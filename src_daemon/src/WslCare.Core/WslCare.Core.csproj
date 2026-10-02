@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>WslCare.Core</RootNamespace>
+    <!-- Collectors, rules, actions and records (plan §8). It ships inside a Native AOT binary on
+         every RID, so the trim, AOT and single-file analyzers run on EVERY build of it: a pattern
+         AOT cannot compile fails here, under TreatWarningsAsErrors, not on a release runner. -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="WslCare.Core.Tests" />
+  </ItemGroup>
+
+</Project>
