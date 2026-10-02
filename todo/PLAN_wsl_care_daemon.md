@@ -34,8 +34,9 @@ jumps, and no process-level history at all.
 4. **Report** everything else, with numbers, and never touch it unasked.
 
 **Success criterion.** Over one working week after enabling actions: no `page allocation failure`;
-`MemAvailable` at 18:00 ≥ 25 % of the VM; Docker reclaimable data stays below 30 GB; the run history lets
-anyone name the top 5 memory holders of any afternoon; and every number in the extension matches the CLI
+`MemAvailable` at 18:00 ≥ 25 % of the VM; Docker reclaimable data stays below 30 GB; anyone can name the
+top 5 memory holders of any afternoon in the last 7 days (atop, 10-minute records, `LOGGENERATIONS=7`) and
+of any 4-hour sample in the last 90 days (`history.jsonl`) — gate round 1, finding 8; and every number in the extension matches the CLI
 output it came from.
 
 ## 2. Decisions already taken (2026-10-02)
@@ -225,7 +226,7 @@ that record, with its age limits as defaults.
 | A1 | `sync; echo 1 > /proc/sys/vm/drop_caches` | §4.1 | — | on | the cache is rebuilt on demand; freed pages go back to Windows. Never `3` | — |
 | A2 | `echo 1 > /proc/sys/vm/compact_memory` | after A1, or fragmentation = 0 | — | on | defragmentation only | — |
 | A3 | `dotnet build-server shutdown`, as the owning user | build servers alive, **no** `dotnet build/test/run` alive | `buildServers.idleHours` (4 h) | on | the official command; the next build restarts them | — |
-| A4 | `docker volume prune -f` — **every unnamed (anonymous) volume not attached to any container** | > `volumes.anonymousMaxCount` (100) or > `volumes.anonymousMaxGb` (20) | — | on | no container refers to them; named volumes never touched. **Refuses on Docker < 23** | 387 volumes, 59.6 GB |
+| A4 | **`docker volume rm` of a re-checked list, never `prune`** (gate round 1, finding 4): at run time it removes only volumes that were in the shown preview AND are still unattached AND carry no `wsl-care.keep` label AND were first seen ≥ `volumes.anonymousOlderThanDays` ago (timer default 1 day; a button may choose 0, as the one-time cleanup did) — **unnamed (anonymous) volumes only** | > `volumes.anonymousMaxCount` (100) or > `volumes.anonymousMaxGb` (20) | — | on | no container refers to them; named volumes never touched. **Refuses on Docker < 23** | 387 volumes, 59.6 GB |
 | A5 | `docker rm -v` of containers stopped ≥ N days (anonymous volumes go with them, named stay) | any exist | `containers.stoppedOlderThanDays` (7 d); Testcontainers: `containers.testcontainersOlderThanHours` (2 h) | **Testcontainers: on; others: off** (button, or opt-in) | user containers go only when the user turned it on or pressed the button | 58 containers, ~3.5 GB |
 | A6 | `docker image prune -f` (dangling) and `docker image prune -af --filter until=…` (not referenced by any container) | dangling: any; unused: reclaimable > `images.unusedMaxGb` (10) | `images.unusedOlderThanDays` (7 d) | dangling: on; unused: **off** (button, or opt-in) | an image used by any container, even a stopped one, is never removed | 99 → 13 images, 31.5 GB |
 | A7 | build cache: auto — `docker builder prune -f` with a **size cap** (`--max-used-space` / `--keep-storage`, whichever this Docker supports); button — `docker builder prune -af` | cache > `buildCache.maxGb` (20) | `buildCache.maxGb` (20), `buildCache.olderThanDays` (7 d) | on (cap); all: button | rebuildable. An **age filter alone freed nothing** on 2026-10-02 (all 34.6 GB < 7 days old) | 34.6 GB |
@@ -557,6 +558,29 @@ the §4.6 numbers.
    (§11 step 10).
 8. Verify on this machine that `autoMemoryReclaim` really defaults to `dropCache` on WSL 2.7.10 (the survey
    cites 2.1.3 release notes) — it decides whether A1 duplicates WSL's own idle reclaim.
+
+## 15. Gate round 1 — amendments (2026-10-02)
+
+`review_plan` over the three wsl_care plans together (session `572b5534`, both reviewers answered, 17
+findings, verdict `good_enough`). Sixteen accepted, one rejected with evidence. Each amendment below
+OVERRIDES the section it names.
+
+| # | Section | Amendment |
+|---|---|---|
+| 0 | §5 A4/A5 | Order fixed A5 → A4; the first-seen record (`volume-seen.json`) is keyed by volume name and drops names Docker no longer lists. |
+| 1 | §7.1 | Root is reached only through an **argv allowlist** built in code — `wsl-care act` with one of A1, A2, A9, A10, A11 and an optional `--preview` — never a shell string, never user text. Any process of this Windows user can already run `wsl -u root`; the boundary we own is what we pass. |
+| 4 | §5 A4 | Inline above: `docker volume rm` of the preview ∩ still-unattached ∩ unlabelled ∩ old-enough set. |
+| 5 | §7.1 | `wsl -u root` without a password is verified, not assumed: `doctor` runs `wsl.exe -u root -- true`; if refused, root actions show as *needs root* and are never attempted. |
+| 6 | §6 | `running.json` records pid + process start time + heartbeat. A stale heartbeat on a LIVE matching process is reported as **wedged**: no new run starts, nothing is killed automatically, a button offers to stop it. Only a dead or mismatched pid is swept. |
+| 8 | §1 | Inline above: the success criterion's history window. |
+| 9 | §4.3 | The events follower writes start/stop/gap markers and backfills from `docker events --since` its last marker (bounded) when it starts; a 24-hour count that overlaps a gap is shown as **partial**, with the gap. |
+| 10 | §5 A16 | Clock fix needs two consecutive observations ≥ 5 minutes apart above the threshold, at most one correction per hour, and is skipped when timesyncd/chrony reports synchronised. |
+| 12 | §9 | `release.yml` adds build-provenance attestations (`actions/attest-build-provenance`); `install.sh` verifies the tarball with `gh attestation verify --repo oleksandrdubyna88/wsl_care` and refuses without it unless `--skip-attestation` is passed (printed loudly). The `.sha256` is integrity, not authentication. |
+| 14 | §12 | A **`WslCare.Scenarios`** project drives the BUILT CLI end to end over a fixture home with fake `docker`/`systemctl` executables on `PATH`; `research/module_tests.md` lists every CLI verb as a flow. |
+| 15 | §8, §9 | **Support matrix:** .NET SDK `10.0.100` `latestFeature` (`global.json`); `linux-x64`/`linux-arm64` AOT built on ubuntu-24.04 → glibc 2.39, so Ubuntu 24.04 and 26.04 are supported and older ones are not; `win-x64` on `windows-latest` for Windows 11; the extension declares `engines.vscode ^1.85.0` with `@types/vscode` held at that floor. |
+| 3 | (Windows plan) | **Rejected:** "pool tags need admin". Measured 2026-10-02 unelevated: status 0, 3 350 tags. A failing call falls back to pool totals with the reason. |
+
+Findings 2, 7, 16 amend the archive plan and 11, 13 the Windows plan — see their own amendment sections.
 
 ## 14. Definition of Done
 
