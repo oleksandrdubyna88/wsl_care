@@ -1,8 +1,9 @@
 # Architecture — wsl_care
 
-> As of 2026-10-02 the repository holds the **daemon skeleton and its foundation seams** (E1.S1 and
-> E1.S2 of `todo/PLAN_wsl_care_daemon.md` §16): the build, the two product projects, the seams every
-> later story hangs on, their tests and the daemon CI. `wsl-care` answers `--help`, `--version` and
+> As of 2026-10-02 the repository holds the **daemon skeleton, its foundation seams and its scenario
+> harness** (E1.S1–E1.S3 of `todo/PLAN_wsl_care_daemon.md` §16): the build, the two product projects,
+> the seams every later story hangs on, their tests, the harness that drives the built CLI, and CI on
+> all three shipped RIDs. `wsl-care` answers `--help`, `--version` and
 > the `config` verbs and refuses everything else; no collector, rule or action exists yet, and there is
 > no extension. This file describes what exists and is rewritten as each part lands.
 
@@ -25,11 +26,19 @@
     `CommandLine.Commands` is the one register of what the binary accepts — the parser, the help text
     and the derived test are all read from it. Exit codes live in one enum (`ExitCode`: 0 ok, 2 usage,
     70 internal, 130 interrupted).
-  - `tests/WslCare.TestSupport` — the doubles and fixtures both test projects share (a temp root, a
-    frozen clock, the recording command runner, a sandboxed host, a directory-link maker).
+  - `tests/WslCare.TestSupport` — the doubles and fixtures the test projects share (a temp root, a
+    frozen clock, the recording command runner, a sandboxed host, a directory-link maker, and
+    `ChildProcess` — the one launcher for a built executable: argv list, ceiling, tree kill).
   - `tests/WslCare.Core.Tests`, `tests/WslCare.Cli.Tests` — xUnit v3 on Microsoft Testing Platform,
     run as executables.
-- **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `pr-title.yml`, `dependabot.yml` (below).
+  - `tests/WslCare.Scenarios` — **the scenario harness** (xUnit v3 MTP executable): the BUILT
+    `wsl-care` run as a child process over a temporary `WSL_CARE_ROOT`, with fake `docker` /
+    `systemctl` / `journalctl` alone on its `PATH`, plus the derived verb register that fails when a
+    verb of `CommandLine.Commands` has no row in [module_tests.md](module_tests.md).
+  - `tests/WslCare.FakeTool` — the fake tool (`wsl-care-fake-tool`), one console program the harness
+    installs under each tool's name; it records argv and answers from fixtures. Ships in no binary.
+- **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `family-checks.yml`, `pr-title.yml`,
+  `dependabot.yml` (below).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
 - Plans: the daemon and extension (`todo/PLAN_wsl_care_daemon.md`), the Windows side
   (`todo/PLAN_windows_care.md`), the AI-session archive (`todo/PLAN_ai_session_archive.md`), the shared
@@ -95,16 +104,21 @@ flowchart LR
         dprops["Directory.Build.props<br/>(imports root, stamps Version)"]
         core["WslCare.Core<br/>class library · IsAotCompatible · 0 packages"]
         cli["WslCare.Cli<br/>exe wsl-care · PublishAot · Serilog"]
-        support["WslCare.TestSupport<br/>doubles and fixtures"]
+        support["WslCare.TestSupport<br/>doubles · ChildProcess launcher"]
         coreT["WslCare.Core.Tests<br/>xUnit v3 MTP exe"]
         cliT["WslCare.Cli.Tests<br/>xUnit v3 MTP exe"]
+        fake["WslCare.FakeTool<br/>exe wsl-care-fake-tool"]
+        scn["WslCare.Scenarios<br/>xUnit v3 MTP exe · fixtures/"]
     end
 
     subgraph ci[".github/workflows"]
-        ciD["ci-daemon.yml<br/>ubuntu-latest · windows-latest"]
+        ciD["ci-daemon.yml<br/>linux-x64 · linux-arm64 · win-x64"]
         ciW["ci-workflows.yml<br/>actionlint + shellcheck"]
+        ciF["family-checks.yml<br/>plans · pin · adapter · build flags"]
         prT["pr-title.yml"]
     end
+
+    conv[".agents/conventions<br/>submodule, tools/*.mjs"]
 
     props --> dprops
     ver --> dprops
@@ -115,14 +129,20 @@ flowchart LR
     slnx --> support
     slnx --> coreT
     slnx --> cliT
+    slnx --> fake
+    slnx --> scn
     cli -->|ProjectReference| core
     support -->|ProjectReference| core
     coreT -->|ProjectReference| core
     coreT -->|ProjectReference| support
     cliT -->|ProjectReference| cli
     cliT -->|ProjectReference| support
-    ciD -->|format · build · run test exes| slnx
-    ciD -->|"publish -r linux-x64 / win-x64, smoke --help --version"| cli
+    scn -->|"ProjectReference: apphost + CommandLine.Commands"| cli
+    scn -->|"ProjectReference: apphost + protocol"| fake
+    scn -->|ProjectReference| support
+    ciD -->|format · build · run 3 test exes| slnx
+    ciD -->|"publish -r RID, smoke --help --version + config round trip"| cli
+    ciF -->|node| conv
 ```
 
 ## The seams inside the binary
@@ -151,16 +171,57 @@ flowchart TB
     records -->|AppendLine| fs
 ```
 
+## The scenario harness (E1.S3)
+
+```mermaid
+flowchart LR
+    test["a scenario test<br/>HelpAndVersionFlows · ConfigFlows · VerbRegisterTests"]
+    home["ScenarioHome<br/>temp dir per test"]
+    launcher["TestSupport.ChildProcess<br/>argv · ceiling · tree kill"]
+    cli["built wsl-care<br/>(apphost beside the harness)"]
+    root["root/ = WSL_CARE_ROOT<br/>config layers · logs · state"]
+    bin["fakebin/ = the WHOLE PATH<br/>docker · systemctl · journalctl"]
+    log["fake-calls.jsonl<br/>argv log"]
+    script["fake-script.json<br/>→ fixtures/"]
+    register["CommandLine.Commands"]
+    catalogue["research/module_tests.md<br/>§ Flow catalogue"]
+
+    test --> home
+    home --> launcher
+    launcher --> cli
+    cli -->|reads / writes| root
+    cli -.->|"a verb that shells out (E2+)"| bin
+    bin -->|append| log
+    bin -->|answer from| script
+    test -->|asserts| log
+    test -->|"enumerates verbs, runs each Example"| register
+    test -->|"every verb has a row"| catalogue
+```
+
+Every run gets `WSL_CARE_ROOT`, so nothing real is read or written, and a `PATH` holding only the
+fakes, so a verb can reach no real tool. The harness reads the product's own types (the verb register,
+`ExitCode`, `ConfigKeys`, `ConfigValidation`, the source-generated JSON context) instead of retyping
+them. What it covers and what it does not prove: [module_tests.md](module_tests.md).
+
 ### `ci · daemon` (`.github/workflows/ci-daemon.yml`)
 
 On every push to `main`, every pull request to `main`, and by hand; unconditional (no path filter),
 `concurrency` with cancel-in-progress, `permissions: contents: read`, `timeout-minutes: 30`, every
-`uses:` pinned by SHA. Matrix `ubuntu-latest` (`linux-x64`) and `windows-latest` (`win-x64`), each:
-restore → `dotnet format --verify-no-changes` → Release build → both test executables → Native AOT
-`dotnet publish -r <rid>` → the published binary must list `--help`/`--version` and print the version in
-`src_daemon/version.txt`. Every MSBuild command carries `-m:4`. **`linux-arm64` has no pull-request leg
-yet** — the workflow header records that gap; the release workflow (E4) builds it on
-`ubuntu-24.04-arm`.
+`uses:` pinned by SHA. Matrix `ubuntu-latest` (`linux-x64`), `ubuntu-24.04-arm` (`linux-arm64`) and
+`windows-latest` (`win-x64`) — every shipped binary-and-platform pair, per the family platform rule,
+mapped in the workflow header — each: restore → `dotnet format --verify-no-changes` → Release build →
+the three test executables (Core, CLI, Scenarios) → Native AOT `dotnet publish -r <rid>` → the
+published binary must list `--help`/`--version` and print the version in `src_daemon/version.txt` →
+the configuration round trip under a temporary `WSL_CARE_ROOT` (set, read back from the user layer,
+a refused set exits 2 with one `wsl-care:` line, the value still holds). Every MSBuild command carries
+`-m:4`.
+
+### `ci · family checks` (`.github/workflows/family-checks.yml`)
+
+The shared rules' own checks, run from the `.agents/conventions` submodule (fetched alone, shallow):
+`plan-lifecycle.mjs`, `adapter-check.mjs`, `pin-check.mjs` (the pin equals the tip of `release`),
+`build-flags-check.mjs`. Separate from the daemon workflow because it gates neither the build nor the
+tests. Mirrors the credential-store repository's `docs · plans` workflow.
 
 ### `ci · workflows`, `pr · title`, Dependabot
 
@@ -174,7 +235,7 @@ FluentAssertions held below 8.x.
 | Part | Where | Role | State |
 |---|---|---|---|
 | daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2) |
-| scenario harness | `src_daemon/tests/WslCare.Scenarios` | drives the built CLI end to end over fixtures | planned (E1.S3) |
+| scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5) |
 
 ## Cross-repository

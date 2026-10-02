@@ -1,5 +1,3 @@
-using System.Diagnostics;
-
 using FluentAssertions;
 
 using WslCare.Cli;
@@ -18,12 +16,11 @@ namespace WslCare.Cli.Tests;
 /// <c>.runtimeconfig.json</c> beside the test assembly, so the binary under test is the one the
 /// <c>ProjectReference</c> built. This is the JIT build; the Native AOT binary is smoked by CI after
 /// <c>dotnet publish</c>. Every run gets <c>WSL_CARE_ROOT</c>, so the real configuration and log
-/// folders of this machine are never read or written.
+/// folders of this machine are never read or written. The launcher (30 s ceiling, tree kill) is
+/// <see cref="ChildProcess"/>, shared with the scenario harness.
 /// </remarks>
 public sealed class BuiltBinaryTests
 {
-    private static readonly TimeSpan Ceiling = TimeSpan.FromSeconds(30);
-
     [Fact]
     public async Task The_built_binary_answers_help_on_stdout_with_exit_code_zero()
     {
@@ -83,39 +80,10 @@ public sealed class BuiltBinaryTests
 
     private static async Task<(int Exit, string Stdout, string Stderr)> RunBuiltBinaryAsync(TempRoot sandbox, params string[] args)
     {
-        var binary = Path.Combine(
-            AppContext.BaseDirectory,
-            CommandLine.BinaryName + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
-        File.Exists(binary).Should().BeTrue($"the referenced CLI's apphost should have been copied to {binary}");
-
-        var start = new ProcessStartInfo(binary)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        start.Environment[HostPaths.SandboxRootVariable] = sandbox.Path;
-        foreach (var arg in args)
-        {
-            start.ArgumentList.Add(arg);
-        }
-
-        using var process = Process.Start(start)
-            ?? throw new InvalidOperationException($"could not start {binary}");
-        using var deadline = new CancellationTokenSource(Ceiling);
-        var stdout = process.StandardOutput.ReadToEndAsync(deadline.Token);
-        var stderr = process.StandardError.ReadToEndAsync(deadline.Token);
-        try
-        {
-            await process.WaitForExitAsync(deadline.Token);
-        }
-        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
-        {
-            // A timeout that only stops WAITING leaves the child running; kill the whole tree.
-            process.Kill(entireProcessTree: true);
-            throw new TimeoutException($"{binary} did not exit within {Ceiling.TotalSeconds:0} s");
-        }
-
-        return (process.ExitCode, await stdout, await stderr);
+        var result = await ChildProcess.RunAsync(
+            ChildProcess.BesideTheTests(CommandLine.BinaryName),
+            args,
+            new Dictionary<string, string?> { [HostPaths.SandboxRootVariable] = sandbox.Path });
+        return (result.Exit, result.Stdout, result.Stderr);
     }
 }

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>wsl-care-fake-tool</AssemblyName>
+    <RootNamespace>WslCare.FakeTool</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!--
+      The stand-in for `docker`, `systemctl` and `journalctl` in the scenario harness: ONE program
+      that answers as whichever tool its apphost was renamed to. The harness copies the apphost three
+      times under the real tools' names into a folder it puts on PATH, alone, so the CLI under test can
+      reach the fakes and nothing else.
+
+      A C# program rather than shell scripts because the same fake must work on both CI legs, and on
+      Windows a `docker.cmd` is NOT found when a program starts a bare `docker` without a shell
+      (.NET's Process.Start and CreateProcess resolve `.exe` only) — so a script fake would be a
+      second, different fake per OS. A renamed apphost is a real `docker.exe` / `docker` on each.
+      It is also the product's language, per the family scenario rule.
+
+      Reflection-free JSON, like the product: the fake reads and writes JSON with JsonDocument and
+      Utf8JsonWriter only.
+    -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+</Project>
