@@ -1,0 +1,7 @@
+Result=success
+NRestarts=0
+Id=wsl-care-live-contract-no-such.service
+LoadState=not-found
+ActiveState=inactive
+SubState=dead
+ActiveEnterTimestamp=

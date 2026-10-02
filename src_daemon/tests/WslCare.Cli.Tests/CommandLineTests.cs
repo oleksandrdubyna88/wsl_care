@@ -106,6 +106,17 @@ public sealed class CommandLineTests
     }
 
     [Fact]
+    public void Preview_needs_all_takes_json_in_either_order_and_refuses_anything_else()
+    {
+        CommandLine.Parse(["preview", "--all"]).Should().Be(new Request.Preview(Json: false));
+        CommandLine.Parse(["preview", "--all", "--json"]).Should().Be(new Request.Preview(Json: true));
+        CommandLine.Parse(["preview", "--json", "--all"]).Should().Be(new Request.Preview(Json: true));
+        CommandLine.Parse(["preview"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("needs --all").And.Contain("act <A#> --preview");
+        CommandLine.Parse(["preview", "--json"]).Should().BeOfType<Request.Failed>();
+        CommandLine.Parse(["preview", "--all", "A4"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("A4");
+    }
+
+    [Fact]
     public void Config_alone_or_with_an_unknown_sub_verb_lists_the_sub_verbs()
     {
         CommandLine.Parse(["config"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("get, set, reset");

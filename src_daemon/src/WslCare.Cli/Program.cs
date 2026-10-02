@@ -83,6 +83,7 @@ internal static class Program
             Request.ConfigSet set => ConfigCommand.Set(set, host, stdout, stderr),
             Request.ConfigReset reset => ConfigCommand.Reset(reset, host, stdout, stderr),
             Request.Status status => StatusCommand.Run(status, host, loaded, stdout, cancellationToken),
+            Request.Preview preview => PreviewCommand.Run(preview, host, loaded, stdout, cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
     }

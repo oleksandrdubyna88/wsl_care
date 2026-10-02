@@ -54,6 +54,11 @@ public sealed class WindowsHostPaths(WindowsEnvironment environment) : IHostPath
 
     public string UserConfigFile => _rules.Join(environment.AppData, Product, "config.json");
 
+    public string DockerDesktopConfigFile => _rules.Join(environment.UserProfile, ".docker", "daemon.json");
+
+    /// <summary>The Windows binary does not read the distro's filesystem (plan §2: no walk through 9p).</summary>
+    public string DistroPath(string absoluteLinuxPath) => string.Empty;
+
     /// <summary>The volume the host's <c>C:</c> figure measures (plan §4.4).</summary>
     public string SystemDrive => environment.SystemDrive;
 
