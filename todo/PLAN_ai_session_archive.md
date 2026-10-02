@@ -1,0 +1,139 @@
+# PLAN — move old AI-agent sessions into a dated archive instead of losing them
+
+> Status: **plan only, nothing implemented yet (2026-10-02).** Scope: a new `archive` capability of the
+> `wsl-care` daemon on **both** sides (WSL and Windows), its settings, its page in the VS Code extension.
+>
+> Parent plan: [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) (§4.6 AI-agent monitoring).
+> Evidence: [2026-10-02_wsl_resource_baseline.md](../research/2026-10-02_wsl_resource_baseline.md) Finding 6.
+
+## 1. Goal and the decision behind it
+
+AI-agent folders grow without a limit (Windows: 477 Claude project folders, 2 631 session files; one WSL
+project 1.4 GB). The user's decision (2026-10-02): **do not delete — move** everything older than N days
+into a folder the user chooses. Under that base folder the tool creates one folder per agent, and inside
+it one folder per **year**, then per **month**:
+
+```
+<base>/
+  claude/
+    2026/
+      09/
+        windows/<project>/<session>.jsonl          ← original path relative to the agent's root
+        wsl/<project>/<session>.jsonl
+        index.jsonl                                 ← one line per archived item (§4)
+      10/ …
+  codex/2026/09/windows/sessions/2026/09/14/rollout-….jsonl
+  gemini/…
+  <manual-agent-name>/…
+```
+
+The month is the **last-modified** month of the session (local time) — the moment the conversation ended,
+which is what a person looking for "that September session" remembers. `windows/` and `wsl/` keep the two
+sides apart because the same project path can exist on both.
+
+## 2. A finding that sets the default N
+
+Claude Code deletes its own transcripts after `cleanupPeriodDays` — **30 days by default**, and it is not
+set on this machine. Measured 2026-10-02: Claude session files older than 30 days — 10 on Windows, 2 in
+WSL; older than 7 days — 1 812 files / 1.26 GB on Windows, 310 files / 0.56 GB in WSL. So today sessions
+are silently **lost** at day 30.
+
+Consequences:
+- Default `archive.olderThanDays` = **14**: well before day 30, and leaves two weeks for `claude --resume`.
+- The tool reads each agent's own retention setting where one exists (Claude: `cleanupPeriodDays` in
+  `~/.claude/settings.json`, default 30) and **warns** when `olderThanDays` ≥ it — the agent would delete
+  first.
+- It **offers** (button with preview, never automatic) to raise `cleanupPeriodDays` (e.g. to 3650) so
+  that the archive, not the agent, owns retention. Editing another tool's settings is the user's call.
+
+## 3. What one "session" is, per agent
+
+The catalogue entry of each agent (parent plan §4.6) gains an `archive` block: which files form one
+session, and what must **never** move.
+
+| Agent | One session = | Never moved |
+|---|---|---|
+| Claude Code | `projects/<project>/<sessionId>.jsonl` **plus** `projects/<project>/<sessionId>/` (subagent transcripts, tool results) when present, and `file-history/<sessionId>/` | `projects/*/memory/` (the agent's long-term memory), `settings*.json`, `plugins/`, `skills/`, `security/`, the project folder itself (removed only when it is left empty) |
+| Codex | `sessions/YYYY/MM/DD/rollout-*.jsonl` | `*.sqlite` state/history databases, `config.toml`, `auth.json` |
+| Gemini CLI | `tmp/<projectHash>/chats/*` (to confirm against the installed version) | `settings.json`, `antigravity*`, `bin/` |
+| Antigravity, Copilot, Rovo Dev, … | to be filled per agent when its layout is confirmed; **until then: monitor only** | everything |
+| Manual agent ("Add CLI path") | the session glob the user gives; **no glob → no archiving** | everything outside the glob |
+
+## 4. How a move is done — safely
+
+1. **Select:** files of a session whose newest file is older than `olderThanDays`.
+2. **Skip if in use:** Linux — any `/proc/*/fd` pointing at the file; Windows — opening it with
+   `FileShare.None` fails. Also skip when the agent's CLI is running with that project as its working
+   directory. Skipped items are counted and listed, never forced.
+3. **Copy, verify, then delete:** copy to the target path (creating `<agent>/<yyyy>/<MM>/<side>/…`),
+   preserve the modification time, flush, compare SHA-256 of source and copy, and only then delete the
+   source. A move within one volume may use a rename, followed by the same hash check.
+4. **Never overwrite:** if the target exists with the same hash, only the source is deleted; with a
+   different hash the new copy gets a `~2` suffix.
+5. **Index:** append `{archivedAt, agent, side, host, originalPath, archivedPath, size, sha256, mtime}`
+   to `<base>/<agent>/<yyyy>/<MM>/index.jsonl`.
+6. **Remove empty folders** the move left behind, except the agent's own top-level folders.
+
+**Restore** is part of the feature, not an afterthought: `wsl-care archive restore` by session id, by
+archived path, or by agent + month moves items back to their original paths (same copy-verify-delete), so
+`claude --resume` sees them again. The extension offers it per session and per month.
+
+**Where each side writes.** Each side archives its own agents. The base folder is one setting, a Windows
+path (e.g. `V:\ai-archive`); the WSL daemon writes through its `/mnt/<drive>` translation (`wslpath`),
+and `archive.linuxBasePath` can override it with a Linux path. Volumes are small (≤ 2 GB today), so the
+9p write path is acceptable; reading from the other side is never needed.
+
+## 5. Settings
+
+| Setting | Default | Note |
+|---|---|---|
+| `wslCare.archive.enabled` | `false` | stays off until a base folder is chosen |
+| `wslCare.archive.basePath` | — | chosen with a folder picker; validated: exists, writable, not inside an agent folder, not on the same folder tree as `~/.claude` etc. |
+| `wslCare.archive.linuxBasePath` | derived | optional override for the WSL side |
+| `wslCare.archive.olderThanDays` | 14 | warning when ≥ an agent's own retention |
+| `wslCare.archive.agents` | all with a confirmed layout | per-agent switch |
+| `wslCare.archive.auto` | `true` once enabled | daily, as part of the timer run; also a **Archive now** button |
+
+## 6. In the extension
+
+- **AI agents** section: per agent, next to live size and sessions — *archived* size and count, the date of
+  the newest archived session, and "eligible now: X sessions / Y GB" (the preview).
+- **Archive** page: tree agent → year → month with sizes and counts; per month **Restore month**; per
+  session **Restore** and **Open folder**; a search box over `index.jsonl`.
+- **Archive now** button: preview (per agent: count, GB, skipped-in-use) → confirm → result table.
+- The **Logs** page shows archive runs as action **A13 "AI sessions archived"** — per agent counts and
+  bytes, skipped items, and every moved file in the run detail.
+- A warning badge when an agent's own retention would delete before the archive moves (§2).
+
+## 7. Build order
+
+1. Catalogue `archive` blocks for Claude and Codex (layouts confirmed on this machine); Gemini after
+   checking its current layout.
+2. `ArchiveAction` (select → in-use check → copy/verify/delete → index) behind `ICommandRunner`/a file
+   system seam; `archive preview|run|restore|list` CLI commands.
+3. Windows side (`win-x64`) and WSL side, with `wslpath` translation.
+4. Retention warnings (`cleanupPeriodDays`) and the "raise it" button.
+5. Extension: settings with folder picker, AI-agents columns, Archive page, Logs integration.
+
+## 8. Test plan
+
+- Layout: a fake Claude tree → a session's `.jsonl` + its same-name folder + its `file-history` entry move
+  together; `memory/` and settings **never** move (property test over random trees).
+- Target paths: year/month from mtime in local time, across a month and a year boundary; `windows`/`wsl`
+  split; collision → `~2`; identical file → source deleted, no duplicate.
+- Safety: a file held open is skipped (Linux fd scan, Windows sharing violation); a hash mismatch leaves the
+  source in place and reports the error; a full or read-only target aborts before deleting anything.
+- Index: every move writes exactly one line; restore uses it and puts the file back byte-identical with
+  its mtime; restore of a missing archive entry reports, not crashes.
+- Settings: base path inside an agent folder is rejected; `olderThanDays` ≥ `cleanupPeriodDays` warns.
+- Live smoke: preview on this machine matches the §2 numbers; archive one month of WSL Codex sessions to a
+  temp base and restore it.
+
+## 9. Definition of Done
+
+- [ ] Claude and Codex sessions older than N days move to `<base>/<agent>/<yyyy>/<MM>/<side>/…` on both
+      sides, verified by hash, indexed, restorable.
+- [ ] Nothing outside a session's definition can be moved — enforced by tests; `memory/` never moves.
+- [ ] Retention conflict with the agent's own cleanup is detected and shown.
+- [ ] Extension: settings with folder picker, archive columns, Archive page with restore, Logs entries.
+- [ ] Plan promoted to `research/` when shipped.

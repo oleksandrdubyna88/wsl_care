@@ -127,6 +127,19 @@ VHDX files never shrink by themselves; space freed inside stays allocated on `C:
 - `snapd` runs with only `core22` + `snapd` installed (no user snaps); `snapfuse` uses CPU at boot.
 - `misc dxg: dxgkio_query_adapter_info: Ioctl failed` ×600 — GPU paravirtualisation noise.
 
+## Finding 6 — AI-agent folders grow without a limit
+
+Measured 2026-10-02 (`ai_agents.sh` for WSL, a PowerShell inventory for Windows):
+
+| Side | CLIs on `PATH` | Data folders | Sessions |
+|---|---|---|---|
+| WSL | `claude` 2.1.223 (nvm), `codex` 0.155.0 (nvm), `gemini` (the Windows npm shim) | `~/.claude` 1.6 GB, `~/.gemini` 0.9 GB (`antigravity-cli` 666 MB), `~/.codex` 174 MB, `~/.rovodev` 6.7 MB, `~/.copilot`, `~/.cache/antigravity` | Claude: 32 project folders, 732 session files (2026-08-31 → now); Codex: 33 |
+| Windows | `claude`, `codex`, `gemini`, `agy` (Antigravity), `ollama` | `.claude` 2.8 GB, `AnthropicClaude` 1.2 GB, `.gemini` 0.5 GB, `.codex` 0.45 GB, `Roaming\Claude` 0.3 GB | Claude: **477** project folders, **2 631** session files; Codex: 385 |
+
+- One Claude project, `-home-user-git-project-a`, holds **1.4 GB** — almost all of WSL's `~/.claude`.
+- Every coai gate run leaves its own Claude project folder (`…-coai-wt-<hash>-r1`), so the count only grows.
+- Agents live on both sides; the Windows side is larger.
+
 ## Windows side (short reach)
 
 - No `Resource-Exhaustion-Detector` 2004 (low virtual memory) events since 2026-09-26.
