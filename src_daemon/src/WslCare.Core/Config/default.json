@@ -1,0 +1,80 @@
+{
+  "dryRun": true,
+  "distro": "Ubuntu",
+  "refreshSeconds": 60,
+  "auto": {
+    "A1": true,
+    "A2": true,
+    "A3": true,
+    "A4": true,
+    "A5": false,
+    "A5Testcontainers": true,
+    "A6": true,
+    "A6Unused": false,
+    "A7": true,
+    "A8": false,
+    "A9": true,
+    "A10": true,
+    "A11": false,
+    "A12": false,
+    "A13": true,
+    "A14": true,
+    "A15": true,
+    "A16": true,
+    "A17": false
+  },
+  "volumes": {
+    "anonymousMaxCount": 100,
+    "anonymousMaxGb": 20,
+    "anonymousOlderThanDays": 1
+  },
+  "containers": {
+    "stoppedOlderThanDays": 7,
+    "testcontainersOlderThanHours": 2
+  },
+  "images": {
+    "unusedOlderThanDays": 7,
+    "unusedMaxGb": 10
+  },
+  "buildCache": {
+    "maxGb": 20,
+    "olderThanDays": 7
+  },
+  "npm": {
+    "maxCacheGb": 5
+  },
+  "journal": {
+    "keepDays": 30
+  },
+  "buildServers": {
+    "idleHours": 4
+  },
+  "processes": {
+    "idleOlderThanHours": 8,
+    "families": ["dotnet-build-servers", "testhost"]
+  },
+  "thresholds": {
+    "memAvailableWarnPercent": 25,
+    "memAvailableActPercent": 15,
+    "swapWarnGb": 4
+  },
+  "aiAgents": {
+    "warnGb": 5,
+    "sessionWarnMb": 500
+  },
+  "archive": {
+    "olderThanDays": 14,
+    "baseFolder": ""
+  },
+  "idle": {
+    "cpuPercent": 20,
+    "minutes": 5
+  },
+  "clock": {
+    "maxDriftSeconds": 5
+  },
+  "logging": {
+    "minimumLevel": "Information",
+    "retentionDays": 14
+  }
+}

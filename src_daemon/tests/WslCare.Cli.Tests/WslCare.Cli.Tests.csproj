@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\WslCare.Cli\WslCare.Cli.csproj" />
+    <ProjectReference Include="..\WslCare.TestSupport\WslCare.TestSupport.csproj" />
   </ItemGroup>
 
 </Project>

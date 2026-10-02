@@ -43,6 +43,7 @@ public sealed class CommandLineTests
     {
         CommandLine.Parse(["--Version"]).Should().BeOfType<Request.Failed>();
         CommandLine.Parse(["-version"]).Should().BeOfType<Request.Failed>();
+        CommandLine.Parse(["Config", "get"]).Should().BeOfType<Request.Failed>();
     }
 
     [Fact]
@@ -64,15 +65,61 @@ public sealed class CommandLineTests
     }
 
     [Fact]
-    public void Every_registered_command_is_in_the_help_text_and_is_accepted_by_its_usage_spelling()
+    public void Config_get_takes_an_optional_key_and_the_json_flag_in_either_order()
+    {
+        CommandLine.Parse(["config", "get"]).Should().Be(new Request.ConfigGet(string.Empty, Json: false));
+        CommandLine.Parse(["config", "get", "dryRun"]).Should().Be(new Request.ConfigGet("dryRun", Json: false));
+        CommandLine.Parse(["config", "get", "--json"]).Should().Be(new Request.ConfigGet(string.Empty, Json: true));
+        CommandLine.Parse(["config", "get", "dryRun", "--json"]).Should().Be(new Request.ConfigGet("dryRun", Json: true));
+        CommandLine.Parse(["config", "get", "--json", "dryRun"]).Should().Be(new Request.ConfigGet("dryRun", Json: true));
+    }
+
+    [Fact]
+    public void Config_get_refuses_a_second_key_and_an_unknown_option()
+    {
+        CommandLine.Parse(["config", "get", "a", "b"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("at most one key");
+        CommandLine.Parse(["config", "get", "--yaml"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("--yaml");
+    }
+
+    [Fact]
+    public void Config_set_takes_exactly_a_key_and_a_value()
+    {
+        CommandLine.Parse(["config", "set", "dryRun", "false"]).Should().Be(new Request.ConfigSet("dryRun", "false"));
+        CommandLine.Parse(["config", "set", "dryRun"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("config set <key> <value>");
+        CommandLine.Parse(["config", "set", "dryRun", "false", "extra"]).Should().BeOfType<Request.Failed>();
+    }
+
+    [Fact]
+    public void Config_reset_takes_exactly_one_key()
+    {
+        CommandLine.Parse(["config", "reset", "dryRun"]).Should().Be(new Request.ConfigReset("dryRun"));
+        CommandLine.Parse(["config", "reset"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("config reset <key>");
+    }
+
+    [Fact]
+    public void Config_alone_or_with_an_unknown_sub_verb_lists_the_sub_verbs()
+    {
+        CommandLine.Parse(["config"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("get, set, reset");
+        CommandLine.Parse(["config", "list"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("get, set, reset");
+    }
+
+    [Fact]
+    public void Every_registered_command_is_in_the_help_text_and_its_example_parses()
     {
         // Derived from the register, not retyped: a command added there is checked here for free.
         CommandLine.Commands.Should().NotBeEmpty();
         foreach (var command in CommandLine.Commands)
         {
             CommandLine.HelpText.Should().Contain($"wsl-care {command.Usage}");
-            command.Spellings.Should().Contain(command.Usage);
-            CommandLine.Parse([command.Usage]).Should().Be(command.Answer);
+            command.Spellings.Should().NotBeEmpty();
+            command.Spellings.Should().Contain(s => command.Example.Take(s.Count).SequenceEqual(s), $"the example of {command.Usage} must begin with one of its spellings");
+            CommandLine.Parse(command.Example).Should().NotBeOfType<Request.Failed>($"the example of {command.Usage} must parse");
         }
+    }
+
+    [Fact]
+    public void Help_mentions_the_three_configuration_layers()
+    {
+        CommandLine.HelpText.Should().Contain("three layers").And.Contain("config set").And.Contain("config get");
     }
 }

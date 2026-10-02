@@ -6,6 +6,9 @@
     <IsTestProject>true</IsTestProject>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <RootNamespace>WslCare.Core.Tests</RootNamespace>
+    <!-- The product forbids reflection-based JSON so AOT failures surface at compile time. The test
+         project inherits the rule rather than testing a laxer configuration than ships. -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,6 +20,14 @@
     <!-- Where the daemon's version file is, as MSBuild resolved it for the stamp — read back by the
          test that checks the stamp, rather than re-derived from a guessed relative path. -->
     <AssemblyMetadata Include="WslCare.VersionFile" Value="$(WslCareVersionFile)" />
+    <!-- Where the product source is, for the architecture test that scans it: stamped by the build
+         for the same reason — a path walked up from the test binary is a guess that breaks in a
+         relocated build. -->
+    <AssemblyMetadata Include="WslCare.SourceRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src'))" />
+    <!-- The sanctioned seam files, so the companion test proving the scanner is alive names them from
+         one place rather than retyping their paths. -->
+    <AssemblyMetadata Include="WslCare.FileSystemSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Files\PhysicalFileSystem.cs'))" />
+    <AssemblyMetadata Include="WslCare.ProcessSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Processes\ProcessCommandRunner.cs'))" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +37,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\WslCare.Core\WslCare.Core.csproj" />
+    <ProjectReference Include="..\WslCare.TestSupport\WslCare.TestSupport.csproj" />
   </ItemGroup>
 
 </Project>

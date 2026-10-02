@@ -1,7 +1,10 @@
 # PLAN — keep WSL from degrading over the working day (`wsl-care` daemon + VS Code extension)
 
 > Status: **in progress, 2026-10-02 — E1.S1 built (root build files, `src_daemon/` skeleton answering
-> `--help`/`--version`, its tests, `ci-daemon.yml`); the rest of §16 is still open.** Scope: a C# Native AOT daemon/CLI run by a
+> `--help`/`--version`, its tests, `ci-daemon.yml`) and E1.S2 built (config layering with observe-only,
+> `config get/set/reset`, `ICommandRunner`, `IFileSystem` + `DeletionPolicy` + architecture test,
+> `IHostPaths`, `IHostProbe`, run records, Serilog — deviations in the E1.S2 row of §16 and in
+> `research/architecture.md`); the rest of §16 is still open.** Scope: a C# Native AOT daemon/CLI run by a
 > systemd timer inside the `Ubuntu` distro (`src_daemon/`), a VS Code extension that shows its state, its
 > logs and its help and runs cleanups on demand (`src_vs_code/`), CI/CD modelled on CredsForDevs, and the
 > one-time cleanups listed in Phase 0.
@@ -629,7 +632,7 @@ week and this plan's promotion after E13.
 | Story | Content | Model |
 |---|---|---|
 | E1.S1 | root build files, `wsl_care.slnx`, Core/Cli + test projects, `ci-daemon.yml` (matrix, format, build, test exes, AOT publish, smoke), actionlint/shellcheck, pr-title, dependabot | Opus — mirrors CredsForDevs |
-| E1.S2 | config layering + schema with observe-only on an invalid layer (§15a #1), `config get/set/reset`, `ICommandRunner` (argv, ceilings, tree kill) + recording double, `IFileSystem` + `DeletionPolicy` + architecture test (§15a C1), `IHostPaths` (C3), `IHostProbe`, run records incl. `interrupted`, Serilog | **Fable** — the seams every later story hangs on |
+| E1.S2 | config layering + schema with observe-only on an invalid layer (§15a #1), `config get/set/reset`, `ICommandRunner` (argv, ceilings, tree kill) + recording double, `IFileSystem` + `DeletionPolicy` + architecture test (§15a C1), `IHostPaths` (C3), `IHostProbe`, run records incl. `interrupted`, Serilog. **Built 2026-10-02; deviations:** `processes.killEnabled` dropped (duplicate of `auto.A11`; A5/A6 carry two switches each per §5); `aiAgents.extra` deferred to E7 (object shape); the schema lives in code (`ConfigKeys`) with defaults in the embedded `default.json`, no separate schema file; the run-file sink writes with its own `StreamWriter`, not `Serilog.Sinks.File` (one package); `WslCare.Core` has zero packages and no `ILogger<T>` yet; console logs go to **stderr** (stdout carries answers); `--help`/`--version`/usage refusals open no log file; a `RootTooBroad` rule (root = `/`, drive root or home) was added; `/tmp/claude` is the Linux analogue of `%TEMP%\claude\`; only `history.jsonl` is written (the per-run detail file is E2.S3); a `WslCare.TestSupport` project holds the shared doubles; `WSL_CARE_ROOT` sandboxes every path for tests | **Fable** — the seams every later story hangs on |
 | E1.S3 | `WslCare.Scenarios` (built CLI, temp home, fake docker/systemctl/journalctl on PATH), fixtures, derived verb register | Opus |
 | E2.S1 | memory/process/disk collectors, Linux + minimal Windows probe, `status --json` | Opus |
 | E2.S2 | Docker collectors, `volume-seen.json`, hygiene audit, `preview --all --json` | Opus |
