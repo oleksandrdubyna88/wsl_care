@@ -30,7 +30,7 @@ internal static class Live
     /// <summary>Plan §15b #2: every real command under a 30 s ceiling.</summary>
     public static readonly TimeSpan Ceiling = TimeSpan.FromSeconds(30);
 
-    private static readonly ICommandRunner Runner = new ProcessCommandRunner(new AllowAllCommandPolicy());
+    private static readonly ICommandRunner Runner = new ProcessCommandRunner(Core.Processes.Policy.CommandPolicy.Product);
     private static readonly object CaptureGate = new();
     private static readonly HashSet<string> CapturedArgv = new(StringComparer.Ordinal);
     private static readonly List<string> CapturedNames = [];

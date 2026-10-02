@@ -80,7 +80,17 @@ public sealed class RunIdJsonConverter : JsonConverter<RunId>
 }
 
 /// <summary>One action's line in a run (plan §6): what it was, how many objects, how many bytes measured freed.</summary>
-public sealed record ActionRecord(string Id, int Count, long FreedBytes);
+public sealed record ActionRecord(string Id, int Count, long FreedBytes)
+{
+    /// <summary>What became of it in this run (<c>ran</c>, <c>failed</c>, <c>dryRun</c>, <c>skipped</c>, <c>deferred</c>,
+    /// <c>refused</c>, E3.S1); absent on lines written before the engine.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Status { get; init; }
+
+    /// <summary>A dry run's preview bytes — what it WOULD have freed (plan §7.4: dry runs counted apart); absent otherwise.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? WouldFreeBytes { get; init; }
+}
 
 /// <summary>One line of <c>history.jsonl</c> (plan §6). Both instants are UTC.</summary>
 public sealed record RunRecord(

@@ -19,11 +19,32 @@ namespace WslCare.Core.Processes;
 /// snapshot and the stuck reads are observed rather than awaited.</para>
 /// <para><see cref="StreamAsync"/> is the same launcher for a child whose stdout never ends on its own
 /// (<c>docker events</c>): lines go to a callback as they arrive, each cut at the output cap.</para>
+/// <para><b>No runner without the policy (E3.S1).</b> The public constructor takes a <see cref="Policy.CommandPolicy"/> —
+/// a sealed type whose never-list no caller can switch off — and refuses a null one. The only other way in is
+/// <see cref="UnguardedForItsOwnTests"/>, internal, for this file's own tests, whose subject's children are shells; a
+/// test holds every product file to never calling it.</para>
 /// </remarks>
-public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
+public sealed class ProcessCommandRunner : ICommandRunner
 {
     /// <summary>How long the stream readers may take to finish after the process is gone.</summary>
     private static readonly TimeSpan DrainGrace = TimeSpan.FromSeconds(2);
+
+    private readonly Func<CommandRequest, CommandVerdict> _review;
+
+    public ProcessCommandRunner(Policy.CommandPolicy policy)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+        _review = policy.Review;
+    }
+
+    private ProcessCommandRunner(Func<CommandRequest, CommandVerdict> review)
+    {
+        _review = review;
+    }
+
+    /// <summary>The runner with a review of the test's own — ONLY for the runner's tests, whose subject's child is a
+    /// shell (a process that spawns a grandchild), which the never-list rightly refuses. Never called from product code.</summary>
+    internal static ProcessCommandRunner UnguardedForItsOwnTests(Func<CommandRequest, CommandVerdict> review) => new(review);
 
     public async Task<CommandOutcome> RunAsync(CommandRequest request, CancellationToken cancellationToken)
     {
@@ -118,7 +139,7 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
     }
 
     private CommandOutcome.Refused? Refusal(CommandRequest request) =>
-        policy.Review(request.Argv) is CommandVerdict.Refused refused ? new CommandOutcome.Refused(refused.Reason) : null;
+        _review(request) is CommandVerdict.Refused refused ? new CommandOutcome.Refused(refused.Reason) : null;
 
     /// <summary>Starts the process from the FULL path <see cref="ExecutableResolver"/> found on <c>PATH</c> — the
     /// operating system is never handed a bare name to search for; the outcome when there is none or the operating
@@ -158,6 +179,16 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
         foreach (var argument in request.Argv.Skip(1))
         {
             info.ArgumentList.Add(argument);
+        }
+
+        if (request.Environment is CommandEnvironment.Clean clean)
+        {
+            // Nothing of this process's environment reaches the child: exactly the variables the request names.
+            info.Environment.Clear();
+            foreach (var (name, value) in clean.Variables)
+            {
+                info.Environment[name] = value;
+            }
         }
 
         return info;

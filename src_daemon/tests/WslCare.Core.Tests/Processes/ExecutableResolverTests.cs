@@ -133,7 +133,7 @@ public sealed class ExecutableResolverTests : IDisposable
     [Fact]
     public async Task The_runner_reports_a_name_found_on_no_path_entry_as_a_failure_to_start_that_says_path_was_searched()
     {
-        var outcome = await new ProcessCommandRunner(new AllowAllCommandPolicy()).RunAsync(new CommandRequest(["wsl-care-no-such-binary-7f3a"], TimeSpan.FromSeconds(5)), CancellationToken.None);
+        var outcome = await new ProcessCommandRunner(Core.Processes.Policy.CommandPolicy.Over(new Core.Processes.Policy.CommandCatalogue([new Core.Processes.Policy.CommandTemplate("absent", Core.Processes.Policy.CommandScope.Machine, "wsl-care-no-such-binary-7f3a", [], TimeSpan.FromSeconds(5), 1024)]))).RunAsync(new CommandRequest(["wsl-care-no-such-binary-7f3a"], TimeSpan.FromSeconds(5)), CancellationToken.None);
 
         outcome.Should().BeOfType<CommandOutcome.FailedToStart>().Which.Reason.Should().Contain("wsl-care-no-such-binary-7f3a").And.Contain("PATH");
     }

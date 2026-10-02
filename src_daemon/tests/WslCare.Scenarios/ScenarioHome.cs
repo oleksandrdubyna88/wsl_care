@@ -70,7 +70,13 @@ internal sealed class ScenarioHome : IDisposable
         // shell sets it), CreateProcess skips the current directory for a bare name, and a scenario run from such a
         // shell would hide exactly the lookup ToolResolutionFlows exists to catch. Meaningless on Linux.
         [NoCurrentDirectoryLookupVariable] = null,
+        // Root is the operating system's answer; a scenario that needs act to run claims it inside the sandbox (E3.S1).
+        [ProcessPrivilege.SandboxVariable] = ClaimsRoot ? "1" : null,
     };
+
+    /// <summary>Whether the CLI answers "am I root" with yes inside this sandbox (<see cref="ProcessPrivilege.SandboxVariable"/>) —
+    /// what lets a scenario drive <c>act</c> over fake tools without being root. Off by default: then the operating system decides.</summary>
+    public bool ClaimsRoot { get; set; }
 
     /// <summary>The Windows variable that makes <c>CreateProcess</c> skip the current directory for a bare name.</summary>
     internal const string NoCurrentDirectoryLookupVariable = "NoDefaultCurrentDirectoryInExePath";

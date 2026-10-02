@@ -119,7 +119,7 @@ public sealed class CollectRunTests : IDisposable
     public async Task A_second_run_while_one_holds_the_lock_is_busy_and_does_nothing()
     {
         _sandbox.Files.CreateDirectory(_sandbox.Paths.StateDirectory);
-        var held = (ExclusiveLock.Held)_sandbox.Files.TryLockExclusive(_sandbox.Paths.Rules.Join(_sandbox.Paths.StateDirectory, CollectRun.RunLockFile));
+        var held = (ExclusiveLock.Held)RunLock.TryTake(_sandbox.Paths, _sandbox.Files);
         using (held.Handle)
         {
             var context = Context(_sandbox.Files);

@@ -40,6 +40,10 @@ internal abstract record Request
 
     /// <summary><c>events follow [--once]</c>: the container-start follower (plan §4.3); <c>--once</c> catches up and stops.</summary>
     internal sealed record EventsFollow(bool Once) : Request;
+
+    /// <summary><c>act &lt;A#&gt;[,&lt;A#&gt;…] (--preview or --confirm) [--json]</c> (plan §6): preview the actions, or run them —
+    /// a destructive run from the CLI needs <c>--confirm</c> (the button passes it after the person confirmed).</summary>
+    internal sealed record Act(IReadOnlyList<Core.Actions.ActionId> Ids, bool Confirm, bool Json) : Request;
 }
 
 /// <summary>One thing the command line accepts: how it is spelt, what it does, how it is parsed.</summary>
@@ -66,8 +70,8 @@ internal sealed record Spelt(Command Command, IReadOnlyList<string> Spelling);
 /// <remarks>
 /// <para><see cref="Commands"/> is the ONE register of what this binary accepts. The parser and the
 /// help text are both derived from it, so a command cannot be accepted and undocumented, or
-/// documented and refused. The remaining verbs of plan §6 (<c>status</c>, <c>collect</c>,
-/// <c>act</c>, …) arrive in later stories as entries here.</para>
+/// documented and refused. The remaining verbs of plan §6 (<c>logs</c>, <c>runs</c>, <c>agents</c>, …) arrive in later
+/// stories as entries here.</para>
 /// </remarks>
 internal static class CommandLine
 {
@@ -76,6 +80,8 @@ internal static class CommandLine
     private const string JsonFlag = "--json";
     private const string AllFlag = "--all";
     private const string OnceFlag = "--once";
+    private const string PreviewFlag = "--preview";
+    private const string ConfirmFlag = "--confirm";
 
     internal static readonly IReadOnlyList<Command> Commands =
     [
@@ -89,6 +95,7 @@ internal static class CommandLine
         new([["collect"]], "collect [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise)", ["collect", "--json"], rest => JsonOnly("collect", rest, json => new Request.Collect(json))),
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
+        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded", ["act", "A10", "--preview", "--json"], ParseAct),
     ];
 
     /// <summary>Every spelling of <see cref="Commands"/> with its command, longest first — ordered once,
@@ -206,6 +213,38 @@ internal static class CommandLine
         _ => new Request.Failed($"\"{BinaryName} events follow\" takes only {OnceFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
     };
 
+    /// <summary>The ids first (one comma-separated word, every id known), then exactly one of <c>--preview</c> /
+    /// <c>--confirm</c>, and optionally <c>--json</c>; nothing else.</summary>
+    private static Request ParseAct(IReadOnlyList<string> rest)
+    {
+        if (rest.Count == 0 || rest[0].StartsWith('-'))
+        {
+            return new Request.Failed($"\"{BinaryName} act\" needs the actions first: {BinaryName} act <A#>[,<A#>...] {PreviewFlag}|{ConfirmFlag} [{JsonFlag}].");
+        }
+
+        if (Core.Actions.ActionId.Parse(rest[0]) is Core.Actions.ActionIdList.Refused refused)
+        {
+            return new Request.Failed($"\"{BinaryName} act\": {Printable(refused.Reason)}.");
+        }
+
+        var flags = rest.Skip(1).ToList();
+        var ids = ((Core.Actions.ActionIdList.Parsed)Core.Actions.ActionId.Parse(rest[0])).Ids;
+        return ActFlags(flags) is { } failure ? failure : new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag));
+    }
+
+    private static Request.Failed? ActFlags(IReadOnlyList<string> flags)
+    {
+        var unknown = flags.Where(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag)).ToList();
+        if (unknown.Count > 0 || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count)
+        {
+            return new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {JsonFlag}, each once; got \"{Printable(string.Join(' ', flags))}\".");
+        }
+
+        return flags.Contains(PreviewFlag) == flags.Contains(ConfirmFlag)
+            ? new Request.Failed($"\"{BinaryName} act\" needs exactly one of {PreviewFlag} (show what it would do) and {ConfirmFlag} (do it; the panel's button passes it after you confirmed).")
+            : null;
+    }
+
     private static Request ParsePreview(IReadOnlyList<string> rest) => rest switch
     {
         [AllFlag] => new Request.Preview(Json: false),
@@ -231,7 +270,7 @@ internal static class CommandLine
             .AppendLine("Settings are read from three layers, each overriding the last: the embedded defaults, the machine")
             .AppendLine("file, and the user file that \"config set\" writes. \"config get\" names the layer behind every value.")
             .AppendLine()
-            .Append("This build answers only the commands above; the cleanups (act) arrive in a later release.")
+            .Append($"This build answers only the commands above; \"act\" holds these actions: {string.Join(", ", Core.Actions.ActionRegistry.Product.Actions.Select(a => a.Id.Text))}.")
             .ToString();
     }
 

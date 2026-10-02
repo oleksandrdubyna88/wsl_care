@@ -8,9 +8,11 @@
 > record `volume-seen.json`, the Docker hygiene audit, the `preview --all [--json]` verb and the live contract
 > check against the real tools, and from E2.S3 the full run `collect` (health collectors, thresholds, the daily
 > folder walk, run detail → history line with the startup reconcile and retention, read-only when unprivileged),
-> `doctor` and the container-start follower `events follow`. `wsl-care` answers `--help`, `--version`, the `config`
-> verbs, `status`, `preview`, `collect`, `doctor` and `events follow`, and refuses everything else; no action exists
-> yet, and there is no extension. This file describes what exists and is rewritten as each part lands.
+> `doctor` and the container-start follower `events follow`, and from E3.S1 the action engine, the command policy (the
+> never-list and deny-by-default templates every argv passes), the root-only `act` verb, the target user and its
+> `runuser` wrapper, and ONE action, A10 (the journal vacuum). `wsl-care` answers `--help`, `--version`, the `config`
+> verbs, `status`, `preview`, `collect`, `doctor`, `events follow` and `act`, and refuses everything else; there is no
+> extension yet. This file describes what exists and is rewritten as each part lands.
 
 ## What exists
 
@@ -75,7 +77,7 @@ Everything a later story does to the machine goes through one of these. Each is 
 | `PathRules` | `Core.Hosting` | values `Linux`, `Windows` | pure path arithmetic per OS family (separators, case, roots), so the Windows policy is checked on the Linux CI leg and vice versa |
 | `IFileSystem` | `Core.Files` | `PhysicalFileSystem` | the only road to delete/move/atomic-write/append; since E2.S1 also the read-only `ReadLink` (the same attributes-first reader the policy trusts, so an uninspectable link is `Unreadable`, not "not a link") and `MeasureVolume` (one `DriveInfo` = `statvfs` / `GetDiskFreeSpaceEx`, no walk); since E2.S2 `FileSize` (one stat, never a read: a container log can be gigabytes); every destructive call resolves the REAL path (`RealPath`: links followed component by component, `..` applied to the real parent) of the target, the destination and the declared root, and asks the `DeletionPolicy` first; a path whose real location cannot be established — a component that cannot be inspected, a cycle of links — is refused by `Unresolvable` (fail closed); the atomic write makes its temporary file in the RESOLVED parent, judges it, re-resolves the target and its parent just before the rename (`PathChanged`) and renames the resolved paths (§ *Fail-closed resolution and the atomic write*); `AppendLine` is a cross-process-safe JSONL append (exclusive open of `{file}.lock`, released by the OS); since E2.S3 `ListFiles`, the bounded `MeasureTree` (links never followed, a stat per entry, an entry and time ceiling), `ProbeWriteAccess` (a delete-on-close probe file: privilege is the OS's answer), `TryLockExclusive` (an exclusive open the OS releases), `RewriteLines` (a line file rewritten atomically under the SAME lock as the append) and a last-write time on `FileSize` |
 | `DeletionPolicy` | `Core.Files.Deletion` | the one class | the never-list as a pure decision over resolved paths: never `projects/*/memory/` (even for the archive), never under an AI agent folder except an archive MOVE with the permit, never under `~/git`, never under `%TEMP%\claude` / `/tmp/claude`, never outside the action's declared root (strictly inside), never a root that is `/`, `C:\` or the home; move destinations are judged too |
-| `ICommandRunner` + `ICommandPolicy` | `Core.Processes` | `ProcessCommandRunner`, `AllowAllCommandPolicy` (E3.S1 replaces it with the never-list) | argv list only, a bare executable name resolved on `PATH` ALONE and started by its full path (`ExecutableResolver`, below), a required ceiling, (since E2.S2 every collector command is a named `ToolCommand` — executable, argv, ceiling, output cap — built in ONE place per tool), the WHOLE process tree killed on timeout, bounded capture of both streams, a closed outcome (`Exited` / `TimedOut` / `FailedToStart` / `Refused`), the caller's cancellation thrown as such after the kill; the policy is asked before any start; since E2.S3 `StreamAsync` — the same launcher for a child whose stdout is a stream (`docker events`), each line handed to a callback as it arrives and cut at the output cap |
+| `ICommandRunner` + `CommandPolicy` | `Core.Processes` (+ `.Policy`) | `ProcessCommandRunner`, whose ONLY constructor takes the sealed `CommandPolicy` (E3.S1: the never-list, then deny by default against the declared templates — § *The action engine, the command policy and `act`*) | argv list only, a bare executable name resolved on `PATH` ALONE and started by its full path (`ExecutableResolver`, below), a required ceiling, (since E2.S2 every collector command is a named `ToolCommand` — executable, argv, ceiling, output cap — built in ONE place per tool), the WHOLE process tree killed on timeout, bounded capture of both streams, a closed outcome (`Exited` / `TimedOut` / `FailedToStart` / `Refused`), the caller's cancellation thrown as such after the kill; the policy is asked before any start; since E2.S3 `StreamAsync` — the same launcher for a child whose stdout is a stream (`docker events`), each line handed to a callback as it arrives and cut at the output cap |
 | `IHostProbe` | `Core.Hosting` | `Collectors.LinuxProbe`, `Collectors.WindowsProbe` (E2.S1) | the platform split of plan §8: ONE fast `Sample` per binary, its own side read, the other side unavailable naming the other binary; a probe holds no command runner, so it starts no process (§ *The collectors and `status`*) |
 | run records | `Core.Records` | `RunRecordWriter` → `{state}/history.jsonl` | `RunRecord` (schemaVersion, `RunId` = UTC second + pid, trigger `timer|manual|cli`, UTC start/end, outcome `completed|failed|interrupted|observeOnly`, actions) as one JSON line, source-generated; since E2.S3 the line names its detail (`detail`), carries `dryRun`, `reason`, the non-ok `warnings` and headline `metrics`; `RunDetailStore` writes `{state}/runs/{day}/{runId}.json` atomically FIRST; `RunHistory` is the one parser; `RunReconcile` and `RunRetention` (§ *The full run*) |
 | configuration | `Core.Config` | `ConfigLoader`, `UserConfigWriter`, `ConfigKeys` | three layers (embedded `default.json` < machine < user), validated against the one register in code; an invalid layer makes the result **observe-only** with `configError {file, line, message}` and the layer's valid keys still in force (plan §15a #1); `config set`/`reset` rewrite the user layer atomically and repair it (invalid keys dropped and named, an unparseable file moved aside with a UTC stamp, `-2`, `-3`, … appended when a repair in the same second already took that name — an aside file is never overwritten) |
@@ -383,7 +385,7 @@ flowchart TB
     verb["CollectCommand<br/>collect [--json]"]
     probe{"ProbeWriteAccess(state dir)<br/>the OS answers"}
     ro["read-only: measure, print,<br/>write NOTHING (plan §15b #3)"]
-    lock{"TryLockExclusive(state/run.lock)"}
+    lock{"RunLock.TryTake<br/>(/run/wsl-care.lock, shared with act)"}
     busy["exit 75: another run"]
     house["housekeeping<br/>RunReconcile → RunRetention (90 d)<br/>→ container-starts prune (14 d)"]
     measure["MeasureAsync"]
@@ -467,7 +469,7 @@ sequenceDiagram
     participant H as history.jsonl
     participant L as the run log
     C->>FS: ProbeWriteAccess(state) — writable
-    C->>FS: TryLockExclusive(state/run.lock)
+    C->>FS: RunLock.TryTake (/run/wsl-care.lock, shared with act)
     Note over C,H: startup reconcile
     C->>D: list every detail
     C->>H: read every line
@@ -481,7 +483,7 @@ sequenceDiagram
     Note over C,H: retention, 90 days
     C->>H: RewriteLines: lock, read, drop lines whose start DAY is before the window, write — ONE lock acquisition
     C->>D: an aged day folder no line names: removed WHOLE (strays included)
-    C->>D: any other day: leftover *.tmp, and in an aged one each detail no line names; the folder once empty
+    C->>D: any other day: leftover *.tmp, and in an aged one each detail no line names, then the folder once empty
     Note over C,L: measure, then record
     C->>D: WriteFileAtomically (temp + rename)
     alt the detail could not be written
@@ -517,9 +519,9 @@ retention, no detail, no line, no first sighting (`PreviewExtras.MayRecord`) —
 record*. Its log goes to `$XDG_STATE_HOME/wsl-care/logs` (`IHostPaths.UserLogDirectory`; `WslCareLogging.LogRoot` picks
 it whenever the system log directory is not writable — for every verb, not only `collect`).
 
-**One run at a time.** `{state}/run.lock` is held for the whole privileged run — an exclusive open the OS releases
+**One run at a time.** THE run lock is held for the whole privileged run — an exclusive open the OS releases
 when the holder dies — so the reconcile never takes a running run's detail for an orphan; a second `collect` exits 75.
-E3.S1's action lock (`/run/wsl-care.lock`) supersedes it.
+Since E3.S1 it is `/run/wsl-care.lock` (`RunLock`), ONE file for `collect` and `act` (E2.S3 held `{state}/run.lock`).
 
 ### `events follow` — the container-start follower (plan §4.3, §15b #0, #8)
 
@@ -614,7 +616,8 @@ whatever it finds (the JSON is the verdict).
 
 0 answered / recorded / read-only / follower stopped by a signal · 1 the run could not be recorded, or `events follow`
 without a writable state directory · 2 usage · 70 a defect · 75 busy (another run or follower holds the lock) ·
-130 interrupted.
+130 interrupted. Since E3.S1 also, for `act`: 3 an action failed · 76 wedged · 77 needs root · 78 observe-only (§ *The action
+engine, the command policy and `act`*).
 
 ### Deviations from the plan recorded in E2.S3
 
@@ -646,6 +649,228 @@ without a writable state directory · 2 usage · 70 a defect · 75 busy (another
   (Linux: `$XDG_STATE_HOME`), `LinuxHostPaths` the apt / snap / sysstat / atop / `wsl.conf` paths, `WindowsHostPaths`
   `.wslconfig`. The fake tool learned prefix matching, a per-answer call budget (`upTo`: down, then up) and output
   followed by a hang (a live stream); `timedatectl` and `snap` joined the fakes.
+
+## The action engine, the command policy and `act` (E3.S1)
+
+`WslCare.Core/Actions` holds the action interface (`ICleanupAction`), the closed set of action ids (`ActionId`, derived
+from the `auto.*` keys of `ConfigKeys`, with the fixed `ExecutionOrder`), the registry (`ActionRegistry.Product` — this
+release holds ONE action), the reference action A10 (`JournalVacuum`), the target-user discovery
+(`TargetUserDiscovery`) and the `runuser` wrapper (`TargetUserCommands`), and the executor an action runs its commands
+through (`ActionCommands`); `Actions/Engine` the engine (`ActionEngine`), `running.json` (`RunningState`, `Heartbeat`,
+`IProcessTable`), the timer's dry-run window (`DryRunWindow`) and the idle gate (`IdleGate`). `Processes/Policy` is the
+command policy (`CommandPolicy`, `NeverList`, `CommandTemplate`, `SlotKind`, `CommandCatalogue`, `ReadCommandTemplates`,
+`TargetUserArgv`). `Records` gained THE run lock (`RunLock`) and the write order shared by every kind of run
+(`RunRecorder`, extracted from `CollectRun`). `Hosting` gained `ProcessPrivilege`. The verb is `ActCommand` in
+`WslCare.Cli/Commands`.
+
+### One run of `act`
+
+```mermaid
+sequenceDiagram
+    participant V as act (CLI)
+    participant E as ActionEngine
+    participant K as /run/wsl-care.lock
+    participant R as running.json
+    participant A as an action
+    participant P as CommandPolicy (inside the runner)
+    participant H as runs/ and history.jsonl
+    V->>V: root? no → exit 77, nothing read, nothing written
+    V->>V: built in this release? this side? observe-only? → exit 2 or 78
+    alt act --preview
+        V->>E: PreviewAsync
+        E->>A: PreviewAsync from LIVE state
+        A->>P: read commands only (journalctl --disk-usage)
+        E-->>V: previewed (no lock, no state)
+    else act --confirm
+        V->>E: ExecuteAsync
+        E->>K: RunLock.TryTake (exclusive open, flock)
+        alt held by another run
+            E->>R: read only: a live run → busy 75, a stale heartbeat → wedged 76
+        else held
+            E->>R: dead or mismatched pid → interrupted history line, then removed
+            E->>R: live → busy 75, stale on a live pid or unreadable → wedged 76 (nothing killed)
+            E->>H: RunReconcile (a detail without a line → interrupted)
+            E->>E: target user once per run, dry-run decision (timer only)
+            E->>R: written: run id, actions, pid, process start, heartbeat
+            loop every asked action, in ActionId.ExecutionOrder
+                E->>R: the current action (and the heartbeat every 5 s)
+                E->>E: side, observe-only, the auto switch (timer)
+                E->>A: PreviewAsync from LIVE state
+                E->>E: trigger (timer), target user, the preview's refusal, idle gate, dry run
+                E->>A: RunAsync with ActionCommands
+                A->>P: only templates it DECLARED, never-list first, then a template match
+                A-->>E: measured result, or a failure that is recorded while the run goes on
+            end
+            E->>H: the detail (atomic), then the history line naming it (RunRecorder)
+            E->>R: removed
+        end
+    end
+```
+
+**The gates, in order, per action** (each stop is an outcome with its reason, never a silent skip): the action's SIDE
+(`skipped`); observe-only (`skipped`); on the timer its `auto.<id>` switch (`skipped`); the LIVE preview (unreadable →
+`refused`); on the timer its trigger (`skipped`); a user-scoped action without a target user (`refused`); the
+preview's own refusal (`refused`); the idle gate (`deferred`, logged as a warning); the dry run (`dryRun`, the preview
+recorded as *would have freed*); then the run — `ran`, or `failed` with the reason, and the next action. ANY exception
+of an action is caught at that unit boundary and recorded as `failed` (reliability rule: one unit's failure is the
+unit's); the caller's cancellation is not — it ends the loop, the run is recorded `interrupted`, `running.json` is
+removed and the cancellation flies on (exit 130).
+
+**Order** is the engine's, whatever order the actions were asked in (`ActionId.ExecutionOrder`): A5Testcontainers, A5,
+A4, A6, A6Unused, A7, A8, A9 (plan §7.3: removing containers first frees their volumes and images), A12, A14, A17, A10,
+A13, A15, A16, A3, A11, A1, A2 (the build servers and suspects before the cache drop, A2 after A1).
+
+**`running.json`** (plan §6, §15 #6, §15a #0): the run id, the trigger, the asked actions, the CURRENT one, the pid,
+the process's START as the operating system reports it (`Process.GetProcessById(pid).StartTime` — inspected, never
+started or killed), the start of the run and a heartbeat. Rewritten at once when the run moves to its next action, and
+by a detached loop every 5 s (`PeriodicTimer` on the run's `TimeProvider`; its outermost frame ends in a catch-all that
+keeps the failure in the run's notes). A reader judges it: no file → none; the pid gone, or alive with a start more
+than 2 s from the recorded one (a reused pid) → **dead**: an `interrupted` history line (the asked actions, the one it
+was on, the last heartbeat) and the file removed — unless the run had already recorded itself (it died between its
+history line and the removal), then the file alone goes; the pid alive with that start and a heartbeat at most 30 s old
+→ **live** (busy); older → **wedged**: no new run, nothing killed, the file left exactly as it is; a file that does not
+parse, or a pid that cannot be inspected → refused like wedged, because a guess there is a second run beside a live one.
+
+### The command policy — the one filter every argv passes
+
+`ProcessCommandRunner`'s only public constructor takes a `CommandPolicy`, a sealed class whose never-list no caller can
+switch off; `CommandPolicy.Product` is the never-list over `CommandCatalogue.Product` = the collectors' read commands
+(`ReadCommandTemplates`, each fixed one taken from its own `ToolCommand`) + every template a registered action
+declares. A test may build `CommandPolicy.Over(itsOwnCatalogue)` — which templates, never which rules. The runner's own
+tests use `ProcessCommandRunner.UnguardedForItsOwnTests` (internal; their child is a shell, which the never-list
+refuses), and a test fails if any other product file names it.
+
+```mermaid
+flowchart TB
+    req["CommandRequest<br/>argv, ceiling, environment"]
+    never{"NeverList<br/>every rule over the argv"}
+    ru{"argv 0 is runuser?"}
+    shape{"the ONE shape<br/>runuser -u user -- /full/path args<br/>with a clean environment"}
+    inner{"NeverList again<br/>over the WRAPPED command"}
+    bin{"the file sits in a permitted bin folder"}
+    user{"a USER-scoped template matches"}
+    machine{"a MACHINE-scoped template matches"}
+    ok["Allowed: the runner starts it"]
+    no["Refused: never started, the reason recorded"]
+
+    req --> never
+    never -->|a rule broken| no
+    never -->|none| ru
+    ru -->|yes| shape
+    ru -->|no| machine
+    shape -->|no| no
+    shape -->|yes| inner
+    inner -->|a rule broken| no
+    inner -->|none| bin
+    bin -->|no| no
+    bin -->|yes| user
+    user -->|no| no
+    user -->|yes| ok
+    machine -->|no, deny by default| no
+    machine -->|yes| ok
+```
+
+**The never-list** (`NeverList.Rules`, each a named rule with a known instance in `CommandPolicyTests`): a control
+character in any argument; a SHELL in any form (`sh`, `bash`, `dash`, `zsh`, …, `cmd` — plan §15c #3, no shell
+anywhere, so not only `-c` / `-ic`); PowerShell with anything but the fixed Windows clock probe (E2.S3's one PowerShell
+argv, a literal with no slot); an interpreter given inline code (`python -c`, `perl -e`, `node -e`, `awk`, …);
+`git worktree prune`; `docker system prune` in ANY form; `docker volume prune` in any form; `vm.drop_caches` with any
+value but `1`, and any argument naming `/proc/sys/vm/drop_caches`; `sysctl` loading a file (`-p`, `--load`,
+`--system`); `wsl --shutdown` / `--terminate` / `--unregister`; deleting or moving by command (`rm`, `rmdir`, `unlink`,
+`shred`, `mv`, `del`, `find -delete`, `rsync --delete`, `git clean` — files go only through `IFileSystem` and its
+`DeletionPolicy`); a path under ANY home's `git`, an AI agent's folder or Claude's temp folder as an argument to ANY
+command; `sparseVhd` / `--set-sparse`; `autoMemoryReclaim` with `gradual`; a command that runs another command
+(`sudo`, `su`, `env`, `xargs`, `nohup`, `timeout`, `nice`, `wsl`, …) — `runuser` only in its one shape; killing by
+name (`pkill`, `killall`, `taskkill`). Broader than plan §5 wherever breadth costs nothing: no action needs any of it.
+
+**Deny by default.** A template (`CommandTemplate`) is the executable as a BARE name (never a path — the catalogue
+refuses one), fixed literals and typed slots (`SlotKind`, a closed set: a bounded number with a suffix, `@unix`
+seconds, an RFC 3339 UTC instant, n hex digits, a unit name, a POSIX user name, plain search text, one of a fixed set,
+a fixed prefix plus a slot, any of several), the last part optionally a bounded repeat. No slot accepts a value that
+starts with `-` (except a fixed set) or holds a control character; the text slot holds only letters, digits, space and
+`| . _ : -`. An action may BIND only the templates it declares itself (`ActionCommands`, compared by identity), and the
+runner's policy then judges the argv again — two filters, one written by the action's author and one nobody can skip.
+
+**The property test** (`CommandPolicyPropertyTests`, a seeded generator in `TestSupport/HostileInputs` — no package):
+20 000 generated requests — every never-command in many spellings (paths, case, `.exe`, extra words, behind a
+wrapper), every declared template with valid and with hostile slot values (`--all`, `;`, `$(…)`, `../`, `~/git`, agent
+folders, unicode, newlines, NUL), token soup, all of it also wrapped in `runuser` with a clean or an inherited
+environment — none the policy allows is a never-command by the INDEPENDENT oracle (`NeverOracle`: the plan's list
+written a second time, as patterns over the joined argv with every wrapper peeled), and every one it allows matches a
+declared template; every declared template instantiated with values its slots accept is never a never-command; and
+every registered action, previewed AND run 2 000 times over generated configurations and generated journals with
+hostile file names, asks only for argv the policy allows, of its OWN templates, none a never-command. Each property has
+a companion that goes red: a permissive policy (`_ => Allowed`), a policy asking the never-list of the outer argv only
+(the refuted shape: it admits undeclared argv and never-commands behind `runuser`), a planted template whose slot is
+too wide (`vm.drop_caches=<0..3>` — the template property names it, and the never-list still refuses it at run time),
+and a planted action that builds a shell string from a preview name.
+
+### The execution context (plan §15c)
+
+- **Root, first.** `act` asks `ProcessPrivilege` before anything else (`Environment.IsPrivilegedProcess`: effective uid
+  0; elevated on Windows). Unprivileged — `--preview` included — it refuses the whole run (exit 77) before the lock,
+  before any read command, before any state. Under `WSL_CARE_ROOT` alone, `WSL_CARE_SANDBOX_PRIVILEGED=1` makes the
+  process ANSWER root — the harness and the AOT smoke drive `act` with it; it changes the answer, never what the
+  operating system lets the process do, and every path of the run is under the sandbox root.
+- **The target user**, once per run: `/etc/wsl.conf`'s `[user] default=` (a valid account name that `/etc/passwd`
+  holds, with an absolute home), else the single account with uid ≥ 1000 (not 65534) and a login shell; anything else —
+  two candidates, a default user `passwd` does not hold, an unreadable file — is *ambiguous* and every USER-scoped
+  action refuses with the reason (machine-scoped ones still run). The run detail records who it was and how.
+- **`runuser`.** A user-scoped tool runs as `runuser -u <user> -- <full path> <args…>`: the file resolved BEFORE the
+  start in the fixed bin folders — `~/.nvm/versions/node/<the default version>/bin` (nvm's `alias/default` resolved to
+  an installed version, or left out), `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/usr/bin` — with a CLEAN
+  environment (`HOME`, `USER`, `LOGNAME`, a `PATH` of those folders; nothing of root's). The policy refuses any other
+  `runuser` shape, an inherited environment, and a file outside those folders even when its name matches. No action of
+  this release is user-scoped (E3.S2's A8 is the first).
+- **Protected homes.** Inside the distro the CLI protects the `git` and AI-agent folders of root's AND every login
+  account's home (from `/etc/passwd`), besides `$HOME`'s (`LinuxEnvironment.ProtectedHomes`) — under the root timer
+  `$HOME` is root's, and the target user's folders must be protected whoever the target is. The daily folder WALK and
+  the user configuration layer still follow `$HOME` (E4.S1 decides).
+
+### Decisions taken in E3.S1
+
+- **The 7-day dry run starts at the timer's FIRST action pass**, recorded once in `{state}/first-timer-run.json`
+  (root-written), not at install: the week is a week of the timer's own decisions. The timer is dry while `dryRun` is
+  on OR the 7 days have not passed; a button never is. An unreadable stamp is rewritten with now (the week restarts);
+  one that cannot be written leaves the run dry.
+- **The lock rule between `collect` and `act`: one file (`/run/wsl-care.lock`), and the second one refuses (75), it
+  never waits.** A run that waited would be a run nobody sees; the timer runs again at its next tick, a button shows
+  busy.
+- **"CPU below `idle.cpuPercent` for `idle.minutes`" is the kernel's load average** — the shortest of its 1 / 5 /
+  15-minute windows covering `idle.minutes` (15 when longer), divided by the CPUs of `/proc/stat`, capped at 100 %. A
+  run is a moment, and the load average is the only CPU history the kernel keeps; it counts I/O wait as busy, the
+  conservative direction. Builds are `docker … build|bake`, `dotnet build|test|publish|pack|msbuild`, `npm ci|install`
+  among the distro's processes (the fast probe's table). An unread figure defers.
+- **Heavy actions** (`IdleRule`): `TimerOnly` for A1 / A2, `Always` for A7 / A15 — a button press of A7 while a build
+  runs is deferred too (refused with the reason); A10 never waits.
+- **A preview takes no lock** and writes nothing — it is a question, like `preview --all`; only `--confirm` locks.
+- **`act` under systemd is the timer** (`INVOCATION_ID`, as for `collect`); `collect` does not call the engine yet.
+
+### Exit codes of `act`
+
+0 previewed / run recorded (an action skipped, deferred, refused or dry-run is still 0 — the answer names it) · 1 the
+run could not be recorded · 2 usage: an unknown id, an action this build does not hold, the other side's action · 3 an
+action failed (the run was recorded, the rest ran) · 75 busy · 76 wedged · 77 needs root · 78 observe-only ·
+130 interrupted.
+
+### Deviations from the plan recorded in E3.S1
+
+- The never-list is broader than §5 (every shell, every delete-by-command, every `docker system prune`, every command
+  wrapper, every argument path under a protected folder), and PowerShell is allowed only as the clock probe's literal
+  argv — the one interpreter E2 already started.
+- The action ids include `A5Testcontainers` and `A6Unused` (plan §5 gives A5 and A6 two switches each); an id is its
+  `auto` key, so the registry and the switches cannot drift.
+- The timer pass is not scheduled yet: `collect` (the timer's target) does not run the engine; E3.S3 wires it with
+  A1 / A2's triggers. `act` under systemd behaves as the timer already.
+- `CommandRequest` gained an `Environment` (inherited, or clean); `ExecutableResolver` gained `ResolveIn` (a list of
+  folders, where a `PATH` string would split a Windows sandbox path at its drive letter); `IHostPaths` gained
+  `RunLockFile`, `LinuxHostPaths` `JournalDirectories` and `WithProtectedHomes`; `ActionRecord` gained `status` and
+  `wouldFreeBytes`; the `RunRecorder` was extracted from `CollectRun` so both kinds of run share one write order.
+- `runuser`'s environment handling is read from util-linux's `su-common.c` (without `-l` / `-m` it sets `HOME`,
+  `SHELL`, `USER`, `LOGNAME` and keeps `PATH` unless `ALWAYS_SET_PATH`), not observed: it needs root, and nothing here
+  runs as root.
+- The button's trigger is `cli` until E6 marks it `manual`; the plan's "A4 removes only volumes that were in the SHOWN
+  preview" needs the button to pass what it showed — E3.S2 / E6.
 
 ## Fail-closed resolution and the atomic write
 
@@ -773,12 +998,12 @@ flowchart TB
     host["CliHost<br/>IHostPaths · IFileSystem · TimeProvider · ICommandRunner"]
     loader["ConfigLoader<br/>default.json, then machine, then user"]
     logging["WslCareLogging<br/>AnsiConsoleSink (stderr) · DailyRunFileSink · LogRetention"]
-    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand"]
+    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand"]
     probe["IHostProbe<br/>LinuxProbe (procfs, cgroup fs) · WindowsProbe (Win32 counters)"]
     history["LastFullRun<br/>slow parts from history.jsonl"]
     writer["UserConfigWriter<br/>repair + atomic write"]
     fs["PhysicalFileSystem<br/>RealPath → DeletionPolicy → disk"]
-    runner["ProcessCommandRunner<br/>ICommandPolicy → Process (tree kill)"]
+    runner["ProcessCommandRunner<br/>CommandPolicy (never-list, templates) → Process (tree kill)"]
     records["RunRecordWriter<br/>history.jsonl (locked append)"]
 
     main --> host
@@ -817,6 +1042,14 @@ flowchart TB
     follower -->|AppendLine · DeleteFile| fs
     verbs -->|doctor| doctor
     doctor -->|systemctl show / --version · docker version| runner
+    engine["ActionEngine<br/>RunLock · RunningState + Heartbeat · DryRunWindow · IdleGate · TargetUserDiscovery"]
+    actions["ActionRegistry<br/>JournalVacuum (A10) via ActionCommands"]
+    verbs -->|act, as root| engine
+    engine --> actions
+    actions -->|declared templates only| runner
+    engine -->|running.json · first-timer-run.json · TryLockExclusive| fs
+    engine --> store
+    engine --> records
 ```
 
 ## The scenario harness (E1.S3)
@@ -882,7 +1115,7 @@ FluentAssertions held below 8.x.
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5) |
