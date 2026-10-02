@@ -45,6 +45,16 @@ public interface IHostPaths
     /// <summary>The user's configuration layer, the one <c>config set</c> writes (plan §6).</summary>
     string UserConfigFile { get; }
 
+    /// <summary>Docker Desktop's <c>daemon.json</c> (plan §4.5, the builder-GC audit) — the WINDOWS-side file, not
+    /// <c>/etc/docker</c>: <c>%USERPROFILE%.dockerdaemon.json</c> on Windows; empty inside the distro, which does
+    /// not know the Windows profile (the <c>.wslconfig</c> audit of E2.S3 resolves it).</summary>
+    string DockerDesktopConfigFile { get; }
+
+    /// <summary>Where an absolute path INSIDE the distro (one Docker reports, such as a container's log) is seen
+    /// from this process: the path itself on the real distro, under the sandbox root under <c>WSL_CARE_ROOT</c>,
+    /// and empty on Windows, which does not read the distro's filesystem.</summary>
+    string DistroPath(string absoluteLinuxPath);
+
     /// <summary>The data folders of the AI agents of plan §4.6 — never deleted under, by anything.</summary>
     IReadOnlyList<string> AgentRoots { get; }
 

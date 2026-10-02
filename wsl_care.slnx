@@ -9,5 +9,6 @@
     <Project Path="src_daemon/tests/WslCare.Cli.Tests/WslCare.Cli.Tests.csproj" />
     <Project Path="src_daemon/tests/WslCare.FakeTool/WslCare.FakeTool.csproj" />
     <Project Path="src_daemon/tests/WslCare.Scenarios/WslCare.Scenarios.csproj" />
+    <Project Path="src_daemon/tests/WslCare.LiveContract/WslCare.LiveContract.csproj" />
   </Folder>
 </Solution>

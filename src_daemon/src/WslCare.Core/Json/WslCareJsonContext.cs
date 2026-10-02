@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 using WslCare.Core.Config;
+using WslCare.Core.Docker;
+using WslCare.Core.Preview;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
 
@@ -26,6 +28,8 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(RunRecord))]
 [JsonSerializable(typeof(ConfigReport))]
 [JsonSerializable(typeof(StatusReport))]
+[JsonSerializable(typeof(PreviewReport))]
+[JsonSerializable(typeof(VolumeSeenRecord))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {
     public static readonly WslCareJsonContext Compact = new(new JsonSerializerOptions

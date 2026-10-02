@@ -114,8 +114,9 @@ public static class FakeCallLog
 
 /// <summary>One scripted answer: when <see cref="Tool"/> is called with exactly <see cref="Argv"/>,
 /// print the bytes of <see cref="StdoutFile"/> (a fixture; empty = nothing), then <see cref="Stderr"/>,
-/// and exit with <see cref="ExitCode"/>.</summary>
-public sealed record FakeAnswer(string Tool, IReadOnlyList<string> Argv, int ExitCode, string StdoutFile, string Stderr);
+/// and exit with <see cref="ExitCode"/> — after <see cref="DelayMilliseconds"/>, which a scenario sets past the
+/// product's ceiling to stand in for a tool that hangs (E2.S2).</summary>
+public sealed record FakeAnswer(string Tool, IReadOnlyList<string> Argv, int ExitCode, string StdoutFile, string Stderr, int DelayMilliseconds = 0);
 
 /// <summary>The script file: a JSON object holding an <c>answers</c> array.</summary>
 public static class FakeScript
@@ -140,6 +141,7 @@ public static class FakeScript
             json.WriteNumber("exitCode", answer.ExitCode);
             json.WriteString("stdoutFile", answer.StdoutFile);
             json.WriteString("stderr", answer.Stderr);
+            json.WriteNumber("delayMs", answer.DelayMilliseconds);
             json.WriteEndObject();
         }
 
@@ -158,7 +160,8 @@ public static class FakeScript
                 [.. element.GetProperty("argv").EnumerateArray().Select(a => a.GetString() ?? string.Empty)],
                 element.GetProperty("exitCode").GetInt32(),
                 element.GetProperty("stdoutFile").GetString() ?? string.Empty,
-                element.GetProperty("stderr").GetString() ?? string.Empty);
+                element.GetProperty("stderr").GetString() ?? string.Empty,
+                element.TryGetProperty("delayMs", out var delay) ? delay.GetInt32() : 0);
             if (call.Matches(answer.Tool, answer.Argv))
             {
                 return answer;

@@ -108,6 +108,9 @@ public sealed class ControlCharacterTests
 
         public VolumeReadResult MeasureVolume(string path) => inner.MeasureVolume(path);
 
+
+        public FileSizeResult FileSize(string path) => inner.FileSize(path);
+
         public void CreateDirectory(string path) => inner.CreateDirectory(path);
 
         public DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>

@@ -1,0 +1,4 @@
+{"Active":"13","Reclaimable":"9.806GB (48%)","Size":"20.3GB","TotalCount":"23","Type":"Images"}
+{"Active":"16","Reclaimable":"389.9MB (99%)","Size":"393MB","TotalCount":"29","Type":"Containers"}
+{"Active":"32","Reclaimable":"16.7GB (38%)","Size":"43.03GB","TotalCount":"48","Type":"Local Volumes"}
+{"Active":"0","Reclaimable":"23.98MB","Size":"1.007GB","TotalCount":"72","Type":"Build Cache"}

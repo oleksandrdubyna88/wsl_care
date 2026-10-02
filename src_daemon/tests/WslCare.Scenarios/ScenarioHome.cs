@@ -24,7 +24,10 @@ internal sealed class ScenarioHome : IDisposable
     private readonly TempRoot _root;
     private readonly List<FakeAnswer> _answers = [];
 
-    public ScenarioHome(string purpose)
+    /// <param name="purpose">Names the temporary directory.</param>
+    /// <param name="tools">The fakes to install; every tool of the protocol when omitted. A scenario leaves one out
+    /// to stand for a tool that is not installed — then nothing on the PATH answers to that name.</param>
+    public ScenarioHome(string purpose, IReadOnlyList<string>? tools = null)
     {
         _root = new TempRoot($"scn-{purpose}");
         SandboxRoot = _root.Dir("root");
@@ -32,7 +35,7 @@ internal sealed class ScenarioHome : IDisposable
         CallsFile = _root.Under("fake-calls.jsonl");
         ScriptFile = _root.Under("fake-script.json");
         Paths = HostPaths.ForThisMachine(SandboxRoot);
-        InstallFakes(FakeBin);
+        InstallFakes(FakeBin, tools ?? FakeToolProtocol.Tools);
         FakeScript.Write(ScriptFile, _answers);
     }
 
@@ -75,9 +78,9 @@ internal sealed class ScenarioHome : IDisposable
         ChildProcess.RunAsync(ChildProcess.BesideTheTests(CommandLine.BinaryName), args, Environment, WorkingDirectory);
 
     /// <summary>Scripts what <paramref name="tool"/> answers to exactly <paramref name="argv"/>.</summary>
-    public ScenarioHome Script(string tool, IReadOnlyList<string> argv, int exitCode, string stdoutFixture = "", string stderr = "")
+    public ScenarioHome Script(string tool, IReadOnlyList<string> argv, int exitCode, string stdoutFixture = "", string stderr = "", int delayMilliseconds = 0)
     {
-        _answers.Add(new FakeAnswer(tool, argv, exitCode, stdoutFixture.Length == 0 ? string.Empty : Fixture(stdoutFixture), stderr));
+        _answers.Add(new FakeAnswer(tool, argv, exitCode, stdoutFixture.Length == 0 ? string.Empty : Fixture(stdoutFixture), stderr, delayMilliseconds));
         FakeScript.Write(ScriptFile, _answers);
         return this;
     }
@@ -105,7 +108,7 @@ internal sealed class ScenarioHome : IDisposable
     /// One apphost, one name per tool: a renamed apphost still loads <c>wsl-care-fake-tool.dll</c> (the name
     /// is embedded in it), so the dll, its runtime config and its deps file go beside the copies.
     /// </summary>
-    private static void InstallFakes(string bin)
+    private static void InstallFakes(string bin, IReadOnlyList<string> tools)
     {
         const string fake = "wsl-care-fake-tool";
         var apphost = ChildProcess.BesideTheTests(fake);
@@ -114,7 +117,7 @@ internal sealed class ScenarioHome : IDisposable
             File.Copy(System.IO.Path.Combine(AppContext.BaseDirectory, fake + companion), System.IO.Path.Combine(bin, fake + companion));
         }
 
-        foreach (var tool in FakeToolProtocol.Tools)
+        foreach (var tool in tools)
         {
             var target = System.IO.Path.Combine(bin, FakeToolProtocol.FileName(tool, OperatingSystem.IsWindows()));
             File.Copy(apphost, target);
