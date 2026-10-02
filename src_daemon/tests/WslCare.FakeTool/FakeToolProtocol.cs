@@ -38,6 +38,10 @@ public static class FakeToolProtocol
 /// <summary>One invocation of a fake: which tool it posed as, and its argv exactly as received.</summary>
 public sealed record FakeCall(string Tool, IReadOnlyList<string> Argv)
 {
+    /// <summary>The directory the fake was started FROM — which copy answered. A decoy planted outside the scenario's
+    /// <c>PATH</c> records its own folder here, so a scenario can tell the product reached the one it meant to.</summary>
+    public string Location { get; init; } = string.Empty;
+
     public string Display => Argv.Count == 0 ? Tool : $"{Tool} {string.Join(' ', Argv)}";
 
     public bool Matches(string tool, IReadOnlyList<string> argv) =>
@@ -96,6 +100,7 @@ public static class FakeCallLog
             }
 
             json.WriteEndArray();
+            json.WriteString("location", call.Location);
             json.WriteEndObject();
         }
 
@@ -108,7 +113,10 @@ public static class FakeCallLog
         var root = document.RootElement;
         return new FakeCall(
             root.GetProperty("tool").GetString() ?? string.Empty,
-            [.. root.GetProperty("argv").EnumerateArray().Select(a => a.GetString() ?? string.Empty)]);
+            [.. root.GetProperty("argv").EnumerateArray().Select(a => a.GetString() ?? string.Empty)])
+        {
+            Location = root.TryGetProperty("location", out var location) ? location.GetString() ?? string.Empty : string.Empty,
+        };
     }
 }
 

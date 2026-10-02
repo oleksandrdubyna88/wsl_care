@@ -66,7 +66,14 @@ internal sealed class ScenarioHome : IDisposable
         ["PATH"] = FakeBin,
         [FakeToolProtocol.CallsVariable] = CallsFile,
         [FakeToolProtocol.ScriptVariable] = ScriptFile,
+        // Removed, so the CLI meets the lookup a default Windows session has: when this variable is set (an agent's
+        // shell sets it), CreateProcess skips the current directory for a bare name, and a scenario run from such a
+        // shell would hide exactly the lookup ToolResolutionFlows exists to catch. Meaningless on Linux.
+        [NoCurrentDirectoryLookupVariable] = null,
     };
+
+    /// <summary>The Windows variable that makes <c>CreateProcess</c> skip the current directory for a bare name.</summary>
+    internal const string NoCurrentDirectoryLookupVariable = "NoDefaultCurrentDirectoryInExePath";
 
     /// <summary>Every fake invocation so far, in order.</summary>
     public IReadOnlyList<FakeCall> Calls => FakeCallLog.ReadAll(CallsFile);
@@ -100,6 +107,18 @@ internal sealed class ScenarioHome : IDisposable
     /// <summary>Starts the BUILT <c>wsl-care</c> and leaves it running — for a verb that runs until a signal.</summary>
     public RunningChild Start(params string[] args) =>
         RunningChild.Start(ChildProcess.BesideTheTests(CommandLine.BinaryName), args, Environment, WorkingDirectory);
+
+    /// <summary>
+    /// Plants a copy of the fake under <paramref name="tool"/>'s name in the scenario's WORKING DIRECTORY — the CLI's
+    /// current directory, which is NOT on its <c>PATH</c>. A launcher that lets the operating system resolve a bare
+    /// name finds it there first (Windows <c>CreateProcess</c> and .NET's Unix lookup both search the current
+    /// directory before <c>PATH</c>); the product must not. Its calls record this folder as their location.
+    /// </summary>
+    public string PlantDecoyInWorkingDirectory(string tool)
+    {
+        InstallFakes(WorkingDirectory, [tool]);
+        return WorkingDirectory;
+    }
 
     /// <summary>The absolute path of a file under <c>fixtures/</c>, copied beside the harness.</summary>
     public static string Fixture(string relativePath)
