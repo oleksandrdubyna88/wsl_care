@@ -1,7 +1,7 @@
 # Post-deploy checks — wsl_care
 
 Target: the owner's own installation (WSL `Ubuntu` + the Windows host + the VS Code extension).
-Last verified: never — nothing released yet.
+Last verified: never, as of 2026-10-02 — nothing released yet.
 
 | # | What a person loses if this is broken | Check | Auto |
 |---|---|---|---|
