@@ -5,10 +5,20 @@
     repositories (.agents/conventions/csharp/nuget-packages.md). Exceptions are pinned below with the
     reason, because an exception without a reason gets bumped by the next person who runs the sweep.
 
-    The product projects (WslCare.Core, WslCare.Cli) reference NO package. Everything below is for
-    the test projects only; a package the daemon needs goes through the approval and licence check in
-    that rule before it lands here.
+    WslCare.Core references NO package (an architecture test keeps it so). WslCare.Cli takes exactly
+    one, Serilog, because the family logging rule names it; a package the daemon needs goes through
+    the approval and licence check in that rule before it lands here.
   -->
+  <ItemGroup>
+    <!-- Serilog core only — the ONE logging stack of the family (common/logging-serilog.md).
+         Apache-2.0; 4.4.0 published 2026-07-10, the latest stable at the 2026-10 sweep. Annotated
+         trim/AOT-compatible since 4.0, which the Native AOT publish of wsl-care relies on. The sinks
+         are this repository's own (AnsiConsoleSink, DailyRunFileSink) — the rule's measured reason
+         not to use Serilog.Sinks.Console, and one fewer package than Serilog.Sinks.File — so no
+         sink or settings package is pinned. -->
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+  </ItemGroup>
+
   <ItemGroup>
     <!-- xUnit v3 on the native Microsoft Testing Platform: each test project builds into a
          self-contained runner executable. There is no VSTest testhost here, so `dotnet test`
