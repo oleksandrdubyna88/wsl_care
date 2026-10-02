@@ -2,6 +2,40 @@ using WslCare.Core.Hosting;
 
 namespace WslCare.Core.Files;
 
+/// <summary>What the disk answered about ONE existing path component: a plain name, a link and its
+/// target, or a component that could not be inspected at all.</summary>
+/// <remarks>Three facts, kept apart on purpose: "not a link" and "could not look" are different, and
+/// collapsing the second into the first is how a component we cannot see into gets treated as a
+/// plain name (fail open). A missing component is a plain name — nothing exists there to follow.</remarks>
+public abstract record LinkInspection
+{
+    private LinkInspection()
+    {
+    }
+
+    public static readonly LinkInspection NotALink = new PlainName();
+
+    public sealed record Link(string Target) : LinkInspection;
+
+    public sealed record Uninspectable(string Reason) : LinkInspection;
+
+    private sealed record PlainName : LinkInspection;
+}
+
+/// <summary>A path's real location, or why it could not be established.</summary>
+public abstract record RealPathResult
+{
+    private RealPathResult()
+    {
+    }
+
+    /// <summary>The real path: absolute, every link followed, <c>..</c> applied to the real parent.</summary>
+    public sealed record Resolved(string Path) : RealPathResult;
+
+    /// <summary>The walk stopped at <paramref name="Component"/>: it could not be inspected, or a cycle of links was met there.</summary>
+    public sealed record Unresolvable(string Component, string Reason) : RealPathResult;
+}
+
 /// <summary>
 /// Resolves a path to what it really names: every link in the chain followed, every <c>..</c>
 /// applied to the REAL parent rather than the spelled one.
@@ -13,42 +47,93 @@ namespace WslCare.Core.Files;
 /// junction inside a cleanup root reaches a protected folder. <c>FileInfo.LinkTarget</c> reports a
 /// link only on the component itself (measured 2026-10-02: a path THROUGH a junction reports none),
 /// so the walk is component by component.</para>
-/// <para>Pure: the disk is reached only through <c>linkTargetOf</c>, which answers the link target of
-/// one existing path or <c>null</c> when it is not a link (or does not exist) — so the walk is a unit
-/// test with a dictionary standing in for the disk, on both path families.</para>
+/// <para>Fail closed: a component that cannot be inspected, or a cycle of links, ends the walk as
+/// <see cref="RealPathResult.Unresolvable"/> — never as a guess. Every destructive operation refuses
+/// an unresolvable path.</para>
+/// <para>Pure: the disk is reached only through <c>inspect</c>, which answers for one path — so the
+/// walk is a unit test with a dictionary standing in for the disk, on both path families.</para>
 /// </remarks>
 public static class RealPath
 {
     /// <summary>Mirrors the kernel's <c>ELOOP</c> guard: a cycle of links is an error, not a hang.</summary>
     public const int MaxLinkHops = 40;
 
-    public static string Resolve(string absolutePath, PathRules rules, Func<string, string?> linkTargetOf)
+    public static RealPathResult Resolve(string absolutePath, PathRules rules, Func<string, LinkInspection> inspect) =>
+        new Walk(absolutePath, rules, inspect).Run();
+
+    /// <summary>One resolution in progress: the prefix and segments already real, and what is still to come.</summary>
+    private sealed class Walk
     {
-        var (prefix, segments) = rules.Split(absolutePath);
-        var remaining = new Queue<string>(segments);
-        var resolved = new List<string>();
-        var hops = 0;
-        while (remaining.Count > 0)
+        private readonly string _original;
+        private readonly PathRules _rules;
+        private readonly Func<string, LinkInspection> _inspect;
+        private readonly List<string> _resolved = [];
+        private string _prefix;
+        private Queue<string> _remaining;
+        private int _hops;
+
+        public Walk(string original, PathRules rules, Func<string, LinkInspection> inspect)
         {
-            var segment = remaining.Dequeue();
-            if (IsDot(segment) || PopIfDotDot(segment, resolved))
-            {
-                continue;
-            }
-
-            var target = linkTargetOf(Compose(prefix, [.. resolved, segment], rules));
-            if (target is null)
-            {
-                resolved.Add(segment);
-                continue;
-            }
-
-            hops = Hop(hops, absolutePath);
-            (prefix, remaining) = Restart(prefix, resolved, target, remaining, rules);
-            resolved.Clear();
+            _original = original;
+            _rules = rules;
+            _inspect = inspect;
+            var (prefix, segments) = rules.Split(original);
+            _prefix = prefix;
+            _remaining = new Queue<string>(segments);
         }
 
-        return Compose(prefix, resolved, rules);
+        public RealPathResult Run()
+        {
+            while (_remaining.TryDequeue(out var segment))
+            {
+                if (Step(segment) is { } failure)
+                {
+                    return failure;
+                }
+            }
+
+            return new RealPathResult.Resolved(Compose(_prefix, _resolved, _rules));
+        }
+
+        /// <summary>One segment: skipped, climbed, kept, or followed — or the reason the walk cannot go on.</summary>
+        private RealPathResult.Unresolvable? Step(string segment)
+        {
+            if (IsDot(segment) || PopIfDotDot(segment, _resolved))
+            {
+                return null;
+            }
+
+            var component = Compose(_prefix, [.. _resolved, segment], _rules);
+            return _inspect(component) switch
+            {
+                LinkInspection.Link link => Follow(component, link.Target),
+                LinkInspection.Uninspectable failed => new RealPathResult.Unresolvable(component, failed.Reason),
+                _ => Keep(segment),
+            };
+        }
+
+        private RealPathResult.Unresolvable? Keep(string segment)
+        {
+            _resolved.Add(segment);
+            return null;
+        }
+
+        /// <summary>A link was met: the walk restarts from the target's root, with the target's segments
+        /// in front of what was still to come, so links inside the target are followed too.</summary>
+        private RealPathResult.Unresolvable? Follow(string component, string target)
+        {
+            if (++_hops > MaxLinkHops)
+            {
+                return new RealPathResult.Unresolvable(component, $"too many levels of links (more than {MaxLinkHops}) while resolving {_original}");
+            }
+
+            var absoluteTarget = _rules.IsAbsolute(target) ? target : _rules.Join(Compose(_prefix, _resolved, _rules), target);
+            var (targetPrefix, targetSegments) = _rules.Split(absoluteTarget);
+            _prefix = targetPrefix;
+            _remaining = new Queue<string>(targetSegments.Concat(_remaining));
+            _resolved.Clear();
+            return null;
+        }
     }
 
     private static bool IsDot(string segment) => segment == ".";
@@ -67,21 +152,6 @@ public static class RealPath
         }
 
         return true;
-    }
-
-    private static int Hop(int hops, string path) =>
-        hops + 1 > MaxLinkHops
-            ? throw new IOException($"too many levels of links while resolving {path}")
-            : hops + 1;
-
-    /// <summary>A link was met: the walk restarts from the target's root, with the target's segments
-    /// in front of what was still to come, so links inside the target are followed too.</summary>
-    private static (string Prefix, Queue<string> Remaining) Restart(
-        string prefix, List<string> resolved, string target, Queue<string> remaining, PathRules rules)
-    {
-        var absoluteTarget = rules.IsAbsolute(target) ? target : rules.Join(Compose(prefix, resolved, rules), target);
-        var (targetPrefix, targetSegments) = rules.Split(absoluteTarget);
-        return (targetPrefix, new Queue<string>(targetSegments.Concat(remaining)));
     }
 
     private static string Compose(string prefix, IReadOnlyList<string> segments, PathRules rules) =>

@@ -32,15 +32,19 @@ public abstract record UserConfigWriteResult
 /// <remarks>
 /// <para>Repair means: the keys of the old file that still validate are kept, the ones that do not
 /// are dropped and named in the result, and a file that cannot be parsed at all is MOVED aside to
-/// <c>config.json.broken-{utc stamp}</c> rather than overwritten — the user's text is never
-/// silently discarded. The move and the write both go through <see cref="IFileSystem"/>, so the
-/// deletion policy sees them like everything else.</para>
+/// <c>config.json.broken-{utc stamp}</c> (with <c>-2</c>, <c>-3</c>, … when that name is already
+/// taken) rather than overwritten — the user's text is never silently discarded. The move and the
+/// write both go through <see cref="IFileSystem"/>, so the deletion policy sees them like everything
+/// else.</para>
 /// <para>The file is written nested (<c>{"volumes":{"anonymousMaxGb":25}}</c>), indented, keys in
 /// schema order — the shape a person expects to open in an editor.</para>
 /// </remarks>
 public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimeProvider clock)
 {
     public const string ActionName = "config-set";
+
+    /// <summary>How many <c>-n</c> suffixes the aside name tries before falling back to a GUID.</summary>
+    private const int MaxAsideProbes = 100;
 
     private static readonly JsonWriterOptions Indented = new() { Indented = true };
 
@@ -106,7 +110,7 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     private string MoveAside(string file, string directory)
     {
         var stamp = clock.GetUtcNow().UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
-        var aside = $"{file}.broken-{stamp}";
+        var aside = FreeAsideName(file, stamp);
         var scope = new DeletionScope(directory, ActionName);
         var verdict = files.DirectoryExists(file) ? files.MoveDirectory(file, aside, scope) : files.MoveFile(file, aside, scope);
         if (verdict is DeletionVerdict.Refused refused)
@@ -117,6 +121,19 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
 
         return aside;
     }
+
+    /// <summary>
+    /// <c>{file}.broken-{stamp}</c>, or <c>-2</c>, <c>-3</c>, … after it when that name is taken: the
+    /// stamp has whole-second precision, so a second repair in the same second asked for the first
+    /// one's name and the move failed. The move itself never overwrites (it fails if the name was
+    /// taken between this probe and the move), so the probe only has to find a name, not reserve one.
+    /// Past <see cref="MaxAsideProbes"/> taken names a GUID suffix ends the search.
+    /// </summary>
+    private string FreeAsideName(string file, string stamp) =>
+        Enumerable.Range(1, MaxAsideProbes)
+            .Select(n => n == 1 ? $"{file}.broken-{stamp}" : $"{file}.broken-{stamp}-{n}")
+            .FirstOrDefault(candidate => !files.FileExists(candidate) && !files.DirectoryExists(candidate))
+        ?? $"{file}.broken-{stamp}-{Guid.NewGuid():N}";
 
     private static byte[] Render(IReadOnlyDictionary<string, ConfigValue> entries)
     {

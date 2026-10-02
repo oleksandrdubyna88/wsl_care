@@ -18,6 +18,9 @@ namespace WslCare.Cli.Logging;
 /// everything is coloured is a line where nothing stands out. The message is rendered through
 /// Serilog's own formatter with <c>:lj</c> — never <c>RenderMessage()</c>, which quotes every string
 /// property. One write per event, built before the lock is taken.</para>
+/// <para>This writes to stderr, so the rendered message goes through
+/// <see cref="CommandLine.Printable"/> as every <see cref="Output"/> message does: a logged value
+/// never carries a raw control character to the terminal.</para>
 /// </remarks>
 internal sealed class AnsiConsoleSink(TextWriter output) : ILogEventSink
 {
@@ -51,15 +54,29 @@ internal sealed class AnsiConsoleSink(TextWriter output) : ILogEventSink
             line.Write($"{Context}{source}{Reset}{Dim}:{Reset} ");
         }
 
-        _message.Format(logEvent, line);
+        line.Write(CommandLine.Printable(Message(logEvent)));
         line.Write(Environment.NewLine);
         if (logEvent.Exception is not null)
         {
-            line.Write($"{LevelColour(LogEventLevel.Error)}{logEvent.Exception}{Reset}{Environment.NewLine}");
+            line.Write($"{LevelColour(LogEventLevel.Error)}{PrintableLines(logEvent.Exception.ToString())}{Reset}{Environment.NewLine}");
         }
 
         return line.ToString();
     }
+
+    /// <summary>The message alone, so its values — a key read from the user's file, a path, an
+    /// exception message — can be made printable before they meet the terminal: only this sink's
+    /// own colour escapes may reach it, and a value cannot split the line or repaint the screen.</summary>
+    private string Message(LogEvent logEvent)
+    {
+        var message = new StringWriter();
+        _message.Format(logEvent, message);
+        return message.ToString();
+    }
+
+    /// <summary>An exception keeps its lines (a stack trace is many); each line is made printable.</summary>
+    private static string PrintableLines(string text) =>
+        string.Join(Environment.NewLine, text.Split('\n').Select(l => CommandLine.Printable(l.TrimEnd('\r'))));
 
     internal static string LevelColour(LogEventLevel level) => level switch
     {
