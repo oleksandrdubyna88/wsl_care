@@ -129,6 +129,17 @@ and `archive.linuxBasePath` can override it with a Linux path. Volumes are small
 - Live smoke: preview on this machine matches the §2 numbers; archive one month of WSL Codex sessions to a
   temp base and restore it.
 
+## 8a. Gate round 1 — amendments (2026-10-02)
+
+- **One session, one month** (finding 2): a session moves as ONE unit under the month of its NEWEST file;
+  it is never split across months.
+- **The index is written before the source goes** (finding 7): copy → fsync → verify hash → append the
+  index line → fsync the index → delete the source. At startup a reconcile finishes the delete for an
+  index entry whose source still exists with the same hash, re-indexes an archive file that has no
+  entry, and REPORTS any mismatch — it never deletes on a mismatch.
+- **Whose month** (finding 16): the machine's local time zone at archive time; the index records the UTC
+  instant and the zone id, so the placement can be reproduced.
+
 ## 9. Definition of Done
 
 - [ ] Claude and Codex sessions older than N days move to `<base>/<agent>/<yyyy>/<MM>/<side>/…` on both

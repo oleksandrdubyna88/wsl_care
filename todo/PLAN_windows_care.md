@@ -146,6 +146,18 @@ Admin actions are marked with a shield and run through the elevated task.
   without the task registered it reports "needs the elevated task" instead of failing silently.
 - Never-list property test, as on Linux.
 
+## 8a. Gate round 1 — amendments (2026-10-02)
+
+- **`logman`** (finding 11): output `%LOCALAPPDATA%\wsl-care\perf\`, circular 512 MB, created by the
+  installer as the user; `doctor` checks the set runs and restarts a stopped one; if creation is refused
+  (the *Performance Log Users* group), the daemon falls back to its own per-run counters and says so.
+- **The elevated channel** (finding 13): a request is one JSON file `{ id, action, preview }` in
+  `%ProgramData%\wsl-care\requests\` (ACL: the user may create, SYSTEM and administrators read), with
+  `action` from a fixed allowlist; `schtasks /run` triggers the elevated task, which validates the id
+  and the action, ignores everything else, writes `results\<id>.json`, and times out after 10 minutes.
+- **Pool tags without admin** (finding 3, rejected): measured to work unelevated; a failing call falls
+  back to totals with the reason.
+
 ## 9. Definition of Done
 
 - [ ] §5 elevated diagnosis recorded; the non-paged-pool consumer named.
