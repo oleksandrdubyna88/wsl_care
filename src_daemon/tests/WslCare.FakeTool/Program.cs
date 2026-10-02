@@ -16,7 +16,7 @@ internal static class Program
             return FakeToolProtocol.NotInAScenario;
         }
 
-        var call = new FakeCall(tool, args);
+        var call = new FakeCall(tool, args) { Location = Path.GetDirectoryName(Environment.ProcessPath) ?? string.Empty };
         FakeCallLog.Append(calls, call);
 
         var script = Environment.GetEnvironmentVariable(FakeToolProtocol.ScriptVariable);

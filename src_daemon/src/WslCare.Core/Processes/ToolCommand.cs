@@ -5,7 +5,8 @@ namespace WslCare.Core.Processes;
 /// <c>journalctl</c>): a stable name (for the log, the live contract's capture and the fixture files), the
 /// executable, the arguments as a list — never a shell string — its ceiling and how much output is kept.
 /// </summary>
-/// <param name="Executable">Started by name; the operating system resolves it on <c>PATH</c>.</param>
+/// <param name="Executable">A bare name, looked up on <c>PATH</c> alone by <see cref="ExecutableResolver"/> and started by its
+/// full path — never by the operating system's own search, which tries System32 and the current directory first.</param>
 /// <param name="Name">A stable short name — also the fixture file a capture of it is replayed from.</param>
 /// <param name="Arguments">Everything after the executable.</param>
 /// <param name="Ceiling">How long it may run before its process tree is killed (reliability rule).</param>
