@@ -4,7 +4,9 @@
 > `wsl-care` daemon on **both** sides (WSL and Windows), its settings, its page in the VS Code extension.
 >
 > Parent plan: [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) (§4.6 AI-agent monitoring).
-> Evidence: [2026-10-02_wsl_resource_baseline.md](../research/2026-10-02_wsl_resource_baseline.md) Finding 6.
+> Evidence: [2026-10-02_wsl_resource_baseline.md](../research/2026-10-02_wsl_resource_baseline.md) Finding 6;
+> [2026-10-02_ai_session_archive_run.md](../research/2026-10-02_ai_session_archive_run.md) (a one-time
+> manual run, §8b).
 
 ## 1. Goal and the decision behind it
 
@@ -55,8 +57,9 @@ session, and what must **never** move.
 |---|---|---|
 | Claude Code | `projects/<project>/<sessionId>.jsonl` **plus** `projects/<project>/<sessionId>/` (subagent transcripts, tool results) when present, and `file-history/<sessionId>/` | `projects/*/memory/` (the agent's long-term memory), `settings*.json`, `plugins/`, `skills/`, `security/`, the project folder itself (removed only when it is left empty) |
 | Codex | `sessions/YYYY/MM/DD/rollout-*.jsonl` | `*.sqlite` state/history databases, `config.toml`, `auth.json` |
-| Gemini CLI | `tmp/<projectHash>/chats/*` (to confirm against the installed version) | `settings.json`, `antigravity*`, `bin/` |
-| Antigravity, Copilot, Rovo Dev, … | to be filled per agent when its layout is confirmed; **until then: monitor only** | everything |
+| Gemini CLI | `tmp/<project>/chats/session-<timestamp>-<id>.jsonl` (confirmed 2026-10-02 — `.jsonl`, not `.json`) | `tmp/<project>/logs.json`, `history/`, `settings.json`, OAuth files, `antigravity*`, `bin/` |
+| Antigravity CLI (`~/.gemini/antigravity-cli/`, older `~/.gemini/antigravity/`) | the files keyed by one conversation id: `conversations/<id>.db`, `brain/<id>/**`, `annotations/<id>.pbtxt`, `presence/<id>.lock`; and `log/cli-<timestamp>.log` per CLI start (confirmed 2026-10-02) | `conversation_summaries.db` (+ `-wal`/`-shm`), `implicit/*.pb`, `bin/`, `builtin/`, settings, state and token files |
+| Copilot, Rovo Dev, … | to be filled per agent when its layout is confirmed; **until then: monitor only** | everything |
 | Manual agent ("Add CLI path") | the session glob the user gives; **no glob → no archiving** | everything outside the glob |
 
 ## 4. How a move is done — safely
@@ -80,8 +83,15 @@ archived path, or by agent + month moves items back to their original paths (sam
 
 **Where each side writes.** Each side archives its own agents. The base folder is one setting, a Windows
 path (e.g. `V:\ai-archive`); the WSL daemon writes through its `/mnt/<drive>` translation (`wslpath`),
-and `archive.linuxBasePath` can override it with a Linux path. Volumes are small (≤ 2 GB today), so the
-9p write path is acceptable; reading from the other side is never needed.
+and `archive.linuxBasePath` can override it with a Linux path.
+
+~~Volumes are small (≤ 2 GB today), so the 9p write path is acceptable.~~ **Refuted for a network drive,
+2026-10-02** ([one-time archive run](../research/2026-10-02_ai_session_archive_run.md), Finding 2): WSL
+`cp` through drvfs to a network-mapped drive wrote ≈ 2 files/s and did not finish 4 696 files in 28 minutes,
+while a WSL `tar` read piped into a Windows-side write did all of them in ≈ 5 minutes. Before the WSL side
+writes through `/mnt/<drive>` by default, the build measures that path against the target the user chose
+(a local NTFS drive was not measured); when it is slow, the WSL daemon hands the copy to the Windows side
+(the same stream shape) instead. Verification reads the archive from the side that reads it fast.
 
 ## 5. Settings
 
@@ -107,8 +117,8 @@ and `archive.linuxBasePath` can override it with a Linux path. Volumes are small
 
 ## 7. Build order
 
-1. Catalogue `archive` blocks for Claude and Codex (layouts confirmed on this machine); Gemini after
-   checking its current layout.
+1. Catalogue `archive` blocks for Claude, Codex, Gemini CLI and Antigravity CLI (layouts confirmed on this
+   machine, 2026-10-02 — §3).
 2. `ArchiveAction` (select → in-use check → copy/verify/delete → index) behind `ICommandRunner`/a file
    system seam; `archive preview|run|restore|list` CLI commands.
 3. Windows side (`win-x64`) and WSL side, with `wslpath` translation.
@@ -139,6 +149,23 @@ and `archive.linuxBasePath` can override it with a Linux path. Volumes are small
   entry, and REPORTS any mismatch — it never deletes on a mismatch.
 - **Whose month** (finding 16): the machine's local time zone at archive time; the index records the UTC
   instant and the zone id, so the placement can be reproduced.
+
+## 8b. Evidence from the one-time archive run — amendments (2026-10-02)
+
+The user ran the move once by hand before this plan is built (7 days, both sides, ≈ 2.18 GB, 13 312 files):
+[research/2026-10-02_ai_session_archive_run.md](../research/2026-10-02_ai_session_archive_run.md). What it
+changes here:
+
+- **The agents delete during the run.** Claude Code's own sweep ran three times in under two hours, and
+  Antigravity removed conversations while the copy was running. So a source that disappears between select,
+  copy and delete is a normal outcome: the copy drops it from the run (counted, not an error), and the
+  delete is decided **per file** — only a source that still hashes to its archived copy is removed; a
+  changed one stays and is reported; a vanished one is reported as *removed by the agent*.
+- **Antigravity is archivable**: its layout is confirmed (§3), so it leaves "monitor only".
+- **The WSL write path** is measured before it is the default (§4).
+- **Not checked yet, and a test-plan item now:** how Codex (`session_index.jsonl`, `state_5.sqlite`,
+  `codex resume`) and Antigravity (`conversation_summaries.db`) behave while a session is in the archive,
+  and that restore makes it visible again.
 
 ## 9. Definition of Done
 
