@@ -6,7 +6,7 @@ extension that shows the state and runs cleanups on demand.
 
 | Folder | Holds |
 |---|---|
-| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs and `status` (memory, processes, containers, disk); the full run and the cleanups arrive in later releases |
+| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk) and `preview` (what each Docker cleanup would free); the full run and the cleanups arrive in later releases |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -69,6 +69,30 @@ arrives in a later release — they are `"available": false` with that reason. E
 read is `"available": false` with a `reason`, never 0. A broken configuration layer is named in the answer
 (`observeOnly`, `configError`) and `status` still answers.
 
+## Preview
+
+```bash
+wsl-care preview --all --json   # every cleanup row with its count and reclaimable bytes; schemaVersion 1
+wsl-care preview --all          # the same, one line per row
+```
+
+`preview` asks Docker — read commands only: `version`, `system df [-v]`, `volume ls --filter dangling=true`,
+`container inspect` through a template that names its fields (never a container's environment) — and answers one
+row per cleanup of the 2026-10-02 one-time run, each with the age limit in force and the `auto` switch that lets the
+timer run it: A4 unattached anonymous volumes, A5 stopped containers (A5Testcontainers apart), A6 dangling and
+A6Unused unused images, A7 build cache; A8 (npm) and A9 (apt, snap) arrive with the full run. Next to them: the
+named volumes no container uses (kept — a person decides), Docker's own totals per type, and a hygiene audit
+(containers logging without `max-size`, Docker Desktop's builder GC, forgotten buildx builders). Nothing is removed.
+
+When Docker cannot answer, every Docker figure is `"available": false` with `docker.kind` —
+`notInstalled`, `daemonStopped`, `socketRefused`, `timedOut`, `commandFailed`, `refused`, `unparseable` — and the
+reason; never 0, and the exit code is still 0. Each Docker command has its own ceiling (10 s for the first probe,
+2 min for `system df`) and is killed with its process tree when it passes it.
+
+A4's age is the first time the daemon saw a volume unattached, kept in `/var/lib/wsl-care/volume-seen.json`. Only
+a process that may write the state directory records it — root, on an installed machine (the timer); run as your
+own user, `preview` reads the record, writes nothing and says `read-only` in `volumeSeen`.
+
 ## Build and test
 
 Needs the .NET 10 SDK (`global.json` pins `10.0.100` with `rollForward: latestFeature`). Every
@@ -85,6 +109,12 @@ dotnet build wsl_care.slnx -c Release -m:4
 # The scenario harness: the BUILT wsl-care over a temp WSL_CARE_ROOT, fake docker/systemctl/journalctl/powershell
 # alone on its PATH, and the check that every CLI verb has a row in research/module_tests.md
 ./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios.exe
+
+# The live contract: the REAL docker / systemctl / journalctl of this machine against the product's parsers.
+# Not run by CI. A missing tool or daemon is a skip with its reason; WSL_CARE_REQUIRE_LIVE=1 (release) makes it a failure.
+# Run it inside WSL Ubuntu for the systemd half; WSL_CARE_LIVE_CAPTURE=<dir> records each answer (fixture capture).
+./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
+WSL_CARE_REQUIRE_LIVE=1 ./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract.exe
 
 # Formatting, as CI checks it (reports, never rewrites)
 dotnet format wsl_care.slnx --verify-no-changes

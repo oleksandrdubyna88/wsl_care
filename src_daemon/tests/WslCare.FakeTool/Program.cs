@@ -27,6 +27,12 @@ internal static class Program
             return FakeToolProtocol.Unscripted;
         }
 
+        if (answer.DelayMilliseconds > 0)
+        {
+            // A hang the product must cut off: it kills this process's tree at its ceiling.
+            Thread.Sleep(answer.DelayMilliseconds);
+        }
+
         if (answer.StdoutFile.Length > 0)
         {
             // The fixture's bytes, unchanged: no re-encoding, no added newline.

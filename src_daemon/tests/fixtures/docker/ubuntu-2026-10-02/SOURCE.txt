@@ -1,0 +1,48 @@
+docker / systemctl / journalctl answers - CAPTURED, not synthetic (one file excepted, named below).
+
+Source:   WSL distro "Ubuntu" (24.04, systemd 255) on the owner's machine, as the unprivileged user (uid 1000,
+          in the docker group), Docker Desktop 4.81.0 with Engine 29.6.1, the docker CLI 29.6.1 inside the distro.
+Captured: 2026-10-02T15:22:28Z (captured-at.txt) by the live contract itself -
+          src_daemon/tests/WslCare.LiveContract run with WSL_CARE_LIVE_CAPTURE=<dir>, built and run from a copy of
+          the worktree under /tmp in the distro (removed afterwards). Each file is the stdout of exactly the argv
+          the product builds (WslCare.Core.Docker.DockerCommands, WslCare.Core.Systemd.SystemdCommands), first
+          answer kept. Read-only commands only.
+State:    the Docker of the afternoon AFTER the morning's one-time cleanup (research/2026-10-02_one_time_cleanup.md):
+          23 images, 29 containers (16 running), 48 volumes (16 unattached: 3 anonymous, 13 named), 72 build-cache
+          entries. The raw outputs of the pre-cleanup Docker (474 volumes, 99 images, 2 190 cache entries) were
+          never saved, so NO fixture reproduces the 387 volumes / 59.6 GB rows of that morning; these reproduce
+          the afternoon's rows (A4 3 volumes / 641.4 MB, 13 kept named volumes / 16.06 GB, ...).
+
+Files (name = the ToolCommand.Name the product gives the command):
+  version.out                  docker version --format {{json .}}
+  system-df.out                docker system df --format {{json .}}
+  system-df-v.out              docker system df -v --format {{json .}}
+  volume-ls-dangling.out       docker volume ls --filter dangling=true --format {{.Name}}
+  container-inspect.out        docker container inspect --format <DockerCommands.InspectTemplate> <the 29 ids, df -v order>
+  ps-a.out                     docker ps -a --no-trunc --format {{json .}}
+  stats.out                    docker stats --no-stream --format {{json .}}
+  events.out                   docker events --since <now-24h> --until <now> --filter type=container
+                               --filter event=start --format {{json .}}  - EMPTY: Docker's in-memory event buffer
+                               held only healthcheck exec_* events (85 each of exec_create/exec_start/exec_die);
+                               the morning's container starts had been pushed out of it.
+  events-exec-die.out          the last line of the same window with --filter event=exec_die instead of
+                               event=start, taken by hand right after (not a product argv): the real shape of
+                               a container event line, for the parser.
+  systemctl-show-journald.out  systemctl show systemd-journald.service --timestamp=unix --property=<SystemdCommands.UnitProperties>
+  systemctl-show-missing.out   the same for wsl-care-live-contract-no-such.service (LoadState=not-found)
+  journalctl-disk-usage.out    journalctl --disk-usage
+  (the live contract wrote both systemctl answers under one command name; the redaction names them by unit)
+
+Redacted after capture by research/diagnostics/docker_fixture_redact.mjs (mechanical; run it on the raw
+capture to reproduce these files byte for byte), and nothing else changed:
+  - labels: only org.testcontainers*, wsl-care.keep, com.docker.volume.anonymous and Docker Desktop's
+    desktop.docker.io/ports* and wsl-distro survive; compose labels (project names, host paths), Aspire's
+    usvc-dev labels (which carry environment variables) and bind-source labels are removed;
+  - a container's Command -> "REDACTED"; a bind source in ps/df Mounts -> REDACTED-BIND;
+  - container names -> container-NN, named volumes -> named-volume-NN (Mountpoint too), networks other than
+    bridge/host/none -> network-NN, two locally built image repositories -> local-image-NN; each name mapped
+    once and replaced in every file, so the files agree with one another;
+  - /home/<user> -> /home/user;
+  - event attributes: only the kept labels, execID, exitCode, and the mapped name and image.
+  The script then searches every output for each original name and fails on any it finds (0 found).
+  Ids (64-hex), sizes, times, states, image ids and public image names are unchanged.

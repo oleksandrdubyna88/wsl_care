@@ -50,6 +50,20 @@ public abstract record VolumeReadResult
     public sealed record Unreadable(string Reason) : VolumeReadResult;
 }
 
+/// <summary>What measuring one file produced: its length, nothing there, or a file that cannot be inspected.</summary>
+public abstract record FileSizeResult
+{
+    private FileSizeResult()
+    {
+    }
+
+    public sealed record Measured(long Bytes) : FileSizeResult;
+
+    public sealed record Missing : FileSizeResult;
+
+    public sealed record Unreadable(string Reason) : FileSizeResult;
+}
+
 /// <summary>
 /// The one road to the disk for everything that removes or relocates (plan §15a C1).
 /// </summary>
@@ -82,6 +96,9 @@ public interface IFileSystem
 
     /// <summary>Size and free space of the filesystem that holds <paramref name="path"/> — one call, no walk.</summary>
     VolumeReadResult MeasureVolume(string path);
+
+    /// <summary>The length of one file — a stat, never a read (a container log can be gigabytes).</summary>
+    FileSizeResult FileSize(string path);
 
     void CreateDirectory(string path);
 
