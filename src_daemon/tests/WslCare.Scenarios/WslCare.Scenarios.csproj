@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <RootNamespace>WslCare.Scenarios</RootNamespace>
+    <!-- The product forbids reflection-based JSON so AOT failures surface at compile time. The
+         harness inherits the rule; it reads the CLI's JSON through the product's own source-generated
+         context. -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+  <!--
+    The scenario harness (plan §15 #14, §16 E1.S3; .agents/conventions/common/scenario-tests.md):
+    the BUILT `wsl-care` run as a child process over a temporary WSL_CARE_ROOT, with fake `docker`,
+    `systemctl` and `journalctl` ALONE on its PATH. What it covers, how it runs and what it does not
+    prove is research/module_tests.md.
+  -->
+
+  <ItemGroup>
+    <!-- xunit.v3 does not contribute an implicit using of its own. -->
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Paths the build resolved, read back by the tests instead of walking up from the test binary
+         (a guess that breaks in a relocated build): the flow catalogue the derived register checks,
+         and the daemon's version file the version flow compares against. -->
+    <AssemblyMetadata Include="WslCare.ModuleTests" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\research\module_tests.md'))" />
+    <AssemblyMetadata Include="WslCare.VersionFile" Value="$(WslCareVersionFile)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Scripted outputs for the fakes. Synthetic unless a file says it was captured; real tool
+         output is recorded by E2's live contract check, never invented here. -->
+    <None Update="fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The subject: its apphost is copied beside the harness, and its register (CommandLine.Commands)
+         is read directly, so a renamed verb is a compile error here rather than a scenario that
+         quietly stops matching. -->
+    <ProjectReference Include="..\..\src\WslCare.Cli\WslCare.Cli.csproj" />
+    <!-- The stand-in for docker / systemctl / journalctl: its apphost is copied beside the harness,
+         which installs it under those names; its protocol types are shared with it. -->
+    <ProjectReference Include="..\WslCare.FakeTool\WslCare.FakeTool.csproj" />
+    <ProjectReference Include="..\WslCare.TestSupport\WslCare.TestSupport.csproj" />
+  </ItemGroup>
+
+</Project>
