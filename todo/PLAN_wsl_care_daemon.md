@@ -582,6 +582,81 @@ OVERRIDES the section it names.
 
 Findings 2, 7, 16 amend the archive plan and 11, 13 the Windows plan — see their own amendment sections.
 
+## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
+
+Every epic is its own branch from the previous epic's final commit, one review-gate code round over its
+whole diff, CI green at its head. Every story ships its scenario flows and updates
+`research/module_tests.md` and `research/architecture.md`. Outside the epics, by hand with the owner:
+Phase 0 (0.1, 0.4–0.8) before E4's live install; the Windows §5 elevated diagnosis before E12; the dryRun
+week and this plan's promotion after E13.
+
+| # | Name | Branch | True when done |
+|---|---|---|---|
+| E1 | Skeleton, foundation seams, daemon CI, scenario harness | `feat/wc-e1-skeleton` | `dotnet build wsl_care.slnx` green on ubuntu+windows; test executables run; AOT `linux-x64`/`win-x64` with zero trim warnings + `--help` smoke; `WslCare.Scenarios` drives the built CLI; a test fails when a CLI verb is missing from `module_tests.md` |
+| E2 | Linux collectors, `status`/`collect`/`preview`/`doctor`, events follower | `feat/wc-e2-collectors` | `status --json` < 2 s with `schemaVersion`; `collect` writes history, run detail, run log; `preview --all --json` reproduces the 2026-10-02 rows from fixtures; follower markers + backfill; `doctor --json` |
+| E3 | Action engine, A1–A17, never-list guard, `logs`/`runs` | `feat/wc-e3-actions` | every `act A#` behind its `auto` switch; property test: no input yields a *never* command; lock, 7-day dryRun, wedged/dead `running.json`; `logs --period` / `runs` answer §7.4 |
+| E4 | Units, `install.sh`, release pipeline, `daemon-v0.1.0` | `feat/wc-e4-daemon-release` | `daemon-v0.1.0` with 3 RID assets + `.sha256` + attestations; installed here, timer + events unit active, `doctor` green |
+| E5 | Extension prototype (read-only) + **Marketplace** `extension-v0.1.0` | `feat/wc-e5-extension-prototype` | `ci-extension.yml` green; `.vsix` bundles `wsl-care.exe`; status bar + read-only panel; *Install daemon*; listed on the Marketplace |
+| E6 | Cleanup buttons, root boundary, Last cleanup, Logs page | `feat/wc-e6-cleanup-logs` | preview → confirm → result for every A#; root only through the argv allowlist; Logs page = §7.4; `extension-v0.2.0` |
+| E7 | AI-agent discovery, settings ↔ config, Add CLI path | `feat/wc-e7-agents-settings` | `agents list` matches §4.6 on both sides; *Add CLI path…* end to end; settings mirrored with the one-time conflict notice; `extension-v0.3.0` |
+| E8 | Help in 5 languages, zoom, tone — via the kit | `feat/wc-e8-help-kit` | the kit imported, no copied coai modules; articles in en/ru/uk/de/es with fallback + stale notes; zoom/tone on every page; `extension-v0.4.0` |
+| E9 | AI-session archive — daemon, both sides | `feat/wc-e9-archive-daemon` | `archive preview\|run\|restore\|list` on both sides; never-move property tests; index-before-delete + reconcile; live round trip byte-identical; A13 in the timer |
+| E10 | Archive in the extension | `feat/wc-e10-archive-ui` | settings with folder picker; Archive page with restore; Logs show A13; `extension-v0.5.0` |
+| E11 | Windows collectors, `install` (task + logman) | `feat/wc-e11-windows-collectors` | `status`/`collect`/`doctor`/`install` on Windows; the task and perf log running here; pool tags with fallback |
+| E12 | Windows actions, elevated channel, advisors with undo | `feat/wc-e12-windows-actions` | W-A1…W-A14 with preview; elevated request → result round trip; advisors/undo round-trip exactly; Windows never-list property test |
+| E13 | Extension Windows group | `feat/wc-e13-windows-ui` | Windows sections; side column in Cleanup/Logs/AI agents; shield actions through the channel; `.wslconfig` cap shown, never written; `extension-v0.6.0` |
+
+**Stories and their models** (Fable where a wrong answer is paid for later; Opus otherwise):
+
+| Story | Content | Model |
+|---|---|---|
+| E1.S1 | root build files, `wsl_care.slnx`, Core/Cli + test projects, `ci-daemon.yml` (matrix, format, build, test exes, AOT publish, smoke), actionlint/shellcheck, pr-title, dependabot | Opus — mirrors CredsForDevs |
+| E1.S2 | config layering + schema, `config get/set`, `ICommandRunner` (argv, ceilings, tree kill) + recording double, `IHostProbe`, run records, Serilog | **Fable** — the seams every later story hangs on |
+| E1.S3 | `WslCare.Scenarios` (built CLI, temp home, fake docker/systemctl/journalctl on PATH), fixtures, derived verb register | Opus |
+| E2.S1 | memory/process/disk collectors, Linux + minimal Windows probe, `status --json` | Opus |
+| E2.S2 | Docker collectors, `volume-seen.json`, hygiene audit, `preview --all --json` | Opus |
+| E2.S3 | thresholds, health collectors, history/run writers + retention sweeps, `collect`, `doctor`, `events follow` | Opus |
+| E3.S1 | action engine, `CommandPolicy` (the one filter every runner call passes), lock, dryRun, idle gating, measured freed bytes, `running.json` | **Fable** — deletion safety and the never-list |
+| E3.S2 | A4–A9, A11, A12, A14, A17 | **Fable** — irreversible deletion |
+| E3.S3 | A1, A2 (event-driven), A3, A10, A15, A16, `logs`/`runs` | Opus |
+| E4.S1 | units, default config, `install.sh` with checksum + attestation, uninstall | **Fable** — the install trust boundary |
+| E4.S2 | release-please, `release.yml` per-RID with attestations, tag ruleset, branch protection, Sonar, CodeRabbit; cut `daemon-v0.1.0` | **Fable** — credentials and supply chain |
+| E5.S1 | extension skeleton, `WslCareClient`, `ci-extension.yml` | Opus |
+| E5.S2 | status bar, read-only panel, *Install daemon* | Opus |
+| E5.S3 | Marketplace publish leg, publisher, icon, README, CHANGELOG | **Fable** — `VSCE_PAT` and what ships publicly |
+| E6.S1 | root argv allowlist, `doctor` root check, buttons with preview/confirm, running state | **Fable** — the root boundary |
+| E6.S2 | Last cleanup, Run full check now | Opus |
+| E6.S3 | Logs page | Opus |
+| E7.S1 | agent catalogue and discovery, `agents list/probe` | Opus |
+| E7.S2 | settings ↔ config | Opus |
+| E7.S3 | AI-agents section, Add CLI path, Windows numbers in Memory/Disk | Opus |
+| E8.S1–S3 | help via the kit, zoom + tone everywhere, ru/uk/de/es + stale stamps | Opus |
+| E9.S1 | archive engine (one session one month, never-move list, in-use skip, copy→fsync→hash→index→delete) | **Fable** — irreplaceable data |
+| E9.S2 | restore, reconcile, list | **Fable** — reverse move and crash recovery |
+| E9.S3 | both sides, `wslpath`, base-path validation, retention warning | Opus |
+| E10.S1–S2 | archive settings and Archive now; Archive page and Logs | Opus |
+| E11.S1–S3 | Windows collectors I and II; Windows install/doctor/perf log | Opus |
+| E12.S1 | unelevated Windows cleanups incl. W-A2 with the `%TEMP%\claude\` guard | **Fable** — bulk deletion in a 155 k-entry tree |
+| E12.S2 | the elevated channel and admin actions | **Fable** — the elevated boundary |
+| E12.S3 | opt-in/reversible actions and advisors with undo | Opus |
+| E13.S1 | Windows group read-only + side column | Opus |
+| E13.S2 | Windows buttons through the channel | **Fable** — crosses the elevated boundary |
+
+**The prototype and the Marketplace** (user decision 2026-10-02): at the end of E5 — `daemon-v0.1.0` and
+`extension-v0.1.0` published. Read-only on purpose: the root boundary gets its own Fable story and gate
+round (E6) before any button reaches the public. Each later extension epic ends with its release.
+
+**Risk list for the gate** (cadence groups {E1–E3}, {E4–E6}, {E7–E9}, {E10–E12}, {E13}): E3.S1+S2 (the
+only thing between the timer and irreversible Docker deletion), E9.S1+S2 (moving the owner's AI
+sessions), E6.S1 (root through an argv allowlist), E12.S2 (a user-writable request folder read by a
+highest-privilege task), E12.S1 (bulk TEMP deletion), E4.S1+S2 (`curl | sh` as root, attestations,
+credentials).
+
+**Order and the kit.** E1→E4 make the daemon releasable first, because the extension is a view over the
+CLI contract. Only E8 imports `@oleksandrdubyna88/vscode-webview-kit`; nothing depends on E8, so it can
+slide after E13 if the kit is late. The archive (E9–E10) precedes Windows (E11–E13) because Claude
+already deletes sessions at day 30.
+
 ## 14. Definition of Done
 
 - [ ] Phase 0 steps done or explicitly declined, each with before/after numbers in `research/`.
