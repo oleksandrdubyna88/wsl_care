@@ -56,6 +56,33 @@ public sealed class EventsFlows
     }
 
     [Fact]
+    public async Task Once_over_an_idle_engine_that_did_not_restart_writes_no_gap_and_records_the_engine_on_its_marker()
+    {
+        // The continuity rule end to end (gate finding #2/#7/#9): the same bridge network as the last marker recorded, an
+        // EMPTY buffer — nothing happened, nothing was lost. E2.S3 wrote an unrecoverable gap here.
+        using var home = new ScenarioHome("events-idle");
+        var now = DateTimeOffset.UtcNow;
+        var engine = new EngineMark(new string('b', 64), now.AddDays(-3));
+        Store(home).Append(new CoverageLine.Covered(now.AddHours(-1)) { Engine = Core.Collectors.Reading.Of(engine) });
+        var empty = home.WriteFile("empty.jsonl", string.Empty);
+        var bridge = home.WriteFile("bridge.json", "{\"id\":\"" + engine.Id + "\",\"created\":\"" + engine.StartedAt.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture) + "\"}\n");
+        home.Answer(Version())
+            .Answer(new FakeAnswer(DockerCommands.Executable, ["events", "--since"], 0, empty, string.Empty) { Prefix = true })
+            .Answer(new FakeAnswer(DockerCommands.Executable, DockerCommands.EngineStart.Arguments, 0, bridge, string.Empty));
+
+        var result = await home.RunAsync("events", "follow", "--once");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        result.Stdout.Should().Contain("0 start(s), 0 gap marker(s)");
+        var lines = Store(home).ReadAll();
+        lines.OfType<CoverageLine.Gap>().Should().BeEmpty("an idle engine that did not restart dropped nothing");
+        lines.OfType<CoverageLine.Covered>().Last().Engine.Should().Be(Core.Collectors.Reading.Of(engine));
+        home.Calls.Should().OnlyContain(c => c.Tool == DockerCommands.Executable && DockerCommands.IsReadVerb(c.Argv));
+        home.Calls.Should().Contain(c => c.Matches(DockerCommands.Executable, DockerCommands.EngineStart.Arguments));
+        File.Exists(Store(home).SummaryFile).Should().BeTrue("the follower keeps the 24-hour summary status reads");
+    }
+
+    [Fact]
     public async Task Once_with_the_daemon_down_exits_zero_names_why_and_writes_no_gap()
     {
         using var home = new ScenarioHome("events-down");

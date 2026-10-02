@@ -78,6 +78,11 @@ public static class DockerCommands
     /// §15b #5) — never <c>status</c>.</summary>
     public static ToolCommand Stats { get; } = new(Executable, "stats", ["stats", "--no-stream", "--format", "{{json .}}"], ListingCeiling, LargeCap);
 
+    /// <summary>The engine instance and its start (<see cref="EngineMark"/>): the default <c>bridge</c> network's id and creation
+    /// instant, which the engine re-creates at every start. The follower records it at each coverage marker so a backfill can
+    /// tell an idle engine (nothing happened) from a restarted one (its buffer was lost).</summary>
+    public static ToolCommand EngineStart { get; } = new(Executable, "network-inspect-bridge", ["network", "inspect", "bridge", "--format", "{\"id\":{{json .Id}},\"created\":{{json .Created}}}"], ProbeCeiling, SmallCap);
+
     /// <summary>
     /// The leading words of every command built here. Each one only READS; a test holds every command
     /// to this list, and the scenario holds every argv the fakes saw to it — so a write verb cannot slip
@@ -85,7 +90,7 @@ public static class DockerCommands
     /// </summary>
     public static IReadOnlyList<IReadOnlyList<string>> ReadVerbs { get; } =
     [
-        ["version"], ["system", "df"], ["volume", "ls"], ["ps"], ["container", "inspect"], ["stats"], ["events"],
+        ["version"], ["system", "df"], ["volume", "ls"], ["ps"], ["container", "inspect"], ["stats"], ["events"], ["network", "inspect"],
     ];
 
     /// <summary>The fields of <see cref="InspectTemplate"/> for 1 to <see cref="InspectBatch"/> containers.</summary>

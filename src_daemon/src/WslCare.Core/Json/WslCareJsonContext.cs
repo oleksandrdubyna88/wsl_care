@@ -34,6 +34,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Collect.CollectReport))]
 [JsonSerializable(typeof(RunDetailHead))]
 [JsonSerializable(typeof(Events.CoverageLineJson))]
+[JsonSerializable(typeof(Events.StartsSummary))]
 [JsonSerializable(typeof(Doctor.DoctorReport))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {

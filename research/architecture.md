@@ -257,7 +257,7 @@ flowchart LR
     cmds["DockerCommands<br/>the ONE place docker argv is built<br/>read verbs only · ceiling per command"]
     runner["ICommandRunner<br/>ProcessCommandRunner: argv · ceiling · tree kill"]
     parsers["parsers<br/>DockerEngine · DockerTotal · DockerInventory<br/>ContainerDetail · DanglingVolumes"]
-    seen["VolumeSeenStore<br/>{state}/volume-seen.json<br/>atomic write through IFileSystem"]
+    seen["VolumeSeenStore<br/>{state}/volume-seen.json<br/>READ by preview · written only by collect"]
     rows["CleanupPreviews.Build (pure)<br/>A4 · A5 · A5Testcontainers · A6 · A6Unused · A7 · A8 · A9<br/>+ kept named volumes"]
     hygiene["DockerHygiene.Audit<br/>unbounded json-file logs · builder GC · buildx leftovers"]
     report["PreviewReports.From → PreviewReport<br/>schemaVersion · docker · rows · kept · totals · hygiene · volumeSeen"]
@@ -317,10 +317,14 @@ below 23 but carries the refusal (plan §5). **Kept**: the unattached named volu
 volume name to when it was first seen UNATTACHED; each look keeps the first sighting of a name still unattached,
 stamps new names now and drops every name that is no longer an unattached anonymous volume (removed or attached
 again) — so the file is bounded by what Docker lists. Written atomically through `IFileSystem` (scope: the state
-directory). **Privilege** is the operating system's answer, not an id check: the write is ATTEMPTED, and on the
-installed layout (`/var/lib/wsl-care`, `root:root 0755`, E4.S1) only root succeeds; an unprivileged `preview`
-gets the refusal, writes nothing, reports `volumeSeen.recorded: false` with a `read-only:` reason, and reads the
-stored record plus "first seen now" for new names — which can only make A4 select fewer. When Docker did not list
+directory). **Who writes it:** only the full run (`collect`, later the cleanup actions) — `preview` is strictly
+read-only, privileged or not (plan §15b #3; gate finding #3/#6/#10 found a root `preview` recording sightings in
+E2.S2): it observes the record against the snapshot IN MEMORY for its rows, reports `volumeSeen.recorded: false`
+with *read-only: preview only reads volume-seen.json…*, and leaves the file byte-identical (absent if it was
+absent). **Privilege** for `collect` is the operating system's answer, not an id check: the write is ATTEMPTED, and
+on the installed layout (`/var/lib/wsl-care`, `root:root 0755`, E4.S1) only root succeeds; an unprivileged run writes
+nothing at all. A run that does not record reads the stored record plus "first seen now" for new names — which can
+only make A4 select fewer. When Docker did not list
 its volumes the record is neither observed nor written, so an outage never drops a first sighting. A sandbox under
 `WSL_CARE_ROOT` belongs to the test user and is the writable case; the unwritable case is tested with the state
 directory denied (`AccessDenial`).
@@ -354,8 +358,8 @@ a failure. `WSL_CARE_LIVE_CAPTURE=<dir>` writes each answer to a file — how `t
   carries the one switch and the one age limit that governs it.
 - `volume-seen.json` records the first sighting UNATTACHED and drops a name that is attached again (the plan:
   "first time it sees each anonymous volume"), so A4's age means "unused for", which is what §5 says it limits.
-- §15b #3 says `preview` only reads the state; a `preview` run by root (the only account the installed state
-  directory admits) also records first sightings — the write is attempted and the OS decides.
+- ~~A `preview` run by root also records first sightings~~ — **withdrawn after the E2 code round** (gate finding
+  #3/#6/#10): `preview` never writes `volume-seen.json`, as §15b #3 says; `collect` records the sightings.
 - A8 and A9 are present and `available: false` until the full run measures the folders (E2.S3).
 - The builder-GC figure is the Windows binary's; inside the distro it is unavailable until E2.S3 resolves the
   Windows profile. Log sizes under Docker Desktop are unavailable (the logs are in Docker Desktop's VM).
@@ -467,14 +471,17 @@ sequenceDiagram
     Note over C,H: startup reconcile
     C->>D: list every detail
     C->>H: read every line
-    alt a detail no line names
+    alt a detail no line names, inside the window
         C->>H: append a line, outcome interrupted
+    else a detail no line names, older than the window
+        C-->>C: left for retention (its line was pruned, never resurrected)
     else a line whose detail is gone
         C-->>C: reported as detail lost (line left as it is)
     end
     Note over C,H: retention, 90 days
-    C->>H: RewriteLines under the append lock: drop lines started before the window
-    C->>D: delete a detail only when NO remaining line names it (and leftover *.tmp)
+    C->>H: RewriteLines: lock, read, drop lines whose start DAY is before the window, write — ONE lock acquisition
+    C->>D: an aged day folder no line names: removed WHOLE (strays included)
+    C->>D: any other day: leftover *.tmp, and in an aged one each detail no line names; the folder once empty
     Note over C,L: measure, then record
     C->>D: WriteFileAtomically (temp + rename)
     alt the detail could not be written
@@ -487,6 +494,17 @@ sequenceDiagram
     end
     C->>L: the logger is disposed last
 ```
+
+**One boundary, one lock** (after the E2 code round, gate findings #0/#4 and #11). Retention ages by the UTC DAY
+(`RunRetention.CutoffDay` = today − 90 days): a history line whose start's day is before it, and a
+`runs/{yyyy-MM-dd}/` folder whose day is. A line and the detail it names share that day (the run id carries it), so
+they age out in the same sweep — E2.S3 aged the line by the instant and the folder by the day, and a run 90 days and
+one hour old lost its line while its detail stayed, which the next reconcile turned into an `interrupted` run. The
+reconcile now ignores a detail older than the window (`RunRetention.IsAged`), so a detail whose deletion failed is
+never resurrected either. An aged day folder no line names goes whole, through `IFileSystem.DeleteDirectory` with
+`runs/` as the declared root. The history is read, filtered and atomically rewritten inside ONE acquisition of
+`history.jsonl.lock` (`IFileSystem.RewriteLines`, the lock `AppendLine` takes), so an append that arrives meanwhile
+waits and lands in the new file — proved by an append interleaved inside the rewrite (`RunRetentionTests`).
 
 Every delete and the history rewrite pass `IFileSystem` with a declared root (`runs/`, the state directory,
 `container-starts/`), so the `DeletionPolicy` judges them like any cleanup. `RunHistory` is the one parser of
@@ -515,24 +533,35 @@ stateDiagram-v2
     Waiting: Waiting in-process<br/>5 s, 10 s, 20 s … 5 min · NOTHING written
     Waiting --> CatchingUp
     CatchingUp --> Backfilling: Docker answers
-    Backfilling: Backfilling<br/>docker events --since now−24h --until now (unfiltered)<br/>Coverage.Plan decides · at most ONE gap marker · backfilled starts · covered marker
+    Backfilling: Backfilling<br/>docker events --since now−24h --until now (unfiltered)<br/>THEN docker network inspect bridge (the engine mark)<br/>Coverage.Plan decides · at most ONE gap marker · backfilled starts<br/>covered marker carrying the engine · 24 h summary rewritten
     Backfilling --> Streaming
     Backfilling --> [*]: --once
     CatchingUp --> Stopping: --once and no daemon
     Streaming: Streaming a 10-minute segment<br/>docker events --since covered --until covered+10m --filter start<br/>each start appended as it arrives
-    Streaming --> Streaming: Docker ended it at --until · covered marker
+    Streaming --> Streaming: Docker ended it at --until · covered marker · summary
     Streaming --> CatchingUp: it ended early or failed
     Streaming --> Stopping: SIGTERM / SIGINT
     Waiting --> Stopping: SIGTERM / SIGINT
-    Stopping: Stopping<br/>followerStopped marker carrying how far coverage reached · exit 0
+    Stopping: Stopping<br/>followerStopped marker carrying how far coverage reached · summary · exit 0
     Stopping --> [*]
 ```
 
 **Files.** `{state}/container-starts/{yyyy-MM-dd}.jsonl`, one line per start (`id`, `name`, `image`,
 `testcontainers`, `backfilled`) and the markers — `followerStarted`, `followerStopped` (with the coverage it reached),
 `covered` (every start up to this instant is recorded), `gap` (from, to, reason) — filed under the UTC day of the line,
-appended under the cross-process lock, kept 14 days (pruned at start and by `collect`). One follower at a time
+appended under the cross-process lock, kept 14 days (pruned at start and by `collect`). A `covered` marker also carries
+the engine instance it came from (`engineId`, `engineStartedAt`). One follower at a time
 (`{state}/events-follower.lock`; a second exits 75); a process that may not write the state directory exits 1.
+**`{state}/starts-summary.json`** (gate finding #8): the trailing-24-hour count (`StartsSummary`: when it was written,
+how far coverage reached, the `StartsWindow`), recomputed over the day files and written atomically after EVERY marker.
+`status` reads only this file (`ContainerStartsStore.ReadSummary`) — its cost no longer grows with the starts recorded —
+and marks it partial with the open gap when the newest coverage is more than 15 minutes old; with no summary yet it
+answers a partial 0 naming why. `collect` and the follower still count over the raw files (`Coverage.Last24h`). A
+failed summary write is noted and the follower goes on: the summary is a cache, the day files are the record.
+
+**Leaving a segment** (gate finding #1/#5). `StreamAsync` drains stderr concurrently into a bounded capture, and every
+way out of a segment but a normal end — its ceiling, SIGTERM's cancellation, a callback that throws — kills the whole
+tree and waits for the child (bounded by a 2 s grace) in a `finally`, before the outcome or the exception propagates.
 
 **Why segments.** A stream that never ends would be a wait without a ceiling. Docker closes `docker events` by itself
 at a FUTURE `--until` (observed by the live contract), so each segment is a bounded command (ceiling: the segment and
@@ -540,11 +569,33 @@ one minute) run through `ICommandRunner.StreamAsync` — the same launcher, poli
 as they arrive (each cut at the output cap) — and the next segment resumes `--since` the previous `--until` from
 Docker's buffer.
 
-**The gap rule** (`Coverage.Plan`, pure). Docker keeps its events in memory only — measured 2026-10-02: 248 events, all
-healthcheck `exec_*`, spanning **91 seconds**. A gap is filled only when the buffer demonstrably reaches back past the
-last coverage (its oldest event, of any kind, is at or before it); otherwise the stretch from the last coverage to the
-oldest buffered event is ONE `unrecoverable` gap with its reason (daemon restarted / buffer overflowed, buffer empty,
-older than the 24-hour window, the follower's first start). The wait for Docker writes nothing, so one outage is one
+**The continuity rule** (`Coverage.Plan` + `Continuity`, pure; amended after the E2 code round, gate finding
+#2/#7/#9 — E2.S3 treated an empty or short buffer as proof of loss). Docker keeps its events in a RING in memory:
+moby's `eventsLimit` is **256**, the oldest dropped first — measured 2026-10-02: the unfiltered window answered 248, 255
+and 255 events, all healthcheck `exec_*`, spanning **91 seconds** on a busy engine. So the buffer is complete from its
+oldest event onward, always; and while it is not full it is complete from the moment the ENGINE STARTED. Events can
+have been lost only when the buffer is FULL (≥ 240 events, `Coverage.FullAt` — within 16 of the capacity, because a
+full buffer never answered 256) or the engine RESTARTED since the last coverage. The proven start of completeness is
+the earlier of the oldest buffered event and — for a buffer that is not full — the engine's start (never before the
+24 h window); coverage holds when it is at or before the last coverage, otherwise the stretch between them is ONE
+`unrecoverable` gap with its reason (engine restarted at …, buffer full and reaching back only to …, older than the
+24-hour window, the follower's first start). An idle engine with an empty buffer is covered with zero starts; a host
+that slept (the engine suspended, the same instance after) is covered.
+
+**The engine signal** (`DockerCommands.EngineStart`, read-only: `docker network inspect bridge`, its `Id` and
+`Created`). The engine deletes and re-creates the default `bridge` network at every start, so its id is new per engine
+start and its creation is the start instant — measured 2026-10-02 on Docker Desktop 4.81.0 / Engine 29.6.1: `bridge`
+created 13:39:47.63Z, the restart-policy containers started from 13:39:48.27Z, while `host` and `none` still carry
+2026-07-16 (they persist). `docker info` has no start time and its `ID` persists across restarts, so it cannot tell a
+restart. Plain `dockerd` runs the same engine start-up, so the same re-creation is EXPECTED there (unless `live-restore`
+keeps the bridge) — not measured: this machine runs Docker Desktop only, and the live contract is what checks it on an
+installation that has a plain `dockerd`. The
+follower reads the mark AFTER the events (a restart between the two then reads as a gap, never as false
+completeness) and records it on each `covered` marker; a different bridge id with a start before the marker means a
+different engine answers, and only the oldest-event rule is trusted. When the mark cannot be read (no `bridge`
+network, the command failing) the rule falls back to E2.S3's: only the oldest buffered event proves anything. The
+live contract checks the signal on this machine: every running container started no earlier than the engine.
+The wait for Docker writes nothing, so one outage is one
 gap, however many retries and even across a restart of the follower. **Counts** (`Coverage.Last24h`): starts in the last
 24 h, Testcontainers apart, the top images; `complete` only when no gap overlaps the window — a recorded gap, the stretch
 before the first record, or an open gap when the newest coverage is more than 15 minutes old — so a count is complete
@@ -586,6 +637,10 @@ without a writable state directory · 2 usage · 70 a defect · 75 busy (another
 - The run log's retention stays `logging.retentionDays` (14, E1.S2), not §6's 30 days.
 - Under the root timer `$HOME` is root's: whose home the daily walk, `~/.npm` and the protected `~/git` mean is the
   installer's decision (E4.S1).
+- **Amended after the E2 code round** (gate session `714367be`): the gap rule became the continuity rule above (an engine
+  mark, the ring's capacity), `status` reads `starts-summary.json` instead of the day files, retention ages lines and
+  day folders by one UTC-day boundary under one lock and the reconcile ignores aged details, `StreamAsync` kills and
+  reaps in a `finally`, and `preview` writes no first sighting.
 - `ICommandRunner` gained `StreamAsync`; `IFileSystem` gained `ListFiles`, `MeasureTree`, `ProbeWriteAccess`,
   `TryLockExclusive`, `RewriteLines` and a last-write time on `FileSize`; `IHostPaths` gained `UserLogDirectory`
   (Linux: `$XDG_STATE_HOME`), `LinuxHostPaths` the apt / snap / sysstat / atop / `wsl.conf` paths, `WindowsHostPaths`

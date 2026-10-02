@@ -34,9 +34,9 @@ public sealed class PreviewCommandTests
         report.Rows.Select(r => r.Id).Should().Equal("A4", "A5", "A5Testcontainers", "A6", "A6Unused", "A7", "A8", "A9");
         report.Kept.Count.Should().Be(13);
         report.Totals.Types!.Select(t => t.Type).Should().Equal(DockerTotal.Images, DockerTotal.Containers, DockerTotal.Volumes, DockerTotal.BuildCache);
-        report.VolumeSeen.Recorded.Should().BeTrue("a sandbox state directory is writable by its owner");
-        report.VolumeSeen.Tracked.Should().Be(3);
-        File.Exists(new VolumeSeenStore(sandbox.Paths, sandbox.Files).File).Should().BeTrue();
+        report.VolumeSeen.Recorded.Should().BeFalse("preview only reads the state, even where it could write it (plan section 15b #3)");
+        report.VolumeSeen.Tracked.Should().Be(3, "the observation is made in memory for the rows");
+        File.Exists(new VolumeSeenStore(sandbox.Paths, sandbox.Files).File).Should().BeFalse();
         runner.Requests.Should().OnlyContain(r => r.Argv[0] == DockerCommands.Executable && DockerCommands.IsReadVerb(r.Argv.Skip(1).ToList()));
     }
 
