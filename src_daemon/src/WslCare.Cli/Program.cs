@@ -11,8 +11,8 @@ namespace WslCare.Cli;
 
 /// <summary>
 /// <c>wsl-care</c> — the daemon and CLI of plan §6. This build answers <c>--help</c>,
-/// <c>--version</c> and the <c>config</c> verbs, and refuses everything else; the collectors and
-/// actions arrive in later stories.
+/// <c>--version</c>, the <c>config</c> verbs and <c>status</c>, and refuses everything else; the full run
+/// and the actions arrive in later stories.
 /// </summary>
 /// <remarks>
 /// <para>Answers go to stdout and nothing else does, because the extension parses stdout. Every
@@ -82,6 +82,7 @@ internal static class Program
             Request.ConfigGet get => ConfigCommand.Get(get, loaded, stdout, stderr),
             Request.ConfigSet set => ConfigCommand.Set(set, host, stdout, stderr),
             Request.ConfigReset reset => ConfigCommand.Reset(reset, host, stdout, stderr),
+            Request.Status status => StatusCommand.Run(status, host, loaded, stdout, cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
     }

@@ -1,0 +1,42 @@
+proc/560/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/561/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/567/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/571/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/792/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/860/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/972/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/1169/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/1175/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/1252/cwd	/mnt/c/Users/user/AppData/Local/Docker
+proc/1568/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/2369/cwd	/home/user/git/project-p
+proc/4965/cwd	/home/user/git/project-p
+proc/4999/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/5171/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/5252/cwd	/home/user/git/project-p
+proc/5814/cwd	/home/user/git/project-p
+proc/5949/cwd	/home/user/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist
+proc/6592/cwd	/home/user/git/project-p
+proc/6612/cwd	/home/user/git/project-p
+proc/6825/cwd	/home/user/git/project-p
+proc/7203/cwd	/home/user/git/project-p
+proc/7327/cwd	/home/user/git/project-p
+proc/7329/cwd	/home/user/git/project-p
+proc/7334/cwd	/home/user/git/project-p
+proc/7377/cwd	/home/user/git/project-p
+proc/7472/cwd	/home/user/git/project-p
+proc/7741/cwd	/home/user/git/project-p
+proc/8124/cwd	/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64
+proc/8176/cwd	/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/servicehub
+proc/8290/cwd	/home/user/git/project-p
+proc/8378/cwd	/home/user/git/project-p
+proc/8380/cwd	/home/user/git/project-p
+proc/8389/cwd	/home/user/git/project-p
+proc/8415/cwd	/home/user/git/project-p
+proc/8477/cwd	/home/user/git/project-p
+proc/8486/cwd	/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/servicehub
+proc/8592/cwd	/home/user/git/project-p
+proc/8648/cwd	/home/user/git/project-p
+proc/9276/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/9344/cwd	/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code
+proc/11049/cwd	/tmp/x

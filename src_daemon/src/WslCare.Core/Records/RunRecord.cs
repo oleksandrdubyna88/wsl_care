@@ -90,4 +90,10 @@ public sealed record RunRecord(
     DateTimeOffset StartedAt,
     DateTimeOffset EndedAt,
     RunOutcome Outcome,
-    IReadOnlyList<ActionRecord> Actions);
+    IReadOnlyList<ActionRecord> Actions)
+{
+    /// <summary>The slow parts a full run sampled (plan §15b #5); absent (<c>null</c>) on a run that sampled
+    /// none, and on every line written before E2 — read only through <see cref="LastFullRun"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SlowParts? Slow { get; init; }
+}

@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 
 using WslCare.Core.Config;
 using WslCare.Core.Records;
+using WslCare.Core.Status;
 
 namespace WslCare.Core.Json;
 
@@ -12,19 +13,25 @@ namespace WslCare.Core.Json;
 /// <c>JsonSerializerIsReflectionEnabledByDefault=false</c> so reaching for one is a compile error
 /// rather than a crash on a user's machine.
 /// </summary>
-/// <remarks>Two instances of one shape: <c>Default</c> indents, for what a person reads on a
+/// <remarks><para>Two instances of one shape: <c>Default</c> indents, for what a person reads on a
 /// terminal (<c>config get --json</c>); <see cref="Compact"/> writes one line, for
 /// <c>history.jsonl</c>, where a record IS a line. A context built with explicit options takes its
 /// naming policy from them, so the camel case is stated twice — once in the attribute, once here —
-/// and a test holds the two outputs to the same property names.</remarks>
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
+/// and a test holds the two outputs to the same property names.</para>
+/// <para>Nulls are not written (<c>WhenWritingNull</c>, stated twice for the same reason): the only nullable
+/// members are the value slots of the <c>status</c> figures and a run's optional slow parts, where an
+/// absent key IS the contract — an unavailable figure carries <c>available: false</c> and a reason, and
+/// no value that could be read as 0.</para></remarks>
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(RunRecord))]
 [JsonSerializable(typeof(ConfigReport))]
+[JsonSerializable(typeof(StatusReport))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {
     public static readonly WslCareJsonContext Compact = new(new JsonSerializerOptions
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = false,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     });
 }

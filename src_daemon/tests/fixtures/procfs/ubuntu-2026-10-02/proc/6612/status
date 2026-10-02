@@ -1,0 +1,59 @@
+Name:	Microsoft.CodeA
+Umask:	0022
+State:	S (sleeping)
+Tgid:	6612
+Ngid:	0
+Pid:	6612
+PPid:	1169
+TracerPid:	0
+Uid:	1000	1000	1000	1000
+Gid:	1000	1000	1000	1000
+FDSize:	512
+Groups:	4 20 24 25 27 29 30 44 46 100 107 1000 1001 
+NStgid:	6612
+NSpid:	6612
+NSpgid:	6612
+NSsid:	6612
+Kthread:	0
+VmPeak:	277457292 kB
+VmSize:	277286384 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	  269432 kB
+VmRSS:	  269432 kB
+RssAnon:	   91972 kB
+RssFile:	  132488 kB
+RssShmem:	   44972 kB
+VmData:	  312240 kB
+VmStk:	     136 kB
+VmExe:	      48 kB
+VmLib:	  138732 kB
+VmPTE:	    1404 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffffff
+Threads:	43
+SigQ:	3/183811
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000000001000
+SigCgt:	00000003000344fe
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread vulnerable
+SpeculationIndirectBranch:	conditional enabled
+Cpus_allowed:	ffffff
+Cpus_allowed_list:	0-23
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	91
+nonvoluntary_ctxt_switches:	1

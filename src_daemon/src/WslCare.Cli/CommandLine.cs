@@ -25,6 +25,9 @@ internal abstract record Request
 
     /// <summary><c>config reset &lt;key&gt;</c>: remove the key from the user layer.</summary>
     internal sealed record ConfigReset(string Key) : Request;
+
+    /// <summary><c>status [--json]</c>: the fast snapshot (plan §6), as text or as the JSON report.</summary>
+    internal sealed record Status(bool Json) : Request;
 }
 
 /// <summary>One thing the command line accepts: how it is spelt, what it does, how it is parsed.</summary>
@@ -67,6 +70,7 @@ internal static class CommandLine
         new([["config", "get"]], "config get [key] [--json]", "print the effective settings (or one) and the layer each came from", ["config", "get"], ParseConfigGet),
         new([["config", "set"]], "config set <key> <value>", "validate one setting and write it into the user layer", ["config", "set", "dryRun", "false"], ParseConfigSet),
         new([["config", "reset"]], "config reset <key>", "remove one setting from the user layer", ["config", "reset", "dryRun"], ParseConfigReset),
+        new([["status"]], "status [--json]", "a fast snapshot: memory, top holders, containers, disk; slow parts from the last full run", ["status", "--json"], ParseStatus),
     ];
 
     /// <summary>Every spelling of <see cref="Commands"/> with its command, longest first — ordered once,
@@ -163,6 +167,13 @@ internal static class CommandLine
             ? new Request.ConfigReset(rest[0])
             : new Request.Failed($"\"{BinaryName} config reset\" needs exactly one key: {BinaryName} config reset <key>.");
 
+    private static Request ParseStatus(IReadOnlyList<string> rest) => rest switch
+    {
+        [] => new Request.Status(Json: false),
+        [JsonFlag] => new Request.Status(Json: true),
+        _ => new Request.Failed($"\"{BinaryName} status\" takes only {JsonFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
+    };
+
     private static string BuildHelpText()
     {
         var width = Commands.Max(c => c.Usage.Length);
@@ -181,7 +192,7 @@ internal static class CommandLine
             .AppendLine("Settings are read from three layers, each overriding the last: the embedded defaults, the machine")
             .AppendLine("file, and the user file that \"config set\" writes. \"config get\" names the layer behind every value.")
             .AppendLine()
-            .Append("This build answers only the commands above; the collectors and cleanups arrive in later releases.")
+            .Append("This build answers only the commands above; the full run and the cleanups arrive in later releases.")
             .ToString();
     }
 

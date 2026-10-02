@@ -23,8 +23,16 @@ public static class FakeToolProtocol
     /// <summary>Exit code for an invocation the scenario did not script: loud, never a silent success.</summary>
     public const int Unscripted = 98;
 
-    /// <summary>The names the harness installs the fake under (plan §15 #14, §16 E1.S3).</summary>
-    public static readonly IReadOnlyList<string> Tools = ["docker", "systemctl", "journalctl"];
+    /// <summary>The names the harness installs the fake under (plan §15 #14, §16 E1.S3). <c>powershell</c>
+    /// joined in E2.S1: the Windows clock is a slow process (plan §15b #5), and <c>status</c> must be seen
+    /// NOT to start it.</summary>
+    public static readonly IReadOnlyList<string> Tools = ["docker", "systemctl", "journalctl", "powershell"];
+
+    /// <summary>The file name a tool is installed under: <c>.exe</c> on Windows; on Linux the bare name,
+    /// except PowerShell, which a WSL distro reaches through interop as <c>powershell.exe</c>. The fake
+    /// names itself from its file name without the extension, so every spelling records as <paramref name="tool"/>.</summary>
+    public static string FileName(string tool, bool windows) =>
+        windows ? tool + ".exe" : tool == "powershell" ? "powershell.exe" : tool;
 }
 
 /// <summary>One invocation of a fake: which tool it posed as, and its argv exactly as received.</summary>

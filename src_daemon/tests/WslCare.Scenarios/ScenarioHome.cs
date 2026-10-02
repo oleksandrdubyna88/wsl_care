@@ -102,7 +102,7 @@ internal sealed class ScenarioHome : IDisposable
     public void Dispose() => _root.Dispose();
 
     /// <summary>
-    /// One apphost, three names: a renamed apphost still loads <c>wsl-care-fake-tool.dll</c> (the name
+    /// One apphost, one name per tool: a renamed apphost still loads <c>wsl-care-fake-tool.dll</c> (the name
     /// is embedded in it), so the dll, its runtime config and its deps file go beside the copies.
     /// </summary>
     private static void InstallFakes(string bin)
@@ -116,7 +116,7 @@ internal sealed class ScenarioHome : IDisposable
 
         foreach (var tool in FakeToolProtocol.Tools)
         {
-            var target = System.IO.Path.Combine(bin, tool + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+            var target = System.IO.Path.Combine(bin, FakeToolProtocol.FileName(tool, OperatingSystem.IsWindows()));
             File.Copy(apphost, target);
             if (!OperatingSystem.IsWindows())
             {

@@ -106,7 +106,7 @@ jobs:
           "./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests$EXE"
 
       # The scenario harness (research/module_tests.md): the BUILT CLI as a child process over a
-      # temporary WSL_CARE_ROOT, fake docker/systemctl/journalctl alone on its PATH, and the derived
+      # temporary WSL_CARE_ROOT, fake docker/systemctl/journalctl/powershell alone on its PATH, and the derived
       # verb register that fails when a verb has no row in module_tests.md.
       - name: Test the scenarios
         run: |
@@ -166,3 +166,28 @@ jobs:
           [ "$messages" -eq 1 ] || { cat refused.err; fail "a refused config set wrote $messages wsl-care: lines, expected 1"; }
           expect_user_25 "after the refused set"
           echo "published $RID binary: config set, get and a refused set round-trip under $WSL_CARE_ROOT"
+
+      # The status verb USED once by the published binary (plan §6): exit 0 and schemaVersion 1. On
+      # Linux the sandbox root holds the procfs tree captured on 2026-10-02, so the AOT binary parses
+      # real meminfo / buddyinfo / status / cgroup files through the source-generated JSON context
+      # and must report the fixture's MemTotal; on Windows it answers for the host.
+      - name: Smoke the published binary's status
+        run: |
+          set -euo pipefail
+          bin="artifacts/publish/$RID/wsl-care$EXE"
+          WSL_CARE_ROOT="$RUNNER_TEMP/wsl-care-status-$RID"
+          export WSL_CARE_ROOT
+          rm -rf "$WSL_CARE_ROOT"
+          mkdir -p "$WSL_CARE_ROOT"
+          fail() { echo "::error::$*"; exit 1; }
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            cp -r src_daemon/tests/fixtures/procfs/ubuntu-2026-10-02/. "$WSL_CARE_ROOT/"
+          fi
+          status="$("$bin" status --json | tr -d '\r')"
+          case "$status" in *'"schemaVersion": 1'*) ;; *) printf '%s\n' "$status"; fail "status --json carries no schemaVersion 1" ;; esac
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            case "$status" in *'"bytes": 48196374528'*) ;; *) printf '%s\n' "$status"; fail "status --json did not report the fixture's MemTotal" ;; esac
+          else
+            case "$status" in *'"side": "windows"'*) ;; *) printf '%s\n' "$status"; fail "status --json did not answer for the Windows side" ;; esac
+          fi
+          echo "published $RID binary answers status --json"

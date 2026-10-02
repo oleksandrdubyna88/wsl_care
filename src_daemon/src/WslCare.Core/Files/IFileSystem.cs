@@ -18,6 +18,38 @@ public abstract record FileReadResult
     public sealed record Unreadable(string Reason) : FileReadResult;
 }
 
+/// <summary>What reading a link produced: its target, a path that is not a link (or not there), or a
+/// link that is there and cannot be read — <c>/proc/[pid]/cwd</c> of another user's process, for one.</summary>
+public abstract record LinkReadResult
+{
+    private LinkReadResult()
+    {
+    }
+
+    public sealed record Target(string Path) : LinkReadResult;
+
+    public sealed record NotALink : LinkReadResult;
+
+    public sealed record Unreadable(string Reason) : LinkReadResult;
+}
+
+/// <summary>What measuring the filesystem holding a path produced (<c>statvfs</c> on Linux,
+/// <c>GetDiskFreeSpaceEx</c> on Windows, through <see cref="DriveInfo"/>): its size, the free bytes,
+/// the bytes an unprivileged user may still write — or why it could not be measured.</summary>
+public abstract record VolumeReadResult
+{
+    private VolumeReadResult()
+    {
+    }
+
+    /// <param name="TotalBytes">The filesystem's size.</param>
+    /// <param name="FreeBytes">Free blocks, the reserve included (<c>f_bfree</c>).</param>
+    /// <param name="AvailableBytes">What an unprivileged writer may still use (<c>f_bavail</c>, <c>df</c>'s "Avail").</param>
+    public sealed record Measured(long TotalBytes, long FreeBytes, long AvailableBytes) : VolumeReadResult;
+
+    public sealed record Unreadable(string Reason) : VolumeReadResult;
+}
+
 /// <summary>
 /// The one road to the disk for everything that removes or relocates (plan §15a C1).
 /// </summary>
@@ -44,6 +76,12 @@ public interface IFileSystem
 
     /// <summary>Full paths of the immediate subdirectories; empty when <paramref name="path"/> does not exist.</summary>
     IReadOnlyList<string> ListDirectories(string path);
+
+    /// <summary>The target a link points at, read without following it (<c>readlink</c>).</summary>
+    LinkReadResult ReadLink(string path);
+
+    /// <summary>Size and free space of the filesystem that holds <paramref name="path"/> — one call, no walk.</summary>
+    VolumeReadResult MeasureVolume(string path);
 
     void CreateDirectory(string path);
 

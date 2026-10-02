@@ -1,0 +1,6 @@
+2026-10-02T13:41:57Z
+6.18.33.2-microsoft-standard-WSL2
+100
+4096
+    1B-blocks         Used        Avail Mounted on
+1081101176832 125970722816 900138098688 /
