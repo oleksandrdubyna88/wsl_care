@@ -23,8 +23,9 @@ public sealed class VerbRegisterTests
 
         var result = await home.RunAsync(command.Example);
 
-        // 0, or the usage refusal: never the internal-error code, never an interruption, never a .NET crash.
-        result.Exit.Should().BeOneOf([(int)ExitCode.Ok, (int)ExitCode.Usage], $"\"wsl-care {string.Join(' ', command.Example)}\" is the example of {usage}; stderr: {result.Stderr}");
+        // 0, the usage refusal, or act's documented refusal of an unprivileged run (plan §15c #0 — the harness is not root):
+        // never the internal-error code, never an interruption, never a .NET crash.
+        result.Exit.Should().BeOneOf([(int)ExitCode.Ok, (int)ExitCode.Usage, (int)ExitCode.NeedsRoot], $"\"wsl-care {string.Join(' ', command.Example)}\" is the example of {usage}; stderr: {result.Stderr}");
         result.Stderr.Should().NotContain("internal error").And.NotContain("Unhandled exception");
     }
 

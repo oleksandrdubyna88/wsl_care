@@ -4,6 +4,8 @@ namespace WslCare.Core.Processes;
 /// The one place a process starts (plan §8). Actions, collectors and probes call this; tests swap in
 /// a recorder that answers scripted outcomes and keeps every argv it was given.
 /// </summary>
+/// <remarks>The real implementation, <see cref="ProcessCommandRunner"/>, cannot be built without a
+/// <see cref="Policy.CommandPolicy"/> — the never-list and the declared templates every argv passes before a start.</remarks>
 public interface ICommandRunner
 {
     /// <summary>
@@ -29,7 +31,7 @@ public interface ICommandRunner
     Task<CommandOutcome> StreamAsync(CommandRequest request, Action<string> onStdoutLine, CancellationToken cancellationToken);
 }
 
-/// <summary>What the policy says about one argv.</summary>
+/// <summary>What the policy says about one request.</summary>
 public abstract record CommandVerdict
 {
     private CommandVerdict()
@@ -45,23 +47,4 @@ public abstract record CommandVerdict
     public sealed record Refused(string Reason) : CommandVerdict;
 
     private sealed record AllowedVerdict : CommandVerdict;
-}
-
-/// <summary>
-/// The filter every argv passes before a process starts — the hook the never-list of plan §5 hangs
-/// on. E3.S1 brings the rules (no <c>prune</c> of everything, no <c>echo 3</c>, no shell strings);
-/// E1.S2 brings the seam and the proof that a refusal prevents the start.
-/// </summary>
-public interface ICommandPolicy
-{
-    CommandVerdict Review(IReadOnlyList<string> argv);
-}
-
-/// <summary>
-/// The policy of this build: everything is allowed, because nothing in this build runs a command.
-/// E3.S1 replaces it with the never-list and a property test that no input gets past it.
-/// </summary>
-public sealed class AllowAllCommandPolicy : ICommandPolicy
-{
-    public CommandVerdict Review(IReadOnlyList<string> argv) => CommandVerdict.Allowed;
 }

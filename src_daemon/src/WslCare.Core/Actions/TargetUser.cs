@@ -1,0 +1,155 @@
+using System.Globalization;
+
+using WslCare.Core.Collectors;
+using WslCare.Core.Collectors.Procfs;
+using WslCare.Core.Files;
+using WslCare.Core.Hosting;
+using WslCare.Core.Processes.Policy;
+
+namespace WslCare.Core.Actions;
+
+/// <summary>The account a user-scoped action works for: its name, uid and home (from <c>/etc/passwd</c>).</summary>
+public sealed record TargetUser(string Name, int Uid, string Home);
+
+/// <summary>What the discovery found — a closed set; only <see cref="Found"/> lets a user-scoped action run.</summary>
+public abstract record TargetUserResult
+{
+    private TargetUserResult()
+    {
+    }
+
+    /// <param name="Source">How it was found: <c>wsl.conf</c> or <c>single login account</c>.</param>
+    public sealed record Found(TargetUser User, string Source) : TargetUserResult;
+
+    /// <summary>More than one candidate, or a candidate that does not check out — every user-scoped action refuses.</summary>
+    public sealed record Ambiguous(string Reason) : TargetUserResult;
+
+    /// <summary>No candidate at all (and on the Windows side, no such notion yet).</summary>
+    public sealed record None(string Reason) : TargetUserResult;
+
+    /// <summary>Why a user-scoped action may not run; empty when a user was found.</summary>
+    public string Refusal => this switch
+    {
+        Found => string.Empty,
+        Ambiguous a => $"no target user: {a.Reason}",
+        None n => $"no target user: {n.Reason}",
+        _ => throw new System.Diagnostics.UnreachableException("TargetUserResult is a closed set"),
+    };
+}
+
+/// <summary>
+/// Whose home and tools a user-scoped action means (plan §15c #2), discovered ONCE per run: the <c>[user] default=</c> of
+/// <c>/etc/wsl.conf</c>; else the single account with uid ≥ 1000 and a login shell in <c>/etc/passwd</c>; anything else
+/// is ambiguous and every user-scoped action refuses with the reason (machine-scoped ones still run).
+/// </summary>
+/// <remarks>Conservative on every edge: an unreadable <c>wsl.conf</c> or <c>passwd</c>, a default user that is not in
+/// <c>passwd</c> or whose name is not a valid account name, a home that is not absolute — all refuse rather than guess.</remarks>
+public static class TargetUserDiscovery
+{
+    public const int FirstLoginUid = 1000;
+    public const int NobodyUid = 65534;
+
+    private static readonly string[] NoLoginShells = ["/usr/sbin/nologin", "/sbin/nologin", "/bin/false", "/usr/bin/false", "/bin/sync", "/usr/bin/nologin"];
+    private static readonly SlotKind.UserName ValidName = new();
+
+    /// <summary>One <c>/etc/passwd</c> entry, the fields the discovery reads.</summary>
+    public sealed record Account(string Name, int Uid, string Home, string Shell)
+    {
+        public bool IsLoginAccount => Uid >= FirstLoginUid && Uid != NobodyUid && Shell.Length > 0 && !NoLoginShells.Contains(Shell);
+    }
+
+    public static TargetUserResult Discover(IFileSystem files, LinuxHostPaths paths)
+    {
+        var passwd = files.ReadFile(paths.PasswdFile);
+        if (passwd is not FileReadResult.Content content)
+        {
+            return new TargetUserResult.Ambiguous($"{paths.PasswdFile} could not be read");
+        }
+
+        var accounts = Accounts(System.Text.Encoding.UTF8.GetString(content.Bytes));
+        return files.ReadFile(paths.WslConfFile) switch
+        {
+            FileReadResult.Content wslConf => FromDefault(DefaultUser(System.Text.Encoding.UTF8.GetString(wslConf.Bytes)), accounts, paths),
+            FileReadResult.Missing => FromSingleAccount(accounts),
+            FileReadResult.Unreadable u => new TargetUserResult.Ambiguous($"{paths.WslConfFile} exists and could not be read ({u.Reason})"),
+            _ => throw new System.Diagnostics.UnreachableException("FileReadResult is a closed set"),
+        };
+    }
+
+    /// <summary>
+    /// The homes of root and every login account, as THIS process sees them (under the sandbox root when sandboxed): the
+    /// homes whose <c>~/git</c> and AI-agent folders the deletion policy protects besides <c>$HOME</c>'s — whoever the
+    /// target user turns out to be (plan §15c #2). An unreadable <c>passwd</c> protects none further.
+    /// </summary>
+    public static IReadOnlyList<string> ProtectedHomes(IFileSystem files, LinuxHostPaths paths) =>
+        files.ReadFile(paths.PasswdFile) is FileReadResult.Content content
+            ? [.. Accounts(System.Text.Encoding.UTF8.GetString(content.Bytes))
+                .Where(a => (a.IsLoginAccount || a.Uid == 0) && a.Home.StartsWith('/') && a.Home.Length > 1)
+                .Select(a => paths.DistroPath(a.Home))
+                .Distinct(StringComparer.Ordinal)]
+            : [];
+
+    /// <summary>Every well-formed line of a passwd file.</summary>
+    public static IReadOnlyList<Account> Accounts(string passwd) =>
+        [.. ProcText.Lines(passwd)
+            .Select(l => l.Split(':'))
+            .Where(f => f.Length >= 7 && int.TryParse(f[2], NumberStyles.None, CultureInfo.InvariantCulture, out _))
+            .Select(f => new Account(f[0], int.Parse(f[2], CultureInfo.InvariantCulture), f[5], f[6].Trim()))];
+
+    /// <summary>The <c>default</c> key of the <c>[user]</c> section; empty when there is none.</summary>
+    public static string DefaultUser(string wslConf)
+    {
+        var section = string.Empty;
+        foreach (var raw in ProcText.Lines(wslConf))
+        {
+            var line = raw.Trim();
+            if (line.StartsWith('[') && line.EndsWith(']'))
+            {
+                section = line[1..^1].Trim().ToLowerInvariant();
+            }
+            else if (section == "user" && KeyValue(line) is ("default", var value))
+            {
+                return value;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static (string Key, string Value)? KeyValue(string line)
+    {
+        var equals = line.IndexOf('=');
+        return line.StartsWith('#') || line.StartsWith(';') || equals <= 0
+            ? null
+            : (line[..equals].Trim().ToLowerInvariant(), line[(equals + 1)..].Trim().Trim('"', '\''));
+    }
+
+    private static TargetUserResult FromDefault(string name, IReadOnlyList<Account> accounts, LinuxHostPaths paths)
+    {
+        if (name.Length == 0)
+        {
+            return FromSingleAccount(accounts);
+        }
+
+        var account = accounts.FirstOrDefault(a => a.Name == name);
+        return !ValidName.Accepts(name) || account is null
+            ? new TargetUserResult.Ambiguous($"{paths.WslConfFile} names the default user \"{name}\", which {(ValidName.Accepts(name) ? $"{paths.PasswdFile} does not hold" : "is not a valid account name")}")
+            : Checked(account, "wsl.conf");
+    }
+
+    private static TargetUserResult FromSingleAccount(IReadOnlyList<Account> accounts)
+    {
+        var logins = accounts.Where(a => a.IsLoginAccount).ToList();
+        return logins.Count switch
+        {
+            0 => new TargetUserResult.None($"no account with uid >= {FirstLoginUid} and a login shell, and no [user] default= in wsl.conf"),
+            1 => Checked(logins[0], "single login account"),
+            _ => new TargetUserResult.Ambiguous($"{logins.Count} login accounts ({string.Join(", ", logins.Select(a => a.Name))}) and no [user] default= in wsl.conf to choose one"),
+        };
+    }
+
+    private static TargetUserResult Checked(Account account, string source) =>
+        ValidName.Accepts(account.Name) && account.Home.StartsWith('/') && account.Home.Length > 1
+            ? new TargetUserResult.Found(new TargetUser(account.Name, account.Uid, account.Home), source)
+            : new TargetUserResult.Ambiguous($"the account \"{account.Name}\" has no usable name or home (home \"{account.Home}\")");
+}

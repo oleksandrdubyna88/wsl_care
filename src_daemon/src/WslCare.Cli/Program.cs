@@ -12,7 +12,8 @@ namespace WslCare.Cli;
 /// <summary>
 /// <c>wsl-care</c> — the daemon and CLI of plan §6. This build answers <c>--help</c>, <c>--version</c>, the
 /// <c>config</c> verbs, <c>status</c>, <c>preview</c>, the full run <c>collect</c>, <c>doctor</c> and the follower
-/// <c>events follow</c>, and refuses everything else; the actions arrive in later stories.
+/// <c>events follow</c>, and the root-only <c>act</c> (E3.S1: the action engine with its first action, A10), and refuses
+/// everything else; the other actions arrive in later stories.
 /// </summary>
 /// <remarks>
 /// <para>Answers go to stdout and nothing else does, because the extension parses stdout. Every
@@ -87,6 +88,7 @@ internal static class Program
             Request.Collect collect => CollectCommand.Run(collect, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Doctor doctor => DoctorCommand.Run(doctor, host, loaded, stdout, cancellationToken),
             Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),
+            Request.Act act => ActCommand.Run(act, host, loaded, stdout, stderr, logger, cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
     }

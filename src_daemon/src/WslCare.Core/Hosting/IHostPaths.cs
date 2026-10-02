@@ -44,6 +44,10 @@ public interface IHostPaths
     /// <summary>The system temporary directory.</summary>
     string TempDirectory { get; }
 
+    /// <summary>The ONE run lock (plan §5 <i>Global guards</i>): <c>/run/wsl-care.lock</c> inside the distro, under the
+    /// state directory on Windows. <c>collect</c> and <c>act</c> take the same file (E3.S1); the second one refuses.</summary>
+    string RunLockFile { get; }
+
     /// <summary>The machine-wide configuration layer (plan §6).</summary>
     string MachineConfigFile { get; }
 

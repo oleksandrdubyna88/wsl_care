@@ -14,7 +14,8 @@ namespace WslCare.Core.Tests.Processes;
 /// </summary>
 public sealed class ProcessCommandRunnerTests
 {
-    private static readonly ICommandRunner Runner = new ProcessCommandRunner(new AllowAllCommandPolicy());
+    // The subject's children are shells, which the product's never-list refuses: the runner's own tests take its one unguarded seam.
+    private static readonly ICommandRunner Runner = ProcessCommandRunner.UnguardedForItsOwnTests(_ => CommandVerdict.Allowed);
 
     private static IReadOnlyList<string> Shell(string script) =>
         OperatingSystem.IsWindows() ? ["cmd.exe", "/d", "/c", script] : ["sh", "-c", script];
@@ -90,12 +91,12 @@ public sealed class ProcessCommandRunnerTests
     [Fact]
     public async Task A_refusing_policy_prevents_the_start_entirely()
     {
-        var runner = new ProcessCommandRunner(new RefuseAllCommandPolicy("the never-list says no"));
+        var runner = new ProcessCommandRunner(Core.Processes.Policy.CommandPolicy.Over(Core.Processes.Policy.CommandCatalogue.Empty));
 
         // A binary that does not exist: had the runner tried to start it, the outcome would be FailedToStart.
         var outcome = await runner.RunAsync(new CommandRequest(["wsl-care-no-such-binary-7f3a"], TimeSpan.FromSeconds(5)), CancellationToken.None);
 
-        outcome.Should().BeOfType<CommandOutcome.Refused>().Which.Reason.Should().Be("the never-list says no");
+        outcome.Should().BeOfType<CommandOutcome.Refused>().Which.Reason.Should().Contain("no declared command template matches", "deny by default: a policy that declares nothing refuses everything");
     }
 
     [Fact]
