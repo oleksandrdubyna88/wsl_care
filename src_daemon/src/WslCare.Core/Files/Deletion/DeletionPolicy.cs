@@ -36,6 +36,24 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
         return source.IsAllowed && request.Operation == FileOperation.Move ? JudgeDestination(request) : source;
     }
 
+    /// <summary>The refusal for a path whose real location could not be established — asked by the file
+    /// system before a request can even be formed, and worded here so every refusal reads the same.</summary>
+    /// <param name="operation">Delete or move.</param>
+    /// <param name="action">The scope's action name.</param>
+    /// <param name="path">The path as the caller spelled it (its real path is the unknown).</param>
+    /// <param name="component">Where the walk stopped.</param>
+    /// <param name="reason">Why it stopped there.</param>
+    public static DeletionVerdict Unresolvable(FileOperation operation, string action, string path, string component, string reason) =>
+        Refuse(DeletionRule.Unresolvable, operation, action, path, $"its real path could not be established at {component} ({reason}); a path that cannot be inspected is never acted on");
+
+    /// <summary>The refusal for a path that, checked again just before acting, resolved somewhere other than where it was approved.</summary>
+    /// <param name="operation">Delete or move.</param>
+    /// <param name="action">The scope's action name.</param>
+    /// <param name="path">The path that was re-resolved.</param>
+    /// <param name="nowResolvesTo">Where it resolves now.</param>
+    public static DeletionVerdict Changed(FileOperation operation, string action, string path, string nowResolvesTo) =>
+        Refuse(DeletionRule.PathChanged, operation, action, path, $"checked again just before acting it resolved to {nowResolvesTo}, not to the place that was approved; a link was swapped in after the decision");
+
     private DeletionVerdict JudgeSource(DeletionRequest request)
     {
         var path = request.RealPath;
@@ -105,7 +123,10 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
     private bool Same(string a, string b) => string.Equals(a, b, rules.Comparison);
 
     private static DeletionVerdict Refuse(DeletionRule rule, DeletionRequest request, string why) =>
-        DeletionVerdict.Refuse(rule, $"{request.Action}: refused to {Verb(request.Operation)} {request.RealPath}: {why}");
+        Refuse(rule, request.Operation, request.Action, request.RealPath, why);
+
+    private static DeletionVerdict Refuse(DeletionRule rule, FileOperation operation, string action, string path, string why) =>
+        DeletionVerdict.Refuse(rule, $"{action}: refused to {Verb(operation)} {path}: {why}");
 
     private static string Verb(FileOperation operation) => operation == FileOperation.Move ? "move" : "delete";
 }

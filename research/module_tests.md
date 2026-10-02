@@ -16,8 +16,12 @@
 | AOT smoke | `.github/workflows/ci-daemon.yml` | the Native AOT binary of each RID answers `--help` / `--version` and performs the configuration round trip |
 
 Shared doubles live in `src_daemon/tests/WslCare.TestSupport` (`TempRoot`, `SandboxHost`,
-`RecordingCommandRunner`, `FixedTimeProvider`, `DirectoryLinks`, and `ChildProcess` — the one launcher
-the process-level tests share: argv list, 30 s ceiling, the whole tree killed on timeout, UTF-8 streams).
+`RecordingCommandRunner`, `FixedTimeProvider`, `DirectoryLinks`, `AccessDenial` — a real access
+denial on one directory, `chmod 000` on Linux and an inherited `icacls` deny for the current user's
+SID on Windows, lifted on dispose and reported as unavailable when it does not take — `TerminalText`
+— stderr with the console sink's colour removed and whatever control characters are left — and
+`ChildProcess` — the one launcher the process-level tests share: argv list, 30 s ceiling, the whole
+tree killed on timeout, UTF-8 streams).
 The fake tool is its own project, `src_daemon/tests/WslCare.FakeTool`, so it ships in no product binary.
 
 ## How they run
@@ -103,25 +107,29 @@ companions exist.
 |---|---|
 | A daemon assembly is stamped from `src_daemon/version.txt`; an unstamped assembly reports `unknown` | `WslCare.Core.Tests/ProductVersionTests.cs` |
 | "Strictly under" is a proper descendant, case-sensitive on Linux and case-insensitive on Windows, never fooled by `~/gitx` vs `~/git` or by trailing separators; roots split from segments on both families; a relative path is refused | `WslCare.Core.Tests/Hosting/PathRulesTests.cs` |
-| The real path follows a link in the middle of a path, applies `..` to the link TARGET, resolves relative targets against the link's parent, follows chains, stops a cycle with an error, changes drive through a Windows junction, never climbs above the root | `WslCare.Core.Tests/Files/RealPathTests.cs` |
+| The real path follows a link in the middle of a path, applies `..` to the link TARGET, resolves relative targets against the link's parent, follows chains, ends a cycle as `Unresolvable` (not a hang), stops at a component that cannot be inspected and names it (fail closed), changes drive through a Windows junction, never climbs above the root | `WslCare.Core.Tests/Files/RealPathTests.cs` |
 | Linux and Windows layouts match plan §6 / §4.6; a sandboxed layout keeps every path under its root; `WSL_CARE_ROOT` is the variable | `WslCare.Core.Tests/Hosting/HostPathsTests.cs` |
 | The never-list, as a table per OS family: inside the root allowed; outside the root, an agent folder, `~/git`, Claude's temp folder, a too-broad root each refused by the NAMED rule; the archive permit allows a move out of an agent folder and nothing else; `projects/*/memory/` is never moved even with the permit; a move's destination is judged; a refusal names the action and the path | `WslCare.Core.Tests/Files/DeletionPolicyTests.cs` |
 | Over a real disk: `..` traversal out of the root is refused before anything is deleted; a link inside the root into an agent folder is refused (through it, and the link itself); an atomic write replaces content and leaves no temp file, and is refused outside its root before writing; a move inside the root is performed; missing is not unreadable; 40 parallel appenders produce 40 whole lines; a held lock makes an append time out | `WslCare.Core.Tests/Files/PhysicalFileSystemTests.cs` |
+| Fail closed: with the real link reader for every component but one, which throws what an access denial throws, a delete, a directory delete, a move (source or destination), an atomic write and a declared root through that component are each refused by `Unresolvable`, naming the component, and nothing is deleted, moved or written; the same seam still allows what does not pass through it; a REAL directory this account was denied (`AccessDenial`) refuses a delete under it as `Unresolvable` rather than letting the policy allow it and `File.Delete` throw | `WslCare.Core.Tests/Files/UnresolvablePathTests.cs` |
+| The atomic write writes where it was ALLOWED to: a directory moved out of the declared root and replaced by a link to it — after the target was approved, or after the temporary file was written — is refused (`OutsideDeclaredRoot`) and the file outside keeps its old content; a target replaced by a link to a place INSIDE the root after the temporary file was written is refused as `PathChanged` and the temporary file removed; the temporary file is created in the target's RESOLVED parent, not beside the spelled path. The swaps run inside the file system's own step callback, at the moment a racing process would act | `WslCare.Core.Tests/Files/AtomicWriteRevalidationTests.cs` |
 | The real runner: exit code and both streams captured; a missing executable is `FailedToStart`; a timeout kills the WHOLE tree (the grandchild's pid is observed dead) and reports what was captured; output past the cap is cut and marked; the caller's cancellation surfaces as `OperationCanceledException`, not as a timeout; a refusing policy prevents the start entirely; a request needs a positive ceiling | `WslCare.Core.Tests/Processes/ProcessCommandRunnerTests.cs` |
 | The register and `default.json` name the same keys; every default validates; the plan's defaults are the shipped ones; a value round-trips through JSON | `WslCare.Core.Tests/Config/ConfigSchemaTests.cs` |
 | A layer flattens to dotted keys with the line of every leaf; a syntax error reports its line in one sentence; a non-object is malformed; comments, trailing commas, a BOM and `$schema` are accepted | `WslCare.Core.Tests/Config/ConfigDocumentTests.cs` |
 | One validator for file and command line: bool spelling, int range with the range in the message, enumerated text exactly, free text, comma-separated lists; a wrong JSON shape names the offending value | `WslCare.Core.Tests/Config/ConfigValidationTests.cs` |
 | Precedence default < machine < user with the layer named per value; an unknown key, an out-of-range or mistyped value, a file that is not JSON, an unreadable file each make the result observe-only with file and line while the same file's valid keys still apply and no default re-enables anything | `WslCare.Core.Tests/Config/ConfigLoaderTests.cs` |
-| `set` writes the key nested and the loader reads it back from the user layer; other valid keys are kept; invalid keys are dropped and named; an unparseable file is moved aside with a UTC stamp; `reset` removes a key and says whether it was there; a missing file becomes `{}`; no temp file is left | `WslCare.Core.Tests/Config/UserConfigWriterTests.cs` |
+| `set` writes the key nested and the loader reads it back from the user layer; other valid keys are kept; invalid keys are dropped and named; an unparseable file is moved aside with a UTC stamp; two repairs in the same second (frozen clock) keep BOTH broken files — `…Z` and `…Z-2`, neither overwritten — and both succeed; `reset` removes a key and says whether it was there; a missing file becomes `{}`; no temp file is left | `WslCare.Core.Tests/Config/UserConfigWriterTests.cs` |
 | A run id is the UTC second and the pid; a record is one camel-case line with string enums and `schemaVersion`; every outcome (`interrupted` included) round-trips; the writer appends one line per record under the state directory | `WslCare.Core.Tests/Records/RunRecordTests.cs` |
 | No file outside `PhysicalFileSystem.cs` and `ProcessCommandRunner.cs` deletes, moves or starts a process; the scanner matches a planted instance formatted across lines; it still finds the sanctioned calls in each seam; it ignores words that merely contain the names; `WslCare.Core` references no package | `WslCare.Core.Tests/ArchitectureTests.cs` |
-| Parsing: every help spelling; `--version`; unknown verbs named; near misses refused; extra words refused; control characters never reach a message; `config get` takes an optional key and `--json` in either order and refuses a second key or an unknown option; `config set` needs exactly key and value; `config reset` exactly one key; `config` alone lists its sub-verbs; every registered command is in the help text and its example parses (derived from the register) | `WslCare.Cli.Tests/CommandLineTests.cs` |
+| Parsing: every help spelling; `--version`; unknown verbs named; near misses refused; extra words refused; control characters never reach a message; `config get` takes an optional key and `--json` in either order and refuses a second key or an unknown option; `config set` needs exactly key and value; `config reset` exactly one key; `config` alone lists its sub-verbs; every registered command is in the help text and its example parses (derived from the register); the longest spelling wins when two commands share a prefix, whatever their register order (a synthetic register with the short spelling first) | `WslCare.Cli.Tests/CommandLineTests.cs` |
 | The whole program in-process: `--version` prints the stamp only; `--help` lists the config verbs; an unknown verb exits 2 with one stderr line even with a newline in it; a cancelled token stops the run as a cancellation | `WslCare.Cli.Tests/ProgramTests.cs` |
 | `config get` lists every key with layer `default` on a fresh host, one key alone, refuses an unknown key (exit 2); `config set` validates, writes, and `get` then shows `(user)`; an out-of-range value is refused with ONE stderr line and the file untouched; an unknown key or a mistyped value is refused and nothing is written; a broken user layer is reported observe-only on stderr and in the JSON (`configError` with file and line) while still answering; `set` repairs a broken layer and the next `get` is valid; a non-JSON layer is moved aside and the command says where; `reset` reports the effective value again; the JSON report carries every key with value and layer | `WslCare.Cli.Tests/ConfigCommandTests.cs` |
+| No control character reaches stderr raw: an unknown key holding a newline, a carriage return or a clear-screen escape (named fixtures, so a failing test name cannot clear the terminal) is refused by `config get` / `set` / `reset` in ONE message line with none of them left; an internal error whose reason holds them is one clean line; the console sink replaces a control character carried by a logged value or an exception message and keeps the line whole | `WslCare.Cli.Tests/ControlCharacterTests.cs` |
+| `Output` is the one road to a stream: every `.Write(`/`.WriteLine(` in the CLI's source is in `Output.cs` or the console sink (scanned across lines); the scan matches a planted instance, still finds the writes in both allowed files, and ignores `AppendLine`, `WriteTo`, `WriteStartObject`, `Format` | `WslCare.Cli.Tests/OutputRoadTests.cs` |
 | Escapes on a redirected writer with a control; levels coloured differently and the message unquoted; a file per run that segments at UTC midnight into the next day's folder with the same pid and never rolls backward; retention selects only expired day folders, deletes through the seam, leaves today and strangers, is a no-op on a missing root, and refuses an expired folder that is a link into `~/git`; starting the logger writes one file under the host's log directory at the configured level | `WslCare.Cli.Tests/LoggingTests.cs` |
 | The BUILT `wsl-care` as a child process (through `TestSupport/ChildProcess`: 30 s ceiling, tree kill): `--help` exits 0 and lists the config verbs; an unknown verb exits 2 with one stderr line; `config set` / `config get --json` / a refused `set` read and write under `WSL_CARE_ROOT` and each run leaves its own log file there; `--help`, `--version` and a refusal write nothing under the root | `WslCare.Cli.Tests/BuiltBinaryTests.cs` |
 | The harness's own fakes: a bare `docker` looked up by a real shell on the scenario `PATH` reaches the fake, which records its argv and prints the scripted fixture byte for byte with the scripted exit code and stderr; each of `docker`, `systemctl`, `journalctl` answers as itself, records argv exactly (spaces included) and refuses an unscripted call (98); `git` is NOT reachable on the scenario `PATH`; a fake started outside a scenario refuses (97) | `WslCare.Scenarios/FakeToolFlows.cs` |
-| The flows of § Flow catalogue, against the built CLI | `WslCare.Scenarios/HelpAndVersionFlows.cs`, `WslCare.Scenarios/ConfigFlows.cs` |
+| The flows of § Flow catalogue, against the built CLI | `WslCare.Scenarios/HelpAndVersionFlows.cs`, `WslCare.Scenarios/ConfigFlows.cs`, `WslCare.Scenarios/ControlCharacterFlows.cs` |
 | The derived register: every verb of `CommandLine.Commands` runs its example (exit 0 or 2) and has a flow-catalogue row; a planted verb is reported missing; prose, other tables and rows after the section do not count | `WslCare.Scenarios/VerbRegisterTests.cs` |
 
 Teeth, observed by breaking the code and watching the named tests go red:
@@ -145,6 +153,35 @@ Teeth, observed by breaking the code and watching the named tests go red:
   Deleting the `config reset` row from this file turned `Every_registered_verb_has_a_row_in_the_flow_catalogue_of_module_tests`
   red naming `config reset <key>`. The CI config smoke, extracted from the workflow and run with the
   first `set` changed to 24, failed with `config get did not answer 25 (after set)`.
+- 2026-10-02 (review fixes on PR #4), each red observed against the unfixed code before the fix:
+  - **Same-second repair (#3):** the second repair failed with `System.IO.IOException : Cannot create a
+    file when that file already exists.` from `UserConfigWriter.MoveAside` — the CLI's internal error.
+  - **Fail closed (#4)**, with only the reader seam added: the delete, the directory delete and the move
+    went through (`Expected boolean to be True because a path whose real location is unknown is never
+    deleted, but found False`), the atomic write landed (`Expected string to be "old", but "new"
+    differs`), the root was judged by its spelling (`… to be DeletionRule.Unresolvable {value: 7}, but
+    found DeletionRule.OutsideDeclaredRoot`), and over the REAL denied directory the policy allowed the
+    delete and `File.Delete` threw `System.UnauthorizedAccessException : Access to the path
+    '…\work\locked\a.txt' is denied.`; the positive companion stayed green. After the fix, the real
+    reader made to skip its `Attributes` read turned the denied-directory test red with that same
+    exception — the line the guarantee rests on is the attribute read, because `LinkTarget` alone
+    answers `null` for a component it cannot inspect (measured on Windows 11 and WSL Ubuntu).
+  - **Atomic-write revalidation (#0, #2)**, with only the step seam added: both swaps let the write
+    follow the link out of the root (`Expected string to be "old" because the write must not follow
+    the swapped link out of the declared root, but "new" differs`), the target replaced by a junction
+    made the rename throw `System.UnauthorizedAccessException : Access to the path is denied.`, and the
+    temporary file was `…\cfg-link\config.json.<guid>.tmp`, not under `cfg-real`.
+  - **Control characters (#7):** the scan's first run listed the direct stderr writes it then fixed —
+    `Program.cs:51` and `:59`, `Logging/WslCareLogging.cs:69`, `Commands/ConfigCommand.cs:105`; the
+    internal-error line split into two with a raw ESC; the console sink wrote a raw ESC from a logged
+    value; the scenario's key read from the user file split the log line (`Unexplained … {"forged" —
+    "wsl-care config get" lists the keys this build knows"}`). The nine typed-key refusals were GREEN
+    first — `Output.Refuse` already applied `CommandLine.Printable` at `141faa4` — and went red (two
+    lines, or a raw ESC) together with the internal-error and scenario cases when `Printable` was taken
+    out of `Output`; green on restore.
+  - **Parser (#6)**, no behaviour change: the new longest-spelling test went red when the length
+    ordering was removed from `CommandLine.LongestFirst` (`Expected object to refer to … Command`), and
+    the 16 existing parser tests stayed green throughout.
 
 ## Flow catalogue
 
@@ -162,6 +199,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care config set <key> <value>` refused: exit 2, empty stdout, ONE `wsl-care:` message (other stderr lines are log lines), the user file byte-identical | covered | `ConfigFlows.A_refused_config_set_prints_one_message_line_exits_with_the_usage_code_and_leaves_the_user_file_unchanged`; AOT binary: CI config smoke |
 | `wsl-care config set <key> <value>` over a broken user layer: `config get` still answers, observe-only on stderr and in the JSON (`configError` naming the file); `set` repairs it, moves the bad file to `config.json.broken-*`, and the next `get` is valid | covered | `ConfigFlows.A_broken_user_layer_is_reported_observe_only_and_config_set_repairs_it` |
 | `wsl-care config reset <key>`: the key leaves the user file and `get` names `(default)` again | covered | `ConfigFlows.Config_reset_removes_the_key_from_the_user_layer_and_get_names_default_again` |
+| control characters typed into a key (`config get` / `set` / `reset`) or read from the user layer never reach stderr raw: one `wsl-care:` message per refusal, no unexplained line, no control character but the console sink's colour | covered | `ControlCharacterFlows.Control_characters_typed_into_a_key_or_read_from_the_user_layer_never_reach_stderr_raw`; also `ControlCharacterTests`, `OutputRoadTests`; AOT binary (`win-x64`): smoke by hand 2026-10-02 |
 | no `config` verb starts any tool: every config verb's example, a refused set, a broken layer and its repair leave the fakes' argv log empty | covered | `ConfigFlows.No_config_verb_starts_any_tool`; the log is proved alive by `FakeToolFlows` |
 | every registered verb's `Example` runs against the built CLI: exit 0 or 2, never 70 | covered | `VerbRegisterTests.Every_registered_verb_runs_its_example_against_the_built_cli_without_crashing` (one case per verb, derived) |
 | `wsl-care status --json` / `collect` / `preview --all --json` / `doctor --json` / `events follow` | not covered | not built yet (E2) |
@@ -193,6 +231,19 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
   with spaces is proved by starting the fake directly.
 - On the owner's machine the directory-link tests run over **junctions**, not symbolic links; the
   symlink branch runs on the Linux CI legs.
+- **The atomic write's residual window is not staged.** The tests swap a link in after the approval
+  and after the temporary file is written, through the file system's step callback; the window between
+  the last re-check and the rename itself cannot be reached without a handle-relative rename, which the
+  code does not have ([architecture.md](architecture.md) § *Fail-closed resolution and the atomic
+  write*). A FILE symlink swap is not staged either — this machine's account cannot create one; the
+  swaps use directory links (junctions here, symlinks on the Linux legs).
+- **The real access denial runs where it can be staged:** `icacls` deny on Windows, `chmod 000` on the
+  Linux CI legs; it skips, with that reason, for an account the denial does not bind (root). The other
+  fail-closed tests use a seam double, so they prove the decision, not that the disk reports the
+  failure — that is the denied-directory test's job.
+- `OutputRoadTests` sees `.Write(` / `.WriteLine(` calls in the CLI's source; a `TextWriter` handed to a
+  library that writes to it would escape the scan (none exists today). The FILE log sink renders values
+  as they are: control characters in a log file are not a terminal concern and are not replaced there.
 - `ShutdownSignals` is thin wiring over `PosixSignalRegistration` and is not tested in isolation; the
   token's effect on a run is (`ProgramTests`, `ProcessCommandRunnerTests`).
 - The `AllowAllCommandPolicy` is a placeholder; the never-list and its property test are E3.S1.

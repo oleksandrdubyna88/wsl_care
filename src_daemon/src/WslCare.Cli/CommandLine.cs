@@ -40,6 +40,9 @@ internal sealed record Command(
     IReadOnlyList<string> Example,
     Func<IReadOnlyList<string>, Request> ParseRest);
 
+/// <summary>One spelling and the command it selects — the unit the parser matches on.</summary>
+internal sealed record Spelt(Command Command, IReadOnlyList<string> Spelling);
+
 /// <summary>
 /// Argument parsing, kept pure so the shapes are a unit test rather than something discovered by
 /// running the binary with the wrong words. Mirrors the hand-rolled parser of the family's
@@ -66,6 +69,11 @@ internal static class CommandLine
         new([["config", "reset"]], "config reset <key>", "remove one setting from the user layer", ["config", "reset", "dryRun"], ParseConfigReset),
     ];
 
+    /// <summary>Every spelling of <see cref="Commands"/> with its command, longest first — ordered once,
+    /// so a parse is a single pass that stops at the first prefix match. Declared after
+    /// <see cref="Commands"/> on purpose: static fields initialise in textual order.</summary>
+    private static readonly IReadOnlyList<Spelt> SpellingsLongestFirst = LongestFirst(Commands);
+
     internal static Request Parse(IReadOnlyList<string> argv)
     {
         if (argv.Count == 0)
@@ -73,7 +81,7 @@ internal static class CommandLine
             return new Request.Help();
         }
 
-        var (command, spelling) = Match(argv);
+        var (command, spelling) = Match(argv, SpellingsLongestFirst);
         if (command is not null)
         {
             return command.ParseRest(argv.Skip(spelling.Count).ToList());
@@ -88,15 +96,24 @@ internal static class CommandLine
     /// <summary>The help text, derived from <see cref="Commands"/>.</summary>
     internal static string HelpText { get; } = BuildHelpText();
 
-    /// <summary>The longest spelling that is a prefix of <paramref name="argv"/>, and its command.</summary>
-    private static (Command? Command, IReadOnlyList<string> Spelling) Match(IReadOnlyList<string> argv)
+    /// <summary>Every spelling of <paramref name="commands"/>, longest first; a stable sort, so spellings of
+    /// equal length keep the register's order.</summary>
+    internal static IReadOnlyList<Spelt> LongestFirst(IEnumerable<Command> commands) =>
+        [.. commands.SelectMany(c => c.Spellings.Select(s => new Spelt(c, s))).OrderByDescending(spelt => spelt.Spelling.Count)];
+
+    /// <summary>The longest spelling that is a prefix of <paramref name="argv"/>, and its command: the
+    /// first match in <paramref name="longestFirst"/>, which is ordered by length already.</summary>
+    internal static (Command? Command, IReadOnlyList<string> Spelling) Match(IReadOnlyList<string> argv, IReadOnlyList<Spelt> longestFirst)
     {
-        var best = Commands
-            .SelectMany(c => c.Spellings.Select(s => (Command: c, Spelling: s)))
-            .Where(pair => StartsWith(argv, pair.Spelling))
-            .OrderByDescending(pair => pair.Spelling.Count)
-            .FirstOrDefault();
-        return best.Command is null ? (null, []) : (best.Command, best.Spelling);
+        foreach (var spelt in longestFirst)
+        {
+            if (StartsWith(argv, spelt.Spelling))
+            {
+                return (spelt.Command, spelt.Spelling);
+            }
+        }
+
+        return (null, []);
     }
 
     private static bool StartsWith(IReadOnlyList<string> argv, IReadOnlyList<string> spelling) =>

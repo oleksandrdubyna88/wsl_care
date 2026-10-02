@@ -101,9 +101,10 @@ internal static class ConfigCommand
     {
         if (result is UserConfigWriteResult.Refused refused)
         {
-            // The user's config directory is never a protected place; reaching here is a defect in the layout.
-            stderr.WriteLine($"{CommandLine.BinaryName}: internal error: the deletion policy refused the user config file: {refused.Verdict.Reason}");
-            return (int)ExitCode.Internal;
+            // The user's config directory is never a protected place: reaching here is a defect in the
+            // layout, or the directory could not be inspected or changed under the write (Unresolvable,
+            // PathChanged). The reason names paths, which Output keeps on one clean line.
+            return Output.Internal(stderr, $"the deletion policy refused the user config file: {refused.Verdict.Reason}");
         }
 
         var written = (UserConfigWriteResult.Written)result;

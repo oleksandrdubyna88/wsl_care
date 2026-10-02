@@ -118,6 +118,23 @@ public sealed class CommandLineTests
     }
 
     [Fact]
+    public void The_longest_spelling_wins_when_two_commands_share_a_prefix_whatever_their_register_order()
+    {
+        // A synthetic register with the SHORT spelling first, so register order alone would pick it;
+        // only the length ordering computed once by LongestFirst picks the long one.
+        Command shortOne = new([["config"]], "config", "short", ["config"], _ => new Request.Help());
+        Command longOne = new([["config", "get"]], "config get", "long", ["config", "get"], _ => new Request.Version());
+        var spellings = CommandLine.LongestFirst([shortOne, longOne]);
+
+        var (command, spelling) = CommandLine.Match(["config", "get", "x"], spellings);
+
+        command.Should().BeSameAs(longOne);
+        spelling.Should().Equal("config", "get");
+        CommandLine.Match(["config", "list"], spellings).Command.Should().BeSameAs(shortOne, "a prefix only the short spelling matches still selects it");
+        CommandLine.Match(["other"], spellings).Command.Should().BeNull();
+    }
+
+    [Fact]
     public void Help_mentions_the_three_configuration_layers()
     {
         CommandLine.HelpText.Should().Contain("three layers").And.Contain("config set").And.Contain("config get");
