@@ -1,11 +1,18 @@
 # PLAN — keep WSL from degrading over the working day (`wsl-care` daemon + VS Code extension)
 
-> Status: **plan only, nothing implemented yet (2026-10-02).** Scope: a systemd timer + service inside the
-> `Ubuntu` distro (`daemon/`), a VS Code extension that shows its state and runs cleanups on demand
-> (`extension/`), their shared config, and the one-time cleanups listed in Phase 0.
+> Status: **plan only, nothing implemented yet (2026-10-02).** Scope: a C# Native AOT daemon/CLI run by a
+> systemd timer inside the `Ubuntu` distro (`src_daemon/`), a VS Code extension that shows its state, its
+> logs and its help and runs cleanups on demand (`src_vs_code/`), CI/CD modelled on CredsForDevs, and the
+> one-time cleanups listed in Phase 0.
 >
-> Evidence: [2026-10-02_wsl_resource_baseline.md](../research/2026-10-02_wsl_resource_baseline.md) — every
-> number quoted here comes from it.
+> Evidence: [2026-10-02_wsl_resource_baseline.md](../research/2026-10-02_wsl_resource_baseline.md),
+> [2026-10-02_one_time_cleanup.md](../research/2026-10-02_one_time_cleanup.md),
+> [2026-10-02_competitor_survey.md](../research/2026-10-02_competitor_survey.md) — every number quoted here
+> comes from them.
+>
+> Companion plans: [PLAN_windows_care.md](PLAN_windows_care.md) (the same daemon on the Windows host),
+> [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md) (moving old AI sessions into a dated archive),
+> [PLAN_shared_vscode_kit.md](PLAN_shared_vscode_kit.md) (help/language/size/tone as a shared npm package).
 
 ## 1. Symptom and goal
 
@@ -13,377 +20,558 @@
 the machine is slow. On 2026-10-01 at 18:36 the VM had 0.27 GB free out of 46 GB: ~22 GB of *inactive*
 anonymous memory, ~19 GB of page cache that WSL never gives back to Windows, and the memory so fragmented
 that the kernel could not find one free 64 KB block (`page allocation failure`, three such days in five
-weeks). Next to that: 108 GB of reclaimable Docker data, 41 GB of worktrees, a journal whose history is
-erased by clock jumps, and no process-level history at all.
+weeks). Next to that: 135 GB of Docker and cache leftovers (removed by hand on 2026-10-02), 41 GB of
+worktrees, AI-agent session folders growing without a limit, a journal whose history is erased by clock
+jumps, and no process-level history at all.
 
 **Goal.**
 1. **Record** what the VM holds, every 4 hours, so the question "who ate the memory" has an answer.
-2. **Fix automatically** what is safe to fix: give the cache back, defragment, stop idle build servers, and
-   remove Docker leftovers that only tests created.
-3. **Show** it all in VS Code — disk, RAM, swap, containers (now / last 24 h / reclaimable) — with
-   **buttons** to run any cleanup by hand and **settings** for the age limits ("older than N hours/days").
+2. **Fix automatically** what is safe to fix: give the cache back, defragment, stop idle build servers,
+   and remove Docker and cache leftovers past configured ages.
+3. **Show** it all in VS Code — disk, RAM, swap, containers (now / last 24 h / reclaimable), AI-agent
+   folders — with **buttons** to run any cleanup by hand, **settings** for the age limits, **logs** of
+   every run for any period, and a **help** page in five languages.
 4. **Report** everything else, with numbers, and never touch it unasked.
 
 **Success criterion.** Over one working week after enabling actions: no `page allocation failure`;
-`MemAvailable` at 18:00 ≥ 25 % of the VM; Docker reclaimable data stays below 30 GB; the daily
-`history.jsonl` lets anyone name the top 5 memory holders of any afternoon; and every number in the
-extension matches the CLI it came from.
+`MemAvailable` at 18:00 ≥ 25 % of the VM; Docker reclaimable data stays below 30 GB; the run history lets
+anyone name the top 5 memory holders of any afternoon; and every number in the extension matches the CLI
+output it came from.
 
 ## 2. Decisions already taken (2026-10-02)
 
 | Question | Decision |
 |---|---|
-| Where the work lives | this repository, `D:\rsd\wsl_care` — `daemon/` + `extension/` |
-| Where the scheduled work runs | **only** a systemd timer inside `Ubuntu` (no Windows Task Scheduler) |
+| Where the work lives | this repository, `github.com/oleksandrdubyna88/wsl_care` — `src_daemon/` + `src_vs_code/` |
+| Daemon technology | **C# on .NET 10, Native AOT** — one self-contained binary, no runtime to install in the distro |
+| Where the scheduled work runs | a systemd timer inside `Ubuntu`; **and, since the 2026-10-02 extension of scope, Windows Task Scheduler on the host** — see [PLAN_windows_care.md](PLAN_windows_care.md) |
 | How far it may fix things on its own | **safe automatic actions only**; everything else is report-only or a button |
-| UI | a VS Code extension shipped in the same package: status bar + side panel + settings + cleanup buttons |
-| History tools | `sysstat` **and** `atop` are installed by the installer, for proper system and per-process logs |
+| UI | a VS Code extension: status bar, side panel, cleanup buttons, settings, logs page, help page |
+| Help and display | like coai: a help page in en/ru/uk/de/es, plus text-size and brightness ("tone") controls — taken from a shared package proposed in [PLAN_shared_vscode_kit.md](PLAN_shared_vscode_kit.md) |
+| Publishing | build a **first working prototype**, then publish it to the VS Code Marketplace right away (§11 step 10) |
+| CI/CD | **by analogy with CredsForDevs** (§9) |
+| History tools | `sysstat` **and** `atop`, installed by the installer |
 | Killing old processes | a **setting**, off by default: families from an allowlist, older than N hours, idle |
+| AI agents | monitored (folder sizes and session counts), auto-discovered, plus a manual "add CLI path" row; **never deleted — sessions older than N days are moved** into `<base>/<agent>/<yyyy>/<MM>/` ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) |
 | What happens now | this plan; implementation is a separate task after review |
 
-Consequences of "systemd inside Ubuntu only", accepted knowingly:
+Consequences, accepted knowingly:
 - The timer cannot run `wsl --shutdown` and cannot compact a `.vhdx` (the VM must be stopped for that).
   Both stay manual (Phase 0) — the extension shows when they are due and how much they would free.
 - The daemon sees the **whole VM's** memory (`/proc/meminfo` is VM-wide) but only **Ubuntu's** processes
   (`Ubuntu-26.04` and `docker-desktop` are separate PID namespaces). Containers are covered through the
   Docker CLI; whatever remains is reported as an explicit *unattributed* figure instead of being guessed.
-- The extension runs on the **Windows** side (§7), so it adds what the daemon cannot see: the `vmmemWSL`
-  working set and host RAM. The `.vhdx` sizes the daemon reads itself through `/mnt/c`.
+- **Windows-side numbers** — `vmmemWSL`, host RAM, AI-agent folders under `%USERPROFILE%` /
+  `%APPDATA%` — are read by the **same C# code compiled for `win-x64`** (`wsl-care.exe`, bundled in the
+  `.vsix`). With the Windows plan it is a full daemon there, on its own scheduled task. Walking `C:` from
+  inside the VM is avoided on purpose — a 9p directory walk is what failed on 2026-10-01.
 
 ## 3. Phase 0 — one-time fixes, by hand, each one confirmed (not the daemon's job)
 
-Ordered by expected effect. Each is a separate step so its effect can be measured on its own.
-
 | # | Fix | Why (baseline finding) | How to verify |
 |---|---|---|---|
-| 0.1 | `%USERPROFILE%\.wslconfig`: add `[experimental]` `autoMemoryReclaim=dropCache` (try `gradual` later) and `sparseVhd=true`; keep `memory` at the default for now | F1: 19 GB of cache is never returned; F3: vhdx never shrinks | `wsl --shutdown`; by the evening `vmmemWSL` is clearly below the 46 GB ceiling. **Check first** whether `gradual` conflicts with Docker Desktop on this WSL version; if it does, stay on `dropCache` |
-| 0.2 | **Done 2026-10-02, ≈ 135 GB freed** — [record](../research/2026-10-02_one_time_cleanup.md); note: no exited container carried the Testcontainers label, so the Testcontainers-only action was replaced by A5 (stopped ≥ N days). Originally planned as: one-time Docker cleanup: `docker builder prune --filter until=168h`, `docker image prune` (dangling only), remove stopped containers labelled `org.testcontainers=true`, then `docker volume prune` (anonymous only — Docker ≥ 23 default) | F2: 71 GB volumes + 21 GB build cache + 16 GB images reclaimable | `docker system df` before/after, recorded in `research/` |
-| 0.3 | Compact the vhdx files after 0.2: `wsl --shutdown`, then `wsl --manage <distro> --set-sparse true` or `Optimize-VHD` / `diskpart compact vdisk`; Docker Desktop's own *Clean up* for `docker_data.vhdx` | F3: 142 + 123 + 71 GB files on `C:` | file sizes before/after |
+| 0.1 | `%USERPROFILE%\.wslconfig` — **revised after the competitor survey**: `autoMemoryReclaim=dropCache` is reported as the default since WSL 2.1.3, but it fires only after ~10 min of *idle*, which a working day never has; **not** `gradual` (hangs with systemd + Docker Desktop); **not** `sparseVhd` (disabled since WSL 2.5.6 after corruption reports, and a sparse VHDX cannot be compacted). Instead: a `memory=` cap (32–36 GB — the Windows baseline shows the host starved at 2.3 GB free), `swap=8GB`, `maxCrashDumpCount=3` | F1; Windows baseline | `wsl --shutdown`; by the evening Windows keeps ≥ 15 GB available and WSL shows no `page allocation failure` |
+| 0.2 | **Done 2026-10-02, ≈ 135 GB freed** — [record](../research/2026-10-02_one_time_cleanup.md). No exited container carried the Testcontainers label, so the Testcontainers-only action was replaced by A5 (stopped ≥ N days) | F2 | `docker system df` before/after, recorded |
+| 0.3 | Compact the vhdx files after 0.2: `wsl --shutdown`, then `Optimize-VHD` / `diskpart compact vdisk` (**not** `--set-sparse`); Docker Desktop's own *Clean up* for `docker_data.vhdx` — **user: later, on request** | F3: 142 + 123 + 71 GB files on `C:` | file sizes before/after |
 | 0.4 | `systemctl mask wsl-pro.service` in **both** Ubuntu distros | F5: a reconnect every ~20 s, ~4 000 log lines a day, for an agent that is not installed | no `wsl-pro-service` lines in syslog for a day |
 | 0.5 | **Verify** the clock hypothesis before changing anything: count jumps for one day with `systemd-timesyncd` (Ubuntu) and `chronyd` (Ubuntu-26.04) stopped, against the ~1 700/day baseline | F4: jumps erase journald history and flush DNS cache | jumps per day; make the change permanent only if the count drops |
-| 0.6 | Decide on `Ubuntu-26.04`: keep it, or `wsl --terminate` it when not in use (it shares the VM's memory and kernel clock) | F1 caveat, F4 | `free` before/after terminating it |
-| 0.7 | Decide on `snapd`: no user snaps are installed (`core22` + `snapd` only) | F5: snapd/snapfuse CPU at boot, 15 failed starts | boot time (`systemd-analyze`) before/after |
+| 0.6 | Decide on `Ubuntu-26.04`: keep it, or `wsl --terminate` it when not in use | F1 caveat, F4 | `free` before/after terminating it |
+| 0.7 | Decide on `snapd`: no user snaps are installed | F5: snapd/snapfuse CPU at boot, 15 failed starts | `systemd-analyze` before/after |
 | 0.8 | Review `~/git/_wt` (41 GB) and `~/coai-514`, `~/coai-462` **by hand**; remove worktrees **from Windows** with `git worktree remove` | F3 | `du` before/after |
 
 **Never in Phase 0 or anywhere else:** `git worktree prune` from WSL — it unregisters every worktree
 created from Windows (`D:/…` paths look missing from inside WSL).
 
-## 4. The daemon — what it monitors
+## 4. What is monitored
 
-Every run collects one record (one JSON line) and evaluates thresholds. Thresholds are config values; the
-numbers below are starting points, re-tuned after one week of recorded data.
+Every run collects one record and evaluates thresholds. Thresholds are config values; the numbers below are
+starting points, re-tuned after one week of recorded data.
 
 ### 4.1 Memory (VM-wide)
 
 | Metric | Source | Warn | Act |
 |---|---|---|---|
-| `MemAvailable` % of `MemTotal` | `/proc/meminfo` | < 25 % | < 15 % → §5 A1 |
-| page cache (`Cached` + `Buffers`) | `/proc/meminfo` | > 15 GB | > 12 GB **and** available < 30 % → §5 A1 |
-| anonymous, of which inactive | `/proc/meminfo` `Inactive(anon)` | > 15 GB | report (it names the processes, §4.2) |
+| `MemAvailable` % of `MemTotal` | `/proc/meminfo` | < 25 % | < 15 % → A1 |
+| page cache (`Cached` + `Buffers`) | `/proc/meminfo` | > 15 GB | > 12 GB **and** available < 30 % → A1 |
+| anonymous, of which inactive | `/proc/meminfo` `Inactive(anon)` | > 15 GB | report (§4.2 names the processes) |
 | swap used / total | `/proc/meminfo` | > 4 GB | — |
-| fragmentation: free blocks ≥ 64 KB (order ≥ 4) in zone Normal | `/proc/buddyinfo` | < 64 blocks | = 0 → §5 A2 |
+| fragmentation: free blocks ≥ 64 KB (order ≥ 4) **and ≥ 512 KB (order ≥ 7, what VMBus needs)** in zone Normal | `/proc/buddyinfo` | order ≥ 7 < 32 blocks | order ≥ 7 = 0 or any `page allocation failure` → A2 **immediately** (event-driven, not only on the timer) — our order-7 `kworker` failures of 2026-09-09/16 match the known WSL VMBus signature ([#41634](https://github.com/microsoft/WSL/issues/41634)) |
+| pressure trend (primary "VM struggles" signal) | `/proc/pressure/{memory,io,cpu}` `some`/`full` avg10/60 | memory `some avg60` > 10 | triggers an early run |
 | memory pressure | `/proc/pressure/memory` `some avg300` | > 10 | — |
 | `page allocation failure` since last run | `kern.log` / `journalctl -k` | ≥ 1 → **alert** | — |
 | OOM kills since last run | same | ≥ 1 → **alert** | — |
+| `vmmemWSL` working set, host RAM | Windows probe (§2) | `vmmemWSL` > 80 % of the VM ceiling | — |
 
 ### 4.2 Who holds it
 
-- The top 30 Ubuntu processes by RSS: pid, user, rss, age (`etimes`), state, cpu time, cwd, command line
-  truncated to 200 characters.
+- The top 30 Ubuntu processes by RSS: pid, user, rss, age, state, cpu time, cwd, command line (200 chars).
 - **Families**, aggregated by config-defined regex: `vscode-server` (extension hosts, ServiceHub,
   `Microsoft.CodeAnalysis.LanguageServer`), `dotnet-build-servers` (MSBuild `/nodemode:`, VBCSCompiler,
-  Razor server), `testhost`, `node`, `claude`/`codex`/`gemini` CLIs, `docker-desktop-proxy`, everything
-  else.
-- Per-container memory: `docker stats --no-stream` (name, image, memory, age, `org.testcontainers` label).
-- **Unattributed** = `AnonPages` + `Shmem` − Σ Ubuntu RSS − Σ container memory. The residue is
-  `Ubuntu-26.04` + docker-desktop internals; reported, never guessed.
+  Razor server), `testhost`, `node`, AI-agent CLIs (from the §4.6 catalogue), `docker-desktop-proxy`,
+  everything else.
+- Per-container memory: `docker stats --no-stream`.
+- **Unattributed** = `AnonPages` + `Shmem` − Σ Ubuntu RSS − Σ container memory — reported, never guessed.
 - **Suspects**: processes with PPID 1 or reparented to `systemd --user`, in a family above, older than the
-  configured age, with < 1 CPU-second in the last interval (orphaned and idle). Input for action A11.
+  configured age, with < 1 CPU-second in the last interval. Input for action A11.
 - Processes whose cwd or arguments are under `/mnt/` (a walk over 9p caused the 2026-10-01 failure).
 
 ### 4.3 Docker
 
-- **Running now** (`docker ps`) and the `docker system df` totals per type (count, size, reclaimable) — the
-  "Docker after: 13 images, 28 containers, 44 volumes, build cache empty" line of the 2026-10-02 cleanup.
-- **One row per cleanup**, the same rows as the one-time cleanup record
-  ([2026-10-02_one_time_cleanup.md](../research/2026-10-02_one_time_cleanup.md)), each with *count* and
-  *reclaimable GB* — these are exactly the `--preview` numbers of the matching action in §5:
+- **Running now** and the `docker system df` totals per type (count, size, reclaimable) — the "Docker
+  after: 13 images, 28 containers, 44 volumes, build cache empty" line of the 2026-10-02 cleanup.
+- **One row per cleanup**, the same rows as the one-time cleanup record, each with *count* and
+  *reclaimable GB* — exactly the `--preview` numbers of the matching action in §5:
 
   | Row | Count | Reclaimable GB | Action |
   |---|---|---|---|
   | anonymous volumes not attached to any container | `docker volume ls -q --filter dangling=true`, 64-hex names only | `docker system df -v` volume sizes | A4 |
-  | containers stopped ≥ N days, with the anonymous volumes they hold (Testcontainers-labelled ones counted separately) | `docker inspect` `State.FinishedAt` (or `Created` for never-started) | container size + their anonymous volumes | A5 |
-  | images not referenced by any container (dangling ones counted separately) | `docker image ls` vs every container's image id | `docker system df` images reclaimable | A6 |
+  | containers stopped ≥ N days, with the anonymous volumes they hold (Testcontainers counted separately) | `docker inspect` `State.FinishedAt` (or `Created` for never-started) | container size + their anonymous volumes | A5 |
+  | images not referenced by any container (dangling counted separately) | `docker image ls` vs every container's image id | `docker system df` images reclaimable | A6 |
   | build cache | `docker buildx du` | total and reclaimable | A7 |
-  | npm cache | — | `du ~/.npm` | A8 |
-  | apt cache + disabled snap revisions | `snap list --all` disabled | `du /var/cache/apt` + snap file sizes | A9 |
+  | npm cache | — | size of `~/.npm` | A8 |
+  | apt cache + disabled snap revisions | `snap list --all` disabled | `/var/cache/apt` + snap file sizes | A9 |
 
-- **Kept, report-only:** named volumes not attached to any container, with their sizes (2026-10-02: ~16 GB,
-  `mindex_qdrant_data` 10.3 GB alone) — shown so a human decides per volume; no action exists for them.
-- `docker_data.vhdx` size and how much of it is now free inside (= what compaction would return).
-- `docker system df -v` takes seconds to minutes; the full numbers come from the 4-hour run and are cached,
+- **Kept, report-only:** named volumes not attached to any container, with their sizes (2026-10-02:
+  ~16 GB, `mindex_qdrant_data` 10.3 GB alone) — a human decides per volume; no action exists for them.
+- `docker_data.vhdx` size and how much of it is free inside (= what compaction would return).
+- `docker system df -v` takes seconds to minutes; the full numbers come from the 4-hour run and are cached;
   `status --json` reports their age.
-- **Started in the last 24 h.** `docker ps` cannot answer it (removed containers vanish) and the daemon's
-  own event buffer is too short for 2 000–3 000 starts a day. So a second, tiny unit
-  `wsl-care-events.service` follows `docker events --filter type=container --filter event=start --format
-  '{{json .}}'` and appends one line per start to `/var/lib/wsl-care/container-starts/{yyyy-MM-dd}.jsonl`
-  (image, name, testcontainers label). Counts for "last 24 h" and "per image" come from those files; kept
-  14 days. Restarts itself when Docker Desktop restarts (`Restart=always`, `RestartSec=30`).
+- **Started in the last 24 h.** `docker ps` cannot answer it (removed containers vanish) and Docker's event
+  buffer is too short for 2 000–3 000 starts a day, so a second unit, `wsl-care-events.service`
+  (`wsl-care events follow`), appends one line per container start to
+  `/var/lib/wsl-care/container-starts/{yyyy-MM-dd}.jsonl` (image, name, Testcontainers label); kept 14
+  days; `Restart=always`, `RestartSec=30`.
 
 ### 4.4 Disk
 
-`df /` (used / free / %), host `C:` free space through `/mnt/c`, sizes of the three `.vhdx` files and their
-growth since the previous record, and — once a day, not every 4 h, because it is expensive — `du` of
-`~/git/_wt`, `~/.npm`, `~/.nuget/packages`, `~/.cache`, `~/.vscode-server`, `~/.claude/projects`, and of
-`bin/` + `obj/` under `~/git`. Warn when `/` > 80 % or a vhdx grew > 10 GB in a day.
+`df /` (used / free / %), host `C:` free space, the three `.vhdx` sizes and their growth since the previous
+record, and — once a day, because it is expensive — the size of `~/git/_wt`, `~/.npm`, `~/.nuget/packages`,
+`~/.cache`, `~/.vscode-server`, and of `bin/` + `obj/` under `~/git`. Warn when `/` > 80 % or a vhdx grew
+> 10 GB in a day.
 
 ### 4.5 System health
 
 Clock-jump count since the last run (warn > 100 per 4 h), journald disk usage and its oldest entry (warn
-when history is shorter than 7 days), failed units (user + system), uptime, the WSL `failed to start
-within` boot error, and whether `sysstat` and `atop` are collecting (their last sample is < 30 min old).
+when history is shorter than 7 days), failed units, uptime, the WSL `failed to start within` boot error,
+and whether `sysstat` and `atop` are collecting (last sample < 30 min old).
+
+Added from the competitor survey:
+- **Clock skew**: `CLOCK_BOOTTIME` vs `CLOCK_REALTIME`, and the distro's time vs Windows' (`powershell.exe
+  Get-Date` / the Windows daemon) — drift > `clock.maxDriftSeconds` (5) triggers A16.
+- **`discard` in `/proc/mounts`** for `/`; if absent, `fstrim.timer` state.
+- **inotify** instances and watches per user vs. the limits.
+- **meminfo explainer**: growth of `SUnreclaim` (kernel leak), `Shmem` (`/dev/shm`, tmpfs),
+  `Inactive(anon)`, swap — each with a plain-language line in the report.
+- **OOM forensics**: who was killed and when; whether earlyoom/systemd-oomd is present.
+- **`.wslconfig` audit** (read through `/mnt/c`): ceiling, `autoMemoryReclaim` value, `sparseVhd` present →
+  warning, `gradual` with systemd/Docker → warning.
+- **Docker hygiene audit**: containers on `json-file` without `max-size` and their log sizes; Docker
+  Desktop `daemon.json` builder GC present or not (the Windows-side file, not `/etc/docker`); forgotten
+  `docker-container` buildx builders and their `buildx_buildkit_*_state` volumes.
+- **VS Code Server builds**: `~/.vscode-server/bin/<commit>`, `~/.vscode-server/cli/servers/*`,
+  `~/.cursor-server`, `~/.windsurf-server` — how many, which are in use (`/proc/*/cmdline`), size.
+- **"What grew since yesterday"** for `$HOME`, `/var`, `~/.cache`.
+
+### 4.6 AI agents — folder sizes and session counts
+
+**Why.** Measured 2026-10-02: on Windows `~/.claude` 2.8 GB with **477 project folders / 2 631 sessions**,
+`AnthropicClaude` 1.2 GB, `.codex` 0.45 GB with 385 sessions, `.gemini` 0.5 GB; in WSL `~/.claude` 1.6 GB
+(32 projects, 732 sessions, **one project alone 1.4 GB**), `~/.gemini` 0.9 GB (`antigravity-cli` 666 MB),
+`~/.codex` 174 MB. Every coai gate run creates its own Claude project folder (`…coai-wt-…-r1`), so the
+count only grows.
+
+**Discovery — automatic, on both sides.** A catalogue (`agents.json`, embedded, data not code) lists known
+agents. For each entry: display name, binary names, npm package names, data folders per OS, and a
+*session layout* (which subfolder holds sessions and what one session is — a folder or a file glob):
+
+| Agent | Binaries | Data folders (Linux / Windows) | One session is |
+|---|---|---|---|
+| Claude Code | `claude` | `~/.claude` / `%USERPROFILE%\.claude`, `%LOCALAPPDATA%\AnthropicClaude`, `%APPDATA%\Claude` | `projects/*/` folder; `projects/*/*.jsonl` file |
+| Codex | `codex` | `~/.codex` | `sessions/**/*.jsonl` |
+| Gemini CLI | `gemini` | `~/.gemini` (minus `antigravity*`) | `tmp/*/` |
+| Antigravity | `agy`, `antigravity` | `~/.gemini/antigravity*`, `~/.cache/antigravity` / `%APPDATA%\Antigravity`, `%LOCALAPPDATA%\agy` | catalogue entry to confirm on implementation |
+| GitHub Copilot CLI | `copilot` | `~/.copilot` | `session-state/*` |
+| Rovo Dev | `acli`, `rovodev` | `~/.rovodev` | `sessions/*` |
+| Cursor agent, OpenCode, Amp, Qwen Code, Kiro, Aider, Goose, Crush, Windsurf | their binaries | their documented folders | per entry |
+| Ollama | `ollama` | `~/.ollama/models`, `OLLAMA_MODELS` | model count instead of sessions |
+
+An agent is **tracked** when any of its binaries is on `PATH`, an npm global package of it is installed, or
+any of its data folders exists. Linux side: the daemon, once a day and on demand. Windows side: the
+`win-x64` probe, when the panel opens (at most hourly, cached).
+
+**Manual addition.** A row at the end of the agents table: **"Add CLI path…"** — for when the user knows an
+agent exists that discovery missed. The user enters the path of the CLI (Linux or Windows); the tool checks
+the file exists and is executable, derives a name from it, then looks for data folders by convention —
+`~/.<name>`, `~/.config/<name>`, `~/.local/share/<name>`, `~/.cache/<name>`, `%APPDATA%\<name>`,
+`%LOCALAPPDATA%\<name>` — and shows what it found, with sizes. The user confirms, removes or adds data
+folders and an optional session glob. Saved to `aiAgents.extra` in the config (§6); shown with a "manual"
+badge and a remove button.
+
+**Per agent, shown:** side (WSL / Windows), version if the CLI answers `--version` within 2 s, total size
+of its data folders, number of session folders/files, the 5 largest sessions, oldest and newest session
+date, growth since yesterday. **Warnings:** an agent over `aiAgents.warnGb` (5 GB) or a single session over
+`aiAgents.sessionWarnMb` (500 MB).
 
 ## 5. Actions — automatic (timer) and manual (buttons)
 
-Every action is one module with `should_run(record, config)` and `run(executor)`, records before/after
-numbers in the history line, and is reachable two ways: the **timer** runs it when its trigger fires and
-its `auto` switch is on; the **extension** runs it on a button press regardless of the trigger (always with
-a preview first, §7.3).
-
-A4–A9 are the cleanups of the 2026-10-02 one-time run, one action per row of that record, with the age
-limits it used as defaults ("≥ 7 days" etc.). Each produces a result row in the same shape — *what*,
-*count*, *freed GB* — and every run ends with the "Docker after" totals (§4.3, §7.2).
+Every action implements one interface, `ICleanupAction { Id; Preview(record, config); Run(executor) }`,
+records before/after numbers, and is reachable two ways: the **timer** runs it when its trigger fires and
+its `auto` switch is on; the **extension** runs it on a button press regardless of the trigger (always
+with a preview first, §7.3). A4–A9 are the cleanups of the 2026-10-02 one-time run, one action per row of
+that record, with its age limits as defaults.
 
 | # | Action | Auto trigger | Setting (default) | Auto by default | Why it is safe | 2026-10-02 |
 |---|---|---|---|---|---|---|
 | A1 | `sync; echo 1 > /proc/sys/vm/drop_caches` | §4.1 | — | on | the cache is rebuilt on demand; freed pages go back to Windows. Never `3` | — |
 | A2 | `echo 1 > /proc/sys/vm/compact_memory` | after A1, or fragmentation = 0 | — | on | defragmentation only | — |
 | A3 | `dotnet build-server shutdown`, as the owning user | build servers alive, **no** `dotnet build/test/run` alive | `buildServers.idleHours` (4 h) | on | the official command; the next build restarts them | — |
-| A4 | `docker volume prune -f` — **every unnamed (anonymous) volume not attached to any container** | > `volumes.anonymousMaxCount` (100) or > `volumes.anonymousMaxGb` (20) | — | on | no container refers to them; named volumes are never touched. **Refuses on Docker < 23** (there `prune` took named volumes too) | 387 volumes, 59.6 GB |
-| A5 | `docker rm -v` of containers stopped ≥ N days (anonymous volumes go with them, named stay) | any exist | `containers.stoppedOlderThanDays` (7 d); Testcontainers-labelled: `containers.testcontainersOlderThanHours` (2 h) | **Testcontainers: on; all others: off** (button, or opt-in) | user containers are removed only when the user turned that on or pressed the button; named volumes survive | 58 containers, ~3.5 GB |
-| A6 | `docker image prune -f` (dangling) **and** `docker image prune -af --filter until=…` (not referenced by any container) | dangling: any; unused: images reclaimable > `images.unusedMaxGb` (10) | `images.unusedOlderThanDays` (7 d) | dangling: on; unused: **off** (button, or opt-in) | an image used by any container, even a stopped one, is never removed; the rest is re-pullable | 99 → 13 images, 31.5 GB |
-| A7 | build cache: auto — `docker builder prune -f` with a **size cap** (`--max-used-space` / `--keep-storage`, whichever this Docker supports — check at implementation); button — `docker builder prune -af` (all) | cache > `buildCache.maxGb` (20) | `buildCache.maxGb` (20); age filter `buildCache.olderThanDays` (7 d) for the timer only | on (cap); all: button | rebuildable. 2026-10-02 showed an **age filter alone frees nothing** (all 34.6 GB were < 7 days old) — the size cap is the trigger that works | 34.6 GB |
-| A8 | `npm cache clean --force`, as the user (through `bash -ic` so `nvm` is on `PATH`) | `~/.npm` > `npm.maxCacheGb` (5) | `npm.maxCacheGb` (5) | **off** (button, or opt-in) | a cache; the next `npm ci` downloads again | 7.0 → 1.7 GB, 5.3 GB |
-| A9 | `apt-get clean` + `snap remove --revision` of **disabled** snap revisions | apt cache > 200 MB or any disabled revision | — | on | package caches and superseded snap revisions only | ~0.4 GB |
+| A4 | `docker volume prune -f` — **every unnamed (anonymous) volume not attached to any container** | > `volumes.anonymousMaxCount` (100) or > `volumes.anonymousMaxGb` (20) | — | on | no container refers to them; named volumes never touched. **Refuses on Docker < 23** | 387 volumes, 59.6 GB |
+| A5 | `docker rm -v` of containers stopped ≥ N days (anonymous volumes go with them, named stay) | any exist | `containers.stoppedOlderThanDays` (7 d); Testcontainers: `containers.testcontainersOlderThanHours` (2 h) | **Testcontainers: on; others: off** (button, or opt-in) | user containers go only when the user turned it on or pressed the button | 58 containers, ~3.5 GB |
+| A6 | `docker image prune -f` (dangling) and `docker image prune -af --filter until=…` (not referenced by any container) | dangling: any; unused: reclaimable > `images.unusedMaxGb` (10) | `images.unusedOlderThanDays` (7 d) | dangling: on; unused: **off** (button, or opt-in) | an image used by any container, even a stopped one, is never removed | 99 → 13 images, 31.5 GB |
+| A7 | build cache: auto — `docker builder prune -f` with a **size cap** (`--max-used-space` / `--keep-storage`, whichever this Docker supports); button — `docker builder prune -af` | cache > `buildCache.maxGb` (20) | `buildCache.maxGb` (20), `buildCache.olderThanDays` (7 d) | on (cap); all: button | rebuildable. An **age filter alone freed nothing** on 2026-10-02 (all 34.6 GB < 7 days old) | 34.6 GB |
+| A8 | `npm cache clean --force`, as the user (through `bash -ic` so `nvm` is on `PATH`) | `~/.npm` > `npm.maxCacheGb` (5) | `npm.maxCacheGb` (5) | **off** (button, or opt-in) | a cache | 5.3 GB |
+| A9 | `apt-get clean` + `snap remove --revision` of **disabled** snap revisions | apt cache > 200 MB or any disabled revision | — | on | package caches and superseded revisions only | ~0.4 GB |
 | A10 | `journalctl --vacuum-time=…` | journald > 1 GB | `journal.keepDays` (30 d) | on | old logs | — |
-| A11 | Terminate **suspect** processes (§4.2): `SIGTERM`, `SIGKILL` after 10 s | suspects exist | `processes.idleOlderThanHours` (8 h) + `processes.families` allowlist | **off** | opt-in only; never touches a process with a TTY or one that used CPU in the interval | — |
-| A12 | Playwright browsers / NuGet HTTP cache | — | — | **off** (button only) | caches, but large re-downloads | — |
+| A11 | Terminate **suspect** processes (§4.2): `SIGTERM`, `SIGKILL` after 10 s | suspects exist | `processes.idleOlderThanHours` (8 h) + `processes.families` | **off** | opt-in; never a process with a TTY or recent CPU | — |
+| A12 | Playwright browsers **not referenced by any project** (never `uninstall --all`) / NuGet `http-cache` | — | — | **off** (button only) | caches, but large re-downloads | — |
+| A13 | AI-session archive — move, never delete ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) | daily, sessions older than N days | `archive.olderThanDays` (14) | on once a base folder is set | copy → verify hash → delete source; restorable | — |
+| A14 | Old VS Code Server builds (and Cursor/Windsurf servers) not used by any running process; keep the newest 2; `.obsolete` extensions | > 2 builds | — | on | re-downloaded on demand by the editor | — |
+| A15 | `fstrim -av` | weekly, when `discard` is not mounted | — | on | returns freed blocks so compaction can shrink the VHDX | — |
+| A16 | Clock fix: `hwclock -s` / `chronyc makestep` **once, on detected drift** (never from cron) | §4.5 drift | `clock.maxDriftSeconds` (5) | on | one correction per event | — |
+| A17 | Package-manager-native cache trims: `pnpm store prune`, `uv cache prune`, `pip cache purge`, `cargo sweep --time 30`, Gradle retention | per tool threshold | per tool | **off** (button, or opt-in) | each tool's own safe command | — |
+
+**Volume age.** `docker volume prune` has no `until` filter, so the daemon records the first time it sees
+each anonymous volume (`/var/lib/wsl-care/volume-seen.json`); A4 can then be limited to volumes unused
+for ≥ `volumes.anonymousOlderThanDays` (default 0 = all unattached, the 2026-10-02 behaviour). A label
+`wsl-care.keep=true` protects any volume or container from every action.
+
+**Heavy actions wait for idle** (as WSL itself does): A1, A2 on the timer, A7, A15 run only after CPU has
+been below `idle.cpuPercent` (20 %) for `idle.minutes` (5) and no `docker build` / `dotnet build|test` /
+`npm ci` is running; otherwise they are deferred to the next run and the deferral is logged. The
+event-driven A2 for an order-7 shortage (§4.1) is the exception — it runs at once.
 
 **Freed bytes are measured, not estimated:** Docker's own "Total reclaimed space" for A4, A6, A7; the
-`docker system df -v` sizes of the removed containers and volumes for A5; `du` before/after for A8, A9.
-Every action run — timer or button — appends `{time, action, trigger: timer|button, count, freedBytes,
-items[≤ 50 names]}` to `/var/lib/wsl-care/cleanups.jsonl` (kept 90 days).
+`docker system df -v` sizes of the removed objects for A5; the folder size before/after for A8, A9.
 
 **Never, neither automatic nor as a button:** `git worktree prune`, `docker system prune -a`,
 `docker volume prune --all`, `echo 3 > drop_caches`, deleting anything under `~/git`, `wsl --shutdown`
-from inside the VM. Tests enforce that no code path can produce these commands.
+from inside the VM, deleting anything in an AI agent's folder (A13 *moves* with hash verification — the
+only write it does there), enabling `sparseVhd`, recommending `autoMemoryReclaim=gradual` with systemd +
+Docker Desktop. Tests enforce that no code path can produce these commands.
 
 Global guards: one run at a time (`flock` on `/run/wsl-care.lock`, shared by timer and buttons);
-`dry_run = true` for the first 7 days for the **timer** (buttons always preview, then execute on
+`dryRun = true` for the first 7 days for the **timer** (buttons always preview, then execute on
 confirmation); each action has its own `auto` switch; a failing action is logged and the run continues.
 
-## 6. Shared config and the CLI contract
+## 6. Data, config and the CLI contract
 
-**Config, one source of truth.** `daemon/config/default.toml` (shipped) < `/etc/wsl-care/config.toml`
-(machine) < `~/.config/wsl-care/config.toml` (user overrides, written by the extension). The daemon runs
-without VS Code, so the file — not the editor — is the truth; the extension's settings are an editor for
-it (§7.4).
+**Runs and their records.** Every run — timer, button, or *Run full check now* — gets a `runId` (UTC
+timestamp + pid) and writes:
 
-**CLI** (`/opt/wsl-care/bin/wsl-care`), the only interface the extension uses — no second implementation
-of any collector in TypeScript:
+| File | Content | Kept |
+|---|---|---|
+| `/var/lib/wsl-care/history.jsonl` | one summary line per run: trigger, dryRun, metrics (§4), warnings, per-action `{id, count, freedBytes}` | 90 days |
+| `/var/lib/wsl-care/runs/{yyyy-MM-dd}/{runId}.json` | the full detail: **every** removed object (type, id, name, image, age, size), the preview that triggered it, before/after numbers | 90 days |
+| `/var/log/wsl-care/{yyyy-MM-dd}/wsl-care-{HH-mm-ss}-{pid}.log` | the human-readable run log (UTC, one file per run) | 30 days |
+| `/var/lib/wsl-care/container-starts/{yyyy-MM-dd}.jsonl` | §4.3 | 14 days |
+| `%LOCALAPPDATA%\wsl-care\history.jsonl` | Windows-probe readings (§2) | 90 days |
+
+**Config, one source of truth:** JSON (System.Text.Json source generation — AOT-safe), validated against a
+schema. `default.json` (embedded) < `/etc/wsl-care/config.json` (machine) < `~/.config/wsl-care/config.json`
+(user overrides, written by the extension). The daemon runs without VS Code, so the file is the truth; the
+extension's settings are an editor for it (§7.5).
+
+**CLI** — `wsl-care` (Linux, `/opt/wsl-care/bin`) and `wsl-care.exe` (Windows probe, inside the `.vsix`);
+the only interface the extension uses, so no collector is implemented twice:
 
 | Command | Output | Used by |
 |---|---|---|
-| `wsl-care status --json` | fresh fast snapshot (< 2 s: meminfo, buddyinfo, `docker ps`, `df`, starts-24h count, last full-run record for the slow parts) | panel, status bar |
-| `wsl-care collect` | full run (timer target) | timer, "Run full check now" button |
-| `wsl-care act <A#> --preview --json` | what would be removed / freed, with counts and GB | every button, before confirmation |
-| `wsl-care act <A#>[,<A#>…] --json` | one result row per action (*what*, *count*, *freed GB*) + "Docker after" totals | button after confirmation, **Clean selected** |
-| `wsl-care preview --all --json` | every §4.3 cleanup row with count and reclaimable GB, plus the kept named volumes | panel *Cleanup* table |
-| `wsl-care cleanups --since 30d --json` | the `cleanups.jsonl` records and per-action totals | panel *Cleanup history* |
-| `wsl-care history --since 24h --json` | records for charts | panel charts |
-| `wsl-care config get/set <key> <value>` | validated read/write of the user override file | settings sync |
-| `wsl-care doctor --json` | sysstat/atop/timer/events-unit health | panel "Health" section |
+| `status --json` | fresh fast snapshot (< 2 s), slow parts from the last full run with their age | panel, status bar |
+| `collect` | full run (timer target) | timer, *Run full check now* |
+| `preview --all --json` | every §4.3 cleanup row with count and reclaimable GB, plus kept named volumes | *Cleanup* table |
+| `act <A#>[,<A#>…] [--preview] --json` | per action: *what*, *count*, *freed GB*; then "Docker after" | buttons |
+| `logs --period today\|yesterday\|date:YYYY-MM-DD\|range:FROM..TO --json` | runs in the period + aggregates (§7.4) | *Logs* page |
+| `runs show <runId> --json` / `runs log <runId>` | one run's full detail / its raw log text | *Logs* page |
+| `agents list --json` / `agents probe <path> --json` | §4.6 discovery result / what a manual CLI path resolves to | *AI agents* section, *Add CLI path* |
+| `config get` / `config set <key> <value>` | validated read/write of the user override file | settings sync |
+| `doctor --json` | sysstat/atop/timer/events-unit health, versions | *Health* section |
+| `events follow` | the §4.3 follower | `wsl-care-events.service` |
 
-The JSON carries `schemaVersion`; the extension refuses a major version it does not know and says so.
+Every JSON answer carries `schemaVersion`; the extension refuses a major version it does not know and says
+so.
 
-**Durable running state.** A running action writes `/var/lib/wsl-care/running.json` (action, pid, start)
-before it starts and removes it when it ends; the timer's startup sweep removes a stale one whose pid is
-gone. The extension derives "Cleaning…" from that file, not from its own memory, so a VS Code reload
-mid-cleanup still shows the truth and never sticks on a dead run.
+**Durable running state.** A running action writes `/var/lib/wsl-care/running.json` (action, pid, start,
+heartbeat every 5 s) before it starts and removes it when it ends; a reader treats a heartbeat older than
+30 s as dead (a pid alone can be reused). The extension derives "Cleaning…" from that file, so a VS Code
+reload mid-cleanup still shows the truth and never sticks on a dead run.
 
-## 7. The VS Code extension (`extension/`)
+## 7. The VS Code extension (`src_vs_code/`)
 
 ### 7.1 Where it runs
 
-`extensionKind: ["ui"]` — it runs on the **Windows** side whether the window is local or *Remote – WSL*,
-and reaches the daemon with `wsl.exe -d <distro> -- /opt/wsl-care/bin/wsl-care …`. A3–A8 and A12 run as
-the user; A1, A2, A9, A10 and A11 (other users' processes) need `-u root`, which `wsl.exe` grants without a
-password. Running on Windows also gives it two numbers the daemon cannot see: the `vmmemWSL`
-working set and host RAM.
+`extensionKind: ["ui"]` — it runs on the **Windows** side whether the window is local or *Remote – WSL*;
+reaches the daemon with `wsl.exe -d <distro> -- /opt/wsl-care/bin/wsl-care …` (A1, A2, A9, A10, A11 with
+`-u root`, which `wsl.exe` grants without a password) and runs the bundled `wsl-care.exe` for Windows-side
+numbers.
 
 ### 7.2 What you see
 
-**Status bar** (always): `WSL RAM 62 % · swap 1.2 G · / 13 %` with a colour (ok / warn / alert from the
-daemon's rules); click opens the panel. Refresh every 60 s, and immediately after any button.
+**Status bar:** `WSL RAM 62 % · swap 1.2 G · / 13 %`, coloured ok / warn / alert; click opens the panel.
 
-**Side panel "WSL Care"** (activity-bar view, webview), sections:
+**Side panel "WSL Care"**, sections:
 
 | Section | Shows |
 |---|---|
-| **Memory** | VM: used / available / cache / inactive-anon / free, of the 46 GB ceiling; `vmmemWSL` on Windows; host RAM; fragmentation indicator; a sparkline of `MemAvailable` today (from history + `sar -r`) |
+| **Memory** | VM used / available / cache / inactive-anon / free of the ceiling; `vmmemWSL`; host RAM; fragmentation; sparkline of `MemAvailable` today |
 | **Swap** | used / total, trend today |
-| **Disk** | `/` used / free; host `C:` free; the three `.vhdx` sizes and "could shrink by ~X GB" hint; big folders (daily `du`) |
-| **Containers** | running now; started in the last 24 h (total + top images); stopped (of which Testcontainers, of which ≥ N days); the "Docker after" line — images / containers / volumes / build cache with count, size and reclaimable |
-| **Top holders** | top Ubuntu processes and families by RSS, top containers by memory, the *unattributed* residue |
-| **Health** | last full run (time, result), warnings since it, clock jumps, journald span, sysstat/atop/timer/events-unit state |
-| **Cleanup** | the table of the one-time cleanup, live: one row per A4–A9 — *what* (with the current age limit in the text, e.g. "containers stopped ≥ 7 days, with their anonymous volumes"), *count*, *reclaimable GB*, a checkbox and a **Clean** button; A1–A3 and A10–A12 as further rows; a **Clean selected** button with the total GB; a *Kept* sub-table of unattached named volumes (size, last used container) with no button; **Run full check now** |
-| **Last cleanup** | the result of the most recent run in the same table shape — *what*, *freed* — plus "Docker after: …"; who ran it (timer / button) and when |
-| **Cleanup history** | freed GB per day and per action over 30 days (from `cleanups.jsonl`); totals for 7 and 30 days |
+| **Disk** | `/` used / free; `C:` free; `.vhdx` sizes with a "could shrink by ~X GB" hint; big folders |
+| **Containers** | running now; started in the last 24 h (total + top images); stopped (Testcontainers, ≥ N days); "Docker after" totals |
+| **AI agents** | one row per tracked agent (§4.6): side, size, sessions, largest session, growth; warnings; the **Add CLI path…** row |
+| **Top holders** | top processes and families by RSS, top containers, the *unattributed* residue |
+| **Health** | last full run, warnings since, clock jumps, journald span, sysstat/atop/timer/events state |
+| **Cleanup** | the live table of the one-time cleanup: one row per A4–A9 — *what* (with the current age limit in the text), *count*, *reclaimable GB*, a checkbox and **Clean**; A1–A3, A10–A12 as further rows; **Clean selected** with the total; a *Kept* sub-table of unattached named volumes, no button; **Run full check now** |
+| **Last cleanup** | the most recent run's freed table + "Docker after", who ran it and when |
+
+The panel's title bar carries three buttons: **Logs** (§7.4), **Help** (§7.6), **Settings**.
 
 ### 7.3 Buttons
 
 Click → `act <A#> --preview` → a modal with exactly what will be removed (counts, names for ≤ 20 items, GB)
-→ **Confirm** → `act <A#>` → the result (freed GB / MB) as a notification and in the panel. **Clean
-selected** previews every ticked row in one modal (the table with a total) and runs them in the order
-A5 → A4 → A6 → A7 → A8 → A9 (removing containers first frees their volumes and images for the later
-steps — the order of the 2026-10-02 run); its result is one table, shown under *Last cleanup*. Actions
-that touch user data or force re-downloads (A5 for non-Testcontainers containers, A6 unused images, A8,
-A11, A12) need a second confirmation that names the setting they used. While running, the buttons read
-*Cleaning…* and are disabled (from `running.json`, §6).
+→ **Confirm** → `act <A#>` → the result as a notification and under *Last cleanup*. **Clean selected**
+previews every ticked row in one modal and runs them in the order A5 → A4 → A6 → A7 → A8 → A9 (removing
+containers first frees their volumes and images — the order of the 2026-10-02 run). Actions that touch
+user data or force re-downloads (A5 for non-Testcontainers, A6 unused, A8, A11, A12) need a second
+confirmation that names the setting they used. While running, the buttons read *Cleaning…* (from
+`running.json`, §6).
 
-### 7.4 Settings
+### 7.4 Logs page
 
-VS Code settings under `wslCare.*`, each mirrored to `~/.config/wsl-care/config.toml` via
-`wsl-care config set` on change (validated by the CLI; an invalid value is rejected with its message and
-the setting is reverted):
+Opened by **Logs** in the panel title, and by **Logs** next to every row of *Last cleanup* (opens that run).
 
-- `wslCare.distro` (default `Ubuntu`)
+**Period selector:** *This run* (per cleanup) · *Today* · *Yesterday* · **date picker** (a single day or a
+from–to range). The period is part of the page state and survives a reload.
+
+For the selected period:
+
+| Block | Content |
+|---|---|
+| **Totals** | freed in total and **per action** (A4 volumes, A5 containers, A6 images, A7 build cache, A8 npm, A9 apt/snap, …), in GB and object counts |
+| **Runs** | number of runs; **with a cleanup** (at least one action freed something) vs **without**; dry-run runs counted separately ("would have freed X GB"); timer vs button |
+| **Max / min** | the run that freed the most and the least (non-zero); per metric over the period — `MemAvailable`, swap used, `/` used, `vmmemWSL`, Docker reclaimable — max and min with the time they occurred |
+| **Run list** | time, trigger, dryRun, actions, freed; expand a run → **what exactly was removed**: every object with type, name/id, image, age and size (from `runs/{day}/{runId}.json`); a link to its raw run log |
+
+Everything comes from `wsl-care logs` / `runs show` — the page computes nothing itself.
+
+### 7.5 Settings
+
+VS Code settings under `wslCare.*`, each mirrored to the user config file via `config set` on change
+(validated by the CLI; a rejected value is reverted with its message):
+
+- `wslCare.distro` (`Ubuntu`), `wslCare.refreshSeconds` (60), `wslCare.dryRun` (true for the first week),
+  `wslCare.auto.<A#>` per action
 - `wslCare.volumes.anonymousMaxCount` (100), `wslCare.volumes.anonymousMaxGb` (20)
 - `wslCare.containers.stoppedOlderThanDays` (7), `wslCare.containers.testcontainersOlderThanHours` (2)
 - `wslCare.images.unusedOlderThanDays` (7), `wslCare.images.unusedMaxGb` (10)
 - `wslCare.buildCache.maxGb` (20), `wslCare.buildCache.olderThanDays` (7)
-- `wslCare.npm.maxCacheGb` (5), `wslCare.journal.keepDays` (30)
-- `wslCare.buildServers.idleHours` (4)
+- `wslCare.npm.maxCacheGb` (5), `wslCare.journal.keepDays` (30), `wslCare.buildServers.idleHours` (4)
 - `wslCare.processes.killEnabled` (false), `wslCare.processes.idleOlderThanHours` (8),
   `wslCare.processes.families` (`["dotnet-build-servers","testhost"]`)
 - `wslCare.thresholds.memAvailableWarnPercent` (25), `…ActPercent` (15), `wslCare.thresholds.swapWarnGb` (4)
-- `wslCare.auto.<A#>` — the per-action `auto` switch, and `wslCare.dryRun` (true for the first week)
-- `wslCare.refreshSeconds` (60)
+- `wslCare.aiAgents.warnGb` (5), `wslCare.aiAgents.sessionWarnMb` (500), `wslCare.aiAgents.extra` (array,
+  written by *Add CLI path*)
+- Display, as in coai (§7.6): `wslCare.helpLanguage` (`en`), `wslCare.uiScale` (0, −5…5),
+  `wslCare.textTone` (0, −5…5) — `ConfigurationTarget.Global`, not mirrored to the daemon's config.
 
-On startup the extension reads the file (`config get`) and shows a one-time notice when it differs from
-the VS Code settings, offering which side to keep — never silently overwriting either.
+On startup the extension reads the file (`config get`) and, when it differs from the VS Code settings,
+shows a one-time notice offering which side to keep — never silently overwriting either.
 
-### 7.5 First run and install
+### 7.6 Help page, language, text size and brightness — as in coai
 
-If `wsl-care` is missing in the distro, the panel shows **Install daemon** → runs `install.sh` from the
-bundled `daemon/` (copied to the distro through `\\wsl$`), which installs `sysstat` and `atop` (10-minute
-intervals), the CLI, both units, and the default config — with an apt password prompt in a VS Code
-terminal, never stored. **Uninstall** removes units and `/opt/wsl-care`, keeps history unless asked.
+Reuse coai's design (`dew_flow_connect_other_ais/src_vs_code/src/`), module for module:
 
-### 7.6 Stack
+| Piece | coai source | Here |
+|---|---|---|
+| Help command + button in the panel title | `package.json` `coai.help` (`view/title`, `navigation@0`), `extension.ts` `registerCommand('coai.help', showHelp)` | `wslCare.help` |
+| Single-instance help webview, re-rendered on language change, `enableFindWidget`, CSP with nonce | `helpPanel.ts`, `helpPage.ts` (`renderHelpHtml`, mini-markup, client-side routing, search index) | same shape |
+| Articles as typed TS literals: `HelpBody { title, whatItIs, why, setup, usage, whatCanGoWrong }`; English in `helpContent.ts`, one file per language (`helpRu.ts`, `helpUk.ts`, `helpDe.ts`, `helpEs.ts`) | `helpContent.ts`, `help<Lang>.ts` | one article per section, action and setting |
+| Missing translation → English with a "not translated yet" note | `bodyFor` → `{ body, fallback }` | same |
+| **Stale translation** detection: an 8-hex digest of the English body stamped next to each translation; a changed English text marks the translation *stale* and shows a note; `npm run help:stamp` | coai *plan* `todo/PLAN_a_stale_translation_is_invisible.md` (not built there yet) | **built in from day one** |
+| Text size: `uiScale` −5…5, 13 px base × 1.1 per step, applied as `font-size` on `body` | `zoomControl.ts`, `uiScaleHost.ts` | `wslCare.uiScale` |
+| Brightness ("tone"): `textTone` −5…5, 8 % `color-mix` per step towards a warm or away colour, CSS variables, light-theme switch | `textTone.ts`, `textToneHost.ts` | `wslCare.textTone` |
+| Setting writes report their failure to the user | `settingWrite.ts` | same |
+| Escaping / JSON-in-script helpers | `webviewHtml.ts` (`escapeHtml`, `jsonForScript`) | same |
 
-TypeScript, the VS Code API, a plain webview (no framework) with `postMessage`; process calls through one
-`WslCareClient` class (spawn `wsl.exe`, timeout, JSON parse, schema check). Packaged with `@vscode/vsce` to
-a `.vsix`. Before choosing lint/test tool versions, check them against the current TypeScript major (a
-TypeScript major can outrun `typescript-eslint`).
+Scope of translation, as in coai: help articles in five languages; the rest of the UI in English. Zoom and
+tone apply to **every** page — panel, logs, help — from one value.
 
-## 8. Repository layout
+**Reuse note.** These modules are copied from coai (MIT, same author) with a header naming the source
+commit. Two copies will drift; extracting them into a shared npm package is §13 Q1, not this plan.
+
+### 7.7 First run and install
+
+If `wsl-care` is missing in the distro, the panel shows **Install daemon** → runs the released `install.sh`
+in a VS Code terminal (an apt password prompt, never stored): the binary, `sysstat` + `atop` (10-minute
+intervals), both units, the default config. **Uninstall** removes units and `/opt/wsl-care`, keeps history
+unless asked.
+
+## 8. Daemon implementation (`src_daemon/`)
+
+| Piece | Choice |
+|---|---|
+| Runtime | .NET 10, `PublishAot=true`, `StripSymbols=true`, `InvariantGlobalization=true`, `JsonSerializerIsReflectionEnabledByDefault=false` — as `CredsCli.csproj`; **zero** AOT/trim warnings (`TreatWarningsAsErrors`) |
+| Projects | `WslCare.Core` (collectors, rules, actions, records — no I/O behind interfaces it does not own), `WslCare.Cli` (the AOT executable, command routing), `WslCare.Core.Tests`, `WslCare.Cli.Tests` |
+| Process calls | one `ICommandRunner` (argument arrays, timeouts, captured output); tests swap it for a recorder — the only place a process starts |
+| Platform split | `IHostProbe` with `LinuxProbe` (`/proc`, systemd, Docker) and `WindowsProbe` (`vmmemWSL`, host RAM, Windows AI-agent folders); one binary per RID |
+| JSON | System.Text.Json source-generated contexts for config, records and CLI output |
+| Logging | Serilog per the family logging rule: coloured console (journald under systemd) + one file per run at `/var/log/wsl-care/{day}/…`, UTC; configured in code (no reflection-based settings reader under AOT), levels from the JSON config |
+| Units | `wsl-care.service` (`Type=oneshot`, root, `Nice=19`, `IOSchedulingClass=idle`, `MemoryMax=256M`, `TimeoutStartSec=10min`); `wsl-care.timer` (`OnBootSec=20min`, `OnUnitActiveSec=4h`, `AccuracySec=5min` — monotonic: the VM is off every night); `wsl-care-events.service` |
+
+## 9. CI/CD — by analogy with CredsForDevs
+
+Mirror `dew_flow_creds_for_devs` (`.github/`, root build files, `install.sh`); differences only where this
+repo is smaller.
+
+**Repository basics.** `Directory.Build.props` (`net10.0`, `Nullable`, `TreatWarningsAsErrors`,
+`ManagePackageVersionsCentrally`, `InvariantGlobalization`), `Directory.Packages.props` (central versions,
+a reason comment on every pin; `xunit.v3`, FluentAssertions held at 7.x for its licence),
+`global.json` (`10.0.100`, `rollForward: latestFeature`, `test.runner: Microsoft.Testing.Platform`),
+`Directory.Build.rsp` (`-nr:false`), `nuget.config` (`<clear/>` + nuget.org). Tests are xUnit v3 MTP
+**executables** — never `dotnet test`.
+
+| Workflow | Copies | Does |
+|---|---|---|
+| `ci-daemon.yml` | `ci-clients.yml` + `ci-server.yml` | push/PR on `main`, path filter `src_daemon/**`; matrix `ubuntu-latest` + `windows-latest`: `dotnet format --verify-no-changes` → build → test executables → `dotnet publish -r <rid>` (AOT) → smoke `wsl-care --help` |
+| `ci-extension.yml` | `ci-extension.yml` | `npm ci` → typecheck → lint → test → `vsce package` → artifact (14 days) |
+| `release-please.yml` | same | `workflow_dispatch`; token minted by a GitHub App (tags made with `GITHUB_TOKEN` trigger nothing) |
+| `release.yml` | same | tags `daemon-v*`, `extension-v*`. **daemon:** native runners per RID (AOT does not cross-compile) — `linux-x64`, `linux-arm64` (`ubuntu-24.04-arm`), `win-x64` (the probe); tests → publish → smoke → `wsl-care-$VERSION-$RID.tar.gz` / `.zip` + `.sha256` → uploaded to the release-please **draft** → "every RID has an asset" check → publish. **extension:** tag must equal `package.json` version; the `win-x64` probe is downloaded from the matching daemon release and bundled; `vsce package` once → `vsce publish --packagePath` (`VSCE_PAT`) → `.vsix` on the release |
+| `pr-title.yml` | same | conventional-commit PR titles |
+| `coderabbit-review.yml` + `.coderabbit.yaml` | same | `language: ru-RU`, `profile: chill` |
+| `sonarcloud.yml` | same | `dotnet-coverage` over the test executables + `c8` for the extension |
+| `ci-workflows` job | `ci-server.yml` actionlint job | actionlint pinned by version + SHA-256, shellcheck present |
+| `.github/dependabot.yml` | same | nuget, npm (`/src_vs_code`), github-actions; weekly; FluentAssertions major, `@types/vscode` major+minor ignored |
+| `.github/branch-protection.json` + `scripts/branch-protection.mjs`, `.github/tag-ruleset.json` | same | required job names, linear history, conversation resolution; tag ruleset on `daemon-v*`/`extension-v*` with only the GitHub App as bypass; CodeQL via default setup |
+
+`release-please-config.json`: `separate-pull-requests`, `include-component-in-tag`, `tag-separator: "-"`,
+`draft: true`, `force-tag-creation: true` (without it a draft cuts no tag and `release.yml` never runs),
+`exclude-paths: [".github"]`; packages `src_daemon` → component `daemon` (`simple`), `src_vs_code` →
+`extension` (`node`). Every `uses:` pinned by SHA, `permissions: contents: read`, `persist-credentials:
+false`, `concurrency` with cancel-in-progress, `timeout-minutes` everywhere.
+
+**`install.sh`** (as CredsForDevs': POSIX `sh`, `curl … | sh`): detect `linux-x64`/`linux-arm64`, find the
+newest `daemon-v*` through the releases API (not `releases/latest`, which is the `.vsix`), download the
+tarball **and its `.sha256` and verify** (abort on mismatch), install to `/opt/wsl-care/bin` with
+`install -m 0755`, then — the part CredsForDevs does not need — install `sysstat` + `atop`, the units and
+the default config, `systemctl enable --now wsl-care.timer wsl-care-events.service`, and smoke
+`wsl-care doctor`.
+
+Secrets to create: `RELEASE_PLEASE_APP_ID`, `RELEASE_PLEASE_APP_PRIVATE_KEY`, `VSCE_PAT`, `SONAR_TOKEN`.
+
+## 10. Repository layout
 
 ```
-daemon/
-  src/wsl_care/   collect/ rules.py actions/ report.py cli.py config.py
-  config/default.toml
-  systemd/        wsl-care.service wsl-care.timer wsl-care-events.service
-  install.sh uninstall.sh
-  tests/          fixtures/ (captured from this machine)
-extension/
-  src/            extension.ts client/WslCareClient.ts views/ settings/
-  media/          panel.html panel.css panel.js
-  test/
-research/         baseline + weekly results
-todo/             this plan
-.gitattributes    *.sh *.py *.toml *.service *.timer text eol=lf
+src_daemon/
+  src/WslCare.Core/  Collectors/ Rules/ Actions/ Records/ Agents/agents.json
+  src/WslCare.Cli/   Program.cs Commands/  (AOT executable: wsl-care / wsl-care.exe)
+  tests/             WslCare.Core.Tests/ WslCare.Cli.Tests/ fixtures/ (captured from this machine)
+  config/default.json  systemd/ (wsl-care.service, .timer, wsl-care-events.service)
+src_vs_code/
+  src/   extension.ts client/WslCareClient.ts views/ logs/ help/ (helpContent, help<Lang>) zoom/ tone/ settings/
+  media/ test/
+.github/  workflows/ dependabot.yml branch-protection.json tag-ruleset.json scripts/
+install.sh  release-please-config.json  .release-please-manifest.json
+Directory.Build.props  Directory.Packages.props  global.json  nuget.config  wsl_care.slnx
+research/  todo/
 ```
 
-Daemon: Python 3.12, **standard library only** (`tomllib`, `json`, `subprocess`, `unittest`). Units:
-`wsl-care.service` (`Type=oneshot`, root, `Nice=19`, `IOSchedulingClass=idle`, `MemoryMax=256M`,
-`TimeoutStartSec=10min`); `wsl-care.timer` (`OnBootSec=20min`, `OnUnitActiveSec=4h`, `AccuracySec=5min` —
-monotonic, because the VM is off every night). Logs: `/var/lib/wsl-care/history.jsonl` (90 days) and
-`/var/log/wsl-care/{yyyy-MM-dd}/wsl-care-{HH-mm-ss}-{pid}.log` (UTC, one file per run); every warning also
-goes to `logger -t wsl-care`.
+## 11. Build order
 
-## 9. Build order
+1. Root build files, `wsl_care.slnx`, `ci-daemon.yml` + `ci-workflows` job on an empty Core/Cli/tests
+   skeleton — CI green before any feature.
+2. Config (JSON + schema, three layers), `ICommandRunner`, records; collectors §4.1–4.5;
+   `status --json` / `collect`; `events follow`.
+3. Rules; history, run detail files, run log, Serilog.
+4. Actions A1–A17 with `--preview`; the never-list guard; `running.json` with heartbeat; `logs` / `runs`.
+5. AI-agent catalogue, discovery, `agents list` / `agents probe`; the Windows probe build.
+6. `install.sh`, units; **observe only** first.
+7. Extension: `WslCareClient`, status bar, panel sections read-only, `ci-extension.yml`.
+8. Extension: cleanup buttons, *Last cleanup*, *Logs* page.
+9. Extension: settings ↔ config sync, *Add CLI path*, help page + zoom + tone + stale-translation stamps.
+10. Release pipeline: release-please, `release.yml`, tag ruleset, branch protection, dependabot, Sonar,
+    CodeRabbit; first `daemon-v0.1.0` + `extension-v0.1.0` — the **first working prototype is published to the VS Code Marketplace right away** (user decision 2026-10-02): publisher id, `VSCE_PAT`, icon, README, `CHANGELOG.md`, `engines.vscode` aligned with `@types/vscode`.
+11. One week of timer `dryRun`; review in `research/`, tune, switch `dryRun` off action by action.
 
-1. Repo skeleton, `.gitattributes`, default config, `config.py` (three-layer merge + validation).
-2. Collectors + `wsl-care status --json` / `collect`; `wsl-care-events.service` for 24-h starts.
-3. `rules.py`; history, run log, `logger`.
-4. Actions A1–A12 with `--preview`; the never-list guard; `running.json` + sweep.
-5. `install.sh` (sysstat, atop, units, CLI) — **observe only** first, actions off.
-6. Extension: `WslCareClient`, status bar, panel sections read-only.
-7. Extension: Cleanup buttons (preview → confirm → act), running state.
-8. Extension: settings ↔ config file sync, first-run install.
-9. Package `.vsix`, install, one week of timer `dry_run`; review in `research/`, tune, switch `dry_run` off
-   action by action.
+## 12. Test plan
 
-## 10. Test plan
-
-**Daemon** (`unittest`, fixtures captured from this machine):
+**Daemon** (xUnit v3 MTP executables, FluentAssertions 7.x, fixtures captured from this machine):
 - Parsers: `/proc/meminfo`, `/proc/buddyinfo`, `/proc/pressure/memory`, `ps`, `docker … --format json`.
 - The 2026-10-01 18:36 state (free 0.27 GB, no order ≥ 4 blocks) → `alert` + A1 + A2; a fresh-boot
   fixture → `ok`, no action.
-- Each threshold just below and just above its value; each age setting at its edge (e.g. a Testcontainers
-  container at 1 h 59 min stays, at 2 h 01 min goes).
-- Actions against a fake executor that records commands: assert **exactly** which commands run; a property
-  test that no input can make any action emit a command from the *never* list; A4 refuses on Docker 22;
-  A11 never targets a process with a TTY or recent CPU.
-- Guards: `dry_run` emits nothing; a second run exits on the lock; a failing action does not stop the run;
-  a stale `running.json` with a dead pid is swept.
-- Config: three-layer merge order; `config set` rejects an out-of-range value with a message.
-- Events follower: a recorded `docker events` stream → per-day files and a correct 24-h count across
-  midnight.
-- Cleanup rows, from fixtures recorded on 2026-10-02 (`docker system df -v`, `docker inspect`,
-  `docker volume ls`): A4 counts the 387 anonymous dangling volumes / 59.6 GB and **excludes** the 7 named
+- Each threshold and each age setting at its edge.
+- Cleanup rows from the 2026-10-02 fixtures: A4 counts 387 volumes / 59.6 GB and excludes the 7 named
   dangling ones; A5 at 7 days selects the 58 containers and leaves the 18 younger ones; A6 never lists an
-  image that a stopped container uses; A7 with `olderThanDays=7` alone selects ~0 GB while the size cap
-  selects the cache (the observed trap); A9 lists only `disabled` snap revisions.
-- Freed-bytes parsing of Docker's "Total reclaimed space: 59.59GB" / "kB" / "B" lines; `cleanups.jsonl`
-  append + 30-day totals; **Clean selected** runs in the A5 → A4 → A6 → A7 → A8 → A9 order.
+  image a stopped container uses; A7 with only the age filter selects ~0 GB while the size cap selects the
+  cache; A9 lists only disabled snap revisions; A4 refuses on Docker 22.
+- Actions against the recording `ICommandRunner`: exactly which commands run; a property test that no input
+  makes any action emit a *never* command; A11 never targets a process with a TTY or recent CPU.
+- Guards: `dryRun` emits nothing; a second run exits on the lock; a failing action does not stop the run; a
+  `running.json` with a stale heartbeat is treated as dead.
+- Logs: `logs --period` for today / yesterday / a date / a range across midnight UTC vs local time; runs
+  with vs without cleanup; dry-run runs counted apart; max/min freed and max/min per metric with times; the
+  run detail lists every removed object.
+- AI agents: discovery over a fake home tree (each catalogue entry found by binary, by npm package, by
+  folder alone); session counting per layout; `agents probe` on a manual path finds conventional folders;
+  a non-executable or missing path is rejected with a message.
+- Config: merge order; `config set` rejects out-of-range values.
+- AOT: the CI publish step plus a smoke run of the published binary — a reflection path that works under
+  JIT but breaks under AOT fails here, not on the user's machine.
 
-**Extension**:
-- `WslCareClient` against a fake `wsl.exe` (a script printing recorded JSON): parse, timeout, non-zero
+**Extension** (as coai/CredsForDevs):
+- `WslCareClient` against a fake `wsl.exe` / `wsl-care.exe` printing recorded JSON: parse, timeout, non-zero
   exit, unknown `schemaVersion`.
-- Pure view-model functions (bytes → "12.3 GB", status colour, button enabled/disabled from
-  `running.json`) unit-tested without VS Code.
-- Settings sync: changed setting → exactly one `config set`; rejected value → setting reverted + message.
+- View-model functions (bytes → "12.3 GB", colours, button state from `running.json`, period labels).
+- Logs page: the period selector produces the right `logs --period` argument and survives a reload.
+- Help, ported from coai's tests: every command and setting has an article; every article in every
+  language; translations differ from English; a stale digest is reported; fallback note shown.
+- Zoom/tone: every page that has zoom also has tone; values clamp to −5…5; the host pushes the value.
+- Page scripts are **run** against a synthetic document, not matched as text (coai's
+  `panelStorageScript.test.ts` pattern).
 - Integration (`@vscode/test-electron`): the extension activates, the status bar item appears, the panel
   renders against the fake client.
 
-**Live smoke on this machine:** `wsl-care status --json`; one timer-driven run and its run log; each
-button's preview against the real Docker; A1 for real with the before/after `MemAvailable` recorded.
+**Live smoke on this machine:** `wsl-care status --json`; one timer run and its log; each button's preview
+against the real Docker; A1 for real with before/after `MemAvailable`; `agents list` on both sides matches
+the §4.6 numbers.
 
-## 11. Definition of Done
+## 13. Open questions
 
-- [ ] Phase 0 steps done or explicitly declined, each with its before/after numbers in `research/`.
-- [ ] `sysstat` and `atop` collect; the timer runs every 4 h; `history.jsonl`, run logs and the 24-h
-      container-start files appear.
-- [ ] A1–A12 implemented with `--preview`, each switchable; the timer's `dry_run` week reviewed.
+1. ~~Copy coai's modules or extract a shared package?~~ → proposed in
+   [PLAN_shared_vscode_kit.md](PLAN_shared_vscode_kit.md) (new repo + public npm package); awaits the
+   user's go-ahead and its own open questions (scope name, live regions).
+2. ~~AI-agent data cleanup?~~ → **decided 2026-10-02: move, never delete** —
+   [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md).
+3. Windows toast notifications on `alert` — on by default, or only the status-bar colour?
+4. Should A1 also run on a short timer (every 30 min)? `autoMemoryReclaim` (0.1) may make it unnecessary.
+5. Which process families belong in the A11 allowlist by default — decide from one week of §4.2 data.
+6. Install the daemon also into `Ubuntu-26.04`, or stop that distro when idle (0.6)?
+7. ~~Marketplace from the start?~~ → **decided 2026-10-02: first working prototype, then publish at once**
+   (§11 step 10).
+8. Verify on this machine that `autoMemoryReclaim` really defaults to `dropCache` on WSL 2.7.10 (the survey
+   cites 2.1.3 release notes) — it decides whether A1 duplicates WSL's own idle reclaim.
+
+## 14. Definition of Done
+
+- [ ] Phase 0 steps done or explicitly declined, each with before/after numbers in `research/`.
+- [ ] The AOT binary builds with zero AOT/trim warnings for `linux-x64`, `linux-arm64`, `win-x64`.
+- [ ] `install.sh` verifies the checksum; `sysstat` and `atop` collect; the timer runs every 4 h; history,
+      run details, run logs and container-start files appear.
+- [ ] A1–A17 implemented with `--preview`, each switchable; the timer's `dryRun` week reviewed.
 - [ ] Nothing from the *never* list can be executed — enforced by tests.
-- [ ] The extension shows disk, RAM, swap, containers (now / 24 h / reclaimable), top holders and health;
-      every button previews, confirms and reports what it freed; settings round-trip to the config file.
-- [ ] The *Cleanup* table shows the same rows as the 2026-10-02 one-time cleanup (anonymous volumes,
-      old stopped containers, unused images, build cache, npm cache, apt/snap) with count and reclaimable
-      GB, and *Last cleanup* shows the freed table + "Docker after" in the same shape.
-- [ ] Daemon and extension tests green, including the 2026-10-01 fixture.
+- [ ] The extension shows memory, swap, disk, containers (now / 24 h / reclaimable), AI agents (both sides,
+      with *Add CLI path*), top holders, health; the *Cleanup* table has the 2026-10-02 rows; *Last
+      cleanup* shows the freed table + "Docker after".
+- [ ] The *Logs* page answers, for this run / today / yesterday / any date or range: what was removed in
+      detail, totals per action, runs with and without cleanup, max and min.
+- [ ] Help in en/ru/uk/de/es with fallback and stale-translation notes; text size and tone on every page.
+- [ ] CI green on every workflow; a tagged release publishes daemon binaries with `.sha256` and the `.vsix`.
 - [ ] The §1 success criterion checked over one working week and recorded in `research/`.
 - [ ] This plan promoted to `research/` with status `IMPLEMENTED <date>` and its deviations.
-
-## 12. Open questions
-
-1. Windows toast notifications on `alert` from the extension (easy, it runs on Windows) — on by default, or
-   only the status-bar colour?
-2. Should A1 also run on a short timer (every 30 min) while 4 h stays the full run? `autoMemoryReclaim`
-   (0.1) may make it unnecessary — decide after a week with 0.1 in place.
-3. Which process families, if any, belong in the A11 allowlist by default — decide from one week of §4.2
-   data, not before.
-4. Should the daemon also be installed into `Ubuntu-26.04`, or should that distro simply be stopped when
-   idle (0.6)?
