@@ -23,6 +23,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The captured procfs / cgroup trees (fixtures/procfs/*/SOURCE.txt says what, when and how), copied
+         beside the runner as fixtures/procfs/… for TestSupport.ProcfsFixture. -->
+    <None Include="..\fixtures\**\*" LinkBase="fixtures" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>

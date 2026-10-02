@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.png binary
 *.vhdx binary
+# Captured procfs / cgroup trees: byte for byte (NUL-separated cmdline, trailing spaces in buddyinfo).
+src_daemon/tests/fixtures/** -text

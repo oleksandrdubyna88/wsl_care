@@ -73,7 +73,7 @@ public sealed class FakeToolFlows
     }
 
     private static string InstalledFake(ScenarioHome home, string tool) =>
-        Path.Combine(home.FakeBin, tool + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+        Path.Combine(home.FakeBin, FakeToolProtocol.FileName(tool, OperatingSystem.IsWindows()));
 
     /// <summary>A real shell resolving <paramref name="tool"/> on the scenario PATH; arguments without
     /// spaces, because cmd.exe re-parses its command line by rules of its own.</summary>

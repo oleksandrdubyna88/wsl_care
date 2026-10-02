@@ -21,9 +21,15 @@ internal static class CliRun
     public static (int Exit, string Stdout, string Stderr) Over(SandboxHost sandbox, Core.Files.IFileSystem files, params string[] args) =>
         Over(sandbox, files, Logger.None, CancellationToken.None, args);
 
-    private static (int Exit, string Stdout, string Stderr) Over(SandboxHost sandbox, Core.Files.IFileSystem files, ILogger logger, CancellationToken cancellationToken, string[] args)
+    /// <summary>The whole program over a host the test built — its own probe, clock or runner.</summary>
+    public static (int Exit, string Stdout, string Stderr) Over(CliHost host, params string[] args) =>
+        Over(host, Logger.None, CancellationToken.None, args);
+
+    private static (int Exit, string Stdout, string Stderr) Over(SandboxHost sandbox, Core.Files.IFileSystem files, ILogger logger, CancellationToken cancellationToken, string[] args) =>
+        Over(new CliHost(sandbox.Paths, files, new FixedTimeProvider(), new RecordingCommandRunner()), logger, cancellationToken, args);
+
+    private static (int Exit, string Stdout, string Stderr) Over(CliHost host, ILogger logger, CancellationToken cancellationToken, string[] args)
     {
-        var host = new CliHost(sandbox.Paths, files, new FixedTimeProvider(), new RecordingCommandRunner());
         var loaded = ConfigLoader.Load(host.Paths, host.Files);
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();

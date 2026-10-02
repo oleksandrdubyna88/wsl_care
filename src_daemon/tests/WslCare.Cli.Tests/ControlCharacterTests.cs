@@ -104,6 +104,10 @@ public sealed class ControlCharacterTests
 
         public IReadOnlyList<string> ListDirectories(string path) => inner.ListDirectories(path);
 
+        public LinkReadResult ReadLink(string path) => inner.ReadLink(path);
+
+        public VolumeReadResult MeasureVolume(string path) => inner.MeasureVolume(path);
+
         public void CreateDirectory(string path) => inner.CreateDirectory(path);
 
         public DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>
