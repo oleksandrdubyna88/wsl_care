@@ -1,6 +1,7 @@
 # PLAN — keep WSL from degrading over the working day (`wsl-care` daemon + VS Code extension)
 
-> Status: **plan only, nothing implemented yet (2026-10-02).** Scope: a C# Native AOT daemon/CLI run by a
+> Status: **in progress, 2026-10-02 — E1.S1 built (root build files, `src_daemon/` skeleton answering
+> `--help`/`--version`, its tests, `ci-daemon.yml`); the rest of §16 is still open.** Scope: a C# Native AOT daemon/CLI run by a
 > systemd timer inside the `Ubuntu` distro (`src_daemon/`), a VS Code extension that shows its state, its
 > logs and its help and runs cleanups on demand (`src_vs_code/`), CI/CD modelled on CredsForDevs, and the
 > one-time cleanups listed in Phase 0.

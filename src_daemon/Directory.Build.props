@@ -1,0 +1,22 @@
+<Project>
+
+  <!-- The repository-wide settings first: a nearer Directory.Build.props stops MSBuild's upward
+       search, so this file must import the root one explicitly or every project below would lose
+       Nullable, TreatWarningsAsErrors and central package management without a word. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)..'))" />
+
+  <!--
+    ONE version for the daemon, in ONE file. `version.txt` is the file a release-please `simple`
+    package keeps (plan §9: `src_daemon` → component `daemon`), and every assembly under src_daemon/
+    is stamped from it, so the CLI's version flag prints what the release is called rather than the
+    SDK's 1.0.0 default — a version that reads the same on every build is worse than none.
+
+    A release may still pass `-p:Version=…` on the command line; a global property wins over this.
+    0.0.0 means "nothing has been released yet".
+  -->
+  <PropertyGroup>
+    <WslCareVersionFile>$(MSBuildThisFileDirectory)version.txt</WslCareVersionFile>
+    <Version>$([System.IO.File]::ReadAllText('$(WslCareVersionFile)').Trim())</Version>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,23 @@
+# .NET build output and tool state — the subset of the family's .NET ignore list this repository
+# produces today. The Node / VS Code section arrives with src_vs_code/.
+
+# Visual Studio / Rider working folders and per-user files
+.vs/
+.idea/
+*.user
+
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# Publish output (CI and local: dotnet publish -o artifacts/publish/<rid>)
+artifacts/
+
+# MSBuild binary and structured logs
+*.binlog
+
+# Test results written by the Microsoft Testing Platform runners
+[Tt]est[Rr]esult*/
+
+# Host logs: a folder per day, a file per run (.agents/conventions/common/logging-serilog.md)
+logs/

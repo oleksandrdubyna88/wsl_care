@@ -1,0 +1,66 @@
+name: ci · workflows
+
+# The workflows themselves are code. Mirrored from the family's `workflows · actionlint` job.
+#
+# actionlint reads every file under .github/workflows. The rule that earns its place on its own is
+# the script-injection one: a `${{ }}` expression written inline in a `run:` is pasted into the shell
+# source before bash parses it. Separately, because ubuntu runners ship shellcheck, it lints the
+# `run:` blocks as shell.
+#
+# NO NEW ACTION. actionlint publishes none — only a release binary — and every `uses:` line in this
+# repository is pinned to a commit SHA so the supply chain stays auditable. The binary is pinned by
+# VERSION and verified by CHECKSUM, which is the same promise a SHA pin makes.
+#
+# THE STEP ASSERTS SHELLCHECK IS PRESENT before linting: without it actionlint keeps its own rules
+# but silently drops the shell analysis of every `run:` block — exit zero, a green check. Measured in
+# the family when this job was first added: zero findings everywhere, wrongly.
+#
+# Standalone shell scripts: the product has none yet. `install.sh` arrives with E4 and joins a
+# pinned-image shellcheck step then. The scripts under research/diagnostics/ are the record of a
+# measurement — they produced the 2026-10-02 baselines exactly as they are — and are deliberately not
+# linted or rewritten here (koalaman/shellcheck:v0.11.0 reports info/warning findings in them).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-workflows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  workflows:
+    name: workflows · actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint every workflow
+        env:
+          ACTIONLINT_VERSION: '1.7.12'
+          ACTIONLINT_SHA256: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
+        run: |
+          set -euo pipefail
+          # The dependency this gate is quietly useless without — see the note above the job.
+          command -v shellcheck > /dev/null || {
+            echo "shellcheck is not on PATH: actionlint would skip every run: block and pass"
+            exit 1
+          }
+          # Retried, because one HTTP 500 from the release host once failed an unrelated pull request
+          # in the family. `--retry-all-errors` makes curl retry a 5xx too; no fixed `--retry-delay`,
+          # which would replace curl's exponential backoff with a flat interval and spend the whole
+          # budget in seconds against an outage measured in minutes. The checksum decides what runs.
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-max-time 120 --retry-all-errors \
+            -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -color
