@@ -582,6 +582,23 @@ OVERRIDES the section it names.
 
 Findings 2, 7, 16 amend the archive plan and 11, 13 the Windows plan — see their own amendment sections.
 
+### 15a. Gate — epic 1 plan round (2026-10-02)
+
+| # | Lands in | Decision |
+|---|---|---|
+| 0 | E1.S2 (record), E3.S1 (sweep) | **Accepted.** No persisted list is trusted across a crash: every action computes its targets from live state at run time (A4 re-lists, §15 #4; the archive reconciles, E9), and is idempotent per target — a volume already gone counts as *already gone*, not a failure. The startup sweep that removes a dead or mismatched `running.json` also writes a run record with outcome `interrupted` (action, start, last heartbeat), so history never shows a run that silently vanished. E1.S2's run-record type carries `interrupted` from the start. |
+| 1 | E1.S2 | **Accepted, changed.** An unreadable or schema-invalid layer never stops the daemon, and is never silently replaced by defaults either — a default can re-enable an action the user switched off. The run degrades to **observe-only** (collect and report, no `act`), `status`/`doctor` carry `configError {file, line, message}`, the panel shows it with the file path, and `config set` / `config reset <key>` still rewrite the broken user layer. |
+| 2 | — | **Rejected:** already covered by §15 #6 — `running.json` records pid **and process start time**; a reused pid has a different start time, so it is *mismatched* and swept, never *wedged*. |
+| 3 | E4.S1 | **Accepted.** `install.sh` verifies each side effect before declaring success — `sar` and `atop` on PATH, `systemctl is-active` for the timer and the events unit, `wsl-care doctor --json` healthy — and exits non-zero naming the step that failed. |
+
+**Cadence consultation for epics 1–3** (local Gemma 4, verified before acting):
+
+| # | Lands in | Decision |
+|---|---|---|
+| C1 | E1.S2 | **Accepted.** A never-list guarded only at `ICommandRunner`/`CommandPolicy` misses deletions that are not commands (the archive's moves, E9; `%TEMP%` cleanup W-A2, E12). E1.S2 adds an `IFileSystem` seam whose every delete and move passes ONE `DeletionPolicy` — never under an AI agent's folder except the archive's verified move, never under `~/git`, never `%TEMP%\claude\`, never outside the action's declared root — and an architecture test that fails on `File.Delete`, `File.Move`, `Directory.Delete`, `Directory.Move` or `Process.Start` anywhere outside the two seams, with a companion proving the scan matches a planted instance. |
+| C2 | E2 | **Accepted for E2.** Fake executables prove invocation, not the real tools' output contract: E2 adds a live contract check against the real Docker/systemd here (skipped in CI with an explicit reason, required at release); parser fixtures stay recorded from real output (the 2026-10-02 captures). |
+| C3 | E1.S2 | **Rejected in part:** platform paths stay in E1.S2 because E2's Windows probe already runs the `win-x64` build — but behind an `IHostPaths` interface with a Linux and a Windows implementation, never as literals in shared code. |
+
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
 Every epic is its own branch from the previous epic's final commit, one review-gate code round over its
@@ -611,7 +628,7 @@ week and this plan's promotion after E13.
 | Story | Content | Model |
 |---|---|---|
 | E1.S1 | root build files, `wsl_care.slnx`, Core/Cli + test projects, `ci-daemon.yml` (matrix, format, build, test exes, AOT publish, smoke), actionlint/shellcheck, pr-title, dependabot | Opus — mirrors CredsForDevs |
-| E1.S2 | config layering + schema, `config get/set`, `ICommandRunner` (argv, ceilings, tree kill) + recording double, `IHostProbe`, run records, Serilog | **Fable** — the seams every later story hangs on |
+| E1.S2 | config layering + schema with observe-only on an invalid layer (§15a #1), `config get/set/reset`, `ICommandRunner` (argv, ceilings, tree kill) + recording double, `IFileSystem` + `DeletionPolicy` + architecture test (§15a C1), `IHostPaths` (C3), `IHostProbe`, run records incl. `interrupted`, Serilog | **Fable** — the seams every later story hangs on |
 | E1.S3 | `WslCare.Scenarios` (built CLI, temp home, fake docker/systemctl/journalctl on PATH), fixtures, derived verb register | Opus |
 | E2.S1 | memory/process/disk collectors, Linux + minimal Windows probe, `status --json` | Opus |
 | E2.S2 | Docker collectors, `volume-seen.json`, hygiene audit, `preview --all --json` | Opus |
