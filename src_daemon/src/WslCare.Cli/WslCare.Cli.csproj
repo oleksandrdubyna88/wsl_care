@@ -10,8 +10,8 @@
          than on a release runner. -->
     <PublishAot>true</PublishAot>
     <StripSymbols>true</StripSymbols>
-    <!-- No reflection-based JSON anywhere: every payload will go through a source-generated
-         context (plan §8). This turns an accidental reflective call into an error. -->
+    <!-- No reflection-based JSON anywhere: every payload goes through the source-generated context
+         in WslCare.Core (plan §8). This turns an accidental reflective call into an error. -->
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
     <!-- The RIDs this binary ships for (plan §9, §15 #15): linux-x64 and linux-arm64 for the distro,
          win-x64 for the Windows probe bundled in the extension. Listed so restore fetches each one's
@@ -22,6 +22,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WslCare.Core\WslCare.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The one package of the product (Directory.Packages.props says why and why only this one). -->
+    <PackageReference Include="Serilog" />
   </ItemGroup>
 
   <ItemGroup>

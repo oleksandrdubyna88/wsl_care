@@ -4,6 +4,7 @@
     <Project Path="src_daemon/src/WslCare.Cli/WslCare.Cli.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="src_daemon/tests/WslCare.TestSupport/WslCare.TestSupport.csproj" />
     <Project Path="src_daemon/tests/WslCare.Core.Tests/WslCare.Core.Tests.csproj" />
     <Project Path="src_daemon/tests/WslCare.Cli.Tests/WslCare.Cli.Tests.csproj" />
   </Folder>

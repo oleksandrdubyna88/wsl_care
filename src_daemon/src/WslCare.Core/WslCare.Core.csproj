@@ -6,10 +6,21 @@
          every RID, so the trim, AOT and single-file analyzers run on EVERY build of it: a pattern
          AOT cannot compile fails here, under TreatWarningsAsErrors, not on a release runner. -->
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- No reflection-based JSON: every payload goes through WslCareJsonContext (source-generated)
+         or is read as a JsonDocument. The flag turns an accidental reflective call into an error. -->
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- The default configuration layer (plan §6), embedded so the binary carries its own defaults
+         and `config get` can name the layer a value came from. Its keys are held to ConfigKeys by a
+         test in both directions. -->
+    <EmbeddedResource Include="Config\default.json" LogicalName="WslCare.Core.Config.default.json" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="WslCare.Core.Tests" />
+    <InternalsVisibleTo Include="WslCare.Cli.Tests" />
   </ItemGroup>
 
 </Project>

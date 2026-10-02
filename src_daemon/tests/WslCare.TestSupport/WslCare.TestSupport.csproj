@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>WslCare.TestSupport</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- Test doubles and fixtures shared by every test project: a temporary root, a frozen clock,
+         the recording command runner, a sandboxed host. NOT a test project itself (no runner), and
+         never referenced by a product project — it is the one place a test double lives so the two
+         test projects do not each grow a copy. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\WslCare.Core\WslCare.Core.csproj" />
+  </ItemGroup>
+
+</Project>
