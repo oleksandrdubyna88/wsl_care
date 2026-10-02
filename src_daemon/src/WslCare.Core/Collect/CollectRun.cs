@@ -1,0 +1,236 @@
+using System.Text.Json;
+
+using WslCare.Core.Collectors;
+using WslCare.Core.Config;
+using WslCare.Core.Docker;
+using WslCare.Core.Events;
+using WslCare.Core.Files;
+using WslCare.Core.Folders;
+using WslCare.Core.Health;
+using WslCare.Core.Hosting;
+using WslCare.Core.Json;
+using WslCare.Core.Preview;
+using WslCare.Core.Processes;
+using WslCare.Core.Records;
+using WslCare.Core.Status;
+using WslCare.Core.Thresholds;
+
+namespace WslCare.Core.Collect;
+
+/// <summary>Everything a full run reaches the machine through.</summary>
+public sealed record CollectContext(
+    IHostPaths Paths,
+    IFileSystem Files,
+    ICommandRunner Commands,
+    TimeProvider Clock,
+    IHostProbe Probe,
+    ConfigLoadResult Loaded,
+    int ProcessId,
+    RunTrigger Trigger);
+
+/// <summary>How a full run ended for its records, and its detail (none when another run held the lock).</summary>
+public sealed record CollectResult(Recording Recording, string Reason, string DetailFile, RunDetail? Detail);
+
+/// <summary>
+/// <c>collect</c> (plan §6): the FULL run — the fast sample, Docker's full numbers and the cleanup rows, the slow
+/// parts (<c>docker stats</c>, the Windows clock), the health collectors, the daily folder walk, the container
+/// starts of the last 24 h, the thresholds — recorded in the order plan §15b #1 fixes.
+/// </summary>
+/// <remarks>
+/// <para><b>Who records (plan §15b #3).</b> The state directory is root's. Whether this process may write it is the
+/// operating system's answer to a write probe (<see cref="IFileSystem.ProbeWriteAccess"/>): when it may not, the
+/// run measures and reports exactly as a privileged one would and writes NOTHING — no reconcile, no retention, no
+/// detail, no history line, no first sightings — and says <i>read-only: run as root to record</i>.</para>
+/// <para><b>One run at a time.</b> A privileged run holds <c>{state}/run.lock</c> (an exclusive open, released by the
+/// OS when the holder dies) for its whole length, so the reconcile never mistakes a running run's detail for an
+/// orphan; a second run is <see cref="Recording.Busy"/> and measures nothing. E3.S1's action lock supersedes it.</para>
+/// <para><b>Order.</b> Reconcile → retention → measure → the detail (atomic) → the history line naming it; the caller
+/// closes the run log last. A failed write makes the run <c>failed</c> with the reason — on its history line when the
+/// detail was what failed, in the result (and the log) when the line itself could not be written.</para>
+/// </remarks>
+public static class CollectRun
+{
+    public const string RunLockFile = "run.lock";
+    public const string ReadOnlyNote = "read-only: run as root to record";
+
+    /// <summary>The "since the last run" window when there is no last run: the timer's period (plan §8).</summary>
+    public static readonly TimeSpan DefaultWindow = TimeSpan.FromHours(4);
+
+    public static async Task<CollectResult> RunAsync(CollectContext c, CancellationToken cancellationToken)
+    {
+        var started = c.Clock.GetUtcNow();
+        var runId = RunId.New(started, c.ProcessId);
+        if (c.Files.ProbeWriteAccess(c.Paths.StateDirectory) is WriteAccess.NotWritable denied)
+        {
+            var measured = await MeasureAsync(c, runId, started, NoHousekeeping(), mayRecord: false, cancellationToken).ConfigureAwait(false);
+            return new CollectResult(Recording.ReadOnly, $"{ReadOnlyNote} ({denied.Reason})", string.Empty, measured);
+        }
+
+        switch (c.Files.TryLockExclusive(c.Paths.Rules.Join(c.Paths.StateDirectory, RunLockFile)))
+        {
+            case ExclusiveLock.Busy busy:
+                return new CollectResult(Recording.Busy, $"another run is in progress: {busy.Reason}", string.Empty, null);
+            case ExclusiveLock.Held held:
+                using (held.Handle)
+                {
+                    var housekeeping = Housekeep(c, started);
+                    var detail = await MeasureAsync(c, runId, started, housekeeping, mayRecord: true, cancellationToken).ConfigureAwait(false);
+                    return Record(c, detail);
+                }
+
+            default:
+                throw new System.Diagnostics.UnreachableException("ExclusiveLock is a closed set");
+        }
+    }
+
+    /// <summary>The detail first (atomic), then the history line that names it.</summary>
+    private static CollectResult Record(CollectContext c, RunDetail detail)
+    {
+        var relative = RunDetailStore.RelativePath(detail.RunId);
+        var failure = WriteDetail(c, detail);
+        var line = failure.Length == 0
+            ? Line(detail, detail.Outcome) with { Detail = relative }
+            : Line(detail, RunOutcome.Failed) with { Reason = failure };
+        try
+        {
+            new RunRecordWriter(c.Paths, c.Files).Append(line);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
+        {
+            var reason = $"the history line could not be written ({e.Message}){(failure.Length > 0 ? $"; before that, {failure}" : string.Empty)}";
+            return new CollectResult(Recording.Failed, reason, failure.Length == 0 ? relative : string.Empty, detail);
+        }
+
+        return failure.Length == 0
+            ? new CollectResult(Recording.Recorded, string.Empty, relative, detail)
+            : new CollectResult(Recording.Failed, failure, string.Empty, detail with { Outcome = RunOutcome.Failed });
+    }
+
+    /// <summary>Empty when written; otherwise why not.</summary>
+    private static string WriteDetail(CollectContext c, RunDetail detail)
+    {
+        try
+        {
+            var json = JsonSerializer.SerializeToUtf8Bytes(detail, WslCareJsonContext.Default.RunDetail);
+            return RunDetailStore.Write(c.Paths, c.Files, detail.RunId, json) is Files.Deletion.DeletionVerdict.Refused refused
+                ? $"the run detail could not be written: {refused.Reason}"
+                : string.Empty;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return $"the run detail could not be written: {e.Message}";
+        }
+    }
+
+    private static RunRecord Line(RunDetail d, RunOutcome outcome) =>
+        new(Core.SchemaVersion.Current, d.RunId, d.Trigger, d.StartedAt, d.EndedAt, outcome, d.Actions)
+        {
+            Slow = d.Slow,
+            DryRun = d.DryRun,
+            Warnings = [.. d.Thresholds.Where(v => v.Level is not Level.Ok).Select(v => new WarningRecord(v.Id, Camel(v.Level), v.Reason))],
+            Metrics = Metrics(d),
+        };
+
+    /// <summary>The reconcile, the retention of the run records and of the container-start files — each step guarded
+    /// on its own, so a sweep that fails is reported and the run still measures (plan §5).</summary>
+    private static HousekeepingReport Housekeep(CollectContext c, DateTimeOffset now)
+    {
+        var problems = new List<string>();
+        var reconcile = Guard(() => RunReconcile.Apply(c.Paths, c.Files), new ReconcileReport([], []), problems, "reconcile");
+        var retention = Guard(() => RunRetention.Sweep(c.Paths, c.Files, now), new RetentionReport(0, [], []), problems, "run retention");
+        var starts = Guard(() => new ContainerStartsStore(c.Paths, c.Files).Prune(now), [], problems, "container-start retention");
+        return new HousekeepingReport(reconcile, retention with { Problems = [.. retention.Problems, .. problems] }, starts);
+    }
+
+    private static T Guard<T>(Func<T> step, T fallback, List<string> problems, string what)
+    {
+        try
+        {
+            return step();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
+        {
+            problems.Add($"{what} failed: {e.Message}");
+            return fallback;
+        }
+    }
+
+    private static HousekeepingReport NoHousekeeping() =>
+        new(new ReconcileReport([], []), new RetentionReport(0, [], [ReadOnlyNote]), []);
+
+    private static async Task<RunDetail> MeasureAsync(CollectContext c, RunId runId, DateTimeOffset started, HousekeepingReport housekeeping, bool mayRecord, CancellationToken cancellationToken)
+    {
+        var newestFirst = RunHistory.Read(c.Paths, c.Files).Records.Reverse().ToList();
+        var since = newestFirst.FirstOrDefault()?.StartedAt ?? started - DefaultWindow;
+        var last = LastFullRun.FromRecords(newestFirst, started);
+        var sample = c.Probe.Sample(cancellationToken);
+        var health = await new HealthCollector(c.Commands, c.Files, c.Paths, c.Clock).CollectAsync(since, cancellationToken).ConfigureAwait(false);
+        var folders = c.Paths is LinuxHostPaths linux && FolderSizes.Due(last.Folders, started)
+            ? await new FolderSizes(c.Files, c.Commands, c.Clock).MeasureAsync(linux, cancellationToken).ConfigureAwait(false)
+            : null;
+        var foldersNow = folders is null ? last.Folders : Reading.Of(new AgedPart<FolderSizesSample>(folders, runId, folders.SampledAt, TimeSpan.Zero));
+        var foldersBefore = folders is null ? last.PreviousFolders : last.Folders.Map(a => a.Value);
+        var profile = health.WindowsClock.Measured ? health.WindowsClock.Profile : last.WindowsClock.Map(a => a.Value.Profile).ValueOr(string.Empty);
+        var docker = await PreviewRun.CollectAsync(c.Paths, c.Files, c.Commands, c.Clock, c.Loaded, new PreviewExtras(foldersNow, WindowsProfiles.DockerDesktopConfig(c.Paths, c.Files, profile)) { MayRecord = mayRecord }, cancellationToken).ConfigureAwait(false);
+        var stats = await DockerStats.SampleAsync(new DockerCli(c.Commands), c.Clock, cancellationToken).ConfigureAwait(false);
+        var starts = Coverage.Last24h(new ContainerStartsStore(c.Paths, c.Files).ReadAll(), c.Clock.GetUtcNow());
+        var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders };
+        var verdicts = ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow), c.Loaded.Config);
+        var ended = c.Clock.GetUtcNow();
+        var thisRun = LastFullRun.FromRecords([new RunRecord(Core.SchemaVersion.Current, runId, c.Trigger, started, ended, RunOutcome.Completed, []) { Slow = slow }, .. newestFirst], ended);
+        var folderReport = FoldersReports.From(foldersNow, foldersBefore, folders is not null);
+        return new RunDetail(
+            Core.SchemaVersion.Current,
+            runId,
+            c.Trigger,
+            started,
+            ended,
+            c.Loaded.IsObserveOnly ? RunOutcome.ObserveOnly : RunOutcome.Completed,
+            c.Loaded.Config.Bool(ConfigKeys.DryRun),
+            c.Loaded.IsObserveOnly,
+            c.Paths.Side == HostSide.Wsl ? "wsl" : "windows",
+            StatusReports.From(sample, thisRun, c.Loaded) with { ContainerStarts = starts, Folders = folderReport },
+            docker.Report,
+            HealthReports.From(health),
+            verdicts,
+            folderReport,
+            starts,
+            slow,
+            housekeeping,
+            []);
+    }
+
+    private static ThresholdInputs Inputs(ProbeSample sample, HealthSample health, TimeSpan sinceLastRun, LastSlowParts last, PreviewResult docker, Reading<AgedPart<FolderSizesSample>> folders) =>
+        new(
+            sample.Vm.Bind(vm => vm.Memory),
+            sample.Vm.Bind(vm => vm.RootVolume),
+            health,
+            sinceLastRun,
+            last.WindowsClock.Map(a => a.Value),
+            docker.Preview.Rows,
+            docker.Snapshot.Inventory.Map(inventory => inventory.BuildCache.Sum(b => b.SizeBytes.ValueOr(0))),
+            folders.Bind(a => a.Value.Find(FolderSizes.NpmCache) is { Measured: true } npm ? Reading.Of(npm.Bytes) : Reading.Missing<long>("~/.npm was not measured")));
+
+    private static RunMetrics Metrics(RunDetail d)
+    {
+        var memory = d.Sample.Vm.Memory;
+        var disk = d.Sample.Vm.Disk;
+        var reclaimable = d.Docker.Totals.Available ? d.Docker.Totals.Types?.Sum(t => t.Reclaimable.Bytes ?? 0) : null;
+        return new RunMetrics(
+            memory?.AvailablePercent?.Value,
+            memory?.MemAvailable?.Bytes,
+            memory?.PageCache?.Bytes,
+            memory?.SwapUsed?.Bytes,
+            disk?.UsedPercent,
+            reclaimable,
+            d.ContainerStarts.Starts);
+    }
+
+    private static string Camel(Level level) => level switch
+    {
+        Level.Warn => "warn",
+        Level.Critical => "critical",
+        Level.Unknown => "unknown",
+        _ => "ok",
+    };
+}

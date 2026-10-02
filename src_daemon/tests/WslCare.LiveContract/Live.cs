@@ -50,6 +50,20 @@ internal static class Live
         return outcome;
     }
 
+    /// <summary>Streams <paramref name="command"/> for real through the product's <see cref="ICommandRunner.StreamAsync"/>
+    /// under the command's OWN ceiling (a stream segment outlasts the 30 s of a listing), skipping first under CI.</summary>
+    public static async Task<(CommandOutcome Outcome, IReadOnlyList<string> Lines)> StreamAsync(ToolCommand command)
+    {
+        if (!Required && Environment.GetEnvironmentVariable("CI") is "true")
+        {
+            Unavailable("CI does not run the live contract: it is about the owner's Docker and systemd, and runs on that machine before every release (plan §15b #2)");
+        }
+
+        var lines = new List<string>();
+        var outcome = await Runner.StreamAsync(command.ToRequest(), lines.Add, TestContext.Current.CancellationToken);
+        return (outcome, lines);
+    }
+
     /// <summary>A docker command whose answer the contract needs: a daemon that is not there skips (or fails
     /// when required); any other failure — a timeout, a cut answer, an error Docker printed three times running —
     /// FAILS, because the product would meet it too.</summary>

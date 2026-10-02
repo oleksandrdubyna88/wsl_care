@@ -94,36 +94,9 @@ public sealed class ControlCharacterTests
     }
 
     /// <summary>The sandbox's real file system, except that every atomic write is refused with <paramref name="reason"/>.</summary>
-    private sealed class RefusingAtomicWrites(IFileSystem inner, string reason) : IFileSystem
+    private sealed class RefusingAtomicWrites(IFileSystem inner, string reason) : DelegatingFileSystem(inner)
     {
-        public FileReadResult ReadFile(string path) => inner.ReadFile(path);
-
-        public bool FileExists(string path) => inner.FileExists(path);
-
-        public bool DirectoryExists(string path) => inner.DirectoryExists(path);
-
-        public IReadOnlyList<string> ListDirectories(string path) => inner.ListDirectories(path);
-
-        public LinkReadResult ReadLink(string path) => inner.ReadLink(path);
-
-        public VolumeReadResult MeasureVolume(string path) => inner.MeasureVolume(path);
-
-
-        public FileSizeResult FileSize(string path) => inner.FileSize(path);
-
-        public void CreateDirectory(string path) => inner.CreateDirectory(path);
-
-        public DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>
+        public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>
             DeletionVerdict.Refuse(DeletionRule.OutsideDeclaredRoot, reason);
-
-        public void AppendLine(string path, string line, TimeSpan lockTimeout) => inner.AppendLine(path, line, lockTimeout);
-
-        public DeletionVerdict DeleteFile(string path, DeletionScope scope) => inner.DeleteFile(path, scope);
-
-        public DeletionVerdict DeleteDirectory(string path, DeletionScope scope) => inner.DeleteDirectory(path, scope);
-
-        public DeletionVerdict MoveFile(string from, string to, DeletionScope scope) => inner.MoveFile(from, to, scope);
-
-        public DeletionVerdict MoveDirectory(string from, string to, DeletionScope scope) => inner.MoveDirectory(from, to, scope);
     }
 }

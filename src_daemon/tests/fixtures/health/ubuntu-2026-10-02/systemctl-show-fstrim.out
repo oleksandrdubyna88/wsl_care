@@ -1,0 +1,7 @@
+Result=success
+Id=fstrim.timer
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+UnitFileState=enabled
+ActiveEnterTimestamp=

@@ -1,0 +1,8 @@
+Result=success
+NRestarts=0
+Id=wsl-pro.service
+LoadState=loaded
+ActiveState=active
+SubState=running
+UnitFileState=enabled
+ActiveEnterTimestamp=@1790948345

@@ -100,12 +100,67 @@ public sealed class PhysicalFileSystem : IFileSystem
         try
         {
             var info = new FileInfo(path);
-            return info.Exists ? new FileSizeResult.Measured(info.Length) : new FileSizeResult.Missing();
+            return info.Exists ? new FileSizeResult.Measured(info.Length, new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) : new FileSizeResult.Missing();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
             return new FileSizeResult.Unreadable(e.Message);
         }
+    }
+
+    public IReadOnlyList<string> ListFiles(string path) =>
+        Directory.Exists(path) ? Directory.GetFiles(path) : [];
+
+    public TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken) =>
+        TreeWalk.Measure(path, limits, countOnlyUnder, neverEnter, cancellationToken);
+
+    public WriteAccess ProbeWriteAccess(string directory)
+    {
+        try
+        {
+            Directory.CreateDirectory(directory);
+            using var probe = new FileStream(
+                Path.Combine(directory, $".wsl-care-write-probe-{Guid.NewGuid():N}"),
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 1,
+                FileOptions.DeleteOnClose);
+            return new WriteAccess.Writable();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new WriteAccess.NotWritable($"{directory} is not writable by this process ({e.Message})");
+        }
+    }
+
+    public ExclusiveLock TryLockExclusive(string lockPath)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(lockPath) ?? lockPath);
+            return new ExclusiveLock.Held(new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None));
+        }
+        catch (IOException e)
+        {
+            return new ExclusiveLock.Busy($"{lockPath} is held by another process ({e.Message})");
+        }
+    }
+
+    public DeletionVerdict RewriteLines(string path, Func<IReadOnlyList<string>, IReadOnlyList<string>> keep, DeletionScope scope, TimeSpan lockTimeout)
+    {
+        using var held = AcquireLock(path + ".lock", lockTimeout);
+        IReadOnlyList<string> current = File.Exists(path)
+            ? [.. File.ReadAllText(path, Encoding.UTF8).Split('\n').Where(l => l.Length > 0)]
+            : [];
+        var kept = keep(current);
+        if (kept.SequenceEqual(current, StringComparer.Ordinal))
+        {
+            return DeletionVerdict.Allowed;
+        }
+
+        var text = kept.Count == 0 ? string.Empty : string.Join('\n', kept) + "\n";
+        return WriteFileAtomically(path, Encoding.UTF8.GetBytes(text), scope);
     }
 
     public void CreateDirectory(string path) => Directory.CreateDirectory(path);

@@ -17,6 +17,8 @@ namespace WslCare.Core.Processes;
 /// <para>After a kill the pipe reads are given a short grace to drain; a grandchild that somehow
 /// survived and still holds the pipe cannot make this method hang, because the buffers are read by
 /// snapshot and the stuck reads are observed rather than awaited.</para>
+/// <para><see cref="StreamAsync"/> is the same launcher for a child whose stdout never ends on its own
+/// (<c>docker events</c>): lines go to a callback as they arrive, each cut at the output cap.</para>
 /// </remarks>
 public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
 {
@@ -25,24 +27,17 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
 
     public async Task<CommandOutcome> RunAsync(CommandRequest request, CancellationToken cancellationToken)
     {
-        if (policy.Review(request.Argv) is CommandVerdict.Refused refused)
+        if (Refusal(request) is { } refused)
         {
-            return new CommandOutcome.Refused(refused.Reason);
+            return refused;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         using var process = new Process { StartInfo = StartInfo(request) };
         var started = Stopwatch.StartNew();
-        try
+        if (Start(process, request) is { } notStarted)
         {
-            if (!process.Start())
-            {
-                return new CommandOutcome.FailedToStart($"the operating system did not start {request.Argv[0]}");
-            }
-        }
-        catch (Win32Exception e)
-        {
-            return new CommandOutcome.FailedToStart($"{request.Argv[0]}: {e.Message}");
+            return notStarted;
         }
 
         var stdout = new OutputCapture(request.OutputCapChars);
@@ -66,6 +61,69 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
 
         await DrainAsync(reads).ConfigureAwait(false);
         return new CommandOutcome.Exited(process.ExitCode, stdout.Snapshot(), stderr.Snapshot(), started.Elapsed);
+    }
+
+    public async Task<CommandOutcome> StreamAsync(CommandRequest request, Action<string> onStdoutLine, CancellationToken cancellationToken)
+    {
+        if (Refusal(request) is { } refused)
+        {
+            return refused;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        using var process = new Process { StartInfo = StartInfo(request) };
+        var started = Stopwatch.StartNew();
+        if (Start(process, request) is { } notStarted)
+        {
+            return notStarted;
+        }
+
+        var stderr = new OutputCapture(request.OutputCapChars);
+        var errors = stderr.DrainAsync(process.StandardError);
+        Observe(errors);
+        var lines = PumpLinesAsync(process.StandardOutput, onStdoutLine, request.OutputCapChars);
+        Observe(lines);
+
+        using var ceiling = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        ceiling.CancelAfter(request.Timeout);
+        try
+        {
+            // stdout ends when the child closes it — normally when it exits.
+            await lines.WaitAsync(ceiling.Token).ConfigureAwait(false);
+            await process.WaitForExitAsync(ceiling.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ceiling.IsCancellationRequested)
+        {
+            Kill(process);
+            await DrainAsync(Task.WhenAll(errors, lines)).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            return new CommandOutcome.TimedOut(CapturedText.Empty, stderr.Snapshot(), request.Timeout);
+        }
+        catch (Exception)
+        {
+            // The callback threw: what that means is the caller's to decide, but the child must not outlive it.
+            Kill(process);
+            throw;
+        }
+
+        await DrainAsync(errors).ConfigureAwait(false);
+        return new CommandOutcome.Exited(process.ExitCode, CapturedText.Empty, stderr.Snapshot(), started.Elapsed);
+    }
+
+    private CommandOutcome.Refused? Refusal(CommandRequest request) =>
+        policy.Review(request.Argv) is CommandVerdict.Refused refused ? new CommandOutcome.Refused(refused.Reason) : null;
+
+    /// <summary>Starts the process; the outcome when the operating system would not, <c>null</c> when it runs.</summary>
+    private static CommandOutcome.FailedToStart? Start(Process process, CommandRequest request)
+    {
+        try
+        {
+            return process.Start() ? null : new CommandOutcome.FailedToStart($"the operating system did not start {request.Argv[0]}");
+        }
+        catch (Win32Exception e)
+        {
+            return new CommandOutcome.FailedToStart($"{request.Argv[0]}: {e.Message}");
+        }
     }
 
     private static ProcessStartInfo StartInfo(CommandRequest request)
@@ -110,6 +168,40 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
     /// <summary>A read that faults after we stopped waiting is still observed — never an unobserved task fault.</summary>
     private static void Observe(Task reads) =>
         _ = reads.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+
+    /// <summary>Lines of <paramref name="reader"/> to <paramref name="onLine"/>, each cut at <paramref name="cap"/>
+    /// characters; a last line without a line end is delivered too.</summary>
+    private static async Task PumpLinesAsync(StreamReader reader, Action<string> onLine, int cap)
+    {
+        var buffer = new char[8192];
+        var line = new System.Text.StringBuilder();
+        int read;
+        while ((read = await reader.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) > 0)
+        {
+            for (var i = 0; i < read; i++)
+            {
+                Take(buffer[i], line, onLine, cap);
+            }
+        }
+
+        if (line.Length > 0)
+        {
+            onLine(line.ToString().TrimEnd('\r'));
+        }
+    }
+
+    private static void Take(char c, System.Text.StringBuilder line, Action<string> onLine, int cap)
+    {
+        if (c == '\n')
+        {
+            onLine(line.ToString().TrimEnd('\r'));
+            line.Clear();
+        }
+        else if (line.Length < cap)
+        {
+            line.Append(c);
+        }
+    }
 
     /// <summary>A bounded, thread-safe accumulator for one stream.</summary>
     private sealed class OutputCapture(int cap)
