@@ -68,6 +68,33 @@ public sealed class PhysicalFileSystem : IFileSystem
     public IReadOnlyList<string> ListDirectories(string path) =>
         Directory.Exists(path) ? Directory.GetDirectories(path) : [];
 
+    /// <summary>Through the same reader the deletion policy trusts (attributes first, then the target),
+    /// so "cannot be inspected" is an answer here too rather than a silent "not a link".</summary>
+    public LinkReadResult ReadLink(string path)
+    {
+        try
+        {
+            return _readLinkTarget(path) is { } target ? new LinkReadResult.Target(target) : new LinkReadResult.NotALink();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new LinkReadResult.Unreadable(e.Message);
+        }
+    }
+
+    public VolumeReadResult MeasureVolume(string path)
+    {
+        try
+        {
+            var drive = new DriveInfo(path);
+            return new VolumeReadResult.Measured(drive.TotalSize, drive.TotalFreeSpace, drive.AvailableFreeSpace);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return new VolumeReadResult.Unreadable(e.Message);
+        }
+    }
+
     public void CreateDirectory(string path) => Directory.CreateDirectory(path);
 
     /// <summary>

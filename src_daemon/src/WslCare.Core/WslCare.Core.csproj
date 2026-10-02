@@ -9,6 +9,10 @@
     <!-- No reflection-based JSON: every payload goes through WslCareJsonContext (source-generated)
          or is read as a JsonDocument. The flag turns an accidental reflective call into an error. -->
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- The LibraryImport source generator emits the marshalling stub for GlobalMemoryStatusEx (the
+         Windows probe's host RAM, Collectors/WindowsProbe.cs) as unsafe code. That stub is the only
+         unsafe code in the project; nothing is written with the keyword by hand. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

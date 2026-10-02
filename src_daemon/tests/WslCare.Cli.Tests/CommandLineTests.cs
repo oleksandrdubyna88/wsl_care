@@ -97,6 +97,15 @@ public sealed class CommandLineTests
     }
 
     [Fact]
+    public void Status_takes_nothing_or_the_json_flag_and_refuses_anything_else()
+    {
+        CommandLine.Parse(["status"]).Should().Be(new Request.Status(Json: false));
+        CommandLine.Parse(["status", "--json"]).Should().Be(new Request.Status(Json: true));
+        CommandLine.Parse(["status", "--json", "--json"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("takes only --json");
+        CommandLine.Parse(["status", "memory"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("\"memory\"");
+    }
+
+    [Fact]
     public void Config_alone_or_with_an_unknown_sub_verb_lists_the_sub_verbs()
     {
         CommandLine.Parse(["config"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("get, set, reset");

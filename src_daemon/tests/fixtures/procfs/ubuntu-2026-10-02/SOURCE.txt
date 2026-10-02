@@ -1,0 +1,27 @@
+procfs / cgroup fixture tree - CAPTURED, not synthetic.
+
+Source:   WSL distro "Ubuntu" (24.04, systemd) on the owner's machine, kernel 6.18.33.2-microsoft-standard-WSL2,
+          x86_64, as the unprivileged user (uid 1000). Docker Desktop's containers seen through
+          /sys/fs/cgroup/docker/<id>/ (their processes are in another PID namespace and are not here).
+Captured: 2026-10-02T13:41:57Z (capture-info.txt, line 1), by research/diagnostics/wsl_procfs_fixture.sh,
+          which writes only under /tmp in the distro and streams a tar out.
+Layout:   the paths a LinuxHostPaths sandboxed at this directory reads: proc/, sys/fs/cgroup/, etc/passwd.
+
+What is in it:
+  proc/meminfo, buddyinfo, stat, uptime, mounts, loadavg, pressure/{memory,io,cpu}
+  proc/self/auxv     - the auxiliary vector of the capturing `cat` (AT_CLKTCK 100, AT_PAGESZ 4096)
+  proc/<pid>/{status,stat,cgroup,cmdline,comm} for the 40 largest processes by RSS, pid 1, and every
+                       process whose cwd or argv was under /mnt/ - 51 of the ~196 processes then
+                       running. The ~145 small ones left out make this tree's unattributed remainder
+                       larger than the live one was by their sum.
+  links.txt          - proc/<pid>/cwd link targets (tab-separated), because a Windows checkout cannot hold
+                       the symlinks; a cwd of another user's process could not be read and is absent.
+  sys/fs/cgroup/docker/<64-hex>/{memory.current,memory.stat,cgroup.procs} for the 10 containers then
+                       running, and sys/fs/cgroup/docker/memory.current.
+  etc/passwd         - reduced to name:x:uid:gid::home:shell for the uids that appear; no hashes.
+  capture-info.txt   - capture instant, kernel, getconf CLK_TCK, getconf PAGESIZE, df -B1 /.
+
+Redacted after capture (and nothing else changed):
+  the values of --connection-token= (VS Code server) and --csrf_token= (an agent hub) -> REDACTED,
+  the value of "CollectorApiKey" inside VS Code's /TelemetrySession: argument -> REDACTED,
+  a company Atlassian site name -> example.atlassian.net.

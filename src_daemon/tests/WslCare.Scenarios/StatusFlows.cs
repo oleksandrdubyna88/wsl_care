@@ -1,0 +1,130 @@
+using System.Diagnostics;
+using System.Text.Json;
+
+using FluentAssertions;
+
+using WslCare.Cli;
+using WslCare.Core;
+using WslCare.Core.Json;
+using WslCare.Core.Records;
+using WslCare.Core.Status;
+using WslCare.FakeTool;
+using WslCare.TestSupport;
+
+namespace WslCare.Scenarios;
+
+/// <summary>
+/// <c>wsl-care status [--json]</c> end to end (plan §6, §15b #5): the BUILT CLI, its <c>WSL_CARE_ROOT</c>
+/// holding the captured 2026-10-02 procfs tree on Linux, fake <c>docker</c> and <c>powershell</c> on its
+/// <c>PATH</c> that would record any call, and the wall-clock budget of 2 s measured around the process.
+/// </summary>
+public sealed class StatusFlows
+{
+    /// <summary>Plan §6: <c>status --json</c> answers in under 2 s.</summary>
+    private static readonly TimeSpan Budget = TimeSpan.FromSeconds(2);
+
+    private static StatusReport Report(ChildResult result)
+    {
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        return JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.StatusReport)
+            ?? throw new InvalidOperationException("status --json printed null");
+    }
+
+    private static async Task<(ChildResult Result, TimeSpan Elapsed)> TimedAsync(ScenarioHome home, params string[] args)
+    {
+        // One unmeasured run first: the first start of a JIT apphost on a cold disk pays for loading the
+        // runtime, which is the machine's cost, not the verb's. The budget is then held by the second run.
+        await home.RunAsync(args);
+        var watch = Stopwatch.StartNew();
+        var result = await home.RunAsync(args);
+        return (result, watch.Elapsed);
+    }
+
+    [Fact]
+    public async Task Status_json_over_the_captured_procfs_answers_within_the_budget_and_starts_no_slow_process()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "the Linux binary reads the procfs tree; the Windows binary answers for the host, which the next flow covers");
+        using var home = new ScenarioHome("status-procfs");
+        var links = ProcfsFixture.CopyTo(home.SandboxRoot);
+        links.Should().Be(ProcfsFixture.Links.Count, "Linux lets the harness make the cwd symlinks the capture recorded");
+        FakeToolProtocol.Tools.Should().Contain(["docker", "powershell"], "the two slow tools of plan §15b #5 are on the PATH and would record a call");
+
+        var (result, elapsed) = await TimedAsync(home, "status", "--json");
+
+        var report = Report(result);
+        elapsed.Should().BeLessThan(Budget, "plan §6: status --json is a fast snapshot");
+        report.SampleMilliseconds.Should().BeLessThan((long)Budget.TotalMilliseconds);
+        report.SchemaVersion.Should().Be(SchemaVersion.Current);
+        report.Side.Should().Be("wsl");
+        report.Vm.Memory!.Total!.Bytes.Should().Be(47_066_772L * 1024);
+        report.Vm.Containers!.Count.Should().Be(10);
+        report.Vm.Processes!.Count.Should().Be(51);
+        report.Vm.Processes.MntWalkers!.First(p => p.Pid == 560).Cwd.Value.Should().Be(ProcfsFixture.Links["proc/560/cwd"], "the cwd is read through the real symlink");
+        report.Vm.Disk!.Available.Should().BeTrue();
+        home.Calls.Should().BeEmpty("status launches no docker stats and no powershell.exe Get-Date; FakeToolFlows proves this log fills when a tool IS started");
+    }
+
+    [Fact]
+    public async Task Status_json_on_this_binarys_side_answers_within_the_budget_names_what_it_cannot_read_and_starts_nothing()
+    {
+        using var home = new ScenarioHome("status-side");
+
+        var (result, elapsed) = await TimedAsync(home, "status", "--json");
+
+        var report = Report(result);
+        elapsed.Should().BeLessThan(Budget);
+        report.SchemaVersion.Should().Be(SchemaVersion.Current);
+        if (OperatingSystem.IsWindows())
+        {
+            report.Side.Should().Be("windows");
+            report.Vm.Available.Should().BeFalse();
+            report.Host.Memory!.Available.Should().BeTrue("GlobalMemoryStatusEx answers on every Windows");
+        }
+        else
+        {
+            report.Side.Should().Be("wsl");
+            report.Vm.Memory!.Available.Should().BeFalse("the sandbox holds no procfs");
+            report.Vm.Memory.Reason.Should().Contain("meminfo");
+            using var json = JsonDocument.Parse(result.Stdout);
+            json.RootElement.GetProperty("vm").GetProperty("memory").TryGetProperty("total", out _).Should().BeFalse("an unread figure is absent, never 0");
+        }
+
+        report.Slow.ContainerStats.Reason.Should().Be(LastFullRun.NoFullRunYet);
+        home.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Status_reads_the_slow_parts_back_from_the_last_full_run_with_their_age()
+    {
+        using var home = new ScenarioHome("status-slow");
+        var sampled = DateTimeOffset.UtcNow.AddHours(-2);
+        new RunRecordWriter(home.Paths, new Core.Files.PhysicalFileSystem(home.Paths)).Append(
+            new RunRecord(SchemaVersion.Current, RunId.New(sampled, 4242), RunTrigger.Timer, sampled, sampled.AddSeconds(30), RunOutcome.Completed, [])
+            {
+                Slow = new SlowParts { ContainerStats = new ContainerStatsSample(sampled, [new ContainerStat("0e456d1dc8c0", "pg", 712_196_096, 0.4)], string.Empty) },
+            });
+
+        var report = Report(await home.RunAsync("status", "--json"));
+
+        report.Slow.ContainerStats.Available.Should().BeTrue();
+        report.Slow.ContainerStats.RunId.Should().Be(RunId.New(sampled, 4242).Text);
+        report.Slow.ContainerStats.AgeSeconds.Should().BeInRange(2 * 3600 - 5, 2 * 3600 + 120);
+        report.Slow.WindowsClock.Available.Should().BeFalse();
+        home.Calls.Should().BeEmpty("read from the record, not sampled again");
+    }
+
+    [Fact]
+    public async Task Status_without_json_prints_text_and_a_stray_argument_is_refused_with_the_usage_code()
+    {
+        using var home = new ScenarioHome("status-text");
+
+        var text = await home.RunAsync("status");
+        var refused = await home.RunAsync("status", "--all");
+
+        text.Exit.Should().Be((int)ExitCode.Ok);
+        text.StdoutLines[0].Should().StartWith("wsl-care status (");
+        refused.Exit.Should().Be((int)ExitCode.Usage);
+        CliStderr.Of(refused).Messages.Should().ContainSingle().Which.Should().Contain("--all");
+        home.Calls.Should().BeEmpty();
+    }
+}

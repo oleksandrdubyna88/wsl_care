@@ -6,7 +6,9 @@ namespace WslCare.Core.Hosting;
 /// <param name="LocalAppData"><c>%LOCALAPPDATA%</c>.</param>
 /// <param name="ProgramData"><c>%ProgramData%</c>.</param>
 /// <param name="Temp"><c>%TEMP%</c>.</param>
-public sealed record WindowsEnvironment(string UserProfile, string AppData, string LocalAppData, string ProgramData, string Temp)
+/// <param name="SystemDrive">The root of the drive Windows runs from (<c>%SystemDrive%</c>), whose free
+/// space the status reports as host <c>C:</c> (plan §4.4); the sandbox root under <c>WSL_CARE_ROOT</c>.</param>
+public sealed record WindowsEnvironment(string UserProfile, string AppData, string LocalAppData, string ProgramData, string Temp, string SystemDrive = "C:\\")
 {
     /// <summary>The real machine, through the shell-folder API.</summary>
     public static WindowsEnvironment FromThisMachine() =>
@@ -15,7 +17,8 @@ public sealed record WindowsEnvironment(string UserProfile, string AppData, stri
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            PathRules.Windows.Normalize(Path.GetTempPath()));
+            PathRules.Windows.Normalize(Path.GetTempPath()),
+            Path.GetPathRoot(Environment.SystemDirectory) is { Length: > 0 } drive ? drive : "C:\\");
 
     /// <summary>The same layout relative to one directory — what a test or a scenario run uses so
     /// nothing real is ever read or written.</summary>
@@ -24,7 +27,7 @@ public sealed record WindowsEnvironment(string UserProfile, string AppData, stri
         var rules = PathRules.Windows;
         var profile = rules.Join(root, "Users", "me");
         var local = rules.Join(profile, "AppData", "Local");
-        return new(profile, rules.Join(profile, "AppData", "Roaming"), local, rules.Join(root, "ProgramData"), rules.Join(local, "Temp"));
+        return new(profile, rules.Join(profile, "AppData", "Roaming"), local, rules.Join(root, "ProgramData"), rules.Join(local, "Temp"), root);
     }
 }
 
@@ -50,6 +53,9 @@ public sealed class WindowsHostPaths(WindowsEnvironment environment) : IHostPath
     public string MachineConfigFile => _rules.Join(environment.ProgramData, Product, "config.json");
 
     public string UserConfigFile => _rules.Join(environment.AppData, Product, "config.json");
+
+    /// <summary>The volume the host's <c>C:</c> figure measures (plan §4.4).</summary>
+    public string SystemDrive => environment.SystemDrive;
 
     /// <summary>Plan §4.6, the Windows column: Claude Code's three folders, Codex, Gemini CLI,
     /// Antigravity (roaming and the <c>agy</c> CLI), GitHub Copilot CLI, Rovo Dev, Ollama.</summary>

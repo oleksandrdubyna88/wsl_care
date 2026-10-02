@@ -6,7 +6,7 @@ extension that shows the state and runs cleanups on demand.
 
 | Folder | Holds |
 |---|---|
-| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams and the `config` verbs; the collectors and cleanups arrive in later releases |
+| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs and `status` (memory, processes, containers, disk); the full run and the cleanups arrive in later releases |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -46,6 +46,29 @@ carries only answers), so a refusal's `wsl-care:` message may sit beside a log l
 path — configuration, state, logs, the protected folders — out under one directory; tests and
 scenario runs use it so nothing real is ever touched.
 
+## Status
+
+```bash
+wsl-care status --json    # the fast snapshot the extension reads; schemaVersion 1
+wsl-care status           # the same, as a few lines for a terminal
+```
+
+`status` answers in well under 2 s and starts no process: it reads `/proc` and the cgroup tree (inside
+the distro) or asks Windows for its counters (`wsl-care.exe`), and nothing else. Inside the distro it
+reports VM memory (`MemAvailable`, page cache, anonymous and inactive anonymous memory, shared memory,
+swap), free high-order blocks in zone Normal (order 4 and 7), pressure (PSI) for memory, I/O and CPU, the
+top 30 processes by `RssAnon` + `RssShmem` with their family, owner, age, CPU time, working directory and
+command line (secret-looking values redacted, 200 characters), the processes working under `/mnt/`, the
+containers' memory from their cgroups, the memory nobody can name (*unattributed*, or *inconsistent
+sample* when the parts exceed the whole) and `df /`. On Windows it reports host RAM, the system drive and
+the VM's `vmmemWSL` working set. Each binary names the other as the source of the side it does not read.
+
+`docker stats` and the Windows clock take a slow process, so only a full run samples them; `status`
+reports them from the last full run in `history.jsonl` with their age. Until a full run exists — `collect`
+arrives in a later release — they are `"available": false` with that reason. Every figure that cannot be
+read is `"available": false` with a `reason`, never 0. A broken configuration layer is named in the answer
+(`observeOnly`, `configError`) and `status` still answers.
+
 ## Build and test
 
 Needs the .NET 10 SDK (`global.json` pins `10.0.100` with `rollForward: latestFeature`). Every
@@ -59,7 +82,7 @@ dotnet build wsl_care.slnx -c Release -m:4
 ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe
 ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe --filter-method "*Version*"
 
-# The scenario harness: the BUILT wsl-care over a temp WSL_CARE_ROOT, fake docker/systemctl/journalctl
+# The scenario harness: the BUILT wsl-care over a temp WSL_CARE_ROOT, fake docker/systemctl/journalctl/powershell
 # alone on its PATH, and the check that every CLI verb has a row in research/module_tests.md
 ./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios.exe
 
