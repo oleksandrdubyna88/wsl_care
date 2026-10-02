@@ -18,6 +18,10 @@ namespace WslCare.Scenarios;
 /// holding the captured 2026-10-02 procfs tree on Linux, fake <c>docker</c> and <c>powershell</c> on its
 /// <c>PATH</c> that would record any call, and the wall-clock budget of 2 s measured around the process.
 /// </summary>
+/// <remarks>In <see cref="WallClock"/>, which runs alone: a budget measured while the suite's other tests start
+/// their own children measures the suite, not the verb — observed 2026-10-02 on Linux, 2.64 s once
+/// <c>PreviewFlows</c> (a 10 s hang flow among them) ran beside it, under 2 s alone.</remarks>
+[Collection(WallClock.Name)]
 public sealed class StatusFlows
 {
     /// <summary>Plan §6: <c>status --json</c> answers in under 2 s.</summary>

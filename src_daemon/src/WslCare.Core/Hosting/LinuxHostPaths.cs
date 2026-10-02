@@ -53,6 +53,11 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
 
     public string UserConfigFile => _rules.Join(environment.ConfigHome, Product, "config.json");
 
+    /// <summary>Not readable from inside the distro; see <see cref="IHostPaths.DockerDesktopConfigFile"/>.</summary>
+    public string DockerDesktopConfigFile => string.Empty;
+
+    public string DistroPath(string absoluteLinuxPath) => _rules.Join(environment.Root, absoluteLinuxPath.TrimStart('/'));
+
     /// <summary>The procfs mount the memory and process collectors read (<c>/proc</c>).</summary>
     public string ProcRoot => _rules.Join(environment.Root, "proc");
 

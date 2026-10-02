@@ -95,6 +95,19 @@ public sealed class PhysicalFileSystem : IFileSystem
         }
     }
 
+    public FileSizeResult FileSize(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists ? new FileSizeResult.Measured(info.Length) : new FileSizeResult.Missing();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return new FileSizeResult.Unreadable(e.Message);
+        }
+    }
+
     public void CreateDirectory(string path) => Directory.CreateDirectory(path);
 
     /// <summary>

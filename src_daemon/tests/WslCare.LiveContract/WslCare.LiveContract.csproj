@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <RootNamespace>WslCare.LiveContract</RootNamespace>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+  <!--
+    The LIVE contract check (plan §15a C2, §15b #2 and #6): the REAL docker / systemctl / journalctl of
+    this machine, run through the product's own ProcessCommandRunner (argv, a 30 s ceiling, tree kill) and
+    parsed by the product's own parsers. A separate executable, deliberately NOT one of the three test
+    executables `ci · daemon` runs: it needs a Docker daemon and systemd, which a CI runner does not stand
+    in for. Locally an absent tool is an explicit skip with its reason; WSL_CARE_REQUIRE_LIVE=1 (the
+    release checklist, POST_DEPLOY.md) turns every skip into a failure. WSL_CARE_LIVE_CAPTURE=<dir> also
+    writes each command's raw stdout there — how src_daemon/tests/fixtures/docker/* was recorded.
+    research/module_tests.md says what it proves and when it runs.
+  -->
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="FluentAssertions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\WslCare.Core\WslCare.Core.csproj" />
+  </ItemGroup>
+
+</Project>

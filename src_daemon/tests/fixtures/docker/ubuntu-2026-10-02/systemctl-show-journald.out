@@ -1,0 +1,7 @@
+Result=success
+NRestarts=0
+Id=systemd-journald.service
+LoadState=loaded
+ActiveState=active
+SubState=running
+ActiveEnterTimestamp=@1790948334

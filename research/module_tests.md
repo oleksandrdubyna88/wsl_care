@@ -13,6 +13,7 @@
 | Unit, core | `src_daemon/tests/WslCare.Core.Tests` | the seams, the configuration system, the records, the architecture rule — in-process |
 | Unit + process, CLI | `src_daemon/tests/WslCare.Cli.Tests` | parsing, the program in-process with captured streams, logging, and the built binary as a child process (`BuiltBinaryTests`) |
 | **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` alone on its `PATH`; the derived verb register |
+| **Live contract** | `src_daemon/tests/WslCare.LiveContract` | the REAL `docker` / `systemctl` / `journalctl` of the owner's machine through the product's own `ProcessCommandRunner` (30 s ceiling, tree kill), parsed by the product's parsers (plan §15a C2, §15b #2/#6) — NOT one of the CI test steps; § *The live contract* below |
 | AOT smoke | `.github/workflows/ci-daemon.yml` | the Native AOT binary of each RID answers `--help` / `--version`, performs the configuration round trip, and answers `status --json` (on Linux over the captured procfs tree, reporting its `MemTotal`) |
 
 Shared doubles live in `src_daemon/tests/WslCare.TestSupport` (`TempRoot`, `SandboxHost`,
@@ -64,11 +65,24 @@ renamed apphost is a real `docker.exe` / `docker` on each, and it is the product
 rule point 2). The protocol — variable names, line format, exit codes — is one file,
 `WslCare.FakeTool/FakeToolProtocol.cs`, which the harness references instead of retyping.
 
-**Fixtures** (`WslCare.Scenarios/fixtures/`, copied beside the harness). Today: one **synthetic** file,
+**Fixtures** (`WslCare.Scenarios/fixtures/`, copied beside the harness): one **synthetic** file,
 `synthetic/harness-self-test.txt`, labelled as such in its first line, used only to prove the fake
-answers from fixtures byte for byte. No real `docker` / `systemctl` / `journalctl` output is invented
-here: E2's collectors record real captures from this machine, and E2's live contract check (plan §15a
-C2) compares them against the real tools.
+answers from fixtures byte for byte. Real tool output lives in `src_daemon/tests/fixtures/docker/` (below).
+
+**The captured Docker answers** (E2.S2): `src_daemon/tests/fixtures/docker/ubuntu-2026-10-02/`, linked into the
+Core, CLI and scenario outputs as `fixtures/docker/…` and read through `TestSupport/DockerFixture`. CAPTURED by
+the live contract itself (`WSL_CARE_LIVE_CAPTURE`) inside WSL `Ubuntu` on 2026-10-02T15:22:28Z — the stdout of
+exactly the argv the product builds — and redacted by `research/diagnostics/docker_fixture_redact.mjs`
+(mechanical: a label allowlist, commands, container / named-volume / network / local-image names mapped once
+across all files, home paths; it fails on any original name left; rerun on the raw capture it reproduced the
+files byte for byte). `DockerFixture.Answers` pairs each product `ToolCommand` with its file — the inspect argv
+built from the ids the product's parser reads out of the captured `system df -v` — and the scenario scripts the
+fake `docker` from that list, so the fake replays Docker's answers for exactly the product's argv. Its
+`SOURCE.txt` says what the state was: the afternoon AFTER the one-time cleanup. **What the fixture reproduces:**
+the afternoon's rows (A4 3 / 641.4 MB, A5 13 containers, A6Unused 10 images / 9.806 GB, A7 4 entries /
+23.95 MB, 13 kept named volumes / 16.06 GB), each landing on Docker's own `system df` reclaimable. It does NOT
+reproduce the 2026-10-02 MORNING rows of the one-time cleanup (387 volumes / 59.6 GB, …): their raw outputs were
+never saved, and no fixture is invented from the summary.
 
 **The captured procfs tree** (E2.S1): `src_daemon/tests/fixtures/procfs/ubuntu-2026-10-02/`, linked into
 the Core, CLI and scenario test outputs as `fixtures/procfs/…` and read through
@@ -115,6 +129,34 @@ collection to be equal to {"planted-verb-without-a-row <thing>"}, but found empt
 synthetic one likewise — and the main check passed **green** against that stub, which is exactly why the
 companions exist.
 
+## The live contract (`WslCare.LiveContract`)
+
+The one check that the real tools still speak what the parsers read (plan §15a C2: fakes prove invocation, not
+the output contract). It is an xUnit v3 MTP executable in `wsl_care.slnx`, built with everything else and run by
+hand — none of CI's test steps names it:
+
+```bash
+./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract          # local: a skip names what is absent
+WSL_CARE_REQUIRE_LIVE=1 ./src_daemon/tests/WslCare.LiveContract/bin/Release/net10.0/WslCare.LiveContract   # release: a skip FAILS
+```
+
+Run it **inside WSL `Ubuntu`** (a Linux build, as E2.S1's procfs scenario) for the whole contract; on Windows the
+Docker half runs against Docker Desktop and the systemd half skips (no `systemctl`). It checks: `docker version`
+reads as reachable; `system df` has the four types, every figure readable; the product's sums over `system df -v`
+rows equal Docker's reclaimable totals for images, volumes and build cache, and the counts match; `volume ls
+--filter dangling=true` names exactly the volumes `df -v` shows without a link; `ps -a` rows, read by the same
+row parser, name the `df -v` containers; `container inspect` through the template answers for containers `df -v`
+lists, never prints `Env`, and every mounted volume is one `df -v` lists; `stats --no-stream` has one sample per
+running container; `events` of the last 24 h are container starts inside the window; `systemctl show` of journald
+is an active unit with an activation time, of a missing unit `not-found`; `journalctl --disk-usage` is a positive
+byte count. Pairs of answers compared with each other are taken while Docker holds still (probe, subject, probe
+again, three attempts) and an error Docker printed is retried twice 5 s apart — without both, a parallel session
+building images made the run red for reasons that were not the parsers' (measured 2026-10-02). `CI=true` skips it
+unless required.
+
+**Runs:** before every daemon release, on the owner's machine, with `WSL_CARE_REQUIRE_LIVE=1` — the release
+checklist in `POST_DEPLOY.md`; and whenever the Docker or systemd version on the machine changes.
+
 ## What each guarantee rests on
 
 | Guarantee | Test file |
@@ -150,7 +192,16 @@ companions exist.
 | The read-only queries the collectors added to the file-system seam: a directory link answers its target, a directory or an absent path is not a link, a link that cannot be inspected is unreadable (fail closed, as the deletion policy); the volume holding a directory is measured in one call; a volume that does not exist is unreadable | `WslCare.Core.Tests/Files/ReadOnlyQueriesTests.cs` |
 | `status [--json]` in-process over the captured tree: the JSON answer with `schemaVersion`, the fixture's figures, the host named as the other binary, no slow part yet — and the recording command runner received NOTHING; the slow parts of a recorded full run come back with their age, still with nothing started; the text form's lines (ASCII only); a broken configuration layer is named (`observeOnly`, `configError`) and status still answers | `WslCare.Cli.Tests/StatusCommandTests.cs` |
 | The harness's own fakes: a bare `docker` looked up by a real shell on the scenario `PATH` reaches the fake, which records its argv and prints the scripted fixture byte for byte with the scripted exit code and stderr; each of `docker`, `systemctl`, `journalctl`, `powershell` (installed as `powershell.exe` on Linux, the name WSL interop uses) answers as itself, records argv exactly (spaces included) and refuses an unscripted call (98); `git` is NOT reachable on the scenario `PATH`; a fake started outside a scenario refuses (97) | `WslCare.Scenarios/FakeToolFlows.cs` |
-| The flows of § Flow catalogue, against the built CLI | `WslCare.Scenarios/HelpAndVersionFlows.cs`, `WslCare.Scenarios/ConfigFlows.cs`, `WslCare.Scenarios/ControlCharacterFlows.cs`, `WslCare.Scenarios/StatusFlows.cs` |
+| Docker's human spellings: sizes in the base their suffix names (`MB` = 10⁶, `MiB` = 2²⁰; the summary `9.806GB (48%)`, the `20.5kB (virtual 306MB)` of `ps`), N/A and garbage unavailable, never 0; both timestamp shapes (`2026-10-02 14:23:39 +0200 CEST`, nine-digit RFC 3339) to the same UTC instant; Go's zero time is "never"; percentages; a label value holding a comma; a listing with a non-JSON line unavailable naming the line | `WslCare.Core.Tests/Docker/DockerTextTests.cs` |
+| Every failure kind with Docker 29.6.1's REAL stderr: missing socket, missing named pipe, the pre-29 wording → `daemonStopped`; permission denied, connection refused → `socketRefused`; Docker's i/o timeout and our ceiling → `timedOut` ("its process tree was killed"); no executable → `notInstalled`; a policy refusal; a cut answer → `unparseable`; an unknown message → `commandFailed` quoted; `"Server": null` → `daemonStopped` whatever the exit code; an inspect naming only vanished containers is read for the others, the same stderr on another command (or mixed with a refusal) still fails | `WslCare.Core.Tests/Docker/DockerCliTests.cs` |
+| The parsers over the CAPTURED answers: version; `system df` totals (23 / 29 / 48 / 72; 9.806 GB, 16.7 GB, 23.98 MB reclaimable); `df -v` rows whose sums equal those totals; 16 dangling volumes (3 anonymous); 29 inspected containers, 13 stopped, 28 unbounded logs, bind mounts with no name; `ps -a` ids = `df -v` ids; 16 stats in binary units; an empty events window and a real event line; `systemctl show` of an active and a missing unit; `journalctl --disk-usage` 407.2M = 426 980 147 bytes | `WslCare.Core.Tests/Docker/DockerParserTests.cs` |
+| Every command `DockerCommands` can build (enumerated by reflection) is a read verb with a ceiling; seven write verbs are not read verbs; the template names no environment, command or source; a batch of 101 ids is refused; over the captured answers the collector runs exactly the five product argvs; when no daemon answers (four ways) only the version probe runs and every part carries its reason; a failed `df -v` leaves the totals and the dangling list readable and starts no inspect; 150 containers are inspected in two batches | `WslCare.Core.Tests/Docker/DockerCollectorTests.cs` |
+| `volume-seen.json`: a still-unattached name keeps its first sighting, a new one is stamped now, a vanished one is dropped; the record round-trips through the state directory with no temporary file left; no record is empty, a broken one is reported; an UNWRITABLE state directory (`AccessDenial`) makes the write `read-only` and leaves no file | `WslCare.Core.Tests/Docker/VolumeSeenTests.cs` |
+| The rows over the captured Docker: at limit 0 A4 3 / 641.4 MB, A5 13 + their 8 anonymous volumes (6 named kept), no Testcontainers, A6Unused 10 = Docker's images reclaimable, A7 4, 13 kept named volumes, A4 + kept = Docker's volumes reclaimable; at the shipped limits nothing young is taken and the notes say what was left; an old-enough volume is selected and a `wsl-care.keep` one never; an image a stopped container uses is never listed even when Docker's count says 0; Testcontainers counted apart by hours; the build-cache age filter selects 0 while a 0 GB cap shows the whole cache; Docker 22 → A4 counted with its refusal; no Docker → every row unavailable with the reason | `WslCare.Core.Tests/Docker/CleanupPreviewTests.cs` |
+| The hygiene audit: 28 unbounded logs, a log planted where an Engine in the distro would write it is measured, the others "inside its own VM"; on Windows the builder GC of `daemon.json` (absent → not present; this machine's file → present, `true`, `20GB`) and log sizes named the Linux binary's; buildx leftovers (synthetic rows); `docker stats` for a full run → 16 samples, or the reason and no containers; the JSON answer writes an unavailable row with `reason` and NO `count` / `reclaimableBytes` key, `schemaVersion`, `docker.kind`, `volumeSeen.recorded: false` on an outage | `WslCare.Core.Tests/Docker/DockerHygieneTests.cs` |
+| `preview` parsing: `--all` required, `--json` in either order, anything else refused naming it | `WslCare.Cli.Tests/CommandLineTests.cs` |
+| `preview --all [--json]` in-process over the captured answers: every row, kept, totals, the record written, read verbs only; the text form one line per row, ASCII only; Docker missing is an answer with exit 0 and only the version probe run | `WslCare.Cli.Tests/PreviewCommandTests.cs` |
+| The flows of § Flow catalogue, against the built CLI | `WslCare.Scenarios/HelpAndVersionFlows.cs`, `WslCare.Scenarios/ConfigFlows.cs`, `WslCare.Scenarios/ControlCharacterFlows.cs`, `WslCare.Scenarios/StatusFlows.cs`, `WslCare.Scenarios/PreviewFlows.cs` |
 | The derived register: every verb of `CommandLine.Commands` runs its example (exit 0 or 2) and has a flow-catalogue row; a planted verb is reported missing; prose, other tables and rows after the section do not count | `WslCare.Scenarios/VerbRegisterTests.cs` |
 
 Teeth, observed by breaking the code and watching the named tests go red:
@@ -240,6 +291,40 @@ Teeth, observed by breaking the code and watching the named tests go red:
     into an *inconsistent sample* (overshoot 1 728 458 752 bytes), which is exactly the double count §15b #4
     was written against — plus `StatusCommandTests`' JSON and text tests. Green on restore.
 
+- 2026-10-02 (E2.S2). The collectors were written before their tests, so — as in E2.S1 — the teeth were proved
+  by breaking the line each guarantee rests on, watching the named tests go red for the behavioural reason, and
+  restoring it. One observation per group:
+  - **Units:** `MiB` read as 10⁶ turned `Megabytes_and_mebibytes_are_not_the_same_figure` red (*Expected … to be
+    104857600L, but found 100000000L*) and the `53.84MiB` case.
+  - **Classification:** the `permission denied` phrase removed turned the real permission-denied stderr into
+    `CommandFailed` (*Expected the enum to be DockerFailure.SocketRefused {value: 2}, but found
+    DockerFailure.CommandFailed {value: 4}*). Swapping the phrase groups' ORDER turned nothing red — no real
+    message carries phrases of two kinds — so the comment claiming the order mattered was corrected.
+  - **No daemon, nothing else:** the early return removed turned all four `When_no_daemon_answers…` cases red
+    (*Expected runner.Requests to contain a single item because only the version probe runs*).
+  - **First sightings:** keeping vanished names turned the observe test red; the `read-only` catch removed made
+    the real denied state directory throw `System.UnauthorizedAccessException : Access to the path
+    '…\volume-seen.json.<guid>.tmp' is denied.` — the OS refusing the temporary file is what "unprivileged" is.
+  - **Protections:** dropping the inspected-image-id check listed the image of a stopped container (*Expected
+    value to be 10 because the image of a stopped container is not unused, but found 11*); dropping the keep
+    label selected the labelled volume (*Expected value to be 2, but found 3*).
+  - **Read verbs only:** `volume ls` changed to `volume prune` in `DockerCommands` turned the scenario red on the
+    fakes' argv log (*Expected home.Calls to contain only items matching ((c.Tool == "docker") AndAlso
+    IsReadVerb(c.Argv))*) and both Core read-verb tests — the fake only replays, it never prunes.
+  - **Never 0:** an unavailable row written with `count: 0` turned the JSON-contract test red (*Expected
+    a4.TryGetProperty("count", out _) to be False because an unread figure is absent, never 0*).
+  - **Verb register:** `preview --all [--json]` registered before its catalogue row turned both register checks
+    red (*missing: preview --all [--json]*).
+  - **Vanished container (a defect the live contract found, test FIRST):** with the fix reverted the new
+    `An_inspect_that_names_only_containers_removed…` failed with *Expected answer to be …Answered … Reason = "docker
+    container inspect … failed: Error response from daemon: No such container: bd82df97…"*; green with the fix.
+  - **A budget measured beside the new flows:** on Linux `StatusFlows`' 2 s budget read 2.64 s once `PreviewFlows`
+    (a 10 s hang flow among them) ran in parallel — a wall-clock measurement of the suite, not of the verb. The
+    timed flows now run in the `WallClock` collection, alone; green on both families afterwards.
+  - **Found by the live contract, not by any fake:** `$m.Name` in the inspect template failed the whole command on
+    this machine's bind mounts (*template parsing error: … at <$m.Name>: map has no entry for key "Name"*), and an
+    empty events window failed an `OnlyContain` assertion — both fixed before any fixture was recorded.
+
 ## Flow catalogue
 
 One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` `` exactly as
@@ -263,7 +348,12 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care status [--json]` on this binary's own side: under 2 s, the Windows binary answers host RAM / drive / `vmmemWSL` and names the VM as the other binary; the Linux binary over an empty root reports memory unavailable with the path and no value key; no slow part recorded yet; no tool started | covered | `StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget_names_what_it_cannot_read_and_starts_nothing`; AOT binary (`win-x64`): CI status smoke |
 | `wsl-care status [--json]` after a full run recorded slow parts: `docker stats` come back from `history.jsonl` with the run id and their age, the Windows clock unavailable; nothing started | covered | `StatusFlows.Status_reads_the_slow_parts_back_from_the_last_full_run_with_their_age`; also `LastFullRunTests`, `StatusCommandTests` |
 | `wsl-care status [--json]` as text, and a stray argument refused with exit 2 and one `wsl-care:` message | covered | `StatusFlows.Status_without_json_prints_text_and_a_stray_argument_is_refused_with_the_usage_code`; also `CommandLineTests` |
-| `wsl-care collect` / `preview --all --json` / `doctor --json` / `events follow` | not covered | not built yet (E2.S2, E2.S3) |
+| `wsl-care preview --all [--json]` over the docker answers CAPTURED on 2026-10-02 at limit 0: A4 3 volumes / 641.4 MB, A5 13 containers, A6Unused 10 images, A7 4 entries, 13 kept named volumes — and A6Unused, A7 and A4 + kept each land on Docker's OWN `system df` reclaimable; 28 unbounded logs; `volume-seen.json` written (the sandbox is writable); the fakes saw exactly the five product argvs, every one a read verb | covered | `PreviewFlows.Preview_over_the_captured_docker_at_limit_zero_reproduces_its_rows_and_starts_docker_read_verbs_only`; in-process: `PreviewCommandTests`, `CleanupPreviewTests` |
+| `wsl-care preview --all [--json]` at the shipped limits: a volume first seen now is left (note: 3 younger), one first seen two days ago (a pre-written `volume-seen.json`) is counted, and its first sighting survives the look | covered | `PreviewFlows.At_the_shipped_limits_a_volume_first_seen_now_is_left_and_one_first_seen_two_days_ago_is_counted` |
+| `wsl-care preview --all [--json]` when Docker cannot answer: not on PATH → `notInstalled`, a stopped daemon (Docker's real stderr) → `daemonStopped` with only the version probe run, a hang → `timedOut` at the 10 s probe ceiling with the tree killed; every row `available: false` with the reason and NO `count` / `reclaimableBytes` key; exit 0 | covered | `PreviewFlows.Without_docker_on_the_path_…`, `PreviewFlows.A_stopped_daemon_…`, `PreviewFlows.A_docker_that_hangs_…`; classification: `DockerCliTests`, `DockerCollectorTests` |
+| `wsl-care preview --all [--json]` with the state directory unwritable (`AccessDenial`): `volumeSeen.recorded: false`, `read-only:` reason, the rows still answer, nothing written | covered | `PreviewFlows.An_unwritable_state_directory_makes_preview_read_only_and_it_still_answers`; also `VolumeSeenTests` |
+| `wsl-care preview --all [--json]` as text, and `preview` without `--all` refused with exit 2 and one `wsl-care:` message | covered | `PreviewFlows.Preview_without_json_prints_the_rows_and_preview_without_all_is_refused`; also `CommandLineTests` |
+| `wsl-care collect` / `doctor --json` / `events follow` | not covered | not built yet (E2.S3) |
 | `wsl-care act <A#> [--preview] --json`: a cleanup previewed, then run | not covered | not built yet (E3) |
 | `wsl-care logs --period …` / `runs show` / `runs log` | not covered | not built yet (E3) |
 | `wsl-care agents list` / `agents probe <path>` | not covered | not built yet (E7) |
@@ -272,12 +362,20 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 
 ## What it does not prove
 
-- **The fakes prove invocation, not the real tools' output.** No `docker`, `systemctl` or `journalctl`
-  output is captured here yet; E2 records real captures from this machine and adds the live contract
-  check against the real tools (plan §15a C2) — skipped in CI with its reason, required at release.
-- **No verb shells out yet** — `status` reads files and OS counters only — so the fakes are exercised
-  today by the harness's own self-test (`FakeToolFlows`), by the "nothing started" assertions, and by the
-  break-its above. The first verbs that start a tool arrive in E2.S2/E2.S3.
+- **The fakes replay one afternoon of one Docker.** The captured answers are Docker Desktop 4.81.0 / Engine
+  29.6.1 after a cleanup: no dangling image, no Testcontainers container, no `docker-container` builder, no
+  container start in Docker's event buffer, no Engine inside the distro (so no log size is ever measured live).
+  Those edges are proved on synthetic rows in the captured shapes, labelled so. Whether the real tools still
+  answer in these shapes is the live contract's job, and it runs by hand — at release and when a tool changes.
+- **The live contract needs a quiet Docker.** It retries and re-reads, then skips (fails at release) when the
+  figures it compares keep changing. On 2026-10-02, with a parallel session building images and replacing
+  containers, the first required runs failed for exactly those races; with stillness judged on the compared
+  figures (counts and reclaimable bytes — a running database grows its volume between any two calls) the
+  required run inside WSL `Ubuntu` passed 11/11, and on Windows 8 passed with the 3 systemd checks skipped. It runs as the unprivileged user, so the privileged
+  write of `volume-seen.json` under `/var/lib/wsl-care` is proved only in a sandbox, never on the real path.
+- **`status` shells out to nothing; `preview` only to Docker read verbs** — proved on the fakes' argv log
+  and by enumerating `DockerCommands`, not by an OS-level sandbox: a code path that started another tool
+  would fail to find it on the scenario PATH rather than reach a real one.
 - **The procfs tree is one afternoon of one machine**: 51 of ~196 processes, no kernel thread, no
   container member in `/proc` (Docker Desktop keeps them in another PID namespace). The container-member,
   `systemd --user` and negative-remainder edges are proved on synthetic trees only. No capture of
@@ -324,7 +422,8 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
   as they are: control characters in a log file are not a terminal concern and are not replaced there.
 - `ShutdownSignals` is thin wiring over `PosixSignalRegistration` and is not tested in isolation; the
   token's effect on a run is (`ProgramTests`, `ProcessCommandRunnerTests`).
-- The `AllowAllCommandPolicy` is a placeholder; the never-list and its property test are E3.S1.
+- The `AllowAllCommandPolicy` is a placeholder; the never-list and its property test are E3.S1. Until then the
+  "read verbs only" guarantee rests on `DockerCommands` being the one builder of docker argv.
 - Nothing here runs on a real WSL VM under memory pressure; the live smoke on the owner's machine is
   the only place that happens, at release time.
 
@@ -333,4 +432,5 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 On every push to `main` and every pull request: `ci · daemon` (unconditional, no path filter) runs the
 three test executables and both AOT smoke steps on `ubuntu-latest`, `ubuntu-24.04-arm` and
 `windows-latest`; `ci · family checks` runs the shared plan, pin, adapter and build-flags checks. The
-live smoke on the owner's machine runs at every release (E4 onwards).
+live smoke on the owner's machine runs at every release (E4 onwards), and so does the live contract with
+`WSL_CARE_REQUIRE_LIVE=1` (§ *The live contract*).

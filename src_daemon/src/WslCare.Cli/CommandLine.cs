@@ -28,6 +28,9 @@ internal abstract record Request
 
     /// <summary><c>status [--json]</c>: the fast snapshot (plan §6), as text or as the JSON report.</summary>
     internal sealed record Status(bool Json) : Request;
+
+    /// <summary><c>preview --all [--json]</c>: every cleanup row with count and reclaimable bytes (plan §6).</summary>
+    internal sealed record Preview(bool Json) : Request;
 }
 
 /// <summary>One thing the command line accepts: how it is spelt, what it does, how it is parsed.</summary>
@@ -62,6 +65,7 @@ internal static class CommandLine
     internal const string BinaryName = "wsl-care";
 
     private const string JsonFlag = "--json";
+    private const string AllFlag = "--all";
 
     internal static readonly IReadOnlyList<Command> Commands =
     [
@@ -71,6 +75,7 @@ internal static class CommandLine
         new([["config", "set"]], "config set <key> <value>", "validate one setting and write it into the user layer", ["config", "set", "dryRun", "false"], ParseConfigSet),
         new([["config", "reset"]], "config reset <key>", "remove one setting from the user layer", ["config", "reset", "dryRun"], ParseConfigReset),
         new([["status"]], "status [--json]", "a fast snapshot: memory, top holders, containers, disk; slow parts from the last full run", ["status", "--json"], ParseStatus),
+        new([["preview"]], "preview --all [--json]", "every cleanup row with its count and reclaimable bytes, the kept named volumes, Docker hygiene", ["preview", "--all", "--json"], ParsePreview),
     ];
 
     /// <summary>Every spelling of <see cref="Commands"/> with its command, longest first — ordered once,
@@ -172,6 +177,13 @@ internal static class CommandLine
         [] => new Request.Status(Json: false),
         [JsonFlag] => new Request.Status(Json: true),
         _ => new Request.Failed($"\"{BinaryName} status\" takes only {JsonFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
+    };
+
+    private static Request ParsePreview(IReadOnlyList<string> rest) => rest switch
+    {
+        [AllFlag] => new Request.Preview(Json: false),
+        [AllFlag, JsonFlag] or [JsonFlag, AllFlag] => new Request.Preview(Json: true),
+        _ => new Request.Failed($"\"{BinaryName} preview\" needs {AllFlag} (and optionally {JsonFlag}); one action's preview is \"{BinaryName} act <A#> --preview\", which arrives with the actions; got \"{Printable(string.Join(' ', rest))}\"."),
     };
 
     private static string BuildHelpText()
