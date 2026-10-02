@@ -47,6 +47,26 @@ public sealed record CommandRequest
 
     public int OutputCapChars { get; init; } = DefaultOutputCapChars;
 
+    /// <summary>The environment the child starts with: this process's own (every read command of E2), or a CLEAN one
+    /// holding exactly the variables given — what a tool run as the target user gets (plan §15c #2).</summary>
+    public CommandEnvironment Environment { get; init; } = CommandEnvironment.Inherited;
+
     /// <summary>The command as a person would read it in a log — for messages only, never executed.</summary>
     public string Display => string.Join(' ', Argv);
+}
+
+/// <summary>The environment a child starts with — a closed set, so the runner's choice is complete by inspection.</summary>
+public abstract record CommandEnvironment
+{
+    private CommandEnvironment()
+    {
+    }
+
+    /// <summary>This process's environment, unchanged.</summary>
+    public static readonly CommandEnvironment Inherited = new InheritedEnvironment();
+
+    /// <summary>Nothing of this process's environment: exactly <paramref name="Variables"/>.</summary>
+    public sealed record Clean(IReadOnlyDictionary<string, string> Variables) : CommandEnvironment;
+
+    private sealed record InheritedEnvironment : CommandEnvironment;
 }

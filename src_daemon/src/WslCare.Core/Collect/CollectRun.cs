@@ -41,16 +41,16 @@ public sealed record CollectResult(Recording Recording, string Reason, string De
 /// operating system's answer to a write probe (<see cref="IFileSystem.ProbeWriteAccess"/>): when it may not, the
 /// run measures and reports exactly as a privileged one would and writes NOTHING — no reconcile, no retention, no
 /// detail, no history line, no first sightings — and says <i>read-only: run as root to record</i>.</para>
-/// <para><b>One run at a time.</b> A privileged run holds <c>{state}/run.lock</c> (an exclusive open, released by the
-/// OS when the holder dies) for its whole length, so the reconcile never mistakes a running run's detail for an
-/// orphan; a second run is <see cref="Recording.Busy"/> and measures nothing. E3.S1's action lock supersedes it.</para>
+/// <para><b>One run at a time.</b> A privileged run holds THE run lock (<see cref="RunLock"/>, <c>/run/wsl-care.lock</c> —
+/// one file for <c>collect</c> and <c>act</c> since E3.S1; an exclusive open, released by the OS when the holder dies) for its
+/// whole length, so the reconcile never mistakes a running run's detail for an orphan; a second run — a full run or an
+/// act — is <see cref="Recording.Busy"/>, waits for nothing and measures nothing.</para>
 /// <para><b>Order.</b> Reconcile → retention → measure → the detail (atomic) → the history line naming it; the caller
 /// closes the run log last. A failed write makes the run <c>failed</c> with the reason — on its history line when the
 /// detail was what failed, in the result (and the log) when the line itself could not be written.</para>
 /// </remarks>
 public static class CollectRun
 {
-    public const string RunLockFile = "run.lock";
     public const string ReadOnlyNote = "read-only: run as root to record";
 
     /// <summary>The "since the last run" window when there is no last run: the timer's period (plan §8).</summary>
@@ -66,10 +66,10 @@ public static class CollectRun
             return new CollectResult(Recording.ReadOnly, $"{ReadOnlyNote} ({denied.Reason})", string.Empty, measured);
         }
 
-        switch (c.Files.TryLockExclusive(c.Paths.Rules.Join(c.Paths.StateDirectory, RunLockFile)))
+        switch (RunLock.TryTake(c.Paths, c.Files))
         {
             case ExclusiveLock.Busy busy:
-                return new CollectResult(Recording.Busy, $"another run is in progress: {busy.Reason}", string.Empty, null);
+                return new CollectResult(Recording.Busy, $"another run is in progress (a full run or an act): {busy.Reason}", string.Empty, null);
             case ExclusiveLock.Held held:
                 using (held.Handle)
                 {
@@ -83,43 +83,18 @@ public static class CollectRun
         }
     }
 
-    /// <summary>The detail first (atomic), then the history line that names it.</summary>
+    /// <summary>The detail first (atomic), then the history line that names it (<see cref="RunRecorder"/>, shared with <c>act</c>).</summary>
     private static CollectResult Record(CollectContext c, RunDetail detail)
     {
-        var relative = RunDetailStore.RelativePath(detail.RunId);
-        var failure = WriteDetail(c, detail);
-        var line = failure.Length == 0
-            ? Line(detail, detail.Outcome) with { Detail = relative }
-            : Line(detail, RunOutcome.Failed) with { Reason = failure };
-        try
+        var json = JsonSerializer.SerializeToUtf8Bytes(detail, WslCareJsonContext.Default.RunDetail);
+        var recorded = RunRecorder.Record(c.Paths, c.Files, detail.RunId, json, (relative, failure) =>
+            failure.Length == 0 ? Line(detail, detail.Outcome) with { Detail = relative } : Line(detail, RunOutcome.Failed) with { Reason = failure });
+        return recorded switch
         {
-            new RunRecordWriter(c.Paths, c.Files).Append(line);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
-        {
-            var reason = $"the history line could not be written ({e.Message}){(failure.Length > 0 ? $"; before that, {failure}" : string.Empty)}";
-            return new CollectResult(Recording.Failed, reason, failure.Length == 0 ? relative : string.Empty, detail);
-        }
-
-        return failure.Length == 0
-            ? new CollectResult(Recording.Recorded, string.Empty, relative, detail)
-            : new CollectResult(Recording.Failed, failure, string.Empty, detail with { Outcome = RunOutcome.Failed });
-    }
-
-    /// <summary>Empty when written; otherwise why not.</summary>
-    private static string WriteDetail(CollectContext c, RunDetail detail)
-    {
-        try
-        {
-            var json = JsonSerializer.SerializeToUtf8Bytes(detail, WslCareJsonContext.Default.RunDetail);
-            return RunDetailStore.Write(c.Paths, c.Files, detail.RunId, json) is Files.Deletion.DeletionVerdict.Refused refused
-                ? $"the run detail could not be written: {refused.Reason}"
-                : string.Empty;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return $"the run detail could not be written: {e.Message}";
-        }
+            { Recording: Recording.Recorded } => new CollectResult(Recording.Recorded, string.Empty, recorded.DetailFile, detail),
+            { LineWritten: false } => new CollectResult(Recording.Failed, recorded.Reason, recorded.DetailFile, detail),
+            _ => new CollectResult(Recording.Failed, recorded.Reason, string.Empty, detail with { Outcome = RunOutcome.Failed }),
+        };
     }
 
     private static RunRecord Line(RunDetail d, RunOutcome outcome) =>

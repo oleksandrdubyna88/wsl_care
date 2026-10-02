@@ -14,6 +14,11 @@ namespace WslCare.Core.Hosting;
 /// <paramref name="Home"/>.</param>
 public sealed record LinuxEnvironment(string Home, string Etc, string Var, string Tmp, string ConfigHome, string Root = "/", string StateHome = "")
 {
+    /// <summary>Further homes whose <c>~/git</c> and AI-agent folders are protected besides <see cref="Home"/>'s (plan §15c #2:
+    /// under the root timer <c>$HOME</c> is root's, and the protected roots must be the TARGET user's — so every login
+    /// account's home is protected, whoever the target turns out to be). Empty by default.</summary>
+    public IReadOnlyList<string> ProtectedHomes { get; init; } = [];
+
     /// <summary>The real machine: <c>$HOME</c>, <c>/etc</c>, <c>/var</c>, <c>/tmp</c>.</summary>
     public static LinuxEnvironment FromThisMachine()
     {
@@ -57,6 +62,16 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
 
     public string TempDirectory => environment.Tmp;
 
+    /// <summary><c>/run/wsl-care.lock</c> (under the sandbox root when sandboxed).</summary>
+    public string RunLockFile => _rules.Join(environment.Root, "run", Product + ".lock");
+
+    /// <summary>journald's two stores (<c>/var/log/journal</c>, <c>/run/log/journal</c>): what A10's preview and its
+    /// measured result walk.</summary>
+    public IReadOnlyList<string> JournalDirectories => [_rules.Join(environment.Var, "log", "journal"), _rules.Join(environment.Root, "run", "log", "journal")];
+
+    /// <summary>The same layout with <paramref name="homes"/> protected as well (<see cref="LinuxEnvironment.ProtectedHomes"/>).</summary>
+    public LinuxHostPaths WithProtectedHomes(IReadOnlyList<string> homes) => new(environment with { ProtectedHomes = homes });
+
     public string MachineConfigFile => _rules.Join(environment.Etc, Product, "config.json");
 
     public string UserConfigFile => _rules.Join(environment.ConfigHome, Product, "config.json");
@@ -95,20 +110,26 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     public string AtopDirectory => _rules.Join(environment.Var, "log", "atop");
 
     /// <summary>Plan §4.6, the Linux column: Claude Code, Codex, Gemini CLI, Antigravity's cache,
-    /// GitHub Copilot CLI, Rovo Dev, Ollama's models. The agent catalogue (E7) extends this list.</summary>
-    public IReadOnlyList<string> AgentRoots { get; } =
-    [
-        PathRules.Linux.Join(environment.Home, ".claude"),
-        PathRules.Linux.Join(environment.Home, ".codex"),
-        PathRules.Linux.Join(environment.Home, ".gemini"),
-        PathRules.Linux.Join(environment.Home, ".cache", "antigravity"),
-        PathRules.Linux.Join(environment.Home, ".copilot"),
-        PathRules.Linux.Join(environment.Home, ".rovodev"),
-        PathRules.Linux.Join(environment.Home, ".ollama"),
-    ];
+    /// GitHub Copilot CLI, Rovo Dev, Ollama's models — under the home AND every protected home (E3.S1). The agent
+    /// catalogue (E7) extends this list.</summary>
+    public IReadOnlyList<string> AgentRoots { get; } = [.. HomesOf(environment).SelectMany(AgentRootsUnder)];
 
-    public IReadOnlyList<string> GitRoots { get; } = [PathRules.Linux.Join(environment.Home, "git")];
+    public IReadOnlyList<string> GitRoots { get; } = [.. HomesOf(environment).Select(home => PathRules.Linux.Join(home, "git"))];
 
     /// <summary>Claude Code keeps its shell snapshots and task output under <c>$TMPDIR/claude</c>.</summary>
     public IReadOnlyList<string> ClaudeTempRoots { get; } = [PathRules.Linux.Join(environment.Tmp, "claude")];
+
+    private static IReadOnlyList<string> HomesOf(LinuxEnvironment environment) =>
+        [.. new[] { environment.Home }.Concat(environment.ProtectedHomes).Where(h => h.Length > 0).Distinct(StringComparer.Ordinal)];
+
+    private static IReadOnlyList<string> AgentRootsUnder(string home) =>
+    [
+        PathRules.Linux.Join(home, ".claude"),
+        PathRules.Linux.Join(home, ".codex"),
+        PathRules.Linux.Join(home, ".gemini"),
+        PathRules.Linux.Join(home, ".cache", "antigravity"),
+        PathRules.Linux.Join(home, ".copilot"),
+        PathRules.Linux.Join(home, ".rovodev"),
+        PathRules.Linux.Join(home, ".ollama"),
+    ];
 }

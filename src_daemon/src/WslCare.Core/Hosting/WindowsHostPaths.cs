@@ -57,6 +57,9 @@ public sealed class WindowsHostPaths(WindowsEnvironment environment) : IHostPath
 
     public string TempDirectory => environment.Temp;
 
+    /// <summary>Under the state directory: Windows has no <c>/run</c>.</summary>
+    public string RunLockFile => _rules.Join(environment.LocalAppData, Product, Product + ".lock");
+
     public string MachineConfigFile => _rules.Join(environment.ProgramData, Product, "config.json");
 
     public string UserConfigFile => _rules.Join(environment.AppData, Product, "config.json");

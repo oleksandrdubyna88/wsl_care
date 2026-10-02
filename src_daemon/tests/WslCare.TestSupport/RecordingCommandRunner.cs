@@ -1,4 +1,5 @@
 using WslCare.Core.Processes;
+using WslCare.Core.Processes.Policy;
 
 namespace WslCare.TestSupport;
 
@@ -25,6 +26,7 @@ public sealed class RecordingCommandRunner : ICommandRunner
     private readonly Dictionary<string, CommandOutcome> _scripted = new(StringComparer.Ordinal);
     private readonly List<(Func<IReadOnlyList<string>, bool> Match, Queue<CommandOutcome> Outcomes)> _matching = [];
     private readonly Queue<StreamScript> _streams = new();
+    private readonly List<(Func<IReadOnlyList<string>, bool> Match, Func<CommandRequest, CommandOutcome> Effect)> _effects = [];
     private readonly object _gate = new();
 
     /// <summary>What an unscripted command answers: exit 0, nothing printed.</summary>
@@ -61,12 +63,24 @@ public sealed class RecordingCommandRunner : ICommandRunner
         return this;
     }
 
+    /// <summary>Script every argv <paramref name="match"/> accepts with an answer COMPUTED at the call — what a test needs when
+    /// the command has an effect it must play (a vacuum that removes files) before the outcome returns.</summary>
+    public RecordingCommandRunner ScriptEffect(Func<IReadOnlyList<string>, bool> match, Func<CommandRequest, CommandOutcome> effect)
+    {
+        _effects.Add((match, effect));
+        return this;
+    }
+
     /// <summary>Queue the next stream a <see cref="StreamAsync"/> call plays.</summary>
     public RecordingCommandRunner Stream(StreamScript script)
     {
         _streams.Enqueue(script);
         return this;
     }
+
+    /// <summary>When set, every request is reviewed first exactly as <c>ProcessCommandRunner</c> reviews it: a refused one is
+    /// kept in <see cref="Requests"/> and answered <see cref="CommandOutcome.Refused"/>, and nothing scripted is played.</summary>
+    public CommandPolicy? Policy { get; init; }
 
     public static CommandOutcome.Exited Exited(int exitCode, string stdout = "", string stderr = "") =>
         new(exitCode, new CapturedText(stdout, false), new CapturedText(stderr, false), TimeSpan.Zero);
@@ -77,7 +91,13 @@ public sealed class RecordingCommandRunner : ICommandRunner
         lock (_gate)
         {
             _requests.Add(request);
-            return Task.FromResult(Answer(request.Argv));
+            if (Policy?.Review(request) is CommandVerdict.Refused refused)
+            {
+                return Task.FromResult<CommandOutcome>(new CommandOutcome.Refused(refused.Reason));
+            }
+
+            var effect = _effects.FirstOrDefault(e => e.Match(request.Argv)).Effect;
+            return Task.FromResult(effect is null ? Answer(request.Argv) : effect(request));
         }
     }
 
@@ -124,10 +144,4 @@ public sealed class RecordingCommandRunner : ICommandRunner
 
         return Default;
     }
-}
-
-/// <summary>A policy that refuses everything, for proving a refusal prevents the start.</summary>
-public sealed class RefuseAllCommandPolicy(string reason = "refused by the test policy") : ICommandPolicy
-{
-    public CommandVerdict Review(IReadOnlyList<string> argv) => CommandVerdict.Refuse(reason);
 }

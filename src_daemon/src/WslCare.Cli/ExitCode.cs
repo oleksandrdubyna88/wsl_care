@@ -18,15 +18,32 @@ internal enum ExitCode
     RunFailed = 1,
 
     /// <summary>The arguments could not be read or accepted — an unknown verb, extra words, a value
-    /// the schema refuses.</summary>
+    /// the schema refuses, an action this build does not hold, an action of the other side.</summary>
     Usage = 2,
+
+    /// <summary><c>act</c>: the run was recorded and at least one action FAILED (the others ran — plan §5: a failing
+    /// action is logged and the run continues). The answer names which and why.</summary>
+    ActionFailed = 3,
 
     /// <summary>A defect in this binary: something it should have handled escaped. Always a bug.</summary>
     Internal = 70,
 
-    /// <summary>Another run holds the lock (<c>collect</c>), or another follower runs (<c>events follow</c>);
-    /// nothing was done. 75 is <c>EX_TEMPFAIL</c>: try again later.</summary>
+    /// <summary>Another run holds the run lock (<c>collect</c> or <c>act</c> — the second one refuses, it never waits), a
+    /// live run is acting, or another follower runs (<c>events follow</c>); nothing was done. 75 is <c>EX_TEMPFAIL</c>:
+    /// try again later.</summary>
     Busy = 75,
+
+    /// <summary><c>act</c>: a run is WEDGED — its process is alive and its heartbeat stale — or the running state cannot be
+    /// told (plan §15 #6). Nothing was done and nothing was killed; it waits for a person.</summary>
+    Wedged = 76,
+
+    /// <summary><c>act</c> started by a process that is not root (plan §15c #0): refused whole, before the lock or any
+    /// state was touched. 77 is <c>EX_NOPERM</c>.</summary>
+    NeedsRoot = 77,
+
+    /// <summary><c>act --confirm</c> while a configuration layer is invalid (plan §15a #1: observe-only): nothing runs.
+    /// 78 is <c>EX_CONFIG</c>.</summary>
+    ObserveOnly = 78,
 
     /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention).</summary>
     Interrupted = 130,

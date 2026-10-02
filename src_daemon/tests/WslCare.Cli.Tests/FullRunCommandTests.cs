@@ -106,7 +106,7 @@ public sealed class FullRunCommandTests
     {
         using var sandbox = new SandboxHost("collect-busy");
         sandbox.Files.CreateDirectory(sandbox.Paths.StateDirectory);
-        var held = (ExclusiveLock.Held)sandbox.Files.TryLockExclusive(sandbox.Paths.Rules.Join(sandbox.Paths.StateDirectory, CollectRun.RunLockFile));
+        var held = (ExclusiveLock.Held)RunLock.TryTake(sandbox.Paths, sandbox.Files);
         using (held.Handle)
         {
             var (exit, stdout, stderr) = CliRun.Over(Host(sandbox, sandbox.Files, Tools(), DockerFixture.CapturedAt), "collect");
