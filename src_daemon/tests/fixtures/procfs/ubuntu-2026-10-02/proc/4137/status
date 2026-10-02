@@ -1,0 +1,59 @@
+Name:	docker-desktop-
+Umask:	0022
+State:	S (sleeping)
+Tgid:	4137
+Ngid:	0
+Pid:	4137
+PPid:	4121
+TracerPid:	0
+Uid:	0	0	0	0
+Gid:	0	0	0	0
+FDSize:	64
+Groups:	0 
+NStgid:	4137
+NSpid:	4137
+NSpgid:	4137
+NSsid:	4137
+Kthread:	0
+VmPeak:	 1287148 kB
+VmSize:	 1287148 kB
+VmLck:	       0 kB
+VmPin:	       0 kB
+VmHWM:	   29868 kB
+VmRSS:	   29868 kB
+RssAnon:	   11340 kB
+RssFile:	       8 kB
+RssShmem:	   18520 kB
+VmData:	   90900 kB
+VmStk:	     132 kB
+VmExe:	    9008 kB
+VmLib:	       8 kB
+VmPTE:	     160 kB
+VmSwap:	       0 kB
+HugetlbPages:	       0 kB
+CoreDumping:	0
+THP_enabled:	1
+untag_mask:	0xffffffffffffffff
+Threads:	14
+SigQ:	5/183811
+SigPnd:	0000000000000000
+ShdPnd:	0000000000000000
+SigBlk:	0000000000000000
+SigIgn:	0000000000000000
+SigCgt:	fffffffc7fc1feff
+CapInh:	0000000000000000
+CapPrm:	000001ffffffffff
+CapEff:	000001ffffffffff
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+NoNewPrivs:	0
+Seccomp:	2
+Seccomp_filters:	1
+Speculation_Store_Bypass:	thread vulnerable
+SpeculationIndirectBranch:	conditional enabled
+Cpus_allowed:	ffffff
+Cpus_allowed_list:	0-23
+Mems_allowed:	00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000000,00000001
+Mems_allowed_list:	0
+voluntary_ctxt_switches:	50
+nonvoluntary_ctxt_switches:	6

@@ -6,7 +6,10 @@ namespace WslCare.Core.Hosting;
 /// <param name="Var">Variable state (<c>/var</c>).</param>
 /// <param name="Tmp">The temporary directory (<c>/tmp</c>).</param>
 /// <param name="ConfigHome">Where user configuration goes (<c>$XDG_CONFIG_HOME</c>, else <c>~/.config</c>).</param>
-public sealed record LinuxEnvironment(string Home, string Etc, string Var, string Tmp, string ConfigHome)
+/// <param name="Root">The filesystem root the collectors read under: <c>/proc</c>, <c>/sys/fs/cgroup</c>,
+/// and the volume <c>df /</c> measures (plan §4.1, §4.2, §4.4). <c>/</c> on the real machine; the sandbox
+/// root under <c>WSL_CARE_ROOT</c>, so a test or a scenario hands the collectors a captured fixture tree.</param>
+public sealed record LinuxEnvironment(string Home, string Etc, string Var, string Tmp, string ConfigHome, string Root = "/")
 {
     /// <summary>The real machine: <c>$HOME</c>, <c>/etc</c>, <c>/var</c>, <c>/tmp</c>.</summary>
     public static LinuxEnvironment FromThisMachine()
@@ -23,7 +26,7 @@ public sealed record LinuxEnvironment(string Home, string Etc, string Var, strin
     {
         var rules = PathRules.Linux;
         var home = rules.Join(root, "home", "me");
-        return new(home, rules.Join(root, "etc"), rules.Join(root, "var"), rules.Join(root, "tmp"), rules.Join(home, ".config"));
+        return new(home, rules.Join(root, "etc"), rules.Join(root, "var"), rules.Join(root, "tmp"), rules.Join(home, ".config"), root);
     }
 }
 
@@ -49,6 +52,18 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     public string MachineConfigFile => _rules.Join(environment.Etc, Product, "config.json");
 
     public string UserConfigFile => _rules.Join(environment.ConfigHome, Product, "config.json");
+
+    /// <summary>The procfs mount the memory and process collectors read (<c>/proc</c>).</summary>
+    public string ProcRoot => _rules.Join(environment.Root, "proc");
+
+    /// <summary>The cgroup v2 mount the container collector reads (<c>/sys/fs/cgroup</c>).</summary>
+    public string CgroupRoot => _rules.Join(environment.Root, "sys", "fs", "cgroup");
+
+    /// <summary>What <c>df /</c> measures: the distro's root filesystem (plan §4.4).</summary>
+    public string FilesystemRoot => environment.Root;
+
+    /// <summary>The user database the process collector names owners from (<c>/etc/passwd</c>).</summary>
+    public string PasswdFile => _rules.Join(environment.Etc, "passwd");
 
     /// <summary>Plan §4.6, the Linux column: Claude Code, Codex, Gemini CLI, Antigravity's cache,
     /// GitHub Copilot CLI, Rovo Dev, Ollama's models. The agent catalogue (E7) extends this list.</summary>
