@@ -25,7 +25,7 @@ extension's settings are an editor for the user file.
 ```bash
 wsl-care config get                      # every setting, its value, and the layer it came from
 wsl-care config get volumes.anonymousMaxGb --json
-wsl-care config set volumes.anonymousMaxGb 25   # validated; refused values exit 2 with one stderr line
+wsl-care config set volumes.anonymousMaxGb 25   # validated; a refused value exits 2 with one "wsl-care:" line
 wsl-care config reset volumes.anonymousMaxGb    # back to the machine/default value
 ```
 
@@ -37,7 +37,9 @@ still read, drops the rest by name, and moves a file it cannot parse to `config.
 
 Run logs go to `/var/log/wsl-care/{yyyy-MM-dd}/wsl-care-{HH-mm-ss}-{pid}.log` (Linux) or
 `%LOCALAPPDATA%\wsl-care\logs\…` (Windows), one file per run, UTC; `logging.minimumLevel` and
-`logging.retentionDays` (14) are settings like any other. Set `WSL_CARE_ROOT=<dir>` to lay every
+`logging.retentionDays` (14) are settings like any other; the console log goes to **stderr** (stdout
+carries only answers), so a refusal's `wsl-care:` message may sit beside a log line there. Set
+`WSL_CARE_ROOT=<dir>` to lay every
 path — configuration, state, logs, the protected folders — out under one directory; tests and
 scenario runs use it so nothing real is ever touched.
 
@@ -54,6 +56,10 @@ dotnet build wsl_care.slnx -c Release -m:4
 ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe
 ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests.exe --filter-method "*Version*"
 
+# The scenario harness: the BUILT wsl-care over a temp WSL_CARE_ROOT, fake docker/systemctl/journalctl
+# alone on its PATH, and the check that every CLI verb has a row in research/module_tests.md
+./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios.exe
+
 # Formatting, as CI checks it (reports, never rewrites)
 dotnet format wsl_care.slnx --verify-no-changes
 
@@ -62,11 +68,14 @@ dotnet publish src_daemon/src/WslCare.Cli/WslCare.Cli.csproj -c Release -r win-x
 ./artifacts/publish/win-x64/wsl-care.exe --help
 ```
 
-On Linux drop the `.exe` and publish with `-r linux-x64` (needs `clang` and `zlib1g-dev`). The daemon's
-version is `src_daemon/version.txt`. What each test covers is in
-[research/module_tests.md](research/module_tests.md).
+On Linux drop the `.exe` and publish with `-r linux-x64` or `-r linux-arm64` on an arm64 host (needs
+`clang` and `zlib1g-dev`; Native AOT does not cross-compile). CI runs all of the above on `linux-x64`,
+`linux-arm64` and `win-x64`. The daemon's version is `src_daemon/version.txt`. What each test covers —
+and every CLI flow with the test that covers it — is in
+[research/module_tests.md](research/module_tests.md); a verb added to the CLI without a row there fails
+the scenario suite.
 
-Family checks, from the repository root:
+Family checks, from the repository root (CI runs them in `ci · family checks`):
 
 ```bash
 node .agents/conventions/tools/plan-lifecycle.mjs

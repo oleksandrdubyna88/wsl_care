@@ -1,8 +1,9 @@
 name: ci · daemon
 
-# The C# daemon/CLI under src_daemon/: formatting, build, the test EXECUTABLES, a Native AOT publish,
-# and a smoke run of the published binary. Mirrors the family credential-store repository's
-# `ci · clients` and `ci · server` workflows and its CLI release leg.
+# The C# daemon/CLI under src_daemon/: formatting, build, the test EXECUTABLES (unit, process-level
+# and the scenario harness), a Native AOT publish, and a smoke run of the published binary that USES
+# it (the configuration round trip), not only starts it. Mirrors the family credential-store
+# repository's `ci · clients` and `ci · server` workflows and its CLI release leg.
 #
 # UNCONDITIONAL rather than path-filtered (plan §9 proposed `src_daemon/**`). A filter would have to
 # cover everything that can change the binary — global.json, Directory.Build.props/.rsp,
@@ -10,15 +11,18 @@ name: ci · daemon
 # skips the job silently, which looks exactly like a pass. The repository is public, the runners are
 # free, and a required check that a pull request can skip protects nothing.
 #
-# Shipped binary -> what a pull request runs for it (.agents/conventions/common/platform-limits.md):
+# Shipped binary -> what a pull request runs for it. The family rule is
+# .agents/conventions/common/platform-limits.md part 2, "a platform that is only BUILT during a release
+# is an untested platform": every shipped binary-and-platform pair runs its tests on a pull request.
 #
-#   - wsl-care linux-x64   (the daemon in WSL Ubuntu)       -> ubuntu-latest: tests, AOT publish, smoke
-#   - wsl-care win-x64     (the Windows probe in the .vsix) -> windows-latest: tests, AOT publish, smoke
-#   - wsl-care linux-arm64 (the daemon on arm64 distros)    -> NOTHING YET. Same sources as linux-x64,
-#     but no arm64 leg runs on a pull request: a recorded gap, not a claim that arm64 cannot differ.
+#   - wsl-care linux-x64   (the daemon in WSL Ubuntu)       -> ubuntu-latest
+#   - wsl-care linux-arm64 (the daemon on arm64 distros)    -> ubuntu-24.04-arm (free: public repository)
+#   - wsl-care win-x64     (the Windows probe in the .vsix) -> windows-latest
 #
-# Every component (WslCare.Core, WslCare.Cli) links into every binary, so no component is left out
-# of any leg that runs.
+# Each leg runs ALL of it: format, build, the three test executables (Core, CLI, Scenarios), the AOT
+# publish for its own RID (Native AOT does not cross-compile), and the smoke of the published binary.
+# Every component (WslCare.Core, WslCare.Cli) links into every binary, so no component is left out of
+# any leg; the test-only projects (TestSupport, FakeTool) ship in no binary.
 on:
   push:
     branches: [main]
@@ -44,6 +48,9 @@ jobs:
         include:
           - os: ubuntu-latest
             rid: linux-x64
+            exe: ''
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
             exe: ''
           - os: windows-latest
             rid: win-x64
@@ -98,6 +105,13 @@ jobs:
         run: |
           "./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests$EXE"
 
+      # The scenario harness (research/module_tests.md): the BUILT CLI as a child process over a
+      # temporary WSL_CARE_ROOT, fake docker/systemctl/journalctl alone on its PATH, and the derived
+      # verb register that fails when a verb has no row in module_tests.md.
+      - name: Test the scenarios
+        run: |
+          "./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios$EXE"
+
       # TreatWarningsAsErrors reaches the AOT compiler too, so a trim or AOT warning fails here.
       - name: Publish (Native AOT)
         run: dotnet publish src_daemon/src/WslCare.Cli/WslCare.Cli.csproj -c Release -r "$RID" -o "artifacts/publish/$RID" -m:4
@@ -121,3 +135,34 @@ jobs:
             *) echo "::error::$bin --version printed '$version', expected $expected from src_daemon/version.txt"; exit 1 ;;
           esac
           echo "published $RID binary answers --help and --version: $version"
+
+      # Starting is not working (.agents/conventions/common/testing.md): the published binary must USE
+      # its configuration once — set, read back from the user layer, refuse an out-of-range value with
+      # exit 2 and one "wsl-care:" line, and still hold the first value. Under a sandbox root, so the
+      # runner's real profile is never touched. RUNNER_TEMP is a native path on every runner (D:\a\_temp
+      # on Windows), so the Windows binary is handed a path it can use without MSYS translation.
+      - name: Smoke the published binary's configuration round trip
+        run: |
+          set -euo pipefail
+          bin="artifacts/publish/$RID/wsl-care$EXE"
+          WSL_CARE_ROOT="$RUNNER_TEMP/wsl-care-smoke-$RID"
+          export WSL_CARE_ROOT
+          rm -rf "$WSL_CARE_ROOT"
+          mkdir -p "$WSL_CARE_ROOT"
+          fail() { echo "::error::$*"; exit 1; }
+          expect_user_25() {
+            local got
+            got="$("$bin" config get volumes.anonymousMaxGb --json | tr -d '\r')"
+            case "$got" in *'"value": 25'*) ;; *) printf '%s\n' "$got"; fail "config get did not answer 25 ($1)" ;; esac
+            case "$got" in *'"layer": "user"'*) ;; *) printf '%s\n' "$got"; fail "config get did not name the user layer ($1)" ;; esac
+          }
+          "$bin" config set volumes.anonymousMaxGb 25 > /dev/null
+          expect_user_25 "after set"
+          code=0
+          "$bin" config set volumes.anonymousMaxGb 100001 > refused.out 2> refused.err || code=$?
+          [ "$code" -eq 2 ] || fail "a refused config set exited $code, expected 2"
+          [ ! -s refused.out ] || fail "a refused config set wrote to stdout"
+          messages="$(grep -c '^wsl-care: ' refused.err || true)"
+          [ "$messages" -eq 1 ] || { cat refused.err; fail "a refused config set wrote $messages wsl-care: lines, expected 1"; }
+          expect_user_25 "after the refused set"
+          echo "published $RID binary: config set, get and a refused set round-trip under $WSL_CARE_ROOT"

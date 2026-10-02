@@ -1,0 +1,59 @@
+name: ci · family checks
+
+# The checks the shared rules ship for every consumer (.agents/conventions/README.md, `tools/`;
+# ROLLOUT.md "CI and fresh clone"), run from the pinned submodule rather than copied — they read
+# markdown, git and config, not code, so one implementation serves the whole family. Mirrors the
+# family credential-store repository's `docs · plans` workflow.
+#
+# Separate from `ci · daemon` because it gates neither the build nor the tests: a misfiled plan
+# should not read as "the daemon is broken", and this runs in seconds.
+#
+# Node is the runner's own (every GitHub-hosted image ships Node 20+, which these tools need; none of
+# the four imports a package, so no `npm ci` either). NO NEW ACTION: nothing here needs one.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: family-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  family:
+    name: family · plans · pins · adapter · build flags
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Only that ONE submodule, shallow: the checks walk markdown and read the gitlink. The
+      # conventions repository is public, so no token is needed to fetch it.
+      - name: Fetch the shared rules
+        run: git submodule update --init --depth 1 .agents/conventions
+
+      # common/planning-docs.md: a plan in the wrong folder, a missing status line, a todo/ <-> research/
+      # link that does not resolve, or a todo/README.md index drifted from the folder.
+      - name: Plan lifecycle
+        run: node .agents/conventions/tools/plan-lifecycle.mjs
+
+      # The Claude adapter hooks the shared rules publish are copied, wired on their own event and
+      # matcher, and byte-identical — so the build-flags guard is wired rather than assumed.
+      - name: Adapter
+        run: node .agents/conventions/tools/adapter-check.mjs
+
+      # The conventions pin equals the tip of the ref it tracks (`release`, per .gitmodules).
+      - name: Pin check
+        run: node .agents/conventions/tools/pin-check.mjs
+
+      # csharp/dotnet-build.md: the root Directory.Build.rsp exists and says -nr:false, and no workflow
+      # suppresses it with the switch that ignores response files.
+      - name: Build flags
+        run: node .agents/conventions/tools/build-flags-check.mjs

@@ -31,6 +31,9 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="WslCare.Cli.Tests" />
+    <!-- The scenario harness reads the verb register (CommandLine.Commands) and the exit codes from
+         the product itself rather than retyping them. -->
+    <InternalsVisibleTo Include="WslCare.Scenarios" />
   </ItemGroup>
 
 </Project>

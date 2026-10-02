@@ -1,0 +1,2 @@
+SYNTHETIC fixture, not a capture of real docker output: the harness self-test prints it to prove a fake answers from fixtures.
+line two, with a non-ASCII character: é
