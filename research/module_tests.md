@@ -22,7 +22,9 @@ denial on one directory, `chmod 000` on Linux and an inherited `icacls` deny for
 SID on Windows, lifted on dispose and reported as unavailable when it does not take — `TerminalText`
 — stderr with the console sink's colour removed and whatever control characters are left — and
 `ChildProcess` — the one launcher the process-level tests share: argv list, 30 s ceiling, the whole
-tree killed on timeout, UTF-8 streams).
+tree killed on timeout, UTF-8 streams — and since E3.S1 `HostileInputs` — the seeded generator of the command-policy
+property tests — `FakeProcessTable` and `LinuxSandbox` — the distro's layout over a temporary root on either
+operating system).
 The fake tool is its own project, `src_daemon/tests/WslCare.FakeTool`, so it ships in no product binary.
 
 ## How they run
@@ -126,8 +128,9 @@ and could not see it.
 `VerbRegisterTests` enumerates `CommandLine.Commands` — the one register the parser and the help text
 are built from — and for every verb:
 
-1. runs its `Example` argv against the built CLI in a fresh home and expects exit 0 or the usage code 2,
-   never 70 (internal) or a crash;
+1. runs its `Example` argv against the built CLI in a fresh home and expects exit 0, the usage code 2, or —
+   for `act`, whose example the unprivileged harness runs — the documented refusal 77 (*needs root*); never 70
+   (internal) or a crash;
 2. requires a row in **§ Flow catalogue** below whose FIRST cell starts with `` `wsl-care <usage>` ``,
    the usage exactly as the register spells it. Prose and other tables do not count.
 
@@ -228,6 +231,14 @@ checklist in `POST_DEPLOY.md`; and whenever the Docker or systemd version on the
 | `doctor`: an installation doing its job is healthy and names the wsl-care / docker / systemd / kernel versions; a stale last run, a stopped unit and a silent follower are each a named problem; a fresh machine says nothing was recorded and creates nothing; an invalid layer is a problem and doctor still answers; read-only questions only | `WslCare.Core.Tests/Doctor/DoctorTests.cs` |
 | `collect` / `doctor` / `events follow` in-process: `collect --json` records and `status` then reads that run's slow parts with their age and counts the never-run follower as partial; the text form; read-only exits 0 with the stderr note and no state directory; an unwritable history line exits 1; a held `run.lock` exits 75; `doctor --json` exits 0 with its verdict; `events follow --once` with Docker down exits 0 naming why; by an unprivileged process exits 1; a second follower exits 75; stopped by a signal exits 0 with its stop marker; an unprivileged run logs to the user's log directory; `status` answers the follower's 24-hour count (200 backfilled starts) from `starts-summary.json` and neither lists the day folder nor opens a day file (a read-recording file system; gate finding #8). **Observed red first** (2026-10-02, unfixed `StatusCommand`): `Expected reads.Paths … to not have any items matching p.StartsWith("…\wsl-care\container-starts", OrdinalIgnoreCase) … but found {"…\container-starts", "…\container-starts\2026-10-02.jsonl"}`; green after the fix | `WslCare.Cli.Tests/FullRunCommandTests.cs` |
 | Docker's event stream and the health tools for real: failed units and boots as JSON, journal searches (one matching nothing answers 0), `timedatectl`, `systemctl --version`, `UnitFileState`, `snap list --all`, the Windows clock probe through interop, an unfiltered past window, and a FUTURE `--until` that streams and closes by itself | `WslCare.LiveContract/HealthContractTests.cs` (run by hand; § *The live contract*) |
+| The never-list rule by rule, DERIVED from `NeverList.Rules` (a rule without a known instance is red): each refuses its instance and names itself; harmless argv (`vm.drop_caches=1`, `--vacuum-time=30d`, a volume id, `du` of `/var/cache/apt`) break no rule; 22 spellings of never-commands (`RM.EXE`, `/usr/bin/rm`, `find -delete`, `git clean`, `docker system prune` without `-a`, `sh script.sh`, `pwsh -File`, `wsl --unregister`, a `--grep=` path under `.claude`, a Windows `Temp\claude` path, `runuser -l`, `runuser` without `--`, a full-path `runuser`, `taskkill /IM`) refused; deny by default; a planted template cannot admit `docker system prune -a` (the never-list is asked first); a never-command behind `runuser` is refused even with a planted user template for it; the clock probe is the one PowerShell argv; EVERY read command the collectors build — each factory, a 1- and a 100-id inspect, every unit `systemctl show` reads, the three journal searches — is allowed by the product policy; a hostile or short container id is not a declared instance; a runner cannot be built without a policy; no product file but the runner names its unguarded test seam (with the companion that the scan finds the definition). **Found by this table, not by the fakes:** the journal search's `--unit=systemd-resolved` was refused (a unit name without `.service`), which on Windows had stayed invisible because the clock-jump count is a Linux-only assertion — the scope slot now takes a bare service name | `WslCare.Core.Tests/Processes/Policy/CommandPolicyTests.cs` |
+| **The property test** (seeded, 20 000 requests; 500 instances per template; 2 000 action cases): no argv the product policy allows is a never-command by the independent `NeverOracle`, and every one it allows matches a declared template (with vacuity guards: > 10 % of the inputs never-commands, > 10 % allowed template instances); every declared template instantiated with values its slots accept is never a never-command; every registered action, previewed and run over generated configurations (`journal.keepDays`, `dryRun`) and generated journals with hostile file names, asks only for argv the policy allows, of its OWN templates, none a never-command. Companions, each red by design and kept: a permissive policy (`ALLOWED a never-command: git worktree prune`), a never-list-on-the-outer-argv-only policy (undeclared argv AND `ALLOWED a never-command: runuser -u me -- …/dash -c x`), a planted `vm.drop_caches=<0..3>` template (named by the template property; still refused at run time), a planted action that builds `sh -c "rm -rf <preview name>"` | `WslCare.Core.Tests/Processes/Policy/CommandPolicyPropertyTests.cs` (+ `NeverOracle.cs`, `TestSupport/HostileInputs.cs`) |
+| The engine over the distro's layout in a temp root with scripted actions: the fixed execution order whatever the request order, `running.json` naming each action while it runs and gone after, detail then history line with per-action status and freed bytes; a throwing action and a failing one recorded `failed` while the next ran and the run `completed`; the timer honours each `auto` switch and each trigger, a button neither; the timer dry for 7 days from its first action pass with `dryRun` off (the last minute dry, the minute after ran; `wouldFreeBytes` on the line), dry while `dryRun` is on, never for a button, a recorded start never moved, an unreadable stamp restarting the week; a heavy action deferred at 87.5 % CPU (5-minute load 3.5 over 4 CPUs) and while `dotnet test` runs, run when idle, the deferral recorded; a timer-only rule not holding back a button; an unread CPU figure deferring; a dead pid's `running.json` swept with an `interrupted` line naming the action it was on and the last heartbeat; a reused pid (different start) swept as mismatched; a live pid with a 31 s heartbeat WEDGED, nothing run, the file byte-identical, no history; a live fresh one busy though the lock was free; an unparseable file or one missing fields refused; a dead run that had recorded itself removed without a second line; a held lock → busy, nothing written; a `collect` started inside an act's run → `busy` (one lock for both); a wedged holder of the lock reported wedged; a signal mid-run → `interrupted` recorded, the next action not run, `running.json` gone, the cancellation rethrown; the heartbeat rewriting `running.json` on its own while an action is busy; a preview taking no lock and writing nothing; a user-scoped action refused for an ambiguous target while A10 ran; the other side's action and a preview's refusal named; an invalid configuration layer → every action skipped, outcome `observeOnly` | `WslCare.Core.Tests/Actions/ActionEngineTests.cs` (+ `ScriptedAction.cs`) |
+| A10, the reference action, under the product policy: the preview counts only ARCHIVED files older than the limit (not the active `system.journal`, not a 5-day-old archive, not a stray `.txt`) and carries journald's own size; the trigger fires above 1 GiB and not at exactly 1.0 G or at 900 M; an unreadable size is no preview with the reason; the freed bytes are the before-sizes of exactly the files that are gone (3 000 — not the preview's 5 000), before / after totals beside them, the two commands in order; a failing vacuum is a failure in journalctl's words, still measured; through the engine a button press runs it and records `ran` | `WslCare.Core.Tests/Actions/JournalVacuumTests.cs` |
+| The target user, as a table: `wsl.conf`'s default (quoted, spaced, after another section, `root`), else the single login account (root, a nologin daemon and `nobody` ignored); two login accounts, a default user `passwd` lacks, an invalid name, a relative home → ambiguous with the reason; none → none; an unreadable `passwd` refuses. A tool run as the user: `runuser -u me -- <the FIRST bin folder's file> args`, a clean environment of exactly `HOME`, `USER`, `LOGNAME`, `PATH` (the fixed folders), allowed by the policy; nvm's default resolved to the highest installed match (`22` → `v22.11.0`) and an unresolvable alias (`lts/*`) left out; a tool in no bin folder refused before any start; the policy refusing a wrapped file outside the bin folders (`/tmp/evil`, `…/.local/bin/../../git`, `~/git/bin`, relative), an inherited environment, a machine template behind `runuser` and a user template without it; every login account's `git` and agent folders protected by the deletion policy, not only `$HOME`'s | `WslCare.Core.Tests/Actions/TargetUserTests.cs` |
+| The parts: number / user-name / text slots at their edges and against hostile values; binding names the slot and refuses extra values; a catalogue refuses a pathed executable and a repeat that is not last; the action ids are exactly the `auto.*` keys and the execution order holds each once (A5 → A4 → A6 → A7 → A8 → A9, A1 → A2); id lists known and unique, an unknown id refused naming the legal values; root is the OS's answer and only a sandbox may claim it; the build detector; which idle rule waits for which trigger | `WslCare.Core.Tests/Actions/EnginePartsTests.cs` |
+| `act` in-process: the parse (no action, a flag first, neither or both of `--preview` / `--confirm`, a repeated or unknown flag, an unknown id, a duplicate id → usage); an unprivileged `--preview` or `--confirm` exits 77 with NOTHING touched — no state directory, no lock file, not one read command; a preview prints the live preview as JSON and writes nothing; a confirmed act records, answers `recorded` with the measured result and ran exactly disk-usage then vacuum; the text form; a failed action exits 3 naming it with the run recorded; a held lock exits 75 having run nothing; a wedged run exits 76; an action this build does not hold, and A10 asked of the Windows binary, exit 2 by name; an invalid layer exits 78 with nothing run; the help names the verb and the actions this build holds | `WslCare.Cli.Tests/ActCommandTests.cs` |
+| `act` against the BUILT CLI: unprivileged → 77 and no state file, no lock, no fake called; with root CLAIMED in the sandbox, `--preview` reads journald's size through the fake and writes nothing (on Windows: exit 2 naming the distro side); `--confirm` runs disk-usage then `--vacuum-time=30d` through the fake (nothing real is vacuumed), records detail then history, removes `running.json` (Linux legs); with the run lock held by the test, `collect` exits 75 (both families) and `act` exits 75 (Linux) and neither records anything | `WslCare.Scenarios/ActFlows.cs` |
 
 Teeth, observed by breaking the code and watching the named tests go red:
 
@@ -384,6 +395,39 @@ Teeth, observed by breaking the code and watching the named tests go red:
     sample arguments now cover a `TimeSpan`; FluentAssertions 7's `OnlyContain` FAILS on an empty collection, so the live
     checks of a window with no start (the ordinary case here) assert `NotContain` of a bad item instead.
 
+- 2026-10-02 (E3.S1). The engine and the policy were written before their tests, so — as in E2.S1/E2.S2 — the teeth were
+  proved by BREAKING each production line a group rests on, alone, watching the named test go red for the behaviour,
+  restoring it (written afresh, so its timestamp is new) and seeing the suite green again:
+  - **The property test, against a deliberately permissive policy** (`CommandPolicy.Review` returning `Allowed` first):
+    *Expected run.Violations to be empty, but found at least one item {"case 0: ALLOWED a never-command: git worktree
+    prune"}*. The kept companions are red by design on every run: the permissive policy, the outer-argv-only policy (its
+    first run found what the test had not predicted — *ALLOWED a never-command: runuser -u me -- …/v22.11.0/bin/dash -c x*,
+    a never-command behind runuser's one legal shape — and the test was rewritten to assert exactly that, the refuted
+    approach kept as a test), the planted `vm.drop_caches=<0..3>` template, the planted shell-string action.
+  - **The wrapped command judged twice:** the second never-list check in `ReviewWrapped` disabled → *Expected type to be
+    WslCare.Core.Processes.CommandVerdict+Refused, but found WslCare.Core.Processes.CommandVerdict+AllowedVerdict*.
+  - **Order:** `InExecutionOrder` returning the request's order → *Expected Statuses(result) to be equal to {"A5:ran",
+    "A4:ran", "A10:ran"}, but {"A10:ran", "A5:ran", "A4:ran"} differs at index 0*.
+  - **A failing action continues:** the unit's catch narrowed to `TimeoutException` → the test failed with
+    *System.InvalidOperationException : docker answered nonsense* escaping the run.
+  - **Dry-run window:** the 7 days made 0 → *Expected Statuses(first) to be equal to {"A10:dryRun"}, but {"A10:ran"}*.
+  - **Idle gate:** `Applies` ignoring `IdleRule.Always` → *Expected Statuses(busyCpu) to be equal to {"A7:deferred"},
+    but {"A7:ran"}*.
+  - **Wedged:** the 30 s staleness never reached → *Expected type to be …ActResult+Wedged, but found …ActResult+Busy*.
+  - **Dead / mismatched:** a gone pid read as live → *Expected type to be …ActResult+Done, but found …ActResult+Busy*; the
+    2 s start tolerance made infinite → the same for a reused pid.
+  - **Freed bytes measured:** the freed figure taken from the preview → *Expected run.FreedBytes to be 3000L because the
+    size, read before, of the one file that is gone - not the preview's 5000, but found 5000L*.
+  - **One lock:** `collect` back on E2.S3's `{state}/run.lock` → *Expected collect!.Recording to be Recording.Busy
+    because collect and act take the SAME lock; the second one refuses, but found Recording.Recorded*.
+  - **Root first:** the root check bypassed → *Expected exit to be 77, but found 0* for both `--preview` and `--confirm`.
+  - **Heartbeat:** the loop's period made an hour → after its 10 s wait *Expected beaten to represent the same point in
+    time as <2026-10-02 12:00:10 +0h> … but <2026-10-02 12:00:00 +0h> does not*.
+  - **Target user:** an ambiguous set taken as its first account → the two ambiguous rows *Expected type to be
+    …TargetUserResult+Ambiguous, but found …TargetUserResult+Found*.
+  - **Verb register:** `act` registered before its catalogue row turned both register checks red (*missing: act
+    <A#>[,<A#>...] (--preview or --confirm) [--json]*).
+
 ## Flow catalogue
 
 One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` `` exactly as
@@ -422,7 +466,11 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care events follow [--once]` over an idle engine that did not restart (the last marker's bridge, an EMPTY buffer): exit 0, `0 start(s), 0 gap marker(s)`, no gap marker, the new `covered` marker carries the engine, `docker network inspect bridge` among the read verbs, `starts-summary.json` written | covered | `EventsFlows.Once_over_an_idle_engine_that_did_not_restart_writes_no_gap_and_records_the_engine_on_its_marker`; rules: `CoverageTests` |
 | `wsl-care events follow [--once]` with the daemon down: exit 0, the reason printed, no gap marker (a gap is known only once Docker answers), only the version probe run | covered | `EventsFlows.Once_with_the_daemon_down_exits_zero_names_why_and_writes_no_gap` |
 | `wsl-care events follow [--once]` followed live (Linux): the socket down then up waited for IN-PROCESS (one 5 s wait), ONE gap marker, a live start in the day file while the stream is open, SIGTERM → exit 0 with the stop marker carrying how far coverage reached | covered (Linux legs; skipped on Windows with the reason) | `EventsFlows.Followed_live_it_waits_for_the_socket_in_process_records_a_start_and_stops_clean_on_SIGTERM`; on every OS in-process: `EventsFollowerTests` (the 5 → 10 → 20 s backoff on a moved clock), `FullRunCommandTests.Events_follow_stopped_by_a_signal_exits_zero_with_its_stop_marker` |
-| `wsl-care act <A#> [--preview] --json`: a cleanup previewed, then run | not covered | not built yet (E3) |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--json]` unprivileged: exit 77, ONE `needs root` message, empty stdout, no running.json / history line / dry-run stamp / run detail / lock file, no tool started | covered (skipped for a root or elevated account, with the reason) | `ActFlows.An_unprivileged_act_is_refused_whole_and_leaves_no_state_no_lock_and_no_command_behind`; in-process: `ActCommandTests.An_unprivileged_act_is_refused_whole_before_the_lock_or_any_state_is_touched` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--json]` `--preview` with root claimed in the sandbox: previewed from the fake journalctl's `--disk-usage`, nothing written; on the Windows binary exit 2 naming the distro side | covered | `ActFlows.With_root_claimed_a_preview_reads_the_journal_s_size_and_writes_nothing`; in-process: `ActCommandTests`; AOT binary (`win-x64`): smoke by hand 2026-10-02 |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--json]` `--confirm` with root claimed: A10 runs through the fake (`--disk-usage`, then `--vacuum-time=30d`), detail then history line, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.With_root_claimed_a_confirmed_act_runs_a10_through_the_fake_and_records_detail_then_history`; on every OS in-process: `ActCommandTests.A_confirmed_act_runs_records_and_answers_with_the_measured_result`, `JournalVacuumTests`, `ActionEngineTests` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--json]` while the run lock is held: `act` 75, `collect` 75, nothing recorded — ONE lock for both | covered (`collect` on both families, `act` on the Linux legs) | `ActFlows.One_lock_for_collect_and_act_the_second_one_refuses_with_75_and_waits_for_nothing`; in-process: `ActionEngineTests.A_full_run_started_while_an_act_holds_the_lock_is_busy_one_lock_for_both`, `ActCommandTests` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--json]` meeting a wedged run (76), an action that fails (3), an invalid layer (78), an unbuilt or other-side action (2), the timer's gates and dry run | covered (in-process) | `ActCommandTests`, `ActionEngineTests`; not staged against the built binary: a live wedged process and the systemd timer cannot be made on cue there |
 | `wsl-care logs --period …` / `runs show` / `runs log` | not covered | not built yet (E3) |
 | `wsl-care agents list` / `agents probe <path>` | not covered | not built yet (E7) |
 | `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |
@@ -510,8 +558,24 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
   as they are: control characters in a log file are not a terminal concern and are not replaced there.
 - `ShutdownSignals` is thin wiring over `PosixSignalRegistration` and is not tested in isolation; the
   token's effect on a run is (`ProgramTests`, `ProcessCommandRunnerTests`).
-- The `AllowAllCommandPolicy` is a placeholder; the never-list and its property test are E3.S1. Until then the
-  "read verbs only" guarantee rests on `DockerCommands` being the one builder of docker argv.
+- **The never-list is proved on argv, not on effects.** The property test shows no generated input gets a never-command
+  PAST THE POLICY; what a tool does with an argv the policy allows is the tool's (journald's vacuum, later Docker's
+  removals) and is proved only against fakes and, for real, by the live smoke at release. The generator reaches what
+  its corpus and its slot kinds reach — a seed is one walk, and a new slot kind fails the generator until it is taught.
+  The oracle is the plan's list written a second time by the same author: an independent SHAPE, not an independent mind.
+- **No act ever ran as root here.** "Root" in every test and scenario is a claim (`ProcessPrivilege` set by the test,
+  or `WSL_CARE_SANDBOX_PRIVILEGED=1` under `WSL_CARE_ROOT`); `/run/wsl-care.lock` and `/var/lib/wsl-care` as root's, the
+  real `journalctl --vacuum-time`, and `runuser` (its environment handling is read from util-linux's source, not
+  observed) are first met on the live install (E4). No destructive command was run against this machine.
+- **The process table is the real one even under `WSL_CARE_ROOT`** (`SystemProcessTable`, a pid is a fact about the
+  machine); the dead / mismatched / wedged decisions are proved on a scripted table, and live only for this process's
+  own pid.
+- **The idle figures are fixtures**: `/proc/loadavg` and `/proc/stat` written by the test; whether the 5-minute load
+  average is a good stand-in for "CPU below 20 % for 5 minutes" on this machine is a measurement the dryRun week owes.
+- **The heartbeat is proved at 20 ms** with a moved clock, not at 5 s over a minutes-long action.
+- **The timer's action pass is not wired** (`collect` does not call the engine until E3.S3); the timer gates and the
+  dry-run window are proved through the engine with `RunTrigger.Timer`, and through `act` only by `INVOCATION_ID`'s
+  presence, which no test sets.
 - Nothing here runs on a real WSL VM under memory pressure; the live smoke on the owner's machine is
   the only place that happens, at release time.
 

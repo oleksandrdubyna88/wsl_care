@@ -56,11 +56,26 @@ public static class ExecutableResolver
             return new ResolvedExecutable.NotFound($"{name} is a relative path; only a bare name (looked up on PATH) or an absolute path is started");
         }
 
-        var directories = Directories(pathVariable, windows);
-        var found = directories.SelectMany(d => Candidates(name, windows).Select(c => Path.Combine(d, c))).FirstOrDefault(c => IsStartable(c, windows));
+        return ResolveIn(name, Directories(pathVariable, windows), windows);
+    }
+
+    /// <summary>
+    /// <paramref name="name"/> — a BARE name — looked up in <paramref name="directories"/>, in order, by the same rules: what
+    /// the target user's tool is resolved against (a fixed list of that user's bin folders, plan §15c #2), where a
+    /// <c>PATH</c> string would split a Windows sandbox path at its drive letter. Relative directories are skipped.
+    /// </summary>
+    public static ResolvedExecutable ResolveIn(string name, IReadOnlyList<string> directories, bool windows)
+    {
+        if (name.Length == 0 || HasADirectory(name, windows) || Path.IsPathFullyQualified(name))
+        {
+            return new ResolvedExecutable.NotFound($"\"{name}\" is not a bare name; only a bare name is looked up in a list of folders");
+        }
+
+        var usable = directories.Where(d => d.Length > 0 && Path.IsPathFullyQualified(d)).ToList();
+        var found = usable.SelectMany(d => Candidates(name, windows).Select(c => Path.Combine(d, c))).FirstOrDefault(c => IsStartable(c, windows));
         return found is not null
             ? new ResolvedExecutable.Found(found)
-            : new ResolvedExecutable.NotFound(NotFoundReason(name, directories.Count, windows));
+            : new ResolvedExecutable.NotFound(NotFoundReason(name, usable.Count, windows));
     }
 
     /// <summary>A relative path rather than a bare name: <c>./docker</c>, <c>bin\docker</c>, <c>C:docker</c>.</summary>

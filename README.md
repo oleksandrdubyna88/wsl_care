@@ -6,7 +6,7 @@ extension that shows the state and runs cleanups on demand.
 
 | Folder | Holds |
 |---|---|
-| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor` and the container-start follower `events follow`; the cleanups arrive in later releases |
+| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with its first action (A10, the journal vacuum); the other cleanups arrive in later releases |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -153,6 +153,41 @@ backfill recovers what Docker still holds, and whatever it cannot prove it holds
 A 24-hour count that overlaps a gap is **partial** and names it, until a whole 24 h lies after the gap. It exits 0 on
 a signal (writing its stop marker), 1 when it may not write the state directory, 75 when another follower runs, and
 otherwise only on a defect — so `Restart=always` does not cycle while Docker is merely down.
+
+## Act — run a cleanup
+
+```bash
+sudo wsl-care act A10 --preview --json   # what it would do, from LIVE state; nothing run but reads, nothing written
+sudo wsl-care act A10 --confirm --json   # do it: one run at a time, recorded (run detail + history line); schemaVersion 1
+wsl-care act A10 --preview               # as yourself: refused whole ("needs root", exit 77) - nothing read, nothing written
+```
+
+Every `act` runs as **root** (the timer is root; the panel's button reaches root through an argv allowlist). Started by
+anyone else it refuses the whole run before the lock or any state is touched. A destructive run from the CLI needs
+`--confirm` — the button passes it after you confirmed the preview. This release holds ONE action, **A10**: `journalctl
+--vacuum-time=<journal.keepDays>d` (default 30 days), which removes only archived journal files; its freed bytes are
+measured — the sizes, read before the vacuum, of exactly the files that are gone after it. The other actions of the plan
+arrive in the next releases; asking for one is refused by name.
+
+What a run does, in order: takes THE run lock (`/run/wsl-care.lock`, shared with `collect` — the second one refuses
+with exit 75 and waits for nothing); sweeps a `running.json` a dead run left (recorded as `interrupted`) or refuses when
+a live run is still acting (75) or has stopped beating (**wedged**, 76 — nothing is ever killed automatically); then for
+each action: the live preview, its gates, the run, the measured result; a failing action is recorded and the run goes
+on. While it acts, `/var/lib/wsl-care/running.json` names the action, the pid and its start, and a heartbeat every 5 s.
+
+Under the systemd timer (`INVOCATION_ID` set) each action also needs its `auto.<A#>` switch and its trigger, heavy
+actions wait for an idle machine, and the timer **runs dry for its first 7 days** (from its first action pass, recorded
+in `/var/lib/wsl-care/first-timer-run.json`) and for as long as `dryRun` is on — a dry run previews and records what
+it would have freed. A button never runs dry.
+
+Every command any action or collector starts passes ONE filter first: the never-list (no shell anywhere, no
+`docker system prune` / `docker volume prune`, no `vm.drop_caches` but 1, no `git worktree prune`, no `wsl --shutdown`,
+no delete by command, no path under `~/git` or an AI agent's folder, …) and then deny-by-default — only an argv a
+component declared as a template runs. A tool run as the target user goes through `runuser -u <user> -- <full path>`
+with a clean environment.
+
+Exit codes: 0 previewed / recorded · 1 not recorded · 2 usage (unknown or unbuilt action, the other side's action) ·
+3 an action failed · 75 busy · 76 wedged · 77 needs root · 78 observe-only (an invalid configuration layer) · 130 interrupted.
 
 ## Build and test
 

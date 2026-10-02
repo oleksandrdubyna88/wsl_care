@@ -1,7 +1,10 @@
+using WslCare.Core.Actions;
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Collectors;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
+using WslCare.Core.Processes.Policy;
 
 namespace WslCare.Cli;
 
@@ -18,12 +21,26 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
 {
     public IHostProbe Probe { get; init; } = ProbeFor(Paths, Files, Clock);
 
-    /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names.</summary>
+    /// <summary>Whether this process is root — what <c>act</c> refuses without (plan §15c #0). A test sets it.</summary>
+    public ProcessPrivilege Privilege { get; init; } = ProcessPrivilege.OfThisProcess();
+
+    /// <summary>The operating system's process table, for the <c>running.json</c> liveness check. A test scripts it.</summary>
+    public IProcessTable Processes { get; init; } = new SystemProcessTable();
+
+    /// <summary>The actions this build holds.</summary>
+    public ActionRegistry Actions { get; init; } = ActionRegistry.Product;
+
+    /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names. The runner is the
+    /// product's ONE policy (<see cref="CommandPolicy.Product"/>: the never-list over the declared templates); inside the
+    /// distro every login account's home is protected besides <c>$HOME</c> (plan §15c #2).</summary>
     public static CliHost ForThisMachine()
     {
-        var paths = HostPaths.ForThisMachine();
-        return new CliHost(paths, new PhysicalFileSystem(paths), TimeProvider.System, new ProcessCommandRunner(new AllowAllCommandPolicy()));
+        var paths = WithLoginHomesProtected(HostPaths.ForThisMachine());
+        return new CliHost(paths, new PhysicalFileSystem(paths), TimeProvider.System, new ProcessCommandRunner(CommandPolicy.Product));
     }
+
+    private static IHostPaths WithLoginHomesProtected(IHostPaths paths) =>
+        paths is LinuxHostPaths linux ? linux.WithProtectedHomes(TargetUserDiscovery.ProtectedHomes(new PhysicalFileSystem(linux), linux)) : paths;
 
     private static IHostProbe ProbeFor(IHostPaths paths, IFileSystem files, TimeProvider clock)
     {
