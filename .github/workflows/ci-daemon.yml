@@ -1,0 +1,123 @@
+name: ci · daemon
+
+# The C# daemon/CLI under src_daemon/: formatting, build, the test EXECUTABLES, a Native AOT publish,
+# and a smoke run of the published binary. Mirrors the family credential-store repository's
+# `ci · clients` and `ci · server` workflows and its CLI release leg.
+#
+# UNCONDITIONAL rather than path-filtered (plan §9 proposed `src_daemon/**`). A filter would have to
+# cover everything that can change the binary — global.json, Directory.Build.props/.rsp,
+# Directory.Packages.props, nuget.config, wsl_care.slnx, this file — and a filter that misses one
+# skips the job silently, which looks exactly like a pass. The repository is public, the runners are
+# free, and a required check that a pull request can skip protects nothing.
+#
+# Shipped binary -> what a pull request runs for it (.agents/conventions/common/platform-limits.md):
+#
+#   - wsl-care linux-x64   (the daemon in WSL Ubuntu)       -> ubuntu-latest: tests, AOT publish, smoke
+#   - wsl-care win-x64     (the Windows probe in the .vsix) -> windows-latest: tests, AOT publish, smoke
+#   - wsl-care linux-arm64 (the daemon on arm64 distros)    -> NOTHING YET. Same sources as linux-x64,
+#     but no arm64 leg runs on a pull request: a recorded gap, not a claim that arm64 cannot differ.
+#
+# Every component (WslCare.Core, WslCare.Cli) links into every binary, so no component is left out
+# of any leg that runs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-daemon-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-publish:
+    name: daemon · build · test · aot (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            exe: ''
+          - os: windows-latest
+            rid: win-x64
+            exe: '.exe'
+    defaults:
+      run:
+        shell: bash
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      TESTINGPLATFORM_TELEMETRY_OPTOUT: 'true'
+      RID: ${{ matrix.rid }}
+      EXE: ${{ matrix.exe }}
+    steps:
+      # This job builds and RUNS code from a pull request, so the checkout must not leave the token
+      # behind in the local git config where that code could reach it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The SDK global.json names (10.0.100, rollForward latestFeature), not a floating 10.0.x.
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      # Native AOT on Linux links with clang against zlib.
+      - name: Toolchain (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+
+      # Every MSBuild-driven command carries -m:4 (.agents/conventions/csharp/dotnet-build.md); the
+      # root Directory.Build.rsp adds -nr:false. Never the switch that ignores the response file — it
+      # would discard -nr:false with it; a wider build passes -m instead.
+      - name: Restore
+        run: dotnet restore wsl_care.slnx -m:4
+
+      # BEFORE the build: a formatting complaint is cheaper to read than a build log. It REPORTS and
+      # never rewrites — CI must say the branch is not formatted and stop, not push a reformat.
+      - name: Formatted
+        run: dotnet format wsl_care.slnx --verify-no-changes --no-restore
+
+      - name: Build
+        run: dotnet build wsl_care.slnx -c Release --no-restore -m:4
+
+      # xUnit v3 on Microsoft Testing Platform: each test project is its own runner executable.
+      # `dotnet test` has no VSTest host here and would abort with a tooling error, not a result.
+      - name: Test the core
+        run: |
+          "./src_daemon/tests/WslCare.Core.Tests/bin/Release/net10.0/WslCare.Core.Tests$EXE"
+
+      - name: Test the CLI
+        run: |
+          "./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests$EXE"
+
+      # TreatWarningsAsErrors reaches the AOT compiler too, so a trim or AOT warning fails here.
+      - name: Publish (Native AOT)
+        run: dotnet publish src_daemon/src/WslCare.Cli/WslCare.Cli.csproj -c Release -r "$RID" -o "artifacts/publish/$RID" -m:4
+
+      # A binary that cannot answer did not really build: an AOT failure often surfaces only at first
+      # run. Output is captured rather than piped into `grep -q`, which can SIGPIPE the binary under
+      # pipefail; `tr -d '\r'` because the Windows binary ends its lines with CRLF.
+      - name: Smoke the published binary
+        run: |
+          set -euo pipefail
+          bin="artifacts/publish/$RID/wsl-care$EXE"
+          help="$("$bin" --help | tr -d '\r')"
+          case "$help" in
+            *"wsl-care --help"*"wsl-care --version"*) ;;
+            *) echo "::error::$bin --help did not list --help and --version"; printf '%s\n' "$help"; exit 1 ;;
+          esac
+          expected="$(tr -d '[:space:]' < src_daemon/version.txt)"
+          version="$("$bin" --version | tr -d '\r')"
+          case "$version" in
+            "$expected" | "$expected+"*) ;;
+            *) echo "::error::$bin --version printed '$version', expected $expected from src_daemon/version.txt"; exit 1 ;;
+          esac
+          echo "published $RID binary answers --help and --version: $version"

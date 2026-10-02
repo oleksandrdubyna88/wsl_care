@@ -1,0 +1,38 @@
+# Dependabot version updates — grouped, weekly, Monday morning Kyiv time, one pull request per
+# ecosystem. Mirrored from the family's credential-store repository, with the two ecosystems this
+# repository has today. npm (/src_vs_code) joins when the extension lands (E5).
+#
+# Family exception: FluentAssertions stays on 7.x — 8.x changed its licence (Directory.Packages.props).
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Kyiv"
+    groups:
+      nuget-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "FluentAssertions"
+        update-types: ["version-update:semver-major"]
+    labels: ["dependencies", "nuget"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Kyiv"
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["dependencies", "ci"]
+    commit-message:
+      prefix: "ci(deps)"

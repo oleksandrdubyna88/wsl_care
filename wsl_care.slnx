@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src_daemon/src/WslCare.Core/WslCare.Core.csproj" />
+    <Project Path="src_daemon/src/WslCare.Cli/WslCare.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="src_daemon/tests/WslCare.Core.Tests/WslCare.Core.Tests.csproj" />
+    <Project Path="src_daemon/tests/WslCare.Cli.Tests/WslCare.Cli.Tests.csproj" />
+  </Folder>
+</Solution>
