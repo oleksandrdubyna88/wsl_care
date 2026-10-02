@@ -33,7 +33,10 @@ wsl-care config reset volumes.anonymousMaxGb    # back to the machine/default va
 not JSON, or holds an unknown key or an out-of-range value never stops the daemon and is never
 replaced by defaults: the run becomes **observe-only** (collect and report, no cleanup), every answer
 carries `configError {file, line, message}`, and `config set` still works — it keeps the keys it could
-still read, drops the rest by name, and moves a file it cannot parse to `config.json.broken-<utc>`.
+still read, drops the rest by name, and moves a file it cannot parse to `config.json.broken-<utc>`
+(`-2`, `-3`, … appended when that name is already taken; an earlier broken file is never
+overwritten). Every `wsl-care:` message is one line: control characters in what it quotes — a key
+you typed, a key read from the file, a path — are shown as `?`.
 
 Run logs go to `/var/log/wsl-care/{yyyy-MM-dd}/wsl-care-{HH-mm-ss}-{pid}.log` (Linux) or
 `%LOCALAPPDATA%\wsl-care\logs\…` (Windows), one file per run, UTC; `logging.minimumLevel` and

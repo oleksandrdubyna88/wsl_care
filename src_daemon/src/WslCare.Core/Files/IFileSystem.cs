@@ -50,7 +50,9 @@ public interface IFileSystem
     /// <summary>
     /// Writes the whole file so that a reader sees either the old content or the new, never a
     /// half: the bytes go to a sibling temporary file first and replace the target in one rename.
-    /// The target passes the deletion policy, because the rename overwrites it.
+    /// The target passes the deletion policy, because the rename overwrites it; so does the temporary
+    /// file, which is made in the target's RESOLVED parent; and the target is resolved again just
+    /// before the rename, so a link swapped in after the decision is refused, not followed.
     /// </summary>
     DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope);
 

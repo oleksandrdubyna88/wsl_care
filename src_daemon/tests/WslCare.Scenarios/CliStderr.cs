@@ -17,15 +17,12 @@ internal sealed partial record CliStderr(IReadOnlyList<string> Messages, IReadOn
 
     public static CliStderr Of(TestSupport.ChildResult result)
     {
-        var lines = result.StderrLines.Select(line => AnsiEscape().Replace(line, string.Empty)).ToList();
+        var lines = result.StderrLines.Select(TestSupport.TerminalText.WithoutColour).ToList();
         return new CliStderr(
             [.. lines.Where(l => l.StartsWith(MessagePrefix, StringComparison.Ordinal))],
             [.. lines.Where(l => LogLine().IsMatch(l))],
             [.. lines.Where(l => !l.StartsWith(MessagePrefix, StringComparison.Ordinal) && !LogLine().IsMatch(l))]);
     }
-
-    [GeneratedRegex(@"\x1b\[[0-9;]*m", RegexOptions.CultureInvariant)]
-    private static partial Regex AnsiEscape();
 
     [GeneratedRegex(@"^\[\d\d:\d\d:\d\dZ (?:VRB|DBG|INF|WRN|ERR|FTL)\] ", RegexOptions.CultureInvariant)]
     private static partial Regex LogLine();

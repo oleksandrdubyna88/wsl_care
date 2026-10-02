@@ -66,7 +66,7 @@ internal static class WslCareLogging
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            console.WriteLine($"{appName}: log directory '{logRoot}' is not writable ({e.Message}); continuing with console logging only.");
+            Output.Note(console, $"log directory '{logRoot}' is not writable ({e.Message}); continuing with console logging only.");
             return false;
         }
     }

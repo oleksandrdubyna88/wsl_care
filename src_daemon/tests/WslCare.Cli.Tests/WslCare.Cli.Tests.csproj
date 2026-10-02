@@ -17,6 +17,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Where the CLI's source is, for the scan that holds every stream write to Output and the
+         console sink: stamped by the build rather than walked up to from the test binary. -->
+    <AssemblyMetadata Include="WslCare.CliSourceRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Cli'))" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>

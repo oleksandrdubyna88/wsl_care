@@ -13,9 +13,17 @@ internal static class CliRun
     public static (int Exit, string Stdout, string Stderr) Over(SandboxHost sandbox, params string[] args) =>
         Over(sandbox, Logger.None, CancellationToken.None, args);
 
-    public static (int Exit, string Stdout, string Stderr) Over(SandboxHost sandbox, ILogger logger, CancellationToken cancellationToken, params string[] args)
+    public static (int Exit, string Stdout, string Stderr) Over(SandboxHost sandbox, ILogger logger, CancellationToken cancellationToken, params string[] args) =>
+        Over(sandbox, sandbox.Files, logger, cancellationToken, args);
+
+    /// <summary>The same, with <paramref name="files"/> in place of the sandbox's real file system — for
+    /// a test that needs the disk to answer something it cannot be made to answer for real.</summary>
+    public static (int Exit, string Stdout, string Stderr) Over(SandboxHost sandbox, Core.Files.IFileSystem files, params string[] args) =>
+        Over(sandbox, files, Logger.None, CancellationToken.None, args);
+
+    private static (int Exit, string Stdout, string Stderr) Over(SandboxHost sandbox, Core.Files.IFileSystem files, ILogger logger, CancellationToken cancellationToken, string[] args)
     {
-        var host = new CliHost(sandbox.Paths, sandbox.Files, new FixedTimeProvider(), new RecordingCommandRunner());
+        var host = new CliHost(sandbox.Paths, files, new FixedTimeProvider(), new RecordingCommandRunner());
         var loaded = ConfigLoader.Load(host.Paths, host.Files);
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();

@@ -78,6 +78,28 @@ public sealed class UserConfigWriterTests
     }
 
     [Fact]
+    public void Two_repairs_in_the_same_second_keep_both_broken_files_and_both_succeed()
+    {
+        // The stamp has whole-second precision and the clock is frozen, so both repairs ask for the
+        // same aside name; the second must find a free one rather than fail or overwrite the first.
+        using var host = new SandboxHost("writer-broken-twice");
+        var writer = Writer(host);
+        host.WriteUserConfig("{ first broken text");
+        var first = writer.Set(ConfigKeys.DryRun, new ConfigValue.Bool(false));
+        host.WriteUserConfig("{ second broken text");
+
+        var second = writer.Set(ConfigKeys.DryRun, new ConfigValue.Bool(true));
+
+        var firstAside = first.Should().BeOfType<UserConfigWriteResult.Written>().Subject.MovedAsideTo;
+        var secondAside = second.Should().BeOfType<UserConfigWriteResult.Written>().Subject.MovedAsideTo;
+        firstAside.Should().Be(host.Paths.UserConfigFile + ".broken-20261002T120000Z", "the first aside keeps the plain UTC stamp");
+        secondAside.Should().NotBe(firstAside).And.StartWith(host.Paths.UserConfigFile + ".broken-20261002T120000Z", "the stamp stays readable for a person");
+        File.ReadAllText(firstAside).Should().Be("{ first broken text", "an existing aside file is never overwritten");
+        File.ReadAllText(secondAside).Should().Be("{ second broken text");
+        ConfigLoader.Load(host.Paths, host.Files).Config.Bool(ConfigKeys.DryRun).Should().BeTrue("the second set still wrote its value");
+    }
+
+    [Fact]
     public void Reset_removes_the_key_and_says_whether_it_was_there()
     {
         using var host = new SandboxHost("writer-reset");
