@@ -12,6 +12,10 @@ public sealed record SystemdUnit(string Id, string LoadState, string ActiveState
 {
     public bool Exists => LoadState != "not-found";
 
+    /// <summary><c>enabled</c>, <c>disabled</c>, <c>masked</c>, <c>static</c> — empty for a unit that does not exist or a line
+    /// captured before E2.S3 asked for it.</summary>
+    public string UnitFileState { get; init; } = string.Empty;
+
     /// <summary>The answer of <see cref="SystemdCommands.ShowUnit"/>: <c>Key=Value</c> lines, in the unit's
     /// own order (not the order asked for). A unit with no <c>Id</c> line is not an answer.</summary>
     public static Reading<SystemdUnit> Parse(string stdout)
@@ -27,7 +31,10 @@ public sealed record SystemdUnit(string Id, string LoadState, string ActiveState
                 Value("SubState"),
                 Value("Result"),
                 int.TryParse(Value("NRestarts"), NumberStyles.None, CultureInfo.InvariantCulture, out var restarts) ? Reading.Of(restarts) : Reading.Missing<int>("no NRestarts"),
-                SystemdText.UnixTimestamp(Value("ActiveEnterTimestamp"))));
+                SystemdText.UnixTimestamp(Value("ActiveEnterTimestamp")))
+            {
+                UnitFileState = Value("UnitFileState"),
+            });
     }
 }
 

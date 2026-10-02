@@ -48,6 +48,13 @@ public sealed class WindowsHostPaths(WindowsEnvironment environment) : IHostPath
 
     public string LogDirectory => _rules.Join(environment.LocalAppData, Product, "logs");
 
+    /// <summary>The same folder: on Windows the log directory is already the user's own.</summary>
+    public string UserLogDirectory => LogDirectory;
+
+    /// <summary><c>%USERPROFILE%\.wslconfig</c>: the VM's ceiling, read for the audit of plan §4.5 — never written
+    /// (the owner's decision: the recommendation is SHOWN, never applied).</summary>
+    public string WslConfigFile => _rules.Join(environment.UserProfile, ".wslconfig");
+
     public string TempDirectory => environment.Temp;
 
     public string MachineConfigFile => _rules.Join(environment.ProgramData, Product, "config.json");

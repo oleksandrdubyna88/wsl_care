@@ -1,9 +1,7 @@
-using System.Text.Json;
 
 using WslCare.Core.Collectors;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
-using WslCare.Core.Json;
 
 namespace WslCare.Core.Records;
 
@@ -17,7 +15,38 @@ public sealed record ContainerStatsSample(DateTimeOffset SampledAt, IReadOnlyLis
 
 /// <summary>The distro clock against Windows' (plan §4.5, §15b #5): the measured offset with the
 /// launch latency of the probe already subtracted, and that latency.</summary>
-public sealed record WindowsClockSample(DateTimeOffset SampledAt, double OffsetSeconds, double LaunchLatencySeconds, string Unavailable);
+public sealed record WindowsClockSample(DateTimeOffset SampledAt, double OffsetSeconds, double LaunchLatencySeconds, string Unavailable)
+{
+    /// <summary>The Windows user profile the probe printed (<c>C:\Users\…</c>); empty when unknown or on a line
+    /// written before E2.S3 (which reads as <c>null</c> under the source generator — read through
+    /// <see cref="Profile"/>).</summary>
+    public string? WindowsProfile { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string Profile => WindowsProfile ?? string.Empty;
+
+    /// <summary>Whether this is a measured observation (and not the reason there is none).</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool Measured => string.IsNullOrEmpty(Unavailable);
+}
+
+/// <summary>One folder a full run measured (plan §4.4 and the A8 / A9 rows of §4.3) — or why not.</summary>
+/// <param name="Id">Stable: <c>npm-cache</c>, <c>apt-cache</c>, <c>snap-disabled</c>, <c>git-worktrees</c>,
+/// <c>nuget-packages</c>, <c>user-cache</c>, <c>vscode-server</c>, <c>git-build-output</c>.</param>
+/// <param name="Complete">The walk reached its end; <c>false</c> when a limit stopped it (a lower bound).</param>
+/// <param name="Unavailable">Empty when measured; otherwise the reason (missing, unreadable, a link).</param>
+public sealed record FolderSize(string Id, string Path, long Bytes, long Files, bool Complete, string Unavailable)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool Measured => string.IsNullOrEmpty(Unavailable);
+}
+
+/// <summary>The daily folder sizes of plan §4.4, as one full run measured them.</summary>
+public sealed record FolderSizesSample(DateTimeOffset SampledAt, IReadOnlyList<FolderSize> Folders)
+{
+    /// <summary>The folder of that id, or <c>null</c> — a legitimate "not measured".</summary>
+    public FolderSize? Find(string id) => (Folders ?? []).FirstOrDefault(f => f?.Id == id);
+}
 
 /// <summary>
 /// The parts of a sample that need a SLOW process — <c>docker stats</c> and <c>powershell.exe
@@ -33,6 +62,9 @@ public sealed record SlowParts
     public ContainerStatsSample? ContainerStats { get; init; }
 
     public WindowsClockSample? WindowsClock { get; init; }
+
+    /// <summary>The daily folder sizes (plan §4.4) — present only on the run that measured them (once a day).</summary>
+    public FolderSizesSample? Folders { get; init; }
 }
 
 /// <summary>A slow part as <c>status</c> reports it: the value, the run it came from, when it was
@@ -40,7 +72,14 @@ public sealed record SlowParts
 public sealed record AgedPart<T>(T Value, RunId RunId, DateTimeOffset SampledAt, TimeSpan Age);
 
 /// <summary>The slow parts of the newest full run that sampled each one.</summary>
-public sealed record LastSlowParts(Reading<AgedPart<ContainerStatsSample>> ContainerStats, Reading<AgedPart<WindowsClockSample>> WindowsClock);
+public sealed record LastSlowParts(Reading<AgedPart<ContainerStatsSample>> ContainerStats, Reading<AgedPart<WindowsClockSample>> WindowsClock)
+{
+    /// <summary>The folder sizes of the newest run that measured them; unavailable before the first.</summary>
+    public Reading<AgedPart<FolderSizesSample>> Folders { get; init; } = Reading.Missing<AgedPart<FolderSizesSample>>(LastFullRun.NoFullRunYet);
+
+    /// <summary>The sample before <see cref="Folders"/> — what "grew since yesterday" (plan §4.5) is measured against.</summary>
+    public Reading<FolderSizesSample> PreviousFolders { get; init; } = Reading.Missing<FolderSizesSample>("no earlier folder sample is recorded");
+}
 
 /// <summary>
 /// Reads the slow parts back from <c>history.jsonl</c>: for each part, the newest line that carries it.
@@ -53,21 +92,25 @@ public static class LastFullRun
 
     public static LastSlowParts Read(IHostPaths paths, IFileSystem files, TimeProvider clock)
     {
-        var history = new RunRecordWriter(paths, files).HistoryFile;
-        var now = clock.GetUtcNow();
-        return files.ReadFile(history) switch
-        {
-            FileReadResult.Content content => FromRecords(NewestFirst(content.Bytes), now),
-            FileReadResult.Missing => new LastSlowParts(Reading.Missing<AgedPart<ContainerStatsSample>>(NoFullRunYet), Reading.Missing<AgedPart<WindowsClockSample>>(NoFullRunYet)),
-            FileReadResult.Unreadable u => Unreadable($"{history} could not be read: {u.Reason}"),
-            _ => throw new System.Diagnostics.UnreachableException("FileReadResult is a closed set"),
-        };
+        var history = RunHistory.Read(paths, files);
+        return history.Problem.Length > 0
+            ? Unreadable(history.Problem)
+            : history.Records.Count == 0
+                ? Unreadable(NoFullRunYet)
+                : FromRecords([.. history.Records.Reverse()], clock.GetUtcNow());
     }
 
-    private static LastSlowParts FromRecords(IReadOnlyList<RunRecord> newestFirst, DateTimeOffset now) =>
+    /// <summary>The newest part of each kind in <paramref name="newestFirst"/>, aged against <paramref name="now"/>.</summary>
+    public static LastSlowParts FromRecords(IReadOnlyList<RunRecord> newestFirst, DateTimeOffset now) =>
         new(
             Newest(newestFirst, r => r.Slow?.ContainerStats, s => s.SampledAt, s => s.Unavailable, now, "docker stats"),
-            Newest(newestFirst, r => r.Slow?.WindowsClock, s => s.SampledAt, s => s.Unavailable, now, "the Windows clock"));
+            Newest(newestFirst, r => r.Slow?.WindowsClock, s => s.SampledAt, s => s.Unavailable, now, "the Windows clock"))
+        {
+            Folders = Newest(newestFirst, r => r.Slow?.Folders, s => s.SampledAt, _ => string.Empty, now, "the folder sizes"),
+            PreviousFolders = newestFirst.Select(r => r.Slow?.Folders).Where(f => f is not null).Skip(1).FirstOrDefault() is { } previous
+                ? Reading.Of(previous)
+                : Reading.Missing<FolderSizesSample>("no earlier folder sample is recorded"),
+        };
 
     private static Reading<AgedPart<T>> Newest<T>(IReadOnlyList<RunRecord> newestFirst, Func<RunRecord, T?> part, Func<T, DateTimeOffset> sampledAt, Func<T, string?> unavailable, DateTimeOffset now, string what)
         where T : class
@@ -85,26 +128,9 @@ public static class LastFullRun
             : Reading.Missing<AgedPart<T>>($"the last full run that tried ({record.RunId}) could not sample {what}: {reason}");
     }
 
-    private static IReadOnlyList<RunRecord> NewestFirst(byte[] bytes) =>
-        [.. System.Text.Encoding.UTF8.GetString(bytes).Split('\n').Reverse().SelectMany(Parse)];
-
-    private static IEnumerable<RunRecord> Parse(string line)
-    {
-        if (line.Trim().Length == 0)
-        {
-            return [];
-        }
-
-        try
-        {
-            return JsonSerializer.Deserialize(line, WslCareJsonContext.Compact.RunRecord) is { } record ? [record] : [];
-        }
-        catch (JsonException)
-        {
-            return [];
-        }
-    }
-
     private static LastSlowParts Unreadable(string reason) =>
-        new(Reading.Missing<AgedPart<ContainerStatsSample>>(reason), Reading.Missing<AgedPart<WindowsClockSample>>(reason));
+        new(Reading.Missing<AgedPart<ContainerStatsSample>>(reason), Reading.Missing<AgedPart<WindowsClockSample>>(reason))
+        {
+            Folders = Reading.Missing<AgedPart<FolderSizesSample>>(reason),
+        };
 }

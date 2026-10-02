@@ -30,7 +30,15 @@ public sealed record StatusReport(
     IReadOnlyList<ConfigErrorReport> ConfigError,
     VmReport Vm,
     HostReport Host,
-    SlowReport Slow);
+    SlowReport Slow)
+{
+    /// <summary>Container starts in the last 24 h (plan §4.3) from the follower's files — complete, or partial with the
+    /// gaps named (plan §15b #0); absent when the answer was built without them.</summary>
+    public Events.StartsWindow? ContainerStarts { get; init; }
+
+    /// <summary>The daily folder sizes from the newest full run that measured them, with their age and growth.</summary>
+    public Collect.FoldersReport? Folders { get; init; }
+}
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>
 public sealed record VmReport(

@@ -27,15 +27,19 @@ public sealed class DockerCollectorTests
         return [.. properties, .. built];
     }
 
-    private static object Sample(ParameterInfo parameter) =>
-        parameter.ParameterType == typeof(DateTimeOffset) ? DateTimeOffset.UnixEpoch : new List<string> { new('a', 64) };
+    private static object Sample(ParameterInfo parameter) => parameter.ParameterType switch
+    {
+        var t when t == typeof(DateTimeOffset) => parameter.Name == "until" ? DateTimeOffset.UnixEpoch.AddMinutes(10) : DateTimeOffset.UnixEpoch,
+        var t when t == typeof(TimeSpan) => TimeSpan.FromMinutes(1),
+        _ => new List<string> { new('a', 64) },
+    };
 
     [Fact]
     public void Every_docker_command_the_product_can_build_is_a_read_verb_with_a_ceiling()
     {
         var commands = EveryCommand();
 
-        commands.Select(c => c.Name).Should().Contain(["version", "system-df", "system-df-v", "volume-ls-dangling", "ps-a", "stats", "container-inspect", "events"]);
+        commands.Select(c => c.Name).Should().Contain(["version", "system-df", "system-df-v", "volume-ls-dangling", "ps-a", "stats", "container-inspect", "events", "events-backfill", "events-stream"]);
         commands.Should().OnlyContain(c => c.Executable == DockerCommands.Executable && DockerCommands.IsReadVerb(c.Arguments) && c.Ceiling > TimeSpan.Zero);
     }
 

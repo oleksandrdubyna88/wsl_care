@@ -102,13 +102,36 @@ public static class DockerCommands
         };
     }
 
-    /// <summary>Container starts in a bounded window (plan §15b #0: the follower's backfill), one JSON line each.</summary>
+    /// <summary>Container starts in a bounded window, one JSON line each (the live contract's window of the last 24 h).</summary>
     public static ToolCommand Events(DateTimeOffset since, DateTimeOffset until) =>
         new(
             Executable,
             "events",
             ["events", "--since", Rfc3339(since), "--until", Rfc3339(until), "--filter", "type=container", "--filter", "event=start", "--format", "{{json .}}"],
             ListingCeiling,
+            LargeCap);
+
+    /// <summary>
+    /// The follower's backfill (plan §15b #0): EVERY event Docker still buffers in a past window, unfiltered, one JSON
+    /// line each. Unfiltered on purpose — the oldest event of any kind is the proof of how far back the in-memory
+    /// buffer reaches (measured 2026-10-02: 255 healthcheck <c>exec_*</c> events and no start), and so whether a gap
+    /// since the last marker can be filled at all. The buffer is a few hundred events, so the answer stays small.
+    /// </summary>
+    public static ToolCommand Backfill(DateTimeOffset since, DateTimeOffset until) =>
+        new(Executable, "events-backfill", ["events", "--since", Rfc3339(since), "--until", Rfc3339(until), "--format", "{{json .}}"], ListingCeiling, LargeCap);
+
+    /// <summary>
+    /// One segment of the live stream: container starts from <paramref name="since"/> (replayed from Docker's buffer)
+    /// until <paramref name="until"/>, a FUTURE instant, at which Docker closes the stream by itself. A segment is
+    /// bounded so the stream is a wait with a ceiling like any other (reliability rule) — its ceiling is the segment
+    /// plus <paramref name="slack"/>, and each segment's end is a coverage marker.
+    /// </summary>
+    public static ToolCommand EventStream(DateTimeOffset since, DateTimeOffset until, TimeSpan slack) =>
+        new(
+            Executable,
+            "events-stream",
+            ["events", "--since", Rfc3339(since), "--until", Rfc3339(until), "--filter", "type=container", "--filter", "event=start", "--format", "{{json .}}"],
+            until - since + slack,
             LargeCap);
 
     /// <summary>Whether an argv (without <c>docker</c>) starts with one of <see cref="ReadVerbs"/>.</summary>

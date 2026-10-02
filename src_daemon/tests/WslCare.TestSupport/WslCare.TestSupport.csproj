@@ -7,6 +7,9 @@
          the recording command runner, a sandboxed host. NOT a test project itself (no runner), and
          never referenced by a product project — it is the one place a test double lives so the two
          test projects do not each grow a copy. -->
+    <!-- RunningChild sends SIGTERM to the pid of a child the test started (libc kill through LibraryImport,
+         whose generated stub is unsafe code) - the scenario of a follower stopped as systemd stops it. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

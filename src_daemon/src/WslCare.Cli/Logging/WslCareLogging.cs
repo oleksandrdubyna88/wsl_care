@@ -3,6 +3,7 @@ using Serilog.Core;
 using Serilog.Events;
 
 using WslCare.Core.Config;
+using WslCare.Core.Files;
 
 namespace WslCare.Cli.Logging;
 
@@ -16,9 +17,10 @@ namespace WslCare.Cli.Logging;
 /// <para>Configured in code, not through <c>Serilog.Settings.Configuration</c>: that package finds
 /// sinks by scanning assemblies, which is reflection a Native AOT binary does not have. The keys are
 /// <c>logging.minimumLevel</c> and <c>logging.retentionDays</c> in the daemon's own configuration.</para>
-/// <para>A log directory that cannot be written — <c>/var/log/wsl-care</c> when a person runs
-/// <c>config get</c> as themselves — is a degraded log, not a failure: the file sink is dropped with a
-/// note on the console and the command still answers.</para>
+/// <para>A run that may not write <c>/var/log/wsl-care</c> — a person running <c>config get</c> or <c>collect</c>
+/// as themselves — logs to the user's own <c>$XDG_STATE_HOME/wsl-care/logs</c> (plan §15b #3, <see cref="LogRoot"/>).
+/// When even that cannot be written the log is degraded, not failed: the file sink is dropped with a note on the
+/// console and the command still answers.</para>
 /// </remarks>
 internal static class WslCareLogging
 {
@@ -36,11 +38,12 @@ internal static class WslCareLogging
             .Enrich.WithProperty("ProcessId", Environment.ProcessId)
             .WriteTo.Sink(new AnsiConsoleSink(console));
 
-        var fileSinkOpened = TryAddFileSink(configuration, host.Paths.LogDirectory, appName, startedUtc, console);
+        var logRoot = LogRoot(host);
+        var fileSinkOpened = TryAddFileSink(configuration, logRoot, appName, startedUtc, console);
         var logger = configuration.CreateLogger();
         if (fileSinkOpened)
         {
-            Prune(logger, host, config, DateOnly.FromDateTime(startedUtc));
+            Prune(logger, host, logRoot, config, DateOnly.FromDateTime(startedUtc));
         }
 
         return logger;
@@ -71,9 +74,14 @@ internal static class WslCareLogging
         }
     }
 
-    private static void Prune(Logger logger, CliHost host, EffectiveConfig config, DateOnly todayUtc)
+    /// <summary>The run log's root: the system log directory when this process may write it, otherwise the user's own
+    /// (plan §15b #3: an unprivileged run logs to <c>$XDG_STATE_HOME/wsl-care/logs</c>).</summary>
+    internal static string LogRoot(CliHost host) =>
+        host.Files.ProbeWriteAccess(host.Paths.LogDirectory) is WriteAccess.Writable ? host.Paths.LogDirectory : host.Paths.UserLogDirectory;
+
+    private static void Prune(Logger logger, CliHost host, string logRoot, EffectiveConfig config, DateOnly todayUtc)
     {
-        var report = LogRetention.Prune(host.Files, host.Paths.LogDirectory, todayUtc, config.Int(ConfigKeys.Logging.RetentionDays));
+        var report = LogRetention.Prune(host.Files, logRoot, todayUtc, config.Int(ConfigKeys.Logging.RetentionDays));
         if (report.Deleted.Count > 0)
         {
             logger.Information("log retention removed {Count} day folder(s) older than {RetentionDays} days", report.Deleted.Count, config.Int(ConfigKeys.Logging.RetentionDays));

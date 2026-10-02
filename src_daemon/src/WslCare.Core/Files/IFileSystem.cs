@@ -50,18 +50,70 @@ public abstract record VolumeReadResult
     public sealed record Unreadable(string Reason) : VolumeReadResult;
 }
 
-/// <summary>What measuring one file produced: its length, nothing there, or a file that cannot be inspected.</summary>
+/// <summary>What measuring one file produced: its length and last write, nothing there, or a file that cannot be inspected.</summary>
 public abstract record FileSizeResult
 {
     private FileSizeResult()
     {
     }
 
-    public sealed record Measured(long Bytes) : FileSizeResult;
+    /// <param name="Bytes">Its length.</param>
+    /// <param name="ModifiedAt">Its last write, UTC — how the health check tells a collector that still writes
+    /// (sysstat, atop) from one that stopped.</param>
+    public sealed record Measured(long Bytes, DateTimeOffset ModifiedAt) : FileSizeResult;
 
     public sealed record Missing : FileSizeResult;
 
     public sealed record Unreadable(string Reason) : FileSizeResult;
+}
+
+/// <summary>Whether this process may create files in a directory — answered by trying (plan §15b #3: privilege
+/// is the operating system's answer, not an id check of ours).</summary>
+public abstract record WriteAccess
+{
+    private WriteAccess()
+    {
+    }
+
+    public sealed record Writable : WriteAccess;
+
+    public sealed record NotWritable(string Reason) : WriteAccess;
+}
+
+/// <summary>The ceiling on one walk of a tree (reliability rule: every wait has a ceiling): how many entries it
+/// may visit and how long it may take. A walk that reaches either stops and says so.</summary>
+public sealed record TreeLimits(int MaxEntries, TimeSpan MaxDuration);
+
+/// <summary>What a bounded walk of a tree found.</summary>
+public abstract record TreeMeasure
+{
+    private TreeMeasure()
+    {
+    }
+
+    /// <param name="Bytes">The summed length of the files counted.</param>
+    /// <param name="Files">How many files were counted.</param>
+    /// <param name="Complete">The walk reached its end — <c>false</c> when a limit stopped it, and then
+    /// <paramref name="Note"/> says which; the figures are a lower bound.</param>
+    /// <param name="Note">Why it is incomplete; empty when complete.</param>
+    public sealed record Measured(long Bytes, long Files, bool Complete, string Note) : TreeMeasure;
+
+    public sealed record Missing : TreeMeasure;
+
+    public sealed record Unreadable(string Reason) : TreeMeasure;
+}
+
+/// <summary>An exclusive lock file held — or busy because another process holds it.</summary>
+public abstract record ExclusiveLock
+{
+    private ExclusiveLock()
+    {
+    }
+
+    /// <summary>Held until <paramref name="Handle"/> is disposed, or the process dies (the OS releases it).</summary>
+    public sealed record Held(IDisposable Handle) : ExclusiveLock;
+
+    public sealed record Busy(string Reason) : ExclusiveLock;
 }
 
 /// <summary>
@@ -97,8 +149,45 @@ public interface IFileSystem
     /// <summary>Size and free space of the filesystem that holds <paramref name="path"/> — one call, no walk.</summary>
     VolumeReadResult MeasureVolume(string path);
 
-    /// <summary>The length of one file — a stat, never a read (a container log can be gigabytes).</summary>
+    /// <summary>The length and last write of one file — a stat, never a read (a container log can be gigabytes).</summary>
     FileSizeResult FileSize(string path);
+
+    /// <summary>Full paths of the files directly in <paramref name="path"/> (no directories, no recursion);
+    /// empty when it does not exist.</summary>
+    IReadOnlyList<string> ListFiles(string path);
+
+    /// <summary>
+    /// The summed size of the files under <paramref name="path"/>, within <paramref name="limits"/>. Links are
+    /// NEVER followed (a symlink or junction is neither counted nor entered), unreadable directories are skipped,
+    /// file contents are never read — a stat per entry. When <paramref name="countOnlyUnder"/> is non-empty only
+    /// files below a directory of one of those names count (<c>bin</c>, <c>obj</c>); directories named in
+    /// <paramref name="neverEnter"/> are not walked at all (<c>node_modules</c>, <c>.git</c>).
+    /// </summary>
+    TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Whether this process may create a file in <paramref name="directory"/> (creating the directory first when
+    /// it is missing): a temporary file is opened with delete-on-close and closed at once. Nothing remains —
+    /// and for a process that may NOT write there, nothing was ever created.
+    /// </summary>
+    WriteAccess ProbeWriteAccess(string directory);
+
+    /// <summary>
+    /// Takes an exclusive lock file and holds it until the handle is disposed. The atomic operation it rests on
+    /// is an exclusive open (<c>FileShare.None</c> — <c>flock</c> on Linux, a sharing violation on Windows); the
+    /// operating system releases it when the holder dies, so a lock is never stale and nothing sweeps it.
+    /// Residual: the lock file itself stays on disk (empty), which is harmless — holding is the open, not the file.
+    /// </summary>
+    ExclusiveLock TryLockExclusive(string lockPath);
+
+    /// <summary>
+    /// Rewrites a line file (<c>history.jsonl</c>) under the SAME lock <see cref="AppendLine"/> takes, so an
+    /// append that arrives meanwhile waits and lands in the new file rather than in a file about to be replaced.
+    /// <paramref name="keep"/> gets the current lines (none when the file is missing) and returns the lines to
+    /// keep; when they are the same, nothing is written. The new content is written atomically, judged by
+    /// <paramref name="scope"/>.
+    /// </summary>
+    DeletionVerdict RewriteLines(string path, Func<IReadOnlyList<string>, IReadOnlyList<string>> keep, DeletionScope scope, TimeSpan lockTimeout);
 
     void CreateDirectory(string path);
 
