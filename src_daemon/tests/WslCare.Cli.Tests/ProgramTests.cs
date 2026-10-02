@@ -3,6 +3,7 @@ using System.Reflection;
 using FluentAssertions;
 
 using WslCare.Cli;
+using WslCare.TestSupport;
 
 namespace WslCare.Cli.Tests;
 
@@ -20,8 +21,9 @@ public sealed class ProgramTests
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
             .InformationalVersion;
         expected.Should().NotBeNullOrWhiteSpace("the SDK stamps every assembly it builds");
+        using var sandbox = new SandboxHost("program-version");
 
-        var (exit, stdout, stderr) = Run("--version");
+        var (exit, stdout, stderr) = CliRun.Over(sandbox, "--version");
 
         exit.Should().Be(0);
         stdout.Should().Be(expected + Environment.NewLine);
@@ -31,43 +33,49 @@ public sealed class ProgramTests
     [Fact]
     public void Help_exits_zero_and_writes_the_help_text_to_stdout_only()
     {
-        var (exit, stdout, stderr) = Run("--help");
+        using var sandbox = new SandboxHost("program-help");
+
+        var (exit, stdout, stderr) = CliRun.Over(sandbox, "--help");
 
         exit.Should().Be(0);
         stdout.Should().Be(CommandLine.HelpText + Environment.NewLine);
+        stdout.Should().Contain("wsl-care config get").And.Contain("wsl-care config set").And.Contain("wsl-care config reset");
         stderr.Should().BeEmpty();
     }
 
     [Fact]
     public void An_unknown_verb_exits_non_zero_with_exactly_one_line_on_stderr_and_nothing_on_stdout()
     {
-        var (exit, stdout, stderr) = Run("frobnicate");
+        using var sandbox = new SandboxHost("program-unknown");
+
+        var (exit, stdout, stderr) = CliRun.Over(sandbox, "frobnicate");
 
         exit.Should().NotBe(0).And.Be((int)ExitCode.Usage);
         stdout.Should().BeEmpty();
-        Lines(stderr).Should().ContainSingle()
+        CliRun.Lines(stderr).Should().ContainSingle()
             .Which.Should().StartWith("wsl-care: ").And.Contain("frobnicate");
     }
 
     [Fact]
     public void An_unknown_verb_carrying_a_newline_is_still_reported_on_one_line()
     {
-        var (exit, _, stderr) = Run("two\nlines");
+        using var sandbox = new SandboxHost("program-newline");
+
+        var (exit, _, stderr) = CliRun.Over(sandbox, "two\nlines");
 
         exit.Should().Be((int)ExitCode.Usage);
-        Lines(stderr).Should().ContainSingle();
+        CliRun.Lines(stderr).Should().ContainSingle();
     }
 
-    private static (int Exit, string Stdout, string Stderr) Run(params string[] args)
+    [Fact]
+    public void A_cancelled_token_stops_the_run_before_the_verb_as_a_cancellation()
     {
-        using var stdout = new StringWriter();
-        using var stderr = new StringWriter();
-        var exit = Program.Run(args, stdout, stderr);
-        return (exit, stdout.ToString(), stderr.ToString());
-    }
+        using var sandbox = new SandboxHost("program-cancel");
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
 
-    /// <summary>Lines as a terminal shows them: ANY line break counts, not only this platform's
-    /// <see cref="Environment.NewLine"/> — splitting on "\r\n" alone let a bare "\n" pass as one line.</summary>
-    private static string[] Lines(string text) =>
-        text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        var act = () => CliRun.Over(sandbox, Serilog.Core.Logger.None, cancelled.Token, "config", "get");
+
+        act.Should().Throw<OperationCanceledException>();
+    }
 }
