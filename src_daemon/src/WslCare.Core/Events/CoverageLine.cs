@@ -1,3 +1,6 @@
+using WslCare.Core.Collectors;
+using WslCare.Core.Docker;
+
 namespace WslCare.Core.Events;
 
 /// <summary>
@@ -28,6 +31,11 @@ public abstract record CoverageLine
     /// <summary>Every start up to <paramref name="At"/> is recorded: a stream segment ended normally, or a backfill completed.</summary>
     public sealed record Covered(DateTimeOffset At) : CoverageLine
     {
+        /// <summary>The engine instance whose buffer this coverage came from (<see cref="DockerCommands.EngineStart"/>) — what
+        /// the next backfill compares with to tell an idle engine from a restarted one; unavailable on a marker that has none
+        /// (written before the engine was read, or when it could not be).</summary>
+        public Reading<EngineMark> Engine { get; init; } = Reading.Missing<EngineMark>("no engine was recorded at this marker");
+
         public override DateTimeOffset Instant => At;
 
         public override DateTimeOffset? CoveredUntil => At;
@@ -86,6 +94,12 @@ public sealed record CoverageLineJson(string Kind)
 
     public string? Reason { get; init; }
 
+    /// <summary>A <c>covered</c> marker's engine instance (<see cref="EngineMark.Id"/>).</summary>
+    public string? EngineId { get; init; }
+
+    /// <summary>A <c>covered</c> marker's engine start (<see cref="EngineMark.StartedAt"/>).</summary>
+    public DateTimeOffset? EngineStartedAt { get; init; }
+
     public const string StartKind = "start";
     public const string CoveredKind = "covered";
     public const string StartedKind = "followerStarted";
@@ -95,7 +109,7 @@ public sealed record CoverageLineJson(string Kind)
     public static CoverageLineJson Of(CoverageLine line) => line switch
     {
         CoverageLine.Start s => new(StartKind) { At = s.At, Id = s.Id, Name = s.Name, Image = s.Image, Testcontainers = s.Testcontainers, Backfilled = s.Backfilled ? true : null },
-        CoverageLine.Covered c => new(CoveredKind) { At = c.At },
+        CoverageLine.Covered c => OfCovered(c),
         CoverageLine.FollowerStarted f => new(StartedKind) { At = f.At, Pid = f.Pid },
         CoverageLine.FollowerStopped f => new(StoppedKind) { At = f.At, Pid = f.Pid, Covered = f.Reached },
         CoverageLine.Gap g => new(GapKind) { From = g.From, To = g.To, Reason = g.Reason },
@@ -106,10 +120,17 @@ public sealed record CoverageLineJson(string Kind)
     public IEnumerable<CoverageLine> ToLine() => (Kind, At, From, To) switch
     {
         (StartKind, { } at, _, _) => [new CoverageLine.Start(at, Id ?? string.Empty, Name ?? string.Empty, Image ?? string.Empty, Testcontainers ?? false, Backfilled ?? false)],
-        (CoveredKind, { } at, _, _) => [new CoverageLine.Covered(at)],
+        (CoveredKind, { } at, _, _) => [new CoverageLine.Covered(at) { Engine = EngineOf(EngineId, EngineStartedAt) }],
         (StartedKind, { } at, _, _) => [new CoverageLine.FollowerStarted(at, Pid ?? 0)],
         (StoppedKind, { } at, _, _) => [new CoverageLine.FollowerStopped(at, Pid ?? 0, Covered)],
         (GapKind, _, { } from, { } to) => [new CoverageLine.Gap(from, to, Reason ?? string.Empty)],
         _ => [],
     };
+
+    private static CoverageLineJson OfCovered(CoverageLine.Covered c) => c.Engine is Reading<EngineMark>.Available { Value: var e }
+        ? new(CoveredKind) { At = c.At, EngineId = e.Id, EngineStartedAt = e.StartedAt }
+        : new(CoveredKind) { At = c.At };
+
+    private static Reading<EngineMark> EngineOf(string? id, DateTimeOffset? startedAt) =>
+        id is { Length: > 0 } && startedAt is { } at ? Reading.Of(new EngineMark(id, at)) : new CoverageLine.Covered(default).Engine;
 }

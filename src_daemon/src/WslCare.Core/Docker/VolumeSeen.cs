@@ -65,12 +65,13 @@ public abstract record VolumeSeenWrite
 /// (temporary file + rename, judged by the deletion policy inside the state directory).
 /// </summary>
 /// <remarks>
-/// <b>Who writes it (plan §15b #3).</b> State under <c>/var/lib/wsl-care</c> is written by root only. This
-/// class does not decide privilege by an id check of its own: it ATTEMPTS the write and lets the operating
-/// system answer. On the installed layout the state directory is <c>root:root 0755</c> (E4.S1's installer),
-/// so only root succeeds; an unprivileged run (the extension's <c>preview</c>) gets the operating system's
-/// refusal and reports <see cref="VolumeSeenWrite.NotWritten"/> — <i>read-only</i> — having written nothing,
-/// and uses the record it read plus "first seen now" for new volumes, which can only make A4 select FEWER.
+/// <b>Who writes it (plan §15b #3).</b> State under <c>/var/lib/wsl-care</c> is written by root only, and only by
+/// the full run (<c>collect</c>, later the cleanup actions): a <c>preview</c> never asks for a write, privileged or
+/// not (gate finding #3/#6/#10). This class does not decide privilege by an id check of its own: it ATTEMPTS the
+/// write and lets the operating system answer. On the installed layout the state directory is <c>root:root 0755</c>
+/// (E4.S1's installer), so only root succeeds; an unprivileged run gets the operating system's refusal and reports
+/// <see cref="VolumeSeenWrite.NotWritten"/> — <i>read-only</i> — having written nothing. A run that does not record
+/// uses the record it read plus "first seen now" for new volumes, which can only make A4 select FEWER.
 /// A sandbox under <c>WSL_CARE_ROOT</c> belongs to the test user and is therefore writable — the privileged
 /// case; the unwritable case is tested with the state directory denied.
 /// </remarks>

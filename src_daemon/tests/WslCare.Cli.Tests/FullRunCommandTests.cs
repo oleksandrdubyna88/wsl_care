@@ -132,6 +132,48 @@ public sealed class FullRunCommandTests
     }
 
     [Fact]
+    public void Status_reads_the_followers_24_hour_summary_and_never_opens_a_day_file_however_many_starts_were_recorded()
+    {
+        // Gate finding #8: status must not re-parse the raw JSONL, or its cost grows with every start the follower ever
+        // recorded. The follower (here, one --once catch-up over 200 backfilled starts) keeps a small summary; status reads it.
+        using var sandbox = new SandboxHost("status-summary");
+        var now = DockerFixture.CapturedAt;
+        var starts = Enumerable.Range(0, 200).Select(i => DockerEventLines.Start($"c{i:D3}", $"n{i}", "postgres:17", now.AddMinutes(-(i + 1)))).ToArray();
+        var follow = Tools()
+            .Script(a => a is ["docker", "events", "--since", _, "--until", _, "--format", _], RecordingCommandRunner.Exited(0, DockerEventLines.Text(starts)));
+        CliRun.Over(Host(sandbox, sandbox.Files, follow, now), "events", "follow", "--once").Exit.Should().Be((int)ExitCode.Ok);
+        var dayFolder = new ContainerStartsStore(sandbox.Paths, sandbox.Files).Directory;
+        var reads = new ReadRecordingFileSystem(sandbox.Files);
+
+        var (exit, stdout, stderr) = CliRun.Over(Host(sandbox, reads, new RecordingCommandRunner(), now.AddMinutes(1)), "status", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var report = JsonSerializer.Deserialize(stdout, WslCareJsonContext.Default.StatusReport)!;
+        report.ContainerStarts!.Starts.Should().Be(200, "the summary carries the follower's 24-hour count");
+        reads.Paths.Should().NotContain(p => p.StartsWith(dayFolder, StringComparison.OrdinalIgnoreCase), "status opens no day file and lists no day folder");
+    }
+
+    /// <summary>The real file system, recording every path a read or a listing touched.</summary>
+    private sealed class ReadRecordingFileSystem(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        private readonly List<string> _paths = [];
+
+        public IReadOnlyList<string> Paths => _paths;
+
+        public override FileReadResult ReadFile(string path)
+        {
+            _paths.Add(path);
+            return base.ReadFile(path);
+        }
+
+        public override IReadOnlyList<string> ListFiles(string path)
+        {
+            _paths.Add(path);
+            return base.ListFiles(path);
+        }
+    }
+
+    [Fact]
     public void Events_follow_once_with_docker_down_exits_zero_and_names_why_nothing_was_recorded()
     {
         using var sandbox = new SandboxHost("events-once");
