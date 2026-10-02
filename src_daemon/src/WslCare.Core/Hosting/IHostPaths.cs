@@ -36,6 +36,11 @@ public interface IHostPaths
     /// <summary>The root of the per-run log files (plan §6; family logging rule).</summary>
     string LogDirectory { get; }
 
+    /// <summary>The log root of a run that may NOT write <see cref="LogDirectory"/> — an unprivileged run inside the
+    /// distro (plan §15b #3: <c>$XDG_STATE_HOME/wsl-care/logs</c>); on Windows, where the log directory is the
+    /// user's own, the same as <see cref="LogDirectory"/>.</summary>
+    string UserLogDirectory { get; }
+
     /// <summary>The system temporary directory.</summary>
     string TempDirectory { get; }
 

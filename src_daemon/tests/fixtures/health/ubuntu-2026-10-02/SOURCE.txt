@@ -1,0 +1,38 @@
+systemctl / journalctl / timedatectl / snap / powershell.exe answers - CAPTURED, not synthetic.
+
+Source:   WSL distro "Ubuntu" (24.04, systemd 255.4-1ubuntu8.17, kernel 6.18.33.2-microsoft-standard-WSL2) on the
+          owner's machine, as the unprivileged user (uid 1000, in adm and docker), WSL interop on.
+Captured: 2026-10-02T17:34:47Z (captured-at.txt) by the live contract itself -
+          src_daemon/tests/WslCare.LiveContract run with WSL_CARE_LIVE_CAPTURE=<dir>, built and run from a copy of the
+          worktree under /tmp in the distro (removed afterwards). Each file is the stdout of exactly the argv the
+          product builds (WslCare.Core.Systemd.SystemdCommands, WslCare.Core.Health.HealthCommands), first answer kept.
+          Read-only commands only. systemctl-show-wsl-pro.out was taken by hand right after with the product's argv
+          (SystemdCommands.ShowUnit("wsl-pro.service")); the live contract asks for the same unit since.
+
+Files (renamed from the capture's command names, which several files share):
+  systemctl-failed.out          systemctl list-units --failed --output=json --no-pager   (getty@tty1.service failed)
+  journalctl-list-boots.out     journalctl --list-boots --output=json --no-pager          (5 boots; the oldest first entry
+                                2026-10-01T22:10:27Z: the journal held less than a day - plan finding 4)
+  journalctl-search-clock.out   journalctl --since @<now-4h> --no-pager --quiet --output=cat --unit=systemd-resolved
+                                --grep=Clock change detected                              (875 lines in ~3.9 h of uptime)
+  journalctl-search-kernel.out  journalctl --since @<now-4h> ... --dmesg --grep=page allocation failure|invoked oom-killer
+                                (ONE order-7 kworker allocation failure that afternoon - the plan's §4.1 signature)
+  timedatectl-show.out          timedatectl show --property=NTP --property=NTPSynchronized
+  systemctl-version.out         systemctl --version
+  systemctl-show-fstrim.out     systemctl show fstrim.timer --timestamp=unix --property=<UnitProperties>
+  systemctl-show-wsl-pro.out    the same for wsl-pro.service (loaded, active, enabled: Phase 0.4 not done yet)
+  snap-list-all.out             snap list --all   (two snaps, no disabled revision)
+  powershell-clock.out          powershell.exe -NoProfile -NonInteractive -Command <HealthCommands.ClockScript>
+
+Redacted, by hand, and nothing else changed:
+  - powershell-clock.out: the Windows user name in the profile path, C:\Users\<name> -> C:\Users\owner.
+
+Measured and NOT kept as a fixture:
+  - docker events --since <now-24h> --until <now> --format {{json .}} (DockerCommands.Backfill, unfiltered): 248 events,
+    every one a healthcheck exec_create / exec_start / exec_die, spanning 17:33:17Z-17:34:48Z - Docker's in-memory buffer
+    reached back 91 SECONDS. Not kept because the exec_* actions carry the healthchecks' command lines (one holds a
+    database password on its argv). What it decides: a follower outage longer than about a minute and a half is not
+    recoverable from the buffer on this machine, so the follower writes ONE unrecoverable gap marker for it rather than
+    pretending to backfill (plan §15b #0). The tests use synthetic lines in this shape (TestSupport/DockerEventLines).
+  - docker events with a FUTURE --until (DockerCommands.EventStream): the stream stayed open and ended by itself, exit 0,
+    at --until - the follower's bounded segments rest on that (HealthContractTests).

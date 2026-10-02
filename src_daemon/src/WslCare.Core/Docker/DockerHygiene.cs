@@ -39,9 +39,14 @@ public static class DockerHygiene
     private const string StateSuffix = "_state";
 
     public static DockerHygieneAudit Audit(DockerSnapshot snapshot, IHostPaths paths, IFileSystem files) =>
+        Audit(snapshot, paths, files, paths.DockerDesktopConfigFile);
+
+    /// <summary>The audit with Docker Desktop's <c>daemon.json</c> at <paramref name="dockerDesktopConfigFile"/> — inside the
+    /// distro, the Windows profile the full run's clock probe found, seen through <c>/mnt</c> (E2.S3); empty = unknown.</summary>
+    public static DockerHygieneAudit Audit(DockerSnapshot snapshot, IHostPaths paths, IFileSystem files, string dockerDesktopConfigFile) =>
         new(
             snapshot.Details.Map<IReadOnlyList<UnboundedLog>>(details => [.. details.Where(d => d.UnboundedLog).Select(d => new UnboundedLog(d.Name, d.State, LogSize(d.LogPath, paths, files)))]),
-            ReadBuilderGc(paths, files),
+            ReadBuilderGc(dockerDesktopConfigFile, files),
             Reading.Combine(snapshot.Inventory, snapshot.Dangling, Buildkit));
 
     private static Reading<long> LogSize(string logPath, IHostPaths paths, IFileSystem files)
@@ -61,12 +66,11 @@ public static class DockerHygiene
         };
     }
 
-    private static Reading<BuilderGc> ReadBuilderGc(IHostPaths paths, IFileSystem files)
+    private static Reading<BuilderGc> ReadBuilderGc(string file, IFileSystem files)
     {
-        var file = paths.DockerDesktopConfigFile;
         if (file.Length == 0)
         {
-            return Reading.Missing<BuilderGc>("Docker Desktop's daemon.json is on the Windows side (%USERPROFILE%\\.docker\\daemon.json); wsl-care.exe reads it");
+            return Reading.Missing<BuilderGc>("Docker Desktop's daemon.json is on the Windows side (%USERPROFILE%\\.docker\\daemon.json); wsl-care.exe reads it, and the distro once a full run has found the Windows profile");
         }
 
         return files.ReadFile(file) switch

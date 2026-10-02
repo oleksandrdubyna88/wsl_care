@@ -20,7 +20,7 @@ internal static class Program
         FakeCallLog.Append(calls, call);
 
         var script = Environment.GetEnvironmentVariable(FakeToolProtocol.ScriptVariable);
-        var answer = string.IsNullOrWhiteSpace(script) ? null : FakeScript.Find(script, call);
+        var answer = string.IsNullOrWhiteSpace(script) ? null : FakeScript.Find(script, call, FakeCallLog.ReadAll(calls));
         if (answer is null)
         {
             Console.Error.WriteLine($"fake {tool}: no scripted answer for: {call.Display}");
@@ -43,6 +43,13 @@ internal static class Program
         if (answer.Stderr.Length > 0)
         {
             Console.Error.Write(answer.Stderr);
+        }
+
+        if (answer.HangAfterMilliseconds > 0)
+        {
+            // A live stream nobody ended: the output is out, the process stays until killed or the time passes.
+            Console.Out.Flush();
+            Thread.Sleep(answer.HangAfterMilliseconds);
         }
 
         return answer.ExitCode;

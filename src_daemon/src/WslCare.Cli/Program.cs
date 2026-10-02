@@ -10,9 +10,9 @@ using WslCare.Core.Config;
 namespace WslCare.Cli;
 
 /// <summary>
-/// <c>wsl-care</c> — the daemon and CLI of plan §6. This build answers <c>--help</c>,
-/// <c>--version</c>, the <c>config</c> verbs and <c>status</c>, and refuses everything else; the full run
-/// and the actions arrive in later stories.
+/// <c>wsl-care</c> — the daemon and CLI of plan §6. This build answers <c>--help</c>, <c>--version</c>, the
+/// <c>config</c> verbs, <c>status</c>, <c>preview</c>, the full run <c>collect</c>, <c>doctor</c> and the follower
+/// <c>events follow</c>, and refuses everything else; the actions arrive in later stories.
 /// </summary>
 /// <remarks>
 /// <para>Answers go to stdout and nothing else does, because the extension parses stdout. Every
@@ -84,6 +84,9 @@ internal static class Program
             Request.ConfigReset reset => ConfigCommand.Reset(reset, host, stdout, stderr),
             Request.Status status => StatusCommand.Run(status, host, loaded, stdout, cancellationToken),
             Request.Preview preview => PreviewCommand.Run(preview, host, loaded, stdout, cancellationToken),
+            Request.Collect collect => CollectCommand.Run(collect, host, loaded, stdout, stderr, logger, cancellationToken),
+            Request.Doctor doctor => DoctorCommand.Run(doctor, host, loaded, stdout, cancellationToken),
+            Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
     }
