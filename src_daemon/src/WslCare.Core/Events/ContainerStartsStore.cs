@@ -21,6 +21,7 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
     public const int RetentionDays = 14;
 
     private const string Action = "container-starts-retention";
+    private const string SummaryAction = "container-starts-summary";
     private const string Extension = ".jsonl";
     private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(5);
 
@@ -28,6 +29,29 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
 
     /// <summary>The follower's own lock: one follower at a time (an exclusive open, released by the OS when it dies).</summary>
     public string FollowerLock => paths.Rules.Join(paths.StateDirectory, "events-follower.lock");
+
+    /// <summary>The follower's trailing-24-hour summary (<see cref="StartsSummary"/>) — outside <see cref="Directory"/>, so the
+    /// day-file listing and the prune never see it.</summary>
+    public string SummaryFile => paths.Rules.Join(paths.StateDirectory, SummaryFileName);
+
+    public const string SummaryFileName = "starts-summary.json";
+
+    /// <summary>Recomputes the 24-hour count over the day files and writes it atomically (<see cref="SummaryFile"/>). The
+    /// follower calls this after every marker; the verdict says whether the policy allowed the write.</summary>
+    public DeletionVerdict WriteSummary(DateTimeOffset now)
+    {
+        var lines = ReadAll();
+        var summary = new StartsSummary(Core.SchemaVersion.Current, now, Coverage.LastCovered(lines), Coverage.Last24h(lines, now));
+        return files.WriteFileAtomically(SummaryFile, JsonSerializer.SerializeToUtf8Bytes(summary, WslCareJsonContext.Default.StartsSummary), new DeletionScope(paths.StateDirectory, SummaryAction));
+    }
+
+    /// <summary>The 24-hour count <c>status</c> answers: ONE small file read, whatever the number of starts recorded (gate
+    /// finding #8); <see cref="Coverage.NoSummary"/> when there is none or it cannot be read.</summary>
+    public StartsWindow ReadSummary(DateTimeOffset now) => files.ReadFile(SummaryFile) switch
+    {
+        FileReadResult.Content content when ParseSummary(content.Bytes) is { } summary => Coverage.AsOf(summary, now),
+        _ => Coverage.NoSummary(now),
+    };
 
     public void Append(CoverageLine line)
     {
@@ -84,6 +108,18 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
         FileReadResult.Content content => System.Text.Encoding.UTF8.GetString(content.Bytes).Split('\n').Where(l => l.Trim().Length > 0).SelectMany(Parse),
         _ => [],
     };
+
+    private static StartsSummary? ParseSummary(byte[] bytes)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(bytes, WslCareJsonContext.Default.StartsSummary) is { Window: not null } summary ? summary : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private static IEnumerable<CoverageLine> Parse(string line)
     {

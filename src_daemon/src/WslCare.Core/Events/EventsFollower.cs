@@ -1,5 +1,6 @@
 using WslCare.Core.Collectors;
 using WslCare.Core.Docker;
+using WslCare.Core.Files.Deletion;
 using WslCare.Core.Processes;
 
 namespace WslCare.Core.Events;
@@ -52,6 +53,10 @@ public sealed class EventsFollower(
     /// marker carries even when the stop interrupts a segment.</summary>
     private DateTimeOffset? _covered;
 
+    /// <summary>The engine instance the newest coverage came from — carried on every <c>covered</c> marker, compared by the
+    /// next backfill (the continuity rule, <see cref="Coverage.Plan(DateTimeOffset?, IReadOnlyList{DockerEvent}, DateTimeOffset, EngineEvidence)"/>).</summary>
+    private Reading<EngineMark> _engine = EngineEvidence.Unknown.AtLastCoverage;
+
     public async Task<FollowResult> RunAsync(bool once, int processId, CancellationToken cancellationToken)
     {
         store.Append(new CoverageLine.FollowerStarted(clock.GetUtcNow(), processId));
@@ -60,7 +65,9 @@ public sealed class EventsFollower(
             note($"retention: {problem}");
         }
 
-        _covered = Coverage.LastCovered(store.ReadAll());
+        var recorded = store.ReadAll();
+        _covered = Coverage.LastCovered(recorded);
+        _engine = Coverage.LastEngine(recorded);
         var problemAtEnd = string.Empty;
         try
         {
@@ -74,6 +81,7 @@ public sealed class EventsFollower(
         {
             // Written even when the token is cancelled: the stop is the event being recorded.
             store.Append(new CoverageLine.FollowerStopped(clock.GetUtcNow(), processId, _covered));
+            Summarize();
         }
 
         return new FollowResult(_covered, _starts, _gaps, problemAtEnd);
@@ -86,8 +94,9 @@ public sealed class EventsFollower(
         var outcome = await commands.StreamAsync(DockerCommands.EventStream(since, until, SegmentSlack).ToRequest(), Record, cancellationToken).ConfigureAwait(false);
         if (outcome is CommandOutcome.Exited { ExitCode: 0 } && clock.GetUtcNow() >= until - EarlyEnd)
         {
-            store.Append(new CoverageLine.Covered(until));
+            store.Append(new CoverageLine.Covered(until) { Engine = _engine });
             _covered = until;
+            Summarize();
             return;
         }
 
@@ -123,7 +132,10 @@ public sealed class EventsFollower(
             var (events, problem) = await BufferedAsync(cancellationToken).ConfigureAwait(false);
             if (events is not null)
             {
-                _covered = Apply(Coverage.Plan(_covered, events, clock.GetUtcNow()));
+                // Read AFTER the events: an engine that restarts between the two reads then shows a start later than the
+                // anchor (a gap), never an old start over a new, empty buffer (a false completeness).
+                var engine = DockerEngineStart.From(await _docker.RunAsync(DockerCommands.EngineStart, cancellationToken).ConfigureAwait(false));
+                _covered = Apply(Coverage.Plan(_covered, events, clock.GetUtcNow(), new EngineEvidence(engine, _engine)), engine);
                 return string.Empty;
             }
 
@@ -157,8 +169,9 @@ public sealed class EventsFollower(
         };
     }
 
-    private DateTimeOffset Apply(BackfillPlan plan)
+    private DateTimeOffset Apply(BackfillPlan plan, Reading<EngineMark> engine)
     {
+        _engine = engine.IsAvailable ? engine : _engine;
         if (plan.Gap is { } gap)
         {
             store.Append(gap);
@@ -172,8 +185,27 @@ public sealed class EventsFollower(
             _starts++;
         }
 
-        store.Append(new CoverageLine.Covered(plan.CoveredUntil));
+        store.Append(new CoverageLine.Covered(plan.CoveredUntil) { Engine = engine });
+        Summarize();
         return plan.CoveredUntil;
+    }
+
+    /// <summary>The trailing-24-hour summary <c>status</c> reads (gate finding #8), rewritten after every marker. It is a
+    /// cache of the day files: a write that fails is noted and the follower goes on — <c>status</c> then reports the older
+    /// summary as stale, never a wrong count.</summary>
+    private void Summarize()
+    {
+        try
+        {
+            if (store.WriteSummary(clock.GetUtcNow()) is DeletionVerdict.Refused refused)
+            {
+                note($"the 24-hour summary was not written: {refused.Reason}");
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            note($"the 24-hour summary was not written: {e.Message}");
+        }
     }
 
     private static CoverageLine.Start Line(DockerEvent e, bool backfilled) => new(e.At, e.Id, e.Name, e.Image, e.Testcontainers, backfilled);

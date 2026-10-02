@@ -1,5 +1,6 @@
 using FluentAssertions;
 
+using WslCare.Core.Collectors;
 using WslCare.Core.Docker;
 using WslCare.Core.Events;
 using WslCare.Core.Processes;
@@ -37,6 +38,50 @@ public sealed class EventsFollowerTests : IDisposable
     private static CommandOutcome Unreachable() => RecordingCommandRunner.Exited(1, stderr: Down);
 
     private static CommandOutcome Buffer(params string[] lines) => RecordingCommandRunner.Exited(0, DockerEventLines.Text(lines));
+
+    private static bool IsEngineStart(IReadOnlyList<string> argv) => argv.SequenceEqual(DockerCommands.EngineStart.Argv);
+
+    private static CommandOutcome Bridge(string id, DateTimeOffset created) =>
+        RecordingCommandRunner.Exited(0, "{\"id\":\"" + id + "\",\"created\":\"" + created.UtcDateTime.ToString("O", System.Globalization.CultureInfo.InvariantCulture) + "\"}\n");
+
+    [Fact]
+    public async Task An_idle_engine_that_did_not_restart_answers_an_empty_buffer_and_the_catch_up_writes_no_gap_but_records_the_engine()
+    {
+        // Gate finding #2/#7/#9, through the follower: the same bridge (the same engine instance) as the last marker, an
+        // empty buffer, nothing to fill - covered, and the new marker carries the engine for the next comparison.
+        var engineStart = Start.AddDays(-3);
+        Store.Append(new CoverageLine.Covered(Start.AddHours(-2)) { Engine = Reading.Of(new EngineMark("bridge-a", engineStart)) });
+        var docker = new RecordingCommandRunner()
+            .Script(IsVersion, Reachable())
+            .Script(IsBackfill, Buffer())
+            .Script(IsEngineStart, Bridge("bridge-a", engineStart));
+
+        var result = await Follower(docker).RunAsync(once: true, processId: 7, TestContext.Current.CancellationToken);
+
+        result.GapsRecorded.Should().Be(0);
+        var lines = Store.ReadAll();
+        lines.OfType<CoverageLine.Gap>().Should().BeEmpty();
+        lines.OfType<CoverageLine.Covered>().Last().Engine.Should().Be(Reading.Of(new EngineMark("bridge-a", engineStart)));
+        docker.Requests.Select(r => r.Argv).Should().ContainSingle(a => IsEngineStart(a), "the engine is read once, after the events");
+        Store.ReadSummary(Start).Starts.Should().Be(0, "the follower wrote its 24-hour summary after the markers");
+        File.Exists(Store.SummaryFile).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_engine_restarted_since_the_last_marker_is_ONE_gap_up_to_its_start_even_with_an_empty_buffer()
+    {
+        var restarted = Start.AddMinutes(-10);
+        Store.Append(new CoverageLine.Covered(Start.AddHours(-2)) { Engine = Reading.Of(new EngineMark("bridge-a", Start.AddDays(-3))) });
+        var docker = new RecordingCommandRunner()
+            .Script(IsVersion, Reachable())
+            .Script(IsBackfill, Buffer())
+            .Script(IsEngineStart, Bridge("bridge-b", restarted));
+
+        await Follower(docker).RunAsync(once: true, processId: 7, TestContext.Current.CancellationToken);
+
+        Store.ReadAll().OfType<CoverageLine.Gap>().Should().ContainSingle()
+            .Which.Should().Match<CoverageLine.Gap>(g => g.From == Start.AddHours(-2) && g.To == restarted && g.Reason.Contains("restarted"));
+    }
 
     [Fact]
     public async Task Docker_down_then_up_waits_in_process_with_backoff_and_writes_ONE_gap_marker_for_the_outage()

@@ -123,6 +123,32 @@ public sealed class DockerContractTests
         events.Where(e => e.At < since.AddSeconds(-1) || e.At > until.AddSeconds(1)).Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task The_bridge_network_names_an_engine_start_no_later_than_any_running_container_started()
+    {
+        // The continuity rule's engine signal (gate finding #2/#7/#9): the default bridge is re-created at every engine start,
+        // so its creation is the engine's start. No container can be running from before its engine started.
+        var engine = Available(DockerEngineStart.Parse(await Live.DockerAsync(DockerCommands.EngineStart)));
+        engine.Id.Should().HaveLength(64);
+        engine.StartedAt.Should().BeBefore(DateTimeOffset.UtcNow.AddSeconds(5));
+
+        var inventory = Available(DockerInventory.Parse(await Live.DockerAsync(DockerCommands.SystemDfVerbose)));
+        var running = inventory.Containers.Where(c => c.State == "running").Select(c => c.Id).ToList();
+        Assert.SkipWhen(running.Count == 0, "no running container to compare the engine's start with");
+        var starts = new List<DateTimeOffset>();
+        foreach (var batch in running.Chunk(DockerCommands.InspectBatch))
+        {
+            foreach (var line in (await Live.DockerAsync(DockerCommands.ContainerInspect(batch))).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                using var row = System.Text.Json.JsonDocument.Parse(line);
+                starts.AddRange(DockerText.Instant(row.RootElement.GetProperty("startedAt").GetString() ?? string.Empty) is Reading<DateTimeOffset>.Available { Value: var at } ? [at] : []);
+            }
+        }
+
+        starts.Should().NotBeEmpty();
+        starts.Min().Should().BeOnOrAfter(engine.StartedAt.AddSeconds(-1), "every running container started after its engine (a second for the two clocks' rounding)");
+    }
+
     /// <summary>What the sums are compared with: counts and reclaimable figures, not the total size a running
     /// container grows.</summary>
     private static string Reclaimable(string systemDf) =>

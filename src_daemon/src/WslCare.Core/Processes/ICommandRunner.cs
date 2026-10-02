@@ -20,8 +20,10 @@ public interface ICommandRunner
     /// callback), stderr is captured as usual.
     /// </summary>
     /// <remarks>A line longer than <see cref="CommandRequest.OutputCapChars"/> is cut there — a child that never
-    /// ends a line cannot grow this process without bound. A callback that throws kills the process tree, and the
-    /// exception propagates.</remarks>
+    /// ends a line cannot grow this process without bound. stderr is drained concurrently into a bounded capture, so a
+    /// chatty child never blocks on it. Every way out but a normal end — the ceiling, the caller's cancellation, a callback
+    /// that throws — kills the whole process tree and waits for the child to be gone (in a <c>finally</c>) before the
+    /// outcome or the exception arrives.</remarks>
     /// <exception cref="OperationCanceledException">The CALLER cancelled; the process tree has
     /// already been killed when this is thrown.</exception>
     Task<CommandOutcome> StreamAsync(CommandRequest request, Action<string> onStdoutLine, CancellationToken cancellationToken);

@@ -73,8 +73,8 @@ public sealed class PreviewFlows
         report.Kept.Count.Should().Be(13);
         report.Totals.Types!.Single(t => t.Type == DockerTotal.Containers).TotalCount.Should().Be(29);
         report.Hygiene.UnboundedLogs.Count.Should().Be(28);
-        report.VolumeSeen.Recorded.Should().BeTrue("the sandbox's state directory is writable by its owner — the privileged case");
-        File.Exists(new VolumeSeenStore(home.Paths, new Core.Files.PhysicalFileSystem(home.Paths)).File).Should().BeTrue();
+        report.VolumeSeen.Recorded.Should().BeFalse("preview only reads the state, even in the privileged (writable) case");
+        File.Exists(new VolumeSeenStore(home.Paths, new Core.Files.PhysicalFileSystem(home.Paths)).File).Should().BeFalse();
 
         home.Calls.Should().OnlyContain(c => c.Tool == DockerCommands.Executable && DockerCommands.IsReadVerb(c.Argv), "preview runs Docker READ commands only");
         home.Calls.Select(c => c.Argv).Should().Equal(DockerFixture.Answers.Select(a => a.Command.Arguments), (a, b) => a.SequenceEqual(b));
@@ -145,6 +145,31 @@ public sealed class PreviewFlows
         report.Docker.Kind.Should().Be("timedOut");
         report.Docker.Reason.Should().Contain("process tree was killed");
         home.Calls.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Preview_on_a_writable_state_directory_still_never_writes_volume_seen_json()
+    {
+        // Plan section 15b #3: preview only READS the state. The sandbox's state directory is writable by its owner, which
+        // is exactly the privileged case (a root preview) the gate found writing the first sightings (finding #3/#6/#10).
+        using var absent = Captured("preview-seen-absent");
+        using var present = Captured("preview-seen-present");
+        WriteUserLayer(absent, AllAges);
+        var absentFile = new VolumeSeenStore(absent.Paths, new Core.Files.PhysicalFileSystem(absent.Paths)).File;
+        var store = new VolumeSeenStore(present.Paths, new Core.Files.PhysicalFileSystem(present.Paths));
+        var lastWeek = DateTimeOffset.UtcNow.AddDays(-7);
+        store.TryWrite(new VolumeSeenRecord(SchemaVersion.Current, lastWeek, [new VolumeSighting("a-volume-docker-no-longer-lists", lastWeek)])).Should().BeOfType<VolumeSeenWrite.Written>();
+        var before = File.ReadAllBytes(store.File);
+
+        var fresh = Report(await absent.RunAsync("preview", "--all", "--json"));
+        var known = Report(await present.RunAsync("preview", "--all", "--json"));
+
+        File.Exists(absentFile).Should().BeFalse("a preview creates no volume-seen.json, even where it could");
+        File.ReadAllBytes(store.File).Should().Equal(before, "a preview leaves an existing volume-seen.json byte-identical — it would otherwise drop the name Docker no longer lists");
+        fresh.VolumeSeen.Recorded.Should().BeFalse();
+        known.VolumeSeen.Recorded.Should().BeFalse();
+        fresh.VolumeSeen.Reason.Should().StartWith("read-only:").And.Contain("collect");
+        Row(fresh, "A4").Count.Should().Be(3, "the rows still count the volumes, first seen now, from the in-memory observation");
     }
 
     [Fact]
