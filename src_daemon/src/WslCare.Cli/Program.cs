@@ -48,16 +48,14 @@ internal static class Program
         catch (OperationCanceledException) when (shutdown.Token.IsCancellationRequested)
         {
             logger.Warning("interrupted by a signal before the command finished");
-            Console.Error.WriteLine($"{CommandLine.BinaryName}: interrupted.");
-            return (int)ExitCode.Interrupted;
+            return Output.Interrupted(Console.Error);
         }
         catch (Exception e)
         {
             // The last frame before "nobody above me": a defect escaping here is reported in one
             // line and a distinct code instead of a .NET crash dump the extension cannot parse.
             logger.Fatal(e, "internal error");
-            Console.Error.WriteLine($"{CommandLine.BinaryName}: internal error: {e.GetType().Name}: {e.Message}");
-            return (int)ExitCode.Internal;
+            return Output.Internal(Console.Error, $"{e.GetType().Name}: {e.Message}");
         }
     }
 

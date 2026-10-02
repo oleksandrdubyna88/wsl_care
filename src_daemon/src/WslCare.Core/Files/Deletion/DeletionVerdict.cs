@@ -23,6 +23,15 @@ public enum DeletionRule
 
     /// <summary>The declared root is a filesystem root or the home directory — too broad to mean anything.</summary>
     RootTooBroad,
+
+    /// <summary>A component of the path (or of the destination, or of the root) could not be inspected
+    /// for a link — access denied, an unreadable reparse point, a cycle of links — so its real path is
+    /// unknown and nothing is done to it. Fail closed: an unknown is never treated as a plain name.</summary>
+    Unresolvable,
+
+    /// <summary>Re-resolved just before the final step of an atomic write, the path no longer named
+    /// the place that was approved — a link was swapped in after the decision.</summary>
+    PathChanged,
 }
 
 /// <summary>Allowed, or refused by one named rule with a sentence a person can read.</summary>
