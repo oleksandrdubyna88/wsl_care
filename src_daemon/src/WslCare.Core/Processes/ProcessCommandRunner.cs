@@ -33,7 +33,7 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        using var process = new Process { StartInfo = StartInfo(request) };
+        using var process = new Process();
         var started = Stopwatch.StartNew();
         if (Start(process, request) is { } notStarted)
         {
@@ -71,7 +71,7 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        using var process = new Process { StartInfo = StartInfo(request) };
+        using var process = new Process();
         var started = Stopwatch.StartNew();
         if (Start(process, request) is { } notStarted)
         {
@@ -113,22 +113,33 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
     private CommandOutcome.Refused? Refusal(CommandRequest request) =>
         policy.Review(request.Argv) is CommandVerdict.Refused refused ? new CommandOutcome.Refused(refused.Reason) : null;
 
-    /// <summary>Starts the process; the outcome when the operating system would not, <c>null</c> when it runs.</summary>
-    private static CommandOutcome.FailedToStart? Start(Process process, CommandRequest request)
+    /// <summary>Starts the process from the FULL path <see cref="ExecutableResolver"/> found on <c>PATH</c> — the
+    /// operating system is never handed a bare name to search for; the outcome when there is none or the operating
+    /// system would not start it, <c>null</c> when it runs.</summary>
+    private static CommandOutcome.FailedToStart? Start(Process process, CommandRequest request) =>
+        ExecutableResolver.Resolve(request.Argv[0]) switch
+        {
+            ResolvedExecutable.Found found => StartAt(process, request, found.Path),
+            ResolvedExecutable.NotFound missing => new CommandOutcome.FailedToStart(missing.Reason),
+            _ => throw new UnreachableException("ResolvedExecutable is a closed set"),
+        };
+
+    private static CommandOutcome.FailedToStart? StartAt(Process process, CommandRequest request, string executable)
     {
+        process.StartInfo = StartInfo(request, executable);
         try
         {
-            return process.Start() ? null : new CommandOutcome.FailedToStart($"the operating system did not start {request.Argv[0]}");
+            return process.Start() ? null : new CommandOutcome.FailedToStart($"the operating system did not start {executable}");
         }
         catch (Win32Exception e)
         {
-            return new CommandOutcome.FailedToStart($"{request.Argv[0]}: {e.Message}");
+            return new CommandOutcome.FailedToStart($"{executable}: {e.Message}");
         }
     }
 
-    private static ProcessStartInfo StartInfo(CommandRequest request)
+    private static ProcessStartInfo StartInfo(CommandRequest request, string executable)
     {
-        var info = new ProcessStartInfo(request.Argv[0])
+        var info = new ProcessStartInfo(executable)
         {
             UseShellExecute = false,
             RedirectStandardOutput = true,

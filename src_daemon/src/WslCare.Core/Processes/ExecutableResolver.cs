@@ -1,0 +1,107 @@
+namespace WslCare.Core.Processes;
+
+/// <summary>What looking up a command's executable produced: the full path to start, or why there is none.</summary>
+public abstract record ResolvedExecutable
+{
+    private ResolvedExecutable()
+    {
+    }
+
+    /// <summary>The file to start — a full path, so the operating system is never asked to search.</summary>
+    public sealed record Found(string Path) : ResolvedExecutable;
+
+    /// <summary>Nothing on <c>PATH</c> answers to the name (or the name is a relative path); the reason says where it looked.</summary>
+    public sealed record NotFound(string Reason) : ResolvedExecutable;
+}
+
+/// <summary>
+/// The product's own answer to "which file does <c>docker</c> mean": a bare name is looked up on <c>PATH</c> and
+/// nowhere else, and the FULL path is what the runner starts.
+/// </summary>
+/// <remarks>
+/// <para>Why it exists (CI run 37045304356, win-x64): a bare name handed to the operating system is not a
+/// <c>PATH</c> lookup. Windows <c>CreateProcess</c> searches the application's directory, the CURRENT directory, the
+/// 32-bit System directory and the Windows directory BEFORE <c>PATH</c>, and .NET's Unix launcher also tries the
+/// application's and the current directory first. GitHub's Windows image ships <c>docker.exe</c> in
+/// <c>C:\Windows\System32</c>, so every scenario's fake on <c>PATH</c> lost to the runner's real Docker — and on an
+/// owner's machine a <c>docker.exe</c> dropped into whatever directory the daemon was started from would win the same
+/// way. The family learned the same lesson for <c>gh</c> (<c>dew_flow_conventions</c>,
+/// <c>.github/scripts/lib/resolved.mjs</c>).</para>
+/// <para>The rules: an absolute path passes through unchanged; a relative path with a directory in it is refused (it
+/// would mean whatever the current directory makes it); a bare name is tried in each <c>PATH</c> entry in order, skipping
+/// empty and relative entries (both mean "the current directory"). On Windows only <c>.exe</c> and <c>.com</c> are
+/// candidates — a <c>.cmd</c> or <c>.bat</c> needs a shell, and no shell is ever involved (<see cref="CommandRequest"/>);
+/// on Linux the file must carry an execute bit.</para>
+/// </remarks>
+public static class ExecutableResolver
+{
+    /// <summary>The extensions a Windows program can be started under without a shell.</summary>
+    public static readonly IReadOnlyList<string> WindowsExtensions = [".exe", ".com"];
+
+    /// <summary>Resolves against this process's <c>PATH</c>, by this platform's rules.</summary>
+    public static ResolvedExecutable Resolve(string name) =>
+        Resolve(name, Environment.GetEnvironmentVariable("PATH"), OperatingSystem.IsWindows());
+
+    /// <summary>Resolves <paramref name="name"/> against <paramref name="pathVariable"/> by the rules of the platform
+    /// <paramref name="windows"/> names (the file checks are this machine's).</summary>
+    public static ResolvedExecutable Resolve(string name, string? pathVariable, bool windows)
+    {
+        if (Path.IsPathFullyQualified(name))
+        {
+            return new ResolvedExecutable.Found(name);
+        }
+
+        if (HasADirectory(name, windows))
+        {
+            return new ResolvedExecutable.NotFound($"{name} is a relative path; only a bare name (looked up on PATH) or an absolute path is started");
+        }
+
+        var directories = Directories(pathVariable, windows);
+        var found = directories.SelectMany(d => Candidates(name, windows).Select(c => Path.Combine(d, c))).FirstOrDefault(c => IsStartable(c, windows));
+        return found is not null
+            ? new ResolvedExecutable.Found(found)
+            : new ResolvedExecutable.NotFound(NotFoundReason(name, directories.Count, windows));
+    }
+
+    /// <summary>A relative path rather than a bare name: <c>./docker</c>, <c>bin\docker</c>, <c>C:docker</c>.</summary>
+    private static bool HasADirectory(string name, bool windows) =>
+        name.Contains('/') || (windows && name.IndexOfAny(['\\', ':']) >= 0);
+
+    /// <summary>The usable <c>PATH</c> entries, in order: trimmed, unquoted, empty and relative ones dropped.</summary>
+    private static IReadOnlyList<string> Directories(string? pathVariable, bool windows) =>
+        [.. (pathVariable ?? string.Empty)
+            .Split(windows ? ';' : ':')
+            .Select(e => windows ? e.Trim().Trim('"') : e)
+            .Where(e => e.Length > 0 && Path.IsPathFullyQualified(e))];
+
+    private static IReadOnlyList<string> Candidates(string name, bool windows) =>
+        !windows || WindowsExtensions.Contains(Path.GetExtension(name), StringComparer.OrdinalIgnoreCase)
+            ? [name]
+            : [.. WindowsExtensions.Select(e => name + e)];
+
+    private static bool IsStartable(string candidate, bool windows)
+    {
+        try
+        {
+            return File.Exists(candidate) && MayExecute(candidate, windows);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A directory this account cannot inspect holds nothing it may start.
+            return false;
+        }
+    }
+
+    /// <summary>Windows starts any existing <c>.exe</c>; Linux needs an execute bit (the closest the file mode says to <c>access(X_OK)</c>).</summary>
+    private static bool MayExecute(string candidate, bool windows) =>
+        windows || OperatingSystem.IsWindows() || HasExecuteBit(candidate);
+
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static bool HasExecuteBit(string candidate) =>
+        (File.GetUnixFileMode(candidate) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
+
+    private static string NotFoundReason(string name, int searched, bool windows) =>
+        searched == 0
+            ? $"{name} was not found: PATH holds no absolute directory to search"
+            : $"{name} was not found on PATH ({searched} {(searched == 1 ? "directory" : "directories")} searched{(windows ? ", .exe and .com only" : ", executable files only")})";
+}
