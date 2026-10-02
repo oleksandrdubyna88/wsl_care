@@ -82,38 +82,11 @@ public static class ProcfsFixture
 
     /// <summary>A real file system whose <see cref="IFileSystem.ReadLink"/> answers from the recorded table;
     /// a link the capture could not read is answered as unreadable, which is what it was.</summary>
-    private sealed class LinkOverlayFileSystem(IFileSystem inner, IReadOnlyDictionary<string, string> links) : IFileSystem
+    private sealed class LinkOverlayFileSystem(IFileSystem inner, IReadOnlyDictionary<string, string> links) : DelegatingFileSystem(inner)
     {
-        public LinkReadResult ReadLink(string path) =>
+        public override LinkReadResult ReadLink(string path) =>
             links.TryGetValue(Normalize(path), out var target)
                 ? new LinkReadResult.Target(target)
                 : new LinkReadResult.Unreadable("not recorded in the fixture (another user's process: readlink was refused at capture)");
-
-        public FileReadResult ReadFile(string path) => inner.ReadFile(path);
-
-        public bool FileExists(string path) => inner.FileExists(path);
-
-        public bool DirectoryExists(string path) => inner.DirectoryExists(path);
-
-        public IReadOnlyList<string> ListDirectories(string path) => inner.ListDirectories(path);
-
-        public VolumeReadResult MeasureVolume(string path) => inner.MeasureVolume(path);
-
-
-        public FileSizeResult FileSize(string path) => inner.FileSize(path);
-
-        public void CreateDirectory(string path) => inner.CreateDirectory(path);
-
-        public DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.WriteFileAtomically(path, content, scope);
-
-        public void AppendLine(string path, string line, TimeSpan lockTimeout) => inner.AppendLine(path, line, lockTimeout);
-
-        public DeletionVerdict DeleteFile(string path, DeletionScope scope) => inner.DeleteFile(path, scope);
-
-        public DeletionVerdict DeleteDirectory(string path, DeletionScope scope) => inner.DeleteDirectory(path, scope);
-
-        public DeletionVerdict MoveFile(string from, string to, DeletionScope scope) => inner.MoveFile(from, to, scope);
-
-        public DeletionVerdict MoveDirectory(string from, string to, DeletionScope scope) => inner.MoveDirectory(from, to, scope);
     }
 }

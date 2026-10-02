@@ -85,6 +85,22 @@ internal sealed class ScenarioHome : IDisposable
         return this;
     }
 
+    /// <summary>Scripts one answer as given — its <c>StdoutFile</c> an ABSOLUTE path (a fixture through <see cref="Fixture"/>,
+    /// or a file the scenario wrote with <see cref="WriteFile"/>), with the prefix / up-to / hang-after options of E2.S3.</summary>
+    public ScenarioHome Answer(FakeAnswer answer)
+    {
+        _answers.Add(answer);
+        FakeScript.Write(ScriptFile, _answers);
+        return this;
+    }
+
+    /// <summary>A file of the scenario's own (outside the sandbox root) — a scripted answer's stdout.</summary>
+    public string WriteFile(string name, string content) => _root.File(name, content);
+
+    /// <summary>Starts the BUILT <c>wsl-care</c> and leaves it running — for a verb that runs until a signal.</summary>
+    public RunningChild Start(params string[] args) =>
+        RunningChild.Start(ChildProcess.BesideTheTests(CommandLine.BinaryName), args, Environment, WorkingDirectory);
+
     /// <summary>The absolute path of a file under <c>fixtures/</c>, copied beside the harness.</summary>
     public static string Fixture(string relativePath)
     {

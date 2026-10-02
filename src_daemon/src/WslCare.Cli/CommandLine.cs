@@ -31,6 +31,15 @@ internal abstract record Request
 
     /// <summary><c>preview --all [--json]</c>: every cleanup row with count and reclaimable bytes (plan §6).</summary>
     internal sealed record Preview(bool Json) : Request;
+
+    /// <summary><c>collect [--json]</c>: the full run (plan §6) — measured, recorded when this process may write the state.</summary>
+    internal sealed record Collect(bool Json) : Request;
+
+    /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
+    internal sealed record Doctor(bool Json) : Request;
+
+    /// <summary><c>events follow [--once]</c>: the container-start follower (plan §4.3); <c>--once</c> catches up and stops.</summary>
+    internal sealed record EventsFollow(bool Once) : Request;
 }
 
 /// <summary>One thing the command line accepts: how it is spelt, what it does, how it is parsed.</summary>
@@ -66,6 +75,7 @@ internal static class CommandLine
 
     private const string JsonFlag = "--json";
     private const string AllFlag = "--all";
+    private const string OnceFlag = "--once";
 
     internal static readonly IReadOnlyList<Command> Commands =
     [
@@ -76,6 +86,9 @@ internal static class CommandLine
         new([["config", "reset"]], "config reset <key>", "remove one setting from the user layer", ["config", "reset", "dryRun"], ParseConfigReset),
         new([["status"]], "status [--json]", "a fast snapshot: memory, top holders, containers, disk; slow parts from the last full run", ["status", "--json"], ParseStatus),
         new([["preview"]], "preview --all [--json]", "every cleanup row with its count and reclaimable bytes, the kept named volumes, Docker hygiene", ["preview", "--all", "--json"], ParsePreview),
+        new([["collect"]], "collect [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise)", ["collect", "--json"], rest => JsonOnly("collect", rest, json => new Request.Collect(json))),
+        new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
+        new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
     ];
 
     /// <summary>Every spelling of <see cref="Commands"/> with its command, longest first — ordered once,
@@ -179,6 +192,20 @@ internal static class CommandLine
         _ => new Request.Failed($"\"{BinaryName} status\" takes only {JsonFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
     };
 
+    private static Request JsonOnly(string verb, IReadOnlyList<string> rest, Func<bool, Request> make) => rest switch
+    {
+        [] => make(false),
+        [JsonFlag] => make(true),
+        _ => new Request.Failed($"\"{BinaryName} {verb}\" takes only {JsonFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
+    };
+
+    private static Request ParseEventsFollow(IReadOnlyList<string> rest) => rest switch
+    {
+        [] => new Request.EventsFollow(Once: false),
+        [OnceFlag] => new Request.EventsFollow(Once: true),
+        _ => new Request.Failed($"\"{BinaryName} events follow\" takes only {OnceFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
+    };
+
     private static Request ParsePreview(IReadOnlyList<string> rest) => rest switch
     {
         [AllFlag] => new Request.Preview(Json: false),
@@ -204,7 +231,7 @@ internal static class CommandLine
             .AppendLine("Settings are read from three layers, each overriding the last: the embedded defaults, the machine")
             .AppendLine("file, and the user file that \"config set\" writes. \"config get\" names the layer behind every value.")
             .AppendLine()
-            .Append("This build answers only the commands above; the full run and the cleanups arrive in later releases.")
+            .Append("This build answers only the commands above; the cleanups (act) arrive in a later release.")
             .ToString();
     }
 

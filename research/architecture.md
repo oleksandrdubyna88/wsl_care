@@ -6,9 +6,11 @@
 > all three shipped RIDs — and, from E2.S1, the memory / process / container / disk collectors behind
 > the two probes and the `status [--json]` verb, and from E2.S2 the Docker collectors, the first-sighting
 > record `volume-seen.json`, the Docker hygiene audit, the `preview --all [--json]` verb and the live contract
-> check against the real tools. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status` and
-> `preview`, and refuses everything else; no full run (`collect`), rule or action exists yet, and there is no
-> extension. This file describes what exists and is rewritten as each part lands.
+> check against the real tools, and from E2.S3 the full run `collect` (health collectors, thresholds, the daily
+> folder walk, run detail → history line with the startup reconcile and retention, read-only when unprivileged),
+> `doctor` and the container-start follower `events follow`. `wsl-care` answers `--help`, `--version`, the `config`
+> verbs, `status`, `preview`, `collect`, `doctor` and `events follow`, and refuses everything else; no action exists
+> yet, and there is no extension. This file describes what exists and is rewritten as each part lands.
 
 ## What exists
 
@@ -25,7 +27,10 @@
     architecture test keeps it so). Holds the seams below, the configuration system, the run-record
     type and its writer, `ProductVersion`, since E2.S1 the collectors (`Collectors/`) and the
     `status` report (`Status/`), and since E2.S2 the Docker collectors (`Docker/`), the cleanup preview
-    (`Preview/`) and the `systemctl` / `journalctl` commands and parsers (`Systemd/`).
+    (`Preview/`) and the `systemctl` / `journalctl` commands and parsers (`Systemd/`), and since E2.S3 the full
+    run (`Collect/`), the health collectors (`Health/`), the thresholds (`Thresholds/`), the daily folder walk
+    (`Folders/`), the container-start follower (`Events/`), `doctor` (`Doctor/`) and the run detail store, history
+    reader, reconcile and retention (`Records/`).
   - `src/WslCare.Cli` — the executable `wsl-care` / `wsl-care.exe`: `PublishAot`, `StripSymbols`,
     reflection-free JSON, RIDs `linux-x64`, `linux-arm64`, `win-x64`; one package, Serilog.
     `CommandLine.Commands` is the one register of what the binary accepts — the parser, the help text
@@ -66,13 +71,13 @@ Everything a later story does to the machine goes through one of these. Each is 
 
 | Seam | Namespace | Real implementation | What it guarantees |
 |---|---|---|---|
-| `IHostPaths` | `Core.Hosting` | `LinuxHostPaths`, `WindowsHostPaths`; `HostPaths.ForThisMachine()` | every path per OS (plan §6, §4.6): state, logs, temp, the two config layers, the protected roots (AI agents, `~/git`, Claude's temp folder). Since E2.S2 also Docker Desktop's `daemon.json` (the Windows-side file; empty inside the distro) and `DistroPath` (where a path Docker reports inside the distro is seen from this process: itself, under the sandbox root, or nowhere on Windows). `WSL_CARE_ROOT=<dir>` lays the whole thing out under one directory — what tests and the built-binary tests use so nothing real is touched. No path literal exists outside these two classes. |
+| `IHostPaths` | `Core.Hosting` | `LinuxHostPaths`, `WindowsHostPaths`; `HostPaths.ForThisMachine()` | every path per OS (plan §6, §4.6): state, logs, temp, the two config layers, the protected roots (AI agents, `~/git`, Claude's temp folder). Since E2.S2 also Docker Desktop's `daemon.json` (the Windows-side file; empty inside the distro) and `DistroPath` (where a path Docker reports inside the distro is seen from this process: itself, under the sandbox root, or nowhere on Windows). Since E2.S3 `UserLogDirectory` (`$XDG_STATE_HOME/wsl-care/logs` — the log root of a run that may not write `/var/log/wsl-care`), the apt / snap / sysstat / atop / `wsl.conf` paths (Linux) and `.wslconfig` (Windows). `WSL_CARE_ROOT=<dir>` lays the whole thing out under one directory — what tests and the built-binary tests use so nothing real is touched. No path literal exists outside these two classes. |
 | `PathRules` | `Core.Hosting` | values `Linux`, `Windows` | pure path arithmetic per OS family (separators, case, roots), so the Windows policy is checked on the Linux CI leg and vice versa |
-| `IFileSystem` | `Core.Files` | `PhysicalFileSystem` | the only road to delete/move/atomic-write/append; since E2.S1 also the read-only `ReadLink` (the same attributes-first reader the policy trusts, so an uninspectable link is `Unreadable`, not "not a link") and `MeasureVolume` (one `DriveInfo` = `statvfs` / `GetDiskFreeSpaceEx`, no walk); since E2.S2 `FileSize` (one stat, never a read: a container log can be gigabytes); every destructive call resolves the REAL path (`RealPath`: links followed component by component, `..` applied to the real parent) of the target, the destination and the declared root, and asks the `DeletionPolicy` first; a path whose real location cannot be established — a component that cannot be inspected, a cycle of links — is refused by `Unresolvable` (fail closed); the atomic write makes its temporary file in the RESOLVED parent, judges it, re-resolves the target and its parent just before the rename (`PathChanged`) and renames the resolved paths (§ *Fail-closed resolution and the atomic write*); `AppendLine` is a cross-process-safe JSONL append (exclusive open of `{file}.lock`, released by the OS) |
+| `IFileSystem` | `Core.Files` | `PhysicalFileSystem` | the only road to delete/move/atomic-write/append; since E2.S1 also the read-only `ReadLink` (the same attributes-first reader the policy trusts, so an uninspectable link is `Unreadable`, not "not a link") and `MeasureVolume` (one `DriveInfo` = `statvfs` / `GetDiskFreeSpaceEx`, no walk); since E2.S2 `FileSize` (one stat, never a read: a container log can be gigabytes); every destructive call resolves the REAL path (`RealPath`: links followed component by component, `..` applied to the real parent) of the target, the destination and the declared root, and asks the `DeletionPolicy` first; a path whose real location cannot be established — a component that cannot be inspected, a cycle of links — is refused by `Unresolvable` (fail closed); the atomic write makes its temporary file in the RESOLVED parent, judges it, re-resolves the target and its parent just before the rename (`PathChanged`) and renames the resolved paths (§ *Fail-closed resolution and the atomic write*); `AppendLine` is a cross-process-safe JSONL append (exclusive open of `{file}.lock`, released by the OS); since E2.S3 `ListFiles`, the bounded `MeasureTree` (links never followed, a stat per entry, an entry and time ceiling), `ProbeWriteAccess` (a delete-on-close probe file: privilege is the OS's answer), `TryLockExclusive` (an exclusive open the OS releases), `RewriteLines` (a line file rewritten atomically under the SAME lock as the append) and a last-write time on `FileSize` |
 | `DeletionPolicy` | `Core.Files.Deletion` | the one class | the never-list as a pure decision over resolved paths: never `projects/*/memory/` (even for the archive), never under an AI agent folder except an archive MOVE with the permit, never under `~/git`, never under `%TEMP%\claude` / `/tmp/claude`, never outside the action's declared root (strictly inside), never a root that is `/`, `C:\` or the home; move destinations are judged too |
-| `ICommandRunner` + `ICommandPolicy` | `Core.Processes` | `ProcessCommandRunner`, `AllowAllCommandPolicy` (E3.S1 replaces it with the never-list) | argv list only, a required ceiling, (since E2.S2 every collector command is a named `ToolCommand` — executable, argv, ceiling, output cap — built in ONE place per tool), the WHOLE process tree killed on timeout, bounded capture of both streams, a closed outcome (`Exited` / `TimedOut` / `FailedToStart` / `Refused`), the caller's cancellation thrown as such after the kill; the policy is asked before any start |
+| `ICommandRunner` + `ICommandPolicy` | `Core.Processes` | `ProcessCommandRunner`, `AllowAllCommandPolicy` (E3.S1 replaces it with the never-list) | argv list only, a required ceiling, (since E2.S2 every collector command is a named `ToolCommand` — executable, argv, ceiling, output cap — built in ONE place per tool), the WHOLE process tree killed on timeout, bounded capture of both streams, a closed outcome (`Exited` / `TimedOut` / `FailedToStart` / `Refused`), the caller's cancellation thrown as such after the kill; the policy is asked before any start; since E2.S3 `StreamAsync` — the same launcher for a child whose stdout is a stream (`docker events`), each line handed to a callback as it arrives and cut at the output cap |
 | `IHostProbe` | `Core.Hosting` | `Collectors.LinuxProbe`, `Collectors.WindowsProbe` (E2.S1) | the platform split of plan §8: ONE fast `Sample` per binary, its own side read, the other side unavailable naming the other binary; a probe holds no command runner, so it starts no process (§ *The collectors and `status`*) |
-| run records | `Core.Records` | `RunRecordWriter` → `{state}/history.jsonl` | `RunRecord` (schemaVersion, `RunId` = UTC second + pid, trigger `timer|manual|cli`, UTC start/end, outcome `completed|failed|interrupted|observeOnly`, actions) as one JSON line, source-generated |
+| run records | `Core.Records` | `RunRecordWriter` → `{state}/history.jsonl` | `RunRecord` (schemaVersion, `RunId` = UTC second + pid, trigger `timer|manual|cli`, UTC start/end, outcome `completed|failed|interrupted|observeOnly`, actions) as one JSON line, source-generated; since E2.S3 the line names its detail (`detail`), carries `dryRun`, `reason`, the non-ok `warnings` and headline `metrics`; `RunDetailStore` writes `{state}/runs/{day}/{runId}.json` atomically FIRST; `RunHistory` is the one parser; `RunReconcile` and `RunRetention` (§ *The full run*) |
 | configuration | `Core.Config` | `ConfigLoader`, `UserConfigWriter`, `ConfigKeys` | three layers (embedded `default.json` < machine < user), validated against the one register in code; an invalid layer makes the result **observe-only** with `configError {file, line, message}` and the layer's valid keys still in force (plan §15a #1); `config set`/`reset` rewrite the user layer atomically and repair it (invalid keys dropped and named, an unparseable file moved aside with a UTC stamp, `-2`, `-3`, … appended when a repair in the same second already took that name — an aside file is never overwritten) |
 
 Logging (`Cli.Logging`, per the family rule): Serilog configured in code before the verb runs; the
@@ -332,6 +337,232 @@ a failure. `WSL_CARE_LIVE_CAPTURE=<dir>` writes each answer to a file — how `t
   events — no container start of the last 24 h survived in it — so the follower's backfill (E2.S3) must expect an
   empty `events --since` even right after starts.
 
+## The full run, `doctor` and the events follower (E2.S3)
+
+`WslCare.Core/Collect` holds the full run (`CollectRun`) and the wire shape of its run detail; `Health` the health
+collectors of plan §4.5 and their parsers; `Thresholds` the threshold rules; `Folders` the daily folder walk; `Events`
+the container-start follower; `Doctor` the installation check; `Records` gained the run detail store, the history
+reader, the startup reconcile and the retention sweep. The verbs are `CollectCommand`, `DoctorCommand`,
+`EventsCommand` in `WslCare.Cli/Commands`.
+
+```mermaid
+flowchart TB
+    verb["CollectCommand<br/>collect [--json]"]
+    probe{"ProbeWriteAccess(state dir)<br/>the OS answers"}
+    ro["read-only: measure, print,<br/>write NOTHING (plan §15b #3)"]
+    lock{"TryLockExclusive(state/run.lock)"}
+    busy["exit 75: another run"]
+    house["housekeeping<br/>RunReconcile → RunRetention (90 d)<br/>→ container-starts prune (14 d)"]
+    measure["MeasureAsync"]
+    fast["IHostProbe.Sample<br/>(the status snapshot)"]
+    health["HealthCollector<br/>systemctl · journalctl · timedatectl<br/>/proc/mounts · uptime · sysstat/atop files<br/>powershell.exe clock probe · .wslconfig"]
+    folders["FolderSizes (once a day)<br/>MeasureTree: ~/.npm · /var/cache/apt · ~/git/_wt<br/>~/.nuget/packages · ~/.cache · ~/.vscode-server<br/>bin/ + obj/ under ~/git · snap list --all"]
+    docker["PreviewRun.CollectAsync<br/>the Docker snapshot + cleanup rows (A8/A9 from the folders)"]
+    stats["DockerStats.SampleAsync"]
+    starts["Coverage.Last24h<br/>container-starts/*.jsonl"]
+    rules["ThresholdRules.Evaluate (pure)<br/>ok · warn · critical · unknown"]
+    detail["RunDetail → runs/{day}/{runId}.json<br/>(atomic: temp + rename)"]
+    line["RunRecord → history.jsonl<br/>(locked append, names the detail)"]
+    log["the run log closes<br/>(Program disposes the logger)"]
+
+    verb --> probe
+    probe -->|not writable| ro --> measure
+    probe -->|writable| lock
+    lock -->|busy| busy
+    lock -->|held| house --> measure
+    measure --> fast
+    measure --> health
+    measure --> folders
+    measure --> docker
+    measure --> stats
+    measure --> starts
+    fast --> rules
+    health --> rules
+    docker --> rules
+    folders --> rules
+    rules --> detail --> line --> log
+```
+
+**What a full run measures.** Everything `status` reads (the fast probe), plus what only `collect` may start (plan
+§15b #5): Docker's full numbers and the cleanup rows (the same `PreviewRun` as `preview`), `docker stats`, the
+Windows clock, the health collectors, and once a day the folder walk; and what the follower recorded — container
+starts of the last 24 h, complete or partial. The thresholds are evaluated over all of it; the detail holds every
+verdict, the history line the ones that are not `ok` (`warnings`) and a few headline `metrics`.
+
+**The health collectors** (plan §4.5, read-only, each command with its ceiling, built in `SystemdCommands` /
+`HealthCommands`): failed units (`systemctl list-units --failed --output=json`), journal size and history
+(`journalctl --disk-usage`, the oldest `first_entry` of `--list-boots --output=json`), clock jumps since the last run
+(systemd-resolved's "Clock change detected" — `journalctl --unit=systemd-resolved --grep`, 875 in ~3.9 h measured),
+the kernel's allocation failures and OOM kills since the last run (`journalctl --dmesg --grep` — journald's copy of
+the kernel log, no `dmesg`), time sync (`timedatectl show`), `wsl-pro.service` and `fstrim.timer`
+(`systemctl show`, now with `UnitFileState`), earlyoom / systemd-oomd present, uptime and `discard` on `/` from
+`/proc`, sysstat / atop collecting (the newest file's last write, < 30 min). journalctl exits 1 printing nothing when
+nothing matched — read as 0, never as a failure. A missing tool leaves only its part unavailable with the reason.
+
+**The Windows clock** (plan §4.5, §15b #5). `powershell.exe` prints Windows' "now", its OWN start and
+`%USERPROFILE%`, all on Windows' clock. The start lines up with the instant this side launched it, so the offset is
+*Windows start − our launch instant* and the launch latency (*printed − started*, measured on one clock) is
+subtracted rather than counted as skew — measured 2026-10-02: −2.89 s and −2.74 s a second apart this way,
+−2.05 s / −2.18 s without the subtraction. A drift is reported only on TWO observations above
+`clock.maxDriftSeconds` at least 5 minutes apart — this run's and the previous full run's (plan §15 #10). The printed
+profile, seen through `/etc/wsl.conf`'s automount root (`/mnt/c/Users/…`), is how the distro reads `.wslconfig` and
+Docker Desktop's `daemon.json` (the builder-GC figure E2.S2 left unavailable) without a walk; `preview` reuses the last
+full run's profile.
+
+**Thresholds** (`ThresholdRules`, pure). Settings where the plan made them settings (`thresholds.*`, `volumes.*`,
+`images.unusedMaxGb`, `buildCache.maxGb`, `npm.maxCacheGb`, `clock.maxDriftSeconds`); plan §4's other starting points
+are named constants (page cache / inactive anon 15 GiB, order-7 blocks < 32 warn / 0 critical, PSI > 10, `/` > 80 %,
+journal > 1 GiB or < 7 days, > 100 clock jumps per 4 h). An unread figure is `unknown` with its reason, never `ok`.
+**`.wslconfig`**: the VM's ceiling (inside the VM `MemTotal` IS the ceiling) is red above 90 % used; the row SHOWS
+the owner's recommendation `memory=36GB` and the file's own settings (`sparseVhd=true` and `autoMemoryReclaim=gradual`
+warn) — nothing ever writes the file.
+
+**The daily folder walk** (`FolderSizes`, plan §4.4 and the A8 / A9 rows). `IFileSystem.MeasureTree`: one
+`FileSystemEnumerable` pass, a stat per entry and no read, links (symlinks, junctions — `ReparsePoint`) neither counted
+nor entered, a folder that is itself a link not walked, a ceiling of 2 000 000 entries or 2 minutes per folder (a
+stopped walk is marked a lower bound). Measured when the newest recorded sample is older than 20 h; the other runs
+carry none and readers take the newest line that does. A9's disabled snap revisions come from `snap list --all`, each
+one's size a stat of `{name}_{rev}.snap`. `preview` shows A8 / A9 from that sample with its age in the basis.
+
+### Write order, reconcile, retention (plan §15b #1)
+
+```mermaid
+sequenceDiagram
+    participant C as collect (root)
+    participant FS as IFileSystem
+    participant D as runs/{day}/{runId}.json
+    participant H as history.jsonl
+    participant L as the run log
+    C->>FS: ProbeWriteAccess(state) — writable
+    C->>FS: TryLockExclusive(state/run.lock)
+    Note over C,H: startup reconcile
+    C->>D: list every detail
+    C->>H: read every line
+    alt a detail no line names
+        C->>H: append a line, outcome interrupted
+    else a line whose detail is gone
+        C-->>C: reported as detail lost (line left as it is)
+    end
+    Note over C,H: retention, 90 days
+    C->>H: RewriteLines under the append lock: drop lines started before the window
+    C->>D: delete a detail only when NO remaining line names it (and leftover *.tmp)
+    Note over C,L: measure, then record
+    C->>D: WriteFileAtomically (temp + rename)
+    alt the detail could not be written
+        C->>H: append the line, outcome failed + reason, no detail
+    else written
+        C->>H: append the line naming the detail
+    end
+    alt the line could not be written
+        C-->>C: exit 1, the reason on stderr and in the log (the next reconcile marks it interrupted)
+    end
+    C->>L: the logger is disposed last
+```
+
+Every delete and the history rewrite pass `IFileSystem` with a declared root (`runs/`, the state directory,
+`container-starts/`), so the `DeletionPolicy` judges them like any cleanup. `RunHistory` is the one parser of
+`history.jsonl` (`LastFullRun`, the reconcile, retention, `doctor` read through it); a line that does not parse is never
+aged out — it has no start to age it by.
+
+**Read-only** (plan §15b #3). The write probe answers no for an unprivileged process on the installed layout
+(`/var/lib/wsl-care` is root's): the run still measures everything and prints it, and writes nothing — no reconcile, no
+retention, no detail, no line, no first sighting (`PreviewExtras.MayRecord`) — and says *read-only: run as root to
+record*. Its log goes to `$XDG_STATE_HOME/wsl-care/logs` (`IHostPaths.UserLogDirectory`; `WslCareLogging.LogRoot` picks
+it whenever the system log directory is not writable — for every verb, not only `collect`).
+
+**One run at a time.** `{state}/run.lock` is held for the whole privileged run — an exclusive open the OS releases
+when the holder dies — so the reconcile never takes a running run's detail for an orphan; a second `collect` exits 75.
+E3.S1's action lock (`/run/wsl-care.lock`) supersedes it.
+
+### `events follow` — the container-start follower (plan §4.3, §15b #0, #8)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Starting
+    Starting: Starting<br/>followerStarted marker · prune day files > 14 d · read the last coverage
+    Starting --> CatchingUp
+    CatchingUp: Catching up<br/>docker version (10 s ceiling)
+    CatchingUp --> Waiting: no daemon answers
+    Waiting: Waiting in-process<br/>5 s, 10 s, 20 s … 5 min · NOTHING written
+    Waiting --> CatchingUp
+    CatchingUp --> Backfilling: Docker answers
+    Backfilling: Backfilling<br/>docker events --since now−24h --until now (unfiltered)<br/>Coverage.Plan decides · at most ONE gap marker · backfilled starts · covered marker
+    Backfilling --> Streaming
+    Backfilling --> [*]: --once
+    CatchingUp --> Stopping: --once and no daemon
+    Streaming: Streaming a 10-minute segment<br/>docker events --since covered --until covered+10m --filter start<br/>each start appended as it arrives
+    Streaming --> Streaming: Docker ended it at --until · covered marker
+    Streaming --> CatchingUp: it ended early or failed
+    Streaming --> Stopping: SIGTERM / SIGINT
+    Waiting --> Stopping: SIGTERM / SIGINT
+    Stopping: Stopping<br/>followerStopped marker carrying how far coverage reached · exit 0
+    Stopping --> [*]
+```
+
+**Files.** `{state}/container-starts/{yyyy-MM-dd}.jsonl`, one line per start (`id`, `name`, `image`,
+`testcontainers`, `backfilled`) and the markers — `followerStarted`, `followerStopped` (with the coverage it reached),
+`covered` (every start up to this instant is recorded), `gap` (from, to, reason) — filed under the UTC day of the line,
+appended under the cross-process lock, kept 14 days (pruned at start and by `collect`). One follower at a time
+(`{state}/events-follower.lock`; a second exits 75); a process that may not write the state directory exits 1.
+
+**Why segments.** A stream that never ends would be a wait without a ceiling. Docker closes `docker events` by itself
+at a FUTURE `--until` (observed by the live contract), so each segment is a bounded command (ceiling: the segment and
+one minute) run through `ICommandRunner.StreamAsync` — the same launcher, policy and tree kill, its lines handed over
+as they arrive (each cut at the output cap) — and the next segment resumes `--since` the previous `--until` from
+Docker's buffer.
+
+**The gap rule** (`Coverage.Plan`, pure). Docker keeps its events in memory only — measured 2026-10-02: 248 events, all
+healthcheck `exec_*`, spanning **91 seconds**. A gap is filled only when the buffer demonstrably reaches back past the
+last coverage (its oldest event, of any kind, is at or before it); otherwise the stretch from the last coverage to the
+oldest buffered event is ONE `unrecoverable` gap with its reason (daemon restarted / buffer overflowed, buffer empty,
+older than the 24-hour window, the follower's first start). The wait for Docker writes nothing, so one outage is one
+gap, however many retries and even across a restart of the follower. **Counts** (`Coverage.Last24h`): starts in the last
+24 h, Testcontainers apart, the top images; `complete` only when no gap overlaps the window — a recorded gap, the stretch
+before the first record, or an open gap when the newest coverage is more than 15 minutes old — so a count is complete
+again only once a whole 24 h lies after a gap's end. `status` and `collect` report it.
+
+### `doctor` (plan §6)
+
+Read-only: the configuration (observe-only is a problem), the state directory (missing is a problem; read-only for
+this process is expected), the last run (older than 5 h or `failed` is a problem), lost details, the four units
+(`wsl-care.timer`, `wsl-care-events.service`, `sysstat.service`, `atop.service` — `systemctl show`), sysstat / atop
+collecting, the follower's coverage (≤ 15 min), root reachability `notChecked` (E6), and the versions of `wsl-care`,
+Docker (server and CLI), systemd and the kernel. `healthy` is true when no check is a `problem`; the exit code is 0
+whatever it finds (the JSON is the verdict).
+
+### Exit codes (`ExitCode`)
+
+0 answered / recorded / read-only / follower stopped by a signal · 1 the run could not be recorded, or `events follow`
+without a writable state directory · 2 usage · 70 a defect · 75 busy (another run or follower holds the lock) ·
+130 interrupted.
+
+### Deviations from the plan recorded in E2.S3
+
+- Thresholds without a setting in `ConfigKeys` stay named constants in `ThresholdRules` (plan §4's starting points);
+  their keys arrive with E7's settings sync if the week of data asks for tuning.
+- `collect` takes `{state}/run.lock` (not in the plan for E2) so the reconcile cannot race a running run; E3.S1's lock
+  supersedes it. The trigger is `timer` when systemd's `INVOCATION_ID` is set, `cli` otherwise.
+- The backfill reads the WHOLE 24-hour window unfiltered (`events --since now−24h --until now`), not `--since <marker>`:
+  the oldest buffered event of any kind is the only evidence that the buffer reaches back past the marker. Its lines
+  are parsed in memory only (healthcheck command lines are in them) and never stored.
+- The live follower runs in bounded 10-minute segments rather than one endless stream (a ceiling on every wait); each
+  segment's end is a `covered` marker.
+- `events follow --once` (catch up and stop) is not in the plan; it is what the derived register's example and a
+  manual backfill use.
+- `.vhdx` sizes and their growth stay unavailable (the Windows collectors, E11); "what grew since yesterday" is the
+  growth of each walked folder against the previous sample, not of `$HOME` and `/var` (a walk of the whole home is
+  not a 4-hourly or daily cost this run pays). inotify usage, VS Code Server builds (A14's input) and the WSL
+  "failed to start within" boot error are not collected yet.
+- The kernel's signals come from journald's copy of the kernel log (`journalctl --dmesg`), of THIS boot.
+- The run log's retention stays `logging.retentionDays` (14, E1.S2), not §6's 30 days.
+- Under the root timer `$HOME` is root's: whose home the daily walk, `~/.npm` and the protected `~/git` mean is the
+  installer's decision (E4.S1).
+- `ICommandRunner` gained `StreamAsync`; `IFileSystem` gained `ListFiles`, `MeasureTree`, `ProbeWriteAccess`,
+  `TryLockExclusive`, `RewriteLines` and a last-write time on `FileSize`; `IHostPaths` gained `UserLogDirectory`
+  (Linux: `$XDG_STATE_HOME`), `LinuxHostPaths` the apt / snap / sysstat / atop / `wsl.conf` paths, `WindowsHostPaths`
+  `.wslconfig`. The fake tool learned prefix matching, a per-answer call budget (`upTo`: down, then up) and output
+  followed by a hang (a live stream); `timedatectl` and `snap` joined the fakes.
+
 ## Fail-closed resolution and the atomic write
 
 Hardened on 2026-10-02 from the review of the E1 pull request.
@@ -458,7 +689,7 @@ flowchart TB
     host["CliHost<br/>IHostPaths · IFileSystem · TimeProvider · ICommandRunner"]
     loader["ConfigLoader<br/>default.json, then machine, then user"]
     logging["WslCareLogging<br/>AnsiConsoleSink (stderr) · DailyRunFileSink · LogRetention"]
-    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand"]
+    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand"]
     probe["IHostProbe<br/>LinuxProbe (procfs, cgroup fs) · WindowsProbe (Win32 counters)"]
     history["LastFullRun<br/>slow parts from history.jsonl"]
     writer["UserConfigWriter<br/>repair + atomic write"]
@@ -487,6 +718,21 @@ flowchart TB
     seen -->|ReadFile · WriteFileAtomically| fs
     preview -->|FileSize · ReadFile| fs
     records -->|AppendLine| fs
+    collect["CollectRun<br/>housekeeping · probe · HealthCollector · FolderSizes · PreviewRun · DockerStats · ThresholdRules"]
+    store["RunDetailStore · RunHistory<br/>RunReconcile · RunRetention"]
+    follower["EventsFollower<br/>ContainerStartsStore · Coverage"]
+    doctor["DoctorRun"]
+    verbs -->|collect| collect
+    collect --> probe
+    collect -->|read commands, ceilings| runner
+    collect --> store
+    collect --> records
+    store -->|WriteFileAtomically · RewriteLines · DeleteFile| fs
+    verbs -->|events follow| follower
+    follower -->|StreamAsync · RunAsync: docker events / version| runner
+    follower -->|AppendLine · DeleteFile| fs
+    verbs -->|doctor| doctor
+    doctor -->|systemctl show / --version · docker version| runner
 ```
 
 ## The scenario harness (E1.S3)
@@ -531,7 +777,7 @@ mapped in the workflow header — each: restore → `dotnet format --verify-no-c
 the three test executables (Core, CLI, Scenarios) → Native AOT `dotnet publish -r <rid>` → the
 published binary must list `--help`/`--version` and print the version in `src_daemon/version.txt` →
 the configuration round trip under a temporary `WSL_CARE_ROOT` (set, read back from the user layer,
-a refused set exits 2 with one `wsl-care:` line, the value still holds) → `status --json` under a sandbox root (on Linux holding the captured procfs tree, whose `MemTotal` must come back; on Windows the host side). Every MSBuild command carries
+a refused set exits 2 with one `wsl-care:` line, the value still holds) → `status --json` under a sandbox root (on Linux holding the captured procfs tree, whose `MemTotal` must come back; on Windows the host side) → the full run: `collect --json` must record (one history line naming a run detail under `runs/`), `status --json` must name that run, `doctor --json` must answer. Every MSBuild command carries
 `-m:4`.
 
 ### `ci · family checks` (`.github/workflows/family-checks.yml`)
@@ -552,9 +798,9 @@ FluentAssertions held below 8.x.
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2) |
-| scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2) |
-| live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3) |
+| scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3) |
+| live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5) |
 
 ## Cross-repository

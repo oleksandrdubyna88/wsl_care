@@ -12,6 +12,19 @@ public interface ICommandRunner
     /// <exception cref="OperationCanceledException">The CALLER cancelled; the process tree has
     /// already been killed when this is thrown.</exception>
     Task<CommandOutcome> RunAsync(CommandRequest request, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Runs a command whose standard output is a STREAM (<c>docker events</c>, E2.S3): every line is handed to
+    /// <paramref name="onStdoutLine"/> as it arrives, in order, instead of being collected. The same ceiling,
+    /// policy and tree kill as <see cref="RunAsync"/>; the outcome's stdout is empty (the lines went to the
+    /// callback), stderr is captured as usual.
+    /// </summary>
+    /// <remarks>A line longer than <see cref="CommandRequest.OutputCapChars"/> is cut there — a child that never
+    /// ends a line cannot grow this process without bound. A callback that throws kills the process tree, and the
+    /// exception propagates.</remarks>
+    /// <exception cref="OperationCanceledException">The CALLER cancelled; the process tree has
+    /// already been killed when this is thrown.</exception>
+    Task<CommandOutcome> StreamAsync(CommandRequest request, Action<string> onStdoutLine, CancellationToken cancellationToken);
 }
 
 /// <summary>What the policy says about one argv.</summary>

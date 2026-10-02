@@ -25,8 +25,8 @@ public static class FakeToolProtocol
 
     /// <summary>The names the harness installs the fake under (plan §15 #14, §16 E1.S3). <c>powershell</c>
     /// joined in E2.S1: the Windows clock is a slow process (plan §15b #5), and <c>status</c> must be seen
-    /// NOT to start it.</summary>
-    public static readonly IReadOnlyList<string> Tools = ["docker", "systemctl", "journalctl", "powershell"];
+    /// NOT to start it. <c>timedatectl</c> and <c>snap</c> joined in E2.S3: the health collectors and A9 read them.</summary>
+    public static readonly IReadOnlyList<string> Tools = ["docker", "systemctl", "journalctl", "powershell", "timedatectl", "snap"];
 
     /// <summary>The file name a tool is installed under: <c>.exe</c> on Windows; on Linux the bare name,
     /// except PowerShell, which a WSL distro reaches through interop as <c>powershell.exe</c>. The fake
@@ -116,7 +116,23 @@ public static class FakeCallLog
 /// print the bytes of <see cref="StdoutFile"/> (a fixture; empty = nothing), then <see cref="Stderr"/>,
 /// and exit with <see cref="ExitCode"/> — after <see cref="DelayMilliseconds"/>, which a scenario sets past the
 /// product's ceiling to stand in for a tool that hangs (E2.S2).</summary>
-public sealed record FakeAnswer(string Tool, IReadOnlyList<string> Argv, int ExitCode, string StdoutFile, string Stderr, int DelayMilliseconds = 0);
+/// <remarks>Since E2.S3 an answer can also match by PREFIX (<see cref="Prefix"/>: the scripted argv is the start of the
+/// call's — for an argv that carries an instant, such as <c>docker events --since …</c>), apply only to the first
+/// <see cref="UpTo"/> calls that match it (0 = every call; a later answer for the same call then takes over — a
+/// daemon that is down, then up), and hold the process open AFTER its output (<see cref="HangAfterMilliseconds"/>:
+/// a live stream nobody ended, which the product must cut off or a signal must stop).</remarks>
+public sealed record FakeAnswer(string Tool, IReadOnlyList<string> Argv, int ExitCode, string StdoutFile, string Stderr, int DelayMilliseconds = 0)
+{
+    public bool Prefix { get; init; }
+
+    public int UpTo { get; init; }
+
+    public int HangAfterMilliseconds { get; init; }
+
+    public bool Matches(FakeCall call) =>
+        string.Equals(call.Tool, Tool, StringComparison.Ordinal)
+        && (Prefix ? Argv.Count <= call.Argv.Count && Argv.SequenceEqual(call.Argv.Take(Argv.Count), StringComparer.Ordinal) : call.Argv.SequenceEqual(Argv, StringComparer.Ordinal));
+}
 
 /// <summary>The script file: a JSON object holding an <c>answers</c> array.</summary>
 public static class FakeScript
@@ -142,6 +158,9 @@ public static class FakeScript
             json.WriteString("stdoutFile", answer.StdoutFile);
             json.WriteString("stderr", answer.Stderr);
             json.WriteNumber("delayMs", answer.DelayMilliseconds);
+            json.WriteBoolean("prefix", answer.Prefix);
+            json.WriteNumber("upTo", answer.UpTo);
+            json.WriteNumber("hangAfterMs", answer.HangAfterMilliseconds);
             json.WriteEndObject();
         }
 
@@ -149,20 +168,16 @@ public static class FakeScript
         json.WriteEndObject();
     }
 
-    /// <summary>The first answer scripted for <paramref name="call"/>, or <c>null</c>.</summary>
-    public static FakeAnswer? Find(string path, FakeCall call)
+    /// <summary>The first answer scripted for <paramref name="call"/> that is not used up, or <c>null</c>.
+    /// <paramref name="earlierCalls"/> is the argv log so far (this call included): an answer with
+    /// <see cref="FakeAnswer.UpTo"/> applies while at most that many logged calls match it.</summary>
+    public static FakeAnswer? Find(string path, FakeCall call, IReadOnlyList<FakeCall> earlierCalls)
     {
         using var document = JsonDocument.Parse(File.ReadAllText(path));
         foreach (var element in document.RootElement.GetProperty("answers").EnumerateArray())
         {
-            var answer = new FakeAnswer(
-                element.GetProperty("tool").GetString() ?? string.Empty,
-                [.. element.GetProperty("argv").EnumerateArray().Select(a => a.GetString() ?? string.Empty)],
-                element.GetProperty("exitCode").GetInt32(),
-                element.GetProperty("stdoutFile").GetString() ?? string.Empty,
-                element.GetProperty("stderr").GetString() ?? string.Empty,
-                element.TryGetProperty("delayMs", out var delay) ? delay.GetInt32() : 0);
-            if (call.Matches(answer.Tool, answer.Argv))
+            var answer = Read(element);
+            if (answer.Matches(call) && (answer.UpTo == 0 || earlierCalls.Count(answer.Matches) <= answer.UpTo))
             {
                 return answer;
             }
@@ -170,4 +185,21 @@ public static class FakeScript
 
         return null;
     }
+
+    /// <summary>The first answer for <paramref name="call"/>, ignoring <see cref="FakeAnswer.UpTo"/>.</summary>
+    public static FakeAnswer? Find(string path, FakeCall call) => Find(path, call, []);
+
+    private static FakeAnswer Read(JsonElement element) =>
+        new(
+            element.GetProperty("tool").GetString() ?? string.Empty,
+            [.. element.GetProperty("argv").EnumerateArray().Select(a => a.GetString() ?? string.Empty)],
+            element.GetProperty("exitCode").GetInt32(),
+            element.GetProperty("stdoutFile").GetString() ?? string.Empty,
+            element.GetProperty("stderr").GetString() ?? string.Empty,
+            element.TryGetProperty("delayMs", out var delay) ? delay.GetInt32() : 0)
+        {
+            Prefix = element.TryGetProperty("prefix", out var prefix) && prefix.GetBoolean(),
+            UpTo = element.TryGetProperty("upTo", out var upTo) ? upTo.GetInt32() : 0,
+            HangAfterMilliseconds = element.TryGetProperty("hangAfterMs", out var hang) ? hang.GetInt32() : 0,
+        };
 }

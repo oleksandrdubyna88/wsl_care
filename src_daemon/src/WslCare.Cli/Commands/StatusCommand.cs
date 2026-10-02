@@ -2,7 +2,9 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
+using WslCare.Core.Collect;
 using WslCare.Core.Config;
+using WslCare.Core.Events;
 using WslCare.Core.Json;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
@@ -19,7 +21,12 @@ internal static class StatusCommand
     public static int Run(Request.Status request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, CancellationToken cancellationToken)
     {
         var sample = host.Probe.Sample(cancellationToken);
-        var report = StatusReports.From(sample, LastFullRun.Read(host.Paths, host.Files, host.Clock), loaded);
+        var last = LastFullRun.Read(host.Paths, host.Files, host.Clock);
+        var report = StatusReports.From(sample, last, loaded) with
+        {
+            ContainerStarts = Coverage.Last24h(new ContainerStartsStore(host.Paths, host.Files).ReadAll(), host.Clock.GetUtcNow()),
+            Folders = FoldersReports.From(last.Folders, last.PreviousFolders, measuredThisRun: false),
+        };
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
     }
 }
@@ -42,7 +49,8 @@ internal static class StatusText
         AppendVm(text, report.Vm);
         AppendHost(text, report.Host);
         text.AppendLine($"docker stats: {Slow(report.Slow.ContainerStats)}");
-        text.Append($"windows clock: {Slow(report.Slow.WindowsClock)}");
+        text.AppendLine($"windows clock: {Slow(report.Slow.WindowsClock)}");
+        text.Append(Starts(report.ContainerStarts));
         return text.ToString();
     }
 
@@ -99,6 +107,13 @@ internal static class StatusText
 
     private static string HostMemory(HostMemoryReport m) =>
         m.Available ? Invariant($"{m.AvailableBytes / BytesPerGibibyte:0.0} GiB available of {m.TotalBytes / BytesPerGibibyte:0.0} GiB") : $"unavailable ({m.Reason})";
+
+    private static string Starts(Core.Events.StartsWindow? starts) => starts switch
+    {
+        null => "container starts, last 24 h: not read",
+        { Complete: true } s => Invariant($"container starts, last 24 h: {s.Starts} ({s.Testcontainers} Testcontainers)"),
+        var s => Invariant($"container starts, last 24 h: {s.Starts}, partial: {string.Join("; ", s.Gaps.Select(g => Invariant($"{g.From.UtcDateTime:MM-dd HH:mm}Z..{g.To.UtcDateTime:MM-dd HH:mm}Z {g.Reason}")))}"),
+    };
 
     private static string Slow(SlowPartReport part) =>
         part.Available ? Invariant($"from run {part.RunId}, {part.AgeSeconds:0} s old") : $"unavailable ({part.Reason})";

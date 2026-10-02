@@ -96,4 +96,44 @@ public sealed record RunRecord(
     /// none, and on every line written before E2 — read only through <see cref="LastFullRun"/>.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public SlowParts? Slow { get; init; }
+
+    /// <summary>The run's detail file, relative to the state directory with <c>/</c> separators
+    /// (<c>runs/2026-10-02/20261002T120000Z-123.json</c>, plan §6); absent on a line that names none — before
+    /// E2.S3, or a run whose detail could not be written (then <see cref="Reason"/> says why).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Detail { get; init; }
+
+    /// <summary>Whether the run was a dry run (plan §5: the timer's first week); absent before E2.S3.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? DryRun { get; init; }
+
+    /// <summary>Why the run ended <c>failed</c> or <c>interrupted</c>; absent when it completed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Reason { get; init; }
+
+    /// <summary>The threshold verdicts that were not <c>ok</c> (plan §6: "warnings").</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<WarningRecord>? Warnings { get; init; }
+
+    /// <summary>The headline figures of the run (plan §6: "metrics") — what the Logs page's max / min reads.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public RunMetrics? Metrics { get; init; }
+
+    /// <summary>The detail path, or empty — the one read of <see cref="Detail"/> (it is null on old lines).</summary>
+    [JsonIgnore]
+    public string DetailPath => Detail ?? string.Empty;
 }
+
+/// <summary>A threshold that was not ok, as the history line keeps it: its id, its level, and why.</summary>
+public sealed record WarningRecord(string Id, string Level, string Reason);
+
+/// <summary>The headline figures of one run, as the history line keeps them. A member is absent when the figure was
+/// not read — never written as 0 (plan §15b #7).</summary>
+public sealed record RunMetrics(
+    double? MemAvailablePercent,
+    long? MemAvailableBytes,
+    long? PageCacheBytes,
+    long? SwapUsedBytes,
+    double? RootUsedPercent,
+    long? DockerReclaimableBytes,
+    int? ContainerStarts24h);

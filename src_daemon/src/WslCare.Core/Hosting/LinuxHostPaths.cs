@@ -9,7 +9,10 @@ namespace WslCare.Core.Hosting;
 /// <param name="Root">The filesystem root the collectors read under: <c>/proc</c>, <c>/sys/fs/cgroup</c>,
 /// and the volume <c>df /</c> measures (plan §4.1, §4.2, §4.4). <c>/</c> on the real machine; the sandbox
 /// root under <c>WSL_CARE_ROOT</c>, so a test or a scenario hands the collectors a captured fixture tree.</param>
-public sealed record LinuxEnvironment(string Home, string Etc, string Var, string Tmp, string ConfigHome, string Root = "/")
+/// <param name="StateHome">Where a user's own state goes (<c>$XDG_STATE_HOME</c>, else <c>~/.local/state</c>) — the
+/// log root of a run that may not write <c>/var/log/wsl-care</c> (plan §15b #3); empty means the default under
+/// <paramref name="Home"/>.</param>
+public sealed record LinuxEnvironment(string Home, string Etc, string Var, string Tmp, string ConfigHome, string Root = "/", string StateHome = "")
 {
     /// <summary>The real machine: <c>$HOME</c>, <c>/etc</c>, <c>/var</c>, <c>/tmp</c>.</summary>
     public static LinuxEnvironment FromThisMachine()
@@ -17,7 +20,8 @@ public sealed record LinuxEnvironment(string Home, string Etc, string Var, strin
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var xdg = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
         var configHome = string.IsNullOrWhiteSpace(xdg) ? PathRules.Linux.Join(home, ".config") : xdg;
-        return new(home, "/etc", "/var", "/tmp", configHome);
+        var xdgState = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
+        return new(home, "/etc", "/var", "/tmp", configHome, "/", string.IsNullOrWhiteSpace(xdgState) ? string.Empty : xdgState);
     }
 
     /// <summary>The same layout relative to one directory — what a test or a scenario run uses so
@@ -47,6 +51,10 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
 
     public string LogDirectory => _rules.Join(environment.Var, "log", Product);
 
+    /// <summary><c>$XDG_STATE_HOME/wsl-care/logs</c>, by default <c>~/.local/state/wsl-care/logs</c> (plan §15b #3).</summary>
+    public string UserLogDirectory =>
+        _rules.Join(environment.StateHome.Length > 0 ? environment.StateHome : _rules.Join(environment.Home, ".local", "state"), Product, "logs");
+
     public string TempDirectory => environment.Tmp;
 
     public string MachineConfigFile => _rules.Join(environment.Etc, Product, "config.json");
@@ -69,6 +77,22 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
 
     /// <summary>The user database the process collector names owners from (<c>/etc/passwd</c>).</summary>
     public string PasswdFile => _rules.Join(environment.Etc, "passwd");
+
+    /// <summary>WSL's per-distro settings (<c>/etc/wsl.conf</c>): its <c>[automount] root</c> says where Windows drives
+    /// appear (<c>/mnt/</c> by default) — how a Windows path the clock probe printed becomes a path here.</summary>
+    public string WslConfFile => _rules.Join(environment.Etc, "wsl.conf");
+
+    /// <summary>The apt package cache A9 measures (<c>/var/cache/apt</c>).</summary>
+    public string AptCacheDirectory => _rules.Join(environment.Var, "cache", "apt");
+
+    /// <summary>Where snapd keeps each revision's squashfs file (<c>/var/lib/snapd/snaps</c>): A9's disabled revisions.</summary>
+    public string SnapFilesDirectory => _rules.Join(environment.Var, "lib", "snapd", "snaps");
+
+    /// <summary>sysstat's daily data files (<c>/var/log/sysstat</c>); the newest one's last write says whether it still collects (plan §4.5).</summary>
+    public string SysstatDirectory => _rules.Join(environment.Var, "log", "sysstat");
+
+    /// <summary>atop's daily raw files (<c>/var/log/atop</c>), read the same way.</summary>
+    public string AtopDirectory => _rules.Join(environment.Var, "log", "atop");
 
     /// <summary>Plan §4.6, the Linux column: Claude Code, Codex, Gemini CLI, Antigravity's cache,
     /// GitHub Copilot CLI, Rovo Dev, Ollama's models. The agent catalogue (E7) extends this list.</summary>

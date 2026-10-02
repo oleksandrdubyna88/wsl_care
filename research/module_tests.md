@@ -12,9 +12,9 @@
 |---|---|---|
 | Unit, core | `src_daemon/tests/WslCare.Core.Tests` | the seams, the configuration system, the records, the architecture rule — in-process |
 | Unit + process, CLI | `src_daemon/tests/WslCare.Cli.Tests` | parsing, the program in-process with captured streams, logging, and the built binary as a child process (`BuiltBinaryTests`) |
-| **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` alone on its `PATH`; the derived verb register |
-| **Live contract** | `src_daemon/tests/WslCare.LiveContract` | the REAL `docker` / `systemctl` / `journalctl` of the owner's machine through the product's own `ProcessCommandRunner` (30 s ceiling, tree kill), parsed by the product's parsers (plan §15a C2, §15b #2/#6) — NOT one of the CI test steps; § *The live contract* below |
-| AOT smoke | `.github/workflows/ci-daemon.yml` | the Native AOT binary of each RID answers `--help` / `--version`, performs the configuration round trip, and answers `status --json` (on Linux over the captured procfs tree, reporting its `MemTotal`) |
+| **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` / `timedatectl` / `snap` alone on its `PATH`; the derived verb register |
+| **Live contract** | `src_daemon/tests/WslCare.LiveContract` | the REAL `docker` / `systemctl` / `journalctl` (since E2.S3 also `timedatectl`, `snap`, `powershell.exe` through interop, and the event stream) of the owner's machine through the product's own `ProcessCommandRunner` (30 s ceiling, tree kill), parsed by the product's parsers (plan §15a C2, §15b #2/#6) — NOT one of the CI test steps; § *The live contract* below |
+| AOT smoke | `.github/workflows/ci-daemon.yml` | the Native AOT binary of each RID answers `--help` / `--version`, performs the configuration round trip, answers `status --json` (on Linux over the captured procfs tree, reporting its `MemTotal`), and records a full run (`collect --json` → one history line naming a run detail, `status --json` naming that run, `doctor --json`) |
 
 Shared doubles live in `src_daemon/tests/WslCare.TestSupport` (`TempRoot`, `SandboxHost`,
 `RecordingCommandRunner`, `FixedTimeProvider`, `DirectoryLinks`, `AccessDenial` — a real access
@@ -84,6 +84,16 @@ the afternoon's rows (A4 3 / 641.4 MB, A5 13 containers, A6Unused 10 images / 9.
 reproduce the 2026-10-02 MORNING rows of the one-time cleanup (387 volumes / 59.6 GB, …): their raw outputs were
 never saved, and no fixture is invented from the summary.
 
+**The captured health answers** (E2.S3): `src_daemon/tests/fixtures/health/ubuntu-2026-10-02/`, read through
+`TestSupport/HealthFixture`, CAPTURED by the live contract inside WSL `Ubuntu` on 2026-10-02T17:34:47Z — `systemctl
+list-units --failed`, `journalctl --list-boots`, the two journal searches (875 clock changes, one order-7 allocation
+failure), `timedatectl show`, `systemctl --version`, `systemctl show` of `fstrim.timer` and `wsl-pro.service`, `snap list
+--all`, the Windows clock probe (its user name redacted to `owner`). The unfiltered `docker events` window was measured
+(248 healthcheck events spanning 91 s) and NOT kept: its exec actions carry command lines with credentials. Event lines
+in tests are synthetic in the captured shape (`TestSupport/DockerEventLines`). The fake learned three things for E2.S3:
+prefix matching (an argv carrying an instant), a call budget per answer (`upTo`: down, then up) and output followed by a
+hang (a live stream); `timedatectl` and `snap` joined the fakes; `RunningChild` sends SIGTERM to a pid the test started.
+
 **The captured procfs tree** (E2.S1): `src_daemon/tests/fixtures/procfs/ubuntu-2026-10-02/`, linked into
 the Core, CLI and scenario test outputs as `fixtures/procfs/…` and read through
 `TestSupport/ProcfsFixture`. CAPTURED from WSL `Ubuntu` on 2026-10-02T13:41:57Z by
@@ -149,7 +159,7 @@ row parser, name the `df -v` containers; `container inspect` through the templat
 lists, never prints `Env`, and every mounted volume is one `df -v` lists; `stats --no-stream` has one sample per
 running container; `events` of the last 24 h are container starts inside the window; `systemctl show` of journald
 is an active unit with an activation time, of a missing unit `not-found`; `journalctl --disk-usage` is a positive
-byte count. Pairs of answers compared with each other are taken while Docker holds still (probe, subject, probe
+byte count; since E2.S3 the failed units and the boots as JSON, journal searches (one matching nothing answers a count of 0), `timedatectl`, `systemctl --version`, `UnitFileState`, `snap list --all`, the Windows clock probe through WSL interop, an unfiltered past events window, and a FUTURE `--until` streaming and closing by itself (`HealthContractTests`). Pairs of answers compared with each other are taken while Docker holds still (probe, subject, probe
 again, three attempts) and an error Docker printed is retried twice 5 s apart — without both, a parallel session
 building images made the run red for reasons that were not the parsers' (measured 2026-10-02). `CI=true` skips it
 unless required.
@@ -201,8 +211,19 @@ checklist in `POST_DEPLOY.md`; and whenever the Docker or systemd version on the
 | The hygiene audit: 28 unbounded logs, a log planted where an Engine in the distro would write it is measured, the others "inside its own VM"; on Windows the builder GC of `daemon.json` (absent → not present; this machine's file → present, `true`, `20GB`) and log sizes named the Linux binary's; buildx leftovers (synthetic rows); `docker stats` for a full run → 16 samples, or the reason and no containers; the JSON answer writes an unavailable row with `reason` and NO `count` / `reclaimableBytes` key, `schemaVersion`, `docker.kind`, `volumeSeen.recorded: false` on an outage | `WslCare.Core.Tests/Docker/DockerHygieneTests.cs` |
 | `preview` parsing: `--all` required, `--json` in either order, anything else refused naming it | `WslCare.Cli.Tests/CommandLineTests.cs` |
 | `preview --all [--json]` in-process over the captured answers: every row, kept, totals, the record written, read verbs only; the text form one line per row, ASCII only; Docker missing is an answer with exit 0 and only the version probe run | `WslCare.Cli.Tests/PreviewCommandTests.cs` |
-| The flows of § Flow catalogue, against the built CLI | `WslCare.Scenarios/HelpAndVersionFlows.cs`, `WslCare.Scenarios/ConfigFlows.cs`, `WslCare.Scenarios/ControlCharacterFlows.cs`, `WslCare.Scenarios/StatusFlows.cs`, `WslCare.Scenarios/PreviewFlows.cs` |
+| The flows of § Flow catalogue, against the built CLI | `WslCare.Scenarios/HelpAndVersionFlows.cs`, `WslCare.Scenarios/ConfigFlows.cs`, `WslCare.Scenarios/ControlCharacterFlows.cs`, `WslCare.Scenarios/StatusFlows.cs`, `WslCare.Scenarios/PreviewFlows.cs`, `WslCare.Scenarios/CollectFlows.cs`, `WslCare.Scenarios/EventsFlows.cs` |
 | The derived register: every verb of `CommandLine.Commands` runs its example (exit 0 or 2) and has a flow-catalogue row; a planted verb is reported missing; prose, other tables and rows after the section do not count | `WslCare.Scenarios/VerbRegisterTests.cs` |
+| `collect`'s record order (plan §15b #1): the detail is written (atomically) before the history line, and the line names it; a detail that cannot be written makes the run `failed` with the reason on its line and no detail named; a line that cannot be written fails the run and the NEXT run's reconcile gives the orphan detail an `interrupted` line; a line whose detail is gone is reported *detail lost* and left as it is; an unprivileged run measures and writes nothing (not even a directory); a second run while one holds `run.lock` is busy and measures nothing; the line carries the non-ok warnings and the slow parts `status` reads | `WslCare.Core.Tests/Collect/CollectRunTests.cs` |
+| Retention of the run records (90 days, plan §6): an old line goes and its detail with it, a young one stays; a line that does not parse is kept (it cannot be aged); a detail is never removed while a line names it, even in an old day folder; a dead atomic write's temporary file is removed | `WslCare.Core.Tests/Records/RunRetentionTests.cs` |
+| The thresholds at their edges: MemAvailable at 25 / 24.9 / 15 / 14.9 % against the two settings (and a setting moving the edge); order-7 blocks 32 / 31 / 0; swap 4 / 5 GiB; `/` 80.0 / 80.1 %; the 2026-10-01 18:36 state critical on memory, fragmentation, the VM ceiling and the allocation failure; a fresh boot ok on every memory row; the VM ceiling red only above 90 % and naming `memory=36GB` (never written); one clock observation above the limit is not a drift, two are only when at least 5 min apart (300 s warns, 299 s does not); an unread figure is `unknown` with its reason; A4's count trigger; one verdict per id | `WslCare.Core.Tests/Thresholds/ThresholdRulesTests.cs` |
+| The health collectors over the answers CAPTURED 2026-10-02 (`fixtures/health`): the failed unit, the journal's oldest entry, 875 clock changes, one order-7 allocation failure, NTP synchronised, systemd 255, `wsl-pro` enabled, no disabled snap; journalctl's exit 1 with nothing printed is 0 matches, an error is not; disabled snap revisions (synthetic Notes); discard, the automount root, a Windows profile seen as `/mnt/c/Users/owner`, `.wslconfig` in either section; the Windows clock offset with the launch latency subtracted; on the Windows layout the distro parts name the Linux binary; a missing tool leaves only its part unavailable; read verbs only | `WslCare.Core.Tests/Health/HealthTests.cs` |
+| The daily folder walk: a tree is the sum of its files; a link inside is neither counted nor entered, a folder that is a link is not walked; bin/ + obj/ only, node_modules never entered; a walk at its entry limit says its figure is a lower bound; a missing folder is missing, not 0; once a day (19 h no, 20 h yes); the npm / apt / disabled-snap figures | `WslCare.Core.Tests/Folders/FolderSizesTests.cs` |
+| A8 and A9 from the newest folder sample with its run and age in the basis; unavailable with the reason before one exists, or when the run could not measure the folder | `WslCare.Core.Tests/Docker/FolderRowsTests.cs` |
+| The follower's rules (plan §15b #0, #8): the wait for Docker 5 → 10 → … → 300 s; a buffer that reaches back past the last marker fills the gap and records only newer starts; a daemon restart, an empty buffer, a marker older than 24 h and the first start ever are each ONE gap with its reason; a full day of coverage counts complete with the top images; a count overlapping a gap is partial and names it until a whole 24 h lies after its end; a follower that stopped recording, and nothing recorded before the window, make it partial too; the last coverage | `WslCare.Core.Tests/Events/CoverageTests.cs` |
+| The follower over a scripted docker and a moved clock: down three times then up → waits of 5, 10, 20 s, ONE gap for the outage, the backfilled and the live start, the stop marker carrying the live coverage; a buffer that still covers the outage writes no gap; a segment ending at its `--until` is a covered marker and the next resumes from it; a broken stream goes back to waiting and still writes one gap per outage; `--once` with Docker down returns at once, writes only its markers, read verbs only; day files past 14 days pruned through the seam | `WslCare.Core.Tests/Events/EventsFollowerTests.cs` |
+| `doctor`: an installation doing its job is healthy and names the wsl-care / docker / systemd / kernel versions; a stale last run, a stopped unit and a silent follower are each a named problem; a fresh machine says nothing was recorded and creates nothing; an invalid layer is a problem and doctor still answers; read-only questions only | `WslCare.Core.Tests/Doctor/DoctorTests.cs` |
+| `collect` / `doctor` / `events follow` in-process: `collect --json` records and `status` then reads that run's slow parts with their age and counts the never-run follower as partial; the text form; read-only exits 0 with the stderr note and no state directory; an unwritable history line exits 1; a held `run.lock` exits 75; `doctor --json` exits 0 with its verdict; `events follow --once` with Docker down exits 0 naming why; by an unprivileged process exits 1; a second follower exits 75; stopped by a signal exits 0 with its stop marker; an unprivileged run logs to the user's log directory | `WslCare.Cli.Tests/FullRunCommandTests.cs` |
+| Docker's event stream and the health tools for real: failed units and boots as JSON, journal searches (one matching nothing answers 0), `timedatectl`, `systemctl --version`, `UnitFileState`, `snap list --all`, the Windows clock probe through interop, an unfiltered past window, and a FUTURE `--until` that streams and closes by itself | `WslCare.LiveContract/HealthContractTests.cs` (run by hand; § *The live contract*) |
 
 Teeth, observed by breaking the code and watching the named tests go red:
 
@@ -324,6 +345,40 @@ Teeth, observed by breaking the code and watching the named tests go red:
   - **Found by the live contract, not by any fake:** `$m.Name` in the inspect template failed the whole command on
     this machine's bind mounts (*template parsing error: … at <$m.Name>: map has no entry for key "Name"*), and an
     empty events window failed an `OnlyContain` assertion — both fixed before any fixture was recorded.
+- 2026-10-02 (E2.S3). **Test first, red against stubbed bodies** (`Coverage.Plan` returning no gap and no start,
+  `Last24h` returning complete with 0, `NextBackoff` returning 5 s): 13 of the 17 follower tests red for the behaviour
+  — *Expected waits … to be equal to {5.0, 10.0, 20.0, …}, but {5.0, 5.0, 5.0, …} differs at index 1*; *Expected value
+  to be 3, but found 0*; *Expected plan.Starts … to be equal to {"new"}, but found empty collection*; *Expected boolean
+  to be False, but found True* (partial counts); *Expected Store.ReadAll()…OfType<CoverageLine.Start>() to contain a
+  single item, but the collection is empty*. Implementing the rules left ONE red that was a real defect of the follower,
+  not of the rules: *Expected lines[^1] to represent … 12:01:00 because the stop marker carries how far coverage reached,
+  but 12:00:35 does not* — a SIGTERM inside a stream segment dropped the coverage that segment had reached; coverage now
+  lives in a field every recorded start moves. **Break-it, for the groups written code first** (each production line
+  changed alone, the named test observed red, the line restored, the suite green again):
+  - **Write order:** the detail written after the history line → *Expected value to be greater than 5 because the history
+    line is written only after its detail is on disk, but found 3*.
+  - **Read-only:** the write probe's verdict ignored → *Expected the enum to be Recording.ReadOnly, but found
+    Recording.Busy* (the run went on to lock a directory it could not create; `TryLockExclusive` now creates the
+    parent first, so a missing directory is never mistaken for a busy lock).
+  - **Failed write:** the outcome kept `completed` → *Expected … RunOutcome.Failed because never a silent success, but
+    found RunOutcome.Completed*.
+  - **Reconcile:** the `interrupted` line not appended → *Expected lines to contain 2 item(s), but found 1*.
+  - **Retention:** a detail removed by its folder's age alone → *Expected DetailExists(relative) to be True, but found
+    False*.
+  - **Thresholds:** `< act` made `<= act` → the 15.0 % edge *Expected … Level.Warn, but found Level.Critical*; the 5-minute
+    rule removed → the 299 s case *Expected … Level.Ok, but found Level.Warn*; the ceiling moved to 95 % → *Expected the
+    enum to be Level.Critical, but found Level.Ok*.
+  - **Doctor:** `healthy` hard-wired → *Expected boolean to be False, but found True*.
+  - **Journal search:** the exit-1-is-zero arm removed → the no-match case unavailable (*… exited 1, nothing on
+    stderr*).
+  - **Links:** `AttributesToSkip = ReparsePoint` removed → *Expected … Bytes to be 10L because the 10 000 bytes behind the
+    link are another tree's, but found 10010L* (over a junction on this machine).
+  - **Clock:** the offset taken from the printed instant instead of the process start → *Expected … OffsetSeconds to
+    approximate 0.1867 +/- 0.0001 …, but 0.9375776 differed by 0.7508776* — the launch latency counted as skew.
+  - **Found while writing the tests, not by any fake:** the docker read-verb enumeration crashed on the new
+    `EventStream(since, until, slack)` signature (*Object of type List`1 cannot be converted to type TimeSpan*) — its
+    sample arguments now cover a `TimeSpan`; FluentAssertions 7's `OnlyContain` FAILS on an empty collection, so the live
+    checks of a window with no start (the ordinary case here) assert `NotContain` of a bad item instead.
 
 ## Flow catalogue
 
@@ -353,7 +408,13 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care preview --all [--json]` when Docker cannot answer: not on PATH → `notInstalled`, a stopped daemon (Docker's real stderr) → `daemonStopped` with only the version probe run, a hang → `timedOut` at the 10 s probe ceiling with the tree killed; every row `available: false` with the reason and NO `count` / `reclaimableBytes` key; exit 0 | covered | `PreviewFlows.Without_docker_on_the_path_…`, `PreviewFlows.A_stopped_daemon_…`, `PreviewFlows.A_docker_that_hangs_…`; classification: `DockerCliTests`, `DockerCollectorTests` |
 | `wsl-care preview --all [--json]` with the state directory unwritable (`AccessDenial`): `volumeSeen.recorded: false`, `read-only:` reason, the rows still answer, nothing written | covered | `PreviewFlows.An_unwritable_state_directory_makes_preview_read_only_and_it_still_answers`; also `VolumeSeenTests` |
 | `wsl-care preview --all [--json]` as text, and `preview` without `--all` refused with exit 2 and one `wsl-care:` message | covered | `PreviewFlows.Preview_without_json_prints_the_rows_and_preview_without_all_is_refused`; also `CommandLineTests` |
-| `wsl-care collect` / `doctor --json` / `events follow` | not covered | not built yet (E2.S3) |
+| `wsl-care collect [--json]` over the captured Docker AND health answers (and, on Linux, the procfs tree): exit 0, `recording: recorded`, ONE history line naming the detail file that exists, the A4 row of the captured Docker, the clock-jump count of the capture (875, Linux), the `wslconfig.memory` verdict naming `memory=36GB`; every fake call a read command — then `status --json` returns `docker stats` (and on Linux the Windows clock, launch latency subtracted) from THAT run with its age | covered | `CollectFlows.Collect_records_detail_then_history_and_status_shows_its_slow_parts_with_their_age`; write order in-process: `CollectRunTests.The_detail_is_written_first_then_the_history_line_that_names_it`; `FullRunCommandTests.Collect_json_records_the_run_and_status_then_reads_its_slow_parts_back_with_their_age` |
+| `wsl-care collect [--json]` with the state directory unwritable (`AccessDenial`; on Linux the system log directory too): exit 0, `recording: readOnly`, the `wsl-care: read-only: run as root to record` message, no history line, no `runs/`, no first sighting — and on Linux the run log under `$XDG_STATE_HOME/wsl-care/logs` | covered | `CollectFlows.An_unwritable_state_directory_makes_collect_measure_print_and_record_nothing`; in-process: `CollectRunTests.An_unprivileged_run_measures_and_reports_but_writes_nothing_and_says_read_only`, `FullRunCommandTests.An_unprivileged_collect_…`, `FullRunCommandTests.A_run_that_may_not_write_the_system_log_directory_logs_to_the_users_own` |
+| `wsl-care collect [--json]` when a record cannot be written (exit 1, `recording: failed`, the reason) and while another run holds `run.lock` (exit 75, nothing measured) | covered (in-process) | `FullRunCommandTests.A_collect_whose_history_line_cannot_be_written_…`, `FullRunCommandTests.A_collect_while_another_holds_the_run_lock_…`, `CollectRunTests`; not staged against the built binary: a failing disk cannot be made to fail on cue there |
+| `wsl-care doctor [--json]` after a `collect`: exit 0, `lastRun` ok, the follower that never ran a named `problem`, `healthy: false`; read commands only | covered | `CollectFlows.Doctor_after_a_collect_finds_the_last_run_recent_and_still_names_what_is_not_installed`; in-process: `DoctorTests`, `FullRunCommandTests.Doctor_json_answers_exit_zero_with_its_verdict_and_checks` |
+| `wsl-care events follow [--once]` after a daemon restart that lost Docker's buffer: exit 0, ONE `gap` marker whose reason says how far the buffer reached, the start recorded as backfilled — then `status --json` counts the last 24 h `partial` with the gap named | covered | `EventsFlows.Once_after_a_daemon_restart_writes_ONE_unrecoverable_gap_and_status_counts_partial_naming_it`; rules: `CoverageTests` |
+| `wsl-care events follow [--once]` with the daemon down: exit 0, the reason printed, no gap marker (a gap is known only once Docker answers), only the version probe run | covered | `EventsFlows.Once_with_the_daemon_down_exits_zero_names_why_and_writes_no_gap` |
+| `wsl-care events follow [--once]` followed live (Linux): the socket down then up waited for IN-PROCESS (one 5 s wait), ONE gap marker, a live start in the day file while the stream is open, SIGTERM → exit 0 with the stop marker carrying how far coverage reached | covered (Linux legs; skipped on Windows with the reason) | `EventsFlows.Followed_live_it_waits_for_the_socket_in_process_records_a_start_and_stops_clean_on_SIGTERM`; on every OS in-process: `EventsFollowerTests` (the 5 → 10 → 20 s backoff on a moved clock), `FullRunCommandTests.Events_follow_stopped_by_a_signal_exits_zero_with_its_stop_marker` |
 | `wsl-care act <A#> [--preview] --json`: a cleanup previewed, then run | not covered | not built yet (E3) |
 | `wsl-care logs --period …` / `runs show` / `runs log` | not covered | not built yet (E3) |
 | `wsl-care agents list` / `agents probe <path>` | not covered | not built yet (E7) |
@@ -387,8 +448,24 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 - **The Windows probe's figures are the real host's even under `WSL_CARE_ROOT`** (only the system drive
   follows the sandbox): host RAM and `vmmemWSL` come from the operating system, read-only. The tests
   assert their shape, not their values; the fake counters prove the assembly.
-- **No writer of the slow parts exists yet**: the tests write `history.jsonl` lines with the product's own
-  `RunRecordWriter`; `collect` (E2.S3) and the Docker collector (E2.S2) are the real writers.
+- **The slow parts' writer is `collect`** (E2.S3), proved end to end by `CollectFlows` (collect, then `status`); the older
+  `LastFullRunTests` still write their lines with the product's own `RunRecordWriter`.
+- **`collect` runs as the test user, never as root.** "Privileged" is a sandbox the user owns (writable); "unprivileged"
+  is a state directory denied with `AccessDenial` (and a double that answers the write probe no). The real
+  `/var/lib/wsl-care` as `root:root 0755` is the installer's (E4.S1) and is first met on the live install.
+- **The folder walk is proved on small trees.** The 2 000 000-entry / 2-minute ceiling is proved by a 3-entry limit; a
+  walk of the real `~/git` (41 GB of worktrees) has not been timed, and under the root timer `$HOME` is root's — whose
+  home it walks is E4.S1's decision.
+- **The follower's real stream is proved twice and the fake's once.** The live contract observes that a FUTURE
+  `--until` streams and closes by itself (a 4-second window); the 10-minute segment of the product is not run live. The
+  scenario stream is the fake printing a line and hanging; the SIGTERM flow runs on the Linux legs only. Docker's
+  buffer reached back 91 seconds when measured (`fixtures/health/…/SOURCE.txt`), so on this machine the backfill fills
+  only a short restart of the follower; every longer outage is, correctly, a gap.
+- **Health parts are proved over one afternoon's answers** (`fixtures/health/ubuntu-2026-10-02`): one failed unit, no
+  disabled snap, no OOM kill; the other shapes are synthetic in the captured format, labelled so. `journalctl --dmesg`
+  sees THIS boot only.
+- **Clock drift is proved on numbers**, not on a skewed clock: no test moves this machine's clock, and A16 (the fix) is
+  E3.S3's.
 - **The secret redaction of command lines is a pattern** (`--name=value` / `--name value` where the name
   holds token, secret, password, apikey or credential); a secret in any other shape is shown as it is,
   cut at 200 characters.

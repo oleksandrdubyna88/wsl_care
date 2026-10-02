@@ -3,6 +3,8 @@ using System.Globalization;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Docker;
+using WslCare.Core.Folders;
+using WslCare.Core.Records;
 
 namespace WslCare.Core.Preview;
 
@@ -43,10 +45,15 @@ public static class CleanupPreviews
     /// <summary>Docker reads a storage cap such as <c>--keep-storage 20GB</c> in binary units.</summary>
     private const long CapUnit = 1L << 30;
 
-    public const string NpmNotYet = "the npm cache size is a folder walk the full run takes (plan 4.4, E2.S3); preview reports it once a full run records it";
-    public const string AptNotYet = "the apt cache and the disabled snap revisions are measured by the full run (E2.S3); preview reports them once a full run records them";
+    public const string NpmNotYet = "the npm cache size is a folder walk the daily full run takes (plan 4.4); no full run has recorded one yet";
+    public const string AptNotYet = "the apt cache and the disabled snap revisions are measured by the daily full run; no full run has recorded them yet";
 
-    public static CleanupPreview Build(DockerSnapshot snapshot, VolumeSeenRecord seen, EffectiveConfig config, DateTimeOffset now)
+    /// <summary>The rows without any folder sample — A8 and A9 unavailable with <see cref="NpmNotYet"/> / <see cref="AptNotYet"/>.</summary>
+    public static CleanupPreview Build(DockerSnapshot snapshot, VolumeSeenRecord seen, EffectiveConfig config, DateTimeOffset now) =>
+        Build(snapshot, seen, config, now, Reading.Missing<AgedPart<FolderSizesSample>>(NpmNotYet));
+
+    /// <summary>The rows; A8 and A9 from the newest folder sample a full run recorded (<paramref name="folders"/>), with its age in the basis.</summary>
+    public static CleanupPreview Build(DockerSnapshot snapshot, VolumeSeenRecord seen, EffectiveConfig config, DateTimeOffset now, Reading<AgedPart<FolderSizesSample>> folders)
     {
         var volumeDays = config.Int(ConfigKeys.Volumes.AnonymousOlderThanDays);
         var stoppedDays = config.Int(ConfigKeys.Containers.StoppedOlderThanDays);
@@ -68,11 +75,39 @@ public static class CleanupPreviews
                 Reading.Combine(snapshot.Inventory, snapshot.Details, (inventory, details) => UnusedImages(inventory, details, dangling: false, now.AddDays(-imageDays))), string.Empty),
             Row("A7", "A7", "build cache neither in use nor shared", ConfigKeys.Auto.A7, config, "build-cache entry sizes (system df -v); Docker's build-cache reclaimable is their sum",
                 snapshot.Inventory.Map(inventory => BuildCache(inventory, now.AddDays(-cacheDays), cacheDays, cacheCapGb)), string.Empty),
-            Row("A8", "A8", "the npm cache (~/.npm)", ConfigKeys.Auto.A8, config, "folder size", Reading.Missing<RowFigures>(NpmNotYet), string.Empty),
-            Row("A9", "A9", "the apt cache and disabled snap revisions", ConfigKeys.Auto.A9, config, "folder and snap file sizes", Reading.Missing<RowFigures>(AptNotYet), string.Empty),
+            Row("A8", "A8", "the npm cache (~/.npm)", ConfigKeys.Auto.A8, config, FolderBasis("folder size", folders), Npm(folders), string.Empty),
+            Row("A9", "A9", "the apt cache and disabled snap revisions", ConfigKeys.Auto.A9, config, FolderBasis("folder and snap file sizes", folders), Apt(folders), string.Empty),
         ];
         return new CleanupPreview(rows, Reading.Combine(snapshot.Inventory, snapshot.Dangling, KeptVolumes));
     }
+
+    /// <summary>A8: the size of <c>~/.npm</c>, one object (the cache is cleaned whole), its file count in a note.</summary>
+    private static Reading<RowFigures> Npm(Reading<AgedPart<FolderSizesSample>> folders) =>
+        Folder(folders, FolderSizes.NpmCache, NpmNotYet).Map(npm => new RowFigures(1, npm.Bytes, 0, [new RowNote(Invariant($"files in the cache{(npm.Complete ? string.Empty : " (walk stopped at its limit: a lower bound)")}"), (int)Math.Min(npm.Files, int.MaxValue), Reading.Of(npm.Bytes))]));
+
+    /// <summary>A9: the apt cache and the disabled snap revisions, each a note; the count is the revisions plus the cache.</summary>
+    private static Reading<RowFigures> Apt(Reading<AgedPart<FolderSizesSample>> folders) =>
+        Reading.Combine(Folder(folders, FolderSizes.AptCache, AptNotYet), Folder(folders, FolderSizes.SnapDisabled, AptNotYet), (apt, snap) =>
+            new RowFigures(1 + (int)snap.Files, apt.Bytes + snap.Bytes, 0, [
+                new RowNote("the apt cache (/var/cache/apt)", 1, Reading.Of(apt.Bytes)),
+                new RowNote("disabled snap revisions", (int)snap.Files, Reading.Of(snap.Bytes)),
+            ]));
+
+    private static Reading<FolderSize> Folder(Reading<AgedPart<FolderSizesSample>> folders, string id, string none) =>
+        folders.Bind(part => part.Value.Find(id) switch
+        {
+            { Measured: true } folder => Reading.Of(folder),
+            { } folder => Reading.Missing<FolderSize>($"the full run {part.RunId} could not measure {folder.Path}: {folder.Unavailable}"),
+            null => Reading.Missing<FolderSize>(none),
+        });
+
+    private static string FolderBasis(string basis, Reading<AgedPart<FolderSizesSample>> folders) => folders switch
+    {
+        Reading<AgedPart<FolderSizesSample>>.Available { Value: var part } => Invariant($"{basis}, measured by the full run {part.RunId.Text} {part.Age.TotalHours:0.0} h ago"),
+        _ => basis,
+    };
+
+    private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 
     private static CleanupRow Row(string id, string action, string what, ConfigKey.BoolKey auto, EffectiveConfig config, string basis, Reading<RowFigures> figures, string refusal) =>
         new(id, action, what, auto, config.Bool(auto), basis, figures, refusal);

@@ -6,7 +6,7 @@ extension that shows the state and runs cleanups on demand.
 
 | Folder | Holds |
 |---|---|
-| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk) and `preview` (what each Docker cleanup would free); the full run and the cleanups arrive in later releases |
+| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor` and the container-start follower `events follow`; the cleanups arrive in later releases |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -39,7 +39,8 @@ overwritten). Every `wsl-care:` message is one line: control characters in what 
 you typed, a key read from the file, a path — are shown as `?`.
 
 Run logs go to `/var/log/wsl-care/{yyyy-MM-dd}/wsl-care-{HH-mm-ss}-{pid}.log` (Linux) or
-`%LOCALAPPDATA%\wsl-care\logs\…` (Windows), one file per run, UTC; `logging.minimumLevel` and
+`%LOCALAPPDATA%\wsl-care\logs\…` (Windows), one file per run, UTC — a run that may not write
+`/var/log/wsl-care` (yours, without root) logs to `$XDG_STATE_HOME/wsl-care/logs` instead; `logging.minimumLevel` and
 `logging.retentionDays` (14) are settings like any other; the console log goes to **stderr** (stdout
 carries only answers), so a refusal's `wsl-care:` message may sit beside a log line there. Set
 `WSL_CARE_ROOT=<dir>` to lay every
@@ -64,8 +65,10 @@ sample* when the parts exceed the whole) and `df /`. On Windows it reports host 
 the VM's `vmmemWSL` working set. Each binary names the other as the source of the side it does not read.
 
 `docker stats` and the Windows clock take a slow process, so only a full run samples them; `status`
-reports them from the last full run in `history.jsonl` with their age. Until a full run exists — `collect`
-arrives in a later release — they are `"available": false` with that reason. Every figure that cannot be
+reports them from the last full run in `history.jsonl` with their age (`collect`, below). Until a full run exists
+they are `"available": false` with that reason. `status` also counts the container starts of the last 24 h from the
+follower's files (`containerStarts`: complete, or partial with each gap named) and shows the daily folder sizes of
+the last run that measured them (`folders`, with their growth). Every figure that cannot be
 read is `"available": false` with a `reason`, never 0. A broken configuration layer is named in the answer
 (`observeOnly`, `configError`) and `status` still answers.
 
@@ -80,7 +83,8 @@ wsl-care preview --all          # the same, one line per row
 `container inspect` through a template that names its fields (never a container's environment) — and answers one
 row per cleanup of the 2026-10-02 one-time run, each with the age limit in force and the `auto` switch that lets the
 timer run it: A4 unattached anonymous volumes, A5 stopped containers (A5Testcontainers apart), A6 dangling and
-A6Unused unused images, A7 build cache; A8 (npm) and A9 (apt, snap) arrive with the full run. Next to them: the
+A6Unused unused images, A7 build cache, A8 (the npm cache) and A9 (the apt cache, disabled snap revisions) from the
+daily folder walk of the last full run, with its age. Next to them: the
 named volumes no container uses (kept — a person decides), Docker's own totals per type, and a hygiene audit
 (containers logging without `max-size`, Docker Desktop's builder GC, forgotten buildx builders). Nothing is removed.
 
@@ -92,6 +96,63 @@ reason; never 0, and the exit code is still 0. Each Docker command has its own c
 A4's age is the first time the daemon saw a volume unattached, kept in `/var/lib/wsl-care/volume-seen.json`. Only
 a process that may write the state directory records it — root, on an installed machine (the timer); run as your
 own user, `preview` reads the record, writes nothing and says `read-only` in `volumeSeen`.
+
+## Collect — the full run
+
+```bash
+sudo wsl-care collect --json   # the timer's target: everything, recorded; schemaVersion 1
+wsl-care collect               # as yourself: the same measurements, printed, NOTHING recorded ("read-only")
+```
+
+`collect` is everything at once: the fast snapshot of `status`, Docker's full numbers and the cleanup rows of
+`preview`, `docker stats`, the distro's clock against Windows' (`powershell.exe`, its launch latency subtracted), the
+health of the distro (failed units, the journal's size and how far back it reaches, clock jumps, the kernel's page
+allocation failures and OOM kills since the last run, time sync, `wsl-pro.service`, `discard` / `fstrim.timer`, whether
+sysstat and atop still collect), the `.wslconfig` audit, once a day the folder sizes (`~/.npm`, `/var/cache/apt`,
+disabled snap revisions, `~/git/_wt`, `~/.nuget/packages`, `~/.cache`, `~/.vscode-server`, `bin/` + `obj/` under
+`~/git` — links never followed, a ceiling per folder), and the container starts of the last 24 h. Every threshold of
+plan §4 is judged over it: `ok`, `warn`, `critical`, or `unknown` when the figure could not be read. The VM's memory
+ceiling is shown against the recommendation `memory=36GB` in `.wslconfig` and is red above 90 % — the recommendation is
+shown, `.wslconfig` is never written. Every command is a read; each has its ceiling.
+
+Recorded in this order: the run's detail `/var/lib/wsl-care/runs/{yyyy-MM-dd}/{runId}.json` (written whole or not at
+all), then one line in `history.jsonl` that names it, then the run log is closed. Each run first reconciles: a detail
+whose line is missing gets a line with outcome `interrupted`; a line whose detail is gone is reported *detail lost*. It
+then keeps 90 days of history (a detail goes only after its line did) and 14 days of container-start files. One run at
+a time (`run.lock`). Run without root it measures and prints the same, writes nothing, says `read-only: run as root to
+record`, and logs to `$XDG_STATE_HOME/wsl-care/logs`.
+
+Exit codes: 0 recorded (or read-only) · 1 the run could not be recorded (the reason on stderr) · 2 usage · 75 another
+run holds the lock · 70 a defect.
+
+## Doctor
+
+```bash
+wsl-care doctor --json   # healthy: true|false, one check per part, the versions; schemaVersion 1
+wsl-care doctor
+```
+
+Read-only: the configuration (observe-only is a problem), the state directory, the last run (older than 5 h or
+failed), lost run details, `wsl-care.timer` / `wsl-care-events.service` / `sysstat.service` / `atop.service`, whether
+sysstat and atop wrote in the last 30 minutes, whether the events follower is current, and the versions of `wsl-care`,
+Docker, systemd and the kernel. Root reachability is the extension's check (`notChecked` here). It exits 0 whatever it
+finds; `healthy` is the verdict.
+
+## Events follow — container starts
+
+```bash
+sudo wsl-care events follow          # the wsl-care-events unit's target: runs until SIGTERM / SIGINT
+sudo wsl-care events follow --once   # catch up (markers, one backfill) and stop
+```
+
+Docker forgets: its event buffer is in memory and short (91 seconds of healthcheck events when measured here), and
+`docker ps` forgets removed containers. The follower records every container start (image, name, Testcontainers label)
+in `/var/lib/wsl-care/container-starts/{yyyy-MM-dd}.jsonl`, with markers that say how far the record is complete. When
+Docker is down it waits in the process — 5 s, doubling to 5 minutes — and writes nothing until Docker answers; then ONE
+backfill recovers what Docker still holds, and whatever it cannot prove it holds is ONE `gap` marker with its reason.
+A 24-hour count that overlaps a gap is **partial** and names it, until a whole 24 h lies after the gap. It exits 0 on
+a signal (writing its stop marker), 1 when it may not write the state directory, 75 when another follower runs, and
+otherwise only on a defect — so `Restart=always` does not cycle while Docker is merely down.
 
 ## Build and test
 
