@@ -7,5 +7,7 @@
     <Project Path="src_daemon/tests/WslCare.TestSupport/WslCare.TestSupport.csproj" />
     <Project Path="src_daemon/tests/WslCare.Core.Tests/WslCare.Core.Tests.csproj" />
     <Project Path="src_daemon/tests/WslCare.Cli.Tests/WslCare.Cli.Tests.csproj" />
+    <Project Path="src_daemon/tests/WslCare.FakeTool/WslCare.FakeTool.csproj" />
+    <Project Path="src_daemon/tests/WslCare.Scenarios/WslCare.Scenarios.csproj" />
   </Folder>
 </Solution>
