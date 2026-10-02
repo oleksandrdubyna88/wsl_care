@@ -1,0 +1,24 @@
+<Project>
+
+  <!--
+    Package policy: bump to the latest STABLE release monthly, all at once, across the family's
+    repositories (.agents/conventions/csharp/nuget-packages.md). Exceptions are pinned below with the
+    reason, because an exception without a reason gets bumped by the next person who runs the sweep.
+
+    The product projects (WslCare.Core, WslCare.Cli) reference NO package. Everything below is for
+    the test projects only; a package the daemon needs goes through the approval and licence check in
+    that rule before it lands here.
+  -->
+  <ItemGroup>
+    <!-- xUnit v3 on the native Microsoft Testing Platform: each test project builds into a
+         self-contained runner executable. There is no VSTest testhost here, so `dotnet test`
+         aborts — run the executable (.agents/conventions/common/testing.md).
+         Apache-2.0, .NET Foundation; 4.0.1 published 2026-09-12, the version the family pins. -->
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+
+    <!-- 7.2.2 = the last Apache-2.0 release; 8.x moved to the Xceed Community License
+         (non-commercial only). Do NOT bump. -->
+    <PackageVersion Include="FluentAssertions" Version="7.2.2" />
+  </ItemGroup>
+
+</Project>
