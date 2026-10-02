@@ -110,6 +110,78 @@ public sealed class ProcessCommandRunnerTests
         empty.Should().Throw<ArgumentException>();
     }
 
+    /// <summary>A parent that starts a long-lived grandchild, prints "parentPid grandchildPid" on one line, then waits.</summary>
+    private static IReadOnlyList<string> ParentAndGrandchildPids() =>
+        OperatingSystem.IsWindows()
+            ? ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+               "$p = Start-Process -FilePath ping.exe -ArgumentList '-n','90','127.0.0.1' -PassThru -NoNewWindow -RedirectStandardOutput ([System.IO.Path]::GetTempFileName()); Write-Output \"$PID $($p.Id)\"; Wait-Process -Id $p.Id"]
+            : ["sh", "-c", "sleep 90 & echo \"$$ $!\"; wait $!"];
+
+    private static (int Parent, int Grandchild) Pids(string line)
+    {
+        var parts = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        parts.Should().HaveCount(2, $"the parent prints its own pid and its child's; the line was '{line}'");
+        return (int.Parse(parts[0], System.Globalization.CultureInfo.InvariantCulture), int.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task A_stream_callback_that_throws_kills_the_child_and_its_grandchild_before_the_exception_arrives()
+    {
+        // Gate finding #1/#5: the callback's failure must not leave the child running behind it. The PARENT is reaped
+        // before StreamAsync throws (alive at that moment = killed but not awaited); the grandchild dies with the tree.
+        (int Parent, int Grandchild)? pids = null;
+        var act = () => Runner.StreamAsync(new CommandRequest(ParentAndGrandchildPids(), TimeSpan.FromMinutes(2)), line =>
+        {
+            pids = Pids(line);
+            throw new InvalidOperationException("the caller could not take this line");
+        }, TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("the caller could not take this line");
+
+        pids.Should().NotBeNull("the first line reached the callback");
+        IsAlive(pids!.Value.Parent).Should().BeFalse($"the streaming child {pids.Value.Parent} is killed AND awaited before the exception propagates");
+        await WaitUntilGone(pids.Value.Grandchild);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_stream_kills_the_child_and_its_grandchild_and_surfaces_as_cancellation()
+    {
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        (int Parent, int Grandchild)? pids = null;
+        var act = () => Runner.StreamAsync(new CommandRequest(ParentAndGrandchildPids(), TimeSpan.FromMinutes(2)), line =>
+        {
+            pids = Pids(line);
+            cancel.CancelAfter(TimeSpan.FromMilliseconds(200));
+        }, cancel.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        pids.Should().NotBeNull("the first line reached the callback");
+        IsAlive(pids!.Value.Parent).Should().BeFalse($"the streaming child {pids.Value.Parent} is killed AND awaited before the cancellation propagates");
+        await WaitUntilGone(pids.Value.Grandchild);
+    }
+
+    [Fact]
+    public async Task A_child_writing_more_than_a_megabyte_to_stderr_while_streaming_stdout_runs_to_its_end()
+    {
+        // stderr is drained concurrently into a BOUNDED capture: a chatty child neither blocks on a full stderr pipe
+        // (which would stall its stdout and hang the stream to its ceiling) nor grows this process without bound.
+        var padding = new string('e', 800);
+        var script = OperatingSystem.IsWindows()
+            ? $"for /L %i in (1,1,2000) do @(echo {padding} 1>&2& echo line%i)"
+            : $"i=0; while [ $i -lt 2000 ]; do echo {padding} >&2; echo line$i; i=$((i+1)); done";
+        var request = new CommandRequest(Shell(script), TimeSpan.FromSeconds(45)) { OutputCapChars = 64 * 1024 };
+        var lines = 0;
+
+        var outcome = await Runner.StreamAsync(request, _ => lines++, TestContext.Current.CancellationToken);
+
+        var exited = outcome.Should().BeOfType<CommandOutcome.Exited>().Subject;
+        exited.ExitCode.Should().Be(0);
+        lines.Should().Be(2000, "every stdout line arrived while 1.6 MB went to stderr");
+        exited.Stderr.Truncated.Should().BeTrue("the capture is bounded at the cap");
+        exited.Stderr.Text.Length.Should().Be(64 * 1024);
+    }
+
     private static async Task WaitUntilGone(int pid)
     {
         for (var attempt = 0; attempt < 50; attempt++)

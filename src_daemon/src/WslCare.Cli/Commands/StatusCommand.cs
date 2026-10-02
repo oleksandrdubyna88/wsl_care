@@ -24,7 +24,8 @@ internal static class StatusCommand
         var last = LastFullRun.Read(host.Paths, host.Files, host.Clock);
         var report = StatusReports.From(sample, last, loaded) with
         {
-            ContainerStarts = Coverage.Last24h(new ContainerStartsStore(host.Paths, host.Files).ReadAll(), host.Clock.GetUtcNow()),
+            // The follower's summary, never the raw day files: status's cost must not grow with the starts recorded (gate finding #8).
+            ContainerStarts = new ContainerStartsStore(host.Paths, host.Files).ReadSummary(host.Clock.GetUtcNow()),
             Folders = FoldersReports.From(last.Folders, last.PreviousFolders, measuredThisRun: false),
         };
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));

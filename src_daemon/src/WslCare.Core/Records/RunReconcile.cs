@@ -15,20 +15,23 @@ public sealed record ReconcileReport(IReadOnlyList<string> Interrupted, IReadOnl
 /// outcome <c>interrupted</c>, and history never shows a run that silently vanished. A line whose detail is
 /// missing is reported as <i>detail lost</i> and left as it is.
 /// </summary>
-/// <remarks>Run under the run lock (<c>collect</c> takes it first), so no detail it looks at belongs to a run still
+/// <remarks>A detail older than the retention window (<see cref="RunRetention.IsAged"/>) is never an orphan: retention
+/// ages a line and its detail by the same UTC day, so such a detail is one whose line was pruned. Run under the run lock (<c>collect</c> takes it first), so no detail it looks at belongs to a run still
 /// writing its line.</remarks>
 public static class RunReconcile
 {
     public const string InterruptedReason = "the run wrote its detail and ended before its history line (found by the next run's reconcile)";
     public const string UnreadableDetailReason = "the run left a detail that cannot be read; its start is the second its id names";
 
-    public static ReconcileReport Apply(IHostPaths paths, IFileSystem files)
+    public static ReconcileReport Apply(IHostPaths paths, IFileSystem files, DateTimeOffset now)
     {
         var history = RunHistory.Read(paths, files).Records;
         var named = history.Select(r => r.DetailPath).Where(p => p.Length > 0).ToHashSet(StringComparer.Ordinal);
         var recordedIds = history.Select(r => r.RunId.Text).ToHashSet(StringComparer.Ordinal);
         var stored = RunDetailStore.List(paths, files);
-        var orphans = stored.Where(d => !named.Contains(d.RelativePath) && !recordedIds.Contains(d.RunId.Text)).ToList();
+        // A detail past the retention window is retention's to remove, never a run that died: its line was pruned, and
+        // writing an "interrupted" line for it would resurrect the run (gate finding #0/#4).
+        var orphans = stored.Where(d => !named.Contains(d.RelativePath) && !recordedIds.Contains(d.RunId.Text) && !RunRetention.IsAged(RunDetailStore.DayOf(d.RunId), now)).ToList();
         var writer = new RunRecordWriter(paths, files);
         foreach (var orphan in orphans)
         {
@@ -49,93 +52,5 @@ public static class RunReconcile
             DryRun = head?.DryRun,
             Reason = head is null ? UnreadableDetailReason : InterruptedReason,
         };
-    }
-}
-
-/// <summary>What one retention sweep removed (plan §6's table), and what it could not.</summary>
-public sealed record RetentionReport(int HistoryLinesRemoved, IReadOnlyList<string> DetailsRemoved, IReadOnlyList<string> Problems);
-
-/// <summary>
-/// Retention of the run records (plan §6: history and details 90 days). The history line ages first; a detail is
-/// removed only once NO remaining line names it (plan §15b #1), and only in a day folder older than the window —
-/// so a detail outlives its line by at most one sweep, never the other way round. Leftover temporary files of an
-/// atomic write that died go too. Every delete passes <see cref="IFileSystem"/> with <c>runs/</c> as the declared
-/// root; the history rewrite takes the append lock.
-/// </summary>
-public static class RunRetention
-{
-    public const int RetentionDays = 90;
-    private const string Action = "run-retention";
-
-    public static RetentionReport Sweep(IHostPaths paths, IFileSystem files, DateTimeOffset now)
-    {
-        var cutoff = now.AddDays(-RetentionDays);
-        var problems = new List<string>();
-        var removedLines = TrimHistory(paths, files, cutoff, problems);
-        var named = RunHistory.Read(paths, files).Records.Select(r => r.DetailPath).Where(p => p.Length > 0).ToHashSet(StringComparer.Ordinal);
-        var scope = new DeletionScope(RunDetailStore.Root(paths), Action);
-        var removed = new List<string>();
-        foreach (var day in files.ListDirectories(RunDetailStore.Root(paths)))
-        {
-            SweepDay(files, day, DateOnly.FromDateTime(cutoff.UtcDateTime), named, scope, removed, problems);
-        }
-
-        return new RetentionReport(removedLines, removed, problems);
-    }
-
-    private static int TrimHistory(IHostPaths paths, IFileSystem files, DateTimeOffset cutoff, List<string> problems)
-    {
-        var removed = 0;
-        var verdict = files.RewriteLines(RunHistory.File(paths), lines =>
-        {
-            IReadOnlyList<string> kept = [.. lines.Where(l => RunHistory.StartedAt(l) is not { } started || started >= cutoff)];
-            removed = lines.Count - kept.Count;
-            return kept;
-        }, new DeletionScope(paths.StateDirectory, Action), RunRecordWriter.LockTimeout);
-        if (verdict is DeletionVerdict.Refused refused)
-        {
-            problems.Add(refused.Reason);
-            return 0;
-        }
-
-        return removed;
-    }
-
-    private static void SweepDay(IFileSystem files, string day, DateOnly cutoffDay, IReadOnlySet<string> named, DeletionScope scope, List<string> removed, List<string> problems)
-    {
-        var name = Path.GetFileName(day);
-        var old = DateOnly.TryParseExact(name, "yyyy-MM-dd", out var date) && date < cutoffDay;
-        foreach (var file in files.ListFiles(day))
-        {
-            var relative = $"{RunDetailStore.Folder}/{name}/{Path.GetFileName(file)}";
-            var leftover = file.EndsWith(".tmp", StringComparison.Ordinal);
-            if (leftover || (old && !named.Contains(relative)))
-            {
-                Remove(() => files.DeleteFile(file, scope), relative, removed, problems);
-            }
-        }
-
-        if (old && files.ListFiles(day).Count == 0 && files.ListDirectories(day).Count == 0)
-        {
-            Remove(() => files.DeleteDirectory(day, scope), $"{RunDetailStore.Folder}/{name}/", removed, problems);
-        }
-    }
-
-    private static void Remove(Func<DeletionVerdict> delete, string what, List<string> removed, List<string> problems)
-    {
-        try
-        {
-            if (delete() is DeletionVerdict.Refused refused)
-            {
-                problems.Add(refused.Reason);
-                return;
-            }
-
-            removed.Add(what);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            problems.Add($"{what}: {e.Message}");
-        }
     }
 }

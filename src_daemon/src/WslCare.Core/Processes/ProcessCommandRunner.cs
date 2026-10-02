@@ -53,8 +53,7 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
         }
         catch (OperationCanceledException)
         {
-            Kill(process);
-            await DrainAsync(reads).ConfigureAwait(false);
+            await KillAndReapAsync(process, reads).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             return new CommandOutcome.TimedOut(stdout.Snapshot(), stderr.Snapshot(), request.Timeout);
         }
@@ -86,24 +85,32 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
 
         using var ceiling = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         ceiling.CancelAfter(request.Timeout);
+        var ended = false;
         try
         {
             // stdout ends when the child closes it — normally when it exits.
             await lines.WaitAsync(ceiling.Token).ConfigureAwait(false);
             await process.WaitForExitAsync(ceiling.Token).ConfigureAwait(false);
+            ended = true;
         }
         catch (OperationCanceledException) when (ceiling.IsCancellationRequested)
         {
-            Kill(process);
-            await DrainAsync(Task.WhenAll(errors, lines)).ConfigureAwait(false);
+            // The ceiling or the caller: decided below, after the finally has killed and reaped the tree.
+        }
+        finally
+        {
+            // EVERY way out but a normal end — the ceiling, the caller's cancellation, a callback that threw (gate finding
+            // #1/#5) — kills the whole tree and waits for the child to be gone before anything propagates.
+            if (!ended)
+            {
+                await KillAndReapAsync(process, Task.WhenAll(errors, lines)).ConfigureAwait(false);
+            }
+        }
+
+        if (!ended)
+        {
             cancellationToken.ThrowIfCancellationRequested();
             return new CommandOutcome.TimedOut(CapturedText.Empty, stderr.Snapshot(), request.Timeout);
-        }
-        catch (Exception)
-        {
-            // The callback threw: what that means is the caller's to decide, but the child must not outlive it.
-            Kill(process);
-            throw;
         }
 
         await DrainAsync(errors).ConfigureAwait(false);
@@ -168,6 +175,17 @@ public sealed class ProcessCommandRunner(ICommandPolicy policy) : ICommandRunner
         {
             // It exited between the timeout and the kill. That is the outcome we wanted.
         }
+    }
+
+    /// <summary>The tree killed, the child waited for (never past the grace), then the readers drained: when this returns the
+    /// child is gone, not merely signalled.</summary>
+    private static async Task KillAndReapAsync(Process process, Task reads)
+    {
+        Kill(process);
+        // CancellationToken.None on purpose: the caller may already have cancelled, and this wait is what makes the kill
+        // observable; DrainGrace is its ceiling.
+        await Task.WhenAny(process.WaitForExitAsync(CancellationToken.None), Task.Delay(DrainGrace)).ConfigureAwait(false);
+        await DrainAsync(reads).ConfigureAwait(false);
     }
 
     /// <summary>Wait for the readers, but never past the grace: a pipe a survivor holds open must not hold us.</summary>
