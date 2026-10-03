@@ -1,8 +1,16 @@
 # Dependabot version updates — grouped, weekly, Monday morning Kyiv time, one pull request per
-# ecosystem. Mirrored from the family's credential-store repository, with the two ecosystems this
-# repository has today. npm (/src_vs_code) joins when the extension lands (E5).
+# ecosystem. Mirrored from the family's credential-store repository: NuGet, GitHub Actions, and since
+# E5.S1 npm for the extension (/src_vs_code).
 #
 # Family exception: FluentAssertions stays on 7.x — 8.x changed its licence (Directory.Packages.props).
+#
+# Extension holds (plan §9, §15g m5):
+# - @types/vscode stays EXACTLY at engines.vscode's floor (1.85.0): a newer minor would type API that
+#   VS Code 1.85 does not have, so major AND minor updates are ignored; the floor moves with
+#   engines.vscode, by hand, together.
+# - typescript stays on 6.x: typescript-eslint accepts typescript <6.1.0, and TypeScript 7 refuses to
+#   install beside it.
+# - @types/node stays on 18.x: the Node that VS Code 1.85 runs the bundle on (esbuild --target=node18).
 version: 2
 updates:
   - package-ecosystem: "nuget"
@@ -36,3 +44,25 @@ updates:
     labels: ["dependencies", "ci"]
     commit-message:
       prefix: "ci(deps)"
+
+  - package-ecosystem: "npm"
+    directory: "/src_vs_code"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "Europe/Kyiv"
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "@types/vscode"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    labels: ["dependencies", "npm"]
+    commit-message:
+      prefix: "chore(deps)"

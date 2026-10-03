@@ -1,5 +1,5 @@
 # .NET build output and tool state — the subset of the family's .NET ignore list this repository
-# produces today. The Node / VS Code section arrives with src_vs_code/.
+# produces today, and the Node / VS Code section for src_vs_code/ (E5.S1).
 
 # Visual Studio / Rider working folders and per-user files
 .vs/
@@ -21,3 +21,10 @@ artifacts/
 
 # Host logs: a folder per day, a file per run (.agents/conventions/common/logging-serilog.md)
 logs/
+
+# The extension (src_vs_code/, E5.S1): dependencies, the compiled tests, the bundle, packages, test-electron downloads
+node_modules/
+src_vs_code/out/
+src_vs_code/dist/
+*.vsix
+.vscode-test/

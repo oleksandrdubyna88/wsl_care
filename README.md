@@ -7,6 +7,7 @@ extension that shows the state and runs cleanups on demand.
 | Folder | Holds |
 |---|---|
 | `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
+| `src_vs_code/` | the VS Code extension WSL Care — in development, read-only: today its client of the daemon and its tests — [Extension (preview)](#extension-preview) below |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -336,6 +337,34 @@ the run's detail file. Memory actions (A1, A2, A3, A11) free no disk and count n
 default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (at most 366 days). Exit codes: 0 answered (an empty period
 too) · 2 a period that is none of these · 4 the history exists but cannot be read.
 
+## Extension (preview)
+
+`src_vs_code/` is the VS Code extension **WSL Care** — in development (E5), not published yet. What exists today
+(E5.S1) is its skeleton and its client; the status bar and the panel arrive in E5.S2, packaging and the Marketplace
+release in E5.S3 (the publisher id in `package.json` is a placeholder until the owner creates it — the E5 live gate).
+
+- **Read-only.** It asks the daemon four questions and nothing else: `status --json`, `preview --all --json`,
+  `doctor --json`, `--version`. It never runs a cleanup, never runs anything as root, never changes the daemon's
+  configuration — tests over the shipped bundle hold that.
+- **What it needs.** Windows with WSL (`extensionKind: ["ui"]`: it runs on the Windows side, also in a Remote – WSL
+  window) and the daemon installed in the distribution by `install.sh` (`/opt/wsl-care/bin/wsl-care`; systemd; Ubuntu
+  24.04 or newer — an older glibc is reported as an unsupported distribution).
+- **How it reaches the daemon.** `%SystemRoot%\System32\wsl.exe -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care
+  <verb>` — the absolute launcher, never a shell, never `--`. It first asks `wsl.exe` whether the distribution exists
+  and is running; **a stopped distribution is never started** (no call is made into it at all).
+- **Settings** (user settings only — `"scope": "application"`, so a repository's `.vscode/settings.json` cannot change
+  them): `wslCare.distro` — empty means WSL's default distribution (the one `wsl.exe -l -v` marks with `*`); a name
+  `wsl.exe --list` does not report is refused — and `wslCare.refreshSeconds` (default 120, at least 30).
+
+```bash
+cd src_vs_code
+npm ci
+npm run typecheck && npm run lint
+npm test        # compile, bundle (dist/extension.js), then every test — no test can start the real wsl.exe
+```
+
+What it measured about `wsl.exe` before the client was written: [research/2026-10-03_wsl_exe_facts.md](research/2026-10-03_wsl_exe_facts.md).
+
 ## Release
 
 A daemon release is the tag `daemon-v<version>` and a GitHub release carrying, for each of `linux-x64`, `linux-arm64`
@@ -379,8 +408,8 @@ publish) first runs on a release day.
   `RELEASE_PLEASE_APP_ID` and `RELEASE_PLEASE_APP_PRIVATE_KEY` (without them release-please stops in its first step and
   says which is missing);
 - the tag ruleset (`.github/rulesets/tags-daemon.json`: only the App creates a `daemon-v*` tag, nobody updates or deletes
-  one) and the `main` ruleset (`.github/rulesets/branch-main.json`: pull requests, linear history, the six required
-  checks), each verified by a probe that must be refused;
+  one) and the `main` ruleset (`.github/rulesets/branch-main.json`: pull requests, linear history, the eight required
+  checks — the extension's two legs since E5.S1), each verified by a probe that must be refused;
 - optionally `SONAR_TOKEN` (Actions AND Dependabot stores) with the SonarCloud project `remsoftdev_wsl_care` — until
   then `sonarcloud.yml` skips with a warning;
 - the CodeRabbit App enabled for this repository (`.coderabbit.yaml` is read from then on).
@@ -422,6 +451,9 @@ On Linux drop the `.exe` and publish with `-r linux-x64` or `-r linux-arm64` on 
 and every CLI flow with the test that covers it — is in
 [research/module_tests.md](research/module_tests.md); a verb added to the CLI without a row there fails
 the scenario suite.
+
+The extension builds and tests with Node (CI: Node 22, `ci · extension` on `windows-latest` and `ubuntu-24.04`) —
+the commands are in [Extension (preview)](#extension-preview).
 
 Family checks, from the repository root (CI runs them in `ci · family checks`):
 

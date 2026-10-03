@@ -15,6 +15,8 @@
 | **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` / `timedatectl` / `snap` alone on its `PATH`; the derived verb register; since E4.S1 the real `install.sh` under `/bin/sh` over a temporary prefix (§ *The installer harness*) and the shipped units and machine layer read by the product's own parser and loader; since E4.S2 the release scripts under bash and the release workflows' structure (§ *The release pipeline's tests*) |
 | **Live contract** | `src_daemon/tests/WslCare.LiveContract` | the REAL `docker` / `systemctl` / `journalctl` (since E2.S3 also `timedatectl`, `snap`, `powershell.exe` through interop, and the event stream) of the owner's machine through the product's own `ProcessCommandRunner` (30 s ceiling, tree kill), parsed by the product's parsers (plan §15a C2, §15b #2/#6) — NOT one of the CI test steps; § *The live contract* below |
 | AOT smoke | `.github/scripts/smoke-daemon.sh` (run by `ci-daemon.yml` on every pull request leg and by `release.yml` on every release leg) | the Native AOT binary of each RID answers `--help` / `--version`, performs the configuration round trip, answers `status --json` (on Linux over the captured procfs tree, reporting its `MemTotal`), and records a full run (`collect --json` → one history line naming a run detail, `status --json` naming that run, `doctor --json`), and since E3.S2 previews EVERY action (`act <ids --help names> --preview --json` under a sandbox with root claimed: exit 0 and every id answered on Linux, exit 2 on Windows, no state written — never a destructive run), and since the E4 review answers `preview --all --json` with no docker reachable (the JSON parsed by Python, `schemaVersion` 1, every row `available: false` with its reason), and since E5.S0 `status --json` carries its `verdicts` (the sample and the full-run ids, every level one of the four) and the `productVersion` `--version` prints — both parsed by Python, because the encoder writes the `+` of `0.0.0+<sha>` as `\u002B`. After the smoke, every pull-request leg packs the release archive from that binary (`package-daemon.sh`), checks the leg's pair (`verify-release-assets.sh <version> <dir> <rid>`) and opens the printed path in a `shell: pwsh` step |
+| Extension: unit, structure, bundle (E5.S1) | `src_vs_code/src/test` (`npm test`) | the runner seam, the client's argv / refusals / handshake over the golden contracts, the manifest, one-runner / one-argv-builder / one-verb-module over the parsed sources, the shipped bundle free of root, timer, confirm, manual and config words; every test process carries a tripwire against the real `wsl.exe` — § *The extension* |
+| **Scenario, extension client** (E5.S1) | `src_vs_code/src/test/scenarios` | the real `WslCareClient` over the real runner seam against the strict fake `wsl.exe` (a Node script), flows derived from the client's verbs; the extension-host tier (`@vscode/test-electron`) is E5.S2's |
 
 Shared doubles live in `src_daemon/tests/WslCare.TestSupport` (`TempRoot`, `SandboxHost`,
 `RecordingCommandRunner`, `FixedTimeProvider`, `DirectoryLinks`, `AccessDenial` — a real access
@@ -816,6 +818,95 @@ on Linux (WSL) with `WSL_CARE_WRITE_GOLDENS=1 ./src_daemon/tests/WslCare.Scenari
   *contracts/golden/head/status.json must be what the CLI answers at this commit — line 5: checked in '
   "sampleMilliseconds": 0,', the CLI answers '  "sampleMs": 63,'*; restored → green.
 
+## The extension (`src_vs_code/`)
+
+> E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
+> against a strict fake `wsl.exe` — and the structural, manifest and bundle checks. The extension-host tier
+> (`@vscode/test-electron`: activation, the status bar, the panel) is E5.S2's; packaging and the `.vsix` content checks
+> are E5.S3's. Every fact the fake reproduces was measured first: [2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md).
+
+### Where it is and how it runs
+
+TypeScript, `node:test`, compiled in place into `src_vs_code/out/` (strict, `noEmitOnError`). One command, identical to
+CI's (`ci · extension`, `windows-latest` and `ubuntu-24.04`):
+
+```bash
+cd src_vs_code && npm ci && npm run typecheck && npm run lint && npm test
+```
+
+`npm test` = compile → bundle (`esbuild`, `dist/extension.js`, node18, `vscode` external, no source map) →
+`scripts/run-tests.mjs`, which walks `out/test` for every `*.test.js` (no glob: it cannot forget a file, and prints the
+count) and starts ONE `node --test` with `--require out/test/support/noRealWsl.js`.
+
+| Part | What it is |
+|---|---|
+| `src/test/support/noRealWsl.ts` | **the tripwire**: loaded into every test process, it replaces `spawn` / `spawnSync` / `execFile` / `execFileSync` / `exec` / `execSync` on the raw `child_process` module with versions that THROW for any program named `wsl` / `wsl.exe` — so no test can reach the real WSL of whoever runs the suite. `noRealWsl.test.ts` asserts it is armed in the process it runs in, and that the product runner handed the real `SystemRoot` gets `failedToStart` naming the tripwire |
+| `src/test/fake/fakeWsl.ts` | **the strict fake `wsl.exe`**, a Node script started through the product's own `nodeScriptRunner` (`node fakeWsl.js <the argv the client built>`; the requested program arrives as `WSL_CARE_FAKE_REQUESTED_FILE`). It answers the three WSL questions in UTF-16LE exactly as measured, a daemon call from a golden set (or edited copies), `--version` as text; it reproduces the measured missing-binary signature (exit 1), wsl.exe's own refusal of an unknown distribution (-1, UTF-16LE on stdout), the documented old-glibc line, a daemon exit with stderr, a hang. It REFUSES — stricter than the real one — a start as anything but an absolute `…\System32\wsl.exe` (96), no scenario (97), every argv the client must never send (98: `-u`, `--user`, `--`, `-e`, anything after the binary but the four verbs, so `--timer` / `--confirm` / `--manual` / `config` / `act` / `collect` / `logs`), and a `-d` to a STOPPED distribution (95 — the real one would start the VM). Its four verbs are its OWN copy, the oracle of plan §15f #5 |
+| `src/test/support/fakeWorld.ts` | one temporary folder per test: the scenario file, the fake's call log (`{argv, file}` per call), removed after |
+| `src/test/support/recordingRunner.ts` | a runner that starts nothing: scripted answers by exact argv, every request recorded |
+| `src/test/support/sourceScan.ts` | the TypeScript parser naming every import (all forms: `import`, `import =`, `require`, `import()`, `export from`) and every string literal of a source — the structural tests read programs, not text |
+| `src/test/scenarios/clientFlows.test.ts` | **the client flows**: the real client, the real runner, the fake; the flow list DERIVED from `VERB_NAMES`, the golden sets from `contracts/golden/*/` |
+
+### Extension flow catalogue
+
+A row for every client verb (`client <verb>`), every contributed command (`command <id>`) and view (`view <id>`) —
+derived from `VERB_NAMES` and `package.json`'s `contributes`; `catalogue.test.ts` fails, naming the flow, when one is
+missing (E5.S1 contributes none yet; its planted companion shows a command or view without a row is reported).
+
+| Flow | Covered | By |
+|---|---|---|
+| `client status` — `-d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care status --json` after `--list --quiet` (+ `-l -v` when no distro is set) and `--list --running --quiet`; answered over every golden set with its schema accepted, verdicts and `productVersion` read, the version judged from `productVersion` (no `--version` call); stopped → no `-d` call; not installed; old glibc; a refusal with Serilog noise reduced to its `wsl-care:` line; a hang ended by the runner at the ceiling | covered | `clientFlows.test.ts` (flows), `client.test.ts`, `handshake.test.ts`, `failures.test.ts` |
+| `client preview` — `preview --all --json`, 330 s ceiling; over every golden set; an unknown `schemaVersion` blanks preview ONLY (status still answered); stopped / not installed / old glibc | covered | `clientFlows.test.ts`, `client.test.ts`, `handshake.test.ts` |
+| `client doctor` — `doctor --json`, 100 s ceiling; over every golden set; the daemon version from an earlier status or ONE `--version` call per distribution; stopped / not installed / old glibc | covered | `clientFlows.test.ts`, `client.test.ts`, `handshake.test.ts` |
+| `client version` — `--version`, 20 s ceiling; read as `x.y.z(+sha)?`, `unknown` (unstamped), `0.0.0+sha` (a build before the first release) | covered | `clientFlows.test.ts`, `client.test.ts`, `handshake.test.ts` |
+
+### What each guarantee rests on
+
+Every guarantee was first seen RED against stubs that compiled and returned neutral answers (2026-10-03: 154 tests,
+110 red for their own symptom), then each was red again with the ONE production line it rests on broken — 15 such
+mutations, each rebuilt, run and restored byte for byte (`SHA-256` equal). Three tests added in the self-review were red
+first against the finished client (157 tests today):
+
+| Guarantee | Test | Red observed |
+|---|---|---|
+| only `src/process/runner.ts` imports `child_process` | `structure.test.ts` | `import { spawn } from 'node:child_process'` added to `extension.ts` → *only the runner imports child_process — in any form* red; stub run: `+ [] - ['src/process/runner.ts']` |
+| only `WslCareClient.ts` spells `wsl.exe` argv words / the daemon path; only `verbs.ts` the verb option words | `structure.test.ts` | `export const STRAY = ['--exec']` added to `runnerSelection.ts` → *only the client spells wsl.exe argv words or the daemon path* red |
+| no `-u` / `--user` / root / `--timer` / `--confirm` / `--manual` / `config` word in the SHIPPED bundle | `bundleScan.test.ts` | `['-u', 'someone']` spread into a live argv of the client (an unused export is tree-shaken by esbuild and proved nothing — the first attempt) → *the shipped bundle spells no root, timer, confirm, manual or config word* red; each word also planted in a copy of the real bundle, as an argv element and in a template |
+| a STOPPED distribution gets no `-d` call; a failed running check counts as stopped | `client.test.ts`, `clientFlows.test.ts` | the running check replaced by `running.ok \|\| …` → *a STOPPED distribution gets no -d call at all* and *when the running check itself fails …* red; stub run: `+ kind: 'interrupted' - kind: 'stopped'` |
+| an out-of-pattern distribution is refused before ANY spawn; an unlisted one before any `-d` | `client.test.ts`, `clientFlows.test.ts` | the pattern check disabled → *an out-of-pattern distribution is refused before ANY spawn* red |
+| "not installed" ONLY from the measured signature for our path at exit 1 | `failures.test.ts` | the signature test dropped (exit 1 alone) → *a missing OTHER path, a permission refusal …* and *the daemon's own exit 1 (RunFailed) is an unknown failure …* red; stub run: `The input did not match the regular expression /$^/` over the measured line |
+| an unknown `schemaVersion` → "needs a newer extension", per verb | `handshake.test.ts`, `client.test.ts`, `clientFlows.test.ts` | the supported-schema check removed → the three *with an unknown schemaVersion major …* tests red; stub: `+ kind: 'unparseable' - kind: 'needsNewerExtension'` |
+| an unknown verdict level reads `unknown`; unknown keys ignored; a missing `verdicts` / `productVersion` tolerated | `handshake.test.ts` | the level passed through unchecked → *a verdict with an unknown level reads as unknown …* red |
+| Test mode without a fake spawns nothing (fail closed); outside Test mode an environment variable cannot redirect | `runnerSelection.test.ts` | the closed branch replaced by the real runner → *Test mode without a usable fake is closed* and *the closed choice yields a runner that answers failedToStart …* red; stub: `'real' !== 'closed'` |
+| a timed-out child is killed, the answer bounded by ceiling + grace | `runner.test.ts` | `this.child.kill()` removed → *a child past its ceiling is reported timed out … and is dead afterwards* red (the child alive after 2.7 s) |
+| `wsl.exe` output decoded as UTF-16LE from its bytes (measured `55 00 62 00`); UTF-8 under `WSL_UTF8=1` and for Linux output | `wsl.test.ts` | detection disabled → *wsl.exe output is decoded as UTF-16LE* red; stub: `+ 'U\x00b\x00u\x00…' - 'Ubuntu\r\ndocker-desktop\r\n…'` |
+| the default distribution is the ONE `*` row of `-l -v` (localised header ignored) | `wsl.test.ts` | the pattern widened to the first row → the `*`-row test red |
+| one call per verb in flight | `client.test.ts` | the in-flight check bypassed → *one call per verb in flight …* red |
+| `wsl.exe` refusing or not answering one of its OWN questions is a WSL failure with its sentence or its ceiling; an unread `--version` is not remembered | `client.test.ts` | red before the self-review fix: `+ kind: 'unknownFailure', code: 1 - kind: 'wslFailed', message: 'The Windows Subsystem for Linux is not installed.'`; `+ code: undefined, kind: 'unknownFailure' - message: 'wsl.exe did not answer within 15000 ms'`; `+ kind: 'notRead' - kind: 'release'` (the second call reused the failed read) |
+| `--exec`, never `--`; exactly the four verbs | `clientFlows.test.ts` (the fake refuses), `structure.test.ts` | `--` inserted into the daemon argv → every answered flow red (the fake: exit 98); a fifth word added to the `version` tail → *flow · version over the head goldens* red |
+| the client's exit-code names are the daemon's `ExitCode` values | `exitCodes.test.ts` | reads `src_daemon/src/WslCare.Cli/ExitCode.cs`; a planted renumbered enum is read back |
+| the manifest: `extensionKind ["ui"]`, `engines.vscode ^1.85.0` + `@types/vscode` exactly 1.85.0, untrusted + virtual workspaces, `preview`, 0.0.0, both settings `application`, distro pattern = the client's, refresh ≥ 30 (default 120), no runtime dependency, every dev dependency pinned, the licence byte-equal | `manifest.test.ts` | stub run: the distro pattern (`/.*/`) did not equal the schema's |
+| the flow catalogue is derived | `catalogue.test.ts` | red until this section existed: *research/module_tests.md has no "## The extension (`src_vs_code/`)" heading* |
+| the TS doctrine's `scriptInterpolation` scan, ready before the first webview (E5.S2) | `scriptInterpolation.test.ts` | ported from the kit; empty allowlist; its fixture companion finds both spellings |
+| the fake is stricter than `wsl.exe`, never more permissive | `fakeWsl.test.ts` | stub run: every fake answer red through the stub runner (`{"kind":"failedToStart","reason":"stub"}`) |
+
+### What the extension's tests do not prove
+
+- **No real `wsl.exe` is ever started by a test** — by design (the tripwire). The fake's answers are the measured ones of
+  WSL 2.7.10.0 on one machine; a different WSL version that changes an encoding or a message is caught only by the E5
+  live gate's named check (the real extension → `wsl.exe` → daemon path, plan §15g m6).
+- **Unmeasured shapes the fake still answers**: what `--list --running --quiet` prints when NO distribution runs (both
+  candidate shapes are answered, and the client makes no `-d` call for either), and the old-glibc loader line (its
+  documented shape). The daemon's coloured stderr through `wsl.exe` is E1.S3's direct observation, not observed through
+  `wsl.exe`.
+- **Whether `wsl-care` itself ends when `wsl.exe` is killed** — measured for `sleep` (it does) and for a process
+  ignoring SIGHUP (it does not); the AOT binary is not installed here.
+- **Which settings file a UI-kind extension reads in a Remote-WSL window** — an E5 live-gate observation.
+- **Nothing runs inside VS Code yet**: `extension.ts` is thin wiring (`context.extensionMode` → `chooseRunner`,
+  `getConfiguration('wslCare')`), covered from E5.S2 by `@vscode/test-electron` against 1.85.0 and stable.
+- **The page harness** (a `node:vm` DOM shim, the kit's `pageHarness.ts` pattern) is not ported: there is no page to run
+  until E5.S2.
+
 ## Flow catalogue
 
 One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` `` exactly as
@@ -906,6 +997,8 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | the extension: status bar, panel, buttons, logs page, settings sync, help | not covered | the extension is not built yet (E5–E8) |
 
 ## What it does not prove
+
+The extension's own limits are listed in its section (§ *The extension* — *What the extension's tests do not prove*).
 
 - **The goldens are the fakes' answers, not this machine's.** `contracts/golden/head/` is the built CLI over the
   captured fixtures and the fake tools: doctor's unit checks answer `unknown` (no `systemctl show` of those units was
@@ -1077,6 +1170,7 @@ three test executables and the shared smoke of the published AOT binary (`.githu
 Linux legs, and `systemd-analyze verify` of the units there); `ci · workflows` runs actionlint and shellcheck of
 `install.sh` and `.github/scripts/`; `release.yml` runs the same three executables and the same smoke on every leg of a
 `daemon-v*` tag before anything is packed; `ci · family checks` runs the shared plan, pin, adapter
-and build-flags checks. The live smoke on the owner's machine runs at every release (E4 onwards) — `install.sh` for real
+and build-flags checks. `ci · extension` (unconditional, `windows-latest` and `ubuntu-24.04`, E5.S1) runs a clean `tsc`,
+the linter and `npm test` — the extension's unit, structural, bundle and client-scenario tests. The live smoke on the owner's machine runs at every release (E4 onwards) — `install.sh` for real
 and `POST_DEPLOY.md` against the installation — and so does the live contract with `WSL_CARE_REQUIRE_LIVE=1`
 (§ *The live contract*).
