@@ -1,0 +1,73 @@
+{
+  "name": "wsl-care",
+  "displayName": "WSL Care",
+  "description": "Shows what the wsl-care daemon measures inside WSL — memory, swap, disk, containers and the cleanup candidates — read-only. Windows with WSL only; the daemon is installed separately.",
+  "version": "0.0.0",
+  "publisher": "publisher-tbd",
+  "preview": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oleksandrdubyna88/wsl_care.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "ui"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "WSL Care",
+      "properties": {
+        "wslCare.distro": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "pattern": "^$|^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+          "patternErrorMessage": "A WSL distribution name: letters, digits, '.', '_' and '-', not starting with '-' — or empty for WSL's default distribution.",
+          "markdownDescription": "The WSL distribution whose `wsl-care` daemon is shown. Empty means WSL's default distribution (the one `wsl.exe -l -v` marks with `*`). A name that `wsl.exe --list` does not report is refused before anything is started. Application-wide: a workspace's `.vscode/settings.json` cannot change it."
+        },
+        "wslCare.refreshSeconds": {
+          "type": "integer",
+          "default": 120,
+          "minimum": 30,
+          "scope": "application",
+          "markdownDescription": "How often the focused window asks the daemon for `status`, in seconds (at least 30). Application-wide: a workspace's `.vscode/settings.json` cannot change it."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "node scripts/clean.mjs out dist",
+    "compile": "node scripts/clean.mjs out && tsc -p ./",
+    "typecheck": "tsc -p ./ --noEmit",
+    "lint": "eslint .",
+    "bundle": "node scripts/clean.mjs dist && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18",
+    "test": "npm run compile && npm run bundle && node scripts/run-tests.mjs",
+    "vscode:prepublish": "npm run bundle"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "18.19.130",
+    "@types/vscode": "1.85.0",
+    "esbuild": "0.28.2",
+    "eslint": "10.12.0",
+    "globals": "17.13.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0"
+  }
+}

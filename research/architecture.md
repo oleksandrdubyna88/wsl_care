@@ -19,8 +19,10 @@
 > per-RID `release.yml` with build-provenance attestations, the shared smoke / package / guard / verify scripts, and the
 > owner-applied rulesets, Sonar and CodeRabbit settings (section *The release pipeline*), and from E5.S0 the threshold
 > verdicts and the product version in `status --json` and the golden contracts the extension's client tests replay
-> (section *The verdicts in `status`*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
-> `events follow`, `act`, `logs` and `runs`, and refuses everything else; there is no extension yet. This file describes
+> (section *The verdicts in `status`*), and from E5.S1 the VS Code extension's skeleton — the runner seam, `WslCareClient` over
+four read-only verbs, the strict fake `wsl.exe` and `ci-extension.yml` (section *The extension: client, runner and fake*);
+nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+> `events follow`, `act`, `logs` and `runs`, and refuses everything else; the extension wires its client and shows nothing yet (E5.S2). This file describes
 > what exists and is rewritten as each part lands.
 
 ## What exists
@@ -73,13 +75,19 @@
   `src_daemon/systemd/` (`wsl-care.service`, `wsl-care.timer`, `wsl-care-events.service`) and
   `src_daemon/config/machine.json` (the empty machine layer) — what a release archive carries (section *The installer
   and the units*).
-- **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `family-checks.yml`, `pr-title.yml`,
-  `dependabot.yml` (below); since E4.S2 the release pipeline: `release-please.yml`, `release.yml`, the scripts both
+- **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `family-checks.yml`, `pr-title.yml`, since E5.S1
+  `ci-extension.yml`, `dependabot.yml` (below); since E4.S2 the release pipeline: `release-please.yml`, `release.yml`, the scripts both
   CI and the release run (`scripts/smoke-daemon.sh`, `package-daemon.sh`, `release-guard.sh`, `verify-release-assets.sh`,
   `lib/daemon-assets.sh`), `sonarcloud.yml` + `sonar.properties`, `coderabbit-review.yml`, and the owner-applied ruleset
   bodies `rulesets/tags-daemon.json` and `rulesets/branch-main.json` — with `release-please-config.json`,
   `.release-please-manifest.json` and `.coderabbit.yaml` at the root and the owner's commands in `docs/repo-settings.md`
   (section *The release pipeline*).
+- **`src_vs_code/`** (E5.S1) — the VS Code extension: `package.json` (WSL Care, 0.0.0, `extensionKind ["ui"]`,
+  `engines.vscode ^1.85.0`, two application-scoped settings), `src/process/runner.ts` (the one process launcher),
+  `src/process/runnerSelection.ts`, `src/client/` (`WslCareClient`, the closed `VERBS`, the handshake, the failure
+  reading, the exit-code names), `src/wsl/` (the launcher path, UTF-16LE, distribution names), `src/test/` (unit,
+  structural, bundle and client-scenario tests, the strict fake, the tripwire), esbuild into `dist/extension.js`
+  (section *The extension: client, runner and fake*).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
@@ -1527,6 +1535,128 @@ fails when a checked-in file is not what the CLI answers at that commit (naming 
 and when a rule no longer matches anything; `WSL_CARE_WRITE_GOLDENS=1` regenerates them. The set frozen at the tag,
 `contracts/golden/daemon-0.1.0/`, is an E5 live-gate step, not part of E5.S0. The goldens are test data and never ship.
 
+## The extension: client, runner and fake (E5.S1)
+
+`src_vs_code/` holds the VS Code extension's skeleton: TypeScript (the family's strict set, `noEmitOnError`), built
+in place into `out/` for the tests and bundled by esbuild into ONE file, `dist/extension.js` (CommonJS, `--platform=node
+--target=node18` — the Node of VS Code 1.85 —, `vscode` external, no source map). No runtime dependency. E5.S1 wires the
+client and shows nothing; the status bar and the panel are E5.S2's, *Install daemon* and packaging E5.S3's.
+
+**The process model.** `extensionKind: ["ui"]`: the extension runs in the WINDOWS extension host whether the window is
+local or *Remote – WSL*. It reaches the daemon only by starting `%SystemRoot%\System32\wsl.exe` (absolute; `PATH` holds a
+second, Store-alias `wsl.exe` on this machine, and a bare name searches the current directory first) with argv built in
+one place. The settings `wslCare.distro` (empty = WSL's default, the `*` row of `wsl.exe -l -v`) and
+`wslCare.refreshSeconds` (≥ 30, default 120) are `"scope": "application"`: a cloned repository's `.vscode/settings.json`
+cannot steer either; the extension declares untrusted- and virtual-workspace support.
+
+**Root-free, by construction and by test (plan §15f #5).** The four verbs are the closed set `VERBS` in
+`client/verbs.ts`: `status --json`, `preview --all --json`, `doctor --json`, `--version`. No `-u`, no `act`, no `collect`,
+no `config`. `structure.test.ts` parses the shipped sources and holds: only `process/runner.ts` imports `child_process`;
+only `client/WslCareClient.ts` spells a `wsl.exe` argv word or the daemon's path; only `verbs.ts` spells the verbs' option
+words. `bundleScan.test.ts` parses the SHIPPED bundle and fails on any string carrying `-u`, `--user`, `root`, `--timer`,
+`--confirm`, `--manual` or `config` — each with planted-instance companions.
+
+**The seams.**
+
+- **Runner** (`process/runner.ts`) — `{file, args, timeoutMs, env?}` in, a typed ending out (`exited` with the code as a
+  signed 32-bit value — Windows reports `wsl.exe`'s -1 as 4294967295 —, `signalled`, `timedOut`, `tooMuchOutput`,
+  `failedToStart`); `shell: false`, streams as BYTES, output capped (16 MiB / 1 MiB), the ceiling enforced by
+  `child.kill()` and a 2 s grace. Killing `wsl.exe` ends the Linux process through the relay's hang-up (measured; a
+  process ignoring SIGHUP survives, reparented to PID 1). `nodeScriptRunner(script)` starts `node <script> <args>` in
+  place of the requested file (the strict fake); `closedRunner` starts nothing.
+- **Runner selection** (`process/runnerSelection.ts`) — `extension.ts` passes `context.extensionMode ===
+  ExtensionMode.Test`. Outside Test mode: the real runner, always (no variable is read). In Test mode: the fake named by
+  `WSL_CARE_TEST_FAKE_WSL` (an absolute `.js`), otherwise the CLOSED runner — a test run that forgot the fake spawns
+  nothing.
+- **Client** (`client/WslCareClient.ts`) — per verb: the platform (`win32` only), the launcher, the configured
+  distribution checked against a strict pattern (`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, never a leading `-`) BEFORE any
+  spawn, `--list --quiet` (UTF-16LE), the default from `-l -v` when none is set, `--list --running --quiet` — and when the
+  distribution is not running (or the question fails) it STOPS: no `-d` call, so polling never starts the VM. Then
+  `-d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care <verb>` (`--exec`, never `--`: measured, `--` hands argv to the
+  distro's shell). One call per verb in flight (a second caller shares the first's outcome).
+- **Reading the ending** (`client/failures.ts`, `client/handshake.ts`, `wsl/*`) — `wsl.exe`'s own output is decoded from
+  its bytes (UTF-16LE when a BOM leads or a NUL sits at an odd offset; UTF-8 otherwise, which is what `WSL_UTF8=1` and
+  the Linux side produce). One of the three WSL questions failing in any way (a non-zero exit, no answer within 15 s) is a
+  WSL failure with `wsl.exe`'s own sentence. For a daemon call: exit -1 → `wsl.exe` refused (its sentence from STDOUT); exit 1 with the measured relay
+  signature for OUR path → *not installed* (exit 1 is also the daemon's `RunFailed`, so nothing else reads as not
+  installed); a `GLIBC_… not found` line → *unsupported distribution*; 2 → refused, 70 → a daemon defect, 130 →
+  interrupted, anything else → unknown — each showing only the daemon's `wsl-care:` lines, colour stripped. Exit 0 →
+  the per-verb schema handshake of plan §6: `SUPPORTED_SCHEMA = [1]`; an unknown major blanks THAT verb only ("needs a
+  newer extension"); unknown keys ignored; `verdicts` / `productVersion` optional; the daemon version from
+  `status.productVersion`, else one cached `--version` per distribution; a released daemon below
+  `MIN_DAEMON_FOR_RENDER = 0.1.0` blanks the view, `unknown` and `0.0.0(+sha)` (a build before the first release) render.
+  The client's exit-code names are read back from `ExitCode.cs` by a test.
+- **Per-verb ceilings** above the daemon's own: `status` / `--version` 20 s (no child process), `doctor` 100 s (four
+  `systemctl show` at 15 s + `systemctl --version` 15 s + `docker version` 10 s = 85 s), `preview` 330 s (`docker version`
+  10 s + two `system df` at 2 min + the dangling listing 30 s + one `container inspect` batch 30 s = 310 s); the three WSL
+  questions 15 s each (measured: ~50 ms).
+
+```mermaid
+flowchart LR
+    ext["extension.ts<br/>activate: wires, starts nothing"]
+    sel["process/runnerSelection.ts<br/>chooseRunner(isTestMode, env)"]
+    run["process/runner.ts<br/>spawnRunner · nodeScriptRunner · closedRunner<br/>the ONLY child_process import"]
+    client["client/WslCareClient.ts<br/>the ONLY argv builder"]
+    verbs["client/verbs.ts<br/>VERBS: status · preview · doctor · --version"]
+    hand["client/handshake.ts<br/>schema 1 · MIN 0.1.0"]
+    fail["client/failures.ts<br/>exit codes · signatures"]
+    wsltext["wsl/*<br/>launcher · UTF-16LE · distros"]
+    wslexe["%SystemRoot%\System32\wsl.exe"]
+    daemon["/opt/wsl-care/bin/wsl-care<br/>inside the distro"]
+    fake["test/fake/fakeWsl.js<br/>strict fake (tests only)"]
+
+    ext --> sel
+    sel -->|"production: real"| run
+    sel -->|"Test mode + fake named"| fake
+    ext --> client
+    client --> verbs
+    client --> hand
+    client --> fail
+    client --> wsltext
+    client -->|"file + args"| run
+    run -->|"spawn, shell false"| wslexe
+    wslexe -->|"--exec, the distro running"| daemon
+    run -.->|"node fakeWsl.js args"| fake
+```
+
+```mermaid
+sequenceDiagram
+    participant C as WslCareClient
+    participant R as runner
+    participant W as wsl.exe
+    participant D as wsl-care (distro)
+    C->>C: distro setting matches the pattern, else refused, nothing started
+    C->>R: --list --quiet
+    R->>W: spawn (shell false, 15 s)
+    W-->>C: UTF-16LE names
+    C->>R: -l -v (only when the setting is empty)
+    W-->>C: the row marked with *
+    C->>R: --list --running --quiet
+    W-->>C: running names
+    alt the distro is not running
+        C-->>C: stopped, and no -d call
+    else running
+        C->>R: -d distro --cd / --exec /opt/wsl-care/bin/wsl-care status --json
+        R->>W: spawn (20 s)
+        W->>D: exec, no shell
+        D-->>C: JSON (UTF-8), exit 0
+        C->>C: schemaVersion in [1], productVersion at least 0.1.0
+    end
+```
+
+**The strict fake** (`src/test/fake/fakeWsl.ts`, never bundled) answers only the shapes the client may send, in the
+measured encodings, and refuses everything else with its own exit codes — `-u`, `--`, any verb outside the four, a `-d`
+to a stopped distribution, a start as anything but `…\System32\wsl.exe`. **No test can reach the real `wsl.exe`**: the
+test runner loads a tripwire into every test process that throws on any start of `wsl` / `wsl.exe`, and a test asserts it
+is armed. Tests, flows and what they do not prove: [module_tests.md](module_tests.md) § *The extension*. The measurements:
+[2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md).
+
+**CI.** `ci-extension.yml` (`ci · extension`), unconditional, on `windows-latest` and `ubuntu-24.04`: setup-node (SHA
+pinned, Node 22), `npm ci`, a clean `tsc`, the linter, `npm test`. Its two job contexts are required in
+`.github/rulesets/branch-main.json` (`ReleaseConfigTests` derives the gating workflows and holds the list equal). Dependabot
+watches `/src_vs_code` weekly, holding `@types/vscode` at 1.85.0 (major and minor ignored), `typescript` on 6.x,
+`@types/node` on 18.x.
+
 ## Fail-closed resolution and the atomic write
 
 Hardened on 2026-10-02 from the review of the E1 pull request.
@@ -1611,6 +1741,7 @@ flowchart LR
 
     subgraph ci[".github/workflows"]
         ciD["ci-daemon.yml<br/>linux-x64 · linux-arm64 · win-x64"]
+        ciE["ci-extension.yml<br/>windows-latest · ubuntu-24.04 (E5.S1)"]
         ciW["ci-workflows.yml<br/>actionlint + shellcheck · shellcheck install.sh"]
         ciF["family-checks.yml<br/>plans · pin · adapter · build flags"]
         prT["pr-title.yml"]
@@ -1628,6 +1759,9 @@ flowchart LR
     end
 
     rules[".github/rulesets/*.json<br/>owner-applied (docs/repo-settings.md)"]
+
+    vsc["src_vs_code/<br/>TypeScript · esbuild · node:test (E5.S1)"]
+    golden["contracts/golden/head/<br/>(E5.S0)"]
 
     conv[".agents/conventions<br/>submodule, tools/*.mjs"]
 
@@ -1680,6 +1814,10 @@ flowchart LR
     scn -->|"ReleaseWorkflowTests · ReleaseConfigTests: read"| rel
     scn -->|"ReleaseConfigTests: read"| rules
     ciW -->|shellcheck| scripts
+    ciE -->|"tsc · eslint · npm test"| vsc
+    vsc -->|"client tests replay"| golden
+    scn -->|"GoldenContracts writes"| golden
+    scn -->|"ReleaseConfigTests: the ci-extension contexts"| ciE
 ```
 
 ## The seams inside the binary
@@ -1826,13 +1964,14 @@ FluentAssertions held below 8.x.
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
-| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5.S1–S3) |
+| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar and panel (E5.S2), packaging and the release (E5.S3) planned |
 
 ## Cross-repository
 
 | Repository | Relationship |
 |---|---|
-| `dew_flow_vscode_kit` | the extension's help page and display controls come from its npm package |
+| `dew_flow_vscode_kit` | the extension's help page and display controls come from its npm package (E8). E5.S1 PORTED, not depended on: the strict tsconfig, the eslint config, `scripts/run-tests.mjs` (made recursive, with the tripwire) and `scriptInterpolation.test.ts` (`dew_flow_vscode_kit · src/test/scriptInterpolation.test.ts`, 2026-10-03); its `pageHarness.ts` waits for E5.S2's first page |
+| `dew_flow_creds_for_devs` (extension) | the model for the absolute `%SystemRoot%System32wsl.exe` and the UTF-16LE list decoding (`dew_flow_creds_for_devs · src_vs_code/src/wslProcess.ts`, `wslRelay.ts`); wsl_care decodes from the bytes (also handling `WSL_UTF8=1`), has no `windir` / `C:Windows` fallback, and kills `wsl.exe` alone — measured to end the Linux process — where the model tree-kills |
 | `dew_flow_creds_for_devs` | the model for this repository's build files, CI/CD, the logging sinks (`AnsiConsoleSink`, `DailyRunFileSink`, `LogRetention` are ports) and `install.sh` (its structure: POSIX sh, the newest tag of ONE component through the releases API, the `.sha256` check, a trap-cleaned temporary folder — `dew_flow_creds_for_devs · install.sh`; wsl_care's REQUIRES the `.sha256` where the model warns without one, adds the attestation, and never calls sudo) |
 | `dew_flow_creds_for_devs` (release) | the model for E4.S2: `release-please-config.json` (`draft` + `force-tag-creation`, `separate-pull-requests`, `simple` + `version.txt`; its `exclude-paths: [".github"]` was copied and then removed here as inert, E4 review), the App-token `release-please.yml`, the per-RID AOT release legs, ONE publish job that asserts every RID from the release and flips the draft last, the tag ruleset with the App as the only bypass, `sonarcloud.yml`, `.coderabbit.yaml` / `coderabbit-review.yml`. wsl_care differs: the build job cannot write the repository (it uploads a run artifact, the publish job uploads), every archive is attested, the `.sha256` is checked again FROM the draft, the smoke and the packing are scripts the scenario suite runs, and `main` is protected by a ruleset rather than classic branch protection |
 | `dew_flow_vscode_kit` (release) | its `release-please.yml` (the loud missing-secret refusal, `contents: read` with every write the App token's) and its first-version bootstrap reasoning, applied here as manifest `0.0.0` + `initial-version: 0.1.0` |

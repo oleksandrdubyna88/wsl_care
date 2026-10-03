@@ -59,6 +59,17 @@ reviews:
       instructions: |
         Release scripts, run by release.yml and spawned by the scenario tests (PackageFlows, ReleaseScriptFlows).
         bash with `set -euo pipefail`; a check that refuses must exit non-zero.
+    - path: "src_vs_code/src/**/*.ts"
+      instructions: |
+        The VS Code extension (E5: read-only, root-free). Only src/process/runner.ts imports child_process; only
+        src/client/WslCareClient.ts builds wsl.exe argv (`-d <validated distro> --cd / --exec
+        /opt/wsl-care/bin/wsl-care <verb>`, never `--`, never `-u`); the verbs are exactly src/client/verbs.ts. Flag a
+        bare `wsl`/`wsl.exe` (it must be %SystemRoot%\System32\wsl.exe), `shell: true`, a wait without a ceiling, a
+        `-d` call made while the distribution is not running, and any root / `--timer` / `--confirm` / `--manual` /
+        `config` word — the structural tests and the bundle scan enforce these. TypeScript doctrine: no
+        `${JSON.stringify(…)}` inside a template literal, no backtick inside a template literal, no `as` cast standing in
+        for a fixture's type. Tests are node:test over the compiled out/ (`npm test`); every test process carries a
+        tripwire against the real wsl.exe.
     - path: "**/*.md"
       instructions: |
         todo/ holds plans not yet done; research/ documents the system as it is; a plan carries a status line on
