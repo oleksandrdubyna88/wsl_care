@@ -14,7 +14,8 @@
 # tools are never touched; nothing destructive runs — act is PREVIEW only:
 #   1. --help lists --help and --version; --version prints src_daemon/version.txt
 #   2. the configuration round trip: set, read back from the user layer, a refused set exits 2 with one line
-#   3. status --json: schemaVersion 1; on Linux over the captured procfs tree (its MemTotal), on Windows the host side
+#   3. status --json: schemaVersion 1, its verdicts and the productVersion --version prints (E5.S0); on Linux over the
+#      captured procfs tree (its MemTotal), on Windows the host side
 #   4. the full run: collect --json records (one history line naming a run detail), status names that run, doctor answers
 #   5. act <every action --help names> --preview --json with root CLAIMED inside the sandbox; Windows refuses (exit 2)
 #   6. preview --all --json with NO docker reachable (PATH = an empty folder): exit 0, the JSON parses (Python's json —
@@ -97,11 +98,23 @@ smoke_config_round_trip() {
 }
 
 smoke_status() {
-  local status
+  local status version py
   sandbox status
   with_procfs_fixture
   status="$("$bin" status --json | tr -d '\r')"
   case "$status" in *'"schemaVersion": 1'*) ;; *) printf '%s\n' "$status"; fail "status --json carries no schemaVersion 1" ;; esac
+  case "$status" in *'"verdicts": ['*) ;; *) printf '%s\n' "$status" | head -c 4000; fail "status --json carries no verdicts (plan §15g B1)" ;; esac
+  # Parsed, not grepped: the encoder writes the + of 0.1.0+<sha> as +.
+  py="$(json_python)" || fail "no python3 / python to parse status --json with"
+  version="$("$bin" --version | tr -d '\r')"
+  printf '%s' "$status" | WSL_CARE_SMOKE_VERSION="$version" "$py" -c '
+import json, os, sys
+answer = json.load(sys.stdin)
+ids = [verdict["id"] for verdict in answer["verdicts"]]
+assert "memory.available" in ids and "clock.jumps" in ids, "verdicts lack the sample or the full-run thresholds: %s" % ids
+assert all(verdict["level"] in ("ok", "warn", "critical", "unknown") for verdict in answer["verdicts"]), "a verdict level outside the four"
+assert answer["productVersion"] == os.environ["WSL_CARE_SMOKE_VERSION"], "productVersion %r is not what --version prints" % answer["productVersion"]
+' || { printf '%s\n' "$status" | head -c 4000; fail "status --json: its verdicts or its productVersion are not what --version and the thresholds say"; }
   if [ "$os" = "Linux" ]; then
     case "$status" in *"\"bytes\": $FIXTURE_MEMTOTAL_BYTES"*) ;; *) printf '%s\n' "$status"; fail "status --json did not report the fixture's MemTotal" ;; esac
   else

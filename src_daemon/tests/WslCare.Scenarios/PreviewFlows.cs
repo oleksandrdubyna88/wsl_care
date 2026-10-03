@@ -24,7 +24,7 @@ public sealed class PreviewFlows
 {
     /// <summary>Every age limit at 0: what a button pressed "for everything unused" would take — the one-time
     /// cleanup's own choice — and the only setting whose rows do not move as the fixture ages.</summary>
-    private const string AllAges = """{ "volumes": { "anonymousOlderThanDays": 0 }, "containers": { "stoppedOlderThanDays": 0, "testcontainersOlderThanHours": 0 }, "images": { "unusedOlderThanDays": 0 }, "buildCache": { "olderThanDays": 0 } }""";
+    internal const string AllAges = """{ "volumes": { "anonymousOlderThanDays": 0 }, "containers": { "stoppedOlderThanDays": 0, "testcontainersOlderThanHours": 0 }, "images": { "unusedOlderThanDays": 0 }, "buildCache": { "olderThanDays": 0 } }""";
 
     private static ScenarioHome Captured(string purpose)
     {

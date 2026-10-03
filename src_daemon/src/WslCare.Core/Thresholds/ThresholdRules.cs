@@ -79,16 +79,54 @@ public static class ThresholdRules
     private const double Gib = 1024d * 1024 * 1024;
     private const double Gb = 1e9;
 
+    /// <summary>Every threshold of one full run, in the order its detail records them: the ones a fast sample decides
+    /// (<see cref="FromSample"/>), then the ones only a full run can (<see cref="UnreadFullRun"/> names them).</summary>
     public static IReadOnlyList<Verdict> Evaluate(ThresholdInputs inputs, EffectiveConfig config) =>
+        [.. FromSample(inputs.Memory, inputs.Root, inputs.Health.WslConfig, config), .. FromFullRun(inputs, config)];
+
+    /// <summary>
+    /// The thresholds a FAST sample decides — memory, swap, fragmentation, pressure, the VM's ceiling and <c>/</c> — with
+    /// the effective configuration. <c>collect</c> evaluates them inside <see cref="Evaluate"/>; <c>status</c> evaluates
+    /// them over its own sample (plan §15g B1), so both answer with the same records and ids.
+    /// </summary>
+    /// <param name="wslConfig">The <c>.wslconfig</c> audit — read by a full run only; <c>status</c> passes the reason it
+    /// has none, and the VM-ceiling verdict then says so in its value (its level is the memory's).</param>
+    public static IReadOnlyList<Verdict> FromSample(Reading<MemorySnapshot> memory, Reading<VolumeUsage> root, Reading<WslConfigAudit> wslConfig, EffectiveConfig config) =>
     [
-        MemoryAvailable(inputs.Memory, config),
-        Above("memory.pageCache", inputs.Memory.Bind(m => m.PageCache), PageCacheWarnGib * Gib, Gib, "GiB", "page cache WSL does not hand back to Windows (A1 drops it)"),
-        Above("memory.inactiveAnon", inputs.Memory.Bind(m => m.InactiveAnon), InactiveAnonWarnGib * Gib, Gib, "GiB", "anonymous memory nobody touched lately (the top holders name the processes)"),
-        Above("memory.swap", inputs.Memory.Bind(m => m.SwapUsed), config.Int(ConfigKeys.Thresholds.SwapWarnGb) * Gib, Gib, "GiB", "swap in use (thresholds.swapWarnGb)"),
-        Fragmentation(inputs.Memory),
-        Pressure(inputs.Memory),
-        WslConfigMemory(inputs.Memory, inputs.Health.WslConfig),
-        RootDisk(inputs.Root),
+        MemoryAvailable(memory, config),
+        Above("memory.pageCache", memory.Bind(m => m.PageCache), PageCacheWarnGib * Gib, Gib, "GiB", "page cache WSL does not hand back to Windows (A1 drops it)"),
+        Above("memory.inactiveAnon", memory.Bind(m => m.InactiveAnon), InactiveAnonWarnGib * Gib, Gib, "GiB", "anonymous memory nobody touched lately (the top holders name the processes)"),
+        Above("memory.swap", memory.Bind(m => m.SwapUsed), config.Int(ConfigKeys.Thresholds.SwapWarnGb) * Gib, Gib, "GiB", "swap in use (thresholds.swapWarnGb)"),
+        Fragmentation(memory),
+        Pressure(memory),
+        WslConfigMemory(memory, wslConfig),
+        RootDisk(root),
+    ];
+
+    /// <summary>
+    /// Every threshold only a full run can judge, evaluated over inputs that were NOT read — so the ids, their order and
+    /// the limits in force under <paramref name="config"/> come from the rules themselves, never from a second list.
+    /// The LEVELS of this list mean nothing (an unread collector is a warning in a full run): a reader takes the ids and
+    /// limits from it.
+    /// </summary>
+    public static IReadOnlyList<Verdict> UnreadFullRun(EffectiveConfig config) => FromFullRun(UnreadInputs(), config);
+
+    private static ThresholdInputs UnreadInputs()
+    {
+        const string reason = "not read";
+        return new(
+            Reading.Missing<MemorySnapshot>(reason),
+            Reading.Missing<VolumeUsage>(reason),
+            HealthSample.Unavailable(DateTimeOffset.UnixEpoch, reason, new WindowsClockSample(DateTimeOffset.UnixEpoch, 0, 0, reason), Reading.Missing<string>(reason), Reading.Missing<WslConfigAudit>(reason)),
+            TimeSpan.Zero,
+            Reading.Missing<WindowsClockSample>(reason),
+            [],
+            Reading.Missing<long>(reason),
+            Reading.Missing<long>(reason));
+    }
+
+    private static IReadOnlyList<Verdict> FromFullRun(ThresholdInputs inputs, EffectiveConfig config) =>
+    [
         AtLeastOne("kernel.allocationFailures", inputs.Health.Kernel.Map(k => k.AllocationFailures), Level.Critical, "page allocation failures since the last run (the VMBus order-7 signature, plan §4.1)"),
         AtLeastOne("kernel.oomKills", inputs.Health.Kernel.Map(k => k.OomKills), Level.Critical, "OOM kills since the last run"),
         Above("journal.size", inputs.Health.JournalBytes, JournalWarnGib * Gib, Gib, "GiB", "journal on disk (A10 vacuums it)"),

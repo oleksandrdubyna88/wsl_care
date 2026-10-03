@@ -154,6 +154,21 @@ the last run that measured them (`folders`, with their growth). Every figure tha
 read is `"available": false` with a `reason`, never 0. A broken configuration layer is named in the answer
 (`observeOnly`, `configError`) and `status` still answers.
 
+**Verdicts.** `status --json` also answers `verdicts` — every threshold of the plan as the same records a full run writes
+into its detail (`id`, `level` = `ok` / `warn` / `critical` / `unknown`, `value`, `limit`, `reason`), each with its
+`basis`. The thresholds the fast sample decides (memory, page cache, inactive anonymous memory, swap, fragmentation,
+pressure, the VM's ceiling, `/`) are judged **now**, with the configuration in force — `wsl-care config set
+thresholds.memAvailableWarnPercent 30` changes the next answer (`basis.source: "sample"`). The ones only a full run can
+judge (kernel allocation failures and OOM kills, the journal, clock jumps and drift, failed units, sysstat / atop,
+`discard`, the Docker and npm figures) are carried exactly as the newest full run recorded them, with its run id and
+age (`basis.source: "fullRun"`), or are `unknown` with the reason when no full run is recorded; a setting changed since
+reaches them at the next full run. The text form prints one line: `verdicts: 1 critical (memory.fragmentation), 2 warn
+(…), 12 ok, 8 unknown`. And `productVersion` names the build exactly as `--version` prints it.
+
+**Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts` and
+`productVersion`) never bumps it, so a reader ignores keys it does not know and treats an absent newer field as "update
+the daemon to see this".
+
 ## Preview
 
 ```bash

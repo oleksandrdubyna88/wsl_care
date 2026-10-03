@@ -21,12 +21,16 @@ internal static class StatusCommand
     public static int Run(Request.Status request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, CancellationToken cancellationToken)
     {
         var sample = host.Probe.Sample(cancellationToken);
-        var last = LastFullRun.Read(host.Paths, host.Files, host.Clock);
+        var now = host.Clock.GetUtcNow();
+        var history = RunHistory.Read(host.Paths, host.Files);
+        var last = LastFullRun.From(history, now);
         var report = StatusReports.From(sample, last, loaded) with
         {
             // The follower's summary, never the raw day files: status's cost must not grow with the starts recorded (gate finding #8).
-            ContainerStarts = new ContainerStartsStore(host.Paths, host.Files).ReadSummary(host.Clock.GetUtcNow()),
+            ContainerStarts = new ContainerStartsStore(host.Paths, host.Files).ReadSummary(now),
             Folders = FoldersReports.From(last.Folders, last.PreviousFolders, measuredThisRun: false),
+            Verdicts = StatusVerdicts.From(sample, FullRunVerdicts.Read(host.Paths, host.Files, history), loaded.Config, now),
+            ProductVersion = Program.VersionText,
         };
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
     }
@@ -51,9 +55,30 @@ internal static class StatusText
         AppendHost(text, report.Host);
         text.AppendLine($"docker stats: {Slow(report.Slow.ContainerStats)}");
         text.AppendLine($"windows clock: {Slow(report.Slow.WindowsClock)}");
+        text.AppendLine(Verdicts(report.Verdicts ?? []));
         text.Append(Starts(report.ContainerStarts));
         return text.ToString();
     }
+
+    /// <summary>One line: how many verdicts stand at each level, worst first, naming the ones that need a look
+    /// (<c>verdicts: 1 critical (memory.fragmentation), 2 warn (…), 12 ok, 8 unknown</c>).</summary>
+    private static string Verdicts(IReadOnlyList<Core.Thresholds.Verdict> verdicts)
+    {
+        Core.Thresholds.Level[] order = [Core.Thresholds.Level.Critical, Core.Thresholds.Level.Warn, Core.Thresholds.Level.Ok, Core.Thresholds.Level.Unknown];
+        var groups = order
+            .Select(level => (Level: level, Ids: verdicts.Where(v => v.Level == level).Select(v => v.Id).ToList()))
+            .Where(g => g.Ids.Count > 0)
+            .Select(g => VerdictGroup(g.Level, g.Ids));
+        return $"verdicts: {(verdicts.Count == 0 ? "none" : string.Join(", ", groups))}";
+    }
+
+    private static string VerdictGroup(Core.Thresholds.Level level, IReadOnlyList<string> ids) => level switch
+    {
+        Core.Thresholds.Level.Critical => Invariant($"{ids.Count} critical ({string.Join(", ", ids)})"),
+        Core.Thresholds.Level.Warn => Invariant($"{ids.Count} warn ({string.Join(", ", ids)})"),
+        Core.Thresholds.Level.Ok => Invariant($"{ids.Count} ok"),
+        _ => Invariant($"{ids.Count} unknown"),
+    };
 
     private static void AppendVm(StringBuilder text, VmReport vm)
     {
