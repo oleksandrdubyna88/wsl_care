@@ -17,7 +17,7 @@ using WslCare.TestSupport;
 namespace WslCare.Scenarios;
 
 /// <summary>
-/// E3.S3 end to end over the BUILT CLI: the TIMER's full run (<c>collect</c> with systemd's <c>INVOCATION_ID</c>) measures,
+/// E3.S3 end to end over the BUILT CLI: the TIMER's full run (<c>collect --timer</c>, as its unit starts it) measures,
 /// then runs the action pass in its dry-run week and records <c>dryRun</c> results in its ONE run record — every fake call a
 /// read; then <c>runs</c> and <c>logs</c> read that record back; and <c>logs</c> / <c>runs</c> over a seeded history (explicit
 /// UTC dates, sums, a bad period). Nothing is written by <c>logs</c> / <c>runs</c>.
@@ -29,7 +29,6 @@ public sealed class LogsFlows
         // A journal above A10's 1 GiB trigger, scripted BEFORE the captured 407 MB answer (the first match wins).
         var home = CollectFlows.Captured(purpose, first: h =>
             h.Answer(new FakeAnswer(SystemdCommands.Journalctl, SystemdCommands.JournalDiskUsage.Arguments, 0, h.WriteFile("journal-1.5G.out", "Archived and active journals take up 1.5G in the file system.\n"), string.Empty)));
-        home.AsTimer = true;
         if (OperatingSystem.IsLinux())
         {
             ProcfsFixture.CopyTo(home.SandboxRoot);
@@ -43,7 +42,7 @@ public sealed class LogsFlows
     {
         using var home = TimerHome("timer-pass");
 
-        var collect = await home.RunAsync("collect", "--json");
+        var collect = await home.RunAsync("collect", "--timer", "--json");
 
         collect.Exit.Should().Be((int)ExitCode.Ok, collect.Stderr);
         var report = JsonSerializer.Deserialize(collect.Stdout, WslCareJsonContext.Default.CollectReport)!;
@@ -74,6 +73,21 @@ public sealed class LogsFlows
         logs.Exit.Should().Be((int)ExitCode.Ok, logs.Stderr);
         var counts = JsonSerializer.Deserialize(logs.Stdout, WslCareJsonContext.Default.LogsReport)!.Runs;
         counts.Should().Match<RunCounts>(c => c.Total == 1 && c.Timer == 1 && c.WithCleanup == 0 && c.DryRun == (home.Paths.Side == HostSide.Wsl ? 1 : 0));
+    }
+
+    [Fact]
+    public async Task A_collect_under_an_inherited_INVOCATION_ID_without_timer_is_a_cli_run_and_acts_on_nothing()
+    {
+        // Every descendant of a systemd unit carries INVOCATION_ID (ScenarioHome sets it for every scenario): a runner job, a
+        // VS Code Server user service. Only the timer's own --timer makes a full run act; anything else is the person's run.
+        using var home = TimerHome("inherited-invocation-id");
+
+        var collect = await home.RunAsync("collect", "--json");
+
+        collect.Exit.Should().Be((int)ExitCode.Ok, collect.Stderr);
+        JsonSerializer.Deserialize(collect.Stdout, WslCareJsonContext.Default.CollectReport)!.Detail!.TimerPass
+            .Should().BeNull("no --timer: the run measures and records, it does not run the timer's action pass");
+        RunHistory.Read(home.Paths, new PhysicalFileSystem(home.Paths)).Records.Single().Trigger.Should().Be(RunTrigger.Cli);
     }
 
     [Fact]
