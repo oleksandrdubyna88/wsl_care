@@ -69,9 +69,18 @@ public sealed class TargetUserTests : IDisposable
     }
 
     [Fact]
-    public void An_unreadable_passwd_refuses_rather_than_guessing()
+    public void An_unreadable_passwd_refuses_rather_than_guessing_and_a_missing_one_is_no_account_at_all()
     {
-        TargetUserDiscovery.Discover(_sandbox.Files, _sandbox.Paths).Should().BeOfType<TargetUserResult.Ambiguous>().Which.Reason.Should().Contain("passwd");
+        // E3.S2: a MISSING user database (a bare sandbox) holds no account — none, not ambiguous; an UNREADABLE one is a doubt.
+        TargetUserDiscovery.Discover(_sandbox.Files, _sandbox.Paths).Should().BeOfType<TargetUserResult.None>().Which.Reason.Should().Contain("passwd");
+        _sandbox.Write("/etc/passwd", Root + Me);
+        TargetUserDiscovery.Discover(new UnreadablePasswd(_sandbox.Files, _sandbox.Paths.PasswdFile), _sandbox.Paths).Should().BeOfType<TargetUserResult.Ambiguous>().Which.Reason.Should().Contain("passwd");
+    }
+
+    private sealed class UnreadablePasswd(Core.Files.IFileSystem inner, string passwd) : DelegatingFileSystem(inner)
+    {
+        public override Core.Files.FileReadResult ReadFile(string path) =>
+            path == passwd ? new Core.Files.FileReadResult.Unreadable("permission denied") : base.ReadFile(path);
     }
 
     [Fact]

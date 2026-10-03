@@ -223,3 +223,39 @@ jobs:
           doctor="$("$bin" doctor --json | tr -d '\r')"
           case "$doctor" in *'"healthy": '*) ;; *) printf '%s\n' "$doctor"; fail "doctor --json carries no verdict" ;; esac
           echo "published $RID binary records a full run, reads it back, and answers doctor"
+
+      # The action verb USED once by the published binary (E3.S2) — PREVIEW ONLY, never destructive: every action this
+      # build holds (the list its own --help prints), under a temporary WSL_CARE_ROOT with root CLAIMED inside that sandbox
+      # (WSL_CARE_SANDBOX_PRIVILEGED=1 changes only the answer to "am I root", never what the process may do). A preview
+      # takes no lock and writes nothing; the only commands it starts are read commands (the runner's own docker and snap,
+      # or none when absent — an absent tool is a figure marked unavailable). The Windows binary refuses the distro's
+      # actions naming the side (exit 2).
+      - name: Smoke the published binary's act preview
+        run: |
+          set -euo pipefail
+          bin="artifacts/publish/$RID/wsl-care$EXE"
+          WSL_CARE_ROOT="$RUNNER_TEMP/wsl-care-act-$RID"
+          WSL_CARE_SANDBOX_PRIVILEGED=1
+          export WSL_CARE_ROOT WSL_CARE_SANDBOX_PRIVILEGED
+          rm -rf "$WSL_CARE_ROOT"
+          mkdir -p "$WSL_CARE_ROOT"
+          fail() { echo "::error::$*"; exit 1; }
+          ids="$("$bin" --help | tr -d '\r' | sed -n 's/.*"act" holds these actions: \(.*\)\.$/\1/p' | tr -d ' ')"
+          [ -n "$ids" ] || fail "--help names no action that act holds"
+          code=0
+          out="$("$bin" act "$ids" --preview --json | tr -d '\r')" || code=$?
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            [ "$code" -eq 2 ] || fail "the Windows binary previewed the distro's actions (exit $code, expected 2)"
+          else
+            [ "$code" -eq 0 ] || { printf '%s\n' "$out" | head -c 4000; fail "act --preview exited $code"; }
+            case "$out" in *'"result": "previewed"'*) ;; *) printf '%s\n' "$out" | head -c 4000; fail "act --preview did not answer previewed" ;; esac
+            for id in $(printf '%s' "$ids" | tr ',' ' '); do
+              case "$out" in *"\"id\": \"$id\""*) ;; *) fail "act --preview did not answer for $id" ;; esac
+            done
+          fi
+          [ -z "$(find "$WSL_CARE_ROOT" -name 'history.jsonl' -o -name 'running.json' -o -name 'volume-seen.json')" ] || fail "a preview wrote state"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            echo "published $RID binary refuses the distro's actions naming the side, and writes nothing"
+          else
+            echo "published $RID binary previews every action ($ids) and writes nothing"
+          fi

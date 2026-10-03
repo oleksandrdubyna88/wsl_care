@@ -46,3 +46,8 @@ capture to reproduce these files byte for byte), and nothing else changed:
   - event attributes: only the kept labels, execID, exitCode, and the mapped name and image.
   The script then searches every output for each original name and fails on any it finds (0 found).
   Ids (64-hex), sizes, times, states, image ids and public image names are unchanged.
+
+Added by E3.S2 (2026-10-02, by hand, the same distro and Docker, stdin from /dev/null; read-only):
+  builder-prune-help.out       docker builder prune --help  - the help of buildx's prune (the builder on Docker
+                               29.6.1): it lists --max-used-space, --reserved-space, --min-free-space and NO
+                               --keep-storage. What A7 detects its size cap from. Nothing redacted (no name in it).

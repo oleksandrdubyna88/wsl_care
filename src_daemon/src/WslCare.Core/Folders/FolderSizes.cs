@@ -23,7 +23,8 @@ public sealed record FolderTarget(string Id, string Path, IReadOnlySet<string> C
 /// does (<see cref="LastFullRun"/>), with its age.</para>
 /// <para><b>AI-agent folders are not walked here.</b> <c>~/.cache</c> holds Antigravity's cache, and its size is part
 /// of <c>~/.cache</c>'s — a size, which plan §4.6 allows; nothing is read, moved or deleted.</para>
-/// <para>Under the root timer <c>$HOME</c> is root's; whose home the daily walk reads is the installer's decision (E4.S1).</para>
+/// <para>Whose home: <see cref="LinuxHostPaths.Home"/> — the TARGET user's when the process is root (plan §15c #2, closed in E3.S2:
+/// <c>TargetHome.Resolve</c>), never root's <c>$HOME</c>.</para>
 /// </remarks>
 public sealed class FolderSizes(IFileSystem files, ICommandRunner commands, TimeProvider clock)
 {

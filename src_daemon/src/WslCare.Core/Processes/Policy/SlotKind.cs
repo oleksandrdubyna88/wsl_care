@@ -98,6 +98,20 @@ public abstract record SlotKind
         public override string Describe => "<user>";
     }
 
+    /// <summary>A snap's name as snapd allows it: lowercase letters, digits and inner hyphens, at most 40 characters, at
+    /// least one letter, never starting or ending with <c>-</c> nor holding <c>--</c> (A9's <c>snap remove &lt;name&gt;</c>, E3.S2).</summary>
+    public sealed record SnapName : SlotKind
+    {
+        public override bool Accepts(string value) =>
+            value.Length is > 0 and <= 40
+            && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
+            && value.Any(char.IsAsciiLetterLower)
+            && value[0] != '-' && value[^1] != '-'
+            && !value.Contains("--", StringComparison.Ordinal);
+
+        public override string Describe => "<snap>";
+    }
+
     /// <summary>Plain text of at most <paramref name="MaxLength"/> characters — ASCII letters, digits, space and
     /// <c>| . _ : -</c> only, not starting with <c>-</c>: a journal search pattern after <c>--grep=</c>. No <c>/</c>,
     /// <c>~</c>, <c>=</c>, <c>$</c>, quote or separator, so it can be neither a path, nor a setting, nor a second
