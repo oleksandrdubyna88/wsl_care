@@ -80,15 +80,25 @@ public sealed class BuildCachePrune : ICleanupAction
             return ActionRun.Nothing(commands.Ran, "no reclaimable build cache");
         }
 
-        var (template, values) = context.Trigger == RunTrigger.Timer
-            ? (preview.Facts.GetValueOrDefault(CapFlagFact) == 2 ? DockerCleanupCommands.BuilderPruneKeepStorage : DockerCleanupCommands.BuilderPruneMaxUsed, (IReadOnlyList<string>)[DockerCleanupCommands.Cap(context.Config.Int(ConfigKeys.BuildCache.MaxGb))])
-            : (DockerCleanupCommands.BuilderPruneAll, []);
+        var (template, values) = Prune(context, preview);
         var outcome = await commands.RunAsync(template, values, cancellationToken).ConfigureAwait(false);
-        if (outcome is not Processes.CommandOutcome.Exited exited)
-        {
-            return new ActionRun(0, null, "nothing was pruned", null, null, [], commands.Ran, CommandFailures.NotRun(template.Shape, outcome));
-        }
+        return outcome is Processes.CommandOutcome.Exited exited
+            ? Pruned(preview, commands, template, exited)
+            : new ActionRun(0, null, "nothing was pruned", null, null, [], commands.Ran, CommandFailures.NotRun(template.Shape, outcome));
+    }
 
+    /// <summary>The timer prunes down to the cap with the flag THIS Docker takes; a button prunes all.</summary>
+    private static (CommandTemplate Template, IReadOnlyList<string> Values) Prune(ActionContext context, ActionPreview preview) =>
+        context.Trigger == RunTrigger.Timer
+            ? (CapTemplate(preview), [DockerCleanupCommands.Cap(context.Config.Int(ConfigKeys.BuildCache.MaxGb))])
+            : (DockerCleanupCommands.BuilderPruneAll, []);
+
+    private static CommandTemplate CapTemplate(ActionPreview preview) =>
+        preview.Facts.GetValueOrDefault(CapFlagFact) == 2 ? DockerCleanupCommands.BuilderPruneKeepStorage : DockerCleanupCommands.BuilderPruneMaxUsed;
+
+    /// <summary>What the prune said: the entries it listed, and Docker's own total as the freed figure.</summary>
+    private static ActionRun Pruned(ActionPreview preview, ActionCommands commands, CommandTemplate template, Processes.CommandOutcome.Exited exited)
+    {
         var removed = DockerCleanupAnswers.PrunedCache(exited.Stdout.Text);
         var reclaimed = DockerCleanupAnswers.Reclaimed(exited.Stdout.Text);
         return new ActionRun(
@@ -99,7 +109,7 @@ public sealed class BuildCachePrune : ICleanupAction
             null,
             removed,
             commands.Ran,
-            CommandFailures.Of(template.Shape, outcome));
+            CommandFailures.Of(template.Shape, exited));
     }
 
     /// <summary>The timer's preview: which cap THIS Docker takes, or a refusal naming the reason.</summary>
@@ -107,18 +117,24 @@ public sealed class BuildCachePrune : ICleanupAction
     {
         var help = DockerCli.Classify(DockerCleanupCommands.BuilderPruneHelpCommand, await commands.RunAsync(DockerCleanupCommands.BuilderPruneHelp, [], cancellationToken).ConfigureAwait(false));
         var flag = help is DockerAnswer.Answered a ? DockerCleanupAnswers.CapFlag(a.Stdout) : string.Empty;
-        var facts = new Dictionary<string, long>(preview.Facts, StringComparer.Ordinal);
-        if (flag.Length > 0)
-        {
-            facts[CapFlagFact] = flag == "--max-used-space" ? 1 : 2;
-        }
+        return flag.Length > 0 ? WithCap(preview, capGb, flag) : WithoutCap(preview, capGb, help);
+    }
 
+    private static ActionPreview WithCap(ActionPreview preview, int capGb, string flag) =>
+        preview with
+        {
+            What = string.Create(CultureInfo.InvariantCulture, $"{preview.What}; the timer prunes down to {capGb} GB ({flag})"),
+            Facts = new Dictionary<string, long>(preview.Facts, StringComparer.Ordinal) { [CapFlagFact] = flag == "--max-used-space" ? 1 : 2 },
+        };
+
+    private static ActionPreview WithoutCap(ActionPreview preview, int capGb, DockerAnswer help)
+    {
         var why = help is DockerAnswer.Failed f ? f.Problem.Reason : "its help lists neither --max-used-space nor --keep-storage";
         return preview with
         {
-            What = string.Create(CultureInfo.InvariantCulture, $"{preview.What}; the timer prunes down to {capGb} GB{(flag.Length > 0 ? $" ({flag})" : string.Empty)}"),
-            Facts = facts,
-            Refusal = flag.Length > 0 ? preview.Refusal : $"this Docker's builder prune takes no size cap ({why}): the timer's capped prune refuses; a button may prune all of it",
+            What = string.Create(CultureInfo.InvariantCulture, $"{preview.What}; the timer prunes down to {capGb} GB"),
+            Facts = new Dictionary<string, long>(preview.Facts, StringComparer.Ordinal),
+            Refusal = $"this Docker's builder prune takes no size cap ({why}): the timer's capped prune refuses; a button may prune all of it",
         };
     }
 }

@@ -74,14 +74,21 @@ public sealed class SuspectTermination : ICleanupAction
 
         var idle = first
             .Select(c => (c.Entry, Before: c.Sample!, After: Sample(context, linux, c.Entry.Pid)))
-            .Where(c => c.After is { } after && after.StartTicks == c.Before.StartTicks && after.CpuTicks == c.Before.CpuTicks && after.Tty == 0 && after.Uid != 0)
+            .Where(c => StayedIdle(c.Before, c.After))
             .Select(c => Item(c.Entry, c.After!))
             .ToList();
-        // Memory is not disk (gate finding #4): what the suspects hold is a fact and each item's size, never the preview's
-        // bytes — which a dry run records as "would free" and the logs sum as disk.
-        var held = new Dictionary<string, long>(StringComparer.Ordinal) { [HeldMemoryFact] = idle.Sum(i => i.Bytes ?? 0) };
-        return ActionPreview.Of(what, idle.Count, null, "processes read twice from /proc; each item carries the memory it holds (RssAnon + RssShmem, also the heldMemoryBytes fact) - memory, not disk, so no bytes are counted", held, string.Empty, idle);
+        return ActionPreview.Of(what, idle.Count, null, "processes read twice from /proc; each item carries the memory it holds (RssAnon + RssShmem, also the heldMemoryBytes fact) - memory, not disk, so no bytes are counted", Held(idle), string.Empty, idle);
     }
+
+    /// <summary>The same process (its start), no CPU tick used, still no terminal, not root's — across the window.</summary>
+    private static bool StayedIdle(SuspectSample before, SuspectSample? after) =>
+        after is { } now
+        && Checks.All(now, n => n.StartTicks == before.StartTicks, n => n.CpuTicks == before.CpuTicks, n => n.Tty == 0, n => n.Uid != 0);
+
+    /// <summary>Memory is not disk (gate finding #4): what the suspects hold is a fact and each item's size, never the preview's
+    /// bytes — which a dry run records as "would free" and the logs sum as disk.</summary>
+    private static Dictionary<string, long> Held(IReadOnlyList<ActionItem> idle) =>
+        new(StringComparer.Ordinal) { [HeldMemoryFact] = idle.Sum(i => i.Bytes ?? 0) };
 
     /// <summary>Plan §5 A11: suspects exist.</summary>
     public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config) =>
@@ -106,10 +113,19 @@ public sealed class SuspectTermination : ICleanupAction
     /// <summary>The candidates of plan §4.2, before the CPU window: orphaned, in an allowed family, old enough, no terminal,
     /// not a zombie, not root's, not this process.</summary>
     public static IReadOnlyList<ProcessEntry> Candidates(IEnumerable<ProcessEntry> processes, IReadOnlyList<string> families, TimeSpan olderThan, int ownPid) =>
-        [.. processes.Where(p =>
-            p.Orphaned && !p.HasTty && p.State != 'Z' && p.Pid != ownPid && p.Pid > 1 && p.User != "root"
-            && families.Contains(p.Family, StringComparer.Ordinal)
-            && p.Age is Reading<TimeSpan>.Available { Value: var age } && age >= olderThan)];
+        [.. processes.Where(p => Checks.All(
+            p,
+            x => x.Orphaned,
+            x => !x.HasTty,
+            x => x.State != 'Z',
+            x => x.Pid != ownPid,
+            x => x.Pid > 1,
+            x => x.User != "root",
+            x => families.Contains(x.Family, StringComparer.Ordinal),
+            x => IsOlderThan(x, olderThan)))];
+
+    private static bool IsOlderThan(ProcessEntry process, TimeSpan olderThan) =>
+        process.Age is Reading<TimeSpan>.Available { Value: var age } && age >= olderThan;
 
     /// <summary>The pid's start, CPU ticks, terminal and owner as <c>/proc</c> answers now; <c>null</c> when it cannot be read
     /// (gone — or never a target: an unread process is not signalled).</summary>
@@ -155,10 +171,12 @@ public sealed class SuspectTermination : ICleanupAction
         {
             null => new SignalOutcome.AlreadyGone(),
             { StartTicks: var start } when start != identity.StartTicks => new SignalOutcome.NotTheSame($"pid {identity.Pid} started at tick {start}, not {identity.StartTicks}: another process now"),
-            { } changed when changed.CpuTicks != cpu || changed.Tty != 0 || changed.Uid == 0 => new SignalOutcome.NotTheSame($"pid {identity.Pid} used CPU, gained a terminal or changed owner since the preview: kept"),
+            { } changed when Changed(changed, cpu) => new SignalOutcome.NotTheSame($"pid {identity.Pid} used CPU, gained a terminal or changed owner since the preview: kept"),
             _ => null,
         };
     }
+
+    private static bool Changed(SuspectSample now, long cpu) => now.CpuTicks != cpu || now.Tty != 0 || now.Uid == 0;
 
     /// <summary>What one outcome means for the record: ended (and how), kept (and why), and the failure it counts as, if any.</summary>
     private static (bool Ended, ActionItem Item, string Failure) Verdict(ActionItem item, SignalOutcome outcome) => outcome switch

@@ -3,7 +3,6 @@ using System.Text.Json;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
-using WslCare.Core.Files.Deletion;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
 using WslCare.Core.Processes.Policy;
@@ -64,17 +63,14 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         const string what = "Playwright browsers no project references (~/.cache/ms-playwright), and NuGet's http-cache (~/.local/share/NuGet/http-cache)";
         if (CacheFolders.Home(context).Length == 0)
         {
-            return Task.FromResult(ActionPreview.Unavailable(what, context.TargetUser.Refusal.Length > 0 ? context.TargetUser.Refusal : "the caches are the WSL distro's"));
+            return Task.FromResult(ActionPreview.Unavailable(what, CacheFolders.NoHome(context, "the caches")));
         }
 
         var browsers = Playwright(context, cancellationToken);
-        var http = HttpCache(context, commands, cancellationToken);
-        IReadOnlyList<ActionItem> targets = [.. browsers.Unreferenced, .. http];
-        var preview = ActionPreview.Of(what, targets.Count, targets.Sum(t => t.Bytes ?? 0), "each folder walked now", new Dictionary<string, long>(StringComparer.Ordinal), string.Empty, targets);
+        IReadOnlyList<ActionItem> targets = [.. browsers.Unreferenced, .. HttpCache(context, commands, cancellationToken)];
         var notes = browsers.Refusal.Length > 0 ? $"; the Playwright part refuses: {browsers.Refusal}" : string.Empty;
-        return Task.FromResult(targets.Count == 0
-            ? preview with { What = what + notes, Skip = $"nothing to remove{notes}" }
-            : preview with { What = what + notes });
+        var preview = ActionPreview.Of(what + notes, targets.Count, CacheFolders.Total(targets), "each folder walked now", new Dictionary<string, long>(StringComparer.Ordinal), string.Empty, targets);
+        return Task.FromResult(targets.Count == 0 ? preview with { Skip = $"nothing to remove{notes}" } : preview);
     }
 
     /// <summary>A button only (plan §5): the timer's trigger never fires.</summary>
@@ -82,31 +78,28 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
-        var removed = new List<ActionItem>();
-        var notRemoved = new List<ActionItem>();
-        var failures = new List<string>();
         var root = Root(context);
-        foreach (var browser in preview.Targets.Where(t => t.Kind == BrowserKind))
+        var browsers = FolderRemovals.Of([.. preview.Targets.Where(t => t.Kind == BrowserKind).Select(b => (b, CacheFolders.RemoveFolder(context, b.Key, root, "A12")))]);
+        var (http, httpFailures) = await ClearHttpCacheAsync(context, preview, commands, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ActionItem> removed = [.. browsers.Removed, .. http];
+        return new ActionRun(removed.Count, CacheFolders.Total(removed), "each browser folder's size walked before, counted when it is gone after; the http-cache walked before and after", null, null, removed, commands.Ran, string.Join("; ", [.. browsers.Failures, .. httpFailures]))
         {
-            Remove(context, root, browser, removed, notRemoved, failures);
-        }
-
-        if (preview.Targets.FirstOrDefault(t => t.Kind == HttpCacheKind) is { } http)
-        {
-            var before = CacheFolders.Measure(context.Files, http.Key, cancellationToken);
-            var outcome = await commands.RunAsync(NugetHttpCacheClear, [], cancellationToken).ConfigureAwait(false);
-            var freed = CacheFolders.Freed(before, CacheFolders.Measure(context.Files, http.Key, cancellationToken));
-            removed.Add(http with { Bytes = freed, Note = freed is null ? "freed unknown: a walk was cut or unreadable" : string.Empty });
-            if (CommandFailures.Of("dotnet nuget locals http-cache --clear", outcome) is { Length: > 0 } failed)
-            {
-                failures.Add(failed);
-            }
-        }
-
-        return new ActionRun(removed.Count, removed.Sum(r => r.Bytes ?? 0), "each browser folder's size walked before, counted when it is gone after; the http-cache walked before and after", null, null, removed, commands.Ran, string.Join("; ", failures))
-        {
-            NotRemoved = notRemoved,
+            NotRemoved = browsers.NotRemoved,
         };
+    }
+
+    /// <summary>NuGet's http-cache, when the preview holds it: cleared by <c>dotnet</c> as the user, measured before and after.</summary>
+    private static async Task<(IReadOnlyList<ActionItem> Removed, IReadOnlyList<string> Failures)> ClearHttpCacheAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
+    {
+        if (preview.Targets.FirstOrDefault(t => t.Kind == HttpCacheKind) is not { } http)
+        {
+            return ([], []);
+        }
+
+        var before = CacheFolders.Measure(context.Files, http.Key, cancellationToken);
+        var failure = CommandFailures.Of("dotnet nuget locals http-cache --clear", await commands.RunAsync(NugetHttpCacheClear, [], cancellationToken).ConfigureAwait(false));
+        var freed = CacheFolders.Freed(before, CacheFolders.Measure(context.Files, http.Key, cancellationToken));
+        return ([http with { Bytes = freed, Note = freed is null ? "freed unknown: a walk was cut or unreadable" : string.Empty }], failure.Length > 0 ? [failure] : []);
     }
 
     /// <summary>The verdict over the target user's Playwright cache — pure over the file system and the process table.</summary>
@@ -119,28 +112,33 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         }
 
         var referenced = Referenced(context, root);
-        if (referenced.Refusal.Length > 0)
-        {
-            return new PlaywrightVerdict([], [], referenced.Refusal);
-        }
+        return referenced.Refusal.Length > 0 ? new PlaywrightVerdict([], [], referenced.Refusal) : Unreferenced(context, root, referenced.Names, cancellationToken);
+    }
 
-        if (context.Files.FileExists(context.Paths.Rules.Join(root, InstallLock)) || context.Files.DirectoryExists(context.Paths.Rules.Join(root, InstallLock)))
+    /// <summary>The browser folders no live link references and no process uses — unless an install is running or the
+    /// process table cannot be read, which refuse the Playwright part whole.</summary>
+    private static PlaywrightVerdict Unreferenced(ActionContext context, string root, IReadOnlyList<string> referenced, CancellationToken cancellationToken)
+    {
+        if (InstallRunning(context, root))
         {
-            return new PlaywrightVerdict([], referenced.Names, $"a Playwright install is running ({InstallLock} exists in {root})");
+            return new PlaywrightVerdict([], referenced, $"a Playwright install is running ({InstallLock} exists in {root})");
         }
 
         if (context.Processes(cancellationToken) is not Reading<ProcessSnapshot>.Available { Value: var processes })
         {
-            return new PlaywrightVerdict([], referenced.Names, "the process table could not be read, so a browser in use cannot be told");
+            return new PlaywrightVerdict([], referenced, "the process table could not be read, so a browser in use cannot be told");
         }
 
         var unreferenced = context.Files.ListDirectories(root)
             .Select(d => (Path: d, Name: Leaf(d)))
-            .Where(d => IsBrowserFolder(d.Name) && !referenced.Names.Contains(d.Name, StringComparer.Ordinal) && !InUse(context, d.Path, processes))
+            .Where(d => Checks.All(d, f => IsBrowserFolder(f.Name), f => !referenced.Contains(f.Name, StringComparer.Ordinal), f => !InUse(context, f.Path, processes)))
             .Select(d => new ActionItem(BrowserKind, d.Name, CacheFolders.Measure(context.Files, d.Path, cancellationToken).CompleteBytes, "no project's browsers.json references it") { Key = d.Path })
             .ToList();
-        return new PlaywrightVerdict(unreferenced, referenced.Names, string.Empty);
+        return new PlaywrightVerdict(unreferenced, referenced, string.Empty);
     }
+
+    private static bool InstallRunning(ActionContext context, string root) =>
+        context.Files.FileExists(context.Paths.Rules.Join(root, InstallLock)) || context.Files.DirectoryExists(context.Paths.Rules.Join(root, InstallLock));
 
     /// <summary>The browser folder names every live link's <c>browsers.json</c> references — or why they cannot be told.</summary>
     private static (IReadOnlyList<string> Names, string Refusal) Referenced(ActionContext context, string root)
@@ -175,11 +173,12 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         }
 
         var package = System.Text.Encoding.UTF8.GetString(content.Bytes).Trim();
-        if (!package.StartsWith('/') || package.Any(char.IsControl))
-        {
-            return ([], $"the link {link} does not name an absolute folder");
-        }
+        return package.StartsWith('/') && !package.Any(char.IsControl) ? PackageRevisions(context, package) : ([], $"the link {link} does not name an absolute folder");
+    }
 
+    /// <summary>The browser folders one package's <c>browsers.json</c> declares; none for a package that is gone (a stale link).</summary>
+    private static (IReadOnlyList<string> Names, string Problem) PackageRevisions(ActionContext context, string package)
+    {
         var linux = (LinuxHostPaths)context.Paths;
         var folder = linux.DistroPath(package);
         if (!context.Files.DirectoryExists(folder))
@@ -199,17 +198,7 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         try
         {
             using var document = JsonDocument.Parse(browsersJson);
-            if (!document.RootElement.TryGetProperty("browsers", out var browsers) || browsers.ValueKind != JsonValueKind.Array)
-            {
-                return null;
-            }
-
-            var names = browsers.EnumerateArray()
-                .Select(b => (Name: Docker.DockerText.Field(b, "name"), Revision: Docker.DockerText.Field(b, "revision")))
-                .ToList();
-            return names.All(n => n.Name.Length > 0 && n.Revision.Length > 0 && n.Revision.All(char.IsAsciiDigit))
-                ? [.. names.Select(n => $"{n.Name.Replace('-', '_')}-{n.Revision}")]
-                : null;
+            return FoldersOf(document.RootElement);
         }
         catch (JsonException)
         {
@@ -217,15 +206,32 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         }
     }
 
+    private static IReadOnlyList<string>? FoldersOf(JsonElement root)
+    {
+        if (!root.TryGetProperty("browsers", out var browsers) || browsers.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var names = browsers.EnumerateArray()
+            .Select(b => (Name: Docker.DockerText.Field(b, "name"), Revision: Docker.DockerText.Field(b, "revision")))
+            .ToList();
+        return names.All(IsDeclared) ? [.. names.Select(n => $"{n.Name.Replace('-', '_')}-{n.Revision}")] : null;
+    }
+
+    /// <summary>A browser entry with a name and a numeric revision.</summary>
+    private static bool IsDeclared((string Name, string Revision) browser) =>
+        browser.Name.Length > 0 && browser.Revision.Length > 0 && browser.Revision.All(char.IsAsciiDigit);
+
     /// <summary><c>chromium-1228</c>, <c>chromium_headless_shell-1228</c>, <c>ffmpeg-1011</c>: a browser folder Playwright
     /// installs, and nothing else under its cache.</summary>
     public static bool IsBrowserFolder(string name)
     {
         var dash = name.LastIndexOf('-');
-        return dash > 0 && dash < name.Length - 1
-            && name[..dash].All(c => char.IsAsciiLetterLower(c) || c == '_')
-            && name[(dash + 1)..].All(char.IsAsciiDigit);
+        return dash > 0 && dash < name.Length - 1 && name[..dash].All(IsBrowserNameChar) && name[(dash + 1)..].All(char.IsAsciiDigit);
     }
+
+    private static bool IsBrowserNameChar(char c) => char.IsAsciiLetterLower(c) || c == '_';
 
     private static bool InUse(ActionContext context, string folder, ProcessSnapshot processes)
     {
@@ -243,29 +249,6 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         }
 
         return [new ActionItem(HttpCacheKind, cache, CacheFolders.Measure(context.Files, cache, cancellationToken).CompleteBytes) { Key = cache }];
-    }
-
-    private static void Remove(ActionContext context, string root, ActionItem browser, List<ActionItem> removed, List<ActionItem> notRemoved, List<string> failures)
-    {
-        if (!context.Files.DirectoryExists(browser.Key))
-        {
-            notRemoved.Add(browser with { Note = "already gone" });
-            return;
-        }
-
-        switch (context.Files.DeleteDirectory(browser.Key, new DeletionScope(root, "A12")))
-        {
-            case DeletionVerdict.Refused refused:
-                notRemoved.Add(browser with { Note = refused.Reason });
-                failures.Add(refused.Reason);
-                break;
-            case var _ when context.Files.DirectoryExists(browser.Key):
-                notRemoved.Add(browser with { Note = "still there after the delete" });
-                break;
-            default:
-                removed.Add(browser);
-                break;
-        }
     }
 
     private static string Root(ActionContext context) => CacheFolders.UnderHome(context, ".cache", "ms-playwright");

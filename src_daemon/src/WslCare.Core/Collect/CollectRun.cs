@@ -117,15 +117,18 @@ public static class CollectRun
             var measured = await MeasureBeatingAsync(c, running, owned, housekeeping, cancellationToken).ConfigureAwait(false);
             var (detail, engine) = await TimerPassAsync(c, measured, runId, started, cancellationToken).ConfigureAwait(false);
             var result = Record(c, detail);
-            var left = engine?.EndTimerPass() ?? string.Empty;
+            var left = EndPass(engine);
             cancellationToken.ThrowIfCancellationRequested();
-            return left.Length == 0 ? result : result with { Reason = result.Reason.Length == 0 ? left : $"{result.Reason}; {left}" };
+            return left.Length == 0 ? result : result with { Reason = Joined(result.Reason, left) };
         }
         finally
         {
             EndRunning(c, runId, owned);
         }
     }
+
+    /// <summary>The timer pass's <c>running.json</c> removed once the run is recorded; empty when there was no pass or it went.</summary>
+    private static string EndPass(ActionEngine? engine) => engine?.EndTimerPass() ?? string.Empty;
 
     /// <summary>The measurement under this run's heartbeat (when it owns <c>running.json</c>).</summary>
     private static async Task<RunDetail> MeasureBeatingAsync(CollectContext c, RunningFile running, bool owned, HousekeepingReport housekeeping, CancellationToken cancellationToken)

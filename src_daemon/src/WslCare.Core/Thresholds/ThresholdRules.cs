@@ -221,9 +221,12 @@ public static class ThresholdRules
     /// <summary>Plan §15 #10, the ONE drift rule (this report and A16 share it): both observations measured, both above
     /// <paramref name="maxSeconds"/>, at least <see cref="DriftObservationsApart"/> apart.</summary>
     public static bool IsDrift(WindowsClockSample current, Reading<WindowsClockSample> previous, int maxSeconds) =>
-        current.Measured && Math.Abs(current.OffsetSeconds) > maxSeconds
+        IsOff(current, maxSeconds)
         && previous is Reading<WindowsClockSample>.Available { Value: var p }
-        && p.Measured && Math.Abs(p.OffsetSeconds) > maxSeconds && current.SampledAt - p.SampledAt >= DriftObservationsApart;
+        && IsOff(p, maxSeconds) && current.SampledAt - p.SampledAt >= DriftObservationsApart;
+
+    /// <summary>One observation, measured and above the limit.</summary>
+    private static bool IsOff(WindowsClockSample sample, int maxSeconds) => sample.Measured && Math.Abs(sample.OffsetSeconds) > maxSeconds;
 
     private static Verdict ClockDrift(WindowsClockSample current, Reading<WindowsClockSample> previous, Reading<TimeSync> sync, EffectiveConfig config)
     {

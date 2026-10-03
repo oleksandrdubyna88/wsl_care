@@ -106,20 +106,7 @@ internal static class CollectCommand
         log.Information("timer action pass: dry run {DryRun} ({DryRunReason}); {Notes}", pass.DryRun, pass.DryRunReason, string.Join("; ", pass.Notes));
         foreach (var outcome in pass.Actions)
         {
-            const string template = "{Action} {Status}: {Reason} (count {Count}, freed {FreedBytes} bytes)";
-            var (count, freed) = (outcome.Run?.Count ?? outcome.Preview?.Count, outcome.Run?.FreedBytes);
-            switch (outcome.Status)
-            {
-                case Core.Actions.Engine.ActionStatus.Failed:
-                    log.Error(template, outcome.Id, outcome.Status, outcome.Reason, count, freed);
-                    break;
-                case Core.Actions.Engine.ActionStatus.Deferred or Core.Actions.Engine.ActionStatus.Refused:
-                    log.Warning(template, outcome.Id, outcome.Status, outcome.Reason, count, freed);
-                    break;
-                default:
-                    log.Information(template, outcome.Id, outcome.Status, outcome.Reason, count, freed);
-                    break;
-            }
+            Logging.OutcomeLog.Log(log, outcome);
         }
     }
 

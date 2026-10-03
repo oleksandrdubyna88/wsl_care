@@ -21,13 +21,14 @@ public sealed record ProcessPrivilege(bool IsRoot, string Basis)
     /// <summary>The same decision with its inputs passed in, so it is a unit test.</summary>
     public static ProcessPrivilege Decide(string? sandboxRoot, string? sandboxClaim, bool privileged, bool windows)
     {
-        if (!string.IsNullOrWhiteSpace(sandboxRoot) && sandboxClaim == "1")
-        {
-            return new ProcessPrivilege(true, $"claimed by {SandboxVariable}=1 inside the sandbox {HostPaths.SandboxRootVariable}");
-        }
+        return !string.IsNullOrWhiteSpace(sandboxRoot) && sandboxClaim == "1"
+            ? new ProcessPrivilege(true, $"claimed by {SandboxVariable}=1 inside the sandbox {HostPaths.SandboxRootVariable}")
+            : OfTheOperatingSystem(privileged, windows);
+    }
 
-        return privileged
+    /// <summary>What the operating system says: elevated / root, or not.</summary>
+    private static ProcessPrivilege OfTheOperatingSystem(bool privileged, bool windows) =>
+        privileged
             ? new ProcessPrivilege(true, windows ? "this process is elevated" : "this process runs as root (effective uid 0)")
             : new ProcessPrivilege(false, windows ? "this process is not elevated" : "this process does not run as root (its effective uid is not 0)");
-    }
 }

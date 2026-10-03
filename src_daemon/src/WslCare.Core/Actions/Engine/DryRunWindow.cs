@@ -51,27 +51,36 @@ public static class DryRunWindow
             return new DryRunDecision(true, $"the setting dryRun is on{note}");
         }
 
-        return start is { } at && now < at + Length
-            ? new DryRunDecision(true, $"the timer's first 7 days run dry: until {(at + Length).UtcDateTime:yyyy-MM-dd HH:mm}Z{note}")
-            : start is null
-                ? new DryRunDecision(true, $"the start of the dry-run week is not recorded{note}")
-                : new DryRunDecision(false, $"dryRun is off and the 7 days since the first timer run ({start.Value.UtcDateTime:yyyy-MM-dd}) have passed");
+        return Week(start, now, note);
     }
+
+    /// <summary>With <c>dryRun</c> off: dry while the week since <paramref name="start"/> runs, or while its start is unknown.</summary>
+    private static DryRunDecision Week(DateTimeOffset? start, DateTimeOffset now, string note) => start switch
+    {
+        null => new DryRunDecision(true, $"the start of the dry-run week is not recorded{note}"),
+        { } at when now < at + Length => new DryRunDecision(true, $"the timer's first 7 days run dry: until {(at + Length).UtcDateTime:yyyy-MM-dd HH:mm}Z{note}"),
+        { } at => new DryRunDecision(false, $"dryRun is off and the 7 days since the first timer run ({at.UtcDateTime:yyyy-MM-dd}) have passed"),
+    };
 
     /// <summary>The recorded start, writing it when it is missing or unreadable; <c>null</c> when it could not be written.</summary>
     private static (DateTimeOffset? Start, string Note) Start(IHostPaths paths, IFileSystem files, DateTimeOffset now)
     {
         var read = files.ReadFile(File(paths));
-        if (read is FileReadResult.Content content && Parse(content.Bytes) is { } stamp)
+        if (Recorded(read) is { } stamp)
         {
             return (stamp.At, string.Empty);
         }
 
-        var why = read is FileReadResult.Missing ? "the first timer run starts the dry-run week" : $"{File(paths)} could not be read, so the week restarts";
+        var why = WhyWritten(read, paths);
         return Write(paths, files, now) is { Length: > 0 } failure
             ? (null, $" ({why}; it could not be recorded: {failure})")
             : (now, $" ({why})");
     }
+
+    private static FirstTimerRun? Recorded(FileReadResult read) => read is FileReadResult.Content content ? Parse(content.Bytes) : null;
+
+    private static string WhyWritten(FileReadResult read, IHostPaths paths) =>
+        read is FileReadResult.Missing ? "the first timer run starts the dry-run week" : $"{File(paths)} could not be read, so the week restarts";
 
     private static FirstTimerRun? Parse(byte[] bytes)
     {

@@ -72,33 +72,58 @@ internal static class LogsCommand
     private static string LogsText(LogsReport r)
     {
         var text = new StringBuilder()
-            .AppendLine(Invariant($"wsl-care logs {r.Period.Label} ({r.Period.From}..{r.Period.To} UTC){(r.Action is null ? string.Empty : $", {r.Action} only")}: freed {Gb(r.FreedBytes)}, {r.ObjectsRemoved} objects"))
+            .AppendLine(Invariant($"wsl-care logs {r.Period.Label} ({r.Period.From}..{r.Period.To} UTC){OnlyAction(r)}: freed {Gb(r.FreedBytes)}, {r.ObjectsRemoved} objects"))
             .AppendLine(Invariant($"runs: {r.Runs.Total} ({r.Runs.WithCleanup} with a cleanup, {r.Runs.WithoutCleanup} without; {r.Runs.DryRun} dry, would have freed {Gb(r.Runs.WouldFreeBytes)}; timer {r.Runs.Timer}, button {r.Runs.Manual}, terminal {r.Runs.Cli})"));
+        PerAction(text, r);
+        Extremes(text, r);
+        Cleanups(text, r);
+        DetailsNotRead(text, r);
+        return text.ToString().TrimEnd();
+    }
+
+    private static string OnlyAction(LogsReport r) => r.Action is null ? string.Empty : $", {r.Action} only";
+
+    private static void PerAction(StringBuilder text, LogsReport r)
+    {
         foreach (var total in r.PerAction.Where(t => t.Runs > 0 || t.DryRuns > 0 || t.Failed > 0))
         {
-            text.AppendLine(Invariant($"  {total.Id,-17} ran {total.Runs}x{(total.Failed > 0 ? $" (failed {total.Failed}x)" : string.Empty)}, {total.Count} objects, freed {Gb(total.FreedBytes)}; dry {total.DryRuns}x, would free {Gb(total.WouldFreeBytes)}"));
+            text.AppendLine(Invariant($"  {total.Id,-17} ran {total.Runs}x{FailedTimes(total)}, {total.Count} objects, freed {Gb(total.FreedBytes)}; dry {total.DryRuns}x, would free {Gb(total.WouldFreeBytes)}"));
         }
+    }
 
+    private static string FailedTimes(ActionTotal total) => total.Failed > 0 ? Invariant($" (failed {total.Failed}x)") : string.Empty;
+
+    private static void Extremes(StringBuilder text, LogsReport r)
+    {
         if (r.MostFreed is { } most && r.LeastFreed is { } least)
         {
             text.AppendLine(Invariant($"most freed: {Gb(most.FreedBytes)} (run {most.RunId}); least (non-zero): {Gb(least.FreedBytes)} (run {least.RunId})"));
         }
+    }
 
+    private static void Cleanups(StringBuilder text, LogsReport r)
+    {
         foreach (var cleanup in r.Cleanups)
         {
-            text.AppendLine(Invariant($"  {cleanup.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm}Z {cleanup.Action}: {cleanup.Count} removed, {Gb(cleanup.FreedBytes)} ({cleanup.Trigger}; detail {cleanup.DetailState}){(cleanup.Failure is { Length: > 0 } failure ? $" - FAILED: {CommandLine.Printable(failure)}" : string.Empty)}"));
+            text.AppendLine(Invariant($"  {cleanup.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm}Z {cleanup.Action}: {cleanup.Count} removed, {Gb(cleanup.FreedBytes)} ({cleanup.Trigger}; detail {cleanup.DetailState}){FailedBeside(cleanup)}"));
             foreach (var item in cleanup.Removed.Take(20))
             {
-                text.AppendLine(Invariant($"      {item.Kind} {CommandLine.Printable(item.Name)}{(item.Bytes is { } b ? $" {Gb(b)}" : string.Empty)}"));
+                text.AppendLine(Invariant($"      {item.Kind} {CommandLine.Printable(item.Name)}{SizeOf(item)}"));
             }
         }
+    }
 
+    private static string FailedBeside(CleanupDetail cleanup) =>
+        cleanup.Failure is { Length: > 0 } failure ? $" - FAILED: {CommandLine.Printable(failure)}" : string.Empty;
+
+    private static string SizeOf(Core.Actions.ActionItem item) => item.Bytes is { } b ? $" {Gb(b)}" : string.Empty;
+
+    private static void DetailsNotRead(StringBuilder text, LogsReport r)
+    {
         if (r.DetailsNotRead > 0)
         {
             text.AppendLine(Invariant($"objects not read for {r.DetailsNotRead} run(s): {(r.DetailsRead == 0 ? "--detail or one --action lists them" : $"only the newest {r.DetailsRead} run details are read")}"));
         }
-
-        return text.ToString().TrimEnd();
     }
 
     private static string RunsText(RunsReport r)

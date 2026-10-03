@@ -172,7 +172,7 @@ public static class DockerCleanupAnswers
             return (RemovalVerdict.Removed, string.Empty);
         }
 
-        var line = errors.FirstOrDefault(e => e.Contains(name, StringComparison.Ordinal) || (alias.Length > 0 && e.Contains($"\"/{alias}\"", StringComparison.Ordinal))) ?? string.Empty;
+        var line = ErrorAbout(name, alias, errors);
         return line switch
         {
             "" => (RemovalVerdict.Unknown, "Docker neither printed its name nor said why"),
@@ -181,6 +181,14 @@ public static class DockerCleanupAnswers
             _ => (RemovalVerdict.Unknown, DockerCli.Quote(line)),
         };
     }
+
+    /// <summary>The first error line about <paramref name="name"/>; empty when Docker said nothing about it.</summary>
+    private static string ErrorAbout(string name, string alias, IReadOnlyList<string> errors) => errors.FirstOrDefault(e => Names(e, name, alias)) ?? string.Empty;
+
+    /// <summary>Whether an error line is about <paramref name="name"/> — or quotes its <paramref name="alias"/> (a container's
+    /// name, as the daemon writes it: <c>"/name"</c>).</summary>
+    private static bool Names(string line, string name, string alias) =>
+        line.Contains(name, StringComparison.Ordinal) || (alias.Length > 0 && line.Contains($"\"/{alias}\"", StringComparison.Ordinal));
 
     private static bool Says(string line, IEnumerable<string> phrases) => phrases.Any(p => line.Contains(p, StringComparison.OrdinalIgnoreCase));
 

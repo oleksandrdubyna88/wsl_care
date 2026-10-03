@@ -28,16 +28,10 @@ public abstract record SlotKind
     /// (<c>30d</c> for <c>--vacuum-time=30d</c>). Digits only — no sign, no spaces, no leading zero but 0 itself.</summary>
     public sealed record Number(long Min, long Max, string Suffix = "") : SlotKind
     {
-        public override bool Accepts(string value)
-        {
-            if (!value.EndsWith(Suffix, StringComparison.Ordinal))
-            {
-                return false;
-            }
+        public override bool Accepts(string value) => value.EndsWith(Suffix, StringComparison.Ordinal) && InRange(value[..^Suffix.Length]);
 
-            var digits = value[..^Suffix.Length];
-            return IsCanonicalDigits(digits) && long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= Min && n <= Max;
-        }
+        private bool InRange(string digits) =>
+            IsCanonicalDigits(digits) && long.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= Min && n <= Max;
 
         public override string Describe => $"<{Min}..{Max}>{Suffix}";
 
@@ -79,10 +73,11 @@ public abstract record SlotKind
         private static readonly string[] Types = [".service", ".timer", ".socket", ".target", ".mount", ".path"];
 
         public override bool Accepts(string value) =>
-            value.Length is > 0 and <= 128
-            && char.IsAsciiLetterOrDigit(value[0])
-            && value.All(c => char.IsAsciiLetterOrDigit(c) || c is '@' or '_' or '.' or ':' or '-')
-            && (!TypeRequired || Types.Any(t => value.EndsWith(t, StringComparison.Ordinal) && value.Length > t.Length));
+            Checks.All(value, v => v.Length is > 0 and <= 128, v => char.IsAsciiLetterOrDigit(v[0]), v => v.All(IsUnitChar), HasType);
+
+        private static bool IsUnitChar(char c) => char.IsAsciiLetterOrDigit(c) || c is '@' or '_' or '.' or ':' or '-';
+
+        private bool HasType(string value) => !TypeRequired || Types.Any(t => value.EndsWith(t, StringComparison.Ordinal) && value.Length > t.Length);
 
         public override string Describe => TypeRequired ? "<unit>" : "<unit or service name>";
     }
@@ -91,9 +86,9 @@ public abstract record SlotKind
     public sealed record UserName : SlotKind
     {
         public override bool Accepts(string value) =>
-            value.Length is > 0 and <= 32
-            && (char.IsAsciiLetterLower(value[0]) || value[0] == '_')
-            && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c is '_' or '-');
+            Checks.All(value, v => v.Length is > 0 and <= 32, v => char.IsAsciiLetterLower(v[0]) || v[0] == '_', v => v.All(IsNameChar));
+
+        private static bool IsNameChar(char c) => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c is '_' or '-';
 
         public override string Describe => "<user>";
     }
@@ -103,11 +98,15 @@ public abstract record SlotKind
     public sealed record SnapName : SlotKind
     {
         public override bool Accepts(string value) =>
-            value.Length is > 0 and <= 40
-            && value.All(c => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-')
-            && value.Any(char.IsAsciiLetterLower)
-            && value[0] != '-' && value[^1] != '-'
-            && !value.Contains("--", StringComparison.Ordinal);
+            Checks.All(
+                value,
+                v => v.Length is > 0 and <= 40,
+                v => v.All(IsSnapChar),
+                v => v.Any(char.IsAsciiLetterLower),
+                v => v[0] != '-' && v[^1] != '-',
+                v => !v.Contains("--", StringComparison.Ordinal));
+
+        private static bool IsSnapChar(char c) => char.IsAsciiLetterLower(c) || char.IsAsciiDigit(c) || c == '-';
 
         public override string Describe => "<snap>";
     }
@@ -119,7 +118,9 @@ public abstract record SlotKind
     public sealed record Text(int MaxLength) : SlotKind
     {
         public override bool Accepts(string value) =>
-            value.Length > 0 && value.Length <= MaxLength && value[0] != '-' && value.All(c => char.IsAsciiLetterOrDigit(c) || c is ' ' or '|' or '.' or '_' or ':' or '-');
+            Checks.All(value, v => v.Length > 0, v => v.Length <= MaxLength, v => v[0] != '-', v => v.All(IsTextChar));
+
+        private static bool IsTextChar(char c) => char.IsAsciiLetterOrDigit(c) || c is ' ' or '|' or '.' or '_' or ':' or '-';
 
         public override string Describe => $"<plain text, at most {MaxLength}>";
     }
