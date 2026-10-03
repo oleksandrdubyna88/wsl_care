@@ -1,0 +1,119 @@
+name: sonarcloud
+
+# SonarCloud analysis of the daemon (src_daemon/) with coverage from its own test executables, mirroring the family
+# credential-store repository's `sonarcloud` workflow (E4.S2). The tests are xUnit v3 / Microsoft Testing Platform
+# executables, run under dotnet-coverage — never `dotnet test`. The analysis settings live in .github/sonar.properties
+# (why that file is not a sonar-project.properties is written at its top); this workflow passes each key to `begin`.
+#
+# WITHOUT `SONAR_TOKEN` THE JOB SKIPS, LOUDLY, AND PASSES: a warning annotation and a line in the run summary say the
+# analysis did not run and why. That is the state until the owner creates the SonarCloud project and the secret
+# (docs/repo-settings.md, step 6) — and it stays the state for pull requests from forks and from Dependabot, which never
+# receive the repository's Actions secrets (Dependabot reads its OWN secret store: set SONAR_TOKEN there too). For that
+# reason `SonarCloud Scan` is NOT a required check (.github/rulesets/branch-main.json): a check that can pass without
+# analysing proves nothing as a gate. SonarCloud's own quality gate reports separately as `SonarCloud Code Analysis`.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: sonarcloud-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sonar:
+    name: SonarCloud Scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      TESTINGPLATFORM_TELEMETRY_OPTOUT: 'true'
+    steps:
+      # `secrets` cannot be read by a step's `if:`, so this step decides and the rest read its output. The token never
+      # reaches this step's environment — only `true` or `false` does.
+      - id: token
+        name: SONAR_TOKEN is set, or the analysis is skipped and says so
+        env:
+          SONAR_TOKEN_SET: ${{ secrets.SONAR_TOKEN != '' }}
+        run: |
+          if [ "$SONAR_TOKEN_SET" = "true" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "sonarcloud: SONAR_TOKEN present, analysing."
+            exit 0
+          fi
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=SonarCloud analysis SKIPPED::SONAR_TOKEN is not set for this run, so nothing was analysed. Owner: docs/repo-settings.md step 6 (Actions AND Dependabot secret stores). A fork's pull request never receives it."
+          echo "SonarCloud analysis **skipped**: \`SONAR_TOKEN\` is not available to this run (docs/repo-settings.md, step 6)." >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.token.outputs.present == 'true'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        if: steps.token.outputs.present == 'true'
+        with:
+          distribution: zulu
+          java-version: 21
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: steps.token.outputs.present == 'true'
+        with:
+          global-json-file: global.json
+
+      # Pinned by version, like every other tool this repository downloads in CI (versions read from nuget.org on
+      # 2026-10-03; Dependabot does not watch global tools, so a bump is a deliberate edit here).
+      - name: Install the scanner and the coverage tool
+        if: steps.token.outputs.present == 'true'
+        run: |
+          dotnet tool install --global dotnet-sonarscanner --version 11.3.0
+          dotnet tool install --global dotnet-coverage --version 18.11.2
+
+      # Every `key=value` of .github/sonar.properties becomes an argument: the key and organization as /k: and /o:,
+      # the rest as /d:. Read into an array, never word-split or evaluated.
+      - name: Begin
+        if: steps.token.outputs.present == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -euo pipefail
+          args=()
+          while IFS= read -r line; do
+            case "$line" in '' | '#'*) continue ;; esac
+            key="${line%%=*}"
+            value="${line#*=}"
+            case "$key" in
+              sonar.projectKey) args+=("/k:$value") ;;
+              sonar.organization) args+=("/o:$value") ;;
+              *) args+=("/d:$key=$value") ;;
+            esac
+          done < .github/sonar.properties
+          dotnet-sonarscanner begin "${args[@]}" /d:sonar.token="$SONAR_TOKEN"
+
+      - name: Build
+        if: steps.token.outputs.present == 'true'
+        run: dotnet build wsl_care.slnx -c Release --no-incremental -m:4
+
+      - name: Test with coverage
+        if: steps.token.outputs.present == 'true'
+        run: |
+          mkdir -p coverage
+          dotnet-coverage collect -f xml -o coverage/core.xml -- ./src_daemon/tests/WslCare.Core.Tests/bin/Release/net10.0/WslCare.Core.Tests
+          dotnet-coverage collect -f xml -o coverage/cli.xml -- ./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests
+          dotnet-coverage collect -f xml -o coverage/scenarios.xml -- ./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios
+
+      - name: End
+        if: steps.token.outputs.present == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: dotnet-sonarscanner end /d:sonar.token="$SONAR_TOKEN"

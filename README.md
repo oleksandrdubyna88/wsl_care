@@ -11,6 +11,7 @@ extension that shows the state and runs cleanups on demand.
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
 | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | the installer, the three systemd units and the machine configuration layer it installs |
+| `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, [docs/repo-settings.md](docs/repo-settings.md) | the release pipeline — [Release](#release) below |
 
 ## Install
 
@@ -299,6 +300,51 @@ Docker reclaimable, container starts) and, per cleanup, every object it removed 
 the run's detail file. Memory actions (A1, A2, A3, A11) free no disk and count no bytes. Periods: `today` (the
 default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (at most 366 days). Exit codes: 0 answered (an empty period
 too) · 2 a period that is none of these · 4 the history exists but cannot be read.
+
+## Release
+
+A daemon release is the tag `daemon-v<version>` and a GitHub release carrying, for each of `linux-x64`, `linux-arm64`
+and `win-x64`, an archive and its `.sha256`, each archive with a build-provenance attestation signed by
+`.github/workflows/release.yml` — what `install.sh` downloads and verifies.
+
+| Archive | Holds |
+|---|---|
+| `wsl-care-<version>-linux-x64.tar.gz`, `…-linux-arm64.tar.gz` | `wsl-care-<version>-<rid>/` with `wsl-care` (0755), `systemd/` (the three units) and `config/machine.json` (the empty machine layer) — regular files and folders only, owner 0:0 |
+| `wsl-care-<version>-win-x64.zip` | `wsl-care-<version>-win-x64/wsl-care.exe` alone — the Windows probe ships no units and no distro machine layer |
+| `<archive>.sha256` | one line, `<sha-256>  <archive name>` (`sha256sum -c` reads it as it is) |
+
+**How one happens.**
+
+1. Conventional commits land on `main`: under `src_daemon/`, `feat:` makes a minor release, `fix:` a patch; `ci:`,
+   `chore:`, `docs:`, `test:` and any commit touching only `.github/` make none.
+2. Someone runs **release-please** (*Actions → release-please → Run workflow*, or `gh workflow run release-please.yml`).
+   It opens one pull request bumping `src_daemon/version.txt` and the manifest and writing `src_daemon/CHANGELOG.md`.
+   Merging it is the decision to release.
+3. The **next** run of release-please (dispatch it again — the merge itself cuts nothing) creates the tag and a DRAFT
+   release, with the release App's token so that the tag starts `release.yml`. The first release is `0.1.0` exactly.
+4. **`release.yml`**, on that tag alone: a guard (the tag is `daemon-v<version>`, `version.txt` at the tag agrees, the
+   commit is on `main`); per RID on its own runner (`ubuntu-24.04`, `ubuntu-24.04-arm`, `windows-latest` — Native AOT
+   does not cross-compile) the three test executables, the AOT publish, the same smoke every pull request runs, the
+   archive, its attestation; then ONE job uploads every asset onto the draft, checks the draft holds every RID's archive
+   and a matching `.sha256` and nothing else, and only then publishes it. One failed leg publishes nothing; a failure
+   leaves an invisible draft, fixed forward — a release tag is never moved or deleted.
+
+The scripts the workflows run are in `.github/scripts/` (`smoke-daemon.sh`, `package-daemon.sh`, `release-guard.sh`,
+`verify-release-assets.sh`, and the asset contract they share, `lib/daemon-assets.sh`); the scenario suite runs them
+too, so a broken release step shows on a pull request rather than on a release day.
+
+**What the owner creates once** — settings, not code, applied with the commands and the probes in
+[docs/repo-settings.md](docs/repo-settings.md):
+
+- the `dew-flow-release-please` GitHub App installed on this repository, and its two Actions secrets
+  `RELEASE_PLEASE_APP_ID` and `RELEASE_PLEASE_APP_PRIVATE_KEY` (without them release-please stops in its first step and
+  says which is missing);
+- the tag ruleset (`.github/rulesets/tags-daemon.json`: only the App creates a `daemon-v*` tag, nobody updates or deletes
+  one) and the `main` ruleset (`.github/rulesets/branch-main.json`: pull requests, linear history, the six required
+  checks), each verified by a probe that must be refused;
+- optionally `SONAR_TOKEN` (Actions AND Dependabot stores) with the SonarCloud project `remsoftdev_wsl_care` — until
+  then `sonarcloud.yml` skips with a warning;
+- the CodeRabbit App enabled for this repository (`.coderabbit.yaml` is read from then on).
 
 ## Build and test
 

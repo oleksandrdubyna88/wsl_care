@@ -1,0 +1,86 @@
+name: release-please
+
+# ---------------------------------------------------------------------------
+# PROPOSES RELEASES AND CUTS THEIR TAGS; BUILDS NOTHING (plan §9; E4.S2). release-please reads the conventional commits
+# under src_daemon/ since the last `daemon-v*` tag and opens (or updates) ONE pull request that bumps
+# src_daemon/version.txt and writes src_daemon/CHANGELOG.md. A PERSON merging that pull request is the decision to
+# release; the NEXT run of this workflow then creates the tag `daemon-v<version>` and a DRAFT release on it
+# (release-please-config.json: `draft` + `force-tag-creation`), and that tag starts release.yml, which builds every RID,
+# attests, fills the draft and publishes it.
+#
+# ON A BUTTON, NOT ON `push: main`, until the first release pull request has been READ (the family's order: the
+# credential-store repository runs it the same way). Turning it on is one line — add `push: branches: [main]` below.
+# Until then: dispatch → read and merge the pull request → dispatch AGAIN. The tag is cut by that second run, never by
+# the merge, and the first dispatch after a merge looking like "nothing happened" is the trap this sentence is for.
+#
+# WHY A GITHUB APP TOKEN AND NOT `GITHUB_TOKEN`. From release-please's README: "all resources created by release-please
+# (release tag or release pull request) will not trigger future GitHub actions workflows". With the default token the
+# tag would stand there with no build, no assets, a draft nobody fills, and NO ERROR. The App installation token is an
+# ordinary actor to GitHub, so the tag starts release.yml and the release pull request gets its CI. Proven in the
+# family with this App and these two secret names (dew_flow_sidecar_rust v0.2.0, dew_flow_connect_other_ais
+# bugs-v0.3.0). Once .github/rulesets/tags-daemon.json is applied, this App is the ONLY actor that can create a
+# `daemon-v*` tag at all.
+#
+# THE COMMIT TYPE IS THE VERSION: `feat:` a minor, `fix:` a patch, `ci:` / `chore:` / `docs:` / `test:` nothing. A
+# commit touching only `.github/` is never a release (`exclude-paths`). The first release is 0.1.0 exactly
+# (release-please-config.json, `$bootstrap`).
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: release · propose
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # `contents: read` and nothing more. Every write — the release branch, the pull request, its labels, the tag, the
+    # draft release — is made with the App token below, so what this job can change is bounded by the App's own
+    # permissions on this one repository and by the token's hour, not by this block.
+    permissions:
+      contents: read
+    steps:
+      # SAY WHAT IS MISSING, rather than letting the mint below fail on an empty input: `create-github-app-token`
+      # answers an absent secret with a message about a MALFORMED private key, which reads like a broken secret rather
+      # than one never set. `secrets` cannot be read by a step's `if:`, so the step always runs and decides in the
+      # shell; the private key never reaches the environment — the expression compares it and hands over only `true`
+      # or `false`.
+      - name: The release App's two secrets must be set in this repository
+        env:
+          APP_ID_SET: ${{ secrets.RELEASE_PLEASE_APP_ID != '' }}
+          APP_KEY_SET: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$APP_ID_SET" = "true" ] && [ "$APP_KEY_SET" = "true" ]; then
+            echo "release-please: app credentials present."
+            exit 0
+          fi
+          echo "::error::release-please: this repository has no release App credentials yet."
+          echo "  RELEASE_PLEASE_APP_ID          set: $APP_ID_SET" >&2
+          echo "  RELEASE_PLEASE_APP_PRIVATE_KEY set: $APP_KEY_SET" >&2
+          echo "  Install the dew-flow-release-please App on this repository and add both as repository" >&2
+          echo "  Actions secrets — docs/repo-settings.md, steps 1 and 2." >&2
+          echo "  Nothing is broken; it is not set up yet, and nothing was proposed or released." >&2
+          exit 1
+
+      # A token that lives for an hour, scoped to THIS repository (no `owner` / `repositories` input), minted per run
+      # rather than stored. `app-id` is deprecated in favour of `client-id` and still works (it warns); it is kept
+      # because the secret holds the numeric App ID, the same value the sibling repositories store under this name.
+      - id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # THE POINT OF THE WHOLE FILE: with `GITHUB_TOKEN` the tag this cuts would start nothing.
+          token: ${{ steps.token.outputs.token }}

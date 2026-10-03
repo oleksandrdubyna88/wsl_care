@@ -15,7 +15,7 @@ name: ci · daemon
 # .agents/conventions/common/platform-limits.md part 2, "a platform that is only BUILT during a release
 # is an untested platform": every shipped binary-and-platform pair runs its tests on a pull request.
 #
-#   - wsl-care linux-x64   (the daemon in WSL Ubuntu)       -> ubuntu-latest
+#   - wsl-care linux-x64   (the daemon in WSL Ubuntu)       -> ubuntu-24.04
 #   - wsl-care linux-arm64 (the daemon on arm64 distros)    -> ubuntu-24.04-arm (free: public repository)
 #   - wsl-care win-x64     (the Windows probe in the .vsix) -> windows-latest
 #
@@ -23,6 +23,11 @@ name: ci · daemon
 # publish for its own RID (Native AOT does not cross-compile), and the smoke of the published binary.
 # Every component (WslCare.Core, WslCare.Cli) links into every binary, so no component is left out of
 # any leg; the test-only projects (TestSupport, FakeTool) ship in no binary.
+#
+# The runners are the RELEASE runners (release.yml builds each RID on exactly these — ReleaseWorkflowTests holds the two
+# matrices equal). ubuntu-24.04 by name, not ubuntu-latest: the Linux binaries link against the runner glibc (2.39
+# on 24.04, plan §15 #15), so a release built on whatever ubuntu-latest becomes would stop running on Ubuntu 24.04, and
+# a pull request leg on a different image would test a binary nobody ships.
 on:
   push:
     branches: [main]
@@ -46,7 +51,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             rid: linux-x64
             exe: ''
           - os: ubuntu-24.04-arm
@@ -136,146 +141,12 @@ jobs:
       - name: Publish (Native AOT)
         run: dotnet publish src_daemon/src/WslCare.Cli/WslCare.Cli.csproj -c Release -r "$RID" -o "artifacts/publish/$RID" -m:4
 
-      # A binary that cannot answer did not really build: an AOT failure often surfaces only at first
-      # run. Output is captured rather than piped into `grep -q`, which can SIGPIPE the binary under
-      # pipefail; `tr -d '\r'` because the Windows binary ends its lines with CRLF.
+      # The published binary USED, not only started (.agents/conventions/common/testing.md, "Starting is not working"):
+      # --help / --version, the configuration round trip, status --json, a recorded full run read back with doctor, and
+      # act --preview of every action — each under a sandbox WSL_CARE_ROOT, nothing destructive. ONE script since E4.S2
+      # (plan §15e #5): release.yml runs exactly this file on every leg before it packs the archive, so the binary that
+      # ships is exercised the way every pull request exercises its source. What each part asserts is in the script's
+      # header. RUNNER_TEMP is a native path on every runner (D:\a\_temp on Windows), so the Windows binary is handed a
+      # path it can use without MSYS translation.
       - name: Smoke the published binary
-        run: |
-          set -euo pipefail
-          bin="artifacts/publish/$RID/wsl-care$EXE"
-          help="$("$bin" --help | tr -d '\r')"
-          case "$help" in
-            *"wsl-care --help"*"wsl-care --version"*) ;;
-            *) echo "::error::$bin --help did not list --help and --version"; printf '%s\n' "$help"; exit 1 ;;
-          esac
-          expected="$(tr -d '[:space:]' < src_daemon/version.txt)"
-          version="$("$bin" --version | tr -d '\r')"
-          case "$version" in
-            "$expected" | "$expected+"*) ;;
-            *) echo "::error::$bin --version printed '$version', expected $expected from src_daemon/version.txt"; exit 1 ;;
-          esac
-          echo "published $RID binary answers --help and --version: $version"
-
-      # Starting is not working (.agents/conventions/common/testing.md): the published binary must USE
-      # its configuration once — set, read back from the user layer, refuse an out-of-range value with
-      # exit 2 and one "wsl-care:" line, and still hold the first value. Under a sandbox root, so the
-      # runner's real profile is never touched. RUNNER_TEMP is a native path on every runner (D:\a\_temp
-      # on Windows), so the Windows binary is handed a path it can use without MSYS translation.
-      - name: Smoke the published binary's configuration round trip
-        run: |
-          set -euo pipefail
-          bin="artifacts/publish/$RID/wsl-care$EXE"
-          WSL_CARE_ROOT="$RUNNER_TEMP/wsl-care-smoke-$RID"
-          export WSL_CARE_ROOT
-          rm -rf "$WSL_CARE_ROOT"
-          mkdir -p "$WSL_CARE_ROOT"
-          fail() { echo "::error::$*"; exit 1; }
-          expect_user_25() {
-            local got
-            got="$("$bin" config get volumes.anonymousMaxGb --json | tr -d '\r')"
-            case "$got" in *'"value": 25'*) ;; *) printf '%s\n' "$got"; fail "config get did not answer 25 ($1)" ;; esac
-            case "$got" in *'"layer": "user"'*) ;; *) printf '%s\n' "$got"; fail "config get did not name the user layer ($1)" ;; esac
-          }
-          "$bin" config set volumes.anonymousMaxGb 25 > /dev/null
-          expect_user_25 "after set"
-          code=0
-          "$bin" config set volumes.anonymousMaxGb 100001 > refused.out 2> refused.err || code=$?
-          [ "$code" -eq 2 ] || fail "a refused config set exited $code, expected 2"
-          [ ! -s refused.out ] || fail "a refused config set wrote to stdout"
-          messages="$(grep -c '^wsl-care: ' refused.err || true)"
-          [ "$messages" -eq 1 ] || { cat refused.err; fail "a refused config set wrote $messages wsl-care: lines, expected 1"; }
-          expect_user_25 "after the refused set"
-          echo "published $RID binary: config set, get and a refused set round-trip under $WSL_CARE_ROOT"
-
-      # The status verb USED once by the published binary (plan §6): exit 0 and schemaVersion 1. On
-      # Linux the sandbox root holds the procfs tree captured on 2026-10-02, so the AOT binary parses
-      # real meminfo / buddyinfo / status / cgroup files through the source-generated JSON context
-      # and must report the fixture's MemTotal; on Windows it answers for the host.
-      - name: Smoke the published binary's status
-        run: |
-          set -euo pipefail
-          bin="artifacts/publish/$RID/wsl-care$EXE"
-          WSL_CARE_ROOT="$RUNNER_TEMP/wsl-care-status-$RID"
-          export WSL_CARE_ROOT
-          rm -rf "$WSL_CARE_ROOT"
-          mkdir -p "$WSL_CARE_ROOT"
-          fail() { echo "::error::$*"; exit 1; }
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            cp -r src_daemon/tests/fixtures/procfs/ubuntu-2026-10-02/. "$WSL_CARE_ROOT/"
-          fi
-          status="$("$bin" status --json | tr -d '\r')"
-          case "$status" in *'"schemaVersion": 1'*) ;; *) printf '%s\n' "$status"; fail "status --json carries no schemaVersion 1" ;; esac
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            case "$status" in *'"bytes": 48196374528'*) ;; *) printf '%s\n' "$status"; fail "status --json did not report the fixture's MemTotal" ;; esac
-          else
-            case "$status" in *'"side": "windows"'*) ;; *) printf '%s\n' "$status"; fail "status --json did not answer for the Windows side" ;; esac
-          fi
-          echo "published $RID binary answers status --json"
-
-      # The full run USED once by the published binary (plan §6, §15b #1): `collect --json` must record the
-      # run — a run detail under runs/ and ONE history line naming it, written through the source-generated
-      # JSON context the AOT binary has no reflection to replace — then `status --json` must read that run's
-      # slow parts back and `doctor --json` must answer. Every tool the run starts is a READ command (the
-      # runner's own docker / systemctl / journalctl, or none); an absent tool is a figure marked unavailable,
-      # never a failed run.
-      - name: Smoke the published binary's full run
-        run: |
-          set -euo pipefail
-          bin="artifacts/publish/$RID/wsl-care$EXE"
-          WSL_CARE_ROOT="$RUNNER_TEMP/wsl-care-collect-$RID"
-          export WSL_CARE_ROOT
-          rm -rf "$WSL_CARE_ROOT"
-          mkdir -p "$WSL_CARE_ROOT"
-          fail() { echo "::error::$*"; exit 1; }
-          if [ "$RUNNER_OS" = "Linux" ]; then
-            cp -r src_daemon/tests/fixtures/procfs/ubuntu-2026-10-02/. "$WSL_CARE_ROOT/"
-          fi
-          collect="$("$bin" collect --json | tr -d '\r')"
-          case "$collect" in *'"recording": "recorded"'*) ;; *) printf '%s\n' "$collect" | head -c 4000; fail "collect --json did not record the run" ;; esac
-          history="$(find "$WSL_CARE_ROOT" -name history.jsonl | head -n 1)"
-          [ -n "$history" ] || fail "collect wrote no history.jsonl"
-          [ "$(grep -c '"detail":"runs/' "$history")" -eq 1 ] || { cat "$history"; fail "history.jsonl does not hold exactly one line naming a run detail"; }
-          [ -n "$(find "$WSL_CARE_ROOT" -path '*runs*' -name '*.json')" ] || fail "collect wrote no run detail under runs/"
-          status="$("$bin" status --json | tr -d '\r')"
-          id="$(sed -n 's/.*"runId":"\([^"]*\)".*/\1/p' "$history" | head -n 1)"
-          [ -n "$id" ] || fail "the history line carries no runId"
-          case "$status" in *"$id"*) ;; *) printf '%s\n' "$status" | head -c 4000; fail "status --json does not name the run $id its slow parts came from" ;; esac
-          doctor="$("$bin" doctor --json | tr -d '\r')"
-          case "$doctor" in *'"healthy": '*) ;; *) printf '%s\n' "$doctor"; fail "doctor --json carries no verdict" ;; esac
-          echo "published $RID binary records a full run, reads it back, and answers doctor"
-
-      # The action verb USED once by the published binary (E3.S2) — PREVIEW ONLY, never destructive: every action this
-      # build holds (the list its own --help prints), under a temporary WSL_CARE_ROOT with root CLAIMED inside that sandbox
-      # (WSL_CARE_SANDBOX_PRIVILEGED=1 changes only the answer to "am I root", never what the process may do). A preview
-      # takes no lock and writes nothing; the only commands it starts are read commands (the runner's own docker and snap,
-      # or none when absent — an absent tool is a figure marked unavailable). The Windows binary refuses the distro's
-      # actions naming the side (exit 2).
-      - name: Smoke the published binary's act preview
-        run: |
-          set -euo pipefail
-          bin="artifacts/publish/$RID/wsl-care$EXE"
-          WSL_CARE_ROOT="$RUNNER_TEMP/wsl-care-act-$RID"
-          WSL_CARE_SANDBOX_PRIVILEGED=1
-          export WSL_CARE_ROOT WSL_CARE_SANDBOX_PRIVILEGED
-          rm -rf "$WSL_CARE_ROOT"
-          mkdir -p "$WSL_CARE_ROOT"
-          fail() { echo "::error::$*"; exit 1; }
-          ids="$("$bin" --help | tr -d '\r' | sed -n 's/.*"act" holds these actions: \(.*\)\.$/\1/p' | tr -d ' ')"
-          [ -n "$ids" ] || fail "--help names no action that act holds"
-          code=0
-          out="$("$bin" act "$ids" --preview --json | tr -d '\r')" || code=$?
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            [ "$code" -eq 2 ] || fail "the Windows binary previewed the distro's actions (exit $code, expected 2)"
-          else
-            [ "$code" -eq 0 ] || { printf '%s\n' "$out" | head -c 4000; fail "act --preview exited $code"; }
-            case "$out" in *'"result": "previewed"'*) ;; *) printf '%s\n' "$out" | head -c 4000; fail "act --preview did not answer previewed" ;; esac
-            for id in $(printf '%s' "$ids" | tr ',' ' '); do
-              case "$out" in *"\"id\": \"$id\""*) ;; *) fail "act --preview did not answer for $id" ;; esac
-            done
-          fi
-          [ -z "$(find "$WSL_CARE_ROOT" -name 'history.jsonl' -o -name 'running.json' -o -name 'volume-seen.json')" ] || fail "a preview wrote state"
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            echo "published $RID binary refuses the distro's actions naming the side, and writes nothing"
-          else
-            echo "published $RID binary previews every action ($ids) and writes nothing"
-          fi
+        run: bash .github/scripts/smoke-daemon.sh "artifacts/publish/$RID/wsl-care$EXE" "$RUNNER_OS" "$RUNNER_TEMP"

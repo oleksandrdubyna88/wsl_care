@@ -1,0 +1,223 @@
+name: release
+
+# ---------------------------------------------------------------------------
+# PUBLISHES A DAEMON RELEASE — `daemon-v<version>` — with every RID's archive, its .sha256 and a build-provenance
+# attestation, and nothing else publishes one (plan §9, §15 #12, §15e #0–#2/#5; E4.S2). The extension's
+# `extension-v*` leg joins this file in E5.
+#
+# THE TRIGGER IS THE TAG PUSH, and the reason is the shape release-please gives a release here. With `draft: true` +
+# `force-tag-creation: true` (release-please-config.json) release-please, running with the release App's token, first
+# CREATES THE TAG REF through the git API (`git.createRef`, read in release-please's own source) and then a DRAFT
+# release on it. The ref creation is an ordinary push of a tag by an ordinary actor, so it raises `push: tags` — the
+# same event the family's `bugs-v0.3.0` release ran on (dew_flow_connect_other_ais, 2026-09-22). The alternatives fail:
+#   - `release: published` never fires for a draft, and the draft is the point: nothing is downloadable until EVERY
+#     RID's asset is on it (plan §15e #2) — a published release would sit public and empty while the legs build;
+#   - `workflow_dispatch` carries no tag event: GITHUB_REF would be a branch, the guard would refuse it, and a
+#     dispatched run is not what `gh attestation verify --signer-workflow` was told to trust.
+# A failed run is RE-RUN ("Re-run failed jobs"), which replays the same tag event. No pull request can reach this
+# file: there is no `pull_request` or `workflow_dispatch` trigger, so no fork reaches `id-token`, the attestation, or
+# `contents: write` (ReleaseWorkflowTests fails the suite if a trigger is added). Only the release App may create a
+# `daemon-v*` tag once .github/rulesets/tags-daemon.json is applied (docs/repo-settings.md).
+#
+#   guard    the tag is `daemon-v<version>`, src_daemon/version.txt at the tag says the same, the commit is on main
+#            (.github/scripts/release-guard.sh)
+#   build    per RID, on a runner of its own kind (Native AOT does not cross-compile): the three test executables, the
+#            AOT publish, THE SAME smoke ci-daemon.yml runs (.github/scripts/smoke-daemon.sh, plan §15e #5), the archive
+#            (.github/scripts/package-daemon.sh — the layout install.sh unpacks, plan §15e #1), the attestation of that
+#            archive, and a workflow artifact. It holds `id-token: write` + `attestations: write` and NO write to the
+#            repository (plan §15e #0): it cannot touch the release, so it uploads to the run, not to the draft.
+#   publish  needs EVERY build leg (one red leg publishes nothing): checks the set is complete BEFORE uploading,
+#            uploads onto release-please's draft, downloads the draft's assets back and checks THEM — every RID's
+#            archive and a matching .sha256, nothing else (.github/scripts/verify-release-assets.sh) — and only then
+#            flips the draft public. The only job with `contents: write`.
+#
+# THE ATTESTATION COMES FROM THIS FILE ITSELF, not from a reusable workflow: install.sh verifies with
+# `gh attestation verify --repo oleksandrdubyna88/wsl_care --signer-workflow
+# oleksandrdubyna88/wsl_care/.github/workflows/release.yml`, and a reusable workflow's attestation names the CALLED
+# file as its signer. Moving the build into one breaks every install.
+#
+# A FAILED RELEASE IS FIXED FORWARD. Before `publish` flips the draft nothing is public: fix the cause on main and either
+# re-run (a leg that failed for a transient reason) or let release-please cut the next patch. Never move or delete a
+# release tag (the family's release rule; the tag ruleset forbids it anyway). `publish` refuses a release that is no
+# longer a draft, so a re-run after publication never replaces published bytes.
+# ---------------------------------------------------------------------------
+
+on:
+  push:
+    tags:
+      - 'daemon-v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: release · guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.guard.outputs.version }}
+    steps:
+      # The whole history: "is this commit on main" is answered by git, and a shallow clone has no main to answer it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: guard
+        name: The tag is daemon-v<version>, version.txt agrees, the commit is on main
+        run: bash .github/scripts/release-guard.sh "$GITHUB_REF_NAME" origin/main
+
+  build:
+    name: release · daemon (${{ matrix.rid }})
+    needs: guard
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      # Signs the provenance statement through GitHub's OIDC issuer and stores it — here and in no other job.
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      # The RIDs of .github/scripts/lib/daemon-assets.sh, on the runners ci-daemon.yml tests every pull request on
+      # (ReleaseWorkflowTests holds all three equal). ubuntu-24.04 by name: the Linux binaries link against its glibc
+      # 2.39, the support floor of plan §15 #15.
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            rid: linux-x64
+            exe: ''
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            exe: ''
+          - os: windows-latest
+            rid: win-x64
+            exe: '.exe'
+    defaults:
+      run:
+        shell: bash
+    env:
+      DOTNET_NOLOGO: 'true'
+      DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+      TESTINGPLATFORM_TELEMETRY_OPTOUT: 'true'
+      RID: ${{ matrix.rid }}
+      EXE: ${{ matrix.exe }}
+      VERSION: ${{ needs.guard.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Toolchain (linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+
+      - name: Build
+        run: |
+          dotnet restore wsl_care.slnx -m:4
+          dotnet build wsl_care.slnx -c Release --no-restore -m:4
+
+      # Never ship a binary that has not passed its own tests on the runner that builds it — the same three executables
+      # ci-daemon.yml runs (xUnit v3 on Microsoft Testing Platform; never `dotnet test`).
+      - name: Test
+        run: |
+          "./src_daemon/tests/WslCare.Core.Tests/bin/Release/net10.0/WslCare.Core.Tests$EXE"
+          "./src_daemon/tests/WslCare.Cli.Tests/bin/Release/net10.0/WslCare.Cli.Tests$EXE"
+          "./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios$EXE"
+
+      - name: Publish (Native AOT)
+        run: dotnet publish src_daemon/src/WslCare.Cli/WslCare.Cli.csproj -c Release -r "$RID" -o "artifacts/publish/$RID" -m:4
+
+      # EXACTLY the smoke every pull request runs (plan §15e #5) — one script, not a copy of it.
+      - name: Smoke the published binary
+        run: bash .github/scripts/smoke-daemon.sh "artifacts/publish/$RID/wsl-care$EXE" "$RUNNER_OS" "$RUNNER_TEMP"
+
+      - name: Package the archive and its .sha256
+        run: |
+          set -euo pipefail
+          asset="$(bash .github/scripts/package-daemon.sh "$VERSION" "$RID" "artifacts/publish/$RID" artifacts/release | tail -n 1)"
+          echo "ASSET=$asset" >> "$GITHUB_ENV"
+          cat "$asset.sha256"
+
+      # The archive install.sh downloads is the subject; the .sha256 beside it is integrity, the attestation is who
+      # built it (plan §15 #12).
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ env.ASSET }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: daemon-${{ matrix.rid }}
+          path: |
+            ${{ env.ASSET }}
+            ${{ env.ASSET }}.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: release · publish
+    needs: [guard, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      # Uploads onto the draft and publishes it. The only write scope in this file (plan §15e #0).
+      contents: write
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # For the verification script only; the job runs nothing else from the tree.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: daemon-*
+          path: from-build
+          merge-multiple: true
+
+      # release-please made this release a DRAFT when it cut the tag. Not a draft means either it was never made (a tag
+      # pushed by hand) or it is already public — and published bytes are never replaced.
+      - name: The release is release-please's draft
+        run: |
+          set -euo pipefail
+          draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" || {
+            echo "::error::there is no release for $GITHUB_REF_NAME — release-please creates it as a draft when it cuts the tag"
+            exit 1
+          }
+          if [ "$draft" != "true" ]; then
+            echo "::error::$GITHUB_REF_NAME is already published; a published release's assets are never replaced"
+            exit 1
+          fi
+          echo "$GITHUB_REF_NAME is a draft"
+
+      # Before anything reaches the draft: every RID, its archive and a matching .sha256.
+      - name: The build produced every asset
+        run: bash .github/scripts/verify-release-assets.sh "$VERSION" from-build
+
+      - name: Upload onto the draft
+        run: gh release upload "$GITHUB_REF_NAME" from-build/* --clobber
+
+      # Asserted from the RELEASE, not from this run's opinion of itself: what goes public is what is checked.
+      - name: The draft holds every asset, and nothing else
+        run: |
+          set -euo pipefail
+          gh release download "$GITHUB_REF_NAME" --dir from-draft
+          bash .github/scripts/verify-release-assets.sh "$VERSION" from-draft
+
+      # ONLY NOW is it downloadable. A failure anywhere above leaves a draft, which is invisible rather than misleading.
+      - name: Publish the release
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
