@@ -117,4 +117,67 @@ public sealed class TimerPassTests : IDisposable
         Detail(result).TimerPass.Should().Match<TimerPass>(p => !p.Ran && p.Reason.Contains("is acting"));
         File.Exists(RunningState.File(_sandbox.Paths)).Should().BeTrue("another live run's running.json is never removed");
     }
+
+    [Theory]
+    [InlineData(RunTrigger.Cli)]
+    [InlineData(RunTrigger.Timer)]
+    public async Task Every_full_run_sweeps_a_dead_running_json_in_its_housekeeping_whatever_started_it(RunTrigger trigger)
+    {
+        // Gate finding #8: the sweep lived only in the timer pass, so a terminal's or the panel's collect left a dead run's
+        // running.json in place — and the extension went on showing "Cleaning..." for a run that was long gone.
+        var dead = 999;
+        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
+        var running = new RunningFile(1, RunId.New(FixedTimeProvider.DefaultNow.AddHours(-1), dead), RunTrigger.Manual, ["A5"], "A5", dead, FixedTimeProvider.DefaultNow.AddHours(-2), FixedTimeProvider.DefaultNow.AddHours(-1), FixedTimeProvider.DefaultNow.AddHours(-1));
+        File.WriteAllBytes(RunningState.File(_sandbox.Paths), JsonSerializer.SerializeToUtf8Bytes(running, WslCareJsonContext.Default.RunningFile));
+
+        var result = await CollectRun.RunAsync(Context(trigger), CancellationToken.None);
+
+        result.Recording.Should().Be(Recording.Recorded, result.Reason);
+        File.Exists(RunningState.File(_sandbox.Paths)).Should().BeFalse("a dead run's running.json is swept by any full run");
+        History().Should().Contain(r => r.RunId == running.RunId && r.Outcome == RunOutcome.Interrupted, "the dead run is recorded, never silently dropped");
+    }
+
+    [Fact]
+    public async Task A_full_run_holds_running_json_named_collect_while_it_measures_and_removes_it_at_the_end()
+    {
+        // Gate finding #11 (durable status): "Run full check now" must survive a window reload — the run says it is running
+        // in running.json from the moment it holds the lock until it ends.
+        RunningFile? seen = null;
+        var context = Context(RunTrigger.Cli);
+        var runner = new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("not installed in this test") };
+        runner.ScriptEffect(argv => argv.Count > 0 && argv[0] == "docker", _ =>
+        {
+            seen ??= File.Exists(RunningState.File(_sandbox.Paths))
+                ? JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)
+                : null;
+            return new CommandOutcome.FailedToStart("not installed in this test");
+        });
+
+        var result = await CollectRun.RunAsync(context with { Commands = runner }, CancellationToken.None);
+
+        result.Recording.Should().Be(Recording.Recorded, result.Reason);
+        seen.Should().NotBeNull("running.json exists while the full run measures");
+        seen!.Actions.Should().Equal(CollectRun.RunningAction);
+        seen.Current.Should().Be(CollectRun.RunningAction);
+        seen.Pid.Should().Be(Pid);
+        seen.RunId.Text.Should().Be(History().Single().RunId.Text);
+        File.Exists(RunningState.File(_sandbox.Paths)).Should().BeFalse("it goes when the run ends");
+    }
+
+    [Fact]
+    public async Task A_full_run_cancelled_mid_measure_still_removes_its_running_json()
+    {
+        using var cancel = new CancellationTokenSource();
+        var runner = new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("not installed in this test") };
+        runner.ScriptEffect(argv => argv.Count > 0 && argv[0] == "docker", _ =>
+        {
+            cancel.Cancel();
+            throw new OperationCanceledException(cancel.Token);
+        });
+
+        var act = () => CollectRun.RunAsync(Context(RunTrigger.Cli) with { Commands = runner }, cancel.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        File.Exists(RunningState.File(_sandbox.Paths)).Should().BeFalse("removed in a finally, whatever ended the run");
+    }
 }

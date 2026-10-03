@@ -68,6 +68,9 @@ public static class CollectRun
 {
     public const string ReadOnlyNote = "read-only: run as root to record";
 
+    /// <summary>What a full run's <c>running.json</c> names as its action and its current step (gate finding #11).</summary>
+    public const string RunningAction = "collect";
+
     /// <summary>The "since the last run" window when there is no last run: the timer's period (plan §8).</summary>
     public static readonly TimeSpan DefaultWindow = TimeSpan.FromHours(4);
 
@@ -88,19 +91,103 @@ public static class CollectRun
             case ExclusiveLock.Held held:
                 using (held.Handle)
                 {
-                    var housekeeping = Housekeep(c, started);
-                    var measured = await MeasureAsync(c, runId, started, housekeeping, mayRecord: true, cancellationToken).ConfigureAwait(false);
-                    var (detail, engine) = await TimerPassAsync(c, measured, runId, started, cancellationToken).ConfigureAwait(false);
-                    var result = Record(c, detail);
-                    var left = engine?.EndTimerPass() ?? string.Empty;
-                    cancellationToken.ThrowIfCancellationRequested();
-                    return left.Length == 0 ? result : result with { Reason = result.Reason.Length == 0 ? left : $"{result.Reason}; {left}" };
+                    return await UnderLockAsync(c, runId, started, cancellationToken).ConfigureAwait(false);
                 }
 
             default:
                 throw new System.Diagnostics.UnreachableException("ExclusiveLock is a closed set");
         }
     }
+
+    /// <summary>
+    /// The run under the lock: the <c>running.json</c> sweep (gate finding #8 — every full run, whatever started it), then THIS
+    /// run's own <c>running.json</c> (action <c>collect</c>, pid, start, a heartbeat every 5 s — gate finding #11, so a window
+    /// reloaded mid-run still shows the truth), the housekeeping, the measurement, the timer pass, the records — and the
+    /// file removed in a <c>finally</c>, whatever ended the run. When another run's state stands in the way (live, wedged,
+    /// unreadable) the run still measures and records, writes no <c>running.json</c> of its own and never removes theirs.
+    /// </summary>
+    private static async Task<CollectResult> UnderLockAsync(CollectContext c, RunId runId, DateTimeOffset started, CancellationToken cancellationToken)
+    {
+        var sweep = RunningSweep.Apply(c.Paths, c.Files, c.Processes, started, RunningReadRetry.Default, runId, c.ProcessId);
+        var running = new RunningFile(Core.SchemaVersion.Current, runId, c.Trigger, [RunningAction], RunningAction, c.ProcessId, OwnStart(c), started, started);
+        var owned = sweep is RunningSweep.Clear && StartRunning(c, running);
+        try
+        {
+            var housekeeping = Housekeep(c, started) with { Running = SweepNote(sweep, owned) };
+            var measured = await MeasureBeatingAsync(c, running, owned, housekeeping, cancellationToken).ConfigureAwait(false);
+            var (detail, engine) = await TimerPassAsync(c, measured, runId, started, cancellationToken).ConfigureAwait(false);
+            var result = Record(c, detail);
+            var left = engine?.EndTimerPass() ?? string.Empty;
+            cancellationToken.ThrowIfCancellationRequested();
+            return left.Length == 0 ? result : result with { Reason = result.Reason.Length == 0 ? left : $"{result.Reason}; {left}" };
+        }
+        finally
+        {
+            EndRunning(c, runId, owned);
+        }
+    }
+
+    /// <summary>The measurement under this run's heartbeat (when it owns <c>running.json</c>).</summary>
+    private static async Task<RunDetail> MeasureBeatingAsync(CollectContext c, RunningFile running, bool owned, HousekeepingReport housekeeping, CancellationToken cancellationToken)
+    {
+        IAsyncDisposable heartbeat = owned ? new Heartbeat(c.Paths, c.Files, c.Clock, running, RunningState.HeartbeatPeriod) : NoHeartbeat.Instance;
+        await using (heartbeat.ConfigureAwait(false))
+        {
+            return await MeasureAsync(c, running.RunId, running.StartedAt, housekeeping, mayRecord: true, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>The heartbeat of a run that does not own <c>running.json</c>: nothing to beat.</summary>
+    private sealed class NoHeartbeat : IAsyncDisposable
+    {
+        public static readonly NoHeartbeat Instance = new();
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    /// <summary>Writes this run's <c>running.json</c>; whether it was written (a refusal leaves the run without one — it still
+    /// measures and records, and says so).</summary>
+    private static bool StartRunning(CollectContext c, RunningFile running)
+    {
+        try
+        {
+            return RunningState.Write(c.Paths, c.Files, running) is not Files.Deletion.DeletionVerdict.Refused;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Removes this run's <c>running.json</c> — only its OWN (the timer pass may have removed it already).</summary>
+    private static void EndRunning(CollectContext c, RunId runId, bool owned)
+    {
+        if (owned && RunningState.RunIdIn(c.Paths, c.Files) == runId)
+        {
+            try
+            {
+                RunningState.Remove(c.Paths, c.Files);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                // The next run's sweep finds a dead pid and removes it without a second history line: this run has one.
+            }
+        }
+    }
+
+    private static string SweepNote(RunningSweep sweep, bool owned) => sweep switch
+    {
+        RunningSweep.Blocked blocked => $"running.json of another run stands: {blocked.Reason}",
+        RunningSweep.Clear clear when !owned => Joined(clear.Note, "this run's running.json could not be written"),
+        RunningSweep.Clear clear => clear.Note,
+        _ => throw new System.Diagnostics.UnreachableException("RunningSweep is a closed set"),
+    };
+
+    private static string Joined(string first, string second) => first.Length == 0 ? second : $"{first}; {second}";
+
+    /// <summary>This process's start as the operating system reports it — what a later reader compares with.</summary>
+    private static DateTimeOffset OwnStart(CollectContext c) =>
+        c.Processes.Lookup(c.ProcessId) is ProcessLookup.Alive alive ? alive.StartUtc : DateTimeOffset.MinValue;
 
     /// <summary>
     /// The TIMER PASS (E3.S3): a full run started by the timer runs the action engine AFTER measuring, under the lock it

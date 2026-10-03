@@ -260,9 +260,29 @@ public sealed class PhysicalFileSystem : IFileSystem
     public void AppendLine(string path, string line, TimeSpan lockTimeout)
     {
         using var held = AcquireLock(path + ".lock", lockTimeout);
+        var torn = EndsTorn(path);
         using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
-        stream.Write(Encoding.UTF8.GetBytes(line + "\n"));
+        stream.Write(Encoding.UTF8.GetBytes((torn ? "\n" : string.Empty) + line + "\n"));
         stream.Flush(flushToDisk: true);
+    }
+
+    /// <summary>Whether the file's last byte is not a newline — the torn remains of a writer that died mid-append, which the
+    /// next line must not continue (gate finding #6: it would swallow a whole record).</summary>
+    private static bool EndsTorn(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        using var stream = OpenForReading(path);
+        if (stream.Length == 0)
+        {
+            return false;
+        }
+
+        stream.Seek(-1, SeekOrigin.End);
+        return stream.ReadByte() != '\n';
     }
 
     public DeletionVerdict DeleteFile(string path, DeletionScope scope) =>

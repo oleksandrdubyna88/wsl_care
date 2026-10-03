@@ -30,10 +30,10 @@ public sealed class SuspectTerminationTests : IDisposable
     {
         public List<ProcessIdentity> Asked { get; } = [];
 
-        public Task<SignalOutcome> TerminateAsync(ProcessIdentity process, TimeSpan grace, CancellationToken cancellationToken)
+        public Task<IReadOnlyList<SignalOutcome>> TerminateAllAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken)
         {
-            Asked.Add(process);
-            return Task.FromResult<SignalOutcome>(new SignalOutcome.Ended(NeededKill: false));
+            Asked.AddRange(processes);
+            return Task.FromResult<IReadOnlyList<SignalOutcome>>([.. processes.Select(_ => new SignalOutcome.Ended(NeededKill: false))]);
         }
     }
 
@@ -91,6 +91,28 @@ public sealed class SuspectTerminationTests : IDisposable
         signals.Asked.Should().Equal(new ProcessIdentity(10, 4000));
         run.Count.Should().Be(1);
         run.FreedBytes.Should().BeNull("A11 frees memory, not disk");
+    }
+
+    [Fact]
+    public async Task A11s_dry_run_counts_no_would_free_bytes_because_memory_is_not_disk()
+    {
+        // Gate finding #4: the memory a suspect holds went into the preview's bytes, so a dry-run week summed it into the
+        // logs' "would have freed" — a disk figure. It is a fact and a note now, never bytes.
+        Stat(10, cpuTicks: 100);
+        var context = Context([Entry(10)], new RecordingSignals());
+        var action = new SuspectTermination();
+        var preview = await action.PreviewAsync(context, new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []), CancellationToken.None);
+        var at = new DateTimeOffset(2026, 9, 26, 9, 0, 0, TimeSpan.Zero);
+        var record = Core.Actions.Engine.ActionRecords.Of(new Core.Actions.Engine.ActionOutcome("A11", action.Summary, Core.Actions.Engine.ActionStatus.DryRun, "dry run", preview, null));
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 5), RunTrigger.Timer, at, at, RunOutcome.Completed, [record]) { DryRun = true });
+
+        var logs = Core.History.RunLogs.Logs(_sandbox.Paths, _sandbox.Files, ((Core.History.PeriodParse.Parsed)Core.History.LogPeriod.Parse("2026-09-26", at)).Period, action: null);
+
+        logs.Runs.WouldFreeBytes.Should().Be(0, "a dry run of A11 would free memory, and the logs' would-free total is disk");
+        logs.PerAction.Single().WouldFreeBytes.Should().Be(0);
+        preview.Count.Should().Be(1);
+        preview.Bytes.Should().BeNull("memory is not disk");
+        preview.Facts[SuspectTermination.HeldMemoryFact].Should().Be(1_000_000, "what the suspects hold is kept as a fact");
     }
 
     [Theory]
@@ -199,6 +221,36 @@ public sealed class SuspectTerminationTests : IDisposable
             foreach (var process in new[] { stubborn, other }.Where(p => !p.HasExited))
             {
                 process.Kill();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task The_pidfd_sender_kills_three_children_that_ignore_sigterm_after_ONE_shared_grace()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "pidfd is Linux's: run in WSL or on the Linux legs");
+        var stubborn = Enumerable.Range(0, 3).Select(_ => Child("sh", "-c", "trap '' TERM; exec sleep 60")).ToList();
+        try
+        {
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+            var signals = new PidfdProcessSignals(new Core.Files.PhysicalFileSystem(Core.Hosting.HostPaths.ForThisMachine(string.Empty)), "/proc");
+            var clock = Stopwatch.StartNew();
+
+            var outcomes = await signals.TerminateAllAsync([.. stubborn.Select(c => new ProcessIdentity(c.Id, StartTicks(c.Id)))], TimeSpan.FromSeconds(2), CancellationToken.None);
+
+            outcomes.Should().AllBeEquivalentTo(new SignalOutcome.Ended(NeededKill: true));
+            clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5), "one 2 s grace across all three, not 2 s each");
+        }
+        finally
+        {
+            foreach (var process in stubborn)
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill();
+                }
+
+                process.Dispose();
             }
         }
     }

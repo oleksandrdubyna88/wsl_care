@@ -26,7 +26,8 @@ public sealed record SuspectSample(int Pid, long StartTicks, long CpuTicks, int 
 /// not move AT ALL in that window — the clock tick is 10 ms, so far below a second — and whose start did not change is a
 /// suspect. Just before its signal the run reads it a third time and refuses it if it used ANY CPU since, or is another
 /// process now; the signal sender then pins it (<c>pidfd</c>) and compares its start once more.</para>
-/// <para>A11 frees MEMORY, not disk: <see cref="ActionRun.FreedBytes"/> stays unknown, and each ended process's item carries
+/// <para>A11 frees MEMORY, not disk: <see cref="ActionRun.FreedBytes"/> and the preview's bytes stay unknown (the memory held is the
+/// <see cref="HeldMemoryFact"/> fact), and each ended process's item carries
 /// the <c>RssAnon</c> + <c>RssShmem</c> it held when read.</para>
 /// </remarks>
 public sealed class SuspectTermination : ICleanupAction
@@ -38,6 +39,9 @@ public sealed class SuspectTermination : ICleanupAction
     public static readonly TimeSpan Grace = TimeSpan.FromSeconds(10);
 
     private const string Kind = "process";
+
+    /// <summary>The fact naming the memory the suspects hold (RssAnon + RssShmem) — memory, so never the preview's bytes.</summary>
+    public const string HeldMemoryFact = "heldMemoryBytes";
 
     public ActionId Id { get; } = ActionId.Find("A11")!;
 
@@ -73,7 +77,10 @@ public sealed class SuspectTermination : ICleanupAction
             .Where(c => c.After is { } after && after.StartTicks == c.Before.StartTicks && after.CpuTicks == c.Before.CpuTicks && after.Tty == 0 && after.Uid != 0)
             .Select(c => Item(c.Entry, c.After!))
             .ToList();
-        return ActionPreview.Of(what, idle.Count, idle.Sum(i => i.Bytes ?? 0), "processes read twice from /proc; the bytes are the memory they hold (RssAnon + RssShmem), not disk", new Dictionary<string, long>(StringComparer.Ordinal), string.Empty, idle);
+        // Memory is not disk (gate finding #4): what the suspects hold is a fact and each item's size, never the preview's
+        // bytes — which a dry run records as "would free" and the logs sum as disk.
+        var held = new Dictionary<string, long>(StringComparer.Ordinal) { [HeldMemoryFact] = idle.Sum(i => i.Bytes ?? 0) };
+        return ActionPreview.Of(what, idle.Count, null, "processes read twice from /proc; each item carries the memory it holds (RssAnon + RssShmem, also the heldMemoryBytes fact) - memory, not disk, so no bytes are counted", held, string.Empty, idle);
     }
 
     /// <summary>Plan §5 A11: suspects exist.</summary>
@@ -87,18 +94,12 @@ public sealed class SuspectTermination : ICleanupAction
             return ActionRun.Nothing(commands.Ran, "no suspect process");
         }
 
-        var ended = new List<ActionItem>();
-        var kept = new List<ActionItem>();
-        var failures = new List<string>();
-        foreach (var target in preview.Targets)
+        var judged = await EndAllAsync(context, linux, preview.Targets, cancellationToken).ConfigureAwait(false);
+        var verdicts = judged.Select(j => Verdict(j.Item, j.Outcome)).ToList();
+        var ended = verdicts.Where(v => v.Ended).Select(v => v.Item).ToList();
+        return new ActionRun(ended.Count, null, "A11 frees memory, not disk: each ended process's item carries what it held", null, null, ended, commands.Ran, string.Join("; ", verdicts.Where(v => v.Failure.Length > 0).Select(v => v.Failure).Take(5)))
         {
-            var (item, outcome) = await EndAsync(context, linux, target, cancellationToken).ConfigureAwait(false);
-            Sort(item, outcome, ended, kept, failures);
-        }
-
-        return new ActionRun(ended.Count, null, "A11 frees memory, not disk: each ended process's item carries what it held", null, null, ended, commands.Ran, string.Join("; ", failures.Take(5)))
-        {
-            NotRemoved = kept,
+            NotRemoved = [.. verdicts.Where(v => !v.Ended).Select(v => v.Item)],
         };
     }
 
@@ -127,57 +128,47 @@ public sealed class SuspectTermination : ICleanupAction
             Key = string.Create(CultureInfo.InvariantCulture, $"{sample.Pid}:{sample.StartTicks}:{sample.CpuTicks}"),
         };
 
-    /// <summary>One target: read again — the same process, still no CPU, still no terminal — then signalled by identity.</summary>
-    private static async Task<(ActionItem Item, SignalOutcome Outcome)> EndAsync(ActionContext context, LinuxHostPaths linux, ActionItem target, CancellationToken cancellationToken)
+    /// <summary>Every target read again — the same process, still no CPU, still no terminal — and the ones that pass signalled
+    /// TOGETHER by identity: one <c>SIGTERM</c> each, ONE shared grace, then <c>SIGKILL</c> to the survivors (gate finding #9:
+    /// three that ignore <c>SIGTERM</c> take one grace, not three).</summary>
+    private static async Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> EndAllAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, CancellationToken cancellationToken)
+    {
+        var checkedTargets = targets.Select(t => (Item: t, Identity: Identity(t), Refusal: Recheck(Sample(context, linux, Identity(t).Pid), t))).ToList();
+        var passing = checkedTargets.Where(c => c.Refusal is null).ToList();
+        var outcomes = passing.Count == 0 ? [] : await context.Signals.TerminateAllAsync([.. passing.Select(c => c.Identity)], Grace, cancellationToken).ConfigureAwait(false);
+        return [.. checkedTargets.Where(c => c.Refusal is not null).Select(c => (c.Item, c.Refusal!)), .. passing.Zip(outcomes, (c, o) => (c.Item, o))];
+    }
+
+    /// <summary>The pid and start a preview item's key names.</summary>
+    private static ProcessIdentity Identity(ActionItem target)
     {
         var parts = target.Key.Split(':');
-        var (pid, start, cpu) = (int.Parse(parts[0], CultureInfo.InvariantCulture), long.Parse(parts[1], CultureInfo.InvariantCulture), long.Parse(parts[2], CultureInfo.InvariantCulture));
-        var now = Sample(context, linux, pid);
-        if (now is null)
-        {
-            return (target, new SignalOutcome.AlreadyGone());
-        }
-
-        if (now.StartTicks != start)
-        {
-            return (target, new SignalOutcome.NotTheSame($"pid {pid} started at tick {now.StartTicks}, not {start}: another process now"));
-        }
-
-        if (now.CpuTicks != cpu || now.Tty != 0 || now.Uid == 0)
-        {
-            return (target, new SignalOutcome.NotTheSame($"pid {pid} used CPU, gained a terminal or changed owner since the preview: kept"));
-        }
-
-        return (target, await context.Signals.TerminateAsync(new ProcessIdentity(pid, start), Grace, cancellationToken).ConfigureAwait(false));
+        return new ProcessIdentity(int.Parse(parts[0], CultureInfo.InvariantCulture), long.Parse(parts[1], CultureInfo.InvariantCulture));
     }
 
-    private static void Sort(ActionItem item, SignalOutcome outcome, List<ActionItem> ended, List<ActionItem> kept, List<string> failures)
+    /// <summary>Why a target is not signalled after all — gone, another process now, or it used CPU / gained a terminal /
+    /// became root's since the preview; <c>null</c> when it is still the idle suspect the preview saw.</summary>
+    private static SignalOutcome? Recheck(SuspectSample? now, ActionItem target)
     {
-        switch (outcome)
+        var (identity, cpu) = (Identity(target), long.Parse(target.Key.Split(':')[2], CultureInfo.InvariantCulture));
+        return now switch
         {
-            case SignalOutcome.Ended e:
-                ended.Add(item with { Note = (e.NeededKill ? "ended on SIGKILL: " : "ended on SIGTERM: ") + item.Note });
-                break;
-            case SignalOutcome.AlreadyGone:
-                kept.Add(item with { Note = "already gone" });
-                break;
-            case SignalOutcome.NotTheSame n:
-                kept.Add(item with { Note = n.Reason });
-                break;
-            case SignalOutcome.StillRunning s:
-                kept.Add(item with { Note = s.Reason });
-                failures.Add(s.Reason);
-                break;
-            case SignalOutcome.Refused r:
-                kept.Add(item with { Note = "not signalled: " + r.Reason });
-                failures.Add("not signalled: " + r.Reason);
-                break;
-            case SignalOutcome.Failed f:
-                kept.Add(item with { Note = f.Reason });
-                failures.Add(f.Reason);
-                break;
-            default:
-                throw new System.Diagnostics.UnreachableException("SignalOutcome is a closed set");
-        }
+            null => new SignalOutcome.AlreadyGone(),
+            { StartTicks: var start } when start != identity.StartTicks => new SignalOutcome.NotTheSame($"pid {identity.Pid} started at tick {start}, not {identity.StartTicks}: another process now"),
+            { } changed when changed.CpuTicks != cpu || changed.Tty != 0 || changed.Uid == 0 => new SignalOutcome.NotTheSame($"pid {identity.Pid} used CPU, gained a terminal or changed owner since the preview: kept"),
+            _ => null,
+        };
     }
+
+    /// <summary>What one outcome means for the record: ended (and how), kept (and why), and the failure it counts as, if any.</summary>
+    private static (bool Ended, ActionItem Item, string Failure) Verdict(ActionItem item, SignalOutcome outcome) => outcome switch
+    {
+        SignalOutcome.Ended e => (true, item with { Note = (e.NeededKill ? "ended on SIGKILL: " : "ended on SIGTERM: ") + item.Note }, string.Empty),
+        SignalOutcome.AlreadyGone => (false, item with { Note = "already gone" }, string.Empty),
+        SignalOutcome.NotTheSame n => (false, item with { Note = n.Reason }, string.Empty),
+        SignalOutcome.StillRunning s => (false, item with { Note = s.Reason }, s.Reason),
+        SignalOutcome.Refused r => (false, item with { Note = "not signalled: " + r.Reason }, "not signalled: " + r.Reason),
+        SignalOutcome.Failed f => (false, item with { Note = f.Reason }, f.Reason),
+        _ => throw new System.Diagnostics.UnreachableException("SignalOutcome is a closed set"),
+    };
 }
