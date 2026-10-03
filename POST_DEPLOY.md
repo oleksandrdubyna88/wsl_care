@@ -7,8 +7,8 @@ items 8–10. Run it from the repository root INSIDE WSL `Ubuntu` (`node .agents
 Last verified: never, as of 2026-10-03 — nothing released yet (`install.sh` exists since E4.S1, the release pipeline since
 E4.S2). The first release and its live install are the **E4 live gate** (plan §16), run by the owner after E4 merges:
 settings with refused probes → item 4 → the release-please cut and the observed `release.yml` run → the live install →
-items 1–11, then THIS line stamped with the date and the version. E5.S3's Marketplace publish and all of E6 wait for that
-stamp.
+items 1–11, then THIS line stamped with the date and the version. The E5 live gate (the Marketplace publish) and all of E6
+wait for that stamp.
 
 | # | What a person loses if this is broken | Check | Auto |
 |---|---|---|---|
