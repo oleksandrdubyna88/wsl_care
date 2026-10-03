@@ -28,6 +28,7 @@
          one place rather than retyping their paths. -->
     <AssemblyMetadata Include="WslCare.FileSystemSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Files\PhysicalFileSystem.cs'))" />
     <AssemblyMetadata Include="WslCare.ProcessSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Processes\ProcessCommandRunner.cs'))" />
+    <AssemblyMetadata Include="WslCare.SignalSeam" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Core\Processes\ProcessSignals.cs'))" />
   </ItemGroup>
 
   <ItemGroup>

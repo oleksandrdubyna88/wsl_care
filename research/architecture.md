@@ -10,7 +10,9 @@
 > folder walk, run detail → history line with the startup reconcile and retention, read-only when unprivileged),
 > `doctor` and the container-start follower `events follow`, and from E3.S1 the action engine, the command policy (the
 > never-list and deny-by-default templates every argv passes), the root-only `act` verb, the target user and its
-> `runuser` wrapper, and ONE action, A10 (the journal vacuum). `wsl-care` answers `--help`, `--version`, the `config`
+> `runuser` wrapper, and the reference action A10 (the journal vacuum), and from E3.S2 the irreversible deletions A4–A9, A11,
+> A12, A14, A17 (one preview computation shared with `preview --all`, measured freed bytes, a pid-and-start signal seam, the
+> target user's home for every per-user path). `wsl-care` answers `--help`, `--version`, the `config`
 > verbs, `status`, `preview`, `collect`, `doctor`, `events follow` and `act`, and refuses everything else; there is no
 > extension yet. This file describes what exists and is rewritten as each part lands.
 
@@ -638,8 +640,8 @@ engine, the command policy and `act`*).
   "failed to start within" boot error are not collected yet.
 - The kernel's signals come from journald's copy of the kernel log (`journalctl --dmesg`), of THIS boot.
 - The run log's retention stays `logging.retentionDays` (14, E1.S2), not §6's 30 days.
-- Under the root timer `$HOME` is root's: whose home the daily walk, `~/.npm` and the protected `~/git` mean is the
-  installer's decision (E4.S1).
+- Under the root timer `$HOME` is root's: whose home the daily walk, `~/.npm` and the protected `~/git` mean was left
+  to E4.S1 — **decided in E3.S2**: the TARGET user's (§ *The irreversible deletions* below).
 - **Amended after the E2 code round** (gate session `714367be`): the gap rule became the continuity rule above (an engine
   mark, the ring's capacity), `status` reads `starts-summary.json` instead of the day files, retention ages lines and
   day folders by one UTC-day boundary under one lock and the reconcile ignores aged details, `StreamAsync` kills and
@@ -820,12 +822,12 @@ and a planted action that builds a shell string from a preview name.
   start in the fixed bin folders — `~/.nvm/versions/node/<the default version>/bin` (nvm's `alias/default` resolved to
   an installed version, or left out), `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/usr/bin` — with a CLEAN
   environment (`HOME`, `USER`, `LOGNAME`, a `PATH` of those folders; nothing of root's). The policy refuses any other
-  `runuser` shape, an inherited environment, and a file outside those folders even when its name matches. No action of
-  this release is user-scoped (E3.S2's A8 is the first).
+  `runuser` shape, an inherited environment, and a file outside those folders even when its name matches. E3.S1 held no
+  user-scoped action; E3.S2's A8, A12, A14 and A17 are.
 - **Protected homes.** Inside the distro the CLI protects the `git` and AI-agent folders of root's AND every login
   account's home (from `/etc/passwd`), besides `$HOME`'s (`LinuxEnvironment.ProtectedHomes`) — under the root timer
   `$HOME` is root's, and the target user's folders must be protected whoever the target is. The daily folder WALK and
-  the user configuration layer still follow `$HOME` (E4.S1 decides).
+  the user configuration layer followed `$HOME` in E3.S1; since E3.S2 they follow the TARGET user's home when root.
 
 ### Decisions taken in E3.S1
 
@@ -869,8 +871,157 @@ action failed (the run was recorded, the rest ran) · 75 busy · 76 wedged · 77
 - `runuser`'s environment handling is read from util-linux's `su-common.c` (without `-l` / `-m` it sets `HOME`,
   `SHELL`, `USER`, `LOGNAME` and keeps `PATH` unless `ALWAYS_SET_PATH`), not observed: it needs root, and nothing here
   runs as root.
-- The button's trigger is `cli` until E6 marks it `manual`; the plan's "A4 removes only volumes that were in the SHOWN
-  preview" needs the button to pass what it showed — E3.S2 / E6.
+- The button's trigger was `cli` in E3.S1; E3.S2 added `--manual` (the trigger `manual`) and A4's `--volume` / `--only`
+  (what the preview SHOWED) — E6 passes both.
+
+## The irreversible deletions (E3.S2)
+
+Eleven more `ICleanupAction`s in `ActionRegistry.Product` — the engine, the policy, the lock, `running.json`, the dry run
+and the idle gate are E3.S1's, reused unchanged. Each declares its `CommandTemplate`s (so the policy's catalogue and the
+property tests pick them up), runs commands only through its `ActionCommands`, previews from LIVE state, and returns a
+MEASURED `ActionRun` with the removed objects and — new — `NotRemoved` (each with why) and `Notes`.
+
+| Folder (`WslCare.Core/Actions/…`) | Actions | Scope |
+|---|---|---|
+| `DockerCleanups/` — `VolumeRemoval`, `ContainerRemoval`, `ImagePrune`, `BuildCachePrune`; `DockerCleanupCommands` (the WRITE templates and the answer parsers), `DockerLook` (one live look) | A4, A5 + A5Testcontainers, A6 + A6Unused, A7 | machine |
+| `UserCaches/` — `NpmCacheClean`, `ToolCacheTrims`, `BrowserAndHttpCaches`, `EditorServerCleanup`; `CacheFolders` (the target user's folders, the one bounded measure) | A8, A17, A12, A14 | user (`runuser`) |
+| `PackageCaches/` — `PackageCacheClean` | A9 | machine |
+| `Suspects/` — `SuspectTermination` | A11 | machine |
+
+### One preview, two readers
+
+`Preview/CleanupTargets` is now the ONE place a Docker row's objects are SELECTED (anonymous volumes, stopped containers
+and their anonymous volumes, unused images, reclaimable cache entries — every protection applied there), and
+`CleanupPreviews` builds each row (`A4Row` … `A9Row`) from those selections. A Docker action's preview takes its own live
+look (`DockerLook`: the same `DockerCollector`, run through `ActionCommands.AsRunner()` — only declared reads run — and the
+first sightings observed in memory exactly as `preview` observes them) and calls the SAME row builder, so
+`act <A#> --preview` and that row of `preview --all` are one computation: same what, count, bytes, basis and refusal
+(`RowPreviews`; held by `DockerCleanupTests.Every_docker_and_folder_actions_preview_equals_its_row_of_preview_all`, derived
+over every registered action that has a row). The full target list travels from the preview to the run in memory only
+(`ActionPreview.Targets`, `ActionItem.Key`, both `[JsonIgnore]`); the JSON keeps the first 20 items.
+
+```mermaid
+sequenceDiagram
+    participant E as ActionEngine
+    participant A as A4 (VolumeRemoval)
+    participant X as ActionCommands
+    participant D as docker (through the CommandPolicy)
+    participant V as volume-seen.json
+    E->>A: PreviewAsync
+    A->>X: AsRunner(): version, system df, df -v, volume ls dangling, inspect (declared reads only)
+    X->>D: read verbs
+    A->>A: CleanupPreviews.A4Row + CleanupTargets.AnonymousVolumes (keep label, 64-hex, first seen >= limit)
+    A->>A: a button's shown list (--volume / --only): kept only if still a candidate; none given on a button = refused
+    E->>E: gates: refusal (Docker < 23 / unreadable), trigger (timer), idle, dry run
+    E->>A: RunAsync(preview)
+    loop 100 names per command
+        A->>X: docker volume rm <64-hex>... (no -f)
+        X->>D: argv judged by the never-list, then the template
+        D-->>A: names on stdout = removed; "no such volume" = already gone; "in use" = kept by Docker; else not counted, failure
+    end
+    A->>D: docker system df (the cross-check), docker volume ls dangling
+    A->>V: first sightings recorded (plan 15b #3)
+    A-->>E: freed = df -v sizes (read just before) of exactly the confirmed volumes
+```
+
+### Per action — what it runs, and what "freed" is
+
+| Action | Command | Freed bytes | Refuses / skips |
+|---|---|---|---|
+| A4 | `docker volume rm <64-hex>{1..100}` | `system df -v` sizes of exactly the volumes Docker printed back (§15c #1); Docker's Local Volumes total before / after beside it | Docker < 23, or a version that is not a number (E3.S2: unknown is not "new enough" — the row's refusal too); a `manual` run without a shown list |
+| A5, A5Testcontainers | `docker rm -v <64-hex id>{1..100}` | the confirmed containers' layers + their anonymous volumes that `docker volume ls` no longer lists | — (a container that started since: Docker refuses, kept; its refusal quotes the NAME, matched as an alias) |
+| A6, A6Unused | `docker image prune -f` / `-a -f --filter until=<days×24>h`, both `--filter label!=wsl-care.keep=true` | Docker's "Total reclaimed space" | no prune at all when the live selection is empty |
+| A7 | timer: `docker builder prune -f --max-used-space <N>GB` or `--keep-storage <N>GB` — whichever `docker builder prune --help` lists (read-only probe; captured 2026-10-02: buildx lists `--max-used-space`, no `--keep-storage`); button: `-a -f` | Docker's "Total:" | timer with neither flag; `IdleRule.Always` |
+| A8 | `runuser -u <user> -- <npm> cache clean --force` | `~/.npm` walked before / after (complete walks only) | npm not in the user's bin folders = skip |
+| A9 | `apt-get clean`; `snap list --all` again, then `snap remove <snap> --revision=<n>` per revision still disabled | `/var/cache/apt` before / after + each `{name}_{rev}.snap` gone | a missing tool skips its part; an x-revision or an odd name is kept |
+| A11 | `IProcessSignals.TerminateAsync(pid, start)`: SIGTERM, SIGKILL after 10 s | none (memory, not disk) | off by default; see below |
+| A12 | `IFileSystem.DeleteDirectory` per unreferenced browser (root `~/.cache/ms-playwright`); `runuser … dotnet nuget locals http-cache --clear` | folders measured before, counted when gone; http-cache before / after | timer never (button only); the Playwright part refuses whole when what is referenced cannot be told |
+| A14 | `IFileSystem.DeleteDirectory` per old build / obsolete extension (root: the editor's folder) | folders measured before, counted when gone | an unreadable process table |
+| A17 | `runuser … pnpm store prune`, `uv cache prune`, `pip cache purge` (`pip3` only without `pip`) | each cache before / after | none installed = skip; `cargo sweep` and Gradle not run (below) |
+
+A tool's absence is a SKIP: `ActionPreview.Skip` (new) makes the engine record `skipped` with the reason — never
+`refused`, never `failed`. A user-scoped action asks `ActionCommands.Locate(template)` (new) whether the tool is in the
+target user's bin folders before anything runs.
+
+### A11 — suspects, by pid and start time
+
+Candidates (`SuspectTermination.Candidates`, pure): orphaned (parent pid 1 or a `systemd --user`), in
+`processes.families`, older than `processes.idleOlderThanHours`, no terminal, not a zombie, not root's, not this process.
+Each candidate's `/proc/[pid]/stat` and `status` are read, then again after a 5 s window: only a process whose CPU ticks
+did not move AT ALL, with the same start and still no terminal and not uid 0, is a suspect. Just before its signal the
+run reads it a THIRD time and keeps it if it used any CPU since, gained a terminal or is another process now. The signal
+goes through the new seam `Processes/ProcessSignals.cs`:
+
+```mermaid
+flowchart LR
+    id["ProcessIdentity<br/>pid + start ticks"]
+    open["pidfd_open(pid)"]
+    check{"/proc/pid/stat start<br/>== identity?"}
+    term["pidfd_send_signal SIGTERM"]
+    wait{"poll(pidfd) readable<br/>within 10 s?"}
+    kill["pidfd_send_signal SIGKILL"]
+    ended["Ended"]
+    gone["AlreadyGone"]
+    other["NotTheSame: nothing sent"]
+    id --> open
+    open -->|ESRCH| gone
+    open --> check
+    check -->|no| other
+    check -->|yes| term --> wait
+    wait -->|yes| ended
+    wait -->|no| kill --> ended
+```
+
+The pidfd pins the process before its start is compared, so the pid can never be reused between the check and the
+signal. `PidfdProcessSignals` (glibc's `pidfd_open` / `pidfd_send_signal` / `poll`, by the soname `libc.so.6`) is wired
+by the CLI only inside the distro and never under `WSL_CARE_ROOT` (a fixture's pids are not this machine's:
+`RefusingProcessSignals.Sandboxed`); a context nobody wired refuses (`NotWired`). An architecture test keeps every
+signalling call (`"pidfd_send_signal"`, `"kill"`, `"tgkill"`, …) in that one file, with a companion that still finds the
+seam's own calls.
+
+### A12 — "not referenced by any project" is Playwright's own rule
+
+Every project that ran `playwright install` left a file in `~/.cache/ms-playwright/.links/` naming its `playwright-core`
+folder (seen on this machine on 2026-10-02: four links, one into a `/tmp` scratch folder that no longer exists); that
+folder's `browsers.json` names the revisions it uses, and a browser's folder is `<name, '-' as '_'>-<revision>`. A link
+whose package is gone references nothing (Playwright drops it too). No link, an unreadable link, a package without a
+readable `browsers.json`, a running install (`__dirlock`), an unreadable process table — each refuses the Playwright part
+whole; a folder a running process names is kept.
+
+### The target user's home (plan §15c #2, closed here)
+
+`TargetHome.Resolve` (in `Actions/TargetUser.cs`), called by `CliHost.ForThisMachine` when the process is root (real or
+claimed in a sandbox): the target user found → `LinuxHostPaths.WithHome(<their home>)` — `Home`, the user configuration
+layer (`~/.config/wsl-care/config.json`, never root's `XDG_CONFIG_HOME`) and the user's state folder follow it, the
+replaced home stays protected; so the daily folder walk (A8 / A9's rows), the caches of A8 / A12 / A14 / A17 and the
+user layer are the TARGET user's. Ambiguous → `HomeOwner.Unknown`: the user layer is loaded as UNREADABLE with the
+reason, so the run is observe-only (§15a #1's reasoning: a default must not stand in for a setting the user changed).
+None (no login account, or no `/etc/passwd` at all — now `None`, it was `Ambiguous`) → `$HOME`, there is no user layer to
+miss. `config set` / `reset` refuse to run as root for the target user (a root-owned file in their home would lock them
+out of it).
+
+### The CLI: the panel's mark and A4's shown list
+
+`act … [--manual] [--volume <name>]... [--only <file>]`: `--manual` records the trigger `manual` (the timer wins if
+`INVOCATION_ID` is also set — more gates, not fewer); `--volume` (repeatable, each a 64-hex anonymous volume name) and
+`--only` (a file of such names, one per line, at most 1 MiB and 10 000 names; read as root, validated line by line, a bad
+line refused BY NUMBER, its content never echoed) need A4 among the actions and travel as `ActRequest.ShownVolumes`.
+
+### Decisions taken in E3.S2
+
+- **Re-checked = the run's own live preview.** A4 / A5 / A6 / A7 act on the targets of the preview the engine took
+  seconds before, in the same call (§15a #0), never on a stored list; Docker itself refuses a volume attached or a
+  container started in between (no `-f` anywhere), and labels and ages cannot change the other way.
+- **A6's `-a` also takes a dangling image of that age** (A6's target, run first); a keep label on an IMAGE is honoured by
+  the prune's filter but not shown by the preview (`system df -v` carries no image labels) — the run can only take fewer.
+- **A7's dry run records the row's figure** (all reclaimable entries); what the timer's capped prune would free is the
+  row's "above the cap" note.
+- **`cargo sweep` is not run**: it deletes projects' `target/` folders and the projects live under `~/git`, under which
+  nothing is ever deleted; **Gradle** has no cache command (it prunes itself). Both are named in A17's preview.
+- **A17's trigger** is one cache above 5 GiB (npm's default) — no measurement of these caches exists here yet; auto is off.
+- **A8 / A9's previews are their rows** (the daily walk's sample): before the first full run they are unavailable and the
+  action is refused with that reason; the RUN measures live.
+- **A14's trigger** fires on any target (more than 2 builds of an editor, or an obsolete extension).
 
 ## Fail-closed resolution and the atomic write
 
@@ -1094,7 +1245,7 @@ mapped in the workflow header — each: restore → `dotnet format --verify-no-c
 the three test executables (Core, CLI, Scenarios) → Native AOT `dotnet publish -r <rid>` → the
 published binary must list `--help`/`--version` and print the version in `src_daemon/version.txt` →
 the configuration round trip under a temporary `WSL_CARE_ROOT` (set, read back from the user layer,
-a refused set exits 2 with one `wsl-care:` line, the value still holds) → `status --json` under a sandbox root (on Linux holding the captured procfs tree, whose `MemTotal` must come back; on Windows the host side) → the full run: `collect --json` must record (one history line naming a run detail under `runs/`), `status --json` must name that run, `doctor --json` must answer. Every MSBuild command carries
+a refused set exits 2 with one `wsl-care:` line, the value still holds) → `status --json` under a sandbox root (on Linux holding the captured procfs tree, whose `MemTotal` must come back; on Windows the host side) → the full run: `collect --json` must record (one history line naming a run detail under `runs/`), `status --json` must name that run, `doctor --json` must answer → `act <every action --help names> --preview --json` under a sandbox root with root CLAIMED there (E3.S2: preview only, never destructive — exit 0, `previewed`, every id answered, no state written; the Windows binary exits 2 naming the side). Every MSBuild command carries
 `-m:4`.
 
 ### `ci · family checks` (`.github/workflows/family-checks.yml`)
@@ -1115,7 +1266,7 @@ FluentAssertions held below 8.x.
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5) |

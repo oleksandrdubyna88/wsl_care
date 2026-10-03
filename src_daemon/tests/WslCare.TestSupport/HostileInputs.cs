@@ -86,6 +86,7 @@ public sealed class HostileInputs(int seed)
         SlotKind.Hex h => new string([.. Enumerable.Range(0, h.Length).Select(_ => "0123456789abcdef"[_random.Next(16)])]),
         SlotKind.UnitName u => Pick<string>(u.TypeRequired ? ["wsl-pro.service", "fstrim.timer", "a@b.service", "systemd-oomd.service", "x-y_z.socket"] : ["systemd-resolved", "wsl-pro.service", "kernel-x"]),
         SlotKind.UserName => Pick<string>(["me", "strug", "_svc", "a-b", "u1000"]),
+        SlotKind.SnapName => Pick<string>(["core22", "snapd", "firefox", "gnome-42-2204", "lxd", "a1"]),
         SlotKind.Text t => TextValue(t),
         SlotKind.OneOf o => Pick(o.Values),
         SlotKind.Prefixed p => p.Prefix + Valid(p.Inner),

@@ -163,10 +163,10 @@ public sealed class ActCommandTests : IDisposable
     [Fact]
     public void An_action_this_build_does_not_hold_is_refused_by_name()
     {
-        var (exit, _, stderr) = CliRun.Over(Host(Root), "act", "A4", "--preview");
+        var (exit, _, stderr) = CliRun.Over(Host(Root), "act", "A1", "--preview");
 
         exit.Should().Be((int)ExitCode.Usage);
-        stderr.Should().Contain("A4 is not built in this release; act holds: A10");
+        stderr.Should().Contain("A1 is not built in this release; act holds: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
     }
 
     [Fact]
@@ -197,6 +197,67 @@ public sealed class ActCommandTests : IDisposable
     [Fact]
     public void The_help_names_the_act_verb_and_the_actions_this_build_holds()
     {
-        CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--json]").And.Contain("\"act\" holds these actions: A10");
+        CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--manual] [--volume <name>]... [--only <file>] [--json]")
+            .And.Contain("\"act\" holds these actions: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
+    }
+
+    // ---------- E3.S2: the panel's mark and A4's shown list ----------
+
+    [Fact]
+    public void A_button_run_marked_manual_is_recorded_with_the_manual_trigger()
+    {
+        var (exit, stdout, stderr) = CliRun.Over(Host(Root), "act", "A10", "--confirm", "--manual", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        Report(stdout).Result.Should().Be("recorded");
+        RunHistory.Read(_sandbox.Paths, _sandbox.Files).Records.Single().Trigger.Should().Be(RunTrigger.Manual);
+    }
+
+    [Theory]
+    [InlineData("A4", "--volume", "not-a-volume")]
+    [InlineData("A10", "--volume", "6300b7160d6ba80230316f78016e24424d0b7b611876e5e7c036ac405ee905ac")]
+    [InlineData("A4", "--volume")]
+    [InlineData("A4", "--only")]
+    [InlineData("A4", "--only", "a", "--only", "b")]
+    public void A_shown_list_belongs_to_a4_and_holds_only_anonymous_volume_names(params string[] rest)
+    {
+        CommandLine.Parse(["act", rest[0], "--confirm", .. rest.Skip(1)]).Should().BeOfType<Request.Failed>();
+    }
+
+    [Fact]
+    public void A_shown_list_parses_into_the_request_with_the_manual_mark()
+    {
+        var volume = new string('a', 64);
+
+        var act = CommandLine.Parse(["act", "A5,A4", "--confirm", "--manual", "--volume", volume, "--only", "/tmp/shown.txt"]).Should().BeOfType<Request.Act>().Subject;
+
+        act.Manual.Should().BeTrue();
+        act.Volumes.Should().Equal(volume);
+        act.OnlyFile.Should().Be("/tmp/shown.txt");
+    }
+
+    [Fact]
+    public void An_only_file_with_a_line_that_is_not_a_volume_name_is_refused_naming_the_line_never_its_content()
+    {
+        var file = _sandbox.Write("/tmp/shown.txt", $"{new string('a', 64)}\nsecret-looking text\n");
+
+        var (exit, stdout, stderr) = CliRun.Over(Host(Root), "act", "A4", "--confirm", "--only", file);
+
+        exit.Should().Be((int)ExitCode.Usage);
+        stdout.Should().BeEmpty();
+        stderr.Should().Contain("line 2").And.NotContain("secret-looking");
+        _runner.Requests.Should().BeEmpty("nothing was read from Docker, nothing removed");
+    }
+
+    [Fact]
+    public void As_root_working_for_the_target_user_config_set_refuses_rather_than_leave_a_root_owned_file_in_their_home()
+    {
+        var host = Host(Root) with { HomeOwner = new HomeOwner.Target(new TargetUser("me", 1000, "/home/me"), "test") };
+
+        var (exit, _, stderr) = CliRun.Over(host, "config", "set", "dryRun", "false");
+
+        exit.Should().Be((int)ExitCode.Usage);
+        stderr.Should().Contain("run them as me, not as root");
+        File.Exists(_sandbox.Paths.UserConfigFile).Should().BeFalse();
     }
 }

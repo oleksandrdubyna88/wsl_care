@@ -24,6 +24,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual FileSizeResult FileSize(string path) => inner.FileSize(path);
 
+    public virtual DirectoryTimeResult DirectoryLastWrite(string path) => inner.DirectoryLastWrite(path);
+
     public virtual IReadOnlyList<string> ListFiles(string path) => inner.ListFiles(path);
 
     public virtual TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken) =>

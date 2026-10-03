@@ -15,20 +15,24 @@ public static class ReadCommandTemplates
     private static readonly SlotKind.Rfc3339Utc Instant = new();
     private static readonly SlotKind.UnitName Unit = new();
 
+    /// <summary><c>docker container inspect</c> through the product's field template, for 1 to 100 full ids — the one
+    /// parameterised read the Docker collector runs; the Docker actions of E3.S2 declare this same instance.</summary>
+    public static CommandTemplate ContainerInspect { get; } = Machine(
+        "container-inspect",
+        DockerCommands.Executable,
+        [L("container"), L("inspect"), L("--format"), L(DockerCommands.InspectTemplate), new ArgPart.Repeat("id", new SlotKind.Hex(64), 1, DockerCommands.InspectBatch)],
+        DockerCommands.ListingCeiling);
+
     public static IReadOnlyList<CommandTemplate> All { get; } =
     [
         .. new[]
         {
-            DockerCommands.Version, DockerCommands.SystemDf, DockerCommands.SystemDfVerbose, DockerCommands.DanglingVolumes,
+            DockerCommands.Version, DockerCommands.SystemDf, DockerCommands.SystemDfVerbose, DockerCommands.DanglingVolumes, DockerCommands.VolumeList,
             DockerCommands.ContainerList, DockerCommands.Stats, DockerCommands.EngineStart,
             SystemdCommands.JournalDiskUsage, SystemdCommands.ListBoots, SystemdCommands.FailedUnits, SystemdCommands.Version, SystemdCommands.TimeSync,
             HealthCommands.WindowsClock, HealthCommands.SnapList,
         }.Select(CommandTemplate.Fixed),
-        Machine(
-            "container-inspect",
-            DockerCommands.Executable,
-            [L("container"), L("inspect"), L("--format"), L(DockerCommands.InspectTemplate), new ArgPart.Repeat("id", new SlotKind.Hex(64), 1, DockerCommands.InspectBatch)],
-            DockerCommands.ListingCeiling),
+        ContainerInspect,
         Machine(
             "events",
             DockerCommands.Executable,

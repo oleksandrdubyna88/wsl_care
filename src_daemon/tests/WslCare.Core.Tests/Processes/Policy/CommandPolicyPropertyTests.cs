@@ -71,30 +71,59 @@ public sealed class CommandPolicyPropertyTests
     /// <summary>The action property: run every action of <paramref name="registry"/> — preview AND run — for generated
     /// configs and generated journal contents, through a runner that applies <paramref name="policy"/>; every argv it asked
     /// for must be allowed, an instance of one of ITS OWN declared templates, and never a never-command.</summary>
-    internal static async Task<(IReadOnlyList<string> Violations, int Commands)> JudgeActionsAsync(ActionRegistry registry, CommandPolicy policy, int seed, int cases)
+    internal static async Task<(IReadOnlyList<string> Violations, int Commands, IReadOnlySet<string> Covered)> JudgeActionsAsync(ActionRegistry registry, CommandPolicy policy, int seed, int cases)
     {
         var inputs = new HostileInputs(seed);
         using var sandbox = new LinuxSandbox("prop-actions");
+        var me = new TargetUser("me", 1000, "/home/me");
+        foreach (var tool in new[] { "npm", "pnpm", "uv", "pip3", "dotnet" })
+        {
+            sandbox.Executable("/home/me/.local/bin", tool);
+        }
+
+        sandbox.Sized("/home/me/.local/share/NuGet/http-cache/x/y.nupkg", 10, FixedTimeProvider.DefaultNow);
         var violations = new List<string>();
+        var covered = new HashSet<string>(StringComparer.Ordinal);
         var commands = 0;
         for (var i = 0; i < cases; i++)
         {
             var files = new GeneratedJournal(sandbox.Files, sandbox.Paths, inputs);
             var config = Config(sandbox, inputs);
+            TogglePip(sandbox, inputs);
             foreach (var action in registry.Actions)
             {
-                var runner = new RecordingCommandRunner { Policy = policy, Default = RecordingCommandRunner.Exited(0, "Archived and active journals take up 1.5G in the file system.") };
-                var context = new ActionContext(sandbox.Paths, files, new FixedTimeProvider(), config, inputs.Pick<RunTrigger>([RunTrigger.Timer, RunTrigger.Cli, RunTrigger.Manual]), new TargetUserResult.Found(new TargetUser("me", 1000, "/home/me"), "test"));
-                var executor = new ActionCommands(action, runner, context.TargetUser, []);
+                var world = new GeneratedWorld(inputs);
+                var runner = world.Runner(policy);
+                var trigger = inputs.Pick<RunTrigger>([RunTrigger.Timer, RunTrigger.Cli, RunTrigger.Manual]);
+                var context = new ActionContext(sandbox.Paths, files, new FixedTimeProvider(), config, trigger, new TargetUserResult.Found(me, "test"))
+                {
+                    ShownVolumes = inputs.Next(2) == 0 ? ShownList.Of(world.Shown()) : ShownList.None,
+                };
+                var executor = new ActionCommands(action, runner, context.TargetUser, TargetUserCommands.BinFolders(me, sandbox.Paths, files));
                 var preview = await action.PreviewAsync(context, executor, CancellationToken.None);
                 await action.RunAsync(context, preview, executor, CancellationToken.None);
                 commands += runner.Requests.Count;
+                covered.UnionWith(executor.Ran.Where(c => c.Outcome == "exited").Select(c => c.Template));
                 violations.AddRange(runner.Requests.SelectMany(r => ActionViolations(action, policy, r, i)));
                 violations.AddRange(executor.Ran.Where(c => c.Outcome == "refused").Select(c => $"case {i}: {action.Id} asked for a command its executor refused: {c.Display} ({c.Detail})"));
             }
         }
 
-        return ([.. violations.Distinct().Take(20)], commands);
+        return ([.. violations.Distinct().Take(20)], commands, covered);
+    }
+
+    /// <summary>pip installed or not, per case: A17 runs <c>pip3</c> only where there is no <c>pip</c>, so both are reached.</summary>
+    private static void TogglePip(LinuxSandbox sandbox, HostileInputs inputs)
+    {
+        var pip = sandbox.Paths.DistroPath("/home/me/.local/bin/pip" + (OperatingSystem.IsWindows() ? ".exe" : string.Empty));
+        if (inputs.Next(2) == 0)
+        {
+            sandbox.Executable("/home/me/.local/bin", "pip");
+        }
+        else if (File.Exists(pip))
+        {
+            File.Delete(pip);
+        }
     }
 
     [Fact]
@@ -153,10 +182,13 @@ public sealed class CommandPolicyPropertyTests
     [Fact]
     public async Task Every_argv_a_registered_action_asks_for_under_any_config_and_any_journal_is_allowed_declared_and_never_a_never_command()
     {
-        var (violations, commands) = await JudgeActionsAsync(ActionRegistry.Product, CommandPolicy.Product, Seed, ActionCases);
+        var (violations, commands, covered) = await JudgeActionsAsync(ActionRegistry.Product, CommandPolicy.Product, Seed, ActionCases);
 
         violations.Should().BeEmpty();
-        commands.Should().BeGreaterThanOrEqualTo(ActionCases * ActionRegistry.Product.Actions.Count * 2, "every case previews and runs every action — at least two commands each");
+        commands.Should().BeGreaterThan(ActionCases * 5, "every case previews and runs every action");
+        // Derived, not retyped: EVERY template a registered action declares must have run in some generated case, or the
+        // property passed without exercising it (E3.S2: the removals and prunes are reached with hostile names around them).
+        ActionRegistry.Product.Actions.SelectMany(a => a.Commands).Select(t => t.Name).Distinct().Should().BeSubsetOf(covered);
     }
 
     [Fact]
@@ -165,7 +197,7 @@ public sealed class CommandPolicyPropertyTests
         var registry = new ActionRegistry([new PlantedShellAction()]);
         var policy = CommandPolicy.Over(new CommandCatalogue([.. CommandCatalogue.Product.Templates, .. registry.Actions.SelectMany(a => a.Commands)]));
 
-        var (violations, _) = await JudgeActionsAsync(registry, policy, Seed, 50);
+        var (violations, _, _) = await JudgeActionsAsync(registry, policy, Seed, 50);
 
         violations.Should().Contain(v => v.Contains("refused", StringComparison.Ordinal) && v.Contains("never-list", StringComparison.Ordinal));
     }
@@ -177,12 +209,16 @@ public sealed class CommandPolicyPropertyTests
             yield return $"case {i}: {action.Id} produced an argv the policy refused: {Shown(request.Argv)} ({((CommandVerdict.Refused)policy.Review(request)).Reason})";
         }
 
-        if (NeverOracle.IsNever(request.Argv))
+        if (NeverOracle.IsNever(request.Argv) || (Wrapped(request) is { } inner && NeverOracle.IsNever(inner)))
         {
             yield return $"case {i}: {action.Id} produced a never-command: {Shown(request.Argv)}";
         }
 
-        if (!action.Commands.Any(t => t.Scope == CommandScope.Machine && t.Executable == request.Argv[0] && t.Matches([.. request.Argv.Skip(1)])))
+        var wrapped = TargetUserArgv.Parse(request.Argv);
+        var declared = wrapped is null
+            ? action.Commands.Any(t => t.Scope == CommandScope.Machine && t.Executable == request.Argv[0] && t.Matches([.. request.Argv.Skip(1)]))
+            : action.Commands.Any(t => t.Scope == CommandScope.User && t.Executable == wrapped.ExecutableName && t.Matches(wrapped.Arguments));
+        if (!declared)
         {
             yield return $"case {i}: {action.Id} produced an argv none of ITS templates declares: {Shown(request.Argv)}";
         }
@@ -193,7 +229,12 @@ public sealed class CommandPolicyPropertyTests
     private static EffectiveConfig Config(LinuxSandbox sandbox, HostileInputs inputs)
     {
         var keep = inputs.Pick<long>([1, 2, 7, 30, 365, 3650, inputs.Next(3650) + 1]);
-        sandbox.Write("/home/me/.config/wsl-care/config.json", $$"""{ "journal": { "keepDays": {{keep}} }, "dryRun": {{(inputs.Next(2) == 0 ? "true" : "false")}} }""");
+        int Pick(params int[] values) => inputs.Pick<int>(values);
+        sandbox.Write("/home/me/.config/wsl-care/config.json", $$"""
+            { "journal": { "keepDays": {{keep}} }, "dryRun": {{(inputs.Next(2) == 0 ? "true" : "false")}},
+              "volumes": { "anonymousOlderThanDays": {{Pick(0, 1)}} }, "containers": { "stoppedOlderThanDays": {{Pick(0, 7)}}, "testcontainersOlderThanHours": {{Pick(0, 2)}} },
+              "images": { "unusedOlderThanDays": {{Pick(0, 7)}} }, "buildCache": { "maxGb": {{Pick(0, 20)}}, "olderThanDays": {{Pick(0, 7)}} } }
+            """);
         return ConfigLoader.Load(sandbox.Paths, sandbox.Files).Config;
     }
 

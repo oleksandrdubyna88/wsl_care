@@ -4,7 +4,12 @@ using WslCare.Core.Records;
 namespace WslCare.Core.Actions.Engine;
 
 /// <summary>What the engine is asked: these actions, started by this trigger, previewed or executed.</summary>
-public sealed record ActRequest(IReadOnlyList<ActionId> Ids, RunTrigger Trigger, bool Execute);
+public sealed record ActRequest(IReadOnlyList<ActionId> Ids, RunTrigger Trigger, bool Execute)
+{
+    /// <summary>The volumes the panel SHOWED and the person confirmed (<c>--volume</c> / <c>--only</c>): A4 removes only
+    /// those that are still candidates; none given for the timer and a terminal (E3.S2).</summary>
+    public ShownList ShownVolumes { get; init; } = ShownList.None;
+}
 
 /// <summary>What became of one action in a run — the closed set of <see cref="ActionStatus"/> names.</summary>
 public static class ActionStatus

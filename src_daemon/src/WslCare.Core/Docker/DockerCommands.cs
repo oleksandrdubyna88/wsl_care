@@ -69,6 +69,10 @@ public static class DockerCommands
     /// <summary>The volumes no container refers to — A4's re-checked list (plan §15 #4).</summary>
     public static ToolCommand DanglingVolumes { get; } = new(Executable, "volume-ls-dangling", ["volume", "ls", "--filter", "dangling=true", "--format", "{{.Name}}"], ListingCeiling, LargeCap);
 
+    /// <summary>The name of EVERY volume, attached or not — what A5 reads after <c>docker rm -v</c> to confirm which anonymous
+    /// volumes went with the containers (E3.S2: a volume it cannot confirm gone counts nothing).</summary>
+    public static ToolCommand VolumeList { get; } = new(Executable, "volume-ls", ["volume", "ls", "--format", "{{.Name}}"], ListingCeiling, LargeCap);
+
     /// <summary>Every container, one JSON line each. Not used by <c>preview</c> (the verbose disk usage
     /// lists containers with their sizes); the live contract holds its rows to the same parser and the
     /// same ids, and the events follower (E2.S3) can name containers with it.</summary>

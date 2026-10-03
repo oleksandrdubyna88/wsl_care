@@ -454,4 +454,15 @@ public sealed class ActionEngineTests : IDisposable
         _sandbox.Write($"/proc/{pid}/cgroup", "0::/user.slice\n");
         File.WriteAllBytes(_sandbox.Paths.DistroPath($"/proc/{pid}/cmdline"), Encoding.UTF8.GetBytes(commandLine.Replace(' ', '\0') + "\0"));
     }
+
+    [Fact]
+    public async Task An_action_whose_tool_is_not_installed_is_skipped_with_the_reason_never_run_and_never_failed()
+    {
+        // E3.S2: a skip (A8 / A17 without their tool) is neither a refusal nor a failure, on a button and on the timer alike.
+        var result = await Engine(new ScriptedAction("A8", _journal) { Skip = "npm is not installed for me" }).ExecuteAsync(Run(RunTrigger.Manual, "A8"), CancellationToken.None);
+
+        Statuses(result).Should().Equal("A8:skipped");
+        Done(result).Detail.Actions.Single().Reason.Should().Be("npm is not installed for me");
+        _journal.Should().Equal("preview A8");
+    }
 }

@@ -1,6 +1,10 @@
+using System.Text.Json.Serialization;
+
+using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
+using WslCare.Core.Processes;
 using WslCare.Core.Processes.Policy;
 using WslCare.Core.Records;
 
@@ -21,19 +25,52 @@ public enum IdleRule
 
 /// <summary>Everything an action reaches the machine through, for one run — built once by the engine.</summary>
 /// <param name="TargetUser">Whose home and tools a user-scoped action works on (plan §15c #2), discovered once per run.</param>
+/// <remarks>The init-only members default to the SAFE answer — no process table, a signal sender that refuses, no shown
+/// list — so a context a caller builds without them can only make an action do LESS (E3.S2).</remarks>
 public sealed record ActionContext(
     IHostPaths Paths,
     IFileSystem Files,
     TimeProvider Clock,
     EffectiveConfig Config,
     RunTrigger Trigger,
-    TargetUserResult TargetUser);
+    TargetUserResult TargetUser)
+{
+    /// <summary>The distro's process table, read fresh at each call (A11's suspects, A12 / A14's "in use"). Unavailable by
+    /// default, which makes those actions refuse.</summary>
+    public Func<CancellationToken, Reading<ProcessSnapshot>> Processes { get; init; } =
+        static _ => Reading.Missing<ProcessSnapshot>("this run has no process table");
+
+    /// <summary>The ONE way a process is signalled (A11): by pid AND start time, never by name. Refuses by default.</summary>
+    public IProcessSignals Signals { get; init; } = RefusingProcessSignals.NotWired;
+
+    /// <summary>The volumes a button SHOWED and the person confirmed (plan §15 #4: A4 removes only those, re-checked);
+    /// <see cref="ShownList.None"/> for the timer and the terminal, which act on their own fresh preview.</summary>
+    public ShownList ShownVolumes { get; init; } = ShownList.None;
+
+    /// <summary>A wait the action may take (A11's CPU window). Real time by default; a test passes its own.</summary>
+    public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
+}
+
+/// <summary>A list of names a caller showed and confirmed — or none given: a closed choice, never a null.</summary>
+public sealed record ShownList(bool Given, IReadOnlySet<string> Names)
+{
+    public static readonly ShownList None = new(false, new HashSet<string>(StringComparer.Ordinal));
+
+    public static ShownList Of(IEnumerable<string> names) => new(true, new HashSet<string>(names, StringComparer.Ordinal));
+}
 
 /// <summary>One object a preview shows or a run removed.</summary>
 /// <param name="Kind">volume, container, image, file, …</param>
 /// <param name="Name">Its id or name.</param>
 /// <param name="Bytes">Its size, when known.</param>
-public sealed record ActionItem(string Kind, string Name, long? Bytes, string Note = "");
+public sealed record ActionItem(string Kind, string Name, long? Bytes, string Note = "")
+{
+    /// <summary>What the action needs to act on this object again (A11: the pid's start and CPU ticks; A12 / A14: the
+    /// folder as this process sees it) — held in memory between the preview and the run of ONE engine call, never
+    /// written to a file and never read back from one.</summary>
+    [JsonIgnore]
+    public string Key { get; init; } = string.Empty;
+}
 
 /// <summary>
 /// What an action WOULD do, computed from LIVE state (plan §15a #0) — the same figure the button's modal shows and the
@@ -60,8 +97,22 @@ public sealed record ActionPreview(
     /// <summary>Plan §7.3: the modal names up to 20 items.</summary>
     public const int MaxItems = 20;
 
+    /// <summary>EVERY object the preview selected — <see cref="Items"/> is the first <see cref="MaxItems"/> of them. What the
+    /// run acts on, re-checked by it; held in memory within ONE engine call and never serialised (E3.S2).</summary>
+    [JsonIgnore]
+    public IReadOnlyList<ActionItem> Targets { get; init; } = [];
+
+    /// <summary>Why the action has nothing it COULD do here — its tool is not installed (A8, A17), nothing of its kind
+    /// exists — a skip with the reason, never an error (E3.S2); empty when it applies.</summary>
+    public string Skip { get; init; } = string.Empty;
+
     public static ActionPreview Unavailable(string what, string reason) =>
         new(what, false, reason, 0, null, string.Empty, new Dictionary<string, long>(), string.Empty, []);
+
+    /// <summary>An available preview of <paramref name="targets"/> — all kept as <see cref="Targets"/>, the first
+    /// <see cref="MaxItems"/> shown as <see cref="Items"/>.</summary>
+    public static ActionPreview Of(string what, int count, long? bytes, string basis, IReadOnlyDictionary<string, long> facts, string refusal, IReadOnlyList<ActionItem> targets) =>
+        new(what, true, null, count, bytes, basis, facts, refusal, [.. targets.Take(MaxItems)]) { Targets = targets };
 }
 
 /// <summary>The timer's trigger: fired, or why not (plan §5's <i>Auto trigger</i> column).</summary>
@@ -87,6 +138,17 @@ public sealed record ActionRun(
     string Failure)
 {
     public bool Succeeded => Failure.Length == 0;
+
+    /// <summary>The targets it did NOT remove, each with why — already gone (not a failure, plan §15a #0), in use since the
+    /// preview (Docker's own refusal), refused by the deletion policy, not the same process any more (E3.S2).</summary>
+    public IReadOnlyList<ActionItem> NotRemoved { get; init; } = [];
+
+    /// <summary>What else the run detail should say: a part skipped because its tool is not installed, a cross-check.</summary>
+    public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>A run that did nothing because nothing was selected — no command started.</summary>
+    public static ActionRun Nothing(IReadOnlyList<ActionCommandRecord> commands, string why = "nothing to remove") =>
+        new(0, 0, why, null, null, [], commands, string.Empty);
 }
 
 /// <summary>
