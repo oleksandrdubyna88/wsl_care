@@ -35,6 +35,7 @@ internal sealed class InstallWorld : IDisposable
 {
     public const string Repo = "oleksandrdubyna88/wsl_care";
     public const string SignerWorkflow = Repo + "/.github/workflows/release.yml";
+    public const string AttestationsApi = "https://api.github.com/repos/" + Repo + "/attestations/sha256:";
     public const string ReleasesApi = "https://api.github.com/repos/" + Repo + "/releases?per_page=100";
     public const string NewestDaemon = "0.1.0";
     public const string BinaryPath = "/opt/wsl-care/bin/wsl-care";
@@ -48,12 +49,30 @@ internal sealed class InstallWorld : IDisposable
     /// <summary>The real tools linked onto the script's PATH: text and file tools only, acting on the temporary folder
     /// and the prefix.</summary>
     public static readonly IReadOnlyList<string> RealTools =
-        ["awk", "cat", "chmod", "cut", "grep", "gzip", "install", "ln", "ls", "mkdir", "mktemp", "mv", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "tar", "timeout", "tr"];
+        ["awk", "cat", "chmod", "cut", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "sort", "tar", "timeout", "tr", "wc"];
 
     private readonly TempRoot _root;
     private readonly List<FakeAnswer> _answers = [];
 
-    public InstallWorld(string purpose, IReadOnlyList<string>? withoutTools = null)
+    /// <summary>The variables every fake call records (<see cref="FakeToolProtocol.RecordEnvironmentVariable"/>): what the
+    /// installer hands <c>gh</c> — whose configuration, whose cache, whose token.</summary>
+    public static readonly IReadOnlyList<string> RecordedVariables =
+        ["HOME", "GH_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "GH_TOKEN", "GITHUB_TOKEN"];
+
+    /// <summary>The certificate identity a genuine release attestation of <paramref name="version"/> carries: release.yml
+    /// of this repository, run for the tag <c>daemon-v&lt;version&gt;</c>.</summary>
+    public static string SignerIdentity(string version) => $"https://github.com/{SignerWorkflow}@refs/tags/daemon-v{version}";
+
+    /// <summary>What a genuine release of <paramref name="version"/> is attested by.</summary>
+    public static AttestationBundles.Signer GenuineSigner(string version) =>
+        AttestationBundles.Signer.ReleaseWorkflow(Repo, $"refs/tags/daemon-v{version}");
+
+    /// <param name="purpose">Names the world's temporary folder.</param>
+    /// <param name="withoutTools">Faked tools left OFF the PATH — a tool that is not installed.</param>
+    /// <param name="awk">The awk the script runs (<c>/usr/bin/mawk</c>, <c>/usr/bin/gawk</c>); empty = the system's
+    /// <c>awk</c>. Ubuntu ships mawk, a runner image may point <c>awk</c> at gawk: the snappy decoder must give both the
+    /// same bytes.</param>
+    public InstallWorld(string purpose, IReadOnlyList<string>? withoutTools = null, string awk = "")
     {
         _root = new TempRoot($"install-{purpose}");
         Root = _root.Dir("root");
@@ -66,7 +85,7 @@ internal sealed class InstallWorld : IDisposable
         StubLog = _root.Under("stub-invocations.log");
         ScenarioHome.InstallFakes(FakeBin, [.. FakedTools.Except(withoutTools ?? [])]);
         ScenarioHome.InstallFakes(StubBin, ["wsl-care"]);
-        LinkRealTools(RealBin);
+        LinkRealTools(RealBin, awk);
         SeedMachine();
         ScriptTheHappyPath();
     }
@@ -91,6 +110,9 @@ internal sealed class InstallWorld : IDisposable
 
     /// <summary>The <c>SUDO_USER</c> the script sees; none unless a test sets it.</summary>
     public string SudoUser { get; set; } = string.Empty;
+
+    /// <summary>A <c>GH_TOKEN</c> in the script's environment; none unless a test sets it.</summary>
+    public string GhToken { get; set; } = string.Empty;
 
     public IReadOnlyList<FakeCall> Calls => FakeCallLog.ReadAll(CallsFile);
 
@@ -124,9 +146,12 @@ internal sealed class InstallWorld : IDisposable
     public InstallWorld Override(string tool, IReadOnlyList<string> argv, int exitCode, string stdout = "", bool prefix = false) =>
         Override(new FakeAnswer(tool, argv, exitCode, stdout.Length == 0 ? string.Empty : _root.File($"answers/{Guid.NewGuid():N}.out", stdout), string.Empty) { Prefix = prefix });
 
-    /// <summary>Publishes a release the fake curl serves: its archive (built by <paramref name="build"/>, or the real one)
-    /// and its <c>.sha256</c> (<paramref name="sha256Line"/> replaces the true line when given).</summary>
-    public void Publish(string version, string rid, Action<TarWriter, string>? build = null, string? sha256Line = null)
+    /// <summary>Publishes a release the fake curl serves: its archive (built by <paramref name="build"/>, or the real one),
+    /// its <c>.sha256</c> (<paramref name="sha256Line"/> replaces the true line when given) and its attestations — by
+    /// default ONE, by release.yml at the version's tag on a hosted runner; <paramref name="signers"/> replaces them (an
+    /// empty list: GitHub knows no attestation for the archive).</summary>
+    /// <returns>The archive's SHA-256, the digest its attestations are looked up by.</returns>
+    public string Publish(string version, string rid, Action<TarWriter, string>? build = null, string? sha256Line = null, IReadOnlyList<AttestationBundles.Signer>? signers = null)
     {
         var name = ReleaseName(version, rid);
         var archive = _root.Under($"release/{name}.tar.gz");
@@ -142,7 +167,63 @@ internal sealed class InstallWorld : IDisposable
         var sha = _root.File($"release/{name}.tar.gz.sha256", sha256Line ?? $"{hash}  {name}.tar.gz\n");
         Override(Download(ReleaseUrl(version, $"{name}.tar.gz"), archive));
         Override(Download(ReleaseUrl(version, $"{name}.tar.gz.sha256"), sha));
+        Attest(hash, signers ?? [GenuineSigner(version)]);
+        return hash;
     }
+
+    /// <summary>Serves, for the archive of SHA-256 <paramref name="digest"/>, one bundle per signer: the attestation API's
+    /// answer naming each bundle's URL, and each URL's snappy-compressed bundle. The newest set is also what the fake gh
+    /// verifies in its ONLINE mode (no <c>--bundle</c>) — what GitHub's API would hand an installer that asks gh to fetch.</summary>
+    public void Attest(string digest, IReadOnlyList<AttestationBundles.Signer> signers) =>
+        ServeAttestations(digest, [.. signers.Select(s => AttestationBundles.Snappy(AttestationBundles.Utf8(AttestationBundles.Bundle(s, digest))))], signers);
+
+    /// <summary>Serves exactly these compressed bundles (a captured one, a corrupt one) for <paramref name="digest"/>;
+    /// <paramref name="onlineSigners"/> is what the fake gh's online mode sees (the first signer's bundle).</summary>
+    public void ServeAttestations(string digest, IReadOnlyList<byte[]> compressedBundles, IReadOnlyList<AttestationBundles.Signer>? onlineSigners = null)
+    {
+        var urls = new List<string>();
+        for (var i = 0; i < compressedBundles.Count; i++)
+        {
+            var url = $"https://tmaproduction.blob.core.windows.net/attestations/1/{digest}-{i}.json.sn?se=2026-10-03T18%3A00%3A00Z&sig=a%2Bb%3D";
+            var blob = _root.Under($"attestations/{digest}-{i}.json.sn");
+            Directory.CreateDirectory(Path.GetDirectoryName(blob)!);
+            File.WriteAllBytes(blob, compressedBundles[i]);
+            Override(Download(url, blob));
+            urls.Add(url);
+        }
+
+        Override(Download(AttestationsApi + digest, _root.File($"attestations/{digest}.api.json", AttestationBundles.ApiAnswer(urls))));
+        var online = onlineSigners is [var first, ..] ? _root.File($"attestations/{digest}.online.json", AttestationBundles.Bundle(first, digest)) : _root.File("attestations/none.json", "{}");
+        Override(new FakeAnswer("gh", ["attestation", "verify"], 0, online, string.Empty) { Prefix = true, VerifiesAttestation = true });
+        Override("gh", ["attestation", "verify", "--help"], 0, GhVerifyHelp);
+    }
+
+    /// <summary>Every verification the fake gh is asked for exits 1, as gh does for a refused attestation; its
+    /// <c>--help</c> still answers, so the preflight passes and the refusal is the verification's.</summary>
+    public void RefuseEveryVerification()
+    {
+        Override("gh", ["attestation", "verify"], 1, prefix: true);
+        Override("gh", ["attestation", "verify", "--help"], 0, GhVerifyHelp);
+    }
+
+    /// <summary>The lines of <c>gh attestation verify --help</c> (gh 2.97.0) the installer's preflight reads: the flags it uses.</summary>
+    public const string GhVerifyHelp =
+        """
+        Verify the integrity and provenance of an artifact using its associated
+        cryptographically signed attestations.
+
+        USAGE
+          gh attestation verify [<file-path> | oci://<image-uri>] [--owner | --repo] [flags]
+
+        FLAGS
+          -b, --bundle string                Path to bundle on disk, either a single bundle in a JSON file or a JSON lines file with multiple bundles
+              --cert-identity string         Enforce that the certificate's SubjectAlternativeName matches the provided value exactly
+          -i, --cert-identity-regex string   Enforce that the certificate's SubjectAlternativeName matches the provided regex
+              --deny-self-hosted-runners     Fail verification for attestations generated on self-hosted runners
+          -R, --repo string                  Repository name in the format <owner>/<repo>
+              --signer-workflow string       Enforce that the workflow that signed the attestation matches the provided value ([host/]<owner>/<repo>/<path>/<to>/<workflow>)
+
+        """;
 
     /// <summary>Publishes a release whose archive and <c>.sha256</c> were made elsewhere — by the release workflow's own
     /// packaging script (E4.S2, <c>PackageFlows</c>) — served by the fake curl exactly as GitHub would serve them.</summary>
@@ -151,6 +232,7 @@ internal sealed class InstallWorld : IDisposable
         var name = ReleaseName(version, rid);
         Override(Download(ReleaseUrl(version, $"{name}.tar.gz"), archive));
         Override(Download(ReleaseUrl(version, $"{name}.tar.gz.sha256"), sha256File));
+        Attest(Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(archive))), [GenuineSigner(version)]);
     }
 
     /// <summary>A curl answer: the file's bytes written where the script's <c>--output</c> says.</summary>
@@ -214,7 +296,9 @@ internal sealed class InstallWorld : IDisposable
         ["TMPDIR"] = Temp,
         [FakeToolProtocol.CallsVariable] = CallsFile,
         [FakeToolProtocol.ScriptVariable] = ScriptFile,
+        [FakeToolProtocol.RecordEnvironmentVariable] = string.Join(',', RecordedVariables),
         ["SUDO_USER"] = SudoUser.Length == 0 ? null : SudoUser,
+        ["GH_TOKEN"] = GhToken.Length == 0 ? null : GhToken,
     };
 
     /// <summary>Every entry under the prefix: path → kind, mode, link target or content hash. Equal before and after a
@@ -232,11 +316,12 @@ internal sealed class InstallWorld : IDisposable
         _ => $"file {File.GetUnixFileMode(info.FullName)} {Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(info.FullName)))}",
     };
 
-    private static void LinkRealTools(string bin)
+    private static void LinkRealTools(string bin, string awk)
     {
         foreach (var tool in RealTools)
         {
-            var real = new[] { "/usr/bin", "/bin" }.Select(d => Path.Combine(d, tool)).FirstOrDefault(File.Exists)
+            var real = (tool == "awk" && awk.Length > 0 ? awk : null)
+                ?? new[] { "/usr/bin", "/bin" }.Select(d => Path.Combine(d, tool)).FirstOrDefault(File.Exists)
                 ?? throw new InvalidOperationException($"the installer's tests need the real {tool} in /usr/bin or /bin");
             File.CreateSymbolicLink(Path.Combine(bin, tool), real);
         }
@@ -259,7 +344,7 @@ internal sealed class InstallWorld : IDisposable
             Answer("uname", ["-m"], "x86_64\n"),
             Answer("id", ["-u"], "0\n"),
             Download(ReleasesApi, _root.File("release/releases.json", ReleasesJson())),
-            new("gh", ["attestation", "verify", "--repo", Repo, "--signer-workflow", SignerWorkflow], 0, string.Empty, string.Empty) { Prefix = true },
+            Answer("gh", ["--version"], "gh version 2.97.0 (2026-07-31)\nhttps://github.com/cli/cli/releases/tag/v2.97.0\n"),
             Answer("systemctl", ["daemon-reload"]),
             Answer("systemctl", ["enable", "--now", "wsl-care.timer", "wsl-care-events.service"]),
             Answer("systemctl", ["enable", "--now", "sysstat.service", "atop.service"]),

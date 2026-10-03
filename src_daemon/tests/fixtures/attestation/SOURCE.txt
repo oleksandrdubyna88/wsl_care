@@ -1,0 +1,20 @@
+Attestation bundle fixture - CAPTURED, not synthetic.
+
+File:     cli-cli-gh_2.60.0_linux_amd64.tar.gz.json.sn (9 654 bytes, sha256 71fdbdfb94d5542ced35130d238b84de1b233c25663b16008918ecb0aa15b0ba)
+Source:   the public attestation GitHub serves for cli/cli's release asset gh_2.60.0_linux_amd64.tar.gz
+          (sha256 73ec218d04748e8e54783833532961d0981cf009661c7e0bfc56a2be7f847b33): an UNAUTHENTICATED
+          GET https://api.github.com/repos/cli/cli/attestations/sha256:<that digest> answered one attestation
+          with "bundle": null and a "bundle_url" on tmaproduction.blob.core.windows.net (Content-Type
+          application/x-snappy); this file is that URL's body, byte for byte.
+Captured: 2026-10-03 from WSL Ubuntu, with curl, no GitHub login, no token.
+
+What it is: a Sigstore bundle v0.3 (JSON, 10 132 bytes decompressed, sha256
+622ccacf813f80d5ea3fce3dfa04b3775cf7775b6681761582796baf6aad8c8c) in snappy's raw block format - a varint
+length, then 64 literal, 37 one-byte-offset copy and 32 two-byte-offset copy elements. The decompressed JSON
+holds bytes above 127 (the largest is 226), so a decoder that passes only ASCII would refuse a real bundle.
+Its certificate's SAN is https://github.com/cli/cli/.github/workflows/deployment.yml@refs/heads/trunk.
+
+Why it is here: install.sh decompresses the bundle itself (awk over od) so root can verify it with
+`gh attestation verify --bundle` and no login. The literal-only streams the tests build exercise one element
+kind; this real one exercises the copies. InstallFlows serves it as an archive's attestation and expects the
+refusal to name cli/cli's SAN - which the fake gh can only read when the decoder produced the exact JSON.

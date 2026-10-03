@@ -13,7 +13,7 @@ name: release
 #   - `release: published` never fires for a draft, and the draft is the point: nothing is downloadable until EVERY
 #     RID's asset is on it (plan §15e #2) — a published release would sit public and empty while the legs build;
 #   - `workflow_dispatch` carries no tag event: GITHUB_REF would be a branch, the guard would refuse it, and a
-#     dispatched run is not what `gh attestation verify --signer-workflow` was told to trust.
+#     dispatched run's attestation would name that branch — install.sh trusts only `release.yml@refs/tags/daemon-v<v>`.
 # A failed run is RE-RUN ("Re-run failed jobs"), which replays the same tag event. No pull request can reach this
 # file: there is no `pull_request` or `workflow_dispatch` trigger, so no fork reaches `id-token`, the attestation, or
 # `contents: write` (ReleaseWorkflowTests fails the suite if a trigger is added). Only the release App may create a
@@ -31,10 +31,12 @@ name: release
 #            archive and a matching .sha256, nothing else (.github/scripts/verify-release-assets.sh) — and only then
 #            flips the draft public. The only job with `contents: write`.
 #
-# THE ATTESTATION COMES FROM THIS FILE ITSELF, not from a reusable workflow: install.sh verifies with
-# `gh attestation verify --repo oleksandrdubyna88/wsl_care --signer-workflow
-# oleksandrdubyna88/wsl_care/.github/workflows/release.yml`, and a reusable workflow's attestation names the CALLED
-# file as its signer. Moving the build into one breaks every install.
+# THE ATTESTATION COMES FROM THIS FILE ITSELF, RUN FOR THE TAG, not from a reusable workflow: install.sh verifies with
+# `gh attestation verify --bundle … --repo oleksandrdubyna88/wsl_care --cert-identity
+# https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release.yml@refs/tags/daemon-v<version>
+# --deny-self-hosted-runners` — the exact identity of this file at the tag, on a GitHub-hosted runner. A reusable
+# workflow's attestation names the CALLED file as its signer, and a self-hosted runner is refused: moving the build into
+# either breaks every install.
 #
 # A FAILED RELEASE IS FIXED FORWARD. Before `publish` flips the draft nothing is public: fix the cause on main and either
 # re-run (a leg that failed for a transient reason) or let release-please cut the next patch. Never move or delete a
