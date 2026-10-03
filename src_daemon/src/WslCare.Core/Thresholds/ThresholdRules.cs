@@ -37,6 +37,12 @@ public static class ThresholdRules
     /// <summary>Plan §4.1: page cache &gt; 15 GB warns.</summary>
     public const double PageCacheWarnGib = 15;
 
+    /// <summary>Plan §4.1, A1's second trigger: page cache &gt; 12 GB AND available &lt; 30 %.</summary>
+    public const double PageCacheActGib = 12;
+
+    /// <summary>Plan §4.1, A1's second trigger: the available share it is paired with.</summary>
+    public const double PageCacheActAvailablePercent = 30;
+
     /// <summary>Plan §4.1: inactive anonymous memory &gt; 15 GB warns.</summary>
     public const double InactiveAnonWarnGib = 15;
 
@@ -212,6 +218,13 @@ public static class ThresholdRules
     /// <summary>Plan §4.5 with §15 #10: a drift is reported only on TWO observations above the threshold at least
     /// 5 minutes apart — this run's and the previous full run's — and never as more than a warning (A16 corrects it,
     /// and skips a clock that timesyncd/chrony reports synchronised).</summary>
+    /// <summary>Plan §15 #10, the ONE drift rule (this report and A16 share it): both observations measured, both above
+    /// <paramref name="maxSeconds"/>, at least <see cref="DriftObservationsApart"/> apart.</summary>
+    public static bool IsDrift(WindowsClockSample current, Reading<WindowsClockSample> previous, int maxSeconds) =>
+        current.Measured && Math.Abs(current.OffsetSeconds) > maxSeconds
+        && previous is Reading<WindowsClockSample>.Available { Value: var p }
+        && p.Measured && Math.Abs(p.OffsetSeconds) > maxSeconds && current.SampledAt - p.SampledAt >= DriftObservationsApart;
+
     private static Verdict ClockDrift(WindowsClockSample current, Reading<WindowsClockSample> previous, Reading<TimeSync> sync, EffectiveConfig config)
     {
         var max = config.Int(ConfigKeys.Clock.MaxDriftSeconds);
@@ -227,8 +240,7 @@ public static class ThresholdRules
             return new("clock.drift", Level.Ok, value, limit, "the distro's clock agrees with Windows'");
         }
 
-        var second = previous is Reading<WindowsClockSample>.Available { Value: var p }
-            && p.Measured && Math.Abs(p.OffsetSeconds) > max && current.SampledAt - p.SampledAt >= DriftObservationsApart;
+        var second = IsDrift(current, previous, max);
         var synced = sync is Reading<TimeSync>.Available { Value.Synchronized: true } ? "; timesyncd reports the clock synchronised, so A16 would not step it" : string.Empty;
         return second
             ? new("clock.drift", Level.Warn, value, limit, $"drift on two observations at least 5 minutes apart{synced}")

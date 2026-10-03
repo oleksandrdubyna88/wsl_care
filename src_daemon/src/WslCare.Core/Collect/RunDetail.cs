@@ -40,7 +40,13 @@ public sealed record RunDetail(
     StartsWindow ContainerStarts,
     SlowParts Slow,
     HousekeepingReport Housekeeping,
-    IReadOnlyList<ActionRecord> Actions);
+    IReadOnlyList<ActionRecord> Actions)
+{
+    /// <summary>The timer pass (E3.S3): every action's outcome with its live preview and measured result — what was removed,
+    /// in detail. Absent on a full run the timer did not start (and on every detail written before E3.S3).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Actions.Engine.TimerPass? TimerPass { get; init; }
+}
 
 /// <summary>What became of the run's records: written, not written because this process may not (read-only), a
 /// write that failed, or another run holding the lock.</summary>

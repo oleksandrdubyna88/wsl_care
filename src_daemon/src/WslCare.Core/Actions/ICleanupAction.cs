@@ -49,6 +49,10 @@ public sealed record ActionContext(
 
     /// <summary>A wait the action may take (A11's CPU window). Real time by default; a test passes its own.</summary>
     public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
+
+    /// <summary>Whether an EARLIER action of this same run ran and succeeded (A2 runs "after A1", plan §5). Nothing ran by
+    /// default — a context built outside the engine never claims a predecessor (E3.S3).</summary>
+    public Func<ActionId, bool> RanEarlier { get; init; } = static _ => false;
 }
 
 /// <summary>A list of names a caller showed and confirmed — or none given: a closed choice, never a null.</summary>
@@ -105,6 +109,10 @@ public sealed record ActionPreview(
     /// <summary>Why the action has nothing it COULD do here — its tool is not installed (A8, A17), nothing of its kind
     /// exists — a skip with the reason, never an error (E3.S2); empty when it applies.</summary>
     public string Skip { get; init; } = string.Empty;
+
+    /// <summary>An EVENT that will not wait for an idle machine (plan §5: the event-driven A2 for an order-7 shortage runs at
+    /// once) — when set, the engine's idle gate is not asked; every other gate still is (E3.S3). Empty for an ordinary preview.</summary>
+    public string Urgent { get; init; } = string.Empty;
 
     public static ActionPreview Unavailable(string what, string reason) =>
         new(what, false, reason, 0, null, string.Empty, new Dictionary<string, long>(), string.Empty, []);

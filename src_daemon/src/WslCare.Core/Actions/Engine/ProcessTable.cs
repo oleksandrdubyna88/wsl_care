@@ -56,3 +56,12 @@ public sealed class SystemProcessTable : IProcessTable
         }
     }
 }
+
+/// <summary>A table that can tell no pid — the safe default of a context built without the real one: a <c>running.json</c>
+/// judged against it is never swept as dead (an unknown pid refuses like wedged, E3.S1).</summary>
+public sealed class UnknownProcessTable : IProcessTable
+{
+    public static readonly UnknownProcessTable Instance = new();
+
+    public ProcessLookup Lookup(int pid) => new ProcessLookup.Unknown("no process table was given to this run");
+}

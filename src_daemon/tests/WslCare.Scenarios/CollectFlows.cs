@@ -24,9 +24,10 @@ namespace WslCare.Scenarios;
 /// </summary>
 public sealed class CollectFlows
 {
-    private static ScenarioHome Captured(string purpose)
+    internal static ScenarioHome Captured(string purpose, Action<ScenarioHome>? first = null)
     {
         var home = new ScenarioHome(purpose);
+        first?.Invoke(home);
         foreach (var (command, file) in DockerFixture.Answers)
         {
             home.Script(DockerCommands.Executable, command.Arguments, 0, $"docker/{DockerFixture.Name}/{file}");
@@ -136,7 +137,7 @@ public sealed class CollectFlows
         home.Calls.Should().OnlyContain(c => IsReadCommand(c));
     }
 
-    private static bool IsReadCommand(FakeCall call) => call.Tool switch
+    internal static bool IsReadCommand(FakeCall call) => call.Tool switch
     {
         DockerCommands.Executable => DockerCommands.IsReadVerb(call.Argv),
         SystemdCommands.Systemctl or SystemdCommands.Journalctl or SystemdCommands.Timedatectl => SystemdCommands.IsReadVerb(call.Argv),

@@ -34,7 +34,8 @@
     (`Preview/`) and the `systemctl` / `journalctl` commands and parsers (`Systemd/`), and since E2.S3 the full
     run (`Collect/`), the health collectors (`Health/`), the thresholds (`Thresholds/`), the daily folder walk
     (`Folders/`), the container-start follower (`Events/`), `doctor` (`Doctor/`) and the run detail store, history
-    reader, reconcile and retention (`Records/`).
+    reader, reconcile and retention (`Records/`), and since E3 the action engine and every action but A13 (`Actions/`), the
+    command policy (`Processes/Policy/`) and, since E3.S3, `logs` / `runs` (`History/`).
   - `src/WslCare.Cli` — the executable `wsl-care` / `wsl-care.exe`: `PublishAot`, `StripSymbols`,
     reflection-free JSON, RIDs `linux-x64`, `linux-arm64`, `win-x64`; one package, Serilog.
     `CommandLine.Commands` is the one register of what the binary accepts — the parser, the help text
@@ -619,7 +620,7 @@ whatever it finds (the JSON is the verdict).
 0 answered / recorded / read-only / follower stopped by a signal · 1 the run could not be recorded, or `events follow`
 without a writable state directory · 2 usage · 70 a defect · 75 busy (another run or follower holds the lock) ·
 130 interrupted. Since E3.S1 also, for `act`: 3 an action failed · 76 wedged · 77 needs root · 78 observe-only (§ *The action
-engine, the command policy and `act`*).
+engine, the command policy and `act`*). Since E3.S3, for `logs` / `runs`: 4 the history exists but cannot be read.
 
 ### Deviations from the plan recorded in E2.S3
 
@@ -862,8 +863,8 @@ action failed (the run was recorded, the rest ran) · 75 busy · 76 wedged · 77
   argv — the one interpreter E2 already started.
 - The action ids include `A5Testcontainers` and `A6Unused` (plan §5 gives A5 and A6 two switches each); an id is its
   `auto` key, so the registry and the switches cannot drift.
-- The timer pass is not scheduled yet: `collect` (the timer's target) does not run the engine; E3.S3 wires it with
-  A1 / A2's triggers. `act` under systemd behaves as the timer already.
+- ~~The timer pass is not scheduled yet: `collect` (the timer's target) does not run the engine; E3.S3 wires it with
+  A1 / A2's triggers.~~ **Closed by E3.S3**: the timer pass (§ *The timer pass*). `act` under systemd behaves as the timer.
 - `CommandRequest` gained an `Environment` (inherited, or clean); `ExecutableResolver` gained `ResolveIn` (a list of
   folders, where a `PATH` string would split a Windows sandbox path at its drive letter); `IHostPaths` gained
   `RunLockFile`, `LinuxHostPaths` `JournalDirectories` and `WithProtectedHomes`; `ActionRecord` gained `status` and
@@ -1022,6 +1023,102 @@ line refused BY NUMBER, its content never echoed) need A4 among the actions and 
 - **A8 / A9's previews are their rows** (the daily walk's sample): before the first full run they are unavailable and the
   action is refused with that reason; the RUN measures live.
 - **A14's trigger** fires on any target (more than 2 builds of an editor, or an obsolete extension).
+
+## The memory, build-server, trim and clock actions, the timer pass, `logs` / `runs` (E3.S3)
+
+Five more `ICleanupAction`s in `ActionRegistry.Product` — every action of plan §5 but A13 (the archive, E9) is now built —
+and the two contract additions they needed, both defaulting to the safe answer: `ActionContext.RanEarlier` (whether an
+earlier action of THIS run ran; nothing by default) and `ActionPreview.Urgent` (an EVENT that does not wait for idle;
+empty by default — the engine's idle gate is skipped for it, every other gate still applies).
+
+| Folder (`WslCare.Core/Actions/…`) | Action | Runs | Trigger (timer) | Idle | Measured |
+|---|---|---|---|---|---|
+| `Memory/CacheDrop` | A1 | `sync`, then `sysctl -w vm.drop_caches=1` (two argv, the value a LITERAL; `sync` failing stops before the drop) | `MemAvailable` < `thresholds.memAvailableActPercent`, or page cache > 12 GiB with < 30 % available (plan §4.1) | timer only | page cache and `MemAvailable` before / after (`/proc/meminfo`); memory, so `freedBytes` unknown |
+| `Memory/Compaction` | A2 | `sysctl -w vm.compact_memory=1` | A1 ran in this run, or the EVENT: no free order-7 block in zone Normal, or a `page allocation failure` in the kernel log since the last run (`journalctl --dmesg --grep`) | timer only — the EVENT is `Urgent` and runs at once | free order-7 blocks before / after (`/proc/buddyinfo`) |
+| `BuildServers/BuildServerShutdown` | A3 | `runuser -u <user> -- dotnet build-server shutdown` | one of the target user's `dotnet-build-servers` processes alive ≥ `buildServers.idleHours` | never | the servers gone after (each with the memory it held); the rest `notRemoved` |
+| `Disk/FilesystemTrim` | A15 | `fstrim -av` | weekly (the history's newest A15 `ran`), only without `discard` on `/` and with `fstrim.timer` not enabled (`systemctl show`) | always | fstrim's own per-filesystem report; trimmed blocks go to the VHDX, `freedBytes` unknown; exit 64 a success with a note |
+| `Clock/ClockFix` | A16 | `chronyc makestep` when `chronyd` runs, else `hwclock -s` | a drift on two observations ≥ 5 min apart (the last full run's and a LIVE probe; `ThresholdRules.IsDrift`, the one rule the health report shares) not yet corrected | never | the offset before / after (a second probe) |
+
+**Refusals and skips.** A3 REFUSES while any `dotnet build|test|run|publish|pack|msbuild|watch` is alive — a button too —
+and re-reads the process table just before the command (a build that started since stops it, nothing asked); no `dotnet`
+in the target user's bin folders, or no server, is a skip. A16 skips a clock timesyncd / chrony reports synchronised
+(§15 #10) and a live observation within the limit; a correction less than an hour ago REFUSES (a button too); the timer
+fires once per drift EVENT: `{state}/clock-fix.json` records the correction, and the event lasts until a full run records
+an observation within the limit after it — a step that did not cure the drift is not repeated every run. A1 / A2 / A15
+with an unreadable `/proc` are unavailable (refused), never zero.
+
+**Where A2's event comes from.** Every run that previews A2 looks — the timer pass inside `collect` (every 4 h), a button,
+and `act A2` started by any timer. There is no watcher process: E4.S1's units may schedule `act A2` more often, and the
+event is then acted on within that period.
+
+### The timer pass — the exact order of a timer's full run
+
+`collect` started by systemd (`INVOCATION_ID`) runs the engine AFTER measuring, under the lock it already holds, for every
+action this build holds; a `collect` from a terminal or the panel's *Run full check now* never acts, and a button's `act`
+stays a separate run with its own record.
+
+```mermaid
+sequenceDiagram
+    participant C as collect (timer)
+    participant K as /run/wsl-care.lock
+    participant M as collectors
+    participant E as ActionEngine.TimerPassAsync
+    participant R as running.json
+    participant H as runs/ and history.jsonl
+    C->>C: may this process write the state? no → measure, print, write nothing (no pass)
+    C->>K: RunLock.TryTake — held by another run → exit 75, nothing measured
+    C->>H: housekeeping: reconcile, retention, container-start retention
+    C->>M: measure: probe, health, folder walk (daily), Docker + rows, docker stats, starts, thresholds
+    C->>E: the pass, run id = the full run's
+    E->>R: sweep: dead → interrupted line + removed; live / wedged / unreadable → NO pass (reason recorded)
+    E->>E: target user, dry-run decision (the 7-day week starts at the first pass)
+    E->>R: written, heartbeat every 5 s
+    loop every action, in ActionId.ExecutionOrder
+        E->>E: side, observe-only, auto switch, LIVE preview, trigger, target user, refusal, idle (unless urgent), dry run
+        E->>E: run → measured result (or a failure recorded, the run goes on)
+    end
+    E-->>C: TimerPass (outcomes, notes, dry run)
+    C->>H: the detail (atomic, with timerPass), then ONE history line: metrics, warnings AND the action lines
+    C->>R: removed (EndTimerPass)
+    C->>C: exit 0 (an action that failed is in the record and the log, not the exit code)
+```
+
+The run's `dryRun` is the pass's decision; the detail keeps every outcome with its live preview and measured result
+(`RunDetail.timerPass`), the history line the per-action `{id, status, count, freedBytes, wouldFreeBytes}`
+(`ActionRecords.Of`, shared with `act`). `CollectContext` gained `Actions`, `Processes` and `Signals` (no action, a table
+that can tell no pid, a refusing sender by default); the CLI sets them from its host.
+
+### `logs` and `runs` (plan §7.4)
+
+`WslCare.Core/History`: `LogPeriod` (`today` — the default — `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd`, at most 366
+days; a run belongs to the UTC day it STARTED), `RunLogs` (pure over `IFileSystem`: no lock, nothing written, any user may
+ask — the state is 0644) and the wire shapes (`LogsReports`). `runs` lists every run of the period: trigger, outcome, dry
+run, detail state (`present` / `lost` / `none`), per-action lines, freed, would-free, and whether it was a cleanup (an
+action ran and removed or freed something). `logs` answers the Logs page: freed in total and per action (runs, objects,
+bytes; dry runs and what they would have freed apart), the runs with and without a cleanup, dry, by trigger, failed and
+interrupted, the run that freed the most and the least (non-zero), each metric's max and min with its time and run
+(`memAvailablePercent`, `memAvailableBytes`, `pageCacheBytes`, `swapUsedBytes`, `rootUsedPercent`,
+`dockerReclaimableBytes`, `containerStarts24h` — absent when never recorded), and every cleanup in detail: the objects it
+removed and those it did not, from the run's detail (an `act` detail's actions or a full run's `timerPass`; a lost
+detail still counts from its history line, with no objects). `--action <A#>` narrows the totals, the cleanups and the run
+counts to one action. Exit codes: 0 answered, 2 a period that is none of the shapes, 4 a history that exists but cannot
+be read (new: `ExitCode.RecordsUnreadable`).
+
+### Decisions taken in E3.S3
+
+- **Memory actions free no disk.** A1, A2, A3 (and A11) leave `freedBytes` unknown; their before / after and notes say what
+  moved, and their previews count no bytes (the item carries the memory) so a dry run's would-free stays disk. `logs` sums
+  disk only — A1's history line counts one operation, freed 0. (A11's preview, E3.S2, still counts the memory its suspects
+  hold as preview bytes — left for the epic's code round to decide.)
+- **A15 waits for `fstrim.timer`.** An enabled `fstrim.timer` already trims weekly, so the timer's A15 does not double it
+  (the plan's row names only `discard`); an unread timer state does not fire either.
+- **A16's two observations** are the last recorded full run's and the preview's live probe; inside the timer pass the
+  full run's own observation is not recorded yet, so it is never counted twice.
+- **`sync` is a bare name** resolved on `PATH` like every tool (the plan writes `/bin/sync`; the catalogue takes bare names
+  only, and on Ubuntu `/bin` is `/usr/bin`).
+- **`ReadCommandTemplates.SystemctlShow` / `JournalSearch`** became named members so A15 and A2 declare the SAME template
+  instances the collectors use; `HealthCollector.MeasureWindowsClockAsync` is the one clock observation (the full run's
+  and A16's); `ThresholdRules.IsDrift` the one drift rule.
 
 ## Fail-closed resolution and the atomic write
 
