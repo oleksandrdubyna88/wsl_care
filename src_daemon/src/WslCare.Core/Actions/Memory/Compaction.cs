@@ -66,19 +66,24 @@ public sealed class Compaction : ICleanupAction
         }
 
         var failures = await AllocationFailuresAsync(context, commands, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<ActionItem> items = [new ActionItem("free memory", $"zone {f.Zone}", f.BytesOrder7Plus, string.Create(CultureInfo.InvariantCulture, $"{f.BlocksOrder7Plus} free order-7 blocks (512 KiB), {f.BlocksOrder4Plus} order-4 (64 KiB)"))];
+        var basis = "/proc/buddyinfo now; the kernel log since the last run" + (failures.IsAvailable ? string.Empty : $" (not read: {failures.ReasonOrEmpty})");
+        return ActionPreview.Of(what, 1, null, basis, Facts(f, context.RanEarlier(A1), failures), string.Empty, items) with { Urgent = Event(f.BlocksOrder7Plus, failures) };
+    }
+
+    private static Dictionary<string, long> Facts(Collectors.Procfs.Fragmentation fragmentation, bool afterA1, Reading<int> failures)
+    {
         var facts = new Dictionary<string, long>(StringComparer.Ordinal)
         {
-            [Order7BlocksFact] = f.BlocksOrder7Plus,
-            [AfterA1Fact] = context.RanEarlier(A1) ? 1 : 0,
+            [Order7BlocksFact] = fragmentation.BlocksOrder7Plus,
+            [AfterA1Fact] = afterA1 ? 1 : 0,
         };
         if (failures is Reading<int>.Available { Value: var count })
         {
             facts[AllocationFailuresFact] = count;
         }
 
-        IReadOnlyList<ActionItem> items = [new ActionItem("free memory", $"zone {f.Zone}", f.BytesOrder7Plus, string.Create(CultureInfo.InvariantCulture, $"{f.BlocksOrder7Plus} free order-7 blocks (512 KiB), {f.BlocksOrder4Plus} order-4 (64 KiB)"))];
-        var basis = "/proc/buddyinfo now; the kernel log since the last run" + (failures.IsAvailable ? string.Empty : $" (not read: {failures.ReasonOrEmpty})");
-        return ActionPreview.Of(what, 1, null, basis, facts, string.Empty, items) with { Urgent = Event(f.BlocksOrder7Plus, failures) };
+        return facts;
     }
 
     /// <summary>Plan §5: after A1 ran in this run, or the event of plan §4.1.</summary>

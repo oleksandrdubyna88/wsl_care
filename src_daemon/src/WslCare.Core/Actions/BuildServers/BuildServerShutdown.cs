@@ -69,9 +69,8 @@ public sealed class BuildServerShutdown : ICleanupAction
 
         var servers = Servers(snapshot.All, found.User.Name);
         var builds = Builds(snapshot.All);
-        var idle = servers.Count(s => s.Age is Reading<TimeSpan>.Available { Value: var age } && age >= TimeSpan.FromHours(hours));
-        var facts = new Dictionary<string, long>(StringComparer.Ordinal) { [IdleServersFact] = idle };
-        var refusal = builds.Count > 0 ? $"a dotnet build is alive ({string.Join("; ", builds.Take(3))}): stopping its servers would fail it" : string.Empty;
+        var facts = new Dictionary<string, long>(StringComparer.Ordinal) { [IdleServersFact] = AliveFor(servers, TimeSpan.FromHours(hours)) };
+        var refusal = BuildRefusal(builds);
         var preview = ActionPreview.Of(what, servers.Count, null, "the process table now; each item carries the memory its server holds (RssAnon + RssShmem) - memory, not disk, so no bytes are counted", facts, refusal, [.. servers.Select(Item)]);
         return Task.FromResult(Skip(preview, servers.Count, commands));
     }
@@ -92,18 +91,34 @@ public sealed class BuildServerShutdown : ICleanupAction
             return stoppedBefore;
         }
 
-        var outcome = await commands.RunAsync(Shutdown, [], cancellationToken).ConfigureAwait(false);
-        var after = context.Processes(cancellationToken) is Reading<ProcessSnapshot>.Available { Value: var table }
-            ? table.All.Select(p => p.Pid).ToHashSet()
-            : null;
-        var stopped = after is null ? [] : preview.Targets.Where(t => !after.Contains(Pid(t))).ToList();
-        var alive = after is null ? preview.Targets : preview.Targets.Where(t => after.Contains(Pid(t))).Select(t => t with { Note = "still running after dotnet build-server shutdown" }).ToList();
-        return new ActionRun(stopped.Count, null, "A3 frees memory, not disk: each stopped server's item carries what it held", null, null, stopped, commands.Ran, CommandFailures.Of("dotnet build-server shutdown", outcome))
+        var failure = CommandFailures.Of("dotnet build-server shutdown", await commands.RunAsync(Shutdown, [], cancellationToken).ConfigureAwait(false));
+        return context.Processes(cancellationToken) is Reading<ProcessSnapshot>.Available { Value: var table }
+            ? Measured(preview, commands, failure, table.All.Select(p => p.Pid).ToHashSet())
+            : new ActionRun(0, null, FreedBasis, null, null, [], commands.Ran, failure)
+            {
+                NotRemoved = preview.Targets,
+                Notes = ["the process table could not be read after the command: which servers ended is unknown"],
+            };
+    }
+
+    private const string FreedBasis = "A3 frees memory, not disk: each stopped server's item carries what it held";
+
+    /// <summary>The servers gone after the command (removed) and those still running (kept, with why).</summary>
+    private static ActionRun Measured(ActionPreview preview, ActionCommands commands, string failure, HashSet<int> alive)
+    {
+        var stopped = preview.Targets.Where(t => !alive.Contains(Pid(t))).ToList();
+        return new ActionRun(stopped.Count, null, FreedBasis, null, null, stopped, commands.Ran, failure)
         {
-            NotRemoved = alive,
-            Notes = after is null ? ["the process table could not be read after the command: which servers ended is unknown"] : [],
+            NotRemoved = [.. preview.Targets.Where(t => alive.Contains(Pid(t))).Select(t => t with { Note = "still running after dotnet build-server shutdown" })],
         };
     }
+
+    /// <summary>How many of <paramref name="servers"/> are alive for <paramref name="age"/> or longer.</summary>
+    private static int AliveFor(IReadOnlyList<ProcessEntry> servers, TimeSpan age) =>
+        servers.Count(s => s.Age is Reading<TimeSpan>.Available { Value: var alive } && alive >= age);
+
+    private static string BuildRefusal(IReadOnlyList<string> builds) =>
+        builds.Count > 0 ? $"a dotnet build is alive ({string.Join("; ", builds.Take(3))}): stopping its servers would fail it" : string.Empty;
 
     /// <summary>The re-check just before the command: the run it stops at (a build alive since the preview — nothing asked;
     /// a process table that cannot be read again — refused, as the preview refuses, since a build that cannot be ruled out

@@ -27,18 +27,27 @@ public static class RunRecorder
         var failure = WriteDetail(paths, files, runId, detailJson);
         try
         {
-            new RunRecordWriter(paths, files).Append(failure.Length == 0 ? line(relative, string.Empty) : line(string.Empty, failure));
+            new RunRecordWriter(paths, files).Append(Line(line, relative, failure));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
         {
-            var reason = $"the history line could not be written ({e.Message}){(failure.Length > 0 ? $"; before that, {failure}" : string.Empty)}";
-            return new RecordResult(Recording.Failed, reason, failure.Length == 0 ? relative : string.Empty) { LineWritten = false };
+            return LineFailed(e, relative, failure);
         }
 
         return failure.Length == 0
             ? new RecordResult(Recording.Recorded, string.Empty, relative)
             : new RecordResult(Recording.Failed, failure, string.Empty);
     }
+
+    /// <summary>The line naming the detail — or, when the detail failed, the line carrying why.</summary>
+    private static RunRecord Line(Func<string, string, RunRecord> line, string relative, string failure) =>
+        failure.Length == 0 ? line(relative, string.Empty) : line(string.Empty, failure);
+
+    private static RecordResult LineFailed(Exception e, string relative, string failure) =>
+        new(Recording.Failed, $"the history line could not be written ({e.Message}){(failure.Length > 0 ? $"; before that, {failure}" : string.Empty)}", failure.Length == 0 ? relative : string.Empty)
+        {
+            LineWritten = false,
+        };
 
     /// <summary>Empty when written; otherwise why not.</summary>
     private static string WriteDetail(IHostPaths paths, IFileSystem files, RunId runId, byte[] json)

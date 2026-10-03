@@ -54,23 +54,20 @@ public sealed class CommandPolicy
     private CommandVerdict ReviewWrapped(CommandRequest request)
     {
         var wrapped = TargetUserArgv.Parse(request.Argv)!;
-        if (request.Environment is not CommandEnvironment.Clean)
-        {
-            return CommandVerdict.Refuse($"refused: a command run as {wrapped.User} must start with a clean environment, never this process's: {Shown(request.Argv)}");
-        }
-
-        if (NeverList.FirstBroken(wrapped.Argv) is { } broken)
-        {
-            return Never(broken, request.Argv);
-        }
-
-        if (!TargetUserArgv.IsInABinFolder(wrapped.ExecutablePath))
-        {
-            return CommandVerdict.Refuse($"refused: {Shown([wrapped.ExecutablePath])} is not a file in one of the target user's bin folders ({string.Join(", ", TargetUserArgv.BinFolderSuffixes)}, nvm's node bin)");
-        }
-
-        return Catalogue.MatchUser(wrapped) is not null ? CommandVerdict.Allowed : NoTemplate(request.Argv);
+        return WrappedRefusal(request, wrapped) ?? (Catalogue.MatchUser(wrapped) is not null ? CommandVerdict.Allowed : NoTemplate(request.Argv));
     }
+
+    /// <summary>Why a <c>runuser</c> command is refused before any template is asked — an inherited environment, a never-rule
+    /// broken by the WRAPPED command, a file outside the user's bin folders — or <c>null</c> when none of these holds.</summary>
+    private static CommandVerdict? WrappedRefusal(CommandRequest request, WrappedCommand wrapped) => request switch
+    {
+        { Environment: not CommandEnvironment.Clean } =>
+            CommandVerdict.Refuse($"refused: a command run as {wrapped.User} must start with a clean environment, never this process's: {Shown(request.Argv)}"),
+        _ when NeverList.FirstBroken(wrapped.Argv) is { } broken => Never(broken, request.Argv),
+        _ when !TargetUserArgv.IsInABinFolder(wrapped.ExecutablePath) =>
+            CommandVerdict.Refuse($"refused: {Shown([wrapped.ExecutablePath])} is not a file in one of the target user's bin folders ({string.Join(", ", TargetUserArgv.BinFolderSuffixes)}, nvm's node bin)"),
+        _ => null,
+    };
 
     private static CommandVerdict Never(NeverRule rule, IReadOnlyList<string> argv) =>
         CommandVerdict.Refuse($"refused by the never-list ({rule.Id}: {rule.Description}): {Shown(argv)}");

@@ -78,33 +78,49 @@ public static class CleanupTargets
     {
         var sizes = inventory.Containers.GroupBy(c => c.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().SizeBytes, StringComparer.Ordinal);
         var volumes = Docker.AnonymousVolumes.ByName(inventory);
-        var stopped = details.Where(d => d.Stopped && d.Testcontainers == testcontainers).ToList();
+        var stopped = details.Where(d => d.Stopped).Where(d => d.Testcontainers == testcontainers).ToList();
         var kept = stopped.Where(d => d.KeptByLabel).ToList();
         var candidates = stopped.Except(kept).ToList();
-        var selected = candidates.Where(d => d.StoppedSince is Reading<DateTimeOffset>.Available { Value: var at } && at <= cutoff).ToList();
+        var selected = candidates.Where(d => StoppedBy(d, cutoff)).ToList();
         var mounted = selected.SelectMany(d => d.Mounts).Where(m => m.Volume).Select(m => m.Name).Distinct(StringComparer.Ordinal).ToList();
         bool IsAnonymous(string name) => Docker.AnonymousVolumes.IsAnonymous(volumes, name);
-        CleanupTarget Container(ContainerDetail d) => new(d.Id, d.Name, sizes.TryGetValue(d.Id, out var size) ? size : Reading.Missing<long>($"container {d.Name} is not in docker system df -v"));
+        CleanupTarget Container(ContainerDetail d) => new(d.Id, d.Name, ContainerSize(sizes, d));
         CleanupTarget Volume(string name) => new(name, name, VolumeSize(volumes, name));
         return new ContainerTargets(
             [.. selected.Select(Container)],
-            selected.ToDictionary(d => d.Id, d => (IReadOnlyList<string>)[.. d.Mounts.Where(m => m.Volume && IsAnonymous(m.Name)).Select(m => m.Name).Distinct(StringComparer.Ordinal)], StringComparer.Ordinal),
+            selected.ToDictionary(d => d.Id, d => AnonymousOf(d, volumes), StringComparer.Ordinal),
             [.. mounted.Where(IsAnonymous).Select(Volume)],
-            [.. mounted.Where(n => volumes.ContainsKey(n) && !IsAnonymous(n)).Select(Volume)],
+            [.. mounted.Where(volumes.ContainsKey).Where(n => !IsAnonymous(n)).Select(Volume)],
             [.. mounted.Where(n => !volumes.ContainsKey(n)).Select(Volume)],
             [.. candidates.Except(selected).Select(Container)],
             [.. kept.Select(Container)]);
     }
 
+    private static bool StoppedBy(ContainerDetail container, DateTimeOffset cutoff) =>
+        container.StoppedSince is Reading<DateTimeOffset>.Available { Value: var at } && at <= cutoff;
+
+    private static Reading<long> ContainerSize(IReadOnlyDictionary<string, Reading<long>> sizes, ContainerDetail container) =>
+        sizes.TryGetValue(container.Id, out var size) ? size : Reading.Missing<long>($"container {container.Name} is not in docker system df -v");
+
+    /// <summary>The distinct anonymous volumes one container mounts — what <c>docker rm -v</c> takes with it.</summary>
+    private static IReadOnlyList<string> AnonymousOf(ContainerDetail container, IReadOnlyDictionary<string, VolumeRow> volumes) =>
+        [.. container.Mounts.Where(m => m.Volume).Select(m => m.Name).Where(n => Docker.AnonymousVolumes.IsAnonymous(volumes, n)).Distinct(StringComparer.Ordinal)];
+
     /// <summary>A6: images no container uses — by Docker's count AND by the image id of every inspected container.</summary>
     public static ImageTargets UnusedImages(DockerInventory inventory, IReadOnlyList<ContainerDetail> details, bool dangling, DateTimeOffset cutoff)
     {
         var used = details.Select(d => d.ImageId).ToHashSet(StringComparer.Ordinal);
-        var unused = inventory.Images.Where(i => i.Dangling == dangling && i.Containers.ValueOr(1) == 0 && !used.Contains(i.Id)).ToList();
-        var selected = unused.Where(i => dangling || (i.CreatedAt is Reading<DateTimeOffset>.Available { Value: var at } && at <= cutoff)).ToList();
+        var unused = inventory.Images.Where(i => i.Dangling == dangling).Where(i => IsUnused(i, used)).ToList();
+        var selected = unused.Where(i => dangling || CreatedBy(i, cutoff)).ToList();
         static CleanupTarget Image(ImageRow i) => new(i.Id, i.Display, i.UniqueBytes);
         return new ImageTargets([.. selected.Select(Image)], [.. unused.Except(selected).Select(Image)]);
     }
+
+    /// <summary>No container uses it: Docker counts none (an unread count is "used") AND no inspected container names it.</summary>
+    private static bool IsUnused(ImageRow image, IReadOnlySet<string> used) => image.Containers.ValueOr(1) == 0 && !used.Contains(image.Id);
+
+    private static bool CreatedBy(ImageRow image, DateTimeOffset cutoff) =>
+        image.CreatedAt is Reading<DateTimeOffset>.Available { Value: var at } && at <= cutoff;
 
     /// <summary>A7: what Docker would reclaim, with the two figures plan §5 sets against each other — an age filter alone
     /// (freed 0.02 GB on 2026-10-02) and the size cap.</summary>

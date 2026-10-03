@@ -1177,6 +1177,7 @@ was first seen failing for the real symptom ([module_tests.md](module_tests.md) 
 | review 4 | A3 refuses when the process table cannot be read again just before the command | `BuildServerShutdown` |
 | review 5 | `--only` is read as a regular file only, never past the cap | `Files/RegularFiles`, `IFileSystem.ReadRegularFile` |
 | review 6 | a `poll` error is a failure, never an end | `Processes/ProcessSignals` (`IPidfdCalls`) |
+| review 7 | every method written in E3 at cyclomatic complexity ≤ 4 (C# doctrine §6), without a change of behaviour: conditions extracted into named predicates, chains of one-fact tests written as `Checks.All(value, tests…)` (asked in order, stopping at the first that fails), the per-outcome log line ONE `Cli/Logging/OutcomeLog` (`act` and the timer pass), the folder deletion of A12 / A14 ONE `CacheFolders.RemoveFolder` + `FolderRemovals` | across `Actions/`, `Processes/Policy/`, `History/`, `Cli/` |
 | gate #0/#1 | this file's overview, verbs and actions nodes | here |
 | gate #2 | an ambiguous target user refuses user-scoped actions only | `TargetHome`, `ConfigLoader`, `CliHost.LoadConfig` |
 | gate #3 | an action's runner also runs the collectors' shared read templates | `ActionCommands.AsRunner` |

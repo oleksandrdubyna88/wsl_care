@@ -161,11 +161,21 @@ public static class ActionRecords
 {
     public static ActionRecord Of(ActionOutcome o) => o.Status switch
     {
-        ActionStatus.Ran => new ActionRecord(o.Id, o.Run?.Count ?? 0, o.Run?.FreedBytes ?? 0) { Status = o.Status },
-        ActionStatus.Failed => new ActionRecord(o.Id, o.Run?.Count ?? 0, o.Run?.FreedBytes ?? 0) { Status = o.Status, Failure = Shortened(o.Run is { Failure.Length: > 0 } run ? run.Failure : o.Reason) },
-        ActionStatus.DryRun => new ActionRecord(o.Id, o.Preview?.Count ?? 0, 0) { Status = o.Status, WouldFreeBytes = o.Preview?.Bytes },
+        ActionStatus.Ran => Measured(o),
+        ActionStatus.Failed => Measured(o) with { Failure = Shortened(FailureOf(o)) },
+        ActionStatus.DryRun => WouldFree(o),
         _ => new ActionRecord(o.Id, 0, 0) { Status = o.Status },
     };
+
+    /// <summary>What a run measured: its count and freed bytes (none recorded when it has no run).</summary>
+    private static ActionRecord Measured(ActionOutcome o) =>
+        o.Run is { } run ? new ActionRecord(o.Id, run.Count, run.FreedBytes ?? 0) { Status = o.Status } : new ActionRecord(o.Id, 0, 0) { Status = o.Status };
+
+    /// <summary>A dry run: the preview's count and its bytes as would-free.</summary>
+    private static ActionRecord WouldFree(ActionOutcome o) =>
+        o.Preview is { } preview ? new ActionRecord(o.Id, preview.Count, 0) { Status = o.Status, WouldFreeBytes = preview.Bytes } : new ActionRecord(o.Id, 0, 0) { Status = o.Status };
+
+    private static string FailureOf(ActionOutcome o) => o.Run is { Failure.Length: > 0 } run ? run.Failure : o.Reason;
 
     private static string Shortened(string failure) =>
         failure.Length <= ActionRecord.FailureLimit ? failure : failure[..(ActionRecord.FailureLimit - 1)] + "…";

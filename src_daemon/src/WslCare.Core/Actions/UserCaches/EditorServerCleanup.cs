@@ -4,7 +4,6 @@ using System.Text.Json;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
-using WslCare.Core.Files.Deletion;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes.Policy;
 
@@ -51,7 +50,7 @@ public sealed class EditorServerCleanup : ICleanupAction
         var what = string.Create(CultureInfo.InvariantCulture, $"editor server builds no running process uses, beyond the newest {Keep} of each editor (~/.vscode-server, ~/.cursor-server, ~/.windsurf-server), and obsolete extensions");
         if (CacheFolders.Home(context).Length == 0)
         {
-            return Task.FromResult(ActionPreview.Unavailable(what, context.TargetUser.Refusal.Length > 0 ? context.TargetUser.Refusal : "the editor servers are the WSL distro's"));
+            return Task.FromResult(ActionPreview.Unavailable(what, CacheFolders.NoHome(context, "the editor servers")));
         }
 
         if (context.Processes(cancellationToken) is not Reading<ProcessSnapshot>.Available { Value: var processes })
@@ -64,7 +63,7 @@ public sealed class EditorServerCleanup : ICleanupAction
             .Where(context.Files.DirectoryExists)
             .SelectMany(root => Builds(context, root, processes, cancellationToken).Concat(Obsolete(context, root, processes, cancellationToken)))
             .ToList();
-        var preview = ActionPreview.Of(what, targets.Count, targets.Sum(t => t.Bytes ?? 0), "each folder walked now", new Dictionary<string, long>(StringComparer.Ordinal), string.Empty, targets);
+        var preview = ActionPreview.Of(what, targets.Count, CacheFolders.Total(targets), "each folder walked now", new Dictionary<string, long>(StringComparer.Ordinal), string.Empty, targets);
         return Task.FromResult(targets.Count == 0 ? preview with { Skip = "nothing to remove: no editor holds more than its newest builds, nor an obsolete extension" } : preview);
     }
 
@@ -74,20 +73,18 @@ public sealed class EditorServerCleanup : ICleanupAction
 
     public Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
-        var removed = new List<ActionItem>();
-        var notRemoved = new List<ActionItem>();
-        var failures = new List<string>();
-        foreach (var target in preview.Targets)
+        var removals = FolderRemovals.Of([.. preview.Targets.Select(t => (t, RemoveTarget(context, t)))]);
+        return Task.FromResult(new ActionRun(removals.Removed.Count, CacheFolders.Total(removals.Removed), "each folder walked before, counted when it is gone after", null, null, removals.Removed, commands.Ran, string.Join("; ", removals.Failures.Take(5)))
         {
-            var root = target.Key[..target.Key.IndexOf('|', StringComparison.Ordinal)];
-            var folder = target.Key[(root.Length + 1)..];
-            Remove(context, root, folder, target, removed, notRemoved, failures);
-        }
-
-        return Task.FromResult(new ActionRun(removed.Count, removed.Sum(r => r.Bytes ?? 0), "each folder walked before, counted when it is gone after", null, null, removed, commands.Ran, string.Join("; ", failures.Take(5)))
-        {
-            NotRemoved = notRemoved,
+            NotRemoved = removals.NotRemoved,
         });
+    }
+
+    /// <summary>One target: its key is <c>root|folder</c> — the editor's folder (the deletion's scope) and the folder itself.</summary>
+    private static FolderDeletion RemoveTarget(ActionContext context, ActionItem target)
+    {
+        var root = target.Key[..target.Key.IndexOf('|', StringComparison.Ordinal)];
+        return CacheFolders.RemoveFolder(context, target.Key[(root.Length + 1)..], root, "A14");
     }
 
     /// <summary>The builds of one editor to remove: neither among the newest <see cref="Keep"/> nor in use.</summary>
@@ -140,39 +137,22 @@ public sealed class EditorServerCleanup : ICleanupAction
     /// <summary>The commit of a build folder: <c>07f806f9…</c> or <c>Stable-07f806f9…</c> → the hex; empty for anything else.</summary>
     public static string Commit(string folder)
     {
-        var dash = folder.IndexOf('-', StringComparison.Ordinal);
-        var hex = dash >= 0 && folder[..dash] is "Stable" or "Insiders" or "Exploration" ? folder[(dash + 1)..] : folder;
+        var hex = WithoutQuality(folder);
         return hex.Length is >= 7 and <= 64 && hex.All(char.IsAsciiHexDigitLower) ? hex : string.Empty;
     }
 
+    /// <summary>The folder name without a <c>Stable-</c> / <c>Insiders-</c> / <c>Exploration-</c> prefix.</summary>
+    private static string WithoutQuality(string folder)
+    {
+        var dash = folder.IndexOf('-', StringComparison.Ordinal);
+        return dash >= 0 && folder[..dash] is "Stable" or "Insiders" or "Exploration" ? folder[(dash + 1)..] : folder;
+    }
+
     private static bool IsPlainName(string name) =>
-        name.Length is > 0 and <= 255 && name != "." && name != ".." && name.IndexOfAny(['/', '\\', ':']) < 0 && !name.Any(char.IsControl);
+        Checks.All(name, n => n.Length is > 0 and <= 255, n => n is not ("." or ".."), n => n.IndexOfAny(['/', '\\', ':']) < 0, n => !n.Any(char.IsControl));
 
     private static bool Named(ProcessSnapshot processes, string text) =>
         processes.All.Any(p => p.CommandLine.Contains(text, StringComparison.Ordinal) || p.Cwd.Map(c => c.Contains(text, StringComparison.Ordinal)).ValueOr(false));
-
-    private static void Remove(ActionContext context, string root, string folder, ActionItem target, List<ActionItem> removed, List<ActionItem> notRemoved, List<string> failures)
-    {
-        if (!context.Files.DirectoryExists(folder))
-        {
-            notRemoved.Add(target with { Note = "already gone" });
-            return;
-        }
-
-        switch (context.Files.DeleteDirectory(folder, new DeletionScope(root, "A14")))
-        {
-            case DeletionVerdict.Refused refused:
-                notRemoved.Add(target with { Note = refused.Reason });
-                failures.Add(refused.Reason);
-                break;
-            case var _ when context.Files.DirectoryExists(folder):
-                notRemoved.Add(target with { Note = "still there after the delete" });
-                break;
-            default:
-                removed.Add(target);
-                break;
-        }
-    }
 
     private static string Leaf(string path) => Path.GetFileName(path.TrimEnd('/', '\\'));
 }

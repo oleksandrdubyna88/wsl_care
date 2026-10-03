@@ -59,35 +59,46 @@ internal static class ActCommand
         var engine = new ActionEngine(new EngineContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, host.Processes, Environment.ProcessId, host.Actions) { Signals = host.Signals });
         var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List };
         // A console program has no synchronisation context; blocking here is the verb's whole job.
-        var result = (request.Confirm ? engine.ExecuteAsync(act, cancellationToken) : engine.PreviewAsync(act, cancellationToken)).GetAwaiter().GetResult();
+        var result = Dispatch(engine, act, cancellationToken).GetAwaiter().GetResult();
         Log(log, result);
-        Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(ActReport.From(result), WslCareJsonContext.Default.ActReport) : ActText.Render(result));
+        Output.Answer(stdout, Answer(result, request.Json));
         return Exit(result, stderr);
     }
 
+    private static Task<ActResult> Dispatch(ActionEngine engine, ActRequest act, CancellationToken cancellationToken) =>
+        act.Execute ? engine.ExecuteAsync(act, cancellationToken) : engine.PreviewAsync(act, cancellationToken);
+
+    private static string Answer(ActResult result, bool json) =>
+        json ? JsonSerializer.Serialize(ActReport.From(result), WslCareJsonContext.Default.ActReport) : ActText.Render(result);
+
     /// <summary>A refusal of the whole request and its code; <c>null</c> when it may go on. Root FIRST: nothing else is
     /// asked of an unprivileged process (plan §15c #0).</summary>
-    private static (ExitCode Code, string Message)? Refusal(Request.Act request, CliHost host, ConfigLoadResult loaded)
+    private static (ExitCode Code, string Message)? Refusal(Request.Act request, CliHost host, ConfigLoadResult loaded) =>
+        NotRoot(host) ?? Unbuilt(request, host) ?? OtherSide(request, host) ?? ObserveOnly(request, loaded);
+
+    private static (ExitCode Code, string Message)? NotRoot(CliHost host) =>
+        host.Privilege.IsRoot ? null : (ExitCode.NeedsRoot, $"needs root: every act runs as root (plan 15c #0) and {host.Privilege.Basis}; nothing was done");
+
+    private static (ExitCode Code, string Message)? Unbuilt(Request.Act request, CliHost host)
     {
-        if (!host.Privilege.IsRoot)
-        {
-            return (ExitCode.NeedsRoot, $"needs root: every act runs as root (plan 15c #0) and {host.Privilege.Basis}; nothing was done");
-        }
-
         var unbuilt = request.Ids.Where(id => host.Actions.Find(id) is null).ToList();
-        if (unbuilt.Count > 0)
-        {
-            return (ExitCode.Usage, $"{string.Join(", ", unbuilt)} {(unbuilt.Count == 1 ? "is" : "are")} not built in this release; act holds: {string.Join(", ", host.Actions.Actions.Select(a => a.Id.Text))}");
-        }
-
-        var otherSide = request.Ids.Select(id => host.Actions.Find(id)!).Where(a => !a.Sides.Contains(host.Paths.Side)).ToList();
-        if (otherSide.Count > 0)
-        {
-            return (ExitCode.Usage, $"{string.Join(", ", otherSide.Select(a => a.Id))} {(otherSide.Count == 1 ? "runs" : "run")} inside the WSL distro, not on this side (the {(host.Paths.Side == Core.Hosting.HostSide.Wsl ? "WSL" : "Windows")} binary)");
-        }
-
-        return request.Confirm && loaded.IsObserveOnly ? (ExitCode.ObserveOnly, ActionEngine.ObserveOnlyReason) : null;
+        return unbuilt.Count > 0
+            ? (ExitCode.Usage, $"{string.Join(", ", unbuilt)} {(unbuilt.Count == 1 ? "is" : "are")} not built in this release; act holds: {string.Join(", ", host.Actions.Actions.Select(a => a.Id.Text))}")
+            : null;
     }
+
+    private static (ExitCode Code, string Message)? OtherSide(Request.Act request, CliHost host)
+    {
+        var otherSide = request.Ids.Select(id => host.Actions.Find(id)!).Where(a => !a.Sides.Contains(host.Paths.Side)).ToList();
+        return otherSide.Count > 0
+            ? (ExitCode.Usage, $"{string.Join(", ", otherSide.Select(a => a.Id))} {(otherSide.Count == 1 ? "runs" : "run")} inside the WSL distro, not on this side (the {SideName(host)} binary)")
+            : null;
+    }
+
+    private static string SideName(CliHost host) => host.Paths.Side == Core.Hosting.HostSide.Wsl ? "WSL" : "Windows";
+
+    private static (ExitCode Code, string Message)? ObserveOnly(Request.Act request, ConfigLoadResult loaded) =>
+        request.Confirm && loaded.IsObserveOnly ? (ExitCode.ObserveOnly, ActionEngine.ObserveOnlyReason) : null;
 
     private static RunTrigger Trigger(Request.Act request) =>
         Environment.GetEnvironmentVariable("INVOCATION_ID") is { Length: > 0 } ? RunTrigger.Timer
@@ -103,11 +114,12 @@ internal static class ActCommand
             return (ShownList.None, string.Empty);
         }
 
-        if (request.OnlyFile.Length == 0)
-        {
-            return (ShownList.Of(request.Volumes), string.Empty);
-        }
+        return request.OnlyFile.Length == 0 ? (ShownList.Of(request.Volumes), string.Empty) : WithOnlyFile(request, host);
+    }
 
+    /// <summary>The <c>--volume</c> names with those of the <c>--only</c> file — read as root, validated line by line.</summary>
+    private static (ShownList List, string Failure) WithOnlyFile(Request.Act request, CliHost host)
+    {
         // Read as ROOT: a regular file only (a FIFO or a device is refused, never waited on) and never past the cap, whatever
         // its length claims (independent review of E3, 2026-10-03).
         var read = host.Files.ReadRegularFile(request.OnlyFile, MaxOnlyFileBytes);
@@ -130,44 +142,32 @@ internal static class ActCommand
 
     private static int Exit(ActResult result, TextWriter stderr)
     {
-        switch (result)
+        var (code, note) = Verdict(result);
+        if (note.Length > 0)
         {
-            case ActResult.Busy busy:
-                Output.Note(stderr, $"busy: {busy.Reason}");
-                return (int)ExitCode.Busy;
-            case ActResult.Wedged wedged:
-                Output.Note(stderr, wedged.Reason);
-                return (int)ExitCode.Wedged;
-            case ActResult.StateUnreadable unreadable:
-                Output.Note(stderr, unreadable.Reason);
-                return (int)ExitCode.StateUnreadable;
-            case ActResult.Done { Recording: not Recording.Recorded } done:
-                Output.Note(stderr, $"the run was not recorded: {done.Reason}");
-                return (int)ExitCode.RunFailed;
-            case ActResult.Done done when done.Detail.Actions.Any(a => a.Status == ActionStatus.Failed):
-                Output.Note(stderr, $"failed: {string.Join("; ", done.Detail.Actions.Where(a => a.Status == ActionStatus.Failed).Select(a => $"{a.Id}: {a.Reason}"))}");
-                return (int)ExitCode.ActionFailed;
-            default:
-                return (int)ExitCode.Ok;
+            Output.Note(stderr, note);
         }
+
+        return (int)code;
     }
+
+    /// <summary>The exit code of a result, and the line stderr says about it (none for a clean run).</summary>
+    private static (ExitCode Code, string Note) Verdict(ActResult result) => result switch
+    {
+        ActResult.Busy busy => (ExitCode.Busy, $"busy: {busy.Reason}"),
+        ActResult.Wedged wedged => (ExitCode.Wedged, wedged.Reason),
+        ActResult.StateUnreadable unreadable => (ExitCode.StateUnreadable, unreadable.Reason),
+        ActResult.Done { Recording: not Recording.Recorded } done => (ExitCode.RunFailed, $"the run was not recorded: {done.Reason}"),
+        ActResult.Done done when done.Detail.Actions.Any(a => a.Status == ActionStatus.Failed) =>
+            (ExitCode.ActionFailed, $"failed: {string.Join("; ", done.Detail.Actions.Where(a => a.Status == ActionStatus.Failed).Select(a => $"{a.Id}: {a.Reason}"))}"),
+        _ => (ExitCode.Ok, string.Empty),
+    };
 
     private static void Log(ILogger log, ActResult result)
     {
         foreach (var outcome in Outcomes(result))
         {
-            switch (outcome.Status)
-            {
-                case ActionStatus.Failed:
-                    log.Error("{Action} {Status}: {Reason}", outcome.Id, outcome.Status, outcome.Reason);
-                    break;
-                case ActionStatus.Deferred or ActionStatus.Refused:
-                    log.Warning("{Action} {Status}: {Reason}", outcome.Id, outcome.Status, outcome.Reason);
-                    break;
-                default:
-                    log.Information("{Action} {Status}: {Reason} (count {Count}, freed {FreedBytes} bytes)", outcome.Id, outcome.Status, outcome.Reason, outcome.Run?.Count ?? outcome.Preview?.Count, outcome.Run?.FreedBytes);
-                    break;
-            }
+            Logging.OutcomeLog.Log(log, outcome);
         }
 
         if (result is ActResult.Done done)

@@ -58,7 +58,7 @@ public static partial class RegularFiles
 
     private static FileReadResult ReadOther(string path, int maxBytes)
     {
-        if (Directory.Exists(path) || (File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.Device)))
+        if (IsDirectoryOrDevice(path))
         {
             return new FileReadResult.Unreadable($"{NotRegular} (a directory or a device)");
         }
@@ -66,6 +66,9 @@ public static partial class RegularFiles
         using var stream = PhysicalFileSystem.OpenForReading(path);
         return stream.CanSeek ? Capped(stream, maxBytes) : new FileReadResult.Unreadable($"{NotRegular} (a pipe or a device)");
     }
+
+    private static bool IsDirectoryOrDevice(string path) =>
+        Directory.Exists(path) || (File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.Device));
 
     [SupportedOSPlatform("linux")]
     private static FileReadResult ReadLinux(string path, int maxBytes)
