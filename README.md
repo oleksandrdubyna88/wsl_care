@@ -10,6 +10,67 @@ extension that shows the state and runs cleanups on demand.
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
+| `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | the installer, the three systemd units and the machine configuration layer it installs |
+
+## Install
+
+Inside the WSL distro (Ubuntu 24.04 or newer, systemd running), as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh
+curl -fsSL …/install.sh | sudo sh -s -- --dry-run          # print every step, change nothing (root not needed)
+curl -fsSL …/install.sh | sudo sh -s -- --version 0.1.0    # a given release instead of the newest daemon-v*
+```
+
+**What it checks before installing anything.** It downloads the newest `daemon-v*` release for this machine
+(`linux-x64` or `linux-arm64`; never `releases/latest`, which is the VS Code extension), and its `.sha256`:
+
+- the **checksum** proves the archive arrived as it was published — integrity, not authorship: whoever can
+  replace the archive can replace its `.sha256` too;
+- the **build-provenance attestation** (`gh attestation verify --repo oleksandrdubyna88/wsl_care --signer-workflow
+  oleksandrdubyna88/wsl_care/.github/workflows/release.yml`) proves this repository's release workflow built those
+  bytes. It needs the [GitHub CLI](https://cli.github.com), logged in (`gh auth login`); under `sudo` it runs as the
+  user who ran `sudo`, with that user's login. Without `gh` the installer stops **before downloading anything** and
+  says how to install it. To proceed knowingly without it — printed loudly, and the checksum still applies:
+
+  ```bash
+  curl -fsSL …/install.sh | sudo sh -s -- --skip-attestation
+  ```
+
+A mismatch, a missing `.sha256`, a refused attestation, or an archive holding anything but regular files under one
+folder (no `..`, no link) stops it with nothing installed.
+
+**What it changes on the machine** — and nothing else:
+
+| Path / thing | What |
+|---|---|
+| `/opt/wsl-care/bin/wsl-care` (0755), linked from `/usr/local/bin/wsl-care` | the binary; root and the units always use the absolute path |
+| `/etc/systemd/system/wsl-care.service` | the timer's full run, `wsl-care collect --timer` (oneshot, `Nice=19`, idle I/O, `MemoryMax=256M`, 10 min) |
+| `/etc/systemd/system/wsl-care.timer` | every 4 hours on the clock (00:00, 04:00, …), catching up ONCE after a night the VM was off; enabled and started |
+| `/etc/systemd/system/wsl-care-events.service` | the container-start follower, `wsl-care events follow`, `Restart=always` after 30 s; enabled and started |
+| `/etc/wsl-care/config.json` | the machine configuration layer — written **only when none exists**, and empty (comments only: every value stays the binary's default); an existing one is never overwritten |
+| `/var/lib/wsl-care`, `/var/log/wsl-care` | the state and the run logs, root's, 0755 |
+| `sysstat`, `atop` | installed with `apt-get` when missing; sysstat's collection switched on through its own debconf setting; both services enabled |
+| `/etc/wsl.conf` | **only** with `--set-default-user <name>`, and only when it names no default user yet: `[user] default=<name>` is added (the user wsl-care's per-user cleanups act for — WSL also logs in as that user from the next distro start). Without the flag nothing is written; the installer says how to name one |
+
+Then it runs one full `collect` (it measures and records — a `collect` outside the timer never cleans) and verifies
+every side effect: `sar` and `atop` on `PATH`, `systemctl is-active` for both units, and
+`/opt/wsl-care/bin/wsl-care doctor --json` healthy (waiting up to 2 minutes for the follower's first marker). A step
+that fails exits non-zero with `FAILED at step "<step>"` and what it found. It never calls `sudo`, never touches
+`.wslconfig`, `wsl-pro.service`, the clock services, snapd or any worktree, and never evaluates what it downloads.
+`doctor` reports the events follower as a problem while Docker cannot be reached, so install with Docker running.
+
+**Uninstall:**
+
+```bash
+curl -fsSL …/install.sh | sudo sh -s -- --uninstall           # units stopped and removed, binary and link removed
+curl -fsSL …/install.sh | sudo sh -s -- --uninstall --purge   # … and the state, the logs and the machine configuration
+```
+
+`--uninstall` keeps `/var/lib/wsl-care` (history, run details, container starts), `/var/log/wsl-care` (run logs) and
+`/etc/wsl-care` (the machine layer). `--purge` removes exactly those three and `/run/wsl-care.lock`, and names each
+before removing it. Never removed: sysstat and atop (other tools may use them), `/etc/wsl.conf`, every user's
+`~/.config/wsl-care`.
 
 ## Configuration
 

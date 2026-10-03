@@ -1,0 +1,25 @@
+# wsl-care — the container-start follower (plan §4.3, §15b #0/#8). Installed by install.sh to
+# /etc/systemd/system/ and enabled with `systemctl enable --now wsl-care-events.service`.
+#
+# Restart=always / RestartSec=30 is the outer net only: the follower waits for the Docker socket
+# IN-PROCESS with backoff (5 s doubling to 5 min) and writes ONE gap marker per outage (§15b #8), and it
+# exits only on a signal or an unexpected error — so this does not cycle while Docker is merely down. At
+# 30 s between starts the default start limit (5 starts in 10 s) can never trip.
+#
+# Root, like the timer: the starts it records go to /var/lib/wsl-care, which only root writes (§15b #3).
+# Hardening: NoNewPrivileges=yes only, for the reasons in wsl-care.service; the follower itself writes only
+# its state folder, but it runs the same binary, and a sandbox written for one verb is a second policy to
+# keep in step with the other. A request to systemd, not yet observed live (E4's live install).
+[Unit]
+Description=wsl-care: record every container start (Docker events)
+Documentation=https://github.com/oleksandrdubyna88/wsl_care
+
+[Service]
+Type=simple
+ExecStart=/opt/wsl-care/bin/wsl-care events follow
+Restart=always
+RestartSec=30
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

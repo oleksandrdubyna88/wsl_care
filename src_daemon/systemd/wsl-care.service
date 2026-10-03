@@ -1,0 +1,47 @@
+# wsl-care — the timer's full run (plan §8, §15d CI row). Installed by install.sh to
+# /etc/systemd/system/ and started only by wsl-care.timer; it has no [Install] section of its own.
+#
+# `--timer` is the ONLY thing that makes this run the timer (§15d CI): INVOCATION_ID is inherited by every
+# descendant of every systemd unit, so the CLI never reads it. Without the flag this would be a terminal
+# `collect`, which measures and records but never acts.
+#
+# HARDENING — what is set, what is NOT, and why. The run is root by design (§15c #0): it writes
+# /var/lib/wsl-care and /var/log/wsl-care, deletes caches under the TARGET USER's home (A8, A12, A14,
+# A17), vacuums /var/log/journal (A10), cleans /var/cache/apt (A9), writes /proc/sys/vm (A1, A2), sets the
+# clock (A16, hwclock -s), trims every mounted filesystem (A15, fstrim -av), signals other users'
+# processes by pidfd (A11), drops to the user with runuser (A3, A8, A12, A17) and talks to the Docker and
+# snapd sockets. So, deliberately NOT set, each because it would break a named action:
+#   ProtectHome=          the per-user cleanups live under /home        (A8, A12, A14, A17)
+#   ProtectSystem=strict  /var/lib, /var/log, /var/cache must be written (state, A9, A10)
+#   ProtectKernelTunables /proc/sys/vm/drop_caches, compact_memory       (A1, A2)
+#   ProtectClock=         hwclock -s sets the system clock               (A16)
+#   PrivateDevices=       fstrim opens the block devices                 (A15)
+#   ProtectProc= / PrivateUsers= / PrivateTmp=  the process table, cwd links and pidfds of
+#                         every user's processes                         (A11, the collectors)
+#   CapabilityBoundingSet= the actions above need a broad set (CAP_SYS_ADMIN for fstrim, CAP_SYS_TIME
+#                         for hwclock, CAP_KILL for A11, CAP_SETUID/SETGID for runuser, CAP_DAC_OVERRIDE for
+#                         other users' caches) — a bound that keeps all of them adds nothing
+# What IS set is only what no action relies on. None of it has been observed on a live systemd yet
+# (the first live install is E4's done-line); until then each line is a REQUEST to systemd, not a
+# measured effect:
+#   NoNewPrivileges=yes   nothing here gains privilege through a set-uid binary: the run already is root,
+#                         runuser only DROPS privilege, sudo is on the never-list
+#   Nice / IOSchedulingClass / MemoryMax / TimeoutStartSec — plan §8, resource limits for a background job
+#   SuccessExitStatus=75  "another run holds the lock" (a button's collect or act) is the designed answer
+#                         of a second run (§5 global guards), not a failed unit — the health collector
+#                         counts failed units
+#   KillMode= (default control-group): a stop or a timeout ends every child the run started, the tree kill
+#                         the reliability rule asks of the CLI's own ceilings too
+[Unit]
+Description=wsl-care: record the WSL VM's state and run the switched-on cleanups
+Documentation=https://github.com/oleksandrdubyna88/wsl_care
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wsl-care/bin/wsl-care collect --timer
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=256M
+TimeoutStartSec=10min
+SuccessExitStatus=75
+NoNewPrivileges=yes

@@ -153,7 +153,7 @@ internal sealed class ScenarioHome : IDisposable
     /// One apphost, one name per tool: a renamed apphost still loads <c>wsl-care-fake-tool.dll</c> (the name
     /// is embedded in it), so the dll, its runtime config and its deps file go beside the copies.
     /// </summary>
-    private static void InstallFakes(string bin, IReadOnlyList<string> tools)
+    internal static void InstallFakes(string bin, IReadOnlyList<string> tools)
     {
         const string fake = "wsl-care-fake-tool";
         var apphost = ChildProcess.BesideTheTests(fake);

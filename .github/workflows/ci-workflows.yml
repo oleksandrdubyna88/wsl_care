@@ -15,10 +15,12 @@ name: ci · workflows
 # but silently drops the shell analysis of every `run:` block — exit zero, a green check. Measured in
 # the family when this job was first added: zero findings everywhere, wrongly.
 #
-# Standalone shell scripts: the product has none yet. `install.sh` arrives with E4 and joins a
-# pinned-image shellcheck step then. The scripts under research/diagnostics/ are the record of a
-# measurement — they produced the 2026-10-02 baselines exactly as they are — and are deliberately not
-# linted or rewritten here (koalaman/shellcheck:v0.11.0 reports info/warning findings in them).
+# Standalone shell scripts: `install.sh` (E4.S1) — the one a person pipes into `sudo sh` — is linted by
+# the pinned shellcheck image below, at its default severity (info and up), as POSIX sh (its shebang).
+# Its behaviour is tested by the scenario harness (ci · daemon, InstallFlows). The scripts under
+# research/diagnostics/ are the record of a measurement — they produced the 2026-10-02 baselines
+# exactly as they are — and are deliberately not linted or rewritten here (koalaman/shellcheck:v0.11.0
+# reports info/warning findings in them).
 on:
   push:
     branches: [main]
@@ -64,3 +66,13 @@ jobs:
           echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -
           tar -xzf actionlint.tar.gz actionlint
           ./actionlint -color
+
+      # The installer (E4.S1). The image is pinned by DIGEST, the same promise a SHA-pinned `uses:` makes; the tag
+      # beside it is for the reader. The repository is mounted read-only — the linter reads, it never rewrites.
+      - name: Shellcheck the installer
+        env:
+          SHELLCHECK_IMAGE: 'koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d'
+        run: |
+          set -euo pipefail
+          docker run --rm -v "$PWD:/mnt:ro" "$SHELLCHECK_IMAGE" /mnt/install.sh
+          echo "install.sh: shellcheck v0.11.0 reports nothing"
