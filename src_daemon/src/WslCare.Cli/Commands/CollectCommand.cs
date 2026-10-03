@@ -19,8 +19,9 @@ namespace WslCare.Cli.Commands;
 /// anyone else it measures, prints, writes nothing and says <i>read-only: run as root to record</i> (plan §15b #3).
 /// </summary>
 /// <remarks>Exit codes: 0 recorded or read-only; 1 the run could not be recorded (detail or history line); 75 another
-/// run holds the lock. The trigger is <c>timer</c> under systemd (which sets <c>INVOCATION_ID</c> for every unit it
-/// runs), <c>cli</c> otherwise; the panel's button (E6) passes through the root allowlist as <c>collect</c>. Only the
+/// run holds the lock. The trigger is <c>timer</c> only with <c>--timer</c>, which the systemd timer unit passes in its <c>ExecStart</c> —
+/// never inferred from <c>INVOCATION_ID</c>, which every descendant of any systemd unit inherits (a CI runner job, a VS Code
+/// Server user service) — and <c>cli</c> otherwise; the panel's button (E6) passes through the root allowlist as <c>collect</c>. Only the
 /// timer's full run acts (E3.S3: the action pass after measuring, under the same lock, in the same record); an action that
 /// fails there is in the record and the log and does not change the exit code — one failed action never ends a run.</remarks>
 internal static class CollectCommand
@@ -28,7 +29,7 @@ internal static class CollectCommand
     public static int Run(Request.Collect request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, ILogger logger, CancellationToken cancellationToken)
     {
         var log = logger.ForContext(typeof(CollectCommand));
-        var context = new CollectContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, Environment.ProcessId, Trigger())
+        var context = new CollectContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, Environment.ProcessId, Trigger(request))
         {
             Actions = host.Actions,
             Processes = host.Processes,
@@ -64,8 +65,7 @@ internal static class CollectCommand
     internal static CollectReport Report(CollectResult result) =>
         new(SchemaVersion.Current, Camel(result.Recording.ToString()), result.Reason.Length == 0 ? null : result.Reason, result.DetailFile.Length == 0 ? null : result.DetailFile, result.Detail);
 
-    private static RunTrigger Trigger() =>
-        Environment.GetEnvironmentVariable("INVOCATION_ID") is { Length: > 0 } ? RunTrigger.Timer : RunTrigger.Cli;
+    private static RunTrigger Trigger(Request.Collect request) => request.Timer ? RunTrigger.Timer : RunTrigger.Cli;
 
     private static void Log(ILogger log, CollectResult result)
     {
