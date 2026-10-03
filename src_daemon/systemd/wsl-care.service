@@ -22,7 +22,7 @@
 #                         for hwclock, CAP_KILL for A11, CAP_SETUID/SETGID for runuser, CAP_DAC_OVERRIDE for
 #                         other users' caches) — a bound that keeps all of them adds nothing
 # What IS set is only what no action relies on. None of it has been observed on a live systemd yet
-# (the first live install is E4's done-line); until then each line is a REQUEST to systemd, not a
+# (the first live install is the E4 live gate, plan §16); until then each line is a REQUEST to systemd, not a
 # measured effect:
 #   NoNewPrivileges=yes   nothing here gains privilege through a set-uid binary: the run already is root,
 #                         runuser only DROPS privilege, sudo is on the never-list. KNOWN RISK, kept on purpose
