@@ -35,6 +35,8 @@
           { "context": "daemon · build · test · aot (linux-x64)", "integration_id": 15368 },
           { "context": "daemon · build · test · aot (linux-arm64)", "integration_id": 15368 },
           { "context": "daemon · build · test · aot (win-x64)", "integration_id": 15368 },
+          { "context": "extension · typecheck · lint · test (windows-latest)", "integration_id": 15368 },
+          { "context": "extension · typecheck · lint · test (ubuntu-24.04)", "integration_id": 15368 },
           { "context": "workflows · actionlint", "integration_id": 15368 },
           { "context": "family · plans · pins · adapter · build flags", "integration_id": 15368 },
           { "context": "pr · semantic title", "integration_id": 15368 }

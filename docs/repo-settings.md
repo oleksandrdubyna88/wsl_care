@@ -77,7 +77,10 @@ DELETE "repos/$REPO/rulesets/$TAGS_ID"`) and stop — do not cut a release on an
 (squash or rebase merges), every change arrives by pull request with its conversations resolved, and these checks —
 the names GitHub reported on pull request #7, all from GitHub Actions (`integration_id` 15368) — must pass on an
 up-to-date branch: `daemon · build · test · aot (linux-x64)`, `(linux-arm64)`, `(win-x64)`, `workflows · actionlint`,
-`family · plans · pins · adapter · build flags`, `pr · semantic title`. No bypass actor (the family's
+`family · plans · pins · adapter · build flags`, `pr · semantic title`, and since E5.S1 the extension's two legs
+`extension · typecheck · lint · test (windows-latest)` and `(ubuntu-24.04)` (`ci-extension.yml`) — re-apply the file (E5 live
+gate, step 3) only after a pull request has REPORTED those two, since a required check that never reports blocks every
+merge. No bypass actor (the family's
 `enforce_admins`). Deliberately not required: `SonarCloud Scan` (it passes while skipping without a token — step 6),
 `ask CodeRabbit` (a third-party free tier that runs out), CodeQL (not set up — step 8).
 
