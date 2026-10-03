@@ -23,6 +23,26 @@ public static class ReadCommandTemplates
         [L("container"), L("inspect"), L("--format"), L(DockerCommands.InspectTemplate), new ArgPart.Repeat("id", new SlotKind.Hex(64), 1, DockerCommands.InspectBatch)],
         DockerCommands.ListingCeiling);
 
+    /// <summary><c>systemctl show &lt;unit&gt;</c> (<see cref="SystemdCommands.ShowUnit"/>) — also declared by A15 (E3.S3), which
+    /// reads <c>fstrim.timer</c> through it. Declared BEFORE <see cref="All"/>: static members initialise in textual order.</summary>
+    public static CommandTemplate SystemctlShow { get; } = Machine(
+        "systemctl-show",
+        SystemdCommands.Systemctl,
+        [L("show"), S("unit", Unit), L("--timestamp=unix"), L($"--property={SystemdCommands.UnitProperties}")],
+        SystemdCommands.Ceiling);
+
+    /// <summary><c>journalctl --since … --grep=…</c> (<see cref="SystemdCommands.Search"/>) — also declared by A2 (E3.S3), which
+    /// counts the kernel's page allocation failures since the last run through it.</summary>
+    public static CommandTemplate JournalSearch { get; } = Machine(
+        "journalctl-search",
+        SystemdCommands.Journalctl,
+        [
+            L("--since"), S("since", new SlotKind.UnixSeconds()), L("--no-pager"), L("--quiet"), L("--output=cat"),
+            S("scope", new SlotKind.AnyOf([new SlotKind.OneOf(["--dmesg"]), new SlotKind.Prefixed("--unit=", new SlotKind.UnitName(TypeRequired: false))])),
+            S("pattern", new SlotKind.Prefixed("--grep=", new SlotKind.Text(256))),
+        ],
+        SystemdCommands.SearchCeiling);
+
     public static IReadOnlyList<CommandTemplate> All { get; } =
     [
         .. new[]
@@ -43,20 +63,8 @@ public static class ReadCommandTemplates
             DockerCommands.Executable,
             [L("events"), L("--since"), S("since", Instant), L("--until"), S("until", Instant), L("--format"), L("{{json .}}")],
             DockerCommands.ListingCeiling),
-        Machine(
-            "systemctl-show",
-            SystemdCommands.Systemctl,
-            [L("show"), S("unit", Unit), L("--timestamp=unix"), L($"--property={SystemdCommands.UnitProperties}")],
-            SystemdCommands.Ceiling),
-        Machine(
-            "journalctl-search",
-            SystemdCommands.Journalctl,
-            [
-                L("--since"), S("since", new SlotKind.UnixSeconds()), L("--no-pager"), L("--quiet"), L("--output=cat"),
-                S("scope", new SlotKind.AnyOf([new SlotKind.OneOf(["--dmesg"]), new SlotKind.Prefixed("--unit=", new SlotKind.UnitName(TypeRequired: false))])),
-                S("pattern", new SlotKind.Prefixed("--grep=", new SlotKind.Text(256))),
-            ],
-            SystemdCommands.SearchCeiling),
+        SystemctlShow,
+        JournalSearch,
     ];
 
     private static CommandTemplate Machine(string name, string executable, IReadOnlyList<ArgPart> parts, TimeSpan ceiling) =>

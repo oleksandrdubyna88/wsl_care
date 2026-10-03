@@ -41,6 +41,13 @@ internal abstract record Request
     /// <summary><c>events follow [--once]</c>: the container-start follower (plan §4.3); <c>--once</c> catches up and stops.</summary>
     internal sealed record EventsFollow(bool Once) : Request;
 
+    /// <summary><c>logs [--period …] [--action &lt;A#&gt;] [--json]</c> (plan §7.4): the period's totals and cleanups; the period
+    /// text is checked against the clock by the verb.</summary>
+    internal sealed record Logs(string Period, Core.Actions.ActionId? Action, bool Json) : Request;
+
+    /// <summary><c>runs [--period …] [--json]</c> (plan §7.4): every run of the period.</summary>
+    internal sealed record Runs(string Period, bool Json) : Request;
+
     /// <summary><c>act &lt;A#&gt;[,&lt;A#&gt;…] (--preview or --confirm) [--manual] [--volume &lt;name&gt;]... [--only &lt;file&gt;] [--json]</c>
     /// (plan §6): preview the actions, or run them — a destructive run from the CLI needs <c>--confirm</c> (the button passes it
     /// after the person confirmed). <c>--manual</c> is the panel's mark (the run's trigger is <c>manual</c>); <c>--volume</c> and
@@ -85,7 +92,7 @@ internal sealed record Spelt(Command Command, IReadOnlyList<string> Spelling);
 /// <remarks>
 /// <para><see cref="Commands"/> is the ONE register of what this binary accepts. The parser and the
 /// help text are both derived from it, so a command cannot be accepted and undocumented, or
-/// documented and refused. The remaining verbs of plan §6 (<c>logs</c>, <c>runs</c>, <c>agents</c>, …) arrive in later
+/// documented and refused. The remaining verbs of plan §6 (<c>agents</c>, <c>runs show</c> / <c>runs log</c>, …) arrive in later
 /// stories as entries here.</para>
 /// </remarks>
 internal static class CommandLine
@@ -100,6 +107,8 @@ internal static class CommandLine
     private const string ManualFlag = "--manual";
     private const string VolumeFlag = "--volume";
     private const string OnlyFlag = "--only";
+    private const string PeriodFlag = "--period";
+    private const string ActionFlag = "--action";
 
     /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — far above the 387
     /// volumes of 2026-10-02, low enough that a mistaken file cannot make a run of millions.</summary>
@@ -118,6 +127,8 @@ internal static class CommandLine
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
         new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual] [--volume <name>]... [--only <file>] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --volume / --only the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
+        new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--action <A#>] [--json]", "what the runs of a period freed, per action and in detail; runs with and without a cleanup; max and min (read-only, UTC days)", ["logs", "--period", "today", "--json"], ParseLogs),
+        new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only, UTC days)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
     ];
 
     /// <summary>Every spelling of <see cref="Commands"/> with its command, longest first — ordered once,
@@ -332,6 +343,56 @@ internal static class CommandLine
 
         var names = lines.Where(l => l.Length > 0).Distinct(StringComparer.Ordinal).ToList();
         return names.Count > MaxShownVolumes ? ([], $"the {OnlyFlag} file names more than {MaxShownVolumes} volumes") : (names, string.Empty);
+    }
+
+    private static Request ParseLogs(IReadOnlyList<string> rest) =>
+        ReadOptions("logs", rest, [PeriodFlag, ActionFlag]) switch
+        {
+            (_, _, { } failure) => failure,
+            var (values, _, _) when values.TryGetValue(ActionFlag, out var id) && Core.Actions.ActionId.Find(id) is null =>
+                new Request.Failed($"\"{BinaryName} logs\": {ActionFlag} \"{Printable(id)}\" is not an action; the actions are {string.Join(", ", Core.Actions.ActionId.All.Select(a => a.Text))}."),
+            var (values, json, _) => new Request.Logs(values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today), values.TryGetValue(ActionFlag, out var action) ? Core.Actions.ActionId.Find(action) : null, json),
+        };
+
+    private static Request ParseRuns(IReadOnlyList<string> rest) =>
+        ReadOptions("runs", rest, [PeriodFlag]) switch
+        {
+            (_, _, { } failure) => failure,
+            var (values, json, _) => new Request.Runs(values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today), json),
+        };
+
+    /// <summary><c>--json</c> and each of <paramref name="valued"/> with its value, each at most once; nothing else.</summary>
+    private static (Dictionary<string, string> Values, bool Json, Request.Failed? Failure) ReadOptions(string verb, IReadOnlyList<string> rest, IReadOnlyList<string> valued)
+    {
+        var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var json = false;
+        for (var i = 0; i < rest.Count; i++)
+        {
+            var known = valued.Contains(rest[i]);
+            var failure = rest[i] switch
+            {
+                JsonFlag when !json => null,
+                _ when known && (i + 1 >= rest.Count || rest[i + 1].StartsWith('-')) => $"{rest[i]} needs a value",
+                _ when known && values.ContainsKey(rest[i]) => $"{rest[i]} is given twice",
+                _ when known => null,
+                _ => $"does not take \"{Printable(rest[i])}\"; it takes {string.Join(", ", valued.Select(v => v + " <value>"))} and {JsonFlag}, each once",
+            };
+            if (failure is not null)
+            {
+                return (values, json, new Request.Failed($"\"{BinaryName} {verb}\" {failure}."));
+            }
+
+            if (known)
+            {
+                values[rest[i]] = rest[++i];
+            }
+            else
+            {
+                json = true;
+            }
+        }
+
+        return (values, json, null);
     }
 
     private static Request ParsePreview(IReadOnlyList<string> rest) => rest switch

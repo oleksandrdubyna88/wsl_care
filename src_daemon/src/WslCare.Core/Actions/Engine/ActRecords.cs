@@ -121,3 +121,42 @@ public sealed record ActReport(
         _ => throw new System.Diagnostics.UnreachableException("ActResult is a closed set"),
     };
 }
+
+/// <summary>
+/// The timer pass of a full run (E3.S3), as the full run's detail keeps it: whether the engine ran over the actions, why not
+/// when it did not (a live or wedged run holds <c>running.json</c>), the dry-run decision, the target user, every action's
+/// outcome with its live preview and measured result, and the engine's notes.
+/// </summary>
+/// <param name="Ran">The pass reached the actions.</param>
+/// <param name="Reason">Why it did not; empty when it ran.</param>
+public sealed record TimerPass(
+    bool Ran,
+    string Reason,
+    bool DryRun,
+    string DryRunReason,
+    TargetUserReport? TargetUser,
+    IReadOnlyList<ActionOutcome> Actions,
+    IReadOnlyList<string> Notes,
+    RunOutcome Outcome)
+{
+    /// <summary>The pass wrote <c>running.json</c>: the caller removes it once the run is recorded.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool RunningWritten { get; init; }
+
+    public static TimerPass NotRun(string reason, IReadOnlyList<string> notes) =>
+        new(false, reason, false, string.Empty, null, [], notes, RunOutcome.Completed);
+
+    /// <summary>The history line's view of each outcome: count and measured freed bytes, a dry run's would-free bytes.</summary>
+    public IReadOnlyList<ActionRecord> Records() => [.. Actions.Select(ActionRecords.Of)];
+}
+
+/// <summary>One action outcome as a history line keeps it — the same shape for an <c>act</c> and a full run's timer pass.</summary>
+public static class ActionRecords
+{
+    public static ActionRecord Of(ActionOutcome o) => o.Status switch
+    {
+        ActionStatus.Ran or ActionStatus.Failed => new ActionRecord(o.Id, o.Run?.Count ?? 0, o.Run?.FreedBytes ?? 0) { Status = o.Status },
+        ActionStatus.DryRun => new ActionRecord(o.Id, o.Preview?.Count ?? 0, 0) { Status = o.Status, WouldFreeBytes = o.Preview?.Bytes },
+        _ => new ActionRecord(o.Id, 0, 0) { Status = o.Status },
+    };
+}

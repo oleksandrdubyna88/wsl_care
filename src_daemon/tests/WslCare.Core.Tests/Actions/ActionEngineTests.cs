@@ -193,6 +193,39 @@ public sealed class ActionEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task An_urgent_preview_skips_the_idle_gate_and_nothing_else_while_its_neighbour_is_deferred()
+    {
+        UserConfig("""{ "dryRun": false }""");
+        _sandbox.Load(3.9, 3.9, 3.9, cpus: 4);
+        _sandbox.Write("/var/lib/wsl-care/first-timer-run.json", "{\"schemaVersion\":1,\"at\":\"2026-09-01T00:00:00+00:00\"}");
+        var urgent = new ScriptedAction("A2", _journal) { Idle = IdleRule.Always, Urgent = "event: scripted shortage" };
+        var heavy = new ScriptedAction("A15", _journal) { Idle = IdleRule.Always };
+
+        var result = await Engine(urgent, heavy).ExecuteAsync(Run(RunTrigger.Timer, "A15", "A2"), CancellationToken.None);
+        var refused = await Engine(new ScriptedAction("A2", _journal) { Idle = IdleRule.Always, Urgent = "event", Refusal = "scripted refusal" })
+            .ExecuteAsync(Run(RunTrigger.Cli, "A2"), CancellationToken.None);
+
+        Statuses(result).Should().Equal("A15:deferred", "A2:ran");
+        Done(result).Detail.Actions[1].Reason.Should().Be("ran at once, without waiting for idle: event: scripted shortage");
+        Statuses(refused).Should().Equal(["A2:refused"], "an event skips the idle gate only, never a refusal");
+    }
+
+    [Fact]
+    public async Task An_action_sees_which_earlier_actions_of_the_same_run_ran()
+    {
+        var seen = new List<string>();
+        var first = new ScriptedAction("A1", _journal);
+        var skipped = new ScriptedAction("A3", _journal) { Fires = false };
+        var second = new ScriptedAction("A2", _journal) { OnPreview = c => seen.AddRange(new[] { "A1", "A3" }.Where(id => c.RanEarlier(ActionId.Find(id)!))) };
+        UserConfig("""{ "dryRun": false }""");
+        _sandbox.Write("/var/lib/wsl-care/first-timer-run.json", "{\"schemaVersion\":1,\"at\":\"2026-09-01T00:00:00+00:00\"}");
+
+        await Engine(first, skipped, second).ExecuteAsync(Run(RunTrigger.Timer, "A1", "A2", "A3"), CancellationToken.None);
+
+        seen.Should().Equal(["A1"], "A1 ran before A2; A3's trigger did not fire (and it runs before A1 anyway)");
+    }
+
+    [Fact]
     public async Task A_timer_only_idle_rule_does_not_hold_back_a_button_and_an_unread_cpu_figure_defers()
     {
         UserConfig("""{ "dryRun": false }""");

@@ -89,6 +89,8 @@ internal static class Program
             Request.Doctor doctor => DoctorCommand.Run(doctor, host, loaded, stdout, cancellationToken),
             Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),
             Request.Act act => ActCommand.Run(act, host, loaded, stdout, stderr, logger, cancellationToken),
+            Request.Logs logs => LogsCommand.Logs(logs, host, stdout, stderr),
+            Request.Runs runs => LogsCommand.Runs(runs, host, stdout, stderr),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
     }

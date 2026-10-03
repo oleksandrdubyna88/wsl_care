@@ -22,7 +22,8 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     public const string WindowsIsTheReference = "this binary runs on Windows: its clock is the one the distro's is compared with";
 
     private const string ClockChange = "Clock change detected";
-    private const string AllocationFailure = "page allocation failure";
+    /// <summary>The kernel's words for a failed allocation (plan §4.1) — also A2's event (E3.S3).</summary>
+    public const string AllocationFailure = "page allocation failure";
     private const string OomKiller = "invoked oom-killer";
     private const int KernelLinesKept = 5;
     private const int KernelLineChars = 200;
@@ -137,18 +138,24 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     /// </summary>
     private async Task<(WindowsClockSample Sample, Reading<string> Profile)> WindowsClockAsync(LinuxHostPaths linux, CancellationToken cancellationToken)
     {
-        var launched = clock.GetUtcNow();
-        var answer = (await RunAsync(HealthCommands.WindowsClock, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.WindowsClock);
-        if (answer is not Reading<WindowsClockAnswer>.Available { Value: var probe })
-        {
-            return (ClockUnavailable(answer.ReasonOrEmpty), Reading.Missing<string>($"the Windows profile is unknown: {answer.ReasonOrEmpty}"));
-        }
+        var sample = await MeasureWindowsClockAsync(commands, clock, cancellationToken).ConfigureAwait(false);
+        return sample.Measured
+            ? (sample, WindowsProfiles.InDistro(linux, files, sample.Profile))
+            : (sample, Reading.Missing<string>($"the Windows profile is unknown: {sample.Unavailable}"));
+    }
 
-        var sample = new WindowsClockSample(launched, (probe.ProcessStartedAt - launched).TotalSeconds, (probe.PrintedAt - probe.ProcessStartedAt).TotalSeconds, string.Empty)
-        {
-            WindowsProfile = probe.Profile,
-        };
-        return (sample, WindowsProfiles.InDistro(linux, files, probe.Profile));
+    /// <summary>
+    /// One observation of the distro's clock against Windows', through <paramref name="runner"/> — the full run's, and A16's
+    /// live observation (E3.S3), so the offset is computed ONE way: the probe's start minus our launch instant, its launch
+    /// latency subtracted. Unmeasured, with the reason, when the probe does not answer.
+    /// </summary>
+    public static async Task<WindowsClockSample> MeasureWindowsClockAsync(ICommandRunner runner, TimeProvider clock, CancellationToken cancellationToken)
+    {
+        var launched = clock.GetUtcNow();
+        var answer = (await ToolAnswers.RunAsync(runner, HealthCommands.WindowsClock, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.WindowsClock);
+        return answer is Reading<WindowsClockAnswer>.Available { Value: var probe }
+            ? new WindowsClockSample(launched, (probe.ProcessStartedAt - launched).TotalSeconds, (probe.PrintedAt - probe.ProcessStartedAt).TotalSeconds, string.Empty) { WindowsProfile = probe.Profile }
+            : new WindowsClockSample(clock.GetUtcNow(), 0, 0, answer.ReasonOrEmpty);
     }
 
     private WindowsClockSample ClockUnavailable(string reason) => new(clock.GetUtcNow(), 0, 0, reason);
