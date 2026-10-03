@@ -49,7 +49,10 @@ public sealed class PhysicalFileSystem : IFileSystem
     {
         try
         {
-            return new FileReadResult.Content(File.ReadAllBytes(path));
+            using var stream = OpenForReading(path);
+            using var bytes = new MemoryStream();
+            stream.CopyTo(bytes);
+            return new FileReadResult.Content(bytes.ToArray());
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -222,9 +225,35 @@ public sealed class PhysicalFileSystem : IFileSystem
             return Abandon(temp.RealPath, scope, recheck);
         }
 
-        File.Move(temp.RealPath, target.RealPath, overwrite: true);
+        MoveReplacing(temp.RealPath, target.RealPath);
         return target.Verdict;
     }
+
+    /// <summary>
+    /// The atomic write's rename over the target. On Windows a rename onto a file another handle holds open is refused
+    /// (access denied) even when that handle shares delete — a reader of <c>running.json</c> or the history holds it for
+    /// microseconds — so the rename is retried for up to <see cref="ReplaceRetryFor"/> before the failure is thrown. On Linux
+    /// a rename never meets an open file, and a failure is real at once.
+    /// </summary>
+    private static void MoveReplacing(string from, string to)
+    {
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                File.Move(from, to, overwrite: true);
+                return;
+            }
+            catch (Exception e) when (OperatingSystem.IsWindows() && e is UnauthorizedAccessException or IOException && e is not (FileNotFoundException or DirectoryNotFoundException) && started.Elapsed < ReplaceRetryFor)
+            {
+                Thread.Sleep(10);
+            }
+        }
+    }
+
+    /// <summary>How long the atomic write's rename waits out a reader on Windows.</summary>
+    internal static readonly TimeSpan ReplaceRetryFor = TimeSpan.FromSeconds(2);
 
     public void AppendLine(string path, string line, TimeSpan lockTimeout)
     {
@@ -371,6 +400,16 @@ public sealed class PhysicalFileSystem : IFileSystem
             return new LinkInspection.Uninspectable(e.Message);
         }
     }
+
+    /// <summary>
+    /// How <see cref="ReadFile"/> opens a file: sharing read, WRITE and DELETE, so a reader never blocks a writer. On
+    /// Windows a reader that shares only read (what <c>File.ReadAllBytes</c> does) makes a concurrent
+    /// <see cref="AppendLine"/> fail with a sharing violation — a run's history line lost — and the atomic replace of
+    /// <see cref="WriteFileAtomically"/> fail too. Found as the flaky <c>RunRetentionTests</c> race under load
+    /// (2026-10-03): retention reads the history right after its rewrite releases the lock, while a racing run appends.
+    /// A line torn by a concurrent append is already read as unparseable (<c>RunHistory</c>).
+    /// </summary>
+    internal static FileStream OpenForReading(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
     /// <summary>The exclusive open described on <see cref="IFileSystem.AppendLine"/>, retried until <paramref name="timeout"/>.</summary>
     private static FileStream AcquireLock(string lockPath, TimeSpan timeout)
