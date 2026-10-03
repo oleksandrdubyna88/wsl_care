@@ -5,7 +5,10 @@ E4.S2 — the published `daemon-v*` release; `$TARGET` is the release VERSION (`
 items 8–10. Run it from the repository root INSIDE WSL `Ubuntu` (`node .agents/conventions/tools/post-deploy-check.mjs
 --target 0.1.0`): the commands are POSIX sh, and `wsl.exe` reaches the distro through interop.
 Last verified: never, as of 2026-10-03 — nothing released yet (`install.sh` exists since E4.S1, the release pipeline since
-E4.S2; the first release and its live install are E4's done-line).
+E4.S2). The first release and its live install are the **E4 live gate** (plan §16), run by the owner after E4 merges:
+settings with refused probes → item 4 → the release-please cut and the observed `release.yml` run → the live install →
+items 1–11, then THIS line stamped with the date and the version. E5.S3's Marketplace publish and all of E6 wait for that
+stamp.
 
 | # | What a person loses if this is broken | Check | Auto |
 |---|---|---|---|

@@ -111,7 +111,11 @@ If (c) **succeeds**, delete the ruleset and the probe branch and stop. Optional,
 
 ## 5. Nothing for the extension yet
 
-`VSCE_PAT` (plan §9) belongs to the extension's Marketplace leg, E5.S3; it is not needed for a daemon release.
+`VSCE_PAT` (plan §9) belongs to the extension's Marketplace leg, E5.S3; it is not needed for a daemon release. When E5.S3
+lands (plan §15f #6): the publisher id is created early (it is permanent), the PAT goes into a protected Environment —
+or `vsce publish --azure-credential` through OIDC, its state checked first — with its expiry recorded in
+`POST_DEPLOY.md`; the tag ruleset gains `extension-v*` and the `main` ruleset the extension's checks, each re-applied
+with a probe that must be refused, exactly as in steps 3 and 4.
 
 ## 6. SonarCloud (optional; the analysis skips loudly until it is done)
 
@@ -147,9 +151,11 @@ gh api "repos/$REPO/code-scanning/default-setup" --jq .state     # configured
 
 Not a required check until it has reported on a pull request (a required check that never reports blocks every merge).
 
-## Cutting `daemon-v0.1.0`
+## Cutting `daemon-v0.1.0` — the E4 live gate
 
-After steps 1–4 (6–8 optional), with the epic's pull request merged to `main` and CI green there:
+E4 is done when its pull request is merged (plan §16, §15f #4); this section is the **E4 live gate** that follows it,
+the owner's alone. After steps 1–4 (6–8 optional; each ruleset applied only after its probe was refused), with the epic's
+pull request merged to `main` and CI green there:
 
 1. **Before tagging**, the release checklist: `POST_DEPLOY.md` item 4 (the live contract inside WSL, 0 failed, 0
    skipped).
@@ -162,7 +168,13 @@ After steps 1–4 (6–8 optional), with the epic's pull request merged to `main
    and a DRAFT release, and the tag starts `release.yml`: `gh run list -R "$REPO" --workflow release.yml --limit 3`.
 5. `release.yml`: the guard → three build legs (tests, AOT publish, the smoke, the archive, its attestation) → publish
    (completeness checked before upload and again from the draft, then the draft goes public).
-6. `POST_DEPLOY.md` items 8–10 against the published release; then install it here (E4's done-line).
+6. `POST_DEPLOY.md` items 8–10 against the published release; then install it here
+   (`curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh` — gh 2.56.0 or
+   newer from GitHub's apt repository, no gh login needed).
+7. `POST_DEPLOY.md` items 1–11 against the installation (inside WSL: `node .agents/conventions/tools/post-deploy-check.mjs
+   --target 0.1.0`, plus the manual items), and its `Last verified:` line stamped with the date and `0.1.0`. That stamp is
+   what E5.S3's Marketplace publish and every story of E6 wait for; E5.S1–S2 need not wait. Phase 0 does not gate this
+   install any more — it gates the review of the dryRun week (plan §16).
 
 If `release.yml` fails, nothing is public: the draft stays a draft. Re-run the failed jobs for a transient failure;
 otherwise fix the cause on `main` and let release-please cut the next patch. **Never move or delete a release tag** —
