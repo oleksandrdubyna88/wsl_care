@@ -111,11 +111,13 @@ If (c) **succeeds**, delete the ruleset and the probe branch and stop. Optional,
 
 ## 5. Nothing for the extension yet
 
-`VSCE_PAT` (plan §9) belongs to the extension's Marketplace leg, E5.S3; it is not needed for a daemon release. When E5.S3
-lands (plan §15f #6): the publisher id is created early (it is permanent), the PAT goes into a protected Environment —
-or `vsce publish --azure-credential` through OIDC, its state checked first — with its expiry recorded in
-`POST_DEPLOY.md`; the tag ruleset gains `extension-v*` and the `main` ruleset the extension's checks, each re-applied
-with a probe that must be refused, exactly as in steps 3 and 4.
+`VSCE_PAT` (plan §9) belongs to the extension's Marketplace leg (`release-extension.yml`, built as files in E5.S3); it is
+not needed for a daemon release. The settings are steps of the **E5 live gate** (plan §16, §15f #6, §15g M4/M5/m9): the
+publisher id is created early (it is permanent), the PAT goes into the protected `marketplace` Environment — or `vsce
+publish --azure-credential` through OIDC, the state of Azure DevOps global PATs checked first — with its expiry recorded in
+`POST_DEPLOY.md`; a SEPARATE tag ruleset `tags-extension.json` covers `extension-v*` (`tags-daemon.json` is not edited) and
+the `main` ruleset gains the extension's checks, each applied with a probe that must be refused, exactly as in steps 3
+and 4.
 
 ## 6. SonarCloud (optional; the analysis skips loudly until it is done)
 
@@ -173,7 +175,7 @@ pull request merged to `main` and CI green there:
    newer from GitHub's apt repository, no gh login needed).
 7. `POST_DEPLOY.md` items 1–11 against the installation (inside WSL: `node .agents/conventions/tools/post-deploy-check.mjs
    --target 0.1.0`, plus the manual items), and its `Last verified:` line stamped with the date and `0.1.0`. That stamp is
-   what E5.S3's Marketplace publish and every story of E6 wait for; E5.S1–S2 need not wait. Phase 0 does not gate this
+   what the E5 live gate (the Marketplace publish) and every story of E6 wait for; E5.S0–S3 need not wait. Phase 0 does not gate this
    install any more — it gates the review of the dryRun week (plan §16).
 
 If `release.yml` fails, nothing is public: the draft stays a draft. Re-run the failed jobs for a transient failure;
