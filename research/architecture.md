@@ -1214,11 +1214,13 @@ packs (plan §15e #1).
 ```mermaid
 flowchart TD
     args["arguments<br/>--version · --skip-attestation · --set-default-user · --dry-run · --uninstall [--purge]<br/>each value checked against a whole-string pattern"]
-    pre["preflight — nothing written yet<br/>Linux · root (or --dry-run) · systemd booted (/run/systemd/system)<br/>arch → linux-x64 / linux-arm64 · tools · gh (unless --skip-attestation)<br/>/usr/local/bin/wsl-care absent or ours · wsl.conf decision"]
+    pre["preflight — nothing written yet<br/>Linux · root (or --dry-run) · systemd booted (/run/systemd/system)<br/>arch → linux-x64 / linux-arm64 · tools<br/>/usr/local/bin/wsl-care absent or ours · wsl.conf decision"]
+    ghpre{"gh ≥ 2.56.0 with attestation verify<br/>--bundle · --cert-identity · --deny-self-hosted-runners<br/>(unless --skip-attestation; asked BEFORE any download)"}
     rel["release: --version, or the newest daemon-v* of the releases API<br/>(never releases/latest — the extension's)"]
     dl["download archive + .sha256 into a mktemp folder (trap removes it)<br/>curl https-only, redirects too, --max-time"]
     sum{"sha256 of the archive<br/>= the .sha256?"}
-    att{"gh attestation verify<br/>--repo · --signer-workflow release.yml<br/>(as SUDO_USER through runuser when set)"}
+    fetchatt["root fetches the attestations itself, unauthenticated:<br/>GET /repos/R/attestations/sha256:digest → each bundle_url<br/>→ the snappy bundle → unsnappy (od + awk)"]
+    att{"as root, gh isolated in the temp folder, no token:<br/>gh attestation verify --bundle · --repo<br/>--cert-identity release.yml@refs/tags/daemon-vVERSION<br/>--deny-self-hosted-runners — any ONE bundle passes"}
     skip["--skip-attestation:<br/>ATTESTATION NOT VERIFIED, on stderr"]
     unp{"members: regular files and folders,<br/>all under wsl-care-V-RID/, no '..', no link"}
     files["/opt/wsl-care/bin/wsl-care 0755 · link /usr/local/bin/wsl-care<br/>3 units → /etc/systemd/system 0644<br/>/etc/wsl-care/config.json ONLY if absent<br/>/var/lib/wsl-care · /var/log/wsl-care 0755"]
@@ -1230,9 +1232,11 @@ flowchart TD
     fail["exit 1: FAILED at step #quot;…#quot;<br/>+ how to re-run or --uninstall once something was written"]
     ok["summary"]
 
-    args --> pre --> rel --> dl --> sum
+    args --> pre --> ghpre
+    ghpre -- "missing / too old / a flag missing" --> fail
+    ghpre -- usable --> rel --> dl --> sum
     sum -- no --> fail
-    sum -- yes --> att
+    sum -- yes --> fetchatt --> att
     sum -- "yes, --skip-attestation" --> skip --> unp
     att -- refused --> fail
     att -- verified --> unp
@@ -1243,13 +1247,34 @@ flowchart TD
 ```
 
 **What each check proves.** The `.sha256` is integrity only — whoever can replace the archive can replace its checksum
-beside it. Authenticity is the build-provenance attestation, verified with `--repo oleksandrdubyna88/wsl_care` AND
-`--signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release.yml` (stricter than plan §15 #12's `--repo`
-alone: an attestation made by any other workflow of the repository is refused). `gh` needs a login for this; under
-`sudo` the installer runs it as `SUDO_USER` through `runuser`, after making its temporary folder readable — the folder
-stays root's, so the user cannot change the archive between the check and the install. No `gh` stops the run in
-preflight, before the download (plan §15e #4); `--skip-attestation` proceeds with a banner on stderr and the checksum
-still applies.
+beside it. Authenticity is the build-provenance attestation, pinned to the EXACT certificate identity
+`https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release.yml@refs/tags/daemon-v<version>`
+(`--cert-identity`) with `--repo oleksandrdubyna88/wsl_care` and `--deny-self-hosted-runners`. E4.S1 used
+`--signer-workflow …/release.yml`, which gh matches as a literal PREFIX of the identity, so `release.yml` built from any
+branch passed (independent review HIGH, 2026-10-03; measured on gh 2.97.0 with cli/cli's own attestation:
+`--signer-workflow …/deploy` accepted `…/deployment.yml@refs/heads/trunk`).
+
+**How it is verified — root, a bundle, no login** (review LOW, the better design taken). E4.S1 ran `gh` online as
+`SUDO_USER` through `runuser`, so that user's gh login, configuration and Sigstore cache decided the verdict. Now root
+asks GitHub's attestation API for the archive's digest **unauthenticated** (`Accept: application/vnd.github+json`,
+`X-GitHub-Api-Version: 2026-03-10`); the API answers every attestation by `bundle_url` alone (`bundle: null`, observed
+for every probe on 2026-10-03), a blob of snappy-compressed JSON (`application/x-snappy`), which the installer fetches
+(≤ 1 MiB, ≤ 10 bundles) and decompresses itself — `unsnappy`, awk over `od`, `LC_ALL=C` so mawk and gawk both write
+each value as one byte (a real bundle carries bytes above 127). Then root runs `gh attestation verify <archive>
+--bundle <file> …` with `HOME`, `GH_CONFIG_DIR`, `XDG_{CONFIG,CACHE,DATA,STATE}_HOME` inside the run's temporary folder
+and every token variable unset: **measured, a `--bundle` verification needs no login** (gh 2.56.0–2.97.0, empty
+configuration, no token); gh still fetches Sigstore's trusted root by TUF from `tuf-repo-cdn.sigstore.dev`, unauthenticated
+(with the network cut it hangs until the 180 s ceiling — a refusal, never a pass). Each bundle is verified on its own
+and any ONE passing suffices (gh before 2.65 stops at the first bundle in a set that fails — GitHub's own immutable-release
+attestation sits beside a build attestation for some artifacts).
+
+**Which gh** (review MEDIUM, corrected by measurement). The review assumed `gh attestation` (2.49.0+) suffices; bisected
+over gh's releases on 2026-10-03, **2.56.0** is the oldest that verifies a public-good attestation today — 2.49.0 to
+2.55.0 fail with `unsupported tlog public key type: PKIX_ED25519` (Sigstore's trusted root now carries a Rekor v2
+Ed25519 key), and Ubuntu 24.04's own gh is 2.45.0 (no `gh attestation`). The preflight asks BOTH the version (≥
+2.56.0) and `gh attestation verify --help` for the four flags, BEFORE any download, and points at GitHub's apt
+repository (`cli.github.com/packages`) — never `apt-get install gh`, never a login. `--skip-attestation` proceeds with
+a banner on stderr and the checksum still applies.
 
 **Every step that writes goes through `run`**, which under `--dry-run` only prints `would run: …`; the dry run still
 downloads and verifies into its temporary folder, needs no root, and changes nothing else. A failed step exits 1 naming
@@ -1268,7 +1293,7 @@ exactly those and `/run/wsl-care.lock`. It never removes sysstat, atop, `/etc/ws
 
 | Unit | Shape | Why |
 |---|---|---|
-| `wsl-care.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care collect --timer`, `Nice=19`, `IOSchedulingClass=idle`, `MemoryMax=256M`, `TimeoutStartSec=10min`, `SuccessExitStatus=75`, `NoNewPrivileges=yes`; no `[Install]` | `--timer` is the only thing that makes a run the timer (§15d CI). 75 is `ExitCode.Busy`: a second run meeting the lock is designed, not a failed unit (the health collector counts failed units) |
+| `wsl-care.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care collect --timer`, `Nice=19`, `IOSchedulingClass=idle`, `MemoryMax=1G`, `TimeoutStartSec=10min`, `SuccessExitStatus=75`, `NoNewPrivileges=yes`; no `[Install]` | `--timer` is the only thing that makes a run the timer (§15d CI). 75 is `ExitCode.Busy`: a second run meeting the lock is designed, not a failed unit (the health collector counts failed units). `MemoryMax` is the cgroup's, so it covers every child — npm, dotnet, pip, the Docker CLI, the 2M-entry walk — and §8's 256M (a guess for the binary alone) was raised to 1G by the E4 review |
 | `wsl-care.timer` | `OnCalendar=*-*-* 00/4:00:00`, `Persistent=true`, `RandomizedDelaySec=5min`, `AccuracySec=1min` | Persistent= acts on calendar timers only; the stored last trigger makes the first boot of the day run ONCE for the night's missed slots — the case §8's monotonic timer was chosen for |
 | `wsl-care-events.service` | `Type=simple`, `ExecStart=/opt/wsl-care/bin/wsl-care events follow`, `Restart=always`, `RestartSec=30`, `NoNewPrivileges=yes`, `WantedBy=multi-user.target` | the follower waits for Docker in-process (§15b #8); the restart is the outer net |
 
@@ -1278,8 +1303,12 @@ journal), `ProtectKernelTunables` (A1, A2 write `/proc/sys/vm`), `ProtectClock` 
 (A15's `fstrim`), `ProtectProc` / `PrivateUsers` / `PrivateTmp` (A11 and the collectors read every user's processes and
 signal them by pidfd), a `CapabilityBoundingSet` (the set the actions need is nearly all of root's). Set: only what no
 action relies on — `NoNewPrivileges=yes` (the run already is root; `runuser` only drops privilege; `sudo` is on the
-never-list) and §8's resource limits. None of it has been OBSERVED on a live systemd yet (E4's live install): it is a
-request to systemd until then, and the unit files say so. `ShippedFilesTests` keeps the breaking directives out; CI's
+never-list) and §8's resource limits. **One known risk is kept on purpose:** no_new_privs also blocks the AppArmor profile
+change a snap application makes at start, so a Docker installed as a snap would fail under the timer (Docker figures
+unavailable, A4–A7 refused) while working from a terminal; Docker Desktop's CLI and apt's docker-ce are not snaps. The
+README says what to do, `POST_DEPLOY.md` #11 checks the journal for it (and for an OOM kill at `MemoryMax`). None of it
+has been OBSERVED on a live systemd yet (E4's live install): it is a request to systemd until then, and the unit files
+say so. `ShippedFilesTests` keeps the breaking directives out; CI's
 `systemd-analyze verify` step reads the units with systemd's own parser.
 
 **The machine layer is deliberately empty** (`src_daemon/config/machine.json`: comments and `{}`), not a copy of the
@@ -1292,7 +1321,15 @@ dependency): the real script under `/bin/sh` over a temporary prefix `WSL_CARE_I
 reads or writes as a file sits under it), `TMPDIR` the world's own, a `PATH` of exactly two folders — the fake tool under
 the names of everything that changes the machine or reaches the network (curl, gh, systemctl, apt-get, debconf,
 runuser, sudo, plus `id` / `uname` so a test can be root or arm64) and links to an allowlist of real text and file
-tools. The fake gained one answer option for it, `OutputFlag` (write the fixture to the file named after `--output`).
+tools. The fake gained one answer option for it, `OutputFlag` (write the fixture to the file named after `--output`),
+and since the E4 review a verifying `gh`: `VerifiesAttestation` makes it ENFORCE the identity flags of the call over a
+bundle in Sigstore's own shape (`FakeAttestation`: the certificate's SAN and Fulcio extensions, the statement's digests;
+`--cert-identity` exact, `--signer-workflow` a prefix, as measured on the real gh), and `WSL_CARE_FAKE_RECORD_ENV` makes
+every call record the named environment variables — so a test proves what the installer's check lets through, and
+under whose configuration, rather than the argv it sent. The worlds publish an attestation per release
+(`AttestationBundles`: a self-signed certificate with the SAN and extensions, snappy-compressed, served at a bundle URL
+named by the API answer), and a captured cli/cli bundle (`src_daemon/tests/fixtures/attestation/`) exercises the
+decoder's copy elements.
 The released binary is a stub that logs the path it was started as and hands its argv to a fake `wsl-care`, so the
 absolute-path rule is observed, not assumed. [module_tests.md](module_tests.md) lists every flow and its red run.
 
@@ -1357,8 +1394,8 @@ flowchart TD
 token) creates the tag ref through `git.createRef` before it creates the draft release — read in its bundled source
 (`release-please-action` v5.0.0, `dist/index.js`). That ref creation is an ordinary tag push, so `push: tags` fires —
 the event the family's `bugs-v0.3.0` ran on. `release: published` never fires for a draft, and the draft is the point
-(nothing public until every RID's asset is on it, plan §15e #2); `workflow_dispatch` carries no tag and is not what
-`install.sh`'s `--signer-workflow` trusts. A failed run is re-run, which replays the tag event.
+(nothing public until every RID's asset is on it, plan §15e #2); `workflow_dispatch` carries no tag, so its attestation would not
+carry the identity `install.sh` pins (`release.yml@refs/tags/daemon-v<version>`). A failed run is re-run, which replays the tag event.
 
 **Permissions** (plan §15e #0): workflow level `contents: read`; the build job alone holds `id-token: write` +
 `attestations: write` (it signs) and nothing that writes the repository, so it hands its archive to the run as an

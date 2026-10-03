@@ -17,6 +17,10 @@ public static class FakeToolProtocol
     /// <summary>The JSON file of scripted answers (<see cref="FakeScript"/>); optional.</summary>
     public const string ScriptVariable = "WSL_CARE_FAKE_SCRIPT";
 
+    /// <summary>Comma-separated names of environment variables each call records beside its argv (E4: what the installer
+    /// handed <c>gh</c> — its isolated configuration and cache folders, and no token); optional.</summary>
+    public const string RecordEnvironmentVariable = "WSL_CARE_FAKE_RECORD_ENV";
+
     /// <summary>Exit code when <see cref="CallsVariable"/> is unset — not inside a scenario.</summary>
     public const int NotInAScenario = 97;
 
@@ -41,6 +45,10 @@ public sealed record FakeCall(string Tool, IReadOnlyList<string> Argv)
     /// <summary>The directory the fake was started FROM — which copy answered. A decoy planted outside the scenario's
     /// <c>PATH</c> records its own folder here, so a scenario can tell the product reached the one it meant to.</summary>
     public string Location { get; init; } = string.Empty;
+
+    /// <summary>The variables named by <see cref="FakeToolProtocol.RecordEnvironmentVariable"/> that were SET in the call's
+    /// environment, with their values; a variable absent from the call is absent here.</summary>
+    public IReadOnlyDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
     public string Display => Argv.Count == 0 ? Tool : $"{Tool} {string.Join(' ', Argv)}";
 
@@ -101,6 +109,13 @@ public static class FakeCallLog
 
             json.WriteEndArray();
             json.WriteString("location", call.Location);
+            json.WriteStartObject("env");
+            foreach (var (name, value) in call.Environment)
+            {
+                json.WriteString(name, value);
+            }
+
+            json.WriteEndObject();
             json.WriteEndObject();
         }
 
@@ -116,8 +131,12 @@ public static class FakeCallLog
             [.. root.GetProperty("argv").EnumerateArray().Select(a => a.GetString() ?? string.Empty)])
         {
             Location = root.TryGetProperty("location", out var location) ? location.GetString() ?? string.Empty : string.Empty,
+            Environment = root.TryGetProperty("env", out var env) ? ReadEnvironment(env) : new Dictionary<string, string>(StringComparer.Ordinal),
         };
     }
+
+    private static Dictionary<string, string> ReadEnvironment(JsonElement env) =>
+        env.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString() ?? string.Empty, StringComparer.Ordinal);
 }
 
 /// <summary>One scripted answer: when <see cref="Tool"/> is called with exactly <see cref="Argv"/>,
@@ -142,6 +161,12 @@ public sealed record FakeAnswer(string Tool, IReadOnlyList<string> Argv, int Exi
     /// temporary folder, which the scenario cannot know in advance. A call without the flag, or with the flag last,
     /// writes nothing and exits <see cref="FakeToolProtocol.Unscripted"/>, saying why.</summary>
     public string OutputFlag { get; init; } = string.Empty;
+
+    /// <summary>When set (E4: <c>gh attestation verify</c>), the fake does not print a fixture: it VERIFIES, enforcing the
+    /// identity flags of the call over the bundle the call names — or, with no <c>--bundle</c>, over
+    /// <see cref="StdoutFile"/>, which then stands for what GitHub's API would hand gh online
+    /// (<see cref="FakeAttestation"/>).</summary>
+    public bool VerifiesAttestation { get; init; }
 
     public bool Matches(FakeCall call) =>
         string.Equals(call.Tool, Tool, StringComparison.Ordinal)
@@ -176,6 +201,7 @@ public static class FakeScript
             json.WriteNumber("upTo", answer.UpTo);
             json.WriteNumber("hangAfterMs", answer.HangAfterMilliseconds);
             json.WriteString("outputFlag", answer.OutputFlag);
+            json.WriteBoolean("verifiesAttestation", answer.VerifiesAttestation);
             json.WriteEndObject();
         }
 
@@ -217,5 +243,6 @@ public static class FakeScript
             UpTo = element.TryGetProperty("upTo", out var upTo) ? upTo.GetInt32() : 0,
             HangAfterMilliseconds = element.TryGetProperty("hangAfterMs", out var hang) ? hang.GetInt32() : 0,
             OutputFlag = element.TryGetProperty("outputFlag", out var output) ? output.GetString() ?? string.Empty : string.Empty,
+            VerifiesAttestation = element.TryGetProperty("verifiesAttestation", out var verifies) && verifies.GetBoolean(),
         };
 }
