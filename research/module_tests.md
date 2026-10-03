@@ -14,7 +14,7 @@
 | Unit + process, CLI | `src_daemon/tests/WslCare.Cli.Tests` | parsing, the program in-process with captured streams, logging, and the built binary as a child process (`BuiltBinaryTests`) |
 | **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` / `timedatectl` / `snap` alone on its `PATH`; the derived verb register; since E4.S1 the real `install.sh` under `/bin/sh` over a temporary prefix (§ *The installer harness*) and the shipped units and machine layer read by the product's own parser and loader; since E4.S2 the release scripts under bash and the release workflows' structure (§ *The release pipeline's tests*) |
 | **Live contract** | `src_daemon/tests/WslCare.LiveContract` | the REAL `docker` / `systemctl` / `journalctl` (since E2.S3 also `timedatectl`, `snap`, `powershell.exe` through interop, and the event stream) of the owner's machine through the product's own `ProcessCommandRunner` (30 s ceiling, tree kill), parsed by the product's parsers (plan §15a C2, §15b #2/#6) — NOT one of the CI test steps; § *The live contract* below |
-| AOT smoke | `.github/scripts/smoke-daemon.sh` (run by `ci-daemon.yml` on every pull request leg and by `release.yml` on every release leg) | the Native AOT binary of each RID answers `--help` / `--version`, performs the configuration round trip, answers `status --json` (on Linux over the captured procfs tree, reporting its `MemTotal`), and records a full run (`collect --json` → one history line naming a run detail, `status --json` naming that run, `doctor --json`), and since E3.S2 previews EVERY action (`act <ids --help names> --preview --json` under a sandbox with root claimed: exit 0 and every id answered on Linux, exit 2 on Windows, no state written — never a destructive run), and since the E4 review answers `preview --all --json` with no docker reachable (the JSON parsed by Python, `schemaVersion` 1, every row `available: false` with its reason). After the smoke, every pull-request leg packs the release archive from that binary (`package-daemon.sh`), checks the leg's pair (`verify-release-assets.sh <version> <dir> <rid>`) and opens the printed path in a `shell: pwsh` step |
+| AOT smoke | `.github/scripts/smoke-daemon.sh` (run by `ci-daemon.yml` on every pull request leg and by `release.yml` on every release leg) | the Native AOT binary of each RID answers `--help` / `--version`, performs the configuration round trip, answers `status --json` (on Linux over the captured procfs tree, reporting its `MemTotal`), and records a full run (`collect --json` → one history line naming a run detail, `status --json` naming that run, `doctor --json`), and since E3.S2 previews EVERY action (`act <ids --help names> --preview --json` under a sandbox with root claimed: exit 0 and every id answered on Linux, exit 2 on Windows, no state written — never a destructive run), and since the E4 review answers `preview --all --json` with no docker reachable (the JSON parsed by Python, `schemaVersion` 1, every row `available: false` with its reason), and since E5.S0 `status --json` carries its `verdicts` (the sample and the full-run ids, every level one of the four) and the `productVersion` `--version` prints — both parsed by Python, because the encoder writes the `+` of `0.0.0+<sha>` as `\u002B`. After the smoke, every pull-request leg packs the release archive from that binary (`package-daemon.sh`), checks the leg's pair (`verify-release-assets.sh <version> <dir> <rid>`) and opens the printed path in a `shell: pwsh` step |
 
 Shared doubles live in `src_daemon/tests/WslCare.TestSupport` (`TempRoot`, `SandboxHost`,
 `RecordingCommandRunner`, `FixedTimeProvider`, `DirectoryLinks`, `AccessDenial` — a real access
@@ -225,6 +225,10 @@ checklist in `POST_DEPLOY.md`; and whenever the Docker or systemd version on the
 | `collect`'s record order (plan §15b #1): the detail is written (atomically) before the history line, and the line names it; a detail that cannot be written makes the run `failed` with the reason on its line and no detail named; a line that cannot be written fails the run and the NEXT run's reconcile gives the orphan detail an `interrupted` line; a line whose detail is gone is reported *detail lost* and left as it is; an unprivileged run measures and writes nothing (not even a directory); a second run while one holds `run.lock` is busy and measures nothing; the line carries the non-ok warnings and the slow parts `status` reads | `WslCare.Core.Tests/Collect/CollectRunTests.cs` |
 | Retention of the run records (90 days, plan §6): an old line goes and its detail with it, a young one stays; a line that does not parse is kept (it cannot be aged); a detail is never removed while a line names it, even in an old day folder; a dead atomic write's temporary file is removed. Since the E2 code round (gate findings #0/#4, #11): an append interleaved INSIDE the history rewrite (a hook between the read and the write, on another thread) lands in the new file; a run 90 days and one hour old keeps its line and detail together, so the next reconcile resurrects nothing; a detail older than the window without a line is never made `interrupted` (a young one still is) and retention removes it with its day folder; an aged day folder no line names goes WHOLE, strays included, and a day inside the window is untouched. **Observed red first** (2026-10-02, unfixed code): `Expected collection to be empty because a run retention pruned is not a run that died, but found at least one item {"20260704T110000Z-100"}`; `Expected records.Select(r => r.DetailPath) to be equal to {"runs/2026-09-30/…"} … but {"runs/2026-06-04/…", "runs/2026-09-30/…"} contains 1 item(s) too many`; `Expected boolean to be False because an aged day no line names is removed whole, but found True`. The interleaved append was GREEN first — `RewriteLines` already read under the lock (E2.S3) — so its teeth were proved by a break-it: with the read moved before the lock it failed `Expected … to be equal to {"20261001T120000Z-100", "20261002T120000Z-4242"} … but {"20261001T120000Z-100"} contains 1 item(s) less`; restored, green | `WslCare.Core.Tests/Records/RunRetentionTests.cs` |
 | The thresholds at their edges: MemAvailable at 25 / 24.9 / 15 / 14.9 % against the two settings (and a setting moving the edge); order-7 blocks 32 / 31 / 0; swap 4 / 5 GiB; `/` 80.0 / 80.1 %; the 2026-10-01 18:36 state critical on memory, fragmentation, the VM ceiling and the allocation failure; a fresh boot ok on every memory row; the VM ceiling red only above 90 % and naming `memory=36GB` (never written); one clock observation above the limit is not a drift, two are only when at least 5 min apart (300 s warns, 299 s does not); an unread figure is `unknown` with its reason; A4's count trigger; one verdict per id | `WslCare.Core.Tests/Thresholds/ThresholdRulesTests.cs` |
+| `status`'s verdicts (E5.S0, plan §15g B1): the eight thresholds a fast sample decides are `ThresholdRules`' own, evaluated over the sample with the effective configuration (`basis.source: sample`, the sample's instant, age 0) — the 2026-10-01 evening critical on fragmentation, warn on page cache and inactive anon, `memory.available` unknown because `MemAvailable` is not in the file; a fresh boot ok on all eight; a warn threshold of 70 % set in the user layer turns 60 % available from ok to warn; the ids and their order equal `Evaluate`'s (what `collect` writes); every other id is the newest full run's record unchanged with its run id, its end and its age — a recorded memory verdict is NOT carried, the sample re-judges it; with no full run every full-run id is `unknown` with `LastFullRun.NoFullRunYet` under the limit the configuration puts in force (`npm.maxCacheGb` 9 → `warn > 9 GB`); a run that recorded no verdict for an id leaves it unknown naming the run | `WslCare.Core.Tests/Status/StatusVerdictsTests.cs` |
+| The newest FULL run's verdicts read back: a `collect` line naming its detail is a full run, a later `act` line is not; the verdicts, run id and end come from the detail; no full run → `NoFullRunYet`; a full run whose line names no detail is passed over for the newest that does; a named detail that is gone, or one that does not parse, is a reason naming the file; an unreadable history is its own reason | `WslCare.Core.Tests/Status/FullRunVerdictsTests.cs` |
+| `status --json` in-process (E5.S0): `verdicts` with `memory.available` ok at 66.8 % over the captured tree (basis `sample`) and `clock.jumps` unknown with no full run, nothing started; `productVersion` equals what `--version` prints; `config set thresholds.memAvailableWarnPercent 70` turns it warn with `warn < 70 %`; the text form's ONE `verdicts:` line; after an in-process `collect`, every carried verdict equals the detail's own record with the run id, its end and 1 800 s of age, and the ids equal the detail's in order | `WslCare.Cli.Tests/StatusCommandTests.cs`, `WslCare.Cli.Tests/FullRunCommandTests.cs` |
+| The golden contracts (E5.S0, plan §15g m7): the checked-in `contracts/golden/head/*.json` are what the BUILT CLI answers at this commit, normalised; every rule of the normalisation list still matches a value; the normaliser replaces exactly what its rules name with a value of the same type, keeps a fixture pid, rewrites the sandbox root and run ids inside sentences; the first difference names the line and both texts | `WslCare.Scenarios/GoldenContractTests.cs` (the drift test on the Linux legs) |
 | The health collectors over the answers CAPTURED 2026-10-02 (`fixtures/health`): the failed unit, the journal's oldest entry, 875 clock changes, one order-7 allocation failure, NTP synchronised, systemd 255, `wsl-pro` enabled, no disabled snap; journalctl's exit 1 with nothing printed is 0 matches, an error is not; disabled snap revisions (synthetic Notes); discard, the automount root, a Windows profile seen as `/mnt/c/Users/owner`, `.wslconfig` in either section; the Windows clock offset with the launch latency subtracted; on the Windows layout the distro parts name the Linux binary; a missing tool leaves only its part unavailable; read verbs only | `WslCare.Core.Tests/Health/HealthTests.cs` |
 | The daily folder walk: a tree is the sum of its files; a link inside is neither counted nor entered, a folder that is a link is not walked; bin/ + obj/ only, node_modules never entered; a walk at its entry limit says its figure is a lower bound; a missing folder is missing, not 0; once a day (19 h no, 20 h yes); the npm / apt / disabled-snap figures | `WslCare.Core.Tests/Folders/FolderSizesTests.cs` |
 | A8 and A9 from the newest folder sample with its run and age in the basis; unavailable with the reason before one exists, or when the run could not measure the folder | `WslCare.Core.Tests/Docker/FolderRowsTests.cs` |
@@ -741,6 +745,77 @@ substitutions), the workflow / configuration 36 on Windows; each red for its own
 | the reader refuses the unknown | an anchor in `pr-title.yml` | `System.NotSupportedException : pr-title.yml:20: an anchor, alias or tag - outside the workflow YAML subset` |
 | the installer's signer is the attesting workflow | `attest-build-provenance` replaced by `actions/attest` | the signer flow red: `release.yml` must contain `attest-build-provenance` |
 
+## The status verdicts and the golden contracts (E5.S0)
+
+**What is tested.** `StatusVerdicts` and `FullRunVerdicts` in-process (`Core.Tests/Status`), `status` in-process over the
+captured tree (`Cli.Tests`), and the BUILT CLI in `StatusFlows` / `CollectFlows` — the 2026-10-01 evening and a fresh boot
+as two SYNTHETIC memory states laid over a copy of the captured tree by `TestSupport/ProcfsVariants` (only `meminfo`,
+`buddyinfo` and `pressure/` rewritten; the 2026-10-01 state from the baseline's dump, `MemAvailable` LEFT OUT because the
+dump did not record it — its verdict is `unknown`, never an invented figure; the fresh boot invented and labelled so).
+
+**The golden writer** (`WslCare.Scenarios/GoldenContracts`, plan §15f #10, §15g m7). On the Linux legs (the Windows binary
+answers for another side, so the test skips there with that reason): `CollectFlows.Captured` (the captured Docker and
+health answers on the fakes, plus `docker version`), the user layer at every age limit 0 (`PreviewFlows.AllAges` — the
+only setting whose rows do not move as the fixtures age), the captured procfs tree, ONE `collect`, then `status --json`,
+`preview --all --json`, `doctor --json`, each re-indented with LF line ends. The NAMED, reviewed normalisation list —
+each entry a value that moves between two runs of one build over one fixture set, replaced by a fixed value of the same
+type:
+
+| Rule | Why it moves | Replaced with |
+|---|---|---|
+| `**.sampledAt` | the instant the sample or a slow part was taken | `2000-01-01T00:00:00+00:00` |
+| `**.sampleMilliseconds` | how long the fast sample took | `0` |
+| `**.ageSeconds` (a number) and `**.ageSeconds.value` (a process's figure) | ages at the time of the answer; a process's age is now − its start | `0` |
+| `**.evaluatedAt` | when a verdict was evaluated | the fixed instant |
+| `**.runId`, and a run id quoted inside any sentence (`runIdInText`) | a run id is its start instant and the CLI's pid | `20000101T000000Z-1` |
+| `checkedAt` | the instant `doctor` answered | the fixed instant |
+| `productVersion`; `component: wsl-care` → `version` (doctor) | the commit after `+`, and the release number every release-please bump moves (a golden pinned to it would turn the release pull request red) | `unknown` — the contract's own value for an unstamped build, which a client renders (plan §6) |
+| `vm.disk.path`, `.totalBytes`, `.usedBytes`, `.availableBytes`, `.usedPercent`; `id: disk.root` → `level`, `value` | `df /` is the sandbox's filesystem on the runner's own disk | `/golden-root`, 100 / 13 / 87 GB, 13 %; `ok`, `13.0 %` (as that disk is judged) |
+| `slow.windowsClock.offsetSeconds`; `id: clock.drift` → the offset at the head of `value` | the fake clock probe answers a captured instant: the offset is that instant − now | `0`; `<captured clock minus now> s` |
+| `containerStarts.from` / `.to`, `containerStarts.gaps[*].from` / `.to` | the 24-hour window ends now | the fixed instant |
+| `id: journal.history` → `level`, the days at the head of `value` | now − the captured oldest journal entry: it grows daily and turns ok at 7 days | `warn` (as at the capture), `<days since the oldest entry>` |
+| every string holding the sandbox root | the temporary sandbox | `/golden-root` |
+
+Observed while building the list (2026-10-03, WSL `Ubuntu`, from a copy under `/tmp`): two generations seconds apart
+differed in exactly `checkedAt`, doctor's and preview's quoted run ids, the clock offset (its figure and its verdict text)
+and the 24-hour window — all then added; after that two generations were byte-identical. A day-scale mover cannot show
+in two runs seconds apart, so the answers were also read for anything derived from now: `journal.history` was the one
+found (the cleanup rows do not move at limit 0; process ages are normalised).
+
+**The drift test** (`GoldenContractTests`): each checked-in file must EQUAL the normalised answer, and the failure names
+the file and the first differing line; its companion fails when a rule of the list matches nothing any more. Regenerate
+on Linux (WSL) with `WSL_CARE_WRITE_GOLDENS=1 ./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios
+--filter-class "*GoldenContractTests"` and review the diff as a contract change. The set frozen at `daemon-v0.1.0`
+(`contracts/golden/daemon-0.1.0/`, keeping its real version) is an E5 live-gate step (plan §16), not written here.
+
+**Red first, per guarantee** (2026-10-03). The tests were written against stubs — `StatusVerdicts.From` answering `[]`,
+`FullRunVerdicts.Read` answering "not built yet", `status` setting no `productVersion` — and run on Windows:
+
+- `StatusVerdictsTests`, 8 red, each for the missing verdicts: *Expected verdicts.Where(v => v.Basis!.Source ==
+  VerdictSource.Sample) to contain 8 item(s), but found 0: {empty}*; *Expected carried.Select(v => v.Id) to be equal to
+  {"kernel.allocationFailures", …, "npm.cache"}, but found empty collection*; *Expected status.Select(v => v.Id) to be
+  equal to {"memory.available", "memory.pageCache", …}* (the others: no element matched the id they ask for).
+- `FullRunVerdictsTests`, 6 red: *Expected type to be …Reading`1+Available[[…RecordedVerdicts…]], but found
+  …Unavailable…*; *Expected Read().ReasonOrEmpty "not built yet" to contain "runs/2026-10-03/20261003T080000Z-2.json"*.
+- `StatusCommandTests` / `FullRunCommandTests`: *Expected report.ProductVersion not to be <null> or empty, but found
+  <null>*; *Expected collection to contain a single item matching l.StartsWith("verdicts: ", Ordinal), but no such item
+  was found*; *Expected carried not to be empty*.
+- The BUILT CLI (`Scenarios`, Windows): *Expected string to be "0.0.0+7aeb02dd39a9841915112456532d3803e4cb6026", but
+  found <null>* (`StatusFlows`, the product version); *Expected verdicts.Select(v => v.Id) to be equal to
+  {"memory.available", …}* (`CollectFlows`).
+- The Linux-only flows, by reverting the line each rests on, in WSL: the `Verdicts =` line of `StatusCommand` deleted
+  turned the 2026-10-01, fresh-boot and user-layer flows red (*System.InvalidOperationException : status --json carried
+  no verdicts*; the fresh-boot flow first failed with a bare `ArgumentNullException` — its accessor was changed to name
+  the symptom); `MemoryAvailable`'s warn threshold hard-coded to 25 instead of read from the configuration turned the
+  user-layer flow red alone: *Expected the enum to be Level.Warn {value: 1} because 66.8 % is below the user's warn
+  threshold of 70 %, but found Level.Ok {value: 0}*. Restored (SHA-256 equal to the worktree's) → green.
+- The smoke, against the JIT build in WSL: the `Verdicts =` line deleted → `::error::status --json carries no verdicts
+  (plan §15g B1)`; the `ProductVersion =` line deleted → `::error::status --json: its verdicts or its productVersion are
+  not what --version and the thresholds say`; restored → *passed all six parts*.
+- The drift test, in WSL: `StatusReport.SampleMilliseconds` renamed on the wire to `sampleMs` →
+  *contracts/golden/head/status.json must be what the CLI answers at this commit — line 5: checked in '
+  "sampleMilliseconds": 0,', the CLI answers '  "sampleMs": 63,'*; restored → green.
+
 ## Flow catalogue
 
 One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` `` exactly as
@@ -764,6 +839,12 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care status [--json]` on this binary's own side: under 2 s, the Windows binary answers host RAM / drive / `vmmemWSL` and names the VM as the other binary; the Linux binary over an empty root reports memory unavailable with the path and no value key; no slow part recorded yet; no tool started | covered | `StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget_names_what_it_cannot_read_and_starts_nothing`; AOT binary (`win-x64`): CI status smoke |
 | `wsl-care status [--json]` after a full run recorded slow parts: `docker stats` come back from `history.jsonl` with the run id and their age, the Windows clock unavailable; nothing started | covered | `StatusFlows.Status_reads_the_slow_parts_back_from_the_last_full_run_with_their_age`; also `LastFullRunTests`, `StatusCommandTests` |
 | `wsl-care status [--json]` as text, and a stray argument refused with exit 2 and one `wsl-care:` message | covered | `StatusFlows.Status_without_json_prints_text_and_a_stray_argument_is_refused_with_the_usage_code`; also `CommandLineTests` |
+| `wsl-care status [--json]` over the 2026-10-01 18:36 memory state (SYNTHETIC, `ProcfsVariants.October1Evening`: the baseline's dump, `MemAvailable` left out) on the captured tree (Linux): `memory.fragmentation` critical, `memory.pageCache` and `memory.inactiveAnon` warn, `memory.available` unknown naming `MemAvailable`, basis `sample` at the sample's instant; no tool started | covered (Linux legs; skipped on Windows) | `StatusFlows.Status_json_over_the_2026_10_01_evening_is_critical_on_fragmentation_and_warns_on_cache_and_inactive_anon`; also `StatusVerdictsTests` |
+| `wsl-care status [--json]` over a fresh boot (SYNTHETIC, `ProcfsVariants.FreshBoot`) on the captured tree (Linux): the seven memory verdicts ok | covered (Linux legs; skipped on Windows) | `StatusFlows.Status_json_over_a_fresh_boot_is_ok_on_every_memory_verdict`; also `StatusVerdictsTests` |
+| `wsl-care status [--json]` after `config set thresholds.memAvailableWarnPercent 70` over the captured tree (Linux): `memory.available` ok before, warn after, limit `warn < 70 %` | covered (Linux legs; skipped on Windows) | `StatusFlows.A_threshold_set_in_the_user_layer_moves_the_verdict_status_answers`; in-process on every OS: `StatusCommandTests.A_threshold_set_in_the_user_layer_changes_the_verdict_status_answers` |
+| `wsl-care status [--json]` names `productVersion` exactly as `--version` prints it | covered | `StatusFlows.Status_json_names_the_product_version_exactly_as_version_prints_it`; AOT binary: CI smoke |
+| `wsl-care status [--json]` after `collect`: `verdicts` carry every id the run recorded, in its order; each full-run verdict is the detail's own record with the run id | covered | `CollectFlows.Collect_records_detail_then_history_and_status_shows_its_slow_parts_with_their_age`; in-process: `FullRunCommandTests.Status_after_a_collect_carries_the_full_runs_own_verdict_records_with_its_run_and_their_age` |
+| the golden contracts: `collect`, then `status --json`, `preview --all --json`, `doctor --json` over the captured fixtures (every age limit 0), normalised, equal to `contracts/golden/head/*.json` | covered (Linux legs; skipped on Windows) | `GoldenContractTests.The_checked_in_goldens_are_what_the_built_cli_answers_at_this_commit_and_every_normalisation_rule_still_matches` |
 | `wsl-care preview --all [--json]` over the docker answers CAPTURED on 2026-10-02 at limit 0: A4 3 volumes / 641.4 MB, A5 13 containers, A6Unused 10 images, A7 4 entries, 13 kept named volumes — and A6Unused, A7 and A4 + kept each land on Docker's OWN `system df` reclaimable; 28 unbounded logs; `volume-seen.json` NOT written although the sandbox is writable (preview only reads, plan §15b #3); the fakes saw exactly the five product argvs, every one a read verb | covered | `PreviewFlows.Preview_over_the_captured_docker_at_limit_zero_reproduces_its_rows_and_starts_docker_read_verbs_only`; in-process: `PreviewCommandTests`, `CleanupPreviewTests` |
 | `wsl-care preview --all [--json]` at the shipped limits: a volume first seen now is left (note: 3 younger), one first seen two days ago (a pre-written `volume-seen.json`) is counted, and its first sighting survives the look | covered | `PreviewFlows.At_the_shipped_limits_a_volume_first_seen_now_is_left_and_one_first_seen_two_days_ago_is_counted` |
 | `wsl-care preview --all [--json]` when Docker cannot answer: not on PATH → `notInstalled`, a stopped daemon (Docker's real stderr) → `daemonStopped` with only the version probe run, a hang → `timedOut` at the 10 s probe ceiling with the tree killed; every row `available: false` with the reason and NO `count` / `reclaimableBytes` key; exit 0 | covered | `PreviewFlows.Without_docker_on_the_path_…`, `PreviewFlows.A_stopped_daemon_…`, `PreviewFlows.A_docker_that_hangs_…`; classification: `DockerCliTests`, `DockerCollectorTests` |
@@ -826,6 +907,14 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 
 ## What it does not prove
 
+- **The goldens are the fakes' answers, not this machine's.** `contracts/golden/head/` is the built CLI over the
+  captured fixtures and the fake tools: doctor's unit checks answer `unknown` (no `systemctl show` of those units was
+  captured, so the fake refuses), the clock offset and `df /` are normalised away, and a value the normalisation list
+  rewrites is a fixed value of the right type, not a reading. They prove the SHAPE the extension will parse and that it
+  is current; the live check of the real extension → `wsl.exe` → daemon path is the E5 live gate's (plan §15g m6).
+- **A carried verdict is the full run's judgement, not a new one.** `status` re-judges only the eight thresholds its own
+  sample decides; a setting changed after the newest full run reaches the carried ones at the next full run (their
+  `limit` says what was applied). Tested as such; the suite cannot call it wrong.
 - **The installer is proved over a prefix and fakes, never against this machine.** systemd, apt, gh, curl and the
   release are fakes; "root" is a fake `id`. What the real tools DO with the argv the script sends — `systemctl enable
   --now`, apt's install, sysstat's postinst honouring the debconf switch, curl's `--proto =https` — is theirs, and is

@@ -8,6 +8,7 @@ using WslCare.Core;
 using WslCare.Core.Json;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
+using WslCare.Core.Thresholds;
 using WslCare.FakeTool;
 using WslCare.TestSupport;
 
@@ -130,5 +131,73 @@ public sealed class StatusFlows
         refused.Exit.Should().Be((int)ExitCode.Usage);
         CliStderr.Of(refused).Messages.Should().ContainSingle().Which.Should().Contain("--all");
         home.Calls.Should().BeEmpty();
+    }
+
+    private static Verdict VerdictOf(StatusReport report, string id) =>
+        (report.Verdicts ?? throw new InvalidOperationException("status --json carried no verdicts")).Single(v => v.Id == id);
+
+    /// <summary>The captured tree with one of <see cref="ProcfsVariants"/>' memory states laid over it.</summary>
+    private static ScenarioHome VariantHome(string purpose, Action<string> variant)
+    {
+        var home = new ScenarioHome(purpose);
+        ProcfsFixture.CopyTo(home.SandboxRoot);
+        variant(home.SandboxRoot);
+        return home;
+    }
+
+    [Fact]
+    public async Task Status_json_over_the_2026_10_01_evening_is_critical_on_fragmentation_and_warns_on_cache_and_inactive_anon()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "the Linux binary reads the procfs tree");
+        using var home = VariantHome("status-oct1", ProcfsVariants.October1Evening);
+
+        var report = Report(await home.RunAsync("status", "--json"));
+
+        VerdictOf(report, "memory.fragmentation").Level.Should().Be(Level.Critical, "no free block of 64 KiB or larger in zone Normal");
+        VerdictOf(report, "memory.pageCache").Level.Should().Be(Level.Warn, "19 GB of page cache");
+        VerdictOf(report, "memory.inactiveAnon").Level.Should().Be(Level.Warn, "21 GB of inactive anonymous memory");
+        VerdictOf(report, "memory.available").Should().Match<Verdict>(v => v.Level == Level.Unknown && v.Reason.Contains("MemAvailable"), "the dump did not record it; it is not invented");
+        VerdictOf(report, "memory.fragmentation").Basis.Should().Be(new VerdictBasis(VerdictSource.Sample, null, report.SampledAt, 0));
+        home.Calls.Should().BeEmpty("the verdicts start no process");
+    }
+
+    [Fact]
+    public async Task Status_json_over_a_fresh_boot_is_ok_on_every_memory_verdict()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "the Linux binary reads the procfs tree");
+        using var home = VariantHome("status-boot", ProcfsVariants.FreshBoot);
+
+        var report = Report(await home.RunAsync("status", "--json"));
+
+        (report.Verdicts ?? throw new InvalidOperationException("status --json carried no verdicts"))
+            .Where(v => v.Id.StartsWith("memory.", StringComparison.Ordinal) || v.Id == "wslconfig.memory")
+            .Should().HaveCount(7).And.OnlyContain(v => v.Level == Level.Ok);
+    }
+
+    [Fact]
+    public async Task A_threshold_set_in_the_user_layer_moves_the_verdict_status_answers()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "the Linux binary reads the procfs tree");
+        using var home = new ScenarioHome("status-threshold");
+        ProcfsFixture.CopyTo(home.SandboxRoot);
+
+        var shipped = VerdictOf(Report(await home.RunAsync("status", "--json")), "memory.available");
+        (await home.RunAsync("config", "set", "thresholds.memAvailableWarnPercent", "70")).Exit.Should().Be((int)ExitCode.Ok);
+        var raised = VerdictOf(Report(await home.RunAsync("status", "--json")), "memory.available");
+
+        shipped.Level.Should().Be(Level.Ok, "the captured tree holds 66.8 % available");
+        raised.Level.Should().Be(Level.Warn, "66.8 % is below the user's warn threshold of 70 %");
+        raised.Limit.Should().Contain("warn < 70 %");
+    }
+
+    [Fact]
+    public async Task Status_json_names_the_product_version_exactly_as_version_prints_it()
+    {
+        using var home = new ScenarioHome("status-version");
+
+        var version = (await home.RunAsync("--version")).StdoutLines.Should().ContainSingle().Subject;
+        var report = Report(await home.RunAsync("status", "--json"));
+
+        report.ProductVersion.Should().Be(version);
     }
 }

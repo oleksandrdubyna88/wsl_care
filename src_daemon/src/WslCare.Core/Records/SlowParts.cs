@@ -90,15 +90,16 @@ public static class LastFullRun
 {
     public const string NoFullRunYet = "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one";
 
-    public static LastSlowParts Read(IHostPaths paths, IFileSystem files, TimeProvider clock)
-    {
-        var history = RunHistory.Read(paths, files);
-        return history.Problem.Length > 0
+    public static LastSlowParts Read(IHostPaths paths, IFileSystem files, TimeProvider clock) =>
+        From(RunHistory.Read(paths, files), clock.GetUtcNow());
+
+    /// <summary>The slow parts of a history already read (<c>status</c> reads it once, for these and for its verdicts).</summary>
+    public static LastSlowParts From(HistoryRead history, DateTimeOffset now) =>
+        history.Problem.Length > 0
             ? Unreadable(history.Problem)
             : history.Records.Count == 0
                 ? Unreadable(NoFullRunYet)
-                : FromRecords([.. history.Records.Reverse()], clock.GetUtcNow());
-    }
+                : FromRecords([.. history.Records.Reverse()], now);
 
     /// <summary>The newest part of each kind in <paramref name="newestFirst"/>, aged against <paramref name="now"/>.</summary>
     public static LastSlowParts FromRecords(IReadOnlyList<RunRecord> newestFirst, DateTimeOffset now) =>

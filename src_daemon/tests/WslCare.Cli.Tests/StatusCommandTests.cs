@@ -80,6 +80,51 @@ public sealed class StatusCommandTests
     }
 
     [Fact]
+    public void Status_json_carries_the_verdicts_of_the_sample_and_the_product_version_that_version_prints()
+    {
+        using var sandbox = new SandboxHost("status-verdicts");
+        var (host, runner) = FixtureHost(sandbox, ProcfsFixture.CapturedAt);
+
+        var report = Report(CliRun.Over(host, "status", "--json").Stdout);
+        var version = CliRun.Over(host, "--version").Stdout.Trim();
+
+        report.ProductVersion.Should().NotBeNullOrEmpty().And.Be(version, "the same text --version prints (plan §15g B1)");
+        var verdicts = report.Verdicts.Should().NotBeNull().And.Subject;
+        verdicts.Single(v => v.Id == "memory.available").Should().Match<Core.Thresholds.Verdict>(
+            v => v.Level == Core.Thresholds.Level.Ok && v.Value == "66.8 %" && v.Basis!.Source == Core.Thresholds.VerdictSource.Sample,
+            "the captured tree holds 66.8 % available, evaluated over this sample");
+        verdicts.Single(v => v.Id == "clock.jumps").Should().Match<Core.Thresholds.Verdict>(
+            v => v.Level == Core.Thresholds.Level.Unknown && v.Reason == LastFullRun.NoFullRunYet, "only a full run counts clock jumps, and none is recorded");
+        runner.Requests.Should().BeEmpty("the verdicts start nothing either");
+    }
+
+    [Fact]
+    public void A_threshold_set_in_the_user_layer_changes_the_verdict_status_answers()
+    {
+        using var sandbox = new SandboxHost("status-threshold");
+        var (host, _) = FixtureHost(sandbox, ProcfsFixture.CapturedAt);
+        CliRun.Over(host, "config", "set", "thresholds.memAvailableWarnPercent", "70").Exit.Should().Be((int)ExitCode.Ok);
+
+        var verdict = Report(CliRun.Over(host, "status", "--json").Stdout).Verdicts!.Single(v => v.Id == "memory.available");
+
+        verdict.Level.Should().Be(Core.Thresholds.Level.Warn, "66.8 % is below a warn threshold of 70 %");
+        verdict.Limit.Should().Contain("warn < 70 %");
+    }
+
+    [Fact]
+    public void Status_without_json_names_the_verdict_levels_in_one_line()
+    {
+        using var sandbox = new SandboxHost("status-text-verdicts");
+        var (host, _) = FixtureHost(sandbox, ProcfsFixture.CapturedAt);
+        CliRun.Over(host, "config", "set", "thresholds.memAvailableWarnPercent", "70").Exit.Should().Be((int)ExitCode.Ok);
+
+        var lines = CliRun.Lines(CliRun.Over(host, "status").Stdout);
+
+        var line = lines.Should().ContainSingle(l => l.StartsWith("verdicts: ", StringComparison.Ordinal)).Subject;
+        line.Should().Contain("warn (memory.available)").And.Contain(" ok").And.Contain(" unknown");
+    }
+
+    [Fact]
     public void Status_without_json_prints_the_summary_lines_a_person_reads()
     {
         using var sandbox = new SandboxHost("status-text");

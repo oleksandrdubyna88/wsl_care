@@ -95,11 +95,15 @@ internal static class Program
         };
     }
 
+    /// <summary>What <c>--version</c> prints and <c>status --json</c> names as <c>productVersion</c> — one expression, so
+    /// the two cannot disagree (plan §15g B1).</summary>
+    internal static string VersionText => ProductVersion.Of(typeof(Program).Assembly).Text;
+
     /// <summary>The three requests that need nothing of the machine; <c>null</c> for a verb that does.</summary>
     private static int? AnswerWithoutTheMachine(Request request, TextWriter stdout, TextWriter stderr) => request switch
     {
         Request.Help => Output.Answer(stdout, CommandLine.HelpText),
-        Request.Version => Output.Answer(stdout, ProductVersion.Of(typeof(Program).Assembly).Text),
+        Request.Version => Output.Answer(stdout, VersionText),
         Request.Failed failed => Output.Refuse(stderr, failed.Message),
         _ => null,
     };
