@@ -258,7 +258,8 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 
 As root, every per-user path — the daily folder walk, the caches above, the user configuration layer — is the
 **target user's** home (`/etc/wsl.conf` `[user] default=`, else the single login account), never root's; when the target
-is ambiguous the run is observe-only. `config set` / `config reset` refuse to run as root for the target user (a
+is ambiguous the user layer is skipped: machine-scoped actions still run, every user-scoped action refuses
+naming the accounts (set `[user] default=` in `/etc/wsl.conf`, or `install.sh --set-default-user <name>`). `config set` / `config reset` refuse to run as root for the target user (a
 root-owned file would lock them out of their own settings): run them as yourself.
 
 What a run does, in order: takes THE run lock (`/run/wsl-care.lock`, shared with `collect` — the second one refuses
