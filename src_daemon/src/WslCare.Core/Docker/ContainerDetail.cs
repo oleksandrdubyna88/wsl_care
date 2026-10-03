@@ -5,13 +5,12 @@ using WslCare.Core.Collectors;
 namespace WslCare.Core.Docker;
 
 /// <summary>One mount of a container: its type (<c>volume</c>, <c>bind</c>, <c>tmpfs</c>) and, for a volume, its name.</summary>
+/// <remarks>Whether the volume is anonymous is NOT read from the name's shape here: the mount carries no labels, so the
+/// decision is <see cref="AnonymousVolumes.IsAnonymous"/> over the inventory (independent review of E3, 2026-10-03).</remarks>
 public sealed record ContainerMount(string Type, string Name)
 {
-    /// <summary>A volume with Docker's random 64-hex name — removed with the container by <c>docker rm -v</c>.</summary>
-    public bool AnonymousVolume => Type == "volume" && DockerJson.IsFullId(Name);
-
-    /// <summary>A volume with a chosen name — never removed with the container.</summary>
-    public bool NamedVolume => Type == "volume" && Name.Length > 0 && !DockerJson.IsFullId(Name);
+    /// <summary>A volume mount with a name — anonymous or named is the inventory's answer.</summary>
+    public bool Volume => Type == "volume" && Name.Length > 0;
 }
 
 /// <summary>

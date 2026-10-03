@@ -52,14 +52,14 @@ public static class RunLogs
         var history = RunHistory.Read(paths, files);
         var runs = InPeriod(history, period).ToList();
         var lines = runs.Select(r => Line(Narrowed(r, action), StateOf(paths, files, r))).ToList();
-        var cleanups = runs.SelectMany(r => Cleanups(paths, files, Narrowed(r, action))).ToList();
+        var cleanups = runs.Select(r => Narrowed(r, action)).Where(r => r.Actions.Any(Removed)).SelectMany(r => Cleanups(paths, files, r)).ToList();
         var freed = lines.Where(l => l.FreedBytes > 0).ToList();
         return new LogsReport(
             SchemaVersion.Current,
             PeriodReport.Of(period),
             action?.Text,
             lines.Sum(l => l.FreedBytes),
-            lines.SelectMany(l => l.Actions).Where(a => a.Status == ActionStatus.Ran).Sum(a => a.Count),
+            lines.SelectMany(l => l.Actions).Where(Acted).Sum(a => a.Count),
             Totals(lines),
             Counts(lines),
             freed.MaxBy(l => l.FreedBytes) is { } most ? new RunExtreme(most.RunId, most.StartedAt, most.FreedBytes) : null,
@@ -81,8 +81,8 @@ public static class RunLogs
 
     private static RunLine Line(RunRecord r, DetailState detail)
     {
-        var actions = r.Actions.Select(a => new RunActionLine(a.Id, a.Status, a.Count, a.FreedBytes, a.WouldFreeBytes)).ToList();
-        var ran = actions.Where(a => a.Status == ActionStatus.Ran).ToList();
+        var actions = r.Actions.Select(a => new RunActionLine(a.Id, a.Status, a.Count, a.FreedBytes, a.WouldFreeBytes, a.Failure)).ToList();
+        var acted = actions.Where(Acted).ToList();
         var dry = actions.Where(a => a.Status == ActionStatus.DryRun).ToList();
         return new RunLine(
             r.RunId.Text,
@@ -93,9 +93,9 @@ public static class RunLogs
             r.DryRun,
             r.Detail,
             Camel(detail.ToString()),
-            ran.Sum(a => a.FreedBytes),
+            acted.Sum(a => a.FreedBytes),
             dry.Count > 0 ? dry.Sum(a => a.WouldFreeBytes ?? 0) : null,
-            ran.Any(a => a.Count > 0 || a.FreedBytes > 0),
+            acted.Any(a => a.Count > 0 || a.FreedBytes > 0),
             actions,
             r.Reason);
     }
@@ -107,10 +107,20 @@ public static class RunLogs
             .Select(g => new ActionTotal(
                 g.Key,
                 g.Count(a => a.Status == ActionStatus.Ran),
-                g.Where(a => a.Status == ActionStatus.Ran).Sum(a => a.Count),
-                g.Where(a => a.Status == ActionStatus.Ran).Sum(a => a.FreedBytes),
+                g.Where(Acted).Sum(a => a.Count),
+                g.Where(Acted).Sum(a => a.FreedBytes),
                 g.Count(a => a.Status == ActionStatus.DryRun),
-                g.Where(a => a.Status == ActionStatus.DryRun).Sum(a => a.WouldFreeBytes ?? 0)))];
+                g.Where(a => a.Status == ActionStatus.DryRun).Sum(a => a.WouldFreeBytes ?? 0),
+                g.Count(a => a.Status == ActionStatus.Failed)))];
+
+    /// <summary>An action that ACTED — ran, or ran and failed: a failed action's measured deletions are real (A4 removing 386
+    /// of 387 volumes and failing on one removed 386), so its count and freed bytes count wherever a successful one's do.</summary>
+    private static bool Acted(RunActionLine action) => action.Status is ActionStatus.Ran or ActionStatus.Failed;
+
+    private static bool Acted(ActionRecord action) => action.Status is ActionStatus.Ran or ActionStatus.Failed;
+
+    /// <summary>An action that acted AND removed (or freed) something: a cleanup.</summary>
+    private static bool Removed(ActionRecord action) => Acted(action) && (action.Count > 0 || action.FreedBytes > 0);
 
     private static RunCounts Counts(IReadOnlyList<RunLine> lines)
     {
@@ -137,22 +147,26 @@ public static class RunLogs
             return new MetricExtremes(reader.Name, reader.Unit, points.Count, points.MaxBy(p => p.Value), points.MinBy(p => p.Value));
         })];
 
-    /// <summary>Every action that RAN and removed (or freed) something in <paramref name="run"/>, with its objects from the detail.</summary>
+    /// <summary>Every action that ACTED (ran, or failed) and removed (or freed) something in <paramref name="run"/>, its failure
+    /// beside its figures and its objects from the run's detail.</summary>
     private static IEnumerable<CleanupDetail> Cleanups(IHostPaths paths, IFileSystem files, RunRecord run)
     {
-        var ran = run.Actions.Where(a => a.Status == ActionStatus.Ran && (a.Count > 0 || a.FreedBytes > 0)).ToList();
-        if (ran.Count == 0)
-        {
-            return [];
-        }
-
         var (state, outcomes) = Outcomes(paths, files, run);
-        // A detail written before a member existed reads it as null under the source generator, whatever the declaration
-        // says (C# doctrine §4a): NotRemoved and Notes arrived with E3.S2, so they are normalised here, where they are read.
-        return ran.Select(a => outcomes.FirstOrDefault(o => o.Id == a.Id) is { Run: { } done }
-            ? new CleanupDetail(run.RunId.Text, run.StartedAt, Camel(run.Trigger.ToString()), a.Id, ActionStatus.Ran, a.Count, a.FreedBytes, done.FreedBasis, state, done.Removed ?? [], done.NotRemoved ?? [], done.Notes ?? [])
-            : new CleanupDetail(run.RunId.Text, run.StartedAt, Camel(run.Trigger.ToString()), a.Id, ActionStatus.Ran, a.Count, a.FreedBytes, null, state == "present" ? "unreadable" : state, [], [], []));
+        return run.Actions.Where(Removed).Select(a => Cleanup(run, a, state, outcomes.FirstOrDefault(o => o.Id == a.Id)));
     }
+
+    /// <summary>One cleanup: its history line's figures and failure, and — when its detail was read and holds its outcome — the
+    /// objects it removed and kept (a detail read without its outcome is <c>unreadable</c>).</summary>
+    private static CleanupDetail Cleanup(RunRecord run, ActionRecord action, string state, ActionOutcome? outcome) => outcome is { Run: { } done }
+        ? Head(run, action, state) with { FreedBasis = done.FreedBasis, Removed = OrEmpty(done.Removed), NotRemoved = OrEmpty(done.NotRemoved), Notes = OrEmpty(done.Notes) }
+        : Head(run, action, state == "present" ? "unreadable" : state);
+
+    private static CleanupDetail Head(RunRecord run, ActionRecord action, string state) =>
+        new(run.RunId.Text, run.StartedAt, Camel(run.Trigger.ToString()), action.Id, action.Status ?? string.Empty, action.Count, action.FreedBytes, null, state, [], [], []) { Failure = action.Failure };
+
+    /// <summary>A detail written before a member existed reads it as null under the source generator, whatever the declaration
+    /// says (C# doctrine §4a): NotRemoved and Notes arrived with E3.S2, so they are normalised here, where they are read.</summary>
+    private static IReadOnlyList<T> OrEmpty<T>(IReadOnlyList<T>? list) => list ?? [];
 
     /// <summary>The action outcomes the run's detail holds — an <c>act</c>'s, or a full run's timer pass — and the detail's state.</summary>
     private static (string State, IReadOnlyList<ActionOutcome> Outcomes) Outcomes(IHostPaths paths, IFileSystem files, RunRecord run)

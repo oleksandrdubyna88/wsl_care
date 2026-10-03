@@ -12,7 +12,9 @@ public sealed record PeriodReport(string Label, string From, string To)
 }
 
 /// <summary>One action's line of a run, as the history keeps it.</summary>
-public sealed record RunActionLine(string Id, string? Status, int Count, long FreedBytes, long? WouldFreeBytes);
+/// <param name="Failure">Why it failed, when it did — beside its figures, which still count (a failed action's measured
+/// deletions are real).</param>
+public sealed record RunActionLine(string Id, string? Status, int Count, long FreedBytes, long? WouldFreeBytes, string? Failure);
 
 /// <summary>One run of the period.</summary>
 /// <param name="DetailState"><c>present</c>, <c>lost</c> (the history names a detail that is gone, plan §15b #1) or <c>none</c>.</param>
@@ -36,10 +38,14 @@ public sealed record RunLine(
 public sealed record RunsReport(int SchemaVersion, PeriodReport Period, int Count, IReadOnlyList<RunLine> Runs, int UnparseableLines, string? Problem);
 
 /// <summary>One action's totals over the period.</summary>
-/// <param name="Runs">The runs in which it RAN.</param>
+/// <param name="Runs">The runs in which it RAN (succeeded).</param>
+/// <param name="Count">The objects it removed — in the runs it ran AND in those it failed (what a failed action measurably
+/// removed is gone all the same).</param>
+/// <param name="FreedBytes">The bytes it freed, on the same footing as <paramref name="Count"/>.</param>
 /// <param name="DryRuns">The runs in which the timer only previewed it (dry run).</param>
 /// <param name="WouldFreeBytes">What those dry runs would have freed.</param>
-public sealed record ActionTotal(string Id, int Runs, int Count, long FreedBytes, int DryRuns, long WouldFreeBytes);
+/// <param name="Failed">The runs in which it FAILED.</param>
+public sealed record ActionTotal(string Id, int Runs, int Count, long FreedBytes, int DryRuns, long WouldFreeBytes, int Failed);
 
 /// <summary>The runs of the period, counted (plan §7.4).</summary>
 public sealed record RunCounts(int Total, int WithCleanup, int WithoutCleanup, int DryRun, long WouldFreeBytes, int Timer, int Manual, int Cli, int Failed, int Interrupted);
@@ -69,7 +75,11 @@ public sealed record CleanupDetail(
     string DetailState,
     IReadOnlyList<ActionItem> Removed,
     IReadOnlyList<ActionItem> NotRemoved,
-    IReadOnlyList<string> Notes);
+    IReadOnlyList<string> Notes)
+{
+    /// <summary>Why the action failed, when it did — shown beside its figures.</summary>
+    public string? Failure { get; init; }
+}
 
 /// <summary>The answer of <c>logs [--period …] [--action …] --json</c> (plan §7.4).</summary>
 /// <param name="Action">The one action asked for, or absent for all.</param>

@@ -61,6 +61,24 @@ public sealed class RefusingProcessSignals(string reason) : IProcessSignals
         Task.FromResult<SignalOutcome>(new SignalOutcome.Refused(reason));
 }
 
+/// <summary>The native calls the pidfd sender makes — a seam so a test can make one of them fail or a process never end;
+/// <see cref="LibcPidfdCalls"/> is the only implementation the product builds.</summary>
+internal interface IPidfdCalls
+{
+    /// <summary><c>pidfd_open</c>: the descriptor, or <c>-errno</c>.</summary>
+    int Open(int pid);
+
+    /// <summary><c>pidfd_send_signal</c>: 0, or the errno.</summary>
+    int Signal(int fd, int signal);
+
+    /// <summary><c>poll</c> of the descriptors for readability (a pidfd is readable once its process ended): how many are
+    /// ready (their <paramref name="ready"/> flags set), 0 when none within <paramref name="milliseconds"/>, or
+    /// <c>-errno</c>.</summary>
+    int Poll(IReadOnlyList<int> fds, bool[] ready, int milliseconds);
+
+    void Close(int fd);
+}
+
 /// <summary>
 /// The Linux sender: a <c>pidfd</c> (<c>pidfd_open</c>, Linux 5.3; glibc 2.36 — Ubuntu 24.04 has 2.39) pins the process
 /// FIRST, its start is then compared with the identity, and both signals go through that descriptor
@@ -69,27 +87,44 @@ public sealed class RefusingProcessSignals(string reason) : IProcessSignals
 /// <see cref="SignalOutcome.NotTheSame"/>. Its end is awaited on the descriptor itself (<c>poll</c> → readable when the
 /// process exits), in short slices so a cancellation is seen.
 /// </summary>
-/// <remarks>Reads <c>/proc/[pid]/stat</c> under <paramref name="procRoot"/> — always the REAL <c>/proc</c>: the CLI builds this
-/// sender only outside a sandbox.</remarks>
-public sealed partial class PidfdProcessSignals(IFileSystem files, string procRoot) : IProcessSignals
+/// <remarks>Reads <c>/proc/[pid]/stat</c> under the proc root — always the REAL <c>/proc</c>: the CLI builds this sender only
+/// outside a sandbox.</remarks>
+public sealed class PidfdProcessSignals : IProcessSignals
 {
     /// <summary>How long a process gets to end after <c>SIGKILL</c> before it is reported still running.</summary>
     public static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
 
     private const int SigTerm = 15;
     private const int SigKill = 9;
-    private const short PollIn = 1;
     private const int Esrch = 3;
     private const int Eintr = 4;
     private const int SliceMilliseconds = 200;
 
+    private readonly IFileSystem _files;
+    private readonly string _procRoot;
+    private readonly IPidfdCalls _calls;
+    private readonly TimeProvider _clock;
+
+    public PidfdProcessSignals(IFileSystem files, string procRoot)
+        : this(files, procRoot, new LibcPidfdCalls(), TimeProvider.System)
+    {
+    }
+
+    /// <summary>The seams, for tests only: the native calls and the clock the waits are measured on.</summary>
+    internal PidfdProcessSignals(IFileSystem files, string procRoot, IPidfdCalls calls, TimeProvider clock)
+    {
+        _files = files;
+        _procRoot = procRoot;
+        _calls = calls;
+        _clock = clock;
+    }
+
     public async Task<SignalOutcome> TerminateAsync(ProcessIdentity process, TimeSpan grace, CancellationToken cancellationToken)
     {
-        var fd = Native.PidfdOpen(process.Pid, 0);
+        var fd = _calls.Open(process.Pid);
         if (fd < 0)
         {
-            var errno = Marshal.GetLastPInvokeError();
-            return errno == Esrch ? new SignalOutcome.AlreadyGone() : new SignalOutcome.Failed($"pidfd_open({process.Pid}) failed with errno {errno}");
+            return -fd == Esrch ? new SignalOutcome.AlreadyGone() : new SignalOutcome.Failed($"pidfd_open({process.Pid}) failed with errno {-fd}");
         }
 
         try
@@ -98,7 +133,7 @@ public sealed partial class PidfdProcessSignals(IFileSystem files, string procRo
         }
         finally
         {
-            _ = Native.Close(fd);
+            _calls.Close(fd);
         }
     }
 
@@ -114,9 +149,12 @@ public sealed partial class PidfdProcessSignals(IFileSystem files, string procRo
             return termFailed;
         }
 
-        if (await EndedWithinAsync(fd, grace, cancellationToken).ConfigureAwait(false))
+        switch (await EndedWithinAsync(fd, process.Pid, grace, cancellationToken).ConfigureAwait(false))
         {
-            return new SignalOutcome.Ended(NeededKill: false);
+            case { Failure.Length: > 0 } failed:
+                return new SignalOutcome.Failed(failed.Failure);
+            case { Ended: true }:
+                return new SignalOutcome.Ended(NeededKill: false);
         }
 
         if (Send(fd, SigKill, process.Pid) is { } killFailed)
@@ -124,67 +162,104 @@ public sealed partial class PidfdProcessSignals(IFileSystem files, string procRo
             return killFailed is SignalOutcome.AlreadyGone ? new SignalOutcome.Ended(NeededKill: false) : killFailed;
         }
 
-        return await EndedWithinAsync(fd, KillWait, cancellationToken).ConfigureAwait(false)
-            ? new SignalOutcome.Ended(NeededKill: true)
-            : new SignalOutcome.StillRunning($"pid {process.Pid} did not end within {KillWait.TotalSeconds:0} s of SIGKILL (uninterruptible I/O?)");
+        return await EndedWithinAsync(fd, process.Pid, KillWait, cancellationToken).ConfigureAwait(false) switch
+        {
+            { Failure.Length: > 0 } failed => new SignalOutcome.Failed(failed.Failure),
+            { Ended: true } => new SignalOutcome.Ended(NeededKill: true),
+            _ => new SignalOutcome.StillRunning($"pid {process.Pid} did not end within {KillWait.TotalSeconds:0} s of SIGKILL (uninterruptible I/O?)"),
+        };
     }
 
     /// <summary>The start the pinned process reports, against the identity; <c>null</c> when they agree.</summary>
     private SignalOutcome? Check(int fd, ProcessIdentity process)
     {
-        var path = $"{procRoot}/{process.Pid.ToString(CultureInfo.InvariantCulture)}/stat";
-        var stat = ProcText.Read(files, path).Bind(text => ProcStat.Parse(text, path));
+        var path = $"{_procRoot}/{process.Pid.ToString(CultureInfo.InvariantCulture)}/stat";
+        var stat = ProcText.Read(_files, path).Bind(text => ProcStat.Parse(text, path));
         return stat switch
         {
             Reading<ProcStat>.Available { Value.StartTicks: var start } when start == process.StartTicks => null,
             Reading<ProcStat>.Available { Value.StartTicks: var start } =>
                 new SignalOutcome.NotTheSame($"pid {process.Pid} started at tick {start}, not {process.StartTicks}: it is another process now"),
-            _ when Exited(fd) => new SignalOutcome.AlreadyGone(),
+            _ when _calls.Poll([fd], new bool[1], 0) > 0 => new SignalOutcome.AlreadyGone(),
             _ => new SignalOutcome.Failed($"pid {process.Pid}: {stat.ReasonOrEmpty}"),
         };
     }
 
-    private static SignalOutcome? Send(int fd, int signal, int pid)
+    private SignalOutcome? Send(int fd, int signal, int pid) => _calls.Signal(fd, signal) switch
     {
-        if (Native.PidfdSendSignal(fd, signal, IntPtr.Zero, 0) == 0)
-        {
-            return null;
-        }
+        0 => null,
+        Esrch => new SignalOutcome.AlreadyGone(),
+        var errno => new SignalOutcome.Failed($"pidfd_send_signal(pid {pid}, {signal}) failed with errno {errno}"),
+    };
 
-        var errno = Marshal.GetLastPInvokeError();
-        return errno == Esrch ? new SignalOutcome.AlreadyGone() : new SignalOutcome.Failed($"pidfd_send_signal(pid {pid}, {signal}) failed with errno {errno}");
-    }
+    /// <summary>How a wait on the pin ended: the process ended, the time ran out, or the wait itself FAILED — a <c>poll</c>
+    /// error other than <c>EINTR</c> says nothing about the process, so it is never taken for an end (independent review of
+    /// E3, 2026-10-03).</summary>
+    private sealed record WaitResult(bool Ended, string Failure);
 
-    private static async Task<bool> EndedWithinAsync(int fd, TimeSpan wait, CancellationToken cancellationToken)
+    private async Task<WaitResult> EndedWithinAsync(int fd, int pid, TimeSpan wait, CancellationToken cancellationToken)
     {
-        var deadline = DateTime.UtcNow + wait;
+        var deadline = _clock.GetUtcNow() + wait;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var left = (int)Math.Clamp((deadline - DateTime.UtcNow).TotalMilliseconds, 0, SliceMilliseconds);
-            if (Poll(fd, left))
+            var left = (int)Math.Clamp((deadline - _clock.GetUtcNow()).TotalMilliseconds, 0, SliceMilliseconds);
+            if (Poll(fd, pid, left) is { } settled)
             {
-                return true;
+                return settled;
             }
 
-            if (DateTime.UtcNow >= deadline)
+            if (_clock.GetUtcNow() >= deadline)
             {
-                return false;
+                return new WaitResult(false, string.Empty);
             }
 
             await Task.Yield();
         }
     }
 
-    private static bool Exited(int fd) => Poll(fd, 0);
-
-    /// <summary>Whether the pinned process has ended (its descriptor is readable), waiting at most <paramref name="milliseconds"/>.</summary>
-    private static bool Poll(int fd, int milliseconds)
+    /// <summary>One slice of the wait: ended, failed, or <c>null</c> while the process is still running (or the poll was interrupted).</summary>
+    private WaitResult? Poll(int fd, int pid, int milliseconds) => _calls.Poll([fd], new bool[1], milliseconds) switch
     {
-        var entry = new PollFd { Fd = fd, Events = PollIn };
-        var ready = Native.Poll(ref entry, 1, milliseconds);
-        return ready > 0 || (ready < 0 && Marshal.GetLastPInvokeError() != Eintr);
+        > 0 => new WaitResult(true, string.Empty),
+        < 0 and var error when -error != Eintr => new WaitResult(false, $"poll failed with errno {-error}: whether pid {pid} ended is unknown"),
+        _ => null,
+    };
+}
+
+/// <summary>glibc, by its full soname: the only library this file loads, and only on Linux (the Windows binary never builds
+/// this sender).</summary>
+internal sealed partial class LibcPidfdCalls : IPidfdCalls
+{
+    private const short PollIn = 1;
+    private const string Libc = "libc.so.6";
+
+    public int Open(int pid)
+    {
+        var fd = PidfdOpen(pid, 0);
+        return fd >= 0 ? fd : -Marshal.GetLastPInvokeError();
     }
+
+    public int Signal(int fd, int signal) => PidfdSendSignal(fd, signal, IntPtr.Zero, 0) == 0 ? 0 : Marshal.GetLastPInvokeError();
+
+    public int Poll(IReadOnlyList<int> fds, bool[] ready, int milliseconds)
+    {
+        var entries = fds.Select(fd => new PollFd { Fd = fd, Events = PollIn }).ToArray();
+        var count = PollNative(entries, (nuint)entries.Length, milliseconds);
+        if (count < 0)
+        {
+            return -Marshal.GetLastPInvokeError();
+        }
+
+        for (var i = 0; i < entries.Length; i++)
+        {
+            ready[i] = entries[i].Revents != 0;
+        }
+
+        return count;
+    }
+
+    public void Close(int fd) => _ = CloseNative(fd);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PollFd
@@ -194,22 +269,15 @@ public sealed partial class PidfdProcessSignals(IFileSystem files, string procRo
         public short Revents;
     }
 
-    /// <summary>glibc, by its full soname: the only library this file loads, and only on Linux (the Windows binary never
-    /// builds this sender).</summary>
-    private static partial class Native
-    {
-        private const string Libc = "libc.so.6";
+    [LibraryImport(Libc, EntryPoint = "pidfd_open", SetLastError = true)]
+    private static partial int PidfdOpen(int pid, uint flags);
 
-        [LibraryImport(Libc, EntryPoint = "pidfd_open", SetLastError = true)]
-        internal static partial int PidfdOpen(int pid, uint flags);
+    [LibraryImport(Libc, EntryPoint = "pidfd_send_signal", SetLastError = true)]
+    private static partial int PidfdSendSignal(int pidfd, int signal, IntPtr info, uint flags);
 
-        [LibraryImport(Libc, EntryPoint = "pidfd_send_signal", SetLastError = true)]
-        internal static partial int PidfdSendSignal(int pidfd, int signal, IntPtr info, uint flags);
+    [LibraryImport(Libc, EntryPoint = "poll", SetLastError = true)]
+    private static partial int PollNative([In, Out] PollFd[] fds, nuint count, int timeoutMilliseconds);
 
-        [LibraryImport(Libc, EntryPoint = "poll", SetLastError = true)]
-        internal static partial int Poll(ref PollFd fds, nuint count, int timeoutMilliseconds);
-
-        [LibraryImport(Libc, EntryPoint = "close", SetLastError = true)]
-        internal static partial int Close(int fd);
-    }
+    [LibraryImport(Libc, EntryPoint = "close", SetLastError = true)]
+    private static partial int CloseNative(int fd);
 }

@@ -74,9 +74,9 @@ internal static class LogsCommand
         var text = new StringBuilder()
             .AppendLine(Invariant($"wsl-care logs {r.Period.Label} ({r.Period.From}..{r.Period.To} UTC){(r.Action is null ? string.Empty : $", {r.Action} only")}: freed {Gb(r.FreedBytes)}, {r.ObjectsRemoved} objects"))
             .AppendLine(Invariant($"runs: {r.Runs.Total} ({r.Runs.WithCleanup} with a cleanup, {r.Runs.WithoutCleanup} without; {r.Runs.DryRun} dry, would have freed {Gb(r.Runs.WouldFreeBytes)}; timer {r.Runs.Timer}, button {r.Runs.Manual}, terminal {r.Runs.Cli})"));
-        foreach (var total in r.PerAction.Where(t => t.Runs > 0 || t.DryRuns > 0))
+        foreach (var total in r.PerAction.Where(t => t.Runs > 0 || t.DryRuns > 0 || t.Failed > 0))
         {
-            text.AppendLine(Invariant($"  {total.Id,-17} ran {total.Runs}x, {total.Count} objects, freed {Gb(total.FreedBytes)}; dry {total.DryRuns}x, would free {Gb(total.WouldFreeBytes)}"));
+            text.AppendLine(Invariant($"  {total.Id,-17} ran {total.Runs}x{(total.Failed > 0 ? $" (failed {total.Failed}x)" : string.Empty)}, {total.Count} objects, freed {Gb(total.FreedBytes)}; dry {total.DryRuns}x, would free {Gb(total.WouldFreeBytes)}"));
         }
 
         if (r.MostFreed is { } most && r.LeastFreed is { } least)
@@ -86,7 +86,7 @@ internal static class LogsCommand
 
         foreach (var cleanup in r.Cleanups)
         {
-            text.AppendLine(Invariant($"  {cleanup.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm}Z {cleanup.Action}: {cleanup.Count} removed, {Gb(cleanup.FreedBytes)} ({cleanup.Trigger}; detail {cleanup.DetailState})"));
+            text.AppendLine(Invariant($"  {cleanup.StartedAt.UtcDateTime:yyyy-MM-dd HH:mm}Z {cleanup.Action}: {cleanup.Count} removed, {Gb(cleanup.FreedBytes)} ({cleanup.Trigger}; detail {cleanup.DetailState}){(cleanup.Failure is { Length: > 0 } failure ? $" - FAILED: {CommandLine.Printable(failure)}" : string.Empty)}"));
             foreach (var item in cleanup.Removed.Take(20))
             {
                 text.AppendLine(Invariant($"      {item.Kind} {CommandLine.Printable(item.Name)}{(item.Bytes is { } b ? $" {Gb(b)}" : string.Empty)}"));

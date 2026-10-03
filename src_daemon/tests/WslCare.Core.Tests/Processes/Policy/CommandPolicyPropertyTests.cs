@@ -110,6 +110,7 @@ public sealed class CommandPolicyPropertyTests
                 commands += runner.Requests.Count;
                 covered.UnionWith(executor.Ran.Where(c => c.Outcome == "exited").Select(c => c.Template));
                 violations.AddRange(runner.Requests.SelectMany(r => ActionViolations(action, policy, r, i)));
+                violations.AddRange(world.NamedVolumeRemovals(runner.Requests).Select(v => $"case {i}: {action.Id} removed {v}, a volume Docker treats as NAMED (no anonymous label, or labels unknown)"));
                 violations.AddRange(executor.Ran.Where(c => c.Outcome == "refused").Select(c => $"case {i}: {action.Id} asked for a command its executor refused: {c.Display} ({c.Detail})"));
             }
         }

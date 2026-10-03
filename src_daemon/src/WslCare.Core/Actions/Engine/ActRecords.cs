@@ -155,8 +155,12 @@ public static class ActionRecords
 {
     public static ActionRecord Of(ActionOutcome o) => o.Status switch
     {
-        ActionStatus.Ran or ActionStatus.Failed => new ActionRecord(o.Id, o.Run?.Count ?? 0, o.Run?.FreedBytes ?? 0) { Status = o.Status },
+        ActionStatus.Ran => new ActionRecord(o.Id, o.Run?.Count ?? 0, o.Run?.FreedBytes ?? 0) { Status = o.Status },
+        ActionStatus.Failed => new ActionRecord(o.Id, o.Run?.Count ?? 0, o.Run?.FreedBytes ?? 0) { Status = o.Status, Failure = Shortened(o.Run is { Failure.Length: > 0 } run ? run.Failure : o.Reason) },
         ActionStatus.DryRun => new ActionRecord(o.Id, o.Preview?.Count ?? 0, 0) { Status = o.Status, WouldFreeBytes = o.Preview?.Bytes },
         _ => new ActionRecord(o.Id, 0, 0) { Status = o.Status },
     };
+
+    private static string Shortened(string failure) =>
+        failure.Length <= ActionRecord.FailureLimit ? failure : failure[..(ActionRecord.FailureLimit - 1)] + "…";
 }

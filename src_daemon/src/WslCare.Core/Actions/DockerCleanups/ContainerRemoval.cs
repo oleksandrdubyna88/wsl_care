@@ -75,25 +75,27 @@ public sealed class ContainerRemoval(bool testcontainers) : ICleanupAction
         };
     }
 
-    /// <summary>Each container a preview item; its anonymous volumes items too, keyed <c>container-id/volume-name</c> so the
-    /// run knows whose they are.</summary>
+    /// <summary>Each container a preview item; each DISTINCT anonymous volume one item too, keyed
+    /// <c>holder-id,holder-id/volume-name</c> so the run knows whose it is — a volume two selected containers share
+    /// (<c>--volumes-from</c>) is one object, listed and counted once (independent review of E3, 2026-10-03).</summary>
     private static List<ActionItem> Items(ContainerTargets selection) =>
     [
         .. selection.Selected.Select(c => RowPreviews.Item("container", c, string.Create(CultureInfo.InvariantCulture, $"{selection.AnonymousVolumesOf[c.Id].Count} anonymous volume(s)"))),
-        .. selection.Selected.SelectMany(c => selection.AnonymousVolumesOf[c.Id].Select(v => VolumeItem(c, v, selection))),
+        .. selection.AnonymousVolumes.Select(v => VolumeItem(v, [.. selection.Selected.Where(c => selection.AnonymousVolumesOf[c.Id].Contains(v.Id))])),
     ];
 
-    private static ActionItem VolumeItem(CleanupTarget container, string volume, ContainerTargets selection)
-    {
-        var size = selection.AnonymousVolumes.FirstOrDefault(t => t.Id == volume)?.Bytes;
-        return new ActionItem("anonymous volume", volume, size is Reading<long>.Available { Value: var b } ? b : null, $"held by {container.Name}") { Key = $"{container.Id}/{volume}" };
-    }
+    private static ActionItem VolumeItem(CleanupTarget volume, IReadOnlyList<CleanupTarget> holders) =>
+        RowPreviews.Item("anonymous volume", volume, $"held by {string.Join(", ", holders.Select(h => h.Name))}") with { Key = $"{string.Join(',', holders.Select(h => h.Id))}/{volume.Id}" };
 
-    /// <summary>The anonymous volumes of the confirmed containers that Docker no longer lists — and a note when it could not be asked.</summary>
+    /// <summary>The holders a volume item's key names.</summary>
+    private static IEnumerable<string> Holders(ActionItem volume) => volume.Key[..volume.Key.IndexOf('/', StringComparison.Ordinal)].Split(',');
+
+    /// <summary>The anonymous volumes of the confirmed containers that Docker no longer lists — each once, by name — and a
+    /// note when it could not be asked.</summary>
     private static async Task<(IReadOnlyList<ActionItem> Gone, string Note)> VolumesGoneAsync(ActionCommands commands, ActionPreview preview, RemovalResult removal, CancellationToken cancellationToken)
     {
         var confirmed = removal.Removed.Select(r => r.Key).ToHashSet(StringComparer.Ordinal);
-        var theirs = preview.Targets.Where(t => t.Kind == "anonymous volume" && confirmed.Contains(t.Key[..t.Key.IndexOf('/', StringComparison.Ordinal)])).ToList();
+        var theirs = preview.Targets.Where(t => t.Kind == "anonymous volume" && Holders(t).Any(confirmed.Contains)).DistinctBy(t => t.Name, StringComparer.Ordinal).ToList();
         if (theirs.Count == 0)
         {
             return ([], "the removed containers held no anonymous volume");

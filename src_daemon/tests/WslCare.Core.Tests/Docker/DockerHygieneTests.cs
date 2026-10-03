@@ -42,18 +42,30 @@ public sealed class DockerHygieneTests
     [Fact]
     public async Task On_windows_the_builder_gc_of_docker_desktops_daemon_json_is_read_and_log_sizes_are_the_linux_binarys()
     {
-        using var sandbox = new TempRoot("hygiene-windows");
-        var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(sandbox.Path));
-        var files = new Core.Files.PhysicalFileSystem(new LinuxHostPaths(LinuxEnvironment.Sandboxed(sandbox.Path)));
-        var snapshot = await CapturedAsync();
+        var sandbox = new TempRoot("hygiene-windows");
+        try
+        {
+            // The Windows layout joins with BACKSLASHES. On a Linux run its root must be a folder INSIDE the temp root: there a
+            // Windows path is one long file name, and with the temp root itself as the layout's root that name was a SIBLING
+            // of it (/tmp/wsl-care-test-hygiene-windows-...\Users\me\.docker\daemon.json) that no dispose removed.
+            var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(Path.Combine(sandbox.Path, "w")));
+            var files = new Core.Files.PhysicalFileSystem(new LinuxHostPaths(LinuxEnvironment.Sandboxed(sandbox.Path)));
+            var snapshot = await CapturedAsync();
 
-        DockerHygiene.Audit(snapshot, paths, files).BuilderGc.Should().Be(Reading.Of(new BuilderGc(false, string.Empty, string.Empty)), "no daemon.json: nothing configured");
-        // The daemon.json of this machine, as Docker Desktop wrote it (2026-10-02).
-        sandbox.File(Path.GetRelativePath(sandbox.Path, paths.DockerDesktopConfigFile), """{ "builder": { "gc": { "defaultKeepStorage": "20GB", "enabled": true } }, "experimental": false }""");
-        var audit = DockerHygiene.Audit(snapshot, paths, files);
+            DockerHygiene.Audit(snapshot, paths, files).BuilderGc.Should().Be(Reading.Of(new BuilderGc(false, string.Empty, string.Empty)), "no daemon.json: nothing configured");
+            // The daemon.json of this machine, as Docker Desktop wrote it (2026-10-02).
+            sandbox.File(Path.GetRelativePath(sandbox.Path, paths.DockerDesktopConfigFile), """{ "builder": { "gc": { "defaultKeepStorage": "20GB", "enabled": true } }, "experimental": false }""");
+            var audit = DockerHygiene.Audit(snapshot, paths, files);
 
-        audit.BuilderGc.Should().Be(Reading.Of(new BuilderGc(true, "true", "20GB")));
-        audit.UnboundedLogs.ValueOr([]).Should().OnlyContain(l => l.LogBytes.ReasonOrEmpty.Contains("Linux binary", StringComparison.Ordinal));
+            audit.BuilderGc.Should().Be(Reading.Of(new BuilderGc(true, "true", "20GB")));
+            audit.UnboundedLogs.ValueOr([]).Should().OnlyContain(l => l.LogBytes.ReasonOrEmpty.Contains("Linux binary", StringComparison.Ordinal));
+        }
+        finally
+        {
+            sandbox.Dispose();
+        }
+
+        Directory.GetFileSystemEntries(Path.GetDirectoryName(sandbox.Path)!, Path.GetFileName(sandbox.Path) + "*").Should().BeEmpty("the test leaves nothing behind in the temp folder");
     }
 
     [Fact]

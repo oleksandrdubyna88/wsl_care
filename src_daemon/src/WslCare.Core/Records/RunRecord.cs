@@ -90,6 +90,14 @@ public sealed record ActionRecord(string Id, int Count, long FreedBytes)
     /// <summary>A dry run's preview bytes — what it WOULD have freed (plan §7.4: dry runs counted apart); absent otherwise.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public long? WouldFreeBytes { get; init; }
+
+    /// <summary>Why a <c>failed</c> action failed, shortened to <see cref="FailureLimit"/> characters — so <c>logs</c> can show
+    /// it beside the figures without opening the run's detail; absent otherwise and on lines written before it existed.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Failure { get; init; }
+
+    /// <summary>How much of a failure the history line keeps: one line of the log page, not a transcript.</summary>
+    public const int FailureLimit = 300;
 }
 
 /// <summary>One line of <c>history.jsonl</c> (plan §6). Both instants are UTC.</summary>
