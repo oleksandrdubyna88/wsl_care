@@ -261,6 +261,20 @@ checklist in `POST_DEPLOY.md`; and whenever the Docker or systemd version on the
 | `logs` / `runs` in-process (E3.S3): the parse (today by default, `--period` / `--action` / `--json` in any order; a missing value, a repeat, an unknown action, a second `--json`, `--action` on `runs`, `runs show` → usage); `logs --json` answers today and writes nothing (no lock file); the text forms; a bad period exit 2 naming the shapes; an unreadable history exit 4 with the reason. **Red** before the rows existed: `VerbRegisterTests` named both usages as missing from the flow catalogue | `WslCare.Cli.Tests/LogsCommandTests.cs` |
 | The ACTION property (E3.S3): the generated world also answers the Windows clock probe (ahead / behind / garbage), `timedatectl`, `systemctl show fstrim.timer`, `fstrim -av` (exit 0 / 64 / 1 with a hostile line), a sandboxed `/proc` (meminfo, buddyinfo with 0 / 5 / 100 order-7 blocks, mounts) and a GENERATED process table (build servers, `dotnet build|test|run`, `chronyd`, hostile command lines, sometimes unreadable), with `RanEarlier` random — so every template of A1, A2, A3, A15 and A16 runs in some case (the derived coverage assertion) and none produces a never-command | `WslCare.Core.Tests/Processes/Policy/CommandPolicyPropertyTests.cs` |
 
+| A4 takes an ANONYMOUS volume only — Docker's `com.docker.volume.anonymous` label AND a 64-hex name: a hex name without the label (what `docker volume create` without a name leaves; Docker 23+ keeps it as named) and a dangling volume missing from `system df -v` are never selected, never removed, never recorded as first sightings; the hex-unlabelled one is listed with the kept named volumes; A5 counts such a volume as named and kept; a volume two removed containers share (`--volumes-from`) is one preview item and is counted once in the freed bytes | `WslCare.Core.Tests/Actions/DockerCleanupTests.cs`, `WslCare.Core.Tests/Docker/CleanupPreviewTests.cs` |
+| The action property's generated Docker world holds hex-named volumes without the anonymous label and dangling names `system df -v` does not list, mounts them in containers too, and asserts none ever appears in a `docker volume rm` argv (an action asking for one is a violation) | `WslCare.Core.Tests/Processes/Policy/CommandPolicyPropertyTests.cs` (+ `GeneratedWorld.cs`) |
+| A failed action's measured deletions count in `logs` (freed, objects, per action with `failed`, runs with a cleanup) and `runs`, its failure printed beside its figures — read from the history line (`ActionRecord.failure`); the totals, counts and extremes of a period open NO run detail; the objects are read only with `--detail` or one `--action`, from at most the newest 50 details (the oldest beyond are listed `notRead`); `--detail` parses, twice or on `runs` it is refused | `WslCare.Core.Tests/History/RunLogsTests.cs`, `WslCare.Cli.Tests/LogsCommandTests.cs` |
+| A3 refuses — nothing asked — when the process table cannot be read again just before the command | `WslCare.Core.Tests/Actions/BuildServerTests.cs` |
+| A file a caller names (`--only`) is read as a REGULAR file only and never past the cap of bytes actually read: a directory, a FIFO (refused within 10 s, never waited on) and a character device (`/dev/zero`, never streamed) are refused naming the kind; a stream whose length lies is still cut at the cap; `act --only <directory>` / `<fifo>` exit 2 naming "not a regular file" | `WslCare.Core.Tests/Files/RegularFilesTests.cs`, `WslCare.Cli.Tests/ActCommandTests.cs` |
+| The pidfd sender's logic over a fake of its native calls and a clock the test moves: a `poll` that fails is `Failed` and no SIGKILL is sent on that guess; three suspects that ignore SIGTERM take ONE grace + one kill wait (≤ 16 s of fake time), each killed; a cancellation during the grace throws and closes every pin, escalating nothing; on Linux, three real children that trap SIGTERM end on SIGKILL after one 2 s grace in under 5 s | `WslCare.Core.Tests/Actions/PidfdSignalsTests.cs`, `WslCare.Core.Tests/Actions/SuspectTerminationTests.cs` |
+| A11's preview counts no bytes (the memory is the `heldMemoryBytes` fact), so a dry run of A11 adds nothing to the logs' would-free | `WslCare.Core.Tests/Actions/SuspectTerminationTests.cs` |
+| An ambiguous target user leaves the user layer out (not observe-only): a machine-scoped action runs, a user-scoped one is refused naming both accounts | `WslCare.Core.Tests/Actions/TargetHomeTests.cs` |
+| An action's runner runs a collector's shared read template it did not declare, and still refuses an undeclared write | `WslCare.Core.Tests/Actions/EnginePartsTests.cs` |
+| The line files: a half-written last `history.jsonl` line is ignored, not counted unparseable (a complete bad line still is); the append after a writer that died mid-line starts on a line of its own, so the next record is not swallowed; a half-written container-starts line is ignored | `WslCare.Core.Tests/Records/LineFileTests.cs` |
+| `running.json` that never parses is read three more times, 100 ms apart, then `stateUnreadable` (not wedged), naming the file; one torn read (a reader racing the writer's replace) is read again and the dead run it names is swept | `WslCare.Core.Tests/Actions/ActionEngineTests.cs` |
+| Every full run sweeps a dead run's `running.json` whatever started it (terminal and timer), recording it `interrupted`; a full run holds its own `running.json` (action `collect`, its pid and run id) while it measures and removes it at the end — and when cancelled mid-measure | `WslCare.Core.Tests/Collect/TimerPassTests.cs` |
+| The Windows-layout hygiene test leaves nothing in the temp folder on a Linux run (its layout root is a folder INSIDE the temp root, where a backslash path is one file name) | `WslCare.Core.Tests/Docker/DockerHygieneTests.cs` |
+
 Teeth, observed by breaking the code and watching the named tests go red:
 
 - 2026-10-02 (E1.S1): removing the `Version` stamp, returning `0` from a refusal, dropping the
@@ -491,6 +505,53 @@ Teeth, observed by breaking the code and watching the named tests go red:
     clock was FIXED at 2026-10-02 12:00 while Serilog stamps events with the real clock, so the run-file sink rolled to the
     next day's segment. The test now starts its run at the real now (red before the change, green after).
 
+- 2026-10-03 (E3 review fixes: the gate's code round, session `a90e342d`, and an independent review). Every fix began with
+  its test, run against the UNFIXED code and seen failing for the real symptom:
+  - **A4 and the anonymous label (review 1):** the action → *Expected preview.Targets.Select(t => t.Key) to be equal to
+    {"6443…", "9548…"} because only volumes carrying Docker's anonymous label AND a 64-hex name are A4's, but {"6300…",
+    "6443…", "9548…", "aaaa…"} contains 2 item(s) too many*; the row → *Expected a4.Count to be 2 because a 64-hex name alone
+    is not anonymous: Docker's label decides, as volume prune does, but found 4*; A5 → *Expected after.Targets…(anonymous
+    volume names) {"d81b…", …} to not contain "d81b…" because docker rm -v keeps a volume Docker does not treat as
+    anonymous*; the property → *Expected violations to be empty, but found at least one item {"case 6: A4 removed 44a2…, a
+    volume Docker treats as NAMED (no anonymous label, or labels unknown)"}*.
+  - **A failed action's deletions (review 2):** *Expected logs.FreedBytes to be 59000000000L because what a failed action
+    measurably removed was removed, but found 0L*.
+  - **A shared volume (review 3):** *Expected preview.Targets.Count(t => t.Name == volume) to be 1 because a volume shared by
+    two selected containers is one object, but found 2*.
+  - **A3's re-check (review 4):** *Expected _world.Runner.Requests to be empty because a build that cannot be ruled out is a
+    build that may be alive: nothing is asked, but found at least one item*.
+  - **`--only` (review 5):** Windows, a directory → *Expected stderr "wsl-care: act: the --only file …/tmp/shown-folder is
+    missing, unreadable, or larger than 1048576 bytes; nothing was done" to contain "not a regular file"*; WSL, a FIFO →
+    *Expected finished to be True because a FIFO is refused, never waited on, but found False* (the root read hung 10 s).
+  - **A poll error (review 6):** *Expected type to be …SignalOutcome+Failed, but found …SignalOutcome+Ended* — the pidfd
+    sender got a native-call seam (`IPidfdCalls`) and a clock first, unchanged in behaviour, to make it observable.
+  - **Ambiguous target (gate #2):** *Expected loaded.IsObserveOnly to be False because without a single target user the user
+    layer is left out, not made an error that stops every action, but found True*.
+  - **Shared reads (gate #3):** *Expected type not to be …CommandOutcome+Refused because docker version is a shared
+    collector read, but it is*.
+  - **A11's bytes (gate #4):** *Expected logs.Runs.WouldFreeBytes to be 0L because a dry run of A11 would free memory, and
+    the logs' would-free total is disk, but found 1000000L*.
+  - **Line files (gate #6):** *Expected read.Unparseable to be 0 because a line still being written is not a corrupt line, but
+    found 1*; the append after torn remains → *Expected read.Records to contain a single item, but the collection is empty*
+    (the new record had been glued onto the torn line and lost — found while writing the test, fixed with it); the
+    container-starts reader → *Expected store.ReadAll() to contain a single item …, but found* two.
+  - **`running.json` unreadable (gate #7):** *Expected type to be …ActResult+StateUnreadable, but found …ActResult+Wedged*
+    (both contents); one torn read → *Expected type to be …ActResult+Done, but found …ActResult+Wedged*.
+  - **`collect` sweeps (gate #8):** from a terminal → *Expected File.Exists(RunningState.File(_sandbox.Paths)) to be False
+    because a dead run's running.json is swept by any full run, but found True*.
+  - **One grace (gate #9):** *Expected (_clock.GetUtcNow() - started) to be less than or equal to 16s because SIGTERM goes to
+    all, ONE grace is waited across all of them, then the survivors get SIGKILL - never one grace each, but found 45s*.
+  - **Totals without details (gate #10):** *Expected logs.Cleanups to contain only items matching (c.Removed.Count == 0)
+    because the objects come from the details, which were not asked for, but* every cleanup carried its objects.
+  - **`collect`'s own running state (gate #11):** *Expected seen not to be <null> because running.json exists while the full
+    run measures*.
+  - **The hygiene test's leak:** on WSL → *Expected Directory.GetFileSystemEntries(…) to be empty because the test leaves
+    nothing behind in the temp folder, but found at least one item {"/tmp/wsl-care-test-hygiene-windows-a994…\Users\me\.docker\daemon.json"}*.
+  - **Tests that enshrined the old behaviour were changed with the fix, not weakened:** the engine's "cannot be told"
+    theory now expects `StateUnreadable` (and the three retries), the ambiguous-target test the run that still acts, and the
+    three detail-reading `logs` tests ask for `detail: true`. The A5 fixture's keep-labelled volume carries the anonymous
+    label too, as Docker writes it — a fixture with the keep label alone is now a NAMED volume.
+
 ## Flow catalogue
 
 One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` `` exactly as
@@ -538,7 +599,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual] [--volume <name>]... [--only <file>] [--json]` `A4 --confirm --manual --volume <one>` over the captured Docker: exit 0, the fake saw exactly `docker volume rm <that one>`, freed = its captured `df -v` size, the key never serialised, the history line's trigger `manual` | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.A_button_run_of_a4_removes_only_the_volume_the_panel_showed_records_the_manual_trigger_and_freed_from_the_confirmed_one`; in-process: `DockerCleanupTests`, `ActCommandTests` |
 | the other E3.S2 actions end to end against the built binary (A5–A7, A9, A11, A12, A14, A17 confirmed) | not covered | in-process only (`DockerCleanupTests`, `UserCacheTests`, `PackageCacheTests`, `SuspectTerminationTests`): a confirmed user-scoped run needs `runuser` as root, and A11's real sender is never wired under a sandbox — by design |
 | `wsl-care collect [--json]` as the TIMER (`INVOCATION_ID` set) over the captured answers and a 1.5 G journal: exit 0, the action pass ran after measuring in its dry-run week, ONE history line (trigger `timer`, `dryRun`), on Linux A10 `dryRun` (its trigger fired), on Windows every action skipped naming the distro side; every fake call a read command — then `runs --json` and `logs --json` read that run back | covered | `LogsFlows.The_timers_full_run_acts_after_measuring_in_its_dry_run_week_and_runs_and_logs_read_it_back`; in-process: `TimerPassTests`, `MemoryActionTests` |
-| `wsl-care logs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--action <A#>] [--json]` over a seeded history: `--period 2026-10-01` holds the 23:59:59 run only (3 objects, 3 GB, 1 with a cleanup, 1 button); a reversed range exit 2 with ONE message; nothing written but its run log | covered | `LogsFlows.Logs_and_runs_over_a_seeded_history_answer_a_utc_date_and_a_range_and_write_nothing`; in-process: `LogsCommandTests`, `RunLogsTests` |
+| `wsl-care logs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--action <A#>] [--detail] [--json]` over a seeded history: `--period 2026-10-01` holds the 23:59:59 run only (3 objects, 3 GB, 1 with a cleanup, 1 button); a reversed range exit 2 with ONE message; nothing written but its run log | covered | `LogsFlows.Logs_and_runs_over_a_seeded_history_answer_a_utc_date_and_a_range_and_write_nothing`; in-process: `LogsCommandTests`, `RunLogsTests` |
 | `wsl-care runs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--json]` over the same history: the range lists both runs, the dry one with what it would free | covered | `LogsFlows.Logs_and_runs_over_a_seeded_history_answer_a_utc_date_and_a_range_and_write_nothing`; in-process: `LogsCommandTests`, `RunLogsTests` |
 | the E3.S3 actions confirmed against the built binary (A1, A2, A3, A15, A16) | not covered | in-process only (`MemoryActionTests`, `BuildServerTests`, `FilesystemTrimTests`, `ClockFixTests`, the property test): `sysctl`, `fstrim`, `hwclock`, `chronyc` are never faked as root writes on PATH here, and A3 needs `runuser` as root; their previews ARE run by the built binary in `ActFlows.A_preview_of_every_action_this_build_holds_…` |
 | `wsl-care runs show <runId>` / `runs log <runId>` | not covered | not built (plan §6 names them; E6's Logs page decides whether `logs`' cleanups suffice) |
@@ -548,6 +609,14 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 
 ## What it does not prove
 
+- **A5's "goes with the container" is Docker's decision, not ours.** The preview counts a mounted volume as going with
+  `docker rm -v` when `system df -v` labels it anonymous; Docker itself removes a volume whose MOUNT named no source
+  (moby's `removeMountPoints`), which is the same set for every volume Docker created anonymously — a volume made by
+  `docker volume create` and mounted by its id is kept by Docker and counted as named here. The run counts only what
+  `docker volume ls` no longer lists. Not observed on a live engine (the captured Docker labels all 48 volumes consistently).
+- **The fake pidfd calls prove the grace logic, not the kernel.** One shared grace, a poll error and a cancellation are
+  tested over `IPidfdCalls` with a moved clock on any platform; the real `poll` over several pidfds is exercised by the
+  Linux-only test of three real children (run in WSL), never against processes the product did not start.
 - **The fakes replay one afternoon of one Docker.** The captured answers are Docker Desktop 4.81.0 / Engine
   29.6.1 after a cleanup: no dangling image, no Testcontainers container, no `docker-container` builder, no
   container start in Docker's event buffer, no Engine inside the distro (so no log size is ever measured live).

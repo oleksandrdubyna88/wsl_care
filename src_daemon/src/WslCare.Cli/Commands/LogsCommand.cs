@@ -27,7 +27,7 @@ internal static class LogsCommand
             return (int)ExitCode.Usage;
         }
 
-        var report = RunLogs.Logs(host.Paths, host.Files, period, request.Action);
+        var report = RunLogs.Logs(host.Paths, host.Files, period, request.Action, request.Detail);
         Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.LogsReport) : LogsText(report));
         return Exit(report.Problem, stderr);
     }
@@ -91,6 +91,11 @@ internal static class LogsCommand
             {
                 text.AppendLine(Invariant($"      {item.Kind} {CommandLine.Printable(item.Name)}{(item.Bytes is { } b ? $" {Gb(b)}" : string.Empty)}"));
             }
+        }
+
+        if (r.DetailsNotRead > 0)
+        {
+            text.AppendLine(Invariant($"objects not read for {r.DetailsNotRead} run(s): {(r.DetailsRead == 0 ? "--detail or one --action lists them" : $"only the newest {r.DetailsRead} run details are read")}"));
         }
 
         return text.ToString().TrimEnd();

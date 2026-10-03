@@ -53,15 +53,16 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
 
     /// <summary>
     /// This executor as an <see cref="ICommandRunner"/>, for the product's own READ machinery (the Docker collector) to run
-    /// through: a request runs only when it is an instance of a MACHINE-scoped template this action declared, and is
-    /// recorded like every other command; anything else is refused and recorded. It never streams.
+    /// through: a request runs only when it is an instance of a MACHINE-scoped template this action declared, or of one of
+    /// the collectors' shared read-only templates (<see cref="ReadCommandTemplates.All"/> — gate finding #3: an action is not
+    /// coupled to the private queries of the collector it borrows), and is recorded like every other command; anything else
+    /// is refused and recorded. The runner's policy still judges every argv. It never streams.
     /// </summary>
     public ICommandRunner AsRunner() => new DeclaredOnly(this);
 
     private async Task<CommandOutcome> RunDeclaredAsync(CommandRequest request, CancellationToken cancellationToken)
     {
-        var template = action.Commands.FirstOrDefault(t =>
-            t.Scope == CommandScope.Machine && string.Equals(t.Executable, request.Argv[0], StringComparison.Ordinal) && t.Matches([.. request.Argv.Skip(1)]));
+        var template = action.Commands.Concat(ReadCommandTemplates.All).FirstOrDefault(t => IsInstance(t, request));
         if (template is null)
         {
             var undeclared = new CommandTemplate("undeclared", CommandScope.Machine, request.Argv[0], [], request.Timeout, request.OutputCapChars);
@@ -70,6 +71,9 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
 
         return Record(template, request.Display, await runner.RunAsync(request, cancellationToken).ConfigureAwait(false));
     }
+
+    private static bool IsInstance(CommandTemplate template, CommandRequest request) =>
+        template.Scope == CommandScope.Machine && string.Equals(template.Executable, request.Argv[0], StringComparison.Ordinal) && template.Matches([.. request.Argv.Skip(1)]);
 
     private sealed class DeclaredOnly(ActionCommands owner) : ICommandRunner
     {

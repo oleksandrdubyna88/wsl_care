@@ -2,15 +2,21 @@ using System.Globalization;
 
 using FluentAssertions;
 
+using WslCare.Core.Actions;
+using WslCare.Core.Actions.Suspects;
+using WslCare.Core.Collectors;
+using WslCare.Core.Config;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
+using WslCare.Core.Records;
 using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Actions;
 
 /// <summary>
 /// The pidfd sender's LOGIC over a fake of its native calls (<see cref="IPidfdCalls"/>) and a clock the test moves — on any
-/// platform: a <c>poll</c> that fails is a failure, never an end (independent review of E3, item 6).
+/// platform: a <c>poll</c> that fails is a failure, never an end (independent review of E3, item 6), and A11's suspects share
+/// ONE grace across all of them, so three that ignore <c>SIGTERM</c> take one grace, not three (gate finding #9).
 /// </summary>
 public sealed class PidfdSignalsTests : IDisposable
 {
@@ -74,5 +80,51 @@ public sealed class PidfdSignalsTests : IDisposable
 
         outcome.Should().BeOfType<SignalOutcome.Failed>().Which.Reason.Should().Contain("poll");
         calls.Sent.Should().Equal([(10, SigTerm)], "whether it ended is unknown: nothing more is sent on a guess");
+    }
+
+    [Fact]
+    public async Task Three_suspects_that_ignore_sigterm_share_one_grace_then_are_killed_together()
+    {
+        int[] pids = [10, 20, 30];
+        foreach (var pid in pids)
+        {
+            Stat(pid);
+        }
+
+        var calls = new NeverEnding(_clock);
+        var config = ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config;
+        var context = new ActionContext(_sandbox.Paths, _sandbox.Files, _clock, config, RunTrigger.Manual, new TargetUserResult.None("machine-scoped"))
+        {
+            Processes = _ => Reading.Of(UserWorld.Snapshot([.. pids.Select(p => UserWorld.Process(p, $"dotnet VBCSCompiler.dll -pipename:{p}", family: "dotnet-build-servers", orphaned: true))])),
+            Signals = Signals(calls),
+            Wait = (_, _) => Task.CompletedTask,
+        };
+        var action = new SuspectTermination();
+        var commands = new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []);
+        var preview = await action.PreviewAsync(context, commands, CancellationToken.None);
+        var started = _clock.GetUtcNow();
+
+        var run = await action.RunAsync(context, preview, commands, CancellationToken.None);
+
+        preview.Count.Should().Be(3);
+        (_clock.GetUtcNow() - started).Should().BeLessThanOrEqualTo(SuspectTermination.Grace + PidfdProcessSignals.KillWait + TimeSpan.FromSeconds(1),
+            "SIGTERM goes to all, ONE grace is waited across all of them, then the survivors get SIGKILL — never one grace each");
+        calls.Sent.Where(s => s.Signal == SigKill).Select(s => s.Fd).Should().BeEquivalentTo(pids);
+        run.NotRemoved.Should().HaveCount(3, "killed and still not ended within the wait is reported, never claimed");
+    }
+
+    [Fact]
+    public async Task A_cancellation_during_the_shared_grace_is_honoured_and_every_pin_is_closed()
+    {
+        Stat(10);
+        Stat(20);
+        using var cancel = new CancellationTokenSource();
+        var calls = new NeverEnding(_clock) { OnPoll = cancel.Cancel };
+
+        var act = () => Signals(calls).TerminateAllAsync([new ProcessIdentity(10, 4000), new ProcessIdentity(20, 4000)], TimeSpan.FromSeconds(10), cancel.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        calls.Closed.Should().BeEquivalentTo([10, 20]);
+        calls.Sent.Should().NotContain(s => s.Signal == SigKill, "a cancelled run escalates nothing");
     }
 }

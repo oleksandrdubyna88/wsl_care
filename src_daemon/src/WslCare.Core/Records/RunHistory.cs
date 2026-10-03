@@ -39,10 +39,11 @@ public static class RunHistory
         _ => throw new System.Diagnostics.UnreachableException("FileReadResult is a closed set"),
     };
 
-    /// <summary>Every line that parses, oldest first.</summary>
+    /// <summary>Every COMPLETE line that parses, oldest first — a trailing line without its newline is a write in progress and
+    /// is ignored, not counted (<see cref="LineFiles"/>, gate finding #6).</summary>
     public static HistoryRead Parse(string text)
     {
-        var lines = text.Split('\n').Where(l => l.Trim().Length > 0).ToList();
+        var lines = LineFiles.CompleteLines(text);
         var records = lines.SelectMany(ParseLine).ToList();
         return new HistoryRead(records, lines.Count - records.Count, string.Empty);
     }

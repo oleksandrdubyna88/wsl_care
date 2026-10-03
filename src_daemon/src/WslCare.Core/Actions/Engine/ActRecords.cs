@@ -87,8 +87,13 @@ public abstract record ActResult
     /// <summary>Another run holds the lock, or a LIVE run claims <c>running.json</c>: nothing was done.</summary>
     public sealed record Busy(string Reason) : ActResult;
 
-    /// <summary>A live run has stopped beating, or the running state cannot be told: nothing was done, nothing killed.</summary>
+    /// <summary>A live run has stopped beating, or its process cannot be inspected: nothing was done, nothing killed.</summary>
     public sealed record Wedged(string Reason) : ActResult;
+
+    /// <summary><c>running.json</c> could not be read or parsed, even after brief retries (gate finding #7): its OWN state —
+    /// not a wedged live process — named with the reason. Nothing was done, nothing killed; a person removes the file once
+    /// no run acts.</summary>
+    public sealed record StateUnreadable(string Reason) : ActResult;
 }
 
 /// <summary>
@@ -97,7 +102,7 @@ public abstract record ActResult
 /// </summary>
 /// <param name="Mode"><c>preview</c> or <c>run</c>.</param>
 /// <param name="Result"><c>previewed</c>, <c>recorded</c>, <c>failed</c> (the records could not be written), <c>busy</c>,
-/// <c>wedged</c>.</param>
+/// <c>wedged</c>, <c>stateUnreadable</c> (<c>running.json</c> cannot be read or parsed).</param>
 public sealed record ActReport(
     int SchemaVersion,
     string Mode,
@@ -118,6 +123,7 @@ public sealed record ActReport(
             d.DetailFile.Length == 0 ? null : d.DetailFile, d.Detail.DryRun, d.Detail.DryRunReason, d.Detail.TargetUser, d.Detail.Actions),
         ActResult.Busy b => new(Core.SchemaVersion.Current, "run", "busy", b.Reason, null, null, null, null, null, []),
         ActResult.Wedged w => new(Core.SchemaVersion.Current, "run", "wedged", w.Reason, null, null, null, null, null, []),
+        ActResult.StateUnreadable u => new(Core.SchemaVersion.Current, "run", "stateUnreadable", u.Reason, null, null, null, null, null, []),
         _ => throw new System.Diagnostics.UnreachableException("ActResult is a closed set"),
     };
 }

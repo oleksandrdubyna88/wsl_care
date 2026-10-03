@@ -174,12 +174,13 @@ public abstract record HomeOwner
     /// are that user's.</summary>
     public sealed record Target(TargetUser User, string Source) : HomeOwner;
 
-    /// <summary>Root, and the target user is ambiguous: whose configuration layer counts cannot be told, so the run is
-    /// observe-only (plan §15a #1's reasoning: a default must not re-enable an action a user switched off).</summary>
+    /// <summary>Root, and the target user is ambiguous: whose configuration layer counts cannot be told, so the run reads the
+    /// embedded defaults and the machine layer only — machine-scoped actions still run, and the engine's target-user gate
+    /// refuses every user-scoped one with the reason (plan §15c #2, gate finding #2).</summary>
     public sealed record Unknown(string Reason) : HomeOwner;
 
-    /// <summary>Why the user configuration layer cannot be used; empty when it can.</summary>
-    public string UserLayerProblem => this is Unknown u ? $"the user layer cannot be located: no single target user ({u.Reason}); the run is observe-only until /etc/wsl.conf names one under [user] default=" : string.Empty;
+    /// <summary>Why the user configuration layer is left out of this run; empty when it is read.</summary>
+    public string UserLayerSkipped => this is Unknown u ? $"the user layer is not read: no single target user ({u.Reason}); user-scoped actions refuse until /etc/wsl.conf names one under [user] default=" : string.Empty;
 }
 
 /// <summary>

@@ -1,6 +1,7 @@
 using WslCare.Core.Actions;
 using WslCare.Core.Actions.Engine;
 using WslCare.Core.Collectors;
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
@@ -36,6 +37,10 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
 
     /// <summary>Whose home the per-user paths follow (plan §15c #2): the target user's when root.</summary>
     public HomeOwner HomeOwner { get; init; } = new HomeOwner.ThisProcess("a host built by a test");
+
+    /// <summary>The configuration this host runs under: the three layers, or — root with an ambiguous target user — the
+    /// defaults and the machine layer only (gate finding #2: user-scoped actions refuse, machine-scoped ones still run).</summary>
+    public ConfigLoadResult LoadConfig() => ConfigLoader.Load(Paths, Files, HomeOwner.UserLayerSkipped);
 
     /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names. The runner is the
     /// product's ONE policy (<see cref="CommandPolicy.Product"/>: the never-list over the declared templates); inside the
