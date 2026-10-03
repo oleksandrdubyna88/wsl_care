@@ -144,6 +144,15 @@ internal sealed class InstallWorld : IDisposable
         Override(Download(ReleaseUrl(version, $"{name}.tar.gz.sha256"), sha));
     }
 
+    /// <summary>Publishes a release whose archive and <c>.sha256</c> were made elsewhere — by the release workflow's own
+    /// packaging script (E4.S2, <c>PackageFlows</c>) — served by the fake curl exactly as GitHub would serve them.</summary>
+    public void PublishFiles(string version, string rid, string archive, string sha256File)
+    {
+        var name = ReleaseName(version, rid);
+        Override(Download(ReleaseUrl(version, $"{name}.tar.gz"), archive));
+        Override(Download(ReleaseUrl(version, $"{name}.tar.gz.sha256"), sha256File));
+    }
+
     /// <summary>A curl answer: the file's bytes written where the script's <c>--output</c> says.</summary>
     public static FakeAnswer Download(string url, string file) =>
         new("curl", ["--url", url], 0, file, string.Empty) { Prefix = true, OutputFlag = "--output" };

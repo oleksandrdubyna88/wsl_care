@@ -1,0 +1,61 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "$note": [
+    "How a daemon release is decided (plan §9; E4.S2): release-please reads the conventional commits under src_daemon/",
+    "since the last daemon-v* tag and opens a pull request that bumps src_daemon/version.txt (the `simple` strategy's",
+    "version file — src_daemon/Directory.Build.props stamps every assembly from it) and writes src_daemon/CHANGELOG.md.",
+    "MERGING that pull request decides the release; the next run of release-please.yml cuts the tag daemon-v<version>",
+    "and a DRAFT release, and the tag starts release.yml.",
+    "",
+    "ROOM FOR THE EXTENSION (E5), not taken yet: its package joins `packages` as",
+    "  \"src_vs_code\": { \"component\": \"extension\", \"release-type\": \"node\", \"initial-version\": \"0.1.0\" }",
+    "with `\"src_vs_code\": \"0.0.0\"` in the manifest, release.yml gains an `extension-v*` leg and the tag ruleset its",
+    "pattern. It is not listed today because there is no src_vs_code/package.json for a node strategy to bump."
+  ],
+  "$bootstrap": [
+    "THE FIRST RELEASE IS 0.1.0 EXACTLY, from two settings that only work together. Read in release-please's own code as",
+    "bundled by release-please-action v5.0.0 (dist/index.js at 45996ed1), not recalled:",
+    "",
+    "1. The manifest says `\"src_daemon\": \"0.0.0\"`, the same as version.txt. Manifest.buildPullRequests backfills a",
+    "   'previous release' from the manifest only when the version there is NOT 0.0.0 (`toString() !== '0.0.0'`, with",
+    "   the log line 'No latest release found ... but a previous version (X) was specified in the manifest'). A manifest",
+    "   saying 0.1.0 would therefore be taken as ALREADY RELEASED and the first release would be 0.1.1 or 0.2.0 —",
+    "   0.1.0 would never exist. 0.0.0 is release-please's own spelling of 'never released', and it keeps the manifest",
+    "   and version.txt equal at every moment (ReleaseWorkflowTests holds them equal).",
+    "2. `initial-version` is 0.1.0. With no previous release BaseStrategy.buildNewVersion returns",
+    "   initialReleaseVersion(), which is `initial-version` when set and otherwise 1.0.0; the `simple` strategy does not",
+    "   override it. A `Release-As:` footer would still win over both — none may be used for the first release.",
+    "",
+    "After daemon-v0.1.0 the release pull request has written 0.1.0 into both files and `initial-version` is never read",
+    "again. Every daemon commit in history is in range for the first changelog (no bootstrap-sha), which is the point."
+  ],
+  "$draft": [
+    "DRAFT + FORCE-TAG-CREATION, the family's measured pair (dew_flow_creds_for_devs release-please-config.json).",
+    "release-please CREATES the GitHub release when it cuts the tag; release.yml must not let it be public until every",
+    "RID's archive is on it (plan §15e #2), so it is a draft. And GitHub creates no tag for a draft until it is",
+    "published, so without `force-tag-creation` there is no tag, release.yml (on `push: tags`) never runs, and the draft",
+    "stays empty forever. With it, release-please calls git.createRef for the tag first (read in its source), which is",
+    "the push release.yml starts on."
+  ],
+  "$exclude": [
+    "A COMMIT THAT TOUCHES NOTHING BUT `.github` IS NOT A RELEASE. An exclude path is a DIRECTORY PREFIX (`isRelevant`",
+    "is `file.indexOf(path + '/') === 0`), so only a directory belongs here; a commit touching `.github` AND src_daemon/",
+    "is still released. A commit touching only root build files (global.json, Directory.*.props) is outside the package",
+    "path and is not a daemon release either — ship it with the next daemon change."
+  ],
+  "exclude-paths": [
+    ".github"
+  ],
+  "draft": true,
+  "force-tag-creation": true,
+  "separate-pull-requests": true,
+  "include-component-in-tag": true,
+  "tag-separator": "-",
+  "packages": {
+    "src_daemon": {
+      "component": "daemon",
+      "release-type": "simple",
+      "initial-version": "0.1.0"
+    }
+  }
+}
