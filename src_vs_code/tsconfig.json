@@ -1,0 +1,30 @@
+{
+  // The family's strict set (dew_flow_vscode_kit's tsconfig.json, ConnectOtherAIs' src_vs_code), built IN PLACE into
+  // out/ — the TypeScript doctrine §4: tests resolve repository files (the goldens, the manifest, the bundle) relative to
+  // the build output, so a relocated build would fail in numbers for no real reason.
+  "compilerOptions": {
+    "module": "commonjs",
+    // ES2022 runs on the Node 18.15 that VS Code 1.85 (engines.vscode ^1.85.0) ships.
+    "target": "ES2022",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "src",
+    "outDir": "out",
+    // No DOM: the host code never touches a document (the webview of E5.S2 is a page script run in a harness).
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "sourceMap": false,
+    "strict": true,
+    // `tsc` EMITS despite errors unless this is set, so a failed compile would leave an out/ that `node --test` happily
+    // runs — numbers about code that did not build (TypeScript doctrine §4).
+    "noEmitOnError": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "skipLibCheck": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "out", "dist"]
+}
