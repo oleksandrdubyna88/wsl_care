@@ -48,6 +48,24 @@ public sealed class FakeToolFlows
     }
 
     [Fact]
+    public async Task An_answer_with_an_output_flag_writes_the_fixture_to_the_file_the_call_names_and_nothing_to_stdout()
+    {
+        using var home = new ScenarioHome("fake-output", ["docker"]);
+        const string fixture = "synthetic/harness-self-test.txt";
+        home.Answer(new FakeAnswer("docker", ["pull"], 0, ScenarioHome.Fixture(fixture), string.Empty) { Prefix = true, OutputFlag = "--output" });
+        var target = Path.Combine(home.WorkingDirectory, "downloaded.bin");
+
+        var written = await ChildProcess.RunAsync(InstalledFake(home, "docker"), ["pull", "--output", target], home.Environment, home.WorkingDirectory);
+        var flagLast = await ChildProcess.RunAsync(InstalledFake(home, "docker"), ["pull", "--output"], home.Environment, home.WorkingDirectory);
+
+        written.Exit.Should().Be(0);
+        written.Stdout.Should().BeEmpty("the bytes go to the file, not to stdout");
+        File.ReadAllBytes(target).Should().Equal(File.ReadAllBytes(ScenarioHome.Fixture(fixture)), "the fixture's bytes, unchanged");
+        flagLast.Exit.Should().Be(FakeToolProtocol.Unscripted, "a call that names no file after the flag is refused, loudly");
+        flagLast.Stderr.Should().Contain("the call has none");
+    }
+
+    [Fact]
     public async Task A_tool_the_scenario_did_not_fake_is_not_reachable_on_its_path()
     {
         // git is on every runner and on the owner's machine; inside a scenario it must not be.
