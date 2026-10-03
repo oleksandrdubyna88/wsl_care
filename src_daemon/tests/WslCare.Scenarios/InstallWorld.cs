@@ -49,7 +49,7 @@ internal sealed class InstallWorld : IDisposable
     /// <summary>The real tools linked onto the script's PATH: text and file tools only, acting on the temporary folder
     /// and the prefix.</summary>
     public static readonly IReadOnlyList<string> RealTools =
-        ["awk", "cat", "chmod", "cut", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "sort", "tar", "timeout", "tr", "wc"];
+        ["awk", "cat", "chmod", "cut", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "sort", "tail", "tar", "timeout", "tr", "wc"];
 
     private readonly TempRoot _root;
     private readonly List<FakeAnswer> _answers = [];
@@ -131,9 +131,20 @@ internal sealed class InstallWorld : IDisposable
         File.WriteAllText(path, content);
     }
 
+    /// <summary>A symbolic link at <paramref name="absolute"/> under the prefix, pointing at <paramref name="target"/>; its
+    /// folder made by the TempRoot (the shared test helper).</summary>
+    public void Link(string absolute, string target)
+    {
+        _root.Dir(Path.GetDirectoryName(Path.GetRelativePath(_root.Path, At(absolute)))!);
+        File.CreateSymbolicLink(At(absolute), target);
+    }
+
     public static string ReleaseName(string version, string rid) => $"wsl-care-{version}-{rid}";
 
     public static string ReleaseUrl(string version, string file) => $"https://github.com/{Repo}/releases/download/daemon-v{version}/{file}";
+
+    /// <summary>A fixture file of this world holding <paramref name="content"/>, for an answer to serve.</summary>
+    public string Answer(string name, string content) => _root.File($"answers/{name}", content);
 
     /// <summary>Puts <paramref name="answer"/> in FRONT of every answer scripted so far: the fake takes the first match.</summary>
     public InstallWorld Override(FakeAnswer answer)

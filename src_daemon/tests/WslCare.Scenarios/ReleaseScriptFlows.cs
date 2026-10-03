@@ -123,6 +123,33 @@ public sealed class ReleaseScriptFlows
         Directory.EnumerateFiles(dir).Should().HaveCount(ReleaseFiles.DaemonRids.Count * 2, "the positive: the fixture really is every RID's pair");
     }
 
+    /// <summary>A pull-request leg packs ONE RID (ci-daemon.yml, E4 review B2) and checks that set alone: named RIDs narrow
+    /// the expected set, and everything else in the folder is still refused.</summary>
+    [Fact]
+    public async Task Named_rids_narrow_the_check_to_their_own_pairs_and_anything_else_is_still_refused()
+    {
+        Linux();
+        using var root = new TempRoot("assets-one-rid");
+        var dir = await CompleteSetAsync(root, "0.1.0");
+        var keep = await ReleaseScripts.ArchiveNameAsync("0.1.0", "linux-arm64");
+        foreach (var file in Directory.EnumerateFiles(dir).Where(f => !Path.GetFileName(f).StartsWith(keep, StringComparison.Ordinal)))
+        {
+            File.Delete(file);
+        }
+
+        var one = await ReleaseScripts.RunAsync("verify-release-assets.sh", ["0.1.0", dir, "linux-arm64"], root.Path);
+        var all = await ReleaseScripts.RunAsync("verify-release-assets.sh", ["0.1.0", dir], root.Path);
+        var other = await ReleaseScripts.RunAsync("verify-release-assets.sh", ["0.1.0", dir, "win-x64"], root.Path);
+        var unknown = await ReleaseScripts.RunAsync("verify-release-assets.sh", ["0.1.0", dir, "osx-arm64"], root.Path);
+
+        one.Exit.Should().Be(0, $"linux-arm64's own pair is complete:\n{one.Stdout}{one.Stderr}");
+        all.Exit.Should().Be(1, "without RIDs every RID a release ships is expected");
+        other.Exit.Should().Be(1, other.Stdout);
+        other.Stdout.Should().Contain("win-x64: the archive").And.Contain($"an asset no daemon release ships: {keep}", "a pair of a RID not asked for is not part of this set");
+        unknown.Exit.Should().Be(2, "a RID no release ships is a usage error, not an empty set");
+        unknown.Stderr.Should().Contain("osx-arm64");
+    }
+
     [Fact]
     public async Task An_incomplete_or_wrong_set_is_refused_naming_every_problem()
     {

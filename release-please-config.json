@@ -37,15 +37,21 @@
     "stays empty forever. With it, release-please calls git.createRef for the tag first (read in its source), which is",
     "the push release.yml starts on."
   ],
-  "$exclude": [
-    "A COMMIT THAT TOUCHES NOTHING BUT `.github` IS NOT A RELEASE. An exclude path is a DIRECTORY PREFIX (`isRelevant`",
-    "is `file.indexOf(path + '/') === 0`), so only a directory belongs here; a commit touching `.github` AND src_daemon/",
-    "is still released. A commit touching only root build files (global.json, Directory.*.props) is outside the package",
-    "path and is not a daemon release either — ship it with the next daemon change."
+  "$scope": [
+    "WHAT IS A DAEMON RELEASE IS DECIDED BY THE PACKAGE PATH. release-please hands the package `src_daemon` only the commits",
+    "that touch a file under `src_daemon/` (its CommitSplit), so a commit touching only `.github/` or root build files",
+    "(global.json, Directory.*.props) is never a daemon release — ship such a change with the next daemon change. There is",
+    "deliberately NO `exclude-paths`: an exclude path outside every package path can never remove a commit the split already",
+    "kept out, so the key would be inert while reading as a guarantee (E4 review, 2026-10-03; ReleaseConfigTests holds",
+    "the package-path rule and the absence of the key)."
   ],
-  "exclude-paths": [
-    ".github"
+  "$versioning": [
+    "BEFORE 1.0.0: `bump-minor-pre-major` makes a breaking change (`feat!:`, a `BREAKING CHANGE:` footer) bump the MINOR,",
+    "not jump to 1.0.0 — release-please's default; `bump-patch-for-minor-pre-major` stays false, so a `feat:` is a minor",
+    "too (every epic ends in a minor release, plan §16) and a `fix:` a patch."
   ],
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
   "draft": true,
   "force-tag-creation": true,
   "separate-pull-requests": true,
