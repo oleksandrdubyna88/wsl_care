@@ -9,7 +9,7 @@
 # native, so the Windows binary is never handed an MSYS path. Run from the repository root (the captured procfs tree
 # and src_daemon/version.txt are read from there). Under bash on every runner, Git Bash on Windows.
 #
-# Five parts, each USING a capability rather than only starting the binary (.agents/conventions/common/testing.md,
+# Six parts, each USING a capability rather than only starting the binary (.agents/conventions/common/testing.md,
 # "Starting is not working"); every one runs under a sandbox WSL_CARE_ROOT, so the runner's real profile, state and
 # tools are never touched; nothing destructive runs — act is PREVIEW only:
 #   1. --help lists --help and --version; --version prints src_daemon/version.txt
@@ -17,6 +17,9 @@
 #   3. status --json: schemaVersion 1; on Linux over the captured procfs tree (its MemTotal), on Windows the host side
 #   4. the full run: collect --json records (one history line naming a run detail), status names that run, doctor answers
 #   5. act <every action --help names> --preview --json with root CLAIMED inside the sandbox; Windows refuses (exit 2)
+#   6. preview --all --json with NO docker reachable (PATH = an empty folder): exit 0, the JSON parses (Python's json —
+#      the runners all carry it), schemaVersion 1, every row `available: false` with its reason (never 0 GB), nothing
+#      written — plan §15e #5 named this part; the E4 review found it missing
 #
 # Output is captured rather than piped into `grep -q`, which can SIGPIPE the binary under pipefail; `tr -d '\r'`
 # because the Windows binary ends its lines with CRLF. A failure prints a GitHub `::error::` line and exits 1.
@@ -153,9 +156,47 @@ smoke_act_preview() {
   fi
 }
 
+# The Python that parses JSON here: python3, else python (a Windows runner's Git Bash may answer python3 with the
+# Store's alias, which does not run — so each candidate must import json).
+json_python() {
+  local candidate
+  for candidate in python3 python; do
+    if command -v "$candidate" > /dev/null 2>&1 && "$candidate" -c 'import json' > /dev/null 2>&1; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+smoke_preview_without_docker() {
+  local empty out code py rows
+  sandbox preview
+  py="$(json_python)" || fail "no python3 / python to parse preview --all --json with"
+  # A POSIX path from mktemp, so Git Bash spells it correctly in the Windows binary's PATH.
+  empty="$(mktemp -d)"
+  code=0
+  out="$(PATH="$empty" "$bin" preview --all --json | tr -d '\r')" || code=$?
+  rmdir "$empty"
+  [ "$code" -eq 0 ] || { printf '%s\n' "$out" | head -c 4000; fail "preview --all --json exited $code with no docker"; }
+  rows="$(printf '%s' "$out" | "$py" -c '
+import json, sys
+answer = json.load(sys.stdin)
+assert answer["schemaVersion"] == 1, "schemaVersion is %r" % answer["schemaVersion"]
+rows = answer["rows"]
+assert rows, "no rows"
+shown = [row["id"] for row in rows if row.get("available") is not False or not row.get("reason")]
+assert not shown, "rows shown as available, or without a reason, while docker is unreachable: %s" % shown
+print(len(rows))
+')" || { printf '%s\n' "$out" | head -c 4000; fail "preview --all --json did not parse as schemaVersion 1 with every row unavailable"; }
+  [ -z "$(find "$WSL_CARE_ROOT" -name 'history.jsonl' -o -name 'volume-seen.json' -o -name 'running.json')" ] || fail "a preview wrote state"
+  echo "smoke: preview --all --json without docker: $rows rows, each available: false with its reason, nothing written"
+}
+
 smoke_help_and_version
 smoke_config_round_trip
 smoke_status
 smoke_full_run
 smoke_act_preview
-echo "smoke-daemon.sh: the published $os binary $bin passed all five parts"
+smoke_preview_without_docker
+echo "smoke-daemon.sh: the published $os binary $bin passed all six parts"
