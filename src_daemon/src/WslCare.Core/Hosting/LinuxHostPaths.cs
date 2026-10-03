@@ -72,6 +72,18 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     /// <summary>The same layout with <paramref name="homes"/> protected as well (<see cref="LinuxEnvironment.ProtectedHomes"/>).</summary>
     public LinuxHostPaths WithProtectedHomes(IReadOnlyList<string> homes) => new(environment with { ProtectedHomes = homes });
 
+    /// <summary>The same layout for another account's home, as this process sees it (plan §15c #2, E3.S2: root working for the
+    /// target user): <see cref="Home"/>, the user configuration layer (<c>~/.config</c>, never root's <c>XDG_CONFIG_HOME</c>)
+    /// and the user's own state folder follow it; the machine paths do not move, and the previous home stays protected.</summary>
+    public LinuxHostPaths WithHome(string home) =>
+        new(environment with
+        {
+            Home = home,
+            ConfigHome = _rules.Join(home, ".config"),
+            StateHome = string.Empty,
+            ProtectedHomes = [.. environment.ProtectedHomes, environment.Home],
+        });
+
     public string MachineConfigFile => _rules.Join(environment.Etc, Product, "config.json");
 
     public string UserConfigFile => _rules.Join(environment.ConfigHome, Product, "config.json");

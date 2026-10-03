@@ -61,6 +61,30 @@ public sealed partial class ArchitectureTests
         Scan(File.ReadAllText(Metadata("WslCare.ProcessSeam"))).Should().Contain(h => h.Text.Contains("Process"));
     }
 
+    /// <summary>What signals a process in native code: the pidfd calls, <c>kill</c> / <c>tgkill</c> / <c>sigqueue</c>, a
+    /// <c>Process.Kill</c> of a pid the product did not start (E3.S2: A11 signals ONLY through <c>IProcessSignals</c>).</summary>
+    [GeneratedRegex(@"""(?:pidfd_send_signal|pidfd_open|kill|tgkill|tkill|sigqueue|killpg)""|\bProcess\s*\.\s*GetProcessById\s*\([^)]*\)\s*\.\s*Kill\b", RegexOptions.CultureInvariant)]
+    private static partial Regex SignalCall();
+
+    [Fact]
+    public void Only_the_signal_seam_signals_a_process()
+    {
+        var seam = Metadata("WslCare.SignalSeam");
+        var offenders = SourceFiles()
+            .Where(file => !string.Equals(file, seam, StringComparison.OrdinalIgnoreCase))
+            .SelectMany(file => SignalCall().Matches(File.ReadAllText(file)).Select(m => $"{file}:{LineOf(File.ReadAllText(file), m.Index)}: {m.Value}"))
+            .ToList();
+
+        offenders.Should().BeEmpty("A11 ends a process only by pid AND start time, through IProcessSignals (E3.S2)");
+    }
+
+    [Fact]
+    public void The_signal_scanner_still_finds_the_seams_own_calls_and_a_planted_one()
+    {
+        SignalCall().Matches(File.ReadAllText(Metadata("WslCare.SignalSeam"))).Select(m => m.Value).Should().Contain("\"pidfd_send_signal\"");
+        SignalCall().IsMatch("[LibraryImport(\"libc\", EntryPoint = \"kill\")]").Should().BeTrue();
+    }
+
     [Fact]
     public void The_scanner_ignores_words_that_merely_contain_the_names()
     {

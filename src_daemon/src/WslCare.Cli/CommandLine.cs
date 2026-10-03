@@ -41,9 +41,24 @@ internal abstract record Request
     /// <summary><c>events follow [--once]</c>: the container-start follower (plan §4.3); <c>--once</c> catches up and stops.</summary>
     internal sealed record EventsFollow(bool Once) : Request;
 
-    /// <summary><c>act &lt;A#&gt;[,&lt;A#&gt;…] (--preview or --confirm) [--json]</c> (plan §6): preview the actions, or run them —
-    /// a destructive run from the CLI needs <c>--confirm</c> (the button passes it after the person confirmed).</summary>
-    internal sealed record Act(IReadOnlyList<Core.Actions.ActionId> Ids, bool Confirm, bool Json) : Request;
+    /// <summary><c>act &lt;A#&gt;[,&lt;A#&gt;…] (--preview or --confirm) [--manual] [--volume &lt;name&gt;]... [--only &lt;file&gt;] [--json]</c>
+    /// (plan §6): preview the actions, or run them — a destructive run from the CLI needs <c>--confirm</c> (the button passes it
+    /// after the person confirmed). <c>--manual</c> is the panel's mark (the run's trigger is <c>manual</c>); <c>--volume</c> and
+    /// <c>--only</c> carry the volumes A4's preview SHOWED (E3.S2).</summary>
+    internal sealed record Act(IReadOnlyList<Core.Actions.ActionId> Ids, bool Confirm, bool Json) : Request
+    {
+        /// <summary>The panel's button started it: recorded as <c>manual</c>, not <c>cli</c>.</summary>
+        public bool Manual { get; init; }
+
+        /// <summary>Every <c>--volume</c> given, each already a 64-hex anonymous volume name.</summary>
+        public IReadOnlyList<string> Volumes { get; init; } = [];
+
+        /// <summary>The <c>--only</c> file (one 64-hex name per line), read by the verb; empty when not given.</summary>
+        public string OnlyFile { get; init; } = string.Empty;
+
+        /// <summary>Whether a shown list was passed at all.</summary>
+        public bool HasShownList => Volumes.Count > 0 || OnlyFile.Length > 0;
+    }
 }
 
 /// <summary>One thing the command line accepts: how it is spelt, what it does, how it is parsed.</summary>
@@ -82,6 +97,13 @@ internal static class CommandLine
     private const string OnceFlag = "--once";
     private const string PreviewFlag = "--preview";
     private const string ConfirmFlag = "--confirm";
+    private const string ManualFlag = "--manual";
+    private const string VolumeFlag = "--volume";
+    private const string OnlyFlag = "--only";
+
+    /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — far above the 387
+    /// volumes of 2026-10-02, low enough that a mistaken file cannot make a run of millions.</summary>
+    internal const int MaxShownVolumes = 10_000;
 
     internal static readonly IReadOnlyList<Command> Commands =
     [
@@ -95,7 +117,7 @@ internal static class CommandLine
         new([["collect"]], "collect [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise)", ["collect", "--json"], rest => JsonOnly("collect", rest, json => new Request.Collect(json))),
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
-        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded", ["act", "A10", "--preview", "--json"], ParseAct),
+        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual] [--volume <name>]... [--only <file>] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --volume / --only the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
     ];
 
     /// <summary>Every spelling of <see cref="Commands"/> with its command, longest first — ordered once,
@@ -227,22 +249,89 @@ internal static class CommandLine
             return new Request.Failed($"\"{BinaryName} act\": {Printable(refused.Reason)}.");
         }
 
-        var flags = rest.Skip(1).ToList();
         var ids = ((Core.Actions.ActionIdList.Parsed)Core.Actions.ActionId.Parse(rest[0])).Ids;
-        return ActFlags(flags) is { } failure ? failure : new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag));
+        return SplitActOptions(rest.Skip(1).ToList()) switch
+        {
+            (_, _, _, { } failure) => failure,
+            var (flags, volumes, only, _) when ActFlags(flags) is { } failure => failure,
+            var (_, volumes, only, _) when ShownListFailure(ids, volumes, only) is { } failure => failure,
+            var (flags, volumes, only, _) => new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag)) { Manual = flags.Contains(ManualFlag), Volumes = volumes, OnlyFile = only },
+        };
+    }
+
+    /// <summary>The flags, the <c>--volume</c> values and the <c>--only</c> file, apart — or the first refusal.</summary>
+    private static (List<string> Flags, List<string> Volumes, string Only, Request.Failed? Failure) SplitActOptions(IReadOnlyList<string> rest)
+    {
+        var (flags, volumes, only) = (new List<string>(), new List<string>(), string.Empty);
+        for (var i = 0; i < rest.Count; i++)
+        {
+            if (rest[i] is not (VolumeFlag or OnlyFlag))
+            {
+                flags.Add(rest[i]);
+                continue;
+            }
+
+            if (i + 1 >= rest.Count || rest[i + 1].StartsWith('-'))
+            {
+                return (flags, volumes, only, new Request.Failed($"\"{BinaryName} act\": {rest[i]} needs a value ({(rest[i] == VolumeFlag ? "a 64-hex anonymous volume name" : "a file of 64-hex names, one per line")})."));
+            }
+
+            if (rest[i] == OnlyFlag && only.Length > 0)
+            {
+                return (flags, volumes, only, new Request.Failed($"\"{BinaryName} act\" takes {OnlyFlag} once."));
+            }
+
+            (only, volumes) = rest[i] == OnlyFlag ? (rest[i + 1], volumes) : (only, [.. volumes, rest[i + 1]]);
+            i++;
+        }
+
+        return (flags, volumes, only, null);
     }
 
     private static Request.Failed? ActFlags(IReadOnlyList<string> flags)
     {
-        var unknown = flags.Where(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag)).ToList();
+        var unknown = flags.Where(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag)).ToList();
         if (unknown.Count > 0 || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count)
         {
-            return new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {JsonFlag}, each once; got \"{Printable(string.Join(' ', flags))}\".");
+            return new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name> and {OnlyFlag} <file>; got \"{Printable(string.Join(' ', flags))}\".");
         }
 
         return flags.Contains(PreviewFlag) == flags.Contains(ConfirmFlag)
             ? new Request.Failed($"\"{BinaryName} act\" needs exactly one of {PreviewFlag} (show what it would do) and {ConfirmFlag} (do it; the panel's button passes it after you confirmed).")
             : null;
+    }
+
+    /// <summary>A shown list belongs to A4 alone, and every <c>--volume</c> is an anonymous volume's 64-hex name.</summary>
+    private static Request.Failed? ShownListFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> volumes, string only)
+    {
+        if ((volumes.Count > 0 || only.Length > 0) && !ids.Any(id => id.Text == "A4"))
+        {
+            return new Request.Failed($"\"{BinaryName} act\": {VolumeFlag} and {OnlyFlag} name the volumes A4's preview showed; they need A4 among the actions.");
+        }
+
+        if (volumes.FirstOrDefault(v => !Core.Docker.DockerJson.IsFullId(v)) is { } bad)
+        {
+            return new Request.Failed($"\"{BinaryName} act\": {VolumeFlag} \"{Printable(bad)}\" is not an anonymous volume's name (64 lowercase hex digits).");
+        }
+
+        return volumes.Count > MaxShownVolumes
+            ? new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} volumes.")
+            : null;
+    }
+
+    /// <summary>The names of an <c>--only</c> file: one 64-hex name per non-empty line (a trailing CR tolerated), at most
+    /// <see cref="MaxShownVolumes"/> — or why not, naming the LINE, never echoing what is on it.</summary>
+    internal static (IReadOnlyList<string> Names, string Failure) ShownVolumesFile(string text)
+    {
+        var lines = text.Split('\n').Select(l => l.TrimEnd('\r').Trim()).ToList();
+        var bad = lines.Select((line, index) => (line, index)).FirstOrDefault(l => l.line.Length > 0 && !Core.Docker.DockerJson.IsFullId(l.line));
+        if (bad.line is { Length: > 0 })
+        {
+            return ([], $"line {bad.index + 1} of the {OnlyFlag} file is not an anonymous volume's name (64 lowercase hex digits)");
+        }
+
+        var names = lines.Where(l => l.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        return names.Count > MaxShownVolumes ? ([], $"the {OnlyFlag} file names more than {MaxShownVolumes} volumes") : (names, string.Empty);
     }
 
     private static Request ParsePreview(IReadOnlyList<string> rest) => rest switch

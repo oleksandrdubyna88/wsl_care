@@ -67,6 +67,21 @@ public abstract record FileSizeResult
     public sealed record Unreadable(string Reason) : FileSizeResult;
 }
 
+/// <summary>When a directory was last written (an entry created or removed in it) — how A14 tells the newest editor-server
+/// builds from the old ones (E3.S2) — or nothing there, or a directory that cannot be inspected.</summary>
+public abstract record DirectoryTimeResult
+{
+    private DirectoryTimeResult()
+    {
+    }
+
+    public sealed record Measured(DateTimeOffset ModifiedAt) : DirectoryTimeResult;
+
+    public sealed record Missing : DirectoryTimeResult;
+
+    public sealed record Unreadable(string Reason) : DirectoryTimeResult;
+}
+
 /// <summary>Whether this process may create files in a directory — answered by trying (plan §15b #3: privilege
 /// is the operating system's answer, not an id check of ours).</summary>
 public abstract record WriteAccess
@@ -151,6 +166,9 @@ public interface IFileSystem
 
     /// <summary>The length and last write of one file — a stat, never a read (a container log can be gigabytes).</summary>
     FileSizeResult FileSize(string path);
+
+    /// <summary>The last write of one directory, UTC — a stat, never a walk.</summary>
+    DirectoryTimeResult DirectoryLastWrite(string path);
 
     /// <summary>Full paths of the files directly in <paramref name="path"/> (no directories, no recursion);
     /// empty when it does not exist.</summary>

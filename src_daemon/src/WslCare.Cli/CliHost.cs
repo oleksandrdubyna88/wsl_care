@@ -30,14 +30,41 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// <summary>The actions this build holds.</summary>
     public ActionRegistry Actions { get; init; } = ActionRegistry.Product;
 
+    /// <summary>How A11 signals a process. Refuses unless <see cref="ForThisMachine"/> wires the real sender — which it does
+    /// only inside the distro and never under a sandbox, whose process table is a fixture (E3.S2).</summary>
+    public IProcessSignals Signals { get; init; } = RefusingProcessSignals.NotWired;
+
+    /// <summary>Whose home the per-user paths follow (plan §15c #2): the target user's when root.</summary>
+    public HomeOwner HomeOwner { get; init; } = new HomeOwner.ThisProcess("a host built by a test");
+
     /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names. The runner is the
     /// product's ONE policy (<see cref="CommandPolicy.Product"/>: the never-list over the declared templates); inside the
-    /// distro every login account's home is protected besides <c>$HOME</c> (plan §15c #2).</summary>
+    /// distro, as root, the per-user paths are the TARGET user's (E3.S2), and every login account's home is protected besides
+    /// it (plan §15c #2).</summary>
     public static CliHost ForThisMachine()
     {
-        var paths = WithLoginHomesProtected(HostPaths.ForThisMachine());
-        return new CliHost(paths, new PhysicalFileSystem(paths), TimeProvider.System, new ProcessCommandRunner(CommandPolicy.Product));
+        var privilege = ProcessPrivilege.OfThisProcess();
+        var (owned, owner) = HostPaths.ForThisMachine() switch
+        {
+            LinuxHostPaths linux => TargetHome.Resolve(linux, new PhysicalFileSystem(linux), privilege.IsRoot),
+            var other => (other, (HomeOwner)new HomeOwner.ThisProcess("the Windows binary")),
+        };
+        var paths = WithLoginHomesProtected(owned);
+        var files = new PhysicalFileSystem(paths);
+        return new CliHost(paths, files, TimeProvider.System, new ProcessCommandRunner(CommandPolicy.Product))
+        {
+            Privilege = privilege,
+            HomeOwner = owner,
+            Signals = SignalsFor(paths, files),
+        };
     }
+
+    /// <summary>The real signal sender inside the distro; a refusing one under a sandbox (a fixture's pids are not this
+    /// machine's) and on Windows.</summary>
+    private static IProcessSignals SignalsFor(IHostPaths paths, IFileSystem files) =>
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(HostPaths.SandboxRootVariable)) ? RefusingProcessSignals.Sandboxed
+        : paths is LinuxHostPaths linux && OperatingSystem.IsLinux() ? new PidfdProcessSignals(files, linux.ProcRoot)
+        : new RefusingProcessSignals("the Windows binary signals no process (A11 is the distro's)");
 
     private static IHostPaths WithLoginHomesProtected(IHostPaths paths) =>
         paths is LinuxHostPaths linux ? linux.WithProtectedHomes(TargetUserDiscovery.ProtectedHomes(new PhysicalFileSystem(linux), linux)) : paths;

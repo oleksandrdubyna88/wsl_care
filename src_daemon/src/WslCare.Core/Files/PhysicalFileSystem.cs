@@ -108,6 +108,19 @@ public sealed class PhysicalFileSystem : IFileSystem
         }
     }
 
+    public DirectoryTimeResult DirectoryLastWrite(string path)
+    {
+        try
+        {
+            var info = new DirectoryInfo(path);
+            return info.Exists ? new DirectoryTimeResult.Measured(new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) : new DirectoryTimeResult.Missing();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return new DirectoryTimeResult.Unreadable(e.Message);
+        }
+    }
+
     public IReadOnlyList<string> ListFiles(string path) =>
         Directory.Exists(path) ? Directory.GetFiles(path) : [];
 

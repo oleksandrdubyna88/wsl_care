@@ -27,13 +27,16 @@ internal sealed class ScriptedAction(string id, List<string> journal) : ICleanup
 
     public string Refusal { get; init; } = string.Empty;
 
+    /// <summary>What the preview says to skip on (a tool not installed); empty by default.</summary>
+    public string Skip { get; init; } = string.Empty;
+
     /// <summary>What the run does; by default it succeeds having removed one object of <see cref="PreviewBytes"/>.</summary>
     public Func<ActionContext, Task<ActionRun>> OnRun { get; init; } = _ => Task.FromResult(new ActionRun(1, 100, "scripted", 200, 100, [], [], string.Empty));
 
     public Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
         journal.Add($"preview {id}");
-        return Task.FromResult(new ActionPreview($"scripted {id}", true, null, 1, PreviewBytes, "scripted", new Dictionary<string, long>(), Refusal, []));
+        return Task.FromResult(new ActionPreview($"scripted {id}", true, null, 1, PreviewBytes, "scripted", new Dictionary<string, long>(), Refusal, []) { Skip = Skip });
     }
 
     public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config) => new(Fires, Fires ? "scripted: fired" : "scripted: below its trigger");
