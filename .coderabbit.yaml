@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit for wsl_care (E4.S2), mirroring the family credential-store repository's file (plan §9: `language:
+# ru-RU`, `profile: chill`). wsl_care keeps one developer workstation from degrading: a C# Native AOT daemon/CLI run by
+# a root systemd timer inside WSL (src_daemon/), installed by `curl … | sudo sh` (install.sh), released with
+# build-provenance attestations (release.yml); a VS Code extension follows (src_vs_code/, E5). The repository is public.
+# The family's shared rules are a git submodule the reviewer may not see, so the ones that matter are restated per path.
+#
+# The CodeRabbit GitHub App must be installed for THIS repository before any of this is read — an owner step
+# (docs/repo-settings.md, step 7). Below ten stars the free plan waits for a "@coderabbitai review" comment, which
+# .github/workflows/coderabbit-review.yml posts when a pull request opens.
+language: "ru-RU"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+  path_filters:
+    - "!**/bin/**"
+    - "!**/obj/**"
+    - "!artifacts/**"
+    - "!**/TestResults/**"
+    - "!src_daemon/tests/fixtures/**"
+  path_instructions:
+    - path: "src_daemon/src/**/*.cs"
+      instructions: |
+        The daemon changes a person's machine as root. Every cleanup has a preview, a measured result, a run record
+        and a switch; every argv passes the one CommandPolicy (never-list, then deny by default against declared
+        templates); every delete or move passes IFileSystem's DeletionPolicy. Flag a Process.Start, File.Delete,
+        File.Move, Directory.Delete or Directory.Move outside those seams, a shell string, a wait without a ceiling,
+        a child process not killed with its tree on timeout, anything deleted under ~/git or an AI agent's folder.
+        Native AOT: no reflection-based JSON (source-generated contexts only). C#: records for data, no null in
+        business logic, primary constructors, cyclomatic complexity of a method at most 4.
+    - path: "src_daemon/tests/**/*.cs"
+      instructions: |
+        xUnit v3 on Microsoft Testing Platform, run as an executable — never `dotnet test`. A bug fix adds a test that
+        reproduces the defect first. A fixture must pass the product's real validator; a list the code holds is
+        derived, never retyped in a test.
+    - path: "install.sh"
+      instructions: |
+        Piped into `sudo sh` as root: POSIX sh, `set -eu`, no `eval`, every value checked against a whole-string
+        pattern, every wait bounded. The .sha256 is required (integrity); the attestation is verified with
+        --signer-workflow .github/workflows/release.yml (authenticity). Flag anything written before both checks pass.
+    - path: ".github/workflows/*.yml"
+      instructions: |
+        Tests run as executables (xUnit v3 / MTP): a step running `dotnet test` is a defect. Every `uses:` is pinned to
+        a commit SHA with its version in a comment. Permissions are job-level and minimal: in release.yml only the
+        per-RID build job holds `id-token: write` + `attestations: write` and only the publish job holds
+        `contents: write`. A `pull_request` trigger with a paths filter makes a required check skippable — flag it. A
+        `${{ }}` expression inside a `run:` is script injection — values go through `env:`.
+    - path: ".github/scripts/**"
+      instructions: |
+        Release scripts, run by release.yml and spawned by the scenario tests (PackageFlows, ReleaseScriptFlows).
+        bash with `set -euo pipefail`; a check that refuses must exit non-zero.
+    - path: "**/*.md"
+      instructions: |
+        todo/ holds plans not yet done; research/ documents the system as it is; a plan carries a status line on
+        line 2-3. POST_DEPLOY.md is at most twelve items. Do not flag the narrative style; do flag a doc that
+        contradicts the code in the same PR.
+  tools:
+    gitleaks:
+      enabled: true
+    actionlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: false
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  opt_out: false
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - ".agents/PROJECT.md"

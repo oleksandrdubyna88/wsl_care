@@ -15,7 +15,9 @@
 > target user's home for every per-user path), and from E3.S3 A1, A2, A3, A15, A16, the timer's action pass inside `collect`
 > and the read-only `logs` / `runs` verbs — then hardened on 2026-10-03 by the epic's review round (section *E3 review
 > fixes* below) — and from E4.S1 the installer `install.sh` with the three systemd units and the machine configuration
-> layer it installs (section *The installer and the units*). `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+> layer it installs (section *The installer and the units*), and from E4.S2 the release pipeline — release-please, the
+> per-RID `release.yml` with build-provenance attestations, the shared smoke / package / guard / verify scripts, and the
+> owner-applied rulesets, Sonar and CodeRabbit settings (section *The release pipeline*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
 > `events follow`, `act`, `logs` and `runs`, and refuses everything else; there is no extension yet. This file describes
 > what exists and is rewritten as each part lands.
 
@@ -70,7 +72,12 @@
   `src_daemon/config/machine.json` (the empty machine layer) — what a release archive carries (section *The installer
   and the units*).
 - **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `family-checks.yml`, `pr-title.yml`,
-  `dependabot.yml` (below).
+  `dependabot.yml` (below); since E4.S2 the release pipeline: `release-please.yml`, `release.yml`, the scripts both
+  CI and the release run (`scripts/smoke-daemon.sh`, `package-daemon.sh`, `release-guard.sh`, `verify-release-assets.sh`,
+  `lib/daemon-assets.sh`), `sonarcloud.yml` + `sonar.properties`, `coderabbit-review.yml`, and the owner-applied ruleset
+  bodies `rulesets/tags-daemon.json` and `rulesets/branch-main.json` — with `release-please-config.json`,
+  `.release-please-manifest.json` and `.coderabbit.yaml` at the root and the owner's commands in `docs/repo-settings.md`
+  (section *The release pipeline*).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
 - Plans: the daemon and extension (`todo/PLAN_wsl_care_daemon.md`), the Windows side
   (`todo/PLAN_windows_care.md`), the AI-session archive (`todo/PLAN_ai_session_archive.md`), the shared
@@ -1289,6 +1296,109 @@ tools. The fake gained one answer option for it, `OutputFlag` (write the fixture
 The released binary is a stub that logs the path it was started as and hands its argv to a fake `wsl-care`, so the
 absolute-path rule is observed, not assumed. [module_tests.md](module_tests.md) lists every flow and its red run.
 
+## The release pipeline (E4.S2)
+
+A daemon release is the tag `daemon-v<version>` plus a GitHub release holding, per RID, an archive, its `.sha256`, and a
+build-provenance attestation of the archive signed by `.github/workflows/release.yml` — the three things `install.sh`
+checks. Nothing has been released yet: the first cut, `daemon-v0.1.0`, is the owner's step after the settings of
+`docs/repo-settings.md` (the App, its secrets, the two rulesets) are in place.
+
+```mermaid
+sequenceDiagram
+    actor Owner
+    participant RP as release-please.yml<br/>(App token, contents: read)
+    participant GH as GitHub
+    participant Rel as release.yml
+    Owner->>RP: dispatch
+    RP->>GH: release PR — src_daemon/version.txt, manifest, src_daemon/CHANGELOG.md
+    Owner->>GH: squash-merge the release PR
+    Owner->>RP: dispatch again
+    RP->>GH: git.createRef refs/tags/daemon-vX (force-tag-creation)
+    RP->>GH: create the release as a DRAFT
+    GH-->>Rel: push of tag daemon-vX (an App-token ref is an ordinary push)
+    Rel->>Rel: guard — tag shape, version.txt at the tag, commit on main
+    Rel->>Rel: build × 3 RIDs — tests, AOT publish, smoke, package, attest, artifact
+    Rel->>GH: publish job — draft? then verify the built set, upload, verify FROM the draft
+    Rel->>GH: gh release edit --draft=false (the last step)
+```
+
+```mermaid
+flowchart TD
+    tag["push: tags daemon-v* — the only trigger<br/>(no pull_request, no workflow_dispatch)"]
+    guard["guard · ubuntu-24.04 · contents: read<br/>release-guard.sh: daemon-v + install.sh's version pattern<br/>= src_daemon/version.txt · ancestor of origin/main"]
+    subgraph legs["build · one leg per RID · contents: read + id-token: write + attestations: write"]
+        l1["linux-x64 · ubuntu-24.04"]
+        l2["linux-arm64 · ubuntu-24.04-arm"]
+        l3["win-x64 · windows-latest"]
+    end
+    steps["restore + Release build → Core, CLI, Scenarios test executables<br/>→ dotnet publish -r RID (AOT) → smoke-daemon.sh (the SAME script ci-daemon.yml runs)<br/>→ package-daemon.sh → archive + .sha256 → attest-build-provenance(archive)<br/>→ upload-artifact daemon-RID (1 day)"]
+    pub["publish · ubuntu-24.04 · contents: write (the only write in the file)<br/>needs guard + build, no if:"]
+    d{"release is a draft?"}
+    v1{"verify-release-assets.sh<br/>over the built set"}
+    up["gh release upload --clobber"]
+    v2{"verify-release-assets.sh<br/>over gh release download"}
+    live["gh release edit --draft=false"]
+    stop["red run, the release stays an invisible draft<br/>fix forward; never move or delete the tag"]
+
+    tag --> guard --> legs
+    l1 --> steps
+    l2 --> steps
+    l3 --> steps
+    steps --> pub --> d
+    d -- no --> stop
+    d -- yes --> v1
+    v1 -- incomplete --> stop
+    v1 -- "every RID, matching .sha256, nothing else" --> up --> v2
+    v2 -- incomplete --> stop
+    v2 -- complete --> live
+```
+
+**Why the tag push is the trigger.** With `draft: true` + `force-tag-creation: true` release-please (holding the App's
+token) creates the tag ref through `git.createRef` before it creates the draft release — read in its bundled source
+(`release-please-action` v5.0.0, `dist/index.js`). That ref creation is an ordinary tag push, so `push: tags` fires —
+the event the family's `bugs-v0.3.0` ran on. `release: published` never fires for a draft, and the draft is the point
+(nothing public until every RID's asset is on it, plan §15e #2); `workflow_dispatch` carries no tag and is not what
+`install.sh`'s `--signer-workflow` trusts. A failed run is re-run, which replays the tag event.
+
+**Permissions** (plan §15e #0): workflow level `contents: read`; the build job alone holds `id-token: write` +
+`attestations: write` (it signs) and nothing that writes the repository, so it hands its archive to the run as an
+artifact instead of to the draft; the publish job alone holds `contents: write`. `release-please.yml`'s job holds only
+`contents: read` — every write there is the App token's.
+
+**The scripts** (`.github/scripts/`, bash): `lib/daemon-assets.sh` is the asset contract in one place — the RIDs
+(`DAEMON_RIDS`), the version pattern (equal to `install.sh`'s `VERSION_PATTERN`) and `daemon_archive_name` (tarball for
+Linux, zip for Windows, an unknown RID refused rather than mapped). `package-daemon.sh` packs one archive with exactly the
+E4.S1 layout (`wsl-care-$V-$RID/` with `wsl-care` 0755, every file of `src_daemon/systemd/` and `config/machine.json`
+0644, folders, owner 0:0, sorted names, `gzip -n`; Windows: the exe alone, zipped with 7-Zip) and writes the `.sha256`
+line itself (`<hash>  <name>`, so Git Bash's binary-mode `*` can never reach it). `release-guard.sh` and
+`verify-release-assets.sh` are the two refusals the pipeline rests on. `smoke-daemon.sh` is ci-daemon.yml's former five
+smoke steps, now one script both workflows call (plan §15e #5). Every one is shellchecked by `ci · workflows` and run by
+the scenario suite (`PackageFlows`, `ReleaseScriptFlows`), so a broken release step is red on a pull request.
+
+**The first version** is 0.1.0 exactly: the manifest says `"src_daemon": "0.0.0"` (release-please backfills a "previous
+release" from the manifest only when it is not 0.0.0) and the package sets `initial-version: 0.1.0` (what
+`buildNewVersion` returns with no previous release; the `simple` strategy does not override it). After the first release
+both files say 0.1.0 and `initial-version` is never read again.
+
+**Owner-applied settings, as files** (GitHub reads none of them; `docs/repo-settings.md` applies them, each with a probe
+that must be refused): `.github/rulesets/tags-daemon.json` (target tag, `refs/tags/daemon-v*`, creation + update +
+deletion, bypass = the release App alone) and `.github/rulesets/branch-main.json` (the default branch: no deletion, no
+force push, linear history, pull requests with resolved conversations, squash or rebase, the six check names a pull
+request reports — pinned to the GitHub Actions app, id 15368 — strict, no bypass). Sonar: `sonarcloud.yml` passes every
+`key=value` of `.github/sonar.properties` to `dotnet-sonarscanner begin` (pinned 11.3.0, with `dotnet-coverage`
+18.11.2 over the three test executables) and skips with a warning when `SONAR_TOKEN` is absent; the settings file is
+deliberately NOT a `sonar-project.properties` — the .NET scanner 11.3.0 fails its `end` step when one sits in the folder
+`begin` ran in (`SonarProjectPropertiesValidator`, read in its source). CodeRabbit: `.coderabbit.yaml` (ru-RU, chill,
+per-path instructions) and `coderabbit-review.yml` (asks for the review once; the App's installation is the owner's).
+
+**Kept equal by tests** (`ReleaseWorkflowTests`, `ReleaseConfigTests`, every OS — the workflows read with a small YAML
+subset reader that refuses what it does not understand): the trigger, the permissions per job across every workflow,
+`publish` needing `guard` + `build` with no `if:`, the release matrix = `DAEMON_RIDS` = ci-daemon.yml's matrix (same
+runner per RID) with Linux on `ubuntu-24.04*`, both workflows calling `smoke-daemon.sh` with no inline copy, the stage
+order inside a leg, the publish order, every `uses:` pinned to a 40-hex commit with its version, a ceiling on every job,
+`persist-credentials: false` on every checkout, no `${{ }}` inside a `run:`, the release-please tag = the release
+trigger = the tag ruleset's pattern, manifest = `version.txt`, and the required checks = the jobs a pull request runs.
+
 ## Fail-closed resolution and the atomic write
 
 Hardened on 2026-10-02 from the review of the E1 pull request.
@@ -1376,7 +1486,20 @@ flowchart LR
         ciW["ci-workflows.yml<br/>actionlint + shellcheck · shellcheck install.sh"]
         ciF["family-checks.yml<br/>plans · pin · adapter · build flags"]
         prT["pr-title.yml"]
+        rp["release-please.yml<br/>App token · proposes, cuts daemon-v* + draft"]
+        rel["release.yml<br/>daemon-v* tag · guard · 3 RID legs · publish"]
+        son["sonarcloud.yml<br/>skips loudly without SONAR_TOKEN"]
+        cr["coderabbit-review.yml"]
     end
+
+    subgraph scripts[".github/scripts (E4.S2)"]
+        smoke["smoke-daemon.sh"]
+        pack["package-daemon.sh"]
+        guardS["release-guard.sh · verify-release-assets.sh"]
+        contract["lib/daemon-assets.sh<br/>RIDs · version pattern · archive names"]
+    end
+
+    rules[".github/rulesets/*.json<br/>owner-applied (docs/repo-settings.md)"]
 
     conv[".agents/conventions<br/>submodule, tools/*.mjs"]
 
@@ -1416,6 +1539,19 @@ flowchart LR
     scn -->|"InstallFlows: runs under /bin/sh over a prefix"| inst
     ciW -->|shellcheck| inst
     ciD -->|"systemd-analyze verify"| unitsF
+    ciD -->|"smoke the published binary"| smoke
+    rel -->|"the same smoke"| smoke
+    rel --> pack
+    rel --> guardS
+    pack --> contract
+    guardS --> contract
+    pack -->|"packs"| unitsF
+    pack -->|"packs"| machine
+    rp -->|"tag push starts"| rel
+    scn -->|"PackageFlows · ReleaseScriptFlows: run under bash"| pack
+    scn -->|"ReleaseWorkflowTests · ReleaseConfigTests: read"| rel
+    scn -->|"ReleaseConfigTests: read"| rules
+    ciW -->|shellcheck| scripts
 ```
 
 ## The seams inside the binary
@@ -1524,12 +1660,14 @@ them. What it covers and what it does not prove: [module_tests.md](module_tests.
 
 On every push to `main`, every pull request to `main`, and by hand; unconditional (no path filter),
 `concurrency` with cancel-in-progress, `permissions: contents: read`, `timeout-minutes: 30`, every
-`uses:` pinned by SHA. Matrix `ubuntu-latest` (`linux-x64`), `ubuntu-24.04-arm` (`linux-arm64`) and
+`uses:` pinned by SHA. Matrix `ubuntu-24.04` (`linux-x64`; `ubuntu-latest` until E4.S2 — pinned by name since, because
+the release builds on it and the Linux binaries link its glibc 2.39, plan §15 #15), `ubuntu-24.04-arm` (`linux-arm64`) and
 `windows-latest` (`win-x64`) — every shipped binary-and-platform pair, per the family platform rule,
-mapped in the workflow header — each: restore → `dotnet format --verify-no-changes` → Release build →
+mapped in the workflow header, and the same runner per RID as `release.yml` — each: restore → `dotnet format --verify-no-changes` → Release build →
 the three test executables (Core, CLI, Scenarios — since E4.S1 the Scenarios run `install.sh` end to end on the two
 Linux legs) → on Linux, `systemd-analyze verify` of the three units, failing on ANY output because it exits 0 on an
-unknown key → Native AOT `dotnet publish -r <rid>` → the
+unknown key → Native AOT `dotnet publish -r <rid>` → `.github/scripts/smoke-daemon.sh` (since E4.S2 ONE script, which
+`release.yml` runs too, plan §15e #5): the
 published binary must list `--help`/`--version` and print the version in `src_daemon/version.txt` →
 the configuration round trip under a temporary `WSL_CARE_ROOT` (set, read back from the user layer,
 a refused set exits 2 with one `wsl-care:` line, the value still holds) → `status --json` under a sandbox root (on Linux holding the captured procfs tree, whose `MemTotal` must come back; on Windows the host side) → the full run: `collect --json` must record (one history line naming a run detail under `runs/`), `status --json` must name that run, `doctor --json` must answer → `act <every action --help names> --preview --json` under a sandbox root with root CLAIMED there (E3.S2: preview only, never destructive — exit 0, `previewed`, every id answered, no state written; the Windows binary exits 2 naming the side). Every MSBuild command carries
@@ -1546,7 +1684,7 @@ tests. Mirrors the credential-store repository's `docs · plans` workflow.
 
 `ci-workflows.yml` runs a version- and checksum-pinned actionlint over every workflow after asserting
 shellcheck is on `PATH` (without it actionlint silently skips the `run:` blocks), then shellcheck v0.11.0 — the image
-pinned by digest — over `install.sh` (E4.S1). `pr-title.yml` requires
+pinned by digest, `-x` to follow a sourced file — over `install.sh` (E4.S1) and `.github/scripts/` (E4.S2). `pr-title.yml` requires
 a conventional-commit pull request title. `dependabot.yml` watches NuGet and GitHub Actions weekly,
 FluentAssertions held below 8.x.
 
@@ -1557,7 +1695,8 @@ FluentAssertions held below 8.x.
 | daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
-| installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is E4's done-line; the release that packs them is E4.S2 |
+| installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is E4's done-line |
+| release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5) |
 
 ## Cross-repository
@@ -1566,3 +1705,5 @@ FluentAssertions held below 8.x.
 |---|---|
 | `dew_flow_vscode_kit` | the extension's help page and display controls come from its npm package |
 | `dew_flow_creds_for_devs` | the model for this repository's build files, CI/CD, the logging sinks (`AnsiConsoleSink`, `DailyRunFileSink`, `LogRetention` are ports) and `install.sh` (its structure: POSIX sh, the newest tag of ONE component through the releases API, the `.sha256` check, a trap-cleaned temporary folder — `dew_flow_creds_for_devs · install.sh`; wsl_care's REQUIRES the `.sha256` where the model warns without one, adds the attestation, and never calls sudo) |
+| `dew_flow_creds_for_devs` (release) | the model for E4.S2: `release-please-config.json` (`draft` + `force-tag-creation`, `separate-pull-requests`, `exclude-paths: [".github"]`, `simple` + `version.txt`), the App-token `release-please.yml`, the per-RID AOT release legs, ONE publish job that asserts every RID from the release and flips the draft last, the tag ruleset with the App as the only bypass, `sonarcloud.yml`, `.coderabbit.yaml` / `coderabbit-review.yml`. wsl_care differs: the build job cannot write the repository (it uploads a run artifact, the publish job uploads), every archive is attested, the `.sha256` is checked again FROM the draft, the smoke and the packing are scripts the scenario suite runs, and `main` is protected by a ruleset rather than classic branch protection |
+| `dew_flow_vscode_kit` (release) | its `release-please.yml` (the loud missing-secret refusal, `contents: read` with every write the App token's) and its first-version bootstrap reasoning, applied here as manifest `0.0.0` + `initial-version: 0.1.0` |
