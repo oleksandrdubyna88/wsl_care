@@ -821,7 +821,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | the published binary's smoke (`smoke-daemon.sh`: help/version, config round trip, `status`, a recorded full run read back with `doctor`, `act --preview` of every action, `preview --all --json` with no docker) | covered by CI, not by the suite | `ci · daemon` runs it on every pull request on all three RIDs; `release.yml` runs the same file on every leg; run by hand on 2026-10-03 against the JIT builds (Linux in WSL, Windows in Git Bash), red with a planted `version.txt`, and part 6 red in WSL with the `PATH` emptying removed (the live Docker answered: `rows shown as available … ['A4', 'A5', 'A5Testcontainers', 'A6', 'A6Unused', 'A7']`) |
 | the release archive packed on EVERY pull-request leg from the published AOT binary, its pair checked, its path opened outside bash | covered by CI | `ci · daemon`, steps *Package the archive* and *The archive path opens outside bash*; their presence on every leg and their order: `ReleaseWorkflowTests.Every_pull_request_leg_packs_the_archive_as_the_release_does_and_opens_its_path_outside_bash` |
 | the release run itself — the App token's tag starting `release.yml`, the attestation, the upload to the draft, the publish | not covered | needs the owner's settings (`docs/repo-settings.md`) and the cut of `daemon-v0.1.0`; verified after it by `POST_DEPLOY.md` items 8–10 |
-| `install.sh` against a real release, a real `gh attestation verify`, real systemd and apt | not covered | the first live install on the owner's machine is E4's done-line, after the owner cuts `daemon-v0.1.0` (`docs/repo-settings.md`) |
+| `install.sh` against a real release, a real `gh attestation verify`, real systemd and apt | not covered | the first live install on the owner's machine is the E4 live gate (plan §16), after the owner cuts `daemon-v0.1.0` (`docs/repo-settings.md`) |
 | the extension: status bar, panel, buttons, logs page, settings sync, help | not covered | the extension is not built yet (E5–E8) |
 
 ## What it does not prove
@@ -829,7 +829,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 - **The installer is proved over a prefix and fakes, never against this machine.** systemd, apt, gh, curl and the
   release are fakes; "root" is a fake `id`. What the real tools DO with the argv the script sends — `systemctl enable
   --now`, apt's install, sysstat's postinst honouring the debconf switch, curl's `--proto =https` — is theirs, and is
-  first observed at the live install (E4's done-line). The flows assert the argv sent and the files written, and say
+  first observed at the live install (the E4 live gate, plan §16). The flows assert the argv sent and the files written, and say
   so. The real `/bin/sh`, `tar`, `sha256sum`, `install`, `ln`, `od`, `awk` (mawk and gawk) and `sed` ARE exercised.
   **gh is the one fake that judges**: it enforces the identity flags with gh's semantics as MEASURED on 2026-10-03 —
   with the real gh 2.97.0 and cli/cli's own attestation, in WSL `Ubuntu`, no login: `--cert-identity` exact,
