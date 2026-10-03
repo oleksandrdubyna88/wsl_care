@@ -1,8 +1,10 @@
 # Post-deploy checks — wsl_care
 
-Target: the owner's own installation (WSL `Ubuntu` + the Windows host + the VS Code extension).
-Last verified: never, as of 2026-10-03 — nothing released yet (`install.sh` exists since E4.S1; its first live run is
-E4's done-line).
+Target: the owner's own installation (WSL `Ubuntu` + the Windows host + the VS Code extension), and — items 8–10, since
+E4.S2 — the published `daemon-v*` release; `$TARGET` is the release VERSION (`0.1.0`) for those three, run from the
+repository root.
+Last verified: never, as of 2026-10-03 — nothing released yet (`install.sh` exists since E4.S1, the release pipeline since
+E4.S2; the first release and its live install are E4's done-line).
 
 | # | What a person loses if this is broken | Check | Auto |
 |---|---|---|---|
@@ -13,3 +15,6 @@ E4's done-line).
 | 5 | The timer runs but records nothing (the state directory is not root's, a full run fails to write), sysstat or atop stopped collecting, or the configuration fell to observe-only — while every unit looks active | `wsl.exe -d Ubuntu -u root -- /opt/wsl-care/bin/wsl-care doctor --json` prints `"healthy": true` — every check, `lastRun` and `eventsFollower` included; the verdict `install.sh` itself waits for (plan §15a #3) | auto |
 | 6 | The container-start follower is down, so the 24 h container count goes silent and every count reads partial | `wsl.exe -d Ubuntu -- systemctl is-active wsl-care-events.service` | auto |
 | 7 | The installed timer unit is not the released one (stale or hand-edited): the timer runs a `collect` without `--timer`, which never acts | `wsl.exe -d Ubuntu -- systemctl cat wsl-care.service` shows `ExecStart=/opt/wsl-care/bin/wsl-care collect --timer` | auto |
+| 8 | A user of one platform finds no archive, or a corrupted one, on the newest daemon release | `rm -rf "/tmp/wsl-care-release-$TARGET" && gh release download "daemon-v$TARGET" -R oleksandrdubyna88/wsl_care --dir "/tmp/wsl-care-release-$TARGET" && bash .github/scripts/verify-release-assets.sh "$TARGET" "/tmp/wsl-care-release-$TARGET"` — every RID's archive and a matching `.sha256`, nothing else (what `release.yml` checked before publishing, now against what GitHub serves) | auto |
+| 9 | Every install refuses the release because its archives carry no provenance from `release.yml` | `for f in "/tmp/wsl-care-release-$TARGET"/*.tar.gz "/tmp/wsl-care-release-$TARGET"/*.zip; do gh attestation verify --repo oleksandrdubyna88/wsl_care --signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release.yml "$f" \|\| exit 1; done` (after item 8; the exact check `install.sh` runs) | auto |
+| 10 | `install.sh` from `main` cannot fetch and unpack the published release on a fresh distro | in a DISPOSABLE systemd-enabled Ubuntu 24.04 container (e.g. `docker run -d --name wsl-care-release-check --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw jrei/systemd-ubuntu:24.04`): install `curl` + `ca-certificates`, then `curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh \| sh -s -- --dry-run --skip-attestation --version <version>` exits 0 (download, checksum, archive layout; attestation is item 9); `docker rm -f wsl-care-release-check` after. The full install is the owner's distro, items 1–7 | manual |

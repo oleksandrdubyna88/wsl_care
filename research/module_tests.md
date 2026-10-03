@@ -12,7 +12,7 @@
 |---|---|---|
 | Unit, core | `src_daemon/tests/WslCare.Core.Tests` | the seams, the configuration system, the records, the architecture rule — in-process |
 | Unit + process, CLI | `src_daemon/tests/WslCare.Cli.Tests` | parsing, the program in-process with captured streams, logging, and the built binary as a child process (`BuiltBinaryTests`) |
-| **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` / `timedatectl` / `snap` alone on its `PATH`; the derived verb register; since E4.S1 the real `install.sh` under `/bin/sh` over a temporary prefix (§ *The installer harness*) and the shipped units and machine layer read by the product's own parser and loader |
+| **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` / `timedatectl` / `snap` alone on its `PATH`; the derived verb register; since E4.S1 the real `install.sh` under `/bin/sh` over a temporary prefix (§ *The installer harness*) and the shipped units and machine layer read by the product's own parser and loader; since E4.S2 the release scripts under bash and the release workflows' structure (§ *The release pipeline's tests*) |
 | **Live contract** | `src_daemon/tests/WslCare.LiveContract` | the REAL `docker` / `systemctl` / `journalctl` (since E2.S3 also `timedatectl`, `snap`, `powershell.exe` through interop, and the event stream) of the owner's machine through the product's own `ProcessCommandRunner` (30 s ceiling, tree kill), parsed by the product's parsers (plan §15a C2, §15b #2/#6) — NOT one of the CI test steps; § *The live contract* below |
 | AOT smoke | `.github/workflows/ci-daemon.yml` | the Native AOT binary of each RID answers `--help` / `--version`, performs the configuration round trip, answers `status --json` (on Linux over the captured procfs tree, reporting its `MemTotal`), and records a full run (`collect --json` → one history line naming a run detail, `status --json` naming that run, `doctor --json`), and since E3.S2 previews EVERY action (`act <ids --help names> --preview --json` under a sandbox with root claimed: exit 0 and every id answered on Linux, exit 2 on Windows, no state written — never a destructive run) |
 
@@ -625,6 +625,65 @@ the machine layer (the one positive beside the negatives). `systemd-analyze veri
 systemd's parser and fails on any output — it exits 0 on an unknown key, observed in `ubuntu:24.04` (systemd 255) with
 a planted `Persistant=`.
 
+## The release pipeline's tests (E4.S2)
+
+A release runs rarely and expensively, so every part of it that can run on a pull request does (testing rule, "a check
+that only runs during a release has never run"). All of it is C# in `WslCare.Scenarios`, no new package:
+
+| Class | What it holds | Where |
+|---|---|---|
+| `PackageFlows` | `.github/scripts/package-daemon.sh` run under bash against a stub binary; the archive read back with `System.Formats.Tar` (an oracle independent of GNU tar): exactly the members `install.sh`'s unpack loop names — read from `install.sh` itself, `ReleaseFiles.InstallerRequiredMembers` — plus their folders, entry types, owner, modes, bytes, and the `.sha256` line; then the archive served to the real `install.sh` by `InstallWorld.PublishFiles` (new), which must install it. The Windows zip is read with `ZipFile` | Linux legs; the zip case where `7z` is on `PATH` (the GitHub Ubuntu image has it) |
+| `ReleaseScriptFlows` | `release-guard.sh` and `verify-release-assets.sh` by EXIT CODE (a check that prints and exits 0 stops nothing in a workflow); the guard's off-`main` case in a throwaway git repository whose commit identity comes from `GIT_AUTHOR_*` / `GIT_COMMITTER_*` in the child's environment (no git configuration is written); archive names from the asset contract itself (`daemon_archive_name`, run under bash), never retyped | Linux legs |
+| `ReleaseWorkflowTests` | the workflows' structure, read with `WorkflowYaml` — a reader for the YAML subset the workflows are written in that THROWS on anything else (a tab, an anchor, a folded or continued scalar, a duplicate key, a flow map with content), so a construct it does not know fails where it was written rather than being guessed. Its own test plants six such constructs and reads one known document | every OS |
+| `ReleaseConfigTests` | `release-please-config.json`, the manifest and `version.txt`, the two ruleset bodies — against the workflows (the tag, the check names, expanded from the matrix) | every OS |
+
+On the owner's machine (2026-10-03): the structure tests on Windows; the whole Scenarios suite in WSL `Ubuntu` from a copy
+of the worktree under `/tmp`, built there, with a downloaded 7-Zip 23.01 (`7zz`, linked as `7z`) on a scratch `PATH`
+folder for the zip case.
+
+**Red, per guarantee.** Every check passed at its first run, which proves nothing by itself, so each was shown to have
+teeth by a scratch script: one `sed` per mutation of the real file, the file checked changed, the one test run, the file
+restored from a copy and compared by SHA-256 (every restore byte-identical). The scripts' 16 mutations ran in WSL (two first
+tries deleted a line and left an empty `then` block — red for a shell syntax error, the wrong reason — and were redone as
+substitutions), the workflow / configuration 36 on Windows; each red for its own symptom:
+
+| Guarantee | The mutation | The red |
+|---|---|---|
+| the archive holds nothing extra | `package-daemon.sh` also installs `README.md` | `Expected entries.Select(e => e.Name.TrimEnd('/')) to be a collection with 8 item(s) because exactly the members install.sh requires … but {…, "wsl-care-0.1.0-linux-arm64/README.md", …}` |
+| the archive misses nothing | the `machine.json` install deleted | the same assertion, `config/machine.json` absent; and the end-to-end flow: `Expected install.Exit to be 0 because install.sh must accept what release.yml packs` |
+| regular files only | the binary `ln -s` instead of `install` | `Expected entries to contain only items matching (… == 53 OrElse … == 48) because install.sh refuses a link or a special file … but {wsl-care-0.1.0-linux-arm64/wsl-care} do(es) not match`; end to end: install exit 1 |
+| the `.sha256` is sha256sum's two-space format | one space | `Expected File.ReadAllText(archive + ".sha256") to be the same string because sha256sum's own format … differ at index 65` |
+| a bad version is refused | the version check replaced by `:` | `Expected result.Exit to be 2 … 0.1 linux-x64 … but found 0` |
+| the Windows zip holds the exe alone | `7z` also given a copy folder | `Expected files.Select(e => e.FullName) to be equal to {"wsl-care-0.1.0-win-x64/wsl-care.exe"} … but {…, "x/wsl-care.exe"} contains 1 item(s) too many` |
+| the guard compares `version.txt` | that comparison deleted | `Expected result.Exit to be 1 because daemon-v0.1.1 against version.txt 0.1.0 must be refused` |
+| the guard checks the version shape | the pattern check deleted | three cases red, e.g. `… "the tag says 0.1.0/../x but src_daemon/version.txt …"` instead of the shape refusal |
+| the guard checks `main` | `git merge-base --is-ancestor` replaced by `true` | `Expected off.Exit to be 1 because version=0.1.0` |
+| the guard hands the version on | the `GITHUB_OUTPUT` append sent to `/dev/null` | `Expected File.ReadAllText(output) to be "version=0.1.0\n"` |
+| an extra asset is refused | that problem line deleted | `Expected result.Exit to be 1 because an asset no release ships must be refused` |
+| a tampered archive is refused | the hash comparison deleted | `Expected result.Exit to be 1 because an archive that does not match must be refused` |
+| a missing archive is refused | that problem line deleted | `… because a RID without its archive must be refused` |
+| problems fail the check | the final `exit 1` made `exit 0` | the same |
+| tag push only | `workflow_dispatch:` added to `release.yml` | `Expected on.Keys to be equal to {"push"} … but {"workflow_dispatch", "push"} contains 1 item(s) too many` |
+| workflow level reads | `release.yml`'s top `contents: write` | `Expected Permissions(Load(name)) to be equal to {["contents"] = "read"} because release.yml: …` |
+| only the build job signs | `id-token: write` added to `publish` | `Expected signers to be equal to {"release.yml/build"} … but {"release.yml/build", "release.yml/publish"}` |
+| only `publish` writes | the build job's `contents: write`; the proposer's `contents: write` | `Expected writers to be equal to {"release.yml/publish"} … but {"release.yml/build", …}` / `{"release-please.yml/release-please", …}` |
+| `publish` waits for every leg | `needs: [guard]`; `if: always()` added | `… to be a collection with 2 item(s) because one red leg publishes nothing … but {"guard"}`; `Expected publish.Has("if") to be False` |
+| every RID ships, on its PR runner | the `win-x64` entry deleted; `release.yml` on `ubuntu-latest`; `ci-daemon.yml` on `ubuntu-22.04` | `… to be equal to {"linux-x64", "linux-arm64", "win-x64"} … contains 1 item(s) less`; `Expected dictionary to be equal to … but {["linux-x64"] = "ubuntu-24.04", …}` (both directions) |
+| one smoke script for both | `release.yml`'s smoke inlined; `ci-daemon.yml` calling another script | `Expected StepIndex(Job(Release, "build"), SmokeScript) to be greater than or equal to 0 … but found -1`; the same for `ci-daemon.yml` |
+| the leg's stages, the attested subject | `subject-path` changed; the Scenarios run deleted | `Expected steps[order[4]]["with"].Map["subject-path"].Text to be the same string because the attested subject is the archive …`; `Expected order {-1, 5, 6, 7, 8, 9} to not contain -1` |
+| verify from the draft, publish last | the from-draft verification deleted; a step appended after publishing | `Expected collection {2, 3, 4, -1, 6} to not contain -1`; `Expected goPublic to be 7 because nothing runs after the release is public, but found 6` |
+| the guard sees `main` | `fetch-depth: 1` | `Expected string to be "0" because is-the-commit-on-main needs main in the clone` |
+| the proposer refuses without secrets and hands on the App token | `exit 1` made `exit 0`; `token: ${{ secrets.GITHUB_TOKEN }}` | `Expected Run(steps[check]) … to contain "exit 1"`; `… because with GITHUB_TOKEN the tag would start nothing` |
+| SHA pins | `attest-build-provenance@v4` | `… to be empty because every uses: names a 40-hex commit … but found … {"release.yml:155: - uses: actions/attest-build-provenance@v4"}` |
+| ceilings, credentials, injection | `persist-credentials: true` in Sonar; the CodeRabbit job's timeout deleted; `${{ github.event.pull_request.number }}` in its `run:` | `… "persist-credentials" … to be "false"`; `… job.Has("timeout-minutes") to be True because coderabbit-review.yml/ask: every wait has a ceiling`; `Did not expect Run(step) … to contain "${{"` |
+| the guard and the installer agree on a version | the contract's pattern narrowed | `Expected ReleaseFiles.DaemonVersionPattern to be the same string because the guard never admits a tag the installer would refuse` |
+| draft, forced tag, the tag shape | `draft` false; `force-tag-creation` false; `component` renamed | `… because nothing is public until every RID's asset is on it`; `… because without it a draft cuts no tag and release.yml never runs`; `… because the tag release-please cuts is the tag release.yml starts on` |
+| manifest = `version.txt`, first version 0.1.0 | manifest `0.1.0`; `initial-version` `1.0.0` | `Expected string to be "0.0.0" because release-please bumps both in one pull request …`; `… to be "0.1.0" because the first daemon release is 0.1.0 exactly` |
+| the tag ruleset | the `update` rule deleted; the pattern `refs/tags/v*` | `… to be a collection with 3 item(s) because creation alone would leave a protected tag that can simply be moved`; `… to be equal to {"refs/tags/daemon-v*"}` |
+| required checks = gating jobs, pinned to Actions | a context renamed; one `integration_id` changed; a bypass actor added to `main` | `… because a required check that never reports blocks every pull request forever …`; `… because only GitHub Actions can satisfy them`; `Expected ruleset.GetProperty("bypass_actors").GetArrayLength() to be 0` |
+| the reader refuses the unknown | an anchor in `pr-title.yml` | `System.NotSupportedException : pr-title.yml:20: an anchor, alias or tag - outside the workflow YAML subset` |
+| the installer's signer is the attesting workflow | `attest-build-provenance` replaced by `actions/attest` | the signer flow red: `release.yml` must contain `attest-build-provenance` |
+
 ## Flow catalogue
 
 One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` `` exactly as
@@ -693,8 +752,15 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `install.sh --set-default-user <name>`: without the flag nothing written (advice printed); with it and no default, `[user] default=` appended and read back by the daemon's `TargetUserDiscovery.DefaultUser`; an existing default never rewritten; an unknown user or a `[user]` section without `default=` refused before anything; the installer's reader and the daemon's agree on ten wsl.conf shapes | covered (Linux legs) | `InstallFlows.Without_the_flag_wsl_conf_is_never_written…`, `…With_the_flag_and_no_default_user…`, `…With_the_flag_an_existing_default_user_is_never_rewritten`, `…The_flag_for_an_unknown_user…`, `…The_installer_and_the_daemon_read_the_same_default_user_from_every_wsl_conf_shape` |
 | `install.sh` preflight refusals: not root (the `sudo sh -s --` line, sudo never called), no systemd, an unknown architecture, a foreign `/usr/local/bin/wsl-care`, a hostile archive member (`..`, outside the folder, a link — each riding a complete release); arm64 installs the `linux-arm64` asset; an upgrade restarts the follower | covered (Linux legs) | `InstallFlows.A_non_root_run_is_refused…`, `…Without_systemd_running…`, `…On_arm64…`, `…A_wsl_care_on_the_link_path…`, `…An_archive_member_that_leaves_its_folder_or_is_a_link…`, `…An_upgrade_restarts_the_running_follower…` |
 | the shipped units and machine layer: `ExecStart` argv parsed by the CLI (`collect --timer`, `events follow`), `SuccessExitStatus` = `ExitCode.Busy`, the timer's calendar, no breaking sandbox directive, `install.sh`'s unit list = the folder, the machine layer valid and empty | covered (every OS) | `ShippedFilesTests`; systemd's own parser: CI `systemd-analyze verify` (Linux legs) |
-| `install.sh`'s pinned signer workflow is this repository's attesting `release.yml` | not covered | skipped with its reason until E4.S2 adds `release.yml` (`InstallFlows.The_signer_workflow_the_installer_pins_is_this_repositorys_release_workflow`) |
-| `install.sh` against a real release, a real `gh attestation verify`, real systemd and apt | not covered | the first live install on the owner's machine is E4's done-line, after E4.S2 cuts `daemon-v0.1.0` |
+| `install.sh`'s pinned signer workflow is this repository's attesting `release.yml` | covered (every OS, since E4.S2) | `InstallFlows.The_signer_workflow_the_installer_pins_is_this_repositorys_release_workflow` (it skipped until `release.yml` existed) |
+| the release archive (`package-daemon.sh`, as `release.yml` runs it): per Linux RID exactly the members `install.sh`'s unpack loop requires plus their folders, regular files and folders only, owner 0:0, 0755 binary / 0644 units and machine layer byte for byte, the `.sha256` line `<hash>  <name>`; the Windows zip holds `wsl-care.exe` alone; a bad version / unknown RID / missing binary refused, nothing written | covered (Linux legs; the zip where 7-Zip is on `PATH`) | `PackageFlows.A_linux_archive_holds_exactly_what_install_sh_unpacks_as_regular_files_under_one_folder` (linux-x64, linux-arm64), `…The_windows_archive_holds_the_exe_alone_under_its_folder`, `…A_bad_version_an_unknown_rid_or_a_missing_binary_is_refused_and_nothing_is_written` |
+| `install.sh` installs the archive the release script packed (the packer and the installer agree, end to end) | covered (Linux legs) | `PackageFlows.The_installer_installs_the_archive_the_release_script_packed` |
+| the release guard (`release-guard.sh`): `daemon-v<version>` with `version.txt` agreeing is admitted and the version reaches `GITHUB_OUTPUT`; another component's tag, a malformed version, a disagreeing `version.txt`, a commit off `main` are refused (exit 1, `::error::`) | covered (Linux legs) | `ReleaseScriptFlows.The_guard_admits_…`, `…The_guard_refuses_a_tag_it_cannot_release` (5 cases), `…The_guard_refuses_a_tagged_commit_that_is_not_on_main` |
+| the completeness check (`verify-release-assets.sh`): every RID's archive and a matching `.sha256` passes; a missing archive, a missing `.sha256`, a tampered archive, a `.sha256` naming another file, an extra asset, a whole RID missing are each refused, every problem named | covered (Linux legs) | `ReleaseScriptFlows.A_complete_set_passes_the_completeness_check`, `…An_incomplete_or_wrong_set_is_refused_naming_every_problem` |
+| the release pipeline's structure: tag-push-only trigger, per-job permissions across every workflow (signing = the build job, `contents: write` = the publish job), `publish` needs guard + every leg, RIDs = the asset contract = the pull-request legs on the same runners, the shared smoke, stage and publish order, SHA pins, ceilings, no credential left in a checkout, no expression in a `run:`; release-please's tag = the trigger = the tag ruleset, manifest = `version.txt`, first version 0.1.0; required checks = the gating jobs | covered (every OS) | `ReleaseWorkflowTests` (16), `ReleaseConfigTests` (5) |
+| the published binary's smoke (`smoke-daemon.sh`: help/version, config round trip, `status`, a recorded full run read back with `doctor`, `act --preview` of every action) | covered by CI, not by the suite | `ci · daemon` runs it on every pull request on all three RIDs; `release.yml` runs the same file on every leg; run by hand on 2026-10-03 against the JIT builds (Linux in WSL, Windows in Git Bash), and red with a planted `version.txt` |
+| the release run itself — the App token's tag starting `release.yml`, the attestation, the upload to the draft, the publish | not covered | needs the owner's settings (`docs/repo-settings.md`) and the cut of `daemon-v0.1.0`; verified after it by `POST_DEPLOY.md` items 8–10 |
+| `install.sh` against a real release, a real `gh attestation verify`, real systemd and apt | not covered | the first live install on the owner's machine is E4's done-line, after the owner cuts `daemon-v0.1.0` (`docs/repo-settings.md`) |
 | the extension: status bar, panel, buttons, logs page, settings sync, help | not covered | the extension is not built yet (E5–E8) |
 
 ## What it does not prove
@@ -830,13 +896,25 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
   behaviour and this machine's cache on 2026-10-02, not from a Playwright release's tests.
 - Nothing here runs on a real WSL VM under memory pressure; the live smoke on the owner's machine is
   the only place that happens, at release time.
+- **The release itself has not run** (E4.S2): no App token has cut a tag here, no attestation has been made or verified,
+  no draft has been filled or published — that needs the owner's settings (`docs/repo-settings.md`) and is checked after
+  the first cut by `POST_DEPLOY.md` items 8–10. The tests hold the workflows' STRUCTURE and run the scripts the steps call;
+  what GitHub does with the YAML (that `push: tags` fires for an App-created ref, that `gh release download` sees a draft,
+  that the attestation names `release.yml`) is read from the family's runs and from the tools' sources, not observed here.
+- **The rulesets' effect is not observed by a test**: GitHub reads none of the files. Their PROBE (a creation or push that
+  must be refused) is a step of `docs/repo-settings.md`, run by the owner when applying them.
+- **The smoke script is not run by the suite**: it needs a published binary, so CI runs it (every pull request, every
+  release leg); on 2026-10-03 it ran by hand against the JIT builds — Linux in WSL, Windows in Git Bash — and refused a
+  planted `version.txt`. The AOT binaries it was written for are CI's.
 
 ## When it runs
 
 On every push to `main` and every pull request: `ci · daemon` (unconditional, no path filter) runs the
-three test executables and both AOT smoke steps on `ubuntu-latest`, `ubuntu-24.04-arm` and
-`windows-latest` (the installer flows on the two Linux legs, and `systemd-analyze verify` of the units there);
-`ci · workflows` runs actionlint and shellcheck of `install.sh`; `ci · family checks` runs the shared plan, pin, adapter
+three test executables and the shared smoke of the published AOT binary (`.github/scripts/smoke-daemon.sh`) on
+`ubuntu-24.04`, `ubuntu-24.04-arm` and `windows-latest` (the installer, packaging and release-script flows on the two
+Linux legs, and `systemd-analyze verify` of the units there); `ci · workflows` runs actionlint and shellcheck of
+`install.sh` and `.github/scripts/`; `release.yml` runs the same three executables and the same smoke on every leg of a
+`daemon-v*` tag before anything is packed; `ci · family checks` runs the shared plan, pin, adapter
 and build-flags checks. The live smoke on the owner's machine runs at every release (E4 onwards) — `install.sh` for real
 and `POST_DEPLOY.md` against the installation — and so does the live contract with `WSL_CARE_REQUIRE_LIVE=1`
 (§ *The live contract*).
