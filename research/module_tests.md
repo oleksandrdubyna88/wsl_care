@@ -547,6 +547,12 @@ Teeth, observed by breaking the code and watching the named tests go red:
     run measures*.
   - **The hygiene test's leak:** on WSL → *Expected Directory.GetFileSystemEntries(…) to be empty because the test leaves
     nothing behind in the temp folder, but found at least one item {"/tmp/wsl-care-test-hygiene-windows-a994…\Users\me\.docker\daemon.json"}*.
+  - **The complexity refactor (review 7) changed no test:** every method written in E3 measured at cyclomatic complexity
+    ≤ 4 (decision points: `if`, loops, `catch`, `case` labels, `?:`, `&&`, `||`, `??`, `?.`, `when`; a switch
+    EXPRESSION's arms and a pattern's `or` alternatives count as one test, as doctrine §6 names the switch expression as
+    the remedy) — 87 methods over 4 before, 0 after — and the whole suite stayed green on Windows and in WSL, unchanged.
+    The one visible difference is the run log: an `act`'s failed / deferred / refused line now carries its count and
+    freed bytes too, as the timer pass's always did (one `OutcomeLog` for both).
   - **Tests that enshrined the old behaviour were changed with the fix, not weakened:** the engine's "cannot be told"
     theory now expects `StateUnreadable` (and the three retries), the ambiguous-target test the run that still acts, and the
     three detail-reading `logs` tests ask for `detail: true`. The A5 fixture's keep-labelled volume carries the anonymous

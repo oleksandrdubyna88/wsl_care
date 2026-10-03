@@ -47,12 +47,14 @@ public static class TargetUserArgv
 
     /// <summary><c>runuser -u &lt;valid name&gt; -- &lt;full path&gt; …</c> exactly.</summary>
     public static bool HasTheOneShape(IReadOnlyList<string> argv) =>
-        argv.Count >= 5
-        && string.Equals(argv[0], Runuser, StringComparison.Ordinal)
-        && argv[1] == "-u"
-        && UserNames.Accepts(argv[2])
-        && argv[3] == "--"
-        && IsFullPath(argv[4]);
+        Checks.All(
+            argv,
+            a => a.Count >= 5,
+            a => string.Equals(a[0], Runuser, StringComparison.Ordinal),
+            a => a[1] == "-u",
+            a => UserNames.Accepts(a[2]),
+            a => a[3] == "--",
+            a => IsFullPath(a[4]));
 
     /// <summary>Whether <paramref name="executablePath"/> is a file directly inside a permitted bin folder.</summary>
     public static bool IsInABinFolder(string executablePath)
@@ -60,17 +62,27 @@ public static class TargetUserArgv
         var normal = executablePath.Replace('\\', '/');
         var folder = normal[..Math.Max(normal.LastIndexOf('/'), 0)];
         var segments = normal.Split('/');
-        return IsFullPath(executablePath)
-            && !segments.Any(s => s is ".." or ".")
-            && (BinFolderSuffixes.Any(s => folder.EndsWith(s, StringComparison.Ordinal)) || IsNvmBin(segments));
+        return Checks.All(
+            executablePath,
+            IsFullPath,
+            _ => !segments.Any(s => s is ".." or "."),
+            _ => BinFolderSuffixes.Any(s => folder.EndsWith(s, StringComparison.Ordinal)) || IsNvmBin(segments));
     }
 
     /// <summary><c>…/.nvm/versions/node/v22.11.0/bin/&lt;tool&gt;</c>.</summary>
     private static bool IsNvmBin(IReadOnlyList<string> segments) =>
-        segments.Count >= 6
-        && segments[^2] == "bin"
-        && segments[^4] == "node" && segments[^5] == "versions" && segments[^6] == ".nvm"
-        && segments[^3].Length > 1 && segments[^3][0] == 'v' && segments[^3][1..].All(c => char.IsAsciiDigit(c) || c == '.');
+        Checks.All(
+            segments,
+            s => s.Count >= 6,
+            s => s[^2] == "bin",
+            s => s[^4] == "node",
+            s => s[^5] == "versions",
+            s => s[^6] == ".nvm",
+            s => IsNodeVersion(s[^3]));
+
+    /// <summary><c>v22.11.0</c>: a <c>v</c>, then digits and dots.</summary>
+    private static bool IsNodeVersion(string folder) =>
+        folder.Length > 1 && folder[0] == 'v' && folder[1..].All(c => char.IsAsciiDigit(c) || c == '.');
 
     private static bool IsFullPath(string path) => path.StartsWith('/') || Path.IsPathFullyQualified(path);
 }

@@ -90,10 +90,14 @@ public static class TargetUserDiscovery
     public static IReadOnlyList<string> ProtectedHomes(IFileSystem files, LinuxHostPaths paths) =>
         files.ReadFile(paths.PasswdFile) is FileReadResult.Content content
             ? [.. Accounts(System.Text.Encoding.UTF8.GetString(content.Bytes))
-                .Where(a => (a.IsLoginAccount || a.Uid == 0) && a.Home.StartsWith('/') && a.Home.Length > 1)
+                .Where(HasProtectedHome)
                 .Select(a => paths.DistroPath(a.Home))
                 .Distinct(StringComparer.Ordinal)]
             : [];
+
+    /// <summary>Root or a login account, with an absolute home that is not <c>/</c> itself.</summary>
+    private static bool HasProtectedHome(Account account) =>
+        (account.IsLoginAccount || account.Uid == 0) && account.Home.StartsWith('/') && account.Home.Length > 1;
 
     /// <summary>Every well-formed line of a passwd file.</summary>
     public static IReadOnlyList<Account> Accounts(string passwd) =>
@@ -103,24 +107,26 @@ public static class TargetUserDiscovery
             .Select(f => new Account(f[0], int.Parse(f[2], CultureInfo.InvariantCulture), f[5], f[6].Trim()))];
 
     /// <summary>The <c>default</c> key of the <c>[user]</c> section; empty when there is none.</summary>
-    public static string DefaultUser(string wslConf)
+    public static string DefaultUser(string wslConf) =>
+        Entries(wslConf).Where(e => e.Section == "user" && e.Key == "default").Select(e => e.Value).FirstOrDefault() ?? string.Empty;
+
+    /// <summary>Every <c>key = value</c> of an ini file with the section it stands in (lowercased; empty before the first).</summary>
+    private static IEnumerable<(string Section, string Key, string Value)> Entries(string ini)
     {
         var section = string.Empty;
-        foreach (var raw in ProcText.Lines(wslConf))
+        foreach (var line in ProcText.Lines(ini).Select(l => l.Trim()))
         {
-            var line = raw.Trim();
-            if (line.StartsWith('[') && line.EndsWith(']'))
+            section = SectionOf(line) ?? section;
+            if (KeyValue(line) is (var key, var value))
             {
-                section = line[1..^1].Trim().ToLowerInvariant();
-            }
-            else if (section == "user" && KeyValue(line) is ("default", var value))
-            {
-                return value;
+                yield return (section, key, value);
             }
         }
-
-        return string.Empty;
     }
+
+    /// <summary>The name of a <c>[section]</c> header line, lowercased; <c>null</c> for any other line.</summary>
+    private static string? SectionOf(string line) =>
+        line.StartsWith('[') && line.EndsWith(']') ? line[1..^1].Trim().ToLowerInvariant() : null;
 
     private static (string Key, string Value)? KeyValue(string line)
     {
@@ -139,9 +145,12 @@ public static class TargetUserDiscovery
 
         var account = accounts.FirstOrDefault(a => a.Name == name);
         return !ValidName.Accepts(name) || account is null
-            ? new TargetUserResult.Ambiguous($"{paths.WslConfFile} names the default user \"{name}\", which {(ValidName.Accepts(name) ? $"{paths.PasswdFile} does not hold" : "is not a valid account name")}")
+            ? new TargetUserResult.Ambiguous($"{paths.WslConfFile} names the default user \"{name}\", which {UnusableDefault(name, paths)}")
             : Checked(account, "wsl.conf");
     }
+
+    private static string UnusableDefault(string name, LinuxHostPaths paths) =>
+        ValidName.Accepts(name) ? $"{paths.PasswdFile} does not hold" : "is not a valid account name";
 
     private static TargetUserResult FromSingleAccount(IReadOnlyList<Account> accounts)
     {

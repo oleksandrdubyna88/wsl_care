@@ -216,9 +216,15 @@ public sealed class ActionEngine(EngineContext c)
             }
         }
 
-        if (heartbeat.Failure.Length > 0)
+        return Completed(heartbeat.Failure, notes);
+    }
+
+    /// <summary>How a pass that reached its end ended: observe-only or completed — with the heartbeat's failure noted.</summary>
+    private RunOutcome Completed(string heartbeatFailure, List<string> notes)
+    {
+        if (heartbeatFailure.Length > 0)
         {
-            notes.Add(heartbeat.Failure);
+            notes.Add(heartbeatFailure);
         }
 
         return c.Loaded.IsObserveOnly ? RunOutcome.ObserveOnly : RunOutcome.Completed;
@@ -229,21 +235,7 @@ public sealed class ActionEngine(EngineContext c)
     {
         try
         {
-            if (Gate(action, run) is { } early)
-            {
-                return early;
-            }
-
-            var commands = Commands(action, run.Target);
-            var preview = await action.PreviewAsync(run.Context, commands, cancellationToken).ConfigureAwait(false);
-            if (Judge(action, preview, run) is { } held)
-            {
-                return held;
-            }
-
-            var done = await action.RunAsync(run.Context, preview, commands, cancellationToken).ConfigureAwait(false);
-            var ran = preview.Urgent.Length > 0 ? $"ran at once, without waiting for idle: {preview.Urgent}" : "ran";
-            return Outcome(action, done.Succeeded ? ActionStatus.Ran : ActionStatus.Failed, done.Succeeded ? ran : done.Failure, preview, done);
+            return await GatedAsync(action, run, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception e) when (!(e is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
@@ -251,36 +243,72 @@ public sealed class ActionEngine(EngineContext c)
         }
     }
 
+    /// <summary>The gates before the preview, the LIVE preview, the gates of the preview, then the run.</summary>
+    private async Task<ActionOutcome> GatedAsync(ICleanupAction action, RunState run, CancellationToken cancellationToken)
+    {
+        if (Gate(action, run) is { } early)
+        {
+            return early;
+        }
+
+        var commands = Commands(action, run.Target);
+        var preview = await action.PreviewAsync(run.Context, commands, cancellationToken).ConfigureAwait(false);
+        if (Judge(action, preview, run) is { } held)
+        {
+            return held;
+        }
+
+        return Ran(action, preview, await action.RunAsync(run.Context, preview, commands, cancellationToken).ConfigureAwait(false));
+    }
+
+    private static ActionOutcome Ran(ICleanupAction action, ActionPreview preview, ActionRun done) =>
+        done.Succeeded
+            ? Outcome(action, ActionStatus.Ran, preview.Urgent.Length > 0 ? $"ran at once, without waiting for idle: {preview.Urgent}" : "ran", preview, done)
+            : Outcome(action, ActionStatus.Failed, done.Failure, preview, done);
+
     /// <summary>A gate's answer: the status and reason that stop the action here, or <c>null</c> to go on.</summary>
     private sealed record Stop(string Status, string Reason);
 
     /// <summary>The gates asked before any preview, in order: the side, observe-only, the timer's <c>auto</c> switch.</summary>
-    private ActionOutcome? Gate(ICleanupAction action, RunState run)
-    {
-        Func<Stop?>[] gates =
-        [
-            () => action.Sides.Contains(c.Paths.Side) ? null : new Stop(ActionStatus.Skipped, NotThisSide(action)),
-            () => c.Loaded.IsObserveOnly ? new Stop(ActionStatus.Skipped, ObserveOnlyReason) : null,
-            () => run.Trigger != RunTrigger.Timer || c.Loaded.Config.Bool(action.Id.AutoSwitch) ? null : new Stop(ActionStatus.Skipped, $"{action.Id.AutoSwitch.Name} is off: the timer does not run {action.Id}"),
-        ];
-        return First(action, gates, preview: null);
-    }
+    private ActionOutcome? Gate(ICleanupAction action, RunState run) =>
+        First(action, [() => SideStop(action), ObserveOnlyStop, () => AutoStop(action, run)], preview: null);
+
+    private Stop? SideStop(ICleanupAction action) => action.Sides.Contains(c.Paths.Side) ? null : new Stop(ActionStatus.Skipped, NotThisSide(action));
+
+    private Stop? ObserveOnlyStop() => c.Loaded.IsObserveOnly ? new Stop(ActionStatus.Skipped, ObserveOnlyReason) : null;
+
+    private Stop? AutoStop(ICleanupAction action, RunState run) =>
+        run.Trigger != RunTrigger.Timer || c.Loaded.Config.Bool(action.Id.AutoSwitch) ? null : new Stop(ActionStatus.Skipped, $"{action.Id.AutoSwitch.Name} is off: the timer does not run {action.Id}");
 
     /// <summary>The gates asked of the LIVE preview, in order; <c>null</c> when the action may run now.</summary>
-    private ActionOutcome? Judge(ICleanupAction action, ActionPreview preview, RunState run)
-    {
-        Func<Stop?>[] gates =
-        [
-            () => preview.Available ? null : new Stop(ActionStatus.Refused, $"its preview could not be read: {preview.Reason}"),
-            () => preview.Skip.Length > 0 ? new Stop(ActionStatus.Skipped, preview.Skip) : null,
-            () => TriggerStop(action, preview, run),
-            () => action.Scope == CommandScope.User && run.Target is not TargetUserResult.Found ? new Stop(ActionStatus.Refused, run.Target.Refusal) : null,
-            () => preview.Refusal.Length > 0 ? new Stop(ActionStatus.Refused, preview.Refusal) : null,
-            () => IdleGate.Applies(action.Idle, run.Trigger) && preview.Urgent.Length == 0 && run.Idle() is { Idle: false } busy ? new Stop(ActionStatus.Deferred, busy.Reason) : null,
-            () => run.Dry.DryRun ? new Stop(ActionStatus.DryRun, $"dry run: {run.Dry.Reason}") : null,
-        ];
-        return First(action, gates, preview);
-    }
+    private ActionOutcome? Judge(ICleanupAction action, ActionPreview preview, RunState run) =>
+        First(
+            action,
+            [
+                () => UnreadStop(preview),
+                () => SkipStop(preview),
+                () => TriggerStop(action, preview, run),
+                () => TargetUserStop(action, run),
+                () => RefusalStop(preview),
+                () => IdleStop(action, preview, run),
+                () => DryRunStop(run),
+            ],
+            preview);
+
+    private static Stop? UnreadStop(ActionPreview preview) => preview.Available ? null : new Stop(ActionStatus.Refused, $"its preview could not be read: {preview.Reason}");
+
+    private static Stop? SkipStop(ActionPreview preview) => preview.Skip.Length > 0 ? new Stop(ActionStatus.Skipped, preview.Skip) : null;
+
+    private static Stop? TargetUserStop(ICleanupAction action, RunState run) =>
+        action.Scope == CommandScope.User && run.Target is not TargetUserResult.Found ? new Stop(ActionStatus.Refused, run.Target.Refusal) : null;
+
+    private static Stop? RefusalStop(ActionPreview preview) => preview.Refusal.Length > 0 ? new Stop(ActionStatus.Refused, preview.Refusal) : null;
+
+    /// <summary>The idle gate: asked only when it applies and the preview is no urgent event; the sample is read once per run.</summary>
+    private static Stop? IdleStop(ICleanupAction action, ActionPreview preview, RunState run) =>
+        IdleGate.Applies(action.Idle, run.Trigger) && preview.Urgent.Length == 0 && run.Idle() is { Idle: false } busy ? new Stop(ActionStatus.Deferred, busy.Reason) : null;
+
+    private static Stop? DryRunStop(RunState run) => run.Dry.DryRun ? new Stop(ActionStatus.DryRun, $"dry run: {run.Dry.Reason}") : null;
 
     /// <summary>The timer runs an action only when its trigger fired; a button runs it regardless (plan §5).</summary>
     private Stop? TriggerStop(ICleanupAction action, ActionPreview preview, RunState run)
@@ -299,21 +327,26 @@ public sealed class ActionEngine(EngineContext c)
 
     private async Task<ActionOutcome> PreviewOneAsync(ICleanupAction action, ActionContext context, TargetUserResult target, CancellationToken cancellationToken)
     {
-        if (!action.Sides.Contains(c.Paths.Side))
-        {
-            return Outcome(action, ActionStatus.Skipped, NotThisSide(action), null, null);
-        }
-
         try
         {
-            var preview = await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false);
-            var refusal = action.Scope == CommandScope.User ? target.Refusal : string.Empty;
-            return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null);
+            return await PreviewedAsync(action, context, target, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception e) when (!(e is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
             return Outcome(action, ActionStatus.Failed, $"its preview failed: {e.GetType().Name}: {e.Message}", null, null);
         }
+    }
+
+    private async Task<ActionOutcome> PreviewedAsync(ICleanupAction action, ActionContext context, TargetUserResult target, CancellationToken cancellationToken)
+    {
+        if (!action.Sides.Contains(c.Paths.Side))
+        {
+            return Outcome(action, ActionStatus.Skipped, NotThisSide(action), null, null);
+        }
+
+        var preview = await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false);
+        var refusal = action.Scope == CommandScope.User ? target.Refusal : string.Empty;
+        return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null);
     }
 
     /// <summary>The <c>running.json</c> a previous run left (<see cref="RunningSweep"/>, shared with every full run's
@@ -395,8 +428,12 @@ public sealed class ActionEngine(EngineContext c)
         {
             DryRun = d.DryRun,
             Detail = relative.Length > 0 ? relative : null,
-            Reason = failure.Length > 0 ? failure : d.Outcome is RunOutcome.Failed or RunOutcome.Interrupted ? string.Join("; ", d.Notes) : null,
+            Reason = LineReason(d, failure),
         };
+
+    /// <summary>Why the run's line says what it says: the record's own failure, or the notes of a failed or interrupted run.</summary>
+    private static string? LineReason(ActRunDetail d, string failure) =>
+        failure.Length > 0 ? failure : d.Outcome is RunOutcome.Failed or RunOutcome.Interrupted ? string.Join("; ", d.Notes) : null;
 
     private static ActionRecord ActionLine(ActionOutcome o) => ActionRecords.Of(o);
 

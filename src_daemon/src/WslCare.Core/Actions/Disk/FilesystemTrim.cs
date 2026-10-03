@@ -77,60 +77,65 @@ public sealed partial class FilesystemTrim : ICleanupAction
         }
 
         var timer = await TimerAsync(commands, cancellationToken).ConfigureAwait(false);
-        var facts = new Dictionary<string, long>(StringComparer.Ordinal) { [DiscardFact] = mounted ? 1 : 0 };
-        if (timer is Reading<SystemdUnit>.Available { Value: var unit })
-        {
-            facts[TimerEnabledFact] = unit.UnitFileState == "enabled" ? 1 : 0;
-        }
-
         var last = LastTrim(context);
-        if (last is { } at)
-        {
-            facts[DaysSinceTrimFact] = (long)Math.Floor((context.Clock.GetUtcNow() - at).TotalDays);
-        }
-
-        var basis = $"/proc/mounts (/ {(mounted ? "is" : "is not")} mounted with discard), fstrim.timer {(timer is Reading<SystemdUnit>.Available a ? a.Value.UnitFileState : $"unknown ({timer.ReasonOrEmpty})")}, last A15 {(last is { } l ? l.UtcDateTime.ToString("yyyy-MM-dd HH:mm'Z'", CultureInfo.InvariantCulture) : "never")}; what it trims is known only when it runs";
-        return ActionPreview.Of(what, 0, null, basis, facts, string.Empty, []);
+        return ActionPreview.Of(what, 0, null, Basis(mounted, timer, last), Facts(mounted, timer, last, context.Clock.GetUtcNow()), string.Empty, []);
     }
 
     /// <summary>Plan §5 A15: weekly, when <c>/</c> has no discard (and, E3.S3, when <c>fstrim.timer</c> is not already doing it).</summary>
-    public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config)
-    {
-        if (preview.Facts.GetValueOrDefault(DiscardFact) == 1)
-        {
-            return new TriggerDecision(false, "/ is mounted with discard: freed blocks already reach the VHDX");
-        }
-
-        if (!preview.Facts.TryGetValue(TimerEnabledFact, out var timer))
-        {
-            return new TriggerDecision(false, "fstrim.timer's state was not read, so a duplicate trim cannot be ruled out");
-        }
-
-        if (timer == 1)
-        {
-            return new TriggerDecision(false, "fstrim.timer is enabled: it trims weekly itself");
-        }
-
-        return preview.Facts.TryGetValue(DaysSinceTrimFact, out var days)
-            ? new TriggerDecision(days >= Period.TotalDays, string.Create(CultureInfo.InvariantCulture, $"the last A15 ran {days} day(s) ago; the trigger is weekly"))
-            : new TriggerDecision(true, "A15 has never run here; the trigger is weekly");
-    }
+    public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config) => NotForTheTimer(preview.Facts) ?? Weekly(preview.Facts);
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
         var outcome = await commands.RunAsync(Trim, [], cancellationToken).ConfigureAwait(false);
         var trimmed = outcome is CommandOutcome.Exited exited ? Trimmed(exited.Stdout.Text) : [];
         var failure = outcome is CommandOutcome.Exited { ExitCode: SomeTrimmed } ? string.Empty : CommandFailures.Of("fstrim -av", outcome);
-        IReadOnlyList<string> notes =
-        [
-            string.Create(CultureInfo.InvariantCulture, $"{trimmed.Sum(t => t.Bytes ?? 0)} bytes trimmed on {trimmed.Count} filesystem(s), as fstrim reported"),
-            .. outcome is CommandOutcome.Exited { ExitCode: SomeTrimmed } e ? [$"fstrim exited 64: some filesystems were trimmed and some were not{ToolAnswers.Said(e.Stderr.Text)}"] : Array.Empty<string>(),
-        ];
         return new ActionRun(trimmed.Count, null, "trimmed blocks return to the VHDX, nothing inside a filesystem is freed: fstrim's own per-filesystem report", null, null, trimmed, commands.Ran, failure)
         {
-            Notes = notes,
+            Notes = TrimNotes(outcome, trimmed),
         };
     }
+
+    private static IReadOnlyList<string> TrimNotes(CommandOutcome outcome, IReadOnlyList<ActionItem> trimmed) =>
+    [
+        string.Create(CultureInfo.InvariantCulture, $"{trimmed.Sum(t => t.Bytes ?? 0)} bytes trimmed on {trimmed.Count} filesystem(s), as fstrim reported"),
+        .. outcome is CommandOutcome.Exited { ExitCode: SomeTrimmed } e ? [$"fstrim exited 64: some filesystems were trimmed and some were not{ToolAnswers.Said(e.Stderr.Text)}"] : Array.Empty<string>(),
+    ];
+
+    /// <summary>Why the timer leaves A15 alone: discard on <c>/</c>, an unread or enabled <c>fstrim.timer</c>; <c>null</c> when
+    /// none of these holds.</summary>
+    private static TriggerDecision? NotForTheTimer(IReadOnlyDictionary<string, long> facts) => facts switch
+    {
+        _ when facts.GetValueOrDefault(DiscardFact) == 1 => new TriggerDecision(false, "/ is mounted with discard: freed blocks already reach the VHDX"),
+        _ when !facts.ContainsKey(TimerEnabledFact) => new TriggerDecision(false, "fstrim.timer's state was not read, so a duplicate trim cannot be ruled out"),
+        _ when facts[TimerEnabledFact] == 1 => new TriggerDecision(false, "fstrim.timer is enabled: it trims weekly itself"),
+        _ => null,
+    };
+
+    private static TriggerDecision Weekly(IReadOnlyDictionary<string, long> facts) =>
+        facts.TryGetValue(DaysSinceTrimFact, out var days)
+            ? new TriggerDecision(days >= Period.TotalDays, string.Create(CultureInfo.InvariantCulture, $"the last A15 ran {days} day(s) ago; the trigger is weekly"))
+            : new TriggerDecision(true, "A15 has never run here; the trigger is weekly");
+
+    private static Dictionary<string, long> Facts(bool discard, Reading<SystemdUnit> timer, DateTimeOffset? last, DateTimeOffset now)
+    {
+        var facts = new Dictionary<string, long>(StringComparer.Ordinal) { [DiscardFact] = discard ? 1 : 0 };
+        if (timer is Reading<SystemdUnit>.Available { Value: var unit })
+        {
+            facts[TimerEnabledFact] = IsEnabled(unit);
+        }
+
+        if (last is { } at)
+        {
+            facts[DaysSinceTrimFact] = (long)Math.Floor((now - at).TotalDays);
+        }
+
+        return facts;
+    }
+
+    private static long IsEnabled(SystemdUnit unit) => unit.UnitFileState == "enabled" ? 1 : 0;
+
+    private static string Basis(bool discard, Reading<SystemdUnit> timer, DateTimeOffset? last) =>
+        $"/proc/mounts (/ {(discard ? "is" : "is not")} mounted with discard), fstrim.timer {(timer is Reading<SystemdUnit>.Available a ? a.Value.UnitFileState : $"unknown ({timer.ReasonOrEmpty})")}, last A15 {(last is { } l ? l.UtcDateTime.ToString("yyyy-MM-dd HH:mm'Z'", CultureInfo.InvariantCulture) : "never")}; what it trims is known only when it runs";
 
     /// <summary>Each <c>&lt;mount&gt;: … (&lt;n&gt; bytes) trimmed[ on &lt;device&gt;]</c> line of <c>fstrim -v</c>, as an item.</summary>
     public static IReadOnlyList<ActionItem> Trimmed(string stdout) =>

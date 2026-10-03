@@ -92,7 +92,7 @@ public sealed class PackageCacheClean : ICleanupAction
         var snapFreed = await SnapsAsync(context, commands, linux, removed, notes, failures, cancellationToken).ConfigureAwait(false);
         return new ActionRun(
             removed.Count,
-            aptFreed is null && snapFreed == 0 ? null : (aptFreed ?? 0) + snapFreed,
+            Total(aptFreed, snapFreed),
             "/var/cache/apt walked before and after apt-get clean, plus the sizes (read before) of the snap files gone after snap remove",
             aptBefore.CompleteBytes,
             null,
@@ -103,6 +103,9 @@ public sealed class PackageCacheClean : ICleanupAction
             Notes = notes,
         };
     }
+
+    /// <summary>The apt cache's freed bytes and the snap files', unknown only when the apt walk failed and no snap file went.</summary>
+    private static long? Total(long? apt, long snaps) => apt is null && snaps == 0 ? null : (apt ?? 0) + snaps;
 
     private static async Task<long?> AptAsync(ActionContext context, ActionCommands commands, LinuxHostPaths linux, FolderReading before, List<string> notes, List<string> failures, CancellationToken cancellationToken)
     {
@@ -125,9 +128,9 @@ public sealed class PackageCacheClean : ICleanupAction
     private static async Task<long> SnapsAsync(ActionContext context, ActionCommands commands, LinuxHostPaths linux, List<ActionItem> removed, List<string> notes, List<string> failures, CancellationToken cancellationToken)
     {
         var snaps = await DisabledAsync(commands, cancellationToken).ConfigureAwait(false);
-        if (snaps.NotInstalled || snaps.Problem.Length > 0)
+        if (Unlisted(snaps) is { Length: > 0 } why)
         {
-            notes.Add(snaps.NotInstalled ? $"snap revisions skipped: snap is not installed ({snaps.Problem})" : $"snap revisions not removed: {snaps.Problem}");
+            notes.Add(why);
             return 0;
         }
 
@@ -140,16 +143,22 @@ public sealed class PackageCacheClean : ICleanupAction
         return freed;
     }
 
+    /// <summary>Why the disabled revisions were not listed — snap is not installed, or it could not be asked; empty when they were.</summary>
+    private static string Unlisted(Disabled snaps) =>
+        snaps.NotInstalled ? $"snap revisions skipped: snap is not installed ({snaps.Problem})"
+        : snaps.Problem.Length > 0 ? $"snap revisions not removed: {snaps.Problem}"
+        : string.Empty;
+
     private static async Task<long> RemoveAsync(ActionContext context, ActionCommands commands, LinuxHostPaths linux, SnapRevision revision, List<ActionItem> removed, List<string> notes, List<string> failures, CancellationToken cancellationToken)
     {
-        if (!new SlotKind.SnapName().Accepts(revision.Name) || !new SlotKind.Number(1, 999_999_999).Accepts(revision.Revision))
+        if (!IsRemovable(revision))
         {
             notes.Add($"kept {Printable(revision.Name)} revision {Printable(revision.Revision)}: not a snap name and numeric revision this action removes");
             return 0;
         }
 
         var file = SnapFile(linux, revision);
-        var size = context.Files.FileSize(file) is FileSizeResult.Measured m ? m.Bytes : (long?)null;
+        var size = SizeOf(context.Files, file);
         var outcome = await commands.RunAsync(SnapRemove, [revision.Name, $"--revision={revision.Revision}"], cancellationToken).ConfigureAwait(false);
         if (CommandFailures.Of($"snap remove {revision.Name} --revision={revision.Revision}", outcome) is { Length: > 0 } failed)
         {
@@ -157,10 +166,20 @@ public sealed class PackageCacheClean : ICleanupAction
             return 0;
         }
 
-        var gone = context.Files.FileSize(file) is FileSizeResult.Missing;
-        removed.Add(new ActionItem("snap revision", $"{revision.Name} {revision.Revision}", gone ? size : null, gone ? string.Empty : "its file is still there: not counted"));
-        return gone ? size ?? 0 : 0;
+        var item = Removed(revision, size, gone: context.Files.FileSize(file) is FileSizeResult.Missing);
+        removed.Add(item);
+        return item.Bytes ?? 0;
     }
+
+    /// <summary>A valid snap name and a numeric revision: the only revision this action asks snap to remove.</summary>
+    private static bool IsRemovable(SnapRevision revision) =>
+        new SlotKind.SnapName().Accepts(revision.Name) && new SlotKind.Number(1, 999_999_999).Accepts(revision.Revision);
+
+    private static long? SizeOf(IFileSystem files, string file) => files.FileSize(file) is FileSizeResult.Measured m ? m.Bytes : null;
+
+    /// <summary>A removed revision: counted by its file's size (read before) only when the file is gone after.</summary>
+    private static ActionItem Removed(SnapRevision revision, long? size, bool gone) =>
+        new("snap revision", $"{revision.Name} {revision.Revision}", gone ? size : null, gone ? string.Empty : "its file is still there: not counted");
 
     /// <summary>The disabled revisions snap lists NOW — or that snap is not installed, or why it could not be asked.</summary>
     private sealed record Disabled(IReadOnlyList<SnapRevision> Revisions, bool NotInstalled, string Problem);
@@ -186,12 +205,16 @@ public sealed class PackageCacheClean : ICleanupAction
         var facts = new Dictionary<string, long>(StringComparer.Ordinal);
         if (row.Figures is Reading<RowFigures>.Available { Value: var f })
         {
-            facts[AptBytesFact] = f.Notes.FirstOrDefault(n => n.What == CleanupPreviews.AptCacheNote)?.Bytes.ValueOr(0) ?? 0;
-            facts[DisabledRevisionsFact] = f.Notes.FirstOrDefault(n => n.What == CleanupPreviews.SnapRevisionsNote)?.Count ?? 0;
+            facts[AptBytesFact] = Note(f, CleanupPreviews.AptCacheNote).Bytes.ValueOr(0);
+            facts[DisabledRevisionsFact] = Note(f, CleanupPreviews.SnapRevisionsNote).Count;
         }
 
         return facts;
     }
+
+    /// <summary>The row's note of that name — an empty one (0, 0) when the row has none.</summary>
+    private static RowNote Note(RowFigures figures, string what) =>
+        figures.Notes.FirstOrDefault(n => n.What == what) ?? new RowNote(what, 0, Reading.Of(0L));
 
     private static string Printable(string text) => new([.. text.Take(60).Select(c => char.IsControl(c) ? '?' : c)]);
 }

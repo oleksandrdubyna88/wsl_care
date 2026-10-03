@@ -60,7 +60,7 @@ public static class RunLogs
         var runs = InPeriod(history, period).ToList();
         var lines = runs.Select(r => Line(Narrowed(r, action), StateOf(paths, files, r))).ToList();
         var withCleanup = runs.Select(r => Narrowed(r, action)).Where(r => r.Actions.Any(Removed)).ToList();
-        var read = detail || action is not null ? withCleanup.TakeLast(MaxDetailsRead).Select(r => r.RunId).ToHashSet() : [];
+        var read = DetailsToRead(withCleanup, detail, action);
         var cleanups = withCleanup.SelectMany(r => Cleanups(paths, files, r, read.Contains(r.RunId))).ToList();
         var freed = lines.Where(l => l.FreedBytes > 0).ToList();
         return new LogsReport(
@@ -71,8 +71,8 @@ public static class RunLogs
             lines.SelectMany(l => l.Actions).Where(Acted).Sum(a => a.Count),
             Totals(lines),
             Counts(lines),
-            freed.MaxBy(l => l.FreedBytes) is { } most ? new RunExtreme(most.RunId, most.StartedAt, most.FreedBytes) : null,
-            freed.MinBy(l => l.FreedBytes) is { } least ? new RunExtreme(least.RunId, least.StartedAt, least.FreedBytes) : null,
+            Extreme(freed.MaxBy(l => l.FreedBytes)),
+            Extreme(freed.MinBy(l => l.FreedBytes)),
             Metrics(runs),
             cleanups,
             history.Unparseable,
@@ -82,6 +82,12 @@ public static class RunLogs
             DetailsNotRead = withCleanup.Count - read.Count,
         };
     }
+
+    /// <summary>The runs whose details are opened: the newest <see cref="MaxDetailsRead"/> with a cleanup, when asked — none otherwise.</summary>
+    private static HashSet<RunId> DetailsToRead(IReadOnlyList<RunRecord> withCleanup, bool detail, ActionId? action) =>
+        detail || action is not null ? [.. withCleanup.TakeLast(MaxDetailsRead).Select(r => r.RunId)] : [];
+
+    private static RunExtreme? Extreme(RunLine? line) => line is null ? null : new RunExtreme(line.RunId, line.StartedAt, line.FreedBytes);
 
     private static IEnumerable<RunRecord> InPeriod(HistoryRead history, LogPeriod period) =>
         history.Records.Where(r => period.Contains(r.StartedAt)).OrderBy(r => r.StartedAt);
@@ -202,15 +208,20 @@ public static class RunLogs
     {
         try
         {
-            return JsonSerializer.Deserialize(json, WslCareJsonContext.Default.DetailKindView)?.Kind == "act"
-                ? JsonSerializer.Deserialize(json, WslCareJsonContext.Default.ActRunDetail)?.Actions ?? []
-                : JsonSerializer.Deserialize(json, WslCareJsonContext.Default.TimerPassView)?.TimerPass?.Actions ?? [];
+            return IsAct(json) ? ActOutcomes(json) : TimerPassOutcomes(json);
         }
         catch (JsonException)
         {
             return [];
         }
     }
+
+    private static bool IsAct(byte[] json) => JsonSerializer.Deserialize(json, WslCareJsonContext.Default.DetailKindView)?.Kind == "act";
+
+    private static IReadOnlyList<ActionOutcome> ActOutcomes(byte[] json) => JsonSerializer.Deserialize(json, WslCareJsonContext.Default.ActRunDetail)?.Actions ?? [];
+
+    private static IReadOnlyList<ActionOutcome> TimerPassOutcomes(byte[] json) =>
+        JsonSerializer.Deserialize(json, WslCareJsonContext.Default.TimerPassView)?.TimerPass?.Actions ?? [];
 
     /// <summary>The detail state of a cleanup whose objects were not asked for (or fell past <see cref="MaxDetailsRead"/>).</summary>
     public const string NotRead = "notRead";

@@ -247,12 +247,17 @@ public sealed class PhysicalFileSystem : IFileSystem
                 File.Move(from, to, overwrite: true);
                 return;
             }
-            catch (Exception e) when (OperatingSystem.IsWindows() && e is UnauthorizedAccessException or IOException && e is not (FileNotFoundException or DirectoryNotFoundException) && started.Elapsed < ReplaceRetryFor)
+            catch (Exception e) when (IsHeldOpenOnWindows(e) && started.Elapsed < ReplaceRetryFor)
             {
                 Thread.Sleep(10);
             }
         }
     }
+
+    /// <summary>The refusal Windows gives a rename onto a file a reader holds open — an access or I/O error that is not a
+    /// missing file or folder.</summary>
+    private static bool IsHeldOpenOnWindows(Exception e) =>
+        OperatingSystem.IsWindows() && e is UnauthorizedAccessException or IOException && e is not (FileNotFoundException or DirectoryNotFoundException);
 
     /// <summary>How long the atomic write's rename waits out a reader on Windows.</summary>
     internal static readonly TimeSpan ReplaceRetryFor = TimeSpan.FromSeconds(2);
