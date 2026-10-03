@@ -6,7 +6,7 @@ extension that shows the state and runs cleanups on demand.
 
 | Folder | Holds |
 |---|---|
-| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with its first action (A10, the journal vacuum); the other cleanups arrive in later releases |
+| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with the journal vacuum and the irreversible cleanups (A4–A9, A11, A12, A14, A17); A1–A3, A15, A16 arrive in the next release |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -157,17 +157,36 @@ otherwise only on a defect — so `Restart=always` does not cycle while Docker i
 ## Act — run a cleanup
 
 ```bash
-sudo wsl-care act A10 --preview --json   # what it would do, from LIVE state; nothing run but reads, nothing written
-sudo wsl-care act A10 --confirm --json   # do it: one run at a time, recorded (run detail + history line); schemaVersion 1
-wsl-care act A10 --preview               # as yourself: refused whole ("needs root", exit 77) - nothing read, nothing written
+sudo wsl-care act A4,A5 --preview --json       # what they would do, from LIVE state; nothing run but reads, nothing written
+sudo wsl-care act A5,A4 --confirm --json       # do it (in the fixed order A5 -> A4): one run at a time, recorded
+sudo wsl-care act A4 --confirm --manual --only shown.txt --json   # the panel's button: only the volumes its preview SHOWED
+wsl-care act A10 --preview                     # as yourself: refused whole ("needs root", exit 77) - nothing read, nothing written
 ```
 
 Every `act` runs as **root** (the timer is root; the panel's button reaches root through an argv allowlist). Started by
 anyone else it refuses the whole run before the lock or any state is touched. A destructive run from the CLI needs
-`--confirm` — the button passes it after you confirmed the preview. This release holds ONE action, **A10**: `journalctl
---vacuum-time=<journal.keepDays>d` (default 30 days), which removes only archived journal files; its freed bytes are
-measured — the sizes, read before the vacuum, of exactly the files that are gone after it. The other actions of the plan
-arrive in the next releases; asking for one is refused by name.
+`--confirm` — the button passes it after you confirmed the preview, together with `--manual` (the run is recorded with
+the trigger `manual`; a terminal's as `cli`). Every action previews from LIVE state, removes only what it re-checked,
+counts an object already gone as *already gone* (not a failure), and MEASURES what it freed:
+
+| Action | What it runs | Freed is | Notes |
+|---|---|---|---|
+| `A4` | `docker volume rm <64-hex>…` — never `prune` | the `system df -v` sizes, read just before, of exactly the volumes Docker confirmed | anonymous volumes only, unattached, no `wsl-care.keep=true`, first seen ≥ `volumes.anonymousOlderThanDays` ago; refuses on Docker < 23 or an unreadable version; a button run removes only the volumes passed with `--volume <name>` (repeatable) / `--only <file>` (one name per line) and refuses without them |
+| `A5`, `A5Testcontainers` | `docker rm -v <id>…` — never `-f` | the confirmed containers' layers + their anonymous volumes Docker no longer lists | stopped ≥ `containers.stoppedOlderThanDays` / Testcontainers ≥ `containers.testcontainersOlderThanHours`; keep label respected; a container that started since is refused by Docker and kept |
+| `A6`, `A6Unused` | `docker image prune -f` / `-a -f --filter until=<h>h`, both with `--filter label!=wsl-care.keep=true` | Docker's own "Total reclaimed space" | never an image any container uses; no prune when the preview selects nothing |
+| `A7` | the timer: `docker builder prune -f --max-used-space <buildCache.maxGb>GB` (or `--keep-storage`, whichever THIS Docker's help lists); a button: `-a -f` | Docker's own "Total:" | waits for an idle machine |
+| `A8` | `npm cache clean --force` as the target user | `~/.npm` walked before and after | npm not installed = a skip |
+| `A9` | `apt-get clean`; `snap remove <name> --revision=<n>` of revisions STILL disabled | `/var/cache/apt` before/after + the snap files gone | a missing tool skips its part |
+| `A10` | `journalctl --vacuum-time=<journal.keepDays>d` | the journal files gone after | archived files only |
+| `A11` | `SIGTERM`, `SIGKILL` after 10 s — by pid AND start time (a `pidfd`), never by name | memory, not disk (not counted) | off by default; only suspects: orphaned, in `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not root's, no CPU in a 5 s window and none since |
+| `A12` | deletes the Playwright browsers no project's `browsers.json` references; `dotnet nuget locals http-cache --clear` as the user | each folder before, counted when gone | a button only; refuses the Playwright part when what is referenced cannot be told |
+| `A14` | deletes VS Code / Cursor / Windsurf server builds no process uses, keeping the newest 2, and `.obsolete` extensions | each folder before, counted when gone | every delete judged by the deletion policy |
+| `A17` | `pnpm store prune`, `uv cache prune`, `pip cache purge` as the target user | each cache before/after | `cargo sweep` is not run (it would delete under `~/git`); Gradle prunes its own caches |
+
+As root, every per-user path — the daily folder walk, the caches above, the user configuration layer — is the
+**target user's** home (`/etc/wsl.conf` `[user] default=`, else the single login account), never root's; when the target
+is ambiguous the run is observe-only. `config set` / `config reset` refuse to run as root for the target user (a
+root-owned file would lock them out of their own settings): run them as yourself.
 
 What a run does, in order: takes THE run lock (`/run/wsl-care.lock`, shared with `collect` — the second one refuses
 with exit 75 and waits for nothing); sweeps a `running.json` a dead run left (recorded as `interrupted`) or refuses when

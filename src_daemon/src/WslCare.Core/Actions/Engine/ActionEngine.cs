@@ -26,6 +26,13 @@ public sealed record EngineContext(
 {
     /// <summary>How often <c>running.json</c> is rewritten (plan §6: 5 s; a test shortens it).</summary>
     public TimeSpan HeartbeatPeriod { get; init; } = RunningState.HeartbeatPeriod;
+
+    /// <summary>How A11 signals a process (by pid and start, never by name). Refuses unless the CLI wires the real one —
+    /// which it does only outside a sandbox, on Linux.</summary>
+    public IProcessSignals Signals { get; init; } = RefusingProcessSignals.NotWired;
+
+    /// <summary>The wait an action may take (A11's CPU window); real time unless a test passes its own.</summary>
+    public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
 }
 
 /// <summary>
@@ -51,7 +58,7 @@ public sealed class ActionEngine(EngineContext c)
     public async Task<ActResult> PreviewAsync(ActRequest request, CancellationToken cancellationToken)
     {
         var target = DiscoverTarget();
-        var context = Context(request.Trigger, target);
+        var context = Context(request, target);
         var outcomes = new List<ActionOutcome>();
         foreach (var action in c.Registry.InExecutionOrder(request.Ids))
         {
@@ -106,7 +113,7 @@ public sealed class ActionEngine(EngineContext c)
             return Record(Detail(runId, request.Trigger, started, dry, target, [], [.. notes, cannot], RunOutcome.Failed));
         }
 
-        var run = new RunState(request.Trigger, target, dry, Context(request.Trigger, target)) { IdleSource = SampleIdle };
+        var run = new RunState(request.Trigger, target, dry, Context(request, target)) { IdleSource = SampleIdle };
         var (outcomes, outcome) = await ActAllAsync(request, run, running, notes, cancellationToken).ConfigureAwait(false);
         var result = RemoveRunning(Record(Detail(runId, request.Trigger, started, dry, target, outcomes, notes, outcome)));
         cancellationToken.ThrowIfCancellationRequested();
@@ -204,6 +211,7 @@ public sealed class ActionEngine(EngineContext c)
         Func<Stop?>[] gates =
         [
             () => preview.Available ? null : new Stop(ActionStatus.Refused, $"its preview could not be read: {preview.Reason}"),
+            () => preview.Skip.Length > 0 ? new Stop(ActionStatus.Skipped, preview.Skip) : null,
             () => TriggerStop(action, preview, run),
             () => action.Scope == CommandScope.User && run.Target is not TargetUserResult.Found ? new Stop(ActionStatus.Refused, run.Target.Refusal) : null,
             () => preview.Refusal.Length > 0 ? new Stop(ActionStatus.Refused, preview.Refusal) : null,
@@ -239,7 +247,7 @@ public sealed class ActionEngine(EngineContext c)
         {
             var preview = await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false);
             var refusal = action.Scope == CommandScope.User ? target.Refusal : string.Empty;
-            return Outcome(action, ActionStatus.Previewed, refusal.Length > 0 ? refusal : preview.Refusal, preview, null);
+            return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null);
         }
         catch (Exception e) when (!(e is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
@@ -389,7 +397,18 @@ public sealed class ActionEngine(EngineContext c)
     private ActionCommands Commands(ICleanupAction action, TargetUserResult target) =>
         new(action, c.Commands, target, action.Scope == CommandScope.User && target is TargetUserResult.Found found && c.Paths is LinuxHostPaths linux ? TargetUserCommands.BinFolders(found.User, linux, c.Files) : []);
 
-    private ActionContext Context(RunTrigger trigger, TargetUserResult target) => new(c.Paths, c.Files, c.Clock, c.Loaded.Config, trigger, target);
+    private ActionContext Context(ActRequest request, TargetUserResult target) =>
+        new(c.Paths, c.Files, c.Clock, c.Loaded.Config, request.Trigger, target)
+        {
+            Processes = SampleProcesses,
+            Signals = c.Signals,
+            ShownVolumes = request.ShownVolumes,
+            Wait = c.Wait,
+        };
+
+    /// <summary>The distro's process table, read fresh (the fast probe reads files only, starts nothing).</summary>
+    private Collectors.Reading<Collectors.ProcessSnapshot> SampleProcesses(CancellationToken cancellationToken) =>
+        c.Probe.Sample(cancellationToken).Vm.Bind(vm => vm.Processes);
 
     /// <summary>This process's start as the operating system reports it — the same reading a later run compares with.</summary>
     private DateTimeOffset OwnStart() =>

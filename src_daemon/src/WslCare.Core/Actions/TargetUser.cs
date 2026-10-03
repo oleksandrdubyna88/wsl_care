@@ -61,6 +61,12 @@ public static class TargetUserDiscovery
     public static TargetUserResult Discover(IFileSystem files, LinuxHostPaths paths)
     {
         var passwd = files.ReadFile(paths.PasswdFile);
+        if (passwd is FileReadResult.Missing)
+        {
+            // No user database at all (a bare sandbox): no account, so no target — and no user's layer to miss (E3.S2).
+            return new TargetUserResult.None($"{paths.PasswdFile} does not exist");
+        }
+
         if (passwd is not FileReadResult.Content content)
         {
             return new TargetUserResult.Ambiguous($"{paths.PasswdFile} could not be read");
@@ -152,4 +158,50 @@ public static class TargetUserDiscovery
         ValidName.Accepts(account.Name) && account.Home.StartsWith('/') && account.Home.Length > 1
             ? new TargetUserResult.Found(new TargetUser(account.Name, account.Uid, account.Home), source)
             : new TargetUserResult.Ambiguous($"the account \"{account.Name}\" has no usable name or home (home \"{account.Home}\")");
+}
+
+/// <summary>Whose home the per-user paths of THIS process follow (plan §15c #2, E3.S2) — a closed set.</summary>
+public abstract record HomeOwner
+{
+    private HomeOwner()
+    {
+    }
+
+    /// <summary><c>$HOME</c> of this process: it is not root (its home IS the user's), or there is no login account at all.</summary>
+    public sealed record ThisProcess(string Why) : HomeOwner;
+
+    /// <summary>Root, for the target user: the folder walks, the editor and cache roots and the user configuration layer
+    /// are that user's.</summary>
+    public sealed record Target(TargetUser User, string Source) : HomeOwner;
+
+    /// <summary>Root, and the target user is ambiguous: whose configuration layer counts cannot be told, so the run is
+    /// observe-only (plan §15a #1's reasoning: a default must not re-enable an action a user switched off).</summary>
+    public sealed record Unknown(string Reason) : HomeOwner;
+
+    /// <summary>Why the user configuration layer cannot be used; empty when it can.</summary>
+    public string UserLayerProblem => this is Unknown u ? $"the user layer cannot be located: no single target user ({u.Reason}); the run is observe-only until /etc/wsl.conf names one under [user] default=" : string.Empty;
+}
+
+/// <summary>
+/// Plan §15c #2, closed in E3.S2: when this process is ROOT, every per-user path — the daily folder walk (A8 / A9's rows),
+/// the roots of A12 / A14 / A17, and the user configuration layer — is the TARGET user's home, never root's <c>$HOME</c>.
+/// Unprivileged, <c>$HOME</c> already is the user's.
+/// </summary>
+public static class TargetHome
+{
+    public static (LinuxHostPaths Paths, HomeOwner Owner) Resolve(LinuxHostPaths paths, IFileSystem files, bool privileged)
+    {
+        if (!privileged)
+        {
+            return (paths, new HomeOwner.ThisProcess("not root: $HOME is the user's own"));
+        }
+
+        return TargetUserDiscovery.Discover(files, paths) switch
+        {
+            TargetUserResult.Found found => (paths.WithHome(paths.DistroPath(found.User.Home)), new HomeOwner.Target(found.User, found.Source)),
+            TargetUserResult.Ambiguous ambiguous => (paths, new HomeOwner.Unknown(ambiguous.Reason)),
+            TargetUserResult.None none => (paths, new HomeOwner.ThisProcess($"root, and no target user ({none.Reason})")),
+            _ => throw new System.Diagnostics.UnreachableException("TargetUserResult is a closed set"),
+        };
+    }
 }

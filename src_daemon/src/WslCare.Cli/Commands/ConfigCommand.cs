@@ -29,6 +29,11 @@ internal static class ConfigCommand
 
     public static int Set(Request.ConfigSet request, CliHost host, TextWriter stdout, TextWriter stderr)
     {
+        if (RootForTheUser(host) is { } refusal)
+        {
+            return Output.Refuse(stderr, refusal);
+        }
+
         var key = ConfigKeys.Find(request.Key);
         if (key is null)
         {
@@ -45,6 +50,11 @@ internal static class ConfigCommand
 
     public static int Reset(Request.ConfigReset request, CliHost host, TextWriter stdout, TextWriter stderr)
     {
+        if (RootForTheUser(host) is { } refusal)
+        {
+            return Output.Refuse(stderr, refusal);
+        }
+
         var key = ConfigKeys.Find(request.Key);
         if (key is null)
         {
@@ -53,6 +63,13 @@ internal static class ConfigCommand
 
         return Report(new UserConfigWriter(host.Paths, host.Files, host.Clock).Reset(key), key, host, stdout, stderr);
     }
+
+    /// <summary>Root working for the target user (plan §15c #2, E3.S2) must not write that user's layer: a root-owned file in their
+    /// home would lock them out of their own settings. The panel writes the layer as the user, unprivileged.</summary>
+    private static string? RootForTheUser(CliHost host) =>
+        host.HomeOwner is Core.Actions.HomeOwner.Target target
+            ? $"config set and config reset write the user layer of {target.User.Name}; run them as {target.User.Name}, not as root (a root-owned file in their home would lock them out of it). Nothing was written."
+            : null;
 
     private static int AnswerJson(ConfigLoadResult loaded, IReadOnlyList<ConfigEntry> entries, TextWriter stdout)
     {

@@ -23,8 +23,20 @@ public static class ConfigLoader
     /// <summary>The embedded layer's "file name" in error messages and the provenance column.</summary>
     public static readonly ConfigLayerFile DefaultsFile = new(ConfigLayer.Default, "<embedded default.json>");
 
-    public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files) =>
-        Load(
+    public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files) => Load(paths, files, string.Empty);
+
+    /// <summary>The three layers — with the user layer reported unreadable, naming <paramref name="userLayerProblem"/>, when
+    /// whose layer it is cannot be told (E3.S2: root with an ambiguous target user). That is an ERROR, not a missing file:
+    /// the run becomes observe-only rather than letting a default stand in for a setting the user may have changed.</summary>
+    public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files, string userLayerProblem) =>
+        userLayerProblem.Length > 0
+            ? Load(
+            [
+                (DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())),
+                (new ConfigLayerFile(ConfigLayer.Machine, paths.MachineConfigFile), files.ReadFile(paths.MachineConfigFile)),
+                (new ConfigLayerFile(ConfigLayer.User, "<the target user's ~/.config/wsl-care/config.json>"), new FileReadResult.Unreadable(userLayerProblem)),
+            ])
+            : Load(
         [
             (DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())),
             (new ConfigLayerFile(ConfigLayer.Machine, paths.MachineConfigFile), files.ReadFile(paths.MachineConfigFile)),

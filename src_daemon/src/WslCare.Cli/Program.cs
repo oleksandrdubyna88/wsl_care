@@ -40,7 +40,7 @@ internal static class Program
 
         using var shutdown = new ShutdownSignals();
         var host = CliHost.ForThisMachine();
-        var loaded = ConfigLoader.Load(host.Paths, host.Files);
+        var loaded = ConfigLoader.Load(host.Paths, host.Files, host.HomeOwner.UserLayerProblem);
         using var logger = WslCareLogging.Start(host, loaded.Config, AppName, Console.Error);
         try
         {

@@ -28,6 +28,57 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
         return Record(template, ready.Display, await runner.RunAsync(ready, cancellationToken).ConfigureAwait(false));
     }
 
+    /// <summary>
+    /// Where <paramref name="template"/>'s executable would be started from — on this process's <c>PATH</c> for a
+    /// machine-scoped one, in the target user's bin folders for a user-scoped one — or why it would not be: how an action
+    /// tells "not installed" (a SKIP, E3.S2) from a failure BEFORE it runs anything. A template it did not declare is
+    /// refused here too.
+    /// </summary>
+    public ResolvedExecutable Locate(CommandTemplate template)
+    {
+        if (!action.Commands.Any(declared => ReferenceEquals(declared, template)))
+        {
+            return new ResolvedExecutable.NotFound($"{action.Id} did not declare the template {template.Name}");
+        }
+
+        if (template.Scope == CommandScope.Machine)
+        {
+            return ExecutableResolver.Resolve(template.Executable);
+        }
+
+        return targetUser is TargetUserResult.Found
+            ? ExecutableResolver.ResolveIn(template.Executable, [.. userBinFolders.Select(f => f.OnDisk)], OperatingSystem.IsWindows())
+            : new ResolvedExecutable.NotFound(targetUser.Refusal);
+    }
+
+    /// <summary>
+    /// This executor as an <see cref="ICommandRunner"/>, for the product's own READ machinery (the Docker collector) to run
+    /// through: a request runs only when it is an instance of a MACHINE-scoped template this action declared, and is
+    /// recorded like every other command; anything else is refused and recorded. It never streams.
+    /// </summary>
+    public ICommandRunner AsRunner() => new DeclaredOnly(this);
+
+    private async Task<CommandOutcome> RunDeclaredAsync(CommandRequest request, CancellationToken cancellationToken)
+    {
+        var template = action.Commands.FirstOrDefault(t =>
+            t.Scope == CommandScope.Machine && string.Equals(t.Executable, request.Argv[0], StringComparison.Ordinal) && t.Matches([.. request.Argv.Skip(1)]));
+        if (template is null)
+        {
+            var undeclared = new CommandTemplate("undeclared", CommandScope.Machine, request.Argv[0], [], request.Timeout, request.OutputCapChars);
+            return Record(undeclared, request.Display, new CommandOutcome.Refused($"{action.Id} declares no template that {request.Display} is an instance of; an action runs only what it declares"));
+        }
+
+        return Record(template, request.Display, await runner.RunAsync(request, cancellationToken).ConfigureAwait(false));
+    }
+
+    private sealed class DeclaredOnly(ActionCommands owner) : ICommandRunner
+    {
+        public Task<CommandOutcome> RunAsync(CommandRequest request, CancellationToken cancellationToken) => owner.RunDeclaredAsync(request, cancellationToken);
+
+        public Task<CommandOutcome> StreamAsync(CommandRequest request, Action<string> onStdoutLine, CancellationToken cancellationToken) =>
+            Task.FromResult<CommandOutcome>(new CommandOutcome.Refused("an action does not stream"));
+    }
+
     private UserCommand Request(CommandTemplate template, IReadOnlyList<string> values)
     {
         if (!action.Commands.Any(declared => ReferenceEquals(declared, template)))
