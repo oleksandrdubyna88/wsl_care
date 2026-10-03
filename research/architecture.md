@@ -631,7 +631,9 @@ E3.S3, for `logs` / `runs`: 4 the history exists but cannot be read.
 - Thresholds without a setting in `ConfigKeys` stay named constants in `ThresholdRules` (plan §4's starting points);
   their keys arrive with E7's settings sync if the week of data asks for tuning.
 - `collect` takes `{state}/run.lock` (not in the plan for E2) so the reconcile cannot race a running run; E3.S1's lock
-  supersedes it. The trigger is `timer` when systemd's `INVOCATION_ID` is set, `cli` otherwise.
+  supersedes it. The trigger is `timer` only with `--timer` (the timer unit passes it in its `ExecStart`), `cli` otherwise — never
+  inferred from `INVOCATION_ID`, which every descendant of any systemd unit inherits (a CI runner job, a VS Code Server
+  user service; CI run 37129452377 caught four act tests taking a runner job for the timer).
 - The backfill reads the WHOLE 24-hour window unfiltered (`events --since now−24h --until now`), not `--since <marker>`:
   the oldest buffered event of any kind is the only evidence that the buffer reaches back past the marker. Its lines
   are parsed in memory only (healthcheck command lines are in them) and never stored.
@@ -857,7 +859,7 @@ and a planted action that builds a shell string from a preview name.
 - **Heavy actions** (`IdleRule`): `TimerOnly` for A1 / A2, `Always` for A7 / A15 — a button press of A7 while a build
   runs is deferred too (refused with the reason); A10 never waits.
 - **A preview takes no lock** and writes nothing — it is a question, like `preview --all`; only `--confirm` locks.
-- **`act` under systemd is the timer** (`INVOCATION_ID`, as for `collect`); `collect` does not call the engine yet (E3.S3:
+- **`act --timer` is the timer** (as for `collect`; never `INVOCATION_ID`); `collect` does not call the engine yet (E3.S3:
   the timer pass does).
 
 ### Exit codes of `act`
@@ -1029,8 +1031,8 @@ out of it).
 
 ### The CLI: the panel's mark and A4's shown list
 
-`act … [--manual] [--volume <name>]... [--only <file>]`: `--manual` records the trigger `manual` (the timer wins if
-`INVOCATION_ID` is also set — more gates, not fewer); `--volume` (repeatable, each a 64-hex anonymous volume name) and
+`act … [--manual or --timer] [--volume <name>]... [--only <file>]`: `--manual` records the trigger `manual`, `--timer` the
+timer (the timer wins if both are given — more gates, not fewer); `--volume` (repeatable, each a 64-hex anonymous volume name) and
 `--only` (a file of such names, one per line, at most 1 MiB and 10 000 names; read as root through
 `IFileSystem.ReadRegularFile` — a REGULAR file only, a directory, FIFO, socket or device refused at once and never waited
 on (on Linux `open(O_NONBLOCK)` + `statx` of the open descriptor), never more bytes read than the cap whatever the length
@@ -1082,7 +1084,7 @@ event is then acted on within that period.
 
 ### The timer pass — the exact order of a timer's full run
 
-`collect` started by systemd (`INVOCATION_ID`) runs the engine AFTER measuring, under the lock it already holds, for every
+`collect --timer` (as the timer unit starts it) runs the engine AFTER measuring, under the lock it already holds, for every
 action this build holds; a `collect` from a terminal or the panel's *Run full check now* never acts, and a button's `act`
 stays a separate run with its own record. EVERY full run — whatever started it — sweeps a dead run's `running.json` in its
 housekeeping (gate finding #8) and holds its own `running.json` (`collect`, pid, start, heartbeat) from the moment it holds

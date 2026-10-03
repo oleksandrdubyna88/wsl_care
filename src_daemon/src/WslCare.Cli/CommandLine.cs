@@ -32,8 +32,13 @@ internal abstract record Request
     /// <summary><c>preview --all [--json]</c>: every cleanup row with count and reclaimable bytes (plan §6).</summary>
     internal sealed record Preview(bool Json) : Request;
 
-    /// <summary><c>collect [--json]</c>: the full run (plan §6) — measured, recorded when this process may write the state.</summary>
-    internal sealed record Collect(bool Json) : Request;
+    /// <summary><c>collect [--timer] [--json]</c>: the full run (plan §6) — measured, recorded when this process may write the
+    /// state. <c>--timer</c> is the systemd timer's own mark in its unit's <c>ExecStart</c>: only then does the run act.</summary>
+    internal sealed record Collect(bool Json) : Request
+    {
+        /// <summary>The timer started it (its unit passes <c>--timer</c>); never inferred from the environment.</summary>
+        public bool Timer { get; init; }
+    }
 
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
@@ -57,6 +62,9 @@ internal abstract record Request
     {
         /// <summary>The panel's button started it: recorded as <c>manual</c>, not <c>cli</c>.</summary>
         public bool Manual { get; init; }
+
+        /// <summary>The timer started it (<c>--timer</c> in its unit): the auto switches, triggers and the dry-run week apply.</summary>
+        public bool Timer { get; init; }
 
         /// <summary>Every <c>--volume</c> given, each already a 64-hex anonymous volume name.</summary>
         public IReadOnlyList<string> Volumes { get; init; } = [];
@@ -106,6 +114,7 @@ internal static class CommandLine
     private const string PreviewFlag = "--preview";
     private const string ConfirmFlag = "--confirm";
     private const string ManualFlag = "--manual";
+    private const string TimerFlag = "--timer";
     private const string VolumeFlag = "--volume";
     private const string OnlyFlag = "--only";
     private const string PeriodFlag = "--period";
@@ -125,10 +134,10 @@ internal static class CommandLine
         new([["config", "reset"]], "config reset <key>", "remove one setting from the user layer", ["config", "reset", "dryRun"], ParseConfigReset),
         new([["status"]], "status [--json]", "a fast snapshot: memory, top holders, containers, disk; slow parts from the last full run", ["status", "--json"], ParseStatus),
         new([["preview"]], "preview --all [--json]", "every cleanup row with its count and reclaimable bytes, the kept named volumes, Docker hygiene", ["preview", "--all", "--json"], ParsePreview),
-        new([["collect"]], "collect [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise)", ["collect", "--json"], rest => JsonOnly("collect", rest, json => new Request.Collect(json))),
+        new([["collect"]], "collect [--timer] [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise); --timer is the systemd timer's mark, the only run that also acts", ["collect", "--json"], ParseCollect),
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
-        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual] [--volume <name>]... [--only <file>] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --volume / --only the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
+        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--volume <name>]... [--only <file>] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --volume / --only the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
         new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only, UTC days)", ["logs", "--period", "today", "--json"], ParseLogs),
         new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only, UTC days)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
     ];
@@ -241,6 +250,12 @@ internal static class CommandLine
         _ => new Request.Failed($"\"{BinaryName} {verb}\" takes only {JsonFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
     };
 
+    /// <summary><c>collect</c> takes <c>--timer</c> and <c>--json</c>, each at most once, in any order.</summary>
+    private static Request ParseCollect(IReadOnlyList<string> rest) =>
+        rest.All(f => f is TimerFlag or JsonFlag) && rest.Distinct(StringComparer.Ordinal).Count() == rest.Count
+            ? new Request.Collect(rest.Contains(JsonFlag)) { Timer = rest.Contains(TimerFlag) }
+            : new Request.Failed($"\"{BinaryName} collect\" takes only {TimerFlag} and {JsonFlag}, each once; got \"{Printable(string.Join(' ', rest))}\".");
+
     private static Request ParseEventsFollow(IReadOnlyList<string> rest) => rest switch
     {
         [] => new Request.EventsFollow(Once: false),
@@ -271,7 +286,7 @@ internal static class CommandLine
         (_, _, _, { } failure) => failure,
         var (flags, _, _, _) when ActFlags(flags) is { } failure => failure,
         var (_, volumes, only, _) when ShownListFailure(ids, volumes, only) is { } failure => failure,
-        var (flags, volumes, only, _) => new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag)) { Manual = flags.Contains(ManualFlag), Volumes = volumes, OnlyFile = only },
+        var (flags, volumes, only, _) => new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag)) { Manual = flags.Contains(ManualFlag), Timer = flags.Contains(TimerFlag), Volumes = volumes, OnlyFile = only },
     };
 
     /// <summary>The flags, the <c>--volume</c> values and the <c>--only</c> file, apart — or the first refusal.</summary>
@@ -315,10 +330,10 @@ internal static class CommandLine
 
     private static Request.Failed? ActFlags(IReadOnlyList<string> flags)
     {
-        var unknown = flags.Where(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag)).ToList();
+        var unknown = flags.Where(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag)).ToList();
         if (unknown.Count > 0 || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count)
         {
-            return new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name> and {OnlyFlag} <file>; got \"{Printable(string.Join(' ', flags))}\".");
+            return new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name> and {OnlyFlag} <file>; got \"{Printable(string.Join(' ', flags))}\".");
         }
 
         return flags.Contains(PreviewFlag) == flags.Contains(ConfirmFlag)

@@ -72,17 +72,15 @@ internal sealed class ScenarioHome : IDisposable
         [NoCurrentDirectoryLookupVariable] = null,
         // Root is the operating system's answer; a scenario that needs act to run claims it inside the sandbox (E3.S1).
         [ProcessPrivilege.SandboxVariable] = ClaimsRoot ? "1" : null,
-        // systemd sets INVOCATION_ID for every unit it runs: the CLI takes it as the TIMER (E3.S3: only then does a full run
-        // act). Always set or removed here, so a test host that itself runs under systemd never leaks it into a scenario.
-        ["INVOCATION_ID"] = AsTimer ? "scenario-timer" : null,
+        // systemd sets INVOCATION_ID for every unit it runs AND every descendant inherits it — a GitHub runner's job, a VS Code
+        // Server started as a user service. It is therefore ALWAYS set here, so every scenario proves the CLI ignores it: the
+        // timer says so with --timer in its unit's ExecStart (CI run 37129452377: four act tests took a runner job for the timer).
+        ["INVOCATION_ID"] = "inherited-from-a-systemd-unit",
     };
 
     /// <summary>Whether the CLI answers "am I root" with yes inside this sandbox (<see cref="ProcessPrivilege.SandboxVariable"/>) —
     /// what lets a scenario drive <c>act</c> over fake tools without being root. Off by default: then the operating system decides.</summary>
     public bool ClaimsRoot { get; set; }
-
-    /// <summary>Whether the CLI runs as the systemd TIMER would start it (<c>INVOCATION_ID</c> set). Off by default.</summary>
-    public bool AsTimer { get; set; }
 
     /// <summary>The Windows variable that makes <c>CreateProcess</c> skip the current directory for a bare name.</summary>
     internal const string NoCurrentDirectoryLookupVariable = "NoDefaultCurrentDirectoryInExePath";

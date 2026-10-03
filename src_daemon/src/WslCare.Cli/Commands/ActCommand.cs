@@ -28,7 +28,7 @@ namespace WslCare.Cli.Commands;
 /// the lock (collect or act — the second refuses, it never waits) or a live run is acting; 76 a run is wedged (alive,
 /// heartbeat stale) or the running state cannot be told — nothing was killed; 77 needs root; 78 observe-only (a
 /// configuration layer is invalid); 130 interrupted.</para>
-/// <para>The trigger is <c>timer</c> under systemd (<c>INVOCATION_ID</c>, as for <c>collect</c>) — then the <c>auto</c>
+/// <para>The trigger is <c>timer</c> with <c>--timer</c> (the timer unit's mark, as for <c>collect</c>; never <c>INVOCATION_ID</c>) — then the <c>auto</c>
 /// switches, the triggers and the 7-day dry run apply — <c>manual</c> when the panel's button passes <c>--manual</c> (E3.S2;
 /// the timer wins if both are true: more gates, not fewer), and <c>cli</c> otherwise. A4 on a <c>manual</c> run removes
 /// only the volumes passed with <c>--volume</c> / <c>--only</c> — what its preview SHOWED — and refuses without them.</para>
@@ -101,7 +101,7 @@ internal static class ActCommand
         request.Confirm && loaded.IsObserveOnly ? (ExitCode.ObserveOnly, ActionEngine.ObserveOnlyReason) : null;
 
     private static RunTrigger Trigger(Request.Act request) =>
-        Environment.GetEnvironmentVariable("INVOCATION_ID") is { Length: > 0 } ? RunTrigger.Timer
+        request.Timer ? RunTrigger.Timer
         : request.Manual ? RunTrigger.Manual
         : RunTrigger.Cli;
 

@@ -122,7 +122,7 @@ then keeps 90 days of history (a detail goes only after its line did) and 14 day
 a time (`run.lock`). Run without root it measures and prints the same, writes nothing, says `read-only: run as root to
 record`, and logs to `$XDG_STATE_HOME/wsl-care/logs`.
 
-**The timer's full run also acts.** When systemd starts `collect` (it sets `INVOCATION_ID`), the run measures, then — under
+**The timer's full run also acts.** When the timer starts `collect --timer` (its unit's `ExecStart` says so; `INVOCATION_ID`, which every descendant of a systemd unit inherits, is never read), the run measures, then — under
 the same lock, before anything is recorded — passes every action through the action engine as the timer (see *Act*
 below: each action's `auto` switch, trigger, idle wait and the first week's dry run decide), and records the measurement
 and the actions in the SAME run: one detail (with a `timerPass` part listing every action's preview and result) and one
@@ -206,7 +206,7 @@ a live run is still acting (75) or has stopped beating (**wedged**, 76 — nothi
 each action: the live preview, its gates, the run, the measured result; a failing action is recorded and the run goes
 on. While it acts, `/var/lib/wsl-care/running.json` names the action, the pid and its start, and a heartbeat every 5 s.
 
-Under the systemd timer (`INVOCATION_ID` set) each action also needs its `auto.<A#>` switch and its trigger, heavy
+Under the systemd timer (`--timer`) each action also needs its `auto.<A#>` switch and its trigger, heavy
 actions wait for an idle machine, and the timer **runs dry for its first 7 days** (from its first action pass, recorded
 in `/var/lib/wsl-care/first-timer-run.json`) and for as long as `dryRun` is on — a dry run previews and records what
 it would have freed. A button never runs dry.
