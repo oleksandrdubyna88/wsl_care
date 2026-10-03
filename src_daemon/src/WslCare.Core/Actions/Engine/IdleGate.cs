@@ -89,10 +89,14 @@ public static class IdleGate
             "docker" or "com.docker.cli" => words.Skip(1).Take(4).Any(w => w is "build" or "bake"),
             "dotnet" => DotnetBuildVerbs.Contains(words[1]),
             "npm" or "npm-cli.js" => NpmBuildVerbs.Contains(words[1]),
-            "node" => words.Length > 2 && Processes.Policy.NeverList.Exe([words[1]]) == "npm-cli.js" && NpmBuildVerbs.Contains(words[2]),
+            "node" => IsNodeRunningNpmBuild(words),
             _ => false,
         };
     }
+
+    /// <summary><c>node …/npm-cli.js ci|install</c>.</summary>
+    private static bool IsNodeRunningNpmBuild(IReadOnlyList<string> words) =>
+        words.Count > 2 && Processes.Policy.NeverList.Exe([words[1]]) == "npm-cli.js" && NpmBuildVerbs.Contains(words[2]);
 
     private static Reading<double> LoadAverage(string text, int field)
     {

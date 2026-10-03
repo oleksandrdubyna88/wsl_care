@@ -100,8 +100,12 @@ public static class NvmVersion
         }
 
         var wanted = Parse(alias.StartsWith('v') ? alias : "v" + alias);
-        return wanted is null ? null : versions.FirstOrDefault(v => v.Parts!.Take(wanted.Count).SequenceEqual(wanted) && v.Parts!.Count >= wanted.Count).Name;
+        return wanted is null ? null : HighestMatching(versions, wanted);
     }
+
+    /// <summary>The highest installed version that starts with <paramref name="wanted"/>'s numbers.</summary>
+    private static string? HighestMatching(IReadOnlyList<(string Name, IReadOnlyList<int>? Parts)> versions, IReadOnlyList<int> wanted) =>
+        versions.FirstOrDefault(v => v.Parts!.Take(wanted.Count).SequenceEqual(wanted) && v.Parts!.Count >= wanted.Count).Name;
 
     private static readonly Comparer<IReadOnlyList<int>> Comparer = Comparer<IReadOnlyList<int>>.Create((a, b) =>
         a.Zip(b).Select(p => p.First.CompareTo(p.Second)).FirstOrDefault(c => c != 0, a.Count.CompareTo(b.Count)));
@@ -114,7 +118,12 @@ public static class NvmVersion
             return null;
         }
 
-        var parts = text[1..].Split('.');
-        return parts.Length <= 3 && parts.All(p => p.Length is > 0 and <= 6 && p.All(char.IsAsciiDigit)) ? [.. parts.Select(p => int.Parse(p, System.Globalization.CultureInfo.InvariantCulture))] : null;
+        return Numbers(text[1..].Split('.'));
     }
+
+    /// <summary>One to three dot-separated numbers of at most six digits; <c>null</c> otherwise.</summary>
+    private static IReadOnlyList<int>? Numbers(string[] parts) =>
+        parts.Length <= 3 && parts.All(IsVersionPart) ? [.. parts.Select(p => int.Parse(p, System.Globalization.CultureInfo.InvariantCulture))] : null;
+
+    private static bool IsVersionPart(string part) => part.Length is > 0 and <= 6 && part.All(char.IsAsciiDigit);
 }

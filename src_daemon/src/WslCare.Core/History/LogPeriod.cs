@@ -37,8 +37,7 @@ public sealed record LogPeriod(DateOnly From, DateOnly To, string Label)
 
     private static PeriodParse Range(string text)
     {
-        var parts = text.Split("..");
-        if (parts.Length != 2 || Day(parts[0]) is not { } from || Day(parts[1]) is not { } to)
+        if (Ends(text) is not var (from, to))
         {
             return Refuse(text);
         }
@@ -51,6 +50,13 @@ public sealed record LogPeriod(DateOnly From, DateOnly To, string Label)
         return to.DayNumber - from.DayNumber + 1 > MaxDays
             ? new PeriodParse.Refused($"the period {text} is longer than {MaxDays} days")
             : new PeriodParse.Parsed(new LogPeriod(from, to, text));
+    }
+
+    /// <summary>The two days of <c>from..to</c>; <c>null</c> unless both are dates.</summary>
+    private static (DateOnly From, DateOnly To)? Ends(string text)
+    {
+        var parts = text.Split("..");
+        return parts.Length == 2 && Day(parts[0]) is { } from && Day(parts[1]) is { } to ? (from, to) : null;
     }
 
     private static DateOnly? Day(string text) =>

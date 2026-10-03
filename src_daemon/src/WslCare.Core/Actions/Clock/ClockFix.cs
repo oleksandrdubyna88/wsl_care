@@ -77,8 +77,7 @@ public sealed class ClockFix : ICleanupAction
     {
         var max = context.Config.Int(ConfigKeys.Clock.MaxDriftSeconds);
         var chrony = ChronydRuns(context, cancellationToken);
-        var tool = chrony ? "chronyc makestep" : "hwclock -s";
-        var what = string.Create(CultureInfo.InvariantCulture, $"{tool}: step the distro's clock to the host's, once per drift of more than {max} s (clock.maxDriftSeconds)");
+        var what = string.Create(CultureInfo.InvariantCulture, $"{Tool(chrony).Name}: step the distro's clock to the host's, once per drift of more than {max} s (clock.maxDriftSeconds)");
         var now = await HealthCollector.MeasureWindowsClockAsync(commands.AsRunner(), context.Clock, cancellationToken).ConfigureAwait(false);
         if (!now.Measured)
         {
@@ -87,14 +86,7 @@ public sealed class ClockFix : ICleanupAction
 
         var previous = LastFullRun.Read(context.Paths, context.Files, context.Clock).WindowsClock.Map(a => a.Value);
         var last = Read(context.Paths, context.Files);
-        var drift = ThresholdRules.IsDrift(now, previous, max);
-        var facts = new Dictionary<string, long>(StringComparer.Ordinal)
-        {
-            [OffsetMillisFact] = (long)Math.Round(now.OffsetSeconds * 1000),
-            [DriftFact] = drift ? 1 : 0,
-            [AlreadyCorrectedFact] = last is { } fix && EventStillOpen(context, fix, max) ? 1 : 0,
-            [ChronyFact] = chrony ? 1 : 0,
-        };
+        var facts = Facts(now, ThresholdRules.IsDrift(now, previous, max), Corrected(context, last, max), chrony);
         var item = new ActionItem("clock", "the distro's clock", null, string.Create(CultureInfo.InvariantCulture, $"{now.OffsetSeconds:+0.00;-0.00} s off Windows' (launch latency {now.LaunchLatencySeconds:0.00} s subtracted)"));
         var preview = ActionPreview.Of(what, 1, null, "a live observation of the Windows clock, and the last full run's", facts, Refusal(context, last), [item]);
         return await SkipAsync(preview, now, max, commands, cancellationToken).ConfigureAwait(false);
@@ -116,43 +108,58 @@ public sealed class ClockFix : ICleanupAction
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
-        var chrony = preview.Facts.GetValueOrDefault(ChronyFact) == 1;
-        var (template, tool) = chrony ? (ChronyMakestep, "chronyc makestep") : (Hwclock, "hwclock -s");
-        var outcome = await commands.RunAsync(template, [], cancellationToken).ConfigureAwait(false);
-        var failure = CommandFailures.Of(tool, outcome);
+        var (template, tool) = Tool(preview.Facts.GetValueOrDefault(ChronyFact) == 1);
+        var failure = CommandFailures.Of(tool, await commands.RunAsync(template, [], cancellationToken).ConfigureAwait(false));
         if (failure.Length > 0)
         {
             return new ActionRun(0, null, "the clock was not stepped", null, null, [], commands.Ran, failure);
         }
 
-        var before = preview.Facts.TryGetValue(OffsetMillisFact, out var millis) ? millis / 1000.0 : double.NaN;
+        var before = OffsetBefore(preview);
         var recorded = Write(context, before, tool);
         var after = await HealthCollector.MeasureWindowsClockAsync(commands.AsRunner(), context.Clock, cancellationToken).ConfigureAwait(false);
-        IReadOnlyList<string> notes =
-        [
-            after.Measured
-                ? string.Create(CultureInfo.InvariantCulture, $"offset {before:+0.00;-0.00} s before, {after.OffsetSeconds:+0.00;-0.00} s after {tool}")
-                : $"the offset after {tool} was not observed: {after.Unavailable}",
-            .. recorded.Length > 0 ? [$"the correction could not be recorded in {FileName}: {recorded} - the next run may correct again"] : Array.Empty<string>(),
-        ];
         return new ActionRun(1, null, "a clock step frees nothing: the offset observed before and after", null, null, [new ActionItem("clock", "the distro's clock", null, $"stepped by {tool}")], commands.Ran, string.Empty)
         {
-            Notes = notes,
+            Notes = [Observed(before, after, tool), .. Unrecorded(recorded)],
         };
     }
 
+    /// <summary>The step's command: <c>chronyc makestep</c> while <c>chronyd</c> runs, else <c>hwclock -s</c>.</summary>
+    private static (CommandTemplate Template, string Name) Tool(bool chrony) => chrony ? (ChronyMakestep, "chronyc makestep") : (Hwclock, "hwclock -s");
+
+    private static double OffsetBefore(ActionPreview preview) =>
+        preview.Facts.TryGetValue(OffsetMillisFact, out var millis) ? millis / 1000.0 : double.NaN;
+
+    private static string Observed(double before, WindowsClockSample after, string tool) =>
+        after.Measured
+            ? string.Create(CultureInfo.InvariantCulture, $"offset {before:+0.00;-0.00} s before, {after.OffsetSeconds:+0.00;-0.00} s after {tool}")
+            : $"the offset after {tool} was not observed: {after.Unavailable}";
+
+    private static IEnumerable<string> Unrecorded(string recorded) =>
+        recorded.Length > 0 ? [$"the correction could not be recorded in {FileName}: {recorded} - the next run may correct again"] : [];
+
+    private static Dictionary<string, long> Facts(WindowsClockSample now, bool drift, bool corrected, bool chrony) =>
+        new(StringComparer.Ordinal)
+        {
+            [OffsetMillisFact] = (long)Math.Round(now.OffsetSeconds * 1000),
+            [DriftFact] = drift ? 1 : 0,
+            [AlreadyCorrectedFact] = corrected ? 1 : 0,
+            [ChronyFact] = chrony ? 1 : 0,
+        };
+
+    /// <summary>The drift <paramref name="last"/> corrected is still open (once per drift).</summary>
+    private static bool Corrected(ActionContext context, ClockFixRecord? last, int max) => last is { } fix && EventStillOpen(context, fix, max);
+
     /// <summary>The last correction, or <c>null</c> when none is recorded (or the record cannot be read: then the per-hour
     /// and once-per-drift guards fall back to the history-free answer — the record is root's and rewritten at each fix).</summary>
-    public static ClockFixRecord? Read(IHostPaths paths, IFileSystem files)
-    {
-        if (files.ReadFile(File(paths)) is not FileReadResult.Content content)
-        {
-            return null;
-        }
+    public static ClockFixRecord? Read(IHostPaths paths, IFileSystem files) =>
+        files.ReadFile(File(paths)) is FileReadResult.Content content ? Parse(content.Bytes) : null;
 
+    private static ClockFixRecord? Parse(byte[] json)
+    {
         try
         {
-            return JsonSerializer.Deserialize(content.Bytes, WslCareJsonContext.Default.ClockFixRecord) is { CorrectedAt: var at } record && at != default ? record : null;
+            return JsonSerializer.Deserialize(json, WslCareJsonContext.Default.ClockFixRecord) is { CorrectedAt: var at } record && at != default ? record : null;
         }
         catch (JsonException)
         {

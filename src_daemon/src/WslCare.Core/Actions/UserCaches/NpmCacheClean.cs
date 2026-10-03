@@ -74,16 +74,15 @@ public sealed class NpmCacheClean : ICleanupAction
         var outcome = await commands.RunAsync(Clean, [], cancellationToken).ConfigureAwait(false);
         var after = CacheFolders.Measure(context.Files, cache, cancellationToken);
         var freed = CacheFolders.Freed(before, after);
-        return new ActionRun(
-            freed is > 0 ? 1 : 0,
-            freed,
-            freed is null ? "unknown: a walk of ~/.npm was cut by its ceiling or could not read it" : "the size of ~/.npm walked right before minus right after npm cleaned it",
-            before.CompleteBytes,
-            after.CompleteBytes,
-            freed is > 0 ? [new ActionItem("npm cache", cache, freed)] : [],
-            commands.Ran,
-            CommandFailures.Of("npm cache clean --force", outcome));
+        var removed = Cleaned(cache, freed);
+        return new ActionRun(removed.Count, freed, FreedBasis(freed), before.CompleteBytes, after.CompleteBytes, removed, commands.Ran, CommandFailures.Of("npm cache clean --force", outcome));
     }
+
+    /// <summary>The cache, as the one object cleaned, when it gave something back.</summary>
+    private static IReadOnlyList<ActionItem> Cleaned(string cache, long? freed) => freed is > 0 ? [new ActionItem("npm cache", cache, freed)] : [];
+
+    private static string FreedBasis(long? freed) =>
+        freed is null ? "unknown: a walk of ~/.npm was cut by its ceiling or could not read it" : "the size of ~/.npm walked right before minus right after npm cleaned it";
 
     /// <summary>A target user without npm in their bin folders: nothing to do, said as a skip.</summary>
     private static ActionPreview Skipped(ActionPreview preview, ActionContext context, ActionCommands commands) =>

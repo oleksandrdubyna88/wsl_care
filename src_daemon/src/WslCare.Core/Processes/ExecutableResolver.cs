@@ -66,17 +66,21 @@ public static class ExecutableResolver
     /// </summary>
     public static ResolvedExecutable ResolveIn(string name, IReadOnlyList<string> directories, bool windows)
     {
-        if (name.Length == 0 || HasADirectory(name, windows) || Path.IsPathFullyQualified(name))
+        if (!IsBareName(name, windows))
         {
             return new ResolvedExecutable.NotFound($"\"{name}\" is not a bare name; only a bare name is looked up in a list of folders");
         }
 
-        var usable = directories.Where(d => d.Length > 0 && Path.IsPathFullyQualified(d)).ToList();
+        var usable = directories.Where(IsAbsoluteFolder).ToList();
         var found = usable.SelectMany(d => Candidates(name, windows).Select(c => Path.Combine(d, c))).FirstOrDefault(c => IsStartable(c, windows));
         return found is not null
             ? new ResolvedExecutable.Found(found)
             : new ResolvedExecutable.NotFound(NotFoundReason(name, usable.Count, windows));
     }
+
+    private static bool IsBareName(string name, bool windows) => name.Length > 0 && !HasADirectory(name, windows) && !Path.IsPathFullyQualified(name);
+
+    private static bool IsAbsoluteFolder(string directory) => directory.Length > 0 && Path.IsPathFullyQualified(directory);
 
     /// <summary>A relative path rather than a bare name: <c>./docker</c>, <c>bin\docker</c>, <c>C:docker</c>.</summary>
     private static bool HasADirectory(string name, bool windows) =>

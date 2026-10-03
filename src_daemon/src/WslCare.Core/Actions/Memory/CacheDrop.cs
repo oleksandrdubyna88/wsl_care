@@ -89,8 +89,11 @@ public sealed class CacheDrop : ICleanupAction
         var act = config.Int(ConfigKeys.Thresholds.MemAvailableActPercent);
         var available = permille / 10.0;
         var said = string.Create(CultureInfo.InvariantCulture, $"MemAvailable {available:0.0} %, page cache {cache / Gib:0.0} GiB; the trigger is available < {act} % (thresholds.memAvailableActPercent), or a page cache > {ThresholdRules.PageCacheActGib:0} GiB with available < {ThresholdRules.PageCacheActAvailablePercent:0} %");
-        return new TriggerDecision(available < act || (cache > ThresholdRules.PageCacheActGib * Gib && available < ThresholdRules.PageCacheActAvailablePercent), said);
+        return new TriggerDecision(Fires(available, cache, act), said);
     }
+
+    private static bool Fires(double availablePercent, long cacheBytes, int actPercent) =>
+        availablePercent < actPercent || (cacheBytes > ThresholdRules.PageCacheActGib * Gib && availablePercent < ThresholdRules.PageCacheActAvailablePercent);
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
@@ -110,8 +113,8 @@ public sealed class CacheDrop : ICleanupAction
             failure.Length == 0 ? 1 : 0,
             null,
             "memory, not disk: the page cache (Cached + Buffers) read from /proc/meminfo before and after",
-            cacheBefore.IsAvailable ? cacheBefore.ValueOr(0) : null,
-            cacheAfter.IsAvailable ? cacheAfter.ValueOr(0) : null,
+            Known(cacheBefore),
+            Known(cacheAfter),
             [],
             commands.Ran,
             failure)
@@ -119,6 +122,8 @@ public sealed class CacheDrop : ICleanupAction
             Notes = [Said("MemAvailable", before.Bind(m => m.AvailablePercent), after.Bind(m => m.AvailablePercent))],
         };
     }
+
+    private static long? Known(Reading<long> bytes) => bytes.IsAvailable ? bytes.ValueOr(0) : null;
 
     private static string Said(string what, Reading<double> before, Reading<double> after) =>
         Reading.Combine(before, after, (b, a) => string.Create(CultureInfo.InvariantCulture, $"{what} {b:0.0} % before, {a:0.0} % after")) is Reading<string>.Available { Value: var text }

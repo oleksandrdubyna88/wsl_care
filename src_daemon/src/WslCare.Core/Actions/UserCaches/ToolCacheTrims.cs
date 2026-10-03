@@ -64,52 +64,53 @@ public sealed class ToolCacheTrims : ICleanupAction
         var what = $"the caches of pnpm, uv and pip, trimmed by their own commands as {CacheFolders.UserName(context)}; {NotRun}";
         if (CacheFolders.Home(context).Length == 0)
         {
-            return Task.FromResult(ActionPreview.Unavailable(what, context.TargetUser.Refusal.Length > 0 ? context.TargetUser.Refusal : "the caches are the WSL distro's"));
+            return Task.FromResult(ActionPreview.Unavailable(what, CacheFolders.NoHome(context, "the caches")));
         }
 
-        var installed = Installed(commands);
-        var items = installed.Select(t => Item(context, t, cancellationToken)).ToList();
-        var facts = items.ToDictionary(i => i.Name + "Bytes", i => i.Bytes ?? 0, StringComparer.Ordinal);
-        var preview = ActionPreview.Of(what, items.Count, items.Sum(i => i.Bytes ?? 0), "each tool's cache folder, walked now", facts, string.Empty, items);
+        var items = Installed(commands).Select(t => Item(context, t, cancellationToken)).ToList();
+        var facts = items.ToDictionary(i => i.Name + "Bytes", CacheFolders.Size, StringComparer.Ordinal);
+        var preview = ActionPreview.Of(what, items.Count, CacheFolders.Total(items), "each tool's cache folder, walked now", facts, string.Empty, items);
         return Task.FromResult(items.Count > 0 ? preview : preview with { Skip = $"none of pnpm, uv, pip is installed for {CacheFolders.UserName(context)}" });
     }
 
     /// <summary>Plan §5 A17, "per tool threshold": any one cache above <see cref="TriggerGib"/> GiB.</summary>
     public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config)
     {
-        var largest = preview.Items.MaxBy(i => i.Bytes ?? 0);
+        var largest = preview.Items.MaxBy(CacheFolders.Size) ?? new ActionItem("cache", "none", 0);
+        var bytes = CacheFolders.Size(largest);
         return new TriggerDecision(
-            (largest?.Bytes ?? 0) > TriggerGib * Gib,
-            string.Create(CultureInfo.InvariantCulture, $"the largest cache is {largest?.Name ?? "none"} with {(largest?.Bytes ?? 0) / (double)Gib:0.00} GiB; the trigger is above {TriggerGib} GiB"));
+            bytes > TriggerGib * Gib,
+            string.Create(CultureInfo.InvariantCulture, $"the largest cache is {largest.Name} with {bytes / (double)Gib:0.00} GiB; the trigger is above {TriggerGib} GiB"));
     }
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
-        var removed = new List<ActionItem>();
-        var failures = new List<string>();
-        var freed = 0L;
-        var unknown = false;
+        var trims = new List<(ActionItem Item, string Failure)>();
         foreach (var tool in Installed(commands))
         {
-            var cache = CacheFolders.UnderHome(context, [.. tool.Cache]);
-            var before = CacheFolders.Measure(context.Files, cache, cancellationToken);
-            var outcome = await commands.RunAsync(tool.Command, [], cancellationToken).ConfigureAwait(false);
-            var after = CacheFolders.Measure(context.Files, cache, cancellationToken);
-            var gone = CacheFolders.Freed(before, after);
-            freed += gone ?? 0;
-            unknown |= gone is null;
-            removed.Add(new ActionItem("cache", tool.Tool, gone, gone is null ? "freed unknown: a walk of its cache was cut or unreadable" : cache));
-            if (CommandFailures.Of(tool.Command.Shape, outcome) is { Length: > 0 } failed)
-            {
-                failures.Add(failed);
-            }
+            trims.Add(await TrimAsync(context, commands, tool, cancellationToken).ConfigureAwait(false));
         }
 
-        return new ActionRun(removed.Count, unknown && freed == 0 ? null : freed, "each tool's cache folder walked right before and right after its own command", null, null, removed, commands.Ran, string.Join("; ", failures))
+        IReadOnlyList<ActionItem> removed = [.. trims.Select(t => t.Item)];
+        return new ActionRun(removed.Count, Freed(removed), "each tool's cache folder walked right before and right after its own command", null, null, removed, commands.Ran, string.Join("; ", trims.Select(t => t.Failure).Where(f => f.Length > 0)))
         {
             Notes = [NotRun],
         };
     }
+
+    /// <summary>One tool's own trim, its cache walked right before and right after.</summary>
+    private static async Task<(ActionItem Item, string Failure)> TrimAsync(ActionContext context, ActionCommands commands, CacheTool tool, CancellationToken cancellationToken)
+    {
+        var cache = CacheFolders.UnderHome(context, [.. tool.Cache]);
+        var before = CacheFolders.Measure(context.Files, cache, cancellationToken);
+        var outcome = await commands.RunAsync(tool.Command, [], cancellationToken).ConfigureAwait(false);
+        var gone = CacheFolders.Freed(before, CacheFolders.Measure(context.Files, cache, cancellationToken));
+        return (new ActionItem("cache", tool.Tool, gone, gone is null ? "freed unknown: a walk of its cache was cut or unreadable" : cache), CommandFailures.Of(tool.Command.Shape, outcome));
+    }
+
+    /// <summary>The sum of what was measured — unknown only when something could not be measured and nothing could.</summary>
+    private static long? Freed(IReadOnlyList<ActionItem> trimmed) =>
+        trimmed.Any(t => t.Bytes is null) && CacheFolders.Total(trimmed) == 0 ? null : CacheFolders.Total(trimmed);
 
     /// <summary>The tools found in the target user's bin folders — <c>pip3</c> only when there is no <c>pip</c> (both trim
     /// the same cache).</summary>

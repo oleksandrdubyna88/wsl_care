@@ -41,13 +41,9 @@ public sealed class SystemProcessTable : IProcessTable
             using var process = Process.GetProcessById(pid);
             return process.HasExited ? new ProcessLookup.Gone() : new ProcessLookup.Alive(new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero));
         }
-        catch (ArgumentException)
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
         {
-            return new ProcessLookup.Gone();
-        }
-        catch (InvalidOperationException)
-        {
-            // It exited between the lookup and the read.
+            // No such pid — or it exited between the lookup and the read.
             return new ProcessLookup.Gone();
         }
         catch (Exception e) when (e is Win32Exception or NotSupportedException or UnauthorizedAccessException)

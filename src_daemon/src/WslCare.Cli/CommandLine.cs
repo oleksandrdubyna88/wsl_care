@@ -257,20 +257,22 @@ internal static class CommandLine
             return new Request.Failed($"\"{BinaryName} act\" needs the actions first: {BinaryName} act <A#>[,<A#>...] {PreviewFlag}|{ConfirmFlag} [{JsonFlag}].");
         }
 
-        if (Core.Actions.ActionId.Parse(rest[0]) is Core.Actions.ActionIdList.Refused refused)
+        return Core.Actions.ActionId.Parse(rest[0]) switch
         {
-            return new Request.Failed($"\"{BinaryName} act\": {Printable(refused.Reason)}.");
-        }
-
-        var ids = ((Core.Actions.ActionIdList.Parsed)Core.Actions.ActionId.Parse(rest[0])).Ids;
-        return SplitActOptions(rest.Skip(1).ToList()) switch
-        {
-            (_, _, _, { } failure) => failure,
-            var (flags, volumes, only, _) when ActFlags(flags) is { } failure => failure,
-            var (_, volumes, only, _) when ShownListFailure(ids, volumes, only) is { } failure => failure,
-            var (flags, volumes, only, _) => new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag)) { Manual = flags.Contains(ManualFlag), Volumes = volumes, OnlyFile = only },
+            Core.Actions.ActionIdList.Refused refused => new Request.Failed($"\"{BinaryName} act\": {Printable(refused.Reason)}."),
+            Core.Actions.ActionIdList.Parsed parsed => ActOptions(parsed.Ids, [.. rest.Skip(1)]),
+            _ => throw new System.Diagnostics.UnreachableException("ActionIdList is a closed set"),
         };
     }
+
+    /// <summary>The act's options after its ids: its flags, then its shown list — or the first refusal.</summary>
+    private static Request ActOptions(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> rest) => SplitActOptions(rest) switch
+    {
+        (_, _, _, { } failure) => failure,
+        var (flags, _, _, _) when ActFlags(flags) is { } failure => failure,
+        var (_, volumes, only, _) when ShownListFailure(ids, volumes, only) is { } failure => failure,
+        var (flags, volumes, only, _) => new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag)) { Manual = flags.Contains(ManualFlag), Volumes = volumes, OnlyFile = only },
+    };
 
     /// <summary>The flags, the <c>--volume</c> values and the <c>--only</c> file, apart — or the first refusal.</summary>
     private static (List<string> Flags, List<string> Volumes, string Only, Request.Failed? Failure) SplitActOptions(IReadOnlyList<string> rest)
@@ -284,22 +286,32 @@ internal static class CommandLine
                 continue;
             }
 
-            if (i + 1 >= rest.Count || rest[i + 1].StartsWith('-'))
+            if (ShownValueProblem(rest, i, only) is { } failure)
             {
-                return (flags, volumes, only, new Request.Failed($"\"{BinaryName} act\": {rest[i]} needs a value ({(rest[i] == VolumeFlag ? "a 64-hex anonymous volume name" : "a file of 64-hex names, one per line")})."));
+                return (flags, volumes, only, failure);
             }
 
-            if (rest[i] == OnlyFlag && only.Length > 0)
-            {
-                return (flags, volumes, only, new Request.Failed($"\"{BinaryName} act\" takes {OnlyFlag} once."));
-            }
-
-            (only, volumes) = rest[i] == OnlyFlag ? (rest[i + 1], volumes) : (only, [.. volumes, rest[i + 1]]);
+            (only, volumes) = Taken(rest[i], rest[i + 1], only, volumes);
             i++;
         }
 
         return (flags, volumes, only, null);
     }
+
+    /// <summary>Why <c>--volume</c> / <c>--only</c> at <paramref name="i"/> cannot be taken: no value, or a second <c>--only</c>.</summary>
+    private static Request.Failed? ShownValueProblem(IReadOnlyList<string> rest, int i, string only) =>
+        NeedsValue(rest, i) ? new Request.Failed($"\"{BinaryName} act\": {rest[i]} needs a value ({ShownValueKind(rest[i])}).")
+        : rest[i] == OnlyFlag && only.Length > 0 ? new Request.Failed($"\"{BinaryName} act\" takes {OnlyFlag} once.")
+        : null;
+
+    private static string ShownValueKind(string flag) => flag == VolumeFlag ? "a 64-hex anonymous volume name" : "a file of 64-hex names, one per line";
+
+    /// <summary>The <c>--only</c> file or one more <c>--volume</c>, taken.</summary>
+    private static (string Only, List<string> Volumes) Taken(string flag, string value, string only, List<string> volumes) =>
+        flag == OnlyFlag ? (value, volumes) : (only, [.. volumes, value]);
+
+    /// <summary>The option at <paramref name="i"/> has no value after it: the end, or another option.</summary>
+    private static bool NeedsValue(IReadOnlyList<string> rest, int i) => i + 1 >= rest.Count || rest[i + 1].StartsWith('-');
 
     private static Request.Failed? ActFlags(IReadOnlyList<string> flags)
     {
@@ -315,22 +327,16 @@ internal static class CommandLine
     }
 
     /// <summary>A shown list belongs to A4 alone, and every <c>--volume</c> is an anonymous volume's 64-hex name.</summary>
-    private static Request.Failed? ShownListFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> volumes, string only)
+    private static Request.Failed? ShownListFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> volumes, string only) => volumes switch
     {
-        if ((volumes.Count > 0 || only.Length > 0) && !ids.Any(id => id.Text == "A4"))
-        {
-            return new Request.Failed($"\"{BinaryName} act\": {VolumeFlag} and {OnlyFlag} name the volumes A4's preview showed; they need A4 among the actions.");
-        }
+        _ when ShownWithoutA4(ids, volumes, only) => new Request.Failed($"\"{BinaryName} act\": {VolumeFlag} and {OnlyFlag} name the volumes A4's preview showed; they need A4 among the actions."),
+        _ when volumes.FirstOrDefault(v => !Core.Docker.DockerJson.IsFullId(v)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {VolumeFlag} \"{Printable(bad)}\" is not an anonymous volume's name (64 lowercase hex digits)."),
+        _ when volumes.Count > MaxShownVolumes => new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} volumes."),
+        _ => null,
+    };
 
-        if (volumes.FirstOrDefault(v => !Core.Docker.DockerJson.IsFullId(v)) is { } bad)
-        {
-            return new Request.Failed($"\"{BinaryName} act\": {VolumeFlag} \"{Printable(bad)}\" is not an anonymous volume's name (64 lowercase hex digits).");
-        }
-
-        return volumes.Count > MaxShownVolumes
-            ? new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} volumes.")
-            : null;
-    }
+    private static bool ShownWithoutA4(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> volumes, string only) =>
+        (volumes.Count > 0 || only.Length > 0) && !ids.Any(id => id.Text == "A4");
 
     /// <summary>The names of an <c>--only</c> file: one 64-hex name per non-empty line (a trailing CR tolerated), at most
     /// <see cref="MaxShownVolumes"/> — or why not, naming the LINE, never echoing what is on it.</summary>
@@ -390,11 +396,12 @@ internal static class CommandLine
     /// <summary>Why the option at <paramref name="i"/> cannot be taken; empty when it can.</summary>
     private static string OptionProblem(IReadOnlyList<string> rest, int i, IReadOnlyList<string> valued, IReadOnlyList<string> switches, Dictionary<string, string> values, HashSet<string> flags) => rest[i] switch
     {
-        var flag when switches.Contains(flag) => flags.Contains(flag) ? $"{flag} is given twice" : string.Empty,
-        var option when valued.Contains(option) && (i + 1 >= rest.Count || rest[i + 1].StartsWith('-')) => $"{option} needs a value",
-        var option when valued.Contains(option) => values.ContainsKey(option) ? $"{option} is given twice" : string.Empty,
+        var flag when switches.Contains(flag) => Twice(flag, flags.Contains(flag)),
+        var option when valued.Contains(option) => NeedsValue(rest, i) ? $"{option} needs a value" : Twice(option, values.ContainsKey(option)),
         var other => $"does not take \"{Printable(other)}\"; it takes {string.Join(", ", valued.Select(v => v + " <value>").Concat(switches))}, each once",
     };
+
+    private static string Twice(string option, bool given) => given ? $"{option} is given twice" : string.Empty;
 
     /// <summary>Takes the option at <paramref name="i"/> (already judged); the index of the next one.</summary>
     private static int Take(IReadOnlyList<string> rest, int i, IReadOnlyList<string> valued, Dictionary<string, string> values, HashSet<string> flags)

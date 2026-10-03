@@ -62,14 +62,20 @@ public sealed record CommandTemplate(string Name, CommandScope Scope, string Exe
     /// <summary>Whether <paramref name="arguments"/> (the argv WITHOUT the executable) is an instance of this template.</summary>
     public bool Matches(IReadOnlyList<string> arguments)
     {
-        var fixedParts = Parts.Count - (Parts.Count > 0 && Parts[^1] is ArgPart.Repeat ? 1 : 0);
-        if (arguments.Count < fixedParts || !Parts.Take(fixedParts).Select((part, i) => Accepts(part, arguments[i])).All(ok => ok))
-        {
-            return false;
-        }
-
-        return Parts.Count > fixedParts ? RepeatAccepts((ArgPart.Repeat)Parts[^1], arguments.Skip(fixedParts).ToList()) : arguments.Count == fixedParts;
+        var fixedParts = FixedPartCount;
+        return arguments.Count >= fixedParts && FixedPartsAccept(arguments, fixedParts) && TailAccepts(arguments, fixedParts);
     }
+
+    /// <summary>The parts before a trailing <see cref="ArgPart.Repeat"/> (all of them when there is none).</summary>
+    private int FixedPartCount => Parts.Count - (EndsWithRepeat ? 1 : 0);
+
+    private bool EndsWithRepeat => Parts.Count > 0 && Parts[^1] is ArgPart.Repeat;
+
+    private bool FixedPartsAccept(IReadOnlyList<string> arguments, int fixedParts) =>
+        Parts.Take(fixedParts).Select((part, i) => Accepts(part, arguments[i])).All(ok => ok);
+
+    private bool TailAccepts(IReadOnlyList<string> arguments, int fixedParts) =>
+        Parts.Count > fixedParts ? RepeatAccepts((ArgPart.Repeat)Parts[^1], [.. arguments.Skip(fixedParts)]) : arguments.Count == fixedParts;
 
     /// <summary>The arguments with <paramref name="values"/> in the slots, in order (the last ones fill a <see cref="ArgPart.Repeat"/>);
     /// refused, naming the slot, when a value is not its shape or the count is wrong.</summary>

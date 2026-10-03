@@ -2,6 +2,7 @@ using System.Globalization;
 
 using WslCare.Core.Collectors;
 using WslCare.Core.Files;
+using WslCare.Core.Files.Deletion;
 using WslCare.Core.Folders;
 using WslCare.Core.Hosting;
 
@@ -12,6 +13,19 @@ public sealed record FolderReading(string Path, Reading<long> Bytes, bool Comple
 {
     /// <summary>The bytes when the walk was COMPLETE; a cut walk is a lower bound, never a figure to subtract.</summary>
     public long? CompleteBytes => Complete && Bytes is Reading<long>.Available { Value: var b } ? b : null;
+}
+
+/// <summary>What deleting one target folder came to: removed, or kept with why — and the failure it counts as, if any.</summary>
+public sealed record FolderDeletion(bool Removed, string Note, string Failure);
+
+/// <summary>Folder deletions sorted for an <see cref="ActionRun"/>: the items removed, those kept (each with its note), the failures.</summary>
+public sealed record FolderRemovals(IReadOnlyList<ActionItem> Removed, IReadOnlyList<ActionItem> NotRemoved, IReadOnlyList<string> Failures)
+{
+    public static FolderRemovals Of(IReadOnlyList<(ActionItem Item, FolderDeletion Result)> results) =>
+        new(
+            [.. results.Where(r => r.Result.Removed).Select(r => r.Item)],
+            [.. results.Where(r => !r.Result.Removed).Select(r => r.Item with { Note = r.Result.Note })],
+            [.. results.Select(r => r.Result.Failure).Where(f => f.Length > 0)]);
 }
 
 /// <summary>
@@ -60,6 +74,30 @@ public static class CacheFolders
     /// complete; otherwise unknown, never an estimate.</summary>
     public static long? Freed(FolderReading before, FolderReading after) =>
         before.CompleteBytes is { } b && after.CompleteBytes is { } a ? Math.Max(0, b - a) : null;
+
+    /// <summary>Why the user's caches cannot be previewed: the target user's refusal, or — on the Windows binary — that they
+    /// are the distro's (<paramref name="what"/> names them).</summary>
+    public static string NoHome(ActionContext context, string what) =>
+        context.TargetUser.Refusal.Length > 0 ? context.TargetUser.Refusal : $"{what} are the WSL distro's";
+
+    /// <summary>An item's size, 0 when unknown — for a sum that says elsewhere what it could not size.</summary>
+    public static long Size(ActionItem item) => item.Bytes ?? 0;
+
+    public static long Total(IEnumerable<ActionItem> items) => items.Sum(Size);
+
+    /// <summary>One target folder deleted through the deletion policy (scope: <paramref name="root"/>): already gone, refused
+    /// (a failure), still there after the delete, or removed.</summary>
+    public static FolderDeletion RemoveFolder(ActionContext context, string folder, string root, string action) =>
+        context.Files.DirectoryExists(folder)
+            ? Judged(context, folder, context.Files.DeleteDirectory(folder, new DeletionScope(root, action)))
+            : new FolderDeletion(false, "already gone", string.Empty);
+
+    private static FolderDeletion Judged(ActionContext context, string folder, DeletionVerdict verdict) => verdict switch
+    {
+        DeletionVerdict.Refused refused => new FolderDeletion(false, refused.Reason, refused.Reason),
+        _ when context.Files.DirectoryExists(folder) => new FolderDeletion(false, "still there after the delete", string.Empty),
+        _ => new FolderDeletion(true, string.Empty, string.Empty),
+    };
 
     /// <summary>A size as a person reads it in a note.</summary>
     public static string Gb(long? bytes) =>

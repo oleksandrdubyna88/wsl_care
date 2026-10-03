@@ -81,18 +81,21 @@ public static class NeverList
     private static bool IsInlineCode(IReadOnlyList<string> argv)
     {
         var exe = Exe(argv);
-        var flags = exe switch
-        {
-            _ when exe.StartsWith("python", StringComparison.Ordinal) || exe is "py" or "pypy" or "pypy3" => new[] { "-c" },
-            _ when exe.StartsWith("perl", StringComparison.Ordinal) => ["-e", "-E"],
-            "node" or "nodejs" or "deno" or "bun" => ["-e", "--eval", "-p", "--print", "eval"],
-            "ruby" => ["-e"],
-            "php" => ["-r"],
-            "lua" or "luajit" => ["-e"],
-            _ => [],
-        };
+        var flags = InlineCodeFlags(exe);
         return exe is "awk" or "gawk" or "mawk" or "nawk" or "osascript" || argv.Skip(1).Any(a => flags.Any(f => a.StartsWith(f, StringComparison.Ordinal)));
     }
+
+    /// <summary>The flags with which <paramref name="exe"/> takes inline code; none for any other executable.</summary>
+    private static string[] InlineCodeFlags(string exe) => exe switch
+    {
+        _ when exe.StartsWith("python", StringComparison.Ordinal) || exe is "py" or "pypy" or "pypy3" => ["-c"],
+        _ when exe.StartsWith("perl", StringComparison.Ordinal) => ["-e", "-E"],
+        "node" or "nodejs" or "deno" or "bun" => ["-e", "--eval", "-p", "--print", "eval"],
+        "ruby" => ["-e"],
+        "php" => ["-r"],
+        "lua" or "luajit" => ["-e"],
+        _ => [],
+    };
 
     private static bool IsGitWorktreePrune(IReadOnlyList<string> argv)
     {
@@ -120,21 +123,36 @@ public static class NeverList
         return at < 0 ? null : lower[(at + "drop_caches".Length)..].TrimStart().TrimStart('=').Trim();
     }
 
-    private static bool IsSysctlFromFile(IReadOnlyList<string> argv) =>
-        Exe(argv) == "sysctl" && argv.Skip(1).Any(a => a is "-p" or "-f" or "--load" or "--system" || a.StartsWith("--load=", StringComparison.Ordinal) || (a.StartsWith('-') && !a.StartsWith("--", StringComparison.Ordinal) && a.Contains('p')));
+    private static bool IsSysctlFromFile(IReadOnlyList<string> argv) => Exe(argv) == "sysctl" && argv.Skip(1).Any(IsSysctlLoadFlag);
+
+    /// <summary>A sysctl flag that loads settings from a file: <c>-p</c>, <c>-f</c>, <c>--load[=…]</c>, <c>--system</c>, or a
+    /// bundle of short flags holding <c>p</c>.</summary>
+    private static bool IsSysctlLoadFlag(string flag) =>
+        flag is "-p" or "-f" or "--load" or "--system" || flag.StartsWith("--load=", StringComparison.Ordinal) || IsShortFlagBundleWith(flag, 'p');
+
+    private static bool IsShortFlagBundleWith(string flag, char letter) =>
+        flag.StartsWith('-') && !flag.StartsWith("--", StringComparison.Ordinal) && flag.Contains(letter);
 
     private static bool IsWslShutdown(IReadOnlyList<string> argv) =>
         Exe(argv) == "wsl" && argv.Skip(1).Any(a => a.ToLowerInvariant() is "--shutdown" or "--terminate" or "-t" or "--unregister");
+
+    /// <summary>The tools that delete files only in some of their forms, each with the test of its arguments (lowercased).</summary>
+    private static readonly (string Exe, Func<IReadOnlyList<string>, bool> Deletes)[] DeletingForms =
+    [
+        ("find", rest => rest.Any(a => a is "-delete" or "-exec" or "-execdir" or "-ok" or "-okdir")),
+        ("rsync", rest => rest.Any(IsRsyncDelete)),
+        ("git", rest => rest.Contains("clean")),
+    ];
 
     private static bool IsDeleteByCommand(IReadOnlyList<string> argv)
     {
         var exe = Exe(argv);
         var rest = argv.Skip(1).Select(a => a.ToLowerInvariant()).ToList();
-        return Deleters.Contains(exe)
-            || (exe is "find" && rest.Any(a => a is "-delete" or "-exec" or "-execdir" or "-ok" or "-okdir"))
-            || (exe is "rsync" && rest.Any(a => a.StartsWith("--delete", StringComparison.Ordinal) || a == "--remove-source-files"))
-            || (exe is "git" && rest.Contains("clean"));
+        return Deleters.Contains(exe) || DeletingForms.Any(form => form.Exe == exe && form.Deletes(rest));
     }
+
+    private static bool IsRsyncDelete(string argument) =>
+        argument.StartsWith("--delete", StringComparison.Ordinal) || argument == "--remove-source-files";
 
     private static bool IsWrapper(IReadOnlyList<string> argv)
     {
@@ -149,16 +167,19 @@ public static class NeverList
     internal static bool IsProtectedPath(string argument)
     {
         var path = argument[(argument.LastIndexOf('=') + 1)..].Replace('\\', '/');
-        if (!(path.StartsWith('/') || path.StartsWith('~') || (path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':')))
-        {
-            return false;
-        }
-
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(s => s.ToLowerInvariant()).ToList();
-        return segments.Any(s => AgentFolders.Contains(s))
-            || Adjacent(segments, "tmp", "claude") || Adjacent(segments, "temp", "claude") || Adjacent(segments, "roaming", "claude")
-            || IsHomeGit(segments);
+        return IsRooted(path) && IsProtected([.. path.Split('/', StringSplitOptions.RemoveEmptyEntries).Select(s => s.ToLowerInvariant())]);
     }
+
+    /// <summary>Absolute, <c>~</c>-relative, or a Windows drive path.</summary>
+    private static bool IsRooted(string path) => path.StartsWith('/') || path.StartsWith('~') || IsDrivePath(path);
+
+    private static bool IsDrivePath(string path) => path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':';
+
+    /// <summary>The parents of Claude's temp folder (<c>/tmp/claude</c>, <c>%TEMP%\claude</c>, <c>AppData\Roaming\Claude</c>).</summary>
+    private static readonly string[] ClaudeFolderParents = ["tmp", "temp", "roaming"];
+
+    private static bool IsProtected(IReadOnlyList<string> segments) =>
+        segments.Any(AgentFolders.Contains) || ClaudeFolderParents.Any(parent => Adjacent(segments, parent, "claude")) || IsHomeGit(segments);
 
     /// <summary><c>~/git</c>, <c>/root/git</c>, <c>/home/&lt;user&gt;/git</c>, <c>C:/Users/&lt;user&gt;/git</c>.</summary>
     private static bool IsHomeGit(IReadOnlyList<string> segments) =>
