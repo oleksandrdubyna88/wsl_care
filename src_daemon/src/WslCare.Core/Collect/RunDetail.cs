@@ -15,7 +15,12 @@ public sealed record FolderReport(string Id, string Path, ByteFigure Size, long?
 public sealed record FoldersReport(bool Available, string? Reason, string? RunId, DateTimeOffset? SampledAt, double? AgeSeconds, bool MeasuredThisRun, IReadOnlyList<FolderReport>? Folders);
 
 /// <summary>What the run's housekeeping did before it measured: the reconcile, the retention sweeps.</summary>
-public sealed record HousekeepingReport(ReconcileReport Reconcile, RetentionReport Retention, IReadOnlyList<string> ContainerStartsRetention);
+public sealed record HousekeepingReport(ReconcileReport Reconcile, RetentionReport Retention, IReadOnlyList<string> ContainerStartsRetention)
+{
+    /// <summary>What the <c>running.json</c> sweep did (gate finding #8: every full run sweeps a dead run's file): swept, or the
+    /// other run's state that stood in the way; empty when there was nothing to sweep.</summary>
+    public string Running { get; init; } = string.Empty;
+}
 
 /// <summary>
 /// <c>runs/{yyyy-MM-dd}/{runId}.json</c> (plan §6): the full detail of one run — written FIRST of its three records

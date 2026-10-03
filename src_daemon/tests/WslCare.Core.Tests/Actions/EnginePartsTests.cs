@@ -145,4 +145,25 @@ public sealed class EnginePartsTests
     {
         IdleGate.Applies(rule, trigger).Should().Be(waits);
     }
+
+    [Fact]
+    public async Task An_actions_runner_lets_a_shared_collector_read_through_undeclared_and_still_refuses_any_undeclared_write()
+    {
+        // Gate finding #3: the read machinery an action borrows (the Docker collector) may run the collectors' shared READ
+        // templates without every action re-declaring them; anything else it did not declare is still refused — and the
+        // runner's policy judges every argv again either way.
+        var runner = new WslCare.TestSupport.RecordingCommandRunner { Policy = CommandPolicy.Product };
+        var action = new ScriptedAction("A10", []);
+        var commands = new ActionCommands(action, runner, new TargetUserResult.None("machine-scoped"), []);
+        var read = WslCare.Core.Docker.DockerCommands.Version.ToRequest();
+        var write = new WslCare.Core.Processes.CommandRequest(["docker", "volume", "rm", new string('a', 64)], TimeSpan.FromMinutes(1));
+
+        var readOutcome = await commands.AsRunner().RunAsync(read, CancellationToken.None);
+        var writeOutcome = await commands.AsRunner().RunAsync(write, CancellationToken.None);
+
+        readOutcome.Should().NotBeOfType<WslCare.Core.Processes.CommandOutcome.Refused>("docker version is a shared collector read");
+        runner.Requests.Select(r => string.Join(' ', r.Argv)).Should().Equal(string.Join(' ', WslCare.Core.Docker.DockerCommands.Version.Argv));
+        writeOutcome.Should().BeOfType<WslCare.Core.Processes.CommandOutcome.Refused>().Which.Reason.Should().Contain("declares no template");
+        commands.Ran.Select(r => r.Outcome).Should().Equal("exited", "refused");
+    }
 }

@@ -12,9 +12,11 @@
 > never-list and deny-by-default templates every argv passes), the root-only `act` verb, the target user and its
 > `runuser` wrapper, and the reference action A10 (the journal vacuum), and from E3.S2 the irreversible deletions A4–A9, A11,
 > A12, A14, A17 (one preview computation shared with `preview --all`, measured freed bytes, a pid-and-start signal seam, the
-> target user's home for every per-user path). `wsl-care` answers `--help`, `--version`, the `config`
-> verbs, `status`, `preview`, `collect`, `doctor`, `events follow` and `act`, and refuses everything else; there is no
-> extension yet. This file describes what exists and is rewritten as each part lands.
+> target user's home for every per-user path), and from E3.S3 A1, A2, A3, A15, A16, the timer's action pass inside `collect`
+> and the read-only `logs` / `runs` verbs — then hardened on 2026-10-03 by the epic's review round (section *E3 review
+> fixes* below). `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+> `events follow`, `act`, `logs` and `runs`, and refuses everything else; there is no extension yet. This file describes
+> what exists and is rewritten as each part lands.
 
 ## What exists
 
@@ -307,8 +309,8 @@ containers). The classification phrases are Docker 29.6.1's own, measured on Lin
 
 | Row | Selected | Bytes | Left out, as notes |
 |---|---|---|---|
-| A4 | the dangling list ∩ 64-hex names ∖ `wsl-care.keep=true`, first seen unattached ≥ `volumes.anonymousOlderThanDays` ago | `system df -v` volume sizes | younger than the limit; kept by label |
-| A5 / A5Testcontainers | stopped (`exited`, `created`, `dead`) since `FinishedAt` (or `Created` for one never started) ≥ the days / hours limit, by the `org.testcontainers=true` label | writable layer + the distinct anonymous volumes they hold | their named volumes (kept); stopped more recently; kept by label |
+| A4 | the dangling list ∩ ANONYMOUS volumes — Docker's `com.docker.volume.anonymous` label AND a 64-hex name (since 2026-10-03; a 64-hex name alone is what `docker volume create` without a name leaves, and Docker 23+ keeps it as named) ∖ `wsl-care.keep=true`, first seen unattached ≥ `volumes.anonymousOlderThanDays` ago | `system df -v` volume sizes | younger than the limit; kept by label; 64-hex names without the label (named to Docker: kept, listed with the named volumes); unattached volumes whose labels are unknown (missing from `system df -v`) |
+| A5 / A5Testcontainers | stopped (`exited`, `created`, `dead`) since `FinishedAt` (or `Created` for one never started) ≥ the days / hours limit, by the `org.testcontainers=true` label | writable layer + the distinct anonymous volumes they hold (anonymous by the same label rule, each counted once however many of them share it) | their named volumes (kept); volumes whose labels are unknown (not counted); stopped more recently; kept by label |
 | A6 / A6Unused | dangling / tagged images with Docker's container count 0 AND not the image id of any inspected container (a stopped one included), A6Unused created ≥ `images.unusedOlderThanDays` ago | unique size | created more recently |
 | A7 | build-cache entries neither in use nor shared | entry sizes | last used more than `buildCache.olderThanDays` ago (an age filter alone); above the `buildCache.maxGb` cap (2³⁰ per GB, as Docker reads `--keep-storage`) |
 | A8, A9 | — | — | `available: false`: the npm / apt / snap figures are file walks the full run takes (E2.S3) |
@@ -319,7 +321,8 @@ kept named ones); build-cache reclaimable = Σ size of entries neither in use no
 below 23 but carries the refusal (plan §5). **Kept**: the unattached named volumes with their sizes, report-only.
 
 **`volume-seen.json`** (plan §5 "Volume age", §15 #0/#4, §15b #3). `{state}/volume-seen.json` maps each anonymous
-volume name to when it was first seen UNATTACHED; each look keeps the first sighting of a name still unattached,
+volume name (anonymous by `AnonymousVolumes`: the label AND the name — `DockerSnapshot.UnattachedAnonymous` needs the
+inventory for the labels) to when it was first seen UNATTACHED; each look keeps the first sighting of a name still unattached,
 stamps new names now and drops every name that is no longer an unattached anonymous volume (removed or attached
 again) — so the file is bounded by what Docker lists. Written atomically through `IFileSystem` (scope: the state
 directory). **Who writes it:** only the full run (`collect`, later the cleanup actions) — `preview` is strictly
@@ -620,7 +623,8 @@ whatever it finds (the JSON is the verdict).
 0 answered / recorded / read-only / follower stopped by a signal · 1 the run could not be recorded, or `events follow`
 without a writable state directory · 2 usage · 70 a defect · 75 busy (another run or follower holds the lock) ·
 130 interrupted. Since E3.S1 also, for `act`: 3 an action failed · 76 wedged · 77 needs root · 78 observe-only (§ *The action
-engine, the command policy and `act`*). Since E3.S3, for `logs` / `runs`: 4 the history exists but cannot be read.
+engine, the command policy and `act`*); since 2026-10-03 · 79 `running.json` unreadable after retries (gate finding #7). Since
+E3.S3, for `logs` / `runs`: 4 the history exists but cannot be read.
 
 ### Deviations from the plan recorded in E2.S3
 
@@ -691,7 +695,7 @@ sequenceDiagram
             E->>R: read only: a live run → busy 75, a stale heartbeat → wedged 76
         else held
             E->>R: dead or mismatched pid → interrupted history line, then removed
-            E->>R: live → busy 75, stale on a live pid or unreadable → wedged 76 (nothing killed)
+            E->>R: live → busy 75, stale on a live pid or an uninspectable pid → wedged 76; a file unreadable after 3 retries → 79 (nothing killed)
             E->>H: RunReconcile (a detail without a line → interrupted)
             E->>E: target user once per run, dry-run decision (timer only)
             E->>R: written: run id, actions, pid, process start, heartbeat
@@ -731,8 +735,12 @@ keeps the failure in the run's notes). A reader judges it: no file → none; the
 than 2 s from the recorded one (a reused pid) → **dead**: an `interrupted` history line (the asked actions, the one it
 was on, the last heartbeat) and the file removed — unless the run had already recorded itself (it died between its
 history line and the removal), then the file alone goes; the pid alive with that start and a heartbeat at most 30 s old
-→ **live** (busy); older → **wedged**: no new run, nothing killed, the file left exactly as it is; a file that does not
-parse, or a pid that cannot be inspected → refused like wedged, because a guess there is a second run beside a live one.
+→ **live** (busy); older → **wedged**: no new run, nothing killed, the file left exactly as it is; a pid that cannot be
+inspected → refused like wedged, because a guess there is a second run beside a live one. A file that cannot be read or
+does not parse is read again — three more times, 100 ms apart (`RunningReadRetry`; a writer's temp + rename can race a
+reader on Windows) — and only then judged: **unreadable**, its OWN state (`RunningStatus.Unreadable`,
+`ActResult.StateUnreadable`, exit 79, the file and the reason named), never taken for a wedged live process. The sweep
+itself is `RunningSweep` (since 2026-10-03), ONE implementation for the engine and every full run's housekeeping.
 
 ### The command policy — the one filter every argv passes
 
@@ -818,7 +826,9 @@ and a planted action that builds a shell string from a preview name.
 - **The target user**, once per run: `/etc/wsl.conf`'s `[user] default=` (a valid account name that `/etc/passwd`
   holds, with an absolute home), else the single account with uid ≥ 1000 (not 65534) and a login shell; anything else —
   two candidates, a default user `passwd` does not hold, an unreadable file — is *ambiguous* and every USER-scoped
-  action refuses with the reason (machine-scoped ones still run). The run detail records who it was and how.
+  action refuses with the reason (machine-scoped ones still run — since 2026-10-03 for real: the run reads the defaults
+  and the machine layer without the user layer, instead of going observe-only as a whole). The run detail records who it
+  was and how.
 - **`runuser`.** A user-scoped tool runs as `runuser -u <user> -- <full path> <args…>`: the file resolved BEFORE the
   start in the fixed bin folders — `~/.nvm/versions/node/<the default version>/bin` (nvm's `alias/default` resolved to
   an installed version, or left out), `~/.local/bin`, `~/.cargo/bin`, `/usr/local/bin`, `/usr/bin` — with a CLEAN
@@ -847,14 +857,15 @@ and a planted action that builds a shell string from a preview name.
 - **Heavy actions** (`IdleRule`): `TimerOnly` for A1 / A2, `Always` for A7 / A15 — a button press of A7 while a build
   runs is deferred too (refused with the reason); A10 never waits.
 - **A preview takes no lock** and writes nothing — it is a question, like `preview --all`; only `--confirm` locks.
-- **`act` under systemd is the timer** (`INVOCATION_ID`, as for `collect`); `collect` does not call the engine yet.
+- **`act` under systemd is the timer** (`INVOCATION_ID`, as for `collect`); `collect` does not call the engine yet (E3.S3:
+  the timer pass does).
 
 ### Exit codes of `act`
 
 0 previewed / run recorded (an action skipped, deferred, refused or dry-run is still 0 — the answer names it) · 1 the
 run could not be recorded · 2 usage: an unknown id, an action this build does not hold, the other side's action · 3 an
-action failed (the run was recorded, the rest ran) · 75 busy · 76 wedged · 77 needs root · 78 observe-only ·
-130 interrupted.
+action failed (the run was recorded, the rest ran) · 75 busy · 76 wedged · 77 needs root · 78 observe-only · 79 the running
+state unreadable (since 2026-10-03) · 130 interrupted.
 
 ### Deviations from the plan recorded in E3.S1
 
@@ -894,7 +905,9 @@ MEASURED `ActionRun` with the removed objects and — new — `NotRemoved` (each
 `Preview/CleanupTargets` is now the ONE place a Docker row's objects are SELECTED (anonymous volumes, stopped containers
 and their anonymous volumes, unused images, reclaimable cache entries — every protection applied there), and
 `CleanupPreviews` builds each row (`A4Row` … `A9Row`) from those selections. A Docker action's preview takes its own live
-look (`DockerLook`: the same `DockerCollector`, run through `ActionCommands.AsRunner()` — only declared reads run — and the
+look (`DockerLook`: the same `DockerCollector`, run through `ActionCommands.AsRunner()` — the action's declared machine
+templates and the collectors' shared read-only templates (`ReadCommandTemplates.All`, gate finding #3) run, every argv still
+judged by the policy — and the
 first sightings observed in memory exactly as `preview` observes them) and calls the SAME row builder, so
 `act <A#> --preview` and that row of `preview --all` are one computation: same what, count, bytes, basis and refusal
 (`RowPreviews`; held by `DockerCleanupTests.Every_docker_and_folder_actions_preview_equals_its_row_of_preview_all`, derived
@@ -909,9 +922,9 @@ sequenceDiagram
     participant D as docker (through the CommandPolicy)
     participant V as volume-seen.json
     E->>A: PreviewAsync
-    A->>X: AsRunner(): version, system df, df -v, volume ls dangling, inspect (declared reads only)
+    A->>X: AsRunner(): version, system df, df -v, volume ls dangling, inspect (declared or shared reads only)
     X->>D: read verbs
-    A->>A: CleanupPreviews.A4Row + CleanupTargets.AnonymousVolumes (keep label, 64-hex, first seen >= limit)
+    A->>A: CleanupPreviews.A4Row + CleanupTargets.AnonymousVolumes (anonymous label AND 64-hex, keep label, first seen >= limit)
     A->>A: a button's shown list (--volume / --only): kept only if still a candidate; none given on a button = refused
     E->>E: gates: refusal (Docker < 23 / unreadable), trigger (timer), idle, dry run
     E->>A: RunAsync(preview)
@@ -920,7 +933,7 @@ sequenceDiagram
         X->>D: argv judged by the never-list, then the template
         D-->>A: names on stdout = removed; "no such volume" = already gone; "in use" = kept by Docker; else not counted, failure
     end
-    A->>D: docker system df (the cross-check), docker volume ls dangling
+    A->>D: docker system df (the cross-check), docker volume ls dangling + system df -v (labels)
     A->>V: first sightings recorded (plan 15b #3)
     A-->>E: freed = df -v sizes (read just before) of exactly the confirmed volumes
 ```
@@ -935,7 +948,7 @@ sequenceDiagram
 | A7 | timer: `docker builder prune -f --max-used-space <N>GB` or `--keep-storage <N>GB` — whichever `docker builder prune --help` lists (read-only probe; captured 2026-10-02: buildx lists `--max-used-space`, no `--keep-storage`); button: `-a -f` | Docker's "Total:" | timer with neither flag; `IdleRule.Always` |
 | A8 | `runuser -u <user> -- <npm> cache clean --force` | `~/.npm` walked before / after (complete walks only) | npm not in the user's bin folders = skip |
 | A9 | `apt-get clean`; `snap list --all` again, then `snap remove <snap> --revision=<n>` per revision still disabled | `/var/cache/apt` before / after + each `{name}_{rev}.snap` gone | a missing tool skips its part; an x-revision or an odd name is kept |
-| A11 | `IProcessSignals.TerminateAsync(pid, start)`: SIGTERM, SIGKILL after 10 s | none (memory, not disk) | off by default; see below |
+| A11 | `IProcessSignals.TerminateAllAsync(pid + start …)`: SIGTERM to all, ONE shared 10 s grace, then SIGKILL to the survivors | none (memory, not disk; the preview counts no bytes either — the memory held is the `heldMemoryBytes` fact) | off by default; see below |
 | A12 | `IFileSystem.DeleteDirectory` per unreferenced browser (root `~/.cache/ms-playwright`); `runuser … dotnet nuget locals http-cache --clear` | folders measured before, counted when gone; http-cache before / after | timer never (button only); the Playwright part refuses whole when what is referenced cannot be told |
 | A14 | `IFileSystem.DeleteDirectory` per old build / obsolete extension (root: the editor's folder) | folders measured before, counted when gone | an unreadable process table |
 | A17 | `runuser … pnpm store prune`, `uv cache prune`, `pip cache purge` (`pip3` only without `pip`) | each cache before / after | none installed = skip; `cargo sweep` and Gradle not run (below) |
@@ -955,26 +968,36 @@ goes through the new seam `Processes/ProcessSignals.cs`:
 
 ```mermaid
 flowchart LR
-    id["ProcessIdentity<br/>pid + start ticks"]
-    open["pidfd_open(pid)"]
+    ids["ProcessIdentity …<br/>pid + start ticks, every suspect"]
+    open["pidfd_open(pid), each"]
     check{"/proc/pid/stat start<br/>== identity?"}
-    term["pidfd_send_signal SIGTERM"]
-    wait{"poll(pidfd) readable<br/>within 10 s?"}
-    kill["pidfd_send_signal SIGKILL"]
+    term["pidfd_send_signal SIGTERM, each"]
+    wait{"ONE poll over every pidfd<br/>until all readable or 10 s"}
+    kill["pidfd_send_signal SIGKILL<br/>to the survivors"]
+    wait2{"poll until all readable<br/>or 5 s"}
     ended["Ended"]
+    still["StillRunning"]
     gone["AlreadyGone"]
     other["NotTheSame: nothing sent"]
-    id --> open
+    failed["Failed: poll error —<br/>whether it ended is unknown, nothing more sent"]
+    ids --> open
     open -->|ESRCH| gone
     open --> check
     check -->|no| other
     check -->|yes| term --> wait
-    wait -->|yes| ended
-    wait -->|no| kill --> ended
+    wait -->|readable| ended
+    wait -->|poll error, not EINTR| failed
+    wait -->|deadline| kill --> wait2
+    wait2 -->|readable| ended
+    wait2 -->|deadline| still
 ```
 
 The pidfd pins the process before its start is compared, so the pid can never be reused between the check and the
-signal. `PidfdProcessSignals` (glibc's `pidfd_open` / `pidfd_send_signal` / `poll`, by the soname `libc.so.6`) is wired
+signal. Since 2026-10-03 the suspects share ONE grace (gate finding #9: three that ignore SIGTERM take 10 s, not 30 s; a
+cancellation is seen within a 200 ms slice and every pin is closed), and a `poll` that fails with anything but `EINTR` is
+a FAILURE, never an end (independent review): the native calls sit behind `IPidfdCalls` (`LibcPidfdCalls`, the only
+implementation the product builds) and the waits on a `TimeProvider`, so both are tested on any platform.
+`PidfdProcessSignals` (glibc's `pidfd_open` / `pidfd_send_signal` / `poll`, by the soname `libc.so.6`) is wired
 by the CLI only inside the distro and never under `WSL_CARE_ROOT` (a fixture's pids are not this machine's:
 `RefusingProcessSignals.Sandboxed`); a context nobody wired refuses (`NotWired`). An architecture test keeps every
 signalling call (`"pidfd_send_signal"`, `"kill"`, `"tgkill"`, …) in that one file, with a companion that still finds the
@@ -995,8 +1018,11 @@ whole; a folder a running process names is kept.
 claimed in a sandbox): the target user found → `LinuxHostPaths.WithHome(<their home>)` — `Home`, the user configuration
 layer (`~/.config/wsl-care/config.json`, never root's `XDG_CONFIG_HOME`) and the user's state folder follow it, the
 replaced home stays protected; so the daily folder walk (A8 / A9's rows), the caches of A8 / A12 / A14 / A17 and the
-user layer are the TARGET user's. Ambiguous → `HomeOwner.Unknown`: the user layer is loaded as UNREADABLE with the
-reason, so the run is observe-only (§15a #1's reasoning: a default must not stand in for a setting the user changed).
+user layer are the TARGET user's. Ambiguous → `HomeOwner.Unknown`: the run reads the embedded defaults and the machine
+layer only (`HomeOwner.UserLayerSkipped` names why; `CliHost.LoadConfig`) — machine-scoped actions run, the engine's
+target-user gate refuses every user-scoped one (§15c #2, gate finding #2; until 2026-10-03 the user layer was loaded as
+unreadable and the whole run went observe-only). The residual: a machine-scoped `auto` switch a user turned off in their
+OWN layer is not seen until `/etc/wsl.conf` names the user.
 None (no login account, or no `/etc/passwd` at all — now `None`, it was `Ambiguous`) → `$HOME`, there is no user layer to
 miss. `config set` / `reset` refuse to run as root for the target user (a root-owned file in their home would lock them
 out of it).
@@ -1005,8 +1031,11 @@ out of it).
 
 `act … [--manual] [--volume <name>]... [--only <file>]`: `--manual` records the trigger `manual` (the timer wins if
 `INVOCATION_ID` is also set — more gates, not fewer); `--volume` (repeatable, each a 64-hex anonymous volume name) and
-`--only` (a file of such names, one per line, at most 1 MiB and 10 000 names; read as root, validated line by line, a bad
-line refused BY NUMBER, its content never echoed) need A4 among the actions and travel as `ActRequest.ShownVolumes`.
+`--only` (a file of such names, one per line, at most 1 MiB and 10 000 names; read as root through
+`IFileSystem.ReadRegularFile` — a REGULAR file only, a directory, FIFO, socket or device refused at once and never waited
+on (on Linux `open(O_NONBLOCK)` + `statx` of the open descriptor), never more bytes read than the cap whatever the length
+claims — validated line by line, a bad line refused BY NUMBER, its content never echoed) need A4 among the actions and
+travel as `ActRequest.ShownVolumes`.
 
 ### Decisions taken in E3.S2
 
@@ -1055,7 +1084,10 @@ event is then acted on within that period.
 
 `collect` started by systemd (`INVOCATION_ID`) runs the engine AFTER measuring, under the lock it already holds, for every
 action this build holds; a `collect` from a terminal or the panel's *Run full check now* never acts, and a button's `act`
-stays a separate run with its own record.
+stays a separate run with its own record. EVERY full run — whatever started it — sweeps a dead run's `running.json` in its
+housekeeping (gate finding #8) and holds its own `running.json` (`collect`, pid, start, heartbeat) from the moment it holds
+the lock, removed in a `finally` (gate finding #11: *Run full check now* survives a window reload); another run's live,
+wedged or unreadable file is left alone and named in the detail's `housekeeping.running`.
 
 ```mermaid
 sequenceDiagram
@@ -1067,10 +1099,12 @@ sequenceDiagram
     participant H as runs/ and history.jsonl
     C->>C: may this process write the state? no → measure, print, write nothing (no pass)
     C->>K: RunLock.TryTake — held by another run → exit 75, nothing measured
+    C->>R: RunningSweep (every full run): dead → interrupted line + removed; live / wedged / unreadable → left, noted
+    C->>R: its OWN running.json (action collect), heartbeat every 5 s while it measures
     C->>H: housekeeping: reconcile, retention, container-start retention
     C->>M: measure: probe, health, folder walk (daily), Docker + rows, docker stats, starts, thresholds
     C->>E: the pass, run id = the full run's
-    E->>R: sweep: dead → interrupted line + removed; live / wedged / unreadable → NO pass (reason recorded)
+    E->>R: sweep: this run's own file passes; dead → interrupted line + removed; live / wedged / unreadable → NO pass
     E->>E: target user, dry-run decision (the 7-day week starts at the first pass)
     E->>R: written, heartbeat every 5 s
     loop every action, in ActionId.ExecutionOrder
@@ -1079,7 +1113,7 @@ sequenceDiagram
     end
     E-->>C: TimerPass (outcomes, notes, dry run)
     C->>H: the detail (atomic, with timerPass), then ONE history line: metrics, warnings AND the action lines
-    C->>R: removed (EndTimerPass)
+    C->>R: removed (EndTimerPass), and in collect's finally whatever ended the run (only its own)
     C->>C: exit 0 (an action that failed is in the record and the log, not the exit code)
 ```
 
@@ -1104,12 +1138,21 @@ detail still counts from its history line, with no objects). `--action <A#>` nar
 counts to one action. Exit codes: 0 answered, 2 a period that is none of the shapes, 4 a history that exists but cannot
 be read (new: `ExitCode.RecordsUnreadable`).
 
+Since 2026-10-03: the totals, counts, extremes and metrics come from the history lines ALONE — no detail file is opened
+for them (gate finding #10); the objects each cleanup removed are read from the run details only with `--detail` or one
+`--action`, and from at most the newest `RunLogs.MaxDetailsRead` (50) runs (`detailsRead` / `detailsNotRead`; an unread
+cleanup's state is `notRead`). A FAILED action's measured deletions count wherever a successful one's do (A4 removing 386
+of 387 volumes removed 386), and its failure — on the history line since 2026-10-03 (`ActionRecord.failure`, ≤ 300
+characters) — is shown beside its figures; `ActionTotal.failed` counts the runs it failed in. Readers of the line files
+(`history.jsonl`, the container-start days) ignore a trailing line without its newline — a write in progress — and the
+next append first ends such torn remains (`LineFiles`, gate finding #6).
+
 ### Decisions taken in E3.S3
 
 - **Memory actions free no disk.** A1, A2, A3 (and A11) leave `freedBytes` unknown; their before / after and notes say what
   moved, and their previews count no bytes (the item carries the memory) so a dry run's would-free stays disk. `logs` sums
-  disk only — A1's history line counts one operation, freed 0. (A11's preview, E3.S2, still counts the memory its suspects
-  hold as preview bytes — left for the epic's code round to decide.)
+  disk only — A1's history line counts one operation, freed 0. A11's preview counted the memory its suspects hold as
+  preview bytes until the code round (gate finding #4): it is the `heldMemoryBytes` fact now, never bytes.
 - **A15 waits for `fstrim.timer`.** An enabled `fstrim.timer` already trims weekly, so the timer's A15 does not double it
   (the plan's row names only `discard`); an unread timer state does not fire either.
 - **A16's two observations** are the last recorded full run's and the preview's live probe; inside the timer pass the
@@ -1119,6 +1162,31 @@ be read (new: `ExitCode.RecordsUnreadable`).
 - **`ReadCommandTemplates.SystemctlShow` / `JournalSearch`** became named members so A15 and A2 declare the SAME template
   instances the collectors use; `HealthCollector.MeasureWindowsClockAsync` is the one clock observation (the full run's
   and A16's); `ThresholdRules.IsDrift` the one drift rule.
+
+## E3 review fixes (2026-10-03)
+
+The epic's gate code round (session `a90e342d`) and an independent code review, every finding accepted but the gate's #5
+(`pidfd_send_signal` is exported by glibc 2.39 as `pidfd_send_signal@@GLIBC_2.36` — verified). Each landed with a test that
+was first seen failing for the real symptom ([module_tests.md](module_tests.md) records the red messages).
+
+| Finding | What changed | Where |
+|---|---|---|
+| review 1 | A4 selects an ANONYMOUS volume only: Docker's `com.docker.volume.anonymous` label AND a 64-hex name; a hex name without the label (named to Docker 23+) and a volume missing from `system df -v` are never selected; the same rule for the first sightings, the kept list and A5's "goes with the container" | `Docker/DockerInventory` (`AnonymousVolumes`), `Preview/CleanupTargets`, `DockerCollector`, `VolumeRemoval` |
+| review 2 | a failed action's measured deletions count in `logs` / `runs`, its failure beside them | `History/RunLogs`, `ActionRecord.failure` |
+| review 3 | A5 counts a volume two removed containers share once | `ContainerRemoval` (one item per distinct volume, keyed by every holder) |
+| review 4 | A3 refuses when the process table cannot be read again just before the command | `BuildServerShutdown` |
+| review 5 | `--only` is read as a regular file only, never past the cap | `Files/RegularFiles`, `IFileSystem.ReadRegularFile` |
+| review 6 | a `poll` error is a failure, never an end | `Processes/ProcessSignals` (`IPidfdCalls`) |
+| gate #0/#1 | this file's overview, verbs and actions nodes | here |
+| gate #2 | an ambiguous target user refuses user-scoped actions only | `TargetHome`, `ConfigLoader`, `CliHost.LoadConfig` |
+| gate #3 | an action's runner also runs the collectors' shared read templates | `ActionCommands.AsRunner` |
+| gate #4 | A11's preview counts no bytes | `SuspectTermination` (`heldMemoryBytes`) |
+| gate #6 | line-file readers ignore an unfinished last line; the next append ends torn remains | `Files/LineFiles`, `PhysicalFileSystem.AppendLine` |
+| gate #7 | `running.json` read again before a verdict; unreadable is its own state | `RunningState` (`RunningReadRetry`, `Unreadable`), exit 79 |
+| gate #8 | every full run sweeps a dead `running.json` | `RunningSweep`, `CollectRun` |
+| gate #9 | A11's suspects share one grace | `PidfdProcessSignals.TerminateAllAsync` |
+| gate #10 | `logs` totals from history lines alone; details only when asked, bounded | `RunLogs`, `logs --detail` |
+| gate #11 | `collect` holds its own `running.json` | `CollectRun` |
 
 ## Fail-closed resolution and the atomic write
 
@@ -1246,7 +1314,7 @@ flowchart TB
     host["CliHost<br/>IHostPaths · IFileSystem · TimeProvider · ICommandRunner"]
     loader["ConfigLoader<br/>default.json, then machine, then user"]
     logging["WslCareLogging<br/>AnsiConsoleSink (stderr) · DailyRunFileSink · LogRetention"]
-    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand"]
+    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand · LogsCommand (logs, runs)"]
     probe["IHostProbe<br/>LinuxProbe (procfs, cgroup fs) · WindowsProbe (Win32 counters)"]
     history["LastFullRun<br/>slow parts from history.jsonl"]
     writer["UserConfigWriter<br/>repair + atomic write"]
@@ -1290,14 +1358,22 @@ flowchart TB
     follower -->|AppendLine · DeleteFile| fs
     verbs -->|doctor| doctor
     doctor -->|systemctl show / --version · docker version| runner
-    engine["ActionEngine<br/>RunLock · RunningState + Heartbeat · DryRunWindow · IdleGate · TargetUserDiscovery"]
-    actions["ActionRegistry<br/>JournalVacuum (A10) via ActionCommands"]
+    engine["ActionEngine<br/>RunLock · RunningSweep · RunningState + Heartbeat · DryRunWindow · IdleGate · TargetUserDiscovery"]
+    actions["ActionRegistry via ActionCommands<br/>CacheDrop A1 · Compaction A2 · BuildServerShutdown A3 · VolumeRemoval A4<br/>ContainerRemoval A5, A5Testcontainers · ImagePrune A6, A6Unused · BuildCachePrune A7<br/>NpmCacheClean A8 · PackageCacheClean A9 · JournalVacuum A10 · SuspectTermination A11<br/>BrowserAndHttpCaches A12 · EditorServerCleanup A14 · FilesystemTrim A15 · ClockFix A16 · ToolCacheTrims A17"]
+    signals["IProcessSignals<br/>PidfdProcessSignals (IPidfdCalls) · RefusingProcessSignals"]
+    logs["RunLogs<br/>history lines alone · details only with --detail / --action"]
     verbs -->|act, as root| engine
     engine --> actions
-    actions -->|declared templates only| runner
+    actions -->|declared templates + shared reads| runner
+    actions -->|A11: pid + start| signals
+    actions -->|DeleteDirectory · ReadRegularFile · walks| fs
     engine -->|running.json · first-timer-run.json · TryLockExclusive| fs
     engine --> store
     engine --> records
+    collect -->|timer pass| engine
+    collect -->|RunningSweep · own running.json| fs
+    verbs -->|logs · runs, read-only| logs
+    logs -->|ReadFile history · details when asked| store
 ```
 
 ## The scenario harness (E1.S3)
@@ -1363,7 +1439,7 @@ FluentAssertions held below 8.x.
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5) |

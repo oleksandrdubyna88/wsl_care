@@ -45,14 +45,23 @@ public static class RunLogs
         return new RunsReport(SchemaVersion.Current, PeriodReport.Of(period), lines.Count, lines, history.Unparseable, Problem(history));
     }
 
-    /// <summary>The period's totals, run counts, extremes and every cleanup in detail; <paramref name="action"/> narrows the
-    /// totals, the cleanups and the run counts to one action (the metrics are the machine's, whatever acted).</summary>
-    public static LogsReport Logs(IHostPaths paths, IFileSystem files, LogPeriod period, ActionId? action)
+    /// <summary>How many run details one <c>logs</c> answer opens at most — the newest runs with a cleanup; the older ones are
+    /// listed from their history lines with their objects not read (gate finding #10).</summary>
+    public const int MaxDetailsRead = 50;
+
+    /// <summary>The period's totals, run counts, extremes and every cleanup; <paramref name="action"/> narrows the totals, the
+    /// cleanups and the run counts to one action (the metrics are the machine's, whatever acted). Everything but the objects
+    /// comes from the history lines ALONE (gate finding #10); the objects each cleanup removed are read from the run details
+    /// only when asked — <paramref name="detail"/>, or one <paramref name="action"/> — and from at most
+    /// <see cref="MaxDetailsRead"/> of them.</summary>
+    public static LogsReport Logs(IHostPaths paths, IFileSystem files, LogPeriod period, ActionId? action, bool detail = false)
     {
         var history = RunHistory.Read(paths, files);
         var runs = InPeriod(history, period).ToList();
         var lines = runs.Select(r => Line(Narrowed(r, action), StateOf(paths, files, r))).ToList();
-        var cleanups = runs.Select(r => Narrowed(r, action)).Where(r => r.Actions.Any(Removed)).SelectMany(r => Cleanups(paths, files, r)).ToList();
+        var withCleanup = runs.Select(r => Narrowed(r, action)).Where(r => r.Actions.Any(Removed)).ToList();
+        var read = detail || action is not null ? withCleanup.TakeLast(MaxDetailsRead).Select(r => r.RunId).ToHashSet() : [];
+        var cleanups = withCleanup.SelectMany(r => Cleanups(paths, files, r, read.Contains(r.RunId))).ToList();
         var freed = lines.Where(l => l.FreedBytes > 0).ToList();
         return new LogsReport(
             SchemaVersion.Current,
@@ -67,7 +76,11 @@ public static class RunLogs
             Metrics(runs),
             cleanups,
             history.Unparseable,
-            Problem(history));
+            Problem(history))
+        {
+            DetailsRead = read.Count,
+            DetailsNotRead = withCleanup.Count - read.Count,
+        };
     }
 
     private static IEnumerable<RunRecord> InPeriod(HistoryRead history, LogPeriod period) =>
@@ -148,10 +161,11 @@ public static class RunLogs
         })];
 
     /// <summary>Every action that ACTED (ran, or failed) and removed (or freed) something in <paramref name="run"/>, its failure
-    /// beside its figures and its objects from the run's detail.</summary>
-    private static IEnumerable<CleanupDetail> Cleanups(IHostPaths paths, IFileSystem files, RunRecord run)
+    /// beside its figures — and, when <paramref name="readDetail"/>, its objects from the run's detail (state <c>notRead</c>
+    /// otherwise).</summary>
+    private static IEnumerable<CleanupDetail> Cleanups(IHostPaths paths, IFileSystem files, RunRecord run, bool readDetail)
     {
-        var (state, outcomes) = Outcomes(paths, files, run);
+        var (state, outcomes) = readDetail ? Outcomes(paths, files, run) : (NotRead, []);
         return run.Actions.Where(Removed).Select(a => Cleanup(run, a, state, outcomes.FirstOrDefault(o => o.Id == a.Id)));
     }
 
@@ -197,6 +211,9 @@ public static class RunLogs
             return [];
         }
     }
+
+    /// <summary>The detail state of a cleanup whose objects were not asked for (or fell past <see cref="MaxDetailsRead"/>).</summary>
+    public const string NotRead = "notRead";
 
     private static DetailState StateOf(IHostPaths paths, IFileSystem files, RunRecord record) =>
         record.DetailPath.Length == 0

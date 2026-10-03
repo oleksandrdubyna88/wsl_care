@@ -108,7 +108,7 @@ public sealed class RunLogsTests : IDisposable
     [Fact]
     public void Each_cleanup_lists_what_its_detail_says_was_removed_and_a_lost_detail_says_so()
     {
-        var cleanups = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("today"), action: null).Cleanups;
+        var cleanups = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("today"), action: null, detail: true).Cleanups;
 
         cleanups.Select(c => $"{c.Action}:{c.DetailState}").Should().Equal("A10:present", "A4:lost");
         cleanups[0].Removed.Select(r => r.Name).Should().Equal("/var/log/journal/x/system@1.journal", "/var/log/journal/x/system@2.journal");
@@ -120,7 +120,7 @@ public sealed class RunLogsTests : IDisposable
     [Fact]
     public void Yesterday_ends_at_23_59_59_utc_and_reads_an_act_detail()
     {
-        var logs = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("yesterday"), action: null);
+        var logs = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("yesterday"), action: null, detail: true);
 
         logs.Runs.Total.Should().Be(1);
         logs.Cleanups.Single().Removed.Select(r => r.Name).Should().Equal("aaa", "bbb", "ccc");
@@ -168,7 +168,7 @@ public sealed class RunLogsTests : IDisposable
         RunDetailStore.Write(_sandbox.Paths, _sandbox.Files, id, System.Text.Encoding.UTF8.GetBytes(old));
         Line(at, RunTrigger.Cli, dryRun: false, detail: RunDetailStore.RelativePath(id), actions: [new ActionRecord("A10", 1, 10) { Status = ActionStatus.Ran }]);
 
-        var cleanup = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("2026-09-25"), action: null).Cleanups.Single();
+        var cleanup = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("2026-09-25"), action: null, detail: true).Cleanups.Single();
 
         cleanup.Removed.Single().Name.Should().Be("/var/log/journal/old.journal");
         cleanup.NotRemoved.Should().NotBeNull().And.BeEmpty();
@@ -187,7 +187,7 @@ public sealed class RunLogsTests : IDisposable
         });
         Act(at, RunTrigger.Manual, outcome);
 
-        var logs = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("2026-09-26"), action: null);
+        var logs = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("2026-09-26"), action: null, detail: true);
 
         logs.FreedBytes.Should().Be(59_000_000_000, "what a failed action measurably removed was removed");
         logs.ObjectsRemoved.Should().Be(386);
@@ -195,6 +195,66 @@ public sealed class RunLogsTests : IDisposable
         logs.PerAction.Single().Should().Match<ActionTotal>(t => t.Count == 386 && t.FreedBytes == 59_000_000_000 && t.Failed == 1);
         logs.Cleanups.Single().Should().Match<CleanupDetail>(c => c.Status == ActionStatus.Failed && c.Count == 386 && c.Failure == failure);
         RunLogs.Runs(_sandbox.Paths, _sandbox.Files, Period("2026-09-26")).Runs.Single().Actions.Single().Failure.Should().Be(failure);
+    }
+
+    [Fact]
+    public void Totals_counts_and_extremes_come_from_the_history_lines_alone_and_open_no_detail_file()
+    {
+        // Gate finding #10: a period of a year is thousands of runs; the totals must not open a detail file per run.
+        var files = new ReadRecordingFileSystem(_sandbox.Files);
+
+        var logs = RunLogs.Logs(_sandbox.Paths, files, Period("2026-09-20..2026-10-02"), action: null);
+
+        logs.FreedBytes.Should().Be(3_000 + 200 + 9_000 + 70_000);
+        logs.Runs.Total.Should().Be(6);
+        logs.Cleanups.Should().HaveCount(4, "every cleanup is listed from its history line");
+        logs.Cleanups.Should().OnlyContain(c => c.Removed.Count == 0, "the objects come from the details, which were not asked for");
+        files.Read.Should().NotContain(p => p.Contains(RunDetailStore.Folder, StringComparison.Ordinal), "no run detail is opened for the totals");
+    }
+
+    [Fact]
+    public void Detail_asked_or_one_action_reads_the_objects_and_at_most_the_newest_bounded_number_of_details()
+    {
+        var files = new ReadRecordingFileSystem(_sandbox.Files);
+
+        var asked = RunLogs.Logs(_sandbox.Paths, files, Period("2026-09-20..2026-10-02"), action: null, detail: true);
+        var one = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("2026-09-20..2026-10-02"), ActionId.Find("A4"));
+
+        asked.DetailsRead.Should().Be(4);
+        asked.DetailsNotRead.Should().Be(0);
+        asked.Cleanups.Single(c => c.Action == "A10").Removed.Should().HaveCount(2);
+        files.Read.Should().Contain(p => p.Contains(RunDetailStore.Folder, StringComparison.Ordinal));
+        one.Cleanups.Select(c => c.DetailState).Should().Equal("present", "lost");
+        RunLogs.MaxDetailsRead.Should().BeInRange(1, 1000, "the bound is a bound");
+    }
+
+    [Fact]
+    public void Past_the_bound_the_older_cleanups_are_listed_from_their_lines_with_their_objects_not_read()
+    {
+        for (var i = 0; i < RunLogs.MaxDetailsRead + 3; i++)
+        {
+            Act(new DateTimeOffset(2026, 9, 27, 0, 0, 0, TimeSpan.Zero).AddMinutes(i), RunTrigger.Manual, Removed("A4", 10, ("volume", $"v{i}", 10L)));
+        }
+
+        var logs = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("2026-09-27"), action: null, detail: true);
+
+        logs.DetailsRead.Should().Be(RunLogs.MaxDetailsRead);
+        logs.DetailsNotRead.Should().Be(3);
+        logs.Cleanups.Take(3).Should().OnlyContain(c => c.DetailState == RunLogs.NotRead && c.Removed.Count == 0, "the OLDEST are the ones left unread");
+        logs.Cleanups.Skip(3).Should().OnlyContain(c => c.DetailState == "present");
+        logs.ObjectsRemoved.Should().Be(RunLogs.MaxDetailsRead + 3, "the totals count every run, read or not");
+    }
+
+    /// <summary>The real file system, with every <see cref="Core.Files.IFileSystem.ReadFile"/> path kept.</summary>
+    private sealed class ReadRecordingFileSystem(Core.Files.IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public List<string> Read { get; } = [];
+
+        public override Core.Files.FileReadResult ReadFile(string path)
+        {
+            Read.Add(path);
+            return base.ReadFile(path);
+        }
     }
 
     [Fact]

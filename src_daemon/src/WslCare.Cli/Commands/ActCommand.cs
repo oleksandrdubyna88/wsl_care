@@ -138,6 +138,9 @@ internal static class ActCommand
             case ActResult.Wedged wedged:
                 Output.Note(stderr, wedged.Reason);
                 return (int)ExitCode.Wedged;
+            case ActResult.StateUnreadable unreadable:
+                Output.Note(stderr, unreadable.Reason);
+                return (int)ExitCode.StateUnreadable;
             case ActResult.Done { Recording: not Recording.Recorded } done:
                 Output.Note(stderr, $"the run was not recorded: {done.Reason}");
                 return (int)ExitCode.RunFailed;
@@ -203,6 +206,7 @@ internal static class ActText
         ActResult.Done d => $"wsl-care act, run {d.Detail.RunId.Text} ({d.Detail.Trigger.ToString().ToLowerInvariant()}), {(d.Recording == Recording.Recorded ? $"recorded ({d.DetailFile})" : "NOT recorded")}; dry run: {(d.Detail.DryRun ? "yes" : "no")} - {d.Detail.DryRunReason}",
         ActResult.Busy b => $"wsl-care act: busy - {b.Reason}",
         ActResult.Wedged w => $"wsl-care act: wedged - {w.Reason}",
+        ActResult.StateUnreadable u => $"wsl-care act: running state unreadable - {u.Reason}",
         _ => throw new System.Diagnostics.UnreachableException("ActResult is a closed set"),
     };
 

@@ -105,7 +105,7 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
 
     private IEnumerable<CoverageLine> Lines(string file) => files.ReadFile(file) switch
     {
-        FileReadResult.Content content => System.Text.Encoding.UTF8.GetString(content.Bytes).Split('\n').Where(l => l.Trim().Length > 0).SelectMany(Parse),
+        FileReadResult.Content content => LineFiles.CompleteLines(System.Text.Encoding.UTF8.GetString(content.Bytes)).SelectMany(Parse),
         _ => [],
     };
 

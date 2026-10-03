@@ -37,8 +37,8 @@ internal enum ExitCode
     /// try again later.</summary>
     Busy = 75,
 
-    /// <summary><c>act</c>: a run is WEDGED — its process is alive and its heartbeat stale — or the running state cannot be
-    /// told (plan §15 #6). Nothing was done and nothing was killed; it waits for a person.</summary>
+    /// <summary><c>act</c>: a run is WEDGED — its process is alive and its heartbeat stale — or its process cannot be
+    /// inspected (plan §15 #6). Nothing was done and nothing was killed; it waits for a person.</summary>
     Wedged = 76,
 
     /// <summary><c>act</c> started by a process that is not root (plan §15c #0): refused whole, before the lock or any
@@ -48,6 +48,10 @@ internal enum ExitCode
     /// <summary><c>act --confirm</c> while a configuration layer is invalid (plan §15a #1: observe-only): nothing runs.
     /// 78 is <c>EX_CONFIG</c>.</summary>
     ObserveOnly = 78,
+
+    /// <summary><c>act</c>: <c>running.json</c> cannot be read or parsed, even after brief retries (gate finding #7) — its own
+    /// state, not a wedged live run. Nothing was done and nothing was killed; the answer names the file and the reason.</summary>
+    StateUnreadable = 79,
 
     /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention).</summary>
     Interrupted = 130,

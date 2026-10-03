@@ -41,6 +41,7 @@ public sealed class LogsCommandTests : IDisposable
         CommandLine.Parse(["logs"]).Should().Be(new Request.Logs("today", null, Json: false));
         CommandLine.Parse(["logs", "--json", "--action", "A10", "--period", "2026-10-01..2026-10-02"]).Should().Be(new Request.Logs("2026-10-01..2026-10-02", ActionId.Find("A10"), Json: true));
         CommandLine.Parse(["runs", "--period", "yesterday"]).Should().Be(new Request.Runs("yesterday", Json: false));
+        CommandLine.Parse(["logs", "--detail", "--json"]).Should().Be(new Request.Logs("today", null, Json: true, Detail: true));
     }
 
     [Theory]
@@ -48,6 +49,8 @@ public sealed class LogsCommandTests : IDisposable
     [InlineData("logs", "--period", "today", "--period", "yesterday")]
     [InlineData("logs", "--action", "A99")]
     [InlineData("logs", "--json", "--json")]
+    [InlineData("logs", "--detail", "--detail")]
+    [InlineData("runs", "--detail")]
     [InlineData("runs", "--action", "A10")]
     [InlineData("runs", "show")]
     public void Anything_else_is_a_usage_refusal(params string[] argv) =>

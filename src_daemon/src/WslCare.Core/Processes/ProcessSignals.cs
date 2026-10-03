@@ -44,7 +44,16 @@ public abstract record SignalOutcome
 /// </summary>
 public interface IProcessSignals
 {
-    Task<SignalOutcome> TerminateAsync(ProcessIdentity process, TimeSpan grace, CancellationToken cancellationToken);
+    /// <summary><c>SIGTERM</c> to every process, ONE shared deadline of <paramref name="grace"/> across all of them, then
+    /// <c>SIGKILL</c> to the survivors (gate finding #9); the outcomes in the order of <paramref name="processes"/>.</summary>
+    Task<IReadOnlyList<SignalOutcome>> TerminateAllAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken);
+}
+
+/// <summary>One process through <see cref="IProcessSignals.TerminateAllAsync"/>.</summary>
+public static class ProcessSignalsExtensions
+{
+    public static async Task<SignalOutcome> TerminateAsync(this IProcessSignals signals, ProcessIdentity process, TimeSpan grace, CancellationToken cancellationToken) =>
+        (await signals.TerminateAllAsync([process], grace, cancellationToken).ConfigureAwait(false))[0];
 }
 
 /// <summary>A sender that signals nothing and says why — the sandbox (<c>WSL_CARE_ROOT</c>: a fixture's pids are not this
@@ -57,8 +66,8 @@ public sealed class RefusingProcessSignals(string reason) : IProcessSignals
 
     public string Reason => reason;
 
-    public Task<SignalOutcome> TerminateAsync(ProcessIdentity process, TimeSpan grace, CancellationToken cancellationToken) =>
-        Task.FromResult<SignalOutcome>(new SignalOutcome.Refused(reason));
+    public Task<IReadOnlyList<SignalOutcome>> TerminateAllAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<SignalOutcome>>([.. processes.Select(_ => new SignalOutcome.Refused(reason))]);
 }
 
 /// <summary>The native calls the pidfd sender makes — a seam so a test can make one of them fail or a process never end;
@@ -80,18 +89,26 @@ internal interface IPidfdCalls
 }
 
 /// <summary>
-/// The Linux sender: a <c>pidfd</c> (<c>pidfd_open</c>, Linux 5.3; glibc 2.36 — Ubuntu 24.04 has 2.39) pins the process
+/// The Linux sender: a <c>pidfd</c> (<c>pidfd_open</c>, Linux 5.3; glibc 2.36 — Ubuntu 24.04 has 2.39) pins each process
 /// FIRST, its start is then compared with the identity, and both signals go through that descriptor
 /// (<c>pidfd_send_signal</c>), so the pid can never be reused between the check and the signal: if the process the
 /// descriptor pins has already ended, a new holder of the pid has a later start and is refused as
-/// <see cref="SignalOutcome.NotTheSame"/>. Its end is awaited on the descriptor itself (<c>poll</c> → readable when the
-/// process exits), in short slices so a cancellation is seen.
+/// <see cref="SignalOutcome.NotTheSame"/>. The ends are awaited on the descriptors themselves (one <c>poll</c> over all of
+/// them → readable when a process exits), in short slices so a cancellation is seen.
 /// </summary>
-/// <remarks>Reads <c>/proc/[pid]/stat</c> under the proc root — always the REAL <c>/proc</c>: the CLI builds this sender only
-/// outside a sandbox.</remarks>
+/// <remarks>
+/// <para><b>One grace for all</b> (gate finding #9): <c>SIGTERM</c> goes to every pinned process, ONE deadline of the grace is
+/// waited across all of them, then the survivors get <c>SIGKILL</c> together and one <see cref="KillWait"/> — three
+/// processes that ignore <c>SIGTERM</c> take one grace, not three.</para>
+/// <para><b>A poll that fails is not an end</b> (independent review of E3, item 6): any error but <c>EINTR</c> settles every
+/// process still waited on as <see cref="SignalOutcome.Failed"/> — whether it ended is unknown, so nothing more is sent on
+/// that guess.</para>
+/// <para>Reads <c>/proc/[pid]/stat</c> under the proc root — always the REAL <c>/proc</c>: the CLI builds this sender only
+/// outside a sandbox.</para>
+/// </remarks>
 public sealed class PidfdProcessSignals : IProcessSignals
 {
-    /// <summary>How long a process gets to end after <c>SIGKILL</c> before it is reported still running.</summary>
+    /// <summary>How long the processes get to end after <c>SIGKILL</c> before they are reported still running.</summary>
     public static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
 
     private const int SigTerm = 15;
@@ -119,56 +136,44 @@ public sealed class PidfdProcessSignals : IProcessSignals
         _clock = clock;
     }
 
-    public async Task<SignalOutcome> TerminateAsync(ProcessIdentity process, TimeSpan grace, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<SignalOutcome>> TerminateAllAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken)
     {
-        var fd = _calls.Open(process.Pid);
-        if (fd < 0)
-        {
-            return -fd == Esrch ? new SignalOutcome.AlreadyGone() : new SignalOutcome.Failed($"pidfd_open({process.Pid}) failed with errno {-fd}");
-        }
-
+        var slots = processes.Select(Pin).ToList();
         try
         {
-            return await PinnedAsync(fd, process, grace, cancellationToken).ConfigureAwait(false);
+            await WaitAsync(slots, grace, neededKill: false, cancellationToken).ConfigureAwait(false);
+            foreach (var slot in slots.Where(s => s.Pending))
+            {
+                slot.Outcome = Kill(slot);
+            }
+
+            await WaitAsync(slots, KillWait, neededKill: true, cancellationToken).ConfigureAwait(false);
+            return [.. slots.Select(s => s.Outcome ?? new SignalOutcome.StillRunning($"pid {s.Process.Pid} did not end within {KillWait.TotalSeconds:0} s of SIGKILL (uninterruptible I/O?)"))];
         }
         finally
         {
-            _calls.Close(fd);
+            foreach (var slot in slots.Where(s => s.Fd >= 0))
+            {
+                _calls.Close(slot.Fd);
+            }
         }
     }
 
-    private async Task<SignalOutcome> PinnedAsync(int fd, ProcessIdentity process, TimeSpan grace, CancellationToken cancellationToken)
+    /// <summary>One process pinned, checked and sent <c>SIGTERM</c> — or settled at once (gone, another process, a failure).</summary>
+    private Slot Pin(ProcessIdentity process)
     {
-        if (Check(fd, process) is { } early)
-        {
-            return early;
-        }
-
-        if (Send(fd, SigTerm, process.Pid) is { } termFailed)
-        {
-            return termFailed;
-        }
-
-        switch (await EndedWithinAsync(fd, process.Pid, grace, cancellationToken).ConfigureAwait(false))
-        {
-            case { Failure.Length: > 0 } failed:
-                return new SignalOutcome.Failed(failed.Failure);
-            case { Ended: true }:
-                return new SignalOutcome.Ended(NeededKill: false);
-        }
-
-        if (Send(fd, SigKill, process.Pid) is { } killFailed)
-        {
-            return killFailed is SignalOutcome.AlreadyGone ? new SignalOutcome.Ended(NeededKill: false) : killFailed;
-        }
-
-        return await EndedWithinAsync(fd, process.Pid, KillWait, cancellationToken).ConfigureAwait(false) switch
-        {
-            { Failure.Length: > 0 } failed => new SignalOutcome.Failed(failed.Failure),
-            { Ended: true } => new SignalOutcome.Ended(NeededKill: true),
-            _ => new SignalOutcome.StillRunning($"pid {process.Pid} did not end within {KillWait.TotalSeconds:0} s of SIGKILL (uninterruptible I/O?)"),
-        };
+        var fd = _calls.Open(process.Pid);
+        return fd >= 0
+            ? new Slot(process, fd) { Outcome = Check(fd, process) ?? Send(fd, SigTerm, process.Pid) }
+            : new Slot(process, -1) { Outcome = -fd == Esrch ? new SignalOutcome.AlreadyGone() : new SignalOutcome.Failed($"pidfd_open({process.Pid}) failed with errno {-fd}") };
     }
+
+    /// <summary><c>SIGKILL</c> through the pin: <c>null</c> when sent (still waited on); gone in between counts as ended.</summary>
+    private SignalOutcome? Kill(Slot slot) => Send(slot.Fd, SigKill, slot.Process.Pid) switch
+    {
+        SignalOutcome.AlreadyGone => new SignalOutcome.Ended(NeededKill: false),
+        var other => other,
+    };
 
     /// <summary>The start the pinned process reports, against the identity; <c>null</c> when they agree.</summary>
     private SignalOutcome? Check(int fd, ProcessIdentity process)
@@ -192,39 +197,54 @@ public sealed class PidfdProcessSignals : IProcessSignals
         var errno => new SignalOutcome.Failed($"pidfd_send_signal(pid {pid}, {signal}) failed with errno {errno}"),
     };
 
-    /// <summary>How a wait on the pin ended: the process ended, the time ran out, or the wait itself FAILED — a <c>poll</c>
-    /// error other than <c>EINTR</c> says nothing about the process, so it is never taken for an end (independent review of
-    /// E3, 2026-10-03).</summary>
-    private sealed record WaitResult(bool Ended, string Failure);
-
-    private async Task<WaitResult> EndedWithinAsync(int fd, int pid, TimeSpan wait, CancellationToken cancellationToken)
+    /// <summary>Waits ONE deadline across every slot still pending, settling each as its descriptor turns readable.</summary>
+    private async Task WaitAsync(IReadOnlyList<Slot> slots, TimeSpan wait, bool neededKill, CancellationToken cancellationToken)
     {
         var deadline = _clock.GetUtcNow() + wait;
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var left = (int)Math.Clamp((deadline - _clock.GetUtcNow()).TotalMilliseconds, 0, SliceMilliseconds);
-            if (Poll(fd, pid, left) is { } settled)
+            var pending = slots.Where(s => s.Pending).ToList();
+            if (pending.Count == 0 || Settle(pending, deadline, neededKill))
             {
-                return settled;
-            }
-
-            if (_clock.GetUtcNow() >= deadline)
-            {
-                return new WaitResult(false, string.Empty);
+                return;
             }
 
             await Task.Yield();
         }
     }
 
-    /// <summary>One slice of the wait: ended, failed, or <c>null</c> while the process is still running (or the poll was interrupted).</summary>
-    private WaitResult? Poll(int fd, int pid, int milliseconds) => _calls.Poll([fd], new bool[1], milliseconds) switch
+    /// <summary>One poll slice over <paramref name="pending"/>; whether the deadline has passed.</summary>
+    private bool Settle(IReadOnlyList<Slot> pending, DateTimeOffset deadline, bool neededKill)
     {
-        > 0 => new WaitResult(true, string.Empty),
-        < 0 and var error when -error != Eintr => new WaitResult(false, $"poll failed with errno {-error}: whether pid {pid} ended is unknown"),
-        _ => null,
-    };
+        var left = (int)Math.Clamp((deadline - _clock.GetUtcNow()).TotalMilliseconds, 0, SliceMilliseconds);
+        var ready = new bool[pending.Count];
+        var count = _calls.Poll([.. pending.Select(s => s.Fd)], ready, left);
+        var failure = count < 0 && -count != Eintr ? $"poll failed with errno {-count}" : string.Empty;
+        for (var i = 0; i < pending.Count; i++)
+        {
+            pending[i].Settle(failure, ready[i], neededKill);
+        }
+
+        return _clock.GetUtcNow() >= deadline;
+    }
+
+    /// <summary>One process during a call: its pin and, once known, its outcome (none while it is still waited on).</summary>
+    private sealed class Slot(ProcessIdentity process, int fd)
+    {
+        public ProcessIdentity Process { get; } = process;
+
+        public int Fd { get; } = fd;
+
+        public SignalOutcome? Outcome { get; set; }
+
+        public bool Pending => Outcome is null;
+
+        public void Settle(string pollFailure, bool ended, bool neededKill) =>
+            Outcome = pollFailure.Length > 0 ? new SignalOutcome.Failed($"{pollFailure}: whether pid {Process.Pid} ended is unknown")
+                : ended ? new SignalOutcome.Ended(neededKill)
+                : null;
+    }
 }
 
 /// <summary>glibc, by its full soname: the only library this file loads, and only on Linux (the Windows binary never builds

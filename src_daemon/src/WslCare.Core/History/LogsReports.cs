@@ -96,4 +96,12 @@ public sealed record LogsReport(
     IReadOnlyList<MetricExtremes> Metrics,
     IReadOnlyList<CleanupDetail> Cleanups,
     int UnparseableLines,
-    string? Problem);
+    string? Problem)
+{
+    /// <summary>How many run details were opened for the cleanups' objects (none unless asked: <c>--detail</c> or one
+    /// <c>--action</c>, gate finding #10).</summary>
+    public int DetailsRead { get; init; }
+
+    /// <summary>How many runs with a cleanup are listed from their history line alone — not asked for, or past the bound.</summary>
+    public int DetailsNotRead { get; init; }
+}
