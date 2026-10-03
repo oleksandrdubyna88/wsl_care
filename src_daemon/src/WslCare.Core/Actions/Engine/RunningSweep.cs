@@ -7,7 +7,7 @@ namespace WslCare.Core.Actions.Engine;
 /// <summary>
 /// The sweep of a <c>running.json</c> a previous run left (plan §15 #6, §15a #0) — ONE implementation for the action engine
 /// (every <c>act</c>, the timer pass) and for every full run's housekeeping (gate finding #8: a <c>collect</c> from a terminal
-/// or the panel sweeps a dead run too, whatever <c>INVOCATION_ID</c> says). A dead or mismatched run gets its
+/// or the panel sweeps a dead run too, timer or not). A dead or mismatched run gets its
 /// <c>interrupted</c> history line, THEN its file goes; anything else that is not this run's own file is a state no run may
 /// act over.
 /// </summary>
