@@ -90,6 +90,17 @@ public sealed class LogsCommandTests : IDisposable
     }
 
     [Fact]
+    public void A_failed_actions_figures_count_and_its_failure_is_printed_beside_them()
+    {
+        Append(Today.AddHours(5), [new ActionRecord("A4", 386, 59_000_000_000) { Status = ActionStatus.Failed, Failure = "eeee: not confirmed" }]);
+
+        var (exit, stdout, _) = CliRun.Over(_sandbox, "logs");
+
+        exit.Should().Be(0);
+        stdout.Should().Contain("freed 59.50 GB, 387 objects").And.Contain("failed 1x").And.Contain("FAILED: eeee: not confirmed");
+    }
+
+    [Fact]
     public void A_period_that_is_not_one_of_the_shapes_is_exit_2_naming_them()
     {
         var (exit, stdout, stderr) = CliRun.Over(_sandbox, "logs", "--period", "last-week");

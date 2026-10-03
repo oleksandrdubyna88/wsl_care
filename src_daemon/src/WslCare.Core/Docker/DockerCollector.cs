@@ -19,9 +19,10 @@ public sealed record DockerSnapshot(
     Reading<IReadOnlySet<string>> Dangling,
     Reading<IReadOnlyList<ContainerDetail>> Details)
 {
-    /// <summary>The anonymous volumes no container refers to — what <c>volume-seen.json</c> tracks.</summary>
+    /// <summary>The anonymous volumes no container refers to — what <c>volume-seen.json</c> tracks. Anonymous by Docker's
+    /// label (<see cref="AnonymousVolumes"/>), so it needs the inventory too: without it the labels are unknown.</summary>
     public Reading<IReadOnlyList<string>> UnattachedAnonymous =>
-        Dangling.Map<IReadOnlyList<string>>(names => [.. names.Where(DockerJson.IsFullId).Order(StringComparer.Ordinal)]);
+        Reading.Combine(Inventory, Dangling, AnonymousVolumes.Unattached);
 }
 
 /// <summary>

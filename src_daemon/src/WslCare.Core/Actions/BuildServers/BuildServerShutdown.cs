@@ -87,9 +87,9 @@ public sealed class BuildServerShutdown : ICleanupAction
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
-        if (context.Processes(cancellationToken) is Reading<ProcessSnapshot>.Available { Value: var now } && Builds(now.All) is { Count: > 0 } builds)
+        if (Stopped(context.Processes(cancellationToken), commands) is { } stoppedBefore)
         {
-            return ActionRun.Nothing(commands.Ran, "nothing stopped") with { Notes = [$"a dotnet build started since the preview ({string.Join("; ", builds.Take(3))}): nothing was stopped"] };
+            return stoppedBefore;
         }
 
         var outcome = await commands.RunAsync(Shutdown, [], cancellationToken).ConfigureAwait(false);
@@ -104,6 +104,22 @@ public sealed class BuildServerShutdown : ICleanupAction
             Notes = after is null ? ["the process table could not be read after the command: which servers ended is unknown"] : [],
         };
     }
+
+    /// <summary>The re-check just before the command: the run it stops at (a build alive since the preview — nothing asked;
+    /// a process table that cannot be read again — refused, as the preview refuses, since a build that cannot be ruled out
+    /// may be alive: independent review of E3, 2026-10-03), or none when the command may go.</summary>
+    private static ActionRun? Stopped(Reading<ProcessSnapshot> now, ActionCommands commands) => now switch
+    {
+        Reading<ProcessSnapshot>.Unavailable unread => ActionRun.Nothing(commands.Ran, "nothing stopped") with
+        {
+            Failure = $"the process table could not be read again just before the command ({unread.Reason}): nothing was stopped",
+        },
+        Reading<ProcessSnapshot>.Available { Value: var table } when Builds(table.All) is { Count: > 0 } builds => ActionRun.Nothing(commands.Ran, "nothing stopped") with
+        {
+            Notes = [$"a dotnet build started since the preview ({string.Join("; ", builds.Take(3))}): nothing was stopped"],
+        },
+        _ => null,
+    };
 
     /// <summary>The target user's .NET build servers (plan §4.2's family).</summary>
     public static IReadOnlyList<ProcessEntry> Servers(IEnumerable<ProcessEntry> processes, string user) =>

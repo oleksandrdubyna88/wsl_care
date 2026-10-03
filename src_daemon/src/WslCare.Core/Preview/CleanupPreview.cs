@@ -167,6 +167,8 @@ public static class CleanupPreviews
         [
             Note("first seen unattached more recently than the limit", targets.Younger.Select(t => t.Bytes)),
             Note($"protected by the {DockerLabels.Keep}=true label", targets.Kept.Select(t => t.Bytes)),
+            Note($"64-hex names without Docker's anonymous label ({DockerLabels.Anonymous}): named to Docker, kept and listed with the named volumes", targets.NamedHex.Select(t => t.Bytes)),
+            Note("unattached volumes whose labels are unknown (not in docker system df -v): never selected", targets.LabelsUnknown.Select(t => t.Bytes)),
         ]);
 
     private static RowFigures ContainerFigures(ContainerTargets targets)
@@ -175,6 +177,7 @@ public static class CleanupPreviews
         [
             Note("anonymous volumes they hold (removed with them)", targets.AnonymousVolumes.Select(t => t.Bytes)),
             Note("named volumes they hold (kept)", targets.NamedVolumes.Select(t => t.Bytes)),
+            Note("volumes they hold whose labels are unknown (not in docker system df -v): not counted", targets.UnknownVolumes.Select(t => t.Bytes)),
             Note("stopped more recently than the limit", targets.Younger.Select(t => t.Bytes)),
             Note($"protected by the {DockerLabels.Keep}=true label", targets.Kept.Select(t => t.Bytes)),
         ]);
