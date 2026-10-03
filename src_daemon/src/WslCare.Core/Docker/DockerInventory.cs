@@ -73,9 +73,12 @@ public sealed record ContainerRow(
 /// <param name="Links">How many containers refer to it, running or not.</param>
 public sealed record VolumeRow(string Name, Reading<int> Links, Reading<long> SizeBytes, IReadOnlyDictionary<string, string> Labels)
 {
-    /// <summary>Plan §4.3: an anonymous volume has a 64-hex name — Docker's own random id. Docker also labels
-    /// them <c>com.docker.volume.anonymous</c>; on 2026-10-02 the two agreed on all 48 volumes.</summary>
-    public bool Anonymous => DockerJson.IsFullId(Name);
+    /// <summary>Plan §4.3, as Docker itself decides it: an anonymous volume carries Docker's
+    /// <c>com.docker.volume.anonymous</c> label AND a 64-hex name. The name alone is not enough — <c>docker volume
+    /// create</c> without a name also gets a random 64-hex name but NO label, and since Docker 23 <c>volume prune</c>
+    /// (without <c>--all</c>) keeps it as NAMED; taking it would be <c>volume prune --all</c> (independent review of E3,
+    /// 2026-10-03). On 2026-10-02 the label and the name agreed on all 48 volumes.</summary>
+    public bool Anonymous => DockerJson.IsFullId(Name) && Labels.ContainsKey(DockerLabels.Anonymous);
 
     /// <summary>Plan §5: <c>wsl-care.keep=true</c> protects a volume from every action.</summary>
     public bool KeptByLabel => Labels.TryGetValue(DockerLabels.Keep, out var value) && value == "true";
@@ -138,6 +141,31 @@ public static class DockerLabels
 
     /// <summary>What Testcontainers puts on everything it starts.</summary>
     public const string Testcontainers = "org.testcontainers";
+
+    /// <summary>What Docker (23+) puts on a volume it created anonymously — the one mark <c>volume prune</c> without
+    /// <c>--all</c> removes by.</summary>
+    public const string Anonymous = "com.docker.volume.anonymous";
+}
+
+/// <summary>Which volumes are anonymous by <see cref="VolumeRow.Anonymous"/> — the ONE rule A4's selection, its first
+/// sightings (<c>volume-seen.json</c>) and A5's accounting share. A volume whose labels are unknown (missing from
+/// <c>system df -v</c>) is never anonymous here.</summary>
+public static class AnonymousVolumes
+{
+    /// <summary>The volumes of <paramref name="inventory"/> by name (the first row of a repeated name).</summary>
+    public static IReadOnlyDictionary<string, VolumeRow> ByName(DockerInventory inventory) =>
+        inventory.Volumes.GroupBy(v => v.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+    /// <summary>The anonymous volumes no container refers to: in the dangling list AND anonymous in the inventory.</summary>
+    public static IReadOnlyList<string> Unattached(DockerInventory inventory, IReadOnlySet<string> dangling)
+    {
+        var byName = ByName(inventory);
+        return [.. dangling.Where(n => IsAnonymous(byName, n)).Order(StringComparer.Ordinal)];
+    }
+
+    /// <summary>Whether <paramref name="name"/> is a listed volume carrying Docker's anonymous label and a 64-hex name.</summary>
+    public static bool IsAnonymous(IReadOnlyDictionary<string, VolumeRow> byName, string name) =>
+        byName.TryGetValue(name, out var volume) && volume.Anonymous;
 }
 
 /// <summary>The names <c>docker volume ls --filter dangling=true</c> printed: volumes no container refers to.</summary>

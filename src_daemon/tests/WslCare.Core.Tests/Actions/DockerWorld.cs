@@ -21,7 +21,13 @@ internal sealed class DockerWorld
 
     public static readonly DateTimeOffset Now = DockerFixture.CapturedAt;
 
-    public DockerWorld(string? serverVersion = null, string keepVolume = "", string keepContainer = "", string testcontainer = "")
+    /// <param name="unlabelledVolume">A volume whose <c>com.docker.volume.anonymous</c> label is taken away in the captured
+    /// <c>system df -v</c> — what <c>docker volume create</c> without a name leaves: a 64-hex name Docker treats as NAMED.</param>
+    /// <param name="unlistedDangling">A 64-hex name added to the dangling list but absent from <c>system df -v</c> — a volume
+    /// whose labels are unknown.</param>
+    /// <param name="shareVolume">A container id and a volume name: the volume is ALSO mounted by that container, as
+    /// <c>--volumes-from</c> leaves it — one anonymous volume held by two containers.</param>
+    public DockerWorld(string? serverVersion = null, string keepVolume = "", string keepContainer = "", string testcontainer = "", string unlabelledVolume = "", string unlistedDangling = "", (string Container, string Volume) shareVolume = default)
     {
         var version = DockerFixture.Read("version.out");
         if (serverVersion is not null)
@@ -35,15 +41,23 @@ internal sealed class DockerWorld
             dfv = dfv.Replace($"\"Labels\":\"com.docker.volume.anonymous=\",\"Links\":\"0\",\"Mountpoint\":\"/var/lib/docker/volumes/{keepVolume}/", $"\"Labels\":\"com.docker.volume.anonymous=,wsl-care.keep=true\",\"Links\":\"0\",\"Mountpoint\":\"/var/lib/docker/volumes/{keepVolume}/", StringComparison.Ordinal);
         }
 
+        if (unlabelledVolume.Length > 0)
+        {
+            var labelled = Regex.Escape("\"Labels\":\"com.docker.volume.anonymous=\",");
+            dfv = Regex.Replace(dfv, labelled + "(\"Links\":\"[0-9]+\",\"Mountpoint\":\"/var/lib/docker/volumes/" + unlabelledVolume + "/)", "\"Labels\":\"\",$1");
+        }
+
+        var dangling = DockerFixture.Read("volume-ls-dangling.out") + (unlistedDangling.Length > 0 ? unlistedDangling + "\n" : string.Empty);
         var inspect = string.Join('\n', DockerFixture.Read("container-inspect.out").Split('\n').Select(line =>
             line.Contains($"\"id\":\"{keepContainer}\"", StringComparison.Ordinal) && keepContainer.Length > 0 ? line.Replace("\"keep\":null", "\"keep\":\"true\"", StringComparison.Ordinal)
             : line.Contains($"\"id\":\"{testcontainer}\"", StringComparison.Ordinal) && testcontainer.Length > 0 ? line.Replace("\"testcontainers\":null", "\"testcontainers\":\"true\"", StringComparison.Ordinal)
+            : line.Contains($"\"id\":\"{shareVolume.Container}\"", StringComparison.Ordinal) && shareVolume.Container is { Length: > 0 } ? line.Replace("\"mounts\":[", $"\"mounts\":[{{\"type\":\"volume\",\"name\":\"{shareVolume.Volume}\"}},", StringComparison.Ordinal)
             : line));
         Runner = new RecordingCommandRunner { Policy = CommandPolicy.Product, Default = new CommandOutcome.FailedToStart("not scripted by the docker world") }
             .Script(DockerCommands.Version.Argv, 0, version)
             .Script(DockerCommands.SystemDf.Argv, 0, DockerFixture.Read("system-df.out"))
             .Script(DockerCommands.SystemDfVerbose.Argv, 0, dfv)
-            .Script(DockerCommands.DanglingVolumes.Argv, 0, DockerFixture.Read("volume-ls-dangling.out"))
+            .Script(DockerCommands.DanglingVolumes.Argv, 0, dangling)
             .Script(DockerFixture.Inspect.Argv, 0, inspect)
             .Script(DockerCommands.VolumeList.Argv, 0, string.Join('\n', DockerFixture.Inventory.Volumes.Select(v => v.Name)));
     }

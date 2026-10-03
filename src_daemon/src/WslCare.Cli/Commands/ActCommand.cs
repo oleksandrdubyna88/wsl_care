@@ -108,9 +108,12 @@ internal static class ActCommand
             return (ShownList.Of(request.Volumes), string.Empty);
         }
 
-        if (host.Files.FileSize(request.OnlyFile) is not FileSizeResult.Measured { Bytes: <= MaxOnlyFileBytes } || host.Files.ReadFile(request.OnlyFile) is not FileReadResult.Content content)
+        // Read as ROOT: a regular file only (a FIFO or a device is refused, never waited on) and never past the cap, whatever
+        // its length claims (independent review of E3, 2026-10-03).
+        var read = host.Files.ReadRegularFile(request.OnlyFile, MaxOnlyFileBytes);
+        if (read is not FileReadResult.Content content)
         {
-            return (ShownList.None, $"act: the --only file {CommandLine.Printable(request.OnlyFile)} is missing, unreadable, or larger than {MaxOnlyFileBytes} bytes; nothing was done");
+            return (ShownList.None, $"act: the --only file {CommandLine.Printable(request.OnlyFile)} {CommandLine.Printable(Unusable(read))}; nothing was done");
         }
 
         var (names, failure) = CommandLine.ShownVolumesFile(Encoding.UTF8.GetString(content.Bytes));
@@ -118,6 +121,12 @@ internal static class ActCommand
             ? (ShownList.None, $"act: {failure}; nothing was done")
             : (ShownList.Of(names.Concat(request.Volumes)), string.Empty);
     }
+
+    private static string Unusable(FileReadResult read) => read switch
+    {
+        FileReadResult.Unreadable unreadable => $"cannot be used: {unreadable.Reason}",
+        _ => "is missing",
+    };
 
     private static int Exit(ActResult result, TextWriter stderr)
     {

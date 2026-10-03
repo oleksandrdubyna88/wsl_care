@@ -151,6 +151,11 @@ public interface IFileSystem
 {
     FileReadResult ReadFile(string path);
 
+    /// <summary>A file a caller NAMED, read only when it is a REGULAR file and only up to <paramref name="maxBytes"/> bytes
+    /// actually read — a directory, FIFO, socket or device is <see cref="FileReadResult.Unreadable"/> at once, never waited
+    /// on, and a larger file is refused, whatever its length claims (<see cref="RegularFiles"/>).</summary>
+    FileReadResult ReadRegularFile(string path, int maxBytes);
+
     bool FileExists(string path);
 
     bool DirectoryExists(string path);

@@ -72,6 +72,28 @@ public sealed class DockerCleanupTests : IDisposable
         world.Calls("volume", "rm").SelectMany(r => r.Argv).Should().NotContain(keep);
     }
 
+    [Fact]
+    public async Task A4_never_removes_a_hex_named_volume_docker_treats_as_named_nor_one_whose_labels_are_unknown()
+    {
+        // docker volume create without a name: a random 64-hex name and NO com.docker.volume.anonymous label — Docker 23+'s
+        // volume prune keeps it as named, so A4 taking it would be volume prune --all, the never-list's own example.
+        var names = DockerWorld.DanglingAnonymous;
+        var unknown = new string('a', 64);
+        var world = new DockerWorld(unlabelledVolume: names[0], unlistedDangling: unknown);
+        world.Runner.ScriptEffect(argv => argv is ["docker", "volume", "rm", ..], r => Removed(r.Argv.Skip(3)));
+        var action = new VolumeRemoval();
+        var context = DockerWorld.Context(_sandbox);
+        var commands = world.Commands(action, context);
+
+        var preview = await action.PreviewAsync(context, commands, CancellationToken.None);
+        var run = await action.RunAsync(context, preview, commands, CancellationToken.None);
+
+        preview.Targets.Select(t => t.Key).Should().Equal(names.Skip(1), "only volumes carrying Docker's anonymous label AND a 64-hex name are A4's");
+        world.Calls("volume", "rm").SelectMany(r => r.Argv).Should().NotContain(names[0]).And.NotContain(unknown);
+        run.Count.Should().Be(2);
+        new VolumeSeenStore(_sandbox.Paths, _sandbox.Files).Read().Record.Volumes.Select(v => v.Name).Should().NotContain(names[0]).And.NotContain(unknown, "first sightings are kept for anonymous volumes only");
+    }
+
     [Theory]
     [InlineData("22.0.4", "is below 23")]
     [InlineData("nightly", "could not be read as a number")]
@@ -154,6 +176,44 @@ public sealed class DockerCleanupTests : IDisposable
         run.Removed.Where(r => r.Kind == "anonymous volume").Select(r => r.Name).Should().BeEquivalentTo(goneVolumes.Select(v => v.Name));
         run.FreedBytes.Should().Be(containers.Skip(1).Sum(c => c.Bytes ?? 0) + goneVolumes.Sum(v => v.Bytes ?? 0));
         world.Calls("rm", "-v").SelectMany(r => r.Argv).Should().NotContain("-f").And.NotContain("--force");
+    }
+
+    [Fact]
+    public async Task A5_counts_an_anonymous_volume_two_removed_containers_share_once_in_the_preview_and_in_the_freed_bytes()
+    {
+        var context = DockerWorld.Context(_sandbox);
+        var action = new ContainerRemoval(testcontainers: false);
+        var plain = await action.PreviewAsync(context, new DockerWorld().Commands(action, context), CancellationToken.None);
+        var holder = plain.Targets.First(t => t.Kind == "anonymous volume");
+        var volume = holder.Name;
+        var other = plain.Targets.First(t => t.Kind == "container" && !holder.Key.StartsWith(t.Key, StringComparison.Ordinal));
+        var world = new DockerWorld(shareVolume: (other.Key, volume));
+        world.Runner.ScriptEffect(argv => argv is ["docker", "rm", "-v", ..], r => Removed(r.Argv.Skip(3)));
+        world.Runner.Script(DockerCommands.VolumeList.Argv, 0, string.Empty);
+        var commands = world.Commands(action, context);
+
+        var preview = await action.PreviewAsync(context, commands, CancellationToken.None);
+        var run = await action.RunAsync(context, preview, commands, CancellationToken.None);
+
+        preview.Targets.Count(t => t.Name == volume).Should().Be(1, "a volume shared by two selected containers is one object");
+        run.Removed.Count(r => r.Name == volume).Should().Be(1, "it went once");
+        run.FreedBytes.Should().Be(preview.Bytes, "every container and every distinct volume, each counted once");
+    }
+
+    [Fact]
+    public async Task A5_counts_a_hex_named_volume_without_dockers_anonymous_label_as_named_and_kept_not_as_going_with_its_container()
+    {
+        var context = DockerWorld.Context(_sandbox);
+        var action = new ContainerRemoval(testcontainers: false);
+        var plain = new DockerWorld();
+        var before = await action.PreviewAsync(context, plain.Commands(action, context), CancellationToken.None);
+        var volume = before.Targets.First(t => t.Kind == "anonymous volume").Name;
+        var world = new DockerWorld(unlabelledVolume: volume);
+
+        var after = await action.PreviewAsync(context, world.Commands(action, context), CancellationToken.None);
+
+        after.Targets.Where(t => t.Kind == "anonymous volume").Select(t => t.Name).Should().NotContain(volume, "docker rm -v keeps a volume Docker does not treat as anonymous");
+        after.Bytes.Should().Be(before.Bytes - DockerWorld.VolumeBytes(volume));
     }
 
     [Fact]

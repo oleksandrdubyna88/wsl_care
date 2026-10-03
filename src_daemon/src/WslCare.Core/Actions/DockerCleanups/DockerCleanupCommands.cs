@@ -69,13 +69,17 @@ public static class DockerCleanupCommands
     /// <summary>The unattached volumes, read again after A4 so its first sightings are recorded (plan §15b #3).</summary>
     public static readonly CommandTemplate DanglingRead = CommandTemplate.Fixed(DockerCommands.DanglingVolumes);
 
+    /// <summary><c>docker system df -v</c>: every object with its size and labels — read again after A4 for the labels that
+    /// decide which unattached volumes are anonymous (their first sightings).</summary>
+    public static readonly CommandTemplate InventoryRead = CommandTemplate.Fixed(DockerCommands.SystemDfVerbose);
+
     /// <summary>Every volume's name, read after A5 to confirm which anonymous volumes went with the containers.</summary>
     public static readonly CommandTemplate VolumeListRead = CommandTemplate.Fixed(DockerCommands.VolumeList);
 
     /// <summary>The collector's reads every Docker action takes its live look with, as the action declares them.</summary>
     public static IReadOnlyList<CommandTemplate> Reads { get; } =
     [
-        CommandTemplate.Fixed(DockerCommands.Version), SystemDfRead, CommandTemplate.Fixed(DockerCommands.SystemDfVerbose),
+        CommandTemplate.Fixed(DockerCommands.Version), SystemDfRead, InventoryRead,
         DanglingRead, VolumeListRead, ReadCommandTemplates.ContainerInspect,
     ];
 

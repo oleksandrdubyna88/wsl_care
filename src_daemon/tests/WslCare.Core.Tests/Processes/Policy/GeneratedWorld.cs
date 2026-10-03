@@ -22,17 +22,25 @@ internal sealed class GeneratedWorld(HostileInputs inputs)
 
     private readonly List<string> _volumes = [];
 
+    /// <summary>The 64-hex volumes Docker treats as NAMED: listed without the <c>com.docker.volume.anonymous</c> label (what
+    /// <c>docker volume create</c> without a name leaves), or dangling but absent from <c>system df -v</c> (labels unknown).
+    /// No action may ever name one in a removal (independent review, item 1).</summary>
+    private readonly HashSet<string> _notAnonymous = new(StringComparer.Ordinal);
+
     /// <summary>A runner under <paramref name="policy"/> answering this case's Docker, snap and tools.</summary>
     public RecordingCommandRunner Runner(CommandPolicy policy)
     {
         var containers = Enumerable.Range(0, inputs.Next(6)).Select(_ => Hex()).ToList();
         _volumes.AddRange(Enumerable.Range(0, inputs.Next(8)).Select(_ => inputs.Next(2) == 0 ? Hex() : Name()));
+        var labels = _volumes.Distinct(StringComparer.Ordinal).ToDictionary(v => v, _ => inputs.Pick<string>(["com.docker.volume.anonymous=,wsl-care.keep=true", "com.docker.volume.anonymous=", "com.docker.volume.anonymous=", string.Empty]), StringComparer.Ordinal);
+        var unlisted = Enumerable.Range(0, inputs.Next(3)).Select(_ => Hex()).ToList();
+        _notAnonymous.UnionWith(_volumes.Where(v => labels[v].Length == 0).Concat(unlisted));
         var images = Enumerable.Range(0, inputs.Next(5)).Select(_ => "sha256:" + Hex()).ToList();
         return new RecordingCommandRunner { Policy = policy, Default = RecordingCommandRunner.Exited(0, "Archived and active journals take up 1.5G in the file system.") }
             .Script(DockerCommands.Version.Argv, 0, Version())
             .Script(DockerCommands.SystemDf.Argv, 0, "{\"Active\":\"1\",\"Reclaimable\":\"1GB (50%)\",\"Size\":\"2GB\",\"TotalCount\":\"3\",\"Type\":\"Local Volumes\"}\n")
-            .Script(DockerCommands.SystemDfVerbose.Argv, 0, DiskUsage(containers, images))
-            .Script(DockerCommands.DanglingVolumes.Argv, 0, string.Join('\n', _volumes))
+            .Script(DockerCommands.SystemDfVerbose.Argv, 0, DiskUsage(containers, images, labels))
+            .Script(DockerCommands.DanglingVolumes.Argv, 0, string.Join('\n', _volumes.Concat(unlisted)))
             .Script(DockerCommands.VolumeList.Argv, 0, string.Join('\n', _volumes.Where(_ => inputs.Next(2) == 0)))
             .Script(argv => argv is ["docker", "container", "inspect", ..], RecordingCommandRunner.Exited(0, string.Join('\n', containers.Select((id, i) => Inspect(id, images)))))
             .ScriptEffect(argv => argv is ["docker", "volume", "rm", ..] or ["docker", "rm", ..], r => RecordingCommandRunner.Exited(0, string.Join('\n', r.Argv.Skip(3))))
@@ -65,20 +73,25 @@ internal sealed class GeneratedWorld(HostileInputs inputs)
         return inputs.Next(6) == 0 ? Name() : $"{Instant(started.AddSeconds(1))}\n{Instant(started)}\nC:\\Users\\{Name()}\n";
     }
 
-    /// <summary>Some of this case's volume names, hostile ones included — what a "shown list" might carry.</summary>
-    public IReadOnlyList<string> Shown() => [.. _volumes.Where(_ => inputs.Next(2) == 0), Name()];
+    /// <summary>Some of this case's volume names, hostile ones included — what a "shown list" might carry (the named 64-hex
+    /// ones too: a shown list never makes a named volume a target).</summary>
+    public IReadOnlyList<string> Shown() => [.. _volumes.Concat(_notAnonymous).Where(_ => inputs.Next(2) == 0), Name()];
+
+    /// <summary>Every removal argv that names a volume Docker treats as named — what must never happen.</summary>
+    public IEnumerable<string> NamedVolumeRemovals(IEnumerable<CommandRequest> requests) =>
+        requests.Where(r => r.Argv is ["docker", "volume", "rm", ..]).SelectMany(r => r.Argv.Skip(3)).Where(_notAnonymous.Contains);
 
     private string Version() =>
         $"{{\"Client\":{{\"Version\":\"29.6.1\"}},\"Server\":{{\"Platform\":{{\"Name\":\"x\"}},\"Version\":\"{inputs.Pick<string>(["29.6.1", "29.6.1", "22.0.4", "nightly"])}\"}}}}";
 
-    private string DiskUsage(IReadOnlyList<string> containers, IReadOnlyList<string> images)
+    private string DiskUsage(IReadOnlyList<string> containers, IReadOnlyList<string> images, IReadOnlyDictionary<string, string> labels)
     {
         var text = new StringBuilder("{\"Images\":[");
         text.AppendJoin(',', images.Select(id => $"{{\"ID\":\"{id}\",\"Repository\":{Json(inputs.Next(3) == 0 ? "<none>" : Name())},\"Tag\":\"x\",\"Containers\":\"{inputs.Next(2)}\",\"CreatedAt\":\"{Age()}\",\"Size\":\"1GB\",\"UniqueSize\":\"{inputs.Next(900)}MB\"}}"));
         text.Append("],\"Containers\":[");
         text.AppendJoin(',', containers.Select(id => $"{{\"ID\":\"{id}\",\"Names\":{Json(Name())},\"Image\":\"x\",\"State\":\"exited\",\"CreatedAt\":\"{Age()}\",\"Size\":\"{inputs.Next(900)}MB\",\"Labels\":\"\"}}"));
         text.Append("],\"Volumes\":[");
-        text.AppendJoin(',', _volumes.Select(name => $"{{\"Name\":{Json(name)},\"Links\":\"0\",\"Size\":\"{inputs.Next(900)}MB\",\"Labels\":{Json(inputs.Next(4) == 0 ? "wsl-care.keep=true" : "com.docker.volume.anonymous=")}}}"));
+        text.AppendJoin(',', _volumes.Select(name => $"{{\"Name\":{Json(name)},\"Links\":\"0\",\"Size\":\"{inputs.Next(900)}MB\",\"Labels\":{Json(labels[name])}}}"));
         text.Append("],\"BuildCache\":[");
         text.AppendJoin(',', Enumerable.Range(0, inputs.Next(4)).Select(_ => $"{{\"ID\":\"{Hex()[..12]}\",\"InUse\":\"false\",\"Shared\":\"false\",\"LastUsedAt\":\"{Age()}\",\"Size\":\"{inputs.Next(30)}GB\"}}"));
         return text.Append("]}").ToString();
@@ -86,12 +99,16 @@ internal sealed class GeneratedWorld(HostileInputs inputs)
 
     private string Inspect(string id, IReadOnlyList<string> images)
     {
-        var mounts = string.Join(',', Enumerable.Range(0, inputs.Next(3)).Select(_ => $"{{\"type\":\"volume\",\"name\":{Json(inputs.Next(2) == 0 ? Hex() : Name())}}}"));
+        var mounts = string.Join(',', Enumerable.Range(0, inputs.Next(3)).Select(_ => $"{{\"type\":\"volume\",\"name\":{Json(MountedVolume())}}}"));
         var stopped = Instant(Now.AddDays(-inputs.Next(30)));
         return $"{{\"id\":\"{id}\",\"name\":{Json("/" + Name())},\"created\":\"{stopped}\",\"state\":\"{inputs.Pick<string>(["exited", "created", "running", "dead"])}\",\"startedAt\":\"{stopped}\",\"finishedAt\":\"{stopped}\","
             + $"\"image\":\"{(images.Count > 0 ? inputs.Pick(images) : "sha256:" + Hex())}\",\"logDriver\":\"json-file\",\"logMaxSize\":null,\"logPath\":\"/x\","
             + $"\"testcontainers\":{(inputs.Next(2) == 0 ? "\"true\"" : "null")},\"keep\":{(inputs.Next(4) == 0 ? "\"true\"" : "null")},\"mounts\":[{mounts}]}}";
     }
+
+    /// <summary>A mounted volume: one of this case's listed volumes (anonymous, named-hex or named — so A5 meets each), or a
+    /// name <c>system df -v</c> does not list.</summary>
+    private string MountedVolume() => _volumes.Count > 0 && inputs.Next(3) > 0 ? inputs.Pick(_volumes) : inputs.Next(2) == 0 ? Hex() : Name();
 
     private string Snaps() =>
         "Name Version Rev Tracking Publisher Notes\n" + string.Concat(Enumerable.Range(0, inputs.Next(5)).Select(_ =>
