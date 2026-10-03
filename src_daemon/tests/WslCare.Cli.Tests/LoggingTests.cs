@@ -153,8 +153,11 @@ public sealed class LoggingTests
     [Fact]
     public void Starting_the_logger_writes_one_file_per_run_under_the_hosts_log_directory_at_the_configured_level()
     {
+        // The run starts NOW (E3.S2 fix): Serilog stamps each event with the real clock, and the sink opens a new day's segment
+        // for an event dated after the run's start day — a fixed 2026-10-02 start made this test expire on 2026-10-03.
         using var sandbox = new SandboxHost("logging-start");
-        var host = new CliHost(sandbox.Paths, sandbox.Files, new FixedTimeProvider(), new RecordingCommandRunner());
+        var started = DateTimeOffset.UtcNow;
+        var host = new CliHost(sandbox.Paths, sandbox.Files, new FixedTimeProvider(started), new RecordingCommandRunner());
         var config = Core.Config.ConfigLoader.Load(host.Paths, host.Files).Config;
         var console = new StringWriter();
 
@@ -164,10 +167,11 @@ public sealed class LoggingTests
             logger.Debug("not at Information");
         }
 
-        var day = Path.Combine(sandbox.Paths.LogDirectory, "2026-10-02");
+        var day = Path.Combine(sandbox.Paths.LogDirectory, started.UtcDateTime.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
         var files = Directory.GetFiles(day);
-        files.Should().ContainSingle().Which.Should().EndWith($"wsl-care-12-00-00-{Environment.ProcessId}.log");
-        File.ReadAllText(files[0]).Should().Contain("hello from the test").And.NotContain("not at Information");
+        files.Should().ContainSingle().Which.Should().EndWith($"wsl-care-{started.UtcDateTime:HH-mm-ss}-{Environment.ProcessId}.log");
+        var written = string.Concat(Directory.GetFiles(sandbox.Paths.LogDirectory, "*.log", SearchOption.AllDirectories).Select(File.ReadAllText));
+        written.Should().Contain("hello from the test").And.NotContain("not at Information");
         console.ToString().Should().Contain("hello from the test").And.Contain("\x1b[");
     }
 
