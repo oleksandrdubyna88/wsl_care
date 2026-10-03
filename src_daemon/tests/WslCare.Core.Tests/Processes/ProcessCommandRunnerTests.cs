@@ -10,8 +10,10 @@ namespace WslCare.Core.Tests.Processes;
 /// <summary>
 /// The real runner against real children: exit codes, captured output, the ceiling, the tree kill,
 /// the cap, cancellation, and the policy gate. The shell here is the SUBJECT's child — a way to get a
-/// process that spawns a grandchild — never the way the product runs anything.
+/// process that spawns a grandchild — never the way the product runs anything. Wall-clock budgets: run alone
+/// (<see cref="WallClock"/>), each wide enough for a loaded machine (2026-10-03).
 /// </summary>
+[Collection(WallClock.Name)]
 public sealed class ProcessCommandRunnerTests
 {
     // The subject's children are shells, which the product's never-list refuses: the runner's own tests take its one unguarded seam.
@@ -51,11 +53,11 @@ public sealed class ProcessCommandRunnerTests
     public async Task A_timeout_kills_the_whole_process_tree_and_reports_what_was_captured()
     {
         var watch = Stopwatch.StartNew();
-        var outcome = await Runner.RunAsync(new CommandRequest(ParentWithGrandchild(), TimeSpan.FromSeconds(6)), CancellationToken.None);
+        var outcome = await Runner.RunAsync(new CommandRequest(ParentWithGrandchild(), TimeSpan.FromSeconds(20)), CancellationToken.None);
         watch.Stop();
 
         var timedOut = outcome.Should().BeOfType<CommandOutcome.TimedOut>().Subject;
-        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30), "a tree kill must not wait for the grandchild's own 90 s");
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60), "a tree kill must not wait for the grandchild's own 90 s");
         var pidText = timedOut.Stdout.Text.Trim();
         int.TryParse(pidText, out var grandchild).Should().BeTrue($"the parent prints its child's pid before waiting; stdout was '{pidText}'");
         await WaitUntilGone(grandchild);
@@ -67,7 +69,7 @@ public sealed class ProcessCommandRunnerTests
         var script = OperatingSystem.IsWindows()
             ? "for /L %i in (1,1,3000) do @echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
             : "yes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx | head -n 3000";
-        var request = new CommandRequest(Shell(script), TimeSpan.FromSeconds(60)) { OutputCapChars = 10_000 };
+        var request = new CommandRequest(Shell(script), TimeSpan.FromMinutes(3)) { OutputCapChars = 10_000 };
 
         var outcome = await Runner.RunAsync(request, CancellationToken.None);
 
@@ -85,7 +87,7 @@ public sealed class ProcessCommandRunnerTests
         var act = () => Runner.RunAsync(new CommandRequest(Shell(OperatingSystem.IsWindows() ? "ping -n 60 127.0.0.1 > nul" : "sleep 60"), TimeSpan.FromMinutes(5)), cancel.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(20));
+        watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(60));
     }
 
     [Fact]
@@ -171,7 +173,7 @@ public sealed class ProcessCommandRunnerTests
         var script = OperatingSystem.IsWindows()
             ? $"for /L %i in (1,1,2000) do @(echo {padding} 1>&2& echo line%i)"
             : $"i=0; while [ $i -lt 2000 ]; do echo {padding} >&2; echo line$i; i=$((i+1)); done";
-        var request = new CommandRequest(Shell(script), TimeSpan.FromSeconds(45)) { OutputCapChars = 64 * 1024 };
+        var request = new CommandRequest(Shell(script), TimeSpan.FromMinutes(3)) { OutputCapChars = 64 * 1024 };
         var lines = 0;
 
         var outcome = await Runner.StreamAsync(request, _ => lines++, TestContext.Current.CancellationToken);

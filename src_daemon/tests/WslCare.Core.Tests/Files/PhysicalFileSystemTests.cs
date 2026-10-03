@@ -161,6 +161,52 @@ public sealed class PhysicalFileSystemTests
     }
 
     [Fact]
+    public void A_reader_holding_the_history_open_never_blocks_an_append()
+    {
+        // The flaky RunRetentionTests race, made deterministic: retention reads history.jsonl again right after its
+        // rewrite released the lock, while a racing run appends. On Windows a reader that denies writers
+        // (File.ReadAllBytes shares Read only) made the append's FileMode.Append open throw a sharing violation - the
+        // run's history line was lost. Linux has no mandatory share modes, so there this holds trivially.
+        using var host = new SandboxHost("fs-read-shared");
+        var file = host.Root.File("state/history.jsonl", "{\"n\":0}\n");
+
+        using (var reader = PhysicalFileSystem.OpenForReading(file))
+        {
+            var append = () => host.Files.AppendLine(file, "{\"n\":1}", TimeSpan.FromSeconds(5));
+            append.Should().NotThrow("a reader of the history must never make a run lose its line");
+            reader.ReadByte().Should().Be('{', "the reader keeps reading what it opened");
+        }
+
+        File.ReadAllText(file).Should().Be("{\"n\":0}\n{\"n\":1}\n");
+    }
+
+    [Fact]
+    public async Task An_atomic_replace_waits_out_a_reader_that_holds_the_file_for_a_moment()
+    {
+        // The heartbeat's half of the same flake: the engine test read running.json while the heartbeat replaced it. On
+        // Windows a rename onto a file another handle holds is refused even when that handle shares delete, so a reader's
+        // microseconds made the heartbeat's write fail. The rename now waits a reader out (up to 2 s). Trivial on Linux.
+        using var host = new SandboxHost("fs-replace-reader");
+        var state = host.Root.Dir("state");
+        var file = host.Root.File("state/running.json", "{\"n\":0}");
+        var reader = PhysicalFileSystem.OpenForReading(file);
+        var token = TestContext.Current.CancellationToken;
+        var release = Task.Run(
+            async () =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200), token);
+                await reader.DisposeAsync();
+            },
+            token);
+
+        var verdict = host.Files.WriteFileAtomically(file, Encoding.UTF8.GetBytes("{\"n\":1}"), new DeletionScope(state, "test"));
+        await release;
+
+        verdict.IsAllowed.Should().BeTrue();
+        File.ReadAllText(file).Should().Be("{\"n\":1}", "the replace landed once the reader let go");
+    }
+
+    [Fact]
     public void Append_line_gives_up_with_a_timeout_when_the_lock_is_held()
     {
         using var host = new SandboxHost("fs-append-lock");

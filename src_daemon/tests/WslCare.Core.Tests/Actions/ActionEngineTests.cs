@@ -374,7 +374,14 @@ public sealed class ActionEngineTests : IDisposable
                 while (beaten < _clock.GetUtcNow() && DateTime.UtcNow < deadline)
                 {
                     await Task.Delay(20);
-                    beaten = JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)!.HeartbeatAt;
+
+                    // Through the product's reader, which shares write and delete: a raw File.ReadAllBytes denied the
+                    // heartbeat's atomic replace on Windows and, read mid-replace, threw out of this action under load —
+                    // the flaky failure "beaten was 0001-01-01" (2026-10-03). A read that lands mid-replace is retried.
+                    if (_sandbox.Files.ReadFile(RunningState.File(_sandbox.Paths)) is FileReadResult.Content content)
+                    {
+                        beaten = JsonSerializer.Deserialize(content.Bytes, WslCareJsonContext.Default.RunningFile)!.HeartbeatAt;
+                    }
                 }
 
                 return new ActionRun(0, 0, "x", null, null, [], [], string.Empty);
