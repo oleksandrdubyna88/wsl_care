@@ -30,7 +30,7 @@ internal static class CliRun
 
     public static (int Exit, string Stdout, string Stderr) Over(CliHost host, ILogger logger, CancellationToken cancellationToken, params string[] args)
     {
-        var loaded = ConfigLoader.Load(host.Paths, host.Files);
+        var loaded = host.LoadConfig();
         using var stdout = new StringWriter();
         using var stderr = new StringWriter();
         var exit = Program.Run(args, stdout, stderr, host, loaded, logger, cancellationToken);

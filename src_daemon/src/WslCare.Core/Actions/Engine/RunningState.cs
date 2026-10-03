@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 
 using WslCare.Core.Files;
@@ -46,9 +47,23 @@ public abstract record RunningStatus
     /// <summary>The pid is gone, or is a different process now: the run died — swept with an <c>interrupted</c> record.</summary>
     public sealed record Dead(RunningFile File, string Why) : RunningStatus;
 
-    /// <summary>It cannot be told: the file does not parse, or the pid cannot be inspected. Treated like wedged — refuse,
-    /// kill nothing — because a guess here is a second run beside a live one.</summary>
+    /// <summary>It cannot be told: the pid cannot be inspected. Treated like wedged — refuse, kill nothing — because a guess
+    /// here is a second run beside a live one.</summary>
     public sealed record Unknown(string Reason) : RunningStatus;
+
+    /// <summary>The file cannot be read or does not parse, even after brief retries (gate finding #7) — its own state, never
+    /// taken for a wedged live process: refuse, kill nothing, and name the file and the reason.</summary>
+    public sealed record Unreadable(string Reason) : RunningStatus;
+}
+
+/// <summary>How an unreadable or unparsable <c>running.json</c> is read again before any verdict: a writer replacing it (temp +
+/// rename) can race a reader on Windows, and one bad read must not decide a run (gate finding #7).</summary>
+/// <param name="Retries">Reads after the first, each after <paramref name="Delay"/>.</param>
+/// <param name="Pause">The wait itself — real sleep, or a test's own.</param>
+public sealed record RunningReadRetry(int Retries, TimeSpan Delay, Action<TimeSpan> Pause)
+{
+    /// <summary>Three more reads, 100 ms apart: at most 300 ms before a verdict.</summary>
+    public static readonly RunningReadRetry Default = new(3, TimeSpan.FromMilliseconds(100), Thread.Sleep);
 }
 
 /// <summary>Reads, writes and judges <c>running.json</c>.</summary>
@@ -71,13 +86,51 @@ public static class RunningState
     public static string File(IHostPaths paths) => paths.Rules.Join(paths.StateDirectory, FileName);
 
     public static RunningStatus Read(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now) =>
-        files.ReadFile(File(paths)) switch
+        Read(paths, files, processes, now, RunningReadRetry.Default);
+
+    /// <summary>What the file says now — read again up to <see cref="RunningReadRetry.Retries"/> times while it cannot be read or
+    /// does not parse (gate finding #7), and only then judged: a file that never reads is <see cref="RunningStatus.Unreadable"/>.</summary>
+    public static RunningStatus Read(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry)
+    {
+        var loaded = Load(paths, files);
+        for (var attempt = 0; attempt < retry.Retries && loaded is Loaded.Bad; attempt++)
         {
-            FileReadResult.Missing => new RunningStatus.None(),
-            FileReadResult.Unreadable u => new RunningStatus.Unknown($"{File(paths)} cannot be read ({u.Reason}); remove it by hand once no wsl-care act runs"),
-            FileReadResult.Content content => Judge(Parse(content.Bytes), processes, now, File(paths)),
-            _ => throw new System.Diagnostics.UnreachableException("FileReadResult is a closed set"),
+            retry.Pause(retry.Delay);
+            loaded = Load(paths, files);
+        }
+
+        return loaded switch
+        {
+            Loaded.Absent => new RunningStatus.None(),
+            Loaded.Bad bad => new RunningStatus.Unreadable(string.Create(CultureInfo.InvariantCulture, $"{File(paths)} {bad.Why} (read {retry.Retries + 1} times, {retry.Delay.TotalMilliseconds:0} ms apart); remove it by hand once no wsl-care act runs")),
+            Loaded.Parsed parsed => Judge(parsed.File, processes, now),
+            _ => throw new System.Diagnostics.UnreachableException("Loaded is a closed set"),
         };
+    }
+
+    /// <summary>One read of the file: absent, parsed, or bad (unreadable or not a running record) with why.</summary>
+    private abstract record Loaded
+    {
+        private Loaded()
+        {
+        }
+
+        public sealed record Absent : Loaded;
+
+        public sealed record Parsed(RunningFile File) : Loaded;
+
+        public sealed record Bad(string Why) : Loaded;
+    }
+
+    private static Loaded Load(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths)) switch
+    {
+        FileReadResult.Missing => new Loaded.Absent(),
+        FileReadResult.Unreadable u => new Loaded.Bad($"cannot be read ({u.Reason})"),
+        FileReadResult.Content content => Parse(content.Bytes),
+        _ => throw new System.Diagnostics.UnreachableException("FileReadResult is a closed set"),
+    };
+    /// <summary>Which run the file names, unjudged — <c>null</c> when there is no file or it does not parse.</summary>
+    public static RunId? RunIdIn(IHostPaths paths, IFileSystem files) => Load(paths, files) is Loaded.Parsed parsed ? parsed.File.RunId : null;
 
     /// <summary>Written atomically (temp + rename) inside the state directory.</summary>
     public static DeletionVerdict Write(IHostPaths paths, IFileSystem files, RunningFile running)
@@ -91,36 +144,29 @@ public static class RunningState
 
     private static DeletionScope Scope(IHostPaths paths) => new(paths.StateDirectory, Action);
 
-    private static RunningFile? Parse(byte[] bytes)
+    private static Loaded Parse(byte[] bytes)
     {
         try
         {
-            return JsonSerializer.Deserialize(bytes, WslCareJsonContext.Default.RunningFile) is { RunId: not null, Actions: not null, Current: not null } file ? file : null;
+            return JsonSerializer.Deserialize(bytes, WslCareJsonContext.Default.RunningFile) is { RunId: not null, Actions: not null, Current: not null } file
+                ? new Loaded.Parsed(file)
+                : new Loaded.Bad("does not parse: it is not a running record");
         }
-        catch (JsonException)
+        catch (JsonException e)
         {
-            return null;
+            return new Loaded.Bad($"does not parse ({e.Message})");
         }
     }
 
-    private static RunningStatus Judge(RunningFile? file, IProcessTable processes, DateTimeOffset now, string path)
+    private static RunningStatus Judge(RunningFile file, IProcessTable processes, DateTimeOffset now) => processes.Lookup(file.Pid) switch
     {
-        if (file is null)
-        {
-            return new RunningStatus.Unknown($"{path} does not parse; remove it by hand once no wsl-care act runs");
-        }
-
-        return processes.Lookup(file.Pid) switch
-        {
-            ProcessLookup.Gone => new RunningStatus.Dead(file, $"pid {file.Pid} is gone"),
-            ProcessLookup.Alive alive when (alive.StartUtc - file.ProcessStartUtc).Duration() > StartTolerance =>
-                new RunningStatus.Dead(file, $"pid {file.Pid} is a different process now (started {alive.StartUtc:O}, the run's started {file.ProcessStartUtc:O})"),
-            ProcessLookup.Alive => Beat(file, now),
-            ProcessLookup.Unknown u => new RunningStatus.Unknown($"pid {file.Pid} of run {file.RunId} cannot be inspected ({u.Reason})"),
-            _ => throw new System.Diagnostics.UnreachableException("ProcessLookup is a closed set"),
-        };
-    }
-
+        ProcessLookup.Gone => new RunningStatus.Dead(file, $"pid {file.Pid} is gone"),
+        ProcessLookup.Alive alive when (alive.StartUtc - file.ProcessStartUtc).Duration() > StartTolerance =>
+            new RunningStatus.Dead(file, $"pid {file.Pid} is a different process now (started {alive.StartUtc:O}, the run's started {file.ProcessStartUtc:O})"),
+        ProcessLookup.Alive => Beat(file, now),
+        ProcessLookup.Unknown u => new RunningStatus.Unknown($"pid {file.Pid} of run {file.RunId} cannot be inspected ({u.Reason})"),
+        _ => throw new System.Diagnostics.UnreachableException("ProcessLookup is a closed set"),
+    };
     private static RunningStatus Beat(RunningFile file, DateTimeOffset now)
     {
         var age = now - file.HeartbeatAt;

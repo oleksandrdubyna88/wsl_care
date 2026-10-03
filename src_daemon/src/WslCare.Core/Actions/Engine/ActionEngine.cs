@@ -33,6 +33,9 @@ public sealed record EngineContext(
 
     /// <summary>The wait an action may take (A11's CPU window); real time unless a test passes its own.</summary>
     public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
+
+    /// <summary>How an unreadable <c>running.json</c> is read again before any verdict (gate finding #7).</summary>
+    public RunningReadRetry RunningRetry { get; init; } = RunningReadRetry.Default;
 }
 
 /// <summary>
@@ -87,9 +90,9 @@ public sealed class ActionEngine(EngineContext c)
     }
 
     /// <summary>The lock is held by someone else: what <c>running.json</c> says about them (read only).</summary>
-    private ActResult WhileLocked(string lockReason) => RunningState.Read(c.Paths, c.Files, c.Processes, c.Clock.GetUtcNow()) switch
+    private ActResult WhileLocked(string lockReason) => RunningState.Read(c.Paths, c.Files, c.Processes, c.Clock.GetUtcNow(), c.RunningRetry) switch
     {
-        RunningStatus.Wedged w => new ActResult.Wedged(Wedged(w)),
+        RunningStatus.Wedged w => new ActResult.Wedged(RunningSweep.WedgedReason(w)),
         RunningStatus.Live live => new ActResult.Busy($"run {live.File.RunId} is acting ({live.File.Current}, pid {live.File.Pid}); try again when it ends"),
         _ => new ActResult.Busy($"another run holds the run lock - a full run (collect), most likely; try again when it ends ({lockReason})"),
     };
@@ -98,13 +101,13 @@ public sealed class ActionEngine(EngineContext c)
     {
         var started = c.Clock.GetUtcNow();
         var notes = new List<string>();
-        if (Sweep(notes, started) is { } refusal)
+        var runId = RunId.New(started, c.ProcessId);
+        if (Sweep(notes, started, runId) is { } refusal)
         {
             return refusal;
         }
 
         Reconcile(notes, started);
-        var runId = RunId.New(started, c.ProcessId);
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         var recorded = Record(Detail(runId, request.Trigger, started, pass.Dry, pass.Target, pass.Outcomes, notes, pass.Outcome));
         var result = pass.RunningWritten ? RemoveRunning(recorded) : recorded;
@@ -124,12 +127,13 @@ public sealed class ActionEngine(EngineContext c)
     public async Task<TimerPass> TimerPassAsync(RunId runId, DateTimeOffset started, CancellationToken cancellationToken)
     {
         var notes = new List<string>();
-        if (Sweep(notes, started) is { } refusal)
+        if (Sweep(notes, started, runId) is { } refusal)
         {
             return TimerPass.NotRun(refusal switch
             {
                 ActResult.Busy busy => busy.Reason,
                 ActResult.Wedged wedged => wedged.Reason,
+                ActResult.StateUnreadable unreadable => unreadable.Reason,
                 _ => "the running state does not allow a pass",
             }, notes);
         }
@@ -312,62 +316,26 @@ public sealed class ActionEngine(EngineContext c)
         }
     }
 
-    /// <summary>The <c>running.json</c> a previous run left: swept when its process is dead, a refusal when it is not.</summary>
-    private ActResult? Sweep(List<string> notes, DateTimeOffset now)
-    {
-        switch (RunningState.Read(c.Paths, c.Files, c.Processes, now))
+    /// <summary>The <c>running.json</c> a previous run left (<see cref="RunningSweep"/>, shared with every full run's
+    /// housekeeping): swept when its process is dead, a refusal when it is not; this run's own file (a full run's, met by its
+    /// timer pass) is never in its way.</summary>
+    private ActResult? Sweep(List<string> notes, DateTimeOffset now, RunId ownRunId) =>
+        RunningSweep.Apply(c.Paths, c.Files, c.Processes, now, c.RunningRetry, ownRunId, c.ProcessId) switch
         {
-            case RunningStatus.None:
-                return null;
-            case RunningStatus.Dead dead:
-                return TrySweep(dead, notes);
-            case RunningStatus.Live live:
-                return new ActResult.Busy($"run {live.File.RunId} (pid {live.File.Pid}) is acting although the run lock was free - the lock file was replaced; nothing was done");
-            case RunningStatus.Wedged wedged:
-                return new ActResult.Wedged(Wedged(wedged));
-            case RunningStatus.Unknown unknown:
-                return new ActResult.Wedged($"the running state cannot be told: {unknown.Reason}; nothing was done, nothing was killed");
-            default:
-                throw new System.Diagnostics.UnreachableException("RunningStatus is a closed set");
-        }
-    }
-
-    /// <summary>A sweep that cannot write its record or remove the file refuses the run: the state is not one to act on.</summary>
-    private ActResult? TrySweep(RunningStatus.Dead dead, List<string> notes)
-    {
-        try
-        {
-            notes.Add(SweepDead(dead));
-            return null;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
-        {
-            return new ActResult.Wedged($"the running.json of the dead run {dead.File.RunId} could not be swept ({e.Message}); nothing was done");
-        }
-    }
-
-    /// <summary>Plan §15a #0: the dead run gets its <c>interrupted</c> history line, THEN its <c>running.json</c> goes.</summary>
-    private string SweepDead(RunningStatus.Dead dead)
-    {
-        var file = dead.File;
-        if (RunHistory.Read(c.Paths, c.Files).Records.Any(r => r.RunId == file.RunId))
-        {
-            // The run recorded itself and died before removing the file: its history already tells the truth.
-            RunningState.Remove(c.Paths, c.Files);
-            return $"removed the running.json of run {file.RunId}: {dead.Why}, and the run had already recorded itself";
-        }
-
-        var line = new RunRecord(Core.SchemaVersion.Current, file.RunId, file.Trigger, file.StartedAt, file.HeartbeatAt, RunOutcome.Interrupted, [.. file.Actions.Select(a => new ActionRecord(a, 0, 0) { Status = "interrupted" })])
-        {
-            Reason = $"swept: {dead.Why}; it was on {(file.Current.Length > 0 ? file.Current : "no action yet")}, last heartbeat {file.HeartbeatAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z",
+            RunningSweep.Clear clear => Noted(notes, clear.Note),
+            RunningSweep.Blocked blocked => blocked.Refusal,
+            _ => throw new System.Diagnostics.UnreachableException("RunningSweep is a closed set"),
         };
-        new RunRecordWriter(c.Paths, c.Files).Append(line);
-        RunningState.Remove(c.Paths, c.Files);
-        return $"swept the running.json of run {file.RunId}: {dead.Why} (recorded as interrupted)";
-    }
 
-    private static string Wedged(RunningStatus.Wedged w) =>
-        $"run {w.File.RunId} is wedged: pid {w.File.Pid} is alive but its heartbeat is {w.HeartbeatAge.TotalSeconds:0} s old ({w.File.Current}); nothing was killed - stop it by hand, then run again";
+    private static ActResult? Noted(List<string> notes, string note)
+    {
+        if (note.Length > 0)
+        {
+            notes.Add(note);
+        }
+
+        return null;
+    }
 
     private void Reconcile(List<string> notes, DateTimeOffset now)
     {

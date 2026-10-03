@@ -1,16 +1,19 @@
 using FluentAssertions;
 
 using WslCare.Core.Actions;
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Config;
 using WslCare.Core.Folders;
+using WslCare.Core.Processes.Policy;
+using WslCare.Core.Records;
 using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Actions;
 
 /// <summary>
 /// Plan §15c #2, closed in E3.S2: as ROOT, the daily folder walk, the cache roots and the user configuration layer are the
-/// TARGET user's home, never root's <c>$HOME</c>; with an ambiguous target the user layer cannot be located and the run is
-/// observe-only; unprivileged, <c>$HOME</c> already is the user's.
+/// TARGET user's home, never root's <c>$HOME</c>; with an ambiguous target the user layer is left out, machine-scoped actions
+/// still run and user-scoped ones refuse (gate finding #2); unprivileged, <c>$HOME</c> already is the user's.
 /// </summary>
 public sealed class TargetHomeTests : IDisposable
 {
@@ -36,16 +39,25 @@ public sealed class TargetHomeTests : IDisposable
     }
 
     [Fact]
-    public void As_root_with_an_ambiguous_target_the_user_layer_cannot_be_located_and_the_run_is_observe_only()
+    public async Task As_root_with_an_ambiguous_target_machine_scoped_actions_still_run_and_only_user_scoped_ones_refuse()
     {
+        // Gate finding #2 (plan 15c #2): ambiguity makes every USER-scoped action refuse with the reason; machine-scoped actions
+        // still run. The run used to go observe-only as a whole, so an ambiguous account list stopped A1 / A4 / A10 too.
         _sandbox.Write("/etc/passwd", Accounts);
+        _sandbox.Write("/home/jinx/.config/wsl-care/config.json", "{ not json");
+        var journal = new List<string>();
 
         var (paths, owner) = TargetHome.Resolve(_sandbox.Paths, _sandbox.Files, privileged: true);
-        var loaded = ConfigLoader.Load(paths, _sandbox.Files, owner.UserLayerProblem);
+        var loaded = ConfigLoader.Load(paths, _sandbox.Files, owner.UserLayerSkipped);
+        var engine = new ActionEngine(new EngineContext(paths, _sandbox.Files, new RecordingCommandRunner(), new FixedTimeProvider(), new FakeProbe(paths.Side, new FixedTimeProvider()), loaded,
+            new FakeProcessTable().Alive(77, FixedTimeProvider.DefaultNow.AddMinutes(-1)), 77, new ActionRegistry([new ScriptedAction("A10", journal), new ScriptedAction("A8", journal) { Scope = CommandScope.User }])));
+        var result = await engine.ExecuteAsync(new ActRequest([ActionId.Find("A10")!, ActionId.Find("A8")!], RunTrigger.Cli, Execute: true), CancellationToken.None);
 
         owner.Should().BeOfType<HomeOwner.Unknown>();
-        loaded.IsObserveOnly.Should().BeTrue("a default must not stand in for a setting the user may have changed");
-        loaded.Errors.Single().Display.Should().Contain("no single target user");
+        loaded.IsObserveOnly.Should().BeFalse("without a single target user the user layer is left out, not made an error that stops every action");
+        var actions = result.Should().BeOfType<ActResult.Done>().Subject.Detail.Actions;
+        actions.Single(a => a.Id == "A10").Status.Should().Be(ActionStatus.Ran, "a machine-scoped action needs no target user");
+        actions.Single(a => a.Id == "A8").Should().Match<ActionOutcome>(a => a.Status == ActionStatus.Refused && a.Reason.Contains("jinx") && a.Reason.Contains("sam"));
     }
 
     [Fact]
@@ -58,6 +70,6 @@ public sealed class TargetHomeTests : IDisposable
 
         owner.Should().BeOfType<HomeOwner.ThisProcess>();
         paths.Should().BeSameAs(_sandbox.Paths);
-        ConfigLoader.Load(paths, _sandbox.Files, owner.UserLayerProblem).IsObserveOnly.Should().BeFalse();
+        ConfigLoader.Load(paths, _sandbox.Files, owner.UserLayerSkipped).IsObserveOnly.Should().BeFalse();
     }
 }

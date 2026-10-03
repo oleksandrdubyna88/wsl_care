@@ -41,9 +41,10 @@ internal abstract record Request
     /// <summary><c>events follow [--once]</c>: the container-start follower (plan §4.3); <c>--once</c> catches up and stops.</summary>
     internal sealed record EventsFollow(bool Once) : Request;
 
-    /// <summary><c>logs [--period …] [--action &lt;A#&gt;] [--json]</c> (plan §7.4): the period's totals and cleanups; the period
+    /// <summary><c>logs [--period …] [--action &lt;A#&gt;] [--detail] [--json]</c> (plan §7.4): the period's totals and cleanups —
+    /// the objects each removed only with <c>--detail</c> or one <c>--action</c> (gate finding #10); the period
     /// text is checked against the clock by the verb.</summary>
-    internal sealed record Logs(string Period, Core.Actions.ActionId? Action, bool Json) : Request;
+    internal sealed record Logs(string Period, Core.Actions.ActionId? Action, bool Json, bool Detail = false) : Request;
 
     /// <summary><c>runs [--period …] [--json]</c> (plan §7.4): every run of the period.</summary>
     internal sealed record Runs(string Period, bool Json) : Request;
@@ -109,6 +110,7 @@ internal static class CommandLine
     private const string OnlyFlag = "--only";
     private const string PeriodFlag = "--period";
     private const string ActionFlag = "--action";
+    private const string DetailFlag = "--detail";
 
     /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — far above the 387
     /// volumes of 2026-10-02, low enough that a mistaken file cannot make a run of millions.</summary>
@@ -127,7 +129,7 @@ internal static class CommandLine
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
         new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual] [--volume <name>]... [--only <file>] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --volume / --only the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
-        new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--action <A#>] [--json]", "what the runs of a period freed, per action and in detail; runs with and without a cleanup; max and min (read-only, UTC days)", ["logs", "--period", "today", "--json"], ParseLogs),
+        new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only, UTC days)", ["logs", "--period", "today", "--json"], ParseLogs),
         new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only, UTC days)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
     ];
 
@@ -346,53 +348,65 @@ internal static class CommandLine
     }
 
     private static Request ParseLogs(IReadOnlyList<string> rest) =>
-        ReadOptions("logs", rest, [PeriodFlag, ActionFlag]) switch
+        ReadOptions("logs", rest, [PeriodFlag, ActionFlag], [DetailFlag, JsonFlag]) switch
         {
-            (_, _, { } failure) => failure,
-            var (values, _, _) when values.TryGetValue(ActionFlag, out var id) && Core.Actions.ActionId.Find(id) is null =>
+            (_, { } failure) => failure,
+            var (options, _) when options.Values.TryGetValue(ActionFlag, out var id) && Core.Actions.ActionId.Find(id) is null =>
                 new Request.Failed($"\"{BinaryName} logs\": {ActionFlag} \"{Printable(id)}\" is not an action; the actions are {string.Join(", ", Core.Actions.ActionId.All.Select(a => a.Text))}."),
-            var (values, json, _) => new Request.Logs(values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today), values.TryGetValue(ActionFlag, out var action) ? Core.Actions.ActionId.Find(action) : null, json),
+            var (options, _) => new Request.Logs(
+                options.Values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today),
+                options.Values.TryGetValue(ActionFlag, out var action) ? Core.Actions.ActionId.Find(action) : null,
+                options.Flags.Contains(JsonFlag),
+                options.Flags.Contains(DetailFlag)),
         };
 
     private static Request ParseRuns(IReadOnlyList<string> rest) =>
-        ReadOptions("runs", rest, [PeriodFlag]) switch
+        ReadOptions("runs", rest, [PeriodFlag], [JsonFlag]) switch
         {
-            (_, _, { } failure) => failure,
-            var (values, json, _) => new Request.Runs(values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today), json),
+            (_, { } failure) => failure,
+            var (options, _) => new Request.Runs(options.Values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today), options.Flags.Contains(JsonFlag)),
         };
 
-    /// <summary><c>--json</c> and each of <paramref name="valued"/> with its value, each at most once; nothing else.</summary>
-    private static (Dictionary<string, string> Values, bool Json, Request.Failed? Failure) ReadOptions(string verb, IReadOnlyList<string> rest, IReadOnlyList<string> valued)
+    /// <summary>The options a verb was given: each valued one with its value, each switch present.</summary>
+    private sealed record Options(IReadOnlyDictionary<string, string> Values, IReadOnlySet<string> Flags);
+
+    /// <summary>Each of <paramref name="valued"/> with its value and each of <paramref name="switches"/>, each at most once;
+    /// nothing else.</summary>
+    private static (Options Options, Request.Failed? Failure) ReadOptions(string verb, IReadOnlyList<string> rest, IReadOnlyList<string> valued, IReadOnlyList<string> switches)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
-        var json = false;
-        for (var i = 0; i < rest.Count; i++)
+        var flags = new HashSet<string>(StringComparer.Ordinal);
+        for (var i = 0; i < rest.Count; i = Take(rest, i, valued, values, flags))
         {
-            var known = valued.Contains(rest[i]);
-            var failure = rest[i] switch
+            if (OptionProblem(rest, i, valued, switches, values, flags) is { Length: > 0 } problem)
             {
-                JsonFlag when !json => null,
-                _ when known && (i + 1 >= rest.Count || rest[i + 1].StartsWith('-')) => $"{rest[i]} needs a value",
-                _ when known && values.ContainsKey(rest[i]) => $"{rest[i]} is given twice",
-                _ when known => null,
-                _ => $"does not take \"{Printable(rest[i])}\"; it takes {string.Join(", ", valued.Select(v => v + " <value>"))} and {JsonFlag}, each once",
-            };
-            if (failure is not null)
-            {
-                return (values, json, new Request.Failed($"\"{BinaryName} {verb}\" {failure}."));
-            }
-
-            if (known)
-            {
-                values[rest[i]] = rest[++i];
-            }
-            else
-            {
-                json = true;
+                return (new Options(values, flags), new Request.Failed($"\"{BinaryName} {verb}\" {problem}."));
             }
         }
 
-        return (values, json, null);
+        return (new Options(values, flags), null);
+    }
+
+    /// <summary>Why the option at <paramref name="i"/> cannot be taken; empty when it can.</summary>
+    private static string OptionProblem(IReadOnlyList<string> rest, int i, IReadOnlyList<string> valued, IReadOnlyList<string> switches, Dictionary<string, string> values, HashSet<string> flags) => rest[i] switch
+    {
+        var flag when switches.Contains(flag) => flags.Contains(flag) ? $"{flag} is given twice" : string.Empty,
+        var option when valued.Contains(option) && (i + 1 >= rest.Count || rest[i + 1].StartsWith('-')) => $"{option} needs a value",
+        var option when valued.Contains(option) => values.ContainsKey(option) ? $"{option} is given twice" : string.Empty,
+        var other => $"does not take \"{Printable(other)}\"; it takes {string.Join(", ", valued.Select(v => v + " <value>").Concat(switches))}, each once",
+    };
+
+    /// <summary>Takes the option at <paramref name="i"/> (already judged); the index of the next one.</summary>
+    private static int Take(IReadOnlyList<string> rest, int i, IReadOnlyList<string> valued, Dictionary<string, string> values, HashSet<string> flags)
+    {
+        if (valued.Contains(rest[i]))
+        {
+            values[rest[i]] = rest[i + 1];
+            return i + 2;
+        }
+
+        flags.Add(rest[i]);
+        return i + 1;
     }
 
     private static Request ParsePreview(IReadOnlyList<string> rest) => rest switch

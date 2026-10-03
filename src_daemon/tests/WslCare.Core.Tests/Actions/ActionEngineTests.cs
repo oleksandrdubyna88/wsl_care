@@ -298,15 +298,48 @@ public sealed class ActionEngineTests : IDisposable
     [Theory]
     [InlineData("{ not json")]
     [InlineData("""{ "schemaVersion": 1 }""")]
-    public async Task A_running_json_that_cannot_be_told_refuses_the_run_rather_than_guessing(string content)
+    public async Task A_running_json_that_never_parses_is_its_own_unreadable_state_never_a_wedged_run_and_nothing_runs(string content)
     {
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
         File.WriteAllText(RunningState.File(_sandbox.Paths), content);
+        var pauses = new List<TimeSpan>();
 
-        var result = await Engine(Action("A10")).ExecuteAsync(Run(RunTrigger.Cli, "A10"), CancellationToken.None);
+        var result = await new ActionEngine(Context(Action("A10")) with { RunningRetry = RunningReadRetry.Default with { Pause = pauses.Add } })
+            .ExecuteAsync(Run(RunTrigger.Cli, "A10"), CancellationToken.None);
 
-        result.Should().BeOfType<ActResult.Wedged>().Which.Reason.Should().Contain("cannot be told");
+        result.Should().BeOfType<ActResult.StateUnreadable>().Which.Reason.Should().Contain("does not parse").And.Contain(RunningState.FileName);
+        pauses.Should().Equal(Enumerable.Repeat(TimeSpan.FromMilliseconds(100), 3), "three more reads, 100 ms apart, before the verdict");
         _journal.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task A_running_json_caught_mid_replace_is_read_again_and_the_dead_run_it_names_is_swept()
+    {
+        var planted = PlantRunning(pid: 999, heartbeatAge: TimeSpan.FromMinutes(3));
+        var files = new FirstReadTorn(_sandbox.Files, RunningState.File(_sandbox.Paths), planted[..(planted.Length / 2)]);
+        var context = Context(Action("A10")) with { Files = files, RunningRetry = RunningReadRetry.Default with { Pause = _ => { } } };
+
+        var result = await new ActionEngine(context).ExecuteAsync(Run(RunTrigger.Cli, "A10"), CancellationToken.None);
+
+        Done(result).Detail.Notes.Should().Contain(n => n.Contains("swept the running.json of run", StringComparison.Ordinal), "one torn read decides nothing");
+        Statuses(result).Should().Equal("A10:ran");
+    }
+
+    /// <summary>The first read of one file returns half of it — a reader racing the writer's replace — and every later read the truth.</summary>
+    private sealed class FirstReadTorn(IFileSystem inner, string path, string torn) : DelegatingFileSystem(inner)
+    {
+        private bool _torn;
+
+        public override FileReadResult ReadFile(string file)
+        {
+            if (file == path && !_torn)
+            {
+                _torn = true;
+                return new FileReadResult.Content(Encoding.UTF8.GetBytes(torn));
+            }
+
+            return base.ReadFile(file);
+        }
     }
 
     [Fact]

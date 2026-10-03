@@ -25,16 +25,17 @@ public static class ConfigLoader
 
     public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files) => Load(paths, files, string.Empty);
 
-    /// <summary>The three layers — with the user layer reported unreadable, naming <paramref name="userLayerProblem"/>, when
-    /// whose layer it is cannot be told (E3.S2: root with an ambiguous target user). That is an ERROR, not a missing file:
-    /// the run becomes observe-only rather than letting a default stand in for a setting the user may have changed.</summary>
-    public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files, string userLayerProblem) =>
-        userLayerProblem.Length > 0
+    /// <summary>The three layers — or, when whose user layer it is cannot be told (<paramref name="userLayerSkipped"/> names
+    /// why: root with an ambiguous target user), the embedded defaults and the machine layer only. That is not an error:
+    /// machine-scoped actions still run, and every user-scoped one is refused by the engine's target-user gate (plan §15c #2,
+    /// gate finding #2). The residual: a machine-scoped <c>auto</c> switch a user turned off in their own layer is not seen
+    /// until <c>/etc/wsl.conf</c> names the user — the machine layer is where a machine-wide switch belongs.</summary>
+    public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files, string userLayerSkipped) =>
+        userLayerSkipped.Length > 0
             ? Load(
             [
                 (DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())),
                 (new ConfigLayerFile(ConfigLayer.Machine, paths.MachineConfigFile), files.ReadFile(paths.MachineConfigFile)),
-                (new ConfigLayerFile(ConfigLayer.User, "<the target user's ~/.config/wsl-care/config.json>"), new FileReadResult.Unreadable(userLayerProblem)),
             ])
             : Load(
         [
