@@ -82,6 +82,7 @@ public sealed class CommandPolicyPropertyTests
         }
 
         sandbox.Sized("/home/me/.local/share/NuGet/http-cache/x/y.nupkg", 10, FixedTimeProvider.DefaultNow);
+        sandbox.Write("/proc/mounts", "/dev/sdc / ext4 rw,relatime 0 0\n");
         var violations = new List<string>();
         var covered = new HashSet<string>(StringComparer.Ordinal);
         var commands = 0;
@@ -90,14 +91,18 @@ public sealed class CommandPolicyPropertyTests
             var files = new GeneratedJournal(sandbox.Files, sandbox.Paths, inputs);
             var config = Config(sandbox, inputs);
             TogglePip(sandbox, inputs);
+            sandbox.Memory(totalKib: 40L << 20, availableKib: inputs.Next(40) << 20, cachedKib: inputs.Next(20) << 20, order7Blocks: inputs.Pick<long>([0, 5, 100]));
             foreach (var action in registry.Actions)
             {
                 var world = new GeneratedWorld(inputs);
                 var runner = world.Runner(policy);
                 var trigger = inputs.Pick<RunTrigger>([RunTrigger.Timer, RunTrigger.Cli, RunTrigger.Manual]);
+                var processes = world.Processes();
                 var context = new ActionContext(sandbox.Paths, files, new FixedTimeProvider(), config, trigger, new TargetUserResult.Found(me, "test"))
                 {
                     ShownVolumes = inputs.Next(2) == 0 ? ShownList.Of(world.Shown()) : ShownList.None,
+                    Processes = _ => processes,
+                    RanEarlier = _ => inputs.Next(2) == 0,
                 };
                 var executor = new ActionCommands(action, runner, context.TargetUser, TargetUserCommands.BinFolders(me, sandbox.Paths, files));
                 var preview = await action.PreviewAsync(context, executor, CancellationToken.None);

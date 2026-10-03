@@ -39,7 +39,30 @@ internal sealed class GeneratedWorld(HostileInputs inputs)
             .Script(argv => argv is ["docker", "image", "prune", ..], RecordingCommandRunner.Exited(0, "Deleted Images:\ndeleted: sha256:" + Hex() + "\n\nTotal reclaimed space: 1.5GB\n"))
             .Script(argv => argv is ["docker", "builder", "prune", "--help"], RecordingCommandRunner.Exited(0, inputs.Pick<string>(["      --max-used-space bytes", "      --keep-storage bytes", "  -f, --force"])))
             .Script(argv => argv is ["docker", "builder", "prune", ..], RecordingCommandRunner.Exited(0, "ID\tRECLAIMABLE\tSIZE\nabc\ttrue\t1GB\nTotal:\t1GB\n"))
-            .Script(HealthCommands.SnapList.Argv, 0, Snaps());
+            .Script(HealthCommands.SnapList.Argv, 0, Snaps())
+            .Script(HealthCommands.WindowsClock.Argv, 0, Clock())
+            .Script(Systemd.SystemdCommands.TimeSync.Argv, 0, $"NTP=yes\nNTPSynchronized={inputs.Pick<string>(["yes", "no", "no"])}\n")
+            .Script(Systemd.SystemdCommands.ShowUnit("fstrim.timer").Argv, 0, $"Id=fstrim.timer\nLoadState=loaded\nUnitFileState={inputs.Pick<string>(["enabled", "disabled"])}\n")
+            .Script(argv => argv is ["fstrim", "-av"], RecordingCommandRunner.Exited(inputs.Pick<int>([0, 64, 1]), $"/: 1 GiB ({inputs.Next(1 << 30)} bytes) trimmed on /dev/sdc\n{Name()}: x\n"));
+    }
+
+    /// <summary>The E3.S3 actions' process table (A3's servers and builds, A16's chronyd), hostile command lines around them.</summary>
+    public WslCare.Core.Collectors.Reading<WslCare.Core.Collectors.ProcessSnapshot> Processes() =>
+        inputs.Next(8) == 0
+            ? WslCare.Core.Collectors.Reading.Missing<WslCare.Core.Collectors.ProcessSnapshot>("generated: unreadable")
+            : WslCare.Core.Collectors.Reading.Of(Actions.UserWorld.Snapshot([.. Enumerable.Range(0, inputs.Next(6)).Select(i => inputs.Next(4) switch
+            {
+                0 => Actions.UserWorld.Process(100 + i, "dotnet MSBuild.dll /nodemode:1 " + Name(), family: "dotnet-build-servers", ageHours: inputs.Next(10)),
+                1 => Actions.UserWorld.Process(100 + i, inputs.Pick<string>(["dotnet build", "dotnet test x", "dotnet run"])),
+                2 => Actions.UserWorld.Process(100 + i, "/usr/sbin/chronyd -F 1", user: "_chrony") with { Name = "chronyd" },
+                _ => Actions.UserWorld.Process(100 + i, Name()),
+            })]));
+
+    /// <summary>The Windows clock probe's three lines, Windows ahead or behind by 0–60 s — or something that is not them.</summary>
+    private string Clock()
+    {
+        var started = Now.AddSeconds(inputs.Next(121) - 60);
+        return inputs.Next(6) == 0 ? Name() : $"{Instant(started.AddSeconds(1))}\n{Instant(started)}\nC:\\Users\\{Name()}\n";
     }
 
     /// <summary>Some of this case's volume names, hostile ones included — what a "shown list" might carry.</summary>

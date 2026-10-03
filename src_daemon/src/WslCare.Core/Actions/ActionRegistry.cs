@@ -7,7 +7,8 @@ namespace WslCare.Core.Actions;
 /// </summary>
 /// <remarks>E3.S1 registered A10 (the journal vacuum), the reference that proved the engine end to end; E3.S2 the
 /// irreversible deletions A4–A9, A11, A12, A14, A17 (with A5Testcontainers and A6Unused, the second switches of A5 and A6);
-/// E3.S3 adds A1, A2, A3, A15, A16. A13 (the archive) is E9's.</remarks>
+/// E3.S3 A1, A2, A3, A15, A16 — so every action but A13 (the archive, E9's) is built.</remarks>
+
 public sealed class ActionRegistry
 {
     public ActionRegistry(IReadOnlyList<ICleanupAction> actions)
@@ -36,6 +37,11 @@ public sealed class ActionRegistry
         new UserCaches.BrowserAndHttpCaches(),
         new UserCaches.EditorServerCleanup(),
         new UserCaches.ToolCacheTrims(),
+        new Memory.CacheDrop(),
+        new Memory.Compaction(),
+        new BuildServers.BuildServerShutdown(),
+        new Disk.FilesystemTrim(),
+        new Clock.ClockFix(),
     ]);
 
     public IReadOnlyList<ICleanupAction> Actions { get; }

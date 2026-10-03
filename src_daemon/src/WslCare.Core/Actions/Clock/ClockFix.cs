@@ -1,0 +1,207 @@
+using System.Globalization;
+using System.Text.Json;
+
+using WslCare.Core.Collectors;
+using WslCare.Core.Config;
+using WslCare.Core.Files;
+using WslCare.Core.Files.Deletion;
+using WslCare.Core.Health;
+using WslCare.Core.Hosting;
+using WslCare.Core.Json;
+using WslCare.Core.Processes;
+using WslCare.Core.Processes.Policy;
+using WslCare.Core.Records;
+using WslCare.Core.Systemd;
+using WslCare.Core.Thresholds;
+
+namespace WslCare.Core.Actions.Clock;
+
+/// <summary><c>{state}/clock-fix.json</c>: the last correction A16 made — when, the offset it corrected, and the tool.</summary>
+public sealed record ClockFixRecord(int SchemaVersion, DateTimeOffset CorrectedAt, double OffsetSeconds, string Tool);
+
+/// <summary>
+/// A16 (plan §5, §4.5, §15 #10): the clock fix — <c>chronyc makestep</c> when <c>chronyd</c> runs, otherwise
+/// <c>hwclock -s</c> (the system clock set from the RTC, which inside WSL is the Hyper-V host's clock) — ONCE per detected
+/// drift, never from cron. A drift is the ONE rule the health report uses (<see cref="ThresholdRules.IsDrift"/>): the
+/// distro's clock more than <c>clock.maxDriftSeconds</c> off Windows' on two observations at least 5 minutes apart — the
+/// last full run's and a LIVE one taken by the preview.
+/// </summary>
+/// <remarks>
+/// <para><b>Gates, in order.</b> A clock timesyncd/chrony reports synchronised is a SKIP (§15 #10), and so is a live
+/// observation within the limit (nothing to fix). A correction less than an hour ago REFUSES, a button too (§15 #10: at most
+/// one per hour). The TIMER fires only on a drift (two observations) that has not been corrected yet: a correction is
+/// recorded in <c>clock-fix.json</c>, and the drift event it corrected lasts until a full run records an observation within
+/// the limit after it — so a drift the correction did not cure is NOT corrected again every run (E3.S3: "once per drift
+/// event"). A button corrects on its one live observation.</para>
+/// <para><b>Measured</b>: the offset is observed again after the command (one more probe) and both are notes. Nothing is
+/// freed.</para>
+/// </remarks>
+public sealed class ClockFix : ICleanupAction
+{
+    public const string FileName = "clock-fix.json";
+
+    public const string OffsetMillisFact = "offsetMillis";
+
+    public const string DriftFact = "drift";
+
+    public const string AlreadyCorrectedFact = "alreadyCorrected";
+
+    public const string ChronyFact = "chrony";
+
+    /// <summary>Plan §15 #10: at most one correction per hour.</summary>
+    public static readonly TimeSpan MinimumGap = TimeSpan.FromHours(1);
+
+    public static readonly CommandTemplate WindowsClock = CommandTemplate.Fixed(HealthCommands.WindowsClock);
+
+    public static readonly CommandTemplate TimeSync = CommandTemplate.Fixed(SystemdCommands.TimeSync);
+
+    public static readonly CommandTemplate Hwclock = new("hwclock-hctosys", CommandScope.Machine, "hwclock", [new ArgPart.Literal("-s")], TimeSpan.FromSeconds(30), CommandRequest.DefaultOutputCapChars);
+
+    public static readonly CommandTemplate ChronyMakestep = new("chronyc-makestep", CommandScope.Machine, "chronyc", [new ArgPart.Literal("makestep")], TimeSpan.FromSeconds(30), CommandRequest.DefaultOutputCapChars);
+
+    public ActionId Id { get; } = ActionId.Find("A16")!;
+
+    public string Summary => "the clock fix: chronyc makestep (chronyd running) or hwclock -s, once per detected drift, at most once an hour";
+
+    public CommandScope Scope => CommandScope.Machine;
+
+    public IdleRule Idle => IdleRule.Never;
+
+    public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];
+
+    public IReadOnlyList<CommandTemplate> Commands { get; } = [WindowsClock, TimeSync, Hwclock, ChronyMakestep];
+
+    public static string File(IHostPaths paths) => paths.Rules.Join(paths.StateDirectory, FileName);
+
+    public async Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
+    {
+        var max = context.Config.Int(ConfigKeys.Clock.MaxDriftSeconds);
+        var chrony = ChronydRuns(context, cancellationToken);
+        var tool = chrony ? "chronyc makestep" : "hwclock -s";
+        var what = string.Create(CultureInfo.InvariantCulture, $"{tool}: step the distro's clock to the host's, once per drift of more than {max} s (clock.maxDriftSeconds)");
+        var now = await HealthCollector.MeasureWindowsClockAsync(commands.AsRunner(), context.Clock, cancellationToken).ConfigureAwait(false);
+        if (!now.Measured)
+        {
+            return ActionPreview.Unavailable(what, $"the Windows clock could not be observed: {now.Unavailable}");
+        }
+
+        var previous = LastFullRun.Read(context.Paths, context.Files, context.Clock).WindowsClock.Map(a => a.Value);
+        var last = Read(context.Paths, context.Files);
+        var drift = ThresholdRules.IsDrift(now, previous, max);
+        var facts = new Dictionary<string, long>(StringComparer.Ordinal)
+        {
+            [OffsetMillisFact] = (long)Math.Round(now.OffsetSeconds * 1000),
+            [DriftFact] = drift ? 1 : 0,
+            [AlreadyCorrectedFact] = last is { } fix && EventStillOpen(context, fix, max) ? 1 : 0,
+            [ChronyFact] = chrony ? 1 : 0,
+        };
+        var item = new ActionItem("clock", "the distro's clock", null, string.Create(CultureInfo.InvariantCulture, $"{now.OffsetSeconds:+0.00;-0.00} s off Windows' (launch latency {now.LaunchLatencySeconds:0.00} s subtracted)"));
+        var preview = ActionPreview.Of(what, 1, null, "a live observation of the Windows clock, and the last full run's", facts, Refusal(context, last), [item]);
+        return await SkipAsync(preview, now, max, commands, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>The timer: a drift on two observations that has not been corrected yet.</summary>
+    public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config)
+    {
+        var max = config.Int(ConfigKeys.Clock.MaxDriftSeconds);
+        if (preview.Facts.GetValueOrDefault(DriftFact) != 1)
+        {
+            return new TriggerDecision(false, string.Create(CultureInfo.InvariantCulture, $"no drift on two observations at least 5 minutes apart (more than {max} s each); one observation is not enough (plan 15 #10)"));
+        }
+
+        return preview.Facts.GetValueOrDefault(AlreadyCorrectedFact) == 1
+            ? new TriggerDecision(false, "this drift was already corrected once and no full run has seen the clock agree since; it is not corrected again (once per drift)")
+            : new TriggerDecision(true, string.Create(CultureInfo.InvariantCulture, $"drift of {preview.Facts.GetValueOrDefault(OffsetMillisFact) / 1000.0:+0.00;-0.00} s on two observations at least 5 minutes apart"));
+    }
+
+    public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
+    {
+        var chrony = preview.Facts.GetValueOrDefault(ChronyFact) == 1;
+        var (template, tool) = chrony ? (ChronyMakestep, "chronyc makestep") : (Hwclock, "hwclock -s");
+        var outcome = await commands.RunAsync(template, [], cancellationToken).ConfigureAwait(false);
+        var failure = CommandFailures.Of(tool, outcome);
+        if (failure.Length > 0)
+        {
+            return new ActionRun(0, null, "the clock was not stepped", null, null, [], commands.Ran, failure);
+        }
+
+        var before = preview.Facts.TryGetValue(OffsetMillisFact, out var millis) ? millis / 1000.0 : double.NaN;
+        var recorded = Write(context, before, tool);
+        var after = await HealthCollector.MeasureWindowsClockAsync(commands.AsRunner(), context.Clock, cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<string> notes =
+        [
+            after.Measured
+                ? string.Create(CultureInfo.InvariantCulture, $"offset {before:+0.00;-0.00} s before, {after.OffsetSeconds:+0.00;-0.00} s after {tool}")
+                : $"the offset after {tool} was not observed: {after.Unavailable}",
+            .. recorded.Length > 0 ? [$"the correction could not be recorded in {FileName}: {recorded} - the next run may correct again"] : Array.Empty<string>(),
+        ];
+        return new ActionRun(1, null, "a clock step frees nothing: the offset observed before and after", null, null, [new ActionItem("clock", "the distro's clock", null, $"stepped by {tool}")], commands.Ran, string.Empty)
+        {
+            Notes = notes,
+        };
+    }
+
+    /// <summary>The last correction, or <c>null</c> when none is recorded (or the record cannot be read: then the per-hour
+    /// and once-per-drift guards fall back to the history-free answer — the record is root's and rewritten at each fix).</summary>
+    public static ClockFixRecord? Read(IHostPaths paths, IFileSystem files)
+    {
+        if (files.ReadFile(File(paths)) is not FileReadResult.Content content)
+        {
+            return null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize(content.Bytes, WslCareJsonContext.Default.ClockFixRecord) is { CorrectedAt: var at } record && at != default ? record : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The drift event <paramref name="fix"/> corrected is still open: no full run since has recorded an observation
+    /// within the limit.</summary>
+    private static bool EventStillOpen(ActionContext context, ClockFixRecord fix, int max) =>
+        !RunHistory.Read(context.Paths, context.Files).Records
+            .Select(r => r.Slow?.WindowsClock)
+            .Any(c => c is { Measured: true } observed && observed.SampledAt > fix.CorrectedAt && Math.Abs(observed.OffsetSeconds) <= max);
+
+    private static string Refusal(ActionContext context, ClockFixRecord? last) =>
+        last is { } fix && context.Clock.GetUtcNow() - fix.CorrectedAt < MinimumGap
+            ? $"the clock was corrected at {fix.CorrectedAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z by {fix.Tool}, less than an hour ago: at most one correction per hour (plan 15 #10)"
+            : string.Empty;
+
+    /// <summary>Synchronised by timesyncd/chrony, or within the limit now: nothing to fix.</summary>
+    private static async Task<ActionPreview> SkipAsync(ActionPreview preview, WindowsClockSample now, int max, ActionCommands commands, CancellationToken cancellationToken)
+    {
+        var sync = (await ToolAnswers.RunAsync(commands.AsRunner(), SystemdCommands.TimeSync, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.TimeSync);
+        if (sync is Reading<Health.TimeSync>.Available { Value.Synchronized: true })
+        {
+            return preview with { Skip = "timesyncd/chrony reports the clock synchronised: it is not stepped (plan 15 #10)" };
+        }
+
+        return Math.Abs(now.OffsetSeconds) <= max
+            ? preview with { Skip = string.Create(CultureInfo.InvariantCulture, $"the clock agrees with Windows' ({now.OffsetSeconds:+0.00;-0.00} s, the limit is {max} s)") }
+            : preview;
+    }
+
+    private static bool ChronydRuns(ActionContext context, CancellationToken cancellationToken) =>
+        context.Processes(cancellationToken) is Reading<ProcessSnapshot>.Available { Value: var snapshot } && snapshot.All.Any(p => p.Name == "chronyd");
+
+    /// <summary>Empty when the correction was recorded; otherwise why not.</summary>
+    private static string Write(ActionContext context, double offset, string tool)
+    {
+        try
+        {
+            var record = new ClockFixRecord(Core.SchemaVersion.Current, context.Clock.GetUtcNow(), double.IsNaN(offset) ? 0 : offset, tool);
+            context.Files.CreateDirectory(context.Paths.StateDirectory);
+            var json = JsonSerializer.SerializeToUtf8Bytes(record, WslCareJsonContext.Default.ClockFixRecord);
+            return context.Files.WriteFileAtomically(File(context.Paths), json, new DeletionScope(context.Paths.StateDirectory, "clock-fix")) is DeletionVerdict.Refused refused ? refused.Reason : string.Empty;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return e.Message;
+        }
+    }
+}

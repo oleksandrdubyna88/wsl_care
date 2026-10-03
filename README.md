@@ -122,6 +122,13 @@ then keeps 90 days of history (a detail goes only after its line did) and 14 day
 a time (`run.lock`). Run without root it measures and prints the same, writes nothing, says `read-only: run as root to
 record`, and logs to `$XDG_STATE_HOME/wsl-care/logs`.
 
+**The timer's full run also acts.** When systemd starts `collect` (it sets `INVOCATION_ID`), the run measures, then — under
+the same lock, before anything is recorded — passes every action through the action engine as the timer (see *Act*
+below: each action's `auto` switch, trigger, idle wait and the first week's dry run decide), and records the measurement
+and the actions in the SAME run: one detail (with a `timerPass` part listing every action's preview and result) and one
+history line. A `collect` you start yourself, or the panel's *Run full check now*, measures only; a button's `act` is its
+own run. An action that fails there is recorded and logged; the exit code stays 0.
+
 Exit codes: 0 recorded (or read-only) · 1 the run could not be recorded (the reason on stderr) · 2 usage · 75 another
 run holds the lock · 70 a defect.
 
@@ -182,6 +189,11 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 | `A12` | deletes the Playwright browsers no project's `browsers.json` references; `dotnet nuget locals http-cache --clear` as the user | each folder before, counted when gone | a button only; refuses the Playwright part when what is referenced cannot be told |
 | `A14` | deletes VS Code / Cursor / Windsurf server builds no process uses, keeping the newest 2, and `.obsolete` extensions | each folder before, counted when gone | every delete judged by the deletion policy |
 | `A17` | `pnpm store prune`, `uv cache prune`, `pip cache purge` as the target user | each cache before/after | `cargo sweep` is not run (it would delete under `~/git`); Gradle prunes its own caches |
+| `A1` | `sync`, then `sysctl -w vm.drop_caches=1` (never another value) | memory, not disk: the page cache and `MemAvailable` before/after | the timer: `MemAvailable` below `thresholds.memAvailableActPercent`, or a page cache above 12 GiB with less than 30 % available; waits for an idle machine on the timer |
+| `A2` | `sysctl -w vm.compact_memory=1` | the free 512 KiB (order-7) blocks before/after | the timer: after A1 ran, or AT ONCE — without waiting for idle — when no order-7 block is left or the kernel logged a `page allocation failure` since the last run |
+| `A3` | `dotnet build-server shutdown` as the target user | the build servers gone after (memory, not disk) | the timer: a server alive for `buildServers.idleHours`; refused while any `dotnet build`, `test` or `run` is alive, a button too |
+| `A15` | `fstrim -av` | what fstrim reports trimmed per filesystem (returned to the VHDX) | the timer: weekly, only without `discard` on `/` and with `fstrim.timer` off; waits for an idle machine |
+| `A16` | `chronyc makestep` (chronyd running) or `hwclock -s` | the clock offset before/after | skipped when time sync reports synchronised or the clock agrees; the timer: once per drift seen on two observations 5 minutes apart (`clock.maxDriftSeconds`); at most once an hour |
 
 As root, every per-user path — the daily folder walk, the caches above, the user configuration layer — is the
 **target user's** home (`/etc/wsl.conf` `[user] default=`, else the single login account), never root's; when the target
@@ -207,6 +219,24 @@ with a clean environment.
 
 Exit codes: 0 previewed / recorded · 1 not recorded · 2 usage (unknown or unbuilt action, the other side's action) ·
 3 an action failed · 75 busy · 76 wedged · 77 needs root · 78 observe-only (an invalid configuration layer) · 130 interrupted.
+
+## Logs and runs — what the runs of a period did
+
+```bash
+wsl-care logs --json                              # today (UTC): freed per action and in total, runs with/without a cleanup, max/min
+wsl-care logs --period yesterday
+wsl-care logs --period 2026-10-01 --action A4     # one UTC day, one action, every volume it removed
+wsl-care runs --period 2026-09-28..2026-10-02 --json   # every run of a range: trigger, outcome, dry run, actions, freed
+```
+
+Read-only: anyone may ask (no lock, nothing written). A run belongs to the UTC day it started. `logs` answers the Logs
+page: what was freed in total and per action (with object counts), how many runs did and did not clean anything, the
+dry runs apart with what they would have freed, the runs by trigger (timer, button, terminal), the run that freed the
+most and the least, each recorded figure's maximum and minimum with its time (`MemAvailable`, page cache, swap, `/`,
+Docker reclaimable, container starts) and, per cleanup, every object it removed — and those it did not, with why — from
+the run's detail file. Memory actions (A1, A2, A3, A11) free no disk and count no bytes. Periods: `today` (the
+default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (at most 366 days). Exit codes: 0 answered (an empty period
+too) · 2 a period that is none of these · 4 the history exists but cannot be read.
 
 ## Build and test
 

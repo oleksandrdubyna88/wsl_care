@@ -1,5 +1,7 @@
 using System.Text.Json;
 
+using WslCare.Core.Actions;
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Docker;
@@ -18,6 +20,9 @@ using WslCare.Core.Thresholds;
 namespace WslCare.Core.Collect;
 
 /// <summary>Everything a full run reaches the machine through.</summary>
+/// <remarks>The init-only members are what the TIMER PASS needs (E3.S3) — the actions, the process table
+/// <c>running.json</c> is judged against, the signal sender — and default to the SAFE answer: no action at all, a table that
+/// can tell no pid, a sender that refuses. The CLI sets them from its host.</remarks>
 public sealed record CollectContext(
     IHostPaths Paths,
     IFileSystem Files,
@@ -26,7 +31,17 @@ public sealed record CollectContext(
     IHostProbe Probe,
     ConfigLoadResult Loaded,
     int ProcessId,
-    RunTrigger Trigger);
+    RunTrigger Trigger)
+{
+    /// <summary>The actions the timer pass runs over; none by default.</summary>
+    public ActionRegistry Actions { get; init; } = new([]);
+
+    /// <summary>The operating system's process table (the <c>running.json</c> sweep); one that can tell no pid by default.</summary>
+    public IProcessTable Processes { get; init; } = UnknownProcessTable.Instance;
+
+    /// <summary>How A11 signals a process; refuses by default.</summary>
+    public IProcessSignals Signals { get; init; } = RefusingProcessSignals.NotWired;
+}
 
 /// <summary>How a full run ended for its records, and its detail (none when another run held the lock).</summary>
 public sealed record CollectResult(Recording Recording, string Reason, string DetailFile, RunDetail? Detail);
@@ -45,8 +60,8 @@ public sealed record CollectResult(Recording Recording, string Reason, string De
 /// one file for <c>collect</c> and <c>act</c> since E3.S1; an exclusive open, released by the OS when the holder dies) for its
 /// whole length, so the reconcile never mistakes a running run's detail for an orphan; a second run — a full run or an
 /// act — is <see cref="Recording.Busy"/>, waits for nothing and measures nothing.</para>
-/// <para><b>Order.</b> Reconcile → retention → measure → the detail (atomic) → the history line naming it; the caller
-/// closes the run log last. A failed write makes the run <c>failed</c> with the reason — on its history line when the
+/// <para><b>Order.</b> Reconcile → retention → measure → (the timer only) the action pass, under the same lock (E3.S3) → the
+/// detail (atomic) → the history line naming it → the pass's <c>running.json</c> removed; the caller closes the run log last. A failed write makes the run <c>failed</c> with the reason — on its history line when the
 /// detail was what failed, in the result (and the log) when the line itself could not be written.</para>
 /// </remarks>
 public static class CollectRun
@@ -74,13 +89,44 @@ public static class CollectRun
                 using (held.Handle)
                 {
                     var housekeeping = Housekeep(c, started);
-                    var detail = await MeasureAsync(c, runId, started, housekeeping, mayRecord: true, cancellationToken).ConfigureAwait(false);
-                    return Record(c, detail);
+                    var measured = await MeasureAsync(c, runId, started, housekeeping, mayRecord: true, cancellationToken).ConfigureAwait(false);
+                    var (detail, engine) = await TimerPassAsync(c, measured, runId, started, cancellationToken).ConfigureAwait(false);
+                    var result = Record(c, detail);
+                    var left = engine?.EndTimerPass() ?? string.Empty;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return left.Length == 0 ? result : result with { Reason = result.Reason.Length == 0 ? left : $"{result.Reason}; {left}" };
                 }
 
             default:
                 throw new System.Diagnostics.UnreachableException("ExclusiveLock is a closed set");
         }
+    }
+
+    /// <summary>
+    /// The TIMER PASS (E3.S3): a full run started by the timer runs the action engine AFTER measuring, under the lock it
+    /// already holds, over every action this build holds — the engine's own gates decide each one (the <c>auto</c> switch, the
+    /// trigger, the idle gate, the dry-run week). Its outcomes become this run's action lines; no second record is written.
+    /// A full run started any other way (a terminal, the panel's <i>Run full check now</i>) does not act — a button's
+    /// <c>act</c> stays a separate run. Returns the engine when it wrote <c>running.json</c>, for the caller to end the pass
+    /// once the run is recorded.
+    /// </summary>
+    private static async Task<(RunDetail Detail, ActionEngine? Engine)> TimerPassAsync(CollectContext c, RunDetail measured, RunId runId, DateTimeOffset started, CancellationToken cancellationToken)
+    {
+        if (c.Trigger != RunTrigger.Timer)
+        {
+            return (measured, null);
+        }
+
+        var engine = new ActionEngine(new EngineContext(c.Paths, c.Files, c.Commands, c.Clock, c.Probe, c.Loaded, c.Processes, c.ProcessId, c.Actions) { Signals = c.Signals });
+        var pass = await engine.TimerPassAsync(runId, started, cancellationToken).ConfigureAwait(false);
+        var detail = measured with
+        {
+            EndedAt = c.Clock.GetUtcNow(),
+            DryRun = pass.Ran ? pass.DryRun : measured.DryRun,
+            Actions = pass.Records(),
+            TimerPass = pass,
+        };
+        return (detail, pass.RunningWritten ? engine : null);
     }
 
     /// <summary>The detail first (atomic), then the history line that names it (<see cref="RunRecorder"/>, shared with <c>act</c>).</summary>

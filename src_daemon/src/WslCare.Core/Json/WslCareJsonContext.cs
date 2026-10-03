@@ -40,6 +40,11 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Actions.Engine.ActReport))]
 [JsonSerializable(typeof(Actions.Engine.RunningFile))]
 [JsonSerializable(typeof(Actions.Engine.FirstTimerRun))]
+[JsonSerializable(typeof(Actions.Clock.ClockFixRecord))]
+[JsonSerializable(typeof(History.RunsReport))]
+[JsonSerializable(typeof(History.LogsReport))]
+[JsonSerializable(typeof(History.DetailKindView))]
+[JsonSerializable(typeof(History.TimerPassView))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {
     public static readonly WslCareJsonContext Compact = new(new JsonSerializerOptions

@@ -1,0 +1,89 @@
+using WslCare.Core.Actions;
+
+namespace WslCare.Core.History;
+
+// The wire shapes of `logs --json` and `runs --json` (plan §6, §7.4). Every instant is UTC; a figure that was not
+// recorded is absent (null), never 0 (plan §15b #7).
+
+/// <summary>The period an answer covers, as UTC dates.</summary>
+public sealed record PeriodReport(string Label, string From, string To)
+{
+    public static PeriodReport Of(LogPeriod period) => new(period.Label, period.FromText, period.ToText);
+}
+
+/// <summary>One action's line of a run, as the history keeps it.</summary>
+public sealed record RunActionLine(string Id, string? Status, int Count, long FreedBytes, long? WouldFreeBytes);
+
+/// <summary>One run of the period.</summary>
+/// <param name="DetailState"><c>present</c>, <c>lost</c> (the history names a detail that is gone, plan §15b #1) or <c>none</c>.</param>
+/// <param name="Cleanup">At least one action ran and removed (or freed) something (plan §7.4: runs with a cleanup).</param>
+public sealed record RunLine(
+    string RunId,
+    string Trigger,
+    DateTimeOffset StartedAt,
+    DateTimeOffset EndedAt,
+    string Outcome,
+    bool? DryRun,
+    string? Detail,
+    string DetailState,
+    long FreedBytes,
+    long? WouldFreeBytes,
+    bool Cleanup,
+    IReadOnlyList<RunActionLine> Actions,
+    string? Reason);
+
+/// <summary>The answer of <c>runs [--period …] --json</c>: every run of the period, oldest first.</summary>
+public sealed record RunsReport(int SchemaVersion, PeriodReport Period, int Count, IReadOnlyList<RunLine> Runs, int UnparseableLines, string? Problem);
+
+/// <summary>One action's totals over the period.</summary>
+/// <param name="Runs">The runs in which it RAN.</param>
+/// <param name="DryRuns">The runs in which the timer only previewed it (dry run).</param>
+/// <param name="WouldFreeBytes">What those dry runs would have freed.</param>
+public sealed record ActionTotal(string Id, int Runs, int Count, long FreedBytes, int DryRuns, long WouldFreeBytes);
+
+/// <summary>The runs of the period, counted (plan §7.4).</summary>
+public sealed record RunCounts(int Total, int WithCleanup, int WithoutCleanup, int DryRun, long WouldFreeBytes, int Timer, int Manual, int Cli, int Failed, int Interrupted);
+
+/// <summary>A run that freed the most or the least (non-zero).</summary>
+public sealed record RunExtreme(string RunId, DateTimeOffset StartedAt, long FreedBytes);
+
+/// <summary>One recorded value of a metric, and when.</summary>
+public sealed record MetricPoint(double Value, DateTimeOffset At, string RunId);
+
+/// <summary>A metric's maximum and minimum over the period, with when they occurred; absent when no run recorded it.</summary>
+public sealed record MetricExtremes(string Name, string Unit, int Samples, MetricPoint? Max, MetricPoint? Min);
+
+/// <summary>
+/// One cleanup in detail (plan §7.4 <i>what exactly was removed</i>): an action that ran in a run of the period, with every
+/// object it removed — and those it did not, each with why — from the run's detail file.
+/// </summary>
+public sealed record CleanupDetail(
+    string RunId,
+    DateTimeOffset StartedAt,
+    string Trigger,
+    string Action,
+    string Status,
+    int Count,
+    long FreedBytes,
+    string? FreedBasis,
+    string DetailState,
+    IReadOnlyList<ActionItem> Removed,
+    IReadOnlyList<ActionItem> NotRemoved,
+    IReadOnlyList<string> Notes);
+
+/// <summary>The answer of <c>logs [--period …] [--action …] --json</c> (plan §7.4).</summary>
+/// <param name="Action">The one action asked for, or absent for all.</param>
+public sealed record LogsReport(
+    int SchemaVersion,
+    PeriodReport Period,
+    string? Action,
+    long FreedBytes,
+    int ObjectsRemoved,
+    IReadOnlyList<ActionTotal> PerAction,
+    RunCounts Runs,
+    RunExtreme? MostFreed,
+    RunExtreme? LeastFreed,
+    IReadOnlyList<MetricExtremes> Metrics,
+    IReadOnlyList<CleanupDetail> Cleanups,
+    int UnparseableLines,
+    string? Problem);

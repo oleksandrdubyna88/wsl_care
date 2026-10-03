@@ -20,13 +20,20 @@ namespace WslCare.Cli.Commands;
 /// </summary>
 /// <remarks>Exit codes: 0 recorded or read-only; 1 the run could not be recorded (detail or history line); 75 another
 /// run holds the lock. The trigger is <c>timer</c> under systemd (which sets <c>INVOCATION_ID</c> for every unit it
-/// runs), <c>cli</c> otherwise; the panel's button (E6) passes through the root allowlist as <c>collect</c>.</remarks>
+/// runs), <c>cli</c> otherwise; the panel's button (E6) passes through the root allowlist as <c>collect</c>. Only the
+/// timer's full run acts (E3.S3: the action pass after measuring, under the same lock, in the same record); an action that
+/// fails there is in the record and the log and does not change the exit code — one failed action never ends a run.</remarks>
 internal static class CollectCommand
 {
     public static int Run(Request.Collect request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, ILogger logger, CancellationToken cancellationToken)
     {
         var log = logger.ForContext(typeof(CollectCommand));
-        var context = new CollectContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, Environment.ProcessId, Trigger());
+        var context = new CollectContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, Environment.ProcessId, Trigger())
+        {
+            Actions = host.Actions,
+            Processes = host.Processes,
+            Signals = host.Signals,
+        };
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = CollectRun.RunAsync(context, cancellationToken).GetAwaiter().GetResult();
         Log(log, result);
@@ -79,6 +86,41 @@ internal static class CollectCommand
         {
             log.Warning("{Threshold} {Level}: {Value} ({Reason})", verdict.Id, verdict.Level, verdict.Value, verdict.Reason);
         }
+
+        if (result.Detail?.TimerPass is { } pass)
+        {
+            LogPass(log, pass);
+        }
+    }
+
+    /// <summary>The timer pass in the run log: why it did not run, or each action's status and reason (a deferral is logged,
+    /// plan §5).</summary>
+    private static void LogPass(ILogger log, Core.Actions.Engine.TimerPass pass)
+    {
+        if (!pass.Ran)
+        {
+            log.Warning("the timer's action pass did not run: {Reason}", pass.Reason);
+            return;
+        }
+
+        log.Information("timer action pass: dry run {DryRun} ({DryRunReason}); {Notes}", pass.DryRun, pass.DryRunReason, string.Join("; ", pass.Notes));
+        foreach (var outcome in pass.Actions)
+        {
+            const string template = "{Action} {Status}: {Reason} (count {Count}, freed {FreedBytes} bytes)";
+            var (count, freed) = (outcome.Run?.Count ?? outcome.Preview?.Count, outcome.Run?.FreedBytes);
+            switch (outcome.Status)
+            {
+                case Core.Actions.Engine.ActionStatus.Failed:
+                    log.Error(template, outcome.Id, outcome.Status, outcome.Reason, count, freed);
+                    break;
+                case Core.Actions.Engine.ActionStatus.Deferred or Core.Actions.Engine.ActionStatus.Refused:
+                    log.Warning(template, outcome.Id, outcome.Status, outcome.Reason, count, freed);
+                    break;
+                default:
+                    log.Information(template, outcome.Id, outcome.Status, outcome.Reason, count, freed);
+                    break;
+            }
+        }
     }
 
     private static string Camel(string name) => char.ToLowerInvariant(name[0]) + name[1..];
@@ -97,6 +139,13 @@ internal static class CollectText
         foreach (var verdict in notOk)
         {
             text.AppendLine($"  {verdict.Level.ToString().ToLowerInvariant(),-8} {verdict.Id}: {(verdict.Value.Length > 0 ? verdict.Value + " - " : string.Empty)}{verdict.Reason}");
+        }
+
+        if (detail.TimerPass is { } pass)
+        {
+            text.AppendLine(pass.Ran
+                ? $"timer action pass{(pass.DryRun ? " (dry run)" : string.Empty)}: {string.Join(", ", pass.Actions.GroupBy(a => a.Status).Select(g => $"{g.Count()} {g.Key}"))}"
+                : $"timer action pass not run: {pass.Reason}");
         }
 
         var starts = detail.ContainerStarts;
