@@ -83,6 +83,14 @@ public sealed partial class ShippedFilesTests
             "a second run meeting the lock is the designed answer (plan §5), not a failed unit");
     }
 
+    /// <summary>The cgroup ceiling covers every child of the run (npm, dotnet, pip, the docker CLIs, the folder walk):
+    /// plan §8's 256M would OOM-kill a child mid-cleanup (E4 review, 2026-10-03).</summary>
+    [Fact]
+    public void The_service_memory_ceiling_leaves_room_for_the_tools_the_cleanups_start()
+    {
+        Single(Unit("wsl-care.service"), "Service", "MemoryMax").Should().Be("1G", "a ceiling against a runaway, not a budget for the binary alone");
+    }
+
     [Fact]
     public void The_events_unit_runs_events_follow_and_restarts_always_after_thirty_seconds()
     {

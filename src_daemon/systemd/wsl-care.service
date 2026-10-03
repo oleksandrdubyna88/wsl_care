@@ -25,8 +25,18 @@
 # (the first live install is E4's done-line); until then each line is a REQUEST to systemd, not a
 # measured effect:
 #   NoNewPrivileges=yes   nothing here gains privilege through a set-uid binary: the run already is root,
-#                         runuser only DROPS privilege, sudo is on the never-list
-#   Nice / IOSchedulingClass / MemoryMax / TimeoutStartSec — plan §8, resource limits for a background job
+#                         runuser only DROPS privilege, sudo is on the never-list. KNOWN RISK, kept on purpose
+#                         (E4 review, 2026-10-03): no_new_privs also blocks the AppArmor profile change a SNAP
+#                         application makes when it starts, so a Docker installed as a snap (`/snap/bin/docker`)
+#                         would fail under this unit — every Docker figure unavailable, A4–A7 refused. Docker
+#                         Desktop's CLI and apt's docker-ce are not snaps. Not observed yet: POST_DEPLOY.md #11
+#                         is the live check; README "What the unit restricts" says what to do if it bites.
+#   MemoryMax=1G          the cgroup's ceiling covers EVERY child the run starts, not only wsl-care: npm cache
+#                         clean (A8), dotnet nuget locals (A12), pip/uv/pnpm (A17), docker CLIs, and the daily
+#                         folder walk's 2M-entry bound. Plan §8's 256M was a guess for the binary alone and would
+#                         OOM-kill a child mid-cleanup; 1G is a ceiling against a runaway, not a budget (the VM's
+#                         ceiling is 36 GB). Unmeasured until the live install: POST_DEPLOY.md #11 reads the peak.
+#   Nice / IOSchedulingClass / TimeoutStartSec — plan §8, resource limits for a background job
 #   SuccessExitStatus=75  "another run holds the lock" (a button's collect or act) is the designed answer
 #                         of a second run (§5 global guards), not a failed unit — the health collector
 #                         counts failed units
@@ -41,7 +51,7 @@ Type=oneshot
 ExecStart=/opt/wsl-care/bin/wsl-care collect --timer
 Nice=19
 IOSchedulingClass=idle
-MemoryMax=256M
+MemoryMax=1G
 TimeoutStartSec=10min
 SuccessExitStatus=75
 NoNewPrivileges=yes

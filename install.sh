@@ -28,10 +28,24 @@
 #
 # WHAT IT VERIFIES, AND WHAT EACH CHECK PROVES. The archive's .sha256 is checked first: it proves the bytes
 # were not corrupted on the way — NOT who made them, because whoever can replace the archive can replace
-# its .sha256 beside it. Authenticity is the build-provenance attestation (`gh attestation verify`, which
-# needs the GitHub CLI): it proves this repository's release workflow built exactly these bytes. Without
-# `gh` the installer stops before installing anything; `--skip-attestation` proceeds knowingly, says so
-# loudly, and still checks the .sha256.
+# its .sha256 beside it. Authenticity is the build-provenance attestation: it proves that THIS repository's
+# release workflow, run for THE TAG of the version installed (`release.yml@refs/tags/daemon-v<version>`, an
+# exact certificate identity) on a GitHub-hosted runner, built exactly these bytes. A build of release.yml
+# from any other ref — a pushed branch that edits the workflow and keeps its attest step — is refused.
+#
+# HOW THE ATTESTATION IS VERIFIED, and why that way (measured 2026-10-03, research/module_tests.md):
+#   1. root fetches it ITSELF, unauthenticated, from GitHub's attestation API for the archive's digest. The
+#      API answers each attestation by a `bundle_url` only (snappy-compressed JSON); the bundle is fetched and
+#      decompressed here (awk over od: POSIX tools, no jq, no Python).
+#   2. root runs `gh attestation verify --bundle <that file>` ITSELF, with gh's configuration, cache and home
+#      inside this run's temporary folder and no token: a bundle needs no login, so nobody's gh login, config
+#      or Sigstore cache — not the person who ran sudo, not root's — has a say in the verdict. gh still fetches
+#      Sigstore's trusted root over the network (TUF, from tuf-repo-cdn.sigstore.dev, unauthenticated).
+#   3. gh must be 2.56.0 or newer: older releases cannot read today's public-good trusted root (gh 2.49.0 to
+#      2.55.0 fail with "unsupported tlog public key type: PKIX_ED25519"), and Ubuntu 24.04's own gh is
+#      2.45.0, which has no `gh attestation` at all. Checked BEFORE anything is downloaded.
+# Without a usable `gh` the installer stops before downloading anything; `--skip-attestation` proceeds
+# knowingly, says so loudly, and still checks the .sha256.
 #
 # `sh`, not `bash`: POSIX only, no eval, every expansion quoted. It needs root and says so; it never calls
 # sudo itself.
@@ -39,9 +53,21 @@ set -eu
 umask 022
 
 readonly REPO="oleksandrdubyna88/wsl_care"
-# The release workflow that signs the archives (plan §15 #12, E4.S2): an attestation made by any other
-# workflow of the repository is refused.
+# The release workflow that signs the archives (plan §15 #12, E4.S2). The identity an attestation must carry is
+# this workflow AT the release tag (SIGNER_IDENTITY, set once the version is known), matched EXACTLY with
+# `--cert-identity`. Never `--signer-workflow`: gh matches that as a PREFIX of the identity, so release.yml run
+# from any branch would pass (observed with gh 2.97.0: `--signer-workflow …/deploy` accepted `…/deployment.yml@
+# refs/heads/trunk`).
 readonly SIGNER_WORKFLOW="$REPO/.github/workflows/release.yml"
+# The oldest gh whose `attestation verify --bundle` verifies a public-good attestation today (bisected over the
+# gh releases on 2026-10-03: 2.55.0 fails on the trusted root's Ed25519 tlog key, 2.56.0 verifies).
+readonly GH_MIN_VERSION="2.56.0"
+# The REST API version the attestation request asks for (2022-11-28 answers with a deprecation date).
+readonly GITHUB_API_VERSION="2026-03-10"
+# Bounds on what an attestation download may be: bundles per archive, compressed and decompressed bytes.
+readonly MAX_BUNDLES=10
+readonly MAX_BUNDLE_BYTES=1048576
+readonly MAX_BUNDLE_JSON_BYTES=4194304
 
 readonly BIN_DIR="/opt/wsl-care/bin"
 readonly BIN_PATH="$BIN_DIR/wsl-care"
@@ -114,8 +140,9 @@ Install wsl-care into this WSL distro (run as root).
   curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh -s -- [options]
 
   --version <x.y.z>           install this daemon release instead of the newest daemon-v* release
-  --skip-attestation          do not verify the build-provenance attestation (no `gh` needed); printed
-                              loudly — the .sha256 integrity check still applies
+  --skip-attestation          do not verify the build-provenance attestation (no `gh` needed — otherwise
+                              gh 2.56.0 or newer, no login); printed loudly — the .sha256 integrity check
+                              still applies
   --set-default-user <name>   add `[user] default=<name>` to /etc/wsl.conf, only when it names no default
                               user yet — the user wsl-care's per-user cleanups act for (WSL also logs in
                               as that user from the next distro start)
@@ -239,11 +266,85 @@ sysstat_enabled() {
   [ -f "$ROOT$SYSSTAT_DEFAULT" ] && grep -Eq '^ENABLED="?true"?[[:space:]]*$' "$ROOT$SYSSTAT_DEFAULT"
 }
 
-# $1 url, $2 destination file, $3 ceiling in seconds. HTTPS only, redirects included (a release asset
-# redirects to GitHub's object store); a ceiling on every transfer.
+# $1 url, $2 destination file, $3 ceiling in seconds, then any extra curl arguments (request headers). HTTPS
+# only, redirects included (a release asset redirects to GitHub's object store); a ceiling on every transfer.
 fetch() {
-  curl --url "$1" --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-    --tlsv1.2 --retry 3 --connect-timeout 15 --max-time "$3" --output "$2"
+  url=$1
+  out=$2
+  ceiling=$3
+  shift 3
+  curl --url "$url" --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+    --tlsv1.2 --retry 3 --connect-timeout 15 --max-time "$ceiling" --output "$out" "$@"
+}
+
+# $1 >= $2, both x.y.z — numerically, field by field.
+version_at_least() {
+  case "$1" in '' | *[!0-9.]*) return 1 ;; esac
+  [ "$(printf '%s\n%s\n' "$2" "$1" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" = "$2" ]
+}
+
+# Runs gh as THIS process (root, or the dry-run's user) with its configuration, cache, data, state and home inside
+# this run's temporary folder and every token variable removed: nobody's login, config or Sigstore cache takes part
+# in the verdict. A ceiling on every call.
+gh_isolated() {
+  (
+    unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN GH_HOST GH_REPO
+    HOME="$WORK/gh/home"
+    GH_CONFIG_DIR="$WORK/gh/config"
+    XDG_CONFIG_HOME="$WORK/gh/config"
+    XDG_CACHE_HOME="$WORK/gh/cache"
+    XDG_DATA_HOME="$WORK/gh/data"
+    XDG_STATE_HOME="$WORK/gh/state"
+    GH_NO_UPDATE_NOTIFIER=1
+    GH_PROMPT_DISABLED=1
+    export HOME GH_CONFIG_DIR XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME XDG_STATE_HOME GH_NO_UPDATE_NOTIFIER GH_PROMPT_DISABLED
+    exec timeout 180 gh "$@"
+  )
+}
+
+# $1 a file in snappy's raw block format (what GitHub serves an attestation bundle as: a varint length, then
+# literal and copy elements), $2 where the decompressed bytes go. awk over `od`, POSIX tools only; LC_ALL=C so
+# every awk writes each value as ONE byte (mawk and gawk alike — a bundle holds bytes above 127). Refuses a stream
+# that ends early, a copy that reaches before the output's start, a length that does not match, a NUL byte, and a
+# declared length above MAX_BUNDLE_JSON_BYTES. A wrong decoding cannot pass anything: gh verifies what comes out.
+unsnappy() {
+  od -An -v -tu1 "$1" | LC_ALL=C awk -v max="$MAX_BUNDLE_JSON_BYTES" '
+    function bad(why) { printf "snappy: %s\n", why > "/dev/stderr"; failed = 1; exit 1 }
+    function need(count) { if (p + count > n) bad("the stream ends inside an element") }
+    { for (i = 1; i <= NF; i++) b[n++] = $i + 0 }
+    END {
+      if (failed) exit 1
+      len = 0; mul = 1
+      do {
+        need(1); c = b[p++]; len += (c % 128) * mul; mul *= 128
+        if (mul > 34359738368) bad("the length does not end")
+      } while (c >= 128)
+      if (len > max) bad("the declared length " len " is above " max " bytes")
+      o = 0
+      while (p < n) {
+        tag = b[p++]; kind = tag % 4
+        if (kind == 0) {
+          l = int(tag / 4)
+          if (l >= 60) { k = l - 59; need(k); l = 0; m = 1; for (j = 0; j < k; j++) { l += b[p++] * m; m *= 256 } }
+          l++
+          need(l)
+          if (o + l > len) bad("a literal runs past the declared length")
+          for (j = 0; j < l; j++) out[o++] = b[p++]
+          continue
+        }
+        if (kind == 1) { need(1); l = int(tag / 4) % 8 + 4; off = int(tag / 32) * 256 + b[p++] }
+        else if (kind == 2) { need(2); l = int(tag / 4) + 1; off = b[p] + b[p + 1] * 256; p += 2 }
+        else { need(4); l = int(tag / 4) + 1; off = b[p] + b[p + 1] * 256 + b[p + 2] * 65536 + b[p + 3] * 16777216; p += 4 }
+        if (off < 1 || off > o) bad("a copy reaches before the start of the output")
+        if (o + l > len) bad("a copy runs past the declared length")
+        for (j = 0; j < l; j++) { out[o] = out[o - off]; o++ }
+      }
+      if (o != len) bad("the stream holds " o " bytes, its header says " len)
+      for (j = 0; j < o; j++) {
+        if (out[j] == 0) bad("a NUL byte - not a JSON bundle")
+        printf "%c", out[j]
+      }
+    }' > "$2"
 }
 
 # --- preflight, shared -------------------------------------------------------------------------------
@@ -343,17 +444,9 @@ install_preflight() {
       have "$tool" || fail preflight "$tool is not installed, and sysstat / atop need installing or switching on"
     done
   fi
-  if [ "$SKIP_ATTESTATION" = 0 ]; then
-    have gh || fail preflight "the GitHub CLI (gh) is not installed, and it is what verifies that this
-repository's release workflow built the archive (its build-provenance attestation). Nothing was installed.
-Either install gh (https://cli.github.com — on Ubuntu: sudo apt-get install gh), log in (gh auth login), and
-run this again; or proceed knowingly WITHOUT the attestation (the .sha256 integrity check still applies):
-  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sudo sh -s -- --skip-attestation"
-    if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
-      matches "$SUDO_USER" "$USER_PATTERN" || fail preflight "SUDO_USER is not a user name: $(printable "$SUDO_USER")"
-      have runuser || fail preflight "runuser is not installed (gh runs as $SUDO_USER, whose gh login it uses)"
-    fi
-  fi
+  for tool in od sort head wc; do
+    have "$tool" || fail preflight "$tool is not installed"
+  done
   if [ -e "$ROOT$LINK_PATH" ] || [ -h "$ROOT$LINK_PATH" ]; then
     if [ ! -h "$ROOT$LINK_PATH" ] || [ "$(readlink "$ROOT$LINK_PATH")" != "$BIN_PATH" ]; then
       fail preflight "$LINK_PATH exists and is not this installer's link to $BIN_PATH — remove it yourself, then run this again"
@@ -378,6 +471,36 @@ wsl_conf_preflight() {
     fi
     WSL_CONF_ACTION="write"
   fi
+}
+
+# How to get a gh that can verify, said once for every refusal below: GitHub's own apt repository — Ubuntu's
+# package (2.45.0 on 24.04) is the one that is too old.
+gh_advice() {
+  printf '%s' "Nothing was installed. Install gh $GH_MIN_VERSION or newer from GitHub's apt repository
+(https://cli.github.com/packages; the steps: https://github.com/cli/cli/blob/trunk/docs/install_linux.md) —
+Ubuntu's own gh package is older than that — and run this again; no gh login is needed. Or proceed knowingly
+WITHOUT the attestation (the .sha256 integrity check still applies):
+  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sudo sh -s -- --skip-attestation"
+}
+
+# BEFORE anything is downloaded: a gh that can verify a bundle against today's trusted root, with the flags the
+# verification uses. Its version alone is not enough (gh 2.49 to 2.55 have the command and cannot verify), nor is
+# the command's presence alone (Ubuntu's 2.45.0 lacks it): both are asked.
+gh_preflight() {
+  [ "$SKIP_ATTESTATION" = 0 ] || return 0
+  have gh || fail preflight "the GitHub CLI (gh) is not installed, and it is what verifies that this
+repository's release workflow built the archive (its build-provenance attestation). $(gh_advice)"
+  mkdir -m 0700 "$WORK/gh" "$WORK/gh/home" "$WORK/gh/config" "$WORK/gh/cache" "$WORK/gh/data" "$WORK/gh/state"
+  gh_version=$(gh_isolated --version 2>/dev/null | sed -n '1s/^gh version \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p') || gh_version=""
+  version_at_least "$gh_version" "$GH_MIN_VERSION" || fail preflight "gh ${gh_version:-of an unknown version} is older than $GH_MIN_VERSION,
+the oldest that verifies a release attestation today. $(gh_advice)"
+  gh_help=$(gh_isolated attestation verify --help 2>&1) || fail preflight "this gh ($gh_version) has no working \`gh attestation verify\`. $(gh_advice)"
+  for flag in --bundle --cert-identity --deny-self-hosted-runners --repo; do
+    case "$gh_help" in
+      *"$flag "*) ;;
+      *) fail preflight "this gh ($gh_version) offers no $flag for \`gh attestation verify\`. $(gh_advice)" ;;
+    esac
+  done
 }
 
 resolve_version() {
@@ -429,17 +552,45 @@ download_and_verify() {
 }
 
 verify_attestation() {
-  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ]; then
-    # gh uses the login of the person who ran sudo; root usually has none. The folder is made readable
-    # to them; it stays root's, so they cannot change the archive between the check and the install.
-    chmod 0755 "$WORK"
-    timeout 180 runuser -u "$SUDO_USER" -- gh attestation verify --repo "$REPO" --signer-workflow "$SIGNER_WORKFLOW" "$WORK/$ARCHIVE" \
-      || fail attestation "gh attestation verify (as $SUDO_USER) refused $ARCHIVE — nothing is installed. If gh is not logged in, run gh auth login first."
-  else
-    timeout 180 gh attestation verify --repo "$REPO" --signer-workflow "$SIGNER_WORKFLOW" "$WORK/$ARCHIVE" \
-      || fail attestation "gh attestation verify refused $ARCHIVE — nothing is installed. If gh is not logged in, run gh auth login first."
+  SIGNER_IDENTITY="https://github.com/$SIGNER_WORKFLOW@refs/tags/daemon-v$VERSION"
+  api="https://api.github.com/repos/$REPO/attestations/sha256:$actual"
+  fetch "$api" "$WORK/attestations.json" 60 --header 'Accept: application/vnd.github+json' --header "X-GitHub-Api-Version: $GITHUB_API_VERSION" \
+    || fail attestation "could not read $api — nothing is installed"
+  # Every bundle URL of the answer, whatever its whitespace: JSON holds no raw newline inside a string, so the
+  # answer is joined into one line first. A JSON encoder may write & as \u0026 and / as \/.
+  tr -d '\r\n' < "$WORK/attestations.json" | grep -o '"bundle_url"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | sed -e 's/^"bundle_url"[[:space:]]*:[[:space:]]*"//' -e 's/"$//' -e 's/\\u0026/\&/g' -e 's/\\\//\//g' \
+    | head -n "$MAX_BUNDLES" > "$WORK/bundle-urls" || true
+  [ -s "$WORK/bundle-urls" ] || fail attestation "GitHub has no attestation for $ARCHIVE (sha256:$actual) — nothing is installed"
+  number=0
+  while IFS= read -r url; do
+    number=$((number + 1))
+    if verify_bundle "$url" "$WORK/bundle-$number"; then
+      say "attestation ok: built by $SIGNER_IDENTITY on a GitHub-hosted runner (authenticity)"
+      return 0
+    fi
+  done < "$WORK/bundle-urls"
+  fail attestation "no attestation of $ARCHIVE was made by $SIGNER_IDENTITY on a GitHub-hosted runner (gh said why above) — nothing is installed"
+}
+
+# $1 a bundle URL from the attestation API, $2 the path stem to keep it under. 0 when gh verifies that bundle
+# against the pinned identity; anything that stops one bundle (a download, a bad stream, gh's refusal) says why and
+# leaves the next bundle its turn.
+verify_bundle() {
+  case "$1" in
+    https://*) ;;
+    *) warn "skipped an attestation whose bundle URL is not https: $(printable "$1")"; return 1 ;;
+  esac
+  if ! fetch "$1" "$2.json.sn" 60 || [ "$(wc -c < "$2.json.sn")" -gt "$MAX_BUNDLE_BYTES" ]; then
+    warn "an attestation bundle could not be read (download failed or larger than $MAX_BUNDLE_BYTES bytes)"
+    return 1
   fi
-  say "attestation ok: built by $SIGNER_WORKFLOW (authenticity)"
+  if ! unsnappy "$2.json.sn" "$2.json"; then
+    warn "an attestation bundle could not be read (not a snappy stream of a JSON bundle)"
+    return 1
+  fi
+  gh_isolated attestation verify "$WORK/$ARCHIVE" --bundle "$2.json" --repo "$REPO" \
+    --cert-identity "$SIGNER_IDENTITY" --deny-self-hosted-runners
 }
 
 # The archive must hold exactly regular files and folders under one top folder: no absolute name, no
@@ -619,6 +770,7 @@ verify() {
 install_all() {
   install_preflight
   WORK=$(mktemp -d "${TMPDIR:-/tmp}/wsl-care-install.XXXXXX")
+  gh_preflight
   resolve_version
   download_and_verify
   unpack

@@ -275,6 +275,9 @@ public sealed partial class ReleaseWorkflowTests
         ReleaseFiles.DaemonVersionPattern.Should().Be(ReleaseFiles.InstallerVersionPattern, "the guard never admits a tag the installer would refuse to install");
         File.ReadAllText(ReleaseFiles.Script("release-guard.sh")).Should().Contain($"{TagPrefix()}*)", "the guard reads the tag shape release.yml triggers on");
         File.ReadAllText(ShippedFiles.InstallScript).Should().Contain($"releases/download/{TagPrefix()}$VERSION", "install.sh downloads from the tag release.yml publishes");
+        File.ReadAllText(ShippedFiles.InstallScript).Should().Contain($"readonly SIGNER_WORKFLOW=\"$REPO/.github/workflows/{Release}\"")
+            .And.Contain($"$SIGNER_WORKFLOW@refs/tags/{TagPrefix()}$VERSION",
+            "install.sh trusts exactly this workflow run for the tag it triggers on — the identity its attestation carries");
     }
 
     /// <summary>The tag prefix release.yml triggers on (<c>daemon-v</c>), read from the file.</summary>
