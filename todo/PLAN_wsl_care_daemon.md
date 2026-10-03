@@ -674,6 +674,17 @@ Independent review (all accepted):
 | R7 | Every E3 method's cyclomatic complexity ≤ 4 (C# doctrine §6), refactored without behaviour change. |
 | CI | The trigger is EXPLICIT: `collect --timer` / `act --timer` is the timer, never `INVOCATION_ID` — every descendant of a systemd unit inherits it (CI run 37129452377: four act tests on the GitHub runners took a runner job for the timer and dry-ran a button press; a VS Code Server started as a user service would have done the same). E4.S1's timer unit MUST pass `--timer` in its `ExecStart`. |
 
+### 15e. Gate — epic 4 plan round (2026-10-03, session `05f9799b`)
+
+| # | Lands in | Decision |
+|---|---|---|
+| 0 | §9, E4.S2 | **Accepted.** Workflow-level permissions stay `contents: read`; each job gets only what it needs: the per-RID build job `id-token: write` + `attestations: write` (`actions/attest-build-provenance`), the upload/publish job `contents: write`. Nothing else holds a write scope. |
+| 1 | §9, E4.S1, E4.S2 | **Accepted.** Each release archive `wsl-care-$VERSION-$RID.tar.gz` carries the binary AND `systemd/` (`wsl-care.service`, `wsl-care.timer`, `wsl-care-events.service`) and `config/default.json`; `install.sh` installs the units to `/etc/systemd/system/` and the machine config to `/etc/wsl-care/config.json` only when none exists (never overwrites a person's machine layer). A packaging test lists the archive and fails on a missing member. |
+| 2 | §9, E4.S2 | **Accepted.** `release.yml` is a per-RID matrix that builds, tests, smokes, attests and uploads to the draft release, then ONE downstream job (`needs: [build]`) checks that every expected RID asset and its `.sha256` exist and only then publishes the release — never a subset of platforms. |
+| 3 | §9, §15 #1, E4.S1 | **Accepted.** `install.sh` installs to `/opt/wsl-care/bin/wsl-care` and links `/usr/local/bin/wsl-care` to it; its own smoke and every root argv the extension sends use the ABSOLUTE path `/opt/wsl-care/bin/wsl-care` (no PATH lookup as root). |
+| 4 | §15 #12, E4.S1 | **Accepted.** Attestation stays required by default: when `gh` is missing `install.sh` stops BEFORE installing anything and prints how to install `gh`, or how to proceed knowingly with `curl … | sh -s -- --skip-attestation` (printed loudly, the `.sha256` integrity check still applies). |
+| 5 | §9, E4.S2 | **Accepted in this form:** `ci-daemon.yml` already smokes the published AOT binary with `status --json`, `preview --all --json`, the full `collect` run and `act --preview` of every action (E2–E3), not only `--help`; `release.yml` reuses exactly those smoke steps (one shared script), so the released binary is exercised the same way. |
+
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
 Every epic is its own branch from the previous epic's final commit, one review-gate code round over its
