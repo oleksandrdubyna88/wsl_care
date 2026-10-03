@@ -38,6 +38,17 @@ public sealed record StatusReport(
 
     /// <summary>The daily folder sizes from the newest full run that measured them, with their age and growth.</summary>
     public Collect.FoldersReport? Folders { get; init; }
+
+    /// <summary>Every threshold of plan §4 as <c>status</c> sees it (plan §15g B1): the SAME <see cref="Thresholds.Verdict"/>
+    /// records and ids a full run writes into its detail — the sample's evaluated now, the full run's carried with their
+    /// age (<see cref="Thresholds.Verdict.Basis"/>). An additive field (plan §6, §15g M2): absent from the sample a run
+    /// detail embeds, and from every answer of a daemon older than E5.S0.</summary>
+    public IReadOnlyList<Thresholds.Verdict>? Verdicts { get; init; }
+
+    /// <summary>The build that answered — the same text <c>--version</c> prints (<c>0.1.0</c>, optionally
+    /// <c>+&lt;commit&gt;</c>; <c>unknown</c> for an unstamped build). Additive (plan §15g B1, M2); absent from the sample
+    /// a run detail embeds.</summary>
+    public string? ProductVersion { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>

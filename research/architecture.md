@@ -17,7 +17,9 @@
 > fixes* below) — and from E4.S1 the installer `install.sh` with the three systemd units and the machine configuration
 > layer it installs (section *The installer and the units*), and from E4.S2 the release pipeline — release-please, the
 > per-RID `release.yml` with build-provenance attestations, the shared smoke / package / guard / verify scripts, and the
-> owner-applied rulesets, Sonar and CodeRabbit settings (section *The release pipeline*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+> owner-applied rulesets, Sonar and CodeRabbit settings (section *The release pipeline*), and from E5.S0 the threshold
+> verdicts and the product version in `status --json` and the golden contracts the extension's client tests replay
+> (section *The verdicts in `status`*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
 > `events follow`, `act`, `logs` and `runs`, and refuses everything else; there is no extension yet. This file describes
 > what exists and is rewritten as each part lands.
 
@@ -78,6 +80,8 @@
   bodies `rulesets/tags-daemon.json` and `rulesets/branch-main.json` — with `release-please-config.json`,
   `.release-please-manifest.json` and `.coderabbit.yaml` at the root and the owner's commands in `docs/repo-settings.md`
   (section *The release pipeline*).
+- **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
+  captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
 - Plans: the daemon and extension (`todo/PLAN_wsl_care_daemon.md`), the Windows side
   (`todo/PLAN_windows_care.md`), the AI-session archive (`todo/PLAN_ai_session_archive.md`), the shared
@@ -1452,6 +1456,77 @@ non-gating ones, `sonarcloud.yml` and `coderabbit-review.yml`), every workflow d
 every job (a workflow without one would pass the per-job checks vacuously), and every pull-request leg packing the
 archive and opening its path outside bash (E4 review B2, B5, B6).
 
+## The verdicts in `status`, `productVersion` and the golden contracts (E5.S0)
+
+The read-only panel of E5 colours its status bar from verdicts, and `status --json` had only figures (plan §15g B1).
+E5.S0 adds two members to it, both additive, `schemaVersion` still 1, riding `daemon-v0.1.0`:
+
+- **`verdicts`** — the SAME `Verdict` records and ids a full run writes into its detail (`RunDetail.Thresholds`), in the
+  same order, from ONE evaluator. `ThresholdRules.Evaluate` was split, without a behaviour change, into
+  `FromSample` (the eight thresholds a fast sample decides: `memory.available`, `.pageCache`, `.inactiveAnon`, `.swap`,
+  `.fragmentation`, `.pressure`, `wslconfig.memory`, `disk.root`) and the full-run rest; `UnreadFullRun(config)` evaluates
+  the rest over inputs that were NOT read, so a reader takes the ids, the order and the limits in force from the rules
+  themselves — no second list of ids exists. `StatusVerdicts.From` (`WslCare.Core/Status`) answers:
+  - the sample's eight, evaluated NOW over `status`'s own sample with the effective configuration — a threshold changed in
+    a configuration layer moves them at once; `basis: {source: "sample", evaluatedAt: <the sample's instant>,
+    ageSeconds: 0}`. The VM-ceiling verdict's level is the memory's; its value says the `.wslconfig` audit is a full run's
+    (read through the Windows profile the clock probe prints, a slow process `status` never starts);
+  - every other id carried EXACTLY as the newest full run recorded it, with `basis: {source: "fullRun", runId,
+    evaluatedAt: <that run's end>, ageSeconds}`; or `unknown` under the limit the configuration puts in force, with the
+    reason: no full run yet, a full run whose detail is gone or does not parse, a run that recorded no verdict for that id.
+    A carried verdict keeps the limit its run applied (its `limit` says which); a setting changed since reaches it at the
+    next full run — status never re-judges a figure it did not read.
+  - `FullRunVerdicts.Read` finds the newest FULL run (a `collect` history line — the only kind carrying the slow parts —
+    that names its detail; `act` lines and the reconcile's `interrupted` lines are not full runs) and reads ONE file, its
+    detail, through a narrow DTO (`RunDetailVerdicts`: the head and `thresholds`), normalising null strings (C# doctrine
+    §4a). `status` reads `history.jsonl` once for the slow parts and the verdicts (`LastFullRun.From`).
+- **`productVersion`** — the assembly's informational version, `Program.VersionText`, the ONE expression `--version` prints
+  too (`0.0.0+<sha>` before the first release). The default JSON encoder writes the `+` as `+`; a reader parses.
+- The text form adds one line, `verdicts: 1 critical (memory.fragmentation), 2 warn (…), 12 ok, 8 unknown`.
+
+```mermaid
+flowchart LR
+    sample["LinuxProbe.Sample<br/>(meminfo, buddyinfo, pressure, df /)"]
+    config["EffectiveConfig<br/>(default &lt; machine &lt; user)"]
+    history["history.jsonl<br/>(read once)"]
+    detail["runs/{day}/{runId}.json<br/>of the newest collect line"]
+    rules["ThresholdRules<br/>FromSample · UnreadFullRun · Evaluate"]
+    sv["StatusVerdicts.From"]
+    frv["FullRunVerdicts.Read<br/>(RunDetailVerdicts DTO)"]
+    out["status --json<br/>verdicts[] + productVersion"]
+    collect["collect<br/>ThresholdRules.Evaluate → RunDetail.Thresholds"]
+
+    sample --> sv
+    config --> sv
+    history --> frv
+    detail --> frv
+    frv -->|recorded verdicts, run id, end| sv
+    rules --> sv
+    rules --> collect
+    collect -->|writes| detail
+    sv --> out
+```
+
+**The compatibility rule** (plan §6, §15g M2) — written before the first public consumer reads these answers:
+`schemaVersion` changes only on a BREAKING change (a field removed, renamed, retyped or its meaning changed); an
+ADDITIVE field never bumps it. A client ignores keys it does not know and treats every field added after 0.1.0 —
+`verdicts` and `productVersion` are the first two — as optional, an absent one reading as "update the daemon to see
+this", never as 0 or an error. Refusal is per verb. The extension's client tests replay two golden sets.
+
+**The golden contracts** (`contracts/golden/head/{status,preview,doctor}.json`, plan §15f #10, §15g m7). Written by
+`WslCare.Scenarios/GoldenContracts` on the Linux legs: the BUILT CLI over the captured procfs, Docker and health
+fixtures, every age limit at 0 (`PreviewFlows.AllAges`, so the rows do not move as the fixtures age), one `collect`
+first, then the three verbs. Every value that moves between two runs of one build over one fixture set is replaced by a
+fixed value of the same type, through a NAMED, reviewed list — paths (`**.sampledAt`, `**.sampleMilliseconds`,
+`**.ageSeconds`, `**.ageSeconds.value`, `**.evaluatedAt`, `**.runId`, `checkedAt`, `productVersion`, `vm.disk.*`,
+`slow.windowsClock.offsetSeconds`, `containerStarts.from|to`, `containerStarts.gaps[*].from|to`), objects picked by a key
+(`id: disk.root`, `id: journal.history`, `id: clock.drift`, `component: wsl-care`) and run ids quoted inside sentences;
+the sandbox root becomes `/golden-root`. `productVersion` and doctor's own version become `unknown` — the release number
+moves at every release-please bump and a golden pinned to it would turn the release pull request red. `GoldenContractTests`
+fails when a checked-in file is not what the CLI answers at that commit (naming the file and the first differing line)
+and when a rule no longer matches anything; `WSL_CARE_WRITE_GOLDENS=1` regenerates them. The set frozen at the tag,
+`contracts/golden/daemon-0.1.0/`, is an E5 live-gate step, not part of E5.S0. The goldens are test data and never ship.
+
 ## Fail-closed resolution and the atomic write
 
 Hardened on 2026-10-02 from the review of the E1 pull request.
@@ -1745,12 +1820,13 @@ FluentAssertions held below 8.x.
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03) |
-| scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0) |
+| scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3); the status verdicts and the golden contracts' writer and drift test (E5.S0) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
-| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5) |
+| golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
+| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5.S1–S3) |
 
 ## Cross-repository
 

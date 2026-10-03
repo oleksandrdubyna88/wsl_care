@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "checkedAt": "2000-01-01T00:00:00+00:00",
+  "healthy": false,
+  "observeOnly": false,
+  "configError": [],
+  "checks": [
+    {
+      "id": "config",
+      "state": "ok",
+      "detail": "every layer is valid"
+    },
+    {
+      "id": "stateDirectory",
+      "state": "ok",
+      "detail": "/golden-root/var/lib/wsl-care is writable by this process"
+    },
+    {
+      "id": "lastRun",
+      "state": "ok",
+      "detail": "20000101T000000Z-1: completed, 0.0 h ago"
+    },
+    {
+      "id": "runDetails",
+      "state": "ok",
+      "detail": "every history line that names a detail has it"
+    },
+    {
+      "id": "unit.wsl-care.timer",
+      "state": "unknown",
+      "detail": "systemctl show wsl-care.timer --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState exited 98: fake systemctl: no scripted answer for: systemctl show wsl-care.timer --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState"
+    },
+    {
+      "id": "unit.wsl-care-events.service",
+      "state": "unknown",
+      "detail": "systemctl show wsl-care-events.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState exited 98: fake systemctl: no scripted answer for: systemctl show wsl-care-events.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState"
+    },
+    {
+      "id": "unit.sysstat.service",
+      "state": "unknown",
+      "detail": "systemctl show sysstat.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState exited 98: fake systemctl: no scripted answer for: systemctl show sysstat.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState"
+    },
+    {
+      "id": "unit.atop.service",
+      "state": "unknown",
+      "detail": "systemctl show atop.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState exited 98: fake systemctl: no scripted answer for: systemctl show atop.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState"
+    },
+    {
+      "id": "collector.sysstat",
+      "state": "problem",
+      "detail": "/golden-root/var/log/sysstat holds no sysstat file: sysstat is not collecting (the installer sets it up, E4)"
+    },
+    {
+      "id": "collector.atop",
+      "state": "problem",
+      "detail": "/golden-root/var/log/atop holds no atop file: atop is not collecting (the installer sets it up, E4)"
+    },
+    {
+      "id": "eventsFollower",
+      "state": "problem",
+      "detail": "the events follower has recorded nothing (wsl-care-events.service)"
+    },
+    {
+      "id": "root",
+      "state": "notChecked",
+      "detail": "root reachability (wsl.exe -u root -- true) is checked by the extension's root boundary (E6)"
+    }
+  ],
+  "versions": [
+    {
+      "component": "wsl-care",
+      "available": true,
+      "version": "unknown"
+    },
+    {
+      "component": "docker",
+      "available": true,
+      "version": "29.6.1"
+    },
+    {
+      "component": "docker-cli",
+      "available": true,
+      "version": "29.6.1"
+    },
+    {
+      "component": "systemd",
+      "available": true,
+      "version": "systemd 255 (255.4-1ubuntu8.17)"
+    },
+    {
+      "component": "kernel",
+      "available": false,
+      "reason": "/golden-root/proc/sys/kernel/osrelease does not exist"
+    }
+  ]
+}
