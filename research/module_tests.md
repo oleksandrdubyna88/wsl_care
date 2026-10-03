@@ -568,7 +568,8 @@ no new dependency — bats was not taken). `InstallWorld` runs the REAL script w
 |---|---|
 | `root/` | `WSL_CARE_INSTALL_ROOT`, the stand-in for `/`: every path the script reads or writes as a file sits under it. Seeded with `/run/systemd/system` (systemd booted), an `/etc/passwd` with `alice` and `zed`, and `/etc/default/sysstat` with `ENABLED="true"` |
 | `fakebin/` | the fake tool (`WslCare.FakeTool`) as `curl`, `gh`, `systemctl`, `apt-get`, `debconf-set-selections`, `dpkg-reconfigure`, `runuser`, `sudo`, `id`, `uname`, `sar`, `atop` — everything that changes the machine, reaches the network, or answers who and where the script runs (so a test can be root, or arm64, without being either). A test leaves one out to stand for a tool that is not installed |
-| `realbin/` | links to an ALLOWLIST of real text and file tools (`awk`, `cat`, `chmod`, `cut`, `grep`, `gzip`, `install`, `ln`, `ls`, `mkdir`, `mktemp`, `mv`, `readlink`, `rm`, `rmdir`, `sed`, `sha256sum`, `sleep`, `tar`, `timeout`, `tr`). `PATH` is exactly `fakebin:realbin`, so a script change that reaches for another tool fails here first |
+| `realbin/` | links to an ALLOWLIST of real text and file tools (`awk`, `cat`, `chmod`, `cut`, `grep`, `gzip`, `head`, `install`, `ln`, `ls`, `mkdir`, `mktemp`, `mv`, `od`, `readlink`, `rm`, `rmdir`, `sed`, `sha256sum`, `sleep`, `sort`, `tar`, `timeout`, `tr`, `wc`). `PATH` is exactly `fakebin:realbin`, so a script change that reaches for another tool fails here first. A world may link `awk` to a named one (`/usr/bin/mawk`, `/usr/bin/gawk`) — the snappy decoder is run under both |
+| the attestations | since the E4 review: every published release carries one attestation per signer — a bundle in Sigstore's shape (`AttestationBundles`: a self-signed certificate with the SAN and the Fulcio extensions, a DSSE statement naming the archive's digest), snappy-compressed (literals only), served at a bundle URL that the fake attestation API names (`bundle: null`, `&` written `\u0026`). The fake `gh` VERIFIES (`VerifiesAttestation`, `FakeAttestation`): `--cert-identity` exact, `--signer-workflow` a literal prefix, `--repo`, `--source-ref`, `--deny-self-hosted-runners`, the artifact's digest — gh's semantics as measured on gh 2.97.0. Every fake call records `HOME`, `GH_CONFIG_DIR`, `XDG_*_HOME`, `GH_TOKEN`, `GITHUB_TOKEN` (`WSL_CARE_FAKE_RECORD_ENV`), so whose configuration gh ran under is asserted. A captured cli/cli bundle (`src_daemon/tests/fixtures/attestation/`, 64 literal + 69 copy elements, bytes above 127) is served where the decoder's copies must be right |
 | `tmp/` | the script's `TMPDIR`; every flow asserts it is EMPTY afterwards (the trap removed the temporary folder on success, on failure and on refusal) |
 | the release | built per test with `System.Formats.Tar` from THIS repository's units and machine layer and served by the fake `curl` (a new answer option, `OutputFlag`: the fixture goes to the file after `--output`); its `.sha256` computed, or replaced by a test |
 | the binary | a two-line shell stub that appends the path it was started as to `stub-invocations.log` and hands its argv to a fake `wsl-care` — so the installer's use of the ABSOLUTE path is observed, and `collect` / `doctor --json` are scripted; `doctor --json` is serialised by the product's own `WslCareJsonContext` from a `DoctorReport`, never typed by hand |
@@ -614,6 +615,41 @@ restored the file and compared it byte for byte) — 28 mutations, every one red
 | sysstat left switched off fails | the re-check after `dpkg-reconfigure` | `… to be 1 … but found 0` |
 | the link names the ABSOLUTE path | the link target (made prefixed) | `Expected string to be the same string because the link names the ABSOLUTE install path (plan §15e #3), but they differ at index 1` |
 | the installed binary records one full run | the `first_run` call | `… to be equal to {"collect", "doctor --json"} … but {"doctor --json"} contains 1 item(s) less` |
+
+**The E4 review, part A — the install trust boundary** (2026-10-03, three independent reviews standing in for the coai
+gate; in WSL `Ubuntu`, the worktree copied under `/tmp` and built there). Every behaviour was first written as a test and
+run against the E4.S1/E4.S2 `install.sh`, where each went red for the real symptom:
+
+| Guarantee | Red against the old installer |
+|---|---|
+| A1 an attestation of `release.yml` built from a branch is refused | `Expected result.Exit to be 1 because the install should fail … attestation ok: built by oleksandrdubyna88/wsl_care/.github/workflows/release.yml (authenticity)` — `release.yml@refs/heads/x` installed |
+| A1 an attestation of another release's tag is refused | the same: `daemon-v0.0.9`'s identity accepted for 0.1.0's archive |
+| A1 a self-hosted runner's attestation is refused | the same: `attestation ok` for a `self-hosted` runner environment |
+| A1 the pinned identity, statically | `Expected string "#!/bin/sh …" to contain "SIGNER_IDENTITY=\"https://github.com/$SIGNER_WORKFLOW@refs/tags/daemon-v$VERSION\""` |
+| A2 gh 2.45.0 (no `gh attestation`) refused before any download | `Expected result.Exit to be 1 … release daemon-v0.1.0 … attestation ok …` — downloaded and installed |
+| A2 gh 2.49.0 (below the floor) refused before any download | the same, installed |
+| A2 the guidance names GitHub's apt repository | `Expected result.Stderr "… on Ubuntu: sudo apt-get install gh), log in (gh auth login) …" to contain "https://cli.github.com/packages"` |
+| A3 under sudo root verifies itself, no runuser | `fake runuser: no scripted answer for: runuser -u alice -- gh attestation verify --repo … --signer-workflow …` (exit 1) |
+| A3 a real bundle is decompressed exactly (×3 awks) | `… the bundle …/attestations/none.json is not a Sigstore bundle …" to contain "https://github.com/cli/cli/.github/workflows/deployment.yml@refs/heads/trunk"` — the old installer never fetched a bundle |
+| A3 each of several bundles is verified alone | `Expected Verifications(world) to contain 2 item(s) … but found 1` |
+
+Then, with the fix in, each new line was deleted or bent in a `/tmp` copy of `install.sh` (one `sed`, the change checked,
+the one test run, the file restored and compared by SHA-256 — byte-identical every time); 10 mutations, every one red:
+
+| The line bent | The red |
+|---|---|
+| `--deny-self-hosted-runners` removed | the self-hosted flow: `Expected result.Exit to be 1 because the install should fail` |
+| `--cert-identity "$SIGNER_IDENTITY"` → `--signer-workflow "$SIGNER_WORKFLOW"` | the branch flow: the same (the fake gh's measured prefix match admits `refs/heads/x`) |
+| the identity's `@refs/tags/daemon-v$VERSION` removed | `Expected … to be "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release.yml@refs/tags/daemon-v0.1.0" with a length of 99` |
+| the version floor made `true` | the gh 2.49.0 flow: `Expected result.Exit to be 1` |
+| the `--help` question replaced by a constant naming every flag | the help-fails / missing-flag flow: `Expected result.Exit to be 1` (a first attempt pointed this mutation at the 2.45.0 flow, which the version check refuses first — it stayed green, so the flow `A_gh_whose_attestation_verify_fails_or_lacks_a_flag_…` was added) |
+| the decoder's one-byte-offset copy reading only the low byte | the captured bundle: `… is not a Sigstore bundle: ',' is invalid after a property name` |
+| gh's token variables no longer unset | `Expected verify.Environment … not to contain key "GH_TOKEN"` |
+| gh's `HOME` no longer isolated | `… because gh's HOME is inside the installer's temporary folder, nobody's home, but "/home/jinx" is too short` |
+| only the first bundle tried | `Expected result.Exit to be 0 because the install should succeed` |
+
+`MemoryMax=1G` (A4) is a configuration decision, not a behaviour: `ShippedFilesTests.The_service_memory_ceiling_leaves_room_for_the_tools_the_cleanups_start`
+holds the value; no red was needed for it.
 
 **The shipped files** (`ShippedFilesTests`, every OS): each unit's `ExecStart` starts `/opt/wsl-care/bin/wsl-care` and
 its argv is parsed by the CLI's own `CommandLine.Parse` — the timer's service to `Request.Collect { Timer: true }`
@@ -742,8 +778,10 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |
 | `install.sh --version <x.y.z>`: no releases-list call; a malformed version (`../`, `v`-prefix, `;`, a newline) exit 2 before anything runs | covered (Linux legs) | `InstallFlows.An_explicit_version_skips_the_releases_list_and_a_malformed_one_is_refused_before_anything_runs` |
 | `install.sh`: checksum mismatch → step `checksum`, no gh call, nothing installed; no `.sha256` → step `download`, nothing installed | covered (Linux legs) | `InstallFlows.A_checksum_mismatch_aborts_before_the_attestation_and_before_anything_is_installed`, `InstallFlows.A_release_without_its_sha256_is_refused_never_installed_unchecked` |
-| `install.sh`: a refused attestation → step `attestation`, nothing installed; under `SUDO_USER` the attestation runs as that user through `runuser` | covered (Linux legs) | `InstallFlows.A_refused_attestation_aborts_before_anything_is_installed`, `InstallFlows.Under_sudo_the_attestation_is_verified_as_the_invoking_user_through_runuser` |
-| `install.sh` without `gh`: step `preflight` BEFORE any download, the guidance (install gh, `gh auth login`, `sh -s -- --skip-attestation`), nothing installed | covered (Linux legs) | `InstallFlows.Without_gh_the_installer_stops_before_downloading_anything_and_says_how_to_proceed` |
+| `install.sh`: a refused attestation → step `attestation`, nothing installed; under `SUDO_USER` (and a `GH_TOKEN` in the environment) root verifies a bundle it fetched itself — the attestation API read unauthenticated, no `runuser`, gh's `HOME` / `GH_CONFIG_DIR` / `XDG_*_HOME` inside the temporary folder, no token | covered (Linux legs) | `InstallFlows.A_refused_attestation_aborts_before_anything_is_installed`, `InstallFlows.Under_sudo_root_verifies_a_bundle_it_fetched_itself_with_no_login_no_token_and_no_runuser` |
+| `install.sh`: the attestation identity is EXACT — `release.yml` built from a branch, `release.yml` at ANOTHER release's tag, or on a self-hosted runner is refused with nothing installed; the verification asks `--cert-identity release.yml@refs/tags/daemon-v<version>` + `--deny-self-hosted-runners` + `--repo`, never `--signer-workflow` | covered (Linux legs) | `InstallFlows.An_attestation_of_release_yml_built_from_a_branch_is_refused_and_nothing_is_installed`, `…An_attestation_of_another_release_tag_is_refused_the_identity_is_the_tag_of_the_version_installed`, `…An_attestation_made_on_a_self_hosted_runner_is_refused` |
+| `install.sh`: the bundle decoder — a real GitHub bundle (captured) decompressed exactly, under the system awk, mawk and gawk; several attestations, one genuine, suffice and each is verified alone; no attestation, or a stream that is not snappy, refused before anything | covered (Linux legs) | `InstallFlows.A_real_github_bundle_is_decompressed_byte_for_byte_so_gh_reads_its_signer` (×3), `…Among_several_attestations_one_genuine_bundle_is_enough…`, `…No_attestation_or_an_unreadable_bundle_is_refused_before_anything_is_installed` |
+| `install.sh` without a usable `gh`: none, gh 2.45.0 (no `gh attestation`, Ubuntu 24.04's), gh 2.49.0 (older than the measured floor 2.56.0), a `--help` that fails or lacks a flag the check uses → step `preflight` BEFORE any download, pointing at GitHub's apt repository (`cli.github.com/packages`) and `--skip-attestation`, never at `apt-get install gh` or a login; nothing installed | covered (Linux legs) | `InstallFlows.Without_gh_the_installer_stops_before_downloading_anything_and_says_how_to_proceed`, `…A_gh_without_attestation_verify_is_refused_before_any_download_pointing_at_githubs_apt_repository`, `…A_gh_that_has_attestation_verify_but_is_older_than_the_measured_floor_is_refused_before_any_download`, `…A_gh_whose_attestation_verify_fails_or_lacks_a_flag_the_check_uses_is_refused_before_any_download` |
 | `install.sh --skip-attestation`: installs without gh, the banner on stderr, a bad checksum still refused | covered (Linux legs) | `InstallFlows.Skip_attestation_installs_without_gh_says_so_loudly_and_still_refuses_a_bad_checksum` |
 | `install.sh`: an existing `/etc/wsl-care/config.json` kept byte for byte | covered (Linux legs) | `InstallFlows.An_existing_machine_configuration_is_kept_byte_for_byte` |
 | `install.sh`: a unit not active → step `verify: wsl-care-events.service active`; an unhealthy `doctor --json` → step `verify: doctor healthy` with doctor's checks on stderr; sar missing after apt → step `verify: sysstat (sar on PATH)`; sysstat still off after `dpkg-reconfigure` → step `packages` | covered (Linux legs) | `InstallFlows.A_unit_that_is_not_active_after_enabling_fails_the_install_naming_that_step`, `…An_unhealthy_doctor_fails…`, `…Missing_sysstat_and_atop_are_installed_with_apt…`, `…Sysstat_switched_off_is_switched_on_through_debconf…` |
@@ -752,7 +790,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `install.sh --set-default-user <name>`: without the flag nothing written (advice printed); with it and no default, `[user] default=` appended and read back by the daemon's `TargetUserDiscovery.DefaultUser`; an existing default never rewritten; an unknown user or a `[user]` section without `default=` refused before anything; the installer's reader and the daemon's agree on ten wsl.conf shapes | covered (Linux legs) | `InstallFlows.Without_the_flag_wsl_conf_is_never_written…`, `…With_the_flag_and_no_default_user…`, `…With_the_flag_an_existing_default_user_is_never_rewritten`, `…The_flag_for_an_unknown_user…`, `…The_installer_and_the_daemon_read_the_same_default_user_from_every_wsl_conf_shape` |
 | `install.sh` preflight refusals: not root (the `sudo sh -s --` line, sudo never called), no systemd, an unknown architecture, a foreign `/usr/local/bin/wsl-care`, a hostile archive member (`..`, outside the folder, a link — each riding a complete release); arm64 installs the `linux-arm64` asset; an upgrade restarts the follower | covered (Linux legs) | `InstallFlows.A_non_root_run_is_refused…`, `…Without_systemd_running…`, `…On_arm64…`, `…A_wsl_care_on_the_link_path…`, `…An_archive_member_that_leaves_its_folder_or_is_a_link…`, `…An_upgrade_restarts_the_running_follower…` |
 | the shipped units and machine layer: `ExecStart` argv parsed by the CLI (`collect --timer`, `events follow`), `SuccessExitStatus` = `ExitCode.Busy`, the timer's calendar, no breaking sandbox directive, `install.sh`'s unit list = the folder, the machine layer valid and empty | covered (every OS) | `ShippedFilesTests`; systemd's own parser: CI `systemd-analyze verify` (Linux legs) |
-| `install.sh`'s pinned signer workflow is this repository's attesting `release.yml` | covered (every OS, since E4.S2) | `InstallFlows.The_signer_workflow_the_installer_pins_is_this_repositorys_release_workflow` (it skipped until `release.yml` existed) |
+| `install.sh`'s pinned identity is this repository's attesting `release.yml` AT the release tag, and no command line of it uses `--signer-workflow` | covered (every OS) | `InstallFlows.The_identity_the_installer_pins_is_this_repositorys_attesting_release_workflow_at_the_release_tag`; `ReleaseWorkflowTests.The_release_scripts_agree_with_the_installer_on_what_a_version_is` (the identity's tag = the trigger) |
 | the release archive (`package-daemon.sh`, as `release.yml` runs it): per Linux RID exactly the members `install.sh`'s unpack loop requires plus their folders, regular files and folders only, owner 0:0, 0755 binary / 0644 units and machine layer byte for byte, the `.sha256` line `<hash>  <name>`; the Windows zip holds `wsl-care.exe` alone; a bad version / unknown RID / missing binary refused, nothing written | covered (Linux legs; the zip where 7-Zip is on `PATH`) | `PackageFlows.A_linux_archive_holds_exactly_what_install_sh_unpacks_as_regular_files_under_one_folder` (linux-x64, linux-arm64), `…The_windows_archive_holds_the_exe_alone_under_its_folder`, `…A_bad_version_an_unknown_rid_or_a_missing_binary_is_refused_and_nothing_is_written` |
 | `install.sh` installs the archive the release script packed (the packer and the installer agree, end to end) | covered (Linux legs) | `PackageFlows.The_installer_installs_the_archive_the_release_script_packed` |
 | the release guard (`release-guard.sh`): `daemon-v<version>` with `version.txt` agreeing is admitted and the version reaches `GITHUB_OUTPUT`; another component's tag, a malformed version, a disagreeing `version.txt`, a commit off `main` are refused (exit 1, `::error::`) | covered (Linux legs) | `ReleaseScriptFlows.The_guard_admits_…`, `…The_guard_refuses_a_tag_it_cannot_release` (5 cases), `…The_guard_refuses_a_tagged_commit_that_is_not_on_main` |
@@ -766,14 +804,26 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 ## What it does not prove
 
 - **The installer is proved over a prefix and fakes, never against this machine.** systemd, apt, gh, curl and the
-  release are fakes; "root" is a fake `id`. What the real tools DO with the argv the script sends — `gh attestation
-  verify`'s judgement, `systemctl enable --now`, apt's install, sysstat's postinst honouring the debconf switch,
-  curl's `--proto =https` — is theirs, and is first observed at the live install (E4's done-line). The flows assert the
-  argv sent and the files written, and say so. The real `/bin/sh`, `tar`, `sha256sum`, `install`, `ln`, `awk` and
-  `sed` ARE exercised. Whether `gh attestation verify` needs a login for a public repository was read from its
-  behaviour as documented (online verification queries the API), not observed here.
+  release are fakes; "root" is a fake `id`. What the real tools DO with the argv the script sends — `systemctl enable
+  --now`, apt's install, sysstat's postinst honouring the debconf switch, curl's `--proto =https` — is theirs, and is
+  first observed at the live install (E4's done-line). The flows assert the argv sent and the files written, and say
+  so. The real `/bin/sh`, `tar`, `sha256sum`, `install`, `ln`, `od`, `awk` (mawk and gawk) and `sed` ARE exercised.
+  **gh is the one fake that judges**: it enforces the identity flags with gh's semantics as MEASURED on 2026-10-03 —
+  with the real gh 2.97.0 and cli/cli's own attestation, in WSL `Ubuntu`, no login: `--cert-identity` exact,
+  `--signer-workflow` a literal prefix (`…/deploy` accepted `…/deployment.yml@refs/heads/trunk`), a wrong identity
+  refused, `--source-ref` and `--deny-self-hosted-runners` enforced. What it does NOT do is Sigstore: no signature, no
+  certificate chain, no transparency log, no TUF — a test bundle is self-signed. The facts the design rests on were
+  observed with the real tools, not the fake: an unauthenticated `GET /repos/cli/cli/attestations/sha256:…` answers
+  (60 requests an hour) with `bundle: null` and a `bundle_url` serving snappy JSON; `gh attestation verify --bundle`
+  verifies with an EMPTY gh configuration and no token on gh 2.56.0 through 2.97.0, while online verification without
+  a login stops with exit 4 ("gh auth login"); with the network cut it does not finish (TUF), so it hangs to the 180 s
+  ceiling and refuses; gh 2.49.0–2.55.0 cannot build the public-good verifier at all (`unsupported tlog public key
+  type: PKIX_ED25519`), bisected over nine releases; gh 2.56.0's `attestation verify --help` lists every flag the
+  installer uses. A bundle file must end in `.json` or `.jsonl` (`.bundle` refused).
 - **The units' hardening is unobserved.** `NoNewPrivileges=yes` and the resource limits are requests to systemd;
-  `systemd-analyze verify` proves the files parse, not that a live run of every action succeeds under them.
+  `systemd-analyze verify` proves the files parse, not that a live run of every action succeeds under them. Two risks
+  are named rather than tested (E4 review): a snap-packaged Docker under `NoNewPrivileges`, and a child killed at
+  `MemoryMax=1G` — `POST_DEPLOY.md` #11 reads the journal for both on the live install.
 - **The doctor wait is proved at 0 seconds** (`WSL_CARE_INSTALL_DOCTOR_SECONDS=0`): one attempt. The 2-minute wait for
   the follower's first marker on a live machine is not timed.
 

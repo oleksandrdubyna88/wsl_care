@@ -16,7 +16,11 @@ internal static class Program
             return FakeToolProtocol.NotInAScenario;
         }
 
-        var call = new FakeCall(tool, args) { Location = Path.GetDirectoryName(Environment.ProcessPath) ?? string.Empty };
+        var call = new FakeCall(tool, args)
+        {
+            Location = Path.GetDirectoryName(Environment.ProcessPath) ?? string.Empty,
+            Environment = RecordedEnvironment(),
+        };
         FakeCallLog.Append(calls, call);
 
         var script = Environment.GetEnvironmentVariable(FakeToolProtocol.ScriptVariable);
@@ -33,11 +37,19 @@ internal static class Program
             Thread.Sleep(answer.DelayMilliseconds);
         }
 
-        if (answer.OutputFlag.Length > 0)
-        {
-            return WriteToOutputArgument(tool, call, answer);
-        }
+        return Respond(tool, call, answer);
+    }
 
+    /// <summary>The scripted answer, in the mode it asks for: verify an attestation, write to a file argument, or print.</summary>
+    private static int Respond(string tool, FakeCall call, FakeAnswer answer) => answer switch
+    {
+        { VerifiesAttestation: true } => FakeAttestation.Verify(call.Argv, answer.StdoutFile),
+        { OutputFlag.Length: > 0 } => WriteToOutputArgument(tool, call, answer),
+        _ => Print(answer),
+    };
+
+    private static int Print(FakeAnswer answer)
+    {
         if (answer.StdoutFile.Length > 0)
         {
             // The fixture's bytes, unchanged: no re-encoding, no added newline.
@@ -59,6 +71,15 @@ internal static class Program
 
         return answer.ExitCode;
     }
+
+    /// <summary>The variables the scenario asked every call to record (<see cref="FakeToolProtocol.RecordEnvironmentVariable"/>)
+    /// that are set in this call's environment.</summary>
+    private static Dictionary<string, string> RecordedEnvironment() =>
+        (Environment.GetEnvironmentVariable(FakeToolProtocol.RecordEnvironmentVariable) ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(name => (Name: name, Value: Environment.GetEnvironmentVariable(name)))
+            .Where(v => v.Value is not null)
+            .ToDictionary(v => v.Name, v => v.Value!, StringComparer.Ordinal);
 
     /// <summary>The fixture's bytes, unchanged, to the file the call names after <see cref="FakeAnswer.OutputFlag"/>.</summary>
     private static int WriteToOutputArgument(string tool, FakeCall call, FakeAnswer answer)

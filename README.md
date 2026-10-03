@@ -28,11 +28,19 @@ curl -fsSL …/install.sh | sudo sh -s -- --version 0.1.0    # a given release i
 
 - the **checksum** proves the archive arrived as it was published — integrity, not authorship: whoever can
   replace the archive can replace its `.sha256` too;
-- the **build-provenance attestation** (`gh attestation verify --repo oleksandrdubyna88/wsl_care --signer-workflow
-  oleksandrdubyna88/wsl_care/.github/workflows/release.yml`) proves this repository's release workflow built those
-  bytes. It needs the [GitHub CLI](https://cli.github.com), logged in (`gh auth login`); under `sudo` it runs as the
-  user who ran `sudo`, with that user's login. Without `gh` the installer stops **before downloading anything** and
-  says how to install it. To proceed knowingly without it — printed loudly, and the checksum still applies:
+- the **build-provenance attestation** proves that this repository's `release.yml`, run for **the tag of the version
+  being installed** on a GitHub-hosted runner, built those bytes — the exact certificate identity
+  `https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release.yml@refs/tags/daemon-v<version>`
+  (`--cert-identity`, plus `--deny-self-hosted-runners`), so a build of `release.yml` from any branch is refused. The
+  installer, as root, fetches the attestation itself from GitHub's attestation API (unauthenticated; the bundle comes
+  snappy-compressed and is decompressed with `od` and `awk`) and runs `gh attestation verify --bundle` with gh's
+  configuration, cache and home inside its own temporary folder and no token — **no gh login is needed**, and nobody's
+  gh login or settings take part in the verdict. gh still fetches Sigstore's trusted root over the network. It needs
+  the [GitHub CLI](https://cli.github.com) **2.56.0 or newer** from GitHub's apt repository
+  ([cli.github.com/packages](https://cli.github.com/packages)): Ubuntu 24.04's own `gh` is 2.45.0, which has no
+  `gh attestation`, and 2.49.0–2.55.0 cannot read Sigstore's current trusted root (measured 2026-10-03). Without a
+  usable `gh` the installer stops **before downloading anything** and says how to install one. To proceed knowingly
+  without it — printed loudly, and the checksum still applies:
 
   ```bash
   curl -fsSL …/install.sh | sudo sh -s -- --skip-attestation
@@ -46,7 +54,7 @@ folder (no `..`, no link) stops it with nothing installed.
 | Path / thing | What |
 |---|---|
 | `/opt/wsl-care/bin/wsl-care` (0755), linked from `/usr/local/bin/wsl-care` | the binary; root and the units always use the absolute path |
-| `/etc/systemd/system/wsl-care.service` | the timer's full run, `wsl-care collect --timer` (oneshot, `Nice=19`, idle I/O, `MemoryMax=256M`, 10 min) |
+| `/etc/systemd/system/wsl-care.service` | the timer's full run, `wsl-care collect --timer` (oneshot, `Nice=19`, idle I/O, `MemoryMax=1G` for the run and every tool it starts, `NoNewPrivileges=yes`, 10 min) |
 | `/etc/systemd/system/wsl-care.timer` | every 4 hours on the clock (00:00, 04:00, …), catching up ONCE after a night the VM was off; enabled and started |
 | `/etc/systemd/system/wsl-care-events.service` | the container-start follower, `wsl-care events follow`, `Restart=always` after 30 s; enabled and started |
 | `/etc/wsl-care/config.json` | the machine configuration layer — written **only when none exists**, and empty (comments only: every value stays the binary's default); an existing one is never overwritten |
@@ -60,6 +68,18 @@ every side effect: `sar` and `atop` on `PATH`, `systemctl is-active` for both un
 that fails exits non-zero with `FAILED at step "<step>"` and what it found. It never calls `sudo`, never touches
 `.wslconfig`, `wsl-pro.service`, the clock services, snapd or any worktree, and never evaluates what it downloads.
 `doctor` reports the events follower as a problem while Docker cannot be reached, so install with Docker running.
+
+**What the unit restricts — and the two places it could bite.** `wsl-care.service` is deliberately NOT sandboxed
+(every `Protect*` / `Private*` directive would break a named cleanup — the unit file lists which). It sets two
+limits, both unobserved until the first live install (`POST_DEPLOY.md` #11 checks them there):
+
+- `MemoryMax=1G` covers the run AND every child it starts (`npm cache clean`, `dotnet nuget locals`, `pip`/`uv`/`pnpm`,
+  the Docker CLI, the daily folder walk). If the journal shows a child OOM-killed, raise it in a drop-in
+  (`systemctl edit wsl-care.service`).
+- `NoNewPrivileges=yes` also blocks the AppArmor profile change a **snap** application makes as it starts. A Docker
+  installed as a snap (`/snap/bin/docker`) would then fail under the timer — every Docker figure unavailable, A4–A7
+  refused — while working from a terminal. Docker Desktop's CLI and apt's `docker-ce` are not snaps. If yours is,
+  either install Docker from apt, or override `NoNewPrivileges=no` in a drop-in.
 
 **Uninstall:**
 
