@@ -1,0 +1,19 @@
+// The MACHINE layer of wsl-care's configuration: /etc/wsl-care/config.json (plan §6).
+//
+// install.sh writes this file only when none exists, and never overwrites it afterwards. It is
+// deliberately EMPTY: every value comes from the defaults built into the binary until you set one here.
+// A copy of the full defaults would freeze them at the installed version — a later release could not
+// change a default, and a key a later release renamed would make this layer invalid, which puts every
+// run in observe-only mode (no cleanups) until someone edits the file.
+//
+//   wsl-care config get            every key, its value, and the layer it came from
+//
+// Write a key here to set it for every user of this machine, for example:
+//
+//   { "dryRun": false, "volumes": { "anonymousMaxGb": 30 } }
+//
+// A user's own ~/.config/wsl-care/config.json (written by `wsl-care config set` and the VS Code
+// extension) overrides this file. Comments are allowed; an unknown key or an out-of-range value makes
+// the run observe-only and says so in `wsl-care doctor`.
+{
+}

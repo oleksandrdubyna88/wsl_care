@@ -14,7 +14,8 @@
 > A12, A14, A17 (one preview computation shared with `preview --all`, measured freed bytes, a pid-and-start signal seam, the
 > target user's home for every per-user path), and from E3.S3 A1, A2, A3, A15, A16, the timer's action pass inside `collect`
 > and the read-only `logs` / `runs` verbs — then hardened on 2026-10-03 by the epic's review round (section *E3 review
-> fixes* below). `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+> fixes* below) — and from E4.S1 the installer `install.sh` with the three systemd units and the machine configuration
+> layer it installs (section *The installer and the units*). `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
 > `events follow`, `act`, `logs` and `runs`, and refuses everything else; there is no extension yet. This file describes
 > what exists and is rewritten as each part lands.
 
@@ -64,6 +65,10 @@
     verb of `CommandLine.Commands` has no row in [module_tests.md](module_tests.md).
   - `tests/WslCare.FakeTool` — the fake tool (`wsl-care-fake-tool`), one console program the harness
     installs under each tool's name; it records argv and answers from fixtures. Ships in no binary.
+- **`install.sh`** (E4.S1) — the installer and uninstaller a person pipes into `sudo sh`; with
+  `src_daemon/systemd/` (`wsl-care.service`, `wsl-care.timer`, `wsl-care-events.service`) and
+  `src_daemon/config/machine.json` (the empty machine layer) — what a release archive carries (section *The installer
+  and the units*).
 - **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `family-checks.yml`, `pr-title.yml`,
   `dependabot.yml` (below).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
@@ -697,7 +702,7 @@ sequenceDiagram
             E->>R: read only: a live run → busy 75, a stale heartbeat → wedged 76
         else held
             E->>R: dead or mismatched pid → interrupted history line, then removed
-            E->>R: live → busy 75, stale on a live pid or an uninspectable pid → wedged 76; a file unreadable after 3 retries → 79 (nothing killed)
+            E->>R: live → busy 75, stale on a live pid or an uninspectable pid → wedged 76, a file unreadable after 3 retries → 79 (nothing killed)
             E->>H: RunReconcile (a detail without a line → interrupted)
             E->>E: target user once per run, dry-run decision (timer only)
             E->>R: written: run id, actions, pid, process start, heartbeat
@@ -927,13 +932,13 @@ sequenceDiagram
     A->>X: AsRunner(): version, system df, df -v, volume ls dangling, inspect (declared or shared reads only)
     X->>D: read verbs
     A->>A: CleanupPreviews.A4Row + CleanupTargets.AnonymousVolumes (anonymous label AND 64-hex, keep label, first seen >= limit)
-    A->>A: a button's shown list (--volume / --only): kept only if still a candidate; none given on a button = refused
+    A->>A: a button's shown list (--volume / --only): kept only if still a candidate, none given on a button = refused
     E->>E: gates: refusal (Docker < 23 / unreadable), trigger (timer), idle, dry run
     E->>A: RunAsync(preview)
     loop 100 names per command
         A->>X: docker volume rm <64-hex>... (no -f)
         X->>D: argv judged by the never-list, then the template
-        D-->>A: names on stdout = removed; "no such volume" = already gone; "in use" = kept by Docker; else not counted, failure
+        D-->>A: names on stdout = removed, "no such volume" = already gone, "in use" = kept by Docker, else not counted, failure
     end
     A->>D: docker system df (the cross-check), docker volume ls dangling + system df -v (labels)
     A->>V: first sightings recorded (plan 15b #3)
@@ -1101,12 +1106,12 @@ sequenceDiagram
     participant H as runs/ and history.jsonl
     C->>C: may this process write the state? no → measure, print, write nothing (no pass)
     C->>K: RunLock.TryTake — held by another run → exit 75, nothing measured
-    C->>R: RunningSweep (every full run): dead → interrupted line + removed; live / wedged / unreadable → left, noted
+    C->>R: RunningSweep (every full run): dead → interrupted line + removed, live / wedged / unreadable → left, noted
     C->>R: its OWN running.json (action collect), heartbeat every 5 s while it measures
     C->>H: housekeeping: reconcile, retention, container-start retention
     C->>M: measure: probe, health, folder walk (daily), Docker + rows, docker stats, starts, thresholds
     C->>E: the pass, run id = the full run's
-    E->>R: sweep: this run's own file passes; dead → interrupted line + removed; live / wedged / unreadable → NO pass
+    E->>R: sweep: this run's own file passes, dead → interrupted line + removed, live / wedged / unreadable → NO pass
     E->>E: target user, dry-run decision (the 7-day week starts at the first pass)
     E->>R: written, heartbeat every 5 s
     loop every action, in ActionId.ExecutionOrder
@@ -1190,6 +1195,99 @@ was first seen failing for the real symptom ([module_tests.md](module_tests.md) 
 | gate #9 | A11's suspects share one grace | `PidfdProcessSignals.TerminateAllAsync` |
 | gate #10 | `logs` totals from history lines alone; details only when asked, bounded | `RunLogs`, `logs --detail` |
 | gate #11 | `collect` holds its own `running.json` | `CollectRun` |
+
+## The installer and the units (E4.S1)
+
+`install.sh` (repository root, POSIX `sh`, `set -eu`, no `eval`, shellcheck-clean) is the install trust boundary:
+`curl … | sudo sh` runs it as root on the owner's distro. It installs what a release archive carries —
+`wsl-care-$VERSION-$RID.tar.gz` holding `wsl-care-$VERSION-$RID/` with `wsl-care`, `systemd/` (the three units of
+`src_daemon/systemd/`) and `config/machine.json` (`src_daemon/config/machine.json`) — the layout E4.S2's release job
+packs (plan §15e #1).
+
+```mermaid
+flowchart TD
+    args["arguments<br/>--version · --skip-attestation · --set-default-user · --dry-run · --uninstall [--purge]<br/>each value checked against a whole-string pattern"]
+    pre["preflight — nothing written yet<br/>Linux · root (or --dry-run) · systemd booted (/run/systemd/system)<br/>arch → linux-x64 / linux-arm64 · tools · gh (unless --skip-attestation)<br/>/usr/local/bin/wsl-care absent or ours · wsl.conf decision"]
+    rel["release: --version, or the newest daemon-v* of the releases API<br/>(never releases/latest — the extension's)"]
+    dl["download archive + .sha256 into a mktemp folder (trap removes it)<br/>curl https-only, redirects too, --max-time"]
+    sum{"sha256 of the archive<br/>= the .sha256?"}
+    att{"gh attestation verify<br/>--repo · --signer-workflow release.yml<br/>(as SUDO_USER through runuser when set)"}
+    skip["--skip-attestation:<br/>ATTESTATION NOT VERIFIED, on stderr"]
+    unp{"members: regular files and folders,<br/>all under wsl-care-V-RID/, no '..', no link"}
+    files["/opt/wsl-care/bin/wsl-care 0755 · link /usr/local/bin/wsl-care<br/>3 units → /etc/systemd/system 0644<br/>/etc/wsl-care/config.json ONLY if absent<br/>/var/lib/wsl-care · /var/log/wsl-care 0755"]
+    conf["/etc/wsl.conf: [user] default= ONLY with the flag and only when none is set<br/>otherwise advice, nothing written"]
+    pkgs["sysstat + atop via apt when missing<br/>debconf sysstat/enable=true; dpkg-reconfigure when still off"]
+    units["systemctl daemon-reload · try-restart follower (upgrade)<br/>enable --now wsl-care.timer wsl-care-events.service<br/>enable --now sysstat.service atop.service"]
+    first["/opt/wsl-care/bin/wsl-care collect<br/>(one full run: records, never acts)"]
+    ver["verify: sar · atop on PATH → is-active timer · events<br/>→ doctor --json healthy (bounded wait)"]
+    fail["exit 1: FAILED at step #quot;…#quot;<br/>+ how to re-run or --uninstall once something was written"]
+    ok["summary"]
+
+    args --> pre --> rel --> dl --> sum
+    sum -- no --> fail
+    sum -- yes --> att
+    sum -- "yes, --skip-attestation" --> skip --> unp
+    att -- refused --> fail
+    att -- verified --> unp
+    unp -- no --> fail
+    unp -- yes --> files --> conf --> pkgs --> units --> first --> ver
+    ver -- "a check fails" --> fail
+    ver -- all hold --> ok
+```
+
+**What each check proves.** The `.sha256` is integrity only — whoever can replace the archive can replace its checksum
+beside it. Authenticity is the build-provenance attestation, verified with `--repo oleksandrdubyna88/wsl_care` AND
+`--signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release.yml` (stricter than plan §15 #12's `--repo`
+alone: an attestation made by any other workflow of the repository is refused). `gh` needs a login for this; under
+`sudo` the installer runs it as `SUDO_USER` through `runuser`, after making its temporary folder readable — the folder
+stays root's, so the user cannot change the archive between the check and the install. No `gh` stops the run in
+preflight, before the download (plan §15e #4); `--skip-attestation` proceeds with a banner on stderr and the checksum
+still applies.
+
+**Every step that writes goes through `run`**, which under `--dry-run` only prints `would run: …`; the dry run still
+downloads and verifies into its temporary folder, needs no root, and changes nothing else. A failed step exits 1 naming
+it (`preflight`, `resolve-release`, `download`, `checksum`, `attestation`, `unpack`, `install-binary`, `install-units`,
+`machine-config`, `wsl-conf`, `packages`, `enable-units`, `first-run`, `verify: …`); a usage refusal exits 2.
+`apt-get install` has no kill ceiling on purpose (a dpkg killed mid-configure breaks the package database) — its waits
+are bounded by `DPkg::Lock::Timeout=300`; every other wait has one (`curl --max-time`, `timeout` around `gh`, `apt-get
+update`, `collect` and `doctor`).
+
+**Uninstall** stops and disables the timer and the follower, stops a running full run, removes the three units, the
+binary, the link (only when it is the installer's) and the emptied `/opt/wsl-care`, and verifies the timer inactive and
+the files gone. It keeps `/var/lib/wsl-care`, `/var/log/wsl-care` and `/etc/wsl-care`; `--purge` names and removes
+exactly those and `/run/wsl-care.lock`. It never removes sysstat, atop, `/etc/wsl.conf` or a user's own layer.
+
+**The units** (`src_daemon/systemd/`, all root):
+
+| Unit | Shape | Why |
+|---|---|---|
+| `wsl-care.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care collect --timer`, `Nice=19`, `IOSchedulingClass=idle`, `MemoryMax=256M`, `TimeoutStartSec=10min`, `SuccessExitStatus=75`, `NoNewPrivileges=yes`; no `[Install]` | `--timer` is the only thing that makes a run the timer (§15d CI). 75 is `ExitCode.Busy`: a second run meeting the lock is designed, not a failed unit (the health collector counts failed units) |
+| `wsl-care.timer` | `OnCalendar=*-*-* 00/4:00:00`, `Persistent=true`, `RandomizedDelaySec=5min`, `AccuracySec=1min` | Persistent= acts on calendar timers only; the stored last trigger makes the first boot of the day run ONCE for the night's missed slots — the case §8's monotonic timer was chosen for |
+| `wsl-care-events.service` | `Type=simple`, `ExecStart=/opt/wsl-care/bin/wsl-care events follow`, `Restart=always`, `RestartSec=30`, `NoNewPrivileges=yes`, `WantedBy=multi-user.target` | the follower waits for Docker in-process (§15b #8); the restart is the outer net |
+
+**Hardening, decided per action.** Deliberately NOT set, because each breaks a named action: `ProtectHome` (A8, A12,
+A14, A17 clean caches under the target user's home), `ProtectSystem=strict` (state, A9's `/var/cache/apt`, A10's
+journal), `ProtectKernelTunables` (A1, A2 write `/proc/sys/vm`), `ProtectClock` (A16's `hwclock -s`), `PrivateDevices`
+(A15's `fstrim`), `ProtectProc` / `PrivateUsers` / `PrivateTmp` (A11 and the collectors read every user's processes and
+signal them by pidfd), a `CapabilityBoundingSet` (the set the actions need is nearly all of root's). Set: only what no
+action relies on — `NoNewPrivileges=yes` (the run already is root; `runuser` only drops privilege; `sudo` is on the
+never-list) and §8's resource limits. None of it has been OBSERVED on a live systemd yet (E4's live install): it is a
+request to systemd until then, and the unit files say so. `ShippedFilesTests` keeps the breaking directives out; CI's
+`systemd-analyze verify` step reads the units with systemd's own parser.
+
+**The machine layer is deliberately empty** (`src_daemon/config/machine.json`: comments and `{}`), not a copy of the
+embedded defaults: a copy would freeze every default at the installed version, show every key as `(machine)` in `config
+get`, and — the moment a later release renames a key — make the layer invalid and every run observe-only. Its comment
+documents an example that `ShippedFilesTests` runs through the real loader.
+
+**The test harness** is `InstallWorld` / `InstallFlows` in `WslCare.Scenarios` (C#, the product's language, no new
+dependency): the real script under `/bin/sh` over a temporary prefix `WSL_CARE_INSTALL_ROOT` (every path the script
+reads or writes as a file sits under it), `TMPDIR` the world's own, a `PATH` of exactly two folders — the fake tool under
+the names of everything that changes the machine or reaches the network (curl, gh, systemctl, apt-get, debconf,
+runuser, sudo, plus `id` / `uname` so a test can be root or arm64) and links to an allowlist of real text and file
+tools. The fake gained one answer option for it, `OutputFlag` (write the fixture to the file named after `--output`).
+The released binary is a stub that logs the path it was started as and hands its argv to a fake `wsl-care`, so the
+absolute-path rule is observed, not assumed. [module_tests.md](module_tests.md) lists every flow and its red run.
 
 ## Fail-closed resolution and the atomic write
 
@@ -1275,12 +1373,18 @@ flowchart LR
 
     subgraph ci[".github/workflows"]
         ciD["ci-daemon.yml<br/>linux-x64 · linux-arm64 · win-x64"]
-        ciW["ci-workflows.yml<br/>actionlint + shellcheck"]
+        ciW["ci-workflows.yml<br/>actionlint + shellcheck · shellcheck install.sh"]
         ciF["family-checks.yml<br/>plans · pin · adapter · build flags"]
         prT["pr-title.yml"]
     end
 
     conv[".agents/conventions<br/>submodule, tools/*.mjs"]
+
+    subgraph ship["what a release carries besides the binary (E4.S1)"]
+        inst["install.sh<br/>POSIX sh"]
+        unitsF["src_daemon/systemd/<br/>wsl-care.service · .timer · wsl-care-events.service"]
+        machine["src_daemon/config/machine.json<br/>the empty machine layer"]
+    end
 
     props --> dprops
     ver --> dprops
@@ -1307,6 +1411,11 @@ flowchart LR
     ciD -->|format · build · run 3 test exes| slnx
     ciD -->|"publish -r RID, smoke --help --version, config round trip, status --json"| cli
     ciF -->|node| conv
+    inst -->|installs| unitsF
+    inst -->|"installs when absent"| machine
+    scn -->|"InstallFlows: runs under /bin/sh over a prefix"| inst
+    ciW -->|shellcheck| inst
+    ciD -->|"systemd-analyze verify"| unitsF
 ```
 
 ## The seams inside the binary
@@ -1418,7 +1527,9 @@ On every push to `main`, every pull request to `main`, and by hand; unconditiona
 `uses:` pinned by SHA. Matrix `ubuntu-latest` (`linux-x64`), `ubuntu-24.04-arm` (`linux-arm64`) and
 `windows-latest` (`win-x64`) — every shipped binary-and-platform pair, per the family platform rule,
 mapped in the workflow header — each: restore → `dotnet format --verify-no-changes` → Release build →
-the three test executables (Core, CLI, Scenarios) → Native AOT `dotnet publish -r <rid>` → the
+the three test executables (Core, CLI, Scenarios — since E4.S1 the Scenarios run `install.sh` end to end on the two
+Linux legs) → on Linux, `systemd-analyze verify` of the three units, failing on ANY output because it exits 0 on an
+unknown key → Native AOT `dotnet publish -r <rid>` → the
 published binary must list `--help`/`--version` and print the version in `src_daemon/version.txt` →
 the configuration round trip under a temporary `WSL_CARE_ROOT` (set, read back from the user layer,
 a refused set exits 2 with one `wsl-care:` line, the value still holds) → `status --json` under a sandbox root (on Linux holding the captured procfs tree, whose `MemTotal` must come back; on Windows the host side) → the full run: `collect --json` must record (one history line naming a run detail under `runs/`), `status --json` must name that run, `doctor --json` must answer → `act <every action --help names> --preview --json` under a sandbox root with root CLAIMED there (E3.S2: preview only, never destructive — exit 0, `previewed`, every id answered, no state written; the Windows binary exits 2 naming the side). Every MSBuild command carries
@@ -1434,7 +1545,8 @@ tests. Mirrors the credential-store repository's `docs · plans` workflow.
 ### `ci · workflows`, `pr · title`, Dependabot
 
 `ci-workflows.yml` runs a version- and checksum-pinned actionlint over every workflow after asserting
-shellcheck is on `PATH` (without it actionlint silently skips the `run:` blocks). `pr-title.yml` requires
+shellcheck is on `PATH` (without it actionlint silently skips the `run:` blocks), then shellcheck v0.11.0 — the image
+pinned by digest — over `install.sh` (E4.S1). `pr-title.yml` requires
 a conventional-commit pull request title. `dependabot.yml` watches NuGet and GitHub Actions weekly,
 FluentAssertions held below 8.x.
 
@@ -1445,6 +1557,7 @@ FluentAssertions held below 8.x.
 | daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
+| installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is E4's done-line; the release that packs them is E4.S2 |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | planned (E5) |
 
 ## Cross-repository
@@ -1452,4 +1565,4 @@ FluentAssertions held below 8.x.
 | Repository | Relationship |
 |---|---|
 | `dew_flow_vscode_kit` | the extension's help page and display controls come from its npm package |
-| `dew_flow_creds_for_devs` | the model for this repository's build files, CI/CD, and the logging sinks (`AnsiConsoleSink`, `DailyRunFileSink`, `LogRetention` are ports) |
+| `dew_flow_creds_for_devs` | the model for this repository's build files, CI/CD, the logging sinks (`AnsiConsoleSink`, `DailyRunFileSink`, `LogRetention` are ports) and `install.sh` (its structure: POSIX sh, the newest tag of ONE component through the releases API, the `.sha256` check, a trap-cleaned temporary folder — `dew_flow_creds_for_devs · install.sh`; wsl_care's REQUIRES the `.sha256` where the model warns without one, adds the attestation, and never calls sudo) |

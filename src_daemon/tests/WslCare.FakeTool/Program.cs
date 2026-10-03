@@ -33,6 +33,11 @@ internal static class Program
             Thread.Sleep(answer.DelayMilliseconds);
         }
 
+        if (answer.OutputFlag.Length > 0)
+        {
+            return WriteToOutputArgument(tool, call, answer);
+        }
+
         if (answer.StdoutFile.Length > 0)
         {
             // The fixture's bytes, unchanged: no re-encoding, no added newline.
@@ -50,6 +55,29 @@ internal static class Program
             // A live stream nobody ended: the output is out, the process stays until killed or the time passes.
             Console.Out.Flush();
             Thread.Sleep(answer.HangAfterMilliseconds);
+        }
+
+        return answer.ExitCode;
+    }
+
+    /// <summary>The fixture's bytes, unchanged, to the file the call names after <see cref="FakeAnswer.OutputFlag"/>.</summary>
+    private static int WriteToOutputArgument(string tool, FakeCall call, FakeAnswer answer)
+    {
+        var at = call.Argv.ToList().IndexOf(answer.OutputFlag);
+        if (at < 0 || at + 1 >= call.Argv.Count)
+        {
+            Console.Error.WriteLine($"fake {tool}: the answer writes to the argument after {answer.OutputFlag}, and the call has none: {call.Display}");
+            return FakeToolProtocol.Unscripted;
+        }
+
+        if (answer.StdoutFile.Length > 0)
+        {
+            File.WriteAllBytes(call.Argv[at + 1], File.ReadAllBytes(answer.StdoutFile));
+        }
+
+        if (answer.Stderr.Length > 0)
+        {
+            Console.Error.Write(answer.Stderr);
         }
 
         return answer.ExitCode;

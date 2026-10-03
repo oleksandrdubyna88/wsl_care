@@ -12,7 +12,7 @@
 |---|---|---|
 | Unit, core | `src_daemon/tests/WslCare.Core.Tests` | the seams, the configuration system, the records, the architecture rule — in-process |
 | Unit + process, CLI | `src_daemon/tests/WslCare.Cli.Tests` | parsing, the program in-process with captured streams, logging, and the built binary as a child process (`BuiltBinaryTests`) |
-| **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` / `timedatectl` / `snap` alone on its `PATH`; the derived verb register |
+| **Scenario** | `src_daemon/tests/WslCare.Scenarios` | the BUILT `wsl-care` driven the way a user and the extension drive it, over a temporary home, with fake `docker` / `systemctl` / `journalctl` / `powershell` / `timedatectl` / `snap` alone on its `PATH`; the derived verb register; since E4.S1 the real `install.sh` under `/bin/sh` over a temporary prefix (§ *The installer harness*) and the shipped units and machine layer read by the product's own parser and loader |
 | **Live contract** | `src_daemon/tests/WslCare.LiveContract` | the REAL `docker` / `systemctl` / `journalctl` (since E2.S3 also `timedatectl`, `snap`, `powershell.exe` through interop, and the event stream) of the owner's machine through the product's own `ProcessCommandRunner` (30 s ceiling, tree kill), parsed by the product's parsers (plan §15a C2, §15b #2/#6) — NOT one of the CI test steps; § *The live contract* below |
 | AOT smoke | `.github/workflows/ci-daemon.yml` | the Native AOT binary of each RID answers `--help` / `--version`, performs the configuration round trip, answers `status --json` (on Linux over the captured procfs tree, reporting its `MemTotal`), and records a full run (`collect --json` → one history line naming a run detail, `status --json` naming that run, `doctor --json`), and since E3.S2 previews EVERY action (`act <ids --help names> --preview --json` under a sandbox with root claimed: exit 0 and every id answered on Linux, exit 2 on Windows, no state written — never a destructive run) |
 
@@ -558,6 +558,73 @@ Teeth, observed by breaking the code and watching the named tests go red:
     three detail-reading `logs` tests ask for `detail: true`. The A5 fixture's keep-labelled volume carries the anonymous
     label too, as Docker writes it — a fixture with the keep label alone is now a NAMED volume.
 
+## The installer harness (`InstallWorld`, E4.S1)
+
+`install.sh` is a shell script, but its harness is C# in `WslCare.Scenarios` like every other flow (scenario rule point 2;
+no new dependency — bats was not taken). `InstallWorld` runs the REAL script with the real `/bin/sh` (dash on Ubuntu) and
+`InstallFlows` asserts what it did:
+
+| Part | What it is |
+|---|---|
+| `root/` | `WSL_CARE_INSTALL_ROOT`, the stand-in for `/`: every path the script reads or writes as a file sits under it. Seeded with `/run/systemd/system` (systemd booted), an `/etc/passwd` with `alice` and `zed`, and `/etc/default/sysstat` with `ENABLED="true"` |
+| `fakebin/` | the fake tool (`WslCare.FakeTool`) as `curl`, `gh`, `systemctl`, `apt-get`, `debconf-set-selections`, `dpkg-reconfigure`, `runuser`, `sudo`, `id`, `uname`, `sar`, `atop` — everything that changes the machine, reaches the network, or answers who and where the script runs (so a test can be root, or arm64, without being either). A test leaves one out to stand for a tool that is not installed |
+| `realbin/` | links to an ALLOWLIST of real text and file tools (`awk`, `cat`, `chmod`, `cut`, `grep`, `gzip`, `install`, `ln`, `ls`, `mkdir`, `mktemp`, `mv`, `readlink`, `rm`, `rmdir`, `sed`, `sha256sum`, `sleep`, `tar`, `timeout`, `tr`). `PATH` is exactly `fakebin:realbin`, so a script change that reaches for another tool fails here first |
+| `tmp/` | the script's `TMPDIR`; every flow asserts it is EMPTY afterwards (the trap removed the temporary folder on success, on failure and on refusal) |
+| the release | built per test with `System.Formats.Tar` from THIS repository's units and machine layer and served by the fake `curl` (a new answer option, `OutputFlag`: the fixture goes to the file after `--output`); its `.sha256` computed, or replaced by a test |
+| the binary | a two-line shell stub that appends the path it was started as to `stub-invocations.log` and hands its argv to a fake `wsl-care` — so the installer's use of the ABSOLUTE path is observed, and `collect` / `doctor --json` are scripted; `doctor --json` is serialised by the product's own `WslCareJsonContext` from a `DoctorReport`, never typed by hand |
+
+It runs as the test user, never root: a path that escaped the prefix would be refused by the operating system before it
+changed `/etc` or `/opt`. Linux only (POSIX sh, GNU coreutils and tar): the two Linux CI legs run it; the Windows leg
+skips each flow with that reason. On the owner's machine it ran in WSL `Ubuntu` from a copy of the worktree under
+`/tmp`, built there (`dotnet build wsl_care.slnx -c Release -m:4`, then the Scenarios executable with
+`--filter-class "*InstallFlows"`).
+
+**Red, per guarantee** (2026-10-03, in WSL `Ubuntu`). The flows passed at their first run, which proves nothing by
+itself (testing rule), so each guarantee was proved to have teeth by deleting the line its behaviour rests on in a copy
+of `install.sh` (a scratch script applied one `sed` per mutation, checked the file really changed, ran the one test,
+restored the file and compared it byte for byte) — 28 mutations, every one red for its own symptom:
+
+| Guarantee | The line removed | The red |
+|---|---|---|
+| a checksum mismatch aborts before anything is installed | the `expected = actual` comparison | `Expected result.Exit to be 1 because the install should fail … but found 0` |
+| a release without its `.sha256` is refused | `fail download` on the `.sha256` fetch | the run went on to `sed: can't read …/wsl-care-0.1.0-linux-x64.tar.gz.sha256`, not step `download` |
+| a refused attestation aborts | `fail attestation` | `… to be 1 … but found 0` |
+| no `gh` stops before the download, with guidance | the `have gh` preflight | stderr was `timeout: failed to run command 'gh': No such file or directory` instead of the guidance |
+| `--skip-attestation` says so loudly | the banner line | stderr held only the frame of `=` lines |
+| an existing machine layer is kept | the exists-check | `… to be the same string because plan §15e #1: an existing machine layer is never overwritten, but they differ at index 0` |
+| an inactive unit fails naming the step | `systemctl is-active … \|\| fail` | `… to be 1 … but found 0` |
+| an unhealthy doctor fails naming the step | the `healthy` test | `… to be 1 … but found 0` |
+| uninstall keeps history, logs, machine layer | `--purge`'s condition (always purge) | `DirectoryNotFoundException: … root/var/lib/wsl-care/history.jsonl` |
+| `--purge` removes exactly those | the `rm -rf` of the three folders | `Expected Directory.Exists(world.At(gone)) to be False because --purge removes /var/lib/wsl-care, but found True` |
+| `--dry-run` changes nothing | `return 0` in `run` | the prefix tree gained `opt/wsl-care/bin/wsl-care`, the units, the link, … (`Expected world.Tree() to be a collection with 7 item(s)`) |
+| an existing `[user] default=` is never rewritten | the keep decision | `… to be 0 because the install should succeed … but found 1` (the preflight refused over the `[user]` section) |
+| wsl.conf is written only with the flag | the `advise` branch (made to write) | `… to be the same string because never written without --set-default-user, but they differ on line 3` |
+| an unknown user refuses before anything | the `user_exists` check | `… to be 1 … but found 0` |
+| installer and daemon read the same default user | the `tolower` of the key in the awk reader | `Expected string to be "zed" … because both read the same default user from [User]\n  Default = "zed"  \n, but "" has a length of 0` |
+| a non-root run is refused, no sudo | the root check | `… to be 1 … but found 0` |
+| no systemd → refused with the setting named | the `/run/systemd/system` check | `… to be 1 … but found 0` |
+| an escaping archive member is refused | the member-name `case` | stderr was GNU tar's `Removing leading 'wsl-care-0.1.0-linux-x64/../'`, not the member check's reason |
+| a link member is refused | the `tar -tvzf` type check | `… to be 1 … but found 0` (installed WITH the link member) |
+| a malformed `--version` is refused (exit 2) | the version pattern check | `Expected value to be 2 because "0.1.0/../../x" is not a version, but found 1` |
+| the newest DAEMON release, never the extension's | `daemon-v` in the tag pattern | `… to be 0 … but found 1` (it downloaded `extension-v0.2.0`'s name) |
+| under sudo, gh runs as `SUDO_USER` | the `SUDO_USER` branch of the verifier | `Expected world.CallsOf("runuser") to contain a single item … but the collection is empty` |
+| an upgrade restarts the follower | the `UPGRADE` branch | `… to contain items {"daemon-reload", "try-restart wsl-care-events.service", …} in order, but "try-restart …" (index 1) did not appear` |
+| a foreign `/usr/local/bin/wsl-care` is refused | the link-ownership check | stderr was `ln: failed to create symbolic link …: File exists`, not the preflight's reason |
+| missing sysstat / atop are installed with apt | `have sar \|\| need=sysstat` | `… apt-get … to be equal to {"update -q", "install … sysstat atop"}, but {…, "install … atop"} differs at index 1` |
+| sysstat left switched off fails | the re-check after `dpkg-reconfigure` | `… to be 1 … but found 0` |
+| the link names the ABSOLUTE path | the link target (made prefixed) | `Expected string to be the same string because the link names the ABSOLUTE install path (plan §15e #3), but they differ at index 1` |
+| the installed binary records one full run | the `first_run` call | `… to be equal to {"collect", "doctor --json"} … but {"doctor --json"} contains 1 item(s) less` |
+
+**The shipped files** (`ShippedFilesTests`, every OS): each unit's `ExecStart` starts `/opt/wsl-care/bin/wsl-care` and
+its argv is parsed by the CLI's own `CommandLine.Parse` — the timer's service to `Request.Collect { Timer: true }`
+(§15d CI), the follower's to `Request.EventsFollow(Once: false)`; `SuccessExitStatus` equals `ExitCode.Busy`; the timer
+is `OnCalendar` every 4 h with `Persistent=true`; no unit sets a sandbox directive that breaks a named action (its
+companion: the same scan finds `NoNewPrivileges`); `install.sh`'s `UNITS` line equals the folder's files; the machine
+layer loads VALID through the real `ConfigLoader` and sets nothing, and the example in its own comment loads valid as
+the machine layer (the one positive beside the negatives). `systemd-analyze verify` (CI, Linux legs) reads the units with
+systemd's parser and fails on any output — it exits 0 on an unknown key, observed in `ubuntu:24.04` (systemd 255) with
+a planted `Persistant=`.
+
 ## Flow catalogue
 
 One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` `` exactly as
@@ -612,9 +679,37 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care runs show <runId>` / `runs log <runId>` | not covered | not built (plan §6 names them; E6's Logs page decides whether `logs`' cleanups suffice) |
 | `wsl-care agents list` / `agents probe <path>` | not covered | not built yet (E7) |
 | `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |
+| `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, the three units byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
+| `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |
+| `install.sh --version <x.y.z>`: no releases-list call; a malformed version (`../`, `v`-prefix, `;`, a newline) exit 2 before anything runs | covered (Linux legs) | `InstallFlows.An_explicit_version_skips_the_releases_list_and_a_malformed_one_is_refused_before_anything_runs` |
+| `install.sh`: checksum mismatch → step `checksum`, no gh call, nothing installed; no `.sha256` → step `download`, nothing installed | covered (Linux legs) | `InstallFlows.A_checksum_mismatch_aborts_before_the_attestation_and_before_anything_is_installed`, `InstallFlows.A_release_without_its_sha256_is_refused_never_installed_unchecked` |
+| `install.sh`: a refused attestation → step `attestation`, nothing installed; under `SUDO_USER` the attestation runs as that user through `runuser` | covered (Linux legs) | `InstallFlows.A_refused_attestation_aborts_before_anything_is_installed`, `InstallFlows.Under_sudo_the_attestation_is_verified_as_the_invoking_user_through_runuser` |
+| `install.sh` without `gh`: step `preflight` BEFORE any download, the guidance (install gh, `gh auth login`, `sh -s -- --skip-attestation`), nothing installed | covered (Linux legs) | `InstallFlows.Without_gh_the_installer_stops_before_downloading_anything_and_says_how_to_proceed` |
+| `install.sh --skip-attestation`: installs without gh, the banner on stderr, a bad checksum still refused | covered (Linux legs) | `InstallFlows.Skip_attestation_installs_without_gh_says_so_loudly_and_still_refuses_a_bad_checksum` |
+| `install.sh`: an existing `/etc/wsl-care/config.json` kept byte for byte | covered (Linux legs) | `InstallFlows.An_existing_machine_configuration_is_kept_byte_for_byte` |
+| `install.sh`: a unit not active → step `verify: wsl-care-events.service active`; an unhealthy `doctor --json` → step `verify: doctor healthy` with doctor's checks on stderr; sar missing after apt → step `verify: sysstat (sar on PATH)`; sysstat still off after `dpkg-reconfigure` → step `packages` | covered (Linux legs) | `InstallFlows.A_unit_that_is_not_active_after_enabling_fails_the_install_naming_that_step`, `…An_unhealthy_doctor_fails…`, `…Missing_sysstat_and_atop_are_installed_with_apt…`, `…Sysstat_switched_off_is_switched_on_through_debconf…` |
+| `install.sh --uninstall`: units, binary, link and `/opt/wsl-care` gone, history / logs / machine layer kept and named; `--purge` removes exactly the three folders and the lock, names each, touches nothing else | covered (Linux legs) | `InstallFlows.Uninstall_removes_the_units_binary_and_link_and_keeps_history_logs_and_machine_config`, `InstallFlows.Uninstall_with_purge_removes_exactly_the_state_logs_machine_config_and_lock_and_names_them` |
+| `install.sh --dry-run` (install and uninstall): the prefix tree identical, no unit / package / binary call, every step printed, no root needed | covered (Linux legs) | `InstallFlows.Dry_run_changes_nothing_needs_no_root_and_prints_every_step` |
+| `install.sh --set-default-user <name>`: without the flag nothing written (advice printed); with it and no default, `[user] default=` appended and read back by the daemon's `TargetUserDiscovery.DefaultUser`; an existing default never rewritten; an unknown user or a `[user]` section without `default=` refused before anything; the installer's reader and the daemon's agree on ten wsl.conf shapes | covered (Linux legs) | `InstallFlows.Without_the_flag_wsl_conf_is_never_written…`, `…With_the_flag_and_no_default_user…`, `…With_the_flag_an_existing_default_user_is_never_rewritten`, `…The_flag_for_an_unknown_user…`, `…The_installer_and_the_daemon_read_the_same_default_user_from_every_wsl_conf_shape` |
+| `install.sh` preflight refusals: not root (the `sudo sh -s --` line, sudo never called), no systemd, an unknown architecture, a foreign `/usr/local/bin/wsl-care`, a hostile archive member (`..`, outside the folder, a link — each riding a complete release); arm64 installs the `linux-arm64` asset; an upgrade restarts the follower | covered (Linux legs) | `InstallFlows.A_non_root_run_is_refused…`, `…Without_systemd_running…`, `…On_arm64…`, `…A_wsl_care_on_the_link_path…`, `…An_archive_member_that_leaves_its_folder_or_is_a_link…`, `…An_upgrade_restarts_the_running_follower…` |
+| the shipped units and machine layer: `ExecStart` argv parsed by the CLI (`collect --timer`, `events follow`), `SuccessExitStatus` = `ExitCode.Busy`, the timer's calendar, no breaking sandbox directive, `install.sh`'s unit list = the folder, the machine layer valid and empty | covered (every OS) | `ShippedFilesTests`; systemd's own parser: CI `systemd-analyze verify` (Linux legs) |
+| `install.sh`'s pinned signer workflow is this repository's attesting `release.yml` | not covered | skipped with its reason until E4.S2 adds `release.yml` (`InstallFlows.The_signer_workflow_the_installer_pins_is_this_repositorys_release_workflow`) |
+| `install.sh` against a real release, a real `gh attestation verify`, real systemd and apt | not covered | the first live install on the owner's machine is E4's done-line, after E4.S2 cuts `daemon-v0.1.0` |
 | the extension: status bar, panel, buttons, logs page, settings sync, help | not covered | the extension is not built yet (E5–E8) |
 
 ## What it does not prove
+
+- **The installer is proved over a prefix and fakes, never against this machine.** systemd, apt, gh, curl and the
+  release are fakes; "root" is a fake `id`. What the real tools DO with the argv the script sends — `gh attestation
+  verify`'s judgement, `systemctl enable --now`, apt's install, sysstat's postinst honouring the debconf switch,
+  curl's `--proto =https` — is theirs, and is first observed at the live install (E4's done-line). The flows assert the
+  argv sent and the files written, and say so. The real `/bin/sh`, `tar`, `sha256sum`, `install`, `ln`, `awk` and
+  `sed` ARE exercised. Whether `gh attestation verify` needs a login for a public repository was read from its
+  behaviour as documented (online verification queries the API), not observed here.
+- **The units' hardening is unobserved.** `NoNewPrivileges=yes` and the resource limits are requests to systemd;
+  `systemd-analyze verify` proves the files parse, not that a live run of every action succeeds under them.
+- **The doctor wait is proved at 0 seconds** (`WSL_CARE_INSTALL_DOCTOR_SECONDS=0`): one attempt. The 2-minute wait for
+  the follower's first marker on a live machine is not timed.
 
 - **A5's "goes with the container" is Docker's decision, not ours.** The preview counts a mounted volume as going with
   `docker rm -v` when `system df -v` labels it anonymous; Docker itself removes a volume whose MOUNT named no source
@@ -740,6 +835,8 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 
 On every push to `main` and every pull request: `ci · daemon` (unconditional, no path filter) runs the
 three test executables and both AOT smoke steps on `ubuntu-latest`, `ubuntu-24.04-arm` and
-`windows-latest`; `ci · family checks` runs the shared plan, pin, adapter and build-flags checks. The
-live smoke on the owner's machine runs at every release (E4 onwards), and so does the live contract with
-`WSL_CARE_REQUIRE_LIVE=1` (§ *The live contract*).
+`windows-latest` (the installer flows on the two Linux legs, and `systemd-analyze verify` of the units there);
+`ci · workflows` runs actionlint and shellcheck of `install.sh`; `ci · family checks` runs the shared plan, pin, adapter
+and build-flags checks. The live smoke on the owner's machine runs at every release (E4 onwards) — `install.sh` for real
+and `POST_DEPLOY.md` against the installation — and so does the live contract with `WSL_CARE_REQUIRE_LIVE=1`
+(§ *The live contract*).
