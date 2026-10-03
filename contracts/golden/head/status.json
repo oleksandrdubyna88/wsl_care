@@ -1,0 +1,2195 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "sampledAt": "2000-01-01T00:00:00+00:00",
+  "sampleMilliseconds": 0,
+  "observeOnly": false,
+  "configError": [],
+  "vm": {
+    "available": true,
+    "memory": {
+      "available": true,
+      "total": {
+        "available": true,
+        "bytes": 48196374528
+      },
+      "memAvailable": {
+        "available": true,
+        "bytes": 32213291008
+      },
+      "availablePercent": {
+        "available": true,
+        "value": 66.8
+      },
+      "free": {
+        "available": true,
+        "bytes": 20572090368
+      },
+      "anonPages": {
+        "available": true,
+        "bytes": 12689281024
+      },
+      "inactiveAnon": {
+        "available": true,
+        "bytes": 12011315200
+      },
+      "shmem": {
+        "available": true,
+        "bytes": 249638912
+      },
+      "pageCache": {
+        "available": true,
+        "bytes": 10509950976
+      },
+      "swapTotal": {
+        "available": true,
+        "bytes": 12884901888
+      },
+      "swapUsed": {
+        "available": true,
+        "bytes": 0
+      },
+      "fragmentation": {
+        "available": true,
+        "zone": "Normal",
+        "blocksOrder4Plus": 4069,
+        "blocksOrder7Plus": 3933,
+        "bytesOrder4Plus": 16480206848,
+        "bytesOrder7Plus": 16466837504
+      },
+      "pressure": {
+        "memory": {
+          "available": true,
+          "some": {
+            "available": true,
+            "avg10": 0,
+            "avg60": 0,
+            "avg300": 0,
+            "totalMicroseconds": 0
+          },
+          "full": {
+            "available": true,
+            "avg10": 0,
+            "avg60": 0,
+            "avg300": 0,
+            "totalMicroseconds": 0
+          }
+        },
+        "io": {
+          "available": true,
+          "some": {
+            "available": true,
+            "avg10": 0.06,
+            "avg60": 1.69,
+            "avg300": 2.02,
+            "totalMicroseconds": 10310664
+          },
+          "full": {
+            "available": true,
+            "avg10": 0.06,
+            "avg60": 1.29,
+            "avg300": 1.58,
+            "totalMicroseconds": 8288681
+          }
+        },
+        "cpu": {
+          "available": true,
+          "some": {
+            "available": true,
+            "avg10": 0.1,
+            "avg60": 4.18,
+            "avg300": 2.74,
+            "totalMicroseconds": 12077848
+          },
+          "full": {
+            "available": true,
+            "avg10": 0,
+            "avg60": 0,
+            "avg300": 0,
+            "totalMicroseconds": 0
+          }
+        }
+      }
+    },
+    "processes": {
+      "available": true,
+      "count": 51,
+      "kernelThreads": 0,
+      "vanished": 0,
+      "containerProcesses": 0,
+      "heldBytesTotal": 9449013248,
+      "top": [
+        {
+          "pid": 5949,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 5431156736,
+          "rssShmemBytes": 0,
+          "heldBytes": 5431156736,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 148.05
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist/server.bundle.js --cancellationReceive=file:3faf",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 1169,
+          "ppid": 571,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 1345765376,
+          "rssShmemBytes": 0,
+          "heldBytes": 1345765376,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 132.92
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node --dns-result-order=ipv4first /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --typ",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 972,
+          "ppid": 571,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 538861568,
+          "rssShmemBytes": 0,
+          "heldBytes": 538861568,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 139.11
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=fileWatcher",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 6825,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "atlassian_cli_r",
+          "state": "S",
+          "rssAnonBytes": 283344896,
+          "rssShmemBytes": 0,
+          "heldBytes": 283344896,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 24.46
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/data/User/workspaceStorage/74e55d12aa25f727550896adc29ed54d/atlassian.atlascode/atlascode-rovodev-bin/202607.24.1/atlassian_cli_rovodev serve 40489 --xid rovodev-ide-vscode -",
+          "family": "ai-agents",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 571,
+          "ppid": 567,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 247001088,
+          "rssShmemBytes": 0,
+          "heldBytes": 247001088,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 12.38
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js --host=127.0.0.1 --port=0 --connec",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 7203,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "claude",
+          "state": "S",
+          "rssAnonBytes": 170545152,
+          "rssShmemBytes": 0,
+          "heldBytes": 170545152,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 11.58
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/extensions/anthropic.claude-code-2.1.287-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <reda",
+          "family": "ai-agents",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 8290,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "claude",
+          "state": "S",
+          "rssAnonBytes": 156176384,
+          "rssShmemBytes": 0,
+          "heldBytes": 156176384,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 6.88
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/extensions/anthropic.claude-code-2.1.287-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <reda",
+          "family": "ai-agents",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 6612,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "Microsoft.CodeA",
+          "state": "S",
+          "rssAnonBytes": 94179328,
+          "rssShmemBytes": 46051328,
+          "heldBytes": 140230656,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 34.03
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csharp-2.160.4-linux-x64/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information --sourceGeneratorExecutionPreference Balanced --devKit",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": false,
+          "underMnt": false
+        },
+        {
+          "pid": 5814,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "agy",
+          "state": "S",
+          "rssAnonBytes": 95440896,
+          "rssShmemBytes": 0,
+          "heldBytes": 95440896,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 2.04
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.gemini/bin/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=<redacted> --add-dir=/home/jinx/git/scoreMeter --add-dir=/home/jinx/git/knowledge_base --add-dir=/home/jinx/gi",
+          "family": "ai-agents",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 8486,
+          "ppid": 8176,
+          "user": "jinx",
+          "name": "Microsoft.Visua",
+          "state": "S",
+          "rssAnonBytes": 63029248,
+          "rssShmemBytes": 29319168,
+          "heldBytes": 92348416,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 12.76
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/servicehub"
+          },
+          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 1175,
+          "ppid": 571,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 91455488,
+          "rssShmemBytes": 0,
+          "heldBytes": 91455488,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 48.03
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=agentHost --logsPath /home/",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 7472,
+          "ppid": 7471,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 91402240,
+          "rssShmemBytes": 0,
+          "heldBytes": 91402240,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 2.74
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "node /home/jinx/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp",
+          "family": "node",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 8477,
+          "ppid": 8476,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 90427392,
+          "rssShmemBytes": 0,
+          "heldBytes": 90427392,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 1.15
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "node /home/jinx/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp",
+          "family": "node",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 8124,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "Microsoft.Visua",
+          "state": "S",
+          "rssAnonBytes": 44400640,
+          "rssShmemBytes": 33193984,
+          "heldBytes": 77594624,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 20.06
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64"
+          },
+          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-server.linux-x64/Microsoft.VisualStu",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 8592,
+          "ppid": 8176,
+          "user": "jinx",
+          "name": "Microsoft.Visua",
+          "state": "S",
+          "rssAnonBytes": 30674944,
+          "rssShmemBytes": 25972736,
+          "heldBytes": 56647680,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 7.85
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 7377,
+          "ppid": 7203,
+          "user": "jinx",
+          "name": "npm exec @playw",
+          "state": "S",
+          "rssAnonBytes": 51834880,
+          "rssShmemBytes": 0,
+          "heldBytes": 51834880,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 2.14
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "npm exec @playwright/mcp@latest                                           ",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 8415,
+          "ppid": 8290,
+          "user": "jinx",
+          "name": "npm exec @playw",
+          "state": "S",
+          "rssAnonBytes": 51515392,
+          "rssShmemBytes": 0,
+          "heldBytes": 51515392,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 1.27
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "npm exec @playwright/mcp@latest                                           ",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 8176,
+          "ppid": 8124,
+          "user": "jinx",
+          "name": "Microsoft.Visua",
+          "state": "S",
+          "rssAnonBytes": 28770304,
+          "rssShmemBytes": 20176896,
+          "heldBytes": 48947200,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 7.7
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/servicehub"
+          },
+          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-controller.linux-x64/Microsoft.Visua",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 4965,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 44126208,
+          "rssShmemBytes": 0,
+          "heldBytes": 44126208,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 1.51
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/extensions/redhat.vscode-yaml-1.24.0/dist/languageserver.js --node-ipc --clientProcessId=1169",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 860,
+          "ppid": 854,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 38989824,
+          "rssShmemBytes": 0,
+          "heldBytes": 38989824,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 6.64
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 8648,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 37322752,
+          "rssShmemBytes": 0,
+          "heldBytes": 37322752,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.3
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/extensions/github.vscode-github-actions-0.32.3/dist/server-node.js --node-ipc --clientProcessId=11",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 792,
+          "ppid": 782,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 34213888,
+          "rssShmemBytes": 0,
+          "heldBytes": 34213888,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 1.24
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 4137,
+          "ppid": 4121,
+          "user": "root",
+          "name": "docker-desktop-",
+          "state": "S",
+          "rssAnonBytes": 11612160,
+          "rssShmemBytes": 18964480,
+          "heldBytes": 30576640,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.34
+          },
+          "cwd": {
+            "available": false,
+            "reason": "/golden-root/proc/4137/cwd is not a link"
+          },
+          "commandLine": "/run/docker-desktop/docker-desktop-user-distro proxy --distro-name Ubuntu --docker-desktop-root /mnt/wsl/docker-desktop C:\\Program Files\\Docker\\Docker\\resources",
+          "family": "docker-desktop-proxy",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 7329,
+          "ppid": 7203,
+          "user": "jinx",
+          "name": "coai-mcp",
+          "state": "S",
+          "rssAnonBytes": 25583616,
+          "rssShmemBytes": 0,
+          "heldBytes": 25583616,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.45
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/data/User/globalStorage/remsoftdev.connect-other-ais/coai-mcp",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 8380,
+          "ppid": 8290,
+          "user": "jinx",
+          "name": "coai-mcp",
+          "state": "S",
+          "rssAnonBytes": 25571328,
+          "rssShmemBytes": 0,
+          "heldBytes": 25571328,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.25
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/data/User/globalStorage/remsoftdev.connect-other-ais/coai-mcp",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 6592,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 23351296,
+          "rssShmemBytes": 0,
+          "heldBytes": 23351296,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.53
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/extensions/json-language-features/server/dist/node/js",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 4999,
+          "ppid": 571,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 22306816,
+          "rssShmemBytes": 0,
+          "heldBytes": 22306816,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.77
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=ptyHost --logsPath /home/ji",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 304,
+          "ppid": 1,
+          "user": "root",
+          "name": "snapd",
+          "state": "S",
+          "rssAnonBytes": 19042304,
+          "rssShmemBytes": 0,
+          "heldBytes": 19042304,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 3.15
+          },
+          "cwd": {
+            "available": false,
+            "reason": "/golden-root/proc/304/cwd is not a link"
+          },
+          "commandLine": "/snap/snapd/current/usr/lib/snapd/snapd",
+          "family": "other",
+          "orphaned": true,
+          "hasTty": false,
+          "underMnt": false
+        },
+        {
+          "pid": 2369,
+          "ppid": 2232,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 17301504,
+          "rssShmemBytes": 0,
+          "heldBytes": 17301504,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 1.07
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-remote-containers/dist/vscode-remote-containers-server-0.469.0.js",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": false
+        },
+        {
+          "pid": 1568,
+          "ppid": 1175,
+          "user": "jinx",
+          "name": "copilot-runtime",
+          "state": "S",
+          "rssAnonBytes": 12931072,
+          "rssShmemBytes": 0,
+          "heldBytes": 12931072,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.86
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/copilot-runtime --headless --no-auto-update --log-level info --std",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        }
+      ],
+      "families": [
+        {
+          "name": "vscode-server",
+          "count": 22,
+          "heldBytes": 8352935936
+        },
+        {
+          "name": "ai-agents",
+          "count": 4,
+          "heldBytes": 705507328
+        },
+        {
+          "name": "node",
+          "count": 2,
+          "heldBytes": 181829632
+        },
+        {
+          "name": "other",
+          "count": 22,
+          "heldBytes": 178163712
+        },
+        {
+          "name": "docker-desktop-proxy",
+          "count": 1,
+          "heldBytes": 30576640
+        }
+      ],
+      "mntWalkers": [
+        {
+          "pid": 1169,
+          "ppid": 571,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 1345765376,
+          "rssShmemBytes": 0,
+          "heldBytes": 1345765376,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 132.92
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node --dns-result-order=ipv4first /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --typ",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 972,
+          "ppid": 571,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 538861568,
+          "rssShmemBytes": 0,
+          "heldBytes": 538861568,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 139.11
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=fileWatcher",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 571,
+          "ppid": 567,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 247001088,
+          "rssShmemBytes": 0,
+          "heldBytes": 247001088,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 12.38
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js --host=127.0.0.1 --port=0 --connec",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 1175,
+          "ppid": 571,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 91455488,
+          "rssShmemBytes": 0,
+          "heldBytes": 91455488,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 48.03
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=agentHost --logsPath /home/",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 860,
+          "ppid": 854,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 38989824,
+          "rssShmemBytes": 0,
+          "heldBytes": 38989824,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 6.64
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 792,
+          "ppid": 782,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 34213888,
+          "rssShmemBytes": 0,
+          "heldBytes": 34213888,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 1.24
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 4137,
+          "ppid": 4121,
+          "user": "root",
+          "name": "docker-desktop-",
+          "state": "S",
+          "rssAnonBytes": 11612160,
+          "rssShmemBytes": 18964480,
+          "heldBytes": 30576640,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.34
+          },
+          "cwd": {
+            "available": false,
+            "reason": "/golden-root/proc/4137/cwd is not a link"
+          },
+          "commandLine": "/run/docker-desktop/docker-desktop-user-distro proxy --distro-name Ubuntu --docker-desktop-root /mnt/wsl/docker-desktop C:\\Program Files\\Docker\\Docker\\resources",
+          "family": "docker-desktop-proxy",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 4999,
+          "ppid": 571,
+          "user": "jinx",
+          "name": "MainThread",
+          "state": "S",
+          "rssAnonBytes": 22306816,
+          "rssShmemBytes": 0,
+          "heldBytes": 22306816,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.77
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=ptyHost --logsPath /home/ji",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 1568,
+          "ppid": 1175,
+          "user": "jinx",
+          "name": "copilot-runtime",
+          "state": "S",
+          "rssAnonBytes": 12931072,
+          "rssShmemBytes": 0,
+          "heldBytes": 12931072,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.86
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/copilot-runtime --headless --no-auto-update --log-level info --std",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 9276,
+          "ppid": 9270,
+          "user": "jinx",
+          "name": "creds",
+          "state": "S",
+          "rssAnonBytes": 5033984,
+          "rssShmemBytes": 4526080,
+          "heldBytes": 9560064,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.67
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.local/share/creds-cli/creds relay",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 7741,
+          "ppid": 559,
+          "user": "jinx",
+          "name": "creds-mcp.exe",
+          "state": "S",
+          "rssAnonBytes": 126976,
+          "rssShmemBytes": 2084864,
+          "heldBytes": 2211840,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/init /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 8389,
+          "ppid": 8378,
+          "user": "jinx",
+          "name": "creds-mcp.exe",
+          "state": "S",
+          "rssAnonBytes": 126976,
+          "rssShmemBytes": 2084864,
+          "heldBytes": 2211840,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/init /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 5252,
+          "ppid": 559,
+          "user": "jinx",
+          "name": "creds-mcp.exe",
+          "state": "S",
+          "rssAnonBytes": 122880,
+          "rssShmemBytes": 2084864,
+          "heldBytes": 2207744,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.01
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/init /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 7334,
+          "ppid": 7327,
+          "user": "jinx",
+          "name": "creds-mcp.exe",
+          "state": "S",
+          "rssAnonBytes": 122880,
+          "rssShmemBytes": 2084864,
+          "heldBytes": 2207744,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.01
+          },
+          "cwd": {
+            "available": true,
+            "value": "/home/jinx/git/scoreMeter"
+          },
+          "commandLine": "/init /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 9344,
+          "ppid": 9276,
+          "user": "jinx",
+          "name": "creds.exe",
+          "state": "S",
+          "rssAnonBytes": 118784,
+          "rssShmemBytes": 2084864,
+          "heldBytes": 2203648,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.01
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/init /mnt/c/Users/strug/AppData/Roaming/Code/User/globalStorage/remsoftdev.creds-for-devs/bin/creds.exe /mnt/c/Users/strug/AppData/Roaming/Code/User/globalStorage/remsoftdev.creds-for-devs/bin/creds.",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 5171,
+          "ppid": 1169,
+          "user": "jinx",
+          "name": "pet",
+          "state": "S",
+          "rssAnonBytes": 1118208,
+          "rssShmemBytes": 0,
+          "heldBytes": 1118208,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 1.51
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "/home/jinx/.vscode-server/extensions/ms-python.vscode-python-envs-1.38.0-linux-x64/python-env-tools/bin/pet server",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 561,
+          "ppid": 560,
+          "user": "jinx",
+          "name": "sh",
+          "state": "S",
+          "rssAnonBytes": 126976,
+          "rssShmemBytes": 0,
+          "heldBytes": 126976,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "sh /mnt/c/Users/strug/.vscode/extensions/ms-vscode-remote.remote-wsl-0.104.3/scripts/wslServer.sh 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 -",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 11049,
+          "ppid": 11047,
+          "user": "jinx",
+          "name": "sh",
+          "state": "S",
+          "rssAnonBytes": 126976,
+          "rssShmemBytes": 0,
+          "heldBytes": 126976,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.13
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Temp/claude/d--rsd-ClaudeRag/50ac00d9-f505-4dc1-81bc-af9b9e359991/scratchpad"
+          },
+          "commandLine": "sh /mnt/c/Users/strug/AppData/Local/Temp/claude/d--rsd-ClaudeRag/50ac00d9-f505-4dc1-81bc-af9b9e359991/scratchpad/capture.sh",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 567,
+          "ppid": 561,
+          "user": "jinx",
+          "name": "sh",
+          "state": "S",
+          "rssAnonBytes": 110592,
+          "rssShmemBytes": 0,
+          "heldBytes": 110592,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "sh /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/code-server --host=127.0.0.1 --port=0 --connection-token=<redacted> --use-host-proxy --without-browser-env-var --disable-w",
+          "family": "vscode-server",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 560,
+          "ppid": 559,
+          "user": "jinx",
+          "name": "sh",
+          "state": "S",
+          "rssAnonBytes": 106496,
+          "rssShmemBytes": 0,
+          "heldBytes": 106496,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.01
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+          },
+          "commandLine": "sh -c \"$VSCODE_WSL_EXT_LOCATION/scripts/wslServer.sh\" 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-token=REDACTED --use-host-proxy ",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        },
+        {
+          "pid": 1252,
+          "ppid": 1251,
+          "user": "jinx",
+          "name": "sh",
+          "state": "S",
+          "rssAnonBytes": 106496,
+          "rssShmemBytes": 0,
+          "heldBytes": 106496,
+          "ageSeconds": {
+            "available": true,
+            "value": 0
+          },
+          "cpuSeconds": {
+            "available": true,
+            "value": 0.01
+          },
+          "cwd": {
+            "available": true,
+            "value": "/mnt/c/Users/strug/AppData/Local/Docker"
+          },
+          "commandLine": "sh",
+          "family": "other",
+          "orphaned": false,
+          "hasTty": true,
+          "underMnt": true
+        }
+      ]
+    },
+    "containers": {
+      "available": true,
+      "count": 10,
+      "memoryCurrentTotal": 4528447488,
+      "anonShmemTotal": 2905608192,
+      "items": [
+        {
+          "id": "247515d64498725223f87330637fabb21a922e72f89bcd95b237b3db87968c40",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 230957056
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 130416640
+          }
+        },
+        {
+          "id": "8e4a5ad93695eabae39cd2c1599859f6db859fbe03e78650efbf49e63a8ad798",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 206041088
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 112455680
+          }
+        },
+        {
+          "id": "96a3e74b001125e749e746b3282def4a17008754c6e2d47f7f578a6700475c1f",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 552321024
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 443863040
+          }
+        },
+        {
+          "id": "7c97ccb226bea5edf00111cf1976105ccdbd89b44b5fc76e9ffd3e55cec8a572",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 194273280
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 87990272
+          }
+        },
+        {
+          "id": "9645d7b162aa7dd3d456d43625569e1802bda42a2261d63c069e4ef7f85bf751",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 30359552
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 3452928
+          }
+        },
+        {
+          "id": "77c5b600990c229bc1974853279bd6ee406d6796b9d498eee58cd164cb05d6e4",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 554807296
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 112852992
+          }
+        },
+        {
+          "id": "dd4205fa75f72674a623a12e70aa7eea6bdef03c13eeb57790603d1f0593cd87",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 453865472
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 370638848
+          }
+        },
+        {
+          "id": "2c49571a4a8c4239331cdc7b67017313f745ef250139380ce757ac2e95759a47",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 37314560
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 3125248
+          }
+        },
+        {
+          "id": "b4307bc5c0b0f8fc6be2dd7d1b57b3fd8163757af7a0a46a33e2e0f31b7dab43",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 1592578048
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 1266847744
+          }
+        },
+        {
+          "id": "0e456d1dc8c05f411335f6a0f82f24cc35f053d7e6a21707c2c46f131a15b69d",
+          "memoryCurrent": {
+            "available": true,
+            "bytes": 675930112
+          },
+          "anonShmem": {
+            "available": true,
+            "bytes": 373964800
+          }
+        }
+      ]
+    },
+    "unattributed": {
+      "state": "remainder",
+      "bytes": 584298496
+    },
+    "disk": {
+      "available": true,
+      "path": "/golden-root",
+      "totalBytes": 100000000000,
+      "usedBytes": 13000000000,
+      "availableBytes": 87000000000,
+      "usedPercent": 13
+    }
+  },
+  "host": {
+    "available": false,
+    "reason": "Windows-side figures (host RAM, C:, vmmemWSL, the .vhdx files) are read by wsl-care.exe on Windows, not from inside the VM"
+  },
+  "slow": {
+    "containerStats": {
+      "available": true,
+      "runId": "20000101T000000Z-1",
+      "sampledAt": "2000-01-01T00:00:00+00:00",
+      "ageSeconds": 0,
+      "containers": [
+        {
+          "id": "0997307242ffbe630f0d1b184b88272a86e2a32302d0a52e303e1fd10c18d493",
+          "name": "container-01",
+          "memoryBytes": 55312384,
+          "cpuPercent": 0
+        },
+        {
+          "id": "f36f1ae3b57bf080c7e7388e9e360ec369c79642f8b5ad7b8c04237d1996e118",
+          "name": "container-04",
+          "memoryBytes": 480352666,
+          "cpuPercent": 1.29
+        },
+        {
+          "id": "8a6e36e853820a47f089d97c1ea6cfeabcf34251c7b58ac3439d0d9e975615b9",
+          "name": "container-05",
+          "memoryBytes": 6050284,
+          "cpuPercent": 0.57
+        },
+        {
+          "id": "d19df415ee86a26cebfb04a9fc7ca96d33361f97912f6f9fa4b20fcb0c87ddab",
+          "name": "container-06",
+          "memoryBytes": 575143936,
+          "cpuPercent": 1.25
+        },
+        {
+          "id": "709fe13ecdb560f6f9873309611995980141f60257a1041efa4a9da9fa3ce0b0",
+          "name": "container-10",
+          "memoryBytes": 12132024,
+          "cpuPercent": 0.78
+        },
+        {
+          "id": "a159144b335590749fb0f898754d05fe856b3a660dbcae6a32245daa51e0f695",
+          "name": "container-11",
+          "memoryBytes": 586363699,
+          "cpuPercent": 2.35
+        },
+        {
+          "id": "247515d64498725223f87330637fabb21a922e72f89bcd95b237b3db87968c40",
+          "name": "container-18",
+          "memoryBytes": 162843853,
+          "cpuPercent": 1.05
+        },
+        {
+          "id": "b4307bc5c0b0f8fc6be2dd7d1b57b3fd8163757af7a0a46a33e2e0f31b7dab43",
+          "name": "container-19",
+          "memoryBytes": 1481763717,
+          "cpuPercent": 0.64
+        },
+        {
+          "id": "0e456d1dc8c05f411335f6a0f82f24cc35f053d7e6a21707c2c46f131a15b69d",
+          "name": "container-20",
+          "memoryBytes": 401814323,
+          "cpuPercent": 1.34
+        },
+        {
+          "id": "9645d7b162aa7dd3d456d43625569e1802bda42a2261d63c069e4ef7f85bf751",
+          "name": "container-21",
+          "memoryBytes": 12457083,
+          "cpuPercent": 0.47
+        },
+        {
+          "id": "8e4a5ad93695eabae39cd2c1599859f6db859fbe03e78650efbf49e63a8ad798",
+          "name": "container-24",
+          "memoryBytes": 165779866,
+          "cpuPercent": 0.43
+        },
+        {
+          "id": "77c5b600990c229bc1974853279bd6ee406d6796b9d498eee58cd164cb05d6e4",
+          "name": "container-25",
+          "memoryBytes": 219047526,
+          "cpuPercent": 1.13
+        },
+        {
+          "id": "2c49571a4a8c4239331cdc7b67017313f745ef250139380ce757ac2e95759a47",
+          "name": "container-26",
+          "memoryBytes": 17605591,
+          "cpuPercent": 0.7
+        },
+        {
+          "id": "7c97ccb226bea5edf00111cf1976105ccdbd89b44b5fc76e9ffd3e55cec8a572",
+          "name": "container-27",
+          "memoryBytes": 132644864,
+          "cpuPercent": 0.13
+        },
+        {
+          "id": "dd4205fa75f72674a623a12e70aa7eea6bdef03c13eeb57790603d1f0593cd87",
+          "name": "container-28",
+          "memoryBytes": 666055475,
+          "cpuPercent": 1.21
+        },
+        {
+          "id": "96a3e74b001125e749e746b3282def4a17008754c6e2d47f7f578a6700475c1f",
+          "name": "container-29",
+          "memoryBytes": 482764390,
+          "cpuPercent": 1.2
+        }
+      ]
+    },
+    "windowsClock": {
+      "available": true,
+      "runId": "20000101T000000Z-1",
+      "sampledAt": "2000-01-01T00:00:00+00:00",
+      "ageSeconds": 0,
+      "offsetSeconds": 0,
+      "launchLatencySeconds": 0.7508915
+    }
+  },
+  "containerStarts": {
+    "from": "2000-01-01T00:00:00+00:00",
+    "to": "2000-01-01T00:00:00+00:00",
+    "starts": 0,
+    "testcontainers": 0,
+    "topImages": [],
+    "complete": false,
+    "gaps": [
+      {
+        "from": "2000-01-01T00:00:00+00:00",
+        "to": "2000-01-01T00:00:00+00:00",
+        "reason": "no 24-hour summary has been written: the events follower has not recorded anything yet"
+      }
+    ]
+  },
+  "folders": {
+    "available": true,
+    "runId": "20000101T000000Z-1",
+    "sampledAt": "2000-01-01T00:00:00+00:00",
+    "ageSeconds": 0,
+    "measuredThisRun": false,
+    "folders": [
+      {
+        "id": "npm-cache",
+        "path": "/golden-root/home/me/.npm",
+        "size": {
+          "available": false,
+          "reason": "/golden-root/home/me/.npm does not exist"
+        },
+        "growthSincePrevious": {
+          "available": false,
+          "reason": "/golden-root/home/me/.npm does not exist"
+        }
+      },
+      {
+        "id": "apt-cache",
+        "path": "/golden-root/var/cache/apt",
+        "size": {
+          "available": false,
+          "reason": "/golden-root/var/cache/apt does not exist"
+        },
+        "growthSincePrevious": {
+          "available": false,
+          "reason": "/golden-root/var/cache/apt does not exist"
+        }
+      },
+      {
+        "id": "git-worktrees",
+        "path": "/golden-root/home/me/git/_wt",
+        "size": {
+          "available": false,
+          "reason": "/golden-root/home/me/git/_wt does not exist"
+        },
+        "growthSincePrevious": {
+          "available": false,
+          "reason": "/golden-root/home/me/git/_wt does not exist"
+        }
+      },
+      {
+        "id": "nuget-packages",
+        "path": "/golden-root/home/me/.nuget/packages",
+        "size": {
+          "available": false,
+          "reason": "/golden-root/home/me/.nuget/packages does not exist"
+        },
+        "growthSincePrevious": {
+          "available": false,
+          "reason": "/golden-root/home/me/.nuget/packages does not exist"
+        }
+      },
+      {
+        "id": "user-cache",
+        "path": "/golden-root/home/me/.cache",
+        "size": {
+          "available": false,
+          "reason": "/golden-root/home/me/.cache does not exist"
+        },
+        "growthSincePrevious": {
+          "available": false,
+          "reason": "/golden-root/home/me/.cache does not exist"
+        }
+      },
+      {
+        "id": "vscode-server",
+        "path": "/golden-root/home/me/.vscode-server",
+        "size": {
+          "available": false,
+          "reason": "/golden-root/home/me/.vscode-server does not exist"
+        },
+        "growthSincePrevious": {
+          "available": false,
+          "reason": "/golden-root/home/me/.vscode-server does not exist"
+        }
+      },
+      {
+        "id": "git-build-output",
+        "path": "/golden-root/home/me/git",
+        "size": {
+          "available": false,
+          "reason": "/golden-root/home/me/git does not exist"
+        },
+        "growthSincePrevious": {
+          "available": false,
+          "reason": "/golden-root/home/me/git does not exist"
+        }
+      },
+      {
+        "id": "snap-disabled",
+        "path": "/golden-root/var/lib/snapd/snaps",
+        "size": {
+          "available": true,
+          "bytes": 0
+        },
+        "files": 0,
+        "complete": true,
+        "growthSincePrevious": {
+          "available": false,
+          "reason": "no earlier folder sample is recorded"
+        }
+      }
+    ]
+  },
+  "verdicts": [
+    {
+      "id": "memory.available",
+      "level": "ok",
+      "value": "66.8 %",
+      "limit": "warn < 25 %, critical < 15 %",
+      "reason": "MemAvailable is above both thresholds",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.pageCache",
+      "level": "ok",
+      "value": "9.79 GiB",
+      "limit": "warn > 15 GiB",
+      "reason": "page cache WSL does not hand back to Windows (A1 drops it)",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.inactiveAnon",
+      "level": "ok",
+      "value": "11.19 GiB",
+      "limit": "warn > 15 GiB",
+      "reason": "anonymous memory nobody touched lately (the top holders name the processes)",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.swap",
+      "level": "ok",
+      "value": "0.00 GiB",
+      "limit": "warn > 4 GiB",
+      "reason": "swap in use (thresholds.swapWarnGb)",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.fragmentation",
+      "level": "ok",
+      "value": "3933 order-7 blocks, 4069 order-4",
+      "limit": "warn < 32 free order-7 blocks, critical = 0 (zone Normal)",
+      "reason": "free high-order blocks in zone Normal",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.pressure",
+      "level": "ok",
+      "value": "some avg60 0, avg300 0",
+      "limit": "warn: memory some avg60 or avg300 > 10",
+      "reason": "memory pressure (PSI), the primary \"VM struggles\" signal",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "wslconfig.memory",
+      "level": "ok",
+      "value": "33.2 % of 44.9 GiB used; .wslconfig not read: status does not read it; the full run (collect) does",
+      "limit": "critical > 90 % of the VM's ceiling; recommended .wslconfig memory=36GB (shown, never written)",
+      "reason": "the VM's ceiling against the recommendation of memory=36GB",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "disk.root",
+      "level": "ok",
+      "value": "13.0 %",
+      "limit": "warn > 80 %",
+      "reason": "df / of the distro",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "kernel.allocationFailures",
+      "level": "ok",
+      "value": "0",
+      "limit": "critical at 1 or more",
+      "reason": "page allocation failures since the last run (the VMBus order-7 signature, plan §4.1)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "kernel.oomKills",
+      "level": "ok",
+      "value": "0",
+      "limit": "critical at 1 or more",
+      "reason": "OOM kills since the last run",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "journal.size",
+      "level": "ok",
+      "value": "0.40 GiB",
+      "limit": "warn > 1 GiB",
+      "reason": "journal on disk (A10 vacuums it)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "journal.history",
+      "level": "warn",
+      "value": "<days since the oldest entry> (oldest entry 2026-10-01 22:10Z)",
+      "limit": "warn when the oldest entry is less than 7 days old",
+      "reason": "how far back the journal reaches (clock jumps erase it, plan finding 4)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "clock.jumps",
+      "level": "warn",
+      "value": "875 in 4.0 h (875 per 4 h)",
+      "limit": "warn > 100 per 4 h",
+      "reason": "systemd-resolved's \"Clock change detected\" since the last run",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "clock.drift",
+      "level": "ok",
+      "value": "<captured clock minus now> s (launch latency 0.75 s subtracted)",
+      "limit": "warn: |offset| > 5 s on two observations at least 5 minutes apart (clock.maxDriftSeconds)",
+      "reason": "one observation above the threshold; a second, at least 5 minutes later, is needed before a drift is reported",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "systemd.failedUnits",
+      "level": "warn",
+      "value": "1",
+      "limit": "warn at 1 or more",
+      "reason": "failed units",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "systemd.wslPro",
+      "level": "warn",
+      "value": "enabled, active",
+      "limit": "warn when wsl-pro.service is not masked and runs (plan 0.4)",
+      "reason": "an agent that is not installed reconnects every ~20 s (plan finding 5)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "collectors.sysstat",
+      "level": "warn",
+      "value": "",
+      "limit": "warn when the last sample is 30 minutes old or older",
+      "reason": "/golden-root/var/log/sysstat holds no sysstat file: sysstat is not collecting (the installer sets it up, E4)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "collectors.atop",
+      "level": "warn",
+      "value": "",
+      "limit": "warn when the last sample is 30 minutes old or older",
+      "reason": "/golden-root/var/log/atop holds no atop file: atop is not collecting (the installer sets it up, E4)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "disk.discard",
+      "level": "ok",
+      "value": "mounted with discard",
+      "limit": "warn when / is mounted without discard and fstrim.timer is not enabled",
+      "reason": "freed blocks reach the VHDX only through discard or fstrim, and only then can compaction shrink it",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "docker.A4",
+      "level": "ok",
+      "value": "3 volumes, 0.64 GB",
+      "limit": "warn > 100 volumes or > 20 GB (volumes.anonymousMaxCount / anonymousMaxGb, A4's trigger)",
+      "reason": "unattached anonymous volumes old enough for A4",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "docker.A6Unused",
+      "level": "ok",
+      "value": "9.81 GB",
+      "limit": "warn > 10 GB",
+      "reason": "unused tagged images reclaimable (images.unusedMaxGb)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "docker.buildCache",
+      "level": "ok",
+      "value": "1.01 GB",
+      "limit": "warn > 20 GB",
+      "reason": "build cache (buildCache.maxGb, A7's cap)",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "npm.cache",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 5 GB",
+      "reason": "~/.npm was not measured",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    }
+  ],
+  "productVersion": "unknown"
+}

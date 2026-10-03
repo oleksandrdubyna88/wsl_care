@@ -79,6 +79,13 @@ public sealed class CollectFlows
         var status = await home.RunAsync("status", "--json");
 
         status.Exit.Should().Be((int)ExitCode.Ok, status.Stderr);
+        var verdicts = JsonSerializer.Deserialize(status.Stdout, WslCareJsonContext.Default.StatusReport)!.Verdicts ?? [];
+        verdicts.Select(v => v.Id).Should().Equal(report.Detail.Thresholds.Select(t => t.Id), "status answers every threshold id the run recorded, in its order (plan §15g B1)");
+        var carried = verdicts.Where(v => v.Basis?.Source == Core.Thresholds.VerdictSource.FullRun).ToList();
+        carried.Should().NotBeEmpty();
+        carried.Select(v => v with { Basis = null }).Should().Equal(
+            carried.Select(v => report.Detail.Thresholds.Single(t => t.Id == v.Id)), "a threshold only a full run can judge is the run's own record");
+        carried.Should().OnlyContain(v => v.Basis!.RunId == report.Detail.RunId.Text, "carried with the id of the run that recorded it");
         var slow = JsonSerializer.Deserialize(status.Stdout, WslCareJsonContext.Default.StatusReport)!.Slow;
         slow.ContainerStats.Should().Match<SlowPartReport>(p => p.Available && p.RunId == report.Detail.RunId.Text && p.AgeSeconds >= 0 && p.Containers!.Count > 0);
         if (home.Paths.Side == Core.Hosting.HostSide.Wsl)

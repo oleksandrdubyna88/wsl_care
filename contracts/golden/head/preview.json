@@ -1,0 +1,655 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "sampledAt": "2000-01-01T00:00:00+00:00",
+  "sampleMilliseconds": 0,
+  "observeOnly": false,
+  "configError": [],
+  "docker": {
+    "available": true,
+    "serverVersion": "29.6.1",
+    "platform": "Docker Desktop 4.81.0 (232925)"
+  },
+  "rows": [
+    {
+      "id": "A4",
+      "action": "A4",
+      "what": "anonymous volumes no container uses, first seen unattached at least 0 days ago",
+      "autoSwitch": "auto.A4",
+      "auto": true,
+      "basis": "volume sizes of docker system df -v",
+      "available": true,
+      "count": 3,
+      "reclaimableBytes": 641400000,
+      "unsized": 0,
+      "notes": [
+        {
+          "what": "first seen unattached more recently than the limit",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "protected by the wsl-care.keep=true label",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "64-hex names without Docker's anonymous label (com.docker.volume.anonymous): named to Docker, kept and listed with the named volumes",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "unattached volumes whose labels are unknown (not in docker system df -v): never selected",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "A5",
+      "action": "A5",
+      "what": "containers stopped at least 0 days ago, not Testcontainers, with the anonymous volumes they hold",
+      "autoSwitch": "auto.A5",
+      "auto": false,
+      "basis": "writable layers (system df -v) + their anonymous volumes",
+      "available": true,
+      "count": 13,
+      "reclaimableBytes": 1677670978,
+      "unsized": 0,
+      "notes": [
+        {
+          "what": "anonymous volumes they hold (removed with them)",
+          "count": 8,
+          "bytes": {
+            "available": true,
+            "bytes": 1288244878
+          }
+        },
+        {
+          "what": "named volumes they hold (kept)",
+          "count": 6,
+          "bytes": {
+            "available": true,
+            "bytes": 21731880000
+          }
+        },
+        {
+          "what": "volumes they hold whose labels are unknown (not in docker system df -v): not counted",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "stopped more recently than the limit",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "protected by the wsl-care.keep=true label",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "A5Testcontainers",
+      "action": "A5",
+      "what": "Testcontainers containers stopped at least 0 hours ago, with their anonymous volumes",
+      "autoSwitch": "auto.A5Testcontainers",
+      "auto": true,
+      "basis": "writable layers (system df -v) + their anonymous volumes",
+      "available": true,
+      "count": 0,
+      "reclaimableBytes": 0,
+      "unsized": 0,
+      "notes": [
+        {
+          "what": "anonymous volumes they hold (removed with them)",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "named volumes they hold (kept)",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "volumes they hold whose labels are unknown (not in docker system df -v): not counted",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "stopped more recently than the limit",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        },
+        {
+          "what": "protected by the wsl-care.keep=true label",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "A6",
+      "action": "A6",
+      "what": "dangling images (no name, no tag) no container uses",
+      "autoSwitch": "auto.A6",
+      "auto": true,
+      "basis": "unique image sizes (system df -v); Docker's images reclaimable is their sum",
+      "available": true,
+      "count": 0,
+      "reclaimableBytes": 0,
+      "unsized": 0,
+      "notes": []
+    },
+    {
+      "id": "A6Unused",
+      "action": "A6",
+      "what": "tagged images no container uses, created at least 0 days ago",
+      "autoSwitch": "auto.A6Unused",
+      "auto": false,
+      "basis": "unique image sizes (system df -v); Docker's images reclaimable is their sum",
+      "available": true,
+      "count": 10,
+      "reclaimableBytes": 9805969710,
+      "unsized": 0,
+      "notes": [
+        {
+          "what": "created more recently than the limit",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "A7",
+      "action": "A7",
+      "what": "build cache neither in use nor shared",
+      "autoSwitch": "auto.A7",
+      "auto": true,
+      "basis": "build-cache entry sizes (system df -v); Docker's build-cache reclaimable is their sum",
+      "available": true,
+      "count": 4,
+      "reclaimableBytes": 23948690,
+      "unsized": 0,
+      "notes": [
+        {
+          "what": "last used more than 0 days ago (what an age filter alone selects)",
+          "count": 4,
+          "bytes": {
+            "available": true,
+            "bytes": 23948690
+          }
+        },
+        {
+          "what": "above the 20 GB cap (buildCache.maxGb, what the timer's capped prune frees)",
+          "count": 0,
+          "bytes": {
+            "available": true,
+            "bytes": 0
+          }
+        }
+      ]
+    },
+    {
+      "id": "A8",
+      "action": "A8",
+      "what": "the npm cache (~/.npm)",
+      "autoSwitch": "auto.A8",
+      "auto": false,
+      "basis": "folder size, measured by the full run 20000101T000000Z-1 0.0 h ago",
+      "available": false,
+      "reason": "the full run 20000101T000000Z-1 could not measure /golden-root/home/me/.npm: /golden-root/home/me/.npm does not exist"
+    },
+    {
+      "id": "A9",
+      "action": "A9",
+      "what": "the apt cache and disabled snap revisions",
+      "autoSwitch": "auto.A9",
+      "auto": true,
+      "basis": "folder and snap file sizes, measured by the full run 20000101T000000Z-1 0.0 h ago",
+      "available": false,
+      "reason": "the full run 20000101T000000Z-1 could not measure /golden-root/var/cache/apt: /golden-root/var/cache/apt does not exist"
+    }
+  ],
+  "kept": {
+    "available": true,
+    "count": 13,
+    "bytes": 16055782089,
+    "volumes": [
+      {
+        "name": "named-volume-18",
+        "size": {
+          "available": true,
+          "bytes": 10310000000
+        }
+      },
+      {
+        "name": "named-volume-25",
+        "size": {
+          "available": true,
+          "bytes": 2472000000
+        }
+      },
+      {
+        "name": "named-volume-23",
+        "size": {
+          "available": true,
+          "bytes": 1175000000
+        }
+      },
+      {
+        "name": "named-volume-14",
+        "size": {
+          "available": true,
+          "bytes": 1058000000
+        }
+      },
+      {
+        "name": "named-volume-24",
+        "size": {
+          "available": true,
+          "bytes": 844700000
+        }
+      },
+      {
+        "name": "named-volume-19",
+        "size": {
+          "available": true,
+          "bytes": 67210000
+        }
+      },
+      {
+        "name": "named-volume-28",
+        "size": {
+          "available": true,
+          "bytes": 49540000
+        }
+      },
+      {
+        "name": "named-volume-16",
+        "size": {
+          "available": true,
+          "bytes": 48760000
+        }
+      },
+      {
+        "name": "named-volume-12",
+        "size": {
+          "available": true,
+          "bytes": 21170000
+        }
+      },
+      {
+        "name": "named-volume-08",
+        "size": {
+          "available": true,
+          "bytes": 9402000
+        }
+      },
+      {
+        "name": "named-volume-27",
+        "size": {
+          "available": true,
+          "bytes": 89
+        }
+      },
+      {
+        "name": "named-volume-21",
+        "size": {
+          "available": true,
+          "bytes": 0
+        }
+      },
+      {
+        "name": "named-volume-26",
+        "size": {
+          "available": true,
+          "bytes": 0
+        }
+      }
+    ]
+  },
+  "totals": {
+    "available": true,
+    "types": [
+      {
+        "type": "Images",
+        "totalCount": 23,
+        "active": 13,
+        "size": {
+          "available": true,
+          "bytes": 20300000000
+        },
+        "reclaimable": {
+          "available": true,
+          "bytes": 9806000000
+        }
+      },
+      {
+        "type": "Containers",
+        "totalCount": 29,
+        "active": 16,
+        "size": {
+          "available": true,
+          "bytes": 393000000
+        },
+        "reclaimable": {
+          "available": true,
+          "bytes": 389900000
+        }
+      },
+      {
+        "type": "Local Volumes",
+        "totalCount": 48,
+        "active": 32,
+        "size": {
+          "available": true,
+          "bytes": 43030000000
+        },
+        "reclaimable": {
+          "available": true,
+          "bytes": 16700000000
+        }
+      },
+      {
+        "type": "Build Cache",
+        "totalCount": 72,
+        "active": 0,
+        "size": {
+          "available": true,
+          "bytes": 1007000000
+        },
+        "reclaimable": {
+          "available": true,
+          "bytes": 23980000
+        }
+      }
+    ]
+  },
+  "hygiene": {
+    "unboundedLogs": {
+      "available": true,
+      "count": 28,
+      "containers": [
+        {
+          "container": "container-01",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/0997307242ffbe630f0d1b184b88272a86e2a32302d0a52e303e1fd10c18d493/0997307242ffbe630f0d1b184b88272a86e2a32302d0a52e303e1fd10c18d493-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-02",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/3fc69e3a0a286604994435d8a1b546f197cb53f674d46040d12db9f3d5f93aca/3fc69e3a0a286604994435d8a1b546f197cb53f674d46040d12db9f3d5f93aca-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-03",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/6f9c69b92ff4e4e85ae7ed71b41bd2dbe421483141c51bb6884bca5e277c210c/6f9c69b92ff4e4e85ae7ed71b41bd2dbe421483141c51bb6884bca5e277c210c-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-04",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/f36f1ae3b57bf080c7e7388e9e360ec369c79642f8b5ad7b8c04237d1996e118/f36f1ae3b57bf080c7e7388e9e360ec369c79642f8b5ad7b8c04237d1996e118-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-05",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/8a6e36e853820a47f089d97c1ea6cfeabcf34251c7b58ac3439d0d9e975615b9/8a6e36e853820a47f089d97c1ea6cfeabcf34251c7b58ac3439d0d9e975615b9-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-06",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/d19df415ee86a26cebfb04a9fc7ca96d33361f97912f6f9fa4b20fcb0c87ddab/d19df415ee86a26cebfb04a9fc7ca96d33361f97912f6f9fa4b20fcb0c87ddab-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-07",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/a4212d715360ec0b5526910842e49512cc8a4dfd4324a7f7cb578992e154b413/a4212d715360ec0b5526910842e49512cc8a4dfd4324a7f7cb578992e154b413-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-08",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/d58e977827f47aea79945f28ca1055f8ec7eb9e3622c0fe121d83f7441e7b279/d58e977827f47aea79945f28ca1055f8ec7eb9e3622c0fe121d83f7441e7b279-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-09",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/bb0d9871a7cfeca17f080fd6bd2902874c011cbc0ef30f7bf3857a9c01d71434/bb0d9871a7cfeca17f080fd6bd2902874c011cbc0ef30f7bf3857a9c01d71434-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-10",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/709fe13ecdb560f6f9873309611995980141f60257a1041efa4a9da9fa3ce0b0/709fe13ecdb560f6f9873309611995980141f60257a1041efa4a9da9fa3ce0b0-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-11",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/a159144b335590749fb0f898754d05fe856b3a660dbcae6a32245daa51e0f695/a159144b335590749fb0f898754d05fe856b3a660dbcae6a32245daa51e0f695-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-12",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/954df98464d5011b609b3d95406be45e48fc2a3df985c3a04b195a1865fde0d5/954df98464d5011b609b3d95406be45e48fc2a3df985c3a04b195a1865fde0d5-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-13",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/181ff0a8c0ed13a3490324582f4848294e175f0ed076cec6ab22a32558550f38/181ff0a8c0ed13a3490324582f4848294e175f0ed076cec6ab22a32558550f38-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-14",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/315ac1a2d96082cc64d08aa71169e73aa3cb38b7013be80ab0e376a3046d671d/315ac1a2d96082cc64d08aa71169e73aa3cb38b7013be80ab0e376a3046d671d-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-15",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/4dc6e9ee725402db5ed7b9388b13b8be736d7a2c66b2d881ffb340625223d55d/4dc6e9ee725402db5ed7b9388b13b8be736d7a2c66b2d881ffb340625223d55d-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-16",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/67bebdf5ffba166ad7ed095ff5611c4eb03e40669ce977b776cd63e030666c9f/67bebdf5ffba166ad7ed095ff5611c4eb03e40669ce977b776cd63e030666c9f-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-18",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/247515d64498725223f87330637fabb21a922e72f89bcd95b237b3db87968c40/247515d64498725223f87330637fabb21a922e72f89bcd95b237b3db87968c40-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-19",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/b4307bc5c0b0f8fc6be2dd7d1b57b3fd8163757af7a0a46a33e2e0f31b7dab43/b4307bc5c0b0f8fc6be2dd7d1b57b3fd8163757af7a0a46a33e2e0f31b7dab43-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-20",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/0e456d1dc8c05f411335f6a0f82f24cc35f053d7e6a21707c2c46f131a15b69d/0e456d1dc8c05f411335f6a0f82f24cc35f053d7e6a21707c2c46f131a15b69d-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-21",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/9645d7b162aa7dd3d456d43625569e1802bda42a2261d63c069e4ef7f85bf751/9645d7b162aa7dd3d456d43625569e1802bda42a2261d63c069e4ef7f85bf751-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-22",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/fd21ee57c63c358a2f3566982b84f31f5b8586490fa9f0e658bd21955a03551a/fd21ee57c63c358a2f3566982b84f31f5b8586490fa9f0e658bd21955a03551a-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-23",
+          "state": "exited",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/4f970e641530b2cf4c3643a683000dfa9744cbeb80a103476b3bf2683d5a6526/4f970e641530b2cf4c3643a683000dfa9744cbeb80a103476b3bf2683d5a6526-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-24",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/8e4a5ad93695eabae39cd2c1599859f6db859fbe03e78650efbf49e63a8ad798/8e4a5ad93695eabae39cd2c1599859f6db859fbe03e78650efbf49e63a8ad798-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-25",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/77c5b600990c229bc1974853279bd6ee406d6796b9d498eee58cd164cb05d6e4/77c5b600990c229bc1974853279bd6ee406d6796b9d498eee58cd164cb05d6e4-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-26",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/2c49571a4a8c4239331cdc7b67017313f745ef250139380ce757ac2e95759a47/2c49571a4a8c4239331cdc7b67017313f745ef250139380ce757ac2e95759a47-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-27",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/7c97ccb226bea5edf00111cf1976105ccdbd89b44b5fc76e9ffd3e55cec8a572/7c97ccb226bea5edf00111cf1976105ccdbd89b44b5fc76e9ffd3e55cec8a572-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-28",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/dd4205fa75f72674a623a12e70aa7eea6bdef03c13eeb57790603d1f0593cd87/dd4205fa75f72674a623a12e70aa7eea6bdef03c13eeb57790603d1f0593cd87-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        },
+        {
+          "container": "container-29",
+          "state": "running",
+          "logSize": {
+            "available": false,
+            "reason": "/var/lib/docker/containers/96a3e74b001125e749e746b3282def4a17008754c6e2d47f7f578a6700475c1f/96a3e74b001125e749e746b3282def4a17008754c6e2d47f7f578a6700475c1f-json.log is not on this filesystem: Docker Desktop keeps container logs inside its own VM"
+          }
+        }
+      ]
+    },
+    "builderGc": {
+      "available": true,
+      "present": false
+    },
+    "buildkit": {
+      "available": true,
+      "leftovers": []
+    }
+  },
+  "volumeSeen": {
+    "file": "/golden-root/var/lib/wsl-care/volume-seen.json",
+    "recorded": false,
+    "reason": "read-only: preview only reads volume-seen.json; the full run (collect) records first sightings",
+    "tracked": 3
+  }
+}

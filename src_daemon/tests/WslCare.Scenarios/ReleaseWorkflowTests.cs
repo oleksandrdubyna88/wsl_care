@@ -343,7 +343,7 @@ public sealed partial class ReleaseWorkflowTests
 
     /// <summary>Strings only the smoke script's checks contain.</summary>
     private static IReadOnlyList<string> SmokeMarkers() =>
-        ["config set volumes.anonymousMaxGb 100001", "\"act\" holds these actions", "\"recording\": \"recorded\"", "WSL_CARE_SANDBOX_PRIVILEGED=1", "preview --all --json"];
+        ["config set volumes.anonymousMaxGb 100001", "\"act\" holds these actions", "\"recording\": \"recorded\"", "WSL_CARE_SANDBOX_PRIVILEGED=1", "preview --all --json", "\"verdicts\": [", "productVersion"];
 
     [GeneratedRegex("""^\s*(-\s+)?uses:\s""")]
     private static partial Regex UsesLine();

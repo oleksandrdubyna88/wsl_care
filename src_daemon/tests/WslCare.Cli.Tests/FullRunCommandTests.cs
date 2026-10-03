@@ -66,6 +66,26 @@ public sealed class FullRunCommandTests
     }
 
     [Fact]
+    public void Status_after_a_collect_carries_the_full_runs_own_verdict_records_with_its_run_and_their_age()
+    {
+        using var sandbox = new SandboxHost("collect-verdicts");
+        var report = Collect(CliRun.Over(Host(sandbox, sandbox.Files, Tools(), DockerFixture.CapturedAt), "collect", "--json").Stdout);
+        var detail = report.Detail!;
+
+        var later = Host(sandbox, sandbox.Files, new RecordingCommandRunner(), DockerFixture.CapturedAt.AddMinutes(30));
+        var status = JsonSerializer.Deserialize(CliRun.Over(later, "status", "--json").Stdout, WslCareJsonContext.Default.StatusReport)!;
+
+        var carried = status.Verdicts!.Where(v => v.Basis!.Source == Core.Thresholds.VerdictSource.FullRun).ToList();
+        carried.Should().NotBeEmpty();
+        var basis = new Core.Thresholds.VerdictBasis(Core.Thresholds.VerdictSource.FullRun, detail.RunId.Text, detail.EndedAt, (DockerFixture.CapturedAt.AddMinutes(30) - detail.EndedAt).TotalSeconds);
+        carried.Should().Equal(
+            detail.Thresholds.Where(t => carried.Any(c => c.Id == t.Id)).Select(t => t with { Basis = basis }),
+            "each is the record the run's detail holds, read back from the file the run wrote");
+        carried.Select(v => v.Id).Should().Contain(["clock.jumps", "docker.A4", "collectors.sysstat"]);
+        status.Verdicts!.Select(v => v.Id).Should().Equal(detail.Thresholds.Select(t => t.Id), "status answers every id the run recorded, in its order");
+    }
+
+    [Fact]
     public void Collect_without_json_prints_the_verdicts_and_where_the_run_was_recorded()
     {
         using var sandbox = new SandboxHost("collect-text");

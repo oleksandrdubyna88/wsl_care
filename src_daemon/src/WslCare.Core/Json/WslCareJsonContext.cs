@@ -33,6 +33,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Collect.RunDetail))]
 [JsonSerializable(typeof(Collect.CollectReport))]
 [JsonSerializable(typeof(RunDetailHead))]
+[JsonSerializable(typeof(RunDetailVerdicts))]
 [JsonSerializable(typeof(Events.CoverageLineJson))]
 [JsonSerializable(typeof(Events.StartsSummary))]
 [JsonSerializable(typeof(Doctor.DoctorReport))]
