@@ -26,6 +26,8 @@ it one folder per **year**, then per **month**:
       10/ …
   codex/2026/09/windows/sessions/2026/09/14/rollout-….jsonl
   gemini/…
+  antigravity/2026/09/windows/conversations/<id>.db    ← no project level: paths stay relative to
+  antigravity/2026/09/windows/brain/<id>/…               the agent's root (~/.gemini/antigravity-cli)
   <manual-agent-name>/…
 ```
 
@@ -58,7 +60,7 @@ session, and what must **never** move.
 | Claude Code | `projects/<project>/<sessionId>.jsonl` **plus** `projects/<project>/<sessionId>/` (subagent transcripts, tool results) when present, and `file-history/<sessionId>/` | `projects/*/memory/` (the agent's long-term memory), `settings*.json`, `plugins/`, `skills/`, `security/`, the project folder itself (removed only when it is left empty) |
 | Codex | `sessions/YYYY/MM/DD/rollout-*.jsonl` | `*.sqlite` state/history databases, `config.toml`, `auth.json` |
 | Gemini CLI | `tmp/<project>/chats/session-<timestamp>-<id>.jsonl` (confirmed 2026-10-02 — `.jsonl`, not `.json`) | `tmp/<project>/logs.json`, `history/`, `settings.json`, OAuth files, `antigravity*`, `bin/` |
-| Antigravity CLI (`~/.gemini/antigravity-cli/`, older `~/.gemini/antigravity/`) | the files keyed by one conversation id: `conversations/<id>.db`, `brain/<id>/**`, `annotations/<id>.pbtxt`, `presence/<id>.lock`; and `log/cli-<timestamp>.log` per CLI start (confirmed 2026-10-02) | `conversation_summaries.db` (+ `-wal`/`-shm`), `implicit/*.pb`, `bin/`, `builtin/`, settings, state and token files |
+| Antigravity CLI (`~/.gemini/antigravity-cli/`, older `~/.gemini/antigravity/`) | the files keyed by one conversation id: `conversations/<id>.db`, `brain/<id>/**`, `annotations/<id>.pbtxt` (confirmed 2026-10-02). `log/cli-<timestamp>.log` (one per CLI start) has no conversation id: each log is its own unit, aged on its own mtime | `presence/<id>.lock` (a process lock, not session data — restoring a stale one could mark the conversation as held; the one-time run did move them), `conversation_summaries.db` (+ `-wal`/`-shm`), `implicit/*.pb`, `bin/`, `builtin/`, settings, state and token files |
 | Copilot, Rovo Dev, … | to be filled per agent when its layout is confirmed; **until then: monitor only** | everything |
 | Manual agent ("Add CLI path") | the session glob the user gives; **no glob → no archiving** | everything outside the glob |
 
@@ -70,7 +72,9 @@ session, and what must **never** move.
    directory. Skipped items are counted and listed, never forced.
 3. **Copy, verify, then delete:** copy to the target path (creating `<agent>/<yyyy>/<MM>/<side>/…`),
    preserve the modification time, flush, compare SHA-256 of source and copy, and only then delete the
-   source. A move within one volume may use a rename, followed by the same hash check.
+   source. ~~A move within one volume may use a rename, followed by the same hash check.~~ Struck
+   2026-10-02 (document gate): a rename removes the source before it can be compared and before the index
+   line is written, which §8a forbids — every volume takes the same copy → verify → index → delete path.
 4. **Never overwrite:** if the target exists with the same hash, only the source is deleted; with a
    different hash the new copy gets a `~2` suffix.
 5. **Index:** append `{archivedAt, agent, side, host, originalPath, archivedPath, size, sha256, mtime}`
@@ -88,10 +92,16 @@ and `archive.linuxBasePath` can override it with a Linux path.
 ~~Volumes are small (≤ 2 GB today), so the 9p write path is acceptable.~~ **Refuted for a network drive,
 2026-10-02** ([one-time archive run](../research/2026-10-02_ai_session_archive_run.md), Finding 2): WSL
 `cp` through drvfs to a network-mapped drive wrote ≈ 2 files/s and did not finish 4 696 files in 28 minutes,
-while a WSL `tar` read piped into a Windows-side write did all of them in ≈ 5 minutes. Before the WSL side
-writes through `/mnt/<drive>` by default, the build measures that path against the target the user chose
-(a local NTFS drive was not measured); when it is slow, the WSL daemon hands the copy to the Windows side
-(the same stream shape) instead. Verification reads the archive from the side that reads it fast.
+while a WSL `tar` read piped into a Windows-side write did all of them in ≈ 5 minutes (≈ 15 files/s).
+
+So the WSL daemon **probes the write path at run time**, when `basePath` is set and again at the start of a
+run: write, read back and remove ~100 files of ~10 KB in a scratch folder under the target (a local NTFS
+drive was not measured, so it may well pass). Below **10 files/s** — between the two rates measured, a
+starting value to re-measure, not a law — it does not write through `/mnt/<drive>` and hands the copy to
+the Windows side instead. **Proposed handoff, to be settled in the epic's own plan round:** the WSL daemon
+starts the Windows `wsl-care.exe` through WSL interop (`archive receive --base <path>`) and pipes a tar
+stream of the selected files to its stdin — the shape that was measured. Verification reads the archive
+from the side that reads it fast (Windows, for a Windows path).
 
 ## 5. Settings
 
@@ -158,19 +168,30 @@ changes here:
 
 - **The agents delete during the run.** Claude Code's own sweep ran three times in under two hours, and
   Antigravity removed conversations while the copy was running. So a source that disappears between select,
-  copy and delete is a normal outcome: the copy drops it from the run (counted, not an error), and the
-  delete is decided **per file** — only a source that still hashes to its archived copy is removed; a
-  changed one stays and is reported; a vanished one is reported as *removed by the agent*.
+  copy and delete is a normal outcome: the copy drops it from the run (counted, not an error) and reports
+  it as *removed by the agent*.
+- **The delete is decided per SESSION, never per file** (document gate, 2026-10-02 — the one-time script
+  decided per file, which is wrong for a multi-file session). At delete time every still-present file of
+  the session must hash to its archived copy:
+  - all match → the session's files are deleted (files the agent already removed are simply absent);
+  - **any one changed** — the session was resumed or written to — → **no file of that session is
+    deleted**; it stays live and whole, the archived copy of this run is kept as a snapshot marked
+    `superseded` in the index, and the session is reported. A session is never left half in the archive
+    and half live.
+  This keeps §8a's *one session, one unit* and the non-negotiable that nothing under an agent's folder is
+  deleted without a verified copy. Test: a session whose `.jsonl` changes between copy and delete keeps its
+  `<id>/subagents/` files at the source.
 - **Antigravity is archivable**: its layout is confirmed (§3), so it leaves "monitor only".
-- **The WSL write path** is measured before it is the default (§4).
+- **The WSL write path** is probed at run time before it is used (§4).
 - **Not checked yet, and a test-plan item now:** how Codex (`session_index.jsonl`, `state_5.sqlite`,
   `codex resume`) and Antigravity (`conversation_summaries.db`) behave while a session is in the archive,
   and that restore makes it visible again.
 
 ## 9. Definition of Done
 
-- [ ] Claude and Codex sessions older than N days move to `<base>/<agent>/<yyyy>/<MM>/<side>/…` on both
-      sides, verified by hash, indexed, restorable.
+- [ ] Claude Code, Codex, Gemini CLI and Antigravity CLI sessions older than N days move to
+      `<base>/<agent>/<yyyy>/<MM>/<side>/…` on both sides, verified by hash, indexed, restorable — and a
+      session changed mid-run stays whole at the source (§8b).
 - [ ] Nothing outside a session's definition can be moved — enforced by tests; `memory/` never moves.
 - [ ] Retention conflict with the agent's own cleanup is detected and shown.
 - [ ] Extension: settings with folder picker, archive columns, Archive page with restore, Logs entries.
