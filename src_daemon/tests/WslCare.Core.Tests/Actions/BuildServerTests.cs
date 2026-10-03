@@ -75,6 +75,24 @@ public sealed class BuildServerTests : IDisposable
     }
 
     [Fact]
+    public async Task A_process_table_that_cannot_be_read_again_just_before_the_command_refuses_the_run_as_the_preview_would()
+    {
+        _world.Tool("dotnet");
+        _world.Processes.Add(Server(10, 5));
+        var context = _world.Context(RunTrigger.Cli);
+        var commands = _world.Commands(_action, context);
+        var preview = await _action.PreviewAsync(context, commands, CancellationToken.None);
+        var unreadable = context with { Processes = _ => Reading.Missing<ProcessSnapshot>("procfs gone") };
+
+        var run = await _action.RunAsync(unreadable, preview, commands, CancellationToken.None);
+
+        _world.Runner.Requests.Should().BeEmpty("a build that cannot be ruled out is a build that may be alive: nothing is asked");
+        run.Count.Should().Be(0);
+        run.Succeeded.Should().BeFalse("the re-check could not be made");
+        run.Failure.Should().Contain("could not be read");
+    }
+
+    [Fact]
     public async Task The_run_asks_as_the_target_user_and_counts_exactly_the_servers_gone_after()
     {
         _world.Tool("dotnet");

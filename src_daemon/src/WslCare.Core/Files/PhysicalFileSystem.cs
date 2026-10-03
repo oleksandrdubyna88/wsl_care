@@ -64,6 +64,8 @@ public sealed class PhysicalFileSystem : IFileSystem
         }
     }
 
+    public FileReadResult ReadRegularFile(string path, int maxBytes) => RegularFiles.Read(path, maxBytes);
+
     public bool FileExists(string path) => File.Exists(path);
 
     public bool DirectoryExists(string path) => Directory.Exists(path);

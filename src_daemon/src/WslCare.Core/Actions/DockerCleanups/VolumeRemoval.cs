@@ -13,7 +13,7 @@ namespace WslCare.Core.Actions.DockerCleanups;
 
 /// <summary>
 /// A4 (plan §5, §15 #4, §15c #1): <c>docker volume rm</c> of a RE-CHECKED list — never <c>prune</c>. At run time it removes
-/// only the anonymous volumes that are in this run's LIVE preview (the dangling list Docker answers now ∩ a 64-hex name ∖
+/// only the anonymous volumes that are in this run's LIVE preview (the dangling list Docker answers now ∩ Docker's anonymous label AND a 64-hex name ∖
 /// the <c>wsl-care.keep=true</c> label ∩ first seen unattached at least <c>volumes.anonymousOlderThanDays</c> ago) AND —
 /// for a button — in the list the panel SHOWED (<c>--volume</c> / <c>--only</c>). It refuses on Docker below 23, and on a
 /// Docker whose version it cannot read.
@@ -118,17 +118,18 @@ public sealed class VolumeRemoval : ICleanupAction
             : preview;
     }
 
-    /// <summary>Plan §15b #3: the action records first sightings — the unattached volumes as Docker lists them NOW.</summary>
+    /// <summary>Plan §15b #3: the action records first sightings — the unattached ANONYMOUS volumes as Docker lists them NOW
+    /// (the dangling list, and <c>system df -v</c> for the labels that decide "anonymous": <see cref="AnonymousVolumes"/>).</summary>
     private static async Task<string> RecordSightingsAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
-        var listed = DockerCli.Classify(DockerCommands.DanglingVolumes, await commands.RunAsync(DockerCleanupCommands.DanglingRead, [], cancellationToken).ConfigureAwait(false));
-        if (listed is not DockerAnswer.Answered answered)
+        var dangling = await ReadAsync(commands, DockerCleanupCommands.DanglingRead, DockerCommands.DanglingVolumes, stdout => Reading.Of(DanglingVolumes.Parse(stdout)), cancellationToken).ConfigureAwait(false);
+        var inventory = await ReadAsync(commands, DockerCleanupCommands.InventoryRead, DockerCommands.SystemDfVerbose, DockerInventory.Parse, cancellationToken).ConfigureAwait(false);
+        if (Reading.Combine(inventory, dangling, AnonymousVolumes.Unattached) is not Reading<IReadOnlyList<string>>.Available { Value: var anonymous })
         {
-            return $"first sightings not recorded: {((DockerAnswer.Failed)listed).Problem.Reason}";
+            return $"first sightings not recorded: {dangling.ReasonOrEmpty}{inventory.ReasonOrEmpty}";
         }
 
         var store = new VolumeSeenStore(context.Paths, context.Files);
-        var anonymous = DanglingVolumes.Parse(answered.Stdout).Where(DockerJson.IsFullId);
         return store.TryWrite(store.Read().Record.Observe(anonymous, context.Clock.GetUtcNow())) switch
         {
             VolumeSeenWrite.Written => "first sightings recorded (volume-seen.json)",
@@ -136,6 +137,14 @@ public sealed class VolumeRemoval : ICleanupAction
             _ => throw new System.Diagnostics.UnreachableException("VolumeSeenWrite is a closed set"),
         };
     }
+
+    private static async Task<Reading<T>> ReadAsync<T>(ActionCommands commands, CommandTemplate template, ToolCommand command, Func<string, Reading<T>> parse, CancellationToken cancellationToken) =>
+        DockerCli.Classify(command, await commands.RunAsync(template, [], cancellationToken).ConfigureAwait(false)) switch
+        {
+            DockerAnswer.Answered answered => parse(answered.Stdout),
+            DockerAnswer.Failed failed => Reading.Missing<T>(failed.Problem.Reason),
+            _ => throw new System.Diagnostics.UnreachableException("DockerAnswer is a closed set"),
+        };
 }
 
 /// <summary>What a batched removal did: the targets removed, those not removed and why, and the failure (empty when none).</summary>

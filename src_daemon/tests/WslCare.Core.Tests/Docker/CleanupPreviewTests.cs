@@ -78,6 +78,33 @@ public sealed class CleanupPreviewTests
     }
 
     [Fact]
+    public async Task A_hex_named_volume_without_dockers_anonymous_label_is_kept_as_named_and_one_whose_labels_are_unknown_is_never_selected()
+    {
+        var snapshot = await CapturedAsync();
+        var names = snapshot.UnattachedAnonymous.ValueOr([]);
+        var unknown = new string('a', 64);
+        var inventory = snapshot.Inventory.ValueOr(null!);
+        var changed = snapshot with
+        {
+            Inventory = Reading.Of(inventory with
+            {
+                Volumes = [.. inventory.Volumes.Select(v => v.Name == names[0] ? v with { Labels = new Dictionary<string, string>() } : v)],
+            }),
+            Dangling = Reading.Of<IReadOnlySet<string>>(new HashSet<string>(snapshot.Dangling.ValueOr(new HashSet<string>())) { unknown }),
+        };
+        var seen = new VolumeSeenRecord(1, Now, [.. names.Append(unknown).Select(n => new VolumeSighting(n, Now.AddDays(-2)))]);
+
+        var preview = CleanupPreviews.Build(changed, seen, Config(), Now);
+
+        var a4 = Figures(Row(preview, "A4"));
+        a4.Count.Should().Be(2, "a 64-hex name alone is not anonymous: Docker's label decides, as volume prune does");
+        a4.Notes.Single(n => n.What.Contains("anonymous label", StringComparison.Ordinal)).Count.Should().Be(1);
+        a4.Notes.Single(n => n.What.Contains("labels are unknown", StringComparison.Ordinal)).Count.Should().Be(1);
+        preview.Kept.ValueOr([]).Select(v => v.Name).Should().Contain(names[0], "Docker treats it as named, so it is listed with the kept named volumes");
+        changed.UnattachedAnonymous.ValueOr([]).Should().NotContain(names[0]).And.NotContain(unknown, "volume-seen.json tracks anonymous volumes only");
+    }
+
+    [Fact]
     public async Task An_anonymous_volume_first_seen_before_the_limit_is_selected_and_one_kept_by_label_never_is()
     {
         var snapshot = await CapturedAsync();
@@ -87,7 +114,7 @@ public sealed class CleanupPreviewTests
         {
             Inventory = Reading.Of(inventory with
             {
-                Volumes = [.. inventory.Volumes.Select(v => v.Name == names[0] ? v with { Labels = new Dictionary<string, string> { [DockerLabels.Keep] = "true" } } : v)],
+                Volumes = [.. inventory.Volumes.Select(v => v.Name == names[0] ? v with { Labels = new Dictionary<string, string> { [DockerLabels.Anonymous] = string.Empty, [DockerLabels.Keep] = "true" } } : v)],
             }),
         };
         var seen = new VolumeSeenRecord(1, Now, [.. names.Select(n => new VolumeSighting(n, Now.AddDays(-2)))]);
@@ -95,7 +122,7 @@ public sealed class CleanupPreviewTests
         var a4 = Figures(Row(CleanupPreviews.Build(labelled, seen, Config(), Now), "A4"));
 
         a4.Count.Should().Be(2);
-        a4.Notes.Single(n => n.What.Contains("label", StringComparison.Ordinal)).Count.Should().Be(1);
+        a4.Notes.Single(n => n.What.Contains(DockerLabels.Keep, StringComparison.Ordinal)).Count.Should().Be(1);
     }
 
     [Fact]

@@ -250,6 +250,43 @@ public sealed class ActCommandTests : IDisposable
     }
 
     [Fact]
+    public void An_only_file_that_is_a_directory_is_refused_as_not_a_regular_file()
+    {
+        var folder = _sandbox.Paths.DistroPath("/tmp/shown-folder");
+        Directory.CreateDirectory(folder);
+
+        var (exit, stdout, stderr) = CliRun.Over(Host(Root), "act", "A4", "--confirm", "--only", folder);
+
+        exit.Should().Be((int)ExitCode.Usage);
+        stdout.Should().BeEmpty();
+        stderr.Should().Contain("not a regular file");
+        _runner.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task An_only_file_that_is_a_fifo_is_refused_at_once_never_waited_on()
+    {
+        // act reads --only as ROOT: a FIFO with no writer would hold the open forever (and a device could stream forever),
+        // so only a regular file is read, and only up to the cap.
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "a FIFO is a Linux file: run in WSL or on the Linux legs");
+        var fifo = _sandbox.Paths.DistroPath("/tmp/shown.fifo");
+        Directory.CreateDirectory(Path.GetDirectoryName(fifo)!);
+        (await ChildProcess.RunAsync("mkfifo", [fifo], new Dictionary<string, string?>())).Exit.Should().Be(0);
+
+        var act = Task.Run(() => CliRun.Over(Host(Root), "act", "A4", "--confirm", "--only", fifo), TestContext.Current.CancellationToken);
+        var finished = await Task.WhenAny(act, Task.Delay(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)) == act;
+        if (!finished)
+        {
+            await using var writer = new FileStream(fifo, FileMode.Open, FileAccess.Write); // releases the blocked reader
+        }
+
+        finished.Should().BeTrue("a FIFO is refused, never waited on");
+        var (exit, _, stderr) = await act;
+        exit.Should().Be((int)ExitCode.Usage);
+        stderr.Should().Contain("not a regular file");
+    }
+
+    [Fact]
     public void As_root_working_for_the_target_user_config_set_refuses_rather_than_leave_a_root_owned_file_in_their_home()
     {
         var host = Host(Root) with { HomeOwner = new HomeOwner.Target(new TargetUser("me", 1000, "/home/me"), "test") };

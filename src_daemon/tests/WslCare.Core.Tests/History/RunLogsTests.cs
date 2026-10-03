@@ -176,6 +176,28 @@ public sealed class RunLogsTests : IDisposable
     }
 
     [Fact]
+    public void A_failed_actions_real_deletions_are_counted_and_its_failure_is_shown_beside_the_figures()
+    {
+        // A4 removed 386 of 387 volumes and could not confirm one: the action FAILED, and the 386 are gone all the same.
+        var at = new DateTimeOffset(2026, 9, 26, 9, 0, 0, TimeSpan.Zero);
+        const string failure = "eeee: \"something Docker said\"";
+        var outcome = new ActionOutcome("A4", "A4 summary", ActionStatus.Failed, failure, null, new ActionRun(386, 59_000_000_000, "measured", null, null, [new ActionItem("volume", "aaaa", 59_000_000_000)], [], failure)
+        {
+            NotRemoved = [new ActionItem("volume", "eeee", 1, "not confirmed: something Docker said")],
+        });
+        Act(at, RunTrigger.Manual, outcome);
+
+        var logs = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period("2026-09-26"), action: null);
+
+        logs.FreedBytes.Should().Be(59_000_000_000, "what a failed action measurably removed was removed");
+        logs.ObjectsRemoved.Should().Be(386);
+        logs.Runs.WithCleanup.Should().Be(1);
+        logs.PerAction.Single().Should().Match<ActionTotal>(t => t.Count == 386 && t.FreedBytes == 59_000_000_000 && t.Failed == 1);
+        logs.Cleanups.Single().Should().Match<CleanupDetail>(c => c.Status == ActionStatus.Failed && c.Count == 386 && c.Failure == failure);
+        RunLogs.Runs(_sandbox.Paths, _sandbox.Files, Period("2026-09-26")).Runs.Single().Actions.Single().Failure.Should().Be(failure);
+    }
+
+    [Fact]
     public void An_unparseable_line_is_counted_and_a_missing_history_is_an_empty_answer()
     {
         File.AppendAllText(RunHistory.File(_sandbox.Paths), "{ torn\n");
