@@ -49,6 +49,8 @@ internal sealed record YamlMap(IReadOnlyList<KeyValuePair<string, YamlNode>> Ent
 /// </remarks>
 internal sealed partial class WorkflowYaml
 {
+    private static readonly HashSet<string> LiteralIndicators = ["|", "|-", "|+"];
+
     private readonly string[] _lines;
     private readonly string _source;
     private int _at;
@@ -193,20 +195,25 @@ internal sealed partial class WorkflowYaml
     private YamlScalar ParseLiteral(string header, int indent)
     {
         var indicator = StripComment(header).Trim();
-        if (indicator is not ("|" or "|-" or "|+"))
-        {
-            throw Unsupported($"the block scalar header '{indicator}'");
-        }
+        return LiteralIndicators.Contains(indicator)
+            ? new YamlScalar(Chomp(LiteralLines(indent), indicator))
+            : throw Unsupported($"the block scalar header '{indicator}'");
+    }
 
+    /// <summary>The lines of a literal block: every following line that is blank or indented deeper than its key.</summary>
+    private List<string> LiteralLines(int indent)
+    {
         var lines = new List<string>();
-        while (_at < _lines.Length && (_lines[_at].Trim().Length == 0 || Indent(_lines[_at]) > indent))
+        while (_at < _lines.Length && IsLiteralLine(_lines[_at], indent))
         {
             lines.Add(_lines[_at]);
             _at++;
         }
 
-        return new YamlScalar(Chomp(lines, indicator));
+        return lines;
     }
+
+    private bool IsLiteralLine(string line, int indent) => line.Trim().Length == 0 || Indent(line) > indent;
 
     private static string Chomp(List<string> lines, string indicator)
     {
@@ -246,17 +253,14 @@ internal sealed partial class WorkflowYaml
         };
     }
 
-    private YamlScalar PlainScalar(string text)
-    {
-        var value = StripComment(text).TrimEnd();
-        if (Peek() is { } next && _at < _lines.Length && next.Indent > 0 && !IsSequenceItem(next.Content) && !KeyPattern().IsMatch(next.Content))
-        {
-            // A plain scalar continued on the next line is legal YAML and folded; the subset refuses it.
-            throw Unsupported("a plain scalar continued on the next line");
-        }
+    /// <summary>A plain scalar continued on the next line is legal YAML and folded; the subset refuses it.</summary>
+    private YamlScalar PlainScalar(string text) =>
+        ContinuesOnTheNextLine() ? throw Unsupported("a plain scalar continued on the next line") : new YamlScalar(StripComment(text).TrimEnd());
 
-        return new YamlScalar(value);
-    }
+    /// <summary>The next significant line is indented and is neither a sequence item nor a key: the scalar goes on.</summary>
+    private bool ContinuesOnTheNextLine() => Peek() is { Indent: > 0 } next && IsContinuation(next.Content);
+
+    private static bool IsContinuation(string content) => !IsSequenceItem(content) && !KeyPattern().IsMatch(content);
 
     private YamlSequence FlowSequence(string text)
     {
@@ -271,36 +275,39 @@ internal sealed partial class WorkflowYaml
 
     private string Quoted(string text)
     {
-        var quote = text[0];
-        var end = quote == '\'' ? SingleQuotedEnd(text) : text.IndexOf('"', 1);
-        while (quote == '"' && end > 0 && text[end - 1] == '\\')
-        {
-            end = text.IndexOf('"', end + 1);
-        }
-
-        if (end < 0 || StripComment(text[(end + 1)..]).Trim().Length > 0)
-        {
-            throw Unsupported($"the quoted scalar {text}");
-        }
-
-        var inner = text[1..end];
-        return quote == '\'' ? inner.Replace("''", "'", StringComparison.Ordinal) : inner.Replace("\\\"", "\"", StringComparison.Ordinal).Replace("\\\\", "\\", StringComparison.Ordinal);
+        var end = text[0] == '\'' ? SingleQuotedEnd(text) : DoubleQuotedEnd(text);
+        return end < 0 || StripComment(text[(end + 1)..]).Trim().Length > 0
+            ? throw Unsupported($"the quoted scalar {text}")
+            : Unquote(text[0], text[1..end]);
     }
 
+    /// <summary>The index of the quote that ends a single-quoted scalar (a doubled <c>''</c> is an escaped quote), or -1.</summary>
     private static int SingleQuotedEnd(string text)
     {
-        for (var i = 1; i < text.Length; i++)
+        var at = text.IndexOf('\'', 1);
+        while (at > 0 && at + 1 < text.Length && text[at + 1] == '\'')
         {
-            if (text[i] == '\'' && (i + 1 >= text.Length || text[i + 1] != '\''))
-            {
-                return i;
-            }
-
-            i += text[i] == '\'' ? 1 : 0;
+            at = text.IndexOf('\'', at + 2);
         }
 
-        return -1;
+        return at;
     }
+
+    /// <summary>The index of the quote that ends a double-quoted scalar (a backslashed quote does not), or -1.</summary>
+    private static int DoubleQuotedEnd(string text)
+    {
+        var at = text.IndexOf('"', 1);
+        while (at > 0 && text[at - 1] == '\\')
+        {
+            at = text.IndexOf('"', at + 1);
+        }
+
+        return at;
+    }
+
+    private static string Unquote(char quote, string inner) => quote == '\''
+        ? inner.Replace("''", "'", StringComparison.Ordinal)
+        : inner.Replace("\\\"", "\"", StringComparison.Ordinal).Replace("\\\\", "\\", StringComparison.Ordinal);
 
     /// <summary>A comment starts at <c>#</c> at the start or after whitespace.</summary>
     private static string StripComment(string text)

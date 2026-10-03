@@ -6,7 +6,7 @@ extension that shows the state and runs cleanups on demand.
 
 | Folder | Holds |
 |---|---|
-| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with the journal vacuum and the irreversible cleanups (A4–A9, A11, A12, A14, A17); A1–A3, A15, A16 arrive in the next release |
+| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -335,8 +335,9 @@ and `win-x64`, an archive and its `.sha256`, each archive with a build-provenanc
 
 **How one happens.**
 
-1. Conventional commits land on `main`: under `src_daemon/`, `feat:` makes a minor release, `fix:` a patch; `ci:`,
-   `chore:`, `docs:`, `test:` and any commit touching only `.github/` make none.
+1. Conventional commits land on `main`: under `src_daemon/`, `feat:` makes a minor release, `fix:` a patch (before 1.0.0
+   a breaking change is a minor too); `ci:`, `chore:`, `docs:`, `test:` make none, and a commit touching nothing under
+   `src_daemon/` — only `.github/` or root files — is never a daemon release.
 2. Someone runs **release-please** (*Actions → release-please → Run workflow*, or `gh workflow run release-please.yml`).
    It opens one pull request bumping `src_daemon/version.txt` and the manifest and writing `src_daemon/CHANGELOG.md`.
    Merging it is the decision to release.
@@ -350,8 +351,11 @@ and `win-x64`, an archive and its `.sha256`, each archive with a build-provenanc
    leaves an invisible draft, fixed forward — a release tag is never moved or deleted.
 
 The scripts the workflows run are in `.github/scripts/` (`smoke-daemon.sh`, `package-daemon.sh`, `release-guard.sh`,
-`verify-release-assets.sh`, and the asset contract they share, `lib/daemon-assets.sh`); the scenario suite runs them
-too, so a broken release step shows on a pull request rather than on a release day.
+`verify-release-assets.sh`, and the asset contract they share, `lib/daemon-assets.sh`). Every pull request runs the
+smoke AND packs the release archive from its leg's published binary on all three runners — the Windows zip included —
+checks that pair and opens the printed path outside bash; the scenario suite runs the packaging, guard and
+completeness scripts too. Only what needs the release itself (the App token's tag, the attestation, the upload, the
+publish) first runs on a release day.
 
 **What the owner creates once** — settings, not code, applied with the commands and the probes in
 [docs/repo-settings.md](docs/repo-settings.md):

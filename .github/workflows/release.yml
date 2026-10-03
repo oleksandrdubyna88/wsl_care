@@ -152,6 +152,20 @@ jobs:
           echo "ASSET=$asset" >> "$GITHUB_ENV"
           cat "$asset.sha256"
 
+      # The path handed to the two actions below, opened first by a step that is NOT bash (E4 review B1: an MSYS spelling
+      # from Git Bash is D:\d\a\… to them, and inside a bash step MSYS would rewrite the variable before any child saw
+      # it). ci-daemon.yml runs the same check on every pull request.
+      - name: The archive path opens outside bash
+        shell: pwsh
+        run: |
+          foreach ($file in @($env:ASSET, "$($env:ASSET).sha256")) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              Write-Output "::error::$file is not a file to a program outside bash (an MSYS spelling such as /d/a/... is not a Windows path)"
+              exit 1
+            }
+            Write-Output "opens outside bash: $((Resolve-Path -LiteralPath $file).Path)"
+          }
+
       # The archive install.sh downloads is the subject; the .sha256 beside it is integrity, the attestation is who
       # built it (plan §15 #12).
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

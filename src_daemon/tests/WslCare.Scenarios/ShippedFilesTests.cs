@@ -22,35 +22,38 @@ public sealed partial class ShippedFilesTests
     private static Dictionary<string, Dictionary<string, List<string>>> Unit(string name)
     {
         var sections = new Dictionary<string, Dictionary<string, List<string>>>(StringComparer.Ordinal);
-        var current = string.Empty;
-        foreach (var raw in File.ReadAllLines(Path.Combine(ShippedFiles.SystemdDirectory, name)))
+        var outside = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var current = outside;
+        foreach (var line in Directives(name))
         {
-            var line = raw.Trim();
-            if (line.Length == 0 || line.StartsWith('#') || line.StartsWith(';'))
-            {
-                continue;
-            }
-
-            if (line.StartsWith('[') && line.EndsWith(']'))
-            {
-                current = line[1..^1];
-                sections.TryAdd(current, new(StringComparer.Ordinal));
-                continue;
-            }
-
-            var equals = line.IndexOf('=');
-            equals.Should().BePositive($"{name}: every directive is key=value, got \"{line}\"");
-            var key = line[..equals];
-            if (!sections[current].TryGetValue(key, out var values))
-            {
-                values = [];
-                sections[current][key] = values;
-            }
-
-            values.Add(line[(equals + 1)..]);
+            current = IsSectionHeader(line) ? Section(sections, line[1..^1]) : Add(current, name, line);
         }
 
+        outside.Should().BeEmpty($"{name}: every directive sits in a [section]");
         return sections;
+    }
+
+    /// <summary>The unit's lines without blanks and comments, trimmed.</summary>
+    private static IEnumerable<string> Directives(string name) =>
+        File.ReadAllLines(Path.Combine(ShippedFiles.SystemdDirectory, name)).Select(raw => raw.Trim()).Where(IsDirective);
+
+    private static bool IsDirective(string line) => line.Length > 0 && !line.StartsWith('#') && !line.StartsWith(';');
+
+    private static bool IsSectionHeader(string line) => line.StartsWith('[') && line.EndsWith(']');
+
+    private static Dictionary<string, List<string>> Section(Dictionary<string, Dictionary<string, List<string>>> sections, string section)
+    {
+        sections.TryAdd(section, new(StringComparer.Ordinal));
+        return sections[section];
+    }
+
+    private static Dictionary<string, List<string>> Add(Dictionary<string, List<string>> section, string name, string line)
+    {
+        var equals = line.IndexOf('=');
+        equals.Should().BePositive($"{name}: every directive is key=value, got \"{line}\"");
+        section.TryAdd(line[..equals], []);
+        section[line[..equals]].Add(line[(equals + 1)..]);
+        return section;
     }
 
     private static string Single(Dictionary<string, Dictionary<string, List<string>>> unit, string section, string key) =>

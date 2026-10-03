@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Packs ONE daemon release archive and its .sha256 (plan §9, §15e #1; E4.S2), the way release.yml does — release.yml
-# calls exactly this, and PackageFlows runs it in the ordinary suite against a stub binary, so the layout install.sh
-# unpacks is checked on every pull request, not first on a release day.
+# calls exactly this; so does ci-daemon.yml, on every pull request, on all three runners (Git Bash on Windows), with the
+# published AOT binary of its leg; and the scenario suite runs it against a stub binary (PackageFlows on Linux,
+# PackagePathFlows on every OS, the Windows zip wherever 7-Zip is on PATH).
 #
 #   package-daemon.sh <version> <rid> <publish-dir> <out-dir>
 #
@@ -22,7 +23,11 @@
 # Beside each archive, <archive>.sha256 in sha256sum's own format — "<64 hex>  <archive name>" — which install.sh reads
 # (its first field) and `sha256sum -c` checks as it is.
 #
-# Prints the archive's path as its LAST line of stdout. Exit 2 on a bad argument, 1 on a failed step.
+# Prints the archive's path as its LAST line of stdout, spelled for the CALLER: built from <out-dir> exactly as given
+# (a relative one stays relative to the caller's working directory), and through `cygpath -m` where that exists (Git
+# Bash). The workflows hand this path to attest-build-provenance and upload-artifact — Windows programs on a Windows
+# runner, which read an MSYS path such as /d/a/… as D:\d\a\… and find nothing (E4 review B1: the win-x64 release leg
+# would have failed at the attestation). Exit 2 on a bad argument, 1 on a failed step.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -46,6 +51,7 @@ version="$1"
 rid="$2"
 publish="$3"
 out="$4"
+out_as_given="${4%/}"
 
 [[ "$version" =~ $DAEMON_VERSION_PATTERN ]] || usage "not a release version: $version"
 archive="$(daemon_archive_name "$version" "$rid")" || usage "not a RID a daemon release ships: $rid (ships: $DAEMON_RIDS)"
@@ -89,4 +95,8 @@ esac
 hash="$(cd "$out" && sha256sum "$archive" | cut -d' ' -f1)" || fail "could not hash $archive"
 hash="${hash#\\}"
 printf '%s  %s\n' "$hash" "$archive" > "$out/$archive.sha256" || fail "could not write $archive.sha256"
-printf '%s\n' "$out/$archive"
+printed="$out_as_given/$archive"
+if command -v cygpath > /dev/null 2>&1; then
+  printed="$(cygpath -m "$printed")" || fail "cygpath could not spell $printed for a Windows program"
+fi
+printf '%s\n' "$printed"
