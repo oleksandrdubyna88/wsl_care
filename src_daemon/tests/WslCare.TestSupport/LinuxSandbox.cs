@@ -63,5 +63,19 @@ public sealed class LinuxSandbox : IDisposable
         return this;
     }
 
+    /// <summary>The memory figures A1 / A2 read (E3.S3): <c>/proc/meminfo</c> with <paramref name="availableKib"/> of
+    /// <paramref name="totalKib"/> available and a page cache of <paramref name="cachedKib"/> (+ 0 buffers), and
+    /// <c>/proc/buddyinfo</c> whose zone Normal holds <paramref name="order7Blocks"/> free order-7 blocks and 50 order-4 ones —
+    /// with the captured <c>/proc/self/auxv</c>, so the page size is the kernel's own.</summary>
+    public LinuxSandbox Memory(long totalKib, long availableKib, long cachedKib, long order7Blocks)
+    {
+        Write("/proc/meminfo", FormattableString.Invariant($"MemTotal: {totalKib} kB\nMemFree: 1000 kB\nMemAvailable: {availableKib} kB\nBuffers: 0 kB\nCached: {cachedKib} kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\nAnonPages: 1000 kB\nShmem: 0 kB\nInactive(anon): 0 kB\n"));
+        Write("/proc/buddyinfo", FormattableString.Invariant($"Node 0, zone      DMA      1      1      1      1      1      1      1      1      1      1      1\nNode 0, zone   Normal    500    400    300    200     50      0      0 {order7Blocks}      0      0      0\n"));
+        var auxv = Paths.DistroPath("/proc/self/auxv");
+        Directory.CreateDirectory(Path.GetDirectoryName(auxv)!);
+        File.Copy(Path.Combine(ProcfsFixture.Root, "proc", "self", "auxv"), auxv, overwrite: true);
+        return this;
+    }
+
     public void Dispose() => Root.Dispose();
 }

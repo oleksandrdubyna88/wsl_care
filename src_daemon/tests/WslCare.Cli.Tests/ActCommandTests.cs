@@ -163,10 +163,10 @@ public sealed class ActCommandTests : IDisposable
     [Fact]
     public void An_action_this_build_does_not_hold_is_refused_by_name()
     {
-        var (exit, _, stderr) = CliRun.Over(Host(Root), "act", "A1", "--preview");
+        var (exit, _, stderr) = CliRun.Over(Host(Root), "act", "A13", "--preview");
 
         exit.Should().Be((int)ExitCode.Usage);
-        stderr.Should().Contain("A1 is not built in this release; act holds: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
+        stderr.Should().Contain("A13 is not built in this release; act holds: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
     }
 
     [Fact]

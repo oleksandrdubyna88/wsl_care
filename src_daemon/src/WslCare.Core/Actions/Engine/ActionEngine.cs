@@ -58,7 +58,7 @@ public sealed class ActionEngine(EngineContext c)
     public async Task<ActResult> PreviewAsync(ActRequest request, CancellationToken cancellationToken)
     {
         var target = DiscoverTarget();
-        var context = Context(request, target);
+        var context = Context(request, target, []);
         var outcomes = new List<ActionOutcome>();
         foreach (var action in c.Registry.InExecutionOrder(request.Ids))
         {
@@ -105,19 +105,76 @@ public sealed class ActionEngine(EngineContext c)
 
         Reconcile(notes, started);
         var runId = RunId.New(started, c.ProcessId);
+        var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
+        var recorded = Record(Detail(runId, request.Trigger, started, pass.Dry, pass.Target, pass.Outcomes, notes, pass.Outcome));
+        var result = pass.RunningWritten ? RemoveRunning(recorded) : recorded;
+        cancellationToken.ThrowIfCancellationRequested();
+        return result;
+    }
+
+    /// <summary>
+    /// The TIMER PASS of a full run (E3.S3): <c>collect</c> calls it AFTER measuring, while it HOLDS the one run lock, for every
+    /// action this build holds, as the timer — so the engine's own gates decide each action (side, observe-only, the
+    /// <c>auto</c> switch, the live preview, the trigger, the target user, the refusal, the idle gate unless the preview is
+    /// urgent, the dry-run week). Its outcomes go into the full run's OWN record; it writes no record of its own. The
+    /// <c>running.json</c> sweep runs first (a live or wedged run, or an unreadable state, means no pass); the reconcile does
+    /// not — the full run's housekeeping already did it. When <see cref="TimerPass.RunningWritten"/> the caller removes
+    /// <c>running.json</c> with <see cref="EndTimerPass"/> once its record is written, the order an <c>act</c> keeps.
+    /// </summary>
+    public async Task<TimerPass> TimerPassAsync(RunId runId, DateTimeOffset started, CancellationToken cancellationToken)
+    {
+        var notes = new List<string>();
+        if (Sweep(notes, started) is { } refusal)
+        {
+            return TimerPass.NotRun(refusal switch
+            {
+                ActResult.Busy busy => busy.Reason,
+                ActResult.Wedged wedged => wedged.Reason,
+                _ => "the running state does not allow a pass",
+            }, notes);
+        }
+
+        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id)], RunTrigger.Timer, Execute: true);
+        var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
+        return new TimerPass(true, string.Empty, pass.Dry.DryRun, pass.Dry.Reason, TargetUserReport.From(pass.Target), pass.Outcomes, notes, pass.Outcome)
+        {
+            RunningWritten = pass.RunningWritten,
+        };
+    }
+
+    /// <summary>The full run is recorded: the timer pass's <c>running.json</c> goes. Empty when it went; otherwise why not (the
+    /// next run sweeps it without a second history line — the run already has one).</summary>
+    public string EndTimerPass()
+    {
+        try
+        {
+            return RunningState.Remove(c.Paths, c.Files) is Files.Deletion.DeletionVerdict.Refused refused ? $"running.json was left behind: {refused.Reason}" : string.Empty;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return $"running.json was left behind: {e.Message}";
+        }
+    }
+
+    /// <summary>What one pass over the actions produced.</summary>
+    private sealed record Pass(TargetUserResult Target, DryRunDecision Dry, IReadOnlyList<ActionOutcome> Outcomes, RunOutcome Outcome, bool RunningWritten);
+
+    /// <summary>The target user, the dry-run decision, <c>running.json</c>, then every action under a beating heart.</summary>
+    private async Task<Pass> PassAsync(RunId runId, ActRequest request, DateTimeOffset started, List<string> notes, CancellationToken cancellationToken)
+    {
         var target = DiscoverTarget();
         var dry = DryRunWindow.Decide(request.Trigger, c.Loaded.Config, c.Paths, c.Files, started);
         var running = new RunningFile(Core.SchemaVersion.Current, runId, request.Trigger, [.. request.Ids.Select(i => i.Text)], string.Empty, c.ProcessId, OwnStart(), started, started);
         if (StartRunning(running) is { Length: > 0 } cannot)
         {
-            return Record(Detail(runId, request.Trigger, started, dry, target, [], [.. notes, cannot], RunOutcome.Failed));
+            notes.Add(cannot);
+            return new Pass(target, dry, [], RunOutcome.Failed, RunningWritten: false);
         }
 
-        var run = new RunState(request.Trigger, target, dry, Context(request, target)) { IdleSource = SampleIdle };
-        var (outcomes, outcome) = await ActAllAsync(request, run, running, notes, cancellationToken).ConfigureAwait(false);
-        var result = RemoveRunning(Record(Detail(runId, request.Trigger, started, dry, target, outcomes, notes, outcome)));
-        cancellationToken.ThrowIfCancellationRequested();
-        return result;
+        var outcomes = new List<ActionOutcome>();
+        var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes)) { IdleSource = SampleIdle };
+        var outcome = await ActAllAsync(request, run, running, notes, outcomes, cancellationToken).ConfigureAwait(false);
+        return new Pass(target, dry, outcomes, outcome, RunningWritten: true);
     }
 
     /// <summary>The idle check of plan §5, read once per run and only when an action needs it.</summary>
@@ -135,9 +192,8 @@ public sealed class ActionEngine(EngineContext c)
     }
 
     /// <summary>Every action, under a beating heart; a cancellation ends the loop as <c>interrupted</c> (recorded, then rethrown by the caller).</summary>
-    private async Task<(IReadOnlyList<ActionOutcome> Outcomes, RunOutcome Outcome)> ActAllAsync(ActRequest request, RunState run, RunningFile running, List<string> notes, CancellationToken cancellationToken)
+    private async Task<RunOutcome> ActAllAsync(ActRequest request, RunState run, RunningFile running, List<string> notes, List<ActionOutcome> outcomes, CancellationToken cancellationToken)
     {
-        var outcomes = new List<ActionOutcome>();
         var heartbeat = new Heartbeat(c.Paths, c.Files, c.Clock, running, c.HeartbeatPeriod);
         await using (heartbeat.ConfigureAwait(false))
         {
@@ -152,7 +208,7 @@ public sealed class ActionEngine(EngineContext c)
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 notes.Add("interrupted by a signal before every action had run");
-                return (outcomes, RunOutcome.Interrupted);
+                return RunOutcome.Interrupted;
             }
         }
 
@@ -161,7 +217,7 @@ public sealed class ActionEngine(EngineContext c)
             notes.Add(heartbeat.Failure);
         }
 
-        return (outcomes, c.Loaded.IsObserveOnly ? RunOutcome.ObserveOnly : RunOutcome.Completed);
+        return c.Loaded.IsObserveOnly ? RunOutcome.ObserveOnly : RunOutcome.Completed;
     }
 
     /// <summary>One action through every gate; ANY failure of its own becomes a <c>failed</c> outcome and the run goes on.</summary>
@@ -182,7 +238,8 @@ public sealed class ActionEngine(EngineContext c)
             }
 
             var done = await action.RunAsync(run.Context, preview, commands, cancellationToken).ConfigureAwait(false);
-            return Outcome(action, done.Succeeded ? ActionStatus.Ran : ActionStatus.Failed, done.Succeeded ? "ran" : done.Failure, preview, done);
+            var ran = preview.Urgent.Length > 0 ? $"ran at once, without waiting for idle: {preview.Urgent}" : "ran";
+            return Outcome(action, done.Succeeded ? ActionStatus.Ran : ActionStatus.Failed, done.Succeeded ? ran : done.Failure, preview, done);
         }
         catch (Exception e) when (!(e is OperationCanceledException && cancellationToken.IsCancellationRequested))
         {
@@ -215,7 +272,7 @@ public sealed class ActionEngine(EngineContext c)
             () => TriggerStop(action, preview, run),
             () => action.Scope == CommandScope.User && run.Target is not TargetUserResult.Found ? new Stop(ActionStatus.Refused, run.Target.Refusal) : null,
             () => preview.Refusal.Length > 0 ? new Stop(ActionStatus.Refused, preview.Refusal) : null,
-            () => IdleGate.Applies(action.Idle, run.Trigger) && run.Idle() is { Idle: false } busy ? new Stop(ActionStatus.Deferred, busy.Reason) : null,
+            () => IdleGate.Applies(action.Idle, run.Trigger) && preview.Urgent.Length == 0 && run.Idle() is { Idle: false } busy ? new Stop(ActionStatus.Deferred, busy.Reason) : null,
             () => run.Dry.DryRun ? new Stop(ActionStatus.DryRun, $"dry run: {run.Dry.Reason}") : null,
         ];
         return First(action, gates, preview);
@@ -373,12 +430,7 @@ public sealed class ActionEngine(EngineContext c)
             Reason = failure.Length > 0 ? failure : d.Outcome is RunOutcome.Failed or RunOutcome.Interrupted ? string.Join("; ", d.Notes) : null,
         };
 
-    private static ActionRecord ActionLine(ActionOutcome o) => o.Status switch
-    {
-        ActionStatus.Ran or ActionStatus.Failed => new ActionRecord(o.Id, o.Run?.Count ?? 0, o.Run?.FreedBytes ?? 0) { Status = o.Status },
-        ActionStatus.DryRun => new ActionRecord(o.Id, o.Preview?.Count ?? 0, 0) { Status = o.Status, WouldFreeBytes = o.Preview?.Bytes },
-        _ => new ActionRecord(o.Id, 0, 0) { Status = o.Status },
-    };
+    private static ActionRecord ActionLine(ActionOutcome o) => ActionRecords.Of(o);
 
     private ActRunDetail Detail(RunId runId, RunTrigger trigger, DateTimeOffset started, DryRunDecision dry, TargetUserResult target, IReadOnlyList<ActionOutcome> outcomes, IReadOnlyList<string> notes, RunOutcome outcome) =>
         new(Core.SchemaVersion.Current, runId, trigger, started, c.Clock.GetUtcNow(), dry.DryRun, "act", outcome, c.Paths.Side == HostSide.Wsl ? "wsl" : "windows", dry.Reason, TargetUserReport.From(target), outcomes, notes);
@@ -397,13 +449,15 @@ public sealed class ActionEngine(EngineContext c)
     private ActionCommands Commands(ICleanupAction action, TargetUserResult target) =>
         new(action, c.Commands, target, action.Scope == CommandScope.User && target is TargetUserResult.Found found && c.Paths is LinuxHostPaths linux ? TargetUserCommands.BinFolders(found.User, linux, c.Files) : []);
 
-    private ActionContext Context(ActRequest request, TargetUserResult target) =>
+    /// <param name="soFar">The outcomes of this run so far — what <see cref="ActionContext.RanEarlier"/> answers from.</param>
+    private ActionContext Context(ActRequest request, TargetUserResult target, IReadOnlyList<ActionOutcome> soFar) =>
         new(c.Paths, c.Files, c.Clock, c.Loaded.Config, request.Trigger, target)
         {
             Processes = SampleProcesses,
             Signals = c.Signals,
             ShownVolumes = request.ShownVolumes,
             Wait = c.Wait,
+            RanEarlier = id => soFar.Any(o => o.Id == id.Text && o.Status == ActionStatus.Ran),
         };
 
     /// <summary>The distro's process table, read fresh (the fast probe reads files only, starts nothing).</summary>
