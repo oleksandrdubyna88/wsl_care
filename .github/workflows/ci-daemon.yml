@@ -107,10 +107,30 @@ jobs:
 
       # The scenario harness (research/module_tests.md): the BUILT CLI as a child process over a
       # temporary WSL_CARE_ROOT, fake docker/systemctl/journalctl/powershell alone on its PATH, and the derived
-      # verb register that fails when a verb has no row in module_tests.md.
+      # verb register that fails when a verb has no row in module_tests.md. Since E4.S1 it also runs install.sh end to
+      # end (InstallFlows: the real script under /bin/sh over a temporary prefix, curl / gh / systemctl / apt-get faked)
+      # — on the two Linux legs; the Windows leg skips those flows with the reason (POSIX sh, GNU coreutils and tar).
       - name: Test the scenarios
         run: |
           "./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios$EXE"
+
+      # The units install.sh ships (src_daemon/systemd), read by systemd's own parser. `systemd-analyze verify` EXITS 0 on
+      # an unknown key or section and only prints it (observed in ubuntu:24.04, systemd 255: "Unknown key name
+      # 'Persistant' in section 'Timer', ignoring." with exit 0), so ANY output fails the step. It also checks that each
+      # ExecStart program exists, so a stand-in is put at the install path — on this throwaway runner only.
+      - name: Verify the systemd units (linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo install -D -m 0755 /bin/true /opt/wsl-care/bin/wsl-care
+          out="$(systemd-analyze verify src_daemon/systemd/wsl-care.service src_daemon/systemd/wsl-care.timer src_daemon/systemd/wsl-care-events.service 2>&1)" \
+            || { printf '%s\n' "$out"; echo "::error::systemd-analyze verify failed"; exit 1; }
+          if [ -n "$out" ]; then
+            printf '%s\n' "$out"
+            echo "::error::systemd-analyze verify reported something about the units (it exits 0 on an unknown key)"
+            exit 1
+          fi
+          echo "the three units pass systemd-analyze verify with nothing to report"
 
       # TreatWarningsAsErrors reaches the AOT compiler too, so a trim or AOT warning fails here.
       - name: Publish (Native AOT)

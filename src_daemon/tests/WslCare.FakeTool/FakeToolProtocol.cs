@@ -137,6 +137,12 @@ public sealed record FakeAnswer(string Tool, IReadOnlyList<string> Argv, int Exi
 
     public int HangAfterMilliseconds { get; init; }
 
+    /// <summary>When set (E4.S1: <c>--output</c>, curl's), the fixture's bytes go to the FILE named by the argument after
+    /// this flag in the call instead of stdout — a download the installer under test writes to a path in its own
+    /// temporary folder, which the scenario cannot know in advance. A call without the flag, or with the flag last,
+    /// writes nothing and exits <see cref="FakeToolProtocol.Unscripted"/>, saying why.</summary>
+    public string OutputFlag { get; init; } = string.Empty;
+
     public bool Matches(FakeCall call) =>
         string.Equals(call.Tool, Tool, StringComparison.Ordinal)
         && (Prefix ? Argv.Count <= call.Argv.Count && Argv.SequenceEqual(call.Argv.Take(Argv.Count), StringComparer.Ordinal) : call.Argv.SequenceEqual(Argv, StringComparer.Ordinal));
@@ -169,6 +175,7 @@ public static class FakeScript
             json.WriteBoolean("prefix", answer.Prefix);
             json.WriteNumber("upTo", answer.UpTo);
             json.WriteNumber("hangAfterMs", answer.HangAfterMilliseconds);
+            json.WriteString("outputFlag", answer.OutputFlag);
             json.WriteEndObject();
         }
 
@@ -209,5 +216,6 @@ public static class FakeScript
             Prefix = element.TryGetProperty("prefix", out var prefix) && prefix.GetBoolean(),
             UpTo = element.TryGetProperty("upTo", out var upTo) ? upTo.GetInt32() : 0,
             HangAfterMilliseconds = element.TryGetProperty("hangAfterMs", out var hang) ? hang.GetInt32() : 0,
+            OutputFlag = element.TryGetProperty("outputFlag", out var output) ? output.GetString() ?? string.Empty : string.Empty,
         };
 }

@@ -30,6 +30,12 @@
          and the daemon's version file the version flow compares against. -->
     <AssemblyMetadata Include="WslCare.ModuleTests" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\research\module_tests.md'))" />
     <AssemblyMetadata Include="WslCare.VersionFile" Value="$(WslCareVersionFile)" />
+    <!-- E4.S1: the installer and what it ships — run and read where they live, never copied, so a test
+         always exercises the files a release packs. -->
+    <AssemblyMetadata Include="WslCare.InstallScript" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..\install.sh'))" />
+    <AssemblyMetadata Include="WslCare.SystemdDirectory" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\systemd'))" />
+    <AssemblyMetadata Include="WslCare.MachineConfig" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\config\machine.json'))" />
+    <AssemblyMetadata Include="WslCare.RepositoryRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\..'))" />
   </ItemGroup>
 
   <ItemGroup>

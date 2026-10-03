@@ -1,0 +1,22 @@
+# wsl-care — every 4 hours (plan §8, E4.S1). Installed by install.sh to /etc/systemd/system/ and
+# enabled with `systemctl enable --now wsl-care.timer`.
+#
+# A CALENDAR timer with Persistent=true, not the monotonic OnBootSec=20min / OnUnitActiveSec=4h of §8:
+# Persistent= takes effect only on OnCalendar= timers (systemd.timer(5)), and it is what answers the reason
+# §8 chose a monotonic timer — the VM is off every night. systemd stores the last trigger on disk; the
+# first boot of the day finds 00:00/04:00/08:00 missed and runs ONCE (not once per missed slot), then on
+# the 4-hour grid. RandomizedDelaySec spreads that catch-up off the busiest seconds of a boot; the heavy
+# actions wait for idle anyway (§5) and the service runs at Nice=19 / idle I/O.
+[Unit]
+Description=wsl-care: the full run every 4 hours
+Documentation=https://github.com/oleksandrdubyna88/wsl_care
+
+[Timer]
+OnCalendar=*-*-* 00/4:00:00
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=wsl-care.service
+
+[Install]
+WantedBy=timers.target
