@@ -150,3 +150,31 @@ jobs:
       # path it can use without MSYS translation.
       - name: Smoke the published binary
         run: bash .github/scripts/smoke-daemon.sh "artifacts/publish/$RID/wsl-care$EXE" "$RUNNER_OS" "$RUNNER_TEMP"
+
+      # The release ARCHIVE, packed from this leg's published binary by the very script release.yml packs with, then
+      # checked by the very script release.yml checks with (this RID's pair only). Before the E4 review the Windows
+      # packaging ran on no pull request: package-daemon.sh printed an MSYS path (/d/a/…) that the attest and upload
+      # actions — Windows programs — read as D:\d\a\…, and the win-x64 release leg would have failed at its last steps.
+      - name: Package the archive (exactly as the release does)
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < src_daemon/version.txt)"
+          asset="$(bash .github/scripts/package-daemon.sh "$version" "$RID" "artifacts/publish/$RID" artifacts/release | tail -n 1)"
+          echo "ASSET=$asset" >> "$GITHUB_ENV"
+          bash .github/scripts/verify-release-assets.sh "$version" artifacts/release "$RID"
+
+      # The printed path opened by a program that is NOT bash, in a step that is not bash: under Git Bash even a native
+      # child is useless here, because MSYS rewrites a path-looking environment variable on its way to a Windows program
+      # (observed: ASSET=/c/… reached node and pwsh as C:/…). A pwsh step reads $ASSET from the runner, as the attest and
+      # upload actions do, so an MSYS spelling fails here on the Windows leg — not on a release day.
+      - name: The archive path opens outside bash
+        shell: pwsh
+        run: |
+          foreach ($file in @($env:ASSET, "$($env:ASSET).sha256")) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              Write-Output "::error::$file is not a file to a program outside bash (an MSYS spelling such as /d/a/... is not a Windows path)"
+              exit 1
+            }
+            Write-Output "opens outside bash: $((Resolve-Path -LiteralPath $file).Path)"
+          }
+

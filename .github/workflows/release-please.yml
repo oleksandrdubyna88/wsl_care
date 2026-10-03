@@ -21,9 +21,10 @@ name: release-please
 # bugs-v0.3.0). Once .github/rulesets/tags-daemon.json is applied, this App is the ONLY actor that can create a
 # `daemon-v*` tag at all.
 #
-# THE COMMIT TYPE IS THE VERSION: `feat:` a minor, `fix:` a patch, `ci:` / `chore:` / `docs:` / `test:` nothing. A
-# commit touching only `.github/` is never a release (`exclude-paths`). The first release is 0.1.0 exactly
-# (release-please-config.json, `$bootstrap`).
+# THE COMMIT TYPE IS THE VERSION: `feat:` a minor, `fix:` a patch, `ci:` / `chore:` / `docs:` / `test:` nothing; before
+# 1.0.0 a breaking change is a minor too (`bump-minor-pre-major`). A commit touching nothing under src_daemon/ — only
+# `.github/` or root files — is never a daemon release: release-please hands the package only commits under its path
+# (release-please-config.json, `$scope`). The first release is 0.1.0 exactly (`$bootstrap`).
 # ---------------------------------------------------------------------------
 
 on:

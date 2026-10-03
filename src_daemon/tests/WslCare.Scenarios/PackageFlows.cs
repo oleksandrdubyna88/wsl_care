@@ -6,6 +6,7 @@ using System.Text;
 
 using FluentAssertions;
 
+using WslCare.Core.Processes;
 using WslCare.TestSupport;
 
 namespace WslCare.Scenarios;
@@ -24,13 +25,8 @@ public sealed class PackageFlows
 
     private static void Linux() => Assert.SkipUnless(OperatingSystem.IsLinux(), ReleaseScripts.LinuxOnly);
 
-    private static async Task<(ChildResult Result, string Archive)> PackAsync(TempRoot root, string rid, byte[] binary, string binaryName = "wsl-care")
-    {
-        var publish = root.Dir("publish");
-        File.WriteAllBytes(Path.Combine(publish, binaryName), binary);
-        var result = await ReleaseScripts.RunAsync("package-daemon.sh", [Version, rid, publish, root.Under("out")], root.Path);
-        return (result, result.StdoutLines.LastOrDefault() ?? string.Empty);
-    }
+    private static Task<(ChildResult Result, string Archive)> PackAsync(TempRoot root, string rid, byte[] binary, string binaryName = "wsl-care") =>
+        PackagePathFlows.PackAsync(root, rid, binary, binaryName);
 
     private static List<TarEntry> Entries(string archive)
     {
@@ -124,35 +120,6 @@ public sealed class PackageFlows
     }
 
     [Fact]
-    public async Task The_windows_archive_holds_the_exe_alone_under_its_folder()
-    {
-        Linux();
-        Assert.SkipWhen(ReleaseScripts.OnPath("7z").Length == 0, "7-Zip (7z) is not on PATH here; the GitHub Ubuntu and Windows images carry it, so the CI legs run this");
-        using var root = new TempRoot("package-win");
-        var exe = Encoding.UTF8.GetBytes("MZ stand-in for wsl-care.exe");
-
-        var (result, archive) = await PackAsync(root, "win-x64", exe, "wsl-care.exe");
-
-        result.Exit.Should().Be(0, $"{result.Stdout}\n{result.Stderr}");
-        var name = await ReleaseScripts.ArchiveNameAsync(Version, "win-x64");
-        Path.GetFileName(archive).Should().Be(name);
-        var folder = $"wsl-care-{Version}-win-x64";
-        using var zip = ZipFile.OpenRead(archive);
-        var files = zip.Entries.Where(e => !e.FullName.EndsWith('/')).ToList();
-        files.Select(e => e.FullName).Should().Equal([$"{folder}/wsl-care.exe"], "the Windows probe ships no units and no distro machine layer");
-        zip.Entries.Where(e => e.FullName.EndsWith('/')).Select(e => e.FullName.TrimEnd('/')).Should().BeSubsetOf([folder]);
-        using (var stream = files[0].Open())
-        using (var copy = new MemoryStream())
-        {
-            stream.CopyTo(copy);
-            copy.ToArray().Should().Equal(exe);
-        }
-
-        var hash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(archive)));
-        File.ReadAllText(archive + ".sha256").Should().Be($"{hash}  {name}\n");
-    }
-
-    [Fact]
     public async Task A_bad_version_an_unknown_rid_or_a_missing_binary_is_refused_and_nothing_is_written()
     {
         Linux();
@@ -178,5 +145,68 @@ public sealed class PackageFlows
         }
 
         (Directory.Exists(out1) ? Directory.EnumerateFileSystemEntries(out1) : []).Should().BeEmpty("a refused run writes no archive");
+    }
+}
+
+/// <summary>
+/// The packaging script on EVERY operating system the release builds on (E4 review B1/B2): the Windows release leg runs
+/// <c>package-daemon.sh</c> under Git Bash and hands the path it prints to <c>attest-build-provenance</c> and
+/// <c>upload-artifact</c> — Windows programs, which read an MSYS path such as <c>/d/a/…</c> as <c>D:\d\a\…</c>. Run here
+/// under the bash the workflows use (Git for Windows' on Windows), the printed path is opened by .NET, a program that is
+/// not bash, exactly as the actions would open it.
+/// </summary>
+public sealed class PackagePathFlows
+{
+    private const string Version = "0.1.0";
+
+    internal static async Task<(ChildResult Result, string Archive)> PackAsync(TempRoot root, string rid, byte[] binary, string binaryName = "wsl-care")
+    {
+        var publish = root.Dir("publish");
+        File.WriteAllBytes(Path.Combine(publish, binaryName), binary);
+        var result = await ReleaseScripts.RunAsync("package-daemon.sh", [Version, rid, publish, root.Under("out")], root.Path);
+        return (result, result.StdoutLines.LastOrDefault() ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task The_printed_archive_path_is_one_a_program_that_is_not_bash_can_open()
+    {
+        Assert.SkipWhen(ReleaseScripts.Bash.Length == 0, ReleaseScripts.NoBash);
+        using var root = new TempRoot("package-path");
+
+        var (result, archive) = await PackAsync(root, "linux-x64", Encoding.UTF8.GetBytes("#!/bin/sh\necho stub\n"));
+
+        result.Exit.Should().Be(0, $"packing should succeed:\n{result.Stdout}\n{result.Stderr}");
+        File.Exists(archive).Should().BeTrue($"the path the script prints ({archive}) is what release.yml hands to attest-build-provenance and upload-artifact, which are not bash");
+        File.Exists(archive + ".sha256").Should().BeTrue("the .sha256 travels beside it under the same spelling");
+    }
+
+    [Fact]
+    public async Task The_windows_archive_holds_the_exe_alone_under_its_folder()
+    {
+        Assert.SkipWhen(ReleaseScripts.Bash.Length == 0, ReleaseScripts.NoBash);
+        Assert.SkipWhen(ExecutableResolver.Resolve("7z") is not ResolvedExecutable.Found, "7-Zip (7z) is not on PATH here; the GitHub Ubuntu and Windows images carry it, so every CI leg runs this");
+        using var root = new TempRoot("package-win");
+        var exe = Encoding.UTF8.GetBytes("MZ stand-in for wsl-care.exe");
+
+        var (result, archive) = await PackAsync(root, "win-x64", exe, "wsl-care.exe");
+
+        result.Exit.Should().Be(0, $"{result.Stdout}\n{result.Stderr}");
+        File.Exists(archive).Should().BeTrue($"the printed path ({archive}) opens outside bash — on the Windows leg it is what the attestation is made of");
+        var name = await ReleaseScripts.ArchiveNameAsync(Version, "win-x64");
+        Path.GetFileName(archive).Should().Be(name);
+        var folder = $"wsl-care-{Version}-win-x64";
+        using var zip = ZipFile.OpenRead(archive);
+        var files = zip.Entries.Where(e => !e.FullName.EndsWith('/')).ToList();
+        files.Select(e => e.FullName).Should().Equal([$"{folder}/wsl-care.exe"], "the Windows probe ships no units and no distro machine layer");
+        zip.Entries.Where(e => e.FullName.EndsWith('/')).Select(e => e.FullName.TrimEnd('/')).Should().BeSubsetOf([folder]);
+        using (var stream = files[0].Open())
+        using (var copy = new MemoryStream())
+        {
+            stream.CopyTo(copy);
+            copy.ToArray().Should().Equal(exe);
+        }
+
+        var hash = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(archive)));
+        File.ReadAllText(archive + ".sha256").Should().Be($"{hash}  {name}\n");
     }
 }

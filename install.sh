@@ -444,7 +444,7 @@ install_preflight() {
       have "$tool" || fail preflight "$tool is not installed, and sysstat / atop need installing or switching on"
     done
   fi
-  for tool in od sort head wc; do
+  for tool in od sort head tail wc; do
     have "$tool" || fail preflight "$tool is not installed"
   done
   if [ -e "$ROOT$LINK_PATH" ] || [ -h "$ROOT$LINK_PATH" ]; then
@@ -508,16 +508,20 @@ resolve_version() {
     return 0
   fi
   # The newest `daemon-v*` release, NOT releases/latest: this repository releases the daemon and the
-  # VS Code extension, and "latest" is usually the extension's .vsix. The API lists newest first.
+  # VS Code extension, and "latest" is usually the extension's .vsix. Read WITHOUT jq and without trusting the
+  # answer's layout: JSON holds no raw newline inside a string, so the answer is joined into one line and every
+  # `"tag_name": "daemon-v<x.y.z>"` is taken from it (a pre-release such as -rc.1 does not match), then the HIGHEST
+  # version wins, compared number by number — not the first one listed, and not one line of pretty-printed output.
   api="https://api.github.com/repos/$REPO/releases?per_page=100"
   fetch "$api" "$WORK/releases.json" 60 || fail resolve-release "could not read $api"
-  sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"daemon-v\([^"]*\)".*/\1/p' "$WORK/releases.json" > "$WORK/daemon-tags"
-  while IFS= read -r candidate; do
-    if matches "$candidate" "$VERSION_PATTERN"; then
-      VERSION=$candidate
-      return 0
-    fi
-  done < "$WORK/daemon-tags"
+  tr -d '\r\n' < "$WORK/releases.json" | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"daemon-v[0-9][0-9.]*"' \
+    | sed 's/.*"daemon-v\([0-9.]*\)"$/\1/' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+    | sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1 > "$WORK/daemon-version" || true
+  candidate=$(cat "$WORK/daemon-version")
+  if [ -n "$candidate" ] && matches "$candidate" "$VERSION_PATTERN"; then
+    VERSION=$candidate
+    return 0
+  fi
   fail resolve-release "no daemon-v* release found at $api — pass --version <x.y.z>"
 }
 

@@ -66,6 +66,14 @@ public sealed partial class ReleaseWorkflowTests
         Uses(steps[0]).Should().Be("x@y");
         steps[0]["with"].Map["k"].Text.Should().Be("v");
         Run(steps[1]).Should().Be("one\ntwo\n");
+
+        // The quoted forms the reader unescapes (kept equal through the E4 review's complexity refactor).
+        var quoted = WorkflowYaml.Parse("a: 'it''s # not a comment' # c\nb: \"say \\\"hi\\\" \\\\ done\"\nc: ''\n", "quoted.yml").Map;
+        quoted["a"].Text.Should().Be("it's # not a comment");
+        quoted["b"].Text.Should().Be("say \"hi\" \\ done");
+        quoted["c"].Text.Should().BeEmpty();
+        var unterminated = () => WorkflowYaml.Parse("a: 'open''\n", "quoted.yml");
+        unterminated.Should().Throw<NotSupportedException>("a doubled quote is an escape, not an end");
     }
 
     [Fact]
@@ -88,6 +96,23 @@ public sealed partial class ReleaseWorkflowTests
 
         Jobs(Load(Release)).Entries.Should().OnlyContain(e => e.Value.Map.Has("permissions"), "each release job names exactly what it needs");
     }
+
+    /// <summary>The permission checks below read <c>permissions:</c> blocks; a workflow with NONE inherits the repository's
+    /// default token scope (possibly write-all) and would pass every one of them vacuously (E4 review B5).</summary>
+    [Fact]
+    public void Every_workflow_declares_its_permissions_at_the_top_or_on_every_job()
+    {
+        ReleaseFiles.AllWorkflows.Where(path => !DeclaresPermissions(WorkflowYaml.Load(path))).Select(Path.GetFileName).Should().BeEmpty(
+            "a workflow without a permissions block gets the repository's default token, and no per-job check can see it");
+
+        // The rule's two shapes and its refusal, on planted workflows — the scan's known instances.
+        DeclaresPermissions(WorkflowYaml.Parse("on:\n  push:\njobs:\n  a:\n    runs-on: x\n", "planted.yml").Map).Should().BeFalse("no block anywhere");
+        DeclaresPermissions(WorkflowYaml.Parse("on:\n  push:\npermissions:\n  contents: read\njobs:\n  a:\n    runs-on: x\n", "planted.yml").Map).Should().BeTrue();
+        DeclaresPermissions(WorkflowYaml.Parse("on:\n  push:\njobs:\n  a:\n    permissions: {}\n  b:\n    runs-on: x\n", "planted.yml").Map).Should().BeFalse("job b has none");
+    }
+
+    private static bool DeclaresPermissions(YamlMap workflow) =>
+        workflow.Has("permissions") || Jobs(workflow).Entries.All(e => e.Value.Map.Has("permissions"));
 
     [Fact]
     public void Only_the_per_rid_build_job_can_sign_and_it_writes_nothing_to_the_repository()
@@ -186,6 +211,33 @@ public sealed partial class ReleaseWorkflowTests
         steps[order[4]]["with"].Map["subject-path"].Text.Should().Be("${{ env.ASSET }}", "the attested subject is the archive install.sh downloads (plan §15 #12)");
         steps[order[5]]["with"].Map["path"].Text.Should().Contain("${{ env.ASSET }}\n").And.Contain("${{ env.ASSET }}.sha256", "the archive and its .sha256 travel together");
     }
+
+    /// <summary>The Windows release leg once handed an MSYS path to the actions (E4 review B1): packaging ran on no pull
+    /// request, so nothing found it. Every pull-request leg now packs exactly as its release leg does, checks that set,
+    /// and opens the printed path in a step that is not bash.</summary>
+    [Fact]
+    public void Every_pull_request_leg_packs_the_archive_as_the_release_does_and_opens_its_path_outside_bash()
+    {
+        var job = Job(CiDaemon, "build-test-publish");
+        var steps = Steps(job);
+        var publish = StepIndex(job, "dotnet publish");
+        var package = StepIndex(job, PackageScript);
+        var check = steps.ToList().FindIndex(s => Run(s).Contains(VerifyScript, StringComparison.Ordinal) && Run(s).Contains("\"$RID\"", StringComparison.Ordinal));
+        var native = NativePathCheck(job);
+
+        new[] { publish, package, check, native }.Should().NotContain(-1).And.BeInAscendingOrder(
+            "publish, pack it as release.yml does, check that RID's set, then open the printed path outside bash");
+        Run(steps[package]).Should().Contain("\"$RID\"").And.Contain("ASSET=").And.Contain("GITHUB_ENV");
+        new[] { package, check, native }.Should().OnlyContain(i => !steps[i].Has("if"), "on EVERY leg — Windows is the leg that needed it");
+        var release = Job(Release, "build");
+        NativePathCheck(release).Should().BeInRange(StepIndex(release, PackageScript), StepIndex(release, "actions/attest-build-provenance@"),
+            "release.yml checks the path before handing it to the attestation");
+    }
+
+    /// <summary>The step that opens <c>$ASSET</c> in pwsh — NOT bash: inside a Git Bash step MSYS rewrites a path-looking
+    /// variable before any child sees it, so the check would pass the very spelling it exists to catch.</summary>
+    private static int NativePathCheck(YamlMap job) =>
+        Steps(job).ToList().FindIndex(s => s.Find("shell")?.Text == "pwsh" && Run(s).Contains("Test-Path -LiteralPath", StringComparison.Ordinal) && Run(s).Contains("$env:ASSET", StringComparison.Ordinal));
 
     [Fact]
     public void The_publish_job_checks_the_set_before_and_after_upload_and_making_it_public_is_its_last_step()
@@ -291,7 +343,7 @@ public sealed partial class ReleaseWorkflowTests
 
     /// <summary>Strings only the smoke script's checks contain.</summary>
     private static IReadOnlyList<string> SmokeMarkers() =>
-        ["config set volumes.anonymousMaxGb 100001", "\"act\" holds these actions", "\"recording\": \"recorded\"", "WSL_CARE_SANDBOX_PRIVILEGED=1"];
+        ["config set volumes.anonymousMaxGb 100001", "\"act\" holds these actions", "\"recording\": \"recorded\"", "WSL_CARE_SANDBOX_PRIVILEGED=1", "preview --all --json"];
 
     [GeneratedRegex("""^\s*(-\s+)?uses:\s""")]
     private static partial Regex UsesLine();

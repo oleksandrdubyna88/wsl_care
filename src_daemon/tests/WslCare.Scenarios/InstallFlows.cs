@@ -115,6 +115,27 @@ public sealed class InstallFlows
             "every download ASKS curl for https only, redirects included, under a ceiling — a request to curl, its effect is curl's");
     }
 
+    /// <summary>GitHub may answer the releases list as COMPACT JSON — every object on one line. A line-based reader then
+    /// sees one line holding every tag; the newest daemon release must still be the one installed, by version number,
+    /// never a pre-release and never the extension's.</summary>
+    [Fact]
+    public async Task The_newest_daemon_release_is_chosen_by_version_number_from_a_compact_releases_list()
+    {
+        Linux();
+        using var world = new InstallWorld("compact-releases");
+        const string compact =
+            """[{"tag_name":"extension-v1.0.0","draft":false},{"tag_name": "daemon-v0.9.1","draft":false},{"tag_name":"daemon-v0.11.0-rc.1","prerelease":true},{"tag_name":"daemon-v0.10.0","draft":false},{"tag_name":"daemon-v0.1.0","draft":false}]""";
+        world.Override(InstallWorld.Download(InstallWorld.ReleasesApi, world.Answer("releases-compact.json", compact)));
+        world.Publish("0.10.0", "linux-x64");
+
+        var result = await world.RunAsync();
+
+        Succeeded(result);
+        world.CallsOf("curl").Select(c => c.Argv[1]).Should().Contain(InstallWorld.ReleaseUrl("0.10.0", "wsl-care-0.10.0-linux-x64.tar.gz"),
+            "0.10.0 is the highest daemon version: numerically above 0.9.1, and 0.11.0-rc.1 is a pre-release");
+        result.Stdout.Should().Contain("release daemon-v0.10.0");
+    }
+
     [Fact]
     public async Task An_explicit_version_skips_the_releases_list_and_a_malformed_one_is_refused_before_anything_runs()
     {
@@ -668,7 +689,7 @@ public sealed class InstallFlows
         Linux();
         using var world = new InstallWorld("upgrade");
         world.Write(InstallWorld.BinaryPath, "#!/bin/sh\necho old\n");
-        File.CreateSymbolicLink(world.At(InstallWorld.LinkPath).EnsureParent(), InstallWorld.BinaryPath);
+        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
         world.Override("systemctl", ["try-restart", "wsl-care-events.service"], 0);
 
         Succeeded(await world.RunAsync());
@@ -839,15 +860,5 @@ public sealed class InstallFlows
         world.Override("systemctl", ["disable", "--now", "wsl-care.timer", "wsl-care-events.service"], 0);
         world.Override("systemctl", ["stop", "wsl-care.service"], 0);
         world.Override("systemctl", ["is-active", "--quiet", "wsl-care.timer"], 3);
-    }
-}
-
-internal static class InstallPathExtensions
-{
-    /// <summary>Creates the parent folder of <paramref name="path"/> and returns the path.</summary>
-    public static string EnsureParent(this string path)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        return path;
     }
 }
