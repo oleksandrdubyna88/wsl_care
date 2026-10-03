@@ -32,10 +32,10 @@ The one recorded expectation it can be held against is the plan's own §4 senten
 
 | Agent | One session = | Left in place |
 |---|---|---|
-| Claude Code | `~/.claude/projects/<project>/<id>.jsonl` + `~/.claude/projects/<project>/<id>/` when present — it holds `subagents/agent-*.jsonl` + `agent-*.meta.json` and `tool-results/` | `projects/*/memory/` (433 folders on Windows, counted again after the run: 433), everything outside `projects/`. **`file-history/<id>/` was NOT moved in this run** although the plan lists it |
+| Claude Code | `~/.claude/projects/<project>/<id>.jsonl` + `~/.claude/projects/<project>/<id>/` when present — it holds `subagents/agent-*.jsonl` + `agent-*.meta.json` and `tool-results/` | `projects/*/memory/` (433 folders on Windows, counted again after the run: 433), everything outside `projects/`. **`file-history/<id>/` was NOT moved in this run** although the plan lists it — not a decision: the one-time script never selected it. Nothing here says it must stay; it remains in the plan's scope, and whether Claude Code needs it for a session that is away was not checked |
 | Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (no `archived_sessions/` on either side) | the `*.sqlite` stores, `session_index.jsonl`, `history.jsonl`, config, auth |
 | Gemini CLI | `~/.gemini/tmp/<project>/chats/session-<timestamp>-<id>.jsonl` — `.jsonl`, not `.json` | `tmp/<project>/logs.json`, `history/`, settings, OAuth files |
-| Antigravity CLI (`~/.gemini/antigravity-cli/`, and the older `~/.gemini/antigravity/`) | the files keyed by one conversation id: `conversations/<id>.db`, `brain/<id>/**`, `annotations/<id>.pbtxt`, `presence/<id>.lock`; plus `log/cli-<timestamp>.log`, one per CLI start | `conversation_summaries.db` (+ `-wal`/`-shm`), `implicit/*.pb` (ids that match no conversation), `bin/`, `builtin/`, settings, state and token files |
+| Antigravity CLI (`~/.gemini/antigravity-cli/`, and the older `~/.gemini/antigravity/`) | the files keyed by one conversation id: `conversations/<id>.db`, `brain/<id>/**`, `annotations/<id>.pbtxt`, `presence/<id>.lock`. Separately, `log/cli-<timestamp>.log` (one per CLI start) carries no conversation id, so each log file was its **own** unit, aged on its own mtime — never bundled with a conversation | `conversation_summaries.db` (+ `-wal`/`-shm`), `implicit/*.pb` (ids that match no conversation), `bin/`, `builtin/`, settings, state and token files |
 
 Also present and **not** touched, as outside "sessions": Claude Desktop's `%APPDATA%\Claude\local-agent-mode-sessions`
 (225 files, 4.3 MB) and its `logs/`; `%LOCALAPPDATA%\claude-cli-nodejs` (per-project MCP server logs,
@@ -83,8 +83,11 @@ file (so its hash step never ran), and the first delete mode refused to delete a
 file no longer hashed.
 
 **Consequence for the plan:** a missing source is a normal outcome, not an error. Copy tolerates it and
-drops the file from the manifest; delete is decided **per file** — removed only when the source still
-hashes to what was archived; a changed file stays, a vanished one is reported as *removed by the agent*.
+drops the file from the manifest, reporting it as *removed by the agent*. This script decided the delete
+**per file** (removed only when the source still hashed to what was archived). That is wrong for a
+multi-file session — a resumed transcript would have stayed while its unchanged `subagents/` went — and the
+plan now decides it **per session** (its §8b). In this run it made no difference: every skipped file was
+*gone*, none was *changed* (Windows 56 gone / 0 changed, WSL 0 / 0).
 And the plan's §2 race is not hypothetical: with the agent's retention at 30 days, the agent wins any
 session that is 30 days old when the archive runs.
 
@@ -129,9 +132,12 @@ V:\…\AI_history\
 
 `files.tsv` keeps the source mtime, size, agent, session key and path for every archived file; the
 archive files carry the original mtimes as well (checked on one file per side). This is **not** the plan's
-`<agent>/<yyyy>/<MM>/<side>/` layout — a one-time copy kept the simplest restorable shape. Three WSL
-Claude files are in the archive but not in the manifest: they were archived and then removed by Claude's
-sweep before they could be hashed. The archive is kept by the user; it grows only when someone runs this
+`<agent>/<yyyy>/<MM>/<side>/` layout — a one-time copy kept the simplest restorable shape.
+
+The WSL counts, reconciled: the final copy listed and wrote **4 696** files; 2 of them vanished at the
+source before hashing, so the manifest holds **4 694** — the number archived, verified and deleted. Three
+WSL Claude files are in the archive but not in the manifest: those 2, and 1 written by the first,
+interrupted copy at 17:30 that Claude's sweep removed at 17:34, before the final copy listed its files. The archive is kept by the user; it grows only when someone runs this
 again.
 
 ## What changed in the script during the run
@@ -141,7 +147,11 @@ again.
 - `delete` checks the archive in full (any mismatch → nothing deleted), then deletes only the source files
   that still hash to the manifest; `delete-source` is the same with the archive check done by the caller
   (used for WSL, whose archive is fast to read only from Windows).
-- Empty session folders are removed only below depth 4 and never under `memory/`.
+- Empty folders are removed only where a file was just deleted (its folder and that folder's parent),
+  only when the folder path has **4 or more components counted from the home folder** — so
+  `.claude/projects/<project>/<id>` (4) and its subfolders can go, while `.claude/projects/<project>` (3),
+  `.codex/sessions/<yyyy>` (3) and `.gemini/antigravity-cli/brain` (3) never do — and never under
+  `memory/`.
 
 One operational lesson from running it: **bash reads a script while it runs**, so editing the file under a
 running instance can make it execute bytes from the edited version at the old offset. A WSL copy was stopped
