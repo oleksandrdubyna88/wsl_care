@@ -7,9 +7,17 @@
  * argv shapes the client may send, each in the encoding the real `wsl.exe` uses (measured 2026-10-03,
  * research/2026-10-03_wsl_exe_facts.md): `wsl.exe`'s own output UTF-16LE, the Linux program's UTF-8. Everything else
  * is refused with a distinct exit code and a sentence naming why — including argv the real `wsl.exe` would happily run
- * but the client must never send: `-u` / `--user`, `--` (argv handed to the distro's shell), anything after the binary
- * but the four read-only verbs (so `--timer`, `--confirm`, `--manual`, `config`, `act`, `collect`), a `-d` to a STOPPED
- * distro (the real one would start the VM), and a start as anything but an absolute `…\System32\wsl.exe`.</p>
+ * but the client must never send: `-u` / `--user` outside the root shapes, `--` (argv handed to the distro's shell),
+ * anything after the binary but the four read-only verbs (so `--timer`, `--confirm`, `--manual`, `config`, `act`,
+ * `collect`), a `-d` to a STOPPED distro (the real one would start the VM), and a start as anything but an absolute
+ * `…\System32\wsl.exe`.</p>
+ *
+ * <p><b>Since E6.S2, the root shapes</b> — its own copy of `rootCall.ts`'s closed union: `-d <distro> -u root --cd /
+ * --exec <daemon>` followed by EXACTLY `act <ids> --preview --json`, `act <ids> --confirm --manual --detach [--only -]
+ * --json`, `act --stop <runId> --json`, `collect --detach --json` or `--version`. It REFUSES a synchronous confirm (no
+ * `--detach`, plan §15j m11), stdin anywhere but a confirm's `--only -` (and a piped line that is not a 64-hex name), ids
+ * outside `contracts/actions.json` ∩ the scenario daemon's `status.actions`, an op whose capability that daemon does not
+ * advertise, and `--timer` / `--user` / `config` anywhere. A call's stdin is recorded in the log.</p>
  *
  * <p>The four verbs are written out HERE, independently of the product's `VERBS`: the fake is the oracle of the plan's
  * decision (§15f #5), so a verb added to the client without a decision added here fails rather than passing because
@@ -52,6 +60,20 @@ export interface FakeScenario {
    * call may start the VM. When on, the fake rewrites its scenario file so the distribution runs from then on.
    */
   readonly startable?: boolean;
+  /** E6.S2: how the root calls answer — the detach's `result`, a root exit, the root check's exit. */
+  readonly root?: FakeRoot;
+}
+
+/** The root calls' scripted answers (E6.S2); absent, every root call of the closed set answers as the goldens do. */
+export interface FakeRoot {
+  /** The `result` a detach answers (`act-detach-accepted.json` with this result): `accepted` by default. */
+  readonly detach?: string;
+  /** Every root call but the root check exits with this code and stderr. */
+  readonly exit?: { readonly code: number; readonly stderr: string };
+  /** The root check (`--version` as root) exits with this code and stderr. */
+  readonly checkExit?: { readonly code: number; readonly stderr: string };
+  /** Milliseconds before a root call answers. */
+  readonly delayMs?: number;
 }
 
 /** Exit codes the fake refuses with — none of them is a code the daemon or `wsl.exe` uses. */
@@ -138,12 +160,19 @@ function sameTail(tail: readonly string[], allowed: readonly string[]): boolean 
   return tail.length === allowed.length && tail.every((word, i) => word === allowed[i]);
 }
 
-function daemonAnswer(scenario: FakeScenario, tail: readonly string[]): Reply {
+/** What the binary answers before it can run at all: missing, or built for a newer glibc. */
+function binaryReply(scenario: FakeScenario): Reply | undefined {
   if (scenario.binary === 'missing') {
     return { code: 1, stderr: missingBinaryStderr(4000 + process.pid % 1000) };
   }
-  if (scenario.binary === 'oldGlibc') {
-    return { code: 1, stderr: OLD_GLIBC_STDERR };
+
+  return scenario.binary === 'oldGlibc' ? { code: 1, stderr: OLD_GLIBC_STDERR } : undefined;
+}
+
+function daemonAnswer(scenario: FakeScenario, tail: readonly string[]): Reply {
+  const binary = binaryReply(scenario);
+  if (binary !== undefined) {
+    return binary;
   }
   if (scenario.daemonExit !== undefined) {
     return { code: scenario.daemonExit.code, stderr: scenario.daemonExit.stderr, ...delay(scenario) };
@@ -160,13 +189,20 @@ function delay(scenario: FakeScenario): { delayMs?: number } {
 }
 
 function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
-  const [d, distro, cd, slash, exec, binary, ...tail] = argv;
+  const [d, , cd, slash, exec, binary, ...tail] = argv;
   if (d !== '-d' || cd !== '--cd' || slash !== '/' || exec !== '--exec' || binary !== DAEMON) {
     return refuse('not the one shape the client sends: -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care <verb>', argv);
   }
   if (!ALLOWED_TAILS.some((allowed) => sameTail(tail, allowed))) {
     return refuse(`outside the four read-only verbs: ${JSON.stringify(tail)}`, argv);
   }
+
+  return distroReply(scenario, argv) ?? daemonAnswer(scenario, tail);
+}
+
+/** The distribution of a `-d` call, as wsl.exe treats it — or nothing to say, when the call may go on. */
+function distroReply(scenario: FakeScenario, argv: readonly string[]): Reply | undefined {
+  const distro = argv[1];
   if (distro === undefined || distro.startsWith('-')) {
     // The real wsl.exe would read it as an option; a listed name of any other shape is taken as it is (§15h #4).
     return refuse(`a -d value starting with "-" is read by wsl.exe as an option: ${JSON.stringify(distro)}`, argv);
@@ -179,14 +215,20 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
     return { code: FAKE_EXIT.wouldStart, stderr: `fake wsl: -d ${distro} would START the stopped distribution\n` };
   }
 
-  return daemonAnswer(scenario, tail);
+  return undefined;
 }
 
-/** The fake's whole decision, pure: what `argv` answers under `scenario`. Exported for its own tests. */
-export function decide(scenario: FakeScenario, argv: readonly string[]): Reply {
+/** The fake's whole decision, pure: what `argv` (with `stdin`) answers under `scenario`. Exported for its own tests. */
+export function decide(scenario: FakeScenario, argv: readonly string[], stdin: Buffer = Buffer.alloc(0)): Reply {
+  if (isRootCall(argv)) {
+    return rootReply(scenario, argv, stdin);
+  }
+  if (stdin.length > 0) {
+    return refuse('stdin outside --only -: only a root confirm of A4 pipes a list', argv);
+  }
   const forbidden = argv.find((word) => FORBIDDEN_WORDS.includes(word));
   if (forbidden !== undefined) {
-    return refuse(`"${forbidden}" is never sent by the read-only client`, argv);
+    return refuse(`"${forbidden}" is never sent outside the root shapes`, argv);
   }
 
   return listReply(scenario, argv) ?? daemonReply(scenario, argv);
@@ -211,8 +253,19 @@ function emit(reply: Reply): void {
   }
 }
 
-function main(): void {
+/** Everything on stdin, to its end — nothing when the runner gave none (its stdin is then closed from the start). */
+function readStdin(): Promise<Buffer> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    process.stdin.on('data', (chunk: Buffer) => chunks.push(chunk));
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks)));
+    process.stdin.on('error', () => resolve(Buffer.concat(chunks)));
+  });
+}
+
+async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  const stdin = await readStdin();
   const scenarioFile = process.env.WSL_CARE_FAKE_SCENARIO;
   if (scenarioFile === undefined || scenarioFile === '') {
     emit({ code: FAKE_EXIT.noScenario, stderr: 'fake wsl: no scenario (WSL_CARE_FAKE_SCENARIO) — refusing to answer\n' });
@@ -221,13 +274,13 @@ function main(): void {
   const scenario = JSON.parse(fs.readFileSync(scenarioFile, 'utf8')) as FakeScenario;
   const file = process.env.WSL_CARE_FAKE_REQUESTED_FILE;
   if (scenario.log !== undefined) {
-    fs.appendFileSync(scenario.log, `${JSON.stringify({ argv, file: file ?? null })}\n`);
+    fs.appendFileSync(scenario.log, `${JSON.stringify({ argv, file: file ?? null, ...(stdin.length > 0 ? { stdin: stdin.toString('utf8') } : {}) })}\n`);
   }
   if (!isSystemWsl(file)) {
     emit({ code: FAKE_EXIT.wrongFile, stderr: `fake wsl: started as ${JSON.stringify(file)}, not as an absolute ...\\System32\\wsl.exe\n` });
     return;
   }
-  const reply = decide(scenario, argv);
+  const reply = decide(scenario, argv, stdin);
   if (reply.code === 0) {
     markStarted(scenarioFile, scenario, argv);
   }
@@ -245,5 +298,155 @@ function markStarted(file: string, scenario: FakeScenario, argv: readonly string
 }
 
 if (require.main === module) {
-  main();
+  void main();
+}
+
+// ---- E6.S2: the root shapes — the fake's OWN copy of the closed union (plan §15j M1 / M2 / m11) ----
+
+/** What follows `-d <distro>` in every root call, word for word. */
+export const ROOT_PREFIX: readonly string[] = ['-u', 'root', '--cd', '/', '--exec', DAEMON];
+
+/** Words no root call carries anywhere: the timer's mark, another user, the settings verb. */
+const NEVER_IN_ROOT = ['--timer', '--user', 'config'];
+
+const VOLUME_NAME = /^[0-9a-f]{64}$/;
+const RUN_ID = /^[0-9]{8}T[0-9]{6}Z-[1-9][0-9]{0,9}$/;
+
+/** The daemon's published registry (`contracts/actions.json`), read from the repository the compiled fake lives in. */
+const CONTRACT_ACTIONS = path.resolve(__dirname, '..', '..', '..', '..', 'contracts', 'actions.json');
+
+interface RootShape {
+  readonly op: 'preview' | 'confirm' | 'stop' | 'collect' | 'check';
+  readonly ids: readonly string[];
+  readonly piped: boolean;
+  readonly capabilities: readonly string[];
+  readonly runId?: string;
+}
+
+function isRootCall(argv: readonly string[]): boolean {
+  return argv[0] === '-d' && sameTail(argv.slice(2, 2 + ROOT_PREFIX.length), ROOT_PREFIX);
+}
+
+function actShape(tail: readonly string[]): RootShape | string {
+  const [, ids = '', ...flags] = tail;
+  const list = ids.split(',');
+  if (sameTail(flags, ['--preview', '--json'])) {
+    return { op: 'preview', ids: list, piped: false, capabilities: ['act.shownList'] };
+  }
+  if (flags.includes('--confirm') && !flags.includes('--detach')) {
+    return 'a synchronous confirm (no --detach) is never sent — a confirm runs in its own unit';
+  }
+  if (sameTail(flags, ['--confirm', '--manual', '--detach', '--json'])) {
+    return { op: 'confirm', ids: list, piped: false, capabilities: ['act.detach'] };
+  }
+  if (sameTail(flags, ['--confirm', '--manual', '--detach', '--only', '-', '--json'])) {
+    return list.includes('A4') ? { op: 'confirm', ids: list, piped: true, capabilities: ['act.detach', 'act.onlyStdin'] } : '--only - names the volumes A4 showed; A4 is not among the ids';
+  }
+
+  return `not one of the root shapes: ${JSON.stringify(tail)}`;
+}
+
+/** The tail after the root prefix, read against the five shapes — or why it is none of them. */
+function rootShape(tail: readonly string[]): RootShape | string {
+  if (sameTail(tail, ['--version'])) {
+    return { op: 'check', ids: [], piped: false, capabilities: [] };
+  }
+  if (sameTail(tail, ['collect', '--detach', '--json'])) {
+    return { op: 'collect', ids: [], piped: false, capabilities: ['act.detach'] };
+  }
+  if (tail.length === 4 && tail[0] === 'act' && tail[1] === '--stop' && tail[3] === '--json') {
+    return RUN_ID.test(tail[2] ?? '') ? { op: 'stop', ids: [], piped: false, capabilities: ['act.stop'], runId: tail[2] ?? '' } : `not a run id the daemon writes: ${JSON.stringify(tail[2])}`;
+  }
+
+  return tail[0] === 'act' && !(tail[1] ?? '').startsWith('-') ? actShape(tail) : `not one of the root shapes: ${JSON.stringify(tail)}`;
+}
+
+function readJson(file: string): Record<string, unknown> {
+  return JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
+}
+
+function strings(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
+/** Every line of a piped list one 64-hex name, every line ended — the empty list legal (A4 bound to nothing). */
+function pipedProblem(stdin: Buffer): string | undefined {
+  const text = stdin.toString('utf8');
+  if (text.length > 0 && !text.endsWith('\n')) {
+    return 'the piped list does not end with a newline';
+  }
+  const bad = text.split('\n').slice(0, -1).findIndex((line) => !VOLUME_NAME.test(line));
+
+  return bad >= 0 ? `line ${bad + 1} of the piped list is not a 64-hex volume name` : undefined;
+}
+
+/** The intersection the extension may act on: the daemon's registry (the contract) ∩ what this daemon reports. */
+function idsProblem(scenario: FakeScenario, ids: readonly string[]): string | undefined {
+  const registry = strings(readJson(CONTRACT_ACTIONS).ids);
+  const reported = strings(readJson(path.join(scenario.answers, 'status.json')).actions);
+  const outside = ids.filter((id) => !registry.includes(id) || !reported.includes(id));
+
+  return outside.length > 0 ? `ids outside the intersection of the registry and status.actions: ${JSON.stringify(outside)}` : undefined;
+}
+
+function capabilityProblem(scenario: FakeScenario, needed: readonly string[]): string | undefined {
+  const advertised = strings(readJson(path.join(scenario.answers, 'status.json')).capabilities);
+  const missing = needed.filter((c) => !advertised.includes(c));
+
+  return missing.length > 0 ? `the daemon does not advertise ${JSON.stringify(missing)}` : undefined;
+}
+
+function shapeProblem(scenario: FakeScenario, shape: RootShape, stdin: Buffer): string | undefined {
+  if (!shape.piped && stdin.length > 0) {
+    return 'stdin outside --only -: only a confirm of A4 pipes a list';
+  }
+
+  return (shape.piped ? pipedProblem(stdin) : undefined) ?? (shape.ids.length > 0 ? idsProblem(scenario, shape.ids) : undefined) ?? capabilityProblem(scenario, shape.capabilities);
+}
+
+function handOff(scenario: FakeScenario, kind: 'act' | 'collect'): Buffer {
+  const accepted = readJson(path.join(scenario.answers, 'act-detach-accepted.json'));
+
+  return Buffer.from(JSON.stringify({ ...accepted, result: scenario.root?.detach ?? 'accepted', kind }), 'utf8');
+}
+
+function previewAnswer(scenario: FakeScenario, ids: readonly string[]): Buffer {
+  const golden = readJson(path.join(scenario.answers, 'act-a4-preview.json'));
+  const entries = Array.isArray(golden.actions) ? (golden.actions as Record<string, unknown>[]) : [];
+  const actions = ids.map((id) => entries.find((a) => a.id === id) ?? { id, summary: '', status: 'previewed', reason: '', preview: { available: true, count: 0, bytes: 0 } });
+
+  return Buffer.from(JSON.stringify({ ...golden, actions }), 'utf8');
+}
+
+function rootAnswer(scenario: FakeScenario, shape: RootShape): Reply {
+  const scripted = shape.op === 'check' ? scenario.root?.checkExit : scenario.root?.exit;
+  const wait = scenario.root?.delayMs === undefined ? {} : { delayMs: scenario.root.delayMs };
+  if (scripted !== undefined) {
+    return { code: scripted.code, stderr: scripted.stderr, ...wait };
+  }
+  const answers: Record<RootShape['op'], () => Buffer> = {
+    check: () => Buffer.from(`${scenario.version ?? '0.1.0'}\n`, 'utf8'),
+    preview: () => previewAnswer(scenario, shape.ids),
+    confirm: () => handOff(scenario, 'act'),
+    collect: () => handOff(scenario, 'collect'),
+    stop: () => Buffer.from(JSON.stringify({ schemaVersion: 1, result: 'stopping', kind: 'act', runId: shape.runId, unit: `wsl-care-act@${shape.runId ?? ''}.service`, productVersion: 'unknown' }), 'utf8'),
+  };
+
+  return { code: 0, stdout: answers[shape.op](), ...wait };
+}
+
+/** A root call: the distribution as every `-d`, then the closed shapes, stdin, the intersection and the capabilities. */
+function rootReply(scenario: FakeScenario, argv: readonly string[], stdin: Buffer): Reply {
+  const tail = argv.slice(2 + ROOT_PREFIX.length);
+  const never = tail.find((word) => NEVER_IN_ROOT.includes(word));
+  if (never !== undefined) {
+    return refuse(`"${never}" is never part of a root call`, argv);
+  }
+  const shape = rootShape(tail);
+  const problem = typeof shape === 'string' ? shape : shapeProblem(scenario, shape, stdin);
+  if (problem !== undefined || typeof shape === 'string') {
+    return refuse(problem ?? 'unreachable', argv);
+  }
+
+  return distroReply(scenario, argv) ?? binaryReply(scenario) ?? rootAnswer(scenario, shape);
 }

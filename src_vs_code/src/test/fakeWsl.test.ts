@@ -200,3 +200,166 @@ test('§15h #4: a LISTED distribution with a name outside the setting pattern is
     assert.equal(code, 0);
   });
 });
+
+// ---- E6.S2: the root shapes (plan §15j M1 / M2 / m11, §15k #10) ----
+//
+// The fake answers exactly the five root calls of the closed union — written out HERE, independently of rootCall.ts —
+// and refuses, stricter than the real daemon would at the argv level: a SYNCHRONOUS confirm, stdin anywhere but
+// `--only -`, an id outside the contract's registry ∩ the scenario daemon's `status.actions`, an op whose capability that
+// daemon does not advertise, `--timer` / `--user` / `config` anywhere, and any other order of the words.
+
+const ROOT_CALL = ['-d', 'Ubuntu', '-u', 'root', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care'];
+const RUN = '20000101T000000Z-1';
+
+function names(count: number): string[] {
+  return Array.from({ length: count }, (_, i) => `${i.toString(16).padStart(8, '0')}${'ab'.repeat(28)}`);
+}
+
+function lines(list: readonly string[]): Buffer {
+  return Buffer.from(list.map((n) => `${n}\n`).join(''), 'utf8');
+}
+
+function rootAsk(world: FakeWorld, tail: readonly string[], stdin?: Buffer): Promise<ProcessResult> {
+  return world.runner({ file: WSL, args: [...ROOT_CALL, ...tail], timeoutMs: 15_000, ...(stdin === undefined ? {} : { stdin }) });
+}
+
+function json(result: ProcessResult): Record<string, unknown> {
+  const { code, stdout, stderr } = exitOf(result);
+  assert.equal(code, 0, stderr);
+  return JSON.parse(stdout.toString('utf8')) as Record<string, unknown>;
+}
+
+test('root: the five shapes of the closed union are answered (the positives)', async () => {
+  await within({ ...UBUNTU_RUNNING, version: '0.1.0' }, async (world) => {
+    const preview = json(await rootAsk(world, ['act', 'A4', '--preview', '--json']));
+    assert.equal((preview.actions as { id: string; shown: string[] }[])[0]?.shown.length, 387);
+    assert.equal(json(await rootAsk(world, ['act', 'A4', '--confirm', '--manual', '--detach', '--only', '-', '--json'], lines(names(387)))).result, 'accepted');
+    assert.equal(json(await rootAsk(world, ['act', 'A5,A10', '--confirm', '--manual', '--detach', '--json'])).result, 'accepted');
+    assert.deepEqual(json(await rootAsk(world, ['act', '--stop', RUN, '--json'])), { schemaVersion: 1, result: 'stopping', kind: 'act', runId: RUN, unit: `wsl-care-act@${RUN}.service`, productVersion: 'unknown' });
+    assert.equal(json(await rootAsk(world, ['collect', '--detach', '--json'])).kind, 'collect');
+    assert.equal(exitOf(await rootAsk(world, ['--version'])).stdout.toString('utf8'), '0.1.0\n');
+  });
+});
+
+test('root: a preview of ids beyond the golden\'s A4 answers an entry for each id asked, and only those', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const preview = json(await rootAsk(world, ['act', 'A5,A4,A10', '--preview', '--json']));
+    assert.deepEqual((preview.actions as { id: string }[]).map((a) => a.id), ['A5', 'A4', 'A10']);
+  });
+});
+
+test('root: the stdin of an --only - confirm is recorded in the call log, byte for byte', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const input = lines(names(3));
+    await rootAsk(world, ['act', 'A4', '--confirm', '--manual', '--detach', '--only', '-', '--json'], input);
+    assert.deepEqual(world.stdins(), [input.toString('utf8')]);
+  });
+});
+
+test('root: a SYNCHRONOUS confirm is refused — a confirm is always --detach (plan §15j m11)', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    for (const tail of [['act', 'A10', '--confirm', '--manual', '--json'], ['act', 'A10', '--confirm', '--json'], ['act', 'A4', '--confirm', '--manual', '--only', '-', '--json']]) {
+      const { code, stderr } = exitOf(await rootAsk(world, tail, tail.includes('--only') ? lines(names(1)) : undefined));
+      assert.equal(code, FAKE_EXIT.refused, tail.join(' '));
+      assert.match(stderr, /synchronous confirm/, tail.join(' '));
+    }
+  });
+});
+
+test('root: stdin anywhere but a confirm\'s --only - is refused', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    for (const tail of [['act', 'A4', '--preview', '--json'], ['act', 'A10', '--confirm', '--manual', '--detach', '--json'], ['collect', '--detach', '--json'], ['act', '--stop', RUN, '--json'], ['--version']]) {
+      const { code, stderr } = exitOf(await rootAsk(world, tail, lines(names(1))));
+      assert.equal(code, FAKE_EXIT.refused, tail.join(' '));
+      assert.match(stderr, /stdin outside --only -/, tail.join(' '));
+    }
+  });
+});
+
+test('root: an --only - list that is not one 64-hex name per line, or --only - without A4, is refused', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const confirmA4 = ['act', 'A4', '--confirm', '--manual', '--detach', '--only', '-', '--json'];
+    for (const bad of [Buffer.from('not-a-name\n'), Buffer.from(`${names(1)[0]}`), Buffer.from(`${names(1)[0]} --timer\n`)]) {
+      assert.equal(exitOf(await rootAsk(world, confirmA4, bad)).code, FAKE_EXIT.refused, bad.toString());
+    }
+    assert.equal(exitOf(await rootAsk(world, ['act', 'A10', '--confirm', '--manual', '--detach', '--only', '-', '--json'], lines(names(1)))).code, FAKE_EXIT.refused);
+    assert.equal(exitOf(await rootAsk(world, confirmA4, Buffer.alloc(0))).code, 0, 'an empty list binds A4 to nothing — legal');
+  });
+});
+
+test('root: an id outside the contract registry ∩ the daemon\'s status.actions is refused, naming it', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    for (const ids of ['A13', 'A99', 'A4,A13', 'a4']) {
+      const { code, stderr } = exitOf(await rootAsk(world, ['act', ids, '--preview', '--json']));
+      assert.equal(code, FAKE_EXIT.refused, ids);
+      assert.match(stderr, /outside the intersection/, ids);
+    }
+  });
+});
+
+test('root: an op whose capability the scenario daemon does not advertise is refused', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const answers = path.join(world.folder, 'answers-no-detach');
+    fs.mkdirSync(answers);
+    for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
+      fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(answers, file));
+    }
+    const status = JSON.parse(fs.readFileSync(path.join(answers, 'status.json'), 'utf8')) as { capabilities: string[] };
+    fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify({ ...status, capabilities: status.capabilities.filter((c) => c !== 'act.detach' && c !== 'act.stop') }));
+    world.rewrite({ answers });
+    for (const tail of [['collect', '--detach', '--json'], ['act', 'A10', '--confirm', '--manual', '--detach', '--json'], ['act', '--stop', RUN, '--json']]) {
+      const { code, stderr } = exitOf(await rootAsk(world, tail));
+      assert.equal(code, FAKE_EXIT.refused, tail.join(' '));
+      assert.match(stderr, /does not advertise/, tail.join(' '));
+    }
+    assert.equal(exitOf(await rootAsk(world, ['act', 'A4', '--preview', '--json'])).code, 0, 'the preview needs act.shownList, still advertised');
+  });
+});
+
+test('root: every other root argv is refused — the timer\'s mark, another user, config, a read verb, another order', async () => {
+  const never: readonly (readonly string[])[] = [
+    [...ROOT_CALL, 'collect', '--timer', '--json'],
+    [...ROOT_CALL, 'collect', '--detach', '--timer', '--json'],
+    [...ROOT_CALL, 'act', 'A10', '--confirm', '--timer', '--detach', '--json'],
+    [...ROOT_CALL, 'act', 'A10', '--confirm', '--detach', '--json'],
+    [...ROOT_CALL, 'act', 'A10', '--confirm', '--manual', '--detach'],
+    [...ROOT_CALL, 'act', 'A10', '--preview', '--manual', '--json'],
+    [...ROOT_CALL, 'act', 'A4', '--confirm', '--manual', '--detach', '--volume', 'ab'.repeat(32), '--json'],
+    [...ROOT_CALL, 'act', '--stop', '20000101T000000Z-01', '--json'],
+    [...ROOT_CALL, 'act', '--request', RUN],
+    [...ROOT_CALL, 'config', 'set', 'dryRun', 'false'],
+    [...ROOT_CALL, 'status', '--json'],
+    [...ROOT_CALL, 'collect', '--json'],
+    ['-d', 'Ubuntu', '-u', 'someone', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', 'collect', '--detach', '--json'],
+    ['-d', 'Ubuntu', '--user', 'root', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', 'collect', '--detach', '--json'],
+    ['-u', 'root', '-d', 'Ubuntu', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', 'collect', '--detach', '--json'],
+    ['-d', 'Ubuntu', '-u', 'root', '--exec', '/opt/wsl-care/bin/wsl-care', 'collect', '--detach', '--json'],
+    ['-d', 'Ubuntu', '-u', 'root', '--cd', '/', '--', '/opt/wsl-care/bin/wsl-care', 'collect', '--detach', '--json'],
+  ];
+  await within(UBUNTU_RUNNING, async (world) => {
+    for (const argv of never) {
+      const { code, stderr } = exitOf(await ask(world, argv));
+      assert.equal(code, FAKE_EXIT.refused, `${argv.join(' ')} → ${code} ${stderr}`);
+    }
+  });
+});
+
+test('root: a scripted detach answers unknown, and a scripted root exit writes its stderr and code', async () => {
+  await within({ ...UBUNTU_RUNNING, root: { detach: 'unknown' } }, async (world) => {
+    assert.equal(json(await rootAsk(world, ['collect', '--detach', '--json'])).result, 'unknown');
+  });
+  await within({ ...UBUNTU_RUNNING, root: { exit: { code: 75, stderr: 'wsl-care: busy\n' } } }, async (world) => {
+    const { code, stderr } = exitOf(await rootAsk(world, ['collect', '--detach', '--json']));
+    assert.deepEqual([code, stderr], [75, 'wsl-care: busy\n']);
+    assert.equal(exitOf(await rootAsk(world, ['--version'])).code, 0, 'the root check is scripted apart');
+  });
+  await within({ ...UBUNTU_RUNNING, root: { checkExit: { code: 1, stderr: 'no\n' } } }, async (world) => {
+    assert.equal(exitOf(await rootAsk(world, ['--version'])).code, 1);
+  });
+});
+
+test('root: a root call to a STOPPED distribution is refused like every -d — a root call never starts the VM', async () => {
+  await within({ distros: [{ name: 'Ubuntu', running: false }], binary: 'present' }, async (world) => {
+    assert.equal(exitOf(await rootAsk(world, ['collect', '--detach', '--json'])).code, FAKE_EXIT.wouldStart);
+  });
+});

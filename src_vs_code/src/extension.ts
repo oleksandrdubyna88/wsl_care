@@ -4,18 +4,24 @@ import { buildVersion } from './buildStamp';
 import { WslCareClient } from './client/WslCareClient';
 import { installDaemon } from './install/installDaemon';
 import { installUiFor, newInstallRecorder, type InstallRecorder } from './install/installUi';
+import { performance } from 'node:perf_hooks';
+
 import { PanelProvider } from './panel/panelProvider';
 import { Poller, type Timers } from './poll/poller';
 import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSelection';
+import { CleanupController } from './root/cleanupController';
 import { OutcomeStore } from './state/outcomeStore';
 import { StatusBar } from './statusBar/statusBar';
 import { clientRunner, type WslCareTestApi } from './testApi';
 import { distroSettingText } from './wsl/distros';
 
 /**
- * AI OS Care — the read-only extension over the `wsl-care` daemon (plan §7, E5). It runs on the Windows side
+ * AI OS Care — the extension over the `wsl-care` daemon (plan §7, E5–E6). It runs on the Windows side
  * (`extensionKind: ["ui"]`) and reaches the daemon only through `WslCareClient`, which starts the absolute
- * `%SystemRoot%\System32\wsl.exe` with one of four read-only verbs; no root call path exists in it (§15f #5).
+ * `%SystemRoot%\System32\wsl.exe` with one of four read-only verbs — and, since E6.S2, through the cleanup controller
+ * (`root/cleanupController.ts`), the ONE host-side holder of the root boundary (`root/rootCall.ts`: a closed union of five
+ * root calls). No button calls the controller yet — E6.S3 adds them; until then it is wired, and in Test mode reachable
+ * through the test API, but nothing in the product invokes it.
  *
  * E5.S2 hangs on it: the status bar (`statusBar/`), the read-only panel (`panel/`), both reading ONE store of the newest
  * outcomes (`state/outcomeStore.ts`), and the poller (`poll/poller.ts`) that decides when the daemon is asked — the
@@ -49,6 +55,7 @@ function distroSetting(): unknown {
 interface Parts {
   readonly testMode: boolean;
   readonly client: WslCareClient;
+  readonly cleanup: CleanupController;
   readonly install: InstallRecorder;
   readonly choice: RunnerChoice;
   readonly calls: string[];
@@ -61,12 +68,15 @@ function build(context: vscode.ExtensionContext): Parts {
   const testMode = context.extensionMode === vscode.ExtensionMode.Test;
   const choice = chooseRunner(testMode, process.env);
   const calls: string[] = [];
+  // ONE runner for the read-only client and the root controller: the same seam, the same Test-mode fake or closed runner.
+  const runner = clientRunner(testMode, runnerFor(choice), calls);
   const client = new WslCareClient({
-    runner: clientRunner(testMode, runnerFor(choice), calls),
+    runner,
     platform: process.platform,
     env: process.env,
     distroSetting,
   });
+  const cleanup = new CleanupController({ client, runner, now: () => performance.now(), sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }) });
   const store = new OutcomeStore();
   const focus: { override: boolean | undefined } = { override: undefined };
   const poller = new Poller({
@@ -78,7 +88,7 @@ function build(context: vscode.ExtensionContext): Parts {
     target: () => distroSettingText(distroSetting()),
   });
 
-  return { testMode, client, install: newInstallRecorder(), choice, calls, store, poller, focus };
+  return { testMode, client, cleanup, install: newInstallRecorder(), choice, calls, store, poller, focus };
 }
 
 /** *Install daemon*: the client resolves the distribution, the modal and the terminal are real — or recorded in Test mode. */
@@ -137,6 +147,7 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider): WslCareTes
     settled: () => poller.settled(),
     lastRendered: () => panel.lastRendered(),
     install: () => parts.install,
+    cleanup: () => parts.cleanup,
     buildVersion,
   };
 }

@@ -17,6 +17,10 @@ export interface FakeWorld {
   calls(): string[];
   /** Every call's requested file — what the client asked the runner to start. */
   files(): (string | null)[];
+  /** The stdin of every call that had one (E6.S2: A4's shown list on `--only -`), as text, in order. */
+  stdins(): string[];
+  /** Changes the scenario between calls — what a test does to stage the next answer. */
+  rewrite(patch: Partial<FakeScenario>): void;
   dispose(): void;
 }
 
@@ -32,6 +36,7 @@ export const UBUNTU_RUNNING: ScenarioInput = {
 interface LoggedCall {
   readonly argv: readonly string[];
   readonly file: string | null;
+  readonly stdin?: string;
 }
 
 export function fakeWorld(input: ScenarioInput): FakeWorld {
@@ -48,6 +53,8 @@ export function fakeWorld(input: ScenarioInput): FakeWorld {
     folder,
     calls: () => logged().map((c) => c.argv.join(' ')),
     files: () => logged().map((c) => c.file),
+    stdins: () => logged().flatMap((c) => (c.stdin === undefined ? [] : [c.stdin])),
+    rewrite: (patch) => fs.writeFileSync(file, JSON.stringify({ ...(JSON.parse(fs.readFileSync(file, 'utf8')) as FakeScenario), ...patch })),
     dispose: () => fs.rmSync(folder, { recursive: true, force: true }),
   };
 }

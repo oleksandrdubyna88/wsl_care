@@ -66,7 +66,7 @@ export interface TerminalTarget {
 export const LIST_TIMEOUT_MS = 15_000;
 
 /** Where the daemon is installed (E4.S1's `install.sh`). */
-const DAEMON_PATH = '/opt/wsl-care/bin/wsl-care';
+export const DAEMON_PATH = '/opt/wsl-care/bin/wsl-care';
 
 const LIST_QUIET = ['--list', '--quiet'];
 const LIST_VERBOSE = ['-l', '-v'];
@@ -82,9 +82,18 @@ function fail<T>(failure: Failure): Step<T> {
   return { ok: false, failure };
 }
 
-/** The daemon argv for `verb` in `distro` — the one place it is built. */
+/**
+ * A daemon call's `wsl.exe` argv — the one place it is built: `-d <distro> [<as user>] --cd / --exec <daemon> <tail>`.
+ * The read-only verbs pass no user; `root/rootCall.ts` — the ONE module that spells a root argv word (plan §15j M1) —
+ * passes its `-u root` and its closed tails. This module spells the `wsl.exe` words and the daemon's path, nothing else.
+ */
+export function daemonArgv(distro: string, tail: readonly string[], asUser: readonly string[] = []): string[] {
+  return ['-d', distro, ...asUser, '--cd', '/', '--exec', DAEMON_PATH, ...tail];
+}
+
+/** The daemon argv for `verb` in `distro`. */
 function daemonArgs(distro: string, verb: Verb): string[] {
-  return ['-d', distro, '--cd', '/', '--exec', DAEMON_PATH, ...VERBS[verb]];
+  return daemonArgv(distro, VERBS[verb]);
 }
 
 function startFailure(result: ProcessResult): Failure {
@@ -144,6 +153,16 @@ export class WslCareClient {
     const distro = await this.listedDistro(wsl.value, distroSettingText(this.options.distroSetting()));
 
     return distro.ok ? { kind: 'terminal', shellPath: wsl.value, shellArgs: ['-d', distro.value, '--cd', '~'], distro: distro.value } : distro.failure;
+  }
+
+  /**
+   * Where a ROOT call may go (E6.S2): the launcher and a validated, listed, RUNNING distribution — exactly the checks of
+   * every read-only verb, and never `startIfStopped`: no root call starts a stopped distribution.
+   */
+  async rootTarget(): Promise<{ readonly wsl: string; readonly distro: string } | Failure> {
+    const target = await this.target(false, distroSettingText(this.options.distroSetting()));
+
+    return target.ok ? target.value : target.failure;
   }
 
   private async runOnce(verb: Verb, startIfStopped: boolean, setting: string): Promise<VerbOutcome> {
