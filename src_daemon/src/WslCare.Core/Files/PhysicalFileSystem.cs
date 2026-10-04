@@ -71,7 +71,14 @@ public sealed class PhysicalFileSystem : IFileSystem
     public bool DirectoryExists(string path) => Directory.Exists(path);
 
     public IReadOnlyList<string> ListDirectories(string path) =>
-        Directory.Exists(path) ? Directory.GetDirectories(path) : [];
+        Directory.Exists(path) ? Ordinal(Directory.GetDirectories(path)) : [];
+
+    /// <summary>A listing in ordinal order — the disk's own order is the filesystem's (see <see cref="IFileSystem.ListDirectories"/>).</summary>
+    private static string[] Ordinal(string[] paths)
+    {
+        Array.Sort(paths, StringComparer.Ordinal);
+        return paths;
+    }
 
     /// <summary>Through the same reader the deletion policy trusts (attributes first, then the target),
     /// so "cannot be inspected" is an answer here too rather than a silent "not a link".</summary>
@@ -127,7 +134,7 @@ public sealed class PhysicalFileSystem : IFileSystem
     }
 
     public IReadOnlyList<string> ListFiles(string path) =>
-        Directory.Exists(path) ? Directory.GetFiles(path) : [];
+        Directory.Exists(path) ? Ordinal(Directory.GetFiles(path)) : [];
 
     public TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken) =>
         TreeWalk.Measure(path, limits, countOnlyUnder, neverEnter, cancellationToken);
