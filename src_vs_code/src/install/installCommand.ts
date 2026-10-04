@@ -1,4 +1,4 @@
-import { INSTALL_DAEMON } from '../client/handshake';
+import { MIN_DAEMON_FOR_ACTIONS } from '../client/handshake';
 
 /**
  * The ONE place the *Install daemon* command is built (plan §15g m2, §15f #5). The extension never RUNS it: the host
@@ -10,10 +10,9 @@ import { INSTALL_DAEMON } from '../client/handshake';
  *
  * <p>What is fixed, and why:</p>
  * <ul>
- *   <li>the version is the compiled `INSTALL_DAEMON` — the release a new install gets, at or above the minimum this
- *       extension renders (`MIN_DAEMON_FOR_RENDER`; two values since 2026-10-06, when 0.1.0's act unit turned out
- *       defective) — checked against a strict `x.y.z` pattern when the module loads; a constant outside it is a
- *       defect, refused loudly, never typed;</li>
+ *   <li>the version is the compiled minimum daemon this extension ACTS with (`MIN_DAEMON_FOR_ACTIONS`, plan §15j M5 —
+ *       never below the render minimum), checked against a strict `x.y.z` pattern when the module loads — a constant outside it is a defect, refused loudly, never
+ *       typed;</li>
  *   <li>the script is fetched from the TAG `daemon-v&lt;MIN&gt;`, not from `main`, so the installer is the one released
  *       with that daemon, and `--version &lt;MIN&gt;` installs exactly that release; the URL spells the ref in full,
  *       `refs/tags/daemon-v&lt;MIN&gt;`, so a branch of the same name can never be served instead (raw.githubusercontent.com
@@ -37,8 +36,8 @@ function pinnedVersion(version: string): string {
   return version;
 }
 
-/** The daemon release the command installs — `INSTALL_DAEMON`, never below the minimum this extension renders. */
-export const INSTALL_VERSION = pinnedVersion(INSTALL_DAEMON);
+/** The daemon release the command installs — the minimum this extension acts with (§15j M5). */
+export const INSTALL_VERSION = pinnedVersion(MIN_DAEMON_FOR_ACTIONS);
 
 /** The command typed into the terminal, verbatim. */
 export const INSTALL_COMMAND = `curl -fsSL https://raw.githubusercontent.com/${REPOSITORY}/refs/tags/daemon-v${INSTALL_VERSION}/install.sh | sudo sh -s -- --version ${INSTALL_VERSION}`;

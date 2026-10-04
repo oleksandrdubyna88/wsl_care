@@ -44,6 +44,11 @@ export interface VsixCheckOptions {
   readonly deniedWords: readonly string[];
   /** A release build: the placeholder publisher is refused. */
   readonly release: boolean;
+  /**
+   * The release guard's `root_allowed` (plan §15j B3, §15k #7): `false` refuses a bundle that carries the root module —
+   * the first public extension stays root-free; absent (a pull request) asks nothing.
+   */
+  readonly rootAllowed?: boolean;
 }
 
 export type VsixEntries = ReadonlyMap<string, Buffer>;
@@ -146,6 +151,18 @@ function stampFindings(entries: VsixEntries): string[] {
   return stamped === version ? [] : [`${BUNDLE_ENTRY} was built for ${stamped}, but the .vsix is version ${version} — the bundle is stale`];
 }
 
+/** The root module's region header, as esbuild writes it (unminified) — what makes a bundle root-capable. */
+const ROOT_MARKER_LINE = '// src/root/rootCall.ts';
+
+/** B3 (§15k #7): a release the tags do not allow a root path is refused when its bundle carries the root module. */
+function rootFindings(entries: VsixEntries, rootAllowed: boolean | undefined): string[] {
+  const bundle = entries.get(BUNDLE_ENTRY)?.toString('utf8') ?? '';
+
+  return rootAllowed === false && bundle.split('\n').some((line) => line.trimEnd() === ROOT_MARKER_LINE)
+    ? [`${BUNDLE_ENTRY} carries the root module (src/root/rootCall.ts), but this release may not: the first public extension stays root-free — an extension release is root-capable only after extension-v0.1.0 is tagged and above it (plan §15j B3, §15k #7)`]
+    : [];
+}
+
 function publisherFindings(entries: VsixEntries, release: boolean): string[] {
   const publisher = manifestOf(entries).publisher;
 
@@ -161,6 +178,7 @@ export function vsixFindings(entries: VsixEntries, options: VsixCheckOptions): s
     ...textFindings(entries, options.deniedWords),
     ...stampFindings(entries),
     ...publisherFindings(entries, options.release),
+    ...rootFindings(entries, options.rootAllowed),
   ];
 }
 
@@ -192,10 +210,10 @@ export interface MinDaemonInputs {
   readonly released?: string | undefined;
 }
 
-/** The two daemon versions min-daemon.json carries: the render minimum and the release *Install daemon* installs. */
-export type DaemonVersionKey = 'minDaemonForRender' | 'installDaemon';
+/** The two minima `min-daemon.json` holds: the daemon this build renders, and the one it acts with (E6.S2, §15j M5). */
+export type MinDaemonKey = 'minDaemonForRender' | 'minDaemonForActions';
 
-function minDaemonOf(json: unknown, key: DaemonVersionKey): string | undefined {
+function minDaemonOf(json: unknown, key: MinDaemonKey): string | undefined {
   const value = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>)[key] : undefined;
 
   return typeof value === 'string' ? value : undefined;
@@ -205,11 +223,11 @@ function minDaemonOf(json: unknown, key: DaemonVersionKey): string | undefined {
  * The four must agree: the compiled constant, what the bundle step emitted, the checked-in artefact the guard read and —
  * at a release — the minimum the guard verified. One finding per place that disagrees, naming it and what to do.
  */
-export function minDaemonFindings(inputs: MinDaemonInputs, key: DaemonVersionKey = 'minDaemonForRender'): string[] {
+export function minDaemonFindings(inputs: MinDaemonInputs, key: MinDaemonKey = 'minDaemonForRender'): string[] {
   const { constant, emitted, checkedIn, released } = inputs;
   const shown = (value: string | undefined): string => (value === undefined ? 'nothing readable' : value);
   const which = key === 'minDaemonForRender' ? '' : ` for ${key}`;
-  const guard = key === 'minDaemonForRender' ? `the minimum daemon ${released ?? ''}, but this .vsix renders ${constant}` : `the daemon to install ${released ?? ''}, but this .vsix installs ${constant}`;
+  const guard = key === 'minDaemonForRender' ? `the minimum daemon ${released ?? ''}, but this .vsix renders and installs ${constant}` : `the actions minimum ${released ?? ''}, but this .vsix acts with and installs ${constant}`;
 
   return [
     ...(minDaemonOf(emitted, key) === constant ? [] : [`dist/min-daemon.json says ${shown(minDaemonOf(emitted, key))}${which}, handshake.ts says ${constant} — the bundle step that built this .vsix saw another constant (run npm run bundle)`]),

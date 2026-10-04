@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { INSTALL_DAEMON, MIN_DAEMON_FOR_RENDER } from '../client/handshake';
+import { MIN_DAEMON_FOR_ACTIONS } from '../client/handshake';
 import type { Failure } from '../client/outcome';
 import { WslCareClient, type TerminalTarget } from '../client/WslCareClient';
 import { INSTALL_COMMAND, INSTALL_PREREQUISITES, INSTALL_VERSION } from '../install/installCommand';
@@ -62,14 +62,11 @@ function deps(target: () => Promise<TerminalTarget | Failure>, answer: boolean):
 
 const UBUNTU: TerminalTarget = { kind: 'terminal', shellPath: WSL, shellArgs: ['-d', 'Ubuntu', '--cd', '~'], distro: 'Ubuntu' };
 
-test('the command installs daemon 0.1.2 — the installer from its TAG and --version of the same — not the render minimum', () => {
-  // daemon 0.1.0's act unit carries the CollectMode defect (fixed in 0.1.1, first published as 0.1.2): a new user
-  // installing from the panel must get 0.1.2. The minimum the extension RENDERS stays lower (a 0.1.0 daemon renders).
-  assert.equal(INSTALL_DAEMON, '0.1.2');
-  assert.equal(INSTALL_VERSION, INSTALL_DAEMON);
+test('the command is pinned to the compiled minimum daemon: the installer from its TAG and --version of the same', () => {
+  assert.equal(INSTALL_VERSION, MIN_DAEMON_FOR_ACTIONS);
   assert.equal(
     INSTALL_COMMAND,
-    'curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.2/install.sh | sudo sh -s -- --version 0.1.2',
+    `curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v${MIN_DAEMON_FOR_ACTIONS}/install.sh | sudo sh -s -- --version ${MIN_DAEMON_FOR_ACTIONS}`,
   );
 });
 
@@ -159,4 +156,10 @@ test('a webview message cannot inject text: installDaemon is accepted only bare,
 test('the Marketplace README shows the very command the extension types', () => {
   const readme = fs.readFileSync(path.join(EXTENSION_ROOT, 'README.md'), 'utf8');
   assert.ok(readme.split(/\r?\n/).includes(INSTALL_COMMAND), 'README.md carries INSTALL_COMMAND on a line of its own');
+});
+
+test('E6.S2 (plan §15j M5): the command installs the ACTIONS minimum — the install module reads that constant, not the render one', () => {
+  const source = fs.readFileSync(path.join(EXTENSION_ROOT, 'src', 'install', 'installCommand.ts'), 'utf8');
+  assert.match(source, /export const INSTALL_VERSION = pinnedVersion\(MIN_DAEMON_FOR_ACTIONS\);/);
+  assert.equal(/MIN_DAEMON_FOR_RENDER/.test(source), false, 'while both minima are 0.1.0 the value cannot tell them apart; the source can');
 });

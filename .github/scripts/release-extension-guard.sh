@@ -12,19 +12,23 @@
 #      time, and the extension's tests and check-vsix hold the checked-in copy equal to it) — is a PUBLISHED, non-draft
 #      GitHub release `daemon-v<MIN>` (asked through `gh api` with the job's read-only token), AND POST_DEPLOY.md's
 #      `Last verified:` line names a date and a verified daemon at or above that minimum (`… · daemon <x.y.z> …`, compared
-#      by lib/versions.sh, the functions POST_DEPLOY item 6 ranks versions with). Since 2026-10-06 the artefact also carries
-#      `installDaemon`, the release *Install daemon* types (`INSTALL_DAEMON`, at or above the render minimum — 0.1.0's act
-#      unit is defective, so a new install gets 0.1.2): it too must be a published, non-draft release, and the stamp must
-#      be at or above it. An extension whose *Install daemon* types `--version <x.y.z>` must never ship before that daemon
-#      is out and was seen working.
+#      by lib/versions.sh, the functions POST_DEPLOY item 6 ranks versions with). An extension whose *Install daemon*
+#      types `--version <MIN>` must never ship before that daemon is out and was seen working. Since E6.S2 (plan §15j
+#      M5) the artefact holds TWO minima — `minDaemonForRender` and `minDaemonForActions` (the daemon the cleanups need,
+#      the one *Install daemon* types) — and BOTH must be published releases, and the stamp at or above both;
+#   6. THE FIRST PUBLIC EXTENSION STAYS ROOT-FREE (plan §15j B3, keyed on TAGS by §15k #7): a checkout that carries the
+#      root module (src_vs_code/src/root/rootCall.ts) is refused while the release is `extension-v0.1.0` or earlier, or
+#      while no `extension-v0.1.0` tag exists yet. The answer is also an output, `root_allowed`, and the build hands it to
+#      check-vsix, which refuses the BUNDLE when it carries the root module's marker and root_allowed is false — the
+#      source here, the artefact there.
 #
 #   release-extension-guard.sh <tag> [<main-ref>]
 #
-# Run from the repository root of the tag's checkout, with GH_REPO (owner/name) and GH_TOKEN set for `gh api`. On
-# success prints `version=…`, `publisher=…` and `min_daemon=…` — appended to $GITHUB_OUTPUT too when that is set; each is
-# a declared output of release-extension.yml's guard job, and the build checks its .vsix against min_daemon — and exits 0;
-# any refusal exits 1 naming the reason. The tag reaches this script as an argument from the environment, never pasted
-# into shell source.
+# Run from the repository root of the tag's checkout (the whole history: the tags are read), with GH_REPO (owner/name) and
+# GH_TOKEN set for `gh api`. On success prints `version=…`, `publisher=…`, `min_daemon=…`, `min_daemon_actions=…` and
+# `root_allowed=…` — appended to $GITHUB_OUTPUT too when that is set; each is a declared output of release-extension.yml's
+# guard job, and the build checks its .vsix against them — and exits 0; any refusal exits 1 naming the reason. The tag
+# reaches this script as an argument from the environment, never pasted into shell source.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -37,6 +41,8 @@ readonly PUBLISHER_PLACEHOLDER='publisher-tbd'
 readonly MANIFEST='src_vs_code/package.json'
 readonly MIN_DAEMON_FILE='src_vs_code/min-daemon.json'
 readonly STAMP_FILE='POST_DEPLOY.md'
+readonly ROOT_MODULE='src_vs_code/src/root/rootCall.ts'
+readonly FIRST_PUBLIC='0.1.0'
 
 refuse() {
   echo "::error::extension release guard: $*"
@@ -72,12 +78,27 @@ if [ "$#" -eq 2 ]; then
   git merge-base --is-ancestor HEAD "$2" 2> /dev/null || refuse "the tagged commit is not on $2 — a release is cut from main only"
 fi
 
-# The two daemon versions, from the JSON artefact, read by a JSON parser (python3, on every Ubuntu runner): neither a
-# reformatted TypeScript source nor a second matching line can change what the guard believes. `minDaemonForRender` is
-# the oldest daemon this extension renders; `installDaemon` is the release *Install daemon* types (2026-10-06: daemon
-# 0.1.0's act unit carries the CollectMode defect, so a new install gets 0.1.2 while 0.1.0 still renders).
-[ -f "$MIN_DAEMON_FILE" ] || refuse "$MIN_DAEMON_FILE is missing at this checkout — the daemon versions this extension renders and installs, emitted by scripts/bundle.mjs from MIN_DAEMON_FOR_RENDER and INSTALL_DAEMON and checked in beside them"
-version_of() {
+# The first public extension stays root-free (plan §15j B3, keyed on TAGS — §15k #7): a root-capable extension is
+# released only ABOVE extension-v0.1.0, and only once that tag exists. The tags come from the guard job's full-history
+# checkout; a checkout with no tags at all (or no git) reads as "no extension-v0.1.0 yet".
+root_allowed=false
+if [ "$version" != "$FIRST_PUBLIC" ] && version_at_least "$version" "$FIRST_PUBLIC" \
+  && git rev-parse -q --verify "refs/tags/extension-v$FIRST_PUBLIC" > /dev/null 2>&1; then
+  root_allowed=true
+fi
+if [ -f "$ROOT_MODULE" ] && [ "$root_allowed" != true ]; then
+  if [ "$version" = "$FIRST_PUBLIC" ] || ! version_at_least "$version" "$FIRST_PUBLIC"; then
+    refuse "this checkout carries the root module ($ROOT_MODULE), but extension-v$version is the first public extension or earlier — it must stay root-free (plan §15j B3); the root boundary ships above extension-v$FIRST_PUBLIC"
+  fi
+  refuse "this checkout carries the root module ($ROOT_MODULE), but no extension-v$FIRST_PUBLIC tag exists yet — the first public extension is tagged root-free from E5's merge first (plan §15j B3, §15k #7)"
+fi
+
+# The minima, from the JSON artefact, read by a JSON parser (python3, on every Ubuntu runner): neither a reformatted
+# TypeScript source nor a second matching line can change what the guard believes.
+[ -f "$MIN_DAEMON_FILE" ] || refuse "$MIN_DAEMON_FILE is missing at this checkout — the minimum daemon this extension renders, emitted by scripts/bundle.mjs from MIN_DAEMON_FOR_RENDER and checked in beside it"
+
+# minimum_of <key>: the x.y.z string under <key> in the artefact, or nothing.
+minimum_of() {
   python3 -c '
 import json, sys
 try:
@@ -88,37 +109,35 @@ except (ValueError, AttributeError):
 print(value if isinstance(value, str) else "")
 ' "$MIN_DAEMON_FILE" "$1"
 }
-min="$(version_of minDaemonForRender)"
-[[ "$min" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForRender \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_RENDER (npm test holds the two equal)"
-install="$(version_of installDaemon)"
-[[ "$install" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no installDaemon \"x.y.z\" — restore it from the extension's INSTALL_DAEMON (npm test holds the two equal)"
-version_at_least "$install" "$min" || refuse "$MIN_DAEMON_FILE: installDaemon $install is below minDaemonForRender $min — Install daemon would install a daemon this extension refuses"
 
-# Both are PUBLISHED releases: the render minimum, and the release Install daemon types. GitHub answers a draft's tag
-# with 404 to a read-only token, and the jq filter makes a published one print `false<TAB>daemon-v<x.y.z>` — anything
-# else is not a published release.
+min="$(minimum_of minDaemonForRender)"
+[[ "$min" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForRender \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_RENDER (npm test holds the two equal)"
+min_actions="$(minimum_of minDaemonForActions)"
+[[ "$min_actions" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForActions \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_ACTIONS (npm test holds the two equal)"
+
+# Each minimum is a PUBLISHED release. GitHub answers a draft's tag with 404 to a read-only token, and the jq filter makes a
+# published one print `false<TAB>daemon-v<MIN>` — anything else is not a published release.
 require_published() {
-  local what="$1" daemon_tag="daemon-v$2" answer
+  local daemon_tag="daemon-v$1" answer
   answer="$(gh api "repos/${GH_REPO:?GH_REPO is required}/releases/tags/$daemon_tag" --jq '[(.draft | tostring), .tag_name] | @tsv' 2> /dev/null)" \
-    || refuse "$what $daemon_tag is not a published release of $GH_REPO — publish it first (the E4 live gate), then tag the extension"
-  [ "$answer" = "false	$daemon_tag" ] || refuse "$what $daemon_tag is not a published, non-draft release (GitHub answered '$answer')"
+    || refuse "the minimum daemon $daemon_tag is not a published release of $GH_REPO — publish it first (the E4 live gate), then tag the extension"
+  [ "$answer" = "false	$daemon_tag" ] || refuse "the minimum daemon $daemon_tag is not a published, non-draft release (GitHub answered '$answer')"
 }
-require_published "the minimum daemon" "$min"
-if [ "$install" != "$min" ]; then
-  require_published "the daemon Install daemon installs," "$install"
+require_published "$min"
+if [ "$min_actions" != "$min" ]; then
+  require_published "$min_actions"
 fi
 
-# …and was seen working: POST_DEPLOY.md's stamp names a date and a daemon at or above the release Install daemon types
-# (which is at or above the render minimum).
+# …and was seen working: POST_DEPLOY.md's stamp names a date and a daemon at or above both minima.
 [ -f "$STAMP_FILE" ] || refuse "$STAMP_FILE is missing at this checkout"
 stamp="$(sed -n 's/^Last verified: //p' "$STAMP_FILE" | head -n 1)"
 [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\  ]] || refuse "$STAMP_FILE's 'Last verified:' line names no date — the minimum daemon $min was never verified live (run POST_DEPLOY.md and stamp it)"
 verified="$(printf '%s\n' "$stamp" | sed -n 's/.*daemon \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')"
 [ -n "$verified" ] || refuse "$STAMP_FILE's 'Last verified:' line names no 'daemon <x.y.z>' — stamp the verified daemon version"
 version_at_least "$verified" "$min" || refuse "$STAMP_FILE last verified daemon $verified, older than the minimum $min this extension needs"
-version_at_least "$verified" "$install" || refuse "$STAMP_FILE last verified daemon $verified, older than $install, the release Install daemon types"
+version_at_least "$verified" "$min_actions" || refuse "$STAMP_FILE last verified daemon $verified, older than the actions minimum $min_actions this extension acts with"
 
-for line in "version=$version" "publisher=$publisher" "min_daemon=$min" "install_daemon=$install"; do
+for line in "version=$version" "publisher=$publisher" "min_daemon=$min" "min_daemon_actions=$min_actions" "root_allowed=$root_allowed"; do
   echo "$line"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "$line" >> "$GITHUB_OUTPUT"

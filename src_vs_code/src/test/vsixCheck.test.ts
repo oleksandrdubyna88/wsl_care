@@ -199,12 +199,39 @@ test('each place that disagrees is named — the stale bundle, the checked-in ar
   assert.equal(minDaemonFindings({ constant: '0.1.0', emitted: {}, checkedIn: [], released: '9.9.9' }).length, 3);
 });
 
-const INSTALL_AGREED = { constant: '0.1.2', emitted: { minDaemonForRender: '0.1.0', installDaemon: '0.1.2' }, checkedIn: { minDaemonForRender: '0.1.0', installDaemon: '0.1.2' }, released: '0.1.2' };
+// ---- E6.S2 (plan §15j M5): the actions minimum is held the same way, in the same four places ----
 
-test('the daemon to install (installDaemon, 2026-10-06) is compared in the same four places, apart from the render minimum', () => {
-  assert.deepEqual(minDaemonFindings(INSTALL_AGREED, 'installDaemon'), []);
-  assert.deepEqual(minDaemonFindings({ ...INSTALL_AGREED, constant: '0.1.0', released: '0.1.0' }, 'minDaemonForRender'), [], 'the render minimum keeps its own value beside it');
-  assert.match(minDaemonFindings({ ...INSTALL_AGREED, emitted: { minDaemonForRender: '0.1.0' } }, 'installDaemon')[0] ?? '', /dist\/min-daemon\.json says nothing readable for installDaemon/);
-  assert.match(minDaemonFindings({ ...INSTALL_AGREED, checkedIn: { minDaemonForRender: '0.1.0', installDaemon: '0.1.0' } }, 'installDaemon')[0] ?? '', /says 0\.1\.0 for installDaemon, handshake\.ts says 0\.1\.2/);
-  assert.match(minDaemonFindings({ ...INSTALL_AGREED, released: '0.1.0' }, 'installDaemon')[0] ?? '', /the release guard verified the daemon to install 0\.1\.0, but this \.vsix installs 0\.1\.2/);
+const ACTIONS_AGREED = { constant: '0.1.0', emitted: { minDaemonForActions: '0.1.0' }, checkedIn: { minDaemonForActions: '0.1.0' }, released: '0.1.0' };
+
+test('the actions minimum: clean when the four agree; each place that disagrees named, under its own key', () => {
+  assert.deepEqual(minDaemonFindings(ACTIONS_AGREED, 'minDaemonForActions'), []);
+  assert.match(minDaemonFindings({ ...ACTIONS_AGREED, emitted: { minDaemonForActions: '0.0.9' } }, 'minDaemonForActions')[0] ?? '', /^dist\/min-daemon\.json says 0\.0\.9 for minDaemonForActions/);
+  assert.match(minDaemonFindings({ ...ACTIONS_AGREED, checkedIn: { minDaemonForRender: '0.1.0' } }, 'minDaemonForActions')[0] ?? '', /says nothing readable for minDaemonForActions/);
+  assert.match(minDaemonFindings({ ...ACTIONS_AGREED, released: '0.2.0' }, 'minDaemonForActions')[0] ?? '', /verified the actions minimum 0\.2\.0/);
+});
+
+// ---- E6.S2 (plan §15j B3, §15k #7): a release the tags do not allow a root path must not carry the root module ----
+
+const ROOT_MARKER_LINE = '// src/root/rootCall.ts';
+
+test('the real bundle carries the root module\'s marker (the subject of the check is present)', () => {
+  assert.ok(fs.readFileSync(BUNDLE, 'utf8').split('\n').includes(ROOT_MARKER_LINE));
+});
+
+test('rootAllowed false: a .vsix whose bundle carries the root module is refused, naming B3', () => {
+  const found = vsixFindings(cleanEntries(), { ...OPTIONS, rootAllowed: false });
+  assert.equal(found.length, 1, found.join('\n'));
+  assert.match(found[0] ?? '', /carries the root module \(src\/root\/rootCall\.ts\).*§15j B3/);
+});
+
+test('rootAllowed true — or not asked (a pull request) — the root module is no finding', () => {
+  assert.deepEqual(vsixFindings(cleanEntries(), { ...OPTIONS, rootAllowed: true }), []);
+  assert.deepEqual(vsixFindings(cleanEntries(), OPTIONS), []);
+});
+
+test('rootAllowed false with a bundle that does NOT carry the root module (a 0.1.0 build) is clean', () => {
+  const entries = cleanEntries();
+  const bundle = (entries.get(BUNDLE_ENTRY) ?? Buffer.alloc(0)).toString('utf8').split('\n').filter((l) => l !== ROOT_MARKER_LINE).join('\n');
+  entries.set(BUNDLE_ENTRY, Buffer.from(bundle, 'utf8'));
+  assert.deepEqual(vsixFindings(entries, { ...OPTIONS, rootAllowed: false }), []);
 });
