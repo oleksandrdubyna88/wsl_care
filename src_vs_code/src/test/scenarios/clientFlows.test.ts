@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import type { VerbOutcome } from '../../client/outcome';
-import { VERB_NAMES, VERB_TIMEOUT_MS } from '../../client/verbs';
+import { VERB_NAMES, VERB_TIMEOUT_MS, VERBS, type Verb } from '../../client/verbs';
 import { WslCareClient } from '../../client/WslCareClient';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from '../support/fakeWorld';
 import { golden, GOLDEN_ROOT, goldenSets } from '../support/paths';
@@ -30,6 +30,16 @@ function daemonCalls(world: FakeWorld): string[] {
   return world.calls().filter((c) => c.startsWith('-d '));
 }
 
+function daemonCall(verb: Verb): string {
+  return ['-d', 'Ubuntu', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', ...VERBS[verb]].join(' ');
+}
+
+/** What one `run(verb)` on a fresh client sends to the daemon: the verb, and — for the two verbs whose answers carry no
+ * version — the one `--version` that tells the handshake which daemon answered. */
+function expectedDaemonCalls(verb: Verb): string[] {
+  return verb === 'preview' || verb === 'doctor' ? [daemonCall(verb), daemonCall('version')] : [daemonCall(verb)];
+}
+
 function editedAnswers(world: FakeWorld, verb: 'status' | 'preview' | 'doctor', edit: (body: Record<string, unknown>) => void): string {
   const folder = path.join(world.folder, 'answers');
   fs.mkdirSync(folder, { recursive: true });
@@ -46,11 +56,11 @@ function editedAnswers(world: FakeWorld, verb: 'status' | 'preview' | 'doctor', 
 
 for (const set of goldenSets()) {
   for (const verb of VERB_NAMES) {
-    test(`flow · ${verb} over the ${set} goldens: answered through the fake, one daemon call, the System32 launcher`, async () => {
+    test(`flow · ${verb} over the ${set} goldens: answered through the fake, exactly the daemon calls it needs, the System32 launcher`, async () => {
       await flow({ ...UBUNTU_RUNNING, answers: path.join(GOLDEN_ROOT, set), version: '0.1.0' }, '', async (client, world) => {
         const outcome = await client.run(verb);
         assert.equal(outcome.kind, 'answered', JSON.stringify(outcome));
-        assert.equal(daemonCalls(world).filter((c) => c.endsWith(verb === 'version' ? '--version' : '--json')).length >= 1, true);
+        assert.deepEqual(daemonCalls(world), expectedDaemonCalls(verb), 'the verb itself, plus ONE --version only for preview / doctor with no status read (status carries productVersion)');
         assert.ok(world.files().every((f) => f === 'C:\\Windows\\System32\\wsl.exe'));
       });
     });

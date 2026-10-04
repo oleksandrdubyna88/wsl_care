@@ -21,7 +21,8 @@ public sealed partial class ReleaseExtensionWorkflowTests
     private const string Workflow = "release-extension.yml";
     private const string GuardScript = ".github/scripts/release-extension-guard.sh";
     private const string AssetsScript = ".github/scripts/verify-extension-assets.sh";
-    private const string Handshake = "src_vs_code/src/client/handshake.ts";
+    private const string MinDaemonFile = "src_vs_code/min-daemon.json";
+    private const string RerunHint = "Re-run FAILED jobs only";
 
     private static YamlMap Load() => WorkflowYaml.Load(ReleaseFiles.Workflow(Workflow));
 
@@ -58,13 +59,14 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var expected = new Dictionary<string, IReadOnlyDictionary<string, string>>
         {
             ["guard"] = read,
-            ["build"] = new Dictionary<string, string> { ["contents"] = "read", ["id-token"] = "write", ["attestations"] = "write" },
+            ["build"] = read,
+            ["attest"] = new Dictionary<string, string> { ["contents"] = "read", ["id-token"] = "write", ["attestations"] = "write" },
             ["github-draft"] = write,
             ["publish-marketplace"] = read,
             ["github-public"] = write,
         };
 
-        Jobs(Load()).Keys.Should().Equal(expected.Keys, "the five jobs, in their order");
+        Jobs(Load()).Keys.Should().Equal(expected.Keys, "the six jobs, in their order");
         foreach (var (id, permissions) in expected)
         {
             Permissions(Job(id)).Should().Equal(permissions, $"{id}: job-level permissions only, nothing more (plan §15e #0)");
@@ -108,7 +110,8 @@ public sealed partial class ReleaseExtensionWorkflowTests
     public void The_order_is_guard_build_draft_upload_marketplace_then_public_and_nothing_runs_past_a_failure()
     {
         Needs(Job("build")).Should().Equal("guard");
-        Needs(Job("github-draft")).Should().BeEquivalentTo(["guard", "build"]);
+        Needs(Job("attest")).Should().BeEquivalentTo(["guard", "build"]);
+        Needs(Job("github-draft")).Should().BeEquivalentTo(["guard", "build", "attest"], "nothing reaches a release before its attestation exists");
         Needs(Job("publish-marketplace")).Should().Contain("github-draft", "the rollback source (the .vsix on the draft) exists BEFORE the Marketplace serves anything (§15h #0)");
         Needs(Job("github-public")).Should().Contain(["github-draft", "publish-marketplace"], "the release goes public only after the Marketplace serves the version");
         Needs(Job("github-draft")).Should().NotContain("publish-marketplace");
@@ -135,27 +138,36 @@ public sealed partial class ReleaseExtensionWorkflowTests
         Run(steps[StepIndex(job, "npm ci")]).Should().Contain("--ignore-scripts", "no dependency's install script runs beside the Marketplace secret");
     }
 
+    /// <summary>E5 code round (security #2): a re-run of ALL jobs rebuilds a different .vsix, while the Marketplace may
+    /// already serve the first. So an asset on the release is never replaced — not even on a draft — and the release is
+    /// compared with THIS run's attested build both before the Marketplace and immediately before going public.</summary>
     [Fact]
-    public void Every_github_step_is_rerunnable_and_published_bytes_are_never_replaced()
+    public void Every_github_step_is_rerunnable_and_bytes_on_a_release_are_never_replaced()
     {
         var draft = Job("github-draft");
         var upload = Run(Steps(draft)[StepIndex(draft, "gh release upload")]);
-        upload.Should().Contain("isDraft").And.Contain("--clobber").And.Contain("already public", "uploads onto a draft; a re-run on a public release uploads nothing");
+        upload.Should().Contain("isDraft").And.Contain("already public", "uploads onto a draft; a re-run on a public release uploads nothing")
+            .And.Contain("never replaced", "an asset already on the draft is compared, never replaced");
+        upload.Should().NotContain("--clobber", "a clobber would put a re-run's rebuilt .vsix beside a Marketplace that serves the first one");
         var readBack = Steps(draft).ToList().FindIndex(s => Run(s).Contains("gh release download", StringComparison.Ordinal) && Run(s).Contains(AssetsScript, StringComparison.Ordinal) && Run(s).Contains("cmp ", StringComparison.Ordinal));
         readBack.Should().BeGreaterThan(StepIndex(draft, "gh release upload"), "the release is read back and compared byte for byte with the build's file");
+        Run(Steps(draft)[readBack]).Should().Contain(RerunHint, "a difference is a re-run of ALL jobs, and the refusal says what to do instead");
 
         var pub = Job("github-public");
         var steps = Steps(pub);
-        var check = steps.ToList().FindIndex(s => Run(s).Contains(AssetsScript, StringComparison.Ordinal));
+        var fromBuild = steps.ToList().FindIndex(s => Uses(s).StartsWith("actions/download-artifact@", StringComparison.Ordinal));
+        var compare = steps.ToList().FindIndex(s => Run(s).Contains("cmp ", StringComparison.Ordinal) && Run(s).Contains("from-build/", StringComparison.Ordinal) && Run(s).Contains("from-release/", StringComparison.Ordinal));
         var goPublic = StepIndex(pub, "--draft=false");
-        new[] { check, goPublic }.Should().NotContain(-1).And.BeInAscendingOrder();
+        new[] { fromBuild, compare, goPublic }.Should().NotContain(-1).And.BeInAscendingOrder("the attested build is fetched, the draft compared with it, and only then is it made public");
+        steps[fromBuild]["with"].Map["name"].Text.Should().Be(BuildArtifactName(), "the very file the attest job signed");
+        Run(steps[compare]).Should().Contain(AssetsScript).And.Contain(RerunHint);
         Run(steps[goPublic]).Should().Contain("already public", "a re-run on a public release changes nothing");
         goPublic.Should().Be(steps.Count - 1, "nothing runs after the release is public");
         ReleaseFiles.AllWorkflows.Sum(p => File.ReadAllText(p).Split("--draft=false").Length - 1).Should().Be(2, "one place per release workflow makes a release public");
     }
 
     [Fact]
-    public void The_build_packages_once_checks_that_file_then_attests_and_uploads_it()
+    public void The_build_packages_once_checks_that_file_and_uploads_it_and_signs_nothing()
     {
         var build = Job("build");
         var steps = Steps(build);
@@ -165,17 +177,40 @@ public sealed partial class ReleaseExtensionWorkflowTests
             StepIndex(build, "npm run package"),
             StepIndex(build, "scripts/check-vsix.mjs"),
             StepIndex(build, AssetsScript.Replace(".github", "../.github", StringComparison.Ordinal)),
-            StepIndex(build, "actions/attest-build-provenance@"),
             StepIndex(build, "actions/upload-artifact@"),
         ];
 
-        order.Should().NotContain(-1).And.BeInAscendingOrder("test, package, check the artefact, check the set, attest it, upload it");
+        order.Should().NotContain(-1).And.BeInAscendingOrder("test, package, check the artefact, check the set, upload it");
+        StepIndex(build, "actions/attest-build-provenance@").Should().Be(-1, "the build runs npm install scripts and a downloaded VS Code: it holds no signing scope and attests nothing");
         steps.Count(s => Run(s).Contains("npm run package", StringComparison.Ordinal) || Run(s).Contains("vsce package", StringComparison.Ordinal)).Should().Be(1, "vsce package ONCE");
-        Run(steps[order[2]]).Should().Contain("--release", "a release refuses the placeholder publisher");
-        steps[order[4]]["with"].Map["subject-path"].Text.Should().Be("release-extension/wsl-care-${{ needs.guard.outputs.version }}.vsix", "the attested subject is the packaged file");
-        steps[order[5]]["with"].Map["path"].Text.Should().Be("release-extension/", "the .vsix and its .sha256 travel together");
+        Run(steps[order[2]]).Should().Contain("--release", "a release refuses the placeholder publisher")
+            .And.Contain("--min-daemon \"$MIN_DAEMON\"", "the built minimum is the one the guard found published and verified");
+        steps[order[4]]["with"].Map["path"].Text.Should().Be("release-extension/", "the .vsix and its .sha256 travel together");
         build["env"].Map["VERSION"].Text.Should().Be("${{ needs.guard.outputs.version }}", "the build packs the version the guard approved");
+        build["env"].Map["MIN_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.min_daemon }}");
         File.ReadAllText(ReleaseFiles.Workflow("ci-extension.yml")).Should().Contain("npm run package").And.Contain("npm run check:vsix", "every pull request packages and checks the same way (plan §15g M8)");
+    }
+
+    /// <summary>E5 code round #3 (and security #1): the ONLY job with <c>id-token</c> / <c>attestations: write</c> downloads
+    /// the build's artifact, checks the pair and attests it — no dependency checkout, no npm, no node, no editor.</summary>
+    [Fact]
+    public void The_attest_job_signs_the_downloaded_build_and_runs_nothing_else()
+    {
+        var attest = Job("attest");
+        var steps = Steps(attest);
+
+        steps.Select(s => Uses(s).Split('@')[0] is { Length: > 0 } action ? action : "run").Should().Equal(
+            ["actions/checkout", "actions/download-artifact", "run", "actions/attest-build-provenance"],
+            "the verification script's folder, the build's artifact, the pair checked, the attestation — nothing else");
+        var checkout = steps[0]["with"].Map;
+        checkout["sparse-checkout"].Text.Should().Be(".github/scripts", "only the verification script — no package.json, no lock file, nothing to install");
+        checkout["persist-credentials"].Text.Should().Be("false");
+        steps[1]["with"].Map["name"].Text.Should().Be(BuildArtifactName());
+        steps[1]["with"].Map["path"].Text.Should().Be("from-build");
+        Run(steps[2]).Should().Contain(AssetsScript).And.Contain("from-build");
+        steps[3]["with"].Map["subject-path"].Text.Should().Be("from-build/wsl-care-${{ needs.guard.outputs.version }}.vsix", "the attested subject is the file the build packaged, checked against its .sha256");
+        steps.Should().OnlyContain(s => !Run(s).Contains("npm", StringComparison.Ordinal) && !Run(s).Contains("node ", StringComparison.Ordinal) && !Uses(s).StartsWith("actions/setup-node", StringComparison.Ordinal),
+            "no package manager and no JavaScript runtime beside the signing scope");
     }
 
     private static string BuildArtifactName() =>
@@ -190,21 +225,41 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var step = Steps(guard)[StepIndex(guard, GuardScript)];
         Run(step).Should().Contain("\"$GITHUB_REF_NAME\" origin/main");
         step["env"].Map["GH_TOKEN"].Text.Should().Be("${{ github.token }}", "the job's read-only token asks for the daemon release");
-        guard["outputs"].Map.Keys.Should().Contain(["version", "publisher"]);
+        guard["outputs"].Map.Keys.Should().Equal(["version", "publisher", "min_daemon"], "every line the guard emits is a declared output (E5 code round #7)");
+        guard["outputs"].Map["min_daemon"].Text.Should().Be("${{ steps.guard.outputs.min_daemon }}");
 
         var script = File.ReadAllText(Path.Combine(ReleaseFiles.Root, GuardScript));
-        script.Should().Contain("MIN_DAEMON_FOR_RENDER").And.Contain("releases/tags/$daemon_tag").And.Contain("POST_DEPLOY.md").And.Contain("publisher-tbd")
+        script.Should().Contain("min-daemon.json").And.Contain("releases/tags/$daemon_tag").And.Contain("POST_DEPLOY.md").And.Contain("publisher-tbd")
             .And.Contain($"{TagPrefix()}*)", "the guard reads the tag shape this workflow triggers on");
+        script.Should().NotContain("handshake.ts", "the guard reads the JSON artefact, never TypeScript with a line pattern (E5 code round #2/#5)");
     }
 
-    /// <summary>The guard reads <c>MIN_DAEMON_FOR_RENDER</c> with a line pattern; the TypeScript must keep that exact
-    /// line, or the guard would refuse every release — held here rather than discovered on a release day.</summary>
+    /// <summary>The guard reads the minimum daemon from the checked-in artefact <c>src_vs_code/min-daemon.json</c> — what the
+    /// bundle step emits from <c>MIN_DAEMON_FOR_RENDER</c>, held equal to it by the extension's tests and by check-vsix.
+    /// Its shape is held here, on every OS, rather than discovered on a release day.</summary>
     [Fact]
-    public void The_minimum_daemon_line_the_guard_reads_is_in_the_extension_exactly_once()
+    public void The_minimum_daemon_artefact_the_guard_reads_is_one_json_member_with_an_x_y_z()
     {
-        var lines = File.ReadAllLines(Path.Combine(ReleaseFiles.Root, Handshake)).Where(l => MinDaemonLine().IsMatch(l)).ToList();
+        using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(ReleaseFiles.Root, MinDaemonFile)));
 
-        lines.Should().ContainSingle("export const MIN_DAEMON_FOR_RENDER = 'x.y.z'; — the line release-extension-guard.sh parses");
+        json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal(["minDaemonForRender"]);
+        json.RootElement.GetProperty("minDaemonForRender").GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$");
+    }
+
+    /// <summary>E5 code round #6: POST_DEPLOY item 6 compares by CONTAINMENT and RANK — the newest published extension tag's
+    /// version is among the Marketplace's versions and none of them sorts above it — through the guard's own comparison
+    /// (<c>lib/versions.sh</c>), never by the list's first entry; and it reads the .vsix with python3, which stock Ubuntu
+    /// has, rather than unzip, which it does not.</summary>
+    [Fact]
+    public void Post_deploy_item_6_ranks_the_served_versions_with_the_guards_comparison_and_needs_no_unzip()
+    {
+        var row = File.ReadAllLines(Path.Combine(ReleaseFiles.Root, "POST_DEPLOY.md")).Single(l => l.StartsWith("| 6 |", StringComparison.Ordinal));
+        var guard = File.ReadAllText(Path.Combine(ReleaseFiles.Root, GuardScript));
+
+        row.Should().Contain(". .github/scripts/lib/versions.sh").And.Contain("highest_version").And.Contain("is_top_version").And.Contain("python3 -c");
+        row.Should().NotContain("versions[0]", "the first listed version is not the highest one").And.NotContain("unzip", "not on stock Ubuntu");
+        guard.Should().Contain("lib/versions.sh").And.Contain("version_at_least", "the guard and the item share one comparison");
+        guard.Should().NotContain("sort -t.", "no second spelling of the comparison");
     }
 
     [Fact]
@@ -221,7 +276,4 @@ public sealed partial class ReleaseExtensionWorkflowTests
 
     [GeneratedRegex("""^  [a-z][a-z0-9-]*:\s*$""")]
     private static partial Regex JobKeyLine();
-
-    [GeneratedRegex("""^export const MIN_DAEMON_FOR_RENDER = '[0-9]+\.[0-9]+\.[0-9]+';$""")]
-    private static partial Regex MinDaemonLine();
 }

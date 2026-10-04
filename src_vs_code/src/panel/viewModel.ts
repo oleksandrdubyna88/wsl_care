@@ -2,7 +2,7 @@ import type { VerbOutcome } from '../client/outcome';
 import { failureText } from '../failureText';
 import type { Snapshot } from '../state/outcomeStore';
 import { FIELD_MAP, isArriving, SECTIONS, type FieldRow, type ReadRow } from './fieldMap';
-import { at } from './jsonPath';
+import { at, unavailableAncestor } from './jsonPath';
 import { isUnavailable, unavailableText } from './read';
 import { RENDERERS, type Rendered } from './rowRenderers';
 import type { PanelView, ViewLevel, ViewRow, ViewSection } from './view';
@@ -15,7 +15,8 @@ import type { PanelView, ViewLevel, ViewRow, ViewSection } from './view';
  * 2. its verb was not asked yet → "checking…";
  * 3. its verb failed (stopped, not installed, a newer schema …) → that failure's short state — per verb, so an unknown
  *    `preview` major blanks only the rows read from `preview` (plan §6);
- * 4. its path is absent from the answer → "update the daemon to see this" (the compatibility rule: never 0);
+ * 4. its path is absent from the answer → "update the daemon to see this" (the compatibility rule: never 0) — unless an
+ *    ANCESTOR on the path was answered `available: false` (`vm`, `vm.memory`), which then reads as 5 with ITS reason;
  * 5. the figure is `available: false` → "unavailable — <reason>";
  * 6. otherwise its kind's renderer.
  */
@@ -28,10 +29,19 @@ function row(field: FieldRow, rendered: Rendered): ViewRow {
   return { ...PLAIN, ...rendered, id: field.id, label: field.label };
 }
 
+/** A path with no value: 'unavailable — <reason>' when an ancestor was answered unavailable (it then has no children),
+ * else 'update the daemon to see this' — the field is genuinely absent, an older daemon. */
+function absent(body: unknown, path: string): Rendered {
+  const parent = unavailableAncestor(body, path);
+
+  return parent === undefined ? { value: MISSING, state: 'missing' } : { value: unavailableText(parent), state: 'unavailable' };
+}
+
 function fromAnswer(field: ReadRow, outcome: Extract<VerbOutcome, { kind: 'answered' }>): Rendered {
-  const value = at('body' in outcome.answer ? outcome.answer.body : undefined, field.path);
+  const body = 'body' in outcome.answer ? outcome.answer.body : undefined;
+  const value = at(body, field.path);
   if (value === undefined) {
-    return { value: MISSING, state: 'missing' };
+    return absent(body, field.path);
   }
 
   return isUnavailable(value) ? { value: unavailableText(value), state: 'unavailable' } : RENDERERS[field.kind](value);

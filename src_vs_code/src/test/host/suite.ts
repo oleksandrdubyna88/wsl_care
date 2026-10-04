@@ -98,7 +98,7 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       const terminal = api.install().terminals.at(-1);
       assert.ok(terminal !== undefined);
       assert.match(terminal.spec.shellPath, /^[A-Za-z]:\\.*\\System32\\wsl\.exe$/i);
-      assert.deepEqual(terminal.spec.shellArgs, ['-d', 'Ubuntu']);
+      assert.deepEqual(terminal.spec.shellArgs, ['-d', 'Ubuntu', '--cd', '~']);
       assert.equal(terminal.shown, true);
       assert.deepEqual(terminal.typed, [{ text: INSTALL_COMMAND, addNewLine: false }]);
       assert.deepEqual(daemonCalls(api).filter((c) => c.includes('install')), [], 'nothing of it reached the runner');
@@ -108,6 +108,11 @@ const WINDOWS_FAKE: readonly Scenario[] = [
     name: 'the focused window asks status and the status-bar item shows the RAM line, uncoloured',
     run: async (api) => {
       scenario(RUNNING);
+      // Quiesce first: activation's own focused tick, or a window-state event the real window sent while focus was not
+      // overridden, may still have a `status` in flight — and the client SHARES a run in flight, so this scenario's
+      // focus would log no request of its own (observed twice on stable 1.140.0, 2026-10-04: `actual []`).
+      api.setFocused(false);
+      await api.settled();
       api.resetCalls();
       api.setFocused(true);
       await api.settled();

@@ -170,3 +170,21 @@ test('the page-source scan finds a planted sink in every spelling', () => {
     assert.ok(FORBIDDEN_NAMES.some((n) => namesIn(planted).includes(n)), planted);
   }
 });
+
+test('the notice is the ONE live region, and the same element across renders — only its text changes, so a screen reader announces the change and not the whole panel', () => {
+  const stop = { kind: 'stopped' as const, distro: 'Ubuntu' };
+  const { page, root } = show(buildPanelView(snapshot({ status: failed('status', stop), preview: failed('preview', stop), doctor: failed('doctor', stop) })));
+  const notice = root.one('p[data-notice]');
+  assert.equal(notice.attributes['aria-live'], 'polite');
+  assert.match(notice.textContent, /not running/);
+  assert.deepEqual([root, ...root.descendants()].filter((e) => e.attributes['aria-live'] !== undefined), [notice], 'nothing else is live');
+
+  const missing = { kind: 'notInstalled' as const, distro: 'Ubuntu' };
+  page.message({ type: 'view', view: buildPanelView(snapshot({ status: failed('status', missing) })) });
+  assert.equal(root.one('p[data-notice]'), notice, 'the same element, re-placed — not a new live region each render');
+  assert.match(notice.textContent, /not installed/);
+
+  page.message({ type: 'view', view: buildPanelView(snapshot(goldenOutcomes())) });
+  assert.equal(root.one('p[data-notice]'), notice);
+  assert.equal(notice.textContent, '', 'no notice: the live region stays, empty');
+});

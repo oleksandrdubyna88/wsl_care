@@ -29,6 +29,15 @@ export interface WslCareTestApi {
   buildVersion(): string;
 }
 
+/**
+ * The runner the client is given: logged into `log` in Test mode ONLY. Outside it nothing reads the log, and a window
+ * left open for weeks would grow it with every poll (E5 code round, security review #4) — so the real runner is handed
+ * over unwrapped. `testApi.test.ts` holds both and that `extension.ts` goes through here.
+ */
+export function clientRunner(testMode: boolean, inner: Runner, log: string[]): Runner {
+  return testMode ? loggedRunner(inner, log) : inner;
+}
+
 /** The runner wrapped so every request is logged before it is handed on — the test API's call log. */
 export function loggedRunner(inner: Runner, log: string[]): Runner {
   return (request: ProcessRequest) => {
