@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { VerbOutcome } from '../client/outcome';
-import { VERB_NAMES, VERB_TIMEOUT_MS, VERBS } from '../client/verbs';
+import { DISTRO_NAME } from '../wsl/distros';
+import { PREVIEW_CONTAINER_ASSUMPTION, VERB_NAMES, VERB_TIMEOUT_MS, VERBS } from '../client/verbs';
 import { LIST_TIMEOUT_MS, WslCareClient } from '../client/WslCareClient';
 import type { ProcessResult } from '../process/runner';
 import { TEST_ENV } from './support/fakeWorld';
@@ -75,7 +76,7 @@ test('an out-of-pattern distribution is refused before ANY spawn', async () => {
 test('a distribution wsl.exe --list does not report is refused before any -d call', async () => {
   const { c, rec } = client(wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), 'Debian');
   const outcome = await c.run('status');
-  assert.deepEqual(outcome, { kind: 'distroRefused', verb: 'status', distro: 'Debian', reason: 'wsl.exe --list does not report it' });
+  assert.deepEqual(outcome, { kind: 'distroRefused', verb: 'status', distro: 'Debian', reason: `wsl.exe --list does not report it (it reports: "Ubuntu"); a wslCare.distro setting must also match the pattern ${DISTRO_NAME.source}` });
   assert.deepEqual(rec.argvs(), [LIST_QUIET]);
 });
 
@@ -260,4 +261,87 @@ test('a poll in flight is not shared with a start the user asked for — the two
   assert.equal((await poll).kind, 'stopped');
   assert.equal((await start).kind, 'answered');
   assert.equal(rec.argvs().filter((a) => a.startsWith('-d ')).length, 1);
+});
+
+// ---- §15h #4: a name WSL lists is taken as it is; the strict pattern is the SETTING's ----
+
+test('a default distribution WSL lists under a name outside the setting pattern is used AS IT IS — argv is shell-free', async () => {
+  const odd = 'Ubuntu+Dev~2';
+  assert.equal(DISTRO_NAME.test(odd), false, 'the fixture is outside the setting pattern');
+  const { c, rec } = client({ ...wslAnswers([odd], [odd], odd), [daemonArgv(odd, VERBS.status)]: exited(0, STATUS) });
+  const outcome = await c.run('status');
+  assert.equal(outcome.kind, 'answered', JSON.stringify(outcome));
+  assert.deepEqual(rec.argvs().at(-1), daemonArgv(odd, VERBS.status));
+});
+
+test('the same name typed into the SETTING is refused by the pattern before any spawn, and the refusal names the pattern', async () => {
+  const { c, rec } = client({}, 'Ubuntu+Dev~2');
+  const outcome = await c.run('status');
+  assert.equal(outcome.kind, 'distroRefused');
+  assert.ok(outcome.kind === 'distroRefused' && outcome.reason.includes(DISTRO_NAME.source), JSON.stringify(outcome));
+  assert.equal(rec.requests.length, 0);
+});
+
+test('a listed default starting with "-" is refused — wsl.exe would read it as an option after -d', async () => {
+  const { c, rec } = client(wslAnswers(['-x'], ['-x'], '-x'));
+  const outcome = await c.run('status');
+  assert.ok(outcome.kind === 'distroRefused' && outcome.reason.includes('option'), JSON.stringify(outcome));
+  assert.ok(rec.argvs().every((a) => !a.startsWith('-d ')));
+});
+
+test('an unlisted setting is refused naming both the distributions WSL lists and the setting pattern', async () => {
+  const { c } = client(wslAnswers(['Ubuntu', 'docker-desktop'], ['Ubuntu'], 'Ubuntu'), 'Debian');
+  const outcome = await c.run('status');
+  assert.ok(outcome.kind === 'distroRefused', JSON.stringify(outcome));
+  assert.ok(outcome.reason.includes('"Ubuntu", "docker-desktop"') && outcome.reason.includes(DISTRO_NAME.source), outcome.reason);
+});
+
+// ---- E5.S3: the terminal Install daemon opens ----
+
+test('terminalTarget: the absolute launcher and -d <the listed distribution> — asked of --list only, never -d, never running', async () => {
+  const { c, rec } = client(wslAnswers(['Ubuntu', 'Debian'], [], 'Ubuntu'), 'Debian');
+  assert.deepEqual(await c.terminalTarget(), { kind: 'terminal', shellPath: WSL, shellArgs: ['-d', 'Debian'], distro: 'Debian' });
+  assert.deepEqual(rec.argvs(), [LIST_QUIET], 'a stopped distribution is still a target: the person asked for a shell there');
+});
+
+test('terminalTarget refuses before anything starts: an out-of-pattern setting, off Windows, an unlisted name', async () => {
+  const shaped = client({}, '-u');
+  assert.equal((await shaped.c.terminalTarget()).kind, 'distroRefused');
+  assert.equal(shaped.rec.requests.length, 0);
+  const off = client({}, '', 'linux');
+  assert.equal((await off.c.terminalTarget()).kind, 'notWindows');
+  assert.equal(off.rec.requests.length, 0);
+  const unlisted = client(wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), 'Debian');
+  assert.equal((await unlisted.c.terminalTarget()).kind, 'distroRefused');
+});
+
+// ---- §15h #1: a preview that times out on a crowded machine says so ----
+
+function crowdedStatus(count: number): string {
+  const body = golden('head', 'status') as { vm: { containers: Record<string, unknown> } } & Record<string, unknown>;
+  return JSON.stringify({ ...body, productVersion: '0.1.0', vm: { ...body.vm, containers: { ...body.vm.containers, count } } });
+}
+
+const PREVIEW_TIMEOUT: ProcessResult = { kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS.preview, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+
+test('a preview timeout with more running containers than the ceiling assumes reads "too many containers" with the count', async () => {
+  const count = PREVIEW_CONTAINER_ASSUMPTION + 40;
+  const { c } = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.status)]: exited(0, crowdedStatus(count)), [daemonArgv('Ubuntu', VERBS.preview)]: PREVIEW_TIMEOUT });
+  await c.run('status');
+  assert.deepEqual(await c.run('preview'), { kind: 'previewTooManyContainers', verb: 'preview', containers: count, timeoutMs: VERB_TIMEOUT_MS.preview });
+});
+
+test('at or below the assumption, or with no status read yet, a preview timeout stays a plain timeout', async () => {
+  const at = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.status)]: exited(0, crowdedStatus(PREVIEW_CONTAINER_ASSUMPTION)), [daemonArgv('Ubuntu', VERBS.preview)]: PREVIEW_TIMEOUT });
+  await at.c.run('status');
+  assert.equal((await at.c.run('preview')).kind, 'timedOut');
+  const unread = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.preview)]: PREVIEW_TIMEOUT });
+  assert.equal((await unread.c.run('preview')).kind, 'timedOut');
+});
+
+test('a doctor timeout is never re-read as a crowded preview, whatever the container count', async () => {
+  const doctorTimeout: ProcessResult = { kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS.doctor, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  const { c } = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.status)]: exited(0, crowdedStatus(500)), [daemonArgv('Ubuntu', VERBS.doctor)]: doctorTimeout });
+  await c.run('status');
+  assert.equal((await c.run('doctor')).kind, 'timedOut');
 });

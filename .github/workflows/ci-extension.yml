@@ -23,7 +23,13 @@ name: ci · extension
 # strict fake is a Node script started through the product's own runner seam on either. No test can reach a real
 # wsl.exe: every test process carries a tripwire that throws on any start of `wsl` / `wsl.exe`, and a test asserts it
 # is armed; in the extension host the runner is the strict fake or the CLOSED one, never the real one (Test mode).
-# Packaging, the `vsce ls` allowlist and the content checks arrive with E5.S3.
+#
+# PACKAGING ON EVERY PULL REQUEST, on both legs (E5.S3, plan §15g M8): `vsce package` builds the universal .vsix exactly
+# as release-extension.yml does, and scripts/check-vsix.mjs checks the ARTEFACT — `vsce ls --no-dependencies` equal to
+# vsix-files.txt, and inside the unzipped .vsix: exactly the allowlist, no drive / home / mnt / wsl-share path, no user
+# name of the runner (derived when the check runs) or word of vsix-denylist.txt, no e-mail address, no source map, a
+# build stamp equal to the package version. The release adds only `--release` (the placeholder publisher refused), so a
+# leak is found on the pull request that introduced it, not on a release day.
 on:
   push:
     branches: [main]
@@ -85,6 +91,21 @@ jobs:
       # the scriptInterpolation scan.
       - name: Test (compile, bundle, run)
         run: npm test
+
+      # vsce package runs vscode:prepublish (the bundle, stamped with package.json's version) and writes
+      # wsl-care-<version>.vsix — the universal package, the one file the leak checks then open.
+      - name: Package the .vsix (vsce package)
+        run: npm run package
+
+      - name: Leak checks on the .vsix (allowlist, paths, names, e-mail, source maps, build stamp)
+        run: npm run check:vsix
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: extension-vsix-${{ matrix.os }}
+          path: src_vs_code/wsl-care-*.vsix
+          if-no-files-found: error
+          retention-days: 14
 
       # The VS Code builds @vscode/test-electron downloads (1.85.0, ~125 MB, and the current stable, ~340 MB), cached
       # per OS and per month: 1.85.0 never changes, and a new stable is fetched once and then cached until the month

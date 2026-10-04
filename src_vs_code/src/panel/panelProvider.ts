@@ -19,6 +19,7 @@ import { buildPanelView } from './viewModel';
 export interface PanelActions {
   readonly refresh: (options?: RunOptions) => Promise<void>;
   readonly openSettings: () => void;
+  readonly installDaemon: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -73,6 +74,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       refresh: () => { void this.actions.refresh(); },
       startWsl: () => { void this.actions.refresh({ startIfStopped: true }); },
       openSettings: () => this.actions.openSettings(),
+      installDaemon: () => this.actions.installDaemon(),
     };
     if (message !== undefined) {
       (handlers[message.type] as (m: PageMessage) => void)(message);

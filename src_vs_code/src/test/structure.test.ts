@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
+import * as ts from 'typescript';
 
 import { VERB_NAMES, VERBS } from '../client/verbs';
 import { fromExtensionRoot, shippedSources } from './support/paths';
@@ -102,4 +103,62 @@ test('the verb union is exactly the four read-only verbs of plan §15f #5, each 
   assert.deepEqual([...VERB_NAMES], ['status', 'preview', 'doctor', 'version']);
   assert.deepEqual(Object.keys(VERBS), [...VERB_NAMES]);
   assert.deepEqual(VERBS, { status: ['status', '--json'], preview: ['preview', '--all', '--json'], doctor: ['doctor', '--json'], version: ['--version'] });
+});
+
+// ---- E5.S3: Install daemon — ONE module builds the command, and nothing that builds it can start a process ----
+
+const INSTALL_COMMAND_MODULE = 'src/install/installCommand.ts';
+const INSTALL_FLOW_MODULES = ['src/install/installCommand.ts', 'src/install/installDaemon.ts', 'src/install/installUi.ts'];
+const INSTALL_UI_MODULE = 'src/install/installUi.ts';
+
+/** Fragments of the install command: only its module may spell a string holding one. */
+const INSTALLER_FRAGMENTS = ['install.sh', 'raw.githubusercontent.com', 'sudo'];
+
+function fragmentSpellers(all: readonly Source[]): string[] {
+  const holds = (literal: string): boolean => INSTALLER_FRAGMENTS.some((f) => new RegExp(`(^|[^A-Za-z0-9])${f.split('.').join('[.]')}([^A-Za-z0-9]|$)`).test(literal));
+
+  return all.filter((s) => stringLiteralsOf(s.text).some(holds)).map((s) => s.file);
+}
+
+/** Files that touch `.<member>` (a property access or a call through one), read with the parser. */
+function accessorsOf(all: readonly Source[], member: string): string[] {
+  return all.filter((s) => {
+    let found = false;
+    const visit = (node: ts.Node): void => {
+      found ||= ts.isPropertyAccessExpression(node) && node.name.text === member;
+      ts.forEachChild(node, visit);
+    };
+    visit(ts.createSourceFile('scan.ts', s.text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS));
+    return found;
+  }).map((s) => s.file);
+}
+
+test('only the install-command module spells the installer, its URL or sudo — and it does (the scan is alive)', () => {
+  assert.deepEqual(fragmentSpellers(sources()), [INSTALL_COMMAND_MODULE]);
+});
+
+test('the fragment scan finds a planted installer string elsewhere, in a template and over lines, and ignores a comment', () => {
+  const planted: Source[] = [
+    { file: 'src/panel/x.ts', text: "const c = 'curl https://raw.githubusercontent.com/x/y/main/install.sh';" },
+    { file: 'src/y.ts', text: 'const c = [\n  `sudo sh -s -- ${v}`,\n];' },
+    { file: 'src/z.ts', text: '// sudo install.sh is typed by installCommand\nconst s = 1;' },
+    { file: 'src/w.ts', text: "const pseudo = 'pseudonym';" },
+  ];
+  assert.deepEqual(fragmentSpellers(planted), ['src/panel/x.ts', 'src/y.ts']);
+});
+
+test('the install flow imports no child_process and not the runner — it can type a command, never run one', () => {
+  for (const file of INSTALL_FLOW_MODULES) {
+    const text = sources().find((s) => s.file === file)?.text;
+    assert.ok(text !== undefined, file);
+    const imports = importsOf(text);
+    assert.equal(imports.some(isChildProcess), false, file);
+    assert.equal(imports.some((m) => m.includes('process/runner')), false, file);
+  }
+  assert.deepEqual(importsOf(sources().find((s) => s.file === INSTALL_COMMAND_MODULE)?.text ?? ''), ['../client/handshake'], 'the command module reads the version constant and nothing else');
+});
+
+test('only the install UI module opens a terminal (createTerminal), and it does', () => {
+  assert.deepEqual(accessorsOf(sources(), 'createTerminal'), [INSTALL_UI_MODULE]);
+  assert.deepEqual(accessorsOf([{ file: 'src/planted.ts', text: 'void vscode.window\n  .createTerminal({ shellPath: p });' }], 'createTerminal'), ['src/planted.ts'], 'the access scan finds a planted one over lines');
 });

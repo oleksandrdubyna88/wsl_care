@@ -1,12 +1,12 @@
 import type { ProcessResult, Runner } from '../process/runner';
-import { isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
+import { DISTRO_NAME, isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
 import { wslExecutable } from '../wsl/wslExecutable';
 import { decodeWslText } from '../wsl/wslText';
 import { DAEMON_EXIT } from './exitCodes';
 import { classifyExit, wslRefusal } from './failures';
 import { parseAnswer, parseDaemonVersion, versionRefusal } from './handshake';
 import type { Answer, DaemonVersion, Failure, VerbOutcome } from './outcome';
-import { VERB_TIMEOUT_MS, VERBS, type Verb } from './verbs';
+import { PREVIEW_CONTAINER_ASSUMPTION, VERB_TIMEOUT_MS, VERBS, type Verb } from './verbs';
 
 /**
  * The extension's one client of the `wsl-care` daemon — and the ONLY module that builds `wsl.exe` argv
@@ -20,8 +20,13 @@ import { VERB_TIMEOUT_MS, VERBS, type Verb } from './verbs';
  *   (measured 2026-10-03: `-- echo '$HOME'` printed `/home/<user>`, the distro's shell expanded it; `--exec echo
  *   '$HOME'` printed `$HOME` — §15f #1), never `-u`, never anything but `VERBS`.
  *
- * <p>The distribution is validated against a strict pattern BEFORE anything starts and against `--list` before any
- * `-d`. One call per verb is in flight: a second `run` of a verb still running shares the first's outcome.
+ * <p>It also builds the one other `wsl.exe` argv the extension has: `-d <distro>` for the terminal *Install daemon*
+ * opens (`terminalTarget`, E5.S3) — built here so this stays the only module that spells a `wsl.exe` argument; the
+ * client never starts that terminal itself.</p>
+ *
+ * <p>The distribution SETTING is validated against a strict pattern BEFORE anything starts; every distribution is
+ * checked against `--list` before any `-d`, and a name WSL lists is taken as it is (only a leading `-` is refused —
+ * §15h #4). One call per verb is in flight: a second `run` of a verb still running shares the first's outcome.
  * Remaining race, stated (§15g m3): a distribution that stops between the running check and the `-d` call is started
  * again by that call — the window is the ~50 ms between two `wsl.exe` starts. The one deliberate exception is
  * `startIfStopped` ("Start WSL and check", E5.S2): the running check is still asked, and its "not running" no longer
@@ -40,6 +45,18 @@ export interface ClientOptions {
 /** How one call may treat a stopped distribution. */
 export interface RunOptions {
   readonly startIfStopped?: boolean;
+}
+
+/**
+ * Where *Install daemon* opens its terminal (plan §15g m2): the absolute launcher and `-d <distro>` — a distribution
+ * that passed the same pattern and `--list` checks as every daemon call. No `--exec`, no `-u`: the terminal is the
+ * person's own login shell in that distribution, and what is typed into it is `install/installCommand.ts`'s.
+ */
+export interface TerminalTarget {
+  readonly kind: 'terminal';
+  readonly shellPath: string;
+  readonly shellArgs: readonly string[];
+  readonly distro: string;
 }
 
 /** The ceiling of each of the three WSL questions (measured: each answers in about 50 ms). */
@@ -83,6 +100,8 @@ function startFailure(result: ProcessResult): Failure {
 export class WslCareClient {
   private readonly inFlight = new Map<string, Promise<VerbOutcome>>();
   private knownVersion: { readonly distro: string; readonly version: DaemonVersion } | undefined;
+  /** The running-container count of the newest `status` answer — what a timed-out `preview` is judged against. */
+  private knownContainers: { readonly distro: string; readonly count: number } | undefined;
 
   constructor(private readonly options: ClientOptions) {}
 
@@ -104,6 +123,21 @@ export class WslCareClient {
     return started;
   }
 
+  /**
+   * The terminal *Install daemon* may open, or why not — the distribution validated by its shape BEFORE anything starts
+   * and checked against `wsl.exe --list` (which starts no VM) before the terminal exists. Not asked whether it runs: the
+   * person confirmed opening a shell there, which starts it.
+   */
+  async terminalTarget(): Promise<TerminalTarget | Failure> {
+    const wsl = this.launcher();
+    if (!wsl.ok) {
+      return wsl.failure;
+    }
+    const distro = await this.listedDistro(wsl.value);
+
+    return distro.ok ? { kind: 'terminal', shellPath: wsl.value, shellArgs: ['-d', distro.value], distro: distro.value } : distro.failure;
+  }
+
   private async runOnce(verb: Verb, startIfStopped: boolean): Promise<VerbOutcome> {
     const target = await this.target(startIfStopped);
     if (!target.ok) {
@@ -111,10 +145,31 @@ export class WslCareClient {
     }
     const answer = await this.ask(target.value.wsl, target.value.distro, verb);
     if (!answer.ok) {
-      return { ...answer.failure, verb };
+      return { ...this.explained(verb, target.value.distro, answer.failure), verb };
     }
+    this.remember(target.value.distro, answer.value);
 
     return this.judged(target.value.wsl, target.value.distro, verb, answer.value);
+  }
+
+  /** Keeps the running-container count a `status` answered, for `explained`. */
+  private remember(distro: string, answer: Answer): void {
+    const count = answer.verb === 'status' ? containerCount(answer.body) : undefined;
+    this.knownContainers = count === undefined ? this.knownContainers : { distro, count };
+  }
+
+  /**
+   * A `preview` that timed out on a machine with more running containers than its ceiling assumes (one
+   * `container inspect` batch, `verbs.ts`) says so with the count, instead of a bare timeout (§15h #1). The count is
+   * `status`'s RUNNING containers — a lower bound of what `preview` inspects, so a machine with many STOPPED containers
+   * still reads as a plain timeout.
+   */
+  private explained(verb: Verb, distro: string, failure: Failure): Failure {
+    return verb === 'preview' && failure.kind === 'timedOut' ? crowdedPreview(this.containersIn(distro), failure) : failure;
+  }
+
+  private containersIn(distro: string): number {
+    return this.knownContainers?.distro === distro ? this.knownContainers.count : 0;
   }
 
   /**
@@ -253,16 +308,44 @@ function targetOf(wsl: string, distro: string, mayAsk: boolean): Step<{ wsl: str
   return mayAsk ? ok({ wsl, distro }) : fail({ kind: 'stopped', distro });
 }
 
-function notAName(distro: string): Failure {
-  return { kind: 'distroRefused', distro, reason: 'not a distribution name (letters, digits, ".", "_", "-", not starting with "-")' };
+/** `status`'s `vm.containers.count`, when it answered one. */
+function containerCount(body: Readonly<Record<string, unknown>>): number | undefined {
+  const count = ['vm', 'containers', 'count'].reduce<unknown>((value, key) => fieldOf(value, key), body);
+
+  return Number.isInteger(count) ? (count as number) : undefined;
 }
 
+function fieldOf(value: unknown, key: string): unknown {
+  return typeof value === 'object' && value !== null ? (value as Readonly<Record<string, unknown>>)[key] : undefined;
+}
+
+/** A timed-out preview with more running containers than its ceiling assumes, said with the count. */
+function crowdedPreview(containers: number, failure: Failure): Failure {
+  return containers > PREVIEW_CONTAINER_ASSUMPTION ? { kind: 'previewTooManyContainers', containers, timeoutMs: VERB_TIMEOUT_MS.preview } : failure;
+}
+
+/** The SETTING's value fails the strict pattern — refused before anything starts, so no list was asked. */
+function notAName(distro: string): Failure {
+  return { kind: 'distroRefused', distro, reason: `the wslCare.distro setting must match the pattern ${DISTRO_NAME.source} (letters, digits, ".", "_", "-", not starting with "-"); nothing was started, so WSL's list was not asked` };
+}
+
+/**
+ * A name `wsl.exe` reports is taken AS IT IS (§15h #4): argv reaches `wsl.exe` without a shell, so the listing is the
+ * authority on what a distribution may be called. The one name refused is one starting with `-`, which `wsl.exe` would
+ * read after `-d` as an option. The strict pattern is the SETTING's (`listedDistro`), checked before any spawn.
+ */
 function checkListed(distro: string, listed: readonly string[]): Step<string> {
-  if (!isDistroName(distro)) {
-    return fail(notAName(distro));
+  if (distro.startsWith('-')) {
+    return fail({ kind: 'distroRefused', distro, reason: 'a name starting with "-" would be read by wsl.exe as an option after -d' });
   }
 
-  return listed.includes(distro) ? ok(distro) : fail({ kind: 'distroRefused', distro, reason: 'wsl.exe --list does not report it' });
+  return listed.includes(distro) ? ok(distro) : fail(unlisted(distro, listed));
+}
+
+function unlisted(distro: string, listed: readonly string[]): Failure {
+  const names = listed.length === 0 ? 'none' : listed.map((name) => `"${name}"`).join(', ');
+
+  return { kind: 'distroRefused', distro, reason: `wsl.exe --list does not report it (it reports: ${names}); a wslCare.distro setting must also match the pattern ${DISTRO_NAME.source}` };
 }
 
 function ownVersion(answer: Answer): DaemonVersion | undefined {
