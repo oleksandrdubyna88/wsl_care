@@ -120,17 +120,35 @@ public sealed class GoldenContractTests
         GoldenContracts.FirstDifference("a", "a\nb").Should().Be("line 2: checked in '<end>', the CLI answers 'b'");
     }
 
-    /// <summary>E6.S2 (plan §15k #11): the checked-in A4 previews hold the shown-list rule — <c>shown.length == min(count,
-    /// 10 000)</c>, and <c>shownTruncated: true</c> exactly when the cap cut the list (absent otherwise). Read from the files
-    /// the extension's host reads, on every OS.</summary>
-    [Theory]
-    [InlineData("act-a4-preview.json", 387, false)]
-    [InlineData("act-a4-preview-capped.json", 10_001, true)]
-    public void The_A4_previews_hold_the_shown_list_rule_below_and_past_the_cap(string file, int count, bool truncated)
+    /// <summary>E6.S2 (plan §15k #11): A4's preview holds the shown-list rule — <c>shown.length == min(count, 10 000)</c>, and
+    /// <c>shownTruncated: true</c> exactly when the cap cut the list (absent otherwise) — below the cap in the checked-in golden
+    /// the extension's host reads, and PAST it in memory: the built CLI over 10 001 synthetic volumes (the E6.S2 review dropped
+    /// a 765 KB golden of that answer — its shape is all the extension needs, and its host test generates 10 000 names).</summary>
+    [Fact]
+    public void The_checked_in_A4_preview_holds_the_shown_list_rule_below_the_cap()
     {
-        using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(GoldenContracts.HeadDirectory, file)));
-        var a4 = json.RootElement.GetProperty("actions").EnumerateArray().Single(a => a.GetProperty("id").GetString() == "A4");
+        using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(GoldenContracts.HeadDirectory, "act-a4-preview.json")));
+        AssertShownRule(json.RootElement, 387, truncated: false);
+    }
 
+    [Fact]
+    public async Task The_built_cli_past_the_cap_counts_every_volume_shows_10_000_and_says_it_truncated()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), LinuxOnly);
+        var (capped, _) = ReadContractScenes.A4Morning("capped-a4", ReadContractScenes.CappedVolumes);
+        using (capped)
+        {
+            var preview = await capped.RunAsync("act", "A4", "--preview", "--json");
+
+            preview.Exit.Should().Be(0, preview.Stderr);
+            using var json = System.Text.Json.JsonDocument.Parse(preview.Stdout);
+            AssertShownRule(json.RootElement, ReadContractScenes.CappedVolumes, truncated: true);
+        }
+    }
+
+    private static void AssertShownRule(System.Text.Json.JsonElement answer, int count, bool truncated)
+    {
+        var a4 = answer.GetProperty("actions").EnumerateArray().Single(a => a.GetProperty("id").GetString() == "A4");
         a4.GetProperty("preview").GetProperty("count").GetInt32().Should().Be(count);
         a4.GetProperty("shown").GetArrayLength().Should().Be(Math.Min(count, Core.Actions.ShownList.MaxNames));
         a4.TryGetProperty("shownTruncated", out var flag).Should().Be(truncated, "the flag is present only when the cap cut the list");
