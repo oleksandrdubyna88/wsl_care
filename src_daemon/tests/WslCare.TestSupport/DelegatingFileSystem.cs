@@ -14,6 +14,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual FileReadResult ReadRegularFile(string path, int maxBytes) => inner.ReadRegularFile(path, maxBytes);
 
+    public virtual FileReadResult ReadStateFile(string path, int maxBytes) => inner.ReadStateFile(path, maxBytes);
+
     public virtual bool FileExists(string path) => inner.FileExists(path);
 
     public virtual bool DirectoryExists(string path) => inner.DirectoryExists(path);

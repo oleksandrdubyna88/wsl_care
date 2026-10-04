@@ -351,10 +351,8 @@
     ],
     "current": "A4",
     "trigger": "manual",
-    "pid": 4242,
     "startedAt": "2026-10-01T10:00:00+00:00",
-    "heartbeatAt": "2000-01-01T00:00:00+00:00",
-    "heartbeatAgeSeconds": 600
+    "heartbeatAt": "2000-01-01T00:00:00+00:00"
   },
   "lastCleanup": {
     "available": false,

@@ -72,6 +72,24 @@ public sealed class ReadContractFlows
         }
     }
 
+    /// <summary>E6.S0 review D3: a run that recorded itself and died before removing its <c>running.json</c> is not "dead,
+    /// nothing recorded it" — status reports none, naming the left-over file, and agrees with runs show (done).</summary>
+    [Fact]
+    public async Task A_left_over_running_json_of_a_recorded_run_is_none_in_status_and_done_in_runs_show()
+    {
+        using var home = new ScenarioHome("running-left-over");
+        var dead = ReadContractScenes.Dead();
+        ReadContractScenes.Running(home, dead);
+        new RunRecordWriter(home.Paths, new PhysicalFileSystem(home.Paths)).Append(new RunRecord(1, dead.RunId, RunTrigger.Manual, dead.StartedAt, dead.HeartbeatAt, RunOutcome.Completed, []));
+
+        var status = Status(await home.RunAsync("status", "--json"));
+        var show = Show(await home.RunAsync("runs", "show", dead.RunId.Text, "--json"));
+
+        status.Running!.State.Should().Be(RunningStateName.None);
+        status.Running.Reason.Should().Contain("only its running.json is left");
+        show.State.Should().Be(RunShowState.Done);
+    }
+
     /// <summary>§15j M3 / §15b #3: status is unprivileged and NEVER sweeps — a dead run is reported and its file left exactly
     /// as it was, with no history line; and with the state directory made unwritable status still answers the same.</summary>
     [Fact]
@@ -196,6 +214,10 @@ public sealed class ReadContractFlows
         line.Outcome.Should().Be(RunOutcome.Interrupted);
         line.Reason.Should().Contain("SIGHUP");
         File.Exists(RunDetailStore.Absolute(home.Paths, line.DetailPath)).Should().BeTrue("the run's detail was written");
+        // E6.S0 review D2: the detail names the action IN FLIGHT, interrupted — it held no action at all before.
+        var detail = JsonSerializer.Deserialize(await File.ReadAllBytesAsync(RunDetailStore.Absolute(home.Paths, line.DetailPath), TestContext.Current.CancellationToken), WslCareJsonContext.Default.ActRunDetail)!;
+        detail.Actions.Should().ContainSingle(a => a.Id == "A10").Which.Status.Should().Be(ActionStatus.Interrupted);
+        line.Actions.Should().ContainSingle(a => a.Id == "A10").Which.Status.Should().Be(ActionStatus.Interrupted);
         File.Exists(RunningState.File(home.Paths)).Should().BeFalse("running.json goes when the run ends");
     }
 

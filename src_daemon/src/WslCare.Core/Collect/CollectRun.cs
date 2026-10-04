@@ -109,7 +109,7 @@ public static class CollectRun
     private static async Task<CollectResult> UnderLockAsync(CollectContext c, RunId runId, DateTimeOffset started, CancellationToken cancellationToken)
     {
         var sweep = RunningSweep.Apply(c.Paths, c.Files, c.Processes, started, RunningReadRetry.Default, runId, c.ProcessId);
-        var running = new RunningFile(Core.SchemaVersion.Current, runId, c.Trigger, [RunningAction], RunningAction, c.ProcessId, OwnStart(c), started, started);
+        var running = RunningState.Identified(new RunningFile(Core.SchemaVersion.Current, runId, c.Trigger, [RunningAction], RunningAction, c.ProcessId, OwnStart(c), started, started), c.Processes);
         var owned = sweep is RunningSweep.Clear && StartRunning(c, running);
         try
         {
@@ -133,7 +133,7 @@ public static class CollectRun
     /// <summary>The measurement under this run's heartbeat (when it owns <c>running.json</c>).</summary>
     private static async Task<RunDetail> MeasureBeatingAsync(CollectContext c, RunningFile running, bool owned, HousekeepingReport housekeeping, CancellationToken cancellationToken)
     {
-        IAsyncDisposable heartbeat = owned ? new Heartbeat(c.Paths, c.Files, c.Clock, running, RunningState.HeartbeatPeriod) : NoHeartbeat.Instance;
+        IAsyncDisposable heartbeat = owned ? new Heartbeat(c.Paths, c.Files, c.Clock, c.Processes, running, RunningState.HeartbeatPeriod) : NoHeartbeat.Instance;
         await using (heartbeat.ConfigureAwait(false))
         {
             return await MeasureAsync(c, running.RunId, running.StartedAt, housekeeping, mayRecord: true, cancellationToken).ConfigureAwait(false);

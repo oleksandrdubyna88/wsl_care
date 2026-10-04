@@ -880,6 +880,38 @@ pid to `1` — fixed to 4242 so no golden reads "pid 1 is gone" (init); the unre
 object, whose reason quoted .NET's own JSON exception text (a wording a runtime update may change) — staged as `{}` now,
 whose reason is the product's own sentence.
 
+### The E6.S0 review round (two own reviews, 2026-10-04)
+
+Every finding was written as a test first and run against the unfixed code (Windows unless named); the message is the
+real symptom:
+
+- **S1, the request reader** (`RunRequestsTests`): content — *Expected type to be …RunRequestRead+Bad, but found
+  …RunRequestRead+Parsed* for schema 2, an unknown kind, an unknown action, a non-hex shown name, a collect naming an action
+  and 10 001 shown names; *Expected Bad(Only()) "does not parse (The input does not contain any JSON tokens …)" to contain
+  "larger than"* (no cap: 1 MiB + 1 read whole); *Expected collection to contain 64 item(s), but found 67* (no flood bound);
+  *Expected RunRequests.List(…, vanishing) to be empty, but found at least one item* (a vanished file reported bad — D4).
+  In WSL, with the new reader swapped back for `ReadFile`: *Expected finished to be True because a request is never opened
+  in a way that could block, but found False* (the FIFO held the read 10 s) and *… not owned by the state's owner … found
+  …Parsed*. The owner / mode rule itself: `RegularFilesTests.A_state_file_is_trusted_only_when_its_owner_alone_may_write_it`.
+- **S2** (`RunningReportsTests`, `RunShowTests`): *Expected string to be "20261002T115800Z-4242", but found <null>*;
+  *Expected string to be "running", but "unknown"*.
+- **S3**: *Did not expect a value, but found 4242* (the dead state's pid).
+- **S4** (`RunRecordTests`): *Expected RunId.TryParse(text) to be <null>* for `…-0123` and `…-00`.
+- **D1** (`RunningReportsTests`): *Expected report.State to be "live" because run … died: pid 4242 is a different process now
+  (started 2026-10-02T12:57:00, the run's started 2026-10-02T11:57:00)* — the wall clock stepped an hour; *… other start
+  ticks … to be "dead", but "live"*.
+- **D2** (`ActionEngineTests`, `DockerCleanupTests`): *Expected detail.Actions… to be equal to {"A5:interrupted",
+  "A10:interrupted"}, but found empty collection*; *Expected _journal … to not contain "run A10"* (a partial run did not
+  stop the run); *System.OperationCanceledException* thrown out of `DockerRemovals.RemoveAsync` (the confirmed batch lost).
+  The SIGHUP flow, strengthened, in WSL with the engine's in-flight / not-run records removed: *Expected collection to
+  contain a single item matching (a.Id == "A10"), but the collection is empty* — the flow was green with the bug before.
+- **D3**: *Expected string to be "none", but "dead"*.
+- **D4**: *Expected string to be "live", but "none"* (`status`: a request that became a run between the reads); *Expected
+  string to be "done" …, but "unknown"* (`runs show`).
+
+All green after the fixes, on Windows and in WSL. Goldens regenerated in WSL: only `status-running-dead.json` moved (its
+`pid` and `heartbeatAgeSeconds` are gone); the `running.json` fields are additive and appear in no answer.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -1149,6 +1181,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care status [--json]` in each running state a scenario stages against the REAL process table — `live` (a `running.json` held by the test process, its real start, a fresh heartbeat), `wedged` (heartbeat ten minutes old), `dead` (a pid no process has), `unreadable` (`{}`), `queued` (a request file): each answers its state, `schemaVersion` 1, `capabilities` = `Capabilities.All`; no tool started | covered | `ReadContractFlows.Status_reads_each_staged_running_state_through_the_real_process_table` (5 cases); in-process: `RunningReportsTests` (+ unknown, a pid that is another process now, live over a waiting request, a request filed under another run's name, strays in the folder), `ReadContractCommandTests` |
 | `wsl-care status [--json]` with nothing in flight: `running.state` `none`, `actions` this side's registry ids in execution order (the Windows binary: none), `lastCleanup` unavailable naming why | covered | `ReadContractFlows.Status_with_nothing_in_flight_names_none_this_sides_actions_and_no_cleanup_yet`; in-process: `ReadContractCommandTests.Status_names_this_sides_actions_…`, `LastCleanupTests` (the newest cleanup with a failed action's real deletions; a dry run and a run that removed nothing are none) |
 | `wsl-care status [--json]` reports a DEAD run and never sweeps it: `running.json` byte-identical, no history line — and with the state directory made read-only (0555, Linux) it still answers `dead` and the tree is unchanged | covered (the writable half on every OS; the read-only half on the Linux legs, skipped for root) | `ReadContractFlows.Status_reports_a_dead_run_and_never_sweeps_it_even_with_the_state_directory_unwritable`; in-process: `RunningReportsTests` through a file system that FAILS on any write, move, delete, lock or probe; `ReadContractCommandTests.Status_reports_a_dead_run_and_the_last_cleanup_without_sweeping_or_writing_anything` |
+| `wsl-care status [--json]` and `runs show` over a LEFT-OVER `running.json` whose run has a history line (it recorded itself and died before removing the file): status `none` naming the left-over file, runs show `done` — the two agree (E6.S0 review D3) | covered | `ReadContractFlows.A_left_over_running_json_of_a_recorded_run_is_none_in_status_and_done_in_runs_show`; in-process: `RunningReportsTests` (D1 clock steps, D3, D4, S2, S3), `RunShowTests` (S2, D4), `RunRequestsTests` (S1) |
 | `wsl-care status [--json]` after `collect`: `verdicts` carry every id the run recorded, in its order; each full-run verdict is the detail's own record with the run id | covered | `CollectFlows.Collect_records_detail_then_history_and_status_shows_its_slow_parts_with_their_age`; in-process: `FullRunCommandTests.Status_after_a_collect_carries_the_full_runs_own_verdict_records_with_its_run_and_their_age` |
 | the golden contracts: `collect`, then `status --json`, `preview --all --json`, `doctor --json` over the captured fixtures (every age limit 0) — and, since E6.S0, `status --json` in each staged running state, `act A4 --preview --json` over 387 synthetic volumes, `runs show` (done / interrupted / unknown), `runs` / `logs` over a UTC-midnight-crossing local day — normalised, equal to `contracts/golden/head/*.json` | covered (Linux legs; skipped on Windows) | `GoldenContractTests.The_checked_in_goldens_are_what_the_built_cli_answers_at_this_commit_and_every_normalisation_rule_still_matches` |
 | `contracts/actions.json` and `contracts/exit-codes.json`: equal to what `ActionId.All`, `ActionId.ExecutionOrder` and every value of `ExitCode` enumerate (never retyped); the companion asserts the second switches, the edges and the counts | covered (every OS) | `ContractFilesTests.The_checked_in_contracts_equal_what_the_types_enumerate`, `ContractFilesTests.The_contracts_hold_every_id_and_every_code_including_the_second_switches_and_the_edges` |

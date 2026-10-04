@@ -138,9 +138,9 @@ public static class RunLogs
 
     /// <summary>An action that ACTED — ran, or ran and failed: a failed action's measured deletions are real (A4 removing 386
     /// of 387 volumes and failing on one removed 386), so its count and freed bytes count wherever a successful one's do.</summary>
-    private static bool Acted(RunActionLine action) => action.Status is ActionStatus.Ran or ActionStatus.Failed;
+    private static bool Acted(RunActionLine action) => action.Status is ActionStatus.Ran or ActionStatus.Failed or ActionStatus.Interrupted;
 
-    private static bool Acted(ActionRecord action) => action.Status is ActionStatus.Ran or ActionStatus.Failed;
+    private static bool Acted(ActionRecord action) => action.Status is ActionStatus.Ran or ActionStatus.Failed or ActionStatus.Interrupted;
 
     /// <summary>An action that acted AND removed (or freed) something: a cleanup.</summary>
     private static bool Removed(ActionRecord action) => Acted(action) && (action.Count > 0 || action.FreedBytes > 0);

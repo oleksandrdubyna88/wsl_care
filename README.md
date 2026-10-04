@@ -280,10 +280,11 @@ wsl-care act A10 --preview                     # as yourself: refused whole ("ne
 ```
 
 Every answer names `productVersion`. A4's preview answer carries `shown` — EVERY volume name it selected (the 20
-`items` are for reading; `shown` is what a button sends back, at most 10 000). `--manual` (the panel) and `--timer` (the
-systemd timer) are exclusive: both together are refused. A confirm cut off by a signal — Ctrl+C, SIGTERM, or SIGHUP when
-the terminal or the `wsl.exe` that started it goes away — kills its child, records itself `interrupted` naming the signal,
-and exits 130.
+`items` are for reading; `shown` is what a button sends back, at most 10 000 — past that `shownTruncated: true`, and only
+the shown names go). `--manual` (the panel) and `--timer` (the systemd timer) are exclusive: both together are refused. A
+confirm cut off by a signal — Ctrl+C, SIGTERM, or SIGHUP when the terminal or the `wsl.exe` that started it goes away —
+kills its child and records itself `interrupted` naming the signal: the action it was on is `interrupted` (with what Docker
+had already confirmed removed, for A4 / A5), the actions it never reached `interrupted / not run`; it exits 130.
 
 Every `act` runs as **root** (the timer is root; the panel's button reaches root through an argv allowlist). Started by
 anyone else it refuses the whole run before the lock or any state is touched. A destructive run from the CLI needs

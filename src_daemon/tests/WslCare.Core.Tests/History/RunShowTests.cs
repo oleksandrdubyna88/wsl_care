@@ -4,6 +4,7 @@ using FluentAssertions;
 
 using WslCare.Core.Actions;
 using WslCare.Core.Actions.Engine;
+using WslCare.Core.Files;
 using WslCare.Core.History;
 using WslCare.Core.Json;
 using WslCare.Core.Records;
@@ -167,6 +168,58 @@ public sealed class RunShowTests : IDisposable
         RunningState.Write(_sandbox.Paths, _sandbox.Files, new RunningFile(1, id, RunTrigger.Manual, ["A4"], "A4", 9, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddMinutes(-1)));
 
         Show(id).State.Should().Be(RunShowState.Done);
+    }
+
+    /// <summary>E6.S0 review S2: a live run whose pid cannot be inspected (/proc mounted hidepid) is still THIS run's — runs
+    /// show answers running with the unknown block, never "unknown / never existed".</summary>
+    [Fact]
+    public void A_holder_whose_pid_cannot_be_inspected_is_running_with_an_unknown_block_never_a_stranger()
+    {
+        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-1), Pid), RunTrigger.Manual, ["A4"], "A4", Pid, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddSeconds(-3));
+        RunningState.Write(_sandbox.Paths, _sandbox.Files, file);
+
+        var show = Show(file.RunId, new FakeProcessTable().Uninspectable(Pid, "hidepid"));
+
+        show.State.Should().Be(RunShowState.Running);
+        show.Running!.State.Should().Be(RunningStateName.Unknown);
+    }
+
+    /// <summary>E6.S0 review D4: states move request → running.json → history line, so they are READ in that order — a run
+    /// that finished between the reads is found done, never "queued" from a stale request nor "unknown".</summary>
+    [Fact]
+    public void A_run_that_finishes_while_runs_show_reads_is_found_done_because_the_reads_follow_the_states()
+    {
+        var id = RunId.New(Now, 41);
+        var request = RunRequests.File(_sandbox.Paths, id);
+        Directory.CreateDirectory(Path.GetDirectoryName(request)!);
+        File.WriteAllBytes(request, JsonSerializer.SerializeToUtf8Bytes(new RunRequestFile(1, id, "act", ["A10"], RunTrigger.Manual, Now), WslCareJsonContext.Default.RunRequestFile));
+        var finishing = new FinishingFileSystem(_sandbox.Files, request, () =>
+        {
+            File.Delete(request);
+            Line(new RunRecord(1, id, RunTrigger.Manual, Now, Now, RunOutcome.Completed, []));
+        });
+
+        var show = RunShow.Read(_sandbox.Paths, finishing, new FakeProcessTable(), Now, NoWait, id);
+
+        show.State.Should().Be(RunShowState.Done);
+    }
+
+    /// <summary>The real file system — except that right after the request is read, the run finishes (<paramref name="finish"/>).</summary>
+    private sealed class FinishingFileSystem(IFileSystem inner, string request, Action finish) : DelegatingFileSystem(inner)
+    {
+        private bool _finished;
+
+        public override FileReadResult ReadStateFile(string path, int maxBytes)
+        {
+            var read = base.ReadStateFile(path, maxBytes);
+            if (path == request && !_finished)
+            {
+                _finished = true;
+                finish();
+            }
+
+            return read;
+        }
     }
 
     [Fact]

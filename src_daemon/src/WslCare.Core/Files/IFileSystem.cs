@@ -156,6 +156,12 @@ public interface IFileSystem
     /// on, and a larger file is refused, whatever its length claims (<see cref="RegularFiles"/>).</summary>
     FileReadResult ReadRegularFile(string path, int maxBytes);
 
+    /// <summary>A file ROOT wrote under the state directory for another process to trust (the request files, E6.S0 review
+    /// S1): read as <see cref="ReadRegularFile"/> does, never through a symbolic link, and on Linux only when the open
+    /// descriptor's owner is the state's owner (root) and neither group nor others may write it
+    /// (<see cref="RegularFiles.ReadOwned"/>).</summary>
+    FileReadResult ReadStateFile(string path, int maxBytes);
+
     bool FileExists(string path);
 
     bool DirectoryExists(string path);

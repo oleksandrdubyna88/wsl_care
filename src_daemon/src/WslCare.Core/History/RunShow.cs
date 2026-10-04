@@ -73,14 +73,22 @@ public static class RunShow
     public const string NothingNamesIt =
         "no history line, running state or request names this run - it never existed here, or it is older than the 90-day retention";
 
+    private static readonly HistoryRead NoHistory = new([], 0, string.Empty);
+
+    /// <summary>
+    /// The three places are READ in the order a run moves through them — its request, then <c>running.json</c>, then its
+    /// history line (E6.S0 review D4) — and the answer is the MOST advanced one found: a run that moves on between two reads
+    /// is then caught by the later read, never answered "queued" from a request already gone, nor "unknown".
+    /// </summary>
     public static RunShowReport Read(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry, RunId runId)
     {
+        var request = RunRequests.Find(paths, files, runId);
+        var holder = RunningReports.OfHolder(RunningState.Read(paths, files, processes, now, retry), NoHistory);
         var history = RunHistory.Read(paths, files);
-        var problem = history.Problem.Length > 0 ? history.Problem : null;
         var report = history.Records.LastOrDefault(r => r.RunId == runId) is { } line
             ? Recorded(paths, files, line)
-            : InFlight(paths, files, processes, now, retry, runId);
-        return report with { Problem = problem };
+            : Holding(holder, runId) ?? Requested(request, runId);
+        return report with { Problem = history.Problem.Length > 0 ? history.Problem : null };
     }
 
     /// <summary>The history holds the run: done, refused or interrupted — with its line and its detail.</summary>
@@ -109,18 +117,14 @@ public static class RunShow
         _ => DetailState.None,
     };
 
-    /// <summary>Not recorded: <c>running.json</c> naming it (running; a dead process is interrupted, never running), else a
-    /// request naming it (queued), else nothing (unknown).</summary>
-    private static RunShowReport InFlight(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry, RunId runId) =>
-        Holding(RunningReports.Read(paths, files, processes, now, retry), runId) ?? Requested(paths, files, runId);
-
-    /// <summary>The run holds <c>running.json</c>: running — or interrupted when its process is gone (it will never finish).</summary>
-    private static RunShowReport? Holding(RunningReport running, RunId runId) =>
-        running.RunId == runId.Text && running.State != RunningStateName.Queued
+    /// <summary>The run holds <c>running.json</c>: running (live, wedged, or a pid that cannot be inspected — review S2) — or
+    /// interrupted when its process is gone (it will never finish).</summary>
+    private static RunShowReport? Holding(RunningReport? running, RunId runId) =>
+        running is not null && running.RunId == runId.Text
             ? new RunShowReport(SchemaVersion.Current, runId.Text, running.State == RunningStateName.Dead ? RunShowState.Interrupted : RunShowState.Running, running.Reason) { Running = running }
             : null;
 
-    private static RunShowReport Requested(IHostPaths paths, IFileSystem files, RunId runId) => RunRequests.Find(paths, files, runId) switch
+    private static RunShowReport Requested(RunRequestRead? request, RunId runId) => request switch
     {
         RunRequestRead.Parsed parsed => Queued(parsed.File),
         RunRequestRead.Bad bad => new RunShowReport(SchemaVersion.Current, runId.Text, RunShowState.Unknown, $"its request {bad.Path} {bad.Why}"),

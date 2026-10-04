@@ -88,6 +88,11 @@ public sealed class VolumeRemoval : ICleanupAction, IBoundToShownList
         }
 
         var removal = await DockerRemovals.RemoveAsync(commands, DockerCleanupCommands.VolumeRemove, preview.Targets, new Dictionary<string, string>(StringComparer.Ordinal), cancellationToken).ConfigureAwait(false);
+        if (removal.Interrupted)
+        {
+            return CutOffRun(preview, removal, commands);
+        }
+
         var after = await DockerRemovals.TotalAsync(commands, DockerTotal.Volumes, cancellationToken).ConfigureAwait(false);
         var sightings = await RecordSightingsAsync(context, commands, cancellationToken).ConfigureAwait(false);
         return new ActionRun(
@@ -104,6 +109,25 @@ public sealed class VolumeRemoval : ICleanupAction, IBoundToShownList
             Notes = [sightings],
         };
     }
+
+    /// <summary>A removal a signal cut off (E6.S0 review D2): what Docker confirmed is recorded as freed — those deletions are
+    /// real — nothing more is run (the run is being cancelled), and <c>volume-seen.json</c> is left as it was: its record is
+    /// keyed by name and the next look drops every name Docker no longer lists, so the removed volumes leave it then.</summary>
+    private static ActionRun CutOffRun(ActionPreview preview, RemovalResult removal, ActionCommands commands) =>
+        new(
+            removal.Removed.Count,
+            removal.Removed.Sum(v => v.Bytes ?? 0),
+            "the docker system df -v sizes, read just before the removal, of exactly the volumes docker volume rm confirmed before the signal",
+            preview.Facts.TryGetValue(VolumesTotalFact, out var before) ? before : null,
+            null,
+            removal.Removed,
+            commands.Ran,
+            string.Empty)
+        {
+            NotRemoved = removal.NotRemoved,
+            Notes = ["cut off by a signal: first sightings not recorded (volume-seen.json drops the removed names at the next look)"],
+            Interrupted = true,
+        };
 
     /// <summary>The preview narrowed to what the panel showed — or, for a button that showed nothing, refused.</summary>
     private static ActionPreview Shown(ActionPreview preview, ActionContext context)
@@ -152,7 +176,12 @@ public sealed class VolumeRemoval : ICleanupAction, IBoundToShownList
 }
 
 /// <summary>What a batched removal did: the targets removed, those not removed and why, and the failure (empty when none).</summary>
-public sealed record RemovalResult(IReadOnlyList<ActionItem> Removed, IReadOnlyList<ActionItem> NotRemoved, string Failure);
+public sealed record RemovalResult(IReadOnlyList<ActionItem> Removed, IReadOnlyList<ActionItem> NotRemoved, string Failure)
+{
+    /// <summary>A cancellation cut the removal off mid-way (E6.S0 review D2): <see cref="Removed"/> holds what Docker confirmed
+    /// before, the batch in flight is "unknown: cut off mid-command", the rest "not attempted".</summary>
+    public bool Interrupted { get; init; }
+}
 
 /// <summary>The batched removal A4 and A5 share: <see cref="DockerCleanupCommands.Batch"/> names per command, each name judged
 /// by what Docker printed (<see cref="DockerCleanupAnswers.Removal(IReadOnlyList{string}, string, string, IReadOnlyDictionary{string, string})"/>);
@@ -167,7 +196,18 @@ public static class DockerRemovals
         var judged = new HashSet<string>(StringComparer.Ordinal);
         foreach (var batch in targets.Chunk(DockerCleanupCommands.Batch))
         {
-            var outcome = await commands.RunAsync(template, [.. batch.Select(t => t.Key)], cancellationToken).ConfigureAwait(false);
+            CommandOutcome outcome;
+            try
+            {
+                outcome = await commands.RunAsync(template, [.. batch.Select(t => t.Key)], cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // E6.S0 review D2: a signal mid-removal keeps what Docker confirmed in the batches before; the batch in flight
+                // is unknown (Docker may have removed some), the rest was never attempted.
+                return CutOff(targets, batch, judged, removed, notRemoved);
+            }
+
             if (CommandFailures.NotRun(template.Shape, outcome) is { Length: > 0 } notRun)
             {
                 failures.Add(notRun);
@@ -185,6 +225,18 @@ public static class DockerRemovals
         }
 
         return new RemovalResult(removed, notRemoved, string.Join("; ", failures.Take(5)));
+    }
+
+    public const string CutOffMidCommand = "unknown: cut off mid-command - the signal arrived while docker ran; the next look shows whether it went";
+
+    public const string NotAttemptedInterrupted = "not attempted: the run was interrupted";
+
+    private static RemovalResult CutOff(IReadOnlyList<ActionItem> targets, ActionItem[] batch, HashSet<string> judged, List<ActionItem> removed, List<ActionItem> notRemoved)
+    {
+        var inFlight = batch.Select(t => t.Key).ToHashSet(StringComparer.Ordinal);
+        notRemoved.AddRange(batch.Where(t => !judged.Contains(t.Key)).Select(t => t with { Note = CutOffMidCommand }));
+        notRemoved.AddRange(targets.Where(t => !judged.Contains(t.Key) && !inFlight.Contains(t.Key)).Select(t => t with { Note = NotAttemptedInterrupted }));
+        return new RemovalResult(removed, notRemoved, string.Empty) { Interrupted = true };
     }
 
     /// <summary>Docker's own total of one type now (<c>docker system df</c>), or <c>null</c> when it did not answer.</summary>
