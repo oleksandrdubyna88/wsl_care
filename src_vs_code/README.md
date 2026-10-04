@@ -1,8 +1,9 @@
 # AI OS Care
 
-**Preview.** A read-only view of what the `wsl-care` daemon measures inside WSL: memory, swap, disk, containers, the
-biggest holders and what each cleanup would free — in the status bar and in a side panel. **Windows with WSL only**; the
-daemon is installed separately, inside the distribution (the panel's **Install daemon** types the command for you).
+**Preview.** A view of what the `wsl-care` daemon measures inside WSL: memory, swap, disk, containers, the biggest holders
+and what each cleanup would free — in the status bar and in a side panel — and the daemon's cleanups, each run only after
+you confirm it. **Windows with WSL only**; the daemon is installed separately, inside the distribution (the panel's
+**Install daemon** types the command for you).
 
 ## What you see
 
@@ -12,11 +13,20 @@ daemon is installed separately, inside the distribution (the panel's **Install d
   Container starts, Cleanup (what each cleanup would free, read-only), Health. A figure the daemon could not read says
   why ("unavailable — reason"); a row this version cannot fill yet says so; nothing is shown as a made-up 0.
 
-## Read-only, and quiet
+## What it runs, and when
 
-- It asks the daemon four questions and nothing else: `status --json`, `preview --all --json`, `doctor --json` and
-  `--version`. It never runs a cleanup, never changes the daemon's settings, and never runs anything with elevated
-  rights.
+- **Reading** — it asks the daemon four questions: `status --json`, `preview --all --json`, `doctor --json` and
+  `--version`. They run as your own user and change nothing.
+- **Cleaning — only after you confirm, and only through five calls.** A cleanup needs root inside the distribution, so
+  the extension has exactly five root calls, all built in one place and nowhere else: a cleanup's preview
+  (`act <ids> --preview`), its run once you confirmed (`act <ids> --confirm --manual --detach`, with the list of volumes
+  the preview showed handed over on stdin), stopping a wedged run (`act --stop <run>`), *Run full check now*
+  (`collect --detach`) and a root check (`--version`). It never sends the timer's mark, never changes the daemon's
+  settings, and never acts on an action the daemon does not offer. A confirmed cleanup runs in the daemon's own systemd
+  unit, so closing or reloading the window does not cut it off. The buttons that start them arrive with the cleanup panel;
+  this build holds the boundary they will use.
+- **The daemon must be new enough to clean.** Whether it may act is decided by what the daemon says it can do; an older
+  one reads "Update daemon" and nothing is run.
 - **A stopped WSL is never started.** Before each question it asks `wsl.exe` whether the distribution is running; when
   it is not, nothing is called in it. **Start WSL and check** in the panel is the one button that starts it.
 - Only the focused VS Code window polls, every `wslCare.refreshSeconds` seconds (default 120), and only for `status`.
@@ -45,6 +55,14 @@ Both are user settings only (`"scope": "application"`), so a repository's `.vsco
 |---|---|---|
 | `wslCare.distro` | empty | The distribution to show. Empty means WSL's default distribution. A name `wsl.exe --list` does not report is refused before anything starts. |
 | `wslCare.refreshSeconds` | 120 | How often the focused window asks for `status`, in seconds (at least 30). |
+
+## Workspace trust
+
+WSL Care works in untrusted (Restricted Mode) workspaces too, and that is deliberate: no input from the workspace reaches a
+root call. Every setting it reads is `"scope": "application"` — a user setting, which a repository's
+`.vscode/settings.json` cannot set — and none of its calls takes a value from the open folder, its files or its tasks.
+What a cleanup acts on comes from the daemon's own preview and your confirmation in a VS Code dialog, never from the
+workspace, so trusting or not trusting a folder changes nothing about what it can run.
 
 ## Requirements
 
