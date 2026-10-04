@@ -93,7 +93,7 @@ internal static class Program
             Request.Runs runs => LogsCommand.Runs(runs, host, stdout, stderr),
             Request.RunsShow show => LogsCommand.Show(show, host, stdout, stderr),
             Request.ActFromRequest fromRequest => DetachedRuns.FromRequest(fromRequest, host, loaded, stdout, stderr, logger.ForContext(typeof(DetachedRuns)), cancellationToken),
-            Request.ActStop stop => DetachedRuns.Stop(stop, host, stdout, stderr, logger.ForContext(typeof(DetachedRuns)), cancellationToken),
+            Request.ActStop stop => RunStops.Stop(stop, host, stdout, stderr, logger.ForContext(typeof(RunStops)), cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
     }

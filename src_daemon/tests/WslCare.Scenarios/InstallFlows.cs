@@ -757,6 +757,7 @@ public sealed class InstallFlows
     [Theory]
     [InlineData("live")]
     [InlineData("queued")]
+    [InlineData("wedged")]
     public async Task An_upgrade_under_a_run_in_flight_waits_bounded_then_refuses_naming_it_and_replaces_nothing(string state)
     {
         Linux();
@@ -769,10 +770,46 @@ public sealed class InstallFlows
         var result = await world.RunAsync();
 
         FailedAt(result, "upgrade-wait");
-        result.Stderr.Should().Contain("still live or queued").And.Contain("nothing was replaced");
+        result.Stderr.Should().Contain("a wsl-care run is live, queued or wedged, still after").And.Contain("nothing was replaced");
         File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(before, "the running binary stays");
         File.Exists(world.At(InstallWorld.BinaryPath + ".new")).Should().BeFalse();
         world.CallsOf("systemctl").Should().BeEmpty("no unit was touched");
+    }
+
+    /// <summary>E6.S1 review S4: the wait failed OPEN — a status that crashed, timed out or printed nothing read as "nothing in
+    /// flight" and the upgrade went ahead under whatever was running. No answer counts as in flight now; only an answer without a
+    /// running block (a binary older than E6.S0) proceeds.</summary>
+    [Theory]
+    [InlineData("#!/bin/sh\nexit 70\n")]
+    [InlineData("#!/bin/sh\nexit 0\n")]
+    public async Task An_upgrade_whose_installed_binary_gives_no_status_answer_waits_then_refuses(string oldBinary)
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-no-answer") { RunWaitSeconds = "0" };
+        world.Write(InstallWorld.BinaryPath, oldBinary);
+        File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), InstallWorld.Executable);
+        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+
+        var result = await world.RunAsync();
+
+        FailedAt(result, "upgrade-wait");
+        result.Stderr.Should().Contain("the installed binary gave no status answer");
+        File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(oldBinary);
+    }
+
+    [Fact]
+    public async Task Uninstall_removes_a_new_binary_an_interrupted_install_left_beside_the_old_one()
+    {
+        Linux();
+        using var world = new InstallWorld("uninstall-new");
+        Succeeded(await world.RunAsync());
+        world.Write(InstallWorld.BinaryPath + ".new", "left behind\n");
+        ScriptUninstall(world);
+
+        Succeeded(await world.RunAsync("--uninstall"));
+
+        File.Exists(world.At(InstallWorld.BinaryPath + ".new")).Should().BeFalse();
+        Directory.Exists(world.At("/opt/wsl-care")).Should().BeFalse("its emptied folders go with it");
     }
 
     [Fact]

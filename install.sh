@@ -414,6 +414,8 @@ uninstall() {
     warn "left $LINK_PATH alone: it is not the link this installer makes"
   fi
   if [ -e "$ROOT$BIN_PATH" ]; then run rm -f -- "$ROOT$BIN_PATH"; fi
+  # A .new an interrupted install left beside it (E6.S1 review).
+  if [ -e "$ROOT$BIN_PATH.new" ] || [ -h "$ROOT$BIN_PATH.new" ]; then run rm -f -- "$ROOT$BIN_PATH.new"; fi
   for dir in "$BIN_DIR" /opt/wsl-care; do
     if [ -d "$ROOT$dir" ] && [ -z "$(ls -A "$ROOT$dir")" ]; then run rmdir -- "$ROOT$dir"; fi
   done
@@ -643,12 +645,21 @@ unpack() {
   done
 }
 
-# The running block of the INSTALLED binary's `status --json` (E6.S0): "live" or "queued" means a run is in flight. A binary
-# older than E6.S0 answers no running block, which reads as nothing in flight.
+# The running block of the INSTALLED binary's `status --json` (E6.S0): "live", "queued" or "wedged" means a run is in flight.
+# It fails CLOSED (E6.S1 review S4): no answer — a status that timed out, crashed or printed nothing — counts as in flight too,
+# and only an answer WITHOUT a running block (a binary older than E6.S0) reads as nothing in flight. FLIGHT says which.
 run_in_flight() {
   [ -x "$ROOT$BIN_PATH" ] || return 1
-  answer=$(timeout 30 "$ROOT$BIN_PATH" status --json 2>/dev/null) || return 1
-  printf '%s\n' "$answer" | grep -Eq '^    "state": "(live|queued)",?[[:space:]]*$'
+  if ! answer=$(timeout 30 "$ROOT$BIN_PATH" status --json 2>/dev/null) || [ -z "$answer" ]; then
+    FLIGHT="the installed binary gave no status answer"
+    return 0
+  fi
+  printf '%s\n' "$answer" | grep -q '^  "running": {' || return 1
+  if printf '%s\n' "$answer" | grep -Eq '^    "state": "(live|queued|wedged)",?[[:space:]]*$'; then
+    FLIGHT="a wsl-care run is live, queued or wedged"
+    return 0
+  fi
+  return 1
 }
 
 # An upgrade never replaces the daemon under a run in flight (plan §15k #16): it waits, bounded, and then REFUSES naming why.
@@ -657,9 +668,9 @@ wait_for_runs() {
   waited=0
   while run_in_flight; do
     if [ "$waited" -ge "$RUN_WAIT_SECONDS" ]; then
-      fail upgrade-wait "a wsl-care run is still live or queued after ${waited}s (see: $BIN_PATH status); nothing was replaced - try again when it ends"
+      fail upgrade-wait "$FLIGHT, still after ${waited}s (see: $BIN_PATH status); nothing was replaced - try again when it ends (a request a stopped distro left behind is swept by: sudo wsl-care collect)"
     fi
-    [ "$waited" = 0 ] && say "a wsl-care run is in flight; waiting for it to end (at most ${RUN_WAIT_SECONDS}s)"
+    [ "$waited" = 0 ] && say "$FLIGHT; waiting (at most ${RUN_WAIT_SECONDS}s)"
     sleep 5
     waited=$((waited + 5))
   done
@@ -674,7 +685,10 @@ install_files() {
   # Never over the running binary (plan §15k #16): a run in flight keeps its file, a new one starts the new file — the binary
   # goes in beside it and is RENAMED over it, one atomic step.
   run install -m 0755 "$SRC/wsl-care" "$ROOT$BIN_PATH.new" || fail install-binary "could not install $BIN_PATH.new"
-  run mv -f "$ROOT$BIN_PATH.new" "$ROOT$BIN_PATH" || fail install-binary "could not rename $BIN_PATH.new over $BIN_PATH"
+  if ! run mv -f "$ROOT$BIN_PATH.new" "$ROOT$BIN_PATH"; then
+    rm -f -- "$ROOT$BIN_PATH.new"
+    fail install-binary "could not rename $BIN_PATH.new over $BIN_PATH"
+  fi
   if [ ! -h "$ROOT$LINK_PATH" ]; then
     run ln -s "$BIN_PATH" "$ROOT$LINK_PATH" || fail install-binary "could not link $LINK_PATH"
   fi

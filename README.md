@@ -356,14 +356,18 @@ template unit this install ships, whose `ExecStart` is `wsl-care act --request <
 through the same hardened reader `status` uses (root's, no group / other write, at most 1 MiB, validated), records
 itself under THAT run id, and removes the request once its `running.json` stands. When another run holds the lock it is
 recorded `refused` with the reason — never a silent busy. Every root run (`collect`, `act --request`) first sweeps the
-request folder: a request whose run has a history line only loses its file; one older than 15 minutes whose unit has no
-queued job and is not active is recorded `interrupted` and goes. `--only -` reads the shown list from stdin under the
+request folder — and so does every `--detach`, under the lock: a request whose run has a history line only loses its file; one
+older than 60 s on the monotonic clock (or written in an earlier boot) whose unit has no queued job and is not active is
+recorded `interrupted` and goes; one that cannot be used is recorded `refused` and goes. `--only -` reads the shown list from stdin under the
 same 1 MiB cap and a 10 s ceiling for the end of input. There is no synchronous fallback: without systemd a detach is
 refused (69). At most 32 requests wait at once (73). `act --stop` asks systemd to stop a wedged run's unit — only when
 its process lives in `wsl-care.service` or its own `wsl-care-act@<runId>.service`; SIGTERM lets it record itself
 `interrupted`, and one that is still there after 90 s is killed and recorded by the next root run's sweep with that reason.
 
-Exit codes of the detached verbs: 0 accepted / recorded / stopping · 2 usage, or nothing to stop · 69 no systemd · 71 the
+A start that times out asks the unit: accepted when systemd holds the job, `result: unknown` (exit 0, the request kept) when
+its state cannot be read. Nothing the daemon writes is group or world writable, whatever the umask.
+
+Exit codes of the detached verbs: 0 accepted / unknown / recorded / stopping · 2 usage, or nothing to stop · 69 no systemd · 71 the
 unit would not start (its request removed) · 73 the request budget is full · 75 / 76 / 79 busy / wedged / state unreadable
 (at `--request` time RECORDED as `refused`, and a success for the unit) · 77 needs root · 80 no request names the run
 (a no-op).
