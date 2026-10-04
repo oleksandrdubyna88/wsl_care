@@ -23,8 +23,20 @@
       "code": 4
     },
     {
+      "name": "detachUnavailable",
+      "code": 69
+    },
+    {
       "name": "internal",
       "code": 70
+    },
+    {
+      "name": "detachStartFailed",
+      "code": 71
+    },
+    {
+      "name": "queueFull",
+      "code": 73
     },
     {
       "name": "busy",
@@ -45,6 +57,10 @@
     {
       "name": "stateUnreadable",
       "code": 79
+    },
+    {
+      "name": "requestGone",
+      "code": 80
     },
     {
       "name": "interrupted",

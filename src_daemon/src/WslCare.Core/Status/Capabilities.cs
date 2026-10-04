@@ -22,6 +22,16 @@ public static class Capabilities
     /// <summary><c>logs</c> / <c>runs</c> take <c>--from &lt;RFC3339&gt; --to &lt;RFC3339&gt;</c> beside the UTC-day periods (§15j M7).</summary>
     public const string LogsInstantRange = "logs.instantRange";
 
+    /// <summary><c>act … --confirm --detach</c> and <c>collect --detach</c>: a run started in its own template unit, answered
+    /// <c>accepted</c> at once (§15j B2, M9; E6.S1).</summary>
+    public const string ActDetach = "act.detach";
+
+    /// <summary><c>act … --only -</c>: A4's shown list on stdin, capped at 1 MiB and 10 s (§15j M2; E6.S1).</summary>
+    public const string ActOnlyStdin = "act.onlyStdin";
+
+    /// <summary><c>act --stop &lt;runId&gt;</c>: a wedged run hosted by one of the units stopped through systemd (§15j M4; E6.S1).</summary>
+    public const string ActStop = "act.stop";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop];
 }

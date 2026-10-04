@@ -82,6 +82,23 @@ public abstract record SlotKind
         public override string Describe => TypeRequired ? "<unit>" : "<unit or service name>";
     }
 
+    /// <summary>The template unit's instance for ONE run, and nothing else: exactly <c>wsl-care-act@&lt;runId&gt;.service</c>,
+    /// the run id in its canonical spelling (plan §15j B2, M4: the closed unit slot of <c>systemctl start / stop / show</c>).
+    /// Any other unit — <c>ssh.service</c>, <c>wsl-care-events.service</c>, an id with a leading zero, a path — is refused.</summary>
+    public sealed record ActUnit : SlotKind
+    {
+        public const string Prefix = "wsl-care-act@";
+        public const string Suffix = ".service";
+
+        public static string Of(Records.RunId runId) => Prefix + runId.Text + Suffix;
+
+        public override bool Accepts(string value) =>
+            value.StartsWith(Prefix, StringComparison.Ordinal) && value.EndsWith(Suffix, StringComparison.Ordinal) && value.Length > Prefix.Length + Suffix.Length
+            && Records.RunId.TryParse(value[Prefix.Length..^Suffix.Length]) is not null;
+
+        public override string Describe => Prefix + "<runId>" + Suffix;
+    }
+
     /// <summary>A POSIX account name (<c>[a-z_][a-z0-9_-]{0,31}</c>) — the target user of <c>runuser -u</c>.</summary>
     public sealed record UserName : SlotKind
     {

@@ -38,6 +38,10 @@ internal abstract record Request
     {
         /// <summary>The timer started it (its unit passes <c>--timer</c>); never inferred from the environment.</summary>
         public bool Timer { get; init; }
+
+        /// <summary><c>--detach</c> (E6.S1, §15j M9 — <i>Run full check now</i>): a request of kind <c>collect</c> and the template
+        /// unit started; never with <c>--timer</c>.</summary>
+        public bool Detach { get; init; }
     }
 
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
@@ -85,12 +89,26 @@ internal abstract record Request
         /// <summary>Every <c>--volume</c> given, each already a 64-hex anonymous volume name.</summary>
         public IReadOnlyList<string> Volumes { get; init; } = [];
 
-        /// <summary>The <c>--only</c> file (one 64-hex name per line), read by the verb; empty when not given.</summary>
+        /// <summary>The <c>--only</c> file (one 64-hex name per line), read by the verb; <c>-</c> is STDIN (E6.S1, §15j M2); empty
+        /// when not given.</summary>
         public string OnlyFile { get; init; } = string.Empty;
+
+        /// <summary><c>--detach</c> (E6.S1, §15j B2): write the request, start the template unit, answer <c>accepted</c> at once.</summary>
+        public bool Detach { get; init; }
 
         /// <summary>Whether a shown list was passed at all.</summary>
         public bool HasShownList => Volumes.Count > 0 || OnlyFile.Length > 0;
+
+        /// <summary>Whether the shown list comes on stdin (<c>--only -</c>).</summary>
+        public bool ShownOnStdin => OnlyFile == "-";
     }
+
+    /// <summary><c>act --request &lt;runId&gt;</c> (E6.S1, §15j B2): the template unit's start — run the request <c>--detach</c>
+    /// wrote, under its run id. The run id is already well formed.</summary>
+    internal sealed record ActFromRequest(string RunId) : Request;
+
+    /// <summary><c>act --stop &lt;runId&gt; [--json]</c> (E6.S1, §15j M4): stop a WEDGED run hosted by one of the units.</summary>
+    internal sealed record ActStop(string RunId, bool Json) : Request;
 }
 
 /// <summary>One thing the command line accepts: how it is spelt, what it does, how it is parsed.</summary>
@@ -138,6 +156,10 @@ internal static class CommandLine
     private const string DetailFlag = "--detail";
     private const string FromFlag = "--from";
     private const string ToFlag = "--to";
+    private const string DetachFlag = "--detach";
+    private const string RequestFlag = "--request";
+    private const string StopFlag = "--stop";
+    private const string StdinMarker = "-";
 
     /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — the same cap a
     /// preview's <c>shown</c> list keeps (<see cref="Core.Actions.ShownList.MaxNames"/>, plan §15j B1).</summary>
@@ -152,10 +174,12 @@ internal static class CommandLine
         new([["config", "reset"]], "config reset <key>", "remove one setting from the user layer", ["config", "reset", "dryRun"], ParseConfigReset),
         new([["status"]], "status [--json]", "a fast snapshot: memory, top holders, containers, disk; slow parts from the last full run", ["status", "--json"], ParseStatus),
         new([["preview"]], "preview --all [--json]", "every cleanup row with its count and reclaimable bytes, the kept named volumes, Docker hygiene", ["preview", "--all", "--json"], ParsePreview),
-        new([["collect"]], "collect [--timer] [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise); --timer is the systemd timer's mark, the only run that also acts", ["collect", "--json"], ParseCollect),
+        new([["collect"]], "collect [--timer or --detach] [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise); --timer is the systemd timer's mark, the only run that also acts; --detach (as root) starts it in its own unit and answers accepted at once", ["collect", "--json"], ParseCollect),
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
-        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--volume <name>]... [--only <file>] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --volume / --only the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
+        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
+        new([["act", "--request"]], "act --request <runId>", "as root, the template unit's start: run the request --detach wrote, recorded under its run id (refused, recorded, when another run holds the lock)", ["act", "--request", "20261002T120000Z-123"], ParseActFromRequest),
+        new([["act", "--stop"]], "act --stop <runId> [--json]", "as root: stop a WEDGED run through systemd, only when its process lives in wsl-care.service or that run's own unit", ["act", "--stop", "20261002T120000Z-123", "--json"], ParseActStop),
         new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["logs", "--period", "today", "--json"], ParseLogs),
         new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
@@ -271,9 +295,24 @@ internal static class CommandLine
 
     /// <summary><c>collect</c> takes <c>--timer</c> and <c>--json</c>, each at most once, in any order.</summary>
     private static Request ParseCollect(IReadOnlyList<string> rest) =>
-        rest.All(f => f is TimerFlag or JsonFlag) && rest.Distinct(StringComparer.Ordinal).Count() == rest.Count
-            ? new Request.Collect(rest.Contains(JsonFlag)) { Timer = rest.Contains(TimerFlag) }
-            : new Request.Failed($"\"{BinaryName} collect\" takes only {TimerFlag} and {JsonFlag}, each once; got \"{Printable(string.Join(' ', rest))}\".");
+        rest.All(f => f is TimerFlag or JsonFlag or DetachFlag) && rest.Distinct(StringComparer.Ordinal).Count() == rest.Count && !(rest.Contains(TimerFlag) && rest.Contains(DetachFlag))
+            ? new Request.Collect(rest.Contains(JsonFlag)) { Timer = rest.Contains(TimerFlag), Detach = rest.Contains(DetachFlag) }
+            : new Request.Failed($"\"{BinaryName} collect\" takes {TimerFlag} or {DetachFlag} (not both) and {JsonFlag}, each once; got \"{Printable(string.Join(' ', rest))}\".");
+
+    /// <summary><c>act --request &lt;runId&gt;</c>: exactly one well-formed run id.</summary>
+    private static Request ParseActFromRequest(IReadOnlyList<string> rest) => rest switch
+    {
+        [var id] when Core.Records.RunId.TryParse(id) is not null => new Request.ActFromRequest(id),
+        _ => new Request.Failed($"\"{BinaryName} act --request\" needs exactly one <runId> (yyyyMMddTHHmmssZ-<pid>); got \"{Printable(string.Join(' ', rest))}\"."),
+    };
+
+    /// <summary><c>act --stop &lt;runId&gt; [--json]</c>: exactly one well-formed run id, then optionally <c>--json</c>.</summary>
+    private static Request ParseActStop(IReadOnlyList<string> rest) => rest switch
+    {
+        [var id] when Core.Records.RunId.TryParse(id) is not null => new Request.ActStop(id, Json: false),
+        [var id, JsonFlag] when Core.Records.RunId.TryParse(id) is not null => new Request.ActStop(id, Json: true),
+        _ => new Request.Failed($"\"{BinaryName} act --stop\" needs exactly one <runId> (yyyyMMddTHHmmssZ-<pid>) and optionally {JsonFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
+    };
 
     private static Request ParseEventsFollow(IReadOnlyList<string> rest) => rest switch
     {
@@ -305,7 +344,7 @@ internal static class CommandLine
         (_, _, _, { } failure) => failure,
         var (flags, _, _, _) when ActFlags(flags) is { } failure => failure,
         var (_, volumes, only, _) when ShownListFailure(ids, volumes, only) is { } failure => failure,
-        var (flags, volumes, only, _) => new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag)) { Manual = flags.Contains(ManualFlag), Timer = flags.Contains(TimerFlag), Volumes = volumes, OnlyFile = only },
+        var (flags, volumes, only, _) => new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag)) { Manual = flags.Contains(ManualFlag), Timer = flags.Contains(TimerFlag), Detach = flags.Contains(DetachFlag), Volumes = volumes, OnlyFile = only },
     };
 
     /// <summary>The flags, the <c>--volume</c> values and the <c>--only</c> file, apart — or the first refusal.</summary>
@@ -334,7 +373,7 @@ internal static class CommandLine
 
     /// <summary>Why <c>--volume</c> / <c>--only</c> at <paramref name="i"/> cannot be taken: no value, or a second <c>--only</c>.</summary>
     private static Request.Failed? ShownValueProblem(IReadOnlyList<string> rest, int i, string only) =>
-        NeedsValue(rest, i) ? new Request.Failed($"\"{BinaryName} act\": {rest[i]} needs a value ({ShownValueKind(rest[i])}).")
+        NeedsValue(rest, i) && !IsStdinOnly(rest, i) ? new Request.Failed($"\"{BinaryName} act\": {rest[i]} needs a value ({ShownValueKind(rest[i])}).")
         : rest[i] == OnlyFlag && only.Length > 0 ? new Request.Failed($"\"{BinaryName} act\" takes {OnlyFlag} once.")
         : null;
 
@@ -347,11 +386,20 @@ internal static class CommandLine
     /// <summary>The option at <paramref name="i"/> has no value after it: the end, or another option.</summary>
     private static bool NeedsValue(IReadOnlyList<string> rest, int i) => i + 1 >= rest.Count || rest[i + 1].StartsWith('-');
 
-    private static Request.Failed? ActFlags(IReadOnlyList<string> flags) => UnknownActFlag(flags) ?? ActMode(flags) ?? ActMark(flags);
+    private static Request.Failed? ActFlags(IReadOnlyList<string> flags) => UnknownActFlag(flags) ?? ActMode(flags) ?? ActMark(flags) ?? ActDetach(flags);
+
+    /// <summary><c>--only -</c>: the one value of <c>--only</c> that starts with a dash — stdin (E6.S1, §15j M2).</summary>
+    private static bool IsStdinOnly(IReadOnlyList<string> rest, int i) => rest[i] == OnlyFlag && i + 1 < rest.Count && rest[i + 1] == StdinMarker;
+
+    /// <summary><c>--detach</c> starts a CONFIRMED run in its unit (§15j B2): never a preview, never the timer's.</summary>
+    private static Request.Failed? ActDetach(IReadOnlyList<string> flags) =>
+        flags.Contains(DetachFlag) && (!flags.Contains(ConfirmFlag) || flags.Contains(TimerFlag))
+            ? new Request.Failed($"\"{BinaryName} act\": {DetachFlag} runs a {ConfirmFlag} in its own unit; it takes neither {PreviewFlag} nor {TimerFlag}.")
+            : null;
 
     private static Request.Failed? UnknownActFlag(IReadOnlyList<string> flags) =>
-        flags.Any(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag)) || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count
-            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name> and {OnlyFlag} <file>; got \"{Printable(string.Join(' ', flags))}\".")
+        flags.Any(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag or DetachFlag)) || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count
+            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name> and {OnlyFlag} <file or ->; got \"{Printable(string.Join(' ', flags))}\".")
             : null;
 
     private static Request.Failed? ActMode(IReadOnlyList<string> flags) =>

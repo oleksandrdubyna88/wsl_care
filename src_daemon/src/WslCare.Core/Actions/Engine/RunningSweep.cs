@@ -74,12 +74,15 @@ public abstract record RunningSweep
             return $"removed the running.json of run {file.RunId}: {dead.Why}, and the run had already recorded itself";
         }
 
+        // E6.S1 (plan §15k #18): a run act --stop asked systemd to stop and that was killed after TimeoutStopSec says so.
+        var stopped = StopMarkers.StoppedReason(paths, files, file.RunId);
         var line = new RunRecord(Core.SchemaVersion.Current, file.RunId, file.Trigger, file.StartedAt, file.HeartbeatAt, RunOutcome.Interrupted, [.. file.Actions.Select(a => new ActionRecord(a, 0, 0) { Status = "interrupted" })])
         {
-            Reason = $"swept: {dead.Why}; it was on {(file.Current.Length > 0 ? file.Current : "no action yet")}, last heartbeat {file.HeartbeatAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z",
+            Reason = $"{(stopped.Length > 0 ? stopped + "; swept" : "swept")}: {dead.Why}; it was on {(file.Current.Length > 0 ? file.Current : "no action yet")}, last heartbeat {file.HeartbeatAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z",
         };
         new RunRecordWriter(paths, files).Append(line);
         RunningState.Remove(paths, files);
+        StopMarkers.Remove(paths, files, file.RunId);
         return $"swept the running.json of run {file.RunId}: {dead.Why} (recorded as interrupted)";
     }
 }

@@ -339,7 +339,10 @@
     "act.shownList",
     "runs.show",
     "running.block",
-    "logs.instantRange"
+    "logs.instantRange",
+    "act.detach",
+    "act.onlyStdin",
+    "act.stop"
   ],
   "running": {
     "state": "unreadable",

@@ -29,11 +29,17 @@ internal static class CollectCommand
     public static int Run(Request.Collect request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, ILogger logger, CancellationToken cancellationToken)
     {
         var log = logger.ForContext(typeof(CollectCommand));
+        if (request.Detach)
+        {
+            return DetachedRuns.CollectDetach(request, host, stdout, stderr, log);
+        }
+
         var context = new CollectContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, Environment.ProcessId, Trigger(request))
         {
             Actions = host.Actions,
             Processes = host.Processes,
             Signals = host.Signals,
+            InterruptCause = host.InterruptCause,
         };
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = CollectRun.RunAsync(context, cancellationToken).GetAwaiter().GetResult();
