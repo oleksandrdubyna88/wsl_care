@@ -3,14 +3,26 @@
  * gives them — never a number at a call site. `exitCodes.test.ts` reads the C# enum and fails when a value here
  * disagrees with it (the contract has two implementations; the client's copy is held to the daemon's).
  *
- * The act-only codes (3, 75–79) belong to E6 (plan §15f #7); a read-only verb never returns them, and if one did the
- * client reports it as an unknown failure with the daemon's own message.
+ * Since E6.S2 every code of `contracts/exit-codes.json` is named here (that file is written from the same enum by the
+ * daemon's `ContractFilesTests`; `exitCodes.test.ts` holds the two EQUAL, both ways): the read-only verbs return the
+ * first five, the root paths (`root/`) the rest — a read-only verb answering an act code still reads as an unknown failure.
  */
 export const DAEMON_EXIT = {
   ok: 0,
   runFailed: 1,
   usage: 2,
+  actionFailed: 3,
+  recordsUnreadable: 4,
+  detachUnavailable: 69,
   internal: 70,
+  detachStartFailed: 71,
+  queueFull: 73,
+  busy: 75,
+  wedged: 76,
+  needsRoot: 77,
+  observeOnly: 78,
+  stateUnreadable: 79,
+  requestGone: 80,
   interrupted: 130,
 } as const;
 
