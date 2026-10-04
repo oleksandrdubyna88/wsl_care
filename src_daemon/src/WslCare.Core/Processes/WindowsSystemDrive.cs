@@ -122,14 +122,23 @@ public static partial class WindowsSystemDrive
             : $"WSL interop is registered but not enabled ({entry} says \"{first}\"), so no Windows program can run from this distro";
     }
 
-    private static bool IsTheDrive(MountInfoLine line) =>
-        line.Root == "/" && IsAbsolute(line.MountPoint) && line.Type switch
-        {
-            "9p" => line.Options.Contains("aname=drvfs", StringComparer.Ordinal) && NamesTheDrive(PathOption(line)),
-            "drvfs" => NamesTheDrive(line.Source),
-            "virtiofs" => NamesTheDrive(line.Source) || NamesTheDrive(PathOption(line)),
-            _ => false,
-        };
+    private static bool IsTheDrive(MountInfoLine line) => IsAWholeDriveAtAnAbsolutePoint(line) && IsADrvfsMountOfTheDrive(line);
+
+    /// <summary>The whole drive (root <c>/</c>, not a bound folder of it), mounted at an absolute path.</summary>
+    private static bool IsAWholeDriveAtAnAbsolutePoint(MountInfoLine line) => line.Root == "/" && IsAbsolute(line.MountPoint);
+
+    private static bool IsADrvfsMountOfTheDrive(MountInfoLine line) => IsWsl2Drvfs(line) || IsWsl1Drvfs(line) || IsVirtiofs(line);
+
+    /// <summary>WSL 2: <c>9p</c> with <c>aname=drvfs</c>, judged by its <c>path=</c> option — never by the source label.</summary>
+    private static bool IsWsl2Drvfs(MountInfoLine line) =>
+        line.Type == "9p" && line.Options.Contains("aname=drvfs", StringComparer.Ordinal) && NamesTheDrive(PathOption(line));
+
+    /// <summary>WSL 1: type <c>drvfs</c>, judged by its source.</summary>
+    private static bool IsWsl1Drvfs(MountInfoLine line) => line.Type == "drvfs" && NamesTheDrive(line.Source);
+
+    /// <summary>virtiofs, only when the source or a <c>path=</c> option names the drive (WSL's tag-mounted share never does).</summary>
+    private static bool IsVirtiofs(MountInfoLine line) =>
+        line.Type == "virtiofs" && (NamesTheDrive(line.Source) || NamesTheDrive(PathOption(line)));
 
     private static bool NamesTheDrive(string name) => DriveNames.Contains(name, StringComparer.OrdinalIgnoreCase);
 
