@@ -981,7 +981,9 @@ against the first implementation — *found UnixFileMode.UserExecute\|UserWrite\
 mode with the umask, so a root shell with `umask 077` would have made `requests/` 0700 and the queue invisible to the
 unprivileged `status`. Fixed (`EnsureParent` sets the mode after creating the folder); green.
 
-**Two existing tests changed, and why.** `CommandPolicyPropertyTests.JudgePolicy` now caps each KIND of violation at 50
+**CI found one more** (the `win-x64` leg, run 37223302838): `VerbRegisterTests.Every_registered_verb_runs_its_example_…(act --request <runId>)` — *Expected result.Exit to be one of {0, 2, 77}*: the GitHub Windows runner is ELEVATED, so the example ran as root and answered `act --request`'s designed no-op, 80 (reproduced here with root claimed in a sandbox: exit 80). The allowed set gained 80 — a named no-op, not a crash.
+
+**Three existing tests changed, and why.** `VerbRegisterTests` as above. `CommandPolicyPropertyTests.JudgePolicy` now caps each KIND of violation at 50
 instead of all of them together: the three new templates shifted the seeded sequence so far that the naive-policy test's
 "undeclared argv" violations filled the shared 50 before a wrapped never-command appeared (the test's own property was
 unchanged). And the hostile unit names live in their own list (`HostileInputs.HostileUnitNames`), not in `HostileValues`,
