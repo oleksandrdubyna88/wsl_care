@@ -22,7 +22,7 @@ public sealed class HostileInputs(int seed)
     public static readonly IReadOnlyList<string> HostileValues =
     [
         "--all", "-a", "-af", "-f", "--force", "--filter=until=0s", "-", "--", ";", "; rm -rf ~", "&& reboot", "|| true", "| sh", "$(reboot)", "`id`", "${IFS}",
-        "../", "../../git", "~/git", "~/git/wsl_care", "/home/me/git/repo", "/root/git", "/home/strug/.claude/projects/x/memory",
+        "../", "../../git", "~/git", "~/git/wsl_care", "/home/me/git/repo", "/root/git", "/home/user/.claude/projects/x/memory",
         "/home/me/.codex/sessions", "/home/me/.gemini", "/tmp/claude/x", "C:\\Users\\me\\git", "C:\\Users\\me\\AppData\\Local\\Temp\\claude",
         "C:\\Users\\me\\.claude", "*", "?", ">", "<", "&", "\n", "a\nb", "\r", "x\0y", "\u001b[31m", "名前", "ünïcödé", "\u202Eexe.txt", " ", "",
         "/proc/sys/vm/drop_caches", "vm.drop_caches=3", "vm.drop_caches=2", "vm/drop_caches=0", "sparseVhd=true", "autoMemoryReclaim=gradual",
@@ -85,7 +85,7 @@ public sealed class HostileInputs(int seed)
         SlotKind.Rfc3339Utc => new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(_random.NextInt64(0, 2_000_000_000)).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
         SlotKind.Hex h => new string([.. Enumerable.Range(0, h.Length).Select(_ => "0123456789abcdef"[_random.Next(16)])]),
         SlotKind.UnitName u => Pick<string>(u.TypeRequired ? ["wsl-pro.service", "fstrim.timer", "a@b.service", "systemd-oomd.service", "x-y_z.socket"] : ["systemd-resolved", "wsl-pro.service", "kernel-x"]),
-        SlotKind.UserName => Pick<string>(["me", "strug", "_svc", "a-b", "u1000"]),
+        SlotKind.UserName => Pick<string>(["me", "user", "_svc", "a-b", "u1000"]),
         SlotKind.SnapName => Pick<string>(["core22", "snapd", "firefox", "gnome-42-2204", "lxd", "a1"]),
         SlotKind.Text t => TextValue(t),
         SlotKind.OneOf o => Pick(o.Values),

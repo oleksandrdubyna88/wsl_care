@@ -2061,6 +2061,11 @@ Claude scratchpad path. Since the code round:
   is not one) and the user name of the machine RUNNING it (read from the environment and the home folder, like
   check-vsix, never stored); a finding names file, line and rule, never the value. Each rule has a planted instance, and a
   known file proves the walk still reaches the trees.
+- **Widened to the whole repository** — `FixturePrivacyTests.No_tracked_text_file…` applies the same rules to EVERY tracked
+  text file (`git ls-files`; a walk skipping build output, dependencies and the editor downloads when there is no `.git`),
+  admitting besides `user` only the commented list of invented test accounts (`SyntheticNames`: `me`, `ann`, `sam`,
+  `alice`, …) and, for e-mail, `noreply@anthropic.com` and the RFC 2606 / 6761 example domains. The research notes,
+  the cleanup scripts and two test sources were anonymised by it (2026-10-04).
 - **Not undone by this**: the data before the code round remains in git history (main and the pull-request branches);
   removing it needs a history rewrite and a force-push — the owner's decision.
 

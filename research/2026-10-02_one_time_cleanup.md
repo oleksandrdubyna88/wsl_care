@@ -3,6 +3,8 @@
 > Status: **done 2026-10-02 (~09:35–10:00 CEST)**, Phase 0.2 of
 > [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md), extended by the user's explicit choices.
 > Not done yet (user: "later"): `.wslconfig` changes, `wsl --shutdown`, vhdx compaction (Phase 0.1 / 0.3).
+> Account, project and volume names are anonymised (2026-10-04 — this repository is public: `user`, `project-a`…,
+> `named-volume-a`…); every size, count and date is as measured.
 
 ## Starting point
 
@@ -10,7 +12,7 @@ WSL had just restarted with Windows, so memory was fresh (MemAvailable 40.6 of 4
 about disk only. Docker Server 29.6.1 (≥ 23, so `docker volume prune` removes anonymous volumes only).
 
 Finding that changed the plan: **none** of the 70 exited containers carried `org.testcontainers=true` —
-all were created by hand or by scripts (`as-test-*`, `es-*-mysql`, `qln-*`, Aspire `pgadmin-*`, …). Plan
+all were created by hand or by scripts (`project-a-test-*`, `project-b-*-mysql`, `project-c-*`, Aspire `pgadmin-*`, …). Plan
 action A4 ("remove exited Testcontainers containers") would have found nothing; the leftovers come from
 named `docker run` containers instead. The daemon's A4/A10 split needs revisiting with that in mind.
 
@@ -43,13 +45,13 @@ named `docker run` containers instead. The daemon's A4/A10 split needs revisitin
 ## Deliberately kept
 
 - **Named volumes** — all of them, attached or not. Unattached named volumes now total ~16 GB
-  (`mindex_qdrant_data` 10.3 GB, `llm-jira-estimates_jiraestimate-qdrant` 1.1 GB, `v2-*`,
-  `access-server_redis_data`, `controll_redis_data`, `alert-center_opensearch_data`, …) — their containers
+  (`named-volume-a` 10.3 GB, `named-volume-b` 1.1 GB, `project-d-*`,
+  `named-volume-c`, `named-volume-d`, `named-volume-e`, …) — their containers
   were removed above, the data stays until someone decides per volume.
-- The 18 containers stopped < 7 days (`qln-*`, `email-service-database-1`, `as-test-*-redesign*`, …).
+- The 18 containers stopped < 7 days (`project-c-*`, `project-e-database-1`, `project-a-test-*`, …).
 - `~/git/_wt` (41 GB worktrees), NuGet packages, Playwright browsers, `~/.vscode-server`.
 
 ## Commands
 
-Scripts as run: `clean_safe.sh` (root; docker as `jinx`) and `clean_more.sh` (`jinx`) — kept in
+Scripts as run: `clean_safe.sh` (root; docker as `user`) and `clean_more.sh` (`user`) — kept in
 [diagnostics/](diagnostics/).
