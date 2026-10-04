@@ -114,6 +114,10 @@ internal sealed class InstallWorld : IDisposable
     /// <summary>A <c>GH_TOKEN</c> in the script's environment; none unless a test sets it.</summary>
     public string GhToken { get; set; } = string.Empty;
 
+    /// <summary><c>WSL_CARE_INSTALL_RUN_WAIT_SECONDS</c>: how long an upgrade waits for a run in flight; the script's own
+    /// 10 minutes unless a test sets it.</summary>
+    public string RunWaitSeconds { get; set; } = string.Empty;
+
     public IReadOnlyList<FakeCall> Calls => FakeCallLog.ReadAll(CallsFile);
 
     public IReadOnlyList<FakeCall> CallsOf(string tool) => [.. Calls.Where(c => c.Tool == tool)];
@@ -310,6 +314,7 @@ internal sealed class InstallWorld : IDisposable
         [FakeToolProtocol.RecordEnvironmentVariable] = string.Join(',', RecordedVariables),
         ["SUDO_USER"] = SudoUser.Length == 0 ? null : SudoUser,
         ["GH_TOKEN"] = GhToken.Length == 0 ? null : GhToken,
+        ["WSL_CARE_INSTALL_RUN_WAIT_SECONDS"] = RunWaitSeconds.Length == 0 ? null : RunWaitSeconds,
     };
 
     /// <summary>Every entry under the prefix: path → kind, mode, link target or content hash. Equal before and after a

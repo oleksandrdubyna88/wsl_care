@@ -390,7 +390,7 @@ public sealed class InstallFlows
 
         result.Stdout.Should().Contain("kept: /var/lib/wsl-care").And.Contain("--uninstall --purge removes them");
         world.CallsOf("systemctl").Select(c => string.Join(' ', c.Argv)).Should().ContainInOrder(
-            "disable --now wsl-care.timer wsl-care-events.service", "stop wsl-care.service", "daemon-reload", "is-active --quiet wsl-care.timer");
+            "disable --now wsl-care.timer wsl-care-events.service", "stop wsl-care.service", "stop wsl-care-act@*.service", "daemon-reload", "is-active --quiet wsl-care.timer");
     }
 
     [Fact]
@@ -736,6 +736,82 @@ public sealed class InstallFlows
             "daemon-reload", "try-restart wsl-care-events.service", string.Join(' ', EnableOurUnits));
     }
 
+    // ---------- E6.S1: never under a run in flight (plan §15k #16) ----------
+
+    /// <summary>The installed binary's <c>status --json</c>, as far as the installer reads it: the running block's state.</summary>
+    private static string OldBinaryAnswering(string state) =>
+        $$"""
+        #!/bin/sh
+        cat <<'EOF'
+        {
+          "schemaVersion": 1,
+          "running": {
+            "state": "{{state}}",
+            "reason": "a test"
+          }
+        }
+        EOF
+
+        """;
+
+    [Theory]
+    [InlineData("live")]
+    [InlineData("queued")]
+    public async Task An_upgrade_under_a_run_in_flight_waits_bounded_then_refuses_naming_it_and_replaces_nothing(string state)
+    {
+        Linux();
+        using var world = new InstallWorld($"upgrade-wait-{state}") { RunWaitSeconds = "0" };
+        world.Write(InstallWorld.BinaryPath, OldBinaryAnswering(state));
+        File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), InstallWorld.Executable);
+        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+        var before = File.ReadAllText(world.At(InstallWorld.BinaryPath));
+
+        var result = await world.RunAsync();
+
+        FailedAt(result, "upgrade-wait");
+        result.Stderr.Should().Contain("still live or queued").And.Contain("nothing was replaced");
+        File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(before, "the running binary stays");
+        File.Exists(world.At(InstallWorld.BinaryPath + ".new")).Should().BeFalse();
+        world.CallsOf("systemctl").Should().BeEmpty("no unit was touched");
+    }
+
+    [Fact]
+    public async Task An_upgrade_with_nothing_in_flight_renames_the_new_binary_over_the_old_and_a_queued_request_survives_it()
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-request");
+        world.Write(InstallWorld.BinaryPath, OldBinaryAnswering("none"));
+        File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), InstallWorld.Executable);
+        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+        world.Override("systemctl", ["try-restart", "wsl-care-events.service"], 0);
+        // An E6.S0-shaped request (no "shown"): the schema stays 1 and additive, so the new binary reads what the old one wrote.
+        const string request = """{"schemaVersion":1,"runId":"20261004T120000Z-4321","kind":"act","actions":["A10"],"trigger":"manual","createdAt":"2026-10-04T12:00:00+00:00"}""";
+        world.Write("/var/lib/wsl-care/requests/20261004T120000Z-4321.json", request);
+
+        var result = await world.RunAsync();
+
+        Succeeded(result);
+        File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(world.StubScript());
+        File.Exists(world.At(InstallWorld.BinaryPath + ".new")).Should().BeFalse("renamed over the old one, never left beside it");
+        File.ReadAllText(world.At("/var/lib/wsl-care/requests/20261004T120000Z-4321.json")).Should().Be(request, "an upgrade never touches the request folder");
+        var parsed = System.Text.Json.JsonSerializer.Deserialize(request, Core.Json.WslCareJsonContext.Default.RunRequestFile)!;
+        parsed.RunId.Text.Should().Be("20261004T120000Z-4321");
+        world.StubInvocations.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_binary_goes_in_beside_the_old_one_and_is_renamed_over_it_in_one_step()
+    {
+        Linux();
+        using var world = new InstallWorld("rename");
+
+        var result = await world.RunAsync("--dry-run");
+
+        Succeeded(result);
+        result.Stdout.Should().Contain($"/wsl-care {world.At(InstallWorld.BinaryPath)}.new")
+            .And.Contain($"mv -f {world.At(InstallWorld.BinaryPath)}.new {world.At(InstallWorld.BinaryPath)}");
+    }
+
     [Fact]
     public async Task A_wsl_care_on_the_link_path_that_is_not_the_installers_link_is_refused_before_anything_is_installed()
     {
@@ -896,6 +972,7 @@ public sealed class InstallFlows
     {
         world.Override("systemctl", ["disable", "--now", "wsl-care.timer", "wsl-care-events.service"], 0);
         world.Override("systemctl", ["stop", "wsl-care.service"], 0);
+        world.Override("systemctl", ["stop", "wsl-care-act@*.service"], 0);
         world.Override("systemctl", ["is-active", "--quiet", "wsl-care.timer"], 3);
     }
 }

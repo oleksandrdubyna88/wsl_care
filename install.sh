@@ -73,7 +73,7 @@ readonly BIN_DIR="/opt/wsl-care/bin"
 readonly BIN_PATH="$BIN_DIR/wsl-care"
 readonly LINK_PATH="/usr/local/bin/wsl-care"
 readonly UNIT_DIR="/etc/systemd/system"
-readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service"
+readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service wsl-care-act@.service"
 readonly CONFIG_DIR="/etc/wsl-care"
 readonly CONFIG_FILE="$CONFIG_DIR/config.json"
 readonly STATE_DIR="/var/lib/wsl-care"
@@ -88,6 +88,8 @@ readonly SYSSTAT_DEFAULT="/etc/default/sysstat"
 ROOT="${WSL_CARE_INSTALL_ROOT:-}"
 # How long the final `doctor --json` may take to turn healthy (the follower's first marker, a first sample).
 DOCTOR_SECONDS="${WSL_CARE_INSTALL_DOCTOR_SECONDS:-120}"
+# How long an upgrade waits for a live or queued run to end before it refuses (plan §15k #16: 10 minutes).
+RUN_WAIT_SECONDS="${WSL_CARE_INSTALL_RUN_WAIT_SECONDS:-600}"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -396,6 +398,11 @@ uninstall() {
   if [ -f "$ROOT$UNIT_DIR/wsl-care.service" ]; then
     run systemctl stop wsl-care.service || fail units "systemctl stop wsl-care.service failed"
   fi
+  if [ -f "$ROOT$UNIT_DIR/wsl-care-act@.service" ]; then
+    # Every detached run still loaded (E6.S1): its unit file is about to go. systemctl matches the pattern against loaded
+    # units only, so none loaded is no error. Quoted: the pattern is systemctl's, never the shell's.
+    run systemctl stop 'wsl-care-act@*.service' || fail units "systemctl stop wsl-care-act@*.service failed"
+  fi
   for unit in $UNITS; do
     if [ -f "$ROOT$UNIT_DIR/$unit" ]; then run rm -f -- "$ROOT$UNIT_DIR/$unit"; fi
   done
@@ -631,17 +638,43 @@ unpack() {
   mkdir "$WORK/x"
   tar -xzf "$WORK/$ARCHIVE" -C "$WORK/x" --no-same-owner --no-same-permissions || fail unpack "could not extract $ARCHIVE"
   SRC="$WORK/x/$NAME"
-  for file in wsl-care systemd/wsl-care.service systemd/wsl-care.timer systemd/wsl-care-events.service config/machine.json; do
+  for file in wsl-care systemd/wsl-care.service systemd/wsl-care.timer systemd/wsl-care-events.service systemd/wsl-care-act@.service config/machine.json; do
     [ -f "$SRC/$file" ] && [ ! -h "$SRC/$file" ] || fail unpack "$ARCHIVE has no $NAME/$file"
+  done
+}
+
+# The running block of the INSTALLED binary's `status --json` (E6.S0): "live" or "queued" means a run is in flight. A binary
+# older than E6.S0 answers no running block, which reads as nothing in flight.
+run_in_flight() {
+  [ -x "$ROOT$BIN_PATH" ] || return 1
+  answer=$(timeout 30 "$ROOT$BIN_PATH" status --json 2>/dev/null) || return 1
+  printf '%s\n' "$answer" | grep -Eq '^    "state": "(live|queued)",?[[:space:]]*$'
+}
+
+# An upgrade never replaces the daemon under a run in flight (plan §15k #16): it waits, bounded, and then REFUSES naming why.
+wait_for_runs() {
+  [ "$DRY_RUN" = 1 ] && return 0
+  waited=0
+  while run_in_flight; do
+    if [ "$waited" -ge "$RUN_WAIT_SECONDS" ]; then
+      fail upgrade-wait "a wsl-care run is still live or queued after ${waited}s (see: $BIN_PATH status); nothing was replaced - try again when it ends"
+    fi
+    [ "$waited" = 0 ] && say "a wsl-care run is in flight; waiting for it to end (at most ${RUN_WAIT_SECONDS}s)"
+    sleep 5
+    waited=$((waited + 5))
   done
 }
 
 install_files() {
   UPGRADE=0
   if [ -e "$ROOT$BIN_PATH" ]; then UPGRADE=1; fi
+  if [ "$UPGRADE" = 1 ]; then wait_for_runs; fi
   run install -d -m 0755 "$ROOT/opt/wsl-care" "$ROOT$BIN_DIR" "$ROOT/usr/local/bin" \
     || fail install-binary "could not create $BIN_DIR"
-  run install -m 0755 "$SRC/wsl-care" "$ROOT$BIN_PATH" || fail install-binary "could not install $BIN_PATH"
+  # Never over the running binary (plan §15k #16): a run in flight keeps its file, a new one starts the new file — the binary
+  # goes in beside it and is RENAMED over it, one atomic step.
+  run install -m 0755 "$SRC/wsl-care" "$ROOT$BIN_PATH.new" || fail install-binary "could not install $BIN_PATH.new"
+  run mv -f "$ROOT$BIN_PATH.new" "$ROOT$BIN_PATH" || fail install-binary "could not rename $BIN_PATH.new over $BIN_PATH"
   if [ ! -h "$ROOT$LINK_PATH" ]; then
     run ln -s "$BIN_PATH" "$ROOT$LINK_PATH" || fail install-binary "could not link $LINK_PATH"
   fi
