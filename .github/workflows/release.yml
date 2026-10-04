@@ -2,8 +2,9 @@ name: release
 
 # ---------------------------------------------------------------------------
 # PUBLISHES A DAEMON RELEASE — `daemon-v<version>` — with every RID's archive, its .sha256 and a build-provenance
-# attestation, and nothing else publishes one (plan §9, §15 #12, §15e #0–#2/#5; E4.S2). The extension's
-# `extension-v*` leg joins this file in E5.
+# attestation, and nothing else publishes one (plan §9, §15 #12, §15e #0–#2/#5; E4.S2). The extension
+# releases from its own `release-extension.yml` on `extension-v*` (§15g M5): install.sh trusts exactly
+# this file's identity, so no other artefact may be signed here.
 #
 # THE TRIGGER IS THE TAG PUSH, and the reason is the shape release-please gives a release here. With `draft: true` +
 # `force-tag-creation: true` (release-please-config.json) release-please, running with the release App's token, first
