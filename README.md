@@ -7,7 +7,7 @@ extension that shows the state and runs cleanups on demand.
 | Folder | Holds |
 |---|---|
 | `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17, and the button-only A18 of E7.S2b) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
-| `src_vs_code/` | the VS Code extension **AI OS Care** (Marketplace id `remsoftdev.ai-os-care`) — in development, read-only: its client of the daemon, the status bar and the read-only panel, and their tests — [Extension (preview)](#extension-preview) below |
+| `src_vs_code/` | the VS Code extension **AI OS Care** (Marketplace id `remsoftdev.ai-os-care`) — in development: its client of the daemon, the status bar and the read-only panel, since E6.S2 the root boundary its cleanups will use (no button yet), and their tests — [Extension (preview)](#extension-preview) below |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -560,9 +560,8 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   distribution is validated first (the setting's pattern, then `wsl.exe --list`); a modal shows the exact command and
   what the distribution needs (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0 or newer, `sudo`); on confirmation a
   terminal opens in that distribution, in your home folder, with the command TYPED, never run — `curl -fsSL
-  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.2/install.sh | sudo sh -s -- --version 0.1.2`,
-  pinned to `INSTALL_DAEMON` (0.1.2 — 0.1.0's act unit carries the CollectMode defect), a value of its own at or above
-  the minimum daemon the extension renders (`MIN_DAEMON_FOR_RENDER`, 0.1.0), never `--skip-attestation`.
+  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.0/install.sh | sudo sh -s -- --version 0.1.0`,
+  pinned to the minimum daemon the extension acts with (`MIN_DAEMON_FOR_ACTIONS`, since E6.S2), never `--skip-attestation`.
 - **The package** is one universal `.vsix` (`npm run package`) holding exactly `vsix-files.txt` (`.vscodeignore` is an
   allowlist); `npm run check:vsix` opens it and refuses machine paths, this machine's user name, e-mail addresses,
   source maps and a bundle built for another version — on every pull request, on both CI legs.
@@ -582,9 +581,20 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   is never asked anything (each `status` the daemon answers writes one run-log file — the cost is measured in
   [research/2026-10-04_extension_poll_churn.md](research/2026-10-04_extension_poll_churn.md)).
 
-- **Read-only.** It asks the daemon four questions and nothing else: `status --json`, `preview --all --json`,
-  `doctor --json`, `--version`. It never runs a cleanup, never runs anything as root, never changes the daemon's
-  configuration — tests over the shipped bundle hold that.
+- **Reading.** It asks the daemon four questions as your own user: `status --json`, `preview --all --json`,
+  `doctor --json`, `--version`. It never changes the daemon's configuration.
+- **The root boundary (E6.S2; no button uses it yet — the cleanup buttons are E6.S3).** A cleanup needs root, so the
+  extension holds exactly five root calls, built in ONE module (`src/root/rootCall.ts`) from a closed set and started only
+  through the runner seam: `-d <distro> -u root --cd / --exec /opt/wsl-care/bin/wsl-care` followed by
+  `act <ids> --preview --json`, `act <ids> --confirm --manual --detach [--only -] --json` (A4's volumes, exactly the ones
+  its preview showed, on stdin), `act --stop <runId> --json`, `collect --detach --json` (*Run full check now*) or the
+  root check `--version`. Never `--timer`, `--user` or `config`; a confirm is always detached (it runs in the daemon's
+  own unit and survives a reload). The ids are the extension's compiled registry ∩ `status.actions`; whether the daemon
+  may act at all is decided by `status.capabilities` (an older one reads "Update daemon", naming the minimum, and nothing
+  runs); one root call at a time per distribution; a detach that times out is "outcome unknown" and is followed through
+  `status.running`, never reported as a failure. Tests over the sources AND the shipped bundle hold that only that module
+  spells a root word and only the host-side cleanup controller imports it; the strict fake refuses a synchronous confirm,
+  stdin anywhere but `--only -` and an id outside the intersection.
 - **What it needs.** Windows with WSL (`extensionKind: ["ui"]`: it runs on the Windows side, also in a Remote – WSL
   window) and the daemon installed in the distribution by `install.sh` (`/opt/wsl-care/bin/wsl-care`; systemd; Ubuntu
   24.04 or newer — an older glibc is reported as an unsupported distribution).
@@ -668,10 +678,11 @@ An extension release is the tag `extension-v<version>`: release-please's `extens
 **`release-extension.yml`** — a file of its own, so the Marketplace secret is never in a workflow a daemon release runs:
 
 1. **guard** — the tag matches `package.json`'s version, the publisher is real, the commit is on `main`, and the
-   two daemon versions of `src_vs_code/min-daemon.json`, as the bundle step emits them — the **minimum** the extension
-   renders (`MIN_DAEMON_FOR_RENDER`) and the release *Install daemon* types (`INSTALL_DAEMON`, since 2026-10-06 a value
-   of its own) — are published releases, and `POST_DEPLOY.md`'s last-verified daemon is at or above the install pin
-   (`release-extension-guard.sh`);
+   **minimum daemon** (`src_vs_code/min-daemon.json` — since E6.S2 two minima, `minDaemonForRender` and the
+   `minDaemonForActions` *Install daemon* types, as the bundle step emits them) is a published release — each of them —
+   that `POST_DEPLOY.md` names as last verified, and **the first public extension stays root-free**: a checkout carrying
+   the root module is refused at or below `extension-v0.1.0`, or while no `extension-v0.1.0` tag exists — keyed on the
+   tags, never on the manifest (`release-extension-guard.sh`; the build's check-vsix refuses the bundle the same way);
 2. **build** — every test, `vsce package` once, the leak checks with `--release` and the guard's minimum, the `.vsix`'s
    `.sha256`; it can read the repository and nothing more;
 3. **attest** — the only job that can sign: it downloads the build's `.vsix`, checks it against its `.sha256` and

@@ -103,10 +103,14 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   *The extension: status bar, read-only panel and polling*); since E5.S3 `src/install/` (*Install daemon*),
   `scripts/bundle.mjs` (the build stamp and `dist/min-daemon.json`), `scripts/check-vsix.mjs` with `vsix-files.txt` /
   `vsix-denylist.txt`, `media/icon.png`, `CHANGELOG.md`, `LICENSE`, and since the E5 code round the checked-in
-  `min-daemon.json` the release guard reads (section *The extension: Install daemon, packaging and its release*).
+  `min-daemon.json` the release guard reads (section *The extension: Install daemon, packaging and its release*); since
+  E6.S2 `src/root/` (the closed root union `rootCall.ts`, the cleanup controller, the gate, the answer and failure readers,
+  the typed ids, the root words), `src/text/safeText.ts` (the one sanitiser), `src/client/enumValue.ts`, and the runner's
+  stdin (section *The extension: the root boundary*).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,
+  since E6.S1 `act-detach-accepted.json`, since E6.S2 `act-a4-preview-capped.json` (the shown list past its cap),
   and beside them `contracts/actions.json` / `contracts/exit-codes.json` held equal to `ActionId` / `ExitCode` by
   `ContractFilesTests` (section *The daemon read contract* of [architecture-daemon-e6.md](architecture-daemon-e6.md)), and since plan §15o `contracts/history-reasons.json` (the reason
   prefixes of a kind-less history line that is not a full check, from `HistoryReasons`; section *A full check's history line
@@ -2452,6 +2456,110 @@ flowchart LR
   ends a timer run at `timer.runLimitMinutes` (240), kept above the run's derived worst case (`Config/RunBudget.cs`: every command
   template once at its ceiling with its drains, the two walks, a margin — 220 min with the defaults); a detached confirm stays
   `infinity`.
+
+## The extension: the root boundary (E6.S2)
+
+E6.S2 (2026-10-04, plan §15f #1–#3, §15j M1, M2, M5, m1, m4, m5, m9, m11, B3; §15k #3, #7, #10, #11, #19) gives the
+extension the ONE place a root call can come from, and the host-side API the cleanup buttons of E6.S3 will call. **No
+button calls it yet**: the controller is wired in `extension.ts` (and reachable through the Test-mode API), nothing in the
+product invokes it. The boundary is a confused-deputy boundary, not a malware one — any process of this Windows user can
+already run `wsl -u root`; what must never happen is a webview, a workspace setting or a daemon answer steering WHICH root
+call is made.
+
+```mermaid
+flowchart TD
+  B["E6.S3 buttons (none yet) / Test-mode API"] --> C["root/cleanupController.ts<br/>preview · confirm · stop · runFullCheck · rootCheck"]
+  C -->|"1 rootTarget(): validated, listed, RUNNING distro"| WC["client/WslCareClient.ts"]
+  C -->|"2 one root op in flight per distro"| C
+  C -->|"3 fresh status → gate"| G["root/actionGate.ts<br/>capabilities = authority<br/>ids = registry ∩ status.actions"]
+  C -->|"4 root check, cached"| R["root/rootCall.ts<br/>closed ROOT_OPS"]
+  C -->|"5 the op"| R
+  R -->|"daemonArgv(distro, tail, -u root)"| WC
+  R -->|"{file, args, timeoutMs, stdin?}"| RUN["process/runner.ts<br/>(the one launcher)"]
+  RUN --> WSL["%SystemRoot%\System32\wsl.exe -d D -u root --cd / --exec /opt/wsl-care/bin/wsl-care …"]
+  C --> A["root/rootAnswers.ts · rootFailures.ts<br/>held preview · hand-off · exit kinds"]
+  A --> T["root/rootFailureText.ts<br/>(the only root prose)"]
+```
+
+**The closed union** (`root/rootCall.ts`, the only module spelling `-u`, `root`, `act`, `collect`, `--preview`,
+`--confirm`, `--manual`, `--detach`, `--only`, `-`, `--stop`): every root call is `-d <distro> -u root --cd /
+--exec /opt/wsl-care/bin/wsl-care` (the client's `daemonArgv`, so `-d` / `--cd` / `--exec` stay the client's words)
+followed by exactly one of
+
+| op | tail | host ceiling (§15k #19) |
+|---|---|---|
+| `preview` | `act <ids> --preview --json` | 330 s — the same per-action previews `preview --all` runs |
+| `confirm` | `act <ids> --confirm --manual --detach [--only -] --json`, A4's names on stdin | 90 s — a detach: the 10 s stdin ceiling + one sweep `systemctl show` (15 s) + `systemctl start --no-block` (30 s) + a second look after a timed-out start (15 s) + the relay |
+| `stop` | `act --stop <runId> --json` | 150 s — `systemctl stop` (120 s; the units carry `TimeoutStopSec=90`) |
+| `fullCheck` | `collect --detach --json` (*Run full check now*, never `--timer`) | 90 s, as a detach |
+| `rootCheck` | `--version` | 20 s |
+
+The op is built from typed values only (`root/rootIds.ts`: the compiled registry `ACTION_IDS` — held EQUAL to
+`contracts/actions.json` —, run ids in the daemon's one spelling, 64-hex volume names); a confirm is ALWAYS detached, and
+A4 is ALWAYS bound to the list its preview showed (`--only -` even for an empty list; a list without A4 or A4 without a
+list builds nothing). It spawns only through the runner it is handed; it imports no process API. Its ceilings are
+DERIVED from the daemon's own; the real times are E6 live-gate measurements.
+
+**The runner's stdin** (`process/runner.ts`): `ProcessRequest.stdin?: Buffer`, written then ENDED (the daemon refuses a
+list with no end after 10 s); absent, the child's stdin is closed from the start. A child that exits without reading it
+(EPIPE) is no crash — its exit is the answer. 650 000 bytes (10 000 names) relay byte for byte — measured through
+`wsl.exe` by the coordinator (facts row 20) and held in the suite against a Node child.
+
+**The controller** (`root/cleanupController.ts`) runs each op as ONE host transaction and stops at the first refusal
+having started nothing further: (1) `WslCareClient.rootTarget()` — the same launcher / pattern / `--list` / running checks
+as every read verb, never `startIfStopped`; (2) one root operation in flight per distribution (host-side, a second is
+refused at once — the daemon's run lock stays the authority); (3) a FRESH `status` and the gate — `status.capabilities`
+must hold what the op needs (`running.block`, `runs.show` for every op; `act.shownList` for a preview, `act.detach` for a
+confirm or a full check, plus `act.onlyStdin` when A4 is confirmed, `act.stop` for a stop) — the version only supplies the
+message ("the daemon is x.y; cleanups need `MIN_DAEMON_FOR_ACTIONS` or newer — Update daemon"), so an unstamped build that
+advertises them acts — and the ids, the compiled registry ∩ `status.actions`, in the registry's order; (4) the root check,
+cached per session per distribution once it answered, a refusal ("needs root") asked again next time; (5) the call.
+
+- **A4's names come from the held preview and nowhere else** (§15j B1): `preview()` returns a frozen `HeldPreview` the
+  controller registers (a `WeakSet`); `confirm()` takes only a registered one, re-checks the gate over a fresh status,
+  refuses another distribution, and re-validates every name before it becomes a stdin line. The preview's shown list
+  must satisfy `shown.length == min(count, 10 000)` with `shownTruncated` exactly when capped (§15k #11) — or the preview
+  is refused, never a partial list.
+- **An unknown detach is never a failure** (§15k #3): a timeout, a kill, an unreadable answer, `result: unknown`, a result
+  this build does not know, or `accepted` with no run id → the controller follows `status.running` every 4 s for 60 s and
+  reports the run it SAW queued or live (`acceptedObserved`) or `outcomeUnknown` with the run id it has. Residual: with no
+  run id, a run seen in flight may be the timer's. A stop's unknown is reported as unknown (its run IS live).
+- **Every exit code of `contracts/exit-codes.json`** is its own kind (`rootFailures.ts`): 69 needs systemd, 71 did not
+  start, 73 too many requests, 75 busy and 76 wedged (each with the `running` block read right after), 77, 78, 79, 80,
+  3, 4; exit 2 on a confirm that piped a list is `shownListRefused` — nothing started, a retry offered; the rest through the
+  read client's `classifyExit`. Every daemon enum goes through `client/enumValue.ts` — an unknown value reads "unknown
+  (<value>)", sanitised by the one sanitiser `text/safeText.ts` (extracted from the panel's, which now calls it).
+
+**What holds it.** `structure.test.ts`: only `rootCall.ts` spells a root argv word (exact literals; `-` is held by the next
+two), nobody spells `--timer` / `--user` / `config`, only the cleanup controller imports `rootCall.ts`, no panel / bar /
+poller / install / store module imports `root/`. `bundleScan.test.ts`: the shipped bundle is partitioned by esbuild's
+`// src/<module>.ts` headers (unminified); the root region must exist and its literals equal an exact set; every other
+region carries no root or mutating flag and the word "root" only as an exact literal of `rootFailureText.ts`. The strict
+fake refuses a synchronous confirm, stdin outside `--only -`, an id outside the intersection, an unadvertised capability.
+
+**The minima and the release (§15j M5, B3; §15k #7).** `client/handshake.ts` gains `MIN_DAEMON_FOR_ACTIONS` (0.1.0 —
+E6.S0 + E6.S1 merge before the owner cuts `daemon-v0.1.0`, B3's first case); `scripts/bundle.mjs` emits both minima into
+`dist/min-daemon.json`, the checked-in `src_vs_code/min-daemon.json` holds both, check-vsix compares all four places for
+each (`--min-daemon`, `--min-daemon-actions`), and *Install daemon* types the ACTIONS minimum. `release-extension-guard.sh`
+requires both published and verified, and keeps the FIRST PUBLIC EXTENSION ROOT-FREE keyed on TAGS: a checkout carrying
+`src/root/rootCall.ts` is refused for `extension-v0.1.0` or earlier, and while no `extension-v0.1.0` tag exists; its
+answer is the output `root_allowed`, which the build hands to check-vsix (`--root-allowed`), which refuses a BUNDLE
+carrying the root module's marker when it is `false`.
+
+**Settings and trust.** Both settings stay `"scope": "application"`; `untrustedWorkspaces.supported: true` stays, with the
+reason written in the extension README (§15j m5): no input from the workspace reaches a root call.
+
+**The golden past the cap** (§15k #11): `contracts/golden/head/act-a4-preview-capped.json` — `act A4 --preview --json`
+over 10 001 synthetic volumes (`ReadContractScenes.CappedVolumes`): `count` 10 001, `shown` the first 10 000,
+`shownTruncated: true`; `GoldenContractTests` holds the rule over both A4 goldens, and the host holds the capped one and
+pipes its 650 000 bytes.
+
+### Tests (details: [module_tests.md](module_tests.md) § *What each E6.S2 guarantee rests on*)
+
+`runner.test.ts` (stdin), `rootIds.test.ts`, `rootCall.test.ts`, `cleanupController.test.ts`, `rootFailures.test.ts`,
+`structure.test.ts`, `bundleScan.test.ts`, `fakeWsl.test.ts` (root shapes), `scenarios/rootFlows.test.ts` (derived from
+`ROOT_OPS`), `minDaemon.test.ts`, `vsixCheck.test.ts`, `installDaemon.test.ts`, `manifest.test.ts`, `catalogue.test.ts`; in
+C#, `ReleaseExtensionScriptFlows` (Linux legs) and `ReleaseExtensionWorkflowTests`, `GoldenContractTests`.
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 
