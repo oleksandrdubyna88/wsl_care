@@ -30,8 +30,11 @@ namespace WslCare.Cli.Commands;
 /// configuration layer is invalid); 130 interrupted.</para>
 /// <para>The trigger is <c>timer</c> with <c>--timer</c> (the timer unit's mark, as for <c>collect</c>; never <c>INVOCATION_ID</c>) — then the <c>auto</c>
 /// switches, the triggers and the 7-day dry run apply — <c>manual</c> when the panel's button passes <c>--manual</c> (E3.S2;
-/// the timer wins if both are true: more gates, not fewer), and <c>cli</c> otherwise. A4 on a <c>manual</c> run removes
-/// only the volumes passed with <c>--volume</c> / <c>--only</c> — what its preview SHOWED — and refuses without them.</para>
+/// the two marks are exclusive since E6.S0, plan §15j m2 — the parser refuses both), and <c>cli</c> otherwise. A4 on a
+/// <c>manual</c> run removes only the volumes passed with <c>--volume</c> / <c>--only</c> — what its preview SHOWED, every one of
+/// them in the preview's <c>shown</c> (§15j B1) — and refuses without them.</para>
+/// <para>Every answer names <c>productVersion</c> (§15f #3). A run cut off by a signal records itself <c>interrupted</c> with the
+/// signal named — SIGHUP included, which a terminal or the <c>wsl.exe</c> relay delivers when it goes away (§15j B2).</para>
 /// </remarks>
 internal static class ActCommand
 {
@@ -56,7 +59,11 @@ internal static class ActCommand
             return (int)ExitCode.Usage;
         }
 
-        var engine = new ActionEngine(new EngineContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, host.Processes, Environment.ProcessId, host.Actions) { Signals = host.Signals });
+        var engine = new ActionEngine(new EngineContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, host.Processes, Environment.ProcessId, host.Actions)
+        {
+            Signals = host.Signals,
+            InterruptCause = host.InterruptCause,
+        });
         var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List };
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = Dispatch(engine, act, cancellationToken).GetAwaiter().GetResult();
@@ -69,7 +76,7 @@ internal static class ActCommand
         act.Execute ? engine.ExecuteAsync(act, cancellationToken) : engine.PreviewAsync(act, cancellationToken);
 
     private static string Answer(ActResult result, bool json) =>
-        json ? JsonSerializer.Serialize(ActReport.From(result), WslCareJsonContext.Default.ActReport) : ActText.Render(result);
+        json ? JsonSerializer.Serialize(ActReport.From(result) with { ProductVersion = Program.VersionText }, WslCareJsonContext.Default.ActReport) : ActText.Render(result);
 
     /// <summary>A refusal of the whole request and its code; <c>null</c> when it may go on. Root FIRST: nothing else is
     /// asked of an unprivileged process (plan §15c #0).</summary>

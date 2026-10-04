@@ -42,6 +42,10 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// defaults and the machine layer only (gate finding #2: user-scoped actions refuse, machine-scoped ones still run).</summary>
     public ConfigLoadResult LoadConfig() => ConfigLoader.Load(Paths, Files, HomeOwner.UserLayerSkipped);
 
+    /// <summary>What cancelled this process, in words — asked only once it was cancelled; <c>Main</c> wires
+    /// <see cref="ShutdownSignals.Cause"/>, so an interrupted run's record names the signal (plan §15j B2).</summary>
+    public Func<string> InterruptCause { get; init; } = static () => "a signal";
+
     /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names. The runner is the
     /// product's ONE policy (<see cref="CommandPolicy.Product"/>: the never-list over the declared templates); inside the
     /// distro, as root, the per-user paths are the TARGET user's (E3.S2), and every login account's home is protected besides

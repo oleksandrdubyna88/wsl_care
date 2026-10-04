@@ -25,8 +25,8 @@ internal enum ExitCode
     /// action is logged and the run continues). The answer names which and why.</summary>
     ActionFailed = 3,
 
-    /// <summary><c>logs</c> / <c>runs</c>: <c>history.jsonl</c> exists but could not be read (permissions, I/O); the answer
-    /// says why and holds no run. A history that does not exist yet is an empty answer, exit 0.</summary>
+    /// <summary><c>logs</c> / <c>runs</c> / <c>runs show</c>: <c>history.jsonl</c> exists but could not be read (permissions,
+    /// I/O); the answer says why and holds no run from it. A history that does not exist yet is an empty answer, exit 0.</summary>
     RecordsUnreadable = 4,
 
     /// <summary>A defect in this binary: something it should have handled escaped. Always a bug.</summary>

@@ -46,13 +46,29 @@ internal abstract record Request
     /// <summary><c>events follow [--once]</c>: the container-start follower (plan §4.3); <c>--once</c> catches up and stops.</summary>
     internal sealed record EventsFollow(bool Once) : Request;
 
-    /// <summary><c>logs [--period …] [--action &lt;A#&gt;] [--detail] [--json]</c> (plan §7.4): the period's totals and cleanups —
-    /// the objects each removed only with <c>--detail</c> or one <c>--action</c> (gate finding #10); the period
-    /// text is checked against the clock by the verb.</summary>
-    internal sealed record Logs(string Period, Core.Actions.ActionId? Action, bool Json, bool Detail = false) : Request;
+    /// <summary><c>logs [--period … or --from … --to …] [--action &lt;A#&gt;] [--detail] [--json]</c> (plan §7.4): the period's
+    /// totals and cleanups — the objects each removed only with <c>--detail</c> or one <c>--action</c> (gate finding #10); the
+    /// period text is checked against the clock by the verb.</summary>
+    internal sealed record Logs(string Period, Core.Actions.ActionId? Action, bool Json, bool Detail = false) : Request
+    {
+        /// <summary>The instant range's start (<c>--from</c>, §15j M7) as typed, checked by the verb; empty when not given.</summary>
+        public string From { get; init; } = string.Empty;
 
-    /// <summary><c>runs [--period …] [--json]</c> (plan §7.4): every run of the period.</summary>
-    internal sealed record Runs(string Period, bool Json) : Request;
+        /// <summary>The instant range's end (<c>--to</c>); empty when not given.</summary>
+        public string To { get; init; } = string.Empty;
+    }
+
+    /// <summary><c>runs [--period … or --from … --to …] [--json]</c> (plan §7.4): every run of the period.</summary>
+    internal sealed record Runs(string Period, bool Json) : Request
+    {
+        public string From { get; init; } = string.Empty;
+
+        public string To { get; init; } = string.Empty;
+    }
+
+    /// <summary><c>runs show &lt;runId&gt; [--json]</c> (plan §15j M3): one run — queued, running, done with its full detail,
+    /// refused, interrupted or unknown. The run id is already well formed (a <see cref="Core.Records.RunId"/>).</summary>
+    internal sealed record RunsShow(string RunId, bool Json) : Request;
 
     /// <summary><c>act &lt;A#&gt;[,&lt;A#&gt;…] (--preview or --confirm) [--manual] [--volume &lt;name&gt;]... [--only &lt;file&gt;] [--json]</c>
     /// (plan §6): preview the actions, or run them — a destructive run from the CLI needs <c>--confirm</c> (the button passes it
@@ -101,8 +117,8 @@ internal sealed record Spelt(Command Command, IReadOnlyList<string> Spelling);
 /// <remarks>
 /// <para><see cref="Commands"/> is the ONE register of what this binary accepts. The parser and the
 /// help text are both derived from it, so a command cannot be accepted and undocumented, or
-/// documented and refused. The remaining verbs of plan §6 (<c>agents</c>, <c>runs show</c> / <c>runs log</c>, …) arrive in later
-/// stories as entries here.</para>
+/// documented and refused. The remaining verbs of plan §6 (<c>agents</c>, …) arrive in later stories as entries here;
+/// <c>runs log</c> was cut by plan §15j M3 (<c>runs show</c> answers the commands and their exits).</para>
 /// </remarks>
 internal static class CommandLine
 {
@@ -120,10 +136,12 @@ internal static class CommandLine
     private const string PeriodFlag = "--period";
     private const string ActionFlag = "--action";
     private const string DetailFlag = "--detail";
+    private const string FromFlag = "--from";
+    private const string ToFlag = "--to";
 
-    /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — far above the 387
-    /// volumes of 2026-10-02, low enough that a mistaken file cannot make a run of millions.</summary>
-    internal const int MaxShownVolumes = 10_000;
+    /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — the same cap a
+    /// preview's <c>shown</c> list keeps (<see cref="Core.Actions.ShownList.MaxNames"/>, plan §15j B1).</summary>
+    internal const int MaxShownVolumes = Core.Actions.ShownList.MaxNames;
 
     internal static readonly IReadOnlyList<Command> Commands =
     [
@@ -138,8 +156,9 @@ internal static class CommandLine
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
         new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--volume <name>]... [--only <file>] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --volume / --only the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
-        new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only, UTC days)", ["logs", "--period", "today", "--json"], ParseLogs),
-        new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only, UTC days)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
+        new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["logs", "--period", "today", "--json"], ParseLogs),
+        new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
+        new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
 
     /// <summary>Every spelling of <see cref="Commands"/> with its command, longest first — ordered once,
@@ -328,18 +347,23 @@ internal static class CommandLine
     /// <summary>The option at <paramref name="i"/> has no value after it: the end, or another option.</summary>
     private static bool NeedsValue(IReadOnlyList<string> rest, int i) => i + 1 >= rest.Count || rest[i + 1].StartsWith('-');
 
-    private static Request.Failed? ActFlags(IReadOnlyList<string> flags)
-    {
-        var unknown = flags.Where(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag)).ToList();
-        if (unknown.Count > 0 || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count)
-        {
-            return new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name> and {OnlyFlag} <file>; got \"{Printable(string.Join(' ', flags))}\".");
-        }
+    private static Request.Failed? ActFlags(IReadOnlyList<string> flags) => UnknownActFlag(flags) ?? ActMode(flags) ?? ActMark(flags);
 
-        return flags.Contains(PreviewFlag) == flags.Contains(ConfirmFlag)
+    private static Request.Failed? UnknownActFlag(IReadOnlyList<string> flags) =>
+        flags.Any(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag)) || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count
+            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name> and {OnlyFlag} <file>; got \"{Printable(string.Join(' ', flags))}\".")
+            : null;
+
+    private static Request.Failed? ActMode(IReadOnlyList<string> flags) =>
+        flags.Contains(PreviewFlag) == flags.Contains(ConfirmFlag)
             ? new Request.Failed($"\"{BinaryName} act\" needs exactly one of {PreviewFlag} (show what it would do) and {ConfirmFlag} (do it; the panel's button passes it after you confirmed).")
             : null;
-    }
+
+    /// <summary>The panel's mark and the timer's are exclusive (plan §15j m2): a run is started by one of them, never both.</summary>
+    private static Request.Failed? ActMark(IReadOnlyList<string> flags) =>
+        flags.Contains(ManualFlag) && flags.Contains(TimerFlag)
+            ? new Request.Failed($"\"{BinaryName} act\" takes {ManualFlag} (the panel's button) or {TimerFlag} (the systemd timer), not both.")
+            : null;
 
     /// <summary>A shown list belongs to A4 alone, and every <c>--volume</c> is an anonymous volume's 64-hex name.</summary>
     private static Request.Failed? ShownListFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> volumes, string only) => volumes switch
@@ -369,24 +393,55 @@ internal static class CommandLine
     }
 
     private static Request ParseLogs(IReadOnlyList<string> rest) =>
-        ReadOptions("logs", rest, [PeriodFlag, ActionFlag], [DetailFlag, JsonFlag]) switch
+        ReadOptions("logs", rest, [PeriodFlag, FromFlag, ToFlag, ActionFlag], [DetailFlag, JsonFlag]) switch
         {
             (_, { } failure) => failure,
+            var (options, _) when RangeFailure("logs", options) is { } failure => failure,
             var (options, _) when options.Values.TryGetValue(ActionFlag, out var id) && Core.Actions.ActionId.Find(id) is null =>
                 new Request.Failed($"\"{BinaryName} logs\": {ActionFlag} \"{Printable(id)}\" is not an action; the actions are {string.Join(", ", Core.Actions.ActionId.All.Select(a => a.Text))}."),
             var (options, _) => new Request.Logs(
                 options.Values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today),
                 options.Values.TryGetValue(ActionFlag, out var action) ? Core.Actions.ActionId.Find(action) : null,
                 options.Flags.Contains(JsonFlag),
-                options.Flags.Contains(DetailFlag)),
+                options.Flags.Contains(DetailFlag))
+            {
+                From = options.Values.GetValueOrDefault(FromFlag, string.Empty),
+                To = options.Values.GetValueOrDefault(ToFlag, string.Empty),
+            },
         };
 
     private static Request ParseRuns(IReadOnlyList<string> rest) =>
-        ReadOptions("runs", rest, [PeriodFlag], [JsonFlag]) switch
+        ReadOptions("runs", rest, [PeriodFlag, FromFlag, ToFlag], [JsonFlag]) switch
         {
             (_, { } failure) => failure,
-            var (options, _) => new Request.Runs(options.Values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today), options.Flags.Contains(JsonFlag)),
+            var (options, _) when RangeFailure("runs", options) is { } failure => failure,
+            var (options, _) => new Request.Runs(options.Values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today), options.Flags.Contains(JsonFlag))
+            {
+                From = options.Values.GetValueOrDefault(FromFlag, string.Empty),
+                To = options.Values.GetValueOrDefault(ToFlag, string.Empty),
+            },
         };
+
+    /// <summary>The instant range (plan §15j M7) comes whole — <c>--from</c> AND <c>--to</c> — and never beside <c>--period</c>;
+    /// the instants themselves are checked by the verb (<see cref="Core.History.LogPeriod.ParseInstants"/>).</summary>
+    private static Request.Failed? RangeFailure(string verb, Options options) =>
+        (options.Values.ContainsKey(PeriodFlag), options.Values.ContainsKey(FromFlag), options.Values.ContainsKey(ToFlag)) switch
+        {
+            (true, true, _) or (true, _, true) => new Request.Failed($"\"{BinaryName} {verb}\" takes {PeriodFlag} or {FromFlag} with {ToFlag}, not both."),
+            (_, true, false) => new Request.Failed($"\"{BinaryName} {verb}\": {FromFlag} needs {ToFlag} (the instant range is half-open: from inclusive, to exclusive)."),
+            (_, false, true) => new Request.Failed($"\"{BinaryName} {verb}\": {ToFlag} needs {FromFlag} (the instant range is half-open: from inclusive, to exclusive)."),
+            _ => null,
+        };
+
+    /// <summary><c>runs show &lt;runId&gt; [--json]</c>: exactly one well-formed run id, then optionally <c>--json</c>.</summary>
+    private static Request ParseRunsShow(IReadOnlyList<string> rest) => rest switch
+    {
+        [var id] when Core.Records.RunId.TryParse(id) is not null => new Request.RunsShow(id, Json: false),
+        [var id, JsonFlag] when Core.Records.RunId.TryParse(id) is not null => new Request.RunsShow(id, Json: true),
+        [var id, ..] when !id.StartsWith('-') && Core.Records.RunId.TryParse(id) is null =>
+            new Request.Failed($"\"{BinaryName} runs show\": \"{Printable(id)}\" is not a run id (yyyyMMddTHHmmssZ-<pid>, as runs and logs print it)."),
+        _ => new Request.Failed($"\"{BinaryName} runs show\" needs exactly one <runId> and optionally {JsonFlag}: {BinaryName} runs show <runId> [{JsonFlag}]."),
+    };
 
     /// <summary>The options a verb was given: each valued one with its value, each switch present.</summary>
     private sealed record Options(IReadOnlyDictionary<string, string> Values, IReadOnlySet<string> Flags);

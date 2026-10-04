@@ -291,4 +291,66 @@ public sealed class RunLogsTests : IDisposable
     [InlineData("date:2026-10-01", "is not today")]
     public void Any_other_period_is_refused_with_the_reason(string text, string reason) =>
         LogPeriod.Parse(text, Now).Should().BeOfType<PeriodParse.Refused>().Which.Reason.Should().Contain(reason);
+
+    // ---------- E6.S0: the instant range (§15j M7) and RunLine.metrics ----------
+
+    private static LogPeriod Instants(string from, string to) => LogPeriod.ParseInstants(from, to).Should().BeOfType<PeriodParse.Parsed>().Subject.Period;
+
+    /// <summary>The LOCAL day 2026-10-02 at UTC+03:00 runs from 2026-10-01T21:00Z to 2026-10-02T21:00Z — it crosses UTC
+    /// midnight, so it holds yesterday's 23:59:59 button run and today's runs up to 08:00, and none of the UTC-day answers can
+    /// say that.</summary>
+    [Fact]
+    public void A_local_day_sent_as_two_instants_crosses_utc_midnight_and_holds_exactly_the_runs_that_started_inside_it()
+    {
+        var period = Instants("2026-10-02T00:00:00+03:00", "2026-10-03T00:00:00+03:00");
+
+        var runs = RunLogs.Runs(_sandbox.Paths, _sandbox.Files, period);
+
+        runs.Runs.Select(r => r.StartedAt).Should().Equal(Today.AddSeconds(-1), Today, Today.AddHours(4), Today.AddHours(8), Today.AddHours(10));
+        runs.Period.Label.Should().Be(LogPeriod.InstantsLabel);
+        runs.Period.FromInstant.Should().Be(new DateTimeOffset(2026, 10, 1, 21, 0, 0, TimeSpan.Zero));
+        runs.Period.ToInstant.Should().Be(new DateTimeOffset(2026, 10, 2, 21, 0, 0, TimeSpan.Zero));
+        runs.Period.FromInstant!.Value.Offset.Should().Be(TimeSpan.Zero, "every instant the answer names is UTC");
+        (runs.Period.From, runs.Period.To).Should().Be(("2026-10-01", "2026-10-02"), "the UTC days the instants touch");
+        RunLogs.Logs(_sandbox.Paths, _sandbox.Files, period, action: null).Runs.Total.Should().Be(5);
+    }
+
+    [Fact]
+    public void The_range_is_half_open_a_run_starting_at_the_end_instant_belongs_to_the_next_range()
+    {
+        var period = Instants("2026-10-01T23:59:59Z", "2026-10-02T04:00:00Z");
+
+        RunLogs.Runs(_sandbox.Paths, _sandbox.Files, period).Runs.Select(r => r.StartedAt).Should().Equal(Today.AddSeconds(-1), Today);
+    }
+
+    [Theory]
+    [InlineData("2026-10-02T00:00:00", "2026-10-03T00:00:00Z", "offset")]
+    [InlineData("2026-10-02", "2026-10-03T00:00:00Z", "offset")]
+    [InlineData("today", "2026-10-03T00:00:00Z", "offset")]
+    [InlineData("2026-10-02T00:00:00Z", "2026-10-02T00:00:00Z", "after")]
+    [InlineData("2026-10-03T00:00:00Z", "2026-10-02T00:00:00Z", "after")]
+    [InlineData("2025-01-01T00:00:00Z", "2026-10-02T00:00:00Z", "366 days")]
+    [InlineData("2026-02-30T00:00:00Z", "2026-03-01T00:00:00Z", "offset")]
+    public void An_instant_without_its_offset_a_reversed_or_empty_range_or_one_over_a_year_is_refused(string from, string to, string reason) =>
+        LogPeriod.ParseInstants(from, to).Should().BeOfType<PeriodParse.Refused>().Which.Reason.Should().Contain(reason);
+
+    [Fact]
+    public void A_run_line_carries_the_metrics_its_history_line_recorded_and_none_where_it_recorded_none()
+    {
+        var runs = RunLogs.Runs(_sandbox.Paths, _sandbox.Files, Period("today")).Runs;
+
+        runs.Single(r => r.StartedAt == Today).Metrics.Should().Be(new RunMetrics(20.0, null, null, 1_000, 13.0, null, null));
+        runs.Single(r => r.StartedAt == Today.AddHours(4)).Metrics!.SwapUsedBytes.Should().Be(3_000);
+        runs.Single(r => r.StartedAt == Today.AddHours(8)).Metrics.Should().BeNull("a line that recorded no metrics answers none, never zeros");
+    }
+
+    [Fact]
+    public void A_cleanup_is_a_run_in_which_an_action_acted_and_removed_something_and_freed_sums_its_acting_actions()
+    {
+        var records = RunHistory.Read(_sandbox.Paths, _sandbox.Files).Records;
+
+        records.Where(RunLogs.IsCleanup).Select(r => r.StartedAt).Should().Equal(Today.AddSeconds(-1), Today.AddHours(4), Today.AddHours(10), new DateTimeOffset(2026, 9, 20, 6, 0, 0, TimeSpan.Zero));
+        RunLogs.Freed(records.Single(r => r.StartedAt == Today.AddSeconds(-1))).Should().Be((3, 3_000L));
+        RunLogs.Freed(records.Single(r => r.StartedAt == Today)).Should().Be((0, 0L), "a dry run acted on nothing");
+    }
 }

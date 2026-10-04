@@ -27,8 +27,12 @@ namespace WslCare.Core.Actions.DockerCleanups;
 /// <para>After the removal it re-reads the unattached volumes and records the first sightings (§15b #3: only collect and
 /// the actions record them) — the removed names leave the record, the others keep their first sighting.</para>
 /// </remarks>
-public sealed class VolumeRemoval : ICleanupAction
+public sealed class VolumeRemoval : ICleanupAction, IBoundToShownList
 {
+    /// <summary>Every name the preview selected, by the key its run matches (<see cref="ActionItem.Key"/>, the volume's name),
+    /// in the preview's order, at most <see cref="ShownList.MaxNames"/> (§15j B1).</summary>
+    public IReadOnlyList<string> Shown(ActionPreview preview) => [.. preview.Targets.Select(t => t.Key).Take(ShownList.MaxNames)];
+
     /// <summary>Docker's own "Local Volumes" total of the preview's look — the cross-check's "before".</summary>
     public const string VolumesTotalFact = "volumesTotalBytes";
 

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "period": {
+    "label": "instants",
+    "from": "2026-10-01",
+    "to": "2026-10-02",
+    "fromInstant": "2026-10-01T21:00:00+00:00",
+    "toInstant": "2026-10-02T21:00:00+00:00"
+  },
+  "count": 3,
+  "runs": [
+    {
+      "runId": "20000101T000000Z-1",
+      "trigger": "timer",
+      "startedAt": "2026-10-01T21:00:00+00:00",
+      "endedAt": "2026-10-01T21:01:00+00:00",
+      "outcome": "completed",
+      "dryRun": true,
+      "detailState": "none",
+      "freedBytes": 0,
+      "wouldFreeBytes": 2000,
+      "cleanup": false,
+      "actions": [
+        {
+          "id": "A10",
+          "status": "dryRun",
+          "count": 2,
+          "freedBytes": 0,
+          "wouldFreeBytes": 2000
+        }
+      ],
+      "metrics": {
+        "memAvailablePercent": 28.5,
+        "memAvailableBytes": 13400000000,
+        "pageCacheBytes": 9500000000,
+        "swapUsedBytes": 600000000,
+        "rootUsedPercent": 12.1,
+        "dockerReclaimableBytes": 21000000000,
+        "containerStarts24h": 950
+      }
+    },
+    {
+      "runId": "20000101T000000Z-1",
+      "trigger": "manual",
+      "startedAt": "2026-10-01T23:59:59+00:00",
+      "endedAt": "2026-10-02T00:00:59+00:00",
+      "outcome": "completed",
+      "dryRun": false,
+      "detail": "runs/2000-01-01/20000101T000000Z-1.json",
+      "detailState": "present",
+      "freedBytes": 308000000,
+      "cleanup": true,
+      "actions": [
+        {
+          "id": "A4",
+          "status": "ran",
+          "count": 2,
+          "freedBytes": 308000000
+        }
+      ]
+    },
+    {
+      "runId": "20000101T000000Z-1",
+      "trigger": "timer",
+      "startedAt": "2026-10-02T00:00:00+00:00",
+      "endedAt": "2026-10-02T00:01:00+00:00",
+      "outcome": "completed",
+      "dryRun": false,
+      "detailState": "none",
+      "freedBytes": 3000,
+      "cleanup": true,
+      "actions": [
+        {
+          "id": "A10",
+          "status": "ran",
+          "count": 3,
+          "freedBytes": 3000
+        }
+      ],
+      "metrics": {
+        "memAvailablePercent": 41,
+        "memAvailableBytes": 19300000000,
+        "pageCacheBytes": 7000000000,
+        "swapUsedBytes": 400000000,
+        "rootUsedPercent": 12.2,
+        "dockerReclaimableBytes": 19000000000,
+        "containerStarts24h": 1000
+      }
+    }
+  ],
+  "unparseableLines": 0
+}

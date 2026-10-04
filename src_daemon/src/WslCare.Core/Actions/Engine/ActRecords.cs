@@ -37,7 +37,13 @@ public static class ActionStatus
 }
 
 /// <summary>One action's line of an <c>act</c> run: its status and why, the LIVE preview, and — when it ran — what it did.</summary>
-public sealed record ActionOutcome(string Id, string Summary, string Status, string Reason, ActionPreview? Preview, ActionRun? Run);
+public sealed record ActionOutcome(string Id, string Summary, string Status, string Reason, ActionPreview? Preview, ActionRun? Run)
+{
+    /// <summary>In an <c>act --preview</c> answer, for an action bound to its shown list (<see cref="IBoundToShownList"/>: A4):
+    /// EVERY name the preview selected (§15j B1) — what the panel sends back through <c>--only -</c>. Absent for every other
+    /// action and in every run detail.</summary>
+    public IReadOnlyList<string>? Shown { get; init; }
+}
 
 /// <summary>Who the run's user-scoped actions were for (plan §15c #2), as the run detail keeps it.</summary>
 public sealed record TargetUserReport(bool Found, string? Name, string? Home, string Source)
@@ -115,6 +121,10 @@ public sealed record ActReport(
     TargetUserReport? TargetUser,
     IReadOnlyList<ActionOutcome> Actions)
 {
+    /// <summary>The build that answered — the text <c>--version</c> prints (plan §15f #3, §15j). Additive (E6.S0): the CLI sets
+    /// it on every answer, preview and run alike.</summary>
+    public string? ProductVersion { get; init; }
+
     public static ActReport From(ActResult result) => result switch
     {
         ActResult.Previewed p => new(Core.SchemaVersion.Current, "preview", "previewed", null, null, null, null, null, p.TargetUser, p.Actions),

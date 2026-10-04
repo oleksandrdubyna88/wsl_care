@@ -59,7 +59,7 @@ public static class RunLogs
         var history = RunHistory.Read(paths, files);
         var runs = InPeriod(history, period).ToList();
         var lines = runs.Select(r => Line(Narrowed(r, action), StateOf(paths, files, r))).ToList();
-        var withCleanup = runs.Select(r => Narrowed(r, action)).Where(r => r.Actions.Any(Removed)).ToList();
+        var withCleanup = runs.Select(r => Narrowed(r, action)).Where(IsCleanup).ToList();
         var read = DetailsToRead(withCleanup, detail, action);
         var cleanups = withCleanup.SelectMany(r => Cleanups(paths, files, r, read.Contains(r.RunId))).ToList();
         var freed = lines.Where(l => l.FreedBytes > 0).ToList();
@@ -98,7 +98,8 @@ public static class RunLogs
     private static RunRecord Narrowed(RunRecord record, ActionId? action) =>
         action is null ? record : record with { Actions = [.. record.Actions.Where(a => a.Id == action.Text)] };
 
-    private static RunLine Line(RunRecord r, DetailState detail)
+    /// <summary>One history line as <c>runs</c> (and <c>runs show</c>) answer it.</summary>
+    internal static RunLine Line(RunRecord r, DetailState detail)
     {
         var actions = r.Actions.Select(a => new RunActionLine(a.Id, a.Status, a.Count, a.FreedBytes, a.WouldFreeBytes, a.Failure)).ToList();
         var acted = actions.Where(Acted).ToList();
@@ -116,7 +117,10 @@ public static class RunLogs
             dry.Count > 0 ? dry.Sum(a => a.WouldFreeBytes ?? 0) : null,
             acted.Any(a => a.Count > 0 || a.FreedBytes > 0),
             actions,
-            r.Reason);
+            r.Reason)
+        {
+            Metrics = r.Metrics,
+        };
     }
 
     private static IReadOnlyList<ActionTotal> Totals(IReadOnlyList<RunLine> lines) =>
@@ -140,6 +144,14 @@ public static class RunLogs
 
     /// <summary>An action that acted AND removed (or freed) something: a cleanup.</summary>
     private static bool Removed(ActionRecord action) => Acted(action) && (action.Count > 0 || action.FreedBytes > 0);
+
+    /// <summary>A run with a cleanup: at least one action acted AND removed (or freed) something — the ONE definition
+    /// <c>logs</c> counts by and <c>status</c>'s <c>lastCleanup</c> picks by (plan §7.4, §15j M7).</summary>
+    public static bool IsCleanup(RunRecord run) => run.Actions.Any(Removed);
+
+    /// <summary>What a run's acting actions removed and measurably freed (a failed action's real deletions included).</summary>
+    public static (int Count, long FreedBytes) Freed(RunRecord run) =>
+        (run.Actions.Where(Acted).Sum(a => a.Count), run.Actions.Where(Acted).Sum(a => a.FreedBytes));
 
     private static RunCounts Counts(IReadOnlyList<RunLine> lines)
     {
@@ -186,7 +198,7 @@ public static class RunLogs
 
     /// <summary>A detail written before a member existed reads it as null under the source generator, whatever the declaration
     /// says (C# doctrine §4a): NotRemoved and Notes arrived with E3.S2, so they are normalised here, where they are read.</summary>
-    private static IReadOnlyList<T> OrEmpty<T>(IReadOnlyList<T>? list) => list ?? [];
+    internal static IReadOnlyList<T> OrEmpty<T>(IReadOnlyList<T>? list) => list ?? [];
 
     /// <summary>The action outcomes the run's detail holds — an <c>act</c>'s, or a full run's timer pass — and the detail's state.</summary>
     private static (string State, IReadOnlyList<ActionOutcome> Outcomes) Outcomes(IHostPaths paths, IFileSystem files, RunRecord run)
@@ -216,7 +228,7 @@ public static class RunLogs
         }
     }
 
-    private static bool IsAct(byte[] json) => JsonSerializer.Deserialize(json, WslCareJsonContext.Default.DetailKindView)?.Kind == "act";
+    internal static bool IsAct(byte[] json) => JsonSerializer.Deserialize(json, WslCareJsonContext.Default.DetailKindView)?.Kind == "act";
 
     private static IReadOnlyList<ActionOutcome> ActOutcomes(byte[] json) => JsonSerializer.Deserialize(json, WslCareJsonContext.Default.ActRunDetail)?.Actions ?? [];
 

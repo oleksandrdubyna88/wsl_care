@@ -22,8 +22,8 @@
 > (section *The verdicts in `status`*), and from E5.S1 the VS Code extension's skeleton — the runner seam, `WslCareClient` over
 four read-only verbs, the strict fake `wsl.exe` and `ci-extension.yml` (section *The extension: client, runner and fake*),
 and from E5.S2 its status bar, the read-only panel driven by one field map, and the focused-window polling (section *The
-extension: status bar, read-only panel and polling*), and from E5.S3 *Install daemon*, the universal `.vsix` with its leak checks, and the extension's own release pipeline as files and tests (section *The extension: Install daemon, packaging and its release*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
-> `events follow`, `act`, `logs` and `runs`, and refuses everything else; the extension shows the daemon's state read-only (E5.S2). This file describes
+extension: status bar, read-only panel and polling*), and from E5.S3 *Install daemon*, the universal `.vsix` with its leak checks, and the extension's own release pipeline as files and tests (section *The extension: Install daemon, packaging and its release*), and from E6.S0 the daemon read contract — `status`'s `actions`, `capabilities`, `running` and `lastCleanup`, A4's full `shown` list, `runs show`, the instant range, `RunLine.metrics`, SIGHUP as a cancellation and `contracts/*.json` (section *The daemon read contract*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+> `events follow`, `act`, `logs`, `runs` and `runs show`, and refuses everything else; the extension shows the daemon's state read-only (E5.S2). This file describes
 > what exists and is rewritten as each part lands.
 
 ## What exists
@@ -103,7 +103,10 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   `vsix-denylist.txt`, `media/icon.png`, `CHANGELOG.md`, `LICENSE`, and since the E5 code round the checked-in
   `min-daemon.json` the release guard reads (section *The extension: Install daemon, packaging and its release*).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
-  captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*).
+  captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
+  also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,
+  and beside them `contracts/actions.json` / `contracts/exit-codes.json` held equal to `ActionId` / `ExitCode` by
+  `ContractFilesTests` (section *The daemon read contract*).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
 - Plans: the daemon and extension (`todo/PLAN_wsl_care_daemon.md`), the Windows side
   (`todo/PLAN_windows_care.md`), the AI-session archive (`todo/PLAN_ai_session_archive.md`), the shared
@@ -2042,6 +2045,104 @@ flowchart TD
 `ReleaseExtensionScriptFlows` (the guard, `lib/versions.sh` and the asset set, run under bash / sh on Linux) and the
 widened `ReleaseWorkflowTests` / `ReleaseConfigTests`.
 
+## The daemon read contract (E6.S0)
+
+What the cleanup buttons and the Logs page of E6.S2–E6.S4 will read, built on the daemon side first (plan §15j, the E6
+plan round). Every addition is ADDITIVE — `schemaVersion` stays 1 on every answer (asserted by the tests), a client ignores
+keys it does not know, treats an absent newer field as "update the daemon", and reads an unknown enum value as unknown.
+Nothing here writes: every new read is unprivileged and takes no lock.
+
+- **`status --json`** gains four members, set by `StatusCommand` after the probe:
+  - `actions` — the ids THIS binary's registry holds for its own side, in `ActionId.ExecutionOrder` (the distro's binary:
+    every built action, A13 not yet; the Windows binary: none — its actions are E12's).
+  - `capabilities` — `Status/Capabilities.All`: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange`. The
+    AUTHORITY a client acts on (§15j M5), never the version; E6.S1 adds `act.detach`, `act.onlyStdin`, `act.stop`.
+  - `running` — `Status/RunningReports.Read`: `RunningState.Read` (the same judge the engine uses; it writes nothing) over
+    `running.json`, else `Actions/Engine/RunRequests.List` over `{state}/requests/<runId>.json` (the request files E6.S1's
+    `--detach` will write — the reader exists now, the folder is empty until then). It NEVER calls `RunningSweep`: a dead
+    run is reported and its file left exactly as it was; the next root run sweeps it (plan §15b #3, §15j M3).
+  - `lastCleanup` — `Status/LastCleanups.From` over the history `status` already read: the newest run in which an action
+    acted AND removed or freed something — `RunLogs.IsCleanup`, the ONE definition `logs` counts by too — with its trigger,
+    objects and freed bytes (a failed action's real deletions count, as in `logs`); `available: false` with the reason
+    before the first or when the history cannot be read.
+- **`act … --json`** answers name `productVersion` (`Program.VersionText`). **A4's preview outcome** carries `shown`: every
+  name its preview selected — the keys its run matches (`VolumeRemoval.Shown`, through the new `IBoundToShownList`, A4
+  alone), at most `ShownList.MaxNames` (10 000, the same cap `--volume` / `--only` keep) — because `items` stops at 20 and a
+  button that sent the items back would pass 20 of 387 names (§15j B1). Run details never carry it.
+- **`runs show <runId> [--json]`** — `History/RunShow.Read`, its own `schemaVersion` 1. The history decides first (a line
+  is terminal: `done` for completed / failed / observe-only, `refused` for the outcome `refused` — added to `RunOutcome`
+  now, written by E6.S1's `act --request` — and `interrupted`), with the line as `runs` answers it and the detail
+  (`act` → every action's preview and run: removed, not removed, commands with their exits, notes; a full run → its timer
+  pass). Then `running.json` naming the run (`running`; a DEAD holder is `interrupted`, never running — it will never
+  finish — and is not swept). Then a request naming it (`queued`). Nothing: `unknown`. Exit 0 whatever the state; 4 only
+  when the history exists and cannot be read. `runs log` is CUT (§15j M3): `runs show` answers the commands and exits.
+- **The instant range** — `logs` / `runs --from <RFC3339> --to <RFC3339>` (`LogPeriod.ParseInstants`), beside the UTC-day
+  periods and never with `--period`, both ends required: each instant with its offset spelt out (a bare date or a time
+  without an offset is refused — never bound to the reading machine's zone, the UTC rule), half-open, at most 366 days. The
+  answer's `period` keeps `label` (`instants`), `from` / `to` (the UTC days the instants touch) and adds `fromInstant` /
+  `toInstant` in UTC. This is how a client asks for a LOCAL day, which crosses UTC midnight (§15j M7).
+- **`RunLine.metrics`** — the `metrics` the history line recorded (a full run's `MemAvailable`, page cache, swap, `/`,
+  Docker reclaimable, container starts), absent on a line that recorded none (an `act`, a swept run, lines before E2.S3).
+- **SIGHUP** joins SIGINT / SIGTERM / SIGQUIT in `ShutdownSignals` as a cancellation; `ShutdownSignals.Cause` (the first
+  signal, set once) reaches the engine through `CliHost.InterruptCause` → `EngineContext.InterruptCause`, so a confirm cut
+  off when its terminal or `wsl.exe` went away records `interrupted by SIGHUP (…)` with its detail, kills its child and
+  exits 130 — before E6.S0 it died by the signal's default action (exit 129) with no detail and no history line (§15j B2;
+  defence in depth — the panel's confirm runs detached from E6.S1).
+- **`--manual` and `--timer` are exclusive** in `act` (§15j m2; E3 let the timer win).
+- **`contracts/actions.json` and `contracts/exit-codes.json`** — the action ids (with `A5Testcontainers` / `A6Unused`), the
+  execution order, and every exit code by name, generated by `WslCare.Scenarios/ContractFilesTests` from `ActionId.All`,
+  `ActionId.ExecutionOrder` and `Enum.GetValues<ExitCode>()` — enumerated, never retyped — and held equal by it
+  (`WSL_CARE_WRITE_GOLDENS=1` rewrites). The extension reads them in E6.S2.
+
+```mermaid
+flowchart TB
+    status["status --json"]
+    show["runs show &lt;runId&gt;"]
+    rr["RunningReports.Read<br/>read-only, never a sweep"]
+    rs["RunningState.Read<br/>(pid + start + heartbeat)"]
+    req["RunRequests.List / Find<br/>{state}/requests/&lt;runId&gt;.json (E6.S1 writes)"]
+    hist["RunHistory.Read<br/>history.jsonl"]
+    det["RunDetailStore<br/>runs/{day}/{runId}.json"]
+    last["LastCleanups.From<br/>RunLogs.IsCleanup"]
+    status --> rr
+    status --> last
+    last --> hist
+    rr --> rs
+    rr -->|no running.json| req
+    show -->|1 a line: done / refused / interrupted| hist
+    show -->|line's detail| det
+    show -->|2 running.json names it: running, dead = interrupted| rr
+    show -->|3 a request names it: queued| req
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> none
+    none --> queued: a request file, E6.S1 detach
+    queued --> live: the run writes running.json
+    none --> live: act or collect writes running.json
+    live --> wedged: heartbeat older than 30 s, process alive
+    live --> dead: process gone or another process
+    wedged --> dead: process gone
+    live --> none: the run records itself and removes running.json
+    dead --> none: the next root run sweeps it as interrupted
+    none --> unreadable: running.json or a lone request does not parse
+    live --> unknown: the pid cannot be inspected
+```
+
+**The goldens it adds** (`contracts/golden/head/`, written by `GoldenContracts` on the Linux legs, staged by
+`ReadContractScenes`): `status-running-{live,wedged,dead,unreadable,queued}.json` — `status --json` over an otherwise
+EMPTY sandbox with the running state staged against the REAL process table (live / wedged on the test process's own pid
+and start; dead on a pid no process has; unreadable = `{}`; queued = a request file); the main `status.json` is the `none`
+state over the captured tree — `act-a4-preview.json` (`act A4 --preview --json` over 387 SYNTHETIC anonymous volumes,
+`SyntheticDocker`: 387 × 154 MB, `shown` holding all 387 names), `runs-show-{done,interrupted,unknown}.json` (a confirmed
+A10 through the fake `journalctl`, the dead run it swept, a stranger) and `runs-local-day.json` / `logs-local-day.json`
+(the local day 2026-10-02 at +03:00 over a seeded history: the first instant in, the end instant out, one run on each side
+of UTC midnight). Normalisation rules added, each matched: `running.pid` (4242), `running.heartbeatAt`,
+`running.heartbeatAgeSeconds` (0 live, 600 wedged), `run.startedAt`, `run.endedAt`, and in sentences `pidInText`,
+`heartbeatAgeInText`, `detailDayInText`. Every instant a scene does not judge against the clock is FIXED
+(`ReadContractScenes.Staged`), so the list stays short.
+
 ## Fixture privacy (E5 code round, 2026-10-04)
 
 The repository is public, and the captured fixtures and the goldens built from them carried the owner's Linux and
@@ -2244,7 +2345,7 @@ flowchart TB
     host["CliHost<br/>IHostPaths · IFileSystem · TimeProvider · ICommandRunner"]
     loader["ConfigLoader<br/>default.json, then machine, then user"]
     logging["WslCareLogging<br/>AnsiConsoleSink (stderr) · DailyRunFileSink · LogRetention"]
-    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand · LogsCommand (logs, runs)"]
+    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand · LogsCommand (logs, runs, runs show)"]
     probe["IHostProbe<br/>LinuxProbe (procfs, cgroup fs) · WindowsProbe (Win32 counters)"]
     history["LastFullRun<br/>slow parts from history.jsonl"]
     writer["UserConfigWriter<br/>repair + atomic write"]
@@ -2304,6 +2405,9 @@ flowchart TB
     collect -->|RunningSweep · own running.json| fs
     verbs -->|logs · runs, read-only| logs
     logs -->|ReadFile history · details when asked| store
+    running["RunningReports · RunShow<br/>RunningState.Read · RunRequests (read-only, never a sweep)"]
+    verbs -->|status running block · runs show, read-only| running
+    running -->|ReadFile running.json · requests · history · a detail| fs
 ```
 
 ## The scenario harness (E1.S3)
