@@ -43,3 +43,26 @@ test('a renamed or renumbered member would be caught: the reader sees a planted 
   assert.equal(planted.get('Usage'), 64);
   assert.equal(planted.get('RunFailed'), undefined);
 });
+
+// ---- E6.S2 (plan §15j m3): every code of the generated contract is named here, and nothing else is ----
+
+const EXIT_CODES_JSON = path.join(REPOSITORY_ROOT, 'contracts', 'exit-codes.json');
+
+function contractCodes(): Map<string, number> {
+  const json = JSON.parse(fs.readFileSync(EXIT_CODES_JSON, 'utf8')) as { codes: { name: string; code: number }[] };
+  return new Map(json.codes.map((c) => [c.name, c.code]));
+}
+
+test('the client names EXACTLY the codes of contracts/exit-codes.json — the daemon writes that file from ExitCode', () => {
+  const contract = contractCodes();
+  assert.ok(contract.size >= 16, `only ${contract.size} codes read from the contract`);
+  assert.deepEqual(Object.fromEntries(Object.entries(DAEMON_EXIT).sort()), Object.fromEntries([...contract.entries()].sort()),
+    'a code the daemon added without a name here is an exit the act paths would read as an unknown failure');
+});
+
+test('the root paths\' codes are among them by name: 69, 71, 73, 75, 76, 77, 78, 79, 80', () => {
+  const contract = contractCodes();
+  for (const [name, code] of [['detachUnavailable', 69], ['detachStartFailed', 71], ['queueFull', 73], ['busy', 75], ['wedged', 76], ['needsRoot', 77], ['observeOnly', 78], ['stateUnreadable', 79], ['requestGone', 80]] as const) {
+    assert.equal(contract.get(name), code, name);
+  }
+});

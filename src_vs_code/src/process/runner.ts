@@ -23,6 +23,11 @@ export interface ProcessRequest {
   readonly timeoutMs: number;
   /** Variables added to the inherited environment. */
   readonly env?: Readonly<Record<string, string>>;
+  /**
+   * Bytes for the child's stdin, written and then ENDED (E6.S2, plan §15j M2) — A4's shown list for `act … --only -`.
+   * Absent: the child's stdin is closed from the start, so it reads an immediate end and nothing waits on it.
+   */
+  readonly stdin?: Buffer;
 }
 
 export type ProcessResult =
@@ -106,9 +111,23 @@ function start(request: ProcessRequest): childProcess.ChildProcess {
   return childProcess.spawn(request.file, [...request.args], {
     shell: false,
     windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: [request.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     env: { ...process.env, ...request.env },
   });
+}
+
+/**
+ * Hand the child its stdin and END it — the end is what tells `act … --only -` the list is complete (the daemon refuses a
+ * list with no end after 10 s, plan §15j M2). A child that exits without reading everything makes the pipe fail
+ * (EPIPE); that failure is not an outcome of its own: the child's exit — its refusal with a reason — is the answer the
+ * caller reads, so the stream's error is taken here, where an unhandled one would end the extension host.
+ */
+function feed(child: childProcess.ChildProcess, stdin: Buffer | undefined): void {
+  if (stdin === undefined || child.stdin === null) {
+    return;
+  }
+  child.stdin.on('error', () => undefined);
+  child.stdin.end(stdin);
 }
 
 /** Resolve exactly once, and stop the ceiling's timer when it does. */
@@ -136,6 +155,7 @@ function watch(child: childProcess.ChildProcess, request: ProcessRequest, resolv
   child.stderr?.on('data', (chunk: Buffer) => run.take('stderr', chunk));
   child.on('error', (error) => run.failed(error));
   child.on('close', (code, signal) => run.ended(code, signal));
+  feed(child, request.stdin);
 }
 
 function reasonOf(error: unknown): string {
@@ -166,6 +186,7 @@ export function nodeScriptRunner(script: string, env: Readonly<Record<string, st
       args: [script, ...request.args],
       timeoutMs: request.timeoutMs,
       env: { ...env, ...request.env, ELECTRON_RUN_AS_NODE: '1', WSL_CARE_FAKE_REQUESTED_FILE: request.file },
+      ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
     });
 }
 

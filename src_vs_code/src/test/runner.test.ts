@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as os from 'node:os';
@@ -120,5 +121,51 @@ test('the closed runner starts nothing and says why', async () => {
     assert.equal(spawned, 0);
   } finally {
     raw.spawn = original;
+  }
+});
+
+// ---- E6.S2 (plan §15j M2): the runner seam takes an optional stdin — written, then ENDED ----
+
+/** A child that reads stdin to its end and prints how many bytes arrived and their SHA-256. */
+const STDIN_DIGEST = "const h = require('node:crypto').createHash('sha256'); let n = 0; process.stdin.on('data', (c) => { n += c.length; h.update(c); }); process.stdin.on('end', () => process.stdout.write(JSON.stringify([n, h.digest('hex')])));";
+
+/** 10 000 anonymous-volume names, one per line — the most A4's shown list may carry (650 000 bytes, research facts row 20). */
+function tenThousandNames(): Buffer {
+  const lines = Array.from({ length: 10_000 }, (_, i) => `${i.toString(16).padStart(8, '0')}${'ab'.repeat(28)}\n`);
+  return Buffer.from(lines.join(''), 'utf8');
+}
+
+test('stdin reaches the child byte for byte and is ENDED: 650 000 bytes arrive whole and the child sees its end', async () => {
+  const input = tenThousandNames();
+  assert.equal(input.length, 650_000);
+  const result = await spawnRunner({ file: node, args: ['-e', STDIN_DIGEST], timeoutMs: 10_000, stdin: input });
+  assert.ok(result.kind === 'exited', JSON.stringify(result));
+  const expected = createHash('sha256').update(input).digest('hex');
+  assert.deepEqual(JSON.parse(result.stdout.toString('utf8')), [650_000, expected]);
+});
+
+test('without stdin the child reads an immediate end — nothing is held open for it', async () => {
+  const result = await spawnRunner({ file: node, args: ['-e', STDIN_DIGEST], timeoutMs: 10_000 });
+  assert.ok(result.kind === 'exited', JSON.stringify(result));
+  assert.deepEqual(JSON.parse(result.stdout.toString('utf8')), [0, createHash('sha256').digest('hex')]);
+});
+
+test('a child that exits without reading its stdin still gives its answer — the unread input is no crash', async () => {
+  const result = await spawnRunner({ file: node, args: ['-e', 'process.exit(2)'], timeoutMs: 10_000, stdin: tenThousandNames() });
+  assert.ok(result.kind === 'exited', JSON.stringify(result));
+  assert.equal(result.code, 2);
+});
+
+test('the script runner hands stdin to the script it starts in place of the requested program', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'wsl-care-runner-'));
+  try {
+    const script = path.join(folder, 'digest.js');
+    fs.writeFileSync(script, STDIN_DIGEST);
+    const input = Buffer.from('a\nb\n', 'utf8');
+    const result = await nodeScriptRunner(script)({ file: 'C:\\Windows\\System32\\wsl.exe', args: ['--version'], timeoutMs: 10_000, stdin: input });
+    assert.ok(result.kind === 'exited', JSON.stringify(result));
+    assert.deepEqual(JSON.parse(result.stdout.toString('utf8')), [4, createHash('sha256').update(input).digest('hex')]);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
   }
 });
