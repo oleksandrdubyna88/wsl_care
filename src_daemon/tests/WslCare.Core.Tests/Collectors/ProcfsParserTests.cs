@@ -187,7 +187,7 @@ public sealed class ProcfsParserTests
         var argv = CommandLineText.Arguments(FixtureBytes("proc/7203/cmdline"));
 
         string.Join(' ', argv).Length.Should().BeGreaterThan(CommandLineText.ShownLength, "the fixture's claude command line is long");
-        CommandLineText.Shown(argv).Should().HaveLength(CommandLineText.ShownLength).And.StartWith("/home/user/.vscode-server/extensions/anthropic.claude-code-2.1.287-linux-x64/resources/native-binary/claude");
+        CommandLineText.Shown(argv).Should().HaveLength(CommandLineText.ShownLength).And.StartWith("/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude");
     }
 
     [Fact]

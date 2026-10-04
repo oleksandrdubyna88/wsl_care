@@ -238,7 +238,7 @@
       "auto": false,
       "basis": "folder size, measured by the full run 20000101T000000Z-1 0.0 h ago",
       "available": false,
-      "reason": "the full run 20000101T000000Z-1 could not measure /golden-root/home/me/.npm: /golden-root/home/me/.npm does not exist"
+      "reason": "the full run 20000101T000000Z-1 could not measure /golden-root/home/user/.npm: /golden-root/home/user/.npm does not exist"
     },
     {
       "id": "A9",

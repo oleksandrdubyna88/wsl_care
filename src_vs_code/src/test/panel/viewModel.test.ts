@@ -64,7 +64,7 @@ test('the rows the E5 verbs cannot fill say "arrives in E#" with why — never b
 test('the head goldens\' own available:false figures read "unavailable — <reason>": the npm folder, A8\'s cleanup row', () => {
   const view = buildPanelView(snapshot(goldenOutcomes()));
   const folders = rowOf(view, 'folders.sizes');
-  assert.ok(folders.items.some((cells) => cells.includes('unavailable — /golden-root/home/me/.npm does not exist')), JSON.stringify(folders.items));
+  assert.ok(folders.items.some((cells) => cells.includes('unavailable — /golden-root/home/user/.npm does not exist')), JSON.stringify(folders.items));
   const cleanup = rowOf(view, 'cleanup.rows');
   const a8 = cleanup.items.find((cells) => cells[0] === 'A8');
   assert.ok(a8 !== undefined && a8.some((c) => c.startsWith('unavailable — the full run')), JSON.stringify(a8));

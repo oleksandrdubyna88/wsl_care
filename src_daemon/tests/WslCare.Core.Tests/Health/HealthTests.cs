@@ -35,7 +35,7 @@ public sealed class HealthTests : IDisposable
         Value(SystemdUnit.Parse(HealthFixture.Read("systemctl-show-fstrim.out"))).Should().Match<SystemdUnit>(u => u.UnitFileState == "enabled" && u.ActiveState == "inactive");
         HealthParsers.DisabledSnapRevisions(HealthFixture.Read("snap-list-all.out")).Should().BeEmpty();
         var clock = Value(HealthParsers.WindowsClock(HealthFixture.Read("powershell-clock.out")));
-        clock.Profile.Should().Be(@"C:\Users\owner");
+        clock.Profile.Should().Be(@"C:\Users\user");
         (clock.PrintedAt - clock.ProcessStartedAt).TotalSeconds.Should().BeApproximately(0.7509, 0.0001);
     }
 
@@ -92,7 +92,7 @@ public sealed class HealthTests : IDisposable
         var paths = new LinuxHostPaths(LinuxEnvironment.Sandboxed(_root.Path));
         _root.File("proc/mounts", "/dev/sdd / ext4 rw,relatime,discard 0 0\n");
         _root.File("proc/uptime", "9253.22 145216.82\n");
-        _root.File("mnt/c/Users/owner/.wslconfig", "[wsl2]\nmemory=36GB\nsparseVhd=true\n");
+        _root.File("mnt/c/Users/user/.wslconfig", "[wsl2]\nmemory=36GB\nsparseVhd=true\n");
         _root.File("var/log/sysstat/sa02", "x");
         var runner = HealthFixture.Script(new RecordingCommandRunner { Default = new CommandOutcome.FailedToStart("not scripted") })
             .Script(SystemdCommands.ShowUnit("earlyoom.service").Argv, 0, "Id=earlyoom.service\nLoadState=not-found\nActiveState=inactive\n")
@@ -114,7 +114,7 @@ public sealed class HealthTests : IDisposable
         health.WindowsClock.Measured.Should().BeTrue(health.WindowsClock.Unavailable);
         health.WindowsClock.OffsetSeconds.Should().BeApproximately(0.1867, 0.0001, "Windows' process start minus the instant this side launched it");
         health.WindowsClock.LaunchLatencySeconds.Should().BeApproximately(0.7509, 0.0001);
-        Value(health.WindowsProfile).Should().Be(paths.DistroPath("/mnt/c/Users/owner"));
+        Value(health.WindowsProfile).Should().Be(paths.DistroPath("/mnt/c/Users/user"));
         Value(health.WslConfig).Should().Match<WslConfigAudit>(a => a.Present && a.Settings.Memory == "36GB" && a.Warnings.Count == 1);
         runner.Requests.Select(r => r.Argv).Should().OnlyContain(a =>
             (a[0] == "systemctl" || a[0] == "journalctl" || a[0] == "timedatectl") ? SystemdCommands.IsReadVerb(a.Skip(1).ToList()) : a.SequenceEqual(HealthCommands.WindowsClock.Argv));

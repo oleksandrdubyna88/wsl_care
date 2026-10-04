@@ -7,7 +7,10 @@ using FluentAssertions;
 
 using WslCare.Cli;
 using WslCare.Core.Docker;
+using WslCare.Core.Health;
 using WslCare.TestSupport;
+
+using static System.FormattableString;
 
 namespace WslCare.Scenarios;
 
@@ -104,14 +107,16 @@ internal static partial class GoldenContracts
             ["level"] = _ => "ok",
             ["value"] = _ => "13.0 %",
         }),
-        new("id", "journal.history", "now minus the captured oldest journal entry: its days grow every day, and at 7 days the level turns ok — fixed as at the capture (warn)", new Dictionary<string, Func<string, string>>
+        new("id", "journal.history", "now minus the captured oldest journal entry: its days grow every day, and at 7 days the level turns ok — fixed as it was AT THE CAPTURE: the health capture's instant minus that entry (0.8 days, warn)", new Dictionary<string, Func<string, string>>
         {
             ["level"] = _ => "warn",
-            ["value"] = value => LeadingDays().Replace(value, "<days since the oldest entry>"),
+            ["value"] = value => LeadingDays().Replace(value, Invariant($"{JournalDaysAtCapture:0.0} days")),
         }),
-        new("id", "clock.drift", "the captured Windows clock minus now", new Dictionary<string, Func<string, string>>
+        new("id", "clock.drift", "the captured Windows clock minus now — fixed as it was AT THE CAPTURE: the clock probe's process start minus the capture's instant (+0.19 s, within the limit, so ok with the product's own sentence for that case)", new Dictionary<string, Func<string, string>>
         {
-            ["value"] = value => LeadingOffset().Replace(value, "<captured clock minus now> s"),
+            ["level"] = _ => "ok",
+            ["value"] = value => LeadingOffset().Replace(value, Invariant($"{ClockOffsetAtCapture:+0.00;-0.00} s")),
+            ["reason"] = _ => "the distro's clock agrees with Windows'",
         }),
         new("component", "wsl-care", "doctor's own version: the release number every release-please bump moves", new Dictionary<string, Func<string, string>>
         {
@@ -124,6 +129,31 @@ internal static partial class GoldenContracts
     [
         new("runIdInText", "a run id quoted in a reason or a basis (its start instant and the CLI's pid)", RunIdInText(), FixedRunId),
     ];
+
+    /// <summary>
+    /// THE normalisation list, part 4 — identity: <see cref="FixtureIdentity.Rules"/>, the SAME list the captured fixtures
+    /// were anonymised with, applied to every string of every answer (after the sandbox root is rewritten), so a golden
+    /// regenerated from a new capture is anonymised by the code that anonymised the capture — the sandbox's own home
+    /// (<c>/golden-root/home/me</c>) included. Its mappings are learnt from the checked-in captured fixtures. Unlike parts
+    /// 1–3, a part-4 rule need not match: it guards a future capture, and <c>FixturePrivacyTests</c> is what proves no
+    /// identity is left in the files.
+    /// </summary>
+    public static IReadOnlyList<IdentityRule> IdentityRules => FixtureIdentity.Rules;
+
+    /// <summary>The identity mappings, learnt once from the checked-in captured fixtures.</summary>
+    public static FixtureIdentity Identity => IdentityOnce.Value;
+
+    private static readonly Lazy<FixtureIdentity> IdentityOnce = new(() => FixtureIdentity.LearnFrom(Path.Combine(ReleaseFiles.Root, "src_daemon", "tests", "fixtures")));
+
+    /// <summary>The journal's span at the health capture: its instant minus the oldest entry the captured boots list names.</summary>
+    private static double JournalDaysAtCapture =>
+        (HealthFixture.CapturedAt - HealthParsers.OldestJournalEntry(HealthFixture.Read("journalctl-list-boots.out")).ValueOr(HealthFixture.CapturedAt)).TotalDays;
+
+    /// <summary>The Windows clock offset at the health capture: the captured probe's process start minus the capture's
+    /// instant (the launch instant the live collection used).</summary>
+    private static double ClockOffsetAtCapture =>
+        HealthParsers.WindowsClock(HealthFixture.Read("powershell-clock.out")).ValueOr(new WindowsClockAnswer(HealthFixture.CapturedAt, HealthFixture.CapturedAt, string.Empty))
+            .ProcessStartedAt.Subtract(HealthFixture.CapturedAt).TotalSeconds;
 
     private static JsonNode AgeSeconds(JsonNode node) => node is JsonObject ? node : 0;
 
@@ -226,7 +256,7 @@ internal static partial class GoldenContracts
         }
 
         var rewritten = TextRules.Aggregate(text, (current, rule) => Rewrite(current, rule, context.Matched));
-        return rewritten.Replace(context.SandboxRoot, FixedRoot, StringComparison.Ordinal);
+        return Identity.Apply(rewritten.Replace(context.SandboxRoot, FixedRoot, StringComparison.Ordinal));
     }
 
     private static string Rewrite(string text, GoldenTextRule rule, ISet<string> matched)
