@@ -42,14 +42,20 @@ function isRequireOrImport(call: ts.CallExpression): boolean {
 
 /** Every string a source spells: string literals, template literals without substitutions, and each template part. */
 export function stringLiteralsOf(text: string, kind: ts.ScriptKind = ts.ScriptKind.TS): string[] {
-  const found: string[] = [];
+  return stringLiteralsAt(text, kind).map((literal) => literal.text);
+}
+
+/** The same strings with the offset each starts at — what lets a scan say WHICH part of a bundle spelt one (E6.S2). */
+export function stringLiteralsAt(text: string, kind: ts.ScriptKind = ts.ScriptKind.TS): { readonly text: string; readonly start: number }[] {
+  const found: { text: string; start: number }[] = [];
+  const file = ts.createSourceFile('scan.ts', text, ts.ScriptTarget.ES2022, true, kind);
   const visit = (node: ts.Node): void => {
     if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
-      found.push(node.text);
+      found.push({ text: node.text, start: node.getStart(file) });
     }
     ts.forEachChild(node, visit);
   };
-  visit(ts.createSourceFile('scan.ts', text, ts.ScriptTarget.ES2022, true, kind));
+  visit(file);
 
   return found;
 }

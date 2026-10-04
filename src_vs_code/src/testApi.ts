@@ -1,6 +1,7 @@
 import type { InstallRecorder } from './install/installUi';
 import type { ProcessRequest, Runner } from './process/runner';
 import type { RunnerChoice } from './process/runnerSelection';
+import type { CleanupController } from './root/cleanupController';
 import type { BarView } from './statusBar/statusBarModel';
 
 /**
@@ -25,6 +26,8 @@ export interface WslCareTestApi {
   lastRendered(): number | undefined;
   /** *Install daemon*'s recorded modal prompts, terminals and reports — and the answer the recorded modal gives. */
   install(): InstallRecorder;
+  /** The host-side cleanup controller (E6.S2) — the API E6.S3's buttons will call; in Test mode the host suite reaches it here. */
+  cleanup(): CleanupController;
   /** The version the running bundle was built for (`buildStamp.ts`). */
   buildVersion(): string;
 }

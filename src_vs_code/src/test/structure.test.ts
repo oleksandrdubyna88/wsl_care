@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import * as ts from 'typescript';
 
@@ -84,8 +85,8 @@ test('the client still spells each of them — the argv scan is alive', () => {
   assert.deepEqual(spellers(sources(), WSL_ARGV_WORDS)[CLIENT], [...WSL_ARGV_WORDS].sort());
 });
 
-test('only the verb module spells the daemon verbs\' option words, and it spells all three', () => {
-  assert.deepEqual(spellers(sources(), VERB_WORDS), { [VERB_MODULE]: [...VERB_WORDS].sort() });
+test('only the verb module spells the daemon verbs\' option words (it spells all three) — and the root module its --json', () => {
+  assert.deepEqual(spellers(sources(), VERB_WORDS), { [VERB_MODULE]: [...VERB_WORDS].sort(), 'src/root/rootCall.ts': ['--json'] });
 });
 
 test('the literal scan finds a planted argv word outside the client, in a string, a template and over lines', () => {
@@ -161,4 +162,80 @@ test('the install flow imports no child_process and not the runner — it can ty
 test('only the install UI module opens a terminal (createTerminal), and it does', () => {
   assert.deepEqual(accessorsOf(sources(), 'createTerminal'), [INSTALL_UI_MODULE]);
   assert.deepEqual(accessorsOf([{ file: 'src/planted.ts', text: 'void vscode.window\n  .createTerminal({ shellPath: p });' }], 'createTerminal'), ['src/planted.ts'], 'the access scan finds a planted one over lines');
+});
+
+// ---- E6.S2: the root boundary (plan §15j M1, §15k #10) ----
+//
+// ONE module spells a root argv word, ONE module imports it, and nothing a webview runs or renders is anywhere near it.
+// Matched as EXACT string literals (an argv element is one), read by the parser: a comment that names `--confirm` is no
+// finding, a call spread over lines still is. The bare `-` (the stdin marker) is not scanned at source level — the client
+// rightly spells it in `startsWith('-')` — and is held instead by the import graph below and by the bundle scan's exact
+// literal set for the root region (§15k #10, deliberate).
+
+const ROOT_CALL = 'src/root/rootCall.ts';
+const CLEANUP_CONTROLLER = 'src/root/cleanupController.ts';
+
+/** The root argv words (§15j M1) — only `rootCall.ts` may spell them. */
+const ROOT_WORDS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '--stop'];
+
+/** Words NO module may spell, the root module included: the timer's mark, another user, the daemon's settings verb. */
+const NEVER_WORDS = ['--timer', '--user', 'config'];
+
+/** Every module a source imports by a RELATIVE specifier, resolved to `src/...ts` the way the structural tests name files. */
+function resolvedImports(source: Source): string[] {
+  const dir = path.posix.dirname(source.file);
+
+  return importsOf(source.text).filter((m) => m.startsWith('.')).map((m) => `${path.posix.normalize(path.posix.join(dir, m))}.ts`);
+}
+
+function importersOf(all: readonly Source[], module: string): string[] {
+  return all.filter((s) => resolvedImports(s).includes(module)).map((s) => s.file).sort();
+}
+
+/** Modules whose code a webview runs or whose output it renders, plus the poller and the install flow: none may touch root/. */
+const FAR_FROM_ROOT = ['src/panel/', 'src/statusBar/', 'src/poll/', 'src/install/', 'src/state/'];
+
+test('only rootCall.ts spells a root argv word — and it spells every one of them (the scan is alive)', () => {
+  assert.deepEqual(spellers(sources(), ROOT_WORDS), { [ROOT_CALL]: [...ROOT_WORDS].sort() });
+});
+
+test('no module spells --timer, --user or config — the root module included', () => {
+  assert.deepEqual(spellers(sources(), NEVER_WORDS), {});
+});
+
+test('the root-word scan finds a planted word outside the root module, in an array, a template and over lines, and ignores a comment', () => {
+  const planted: Source[] = [
+    { file: 'src/panel/x.ts', text: "const args = ['act', ids, '--confirm'];" },
+    { file: 'src/poll/y.ts', text: 'const a = [\n  `-u`,\n  "root",\n];' },
+    { file: 'src/root/rootCall.ts', text: "const t = ['collect', '--timer'];" },
+    { file: 'src/z.ts', text: '// we never pass --confirm or -u root here\nconst s = "rooted";' },
+  ];
+  assert.deepEqual(spellers(planted, ROOT_WORDS), { 'src/panel/x.ts': ['--confirm', 'act'], 'src/poll/y.ts': ['-u', 'root'], 'src/root/rootCall.ts': ['collect'] });
+  assert.deepEqual(spellers(planted, NEVER_WORDS), { 'src/root/rootCall.ts': ['--timer'] });
+});
+
+test('only the host-side cleanup controller imports rootCall.ts', () => {
+  assert.deepEqual(importersOf(sources(), ROOT_CALL), [CLEANUP_CONTROLLER]);
+});
+
+test('no panel, status-bar, poller, install or store module imports anything under src/root/', () => {
+  const offenders = sources().filter((s) => FAR_FROM_ROOT.some((dir) => s.file.startsWith(dir)) && resolvedImports(s).some((m) => m.startsWith('src/root/')));
+  assert.deepEqual(offenders.map((s) => s.file), []);
+  assert.ok(sources().some((s) => s.file.startsWith('src/panel/')), 'the scan sees the panel modules');
+});
+
+test('rootCall.ts imports only the client\'s argv builder, the verbs, the runner\'s types and the typed ids — no process API', () => {
+  const source = sources().find((s) => s.file === ROOT_CALL);
+  assert.ok(source !== undefined);
+  assert.deepEqual(resolvedImports(source).sort(), ['src/client/WslCareClient.ts', 'src/client/verbs.ts', 'src/process/runner.ts', 'src/root/rootIds.ts']);
+  assert.deepEqual(importsOf(source.text).filter((m) => !m.startsWith('.')), []);
+});
+
+test('the import-graph scan resolves relative specifiers and finds a planted import of the root module', () => {
+  const planted: Source[] = [
+    { file: 'src/panel/viewModel.ts', text: "import { callRoot } from '../root/rootCall';" },
+    { file: 'src/root/cleanupController.ts', text: "import { rootRequest } from './rootCall';" },
+    { file: 'src/other.ts', text: "const s = '../root/rootCall';" },
+  ];
+  assert.deepEqual(importersOf(planted, ROOT_CALL), ['src/panel/viewModel.ts', 'src/root/cleanupController.ts']);
 });

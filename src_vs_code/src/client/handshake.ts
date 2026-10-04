@@ -25,6 +25,17 @@ export const MIN_DAEMON_FOR_RENDER = '0.1.0';
  */
 export const INSTALL_DAEMON = '0.1.2';
 
+/**
+ * The daemon minor that carries the E6 contract a cleanup needs — `actions`, `capabilities`, `running`, `runs show`, the
+ * detached runs and `--only -` (E6.S0 + E6.S1; plan §15j M5, B3). It merges before the owner cuts `daemon-v0.1.0`, so it
+ * rides 0.1.0 (B3's first case) — were 0.1.0 cut first, this becomes the next minor. It is the MESSAGE, never the
+ * authority: whether the extension may act is decided by `status.capabilities` (`root/actionGate.ts`), so an unstamped
+ * build that advertises them acts and a release that does not, does not. *Install daemon* types `INSTALL_DAEMON`, which
+ * is never below it (`installDaemon.test.ts`), and the release guard requires it published and verified
+ * (`min-daemon.json`).
+ */
+export const MIN_DAEMON_FOR_ACTIONS = '0.1.0';
+
 const MINIMUM: readonly [number, number, number] = [0, 1, 0];
 
 const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:\+[0-9A-Za-z.-]+)?$/;
@@ -101,8 +112,8 @@ function statusAnswer(schemaVersion: number, body: JsonObject): StatusAnswer {
   return { verb: 'status', schemaVersion, productVersion: optionalString(body.productVersion), verdicts: verdictsOf(body.verdicts), body };
 }
 
-/** The body of a JSON verb, its schema checked; a refusal names why. */
-function checkedBody(stdout: string): { body: JsonObject; schemaVersion: number } | Failure {
+/** The body of a JSON answer, its schema checked; a refusal names why — every JSON verb's, the root answers' too. */
+export function checkedBody(stdout: string): { body: JsonObject; schemaVersion: number } | Failure {
   const parsed = parseJson(stdout);
   if (parsed === undefined) {
     return { kind: 'unparseable', detail: 'the answer is not JSON' };
