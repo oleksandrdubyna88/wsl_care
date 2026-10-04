@@ -1,240 +1,143 @@
-using System.Text;
-
 using FluentAssertions;
 
 using WslCare.Core.Collectors;
-using WslCare.Core.Health;
 using WslCare.Core.Processes;
-using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Processes;
 
 /// <summary>
-/// The Windows programs the product starts from inside the distro (the clock probe's <c>powershell.exe</c>) are found
-/// on the mounted Windows system drive when <c>PATH</c> does not name them — which is EVERY run under systemd: a service
-/// gets <c>/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin</c>, and WSL appends the Windows folders to
-/// <c>PATH</c> only for interactive and login sessions. Observed live 2026-10-04 on the first install: under
-/// <c>wsl-care.service</c> <c>clock.drift</c> was unknown and A16 refused, both with "powershell.exe was not found on
-/// PATH (5 directories searched, executable files only)". Real files in a temporary root, a mount table in the shape
-/// the WSL 2 kernel prints.
+/// Where the distro sees the Windows system drive (<see cref="WindowsSystemDrive.Mount"/>, over <c>/proc/self/mountinfo</c>)
+/// and whether WSL interop can run a Windows program (<see cref="WindowsSystemDrive.InteropRefusal"/>) — one fixture per
+/// shape the rule must take or refuse. Pure text: these run on every leg. The resolver's use of both is
+/// <see cref="SystemDriveResolverTests"/>.
 /// </summary>
-public sealed class WindowsSystemDriveTests : IDisposable
+public sealed class WindowsSystemDriveTests
 {
-    /// <summary>The <c>PATH</c> systemd hands <c>wsl-care.service</c> (no <c>Environment=PATH</c> in the unit).</summary>
-    private const string ServicePath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin";
+    /// <summary>The system drive's line of <c>/proc/self/mountinfo</c> on the owner's machine, 2026-10-04 (WSL 2.7.10,
+    /// kernel 6.18), UNEDITED — it holds no user data (<c>uid=1000</c> is the default account's number, not a name).</summary>
+    private const string ObservedC =
+        @"487 523 0:159 / /mnt/c rw,noatime - 9p C:\134 rw,aname=drvfs;path=C:\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=6,wfd=6";
 
-    /// <summary>
-    /// <c>/proc/self/mounts</c> of a WSL 2 distro as observed 2026-10-04 (kernel 6.18, Docker Desktop running): the
-    /// driver share, a mapped network drive, three fixed drives, a folder of <c>C:</c> Docker mounts, and Docker
-    /// Desktop's second mount of <c>D:\</c> (its folder name, a hash, replaced). <c>{c}</c> is where <c>C:\</c> is mounted.
-    /// </summary>
-    private const string ObservedMountTable =
-        "drivers /usr/lib/wsl/drivers 9p ro,nosuid,nodev,noatime,aname=drivers;fmask=222;dmask=222,cache=0x5,access=client,msize=65536,trans=fd,rfd=8,wfd=8 0 0\n" +
-        "V: /mnt/v 9p rw,relatime,aname=drvfs;path=V:;uid=1000;gid=1000;metadata;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=3,wfd=3 0 0\n" +
-        "C:\\134 {c} 9p rw,noatime,aname=drvfs;path=C:\\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=6,wfd=6 0 0\n" +
-        "D:\\134 /mnt/d 9p rw,noatime,aname=drvfs;path=D:\\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=6,wfd=6 0 0\n" +
-        "F:\\134 /mnt/f 9p rw,noatime,aname=drvfs;path=F:\\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=6,wfd=6 0 0\n" +
-        "C:\\134Program\\040Files\\134Docker\\134Docker\\134resources /Docker/host 9p rw,noatime,aname=drvfs;path=C:\\Program Files\\Docker\\Docker\\resources;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=3,wfd=3 0 0\n" +
-        "D:\\134 /mnt/wsl/docker-desktop-bind-mounts/Ubuntu/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef 9p rw,noatime,aname=drvfs;path=D:\\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=6,wfd=6 0 0\n";
+    /// <summary>The other lines of that table a C: rule must NOT take: the root filesystem, WSL's driver share, a mapped
+    /// network drive, two fixed drives (one stacked twice, as Docker Desktop leaves it), and Docker Desktop's mount of a
+    /// FOLDER of <c>C:</c>.</summary>
+    private const string ObservedOthers =
+        "523 504 8:96 / / rw,relatime - ext4 /dev/sdg rw,discard,errors=remount-ro,data=ordered\n" +
+        "520 523 0:36 / /usr/lib/wsl/drivers ro,nosuid,nodev,noatime - 9p drivers ro,aname=drivers;fmask=222;dmask=222,cache=0x5,access=client,msize=65536,trans=fd,rfd=8,wfd=8\n" +
+        "479 523 0:154 / /mnt/v rw,relatime - 9p V: rw,aname=drvfs;path=V:;uid=1000;gid=1000;metadata;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=3,wfd=3\n" +
+        @"483 523 0:157 / /mnt/d rw,noatime - 9p D:\134 rw,aname=drvfs;path=D:\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=6,wfd=6" + "\n" +
+        @"488 523 0:161 / /mnt/f rw,noatime - 9p F:\134 rw,aname=drvfs;path=F:\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=6,wfd=6" + "\n" +
+        @"1560 523 0:190 / /Docker/host rw,noatime - 9p C:\134Program\040Files\134Docker\134Docker\134resources rw,aname=drvfs;path=C:\Program Files\Docker\Docker\resources;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=3,wfd=3" + "\n" +
+        @"945 483 0:157 / /mnt/d rw,noatime - 9p D:\134 rw,aname=drvfs;path=D:\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=6,wfd=6" + "\n";
 
-    private readonly TempRoot _root = new("system-drive");
+    private const string Interop = "enabled\ninterpreter /init\nflags: P\noffset 0\nmagic 4d5a\n";
 
-    public void Dispose() => _root.Dispose();
+    private static Reading<SystemDriveMount> MountOf(string mountInfo) => WindowsSystemDrive.Mount(mountInfo, "/mnt/");
 
-    /// <summary>The program's folder as the PRODUCT names it, read back rather than retyped.</summary>
-    private static string PowerShellFolder => WindowsSystemDrive.Programs[HealthCommands.PowerShell];
-
-    /// <summary>The observed table, with <c>C:\</c> mounted at <paramref name="mountPoint"/> (escaped as the kernel escapes it).</summary>
-    private static string TableWithC(string mountPoint) => ObservedMountTable.Replace("{c}", Escaped(mountPoint), StringComparison.Ordinal);
-
-    /// <summary>The kernel's escaping of a mount table field: space, tab, newline and backslash as three octal digits.</summary>
-    private static string Escaped(string field) =>
-        field.Replace("\\", "\\134", StringComparison.Ordinal).Replace(" ", "\\040", StringComparison.Ordinal).Replace("\t", "\\011", StringComparison.Ordinal).Replace("\n", "\\012", StringComparison.Ordinal);
-
-    /// <summary>A mounted system drive holding <c>powershell.exe</c> where Windows installs it; the program's full path.</summary>
-    private string PlantPowerShell(string drive, string content = "MZ\u0090\0 a Windows program, as far as the header says", bool executable = true)
-    {
-        var path = _root.File($"{drive}/{PowerShellFolder}/{HealthCommands.PowerShell}", content);
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(path, executable
-                ? UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
-                : UnixFileMode.UserRead | UnixFileMode.UserWrite);
-        }
-
-        return path;
-    }
-
-    private Func<Reading<string>> MountedAt(string drive) => () => WindowsSystemDrive.MountPoint(TableWithC(_root.Under(drive)));
-
-    private static string FoundPath(ResolvedExecutable resolved) =>
-        Path.GetFullPath(resolved.Should().BeOfType<ResolvedExecutable.Found>("the resolver answered {0}", resolved).Which.Path);
+    private static string Refusal(string mountInfo) =>
+        MountOf(mountInfo).Should().BeOfType<Reading<SystemDriveMount>.Unavailable>().Which.Reason;
 
     [Fact]
-    public void Under_a_services_minimal_path_the_windows_clock_probe_still_resolves_powershell_on_the_mounted_system_drive()
+    public void The_observed_wsl2_table_names_the_system_drive_and_its_device()
     {
-        var planted = PlantPowerShell("mnt/c");
-
-        var resolved = ExecutableResolver.Resolve(HealthCommands.PowerShell, ServicePath, windows: false, MountedAt("mnt/c"));
-
-        FoundPath(resolved).Should().Be(Path.GetFullPath(planted));
+        MountOf(ObservedOthers + ObservedC + "\n").Should().Be(Reading.Of(new SystemDriveMount("/mnt/c", 0, 159)));
     }
 
     [Fact]
-    public void A_powershell_on_path_still_wins_over_the_system_drive()
+    public void A_wsl1_drvfs_line_with_the_drive_root_or_the_bare_drive_as_its_source_is_the_drive()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "a Linux PATH (split at ':') cannot hold this machine's drive-letter temp path");
-        PlantPowerShell("mnt/c");
-        var onPath = PlantPowerShell("interop-path");
-
-        var resolved = ExecutableResolver.Resolve(HealthCommands.PowerShell, _root.Under($"interop-path/{PowerShellFolder}"), windows: false, MountedAt("mnt/c"));
-
-        FoundPath(resolved).Should().Be(Path.GetFullPath(onPath));
+        // Constructed: WSL 1 names the type drvfs and has no path= option (not observed on this machine).
+        MountOf(@"40 30 0:42 / /mnt/c rw,noatime - drvfs C:\134 rw,uid=1000").Should().Be(Reading.Of(new SystemDriveMount("/mnt/c", 0, 42)));
+        MountOf("40 30 0:42 / /mnt/c rw,noatime - drvfs C: rw,uid=1000").Should().Be(Reading.Of(new SystemDriveMount("/mnt/c", 0, 42)));
     }
 
     [Fact]
-    public void The_system_drive_is_searched_only_for_the_windows_programs_the_product_names()
+    public void A_manual_drvfs_mount_of_C_colon_is_the_drive_by_its_path_option()
     {
-        var other = _root.File($"mnt/c/{PowerShellFolder}/wc-tool", "MZ");
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(other, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        }
-
-        var asked = 0;
-        Reading<string> Drive()
-        {
-            asked++;
-            return WindowsSystemDrive.MountPoint(TableWithC(_root.Under("mnt/c")));
-        }
-
-        var resolved = ExecutableResolver.Resolve("wc-tool", ServicePath, windows: false, Drive);
-
-        resolved.Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason.Should().NotContain("system drive");
-        asked.Should().Be(0, "the mount table is read only for a program the product starts from the system drive");
+        // `mount -t drvfs C: /mnt/c` writes path=C: (no backslash) — the shape of the mapped drive V: above.
+        MountOf("500 523 0:170 / /mnt/c rw,relatime - 9p C: rw,aname=drvfs;path=C:;uid=1000;gid=1000").Should().Be(Reading.Of(new SystemDriveMount("/mnt/c", 0, 170)));
     }
 
     [Fact]
-    public void A_file_there_that_is_not_a_windows_program_is_never_started()
+    public void A_9p_line_is_judged_by_its_path_option_never_by_its_source_label()
     {
-        // Under systemd the run is root: an ELF or a script planted under that name would run NATIVELY, as root. A file
-        // with the MZ header can only run through WSL interop — on Windows, as the Windows user.
-        PlantPowerShell("mnt/c", content: "\u007fELF not a Windows program");
-
-        var resolved = ExecutableResolver.Resolve(HealthCommands.PowerShell, ServicePath, windows: false, MountedAt("mnt/c"));
-
-        var reason = resolved.Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason;
-        reason.Should().Contain("not a Windows program").And.Contain("PATH");
+        Refusal(@"501 523 0:171 / /mnt/c rw,noatime - 9p C:\134 rw,aname=drvfs;path=D:\;uid=1000").Should().Contain(@"C:\");
+        Refusal(@"502 523 0:172 / /mnt/c rw,noatime - 9p C:\134 rw,aname=other;path=C:\").Should().Contain(@"C:\");
     }
 
     [Fact]
-    public void A_symbolic_link_there_is_never_followed()
+    public void An_automount_root_holding_a_space_is_decoded_from_the_kernels_escape()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "creating a symbolic link needs a privilege on Windows; the rule is the distro's");
-        var elsewhere = PlantPowerShell("elsewhere");
-        var link = _root.Under($"mnt/c/{PowerShellFolder}/{HealthCommands.PowerShell}");
-        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
-        File.CreateSymbolicLink(link, elsewhere);
-
-        var resolved = ExecutableResolver.Resolve(HealthCommands.PowerShell, ServicePath, windows: false, MountedAt("mnt/c"));
-
-        resolved.Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason.Should().Contain("symbolic link");
+        MountOf(ObservedC.Replace(" /mnt/c ", @" /my\040drives/c ", StringComparison.Ordinal))
+            .Should().Be(Reading.Of(new SystemDriveMount("/my drives/c", 0, 159)));
     }
 
     [Fact]
-    public void On_linux_a_copy_without_an_execute_bit_is_not_started()
+    public void Two_lines_for_one_mount_point_agree_and_the_one_on_top_gives_the_device()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "the execute bit is a Linux rule");
-        PlantPowerShell("mnt/c", executable: false);
+        var stacked = ObservedC.Replace("487 523 0:159", "900 487 0:200", StringComparison.Ordinal);
 
-        var resolved = ExecutableResolver.Resolve(HealthCommands.PowerShell, ServicePath, windows: false, MountedAt("mnt/c"));
-
-        resolved.Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason.Should().Contain("execute bit");
+        MountOf(ObservedC + "\n" + stacked).Should().Be(Reading.Of(new SystemDriveMount("/mnt/c", 0, 200)));
     }
 
     [Fact]
-    public void When_the_system_drive_is_mounted_but_holds_no_powershell_the_reason_names_the_path_it_checked()
+    public void Two_different_mount_points_of_the_drive_are_refused_naming_both()
     {
-        _root.Dir("mnt/c");
+        var second = ObservedC.Replace("487 523 0:159 / /mnt/c ", "901 523 0:202 / /mnt/wsl/docker-desktop-bind-mounts/Ubuntu/0123abcd ", StringComparison.Ordinal);
 
-        var resolved = ExecutableResolver.Resolve(HealthCommands.PowerShell, ServicePath, windows: false, MountedAt("mnt/c"));
-
-        var reason = resolved.Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason;
-        reason.Should().Contain("PATH").And.Contain(HealthCommands.PowerShell).And.Contain("does not exist");
+        Refusal(ObservedC + "\n" + second).Should().Contain("/mnt/c").And.Contain("/mnt/wsl/docker-desktop-bind-mounts/Ubuntu/0123abcd").And.Contain("not guessed");
     }
 
     [Fact]
-    public void When_no_system_drive_is_mounted_the_reason_says_PATH_was_searched_and_the_drive_was_not_found()
+    public void A_bind_of_a_folder_of_the_drive_is_not_the_drive()
     {
-        var resolved = ExecutableResolver.Resolve(
-            HealthCommands.PowerShell, ServicePath, windows: false, () => WindowsSystemDrive.MountPoint("drivers /usr/lib/wsl/drivers 9p ro,aname=drivers 0 0\n"));
+        var folder = ObservedC.Replace("487 523 0:159 / /mnt/c ", "902 523 0:159 /Windows /srv/win ", StringComparison.Ordinal);
 
-        var reason = resolved.Should().BeOfType<ResolvedExecutable.NotFound>().Which.Reason;
-        reason.Should().Contain("PATH").And.Contain(@"C:\");
+        MountOf(folder + "\n" + ObservedC).Should().Be(Reading.Of(new SystemDriveMount("/mnt/c", 0, 159)));
+        Refusal(folder).Should().Contain("nothing is mounted at /mnt/c");
     }
 
     [Fact]
-    public void On_windows_the_system_drive_is_never_consulted()
+    public void No_mount_of_the_drive_is_refused_naming_what_was_looked_for()
     {
-        PlantPowerShell("mnt/c");
-        var asked = 0;
-
-        var resolved = ExecutableResolver.Resolve(HealthCommands.PowerShell, _root.Under("empty"), windows: true, () =>
-        {
-            asked++;
-            return Reading.Of(_root.Under("mnt/c"));
-        });
-
-        resolved.Should().BeOfType<ResolvedExecutable.NotFound>();
-        asked.Should().Be(0, "on Windows powershell.exe is System32's, on PATH; the fallback is the distro's");
+        Refusal(ObservedOthers).Should().Contain(WindowsSystemDrive.MountInfo).And.Contain(@"C:\").And.Contain("nothing is mounted at /mnt/c");
+        Refusal(string.Empty).Should().Contain(@"C:\");
+        Refusal("not a mountinfo line at all\n1 2 3\n").Should().Contain(@"C:\");
     }
 
     [Fact]
-    public void The_mount_table_of_a_wsl_distro_names_where_the_system_drive_is_mounted()
+    public void WSLs_virtiofs_mode_is_not_identified_and_the_refusal_names_the_type_found_at_the_drive_folder()
     {
-        WindowsSystemDrive.MountPoint(TableWithC("/mnt/c")).Should().Be(Reading.Of("/mnt/c"));
-    }
+        // Constructed from WSL's drvfs mount code (the share mounted by TAG, a child of it bound onto the drive's folder) —
+        // not observed on this machine, which mounts drives over 9p.
+        const string Virtiofs =
+            "600 523 0:210 / /mnt/wsl/drvfs-shares rw,relatime - virtiofs drvfsTag rw\n" +
+            "601 523 0:210 /C /mnt/c rw,relatime - virtiofs drvfsTag rw\n";
 
-    [Fact]
-    public void A_custom_automount_root_from_wsl_conf_is_read_from_where_wsl_mounted_the_drive()
-    {
-        // [automount] root=/windir/ in /etc/wsl.conf is applied by WSL when it mounts; the mount table is that answer.
-        WindowsSystemDrive.MountPoint(TableWithC("/windir/c")).Should().Be(Reading.Of("/windir/c"));
-        WindowsSystemDrive.MountPoint(TableWithC("/my drives/c")).Should().Be(Reading.Of("/my drives/c"), "the kernel escapes a space as \\040");
-    }
-
-    [Fact]
-    public void A_folder_of_c_a_network_drive_and_a_non_drvfs_share_are_not_the_system_drive()
-    {
-        var withoutC = string.Join('\n', ObservedMountTable.Split('\n').Where(l => !l.Contains("{c}", StringComparison.Ordinal)));
-        const string NotDrvfs = "C:\\134 /mnt/c 9p rw,noatime,aname=other;path=C:\\ 0 0\n";
-
-        WindowsSystemDrive.MountPoint(withoutC).Should().BeOfType<Reading<string>.Unavailable>().Which.Reason.Should().Contain(@"C:\");
-        WindowsSystemDrive.MountPoint(NotDrvfs).Should().BeOfType<Reading<string>.Unavailable>();
-        WindowsSystemDrive.MountPoint(string.Empty).Should().BeOfType<Reading<string>.Unavailable>();
+        Refusal(Virtiofs).Should().Contain("/mnt/c is a virtiofs mount of drvfsTag (root /C)");
     }
 
     [Fact]
     public void A_relative_mount_point_is_never_used()
     {
-        WindowsSystemDrive.MountPoint("C:\\134 mnt/c 9p rw,aname=drvfs;path=C:\\ 0 0\n").Should().BeOfType<Reading<string>.Unavailable>();
+        Refusal(ObservedC.Replace(" /mnt/c ", " mnt/c ", StringComparison.Ordinal)).Should().Contain(@"C:\");
     }
 
     [Fact]
-    public void A_drvfs_filesystem_type_is_a_drive_too()
+    public void Interop_registered_and_enabled_under_either_name_lets_a_windows_program_run()
     {
-        // `mount -t drvfs` names its type drvfs where the kernel does not translate it to 9p (WSL 1) — not observed here.
-        WindowsSystemDrive.MountPoint("C:\\134 /mnt/c drvfs rw,noatime,uid=1000 0 0\n").Should().Be(Reading.Of("/mnt/c"));
+        WindowsSystemDrive.InteropRefusal(e => e.EndsWith("/WSLInterop", StringComparison.Ordinal) ? Reading.Of(Interop) : Reading.Missing<string>($"{e} does not exist"))
+            .Should().BeEmpty();
+        WindowsSystemDrive.InteropRefusal(e => e.EndsWith("-late", StringComparison.Ordinal) ? Reading.Of(Interop) : Reading.Missing<string>($"{e} does not exist"))
+            .Should().BeEmpty();
     }
 
     [Fact]
-    public void The_planted_header_fixture_is_what_the_product_reads_as_a_windows_program()
+    public void Interop_disabled_or_not_registered_is_a_refusal_naming_interop()
     {
-        // The positive control for the refusals above: the fixture every "found" test plants carries the two bytes the
-        // check reads, so a refusal test fails for ITS reason, not because every fixture is refused.
-        var planted = PlantPowerShell("mnt/c");
-
-        File.ReadAllBytes(planted).Take(2).Should().Equal(Encoding.ASCII.GetBytes("MZ"));
-        ExecutableResolver.Resolve(HealthCommands.PowerShell, ServicePath, windows: false, MountedAt("mnt/c")).Should().BeOfType<ResolvedExecutable.Found>();
+        WindowsSystemDrive.InteropRefusal(e => e.EndsWith("/WSLInterop", StringComparison.Ordinal) ? Reading.Of(Interop.Replace("enabled", "disabled", StringComparison.Ordinal)) : Reading.Missing<string>($"{e} does not exist"))
+            .Should().Contain("not enabled").And.Contain("disabled");
+        WindowsSystemDrive.InteropRefusal(e => Reading.Missing<string>($"{e} does not exist"))
+            .Should().Contain("not registered").And.Contain("WSLInterop-late");
     }
 }

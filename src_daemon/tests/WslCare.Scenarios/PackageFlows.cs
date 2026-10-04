@@ -184,7 +184,7 @@ public sealed class PackagePathFlows
     public async Task The_windows_archive_holds_the_exe_alone_under_its_folder()
     {
         Assert.SkipWhen(ReleaseScripts.Bash.Length == 0, ReleaseScripts.NoBash);
-        Assert.SkipWhen(ExecutableResolver.Resolve("7z") is not ResolvedExecutable.Found, "7-Zip (7z) is not on PATH here; the GitHub Ubuntu and Windows images carry it, so every CI leg runs this");
+        Assert.SkipWhen(ExecutableResolver.Resolve("7z", TestContext.Current.CancellationToken) is not ResolvedExecutable.Found, "7-Zip (7z) is not on PATH here; the GitHub Ubuntu and Windows images carry it, so every CI leg runs this");
         using var root = new TempRoot("package-win");
         var exe = Encoding.UTF8.GetBytes("MZ stand-in for wsl-care.exe");
 
