@@ -4,13 +4,15 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { VERB_NAMES } from '../client/verbs';
+import { ROOT_OPS } from '../root/rootCall';
 import { EXTENSION_ROOT, REPOSITORY_ROOT } from './support/paths';
 
 /**
  * The extension's flow catalogue is DERIVED (`common.scenario-tests` rule 4, plan §15g m6): every client verb, every
  * contributed command and every contributed view must have a row in research/module_tests.md's extension section —
  * a flow added without a row is a red build, not a stale document. Since E5.S2 / E5.S3 the manifest contributes four
- * commands and one view, each with its row; the planted companion shows the check bites for the next one added.
+ * commands and one view, each with its row; since E6.S2 every op of the closed root union (`ROOT_OPS`) has its row too.
+ * The planted companion shows the check bites for the next one added.
  */
 
 const MODULE_TESTS = path.join(REPOSITORY_ROOT, 'research', 'module_tests.md');
@@ -27,6 +29,7 @@ interface Contributes {
 function flowIds(contributes: Contributes): string[] {
   return [
     ...VERB_NAMES.map((verb) => `client ${verb}`),
+    ...ROOT_OPS.map((op) => `root ${op}`),
     ...(contributes.commands ?? []).map((c) => `command ${c.command}`),
     ...Object.values(contributes.views ?? {}).flat().map((v) => `view ${v.id}`),
   ];
@@ -58,6 +61,7 @@ test('every client verb, contributed command and view has a row in the extension
 test('the derivation sees the verbs (its known instances) and a planted command or view without a row is reported', () => {
   const cells = firstCells(fs.readFileSync(MODULE_TESTS, 'utf8'));
   assert.ok(flowIds({}).includes('client status'));
+  assert.ok(flowIds({}).includes('root fullCheck'), 'the root ops are derived too');
   const planted: Contributes = { commands: [{ command: 'wslCare.plantedRefresh' }], views: { explorer: [{ id: 'wslCare.plantedPanel' }] } };
   assert.deepEqual(missing(flowIds(planted), cells), ['command wslCare.plantedRefresh', 'view wslCare.plantedPanel']);
 });
