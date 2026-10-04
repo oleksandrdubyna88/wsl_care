@@ -39,6 +39,9 @@ internal static class ReadContractScenes
     /// <summary>A4's synthetic morning: 387 anonymous volumes, as on 2026-10-02.</summary>
     public const int A4Volumes = 387;
 
+    /// <summary>One past the shown-list cap (<c>ShownList.MaxNames</c> = 10 000): the capped golden (E6.S2, plan §15k #11).</summary>
+    public const int CappedVolumes = 10_001;
+
     /// <summary>Stages <paramref name="state"/> in the sandbox: a <c>running.json</c> or a request file, as a run would leave it.</summary>
     public static void Stage(ScenarioHome home, string state)
     {
@@ -95,11 +98,12 @@ internal static class ReadContractScenes
         return home;
     }
 
-    /// <summary>A sandbox with root claimed, every age limit at 0 and <see cref="A4Volumes"/> synthetic anonymous volumes.</summary>
-    public static (ScenarioHome Home, IReadOnlyList<string> Names) A4Morning(string purpose)
+    /// <summary>A sandbox with root claimed, every age limit at 0 and <paramref name="volumes"/> (by default
+    /// <see cref="A4Volumes"/>) synthetic anonymous volumes.</summary>
+    public static (ScenarioHome Home, IReadOnlyList<string> Names) A4Morning(string purpose, int volumes = A4Volumes)
     {
         var home = new ScenarioHome(purpose) { ClaimsRoot = true };
-        var names = SyntheticDocker.AnonymousVolumes(home, A4Volumes);
+        var names = SyntheticDocker.AnonymousVolumes(home, volumes);
         Write(home.Paths.UserConfigFile, System.Text.Encoding.UTF8.GetBytes(PreviewFlows.AllAges));
         return (home, names);
     }

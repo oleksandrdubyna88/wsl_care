@@ -212,9 +212,10 @@ internal static partial class GoldenContracts
     }
 
     /// <summary>
-    /// E6.S0's read contract (plan §15j): <c>status --json</c> in every running state a scenario stages against the real
+    /// <c>status --json</c> in every running state a scenario stages against the real
     /// process table (each over an otherwise EMPTY sandbox — the running block is what differs; the main <c>status.json</c>
-    /// is the <c>none</c> state over the captured tree), <c>act A4 --preview --json</c> over the 387 synthetic volumes,
+    /// is the <c>none</c> state over the captured tree), <c>act A4 --preview --json</c> over the 387 synthetic volumes and
+    /// (E6.S2) over 10 001 — past the shown-list cap,
     /// <c>runs show</c> of a confirmed act (done), of the dead run it swept (interrupted) and of a stranger (unknown), and
     /// <c>runs</c> / <c>logs</c> over a local day that crosses UTC midnight.
     /// </summary>
@@ -232,6 +233,14 @@ internal static partial class GoldenContracts
         using (morning)
         {
             files.Add(Answered("act-a4-preview.json", morning, await morning.RunAsync("act", "A4", "--preview", "--json"), matched));
+        }
+
+        // E6.S2 (plan §15k #11): A4's preview PAST the shown-list cap — count stays the total (10 001), shown holds the first
+        // 10 000 names and shownTruncated says so; the extension's host reads it from this file (cleanupController.test.ts).
+        var (capped, _) = ReadContractScenes.A4Morning("golden-a4-capped", ReadContractScenes.CappedVolumes);
+        using (capped)
+        {
+            files.Add(Answered("act-a4-preview-capped.json", capped, await capped.RunAsync("act", "A4", "--preview", "--json"), matched));
         }
 
         // E6.S1: the answer a detach hands the panel — the run id it follows and the unit systemd runs it in.

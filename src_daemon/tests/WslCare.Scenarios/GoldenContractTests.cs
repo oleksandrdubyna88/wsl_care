@@ -119,4 +119,24 @@ public sealed class GoldenContractTests
         GoldenContracts.FirstDifference("a\n", "a\n").Should().Be("no difference");
         GoldenContracts.FirstDifference("a", "a\nb").Should().Be("line 2: checked in '<end>', the CLI answers 'b'");
     }
+
+    /// <summary>E6.S2 (plan §15k #11): the checked-in A4 previews hold the shown-list rule — <c>shown.length == min(count,
+    /// 10 000)</c>, and <c>shownTruncated: true</c> exactly when the cap cut the list (absent otherwise). Read from the files
+    /// the extension's host reads, on every OS.</summary>
+    [Theory]
+    [InlineData("act-a4-preview.json", 387, false)]
+    [InlineData("act-a4-preview-capped.json", 10_001, true)]
+    public void The_A4_previews_hold_the_shown_list_rule_below_and_past_the_cap(string file, int count, bool truncated)
+    {
+        using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(GoldenContracts.HeadDirectory, file)));
+        var a4 = json.RootElement.GetProperty("actions").EnumerateArray().Single(a => a.GetProperty("id").GetString() == "A4");
+
+        a4.GetProperty("preview").GetProperty("count").GetInt32().Should().Be(count);
+        a4.GetProperty("shown").GetArrayLength().Should().Be(Math.Min(count, Core.Actions.ShownList.MaxNames));
+        a4.TryGetProperty("shownTruncated", out var flag).Should().Be(truncated, "the flag is present only when the cap cut the list");
+        if (truncated)
+        {
+            flag.GetBoolean().Should().BeTrue();
+        }
+    }
 }
