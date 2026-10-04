@@ -58,6 +58,11 @@ public sealed record ActionContext(
 /// <summary>A list of names a caller showed and confirmed — or none given: a closed choice, never a null.</summary>
 public sealed record ShownList(bool Given, IReadOnlySet<string> Names)
 {
+    /// <summary>The most names one shown list carries — in a preview's <c>shown</c> (§15j B1) and back through <c>--volume</c> /
+    /// <c>--only</c>: far above the 387 volumes of 2026-10-02, low enough that a mistaken file cannot make a run of millions
+    /// (≈ 650 KB of names).</summary>
+    public const int MaxNames = 10_000;
+
     public static readonly ShownList None = new(false, new HashSet<string>(StringComparer.Ordinal));
 
     public static ShownList Of(IEnumerable<string> names) => new(true, new HashSet<string>(names, StringComparer.Ordinal));
@@ -188,4 +193,16 @@ public interface ICleanupAction
     TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config);
 
     Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken);
+}
+
+/// <summary>
+/// An action whose button run is BOUND to the list its preview showed (plan §15 #4, §15f #11: A4 alone — A5 / A6 / A7
+/// re-select live). Its <c>act --preview</c> answer carries <see cref="Shown"/> — every name the preview selected — so the
+/// panel can send exactly those back (§15j B1), never the first 20 the items hold.
+/// </summary>
+public interface IBoundToShownList
+{
+    /// <summary>Every name <paramref name="preview"/> selected, in its order, at most <see cref="ShownList.MaxNames"/> — the
+    /// names a run of this action accepts as its shown list.</summary>
+    IReadOnlyList<string> Shown(ActionPreview preview);
 }

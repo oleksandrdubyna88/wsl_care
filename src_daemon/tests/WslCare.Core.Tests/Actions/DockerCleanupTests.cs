@@ -130,6 +130,37 @@ public sealed class DockerCleanupTests : IDisposable
         RunHistory.Read(_sandbox.Paths, _sandbox.Files).Records.Should().OnlyContain(r => r.Trigger == RunTrigger.Manual);
     }
 
+    /// <summary>§15j B1: the preview's items stop at 20, so a button that sent back the ITEMS would pass 20 of 387. A4's
+    /// preview outcome carries <c>shown</c> — every name it selected, the keys its run matches — and no other action's does.</summary>
+    [Fact]
+    public async Task A4s_preview_outcome_carries_every_selected_name_as_shown_and_no_other_actions_outcome_carries_one()
+    {
+        var engine = Engine(new DockerWorld());
+
+        var result = await engine.PreviewAsync(new ActRequest([ActionId.Find("A4")!, ActionId.Find("A5")!, ActionId.Find("A10")!], RunTrigger.Cli, Execute: false), CancellationToken.None);
+
+        var outcomes = result.Should().BeOfType<ActResult.Previewed>().Subject.Actions;
+        var a4 = outcomes.Single(o => o.Id == "A4");
+        a4.Shown.Should().BeEquivalentTo(DockerWorld.DanglingAnonymous, "every anonymous volume the preview selected, by the name its run matches");
+        a4.Shown!.Count.Should().Be(a4.Preview!.Count);
+        outcomes.Where(o => o.Id != "A4").Should().OnlyContain(o => o.Shown == null, "only A4 is bound to its shown list (plan §15f #11)");
+    }
+
+    /// <summary>The cap: a preview selecting more than <see cref="ShownList.MaxNames"/> names lists the first that many — the
+    /// most a shown list can carry back.</summary>
+    [Fact]
+    public void A4s_shown_list_is_every_target_key_in_order_capped_at_the_most_a_shown_list_carries()
+    {
+        var targets = Enumerable.Range(0, ShownList.MaxNames + 5).Select(i => new ActionItem("volume", $"v{i}", 1) { Key = i.ToString("x64", System.Globalization.CultureInfo.InvariantCulture) }).ToList();
+        var preview = ActionPreview.Of("what", targets.Count, targets.Count, "basis", new Dictionary<string, long>(), string.Empty, targets);
+
+        var shown = new VolumeRemoval().Shown(preview);
+
+        shown.Should().HaveCount(ShownList.MaxNames);
+        shown[0].Should().Be(targets[0].Key);
+        shown[^1].Should().Be(targets[ShownList.MaxNames - 1].Key);
+    }
+
     [Fact]
     public async Task A4_keeps_a_volume_docker_refuses_as_in_use_and_fails_only_on_an_answer_it_cannot_read()
     {

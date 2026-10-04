@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "period": {
+    "label": "instants",
+    "from": "2026-10-01",
+    "to": "2026-10-02",
+    "fromInstant": "2026-10-01T21:00:00+00:00",
+    "toInstant": "2026-10-02T21:00:00+00:00"
+  },
+  "freedBytes": 308003000,
+  "objectsRemoved": 5,
+  "perAction": [
+    {
+      "id": "A4",
+      "runs": 1,
+      "count": 2,
+      "freedBytes": 308000000,
+      "dryRuns": 0,
+      "wouldFreeBytes": 0,
+      "failed": 0
+    },
+    {
+      "id": "A10",
+      "runs": 1,
+      "count": 3,
+      "freedBytes": 3000,
+      "dryRuns": 1,
+      "wouldFreeBytes": 2000,
+      "failed": 0
+    }
+  ],
+  "runs": {
+    "total": 3,
+    "withCleanup": 2,
+    "withoutCleanup": 1,
+    "dryRun": 1,
+    "wouldFreeBytes": 2000,
+    "timer": 2,
+    "manual": 1,
+    "cli": 0,
+    "failed": 0,
+    "interrupted": 0
+  },
+  "mostFreed": {
+    "runId": "20000101T000000Z-1",
+    "startedAt": "2026-10-01T23:59:59+00:00",
+    "freedBytes": 308000000
+  },
+  "leastFreed": {
+    "runId": "20000101T000000Z-1",
+    "startedAt": "2026-10-02T00:00:00+00:00",
+    "freedBytes": 3000
+  },
+  "metrics": [
+    {
+      "name": "memAvailablePercent",
+      "unit": "%",
+      "samples": 2,
+      "max": {
+        "value": 41,
+        "at": "2026-10-02T00:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      },
+      "min": {
+        "value": 28.5,
+        "at": "2026-10-01T21:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      }
+    },
+    {
+      "name": "memAvailableBytes",
+      "unit": "bytes",
+      "samples": 2,
+      "max": {
+        "value": 19300000000,
+        "at": "2026-10-02T00:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      },
+      "min": {
+        "value": 13400000000,
+        "at": "2026-10-01T21:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      }
+    },
+    {
+      "name": "pageCacheBytes",
+      "unit": "bytes",
+      "samples": 2,
+      "max": {
+        "value": 9500000000,
+        "at": "2026-10-01T21:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      },
+      "min": {
+        "value": 7000000000,
+        "at": "2026-10-02T00:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      }
+    },
+    {
+      "name": "swapUsedBytes",
+      "unit": "bytes",
+      "samples": 2,
+      "max": {
+        "value": 600000000,
+        "at": "2026-10-01T21:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      },
+      "min": {
+        "value": 400000000,
+        "at": "2026-10-02T00:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      }
+    },
+    {
+      "name": "rootUsedPercent",
+      "unit": "%",
+      "samples": 2,
+      "max": {
+        "value": 12.2,
+        "at": "2026-10-02T00:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      },
+      "min": {
+        "value": 12.1,
+        "at": "2026-10-01T21:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      }
+    },
+    {
+      "name": "dockerReclaimableBytes",
+      "unit": "bytes",
+      "samples": 2,
+      "max": {
+        "value": 21000000000,
+        "at": "2026-10-01T21:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      },
+      "min": {
+        "value": 19000000000,
+        "at": "2026-10-02T00:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      }
+    },
+    {
+      "name": "containerStarts24h",
+      "unit": "starts",
+      "samples": 2,
+      "max": {
+        "value": 1000,
+        "at": "2026-10-02T00:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      },
+      "min": {
+        "value": 950,
+        "at": "2026-10-01T21:00:00+00:00",
+        "runId": "20000101T000000Z-1"
+      }
+    }
+  ],
+  "cleanups": [
+    {
+      "runId": "20000101T000000Z-1",
+      "startedAt": "2026-10-01T23:59:59+00:00",
+      "trigger": "manual",
+      "action": "A4",
+      "status": "ran",
+      "count": 2,
+      "freedBytes": 308000000,
+      "freedBasis": "the docker system df -v sizes of exactly the volumes docker volume rm confirmed",
+      "detailState": "present",
+      "removed": [
+        {
+          "kind": "volume",
+          "name": "60f2c0fbf6c2f213e212e98de647bee3e0e8a674faf4b4faa52dabf203436400",
+          "bytes": 154000000,
+          "note": ""
+        },
+        {
+          "kind": "volume",
+          "name": "3d4d73f2b142c2066c06713369084bf60c644661d3f5057bbe01c5794e972ce0",
+          "bytes": 154000000,
+          "note": ""
+        }
+      ],
+      "notRemoved": [],
+      "notes": []
+    },
+    {
+      "runId": "20000101T000000Z-1",
+      "startedAt": "2026-10-02T00:00:00+00:00",
+      "trigger": "timer",
+      "action": "A10",
+      "status": "ran",
+      "count": 3,
+      "freedBytes": 3000,
+      "detailState": "none",
+      "removed": [],
+      "notRemoved": [],
+      "notes": []
+    }
+  ],
+  "unparseableLines": 0,
+  "detailsRead": 2,
+  "detailsNotRead": 0
+}

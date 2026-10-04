@@ -166,9 +166,20 @@ age (`basis.source: "fullRun"`), or are `unknown` with the reason when no full r
 reaches them at the next full run. The text form prints one line: `verdicts: 1 critical (memory.fragmentation), 2 warn
 (…), 12 ok, 8 unknown`. And `productVersion` names the build exactly as `--version` prints it.
 
-**Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts` and
-`productVersion`) never bumps it, so a reader ignores keys it does not know and treats an absent newer field as "update
-the daemon to see this".
+**What runs, what this build can do, the last cleanup.** `status --json` also answers `actions` (the action ids this
+binary holds for its own side, in the order a run takes them), `capabilities` (what this build can do beyond the first
+release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange` — what a client acts on, never the
+version number), `running` — `none`, `queued` (a run accepted and not started yet), `live` (acting: the run, its actions,
+the one it is on, its pid and how old its heartbeat is), `wedged` (alive, heartbeat older than 30 s — nothing is killed),
+`dead` (its process is gone and no run has swept it yet — status only REPORTS it; the next root run records it
+`interrupted`), `unknown` (the pid cannot be inspected) or `unreadable` — and `lastCleanup` (the newest run that removed
+or freed something: run id, start, trigger, objects removed, bytes freed; `available: false` with the reason before the
+first). `status` stays read-only and needs no root for any of it. The text form adds a `running:` and a `last cleanup:` line.
+
+**Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts`,
+`productVersion`, `actions`, `capabilities`, `running` and `lastCleanup`) never bumps it, so a reader ignores keys it does
+not know, treats an absent newer field as "update the daemon to see this", and reads an enum value it does not know as
+unknown, never as a crash.
 
 ## Preview
 
@@ -268,6 +279,12 @@ sudo wsl-care act A4 --confirm --manual --only shown.txt --json   # the panel's 
 wsl-care act A10 --preview                     # as yourself: refused whole ("needs root", exit 77) - nothing read, nothing written
 ```
 
+Every answer names `productVersion`. A4's preview answer carries `shown` — EVERY volume name it selected (the 20
+`items` are for reading; `shown` is what a button sends back, at most 10 000). `--manual` (the panel) and `--timer` (the
+systemd timer) are exclusive: both together are refused. A confirm cut off by a signal — Ctrl+C, SIGTERM, or SIGHUP when
+the terminal or the `wsl.exe` that started it goes away — kills its child, records itself `interrupted` naming the signal,
+and exits 130.
+
 Every `act` runs as **root** (the timer is root; the panel's button reaches root through an argv allowlist). Started by
 anyone else it refuses the whole run before the lock or any state is touched. A destructive run from the CLI needs
 `--confirm` — the button passes it after you confirmed the preview, together with `--manual` (the run is recorded with
@@ -326,6 +343,8 @@ wsl-care logs --json                              # today (UTC): freed per actio
 wsl-care logs --period yesterday
 wsl-care logs --period 2026-10-01 --action A4     # one UTC day, one action, every volume it removed
 wsl-care runs --period 2026-09-28..2026-10-02 --json   # every run of a range: trigger, outcome, dry run, actions, freed
+wsl-care logs --from 2026-10-02T00:00:00+03:00 --to 2026-10-03T00:00:00+03:00 --json   # a LOCAL day, as two instants
+wsl-care runs show 20261002T040000Z-1234 --json     # one run: its state, every object removed and not, commands and exits
 ```
 
 Read-only: anyone may ask (no lock, nothing written). A run belongs to the UTC day it started. `logs` answers the Logs
@@ -334,8 +353,17 @@ dry runs apart with what they would have freed, the runs by trigger (timer, butt
 most and the least, each recorded figure's maximum and minimum with its time (`MemAvailable`, page cache, swap, `/`,
 Docker reclaimable, container starts) and, per cleanup, every object it removed — and those it did not, with why — from
 the run's detail file. Memory actions (A1, A2, A3, A11) free no disk and count no bytes. Periods: `today` (the
-default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (at most 366 days). Exit codes: 0 answered (an empty period
-too) · 2 a period that is none of these · 4 the history exists but cannot be read.
+default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (UTC days, at most 366) — or `--from <instant> --to
+<instant>`, two RFC 3339 instants with their offset spelt out (`Z` or `+03:00`; a bare date or a time without an offset is
+refused, never read in this machine's zone), half-open (from inclusive, to exclusive), at most 366 days: how a client asks
+for a LOCAL day, which crosses UTC midnight. `runs` lines carry the `metrics` their history line recorded (a full run's
+`MemAvailable`, page cache, swap, `/`, Docker reclaimable, container starts; none for an `act`).
+
+`runs show <runId>` answers one run: `done` (with its history line and its detail — every action, every object it removed
+and did not remove, every command it ran and its exit), `refused`, `interrupted` (also a run whose process died before
+anything recorded it), `running` (its `running` block), `queued`, or `unknown` (nothing names it — never existed here, or
+older than the 90-day retention). Read-only like `logs`. Exit codes: 0 answered (an empty period, an unknown run too) ·
+2 a period or a run id that is none of these · 4 the history exists but cannot be read.
 
 ## Extension (preview)
 

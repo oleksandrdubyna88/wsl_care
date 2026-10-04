@@ -39,7 +39,7 @@ internal static class Program
         }
 
         using var shutdown = new ShutdownSignals();
-        var host = CliHost.ForThisMachine();
+        var host = CliHost.ForThisMachine() with { InterruptCause = () => shutdown.Cause };
         var loaded = host.LoadConfig();
         using var logger = WslCareLogging.Start(host, loaded.Config, AppName, Console.Error);
         try
@@ -91,6 +91,7 @@ internal static class Program
             Request.Act act => ActCommand.Run(act, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Logs logs => LogsCommand.Logs(logs, host, stdout, stderr),
             Request.Runs runs => LogsCommand.Runs(runs, host, stdout, stderr),
+            Request.RunsShow show => LogsCommand.Show(show, host, stdout, stderr),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
     }

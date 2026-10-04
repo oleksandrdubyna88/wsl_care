@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "runId": "20000101T000000Z-1",
+  "state": "interrupted",
+  "reason": "swept: pid 4242 is gone; it was on A4, last heartbeat 2026-10-01 10:01:00Z",
+  "run": {
+    "runId": "20000101T000000Z-1",
+    "trigger": "manual",
+    "startedAt": "2000-01-01T00:00:00+00:00",
+    "endedAt": "2000-01-01T00:00:00+00:00",
+    "outcome": "interrupted",
+    "detailState": "none",
+    "freedBytes": 0,
+    "cleanup": false,
+    "actions": [
+      {
+        "id": "A5",
+        "status": "interrupted",
+        "count": 0,
+        "freedBytes": 0
+      },
+      {
+        "id": "A4",
+        "status": "interrupted",
+        "count": 0,
+        "freedBytes": 0
+      }
+    ],
+    "reason": "swept: pid 4242 is gone; it was on A4, last heartbeat 2026-10-01 10:01:00Z"
+  },
+  "detailState": "none"
+}

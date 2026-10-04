@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "description": "Every exit code wsl-care returns. Generated from the ExitCode enum by ContractFilesTests.",
+  "codes": [
+    {
+      "name": "ok",
+      "code": 0
+    },
+    {
+      "name": "runFailed",
+      "code": 1
+    },
+    {
+      "name": "usage",
+      "code": 2
+    },
+    {
+      "name": "actionFailed",
+      "code": 3
+    },
+    {
+      "name": "recordsUnreadable",
+      "code": 4
+    },
+    {
+      "name": "internal",
+      "code": 70
+    },
+    {
+      "name": "busy",
+      "code": 75
+    },
+    {
+      "name": "wedged",
+      "code": 76
+    },
+    {
+      "name": "needsRoot",
+      "code": 77
+    },
+    {
+      "name": "observeOnly",
+      "code": 78
+    },
+    {
+      "name": "stateUnreadable",
+      "code": 79
+    },
+    {
+      "name": "interrupted",
+      "code": 130
+    }
+  ]
+}

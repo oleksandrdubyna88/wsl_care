@@ -36,6 +36,10 @@ public sealed record EngineContext(
 
     /// <summary>How an unreadable <c>running.json</c> is read again before any verdict (gate finding #7).</summary>
     public RunningReadRetry RunningRetry { get; init; } = RunningReadRetry.Default;
+
+    /// <summary>What cancelled the run, in words, asked only once it was cancelled — the CLI names the signal (SIGHUP when
+    /// the terminal or the <c>wsl.exe</c> that started it went away, §15j B2), so the <c>interrupted</c> record says which.</summary>
+    public Func<string> InterruptCause { get; init; } = static () => "a signal";
 }
 
 /// <summary>
@@ -211,7 +215,7 @@ public sealed class ActionEngine(EngineContext c)
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                notes.Add("interrupted by a signal before every action had run");
+                notes.Add($"interrupted by {c.InterruptCause()} before every action had run");
                 return RunOutcome.Interrupted;
             }
         }
@@ -346,8 +350,16 @@ public sealed class ActionEngine(EngineContext c)
 
         var preview = await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false);
         var refusal = action.Scope == CommandScope.User ? target.Refusal : string.Empty;
-        return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null);
+        return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null) with
+        {
+            Shown = ShownOf(action, preview),
+        };
     }
+
+    /// <summary>§15j B1: for an action bound to its shown list (A4), every name its available preview selected — what the
+    /// panel sends back; absent (null) for every other action and for a preview that could not be read.</summary>
+    private static IReadOnlyList<string>? ShownOf(ICleanupAction action, ActionPreview preview) =>
+        action is IBoundToShownList bound && preview.Available ? bound.Shown(preview) : null;
 
     /// <summary>The <c>running.json</c> a previous run left (<see cref="RunningSweep"/>, shared with every full run's
     /// housekeeping): swept when its process is dead, a refusal when it is not; this run's own file (a full run's, met by its

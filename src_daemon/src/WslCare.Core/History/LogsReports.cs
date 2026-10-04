@@ -5,10 +5,17 @@ namespace WslCare.Core.History;
 // The wire shapes of `logs --json` and `runs --json` (plan §6, §7.4). Every instant is UTC; a figure that was not
 // recorded is absent (null), never 0 (plan §15b #7).
 
-/// <summary>The period an answer covers, as UTC dates.</summary>
+/// <summary>The period an answer covers, as UTC dates — and, for an instant range (<c>--from</c> / <c>--to</c>, §15j M7), the
+/// two instants themselves, in UTC: a run belongs to it when it STARTED at or after <see cref="FromInstant"/> and before
+/// <see cref="ToInstant"/>; <see cref="From"/> / <see cref="To"/> are then the UTC days those instants touch.</summary>
 public sealed record PeriodReport(string Label, string From, string To)
 {
-    public static PeriodReport Of(LogPeriod period) => new(period.Label, period.FromText, period.ToText);
+    public DateTimeOffset? FromInstant { get; init; }
+
+    public DateTimeOffset? ToInstant { get; init; }
+
+    public static PeriodReport Of(LogPeriod period) =>
+        new(period.Label, period.FromText, period.ToText) { FromInstant = period.Instants?.From, ToInstant = period.Instants?.To };
 }
 
 /// <summary>One action's line of a run, as the history keeps it.</summary>
@@ -32,7 +39,13 @@ public sealed record RunLine(
     long? WouldFreeBytes,
     bool Cleanup,
     IReadOnlyList<RunActionLine> Actions,
-    string? Reason);
+    string? Reason)
+{
+    /// <summary>The headline figures the history line carries (<c>MemAvailable</c>, page cache, swap, <c>/</c>, Docker
+    /// reclaimable, container starts) — what the Logs page's sparkline and trends read (§15j M7). Additive (E6.S0): absent on
+    /// a line that recorded none (an <c>act</c>, a swept run, every line before E2.S3), never 0.</summary>
+    public Records.RunMetrics? Metrics { get; init; }
+}
 
 /// <summary>The answer of <c>runs [--period …] --json</c>: every run of the period, oldest first.</summary>
 public sealed record RunsReport(int SchemaVersion, PeriodReport Period, int Count, IReadOnlyList<RunLine> Runs, int UnparseableLines, string? Problem);

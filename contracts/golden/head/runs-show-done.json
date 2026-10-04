@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "runId": "20000101T000000Z-1",
+  "state": "done",
+  "run": {
+    "runId": "20000101T000000Z-1",
+    "trigger": "cli",
+    "startedAt": "2000-01-01T00:00:00+00:00",
+    "endedAt": "2000-01-01T00:00:00+00:00",
+    "outcome": "completed",
+    "dryRun": false,
+    "detail": "runs/2000-01-01/20000101T000000Z-1.json",
+    "detailState": "present",
+    "freedBytes": 0,
+    "cleanup": false,
+    "actions": [
+      {
+        "id": "A10",
+        "status": "ran",
+        "count": 0,
+        "freedBytes": 0
+      }
+    ]
+  },
+  "detailState": "present",
+  "detail": {
+    "kind": "act",
+    "dryRun": false,
+    "dryRunReason": "a button or the CLI never dry-runs: it previews, then runs on confirmation (plan §5)",
+    "targetUser": {
+      "found": false,
+      "source": "no target user: /golden-root/etc/passwd does not exist"
+    },
+    "actions": [
+      {
+        "id": "A10",
+        "summary": "journalctl --vacuum-time: remove archived journal files older than journal.keepDays",
+        "status": "ran",
+        "reason": "ran",
+        "preview": {
+          "what": "archived journal files with nothing newer than 30 days (journalctl --vacuum-time=30d)",
+          "available": true,
+          "count": 0,
+          "bytes": 0,
+          "basis": "archived journal files whose last write is older than the limit (an estimate: journald compares each file's newest entry)",
+          "facts": {
+            "journalBytes": 426980147
+          },
+          "refusal": "",
+          "items": [],
+          "skip": "",
+          "urgent": ""
+        },
+        "run": {
+          "count": 0,
+          "freedBytes": 0,
+          "freedBasis": "the sizes, read before the vacuum, of the journal files that are gone after it",
+          "beforeBytes": 0,
+          "afterBytes": 0,
+          "removed": [],
+          "commands": [
+            {
+              "template": "journalctl-disk-usage",
+              "display": "journalctl --disk-usage",
+              "outcome": "exited",
+              "exit": 0,
+              "detail": ""
+            },
+            {
+              "template": "journalctl-vacuum-time",
+              "display": "journalctl --vacuum-time=30d",
+              "outcome": "exited",
+              "exit": 0,
+              "detail": "Vacuuming done, freed 0B of archived journals from /var/log/journal."
+            }
+          ],
+          "failure": "",
+          "succeeded": true,
+          "notRemoved": [],
+          "notes": []
+        }
+      }
+    ],
+    "notes": [
+      "swept the running.json of run 20000101T000000Z-1: pid 4242 is gone (recorded as interrupted)"
+    ]
+  }
+}

@@ -31,9 +31,18 @@ internal static class StatusCommand
             Folders = FoldersReports.From(last.Folders, last.PreviousFolders, measuredThisRun: false),
             Verdicts = StatusVerdicts.From(sample, FullRunVerdicts.Read(host.Paths, host.Files, history), loaded.Config, now),
             ProductVersion = Program.VersionText,
+            Actions = ThisSidesActions(host),
+            Capabilities = Capabilities.All,
+            // Read-only: judged, never swept — status is unprivileged (plan §15b #3, §15j M3).
+            Running = RunningReports.Read(host.Paths, host.Files, host.Processes, now, Core.Actions.Engine.RunningReadRetry.Default),
+            LastCleanup = LastCleanups.From(history),
         };
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
     }
+
+    /// <summary>The ids this binary's registry holds for its own side, in the order a run takes them (plan §15f #3).</summary>
+    private static IReadOnlyList<string> ThisSidesActions(CliHost host) =>
+        [.. Core.Actions.ActionId.ExecutionOrder.Where(id => host.Actions.Find(id)?.Sides.Contains(host.Paths.Side) == true).Select(id => id.Text)];
 }
 
 /// <summary>The human form: a few lines a person reads at a terminal. The extension reads the JSON.</summary>
@@ -56,9 +65,27 @@ internal static class StatusText
         text.AppendLine($"docker stats: {Slow(report.Slow.ContainerStats)}");
         text.AppendLine($"windows clock: {Slow(report.Slow.WindowsClock)}");
         text.AppendLine(Verdicts(report.Verdicts ?? []));
+        text.AppendLine(Running(report.Running));
+        text.AppendLine(LastCleanup(report.LastCleanup));
         text.Append(Starts(report.ContainerStarts));
         return text.ToString();
     }
+
+    /// <summary><c>running: none</c>, or the state and what it means (<c>running: wedged - run … is wedged: …</c>).</summary>
+    private static string Running(RunningReport? running) => running switch
+    {
+        null => "running: not read",
+        { Reason: null } => $"running: {running.State}",
+        _ => $"running: {running.State} - {running.Reason}",
+    };
+
+    private static string LastCleanup(LastCleanupReport? last) => last switch
+    {
+        null => "last cleanup: not read",
+        { Available: true } => Invariant($"last cleanup: run {last.RunId} ({last.Trigger}), {last.Count} removed, freed {last.FreedBytes / BytesPerGibibyte:0.00} GiB"),
+        { Reason: LastCleanups.NoneYet } => "last cleanup: none yet",
+        _ => $"last cleanup: unavailable ({last.Reason})",
+    };
 
     /// <summary>One line: how many verdicts stand at each level, worst first, naming the ones that need a look
     /// (<c>verdicts: 1 critical (memory.fragmentation), 2 warn (…), 12 ok, 8 unknown</c>).</summary>
