@@ -2,6 +2,8 @@
 
 > Status: **measured 2026-10-02**, read-only diagnostics, nothing was changed on the machine.
 > Scripts that produced every number below: [diagnostics/](diagnostics/).
+> Account and project names are anonymised (2026-10-04 — this repository is public: `user`, `project-a`); every number
+> is as measured.
 >
 > Plan built on this: [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md).
 

@@ -74,7 +74,7 @@ public sealed class HealthTests : IDisposable
     [Fact]
     public void A_windows_profile_is_seen_through_the_automount_root()
     {
-        Value(HealthCollector.InDistro(@"C:\Users\owner", "/mnt/")).Should().Be("/mnt/c/Users/owner");
+        Value(HealthCollector.InDistro(@"C:\Users\alice", "/mnt/")).Should().Be("/mnt/c/Users/alice");
         HealthCollector.InDistro(@"\\server\share", "/mnt/").IsAvailable.Should().BeFalse();
     }
 

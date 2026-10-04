@@ -3,6 +3,8 @@
 > Status: **done 2026-10-02 (~09:35–10:00 CEST)**, Phase 0.2 of
 > [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md), extended by the user's explicit choices.
 > Not done yet (user: "later"): `.wslconfig` changes, `wsl --shutdown`, vhdx compaction (Phase 0.1 / 0.3).
+> Account, project and volume names are anonymised (2026-10-04 — this repository is public: `user`, `project-a`…,
+> `named-volume-a`…); every size, count and date is as measured.
 
 ## Starting point
 
