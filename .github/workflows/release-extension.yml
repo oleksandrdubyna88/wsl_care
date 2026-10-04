@@ -14,12 +14,16 @@ name: release · extension
 # `extension-v*` tag once .github/rulesets/tags-extension.json is applied (docs/repo-settings.md).
 #
 #   guard               the tag is extension-v<version>, src_vs_code/package.json says the same, the publisher is real,
-#                       the commit is on main — and THE MECHANICAL LIVE GATE: the minimum daemon (src_vs_code/min-daemon.json)
-#                       is a published non-draft release and POST_DEPLOY.md names it as last verified
+#                       the commit is on main — and THE MECHANICAL LIVE GATE: both minima of src_vs_code/min-daemon.json
+#                       (render, actions — E6.S2) are published non-draft releases and POST_DEPLOY.md names a verified daemon
+#                       at or above both — and the first public extension stays root-free: a checkout carrying the root
+#                       module is refused at or below extension-v0.1.0, or before that tag exists (plan §15j B3, §15k #7)
 #                       (.github/scripts/release-extension-guard.sh)
 #   build               npm ci, typecheck, lint, every test (unit, page, structural, bundle scans; the extension-host tier
 #                       under xvfb), `vsce package` ONCE, the leak checks on that .vsix (--release: the placeholder publisher
-#                       refused; --min-daemon: the built minimum is the one the guard verified), its .sha256, a workflow
+#                       refused; --min-daemon / --min-daemon-actions: the built minima are the ones the guard verified;
+#                       --root-allowed: the guard's answer, so a bundle carrying the root module is refused when the tags
+#                       do not allow it), its .sha256, a workflow
 #                       artifact. `contents: read` ONLY: it runs dependency install scripts and a downloaded VS Code, so it
 #                       holds no signing scope (E5 code round #3).
 #   attest              the ONLY job with `id-token: write` + `attestations: write`: it checks out .github/scripts and nothing
@@ -79,9 +83,10 @@ jobs:
       publisher: ${{ steps.guard.outputs.publisher }}
       # The minimum daemon the guard found published and verified — the build checks its .vsix renders exactly that one.
       min_daemon: ${{ steps.guard.outputs.min_daemon }}
-      # The daemon release Install daemon types (2026-10-06: a value of its own, at or above min_daemon), found published
-      # and verified — the build checks its .vsix installs exactly that one.
-      install_daemon: ${{ steps.guard.outputs.install_daemon }}
+      # The daemon the cleanups need (E6.S2, plan §15j M5) — published and verified too; the .vsix acts with and installs it.
+      min_daemon_actions: ${{ steps.guard.outputs.min_daemon_actions }}
+      # Whether the tags allow a root-capable extension (plan §15j B3, §15k #7) — check-vsix refuses the root module otherwise.
+      root_allowed: ${{ steps.guard.outputs.root_allowed }}
     steps:
       # The whole history: "is this commit on main" is answered by git, and a shallow clone has no main to answer it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,7 +118,8 @@ jobs:
     env:
       VERSION: ${{ needs.guard.outputs.version }}
       MIN_DAEMON: ${{ needs.guard.outputs.min_daemon }}
-      INSTALL_DAEMON: ${{ needs.guard.outputs.install_daemon }}
+      MIN_DAEMON_ACTIONS: ${{ needs.guard.outputs.min_daemon_actions }}
+      ROOT_ALLOWED: ${{ needs.guard.outputs.root_allowed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -153,10 +159,11 @@ jobs:
           (cd ../release-extension && sha256sum "ai-os-care-$VERSION.vsix" > "ai-os-care-$VERSION.vsix.sha256")
 
       # The ARTEFACT, not the source: exactly the allowlist, no machine path / user name / e-mail / source map, the build
-      # stamp equal to the version, (--release) a real publisher, (--min-daemon) the minimum this .vsix renders and
-      # (--install-daemon) the release it installs, each equal to the one the guard found published and verified.
+      # stamp equal to the version, (--release) a real publisher, (--min-daemon / --min-daemon-actions) the minima this .vsix
+      # renders and acts with equal to the ones the guard found published and verified, and (--root-allowed) no root module
+      # in a bundle the tags keep root-free.
       - name: Leak checks on the .vsix
-        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON" --install-daemon "$INSTALL_DAEMON"
+        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON" --min-daemon-actions "$MIN_DAEMON_ACTIONS" --root-allowed "$ROOT_ALLOWED"
 
       - name: The asset set
         run: bash ../.github/scripts/verify-extension-assets.sh "$VERSION" ../release-extension

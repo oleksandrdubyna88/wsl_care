@@ -11,9 +11,9 @@
  *   - no source map and no sourcesContent — nothing of the sources or this machine's paths ships;
  *   - not minified — the bundle scan reads it, and a reader of the .vsix can too.
  *
- * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>", "installDaemon": "<x.y.z>" }`, the minimum
- * daemon this build renders and the release its *Install daemon* installs (E5 code round #2/#5; two values since
- * 2026-10-06). The value is read by RUNNING src/client/handshake.ts (esbuild's transform, then a
+ * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>" }`, the minimum
+ * daemon this build renders and the one it acts with and installs (E5 code round #2/#5, E6.S2 / plan §15j M5). The values
+ * are read by RUNNING src/client/handshake.ts (esbuild's transform, then a
  * bounded node:vm with an empty context — the module imports types only), never with a pattern over its text.
  * scripts/check-vsix.mjs compares it with the compiled constant and with the checked-in src_vs_code/min-daemon.json —
  * the artefact the release guard reads at the tag, with a JSON parser, instead of parsing TypeScript.
@@ -35,8 +35,8 @@ if (typeof version !== 'string' || !RELEASE_VERSION.test(version)) {
   process.exit(1);
 }
 
-/** MIN_DAEMON_FOR_RENDER and INSTALL_DAEMON as the module itself exports them — transformed by esbuild and run, not matched as text. */
-function daemonVersions() {
+/** The two minima as the module itself exports them — transformed by esbuild and run, not matched as text. */
+function minDaemons() {
   const { code } = transformSync(readFileSync(join(ROOT, 'src', 'client', 'handshake.ts'), 'utf8'), { loader: 'ts', format: 'cjs', target: 'node18' });
   const module = { exports: {} };
   runInNewContext(code, { module, exports: module.exports }, { timeout: 5000 });
@@ -49,7 +49,7 @@ function daemonVersions() {
     return value;
   };
 
-  return { minDaemonForRender: read('MIN_DAEMON_FOR_RENDER'), installDaemon: read('INSTALL_DAEMON') };
+  return { minDaemonForRender: read('MIN_DAEMON_FOR_RENDER'), minDaemonForActions: read('MIN_DAEMON_FOR_ACTIONS') };
 }
 
 buildSync({
@@ -67,7 +67,7 @@ buildSync({
   define: { WSL_CARE_BUILD_STAMP: JSON.stringify(`wsl-care-build ${version}`) },
 });
 
-const daemons = daemonVersions();
+const minima = minDaemons();
 mkdirSync(join(ROOT, 'dist'), { recursive: true });
-writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify(daemons, null, 2)}\n`);
-console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says render ${daemons.minDaemonForRender}, install ${daemons.installDaemon}`);
+writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify(minima, null, 2)}\n`);
+console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says render ${minima.minDaemonForRender}, actions ${minima.minDaemonForActions}`);

@@ -1,4 +1,4 @@
 {
   "minDaemonForRender": "0.1.0",
-  "installDaemon": "0.1.2"
+  "minDaemonForActions": "0.1.0"
 }
