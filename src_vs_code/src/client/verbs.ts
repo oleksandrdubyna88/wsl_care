@@ -41,3 +41,11 @@ export const VERB_TIMEOUT_MS: { readonly [V in Verb]: number } = {
   doctor: 100_000,
   preview: 330_000,
 };
+
+/**
+ * How many containers `preview`'s ceiling assumes: ONE `container inspect` batch (`DockerCommands.InspectBatch` = 100).
+ * Above it the preview may outrun `VERB_TIMEOUT_MS.preview`, and a timeout then says "too many containers for a quick
+ * preview (<n>)" rather than a bare timeout (§15h #1); the real duration at the real count is measured at the E5 live
+ * gate (`POST_DEPLOY.md`).
+ */
+export const PREVIEW_CONTAINER_ASSUMPTION = 100;

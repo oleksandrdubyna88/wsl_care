@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import * as ts from 'typescript';
 
 import { DISTRO_NAME } from '../wsl/distros';
+import { decodePng } from './support/iconPng';
 import { EXTENSION_ROOT, REPOSITORY_ROOT } from './support/paths';
+import { PUBLISHER_PLACEHOLDER } from './support/vsixCheck';
 
 /**
  * The manifest E5.S1 owes (plan §16 E5.S1, §15f #5 / #12, §15g M3): what VS Code reads from `package.json` decides
@@ -40,16 +43,48 @@ interface Manifest {
 const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8')) as Manifest;
 const settings = manifest.contributes.configuration.properties;
 
-/** The placeholder the owner replaces with the permanent Marketplace publisher id at the E5 live gate, step 1. */
-const PUBLISHER_PLACEHOLDER = 'publisher-tbd';
+/** A Marketplace publisher id: lower-case letters, digits and dashes (the placeholder has the same shape). */
+const PUBLISHER_ID = /^[a-z0-9][a-z0-9-]*$/;
 
-test('identity: WSL Care, version 0.0.0 until release-please, a preview, MIT', () => {
+test('identity: WSL Care, an x.y.z version (0.0.0 until release-please bumps it), a preview, MIT', () => {
   assert.equal(manifest.name, 'wsl-care');
   assert.equal(manifest.displayName, 'WSL Care');
-  assert.equal(manifest.version, '0.0.0');
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.preview, true);
   assert.equal(manifest.license, 'MIT');
-  assert.equal(manifest.publisher, PUBLISHER_PLACEHOLDER, 'the publisher id is created by the owner (E5 live gate, step 1)');
+});
+
+test('the publisher is a Marketplace id — the placeholder until the owner creates the real one (E5 live gate, step 1); a RELEASE refuses the placeholder (vsixCheck.test.ts, release-extension-guard.sh)', () => {
+  assert.match(manifest.publisher, PUBLISHER_ID);
+  assert.ok(manifest.publisher === PUBLISHER_PLACEHOLDER || !manifest.publisher.includes('tbd'), manifest.publisher);
+});
+
+interface Listing {
+  readonly icon: string;
+  readonly pricing: string;
+  readonly repository: { readonly url: string };
+  readonly bugs: { readonly url: string };
+  readonly homepage: string;
+  readonly categories: readonly string[];
+  readonly keywords: readonly string[];
+}
+
+test('the Marketplace listing (plan §15f #6): a PNG icon of at least 128 px, Free, https repository / bugs / homepage, categories and keywords', () => {
+  const listing = manifest as unknown as Listing;
+  assert.match(listing.icon, /\.png$/);
+  const icon = decodePng(fs.readFileSync(path.join(EXTENSION_ROOT, listing.icon)));
+  assert.ok(icon.width >= 128 && icon.height >= 128, `${icon.width}x${icon.height}`);
+  assert.equal(listing.pricing, 'Free');
+  for (const url of [listing.repository.url, listing.bugs.url, listing.homepage]) {
+    assert.match(url, /^https:\/\/github\.com\/oleksandrdubyna88\/wsl_care/, url);
+  }
+  assert.ok(listing.categories.length > 0 && listing.keywords.length > 0 && listing.keywords.length <= 30);
+});
+
+test('@vscode/vsce is a pinned development dependency — the one packager, the same in CI and in the release', () => {
+  assert.match(manifest.devDependencies['@vscode/vsce'] ?? '', /^\d+\.\d+\.\d+$/);
+  assert.equal(manifest.scripts.package, 'vsce package --no-dependencies');
+  assert.equal(manifest.scripts['vscode:prepublish'], 'npm run bundle', 'vsce runs the bundle before it packs — the .vsix never carries a stale one');
 });
 
 test('the API floor is 1.85.0 and @types/vscode is held EXACTLY at it — newer typings would let code use API 1.85 lacks', () => {
@@ -94,12 +129,37 @@ test('no runtime dependency ships, and every development dependency is pinned to
   }
 });
 
-test('the bundle is CommonJS for node 18 with vscode left external and no source map', () => {
-  const bundle = manifest.scripts.bundle ?? '';
-  for (const flag of ['--bundle', '--external:vscode', '--platform=node', '--target=node18', '--format=cjs', '--outfile=dist/extension.js']) {
-    assert.ok(bundle.split(' ').includes(flag), `bundle script lacks ${flag}: ${bundle}`);
-  }
-  assert.equal(/--sourcemap|--sources-content/.test(bundle), false);
+/** The options object scripts/bundle.mjs hands esbuild's buildSync, read with the TypeScript parser: name → source text. */
+function bundleOptions(): Map<string, string> {
+  const file = ts.createSourceFile('bundle.mjs', fs.readFileSync(path.join(EXTENSION_ROOT, 'scripts', 'bundle.mjs'), 'utf8'), ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS);
+  const options = new Map<string, string>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && node.expression.getText(file) === 'buildSync' && node.arguments[0] !== undefined && ts.isObjectLiteralExpression(node.arguments[0])) {
+      for (const property of node.arguments[0].properties) {
+        if (ts.isPropertyAssignment(property)) {
+          options.set(property.name.getText(file), property.initializer.getText(file));
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+
+  return options;
+}
+
+test('the bundle is CommonJS for node 18 with vscode left external, no source map, and the build stamp (scripts/bundle.mjs)', () => {
+  assert.equal(manifest.scripts.bundle, 'node scripts/clean.mjs dist && node scripts/bundle.mjs');
+  const options = bundleOptions();
+  assert.equal(options.get('bundle'), 'true');
+  assert.equal(options.get('external'), "['vscode']");
+  assert.equal(options.get('platform'), "'node'");
+  assert.equal(options.get('target'), "'node18'");
+  assert.equal(options.get('format'), "'cjs'");
+  assert.equal(options.get('outfile'), "'dist/extension.js'");
+  assert.equal(options.get('sourcemap'), 'false');
+  assert.equal(options.has('sourcesContent'), false);
+  assert.match(options.get('define') ?? '', /WSL_CARE_BUILD_STAMP/);
 });
 
 test('the extension carries the repository\'s licence, byte for byte', () => {
@@ -115,8 +175,8 @@ interface Contributions {
 
 const contributed = (manifest as unknown as { contributes: Contributions }).contributes;
 
-test('E5.S2 contributes the read-only surface only: the panel view and three argument-free commands, no URI handler', () => {
-  assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl']);
+test('E5 contributes the read-only surface only: the panel view and four argument-free commands, no URI handler', () => {
+  assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl', 'wslCare.installDaemon']);
   assert.deepEqual(contributed.views.wslCare, [{ type: 'webview', id: 'wslCare.panel', name: 'WSL Care' }]);
   assert.equal(contributed.viewsContainers.activitybar[0]?.id, 'wslCare');
   assert.ok(fs.existsSync(path.join(EXTENSION_ROOT, contributed.viewsContainers.activitybar[0]?.icon ?? '')), 'the activity-bar icon ships');

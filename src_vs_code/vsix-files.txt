@@ -1,0 +1,9 @@
+CHANGELOG.md
+LICENSE
+README.md
+dist/extension.js
+media/icon.png
+media/panel.css
+media/panel.js
+media/wsl-care.svg
+package.json

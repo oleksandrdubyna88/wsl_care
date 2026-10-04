@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import * as ts from 'typescript';
 
-import { BUNDLE } from './support/paths';
+import { INSTALL_COMMAND, INSTALL_PREREQUISITES } from '../install/installCommand';
+import { BUNDLE, EXTENSION_ROOT } from './support/paths';
 import { stringLiteralsOf } from './support/sourceScan';
 
 /**
@@ -79,4 +81,41 @@ test('no source map ships: no sourceMappingURL comment and no sourcesContent', (
   assert.equal(/sourceMappingURL=/.test(text), false);
   assert.equal(text.includes('sourcesContent'), false);
   assert.equal(fs.existsSync(`${BUNDLE}.map`), false);
+});
+
+// ---- E5.S3: the one privileged WORD the bundle carries is typed for the person, never run ----
+//
+// *Install daemon* shows and types `… | sudo sh -s -- --version <MIN>` (install/installCommand.ts) and lists "sudo
+// rights" among the prerequisites. That is the only `sudo` the bundle may spell, and none of the words above (-u,
+// --user, root, --timer, --confirm, --manual, config) is part of it — so the forbidden set stays as it was, with no
+// exception. What keeps the command from ever being RUN is structural: the install modules import neither the runner
+// nor child_process, and the command reaches a terminal only through sendText(command, false) (structure.test.ts,
+// installDaemon.test.ts).
+
+/** The sudo-carrying literals the install-command module itself spells: its command template part and one prerequisite. */
+function installerSudoLiterals(): string[] {
+  const source = fs.readFileSync(path.join(EXTENSION_ROOT, 'src', 'install', 'installCommand.ts'), 'utf8');
+  return stringLiteralsOf(source).filter((literal) => /\bsudo\b/.test(literal));
+}
+
+function sudoOutsideTheInstaller(text: string): string[] {
+  const allowed = installerSudoLiterals();
+  return stringLiteralsOf(text, ts.ScriptKind.JS).filter((literal) => /\bsudo\b/.test(literal) && !allowed.includes(literal));
+}
+
+test('sudo appears in the bundle only inside the install command the extension types and its prerequisite line', () => {
+  assert.deepEqual(sudoOutsideTheInstaller(bundleText()), []);
+});
+
+test('the sudo scan is alive: the real bundle does carry the install command\'s sudo, and a planted one elsewhere is found', () => {
+  const literals = stringLiteralsOf(bundleText(), ts.ScriptKind.JS);
+  assert.ok(literals.some((l) => /\bsudo\b/.test(l) && INSTALL_COMMAND.includes(l)), 'the install command ships');
+  assert.ok(INSTALL_PREREQUISITES.some((p) => /\bsudo\b/.test(p) && literals.includes(p)), 'its prerequisite line ships');
+  assert.equal(installerSudoLiterals().length, 2, 'the module spells sudo in exactly its command template and one prerequisite');
+  assert.deepEqual(sudoOutsideTheInstaller(bundleText() + '\nvar plantedArgv = ["sudo", "/opt/wsl-care/bin/wsl-care", "status"];\n'), ['sudo']);
+});
+
+test('the bundle carries the build stamp of the version it was built for (scripts/bundle.mjs)', () => {
+  const version = (JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8')) as { version: string }).version;
+  assert.deepEqual(stringLiteralsOf(bundleText(), ts.ScriptKind.JS).filter((l) => l.startsWith('wsl-care-build ')), [`wsl-care-build ${version}`]);
 });

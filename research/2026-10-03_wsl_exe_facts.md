@@ -8,8 +8,10 @@
 > - **Harness:** [diagnostics/wsl_exe_facts.mjs](diagnostics/wsl_exe_facts.mjs) (exit code, raw bytes, both decodings per
 >   call), [diagnostics/wsl_exe_kill.mjs](diagnostics/wsl_exe_kill.mjs) and
 >   [diagnostics/wsl_exe_kill_sighup.mjs](diagnostics/wsl_exe_kill_sighup.mjs) (kill only the `wsl.exe` the script
->   started, then a read-only `ps` in the distro). Node 24.18.0.
-> - **Subject:** the repository at `65c3198` (E5.S0); the daemon is NOT installed in any distribution here.
+>   started, then a read-only `ps` in the distro). Node 24.18.0. Added 2026-10-04 (§15h #3):
+>   [diagnostics/wsl_exe_kill_preview.mjs](diagnostics/wsl_exe_kill_preview.mjs) — row 18.
+> - **Subject:** the repository at `65c3198` (E5.S0); the daemon is NOT installed in any distribution here (row 18: a
+>   throwaway build in `/tmp`, removed after).
 > - **Machine:** Windows 11 Pro 10.0.26300, three WSL 2 distributions, all running during the measurement.
 
 ## The WSL build
@@ -45,8 +47,9 @@ Windows version: 10.0.26300.9550
 | 13 | an unknown distribution: `-d NoSuchDistro-e5s1 --cd / --exec true` | exit **4294967295** (as Node reports it on Windows; -1 as a signed 32-bit value), stderr empty, **stdout** UTF-16LE: `There is no distribution with the supplied name.\r\nError code: Wsl/Service/WSL_E_DISTRO_NOT_FOUND\r\n` | `signed32` in the runner; exit -1 = `wsl.exe` refused, its message read from STDOUT; the fake answers an unlisted distribution exactly so |
 | 14 | an invalid option: `--no-such-option-e5s1` | exit 4294967295, stdout UTF-16LE `Invalid command line argument: --no-such-option-e5s1\r\nPlease use 'wsl.exe --help' to get a list of supported arguments.\r\n` | the same reading as 13 |
 | 15 | does killing `wsl.exe` end the Linux process? `--exec sleep 37.123`, then `child.kill()` of THAT `wsl.exe` (pid 12432) after 3 s | before: `190746 190744 sleep 37.123`; `wsl.exe` ended `SIGTERM`; **0.5 s and 3 s later the `sleep` was gone** (`ps -eo pid,ppid,args`) | the runner's timeout is `child.kill()` of `wsl.exe` — no `taskkill /T` and no second Linux call |
-| 16 | the same with SIGHUP ignored: `--exec sh -c 'trap "" HUP; exec sleep 38.517'` | `wsl.exe` ended; the `sleep` **survived, reparented to PID 1** (`190776 1 sleep 38.517`), and ended on its own | the Linux side is ended by a HANG-UP when the relay goes: a program that ignores SIGHUP outlives the kill. Whether the AOT `wsl-care` does is NOT measured (the binary is absent) — a check of the E5 live gate |
+| 16 | the same with SIGHUP ignored: `--exec sh -c 'trap "" HUP; exec sleep 38.517'` | `wsl.exe` ended; the `sleep` **survived, reparented to PID 1** (`190776 1 sleep 38.517`), and ended on its own | the Linux side is ended by a HANG-UP when the relay goes: a program that ignores SIGHUP outlives the kill. Whether `wsl-care` does: row 18 (2026-10-04) — it does not survive |
 | 17 | timing | every `wsl.exe` own question answered in 46–59 ms; an `--exec` into the running distro in 130–150 ms | the WSL questions' ceiling (`LIST_TIMEOUT_MS`, 15 s) is three hundred times what they take |
+| 18 | **2026-10-04, §15h #3** — does killing `wsl.exe` end a running `wsl-care preview --all --json` and the `docker` CLI child it waits on? A linux-x64 build of `wsl-care` at `9703aef` (`dotnet publish -r linux-x64 -p:PublishAot=false --self-contained` into `/tmp` — the distro has no `clang`, so NOT the AOT binary), started as the runner starts it (`--exec <binary> preview --all --json`, stdin ignored, stdout / stderr piped), then `child.kill()` of THAT `wsl.exe` only. Twice: killed after 1.5 s (during `docker system df`) and after 3.2 s (during `docker system df -v`), 12 containers running; a full preview took 5.2 s | before: `2626 2624 2626 2626 Ssl+ … wsl-care preview --all --json` and its child `2671 2626 2626 2626 Sl+ /usr/bin/docker system df -v --format {{json .}}` — `wsl-care` leads its own session and process group, both in the foreground (`+`); `wsl.exe` ended `SIGTERM`; **0.5 s, 3 s and 10 s later neither `wsl-care` nor the `docker` child was left** (the same with stdin piped) | the relay's hang-up reaches the whole foreground group, the .NET runtime ends on it, and the `docker` child goes with it: the runner's `child.kill()` of `wsl.exe` is enough and NO daemon-side cleanup (exit on stdin EOF / SIGHUP) is needed. Not measured: the AOT binary itself — the E5 live gate's installed daemon (`POST_DEPLOY.md`) |
 
 ## What was NOT measured, and why
 

@@ -1,0 +1,8 @@
+# Words the packaged .vsix must never contain, matched case-insensitively as whole words (scripts/check-vsix.mjs).
+# The build machine's own user name is added when the check runs and is never written here. Extend this list with any
+# other name or fragment that must not ship — a second account, a host name, a private folder. One entry per line;
+# `#` starts a comment. Repository-internal folders that a bundle or a README could only carry by mistake:
+AppData
+scratchpad
+contracts/golden
+.vscode-test
