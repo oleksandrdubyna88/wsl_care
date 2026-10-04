@@ -1,12 +1,13 @@
-import { classifyExit } from '../client/failures';
+import { DAEMON_EXIT, WSL_EXE_FAILED } from '../client/exitCodes';
+import { classifyExit, launchFailure } from '../client/failures';
 import { parseDaemonVersion } from '../client/handshake';
 import type { DaemonVersion, Failure, JsonObject, VerbOutcome } from '../client/outcome';
 import { DAEMON_PATH } from '../client/WslCareClient';
 import type { ProcessResult, Runner } from '../process/runner';
 import { actionGate, pickIds, type GateOpen } from './actionGate';
 import { parseHandOff, parsePreview, runningOf, type HandOff, type HandOffResult, type PreviewContext } from './rootAnswers';
-import { callRoot, type RootOp, type RootTarget } from './rootCall';
-import { exitFailure, startFailure } from './rootFailures';
+import { callRoot, FULL_CHECK_ACTIONS, type RootOp, type RootTarget } from './rootCall';
+import { exitFailure } from './rootFailures';
 import { runIdOf, volumeNameOf, type ActionIds, type RunId, type VolumeName } from './rootIds';
 import type { HandOffOutcome, HeldPreview, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
 
@@ -27,11 +28,24 @@ import type { HandOffOutcome, HeldPreview, PreviewOutcome, RootCheckOutcome, Roo
  *
  * <p><b>A4's names come from the held preview and nowhere else</b> (§15j B1): `preview()` returns a frozen `HeldPreview`
  * that this controller registers; `confirm()` takes only a registered one, and re-validates every name before it becomes
- * a stdin line. <b>A detach whose outcome is unknown</b> — a timeout, a kill, an unreadable answer, `result: unknown`, a
- * result this build does not know — is never reported as a failure: the controller follows `status.running` every
- * `FOLLOW.intervalMs` for `FOLLOW.boundMs`, and reports the run it SAW queued or live, or "outcome unknown" with the run
- * id when it has one (§15k #3). Residual, stated: with no run id (a detach that timed out before answering), a run seen in
- * flight may be another's — the timer's — and is reported as the run in flight, not as ours.</p>
+ * a stdin line, and a preview is CONSUMED by the confirm whose call went out (review M4) — it stays held only when nothing
+ * started (a refusal before the call, a launcher that never started, the daemon refusing the piped list).</p>
+ *
+ * <p><b>A detach whose outcome is unknown is never reported as a failure</b> (§15k #3, the E6.S2 review round M1–M3, L3):</p>
+ * <ul>
+ *   <li>an exit the daemon does NOT guarantee as "nothing written" (70, 130, a signal's 137 / 143, anything outside
+ *       `CERTAIN_DETACH_EXITS`), a timeout, a kill, an unreadable answer, `result: unknown`, a result this build does
+ *       not know, or `accepted` without a run id — all are UNKNOWN;</li>
+ *   <li>when the daemon NAMED a run id, `outcomeUnknown` carries it at once and the controller does not follow: E6.S3's
+ *       durable poll follows that run (`runs show` / `status.running`) — one follower, not two;</li>
+ *   <li>with NO run id the controller follows `status.running` of THIS distribution every `FOLLOW.intervalMs`, and adopts
+ *       only a queued / live run that is provably this hand-off — trigger `manual` with exactly the asked actions
+ *       (`["collect"]` for a full check) — as `acceptedObserved`. Any other run in flight (the timer's) is reported in
+ *       `outcomeUnknown.otherRun`, never adopted; `outcomeUnknown.followed` counts the polls and how many status answered;</li>
+ *   <li>the REAL bound: the loop stops starting polls at `FOLLOW.boundMs` (60 s) of the monotonic clock, and a poll in
+ *       flight finishes — one `status` call is at most its three `wsl.exe` questions (15 s each) and the verb (20 s), so a
+ *       follow ends within ~60 s + one interval (4 s) + one poll (65 s), about two minutes.</li>
+ * </ul>
  */
 
 export interface CleanupClient {
@@ -51,6 +65,35 @@ export interface CleanupOptions {
 export const FOLLOW = { intervalMs: 4_000, boundMs: 60_000 } as const;
 
 const BASE = ['running.block', 'runs.show'];
+
+/**
+ * The exits of a DETACH the daemon guarantees as "nothing written, nothing removed" (review M1): 1 (the write refused, or the
+ * not-installed / old-glibc readings), 2, 69, 71, 73, 75–80, and wsl.exe's own -1. Every other exit — 70, 130, a signal's
+ * 137 / 143, 3, 4 — may have come after the request was written, so it is followed, never reported as a failure.
+ */
+export const CERTAIN_DETACH_EXITS: ReadonlySet<number> = new Set([
+  DAEMON_EXIT.runFailed, DAEMON_EXIT.usage, DAEMON_EXIT.detachUnavailable, DAEMON_EXIT.detachStartFailed, DAEMON_EXIT.queueFull,
+  DAEMON_EXIT.busy, DAEMON_EXIT.wedged, DAEMON_EXIT.needsRoot, DAEMON_EXIT.observeOnly, DAEMON_EXIT.stateUnreadable, DAEMON_EXIT.requestGone, WSL_EXE_FAILED,
+]);
+
+/** What a follow with no run id may adopt: a run of THIS distribution, started by the panel, holding exactly these actions. */
+interface Expected {
+  readonly distro: string;
+  readonly actions: readonly string[];
+}
+
+/** One status poll: answered for this distribution (with its running block, if any), or not. */
+type Poll = { readonly answered: false } | { readonly answered: true; readonly running: RunningBlock | undefined };
+
+/** A follow so far. */
+interface Watch {
+  readonly polls: number;
+  readonly answered: number;
+  readonly ours: RunningBlock | undefined;
+  readonly other: RunningBlock | undefined;
+}
+
+const NO_WATCH: Watch = { polls: 0, answered: 0, ours: undefined, other: undefined };
 
 /** What each op needs the daemon to ADVERTISE (`status.capabilities`) — the authority for acting (§15j M5). */
 export const CAPABILITIES = {
@@ -175,13 +218,26 @@ export class CleanupController {
   }
 
   private async confirmIn(target: RootTarget, preview: HeldPreview): Promise<HandOffOutcome> {
-    if (target.distro !== preview.distro) {
-      return { kind: 'distroChanged', previewed: preview.distro, now: target.distro };
+    if (!this.issued.has(preview)) {
+      return { kind: 'previewNotHeld' };
     }
+
+    return target.distro === preview.distro ? this.confirmCall(target, preview) : { kind: 'distroChanged', previewed: preview.distro, now: target.distro };
+  }
+
+  /** The confirm's call; the preview is consumed once the call went out and the daemon took it (review M4). */
+  private async confirmCall(target: RootTarget, preview: HeldPreview): Promise<HandOffOutcome> {
     const required = preview.ids.includes('A4') ? CAPABILITIES.confirmA4 : CAPABILITIES.confirm;
     const call = await this.acting(target, required, (gate) => confirmOp(preview, gate));
+    if ('kind' in call) {
+      return call;
+    }
+    const outcome = await this.handedOff(call, target.distro, true);
+    if (consumed(call, outcome)) {
+      this.issued.delete(preview);
+    }
 
-    return 'kind' in call ? call : this.handedOff(call, target.distro, true);
+    return outcome;
   }
 
   /** A preview's answer, held and registered — or why not. */
@@ -211,62 +267,71 @@ export class CleanupController {
     if (result === undefined) {
       return NOT_BUILT;
     }
+    const expected = { distro, actions: expectedActions(call.op) };
 
-    return result.kind === 'exited' && result.code !== 0 ? this.withRunning(exitFailure(result, distro, pipedShown(call.op))) : this.notRefused(result, follows);
+    return result.kind === 'exited' && result.code !== 0 ? this.refusedOrUnknown(call, result, expected, follows) : this.notRefused(result, expected, follows);
+  }
+
+  /** A non-zero exit: certain when the daemon guarantees nothing was written — for a detach, otherwise unknown (review M1). */
+  private refusedOrUnknown(call: Call, result: Extract<ProcessResult, { kind: 'exited' }>, expected: Expected, follows: boolean): Promise<HandOffOutcome> {
+    return follows && !CERTAIN_DETACH_EXITS.has(result.code)
+      ? this.follow(`the detach exited ${result.code} (${exitFailure(result, expected.distro, false).kind}) — it may have written its request`, expected)
+      : this.withRunning(exitFailure(result, expected.distro, pipedShown(call.op)), expected.distro);
   }
 
   /** Not a refusal: a launcher that never started (certain), or an answer — read, or none at all (a timeout, a kill). */
-  private notRefused(result: ProcessResult, follows: boolean): Promise<HandOffOutcome> {
+  private notRefused(result: ProcessResult, expected: Expected, follows: boolean): Promise<HandOffOutcome> {
     if (result.kind === 'failedToStart') {
-      return Promise.resolve(startFailure(result));
+      return Promise.resolve(launchFailure(result, 'daemonCall'));
     }
 
-    return this.settled(result.kind === 'exited' ? parseHandOff(result.stdout.toString('utf8')) : undefined, follows);
+    return this.settled(result.kind === 'exited' ? parseHandOff(result.stdout.toString('utf8')) : undefined, expected, follows);
   }
 
-  /** Accepted or stopping when the answer says so with its run id; otherwise unknown — followed, when it was a detach. */
-  private settled(answer: HandOff | RootFailure | undefined, follows: boolean): Promise<HandOffOutcome> {
+  /** Accepted or stopping when the answer says so with its run id; otherwise unknown. */
+  private settled(answer: HandOff | RootFailure | undefined, expected: Expected, follows: boolean): Promise<HandOffOutcome> {
     const read = readable(answer);
     const certain = read === undefined ? undefined : certainOf(read);
     if (certain !== undefined) {
       return Promise.resolve(certain);
     }
 
-    return this.unknown(read === undefined ? undefined : read.runId, unknownReason(answer), follows);
+    return this.unknown(read === undefined ? undefined : read.runId, unknownReason(answer), expected, follows);
   }
 
-  private unknown(runId: RunId | undefined, reason: string, follows: boolean): Promise<HandOffOutcome> {
-    return follows ? this.follow(runId, reason) : Promise.resolve({ kind: 'outcomeUnknown', runId, reason });
+  /** Review M3: a named run id goes back AT ONCE (E6.S3 follows it); only a detach with no run id is followed here. */
+  private unknown(runId: RunId | undefined, reason: string, expected: Expected, follows: boolean): Promise<HandOffOutcome> {
+    return runId === undefined && follows ? this.follow(reason, expected) : Promise.resolve(unknownOutcome(runId, reason));
   }
 
-  private async follow(runId: RunId | undefined, reason: string): Promise<HandOffOutcome> {
+  /** Review M2 / L3: poll THIS distribution's status until a run provably ours is seen, or the bound passes. */
+  private async follow(reason: string, expected: Expected): Promise<HandOffOutcome> {
     const deadline = this.options.now() + FOLLOW.boundMs;
-    while (this.options.now() < deadline) {
+    let watch = NO_WATCH;
+    while (this.options.now() < deadline && watch.ours === undefined) {
       await this.options.sleep(FOLLOW.intervalMs);
-      const seen = await this.inFlightRun(runId);
-      if (seen !== undefined) {
-        return { kind: 'acceptedObserved', runId: seen.runId ?? runId, running: seen };
-      }
+      watch = watched(watch, await this.poll(expected.distro), expected);
     }
 
-    return { kind: 'outcomeUnknown', runId, reason };
+    return watch.ours === undefined ? followedUnknown(reason, watch) : { kind: 'acceptedObserved', runId: watch.ours.runId, running: watch.ours };
   }
 
-  private async inFlightRun(runId: RunId | undefined): Promise<RunningBlock | undefined> {
-    const running = await this.runningNow();
-
-    return running !== undefined && isOurs(running, runId) && isQueuedOrLive(running) ? running : undefined;
-  }
-
-  private async runningNow(): Promise<RunningBlock | undefined> {
+  /** One status read — counted only when it answered for THIS distribution (review L3). */
+  private async poll(distro: string): Promise<Poll> {
     const outcome = await this.options.client.run('status');
 
-    return outcome.kind === 'answered' ? runningOf(statusBody(outcome)) : undefined;
+    return outcome.kind === 'answered' && outcome.distro === distro ? { answered: true, running: runningOf(statusBody(outcome)) } : { answered: false };
+  }
+
+  private async runningNow(distro: string): Promise<RunningBlock | undefined> {
+    const poll = await this.poll(distro);
+
+    return poll.answered ? poll.running : undefined;
   }
 
   /** 75 / 76 come back with the `running` block the daemon reports right after (§15j m9). */
-  private async withRunning(failure: RootFailure): Promise<RootFailure> {
-    return failure.kind === 'busy' || failure.kind === 'wedged' ? { ...failure, running: await this.runningNow() } : failure;
+  private async withRunning(failure: RootFailure, distro: string): Promise<RootFailure> {
+    return failure.kind === 'busy' || failure.kind === 'wedged' ? { ...failure, running: await this.runningNow(distro) } : failure;
   }
 }
 
@@ -323,23 +388,68 @@ function answerOf(result: ProcessResult | undefined, distro: string): string | R
     return NOT_BUILT;
   }
   if (result.kind !== 'exited') {
-    return startFailure(result);
+    return launchFailure(result, 'daemonCall');
   }
 
   return result.code === 0 ? result.stdout.toString('utf8') : exitFailure(result, distro, false);
 }
 
+/** Review L2: only an EXIT of the root check (not 0, not wsl.exe's own -1) is "needs root"; a launcher failure is itself. */
 function rootCheckOf(result: ProcessResult | undefined, distro: string): RootCheckOutcome {
   if (result === undefined) {
-    return { kind: 'rootRefused', reason: NOT_BUILT };
+    return NOT_BUILT;
   }
   if (result.kind !== 'exited') {
-    return { kind: 'rootRefused', reason: startFailure(result) };
+    return launchFailure(result, 'daemonCall');
   }
 
-  return result.code === 0
-    ? { kind: 'rootOk', distro, version: parseDaemonVersion(result.stdout.toString('utf8')) }
-    : { kind: 'rootRefused', reason: classifyExit(result.code, result.stdout, result.stderr, distro, DAEMON_PATH) };
+  return result.code === 0 ? { kind: 'rootOk', distro, version: parseDaemonVersion(result.stdout.toString('utf8')) } : exitedRootCheck(result, distro);
+}
+
+function exitedRootCheck(result: Extract<ProcessResult, { kind: 'exited' }>, distro: string): RootCheckOutcome {
+  const failure = classifyExit(result.code, result.stdout, result.stderr, distro, DAEMON_PATH);
+
+  return result.code === WSL_EXE_FAILED ? failure : { kind: 'rootRefused', reason: failure };
+}
+
+/** Review M4: a confirm consumed its preview unless nothing started — no launcher, or the daemon refusing the piped list. */
+function consumed(call: Call, outcome: HandOffOutcome): boolean {
+  return call.result !== undefined && call.result.kind !== 'failedToStart' && outcome.kind !== 'shownListRefused';
+}
+
+/** The actions a run started by this op holds: the confirmed ids, or ["collect"] for a full check. */
+function expectedActions(op: RootOp): readonly string[] {
+  return op.op === 'confirm' ? op.ids : FULL_CHECK_ACTIONS;
+}
+
+function unknownOutcome(runId: RunId | undefined, reason: string): HandOffOutcome {
+  return { kind: 'outcomeUnknown', runId, reason, followed: undefined, otherRun: undefined };
+}
+
+/** A queued or live run of the poll, sorted into ours (the panel's, exactly the asked actions) or another's. */
+function watched(watch: Watch, poll: Poll, expected: Expected): Watch {
+  const counted = { ...watch, polls: watch.polls + 1 };
+
+  return poll.answered ? { ...counted, answered: watch.answered + 1, ...sorted(inFlightOf(poll.running), expected, watch.other) } : counted;
+}
+
+function inFlightOf(running: RunningBlock | undefined): RunningBlock | undefined {
+  return running !== undefined && isQueuedOrLive(running) ? running : undefined;
+}
+
+function sorted(inFlight: RunningBlock | undefined, expected: Expected, other: RunningBlock | undefined): Pick<Watch, 'ours' | 'other'> {
+  if (inFlight === undefined) {
+    return { ours: undefined, other };
+  }
+
+  return isOurs(inFlight, expected) ? { ours: inFlight, other } : { ours: undefined, other: inFlight };
+}
+
+function followedUnknown(reason: string, watch: Watch): HandOffOutcome {
+  const silent = watch.answered === 0 ? `; status answered none of ${watch.polls} polls` : '';
+  const other = watch.other === undefined ? '' : `; another run is in flight (${watch.other.runId ?? 'no run id'}, ${watch.other.trigger}) — not this one`;
+
+  return { kind: 'outcomeUnknown', runId: undefined, reason: reason + silent + other, followed: { polls: watch.polls, answered: watch.answered }, otherRun: watch.other };
 }
 
 function readable(answer: HandOff | RootFailure | undefined): HandOff | undefined {
@@ -379,8 +489,13 @@ function resultReason(answer: HandOff): string {
   return `the daemon answered result ${result}${answer.runId === undefined ? ' with no run id' : ''}`;
 }
 
-function isOurs(running: RunningBlock, runId: RunId | undefined): boolean {
-  return runId === undefined || running.runId === runId;
+/** Review M2: with no run id, only the panel's run of exactly the asked actions is this hand-off. */
+function isOurs(running: RunningBlock, expected: Expected): boolean {
+  return running.trigger === 'manual' && sameActions(running.actions, expected.actions);
+}
+
+function sameActions(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && [...a].sort().every((x, i) => x === [...b].sort()[i]);
 }
 
 function isQueuedOrLive(running: RunningBlock): boolean {

@@ -17,6 +17,8 @@ export type RunningState = (typeof RUNNING_STATES)[number];
 export interface RunningBlock {
   readonly state: EnumRead<RunningState>;
   readonly runId: RunId | undefined;
+  readonly trigger: string;
+  readonly actions: readonly string[];
   readonly reason: string;
 }
 
@@ -99,9 +101,15 @@ export type HandOffOutcome =
   /** The answer was unknown (a timeout, a kill, `result: unknown`, a value this build does not know) and the run was SEEN queued or live. */
   | { readonly kind: 'acceptedObserved'; readonly runId: RunId | undefined; readonly running: RunningBlock }
   /** Unknown, and followed for the bound without seeing it: E6.S3 keeps the run id (when there is one) and asks `runs show`. */
-  | { readonly kind: 'outcomeUnknown'; readonly runId: RunId | undefined; readonly reason: string }
+  | { readonly kind: 'outcomeUnknown'; readonly runId: RunId | undefined; readonly reason: string; readonly followed: FollowCount | undefined; readonly otherRun: RunningBlock | undefined }
   /** `act --stop` was taken (`result: stopping`). */
   | { readonly kind: 'stopping'; readonly runId: RunId; readonly unit: string }
   | RootFailure;
+
+/** How a follow went: the status polls made, and how many answered for this distribution. */
+export interface FollowCount {
+  readonly polls: number;
+  readonly answered: number;
+}
 
 export type RootCheckOutcome = { readonly kind: 'rootOk'; readonly distro: string; readonly version: DaemonVersion } | RootFailure;

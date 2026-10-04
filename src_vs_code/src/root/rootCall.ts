@@ -68,7 +68,13 @@ export const ROOT_TIMEOUT_MS: { readonly [K in RootOpName]: number } = {
   rootCheck: VERB_TIMEOUT_MS.version,
 };
 
+/** What a full check's run holds as its actions in `status.running` (`["collect"]`) — what a follow with no run id may adopt. */
+export const FULL_CHECK_ACTIONS: readonly string[] = ['collect'];
+
 const AS_ROOT = ['-u', 'root'];
+
+/** Taken out of every root call's environment (review S2): `wsl.exe` would carry the Windows variables it names into root's. */
+const NOT_FOR_ROOT = ['WSLENV'];
 
 type Tails = { readonly [K in RootOpName]: (op: Extract<RootOp, { op: K }>) => readonly string[] | undefined };
 
@@ -107,7 +113,7 @@ function stdinOf(op: RootOp): { readonly stdin?: Buffer } {
 export function rootRequest(target: RootTarget, op: RootOp): ProcessRequest | undefined {
   const tail = tailOf(op);
 
-  return tail === undefined ? undefined : { file: target.wsl, args: daemonArgv(target.distro, tail, AS_ROOT), timeoutMs: ROOT_TIMEOUT_MS[op.op], ...stdinOf(op) };
+  return tail === undefined ? undefined : { file: target.wsl, args: daemonArgv(target.distro, tail, AS_ROOT), timeoutMs: ROOT_TIMEOUT_MS[op.op], withoutEnv: NOT_FOR_ROOT, ...stdinOf(op) };
 }
 
 /** Start `op` through `runner` — or nothing, when it cannot be built. */

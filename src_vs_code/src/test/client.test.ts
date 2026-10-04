@@ -369,3 +369,17 @@ test('a doctor timeout is never re-read as a crowded preview, whatever the conta
   await c.run('status');
   assert.equal((await c.run('doctor')).kind, 'timedOut');
 });
+
+// ---- E6.S2 review L1: ONE reading of a launcher ending, shared with the root paths ----
+
+test('L1: a daemon call ended by a signal reads as the root paths read it — an unknown failure naming the signal', async () => {
+  const signalled: ProcessResult = { kind: 'signalled', signal: 'SIGKILL', stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  const { c } = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.status)]: signalled });
+  assert.deepEqual(await c.run('status'), { kind: 'unknownFailure', code: undefined, messages: ['ended by SIGKILL'], verb: 'status' });
+});
+
+test('L1: a WSL question that timed out is WSL failing; a daemon call that timed out is its own timeout — the one reader\'s parameter', async () => {
+  const timedOut: ProcessResult = { kind: 'timedOut', timeoutMs: 15_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  const { c } = client({ [LIST_QUIET]: timedOut });
+  assert.deepEqual(await c.run('status'), { kind: 'wslFailed', message: 'wsl.exe did not answer within 15000 ms', verb: 'status' });
+});

@@ -363,3 +363,13 @@ test('root: a root call to a STOPPED distribution is refused like every -d — a
     assert.equal(exitOf(await rootAsk(world, ['collect', '--detach', '--json'])).code, FAKE_EXIT.wouldStart);
   });
 });
+
+test('root: S2 — a root call that still carries WSLENV in its environment is refused; a read call may carry it', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const withEnv = (args: readonly string[]): Promise<ProcessResult> => world.runner({ file: WSL, args, timeoutMs: 15_000, env: { WSLENV: 'PATH/l' } });
+    const { code, stderr } = exitOf(await withEnv([...ROOT_CALL, '--version']));
+    assert.equal(code, FAKE_EXIT.refused);
+    assert.match(stderr, /WSLENV reached a root call/);
+    assert.equal(exitOf(await withEnv([...DAEMON_CALL, 'status', '--json'])).code, 0);
+  });
+});

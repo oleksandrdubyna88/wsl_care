@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { DAEMON_EXIT, WSL_EXE_FAILED } from '../client/exitCodes';
-import { classifyExit, daemonMessages, GLIBC_MISSING, notInstalledSignature } from '../client/failures';
+import { classifyExit, daemonMessages, GLIBC_MISSING, notInstalledSignature, launchFailure } from '../client/failures';
 import { missingBinaryStderr, NO_SUCH_DISTRO, OLD_GLIBC_STDERR } from './fake/fakeWsl';
 
 /**
@@ -73,4 +73,15 @@ test('any other code is an unknown failure with the code and the daemon lines on
 
 test('only lines that START with wsl-care: are the daemon\'s message — a log line mentioning it is not', () => {
   assert.deepEqual(daemonMessages('[INF] wsl-care: starting\nwsl-care: refused\r\n  wsl-care: indented\n\u001b[1mwsl-care: bold\u001b[0m'), ['wsl-care: refused', 'wsl-care: bold']);
+});
+
+// ---- E6.S2 review L1: launchFailure is THE reading of a launcher ending that is not an exit ----
+
+test('L1: launchFailure reads every non-exit ending, the timeout by its parameter', () => {
+  const empty = { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+  assert.deepEqual(launchFailure({ kind: 'failedToStart', reason: 'ENOENT' }, 'daemonCall'), { kind: 'wslFailed', message: 'wsl.exe could not be started: ENOENT' });
+  assert.deepEqual(launchFailure({ kind: 'tooMuchOutput', stream: 'stdout', limitBytes: 9 }, 'wslQuestion'), { kind: 'unparseable', detail: 'the answer exceeded 9 bytes on stdout' });
+  assert.deepEqual(launchFailure({ kind: 'timedOut', timeoutMs: 5, ...empty }, 'daemonCall'), { kind: 'timedOut', timeoutMs: 5 });
+  assert.deepEqual(launchFailure({ kind: 'timedOut', timeoutMs: 5, ...empty }, 'wslQuestion'), { kind: 'wslFailed', message: 'wsl.exe did not answer within 5 ms' });
+  assert.deepEqual(launchFailure({ kind: 'signalled', signal: 'SIGTERM', ...empty }, 'daemonCall'), { kind: 'unknownFailure', code: undefined, messages: ['ended by SIGTERM'] });
 });

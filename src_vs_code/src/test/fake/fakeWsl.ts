@@ -219,9 +219,10 @@ function distroReply(scenario: FakeScenario, argv: readonly string[]): Reply | u
 }
 
 /** The fake's whole decision, pure: what `argv` (with `stdin`) answers under `scenario`. Exported for its own tests. */
-export function decide(scenario: FakeScenario, argv: readonly string[], stdin: Buffer = Buffer.alloc(0)): Reply {
+export function decide(scenario: FakeScenario, argv: readonly string[], stdin: Buffer = Buffer.alloc(0), wslenv = false): Reply {
   if (isRootCall(argv)) {
-    return rootReply(scenario, argv, stdin);
+    // E6.S2 review S2: the Windows user's WSLENV must never reach a root call (it would choose what the daemon's env holds).
+    return wslenv ? refuse('WSLENV reached a root call — the environment of the root daemon must not be steered from Windows', argv) : rootReply(scenario, argv, stdin);
   }
   if (stdin.length > 0) {
     return refuse('stdin outside --only -: only a root confirm of A4 pipes a list', argv);
@@ -280,7 +281,7 @@ async function main(): Promise<void> {
     emit({ code: FAKE_EXIT.wrongFile, stderr: `fake wsl: started as ${JSON.stringify(file)}, not as an absolute ...\\System32\\wsl.exe\n` });
     return;
   }
-  const reply = decide(scenario, argv, stdin);
+  const reply = decide(scenario, argv, stdin, process.env.WSLENV !== undefined);
   if (reply.code === 0) {
     markStarted(scenarioFile, scenario, argv);
   }
