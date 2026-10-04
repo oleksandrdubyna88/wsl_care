@@ -224,6 +224,43 @@ public sealed class InstallFlows
         NothingChanged(world, before);
     }
 
+    /// <summary>E5 code round (security #3): an install PINNED to a release — what the extension's *Install daemon* types,
+    /// `refs/tags/daemon-v&lt;x&gt;/install.sh … --version &lt;x&gt;` — that stops for want of gh must be told the last-resort line
+    /// for that SAME tag and version. The old advice named main's installer with no version: one paste away from the
+    /// newest daemon, unverified, instead of the one the person chose.</summary>
+    [Fact]
+    public async Task Without_gh_a_pinned_install_is_told_the_last_resort_line_for_the_same_tag_and_version_never_main()
+    {
+        Linux();
+        using var world = new InstallWorld("no-gh-pinned", withoutTools: ["gh"]);
+        var before = world.Tree();
+
+        var result = await world.RunAsync("--version", InstallWorld.NewestDaemon);
+
+        FailedAt(result, "preflight");
+        result.Stderr.Should().Contain($"curl -fsSL https://raw.githubusercontent.com/{InstallWorld.Repo}/refs/tags/daemon-v{InstallWorld.NewestDaemon}/install.sh | sudo sh -s -- --version {InstallWorld.NewestDaemon} --skip-attestation")
+            .And.Contain("LAST RESORT");
+        result.Stderr.Should().NotContain("/main/install.sh", "a pinned install is never pointed at main's installer");
+        world.CallsOf("curl").Should().BeEmpty();
+        NothingChanged(world, before);
+    }
+
+    /// <summary>The same class, swept (security.md — a measure applied at SOME of its sites): every re-run line the
+    /// installer prints comes from one function, so the "run it as root" line repeats the pinned ref too.</summary>
+    [Fact]
+    public async Task A_pinned_install_started_without_root_is_told_to_re_run_the_same_tag_and_version()
+    {
+        Linux();
+        using var world = new InstallWorld("not-root-pinned");
+        world.Override("id", ["-u"], 0, "1000\n");
+
+        var result = await world.RunAsync("--version", InstallWorld.NewestDaemon);
+
+        FailedAt(result, "preflight");
+        result.Stderr.Should().Contain($"curl -fsSL https://raw.githubusercontent.com/{InstallWorld.Repo}/refs/tags/daemon-v{InstallWorld.NewestDaemon}/install.sh | sudo sh -s -- --version {InstallWorld.NewestDaemon}\n");
+        result.Stderr.Should().NotContain("/main/install.sh");
+    }
+
     [Fact]
     public async Task Skip_attestation_installs_without_gh_says_so_loudly_and_still_refuses_a_bad_checksum()
     {
