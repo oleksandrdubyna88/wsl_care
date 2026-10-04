@@ -80,7 +80,7 @@ test('lists under a row render as a sub-table: headers, then one line per item �
   assert.deepEqual(list.all('th[data-header]').map((h) => h.textContent), folders.headers);
   const lines = list.all('tr[data-item]').map((tr) => tr.all('td[data-cell]').map((td) => td.textContent));
   assert.deepEqual(lines, folders.items);
-  assert.ok(lines.some((cells) => cells.includes('unavailable — /golden-root/home/me/.npm does not exist')));
+  assert.ok(lines.some((cells) => cells.includes('unavailable — /golden-root/home/user/.npm does not exist')));
 });
 
 test('a row\'s level reaches the page as data (clock jumps warn in the head golden)', () => {
