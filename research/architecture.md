@@ -137,6 +137,23 @@ scenarios measured the runner's real Docker instead of their fake. The same look
 `docker.exe` in whatever directory the daemon started from win; the family's `gh` resolver
 (`dew_flow_conventions/.github/scripts/lib/resolved.mjs`) records the same lesson.
 
+**The one fallback: Windows programs on the mounted system drive** (`WindowsSystemDrive`, live finding 2026-10-04, plan
+§17 #1). systemd gives `wsl-care.service` the PATH `/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin`; WSL
+appends the Windows folders to PATH only for interactive and login sessions, so under the timer `powershell.exe` was
+"not found on PATH", `clock.drift` unknown and A16 refused — on every machine. Now, inside the distro only, when PATH
+does not hold a name in the CLOSED list `WindowsSystemDrive.Programs` (`powershell.exe` → `Windows/System32/WindowsPowerShell/v1.0`,
+nothing else), the resolver looks in that one folder on the Windows system drive and starts the file only if it is a
+regular file (a symbolic link is refused), carries an execute bit and begins with the `MZ` header — a Windows program
+runs only through WSL interop, on Windows as the Windows user, where an ELF or a script under that name would run
+natively as root. WHERE the drive is mounted is derived from `/proc/self/mounts` (the `drvfs` mount — `9p` with
+`aname=drvfs`, or type `drvfs` — whose source is the drive root `C:\`), so `/etc/wsl.conf`'s `[automount] root=` is
+honoured as WSL applied it and a folder nobody mounted is never searched; the mount table is read only for a name in
+the list. WHICH drive holds Windows is an assumption, documented in the type: `C:` — nothing a service can read names
+`%SystemDrive%`, and searching every drive would let a folder a Windows user may create on a data drive be started by
+the root daemon. PATH still wins, every other name is PATH-only, Windows is unchanged, and the argv the policy judges
+still names the bare program. The not-found reason names both searches (`… not found on PATH (5 directories searched,
+…); on the Windows system drive /mnt/c/…/powershell.exe does not exist`).
+
 ```mermaid
 flowchart LR
     argv["argv[0]"]
@@ -144,14 +161,20 @@ flowchart LR
     rel{"a relative path?"}
     walk["each absolute PATH entry, in order<br/>Windows: name.exe, name.com · Linux: name + execute bit"]
     found["Process.Start(FULL path)"]
-    fail["FailedToStart<br/>'… not found on PATH (N directories searched)'"]
+    fail["FailedToStart<br/>'… not found on PATH (N directories searched)…'"]
+    listed{"Linux, and a name in<br/>WindowsSystemDrive.Programs?"}
+    drive["its folder under the drvfs mount of drive C<br/>(from /proc/self/mounts)<br/>regular file · execute bit · MZ header"]
     argv --> abs
     abs -->|yes| found
     abs -->|no| rel
     rel -->|yes| fail
     rel -->|no, a bare name| walk
     walk -->|first hit| found
-    walk -->|none| fail
+    walk -->|none| listed
+    listed -->|no| fail
+    listed -->|yes| drive
+    drive -->|passes| found
+    drive -->|absent / refused| fail
 ```
 
 Logging (`Cli.Logging`, per the family rule): Serilog configured in code before the verb runs; the
