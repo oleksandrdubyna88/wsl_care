@@ -16,9 +16,11 @@
 #      types `--version <MIN>` must never ship before that daemon is out and was seen working. Since E6.S2 (plan §15j
 #      M5) the artefact holds TWO minima — `minDaemonForRender` and `minDaemonForActions` (the daemon the cleanups need,
 #      the one *Install daemon* types) — and BOTH must be published releases, and the stamp at or above both;
-#   6. THE FIRST PUBLIC EXTENSION STAYS ROOT-FREE (plan §15j B3, keyed on TAGS by §15k #7): a checkout that carries the
-#      root module (src_vs_code/src/root/rootCall.ts) is refused while the release is `extension-v0.1.0` or earlier, or
-#      while no `extension-v0.1.0` tag exists yet. The answer is also an output, `root_allowed`, and the build hands it to
+#   6. THE FIRST PUBLIC EXTENSION STAYS ROOT-FREE (plan §15j B3, keyed on TAGS by §15k #7, tightened by the E6.S2 review
+#      S1): a checkout that carries the root module (src_vs_code/src/root/rootCall.ts) is refused unless ALL of: the release
+#      is above `extension-v0.1.0`; that tag exists and its OWN tree carries no root module (a refused 0.1.0 that carried it
+#      stays tagged — the ruleset blocks deleting a tag — and must not open the door); and `extension-v0.1.0` is a PUBLISHED,
+#      non-draft GitHub release (the root-free one actually shipped). The answer is also an output, `root_allowed`, and the build hands it to
 #      check-vsix, which refuses the BUNDLE when it carries the root module's marker and root_allowed is false — the
 #      source here, the artefact there.
 #
@@ -78,19 +80,31 @@ if [ "$#" -eq 2 ]; then
   git merge-base --is-ancestor HEAD "$2" 2> /dev/null || refuse "the tagged commit is not on $2 — a release is cut from main only"
 fi
 
-# The first public extension stays root-free (plan §15j B3, keyed on TAGS — §15k #7): a root-capable extension is
-# released only ABOVE extension-v0.1.0, and only once that tag exists. The tags come from the guard job's full-history
-# checkout; a checkout with no tags at all (or no git) reads as "no extension-v0.1.0 yet".
+# published_release <tag>: succeeds when <tag> is a PUBLISHED, non-draft GitHub release. GitHub answers a draft's tag with 404
+# to a read-only token, and the jq filter makes a published one print `false<TAB><tag>` — anything else is not published.
+published_release() {
+  local answer
+  answer="$(gh api "repos/${GH_REPO:?GH_REPO is required}/releases/tags/$1" --jq '[(.draft | tostring), .tag_name] | @tsv' 2> /dev/null)" || return 1
+  [ "$answer" = "false	$1" ]
+}
+
+# The first public extension stays root-free (plan §15j B3, keyed on TAGS — §15k #7 — and the E6.S2 review S1). The tags
+# and trees come from the guard job's full-history checkout; GitHub is asked last, and only when everything local allows.
+first_public="extension-v$FIRST_PUBLIC"
 root_allowed=false
-if [ "$version" != "$FIRST_PUBLIC" ] && version_at_least "$version" "$FIRST_PUBLIC" \
-  && git rev-parse -q --verify "refs/tags/extension-v$FIRST_PUBLIC" > /dev/null 2>&1; then
+if [ "$version" = "$FIRST_PUBLIC" ] || ! version_at_least "$version" "$FIRST_PUBLIC"; then
+  root_refusal="extension-v$version is the first public extension or earlier — it must stay root-free (plan §15j B3); the root boundary ships above $first_public"
+elif ! git rev-parse -q --verify "refs/tags/$first_public^{commit}" > /dev/null 2>&1; then
+  root_refusal="no $first_public tag exists yet — the first public extension is tagged root-free from E5's merge first (plan §15j B3, §15k #7)"
+elif git cat-file -e "refs/tags/$first_public:$ROOT_MODULE" 2> /dev/null; then
+  root_refusal="$first_public was tagged from a tree that carries the root module, so the first public extension never shipped root-free (plan §15j B3, E6.S2 review S1)"
+elif ! published_release "$first_public"; then
+  root_refusal="$first_public is not a published, non-draft GitHub release yet — a root-capable extension waits until the root-free one shipped (plan §15j B3, E6.S2 review S1); re-run this job once it is public"
+else
   root_allowed=true
 fi
 if [ -f "$ROOT_MODULE" ] && [ "$root_allowed" != true ]; then
-  if [ "$version" = "$FIRST_PUBLIC" ] || ! version_at_least "$version" "$FIRST_PUBLIC"; then
-    refuse "this checkout carries the root module ($ROOT_MODULE), but extension-v$version is the first public extension or earlier — it must stay root-free (plan §15j B3); the root boundary ships above extension-v$FIRST_PUBLIC"
-  fi
-  refuse "this checkout carries the root module ($ROOT_MODULE), but no extension-v$FIRST_PUBLIC tag exists yet — the first public extension is tagged root-free from E5's merge first (plan §15j B3, §15k #7)"
+  refuse "this checkout carries the root module ($ROOT_MODULE), but $root_refusal"
 fi
 
 # The minima, from the JSON artefact, read by a JSON parser (python3, on every Ubuntu runner): neither a reformatted
