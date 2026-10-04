@@ -698,7 +698,9 @@ that only runs during a release has never run"). All of it is C# in `WslCare.Sce
 | `PackageFlows` | `.github/scripts/package-daemon.sh` run under bash against a stub binary; the archive read back with `System.Formats.Tar` (an oracle independent of GNU tar): exactly the members `install.sh`'s unpack loop names — read from `install.sh` itself, `ReleaseFiles.InstallerRequiredMembers` — plus their folders, entry types, owner, modes, bytes, and the `.sha256` line; then the archive served to the real `install.sh` by `InstallWorld.PublishFiles` (new), which must install it. The Windows zip is read with `ZipFile` | Linux legs; the zip case where `7z` is on `PATH` (the GitHub Ubuntu image has it) |
 | `ReleaseScriptFlows` | `release-guard.sh` and `verify-release-assets.sh` (since the review also with named RIDs: one leg's pair passes, anything else is refused, an unknown RID exits 2) by EXIT CODE (a check that prints and exits 0 stops nothing in a workflow); the guard's off-`main` case in a throwaway git repository whose commit identity comes from `GIT_AUTHOR_*` / `GIT_COMMITTER_*` in the child's environment (no git configuration is written); archive names from the asset contract itself (`daemon_archive_name`, run under bash), never retyped | Linux legs |
 | `ReleaseWorkflowTests` | the workflows' structure, read with `WorkflowYaml` — a reader for the YAML subset the workflows are written in that THROWS on anything else (a tab, an anchor, a folded or continued scalar, a duplicate key, a flow map with content), so a construct it does not know fails where it was written rather than being guessed. Its own test plants six such constructs and reads one known document | every OS |
-| `ReleaseConfigTests` | `release-please-config.json`, the manifest and `version.txt`, the two ruleset bodies — against the workflows (the tag, the check names, expanded from the matrix) | every OS |
+| `ReleaseConfigTests` | `release-please-config.json`, the manifest and `version.txt`, the two ruleset bodies — against the workflows (the tag, the check names, expanded from the matrix); since E5.S3 the `src_vs_code` package too (`node`, its tag = `release-extension.yml`'s, manifest = `package.json`, both packages bootstrapped at 0.1.0) | every OS |
+| `ReleaseExtensionWorkflowTests` (E5.S3) | `release-extension.yml`'s structure: the tag-only trigger, each job's exact permissions, the `marketplace` Environment on one job and `VSCE_PAT` named by that job alone (across every workflow), the order github-draft → publish-marketplace → github-public (§15h #0), the idempotent skip and the attested file published, one package checked with `--release` then attested, the guard's inputs, the `MIN_DAEMON_FOR_RENDER` line the guard parses, `tags-extension.json` equal to `tags-daemon.json` but for name and pattern | every OS |
+| `ReleaseExtensionScriptFlows` (E5.S3) | `release-extension-guard.sh` by exit code with a fake `gh` on `PATH`: tag shape, `package.json` version, the placeholder publisher, off-`main`, the minimum daemon not published / a draft / another tag, POST_DEPLOY's stamp without a date / without a daemon / older than the minimum, a newer one (and `0.10.0` compared as a number); `verify-extension-assets.sh` whole and broken five ways | Linux legs |
 
 On the owner's machine (2026-10-03): the structure tests on Windows; the whole Scenarios suite in WSL `Ubuntu` from a copy
 of the worktree under `/tmp`, built there, with a downloaded 7-Zip 23.01 (`7zz`, linked as `7z`) on a scratch `PATH`
@@ -824,8 +826,10 @@ on Linux (WSL) with `WSL_CARE_WRITE_GOLDENS=1 ./src_daemon/tests/WslCare.Scenari
 > against a strict fake `wsl.exe` — and the structural, manifest and bundle checks. E5.S2 (2026-10-04): the views'
 > unit tests over the goldens (status bar, view model, field map held equal to `architecture.md`, poller on a manual
 > clock, webview shell / CSP / messages), the panel's page script RUN in a strict `node:vm` harness, and the
-> EXTENSION-HOST tier — `@vscode/test-electron` against VS Code 1.85.0 and stable. Packaging and the `.vsix` content
-> checks are E5.S3's. Every fact the fake reproduces was measured first: [2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md).
+> EXTENSION-HOST tier — `@vscode/test-electron` against VS Code 1.85.0 and stable. E5.S3 (2026-10-04): *Install daemon*
+> (the pinned command, the modal and the terminal through recorders), the `.vsix` content checks over the PACKAGED
+> artefact, the icon held to its recipe, and in C# the extension release workflow's structure and its guard / asset
+> scripts. Every fact the fake reproduces was measured first: [2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md).
 
 ### Where it is and how it runs
 
@@ -858,6 +862,9 @@ count) and starts ONE `node --test` with `--require out/test/support/noRealWsl.j
 | `src/test/support/pageHarness.ts` | **the page harness** (E5.S2), ported from dew_flow_vscode_kit's `pageHarness.ts` and made stricter: `node:vm` with three globals (`document`, `window`, `acquireVsCodeApi` — no `require`, `process`, `fetch`, `setTimeout`), a 5 s deadline on the script AND on every dispatched message / click, and a PROXY per element that throws on any member it does not model — every HTML sink (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`), `style`, `on*`, `src`, `href`; `createElement` of a text page's tags only; `setAttribute` of `role` / `scope` / `title` / `type` / `colspan` / `aria-*` / `data-*` only; `textContent` of a string only (as in a browser, it replaces the children). Its own tests: `harness.test.ts` |
 | `src/test/support/outcomes.ts` | golden bodies (or edited copies) read through the client's own `parseAnswer` — the view tests see exactly the typed answers the product receives |
 | `src/test/support/fieldMapDoc.ts` | the field map as the Markdown block `architecture.md` carries — generated, never typed (`npm run fieldmap:doc` writes it) |
+| `src/test/support/vsixCheck.ts` + `zipFile.ts` | **the `.vsix` checks** (E5.S3) — a dependency-free ZIP reader that refuses what it cannot read safely (ZIP64, encryption, another method, a climbing or duplicate name), and the checks `scripts/check-vsix.mjs` runs over the packaged file: the allowlist exactly, no machine path / user name / denylist word / e-mail / source map, the build stamp, a real publisher on a release. Tested by planting each offence into an archive built from the files the allowlist names (`vsixCheck.test.ts`) |
+| `src/test/support/iconPng.ts` | the Marketplace icon's RECIPE — a rasteriser and PNG encoder (Node zlib only) and a decoder the test uses to hold `media/icon.png` to it |
+| `src/install/installUi.ts` (product code) | in Test mode the modal and the terminal of *Install daemon* are RECORDERS the test API exposes — no real terminal (it would start the real `wsl.exe`) |
 | `src/test/host/suite.ts` + `scripts/run-host.mjs` | **the extension-host tier**: the extension as it ships (`dist/extension.js`) in a real VS Code; observed through the runner seam's call log and the test API `activate` returns in Test mode only (`testApi.ts`) |
 
 ### Extension flow catalogue
@@ -865,7 +872,8 @@ count) and starts ONE `node --test` with `--require out/test/support/noRealWsl.j
 A row for every client verb (`client <verb>`), every contributed command (`command <id>`) and view (`view <id>`) —
 derived from `VERB_NAMES` and `package.json`'s `contributes`; `catalogue.test.ts` fails, naming the flow, when one is
 missing (E5.S2 contributes the view `wslCare.panel` and three commands; it was red with exactly those four missing
-before the rows below were written — its planted companion still shows a command or view without a row is reported).
+before the rows below were written — its planted companion still shows a command or view without a row is reported;
+E5.S3 adds the command `wslCare.installDaemon`, and the check was red with exactly it missing until its row existed).
 
 | Flow | Covered | By |
 |---|---|---|
@@ -877,6 +885,7 @@ before the rows below were written — its planted companion still shows a comma
 | `command wslCare.openPanel` — the status-bar item's click; focuses `wslCare.panel` | covered | `host/suite.ts` (executes it, the webview reports its rows) |
 | `command wslCare.refresh` — the panel title's Refresh: the same round as a panel open (`status`, then `preview` + `doctor`); never starts a stopped distribution | covered | `poller.test.ts` (*opening the panel asks status, then preview and doctor*; *a stopped distribution: the panel asks status only*), `host/suite.ts` (*a stopped distribution: NO -d call … on a panel refresh*) |
 | `command wslCare.startWsl` — *Start WSL and check*: `status` with `startIfStopped`, the ONE `-d` that may start a stopped distribution, because the user asked; every distribution check still applies; never folded into a poll in flight | covered | `client.test.ts` (*startIfStopped …*), `poller.test.ts` (*"Start WSL and check" passes startIfStopped to status ONLY*), `fakeWsl.test.ts` (*startable …*), `host/suite.ts` (*"Start WSL and check" makes the one -d the user asked for*) |
+| `command wslCare.installDaemon` — *Install daemon* (E5.S3; also the panel button when the status answer is *daemon not installed*): the distribution validated (the setting's pattern before any spawn, then `--list`) BEFORE anything is opened; a modal with the exact pinned command and the prerequisites as text; on confirm ONE terminal `wsl.exe -d <distro>` (absolute launcher) and the command TYPED with `sendText(command, false)`, never run; declined → nothing; the page can only send the bare message | covered | `installDaemon.test.ts` (order, typed-not-run, refusal before anything, the real client's `terminalTarget`, a smuggled message dropped), `client.test.ts` (*terminalTarget …*), `viewModel.test.ts` (*E5.S3: a daemon that is not installed offers "Install daemon"*), `structure.test.ts` / `bundleScan.test.ts` (one command module, no runner, sudo only there), `host/suite.ts` (*Install daemon …* — the recorded modal and terminal in a real VS Code) |
 
 ### What each guarantee rests on
 
@@ -945,6 +954,43 @@ more mutation was run through the EXTENSION HOST.
 **The extension-host tier, green locally** (Windows, 2026-10-04): VS Code 1.85.0 and stable 1.140.0, each launched
 with the fake (6 scenarios) and without it (1 scenario) — 14 scenario runs, `npm run test:host` exit 0.
 
+### What each E5.S3 guarantee rests on
+
+E5.S3 (2026-10-04): *Install daemon*, the package and its leak checks, the extension's release pipeline, and the five
+findings of the coai gate's E5 plan round (plan §15h). Every guarantee below was broken by ONE production line, the
+suite run, and the file restored byte for byte (SHA-256 equal) — by a harness that applies the mutation, runs `npm test`
+(compile, bundle, every test) or rebuilds `WslCare.Scenarios` and runs its release classes, and restores. Six first
+attempts were red only because the compiler refused them (`noUnusedLocals`, a narrowed type) and were redone as
+behavioural mutations; the table records the behavioural ones. 338 extension tests after E5.S3 (337 pass, 1 skipped:
+the packaged-`.vsix` read when no `.vsix` newer than the bundle exists).
+
+| Guarantee | Test | Red observed (the one line broken) |
+|---|---|---|
+| the command is pinned to the minimum daemon's TAG, `--version <MIN>`, never `--skip-attestation`, never `main` | `installDaemon.test.ts` | `--skip-attestation` added → 3 red (*the command is pinned …*, *never skips the attestation …*, *the Marketplace README shows the very command …*); `daemon-v<MIN>` → `main` → the same 3 |
+| the command is TYPED, never executed | `installDaemon.test.ts` | `sendText(INSTALL_COMMAND, true)` → *confirmed: … typed, NOT executed* (`sendText(command, false): typed, never run`) |
+| a refused distribution gets no modal and no terminal | `installDaemon.test.ts` | a terminal opened on the refusal path → *a refused distribution: reported, no modal, no terminal* and *with the real client: an out-of-pattern setting is refused BEFORE anything starts …* |
+| nothing is opened without the modal's confirmation | `installDaemon.test.ts` | the confirm bypassed → *confirmed: …* and *declined …: no terminal, nothing typed* |
+| `terminalTarget` validates against `--list` | `client.test.ts`, `installDaemon.test.ts` | the setting used without the list → 4 red, among them *terminalTarget: the absolute launcher and -d <the listed distribution> …* |
+| a page message cannot carry text into the command | `installDaemon.test.ts`, `webviewHost.test.ts` | `keys.length === 1` → `>= 1` → *a webview message cannot inject text …* (`{"type":"installDaemon","command":"rm -rf ~"}`) and *anything else from the page is dropped …* |
+| a missing daemon offers *Install daemon* | `viewModel.test.ts` | the `notInstalled` button removed → *E5.S3: a daemon that is not installed offers "Install daemon" first* |
+| only `installCommand.ts` spells the installer / `sudo`; `sudo` in the bundle only there | `structure.test.ts`, `bundleScan.test.ts` | `Run sudo install.sh: …` put into `failureText.ts` → 3 red (*only the install-command module spells …*, *sudo appears in the bundle only inside the install command …*, *the sudo scan is alive …*) |
+| the README carries the command the extension types | `installDaemon.test.ts` | the README's line changed → *the Marketplace README shows the very command …* |
+| §15h #4: a LISTED name is used as it is | `client.test.ts` | the setting pattern applied to listed names again → *a default distribution WSL lists under a name outside the setting pattern is used AS IT IS* (`reason: "a name starting with \"-\"…"` on `Ubuntu+Dev~2`) |
+| §15h #4: a listed leading `-` is refused | `client.test.ts` | the check disabled → *a default whose name fails the pattern …* and *a listed default starting with "-" is refused …* |
+| §15h #4: an unlisted refusal names the listed distributions | `client.test.ts` | the names dropped from the reason → *a distribution wsl.exe --list does not report …* and *an unlisted setting is refused naming both …* |
+| §15h #4: the fake refuses a leading-`-` `-d` | `fakeWsl.test.ts` | the fake's check removed → *§15h #4: a -d value starting with "-" is refused …* |
+| §15h #1: a crowded preview timeout says so | `client.test.ts` | the explanation fed 0 containers → *a preview timeout with more running containers …*; `>` → `>=` → *at or below the assumption … stays a plain timeout* |
+| the bundle is stamped with its version | `bundleScan.test.ts`, `vsixCheck.test.ts`, `manifest.test.ts` | the `define` removed from `scripts/bundle.mjs` → 21 red (every clean-archive check, the stamp scans, the bundle-options test) |
+| the `.vsix` checks: drive path, e-mail, extra entry, stale stamp, placeholder publisher on a release | `vsixCheck.test.ts` | each rule disabled in turn → its planted test red: both drive-path plants; the e-mail plant (`did not match … holds an e-mail address`); *an extra entry is a finding*; *a stale bundle …*; *a RELEASE refuses the placeholder publisher* |
+| names are read in the bundle's LITERALS only | `vsixCheck.test.ts` | the whole bundle text read → *in the bundle only string LITERALS are read …* (`the real bundle carries the identifier, not the word in a string` — the CI account `runner`) |
+| the icon is its recipe | `icon.test.ts` | one channel of the fill colour changed → *its pixels are the ones the recipe draws* (`5453 bytes differ`) |
+| `release-extension.yml`: tag-only, per-job scopes, the Environment on one job, the secret named once, draft → Marketplace → public, the skip, one package with `--release`, the attested file published, a guard reading `releases/tags/daemon-v<MIN>`, the `MIN` line's shape, the extension ruleset, the manifest bootstrap, SHA pins, no `${{ }}` in `run:` | `ReleaseExtensionWorkflowTests`, `ReleaseWorkflowTests`, `ReleaseConfigTests` | 16 mutations, each red: a `workflow_dispatch` trigger; `id-token: write` on the Marketplace job (2 red: its scope and the signer list); `environment:` on build; the Marketplace not waiting for the draft (*… exists BEFORE the Marketplace serves anything (15h #0)*); public not waiting for the Marketplace; the `if:` of the skip removed; a second `npm run package` (`found 2`); the leak check without `--release`; `${{ github.ref_name }}` in a `run:` (2 red); an action by tag; the guard asking `releases/latest`; the manifest at 0.1.0; the extension ruleset on `daemon-v*`; `MIN_DAEMON_FOR_RENDER: string =` (the guard's line shape); `VSCE_PAT` named in the draft job; `vsce publish` without `--packagePath` |
+| the guard refuses a draft / wrong daemon release, an older verified daemon, the placeholder publisher; the asset set checks its checksum | `ReleaseExtensionScriptFlows` (Linux, under bash) | in the WSL copy: the stamp comparison disabled → *… daemon 0.0.9, older than the minimum*; the release answer check disabled → both *… not a published, non-draft release* rows; the publisher check disabled → *the placeholder publisher*; `sha256sum --check` replaced → *the extension asset set … refused broken* |
+
+**The extension-host tier, green locally** (Windows, 2026-10-04): VS Code 1.85.0 and stable, each with the fake (9
+scenarios — the build stamp, *Install daemon* declined and confirmed through the recorders) and without it (3 — the stamp,
+*Install daemon* ending at the closed runner, nothing started), `npm run test:host` exit 0.
+
 ### What the extension's tests do not prove
 
 - **No real `wsl.exe` is ever started by a test** — by design (the tripwire). The fake's answers are the measured ones of
@@ -954,8 +1000,17 @@ with the fake (6 scenarios) and without it (1 scenario) — 14 scenario runs, `n
   candidate shapes are answered, and the client makes no `-d` call for either), and the old-glibc loader line (its
   documented shape). The daemon's coloured stderr through `wsl.exe` is E1.S3's direct observation, not observed through
   `wsl.exe`.
-- **Whether `wsl-care` itself ends when `wsl.exe` is killed** — measured for `sleep` (it does) and for a process
-  ignoring SIGHUP (it does not); the AOT binary is not installed here.
+- **Whether the AOT `wsl-care` ends when `wsl.exe` is killed** — measured for `sleep` (it does), for a process ignoring
+  SIGHUP (it does not) and, since 2026-10-04 (§15h #3), for a JIT build of `wsl-care preview --all --json` with its
+  `docker` child (both end, [2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md) row 18); the AOT binary itself is
+  the installed daemon of the E5 live gate.
+- **What VS Code's real terminal does with `sendText(command, false)`**, and where a UI-kind extension's terminal opens
+  in a Remote – WSL window — the tests see the RECORDER's calls; the real terminal is an E5 live-gate observation
+  (`POST_DEPLOY.md` item 3).
+- **The release run itself** — `vsce publish`, the Marketplace's validation and serving, the Environment's approval, the
+  attestation and the uploads to a real draft never run outside a release; the tests hold the workflow's structure and
+  run its two scripts. `POST_DEPLOY.md` items 6 and 12 check the result after the E5 live gate.
+- **No screenshots** — the Marketplace README ships without images (no synthetic-fixture render pipeline here).
 - **Which settings file a UI-kind extension reads in a Remote-WSL window** — an E5 live-gate observation.
 - **The page harness is not a browser.** It runs `media/panel.js` against a modelled DOM that is stricter than a
   browser; it does not lay out, paint or apply the CSP. The CSP is asserted over the shell's TEXT (parsed into
@@ -1056,6 +1111,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | the published binary's smoke (`smoke-daemon.sh`: help/version, config round trip, `status`, a recorded full run read back with `doctor`, `act --preview` of every action, `preview --all --json` with no docker) | covered by CI, not by the suite | `ci · daemon` runs it on every pull request on all three RIDs; `release.yml` runs the same file on every leg; run by hand on 2026-10-03 against the JIT builds (Linux in WSL, Windows in Git Bash), red with a planted `version.txt`, and part 6 red in WSL with the `PATH` emptying removed (the live Docker answered: `rows shown as available … ['A4', 'A5', 'A5Testcontainers', 'A6', 'A6Unused', 'A7']`) |
 | the release archive packed on EVERY pull-request leg from the published AOT binary, its pair checked, its path opened outside bash | covered by CI | `ci · daemon`, steps *Package the archive* and *The archive path opens outside bash*; their presence on every leg and their order: `ReleaseWorkflowTests.Every_pull_request_leg_packs_the_archive_as_the_release_does_and_opens_its_path_outside_bash` |
 | the release run itself — the App token's tag starting `release.yml`, the attestation, the upload to the draft, the publish | not covered | needs the owner's settings (`docs/repo-settings.md`) and the cut of `daemon-v0.1.0`; verified after it by `POST_DEPLOY.md` items 8–10 |
+| the extension's release run — `release-extension.yml` from the guard to github-public, the Marketplace publish | not covered | needs the E5 live gate (`docs/repo-settings.md` steps 9–11 and *Cutting `extension-v0.1.0`*); verified after it by `POST_DEPLOY.md` items 3, 6 and 12 |
 | `install.sh` against a real release, a real `gh attestation verify`, real systemd and apt | not covered | the first live install on the owner's machine is the E4 live gate (plan §16), after the owner cuts `daemon-v0.1.0` (`docs/repo-settings.md`) |
 | the extension: status bar, panel, buttons, logs page, settings sync, help | not covered | the extension is not built yet (E5–E8) |
 

@@ -2,7 +2,9 @@
  * The CLOSED set of messages the panel's page may send the host (plan §15g m10), each validated EXACTLY — no extra
  * key, no other type. Nothing the page sends becomes argv: `refresh` and `startWsl` trigger a round the host builds
  * from its own closed verb set, `openSettings` opens the settings UI, `ready` asks for the current view, and `rendered`
- * reports how many rows the page drew (the extension-host scenarios read it). E5.S3 adds `installDaemon`.
+ * reports how many rows the page drew (the extension-host scenarios read it), and `installDaemon` (E5.S3) asks the host
+ * to start its *Install daemon* flow — bare, like the others: the command that flow types is the host's compiled
+ * constant (`install/installCommand.ts`), and a message carrying anything more is dropped.
  */
 
 export type PageMessage =
@@ -10,9 +12,10 @@ export type PageMessage =
   | { readonly type: 'rendered'; readonly rows: number }
   | { readonly type: 'refresh' }
   | { readonly type: 'openSettings' }
-  | { readonly type: 'startWsl' };
+  | { readonly type: 'startWsl' }
+  | { readonly type: 'installDaemon' };
 
-const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl']);
+const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon']);
 
 function isRecord(raw: unknown): raw is Readonly<Record<string, unknown>> {
   return typeof raw === 'object' && raw !== null && !Array.isArray(raw);

@@ -1,3 +1,4 @@
+import type { InstallRecorder } from './install/installUi';
 import type { ProcessRequest, Runner } from './process/runner';
 import type { RunnerChoice } from './process/runnerSelection';
 import type { BarView } from './statusBar/statusBarModel';
@@ -22,6 +23,10 @@ export interface WslCareTestApi {
   startWsl(): Promise<void>;
   settled(): Promise<void>;
   lastRendered(): number | undefined;
+  /** *Install daemon*'s recorded modal prompts, terminals and reports — and the answer the recorded modal gives. */
+  install(): InstallRecorder;
+  /** The version the running bundle was built for (`buildStamp.ts`). */
+  buildVersion(): string;
 }
 
 /** The runner wrapped so every request is logged before it is handed on — the test API's call log. */

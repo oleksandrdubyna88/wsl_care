@@ -76,10 +76,16 @@ function notice(snapshot: Snapshot): { notice: string; noticeLevel: ViewLevel } 
   return { notice: snapshot.checking ? 'Asking the daemon…' : '', noticeLevel: 'none' };
 }
 
-function actions(snapshot: Snapshot): PanelView['actions'] {
-  const start = snapshot.status?.kind === 'stopped' ? [{ id: 'startWsl' as const, label: 'Start WSL and check' }] : [];
+/** The button a status failure offers first: start a stopped distribution, or install a missing daemon (E5.S3). */
+const FIRST_ACTION: Partial<Record<VerbOutcome['kind'], PanelView['actions'][number]>> = {
+  stopped: { id: 'startWsl', label: 'Start WSL and check' },
+  notInstalled: { id: 'installDaemon', label: 'Install daemon' },
+};
 
-  return [...start, { id: 'refresh', label: 'Refresh' }, { id: 'openSettings', label: 'Settings' }];
+function actions(snapshot: Snapshot): PanelView['actions'] {
+  const first = snapshot.status === undefined ? undefined : FIRST_ACTION[snapshot.status.kind];
+
+  return [...(first === undefined ? [] : [first]), { id: 'refresh', label: 'Refresh' }, { id: 'openSettings', label: 'Settings' }];
 }
 
 export function buildPanelView(snapshot: Snapshot): PanelView {
