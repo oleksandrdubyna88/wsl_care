@@ -16,7 +16,7 @@ public sealed class LinuxSandbox : IDisposable
     {
         Root = new TempRoot(purpose);
         Paths = ProcfsFixture.PathsAt(Root.Path);
-        Files = new PhysicalFileSystem(Paths);
+        Files = new PhysicalFileSystem(Paths) { TrustedStateOwner = RegularFiles.EffectiveUid() };
     }
 
     public TempRoot Root { get; }

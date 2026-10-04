@@ -17,16 +17,18 @@ internal sealed class Heartbeat : IAsyncDisposable
     private readonly IHostPaths _paths;
     private readonly IFileSystem _files;
     private readonly TimeProvider _clock;
+    private readonly IProcessTable _processes;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
     private RunningFile _file;
 
-    public Heartbeat(IHostPaths paths, IFileSystem files, TimeProvider clock, RunningFile file, TimeSpan period)
+    public Heartbeat(IHostPaths paths, IFileSystem files, TimeProvider clock, IProcessTable processes, RunningFile file, TimeSpan period)
     {
         _paths = paths;
         _files = files;
         _clock = clock;
+        _processes = processes;
         _file = file;
         _loop = Task.Run(() => LoopAsync(period));
     }
@@ -39,7 +41,7 @@ internal sealed class Heartbeat : IAsyncDisposable
     {
         lock (_gate)
         {
-            _file = _file with { Current = actionId, HeartbeatAt = _clock.GetUtcNow() };
+            _file = RunningState.WithHeartbeat(_file with { Current = actionId }, _clock.GetUtcNow(), _processes);
             Write();
         }
     }
@@ -76,7 +78,7 @@ internal sealed class Heartbeat : IAsyncDisposable
     {
         lock (_gate)
         {
-            _file = _file with { HeartbeatAt = _clock.GetUtcNow() };
+            _file = RunningState.WithHeartbeat(_file, _clock.GetUtcNow(), _processes);
             Write();
         }
     }

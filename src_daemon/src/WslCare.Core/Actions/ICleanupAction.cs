@@ -65,6 +65,9 @@ public sealed record ShownList(bool Given, IReadOnlySet<string> Names)
 
     public static readonly ShownList None = new(false, new HashSet<string>(StringComparer.Ordinal));
 
+    /// <summary>Whether a selection of <paramref name="count"/> names is more than one shown list carries (coai E6 plan round #11).</summary>
+    public static bool Truncates(int count) => count > MaxNames;
+
     public static ShownList Of(IEnumerable<string> names) => new(true, new HashSet<string>(names, StringComparer.Ordinal));
 }
 
@@ -158,6 +161,12 @@ public sealed record ActionRun(
 
     /// <summary>What else the run detail should say: a part skipped because its tool is not installed, a cross-check.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>The run was CUT OFF by a cancellation (a signal) and stopped where it was: what it confirmed before is in
+    /// <see cref="Removed"/>, the command in flight and the rest in <see cref="NotRemoved"/> (E6.S0 review D2). The engine
+    /// records it as <c>interrupted</c> and stops the run there. Never serialised as false (absent).</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Interrupted { get; init; }
 
     /// <summary>A run that did nothing because nothing was selected — no command started.</summary>
     public static ActionRun Nothing(IReadOnlyList<ActionCommandRecord> commands, string why = "nothing to remove") =>

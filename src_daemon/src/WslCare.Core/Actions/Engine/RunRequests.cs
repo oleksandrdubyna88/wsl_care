@@ -43,6 +43,14 @@ public static class RunRequests
 {
     public const string Folder = "requests";
 
+    /// <summary>The largest request read: a full shown list (10 000 names of 64 hex digits, quoted, comma-separated ≈ 670 KB)
+    /// with room to spare; one byte more is a refusal, whatever the file's length claims.</summary>
+    public const int MaxRequestBytes = 1024 * 1024;
+
+    /// <summary>How many request files one reader opens at most: a queue that deep is already a defect to report, and every
+    /// unprivileged <c>status</c> reads them.</summary>
+    public const int MaxRequestsRead = 64;
+
     private const string Extension = ".json";
 
     public static string Directory(IHostPaths paths) => paths.Rules.Join(paths.StateDirectory, Folder);
@@ -64,15 +72,15 @@ public static class RunRequests
             return [new RunRequestRead.Bad(Directory(paths), $"the request folder cannot be listed ({e.Message})")];
         }
 
-        return [.. names.SelectMany(path => FiledRunId(path) is { } id ? [Read(files, path, id)] : Array.Empty<RunRequestRead>())];
+        var filed = names.SelectMany(path => FiledRunId(path) is { } id ? [(path, id)] : Array.Empty<(string, RunId)>()).ToList();
+        var reads = filed.Take(MaxRequestsRead).SelectMany(f => Read(files, f.Item1, f.Item2) is { } read ? [read] : Array.Empty<RunRequestRead>());
+        return filed.Count > MaxRequestsRead
+            ? [.. reads, new RunRequestRead.Bad(Directory(paths), $"holds {filed.Count - MaxRequestsRead} more requests than the {MaxRequestsRead} a reader opens; they were not read")]
+            : [.. reads];
     }
 
-    /// <summary>The request filed under <paramref name="runId"/>; <c>null</c> when there is none.</summary>
-    public static RunRequestRead? Find(IHostPaths paths, IFileSystem files, RunId runId)
-    {
-        var path = File(paths, runId);
-        return files.FileExists(path) ? Read(files, path, runId) : null;
-    }
+    /// <summary>The request filed under <paramref name="runId"/>; <c>null</c> when there is none (or it vanished as it was read).</summary>
+    public static RunRequestRead? Find(IHostPaths paths, IFileSystem files, RunId runId) => Read(files, File(paths, runId), runId);
 
     private static RunId? FiledRunId(string path)
     {
@@ -80,11 +88,13 @@ public static class RunRequests
         return name.EndsWith(Extension, StringComparison.Ordinal) ? RunId.TryParse(name[..^Extension.Length]) : null;
     }
 
-    private static RunRequestRead Read(IFileSystem files, string path, RunId filedAs) => files.ReadFile(path) switch
+    /// <summary>One request, read as a state file root wrote (regular, no link, capped, root's alone — E6.S0 review S1); a
+    /// file gone by the time it is read is no request (review D4: the run it named has just moved on).</summary>
+    private static RunRequestRead? Read(IFileSystem files, string path, RunId filedAs) => files.ReadStateFile(path, MaxRequestBytes) switch
     {
         FileReadResult.Content content => Parse(path, content.Bytes, filedAs),
-        FileReadResult.Unreadable u => new RunRequestRead.Bad(path, $"cannot be read ({u.Reason})"),
-        _ => new RunRequestRead.Bad(path, "disappeared while it was read"),
+        FileReadResult.Unreadable u => new RunRequestRead.Bad(path, $"cannot be used ({u.Reason})"),
+        _ => null,
     };
 
     private static RunRequestRead Parse(string path, byte[] bytes, RunId filedAs)
@@ -93,7 +103,7 @@ public static class RunRequests
         {
             return JsonSerializer.Deserialize(bytes, WslCareJsonContext.Default.RunRequestFile) switch
             {
-                { RunId: not null, Kind: not null, Actions: not null } file when file.RunId == filedAs => new RunRequestRead.Parsed(path, file with { Shown = file.Shown ?? [] }),
+                { RunId: not null, Kind: not null, Actions: not null } file when file.RunId == filedAs => Validated(path, file with { Shown = file.Shown ?? [] }),
                 { RunId: not null } other => new RunRequestRead.Bad(path, $"names run {other.RunId} but is filed as {filedAs}"),
                 _ => new RunRequestRead.Bad(path, "does not parse: it is not a run request"),
             };
@@ -103,4 +113,22 @@ public static class RunRequests
             return new RunRequestRead.Bad(path, $"does not parse ({e.Message})");
         }
     }
+
+    /// <summary>Parsed is not trusted: the content is held to exactly what root writes — schema 1, a known kind, known ids
+    /// (an <c>act</c>'s action ids; a <c>collect</c>'s <c>["collect"]</c>), every shown name a 64-hex volume name, no more of
+    /// them than a shown list carries (E6.S0 review S1).</summary>
+    private static RunRequestRead Validated(string path, RunRequestFile file) =>
+        ContentProblem(file) is { Length: > 0 } problem ? new RunRequestRead.Bad(path, problem) : new RunRequestRead.Parsed(path, file);
+
+    private static string ContentProblem(RunRequestFile file) =>
+        file.SchemaVersion != SchemaVersion.Current ? $"has schemaVersion {file.SchemaVersion}, not {SchemaVersion.Current}"
+        : file.Kind is not ("act" or "collect") ? "names a kind that is neither act nor collect"
+        : !KnownActions(file) ? $"names an action this daemon does not know for a {file.Kind} request"
+        : !ValidShown(file.Shown) ? $"carries a shown list that is not at most {ShownList.MaxNames} anonymous volume names (64 lowercase hex digits)"
+        : string.Empty;
+
+    private static bool KnownActions(RunRequestFile file) =>
+        file.Kind == "collect" ? file.Actions.SequenceEqual(["collect"]) : file.Actions.Count > 0 && file.Actions.All(a => ActionId.Find(a) is not null);
+
+    private static bool ValidShown(IReadOnlyList<string> shown) => shown.Count <= ShownList.MaxNames && shown.All(Docker.DockerJson.IsFullId);
 }

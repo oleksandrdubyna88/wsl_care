@@ -66,6 +66,12 @@ public sealed class PhysicalFileSystem : IFileSystem
 
     public FileReadResult ReadRegularFile(string path, int maxBytes) => RegularFiles.Read(path, maxBytes);
 
+    /// <summary>The uid a state file must be owned by on Linux (<see cref="ReadStateFile"/>): root — unless a sandbox (a test,
+    /// <c>WSL_CARE_ROOT</c>) says the state there is its own process's.</summary>
+    public uint TrustedStateOwner { get; init; }
+
+    public FileReadResult ReadStateFile(string path, int maxBytes) => RegularFiles.ReadOwned(path, maxBytes, TrustedStateOwner);
+
     public bool FileExists(string path) => File.Exists(path);
 
     public bool DirectoryExists(string path) => Directory.Exists(path);

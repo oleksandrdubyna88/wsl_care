@@ -80,30 +80,55 @@ public sealed record RunningReport(string State, string? Reason)
 /// </summary>
 public static class RunningReports
 {
-    public static RunningReport Read(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry) =>
-        RunningState.Read(paths, files, processes, now, retry) switch
-        {
-            RunningStatus.None => FromRequests(RunRequests.List(paths, files)),
-            RunningStatus.Live live => Of(RunningStateName.Live, $"run {live.File.RunId} is acting ({Doing(live.File)})", live.File, now),
-            RunningStatus.Wedged w => Of(RunningStateName.Wedged, RunningSweep.WedgedReason(w), w.File, now),
-            RunningStatus.Dead dead => Of(RunningStateName.Dead, $"run {dead.File.RunId} died: {dead.Why}; nothing recorded it yet - the next root run (collect or act) sweeps it as interrupted", dead.File, now),
-            RunningStatus.Unknown unknown => new RunningReport(RunningStateName.Unknown, $"{unknown.Reason}; nothing was killed"),
-            RunningStatus.Unreadable unreadable => new RunningReport(RunningStateName.Unreadable, unreadable.Reason),
-            _ => throw new System.Diagnostics.UnreachableException("RunningStatus is a closed set"),
-        };
+    /// <summary>The block: <c>running.json</c> judged; with no holder, the requests — and when they show nothing (or a file
+    /// vanished as it was read), <c>running.json</c> ONCE more, because states move request → running.json → history line and
+    /// a request that just disappeared has just become a run (E6.S0 review D4). <paramref name="history"/> is what the caller
+    /// already read: a dead holder whose run has a line is not "dead, nothing recorded it" (review D3).</summary>
+    public static RunningReport Read(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry, HistoryRead history) =>
+        OfHolder(RunningState.Read(paths, files, processes, now, retry), history) ?? AfterRequests(paths, files, processes, now, retry, history);
 
-    /// <summary>The block of a run that holds <c>running.json</c>.</summary>
-    public static RunningReport Of(string state, string reason, RunningFile file, DateTimeOffset now) =>
+    private static RunningReport AfterRequests(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry, HistoryRead history) =>
+        FromRequests(RunRequests.List(paths, files)) is { State: not RunningStateName.None } fromRequests
+            ? fromRequests
+            : OfHolder(RunningState.Read(paths, files, processes, now, retry), history) ?? new RunningReport(RunningStateName.None, null);
+
+    /// <summary>The block of a holder of <c>running.json</c> (<c>runs show</c> asks it too); <c>null</c> when there is none.</summary>
+    public static RunningReport? OfHolder(RunningStatus status, HistoryRead history) => status switch
+    {
+        RunningStatus.None => null,
+        RunningStatus.Live live => Of(RunningStateName.Live, $"run {live.File.RunId} is acting ({Doing(live.File)})", live.File, live.HeartbeatAge),
+        RunningStatus.Wedged w => Of(RunningStateName.Wedged, RunningSweep.WedgedReason(w), w.File, w.HeartbeatAge),
+        RunningStatus.Dead dead => Dead(dead, history),
+        RunningStatus.Unknown unknown => Of(RunningStateName.Unknown, $"{unknown.Reason}; nothing was killed", unknown.File, null),
+        RunningStatus.Unreadable unreadable => new RunningReport(RunningStateName.Unreadable, unreadable.Reason),
+        _ => throw new System.Diagnostics.UnreachableException("RunningStatus is a closed set"),
+    };
+
+    /// <summary>A dead holder. When its run HAS a history line it recorded itself and died before removing its file: nothing
+    /// is in flight, so the state is <c>none</c>, the reason naming the left-over file (review D3 — chosen over "dead with
+    /// the true reason" because the panel asks "is something running", and nothing is); otherwise <c>dead</c>.</summary>
+    private static RunningReport Dead(RunningStatus.Dead dead, HistoryRead history) =>
+        history.Records.LastOrDefault(r => r.RunId == dead.File.RunId) is { } line
+            ? new RunningReport(RunningStateName.None, $"run {dead.File.RunId} recorded itself as {OutcomeName(line.Outcome)}; only its running.json is left (the next root run removes it)")
+            : Of(RunningStateName.Dead, $"run {dead.File.RunId} died: {dead.Why}; nothing recorded it yet - the next root run (collect or act) sweeps it as interrupted", dead.File, null);
+
+    /// <summary>The outcome as the history line spells it (<c>completed</c>, <c>observeOnly</c>, …).</summary>
+    private static string OutcomeName(RunOutcome outcome) => outcome.ToString() is var name ? char.ToLowerInvariant(name[0]) + name[1..] : string.Empty;
+
+    /// <summary>The block of a run that holds <c>running.json</c>. The pid and the heartbeat's age only where the process IS
+    /// the run — live or wedged (<paramref name="heartbeatAge"/> given): a dead run's pid is gone or another process's, an
+    /// uninspectable one cannot be acted on (E6.S0 review S2 / S3; M4 tells a person to stop a wedged run by its pid).</summary>
+    public static RunningReport Of(string state, string reason, RunningFile file, TimeSpan? heartbeatAge) =>
         new(state, reason)
         {
             RunId = file.RunId.Text,
             Actions = file.Actions,
             Current = file.Current,
             Trigger = TriggerName(file.Trigger),
-            Pid = file.Pid,
+            Pid = heartbeatAge is null ? null : file.Pid,
             StartedAt = file.StartedAt,
             HeartbeatAt = file.HeartbeatAt,
-            HeartbeatAgeSeconds = Math.Max(0, Math.Round((now - file.HeartbeatAt).TotalSeconds)),
+            HeartbeatAgeSeconds = heartbeatAge is { } age ? Math.Max(0, Math.Round(age.TotalSeconds)) : null,
         };
 
     /// <summary>The block of a queued request.</summary>

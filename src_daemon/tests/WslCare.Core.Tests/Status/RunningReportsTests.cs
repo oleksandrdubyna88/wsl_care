@@ -28,8 +28,110 @@ public sealed class RunningReportsTests : IDisposable
 
     public void Dispose() => _sandbox.Dispose();
 
-    private RunningReport Read(IProcessTable processes) =>
-        RunningReports.Read(_sandbox.Paths, new NoWrites(_sandbox.Files), processes, Now, NoWait);
+    private RunningReport Read(IProcessTable processes) => Read(processes, new NoWrites(_sandbox.Files));
+
+    private RunningReport Read(IProcessTable processes, IFileSystem files) =>
+        RunningReports.Read(_sandbox.Paths, files, processes, Now, NoWait, History());
+
+    private HistoryRead History() => RunHistory.Read(_sandbox.Paths, _sandbox.Files);
+
+    // ---------- the E6.S0 review round ----------
+
+    /// <summary>S2: a live run whose pid cannot be inspected (/proc mounted hidepid) still names its run — runs show must be
+    /// able to match it, never answer "never existed".</summary>
+    [Fact]
+    public void An_uninspectable_holder_keeps_its_run_id_and_publishes_no_pid()
+    {
+        Stage(Running(Now.AddSeconds(-2)));
+
+        var report = Read(new FakeProcessTable().Uninspectable(Pid, "hidepid"));
+
+        report.State.Should().Be(RunningStateName.Unknown);
+        report.RunId.Should().Be(RunId.New(Now.AddMinutes(-2), Pid).Text);
+        report.Pid.Should().BeNull("a pid is published only where a person may act on it: live or wedged (M4)");
+    }
+
+    /// <summary>S3: a dead run's pid is gone or is ANOTHER process now — publishing it invites stopping a stranger.</summary>
+    [Fact]
+    public void A_dead_run_publishes_no_pid()
+    {
+        Stage(Running(Now.AddSeconds(-2)));
+
+        var report = Read(new FakeProcessTable().Alive(Pid, ProcessStart.AddHours(1)));
+
+        report.State.Should().Be(RunningStateName.Dead);
+        report.Pid.Should().BeNull();
+    }
+
+    /// <summary>D1: the wall clock stepped an hour (this machine logs hundreds of clock changes per 4 h; A16 itself steps it):
+    /// .NET's Process.StartTime moved with it, but the boot id and the boot-relative start ticks did not — a live run stays
+    /// live, and its heartbeat age is the MONOTONIC one, not the wall-clock one.</summary>
+    [Fact]
+    public void A_wall_clock_step_neither_kills_a_live_run_nor_ages_its_heartbeat_when_the_boot_and_its_ticks_match()
+    {
+        Stage(Running(Now.AddHours(-2)) with { StartTicks = 123_456, BootId = "boot-a", HeartbeatMonotonicMs = 1_000_000 });
+
+        var report = Read(new FakeProcessTable().Alive(Pid, ProcessStart.AddHours(1), startTicks: 123_456).Booted("boot-a", 1_003_000));
+
+        report.State.Should().Be(RunningStateName.Live, report.Reason);
+        report.HeartbeatAgeSeconds.Should().Be(3, "1 003 000 − 1 000 000 ms on the monotonic clock; the wall clock says two hours");
+    }
+
+    [Fact]
+    public void Within_one_boot_other_start_ticks_are_another_process_and_another_boot_is_a_dead_run()
+    {
+        Stage(Running(Now.AddSeconds(-2)) with { StartTicks = 123_456, BootId = "boot-a", HeartbeatMonotonicMs = 1_000_000 });
+
+        Read(new FakeProcessTable().Alive(Pid, ProcessStart, startTicks: 999).Booted("boot-a", 1_001_000)).State.Should().Be(RunningStateName.Dead);
+        Read(new FakeProcessTable().Alive(Pid, ProcessStart, startTicks: 123_456).Booted("boot-b", 5_000)).State.Should().Be(RunningStateName.Dead);
+    }
+
+    /// <summary>D3: a run that recorded itself and died before removing its file is not "dead, nothing recorded it yet" — its
+    /// history line says how it ended; status reports none, naming the left-over file.</summary>
+    [Fact]
+    public void A_dead_holder_whose_run_has_a_history_line_is_none_naming_its_left_over_file()
+    {
+        var file = Running(Now.AddMinutes(-1));
+        Stage(file);
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, file.RunId, RunTrigger.Manual, file.StartedAt, Now, RunOutcome.Completed, []));
+
+        var report = Read(new FakeProcessTable());
+
+        report.State.Should().Be(RunningStateName.None);
+        report.Reason.Should().Contain("recorded itself as completed").And.Contain("only its running.json is left");
+    }
+
+    /// <summary>D4: a request that vanished as status read it has just become a run — running.json is read again, and the run
+    /// it now names is reported, never "none".</summary>
+    [Fact]
+    public void A_request_that_vanished_while_status_read_it_sends_status_back_to_running_json()
+    {
+        var live = Running(Now.AddSeconds(-1));
+        var racing = new RaceFileSystem(_sandbox.Files, RunningState.File(_sandbox.Paths), () => Stage(live));
+
+        var report = Read(new FakeProcessTable().Alive(Pid, ProcessStart), racing);
+
+        report.State.Should().Be(RunningStateName.Live);
+    }
+
+    /// <summary>The real file system — except that the FIRST read of <paramref name="watched"/> finds nothing and, right after
+    /// it, <paramref name="move"/> runs: the request became a run between the two reads.</summary>
+    private sealed class RaceFileSystem(IFileSystem inner, string watched, Action move) : DelegatingFileSystem(inner)
+    {
+        private bool _moved;
+
+        public override FileReadResult ReadFile(string path)
+        {
+            if (path != watched || _moved)
+            {
+                return base.ReadFile(path);
+            }
+
+            _moved = true;
+            move();
+            return new FileReadResult.Missing();
+        }
+    }
 
     private RunningFile Running(DateTimeOffset heartbeat, int pid = Pid) =>
         new(1, RunId.New(Now.AddMinutes(-2), pid), RunTrigger.Manual, ["A5", "A4"], "A4", pid, ProcessStart, Now.AddMinutes(-2), heartbeat);

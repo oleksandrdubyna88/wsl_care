@@ -26,6 +26,15 @@ public sealed class RunRecordTests
         RunId.TryParse("20261002T101500Z-abc").Should().BeNull();
     }
 
+    /// <summary>E6.S0 review S4: one run, one spelling — a pid with a leading zero (<c>…-0123</c>) would name the same
+    /// process as <c>…-123</c> under a second id, and a real pid never has one.</summary>
+    [Theory]
+    [InlineData("20261002T101500Z-0123")]
+    [InlineData("20261002T101500Z-00")]
+    [InlineData("20261002T101500Z-+12")]
+    public void A_run_id_is_accepted_only_in_its_canonical_spelling(string text) =>
+        RunId.TryParse(text).Should().BeNull();
+
     [Fact]
     public void A_record_serializes_as_one_camel_case_line_with_string_enums_and_the_schema_version()
     {

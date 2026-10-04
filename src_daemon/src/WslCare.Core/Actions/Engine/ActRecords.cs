@@ -34,6 +34,10 @@ public static class ActionStatus
 
     /// <summary>It may not run: no target user, its preview could not be read, or it refuses on the live state.</summary>
     public const string Refused = "refused";
+
+    /// <summary>A cancellation (a signal) cut the run off: the action in flight — with what it had confirmed, when it knows —
+    /// and every requested action that never ran (E6.S0 review D2; the sweep of a dead run writes the same word).</summary>
+    public const string Interrupted = "interrupted";
 }
 
 /// <summary>One action's line of an <c>act</c> run: its status and why, the LIVE preview, and — when it ran — what it did.</summary>
@@ -43,6 +47,11 @@ public sealed record ActionOutcome(string Id, string Summary, string Status, str
     /// EVERY name the preview selected (§15j B1) — what the panel sends back through <c>--only -</c>. Absent for every other
     /// action and in every run detail.</summary>
     public IReadOnlyList<string>? Shown { get; init; }
+
+    /// <summary>True when the preview selected more than <see cref="ShownList.MaxNames"/> names: <see cref="Shown"/> holds the
+    /// first that many and only those will be removed (coai E6 plan round #11 — the invariant is shown.length ==
+    /// min(count, 10 000)); absent otherwise.</summary>
+    public bool? ShownTruncated { get; init; }
 }
 
 /// <summary>Who the run's user-scoped actions were for (plan §15c #2), as the run detail keeps it.</summary>
@@ -173,6 +182,7 @@ public static class ActionRecords
     {
         ActionStatus.Ran => Measured(o),
         ActionStatus.Failed => Measured(o) with { Failure = Shortened(FailureOf(o)) },
+        ActionStatus.Interrupted => Measured(o),
         ActionStatus.DryRun => WouldFree(o),
         _ => new ActionRecord(o.Id, 0, 0) { Status = o.Status },
     };

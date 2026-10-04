@@ -143,6 +143,7 @@ public sealed class DockerCleanupTests : IDisposable
         var a4 = outcomes.Single(o => o.Id == "A4");
         a4.Shown.Should().BeEquivalentTo(DockerWorld.DanglingAnonymous, "every anonymous volume the preview selected, by the name its run matches");
         a4.Shown!.Count.Should().Be(a4.Preview!.Count);
+        a4.ShownTruncated.Should().BeNull("three names fit a shown list: the flag is absent, not false");
         outcomes.Where(o => o.Id != "A4").Should().OnlyContain(o => o.Shown == null, "only A4 is bound to its shown list (plan §15f #11)");
     }
 
@@ -159,6 +160,41 @@ public sealed class DockerCleanupTests : IDisposable
         shown.Should().HaveCount(ShownList.MaxNames);
         shown[0].Should().Be(targets[0].Key);
         shown[^1].Should().Be(targets[ShownList.MaxNames - 1].Key);
+        ShownList.Truncates(preview.Count).Should().BeTrue("count stays the total; shownTruncated says only the first 10 000 go (coai #11)");
+        ShownList.Truncates(ShownList.MaxNames).Should().BeFalse();
+    }
+
+    /// <summary>E6.S0 review D2: a removal cut off by a signal keeps what Docker CONFIRMED in the batches before — those
+    /// deletions are real — and names the batch in flight as unknown and the rest as not attempted, instead of throwing
+    /// everything it knew away.</summary>
+    [Fact]
+    public async Task A_removal_cut_off_mid_batch_keeps_the_confirmed_batches_and_names_the_rest()
+    {
+        using var signal = new CancellationTokenSource();
+        var world = new DockerWorld();
+        var targets = Enumerable.Range(1, DockerCleanupCommands.Batch * 2 + 1)
+            .Select(i => i.ToString("x64", System.Globalization.CultureInfo.InvariantCulture))
+            .Select(name => new ActionItem("volume", name, 10) { Key = name }).ToList();
+        var calls = 0;
+        world.Runner.ScriptEffect(argv => argv is ["docker", "volume", "rm", ..], r =>
+        {
+            if (++calls == 1)
+            {
+                return Removed(r.Argv.Skip(3));
+            }
+
+            signal.Cancel();
+            throw new OperationCanceledException(signal.Token);
+        });
+        var context = DockerWorld.Context(_sandbox);
+        var commands = world.Commands(new VolumeRemoval(), context);
+
+        var removal = await DockerRemovals.RemoveAsync(commands, DockerCleanupCommands.VolumeRemove, targets, new Dictionary<string, string>(StringComparer.Ordinal), signal.Token);
+
+        removal.Interrupted.Should().BeTrue();
+        removal.Removed.Should().HaveCount(DockerCleanupCommands.Batch, "the first batch was confirmed before the signal");
+        removal.NotRemoved.Where(n => n.Note.StartsWith("unknown: cut off mid-command", StringComparison.Ordinal)).Should().HaveCount(DockerCleanupCommands.Batch);
+        removal.NotRemoved.Where(n => n.Note.StartsWith("not attempted", StringComparison.Ordinal)).Should().ContainSingle();
     }
 
     [Fact]

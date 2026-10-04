@@ -2143,6 +2143,32 @@ of UTC midnight). Normalisation rules added, each matched: `running.pid` (4242),
 `heartbeatAgeInText`, `detailDayInText`. Every instant a scene does not judge against the clock is FIXED
 (`ReadContractScenes.Staged`), so the list stays short.
 
+### What the E6.S0 review round changed (2026-10-04, plan §15j)
+
+- **Run identity survives a clock step.** `running.json` gains three additive fields its writers (the engine, `collect`)
+  fill through `RunningState.Identified` / `WithHeartbeat`: `startTicks` (`/proc/[pid]/stat` field 22, ticks after boot),
+  `bootId` (`/proc/sys/kernel/random/boot_id`) and `heartbeatMonotonicMs` (`Environment.TickCount64`, system-wide).
+  `IProcessTable` gains `Boot()` and `ProcessLookup.Alive.StartTicks` (`SystemProcessTable` reads the REAL `/proc`).
+  `RunningState.Judge`: same boot id + exact ticks = the run; another boot = dead; the heartbeat age is monotonic within one
+  boot. Only where a side cannot tell (an older file, the Windows binary) does it fall back to `Process.StartTime` ± 2 s and
+  the wall clock — on Linux .NET derives `StartTime` from a boot time computed off the wall clock, so a step moved it.
+- **The request reader trusts nothing it did not check.** `IFileSystem.ReadStateFile` → `RegularFiles.ReadOwned`: no link
+  (`O_NOFOLLOW`), never blocking (`O_NONBLOCK`), regular, owned by `PhysicalFileSystem.TrustedStateOwner` (uid 0; a
+  sandbox's own euid) with no group / other write — type, uid and mode from ONE `statx` of the open descriptor — at most
+  `RunRequests.MaxRequestBytes` (1 MiB); then the content: schema 1, kind `act` / `collect`, known ids, 64-hex shown names,
+  ≤ 10 000; at most `RunRequests.MaxRequestsRead` (64) files per read. A file gone as it is read is skipped.
+- **The running block.** `pid` and `heartbeatAgeSeconds` only for `live` / `wedged`; `unknown` keeps the run id; a dead
+  holder whose run has a history line is `none` with the reason "recorded itself as <outcome>; only its running.json is
+  left"; `status` reads `running.json` again when the requests show nothing (`RunningReports.Read` takes the history it
+  already read). `runs show` reads request → `running.json` → history and answers the most advanced
+  (`RunningReports.OfHolder` for the holder); an `unknown` holder is `running`.
+- **An interrupted run says what it was doing.** `DockerRemovals.RemoveAsync` returns a partial `RemovalResult`
+  (`Interrupted`) on cancellation; A4 / A5 return an `Interrupted` `ActionRun` with what Docker confirmed; the engine
+  records the action in flight as `interrupted` (with its removals, or without when it threw) and every requested action
+  that never ran as `interrupted / not run`; `logs` counts an interrupted action's real deletions.
+- **One run, one id** (`RunId.TryParse` refuses a leading zero), and A4's preview outcome carries `shownTruncated: true`
+  past 10 000 names (coai E6 plan round #11).
+
 ## Fixture privacy (E5 code round, 2026-10-04)
 
 The repository is public, and the captured fixtures and the goldens built from them carried the owner's Linux and

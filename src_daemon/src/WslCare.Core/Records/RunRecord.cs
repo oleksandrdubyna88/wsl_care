@@ -68,9 +68,15 @@ public sealed record RunId
         var dash = text.IndexOf('-');
         var wellFormed = dash > 0
             && DateTime.TryParseExact(text[..dash], StampFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _)
-            && int.TryParse(text[(dash + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out _);
+            && CanonicalPid(text[(dash + 1)..]);
         return wellFormed ? new RunId(text) : null;
     }
+
+    /// <summary>A pid as <see cref="New"/> spells it — digits only, no leading zero — so one run has ONE id (E6.S0 review S4:
+    /// <c>…-0123</c> and <c>…-123</c> would name the same process twice; a real pid never has a leading zero).</summary>
+    private static bool CanonicalPid(string pid) =>
+        int.TryParse(pid, NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+        && pid == number.ToString(CultureInfo.InvariantCulture);
 
     public override string ToString() => Text;
 }

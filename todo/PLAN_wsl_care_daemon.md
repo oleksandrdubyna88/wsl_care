@@ -885,6 +885,23 @@ Last cleanup, Run full check now), **E6.S4** (Logs page) and the **E6 live gate*
 | m10 | Starting before the E4 stamp | §16 | **Accepted.** E6.S0 / E6.S1 code may start against the scenarios before the E4 live gate's stamp; only releases and live measurements need it. |
 | m11 | The fake and a synchronous confirm | E6.S2 | **Accepted.** The strict fake REFUSES a root `act … --confirm` without `--detach`. |
 
+**E6.S0 review round (two own reviews standing in for coai — security; durable state — 2026-10-04).** Every finding
+Accepted unless marked; each fix landed with a test seen red first for the real reason (`research/module_tests.md`, *The
+E6.S0 review round*).
+
+| # | Finding | Disposition |
+|---|---|---|
+| S1 | `RunRequests` read with `ReadFile`: no cap, followed links, blocked on a FIFO, no owner / mode check, content unvalidated | **Fixed.** `IFileSystem.ReadStateFile` → `RegularFiles.ReadOwned`: `O_NONBLOCK` + `O_NOFOLLOW` (0x20000 x86-64, 0x8000 arm64), type, owner and mode from ONE `statx` of the open descriptor — regular, uid = the state's owner (0 on a machine; a sandbox's own euid, `PhysicalFileSystem.TrustedStateOwner`), no g+w / o+w — at most 1 MiB; content validated (schema 1, kind `act` / `collect`, known ids, `["collect"]` for a collect, every shown name 64-hex, ≤ `ShownList.MaxNames`); at most 64 request files read, the rest named. |
+| S2 | `Unknown` dropped the run id, so `runs show` of a live run with an uninspectable pid answered "never existed" | **Fixed.** `RunningStatus.Unknown` keeps the file; the block names the run; `runs show` answers `running` with the `unknown` block. |
+| S3 | the dead state published a pid that is gone or another process's | **Fixed.** `pid` (and `heartbeatAgeSeconds`) only for `live` / `wedged`. The dead golden changed accordingly. |
+| S4 | `RunId.TryParse` accepted a pid with a leading zero (two ids for one run) | **Fixed.** Canonical spelling only. |
+| D1 | identity by `Process.StartTime` ± 2 s: a wall-clock step (hundreds per 4 h here; A16 steps it) made a live run read dead; the heartbeat age used the wall clock | **Fixed.** `running.json` gains `startTicks` (`/proc/[pid]/stat` field 22), `bootId` and `heartbeatMonotonicMs` (additive); identity = same boot id + exact ticks, another boot = dead; the age is monotonic within one boot; the wall clock only where a side cannot tell (older files, Windows). |
+| D2 | an interrupted record held neither the action in flight nor its confirmed deletions; `DockerRemovals` threw the confirmed batches away | **Fixed.** `RemoveAsync` returns a partial result on cancellation (the batch in flight "unknown: cut off mid-command", the rest "not attempted"); A4 / A5 return it as an `Interrupted` run (A4 leaves `volume-seen.json` as it was — the next look drops the removed names); the engine records the in-flight action `interrupted` (with its removals when it returned them) and every requested action that never ran `interrupted / not run`; `logs` counts an interrupted action's real deletions. The SIGHUP flow asserts the in-flight A10 `interrupted` (it was green with the bug). |
+| D3 | `status` said "dead, nothing recorded it yet" for a run whose line exists | **Fixed — `none`** with the reason "recorded itself as <outcome>; only its running.json is left" (chosen over `dead`: nothing is in flight). |
+| D4 | read-order races (`runs show` history → running → request, `status` request read finding nothing) | **Fixed.** `runs show` reads request → `running.json` → history (the order states move) and answers the most advanced; `status` reads `running.json` again when the requests show nothing; a request gone as it is read is skipped, not bad. **For E6.S1:** write `running.json` BEFORE removing the request. |
+| — | *(record only)* a `collect` cancelled during measurement leaves no record (`CollectRun` throws, the `finally` removes `running.json`, `runs show` then says unknown); SIGHUP now joins that path and M9's `collect --detach` stopped by `systemctl stop` will hit it | **On E6.S1's list.** |
+| coai #11 | (from §15k, cheap here) a preview over the cap | **Fixed in this round:** A4's outcome carries `shownTruncated: true` when `count` > 10 000 (absent otherwise); `count` stays the total. |
+
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
 Every epic is its own branch from the previous epic's final commit, one review-gate code round over its
