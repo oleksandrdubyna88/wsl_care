@@ -98,3 +98,9 @@ test('callRoot of a confirm that cannot be built starts nothing', async () => {
   assert.equal(await callRoot(runner.runner, TARGET, { op: 'confirm', ids: ['A4'], shown: undefined }), undefined);
   assert.deepEqual(runner.argvs(), []);
 });
+
+test('S2: every root request takes WSLENV out of the environment — the Windows user\'s variables never steer the root daemon', () => {
+  for (const { op } of OPS) {
+    assert.deepEqual(rootRequest(TARGET, op)?.withoutEnv, ['WSLENV'], op.op);
+  }
+});

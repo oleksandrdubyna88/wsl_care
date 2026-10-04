@@ -111,13 +111,14 @@ test('root flow · a daemon that does not advertise the capabilities: "Update da
   });
 });
 
-test('root flow · a detach answered "unknown" is followed through status.running, and reported unknown with its run id', async () => {
+test('root flow · a detach answered "unknown" WITH its run id is handed back at once — E6.S3 follows the run id (review M3)', async () => {
   await flow({ ...UBUNTU_RUNNING, root: { detach: 'unknown' } }, async ({ world, controller }) => {
     const outcome = await controller.runFullCheck();
     assert.equal(outcome.kind, 'outcomeUnknown');
     assert.ok(outcome.kind === 'outcomeUnknown');
     assert.equal(outcome.runId, RUN);
-    assert.ok(world.calls().filter((c) => c.endsWith('status --json')).length > 1, 'status was asked while following');
+    assert.equal(outcome.followed, undefined);
+    assert.equal(world.calls().filter((c) => c.endsWith('status --json')).length, 1, 'the gate\x27s status only: nothing followed here');
   });
 });
 
@@ -136,4 +137,21 @@ test('root flow · the root check refused: "needs root", and no act reached the 
     assert.equal((await controller.preview(['A4'])).kind, 'rootRefused');
     assert.deepEqual(rootCalls(world), [`${ROOT} --version`]);
   });
+});
+
+test('root flow · S2: with WSLENV set in the extension host, every root call reaches the fake WITHOUT it (the fake refuses one that has it)', async () => {
+  const before = process.env.WSLENV;
+  process.env.WSLENV = 'PATH/l:USERPROFILE/p';
+  try {
+    await flow(UBUNTU_RUNNING, async ({ world, controller }) => {
+      assert.equal((await controller.runFullCheck()).kind, 'accepted');
+      assert.equal(rootCalls(world).length, 2, 'the root check and the full check, both answered');
+    });
+  } finally {
+    if (before === undefined) {
+      delete process.env.WSLENV;
+    } else {
+      process.env.WSLENV = before;
+    }
+  }
 });

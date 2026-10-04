@@ -1,4 +1,5 @@
 import { decodeWslText, stripAnsi, textLines } from '../wsl/wslText';
+import type { ProcessResult } from '../process/runner';
 import { DAEMON_EXIT, WSL_EXE_FAILED } from './exitCodes';
 import type { Failure } from './outcome';
 
@@ -71,3 +72,27 @@ export function classifyExit(code: number, stdout: Buffer, stderr: Buffer, distr
 
   return fromSignature(code, textLines(text), distro, daemonPath) ?? byCode(code, daemonMessages(text));
 }
+
+type NotExited = Exclude<ProcessResult, { kind: 'exited' }>;
+
+/** How a timeout of the launcher reads: a WSL question that did not answer is WSL failing; a daemon call is its own timeout. */
+export type TimeoutReading = 'wslQuestion' | 'daemonCall';
+
+/**
+ * THE reading of a launcher ending that is not an exit (E6.S2 review L1: one reader, where the client and the root paths
+ * each had their own and read a signal differently). A timeout reads by `timeout`; everything else the same everywhere.
+ */
+export function launchFailure(result: NotExited, timeout: TimeoutReading): Failure {
+  const read = ENDINGS[result.kind] as (r: NotExited, t: TimeoutReading) => Failure;
+
+  return read(result, timeout);
+}
+
+type Endings = { readonly [K in NotExited['kind']]: (result: Extract<NotExited, { kind: K }>, timeout: TimeoutReading) => Failure };
+
+const ENDINGS: Endings = {
+  failedToStart: (r) => ({ kind: 'wslFailed', message: `wsl.exe could not be started: ${r.reason}` }),
+  tooMuchOutput: (r) => ({ kind: 'unparseable', detail: `the answer exceeded ${r.limitBytes} bytes on ${r.stream}` }),
+  timedOut: (r, timeout) => (timeout === 'daemonCall' ? { kind: 'timedOut', timeoutMs: r.timeoutMs } : { kind: 'wslFailed', message: `wsl.exe did not answer within ${r.timeoutMs} ms` }),
+  signalled: (r) => ({ kind: 'unknownFailure', code: undefined, messages: [`ended by ${r.signal}`] }),
+};

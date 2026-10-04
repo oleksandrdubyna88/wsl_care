@@ -62,9 +62,9 @@ const OUTSIDE_ROOT: readonly Forbidden[] = [
 /**
  * The root region's literals, EXACTLY — the oracle of `rootCall.ts`, written out independently: the argv words of the
  * five ops, the comma that joins the ids, A4 (the one id bound to a shown list), `confirm` (the op that pipes it), the
- * empty string and the newline that build the stdin lines.
+ * empty string and the newline that build the stdin lines, and WSLENV, taken out of every root call's environment.
  */
-const ROOT_LITERALS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '-', '--stop', '--json', ',', 'A4', 'confirm', '', '\n'];
+const ROOT_LITERALS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '-', '--stop', '--json', ',', 'A4', 'confirm', '', '\n', 'WSLENV'];
 
 /** The exact literals of the failure-text module that spell "root" — the only root prose any other region may carry. */
 function rootProse(): string[] {

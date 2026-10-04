@@ -3,7 +3,7 @@ import { DISTRO_NAME, distroSettingText, isDistroName, parseDefaultDistro, parse
 import { wslExecutable } from '../wsl/wslExecutable';
 import { decodeWslText } from '../wsl/wslText';
 import { DAEMON_EXIT } from './exitCodes';
-import { classifyExit, wslRefusal } from './failures';
+import { classifyExit, launchFailure, wslRefusal } from './failures';
 import { parseAnswer, parseDaemonVersion, versionRefusal } from './handshake';
 import type { Answer, DaemonVersion, Failure, VerbOutcome } from './outcome';
 import { PREVIEW_CONTAINER_ASSUMPTION, VERB_TIMEOUT_MS, VERBS, type Verb } from './verbs';
@@ -94,19 +94,6 @@ export function daemonArgv(distro: string, tail: readonly string[], asUser: read
 /** The daemon argv for `verb` in `distro`. */
 function daemonArgs(distro: string, verb: Verb): string[] {
   return daemonArgv(distro, VERBS[verb]);
-}
-
-function startFailure(result: ProcessResult): Failure {
-  switch (result.kind) {
-    case 'failedToStart':
-      return { kind: 'wslFailed', message: `wsl.exe could not be started: ${result.reason}` };
-    case 'tooMuchOutput':
-      return { kind: 'unparseable', detail: `the answer exceeded ${result.limitBytes} bytes on ${result.stream}` };
-    case 'timedOut':
-      return { kind: 'wslFailed', message: `wsl.exe did not answer within ${result.timeoutMs} ms` };
-    default:
-      return { kind: 'unknownFailure', code: undefined, messages: [] };
-  }
 }
 
 export class WslCareClient {
@@ -265,7 +252,7 @@ export class WslCareClient {
   private async wslText(wsl: string, args: readonly string[]): Promise<Step<string>> {
     const result = await this.options.runner({ file: wsl, args, timeoutMs: LIST_TIMEOUT_MS });
     if (result.kind !== 'exited') {
-      return fail(startFailure(result));
+      return fail(launchFailure(result, 'wslQuestion'));
     }
 
     return result.code === DAEMON_EXIT.ok ? ok(decodeWslText(result.stdout)) : fail(wslRefusal(result.stdout, result.stderr));
@@ -329,7 +316,7 @@ function answerOf(result: ProcessResult, distro: string, verb: Verb): Step<Answe
     case 'exited':
       return exitedAnswer(result, distro, verb);
     default:
-      return fail(startFailure(result));
+      return fail(launchFailure(result, 'daemonCall'));
   }
 }
 

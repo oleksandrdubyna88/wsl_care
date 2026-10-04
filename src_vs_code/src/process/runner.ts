@@ -28,6 +28,12 @@ export interface ProcessRequest {
    * Absent: the child's stdin is closed from the start, so it reads an immediate end and nothing waits on it.
    */
   readonly stdin?: Buffer;
+  /**
+   * Variables taken OUT of the child's environment, whatever the inherited one or `env` says — matched case-insensitively,
+   * as Windows names them. The root calls take out `WSLENV` (E6.S2 review S2): it is how `wsl.exe` carries Windows
+   * variables into the distribution, and the Windows user's choice of them must not shape a root daemon's environment.
+   */
+  readonly withoutEnv?: readonly string[];
 }
 
 export type ProcessResult =
@@ -112,8 +118,15 @@ function start(request: ProcessRequest): childProcess.ChildProcess {
     shell: false,
     windowsHide: true,
     stdio: [request.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-    env: { ...process.env, ...request.env },
+    env: environmentOf(request),
   });
+}
+
+/** The inherited environment plus `env`, minus every `withoutEnv` name (case-insensitively). */
+function environmentOf(request: ProcessRequest): NodeJS.ProcessEnv {
+  const without = new Set((request.withoutEnv ?? []).map((name) => name.toUpperCase()));
+
+  return Object.fromEntries(Object.entries({ ...process.env, ...request.env }).filter(([name]) => !without.has(name.toUpperCase())));
 }
 
 /**
@@ -187,6 +200,7 @@ export function nodeScriptRunner(script: string, env: Readonly<Record<string, st
       timeoutMs: request.timeoutMs,
       env: { ...env, ...request.env, ELECTRON_RUN_AS_NODE: '1', WSL_CARE_FAKE_REQUESTED_FILE: request.file },
       ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
+      ...(request.withoutEnv === undefined ? {} : { withoutEnv: request.withoutEnv }),
     });
 }
 

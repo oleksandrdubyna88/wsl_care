@@ -38,6 +38,10 @@ function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function actionsOf(value: unknown): readonly string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
+}
+
 /** `status.running`, or undefined when the status carries none (a daemon before E6.S0). */
 export function runningOf(status: JsonObject): RunningBlock | undefined {
   const running = status.running;
@@ -45,7 +49,7 @@ export function runningOf(status: JsonObject): RunningBlock | undefined {
     return undefined;
   }
 
-  return { state: readEnum(running.state, RUNNING_STATES), runId: runIdOf(running.runId), reason: stringOr(running.reason, '') };
+  return { state: readEnum(running.state, RUNNING_STATES), runId: runIdOf(running.runId), trigger: stringOr(running.trigger, ''), actions: actionsOf(running.actions), reason: stringOr(running.reason, '') };
 }
 
 /** A detach / stop answer (exit 0): its result, run id and unit — or why it cannot be read. */

@@ -1,6 +1,5 @@
 import { DAEMON_EXIT } from '../client/exitCodes';
 import { classifyExit, daemonMessages } from '../client/failures';
-import type { Failure } from '../client/outcome';
 import { DAEMON_PATH } from '../client/WslCareClient';
 import { decodeWslText, stripAnsi } from '../wsl/wslText';
 import type { ProcessResult } from '../process/runner';
@@ -40,22 +39,4 @@ export function exitFailure(result: Extract<ProcessResult, { kind: 'exited' }>, 
   }
 
   return shownOnStdin && result.code === DAEMON_EXIT.usage ? { kind: 'shownListRefused', messages } : classifyExit(result.code, result.stdout, result.stderr, distro, DAEMON_PATH);
-}
-
-type NotExited = Exclude<ProcessResult, { kind: 'exited' }>;
-type Endings = { readonly [K in NotExited['kind']]: (result: Extract<NotExited, { kind: K }>) => Failure };
-
-/** The launcher's endings other than an exit, each read once (a timeout of a root call is its own ceiling, `ROOT_TIMEOUT_MS`). */
-const ENDINGS: Endings = {
-  failedToStart: (r) => ({ kind: 'wslFailed', message: `wsl.exe could not be started: ${r.reason}` }),
-  tooMuchOutput: (r) => ({ kind: 'unparseable', detail: `the answer exceeded ${r.limitBytes} bytes on ${r.stream}` }),
-  timedOut: (r) => ({ kind: 'timedOut', timeoutMs: r.timeoutMs }),
-  signalled: (r) => ({ kind: 'unknownFailure', code: undefined, messages: [`ended by ${r.signal}`] }),
-};
-
-/** A run that did not END in an exit code: the launcher's own reading. */
-export function startFailure(result: NotExited): Failure {
-  const read = ENDINGS[result.kind] as (r: NotExited) => Failure;
-
-  return read(result);
 }

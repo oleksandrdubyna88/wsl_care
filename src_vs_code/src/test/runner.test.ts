@@ -169,3 +169,25 @@ test('the script runner hands stdin to the script it starts in place of the requ
     fs.rmSync(folder, { recursive: true, force: true });
   }
 });
+
+// ---- E6.S2 review S2: a request can take variables OUT of the inherited environment (WSLENV, for every root call) ----
+
+test('S2: withoutEnv removes a variable from the inherited environment — even when the request itself sets it', async () => {
+  const before = process.env.WSLENV;
+  process.env.WSLENV = 'PATH/l:USERPROFILE/p';
+  try {
+    const probe = ['-e', 'process.stdout.write(JSON.stringify([process.env.WSLENV ?? null, typeof process.env.PATH]))'];
+    const kept = await spawnRunner({ file: node, args: probe, timeoutMs: 10_000 });
+    assert.ok(kept.kind === 'exited');
+    assert.deepEqual(JSON.parse(kept.stdout.toString('utf8')), ['PATH/l:USERPROFILE/p', 'string'], 'without withoutEnv it is inherited (the subject is present)');
+    const stripped = await spawnRunner({ file: node, args: probe, timeoutMs: 10_000, env: { WSLENV: 'x' }, withoutEnv: ['WSLENV'] });
+    assert.ok(stripped.kind === 'exited');
+    assert.deepEqual(JSON.parse(stripped.stdout.toString('utf8')), [null, 'string'], 'gone, and the rest of the environment kept');
+  } finally {
+    if (before === undefined) {
+      delete process.env.WSLENV;
+    } else {
+      process.env.WSLENV = before;
+    }
+  }
+});
