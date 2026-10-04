@@ -27,6 +27,7 @@ interface Setting {
 interface Manifest {
   readonly name: string;
   readonly displayName: string;
+  readonly description: string;
   readonly version: string;
   readonly publisher: string;
   readonly preview: boolean;
@@ -190,4 +191,17 @@ test('E5 contributes the read-only surface only: the panel view and four argumen
       assert.ok(contributed.commands.some((c) => c.command === item.command), item.command);
     }
   }
+});
+
+test('E6.S2 (plan §15j M1 (3)): the description no longer calls the extension read-only — cleanups run only after a confirmation', () => {
+  assert.equal(/read-only/i.test(manifest.description), false, manifest.description);
+  assert.match(manifest.description, /only after you confirm/);
+});
+
+test('E6.S2 (plan §15j m5): untrusted workspaces stay supported, with the reason written in the README', () => {
+  assert.equal(manifest.capabilities.untrustedWorkspaces.supported, true);
+  const readme = fs.readFileSync(path.join(EXTENSION_ROOT, 'README.md'), 'utf8');
+  const section = (readme.split(/^## /m).find((s) => s.startsWith('Workspace trust\n')) ?? '').replace(/\s+/g, ' ');
+  assert.match(section, /no input from the workspace reaches a root call/);
+  assert.match(section, /"scope": "application"/);
 });
