@@ -107,6 +107,9 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
 
     private CommandOutcome Record(CommandTemplate template, string display, CommandOutcome outcome)
     {
+        // The policy judged the bare program; when the launcher started a file the system drive fallback found, the record
+        // names both (plan §17 #1).
+        display = outcome.StartedFrom.Length > 0 ? $"{display} (started from {outcome.StartedFrom})" : display;
         _ran.Add(outcome switch
         {
             CommandOutcome.Exited e => new ActionCommandRecord(template.Name, display, "exited", e.ExitCode, FirstLine(e.Stderr.Text)),
