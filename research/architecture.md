@@ -110,7 +110,7 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,
-  since E6.S1 `act-detach-accepted.json`, since E6.S2 `act-a4-preview-capped.json` (the shown list past its cap),
+  since E6.S1 `act-detach-accepted.json`,
   and beside them `contracts/actions.json` / `contracts/exit-codes.json` held equal to `ActionId` / `ExitCode` by
   `ContractFilesTests` (section *The daemon read contract* of [architecture-daemon-e6.md](architecture-daemon-e6.md)), and since plan §15o `contracts/history-reasons.json` (the reason
   prefixes of a kind-less history line that is not a full check, from `HistoryReasons`; section *A full check's history line
@@ -2520,10 +2520,9 @@ cached per session per distribution once it answered, a refusal ("needs root") a
   refuses another distribution, and re-validates every name before it becomes a stdin line. The preview's shown list
   must satisfy `shown.length == min(count, 10 000)` with `shownTruncated` exactly when capped (§15k #11) — or the preview
   is refused, never a partial list.
-- **An unknown detach is never a failure** (§15k #3): a timeout, a kill, an unreadable answer, `result: unknown`, a result
-  this build does not know, or `accepted` with no run id → the controller follows `status.running` every 4 s for 60 s and
-  reports the run it SAW queued or live (`acceptedObserved`) or `outcomeUnknown` with the run id it has. Residual: with no
-  run id, a run seen in flight may be the timer's. A stop's unknown is reported as unknown (its run IS live).
+- **An unknown detach is never a failure** (§15k #3; refined by the review round below): with a run id it goes back at once
+  as `outcomeUnknown{runId}` for E6.S3 to follow; with none the controller follows `status.running` of this distribution and
+  adopts only the panel's run of exactly the asked actions. A stop's unknown is reported as unknown (its run IS live).
 - **Every exit code of `contracts/exit-codes.json`** is its own kind (`rootFailures.ts`): 69 needs systemd, 71 did not
   start, 73 too many requests, 75 busy and 76 wedged (each with the `running` block read right after), 77, 78, 79, 80,
   3, 4; exit 2 on a confirm that piped a list is `shownListRefused` — nothing started, a retry offered; the rest through the
@@ -2542,21 +2541,40 @@ E6.S0 + E6.S1 merge before the owner cuts `daemon-v0.1.0`, B3's first case); `sc
 `dist/min-daemon.json`, the checked-in `src_vs_code/min-daemon.json` holds both, check-vsix compares all four places for
 each (`--min-daemon`, `--min-daemon-actions`), and *Install daemon* types the ACTIONS minimum. `release-extension-guard.sh`
 requires both published and verified, and keeps the FIRST PUBLIC EXTENSION ROOT-FREE keyed on TAGS: a checkout carrying
-`src/root/rootCall.ts` is refused for `extension-v0.1.0` or earlier, and while no `extension-v0.1.0` tag exists; its
+`src/root/rootCall.ts` is refused unless the release is above `extension-v0.1.0`, that tag's own tree carries no root module and it is a published, non-draft release (the review round's S1, below); its
 answer is the output `root_allowed`, which the build hands to check-vsix (`--root-allowed`), which refuses a BUNDLE
 carrying the root module's marker when it is `false`.
 
 **Settings and trust.** Both settings stay `"scope": "application"`; `untrustedWorkspaces.supported: true` stays, with the
 reason written in the extension README (§15j m5): no input from the workspace reaches a root call.
 
-**The golden past the cap** (§15k #11): `contracts/golden/head/act-a4-preview-capped.json` — `act A4 --preview --json`
-over 10 001 synthetic volumes (`ReadContractScenes.CappedVolumes`): `count` 10 001, `shown` the first 10 000,
-`shownTruncated: true`; `GoldenContractTests` holds the rule over both A4 goldens, and the host holds the capped one and
-pipes its 650 000 bytes.
+**Past the cap** (§15k #11): `GoldenContractTests` runs `act A4 --preview --json` over 10 001 synthetic volumes
+(`ReadContractScenes.CappedVolumes`) IN MEMORY and asserts `count` 10 001, `shown` the first 10 000, `shownTruncated:
+true`; the host's case is a generated 10 000-name preview that pipes 650 000 bytes. (A 765 KB golden of that answer was
+checked in first; the E6.S2 review round dropped it.)
+
+**What the E6.S2 review round changed** (2026-10-04, two own reviews; plan §16 E6.S2 row, *E6.S2 review round*):
+
+- **B3 is stricter (S1).** Root is allowed only when `extension-v0.1.0` exists, its OWN tree carries no root module
+  (`git cat-file -e refs/tags/extension-v0.1.0:src_vs_code/src/root/rootCall.ts` fails), it is a PUBLISHED non-draft GitHub
+  release (asked last, only when everything local allows), and the release is above it. A refused 0.1.0 stays tagged (the
+  ruleset blocks deleting a tag), so its existence alone opened the door before.
+- **No `WSLENV` for root (S2).** `ProcessRequest.withoutEnv` takes variables out of the child's environment (case-
+  insensitively); every root request takes out `WSLENV`, so the Windows user's choice of shared variables cannot shape a root
+  daemon's environment. The strict fake refuses a root call that still carries it.
+- **Which detach exits are certain (M1).** Only 1, 2, 69, 71, 73, 75–80 and wsl.exe's −1 (`CERTAIN_DETACH_EXITS`); 70, 130, a
+  signal's 137 / 143, 3, 4 may come after the request was written — unknown, followed.
+- **Who follows (M3).** A run id the daemon named goes back AT ONCE in `outcomeUnknown`; E6.S3's durable poll follows it. The
+  controller follows only a detach with no run id, and adopts only a run of THIS distribution started by the panel
+  (`trigger: manual`) with exactly the asked actions (M2, L3) — another is `outcomeUnknown.otherRun`; `followed` counts the
+  polls and how many status answered; the real bound is ~60 s + one interval + one poll (≈ two minutes).
+- **A preview is confirmed once (M4)** — consumed when the confirm's call went out; kept when nothing started.
+- **One launcher reading (L1)** — `client/failures.ts` `launchFailure`, the timeout's reading a parameter; the client now names
+  a signal as the root paths do. **The root check (L2)** is "needs root" only for an exit (not 0, not −1).
 
 ### Tests (details: [module_tests.md](module_tests.md) § *What each E6.S2 guarantee rests on*)
 
-`runner.test.ts` (stdin), `rootIds.test.ts`, `rootCall.test.ts`, `cleanupController.test.ts`, `rootFailures.test.ts`,
+`runner.test.ts` (stdin, `withoutEnv`), `rootIds.test.ts`, `rootCall.test.ts`, `cleanupController.test.ts`, `rootFailures.test.ts`,
 `structure.test.ts`, `bundleScan.test.ts`, `fakeWsl.test.ts` (root shapes), `scenarios/rootFlows.test.ts` (derived from
 `ROOT_OPS`), `minDaemon.test.ts`, `vsixCheck.test.ts`, `installDaemon.test.ts`, `manifest.test.ts`, `catalogue.test.ts`; in
 C#, `ReleaseExtensionScriptFlows` (Linux legs) and `ReleaseExtensionWorkflowTests`, `GoldenContractTests`.

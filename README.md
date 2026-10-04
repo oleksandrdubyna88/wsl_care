@@ -591,8 +591,10 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   root check `--version`. Never `--timer`, `--user` or `config`; a confirm is always detached (it runs in the daemon's
   own unit and survives a reload). The ids are the extension's compiled registry ∩ `status.actions`; whether the daemon
   may act at all is decided by `status.capabilities` (an older one reads "Update daemon", naming the minimum, and nothing
-  runs); one root call at a time per distribution; a detach that times out is "outcome unknown" and is followed through
-  `status.running`, never reported as a failure. Tests over the sources AND the shipped bundle hold that only that module
+  runs); one root call at a time per distribution; every root call runs without the Windows `WSLENV`; a detach whose
+  outcome is unknown (a timeout, an exit that may have come after the request was written) is never reported as a
+  failure — a run id the daemon named is handed back for the panel to follow, and with none only the panel's own run of
+  exactly those actions is recognised in `status.running`; a preview is confirmed once. Tests over the sources AND the shipped bundle hold that only that module
   spells a root word and only the host-side cleanup controller imports it; the strict fake refuses a synchronous confirm,
   stdin anywhere but `--only -` and an id outside the intersection.
 - **What it needs.** Windows with WSL (`extensionKind: ["ui"]`: it runs on the Windows side, also in a Remote – WSL
@@ -681,8 +683,8 @@ An extension release is the tag `extension-v<version>`: release-please's `extens
    **minimum daemon** (`src_vs_code/min-daemon.json` — since E6.S2 two minima, `minDaemonForRender` and the
    `minDaemonForActions` *Install daemon* types, as the bundle step emits them) is a published release — each of them —
    that `POST_DEPLOY.md` names as last verified, and **the first public extension stays root-free**: a checkout carrying
-   the root module is refused at or below `extension-v0.1.0`, or while no `extension-v0.1.0` tag exists — keyed on the
-   tags, never on the manifest (`release-extension-guard.sh`; the build's check-vsix refuses the bundle the same way);
+   the root module is refused unless the release is above `extension-v0.1.0` AND that tag's own tree carries no root
+   module AND it is a published, non-draft GitHub release — keyed on the tags, never on the manifest (`release-extension-guard.sh`; the build's check-vsix refuses the bundle the same way);
 2. **build** — every test, `vsce package` once, the leak checks with `--release` and the guard's minimum, the `.vsix`'s
    `.sha256`; it can read the repository and nothing more;
 3. **attest** — the only job that can sign: it downloads the build's `.vsix`, checks it against its `.sha256` and
