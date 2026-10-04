@@ -29,47 +29,81 @@ public sealed class FixturePrivacyTests
             string.Join('\n', findings.Take(40)));
     }
 
-    /// <summary>
-    /// The repository-wide scan's ONE allowlist: names the tests and docs INVENT for a /home or profile path — synthetic
-    /// accounts, never a person's. Each entry says where it is used; a name not here, other than <c>user</c>, is a finding.
-    /// The running machine's user names are checked regardless of this list.
-    /// </summary>
-    internal static readonly IReadOnlySet<string> SyntheticNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        "me",      // the sandbox's own home (LinuxEnvironment.Sandboxed: <root>/home/me) and the target user of the action,
-                   // config, path-rule and scenario tests
-        "ann",     // a second invented login account (ActionEngineTests, UserCacheTests)
-        "sam",     // a third (TargetHomeTests)
-        "alice",   // invented accounts of the installer, path, privacy and identity tests (InstallWorld, HostPathsTests,
-                   // HealthTests, FixturePrivacyTests, FixtureIdentityTests, GoldenContractTests); case-insensitive, as
-                   // every entry: PathRulesTests folds "me" to "ME" on purpose
-        "Bob",     // the invented Windows profile of FixtureIdentityTests
-        "zed",     // the invented --set-default-user of InstallWorld
-        "u",       // the one-letter home of GoldenContractTests' normaliser input
-        "x",       // a placeholder home in the scanners' own planted instances (vsixCheck.test.ts, FixturePrivacy.cs)
-        "planted", // the planted name of this class's allowlist test
-    };
-
     /// <summary>The same rules over EVERY tracked text file — the README, the plan, POST_DEPLOY, docs, workflows, the
-    /// extension, research notes and sources alike — with only <see cref="SyntheticNames"/> admitted besides <c>user</c>.
-    /// A finding is counted per file and rule, never shown with its value.</summary>
+    /// extension, research notes and sources alike — with only <see cref="FixturePrivacy.SyntheticNames"/> admitted
+    /// besides <c>user</c>. A finding is counted per file and rule, never shown with its value.</summary>
     [Fact]
     public void No_tracked_text_file_carries_a_real_home_or_profile_name_an_e_mail_address_or_this_machines_user_name()
     {
-        var names = FixturePrivacy.MachineUserNames();
         var files = FixturePrivacy.RepositoryTextFiles(ReleaseFiles.Root);
-        var findings = files.SelectMany(f => FixturePrivacy.Findings(f.Path, f.Text, names, SyntheticNames)).ToList();
-        var byFile = findings
-            .GroupBy(f => System.Text.RegularExpressions.Regex.Replace(f, @":\d+ holds ", " holds "), StringComparer.Ordinal)
-            .Select(g => $"{g.Count(),4} × {g.Key}")
-            .Order(StringComparer.Ordinal);
+        var findings = FixturePrivacy.RepositoryFindings(ReleaseFiles.Root, FixturePrivacy.MachineNameCandidates());
 
         files.Should().Contain(f => f.Path == "README.md").And.Contain(f => f.Path == "todo/PLAN_wsl_care_daemon.md")
             .And.Contain(f => f.Path == ".github/workflows/release-extension.yml").And.Contain(f => f.Path == "src_vs_code/src/extension.ts")
             .And.Contain(f => f.Path == "contracts/golden/head/status.json", "the walk reaches every kind of tracked text file");
         findings.Should().BeEmpty("no tracked text file of this public repository may carry a person — {0} finding(s), by file and rule:\n{1}",
-            findings.Count, string.Join('\n', byFile));
+            findings.Count, ByFileAndRule(findings));
     }
+
+    /// <summary>CI run 37202261532 (2026-10-04): the machine-name rule read the runner's own account — <c>runner</c> on the
+    /// Linux images, <c>runneradmin</c> on Windows — and <c>runner</c> is an ordinary word of this repository. A machine
+    /// running under a service account or a synthetic name, or under a name shorter than the floor, has no person to find.</summary>
+    [Theory]
+    [InlineData("runner")]
+    [InlineData("runneradmin")]
+    [InlineData("RUNNER")]
+    [InlineData("vscode")]
+    [InlineData("codespace")]
+    [InlineData("root")]
+    [InlineData("user")]
+    [InlineData("alice")]
+    [InlineData("me")]
+    [InlineData("ab")]
+    public void A_service_or_synthetic_account_as_the_machine_name_finds_nothing_in_the_repository(string machineName)
+    {
+        var findings = FixturePrivacy.RepositoryFindings(ReleaseFiles.Root, [machineName, machineName.ToUpperInvariant()]);
+
+        findings.Should().BeEmpty("'{0}' is not a person — {1} finding(s), by file and rule:\n{2}", machineName, findings.Count, ByFileAndRule(findings));
+    }
+
+    /// <summary>The other direction: a distinctive machine name is still found — in a sentence, in any case, as a path
+    /// segment — and only as a WHOLE word, never inside a longer one; a service account beside it changes nothing.</summary>
+    [Fact]
+    public void A_distinctive_machine_name_planted_in_a_tree_is_found_as_a_whole_word_or_path_segment_only()
+    {
+        using var tree = new WslCare.TestSupport.TempRoot("privacy-planted");
+        tree.File("notes.txt", "built by Quillonvex today\nxquillonvexy and quillonvexes are other words\ncwd /home/user/QUILLONVEX/git\n");
+        tree.File("runner.txt", "the test runner starts the command runner\n");
+
+        var findings = FixturePrivacy.RepositoryFindings(tree.Path, ["runner", "Quillonvex", null, " "]);
+
+        findings.Should().Equal(
+            "notes.txt:1 holds the user name #1 of the machine running this test (not printed)",
+            "notes.txt:3 holds the user name #1 of the machine running this test (not printed)");
+    }
+
+    /// <summary>The service accounts and the name floor are the .vsix check's knowledge, mirrored: every CI account
+    /// <c>vsixCheck.test.ts</c> names is a service account here, and <c>machineUserNames</c> drops what is shorter than
+    /// <see cref="FixturePrivacy.MinimumNameLength"/> as this scan does.</summary>
+    [Fact]
+    public void The_service_accounts_and_the_name_floor_are_the_vsix_checks_own()
+    {
+        var vsixTest = File.ReadAllText(Path.Combine(ReleaseFiles.Root, "src_vs_code", "src", "test", "vsixCheck.test.ts"));
+        var vsixCheck = File.ReadAllText(Path.Combine(ReleaseFiles.Root, "src_vs_code", "src", "test", "support", "vsixCheck.ts"));
+
+        var ciAccounts = System.Text.RegularExpressions.Regex.Matches(vsixTest, @"deniedWords: \[(?<words>'[a-z]+'(?:, '[a-z]+')*)\]")
+            .SelectMany(m => m.Groups["words"].Value.Split(", ").Select(w => w.Trim('\'')))
+            .ToList();
+        ciAccounts.Should().NotBeEmpty("vsixCheck.test.ts names the CI accounts its check meets").And.OnlyContain(a => FixturePrivacy.ServiceAccounts.Contains(a));
+        System.Text.RegularExpressions.Regex.Match(vsixCheck, @"c\.length >= (?<floor>\d+)").Groups["floor"].Value
+            .Should().Be(FixturePrivacy.MinimumNameLength.ToString(System.Globalization.CultureInfo.InvariantCulture), "one floor for a machine name in both checks");
+    }
+
+    private static string ByFileAndRule(IEnumerable<string> findings) =>
+        string.Join('\n', findings
+            .GroupBy(f => System.Text.RegularExpressions.Regex.Replace(f, @":\d+ holds ", " holds "), StringComparer.Ordinal)
+            .Select(g => $"{g.Count(),4} × {g.Key}")
+            .Order(StringComparer.Ordinal));
 
     [Fact]
     public void The_repository_scan_admits_only_the_listed_synthetic_names_besides_user()
@@ -149,8 +183,9 @@ public sealed class FixturePrivacyTests
     }
 
     [Fact]
-    public void The_machine_names_leave_out_blanks_duplicates_and_the_names_the_anonymised_data_or_the_system_use()
+    public void The_machine_names_leave_out_blanks_duplicates_short_names_service_accounts_and_synthetic_names()
     {
-        FixturePrivacy.Personal(["alice", "ALICE", " ", null, "user", "root", "bob"]).Should().Equal("alice", "bob");
+        FixturePrivacy.Personal(["Quillonvex", "QUILLONVEX", " ", null, "ab", "user", "root", "runner", "RunnerAdmin", "vscode", "codespace", "alice", "Bob", "Marrowind"])
+            .Should().Equal("Quillonvex", "Marrowind");
     }
 }
