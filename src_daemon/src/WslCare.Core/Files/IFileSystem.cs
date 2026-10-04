@@ -160,7 +160,9 @@ public interface IFileSystem
 
     bool DirectoryExists(string path);
 
-    /// <summary>Full paths of the immediate subdirectories; empty when <paramref name="path"/> does not exist.</summary>
+    /// <summary>Full paths of the immediate subdirectories, in ordinal order; empty when <paramref name="path"/> does not
+    /// exist. Never the disk's own order: an ext4 directory reads in the order of a hash seeded per filesystem, so the
+    /// same tree answers a different order on every machine (and every answer built from a listing would follow it).</summary>
     IReadOnlyList<string> ListDirectories(string path);
 
     /// <summary>The target a link points at, read without following it (<c>readlink</c>).</summary>
@@ -175,8 +177,8 @@ public interface IFileSystem
     /// <summary>The last write of one directory, UTC — a stat, never a walk.</summary>
     DirectoryTimeResult DirectoryLastWrite(string path);
 
-    /// <summary>Full paths of the files directly in <paramref name="path"/> (no directories, no recursion);
-    /// empty when it does not exist.</summary>
+    /// <summary>Full paths of the files directly in <paramref name="path"/> (no directories, no recursion), in ordinal
+    /// order for the reason <see cref="ListDirectories"/> gives; empty when it does not exist.</summary>
     IReadOnlyList<string> ListFiles(string path);
 
     /// <summary>

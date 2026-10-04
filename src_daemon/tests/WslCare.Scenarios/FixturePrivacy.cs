@@ -28,8 +28,47 @@ internal static partial class FixturePrivacy
         ".git", "bin", "obj", "node_modules", "out", "dist", "artifacts", ".vscode-test", ".agents",
     };
 
-    /// <summary>Names a machine account may legitimately share with the anonymised data or the system.</summary>
-    private static readonly HashSet<string> NotPersonal = new(StringComparer.OrdinalIgnoreCase) { "user", "root" };
+    /// <summary>
+    /// The repository-wide scan's ONE allowlist: names the tests and docs INVENT for a /home or profile path — synthetic
+    /// accounts, never a person's. Each entry says where it is used; a name not here, other than <c>user</c>, is a finding.
+    /// A machine running the test under one of these names has no person to find either (<see cref="Personal"/>).
+    /// </summary>
+    internal static readonly IReadOnlySet<string> SyntheticNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "me",      // the sandbox's own home (LinuxEnvironment.Sandboxed: <root>/home/me) and the target user of the action,
+                   // config, path-rule and scenario tests
+        "ann",     // a second invented login account (ActionEngineTests, UserCacheTests)
+        "sam",     // a third (TargetHomeTests)
+        "alice",   // invented accounts of the installer, path, privacy and identity tests (InstallWorld, HostPathsTests,
+                   // HealthTests, FixturePrivacyTests, FixtureIdentityTests, GoldenContractTests); case-insensitive, as
+                   // every entry: PathRulesTests folds "me" to "ME" on purpose
+        "Bob",     // the invented Windows profile of FixtureIdentityTests
+        "zed",     // the invented --set-default-user of InstallWorld
+        "u",       // the one-letter home of GoldenContractTests' normaliser input
+        "x",       // a placeholder home in the scanners' own planted instances (vsixCheck.test.ts, FixturePrivacy.cs)
+        "planted", // the planted name of FixturePrivacyTests' allowlist test
+    };
+
+    /// <summary>
+    /// Accounts a machine runs a test under that are a SERVICE, never a person, so the machine-name rule leaves them out.
+    /// CI run 37202261532 (2026-10-04) is why: <c>runner</c> is an ordinary word of this repository (a test runner, the
+    /// command runner) and the Linux legs reported 541 findings, the Windows leg 1 (<c>runneradmin</c>). The CI accounts
+    /// are the ones <c>src_vs_code/src/test/vsixCheck.test.ts</c> names for the .vsix check — which keeps them and reads
+    /// only the bundle's string literals instead —, and <c>FixturePrivacyTests</c> holds the two in step.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> ServiceAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "runner",      // GitHub-hosted runners, the Linux and macOS images
+        "runneradmin", // GitHub-hosted runners, the Windows image
+        "root",        // a container, or the distro's superuser
+        "vscode",      // the default account of a VS Code dev container
+        "codespace",   // GitHub Codespaces
+        "user",        // the anonymised data's own placeholder account
+    };
+
+    /// <summary>The shortest machine name the scan looks for — a shorter one matches too much to mean anything. The same
+    /// floor as <c>machineUserNames</c> in <c>src_vs_code/src/test/support/vsixCheck.ts</c>.</summary>
+    internal const int MinimumNameLength = 3;
 
     private static readonly HashSet<string> WindowsOwnProfiles = new(StringComparer.OrdinalIgnoreCase) { "user", "Public", "Default" };
 
@@ -135,20 +174,38 @@ internal static partial class FixturePrivacy
         }
     }
 
-    /// <summary>The user names of the machine running this test: the process's account, <c>USERNAME</c>, <c>USER</c> and the
-    /// home folder's name — the same four places check-vsix.mjs reads. Blank values and <see cref="NotPersonal"/> names
-    /// are left out.</summary>
-    public static IReadOnlyList<string> MachineUserNames() =>
-        Personal([
-            Environment.UserName,
-            Environment.GetEnvironmentVariable("USERNAME"),
-            Environment.GetEnvironmentVariable("USER"),
-            Path.GetFileName(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('/', '\\')),
-        ]);
+    /// <summary>The raw user names of the machine running this test: the process's account, <c>USERNAME</c>, <c>USER</c> and
+    /// the home folder's name — the same four places check-vsix.mjs reads. The one place the environment is read; a test
+    /// passes its own candidates to <see cref="RepositoryFindings"/> instead.</summary>
+    public static IReadOnlyList<string?> MachineNameCandidates() =>
+    [
+        Environment.UserName,
+        Environment.GetEnvironmentVariable("USERNAME"),
+        Environment.GetEnvironmentVariable("USER"),
+        Path.GetFileName(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile).TrimEnd('/', '\\')),
+    ];
 
-    /// <summary>The distinct, non-blank names of <paramref name="candidates"/> that are not <see cref="NotPersonal"/>.</summary>
+    /// <summary>The machine's names that could be a person's: <see cref="Personal"/> of <see cref="MachineNameCandidates"/>.</summary>
+    public static IReadOnlyList<string> MachineUserNames() => Personal(MachineNameCandidates());
+
+    /// <summary>The repository-wide scan: every <see cref="RepositoryTextFiles">tracked text file</see> under
+    /// <paramref name="root"/> against the fixed rules, with <see cref="SyntheticNames"/> admitted as a /home or profile
+    /// name, and against the <see cref="Personal"/> names of <paramref name="machineNameCandidates"/> — the seam that lets
+    /// a test stand in for the machine running it.</summary>
+    public static IReadOnlyList<string> RepositoryFindings(string root, IEnumerable<string?> machineNameCandidates)
+    {
+        var names = Personal(machineNameCandidates);
+        return [.. RepositoryTextFiles(root).SelectMany(f => Findings(f.Path, f.Text, names, SyntheticNames))];
+    }
+
+    /// <summary>The distinct names of <paramref name="candidates"/> that could be a person's: at least
+    /// <see cref="MinimumNameLength"/> characters, and neither one of the <see cref="ServiceAccounts"/> nor one of the
+    /// <see cref="SyntheticNames"/>. Each is then matched as a whole word (<see cref="LineFindings"/>), so it is found as
+    /// a path segment or in a sentence, never inside a longer word.</summary>
     public static IReadOnlyList<string> Personal(IEnumerable<string?> candidates) =>
-        [.. candidates.Select(c => c?.Trim() ?? string.Empty).Where(c => c.Length > 0 && !NotPersonal.Contains(c)).Distinct(StringComparer.OrdinalIgnoreCase)];
+        [.. candidates.Select(c => c?.Trim() ?? string.Empty)
+            .Where(c => c.Length >= MinimumNameLength && !ServiceAccounts.Contains(c) && !SyntheticNames.Contains(c))
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
 
     /// <summary>What <paramref name="text"/> (the content of <paramref name="file"/>) must not carry, one finding per rule
     /// and line: <c>file:line holds …</c>. Empty is clean.</summary>

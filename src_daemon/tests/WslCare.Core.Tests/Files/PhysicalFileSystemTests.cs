@@ -218,4 +218,26 @@ public sealed class PhysicalFileSystemTests
 
         act.Should().Throw<TimeoutException>().WithMessage("*.lock*");
     }
+
+    /// <summary>CI run 37202261532 (2026-10-04): <c>status --json</c> listed the container cgroups in the order the disk
+    /// answered — an ext4 directory reads in the order of a hash seeded per filesystem, so every runner image answered its
+    /// own order and the golden made in WSL went stale on both Linux legs. A listing is in ordinal order on every disk;
+    /// the names here are made in an order that is neither, and mix case, so NTFS's case-insensitive order is not it either.</summary>
+    [Fact]
+    public void Directories_and_files_are_listed_in_ordinal_order_whatever_order_the_disk_answers()
+    {
+        using var host = new SandboxHost("fs-list-order");
+        var root = host.Root.Dir("listed");
+        string[] names = ["gamma9", "beta", "_under", "Epsilon", "zeta", "Alpha", "gamma10", "Delta", "c0ffee", "9lives", "omega", "Kappa"];
+        foreach (var name in names)
+        {
+            host.Root.Dir($"listed/{name}");
+            host.Root.File($"listed/{name}.txt", name);
+        }
+
+        string[] ordinal = [.. names.Order(StringComparer.Ordinal)];
+
+        host.Files.ListDirectories(root).Select(Path.GetFileName).Should().Equal(ordinal);
+        host.Files.ListFiles(root).Select(Path.GetFileNameWithoutExtension).Should().Equal(ordinal);
+    }
 }
