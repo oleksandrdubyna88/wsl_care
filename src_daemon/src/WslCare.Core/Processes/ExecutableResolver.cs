@@ -1,3 +1,5 @@
+using System.Globalization;
+
 using WslCare.Core.Collectors;
 
 namespace WslCare.Core.Processes;
@@ -10,7 +12,12 @@ public abstract record ResolvedExecutable
     }
 
     /// <summary>The file to start — a full path, so the operating system is never asked to search.</summary>
-    public sealed record Found(string Path) : ResolvedExecutable;
+    public sealed record Found(string Path) : ResolvedExecutable
+    {
+        /// <summary>Found by the Windows system drive fallback rather than on <c>PATH</c> — what the launcher names beside
+        /// the bare program in what it reports.</summary>
+        public bool OnTheSystemDrive { get; init; }
+    }
 
     /// <summary>Nothing on <c>PATH</c> answers to the name (or the name is a relative path); the reason says where it looked.</summary>
     public sealed record NotFound(string Reason) : ResolvedExecutable;
@@ -39,9 +46,11 @@ public abstract record ResolvedExecutable
 /// <para>The one fallback (live, 2026-10-04): a systemd service's <c>PATH</c> holds no Windows folder — WSL appends them only
 /// for interactive and login sessions — so under the timer <c>powershell.exe</c> was never found and the clock probe and
 /// A16 never ran. A name <see cref="WindowsSystemDrive.Programs"/> lists is then looked for in its one fixed folder on the
-/// drive <see cref="WindowsSystemDrive"/> finds in the mount table, and started only as a regular file with an execute bit
-/// and the Windows program header. Nothing else changes: <c>PATH</c> still wins, every other name is PATH-only, and the
-/// argv the <see cref="Policy.CommandPolicy"/> judged still names the bare program.</para>
+/// drive <see cref="WindowsSystemDrive"/> finds in mountinfo, only when WSL interop is enabled, and started only when
+/// every check <see cref="SystemDriveFiles"/> lists holds; the whole lookup runs under
+/// <see cref="WindowsSystemDrive.Ceiling"/>, and one that does not answer is a named refusal. Nothing else changes:
+/// <c>PATH</c> still wins, every other name is PATH-only, and the argv the <see cref="Policy.CommandPolicy"/> judges still
+/// names the BARE program — the resolved absolute path is only what <c>Process.Start</c> receives, never re-resolved.</para>
 /// </remarks>
 public static class ExecutableResolver
 {
@@ -50,23 +59,21 @@ public static class ExecutableResolver
 
     /// <summary>Resolves against this process's <c>PATH</c>, by this platform's rules — inside the distro falling back to
     /// the mounted Windows system drive for the programs <see cref="WindowsSystemDrive.Programs"/> names.</summary>
-    public static ResolvedExecutable Resolve(string name) =>
-        Resolve(name, Environment.GetEnvironmentVariable("PATH"), OperatingSystem.IsWindows(), WindowsSystemDrive.MountPointHere);
+    public static ResolvedExecutable Resolve(string name, CancellationToken cancellationToken = default) =>
+        Resolve(name, Environment.GetEnvironmentVariable("PATH"), OperatingSystem.IsWindows(), SystemDriveLookup.ThisMachine, cancellationToken);
 
     /// <summary>Resolves <paramref name="name"/> against <paramref name="pathVariable"/> ALONE by the rules of the platform
     /// <paramref name="windows"/> names (the file checks are this machine's) — the Windows system drive is not consulted.</summary>
     public static ResolvedExecutable Resolve(string name, string? pathVariable, bool windows) =>
-        Resolve(name, pathVariable, windows, NotConsulted);
+        Resolve(name, pathVariable, windows, SystemDriveLookup.NotConsulted);
 
     /// <summary>
     /// Resolves <paramref name="name"/> against <paramref name="pathVariable"/>; when PATH does not hold it, the platform is
     /// Linux and the name is one of <see cref="WindowsSystemDrive.Programs"/>, it is looked for in its folder on the Windows
-    /// system drive mounted where <paramref name="systemDriveMountPoint"/> says — asked only then, so the mount table is read
-    /// for no other tool. A copy found there must be a regular file (never a symbolic link), carry an execute bit and start
-    /// with the <c>MZ</c> header of a Windows program: only WSL interop runs such a file, on Windows as the Windows user,
-    /// where an ELF or a script under that name would run natively — as root, under the service.
+    /// system drive as <paramref name="systemDrive"/> answers — asked only then, so nothing of it is read for any other tool
+    /// — under its ceiling; <paramref name="cancellationToken"/> ends the wait as the caller's cancellation.
     /// </summary>
-    public static ResolvedExecutable Resolve(string name, string? pathVariable, bool windows, Func<Reading<string>> systemDriveMountPoint)
+    public static ResolvedExecutable Resolve(string name, string? pathVariable, bool windows, SystemDriveLookup systemDrive, CancellationToken cancellationToken = default)
     {
         if (Path.IsPathFullyQualified(name))
         {
@@ -79,7 +86,7 @@ public static class ExecutableResolver
         }
 
         var onPath = ResolveIn(name, Directories(pathVariable, windows), windows);
-        return onPath is ResolvedExecutable.NotFound notOnPath ? OrOnTheSystemDrive(name, windows, systemDriveMountPoint, notOnPath) : onPath;
+        return onPath is ResolvedExecutable.NotFound notOnPath ? OrOnTheSystemDrive(name, windows, systemDrive, notOnPath, cancellationToken) : onPath;
     }
 
     /// <summary>
@@ -142,58 +149,41 @@ public static class ExecutableResolver
     private static bool HasExecuteBit(string candidate) =>
         (File.GetUnixFileMode(candidate) & (UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute)) != 0;
 
-    /// <summary>What a copy on the Windows system drive must be, in the order a refusal names the first it fails. The link
-    /// check comes first: a link is refused whatever it points at.</summary>
-    private static readonly (Func<FileInfo, bool> Fails, string Problem)[] SystemDriveChecks =
-    [
-        (f => f.LinkTarget is not null, "is a symbolic link, which is never followed there"),
-        (f => !f.Exists, "does not exist"),
-        (f => !MayExecute(f.FullName, windows: false), "has no execute bit"),
-        (f => !StartsWithTheWindowsProgramHeader(f.FullName), "is not a Windows program (no MZ header); only WSL interop may start a file found there"),
-    ];
-
-    /// <summary>For the 3-argument overload: PATH alone.</summary>
-    private static Reading<string> NotConsulted() => Reading.Missing<string>("this lookup consults PATH alone");
-
     /// <summary>The system drive's copy when PATH had none and the name is a Windows program the product starts from the
     /// distro; <paramref name="notOnPath"/> unchanged for every other name, and always on Windows.</summary>
-    private static ResolvedExecutable OrOnTheSystemDrive(string name, bool windows, Func<Reading<string>> mountPoint, ResolvedExecutable.NotFound notOnPath) =>
+    private static ResolvedExecutable OrOnTheSystemDrive(string name, bool windows, SystemDriveLookup systemDrive, ResolvedExecutable.NotFound notOnPath, CancellationToken cancellationToken) =>
         !windows && WindowsSystemDrive.Programs.TryGetValue(name, out var folder)
-            ? OnTheSystemDrive(name, folder, mountPoint(), notOnPath.Reason)
+            ? Bounded(() => OnTheSystemDrive(name, folder, systemDrive, notOnPath.Reason), systemDrive.Ceiling, notOnPath.Reason, cancellationToken)
             : notOnPath;
 
-    private static ResolvedExecutable OnTheSystemDrive(string name, string folder, Reading<string> mountPoint, string notOnPath) => mountPoint switch
+    /// <summary>
+    /// <paramref name="lookup"/> under <paramref name="ceiling"/>: its answer, or a refusal naming the ceiling. A read blocked
+    /// in the kernel (a 9p share the host stopped serving) cannot be cancelled, so the lookup's thread is left to finish on its
+    /// own — once per resolve, its answer ignored and any fault observed — rather than holding the run.
+    /// </summary>
+    private static ResolvedExecutable Bounded(Func<ResolvedExecutable> lookup, TimeSpan ceiling, string notOnPath, CancellationToken cancellationToken)
     {
-        Reading<string>.Available { Value: var root } => CheckedOnTheSystemDrive(Path.Combine(root, folder, name), notOnPath),
-        _ => new ResolvedExecutable.NotFound($"{notOnPath}; the Windows system drive was not searched: {mountPoint.ReasonOrEmpty}"),
-    };
-
-    private static ResolvedExecutable CheckedOnTheSystemDrive(string candidate, string notOnPath) =>
-        SystemDriveProblem(candidate) is { Length: > 0 } problem
-            ? new ResolvedExecutable.NotFound($"{notOnPath}; on the Windows system drive {candidate} {problem}")
-            : new ResolvedExecutable.Found(candidate);
-
-    /// <summary>Why <paramref name="candidate"/> is not started, or empty when it may be.</summary>
-    private static string SystemDriveProblem(string candidate)
-    {
-        try
-        {
-            var file = new FileInfo(candidate);
-            return SystemDriveChecks.FirstOrDefault(c => c.Fails(file)).Problem ?? string.Empty;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return $"could not be inspected: {e.Message}";
-        }
+        var running = Task.Run(lookup, CancellationToken.None);
+        _ = running.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
+        return running.Wait(ceiling, cancellationToken)
+            ? running.GetAwaiter().GetResult()
+            : new ResolvedExecutable.NotFound(string.Create(CultureInfo.InvariantCulture, $"{notOnPath}; the Windows system drive did not answer within {ceiling.TotalSeconds:0.###} s, so nothing there is started"));
     }
 
-    /// <summary>The two bytes every Windows executable starts with (the DOS header's <c>MZ</c>) — what WSL's interop
-    /// handler is registered for, so such a file never runs as a Linux program.</summary>
-    private static bool StartsWithTheWindowsProgramHeader(string path)
+    private static ResolvedExecutable OnTheSystemDrive(string name, string folder, SystemDriveLookup systemDrive, string notOnPath) => systemDrive.Mount() switch
     {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-        Span<byte> header = stackalloc byte[2];
-        return stream.ReadAtLeast(header, 2, throwOnEndOfStream: false) == 2 && header[0] == (byte)'M' && header[1] == (byte)'Z';
+        Reading<SystemDriveMount>.Available { Value: var mount } => Checked(mount, name, folder, systemDrive, notOnPath),
+        var missing => new ResolvedExecutable.NotFound($"{notOnPath}; the Windows system drive was not searched: {missing.ReasonOrEmpty}"),
+    };
+
+    /// <summary>Interop first (no Windows program runs without it), then the mount point's ancestors, then the file.</summary>
+    private static ResolvedExecutable Checked(SystemDriveMount mount, string name, string folder, SystemDriveLookup systemDrive, string notOnPath)
+    {
+        Func<string>[] checks = [systemDrive.InteropRefusal, () => systemDrive.MountPointRefusal(mount.MountPoint), () => systemDrive.Inspect(mount, folder, name)];
+        var problem = checks.Select(check => check()).FirstOrDefault(p => p.Length > 0) ?? string.Empty;
+        return problem.Length > 0
+            ? new ResolvedExecutable.NotFound($"{notOnPath}; not started from the Windows system drive: {problem}")
+            : new ResolvedExecutable.Found(Path.Combine(mount.MountPoint, folder, name)) { OnTheSystemDrive = true };
     }
 
     private static string NotFoundReason(string name, int searched, bool windows) =>

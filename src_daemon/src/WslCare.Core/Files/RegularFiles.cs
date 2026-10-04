@@ -3,7 +3,26 @@ using System.Runtime.Versioning;
 
 using Microsoft.Win32.SafeHandles;
 
+using WslCare.Core.Collectors;
+
 namespace WslCare.Core.Files;
+
+/// <summary>What <c>statx</c> says about one file: its type and permission bits (from <c>stx_mode</c>), its owner, its inode
+/// and the device it lives on.</summary>
+public sealed record FileStatus(int Type, int Permissions, uint OwnerUid, ulong Inode, uint DeviceMajor, uint DeviceMinor)
+{
+    public bool IsRegular => Type == 0x8000;
+
+    public bool IsDirectory => Type == 0x4000;
+
+    public bool IsSymbolicLink => Type == 0xA000;
+
+    /// <summary>The same file: one device, one inode.</summary>
+    public bool SameFileAs(FileStatus other) => Inode == other.Inode && DeviceMajor == other.DeviceMajor && DeviceMinor == other.DeviceMinor;
+}
+
+/// <summary>The first bytes of a regular file and its status, both from ONE open descriptor.</summary>
+public sealed record FileHead(FileStatus Status, IReadOnlyList<byte> Bytes);
 
 /// <summary>
 /// Reading a file a caller NAMED (A4's <c>--only</c> list, read as root) only when it is a REGULAR file, and never past a
@@ -39,6 +58,65 @@ public static partial class RegularFiles
             return new FileReadResult.Unreadable(e.Message);
         }
     }
+
+    /// <summary>
+    /// The status of <paramref name="path"/> itself — a final symbolic link is described, never followed
+    /// (<c>statx(AT_FDCWD, path, AT_SYMLINK_NOFOLLOW)</c>) — or why not; a missing path says so in those words.
+    /// </summary>
+    [SupportedOSPlatform("linux")]
+    public static Reading<FileStatus> StatNoFollow(string path)
+    {
+        var buffer = new byte[Native.StatxSize];
+        return Native.Statx(Native.AtFdCwd, path, Native.AtSymlinkNoFollow, Native.StatxBasic, buffer) == 0
+            ? Reading.Of(Status(buffer))
+            : Reading.Missing<FileStatus>(StatFailure(path, Marshal.GetLastPInvokeError()));
+    }
+
+    /// <summary>
+    /// The first <paramref name="count"/> bytes of <paramref name="path"/> and its status, from one descriptor opened with
+    /// <c>O_NONBLOCK</c> — only when that descriptor is a REGULAR file (a FIFO, a device or a directory is refused, never
+    /// waited on). Reads at most <paramref name="count"/> bytes, whatever the file's length.
+    /// </summary>
+    [SupportedOSPlatform("linux")]
+    public static Reading<FileHead> ReadHead(string path, int count)
+    {
+        var fd = Native.Open(path, Native.OpenReadOnlyNonBlocking, 0);
+        if (fd < 0)
+        {
+            return Reading.Missing<FileHead>(StatFailure(path, Marshal.GetLastPInvokeError()));
+        }
+
+        using var handle = new SafeFileHandle(fd, ownsHandle: true);
+        var buffer = new byte[Native.StatxSize];
+        if (Native.Statx(fd, string.Empty, Native.AtEmptyPath, Native.StatxBasic, buffer) != 0)
+        {
+            return Reading.Missing<FileHead>($"{path}: its status could not be read (errno {Marshal.GetLastPInvokeError()})");
+        }
+
+        var status = Status(buffer);
+        return status.IsRegular ? Reading.Of(Head(handle, status, count)) : Reading.Missing<FileHead>($"{path} is {NotRegular} ({Describe(status.Type)})");
+    }
+
+    private static FileHead Head(SafeFileHandle handle, FileStatus status, int count)
+    {
+        var bytes = new byte[count];
+        var read = RandomAccess.Read(handle, bytes, 0);
+        return new FileHead(status, bytes[..read]);
+    }
+
+    /// <summary><c>stx_mode</c> (u16 at 28: type and permission bits), <c>stx_uid</c> (u32 at 20), <c>stx_ino</c> (u64 at 32),
+    /// <c>stx_dev_major</c> / <c>stx_dev_minor</c> (u32 at 136 / 140) of the 256-byte <c>struct statx</c>.</summary>
+    private static FileStatus Status(byte[] statx)
+    {
+        var mode = BitConverter.ToUInt16(statx, Native.StatxModeOffset);
+        return new FileStatus(mode & Native.TypeMask, mode & 0xFFF, BitConverter.ToUInt32(statx, 20), BitConverter.ToUInt64(statx, 32), BitConverter.ToUInt32(statx, 136), BitConverter.ToUInt32(statx, 140));
+    }
+
+    private static string StatFailure(string path, int errno) => errno switch
+    {
+        Native.NoEntry or Native.NotADirectory => $"{path} does not exist",
+        _ => $"{path} could not be inspected (errno {errno})",
+    };
 
     /// <summary>The bytes of an open stream, at most <paramref name="maxBytes"/> — or the refusal when there is more.</summary>
     internal static FileReadResult Capped(Stream stream, int maxBytes)
@@ -117,18 +195,23 @@ public static partial class RegularFiles
 
     /// <summary>glibc, by its full soname — loaded only on Linux. The constants are the same on x86-64 and arm64 (the two
     /// Linux RIDs the daemon ships): <c>O_NONBLOCK</c> 0x800, <c>O_CLOEXEC</c> 0x80000, <c>O_NOCTTY</c> 0x100,
-    /// <c>AT_EMPTY_PATH</c> 0x1000, <c>STATX_TYPE</c> 1; <c>stx_mode</c> is the u16 at offset 28 of the 256-byte
+    /// <c>AT_EMPTY_PATH</c> 0x1000, <c>AT_FDCWD</c> -100, <c>AT_SYMLINK_NOFOLLOW</c> 0x100, <c>STATX_TYPE</c> 1,
+    /// <c>STATX_BASIC_STATS</c> 0x7ff, <c>ENOENT</c> 2, <c>ENOTDIR</c> 20; <c>stx_mode</c> is the u16 at offset 28 of the 256-byte
     /// <c>struct statx</c>.</summary>
     private static partial class Native
     {
         public const int OpenReadOnlyNonBlocking = 0x800 | 0x80000 | 0x100;
         public const int AtEmptyPath = 0x1000;
+        public const int AtFdCwd = -100;
+        public const int AtSymlinkNoFollow = 0x100;
         public const uint StatxType = 1;
+        public const uint StatxBasic = 0x7FF;
         public const int StatxSize = 256;
         public const int StatxModeOffset = 28;
         public const int TypeMask = 0xF000;
         public const int TypeRegular = 0x8000;
         public const int NoEntry = 2;
+        public const int NotADirectory = 20;
 
         private const string Libc = "libc.so.6";
 
