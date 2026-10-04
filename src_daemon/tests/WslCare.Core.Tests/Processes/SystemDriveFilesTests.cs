@@ -151,7 +151,9 @@ public sealed class SystemDriveFilesTests : IDisposable
     {
         SkipOnWindows();
 
-        SystemDriveFiles.MountPointRefusal("/usr/share/drive-c").Should().BeEmpty("/ and /usr and /usr/share are root's, mode 755");
+        // Only "/" above: the one ancestor that is root's and 755 on every Linux. (GitHub's ubuntu image ships /usr/share as
+        // 777 — observed by this test's first CI run, 2026-10-04 — so a deeper path is a fact about the runner, not the rule.)
+        SystemDriveFiles.MountPointRefusal("/drive-c").Should().BeEmpty("/ is root's, mode 755");
         SystemDriveFiles.MountPointRefusal("/tmp/anything/c").Should().Contain("/tmp").And.Contain("writable by its group or by others");
     }
 
