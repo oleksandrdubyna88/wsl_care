@@ -18,6 +18,7 @@ public sealed partial class ReleaseWorkflowTests
     private const string Release = "release.yml";
     private const string CiDaemon = "ci-daemon.yml";
     private const string Proposer = "release-please.yml";
+    private const string ExtensionRelease = "release-extension.yml";
     private const string SmokeScript = ".github/scripts/smoke-daemon.sh";
     private const string PackageScript = ".github/scripts/package-daemon.sh";
     private const string VerifyScript = ".github/scripts/verify-release-assets.sh";
@@ -36,7 +37,7 @@ public sealed partial class ReleaseWorkflowTests
     {
         var parsed = ReleaseFiles.AllWorkflows.Select(path => (Name: Path.GetFileName(path), Workflow: WorkflowYaml.Load(path))).ToList();
 
-        parsed.Select(p => p.Name).Should().Contain([Release, Proposer, CiDaemon, "ci-workflows.yml", "family-checks.yml", "pr-title.yml", "sonarcloud.yml", "coderabbit-review.yml"]);
+        parsed.Select(p => p.Name).Should().Contain([Release, ExtensionRelease, Proposer, CiDaemon, "ci-workflows.yml", "family-checks.yml", "pr-title.yml", "sonarcloud.yml", "coderabbit-review.yml"]);
         parsed.Should().OnlyContain(p => p.Workflow.Has("on") && p.Workflow.Has("jobs"), "a workflow has triggers and jobs");
         // The one positive beside the structural reads: the reader sees the ci-daemon matrix the file really holds.
         RunnerPerRid(Job(CiDaemon, "build-test-publish")).Keys.Should().BeEquivalentTo(ReleaseFiles.DaemonRids, "the reader reads the matrix that is there");
@@ -89,7 +90,7 @@ public sealed partial class ReleaseWorkflowTests
     [Fact]
     public void Release_workflows_default_to_reading_and_every_release_job_declares_its_own_permissions()
     {
-        foreach (var name in new[] { Release, Proposer })
+        foreach (var name in new[] { Release, ExtensionRelease, Proposer })
         {
             Permissions(Load(name)).Should().Equal(new Dictionary<string, string> { ["contents"] = "read" }, $"{name}: workflow-level permissions stay contents: read (plan §15e #0)");
         }
@@ -115,12 +116,12 @@ public sealed partial class ReleaseWorkflowTests
         workflow.Has("permissions") || Jobs(workflow).Entries.All(e => e.Value.Map.Has("permissions"));
 
     [Fact]
-    public void Only_the_per_rid_build_job_can_sign_and_it_writes_nothing_to_the_repository()
+    public void Only_the_two_release_build_jobs_can_sign_and_they_write_nothing_to_the_repository()
     {
         var signers = AllJobs().Where(j => SignsWith(Permissions(j.Job))).Select(j => $"{j.File}/{j.Id}").ToList();
         var workflowLevel = ReleaseFiles.AllWorkflows.Where(p => SignsWith(Permissions(WorkflowYaml.Load(p)))).ToList();
 
-        signers.Should().Equal([$"{Release}/build"], "id-token / attestations are the build job's alone (plan §15e #0)");
+        signers.Should().BeEquivalentTo([$"{Release}/build", $"{ExtensionRelease}/build"], "id-token / attestations are each release's build job's alone (plan §15e #0, §15g M5)");
         workflowLevel.Should().BeEmpty("no workflow grants a signing scope to all its jobs");
         Permissions(Job(Release, "build")).Should().Equal(new Dictionary<string, string>
         {
@@ -131,12 +132,13 @@ public sealed partial class ReleaseWorkflowTests
     }
 
     [Fact]
-    public void Only_the_publish_job_can_write_the_repository()
+    public void Only_the_release_publish_jobs_can_write_the_repository()
     {
         var writers = AllJobs().Where(j => WritesContents(Permissions(j.Job))).Select(j => $"{j.File}/{j.Id}").ToList();
         var workflowLevel = ReleaseFiles.AllWorkflows.Where(p => WritesContents(Permissions(WorkflowYaml.Load(p)))).ToList();
 
-        writers.Should().Equal([$"{Release}/publish"], "contents: write is the aggregator's alone (plan §15e #0) — the proposer writes with the App token");
+        writers.Should().BeEquivalentTo([$"{Release}/publish", $"{ExtensionRelease}/github-draft", $"{ExtensionRelease}/github-public"],
+            "contents: write is the daemon aggregator's and the extension's two GitHub-release jobs' alone (plan §15e #0, §15h #0) — the proposer writes with the App token");
         workflowLevel.Should().BeEmpty();
         Permissions(Job(Release, "publish")).Should().Equal(new Dictionary<string, string> { ["contents"] = "write" });
     }
