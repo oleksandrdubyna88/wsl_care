@@ -1,19 +1,20 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "$note": [
-    "How a daemon release is decided (plan §9; E4.S2): release-please reads the conventional commits under src_daemon/",
-    "since the last daemon-v* tag and opens a pull request that bumps src_daemon/version.txt (the `simple` strategy's",
-    "version file — src_daemon/Directory.Build.props stamps every assembly from it) and writes src_daemon/CHANGELOG.md.",
-    "MERGING that pull request decides the release; the next run of release-please.yml cuts the tag daemon-v<version>",
-    "and a DRAFT release, and the tag starts release.yml.",
+    "How a release is decided (plan §9; E4.S2, E5.S3): release-please reads the conventional commits under each package path",
+    "since that package's last tag and opens ONE pull request per package (`separate-pull-requests`).",
     "",
-    "ROOM FOR THE EXTENSION (E5), not taken yet: its package joins `packages` as",
-    "  \"src_vs_code\": { \"component\": \"extension\", \"release-type\": \"node\", \"initial-version\": \"0.1.0\" }",
-    "with `\"src_vs_code\": \"0.0.0\"` in the manifest, release.yml gains an `extension-v*` leg and the tag ruleset its",
-    "pattern. It is not listed today because there is no src_vs_code/package.json for a node strategy to bump."
+    "src_daemon (component `daemon`, the `simple` strategy): bumps src_daemon/version.txt (src_daemon/Directory.Build.props",
+    "stamps every assembly from it) and writes src_daemon/CHANGELOG.md; its tag daemon-v<version> starts release.yml.",
+    "",
+    "src_vs_code (component `extension`, the `node` strategy, E5.S3 — plan §15g M5 (4)): bumps src_vs_code/package.json and",
+    "package-lock.json and writes src_vs_code/CHANGELOG.md; its tag extension-v<version> starts release-extension.yml, a",
+    "workflow of its own so the Marketplace secret never sits in a file the daemon's release runs.",
+    "",
+    "MERGING a release pull request decides that release; the NEXT run of release-please.yml cuts the tag and a DRAFT release."
   ],
   "$bootstrap": [
-    "THE FIRST RELEASE IS 0.1.0 EXACTLY, from two settings that only work together. Read in release-please's own code as",
+    "THE FIRST RELEASE OF EACH PACKAGE IS 0.1.0 EXACTLY, from two settings that only work together. Read in release-please's own code as",
     "bundled by release-please-action v5.0.0 (dist/index.js at 45996ed1), not recalled:",
     "",
     "1. The manifest says `\"src_daemon\": \"0.0.0\"`, the same as version.txt. Manifest.buildPullRequests backfills a",
@@ -27,7 +28,10 @@
     "   override it. A `Release-As:` footer would still win over both — none may be used for the first release.",
     "",
     "After daemon-v0.1.0 the release pull request has written 0.1.0 into both files and `initial-version` is never read",
-    "again. Every daemon commit in history is in range for the first changelog (no bootstrap-sha), which is the point."
+    "again. Every daemon commit in history is in range for the first changelog (no bootstrap-sha), which is the point.",
+    "",
+    "The extension is bootstrapped the same way: `\"src_vs_code\": \"0.0.0\"` in the manifest, `\"version\": \"0.0.0\"` in",
+    "src_vs_code/package.json, `initial-version` 0.1.0 (ReleaseConfigTests holds both packages to it)."
   ],
   "$draft": [
     "DRAFT + FORCE-TAG-CREATION, the family's measured pair (dew_flow_creds_for_devs release-please-config.json).",
@@ -62,6 +66,12 @@
       "component": "daemon",
       "release-type": "simple",
       "initial-version": "0.1.0"
+    },
+    "src_vs_code": {
+      "component": "extension",
+      "release-type": "node",
+      "initial-version": "0.1.0",
+      "changelog-path": "CHANGELOG.md"
     }
   }
 }

@@ -112,15 +112,13 @@ gh api "repos/$REPO/rules/branches/main" --jq '.[].type'
 If (c) **succeeds**, delete the ruleset and the probe branch and stop. Optional, for `gh pr merge --auto`:
 `gh api --method PATCH "repos/$REPO" -F allow_auto_merge=true`.
 
-## 5. Nothing for the extension yet
+## 5. The extension's settings are steps 9–11
 
-`VSCE_PAT` (plan §9) belongs to the extension's Marketplace leg (`release-extension.yml`, built as files in E5.S3); it is
-not needed for a daemon release. The settings are steps of the **E5 live gate** (plan §16, §15f #6, §15g M4/M5/m9): the
-publisher id is created early (it is permanent), the PAT goes into the protected `marketplace` Environment — or `vsce
-publish --azure-credential` through OIDC, the state of Azure DevOps global PATs checked first — with its expiry recorded in
-`POST_DEPLOY.md`; a SEPARATE tag ruleset `tags-extension.json` covers `extension-v*` (`tags-daemon.json` is not edited) and
-the `main` ruleset gains the extension's checks, each applied with a probe that must be refused, exactly as in steps 3
-and 4.
+Nothing in steps 1–4 is needed again for the extension, and nothing of the extension is needed for a daemon release. The
+extension's own settings — the Marketplace publisher and its credential, the `marketplace` Environment, the
+`extension-v*` tag ruleset — are steps 9–11 below, run at the **E5 live gate** (plan §16), after the E4 live gate's
+stamp. The `main` ruleset of step 4 already names the extension's two checks; `ci-extension.yml`'s job names did not
+change in E5.S3, so step 4 needs no second application for it.
 
 ## 6. SonarCloud (optional; the analysis skips loudly until it is done)
 
@@ -156,6 +154,74 @@ gh api "repos/$REPO/code-scanning/default-setup" --jq .state     # configured
 
 Not a required check until it has reported on a pull request (a required check that never reports blocks every merge).
 
+## 9. The Marketplace publisher, its credential, and the `marketplace` Environment (E5 live gate, steps 1–2)
+
+**The publisher (browser, permanent).** Sign in at <https://marketplace.visualstudio.com/manage> with the Microsoft
+account that will own the extension and create a publisher. Its **id** is permanent and becomes part of the extension's
+identity (`<publisher>.wsl-care`); check first that the display name **WSL Care** is free (search the Marketplace) and
+that no extension `<id>.wsl-care` exists. Then put the id into `src_vs_code/package.json` (`"publisher"`) through a pull
+request — nothing else changes: the host scenarios and `POST_DEPLOY.md` item 6 read it from the manifest, and both
+`release-extension-guard.sh` and `check-vsix.mjs --release` refuse the placeholder `publisher-tbd`.
+
+**The credential — what was checked, 2026-10-04 (plan §15g m9).** `vsce publish` takes either a Personal Access Token
+(`VSCE_PAT`) or, since vsce 3.x, `--azure-credential` (Microsoft Entra ID through `DefaultAzureCredential`). A Marketplace
+PAT must be created with organisation **All accessible organizations** — a GLOBAL PAT — and scope **Marketplace →
+Manage**. Azure DevOps retires global PATs: the creation block once planned for 2026-03-15 was withdrawn, but **every
+global PAT stops working on 2026-12-01** (Azure DevOps blog, *Retirement of Global Personal Access Tokens*), and
+organisation-scoped PATs for the Marketplace are an open request (microsoft/vsmarketplace#2121). So:
+
+- **Recommended: OIDC, no stored secret.** Register an Entra application (or a user-assigned managed identity), add a
+  federated credential for subject `repo:oleksandrdubyna88/wsl_care:environment:marketplace` (issuer
+  `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`), and add that identity as a member
+  of the publisher (*Manage → Members*, role Contributor). Then, in ONE pull request: in `release-extension.yml`'s
+  `publish-marketplace` job add `id-token: write`, an `azure/login` step (SHA-pinned; `client-id`, `tenant-id`,
+  `allow-no-subscriptions: true`) before the publish, and `--azure-credential` on `vsce publish`; widen
+  `ReleaseWorkflowTests` / `ReleaseExtensionWorkflowTests`' signing-scope assertions to that job; set the two ids as
+  Environment variables (not secrets). Record `VSCE_PAT expires: none — OIDC` in `POST_DEPLOY.md`.
+- **Or, until 2026-12-01: a PAT.** Create it at `https://dev.azure.com/<org>/_usersSettings/tokens` (Organization: All
+  accessible organizations; Scopes: Custom defined → Marketplace → **Manage**; expiry at most 2026-12-01), store it ONLY
+  in the Environment (below), and record `VSCE_PAT expires: <YYYY-MM-DD>` in `POST_DEPLOY.md` (item 12 fails 30 days
+  before it).
+
+**The Environment** — a required reviewer, and only `extension-v*` tags may deploy to it:
+
+```bash
+OWNER_ID="$(gh api user --jq .id)"
+printf '{"reviewers":[{"type":"User","id":%s}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' "$OWNER_ID" > /tmp/marketplace-env.json
+gh api --method PUT "repos/$REPO/environments/marketplace" --input /tmp/marketplace-env.json
+gh api --method POST "repos/$REPO/environments/marketplace/deployment-branch-policies" -f name='extension-v*' -f type=tag
+gh secret set VSCE_PAT -R "$REPO" --env marketplace        # prompts for the value; skip with OIDC
+```
+
+**Check:** `gh api "repos/$REPO/environments/marketplace" --jq '.protection_rules[].type'` lists `required_reviewers` and
+`branch_policy`; `gh api "repos/$REPO/environments/marketplace/deployment-branch-policies" --jq '.branch_policies[] |
+[.name,.type]'` is `["extension-v*","tag"]`; `gh secret list -R "$REPO" --env marketplace` names `VSCE_PAT`. Whether the
+protection ACTS is observed on the first release: `publish-marketplace` stops at *Waiting for review* until you approve.
+
+## 10. The extension tag ruleset — only the App creates an `extension-v*` tag, nobody moves or deletes one (E5 live gate, step 3)
+
+`.github/rulesets/tags-extension.json` is `tags-daemon.json` with the pattern `refs/tags/extension-v*` (the daemon's
+file is not edited; `ReleaseExtensionWorkflowTests` holds the two equal but for the name and the pattern). Applied
+exactly as step 3, WITH its own probe:
+
+```bash
+node -e 'const r=JSON.parse(require("fs").readFileSync(".github/rulesets/tags-extension.json","utf8")); r.conditions.ref_name.include.push("refs/tags/zz-ruleset-probe-ext-*"); process.stdout.write(JSON.stringify(r))' > /tmp/tags-ext-probe.json
+EXT_ID="$(gh api --method POST "repos/$REPO/rulesets" --input /tmp/tags-ext-probe.json --jq .id)"; echo "$EXT_ID"
+gh api --method POST "repos/$REPO/git/refs" -f ref=refs/tags/zz-ruleset-probe-ext-1 -f sha="$MAIN_SHA"     # MUST be refused (HTTP 422)
+gh api --method PUT "repos/$REPO/rulesets/$EXT_ID" --input .github/rulesets/tags-extension.json            # only after the refusal
+gh api "repos/$REPO/git/matching-refs/tags/zz-ruleset-probe-ext" --jq length                              # 0
+gh api "repos/$REPO/rulesets/$EXT_ID" --jq '.conditions.ref_name.include'                                 # ["refs/tags/extension-v*"]
+```
+
+If the probe tag is **created**, the ruleset does not act: delete the probe tag and the ruleset (as in step 3) and stop.
+
+## 11. The `main` ruleset after the extension's checks reported (only if it changed)
+
+Step 4's `branch-main.json` already requires `extension · typecheck · lint · test (windows-latest)` and
+`(ubuntu-24.04)`. Re-apply it (step 4 (d)'s PUT, with its probe if the ruleset is new) only when a pull request has
+REPORTED every context it names — a required check that never reports blocks every merge. E5.S3 renamed no job, so the
+file is unchanged by it.
+
 ## Cutting `daemon-v0.1.0` — the E4 live gate
 
 E4 is done when its pull request is merged (plan §16, §15f #4); this section is the **E4 live gate** that follows it,
@@ -176,11 +242,51 @@ pull request merged to `main` and CI green there:
 6. `POST_DEPLOY.md` items 8–10 against the published release; then install it here
    (`curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh` — gh 2.56.0 or
    newer from GitHub's apt repository, no gh login needed).
-7. `POST_DEPLOY.md` items 1–11 against the installation (inside WSL: `node .agents/conventions/tools/post-deploy-check.mjs
-   --target 0.1.0`, plus the manual items), and its `Last verified:` line stamped with the date and `0.1.0`. That stamp is
+7. `POST_DEPLOY.md` items 1–2, 4–5 and 7–11 against the installation (inside WSL: `node .agents/conventions/tools/post-deploy-check.mjs
+   --target 0.1.0`, plus the manual items; 3, 6 and 12 are the extension's, at the E5 live gate), and its `Last verified:` line
+   stamped `Last verified: <YYYY-MM-DD> · <target> · daemon 0.1.0` — `release-extension.yml`'s guard reads that shape. That stamp is
    what the E5 live gate (the Marketplace publish) and every story of E6 wait for; E5.S0–S3 need not wait. Phase 0 does not gate this
    install any more — it gates the review of the dryRun week (plan §16).
 
 If `release.yml` fails, nothing is public: the draft stays a draft. Re-run the failed jobs for a transient failure;
 otherwise fix the cause on `main` and let release-please cut the next patch. **Never move or delete a release tag** —
 the tag ruleset refuses it anyway.
+
+## Cutting `extension-v0.1.0` — the E5 live gate
+
+E5 is done when its pull request is merged (plan §16, §15g M4); this section is the **E5 live gate**, the owner's alone,
+AFTER the E4 live gate's stamp (`release-extension.yml`'s guard refuses before it anyway). Each step observed, not
+assumed:
+
+1. Steps 9–11 above: the publisher (its id merged into `package.json`), the credential and the `marketplace` Environment,
+   the tag ruleset with its refused probe.
+2. The minimum daemon (`daemon-v0.1.0`, carrying E5.S0) published and `POST_DEPLOY.md` stamped `… · daemon 0.1.0` by the
+   E4 live gate; then `contracts/golden/daemon-0.1.0/` frozen from it (plan §15g m7) and committed.
+3. `POST_DEPLOY.md` item 3's preview timing at this machine's real container count — BEFORE the listing (§15h #1).
+4. `gh workflow run release-please.yml -R "$REPO"`. Expect a pull request *chore(main): release extension 0.1.0*
+   changing exactly `src_vs_code/package.json` and `package-lock.json` (0.0.0 → **0.1.0**), `.release-please-manifest.json`
+   and `src_vs_code/CHANGELOG.md`. **Read it**; any other version means the bootstrap did not hold — close it. (A
+   `Release-As:` footer applies to EVERY package the commit touches — never use one here.) Squash-merge it green.
+5. `gh workflow run release-please.yml -R "$REPO"` **again** — this run cuts `extension-v0.1.0` and a DRAFT release; the
+   tag starts `release-extension.yml`: record the run ids BEFORE (`gh run list -R "$REPO" --workflow release-extension.yml
+   --limit 5 --json databaseId`) and accept only a NEW run on event `push` for `refs/tags/extension-v0.1.0`. Push no other
+   tag in the same minute (more than three tags in one push trigger nothing).
+6. `release-extension.yml`, observed job by job: guard (tag, package.json, publisher, main, the minimum daemon published
+   and stamped) → build (tests, the extension-host tier, `vsce package` once, the leak checks with `--release`, the
+   attestation) → **github-draft** (the `.vsix` + `.sha256` on the draft, read back and compared — the rollback source
+   exists before anything is public) → **publish-marketplace** (approve it: the Environment waits for you; it skips if
+   the Marketplace already serves 0.1.0, otherwise publishes the attested file and waits until the Marketplace serves it)
+   → **github-public** (the draft goes public).
+7. `POST_DEPLOY.md` items 3, 6 and 12 against the Marketplace build installed in VS Code
+   (`code --install-extension <publisher>.wsl-care`), then the stamp extended to `… · daemon 0.1.0 · extension 0.1.0`.
+
+**Every job is re-runnable** ("Re-run failed jobs" replays the same tag event): github-draft uploads `--clobber` onto a
+draft and only COMPARES on a public release (published bytes are never replaced); publish-marketplace skips a version the
+Marketplace already serves and waits again; github-public is a no-op on a public release. A failure before github-public
+leaves an invisible draft (and, at worst, a Marketplace version whose `.vsix` is already on that draft). Fix forward: the
+next patch through release-please. **Never move or delete an `extension-v*` tag** — the ruleset refuses it.
+
+**Rollback** never builds: install a previous version's attested `.vsix` from its GitHub release —
+`gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix'` then
+`code --install-extension wsl-care-<previous>.vsix` — or ship the next patch. Every release keeps its `.vsix` (a release
+asset does not expire, unlike a workflow artifact).

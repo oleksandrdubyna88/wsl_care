@@ -340,8 +340,19 @@ too) · 2 a period that is none of these · 4 the history exists but cannot be r
 ## Extension (preview)
 
 `src_vs_code/` is the VS Code extension **WSL Care** — in development (E5), not published yet. What exists today
-(E5.S1, E5.S2): its client, a **status-bar item** and a **read-only panel**; packaging and the Marketplace release arrive
-in E5.S3 (the publisher id in `package.json` is a placeholder until the owner creates it — the E5 live gate).
+(E5.S1–E5.S3): its client, a **status-bar item**, a **read-only panel**, ***Install daemon***, and its packaging and
+release pipeline as files and tests (the publisher id in `package.json` is a placeholder until the owner creates it —
+the E5 live gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-settings.md) steps 9–11).
+
+- ***Install daemon*** (the panel's button when the daemon is not installed, and *WSL Care: Install daemon…*): the
+  distribution is validated first (the setting's pattern, then `wsl.exe --list`); a modal shows the exact command and
+  what the distribution needs (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0 or newer, `sudo`); on confirmation a
+  terminal opens in that distribution with the command TYPED, never run — `curl -fsSL
+  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/daemon-v0.1.0/install.sh | sudo sh -s -- --version 0.1.0`,
+  pinned to the minimum daemon the extension renders, never `--skip-attestation`.
+- **The package** is one universal `.vsix` (`npm run package`) holding exactly `vsix-files.txt` (`.vscodeignore` is an
+  allowlist); `npm run check:vsix` opens it and refuses machine paths, this machine's user name, e-mail addresses,
+  source maps and a bundle built for another version — on every pull request, on both CI legs.
 
 - **The status bar** reads `WSL RAM <used>% · swap <x>G · <n> containers`, coloured (theme colours) by the worst memory
   or kernel verdict the daemon reports; "WSL stopped" when the distribution is not running; "daemon not installed",
@@ -377,6 +388,9 @@ npm run typecheck && npm run lint
 npm test        # compile, bundle (dist/extension.js), then every test — no test can start the real wsl.exe
 npm run test:host   # the extension in a real VS Code 1.85.0 and stable (downloads into .vscode-test/; xvfb-run on Linux)
 npm run fieldmap:doc   # rewrite the panel's field-map table in research/architecture.md from src/panel/fieldMap.ts
+npm run package        # vsce package: wsl-care-<version>.vsix (runs the stamped bundle first)
+npm run check:vsix     # the leak checks on that .vsix (after npm test, which compiles the checker)
+npm run icon:make      # redraw media/icon.png from its recipe (src/test/support/iconPng.ts) — no third-party art
 ```
 
 What it measured about `wsl.exe` before the client was written: [research/2026-10-03_wsl_exe_facts.md](research/2026-10-03_wsl_exe_facts.md).
@@ -428,7 +442,41 @@ publish) first runs on a release day.
   checks — the extension's two legs since E5.S1), each verified by a probe that must be refused;
 - optionally `SONAR_TOKEN` (Actions AND Dependabot stores) with the SonarCloud project `remsoftdev_wsl_care` — until
   then `sonarcloud.yml` skips with a warning;
-- the CodeRabbit App enabled for this repository (`.coderabbit.yaml` is read from then on).
+- the CodeRabbit App enabled for this repository (`.coderabbit.yaml` is read from then on);
+- for the extension (the E5 live gate): the Marketplace publisher, the `marketplace` Environment (a required reviewer,
+  `extension-v*` tags only) with `VSCE_PAT` — or OIDC through `--azure-credential`, recommended because global Azure
+  DevOps PATs stop working on 2026-12-01 — and the tag ruleset `.github/rulesets/tags-extension.json` (steps 9–11).
+
+### The extension's release
+
+An extension release is the tag `extension-v<version>`: release-please's `extension` package (the `node` strategy over
+`src_vs_code/package.json`; the first release is `0.1.0`) cuts it with a DRAFT release, and the tag starts
+**`release-extension.yml`** — a file of its own, so the Marketplace secret is never in a workflow a daemon release runs:
+
+1. **guard** — the tag matches `package.json`'s version, the publisher is real, the commit is on `main`, and the
+   **minimum daemon** (`MIN_DAEMON_FOR_RENDER`, the version *Install daemon* types) is a published release that
+   `POST_DEPLOY.md` names as last verified (`release-extension-guard.sh`);
+2. **build** — every test, `vsce package` once, the leak checks with `--release`, the `.vsix`'s `.sha256` and its
+   build-provenance attestation;
+3. **github-draft** — the `.vsix` and `.sha256` uploaded to the draft and read back FIRST, so the rollback source exists
+   before anything is public;
+4. **publish-marketplace** — in the protected `marketplace` Environment: skipped when the Marketplace already serves the
+   version, otherwise `vsce publish --packagePath` of the attested file, then a bounded wait until it is served;
+5. **github-public** — the draft made public, last.
+
+Every job is re-runnable (*Re-run failed jobs*): the draft upload compares rather than replaces once the release is
+public, the Marketplace job skips a version it already serves, making public is a no-op the second time. A failure
+leaves a draft; it is fixed forward with the next patch — an `extension-v*` tag is never moved or deleted.
+
+**Rollback — one command, nothing built:** install a previous release's attested `.vsix` from GitHub,
+
+```bash
+gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && code --install-extension wsl-care-<previous>.vsix
+```
+
+— or ship the next patch. Every extension release keeps its `.vsix` and `.sha256` as release assets, which do not
+expire (a workflow artifact does); `gh attestation verify wsl-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care`
+checks one before it is installed.
 
 ## Build and test
 

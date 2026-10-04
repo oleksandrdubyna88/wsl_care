@@ -42,6 +42,10 @@ public sealed class ReleaseConfigTests
 
     private static JsonElement Daemon => Json(ReleaseFiles.ReleasePleaseConfig).GetProperty("packages").GetProperty("src_daemon");
 
+    private static JsonElement Extension => Json(ReleaseFiles.ReleasePleaseConfig).GetProperty("packages").GetProperty("src_vs_code");
+
+    private static string ExtensionManifestVersion => Json(Path.Combine(ReleaseFiles.Root, "src_vs_code", "package.json")).GetProperty("version").GetString()!;
+
     [Fact]
     public void Release_please_cuts_daemon_tags_on_a_draft_with_the_tag_forced()
     {
@@ -75,6 +79,8 @@ public sealed class ReleaseConfigTests
         PackagesTouched(paths, ["global.json", "Directory.Packages.props", "README.md"]).Should().BeEmpty("root build files ship with the next daemon change");
         PackagesTouched(paths, ["src_daemon/version.txt"]).Should().Equal(["src_daemon"], "the positive: a daemon file reaches the daemon package");
         PackagesTouched(paths, [".github/workflows/ci-daemon.yml", "src_daemon/src/WslCare.Cli/Program.cs"]).Should().Equal(["src_daemon"], "a commit touching both is released");
+        PackagesTouched(paths, ["src_vs_code/src/extension.ts"]).Should().Equal(["src_vs_code"], "an extension file reaches the extension package (E5.S3)");
+        PackagesTouched(paths, [".github/workflows/release-extension.yml", ".github/rulesets/tags-extension.json"]).Should().BeEmpty("the extension's release wiring is not an extension release");
 
         config.TryGetProperty("exclude-paths", out _).Should().BeFalse("inert: no exclude path can drop a commit the package path never received");
         config.GetProperty("packages").EnumerateObject().Where(p => p.Value.TryGetProperty("exclude-paths", out _)).Should().BeEmpty("the same inside a package");
@@ -110,6 +116,44 @@ public sealed class ReleaseConfigTests
             // release-please treats 0.0.0 as never released and then uses initial-version; any other manifest value would
             // be taken as ALREADY released and bumped past (release-please-config.json, $bootstrap).
             Daemon.GetProperty("initial-version").GetString().Should().Be("0.1.0", "the first daemon release is 0.1.0 exactly (plan §16 E4)");
+        }
+    }
+
+    /// <summary>The extension package (E5.S3, plan §15g M5 (4)): the `node` strategy bumps package.json and the lock file and
+    /// writes src_vs_code/CHANGELOG.md; its tag is the tag release-extension.yml starts on; the first release is 0.1.0
+    /// exactly by the same bootstrap as the daemon's (manifest 0.0.0 = never released, `initial-version` 0.1.0).</summary>
+    [Fact]
+    public void Release_please_cuts_extension_tags_from_a_node_package_whose_first_release_is_0_1_0()
+    {
+        var config = Json(ReleaseFiles.ReleasePleaseConfig);
+
+        Extension.GetProperty("release-type").GetString().Should().Be("node", "package.json is the extension's one version");
+        Extension.GetProperty("changelog-path").GetString().Should().Be("CHANGELOG.md");
+        var tag = Extension.GetProperty("component").GetString() + config.GetProperty("tag-separator").GetString() + "v";
+        tag.Should().Be(ReleaseExtensionWorkflowTests.TagPrefix(), "the tag release-please cuts is the tag release-extension.yml starts on");
+        File.Exists(Path.Combine(ReleaseFiles.Root, "src_vs_code", "CHANGELOG.md")).Should().BeTrue("release-please prepends each release below its header");
+
+        var manifest = Json(ReleaseFiles.ReleasePleaseManifest).GetProperty("src_vs_code").GetString();
+        manifest.Should().Be(ExtensionManifestVersion, "release-please bumps the manifest and package.json in one pull request");
+        if (manifest == "0.0.0")
+        {
+            Extension.GetProperty("initial-version").GetString().Should().Be("0.1.0", "the first extension release is 0.1.0 exactly (plan §15f #6)");
+        }
+    }
+
+    /// <summary>Both packages are held to the bootstrap at once — the one place a reader sees that neither has been released
+    /// and each starts at 0.1.0.</summary>
+    [Fact]
+    public void Both_packages_are_bootstrapped_and_nothing_else_is_a_package()
+    {
+        var packages = Json(ReleaseFiles.ReleasePleaseConfig).GetProperty("packages").EnumerateObject().Select(p => p.Name).ToList();
+        var manifest = Json(ReleaseFiles.ReleasePleaseManifest).EnumerateObject().Select(p => p.Name).ToList();
+
+        packages.Should().BeEquivalentTo(["src_daemon", "src_vs_code"]);
+        manifest.Should().BeEquivalentTo(packages, "every package has a manifest entry and nothing else does");
+        foreach (var package in packages)
+        {
+            Json(ReleaseFiles.ReleasePleaseConfig).GetProperty("packages").GetProperty(package).GetProperty("initial-version").GetString().Should().Be("0.1.0", package);
         }
     }
 
