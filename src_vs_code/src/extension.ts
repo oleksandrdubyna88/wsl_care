@@ -1,6 +1,9 @@
 import * as vscode from 'vscode';
 
+import { buildVersion } from './buildStamp';
 import { WslCareClient } from './client/WslCareClient';
+import { installDaemon } from './install/installDaemon';
+import { installUiFor, newInstallRecorder, type InstallRecorder } from './install/installUi';
 import { PanelProvider } from './panel/panelProvider';
 import { Poller, type Timers } from './poll/poller';
 import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSelection';
@@ -17,6 +20,9 @@ import { loggedRunner, type WslCareTestApi } from './testApi';
  * outcomes (`state/outcomeStore.ts`), and the poller (`poll/poller.ts`) that decides when the daemon is asked — the
  * focused window only, `status` only, never a `-d` call to a stopped distribution. Activation asks `status` once when
  * the window is focused (it is no longer "starts no process": the bar needs a first answer).
+ *
+ * E5.S3 adds *Install daemon* (`install/`): a command and a panel button that validate the distribution, show the pinned
+ * command in a modal and TYPE it into a terminal in that distribution — never run it.
  */
 
 const OPEN_PANEL = 'wslCare.openPanel';
@@ -34,6 +40,9 @@ function settings(): vscode.WorkspaceConfiguration {
 }
 
 interface Parts {
+  readonly testMode: boolean;
+  readonly client: WslCareClient;
+  readonly install: InstallRecorder;
   readonly choice: RunnerChoice;
   readonly calls: string[];
   readonly store: OutcomeStore;
@@ -42,7 +51,8 @@ interface Parts {
 }
 
 function build(context: vscode.ExtensionContext): Parts {
-  const choice = chooseRunner(context.extensionMode === vscode.ExtensionMode.Test, process.env);
+  const testMode = context.extensionMode === vscode.ExtensionMode.Test;
+  const choice = chooseRunner(testMode, process.env);
   const calls: string[] = [];
   const client = new WslCareClient({
     runner: loggedRunner(runnerFor(choice), calls),
@@ -60,15 +70,24 @@ function build(context: vscode.ExtensionContext): Parts {
     timers: REAL_TIMERS,
   });
 
-  return { choice, calls, store, poller, focus };
+  return { testMode, client, install: newInstallRecorder(), choice, calls, store, poller, focus };
+}
+
+/** *Install daemon*: the client resolves the distribution, the modal and the terminal are real — or recorded in Test mode. */
+function installer(parts: Parts): () => void {
+  const ui = installUiFor(parts.testMode, parts.install);
+
+  return () => { void installDaemon({ target: () => parts.client.terminalTarget(), ...ui }); };
 }
 
 function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar; panel: PanelProvider } {
   const { poller, store, focus } = parts;
+  const install = installer(parts);
   const bar = new StatusBar(store, OPEN_PANEL);
   const panel = new PanelProvider(context.extensionUri, store, {
     refresh: (options) => poller.refreshPanel(options),
     openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'wslCare'); },
+    installDaemon: install,
   });
   context.subscriptions.push(
     bar,
@@ -78,6 +97,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     vscode.commands.registerCommand(OPEN_PANEL, () => vscode.commands.executeCommand(`${PanelProvider.viewId}.focus`)),
     vscode.commands.registerCommand('wslCare.refresh', () => poller.refreshPanel()),
     vscode.commands.registerCommand('wslCare.startWsl', () => poller.refreshPanel({ startIfStopped: true })),
+    vscode.commands.registerCommand('wslCare.installDaemon', install),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); } }),
     vscode.workspace.onDidChangeConfiguration((event) => configurationChanged(event, parts, panel)),
   );
@@ -108,6 +128,8 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider): WslCareTes
     startWsl: () => poller.refreshPanel({ startIfStopped: true }),
     settled: () => poller.settled(),
     lastRendered: () => panel.lastRendered(),
+    install: () => parts.install,
+    buildVersion,
   };
 }
 

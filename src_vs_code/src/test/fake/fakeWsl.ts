@@ -167,6 +167,10 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
   if (!ALLOWED_TAILS.some((allowed) => sameTail(tail, allowed))) {
     return refuse(`outside the four read-only verbs: ${JSON.stringify(tail)}`, argv);
   }
+  if (distro === undefined || distro.startsWith('-')) {
+    // The real wsl.exe would read it as an option; a listed name of any other shape is taken as it is (§15h #4).
+    return refuse(`a -d value starting with "-" is read by wsl.exe as an option: ${JSON.stringify(distro)}`, argv);
+  }
   const known = scenario.distros.find((x) => x.name === distro);
   if (known === undefined) {
     return { code: -1, stdout: wslText(scenario, NO_SUCH_DISTRO) };

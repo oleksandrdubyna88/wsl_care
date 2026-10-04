@@ -40,7 +40,7 @@ export interface ViewSection {
 }
 
 /** The buttons the page may show; each posts its own id back, and the host accepts only these (`messages.ts`). */
-export type PageAction = 'refresh' | 'openSettings' | 'startWsl';
+export type PageAction = 'refresh' | 'openSettings' | 'startWsl' | 'installDaemon';
 
 export interface PanelView {
   readonly heading: string;

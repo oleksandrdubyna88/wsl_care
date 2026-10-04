@@ -1,7 +1,9 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as vscode from 'vscode';
 
+import { INSTALL_COMMAND } from '../../install/installCommand';
 import { FIELD_MAP } from '../../panel/fieldMap';
 import { CLOSED_REASON } from '../../process/runner';
 import type { WslCareTestApi } from '../../testApi';
@@ -19,7 +21,9 @@ import type { WslCareTestApi } from '../../testApi';
  * throws, so a launch that ran nothing is red.
  */
 
-const EXTENSION_ID = 'publisher-tbd.wsl-care';
+/** `<publisher>.<name>` from the manifest — the publisher changes at the E5 live gate, and this follows it. */
+const MANIFEST = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'package.json'), 'utf8')) as { publisher: string; name: string; version: string };
+const EXTENSION_ID = `${MANIFEST.publisher}.${MANIFEST.name}`;
 const MODE = process.env.WSL_CARE_HOST_MODE ?? '';
 const SCENARIO_FILE = process.env.WSL_CARE_FAKE_SCENARIO ?? '';
 const WINDOWS = process.platform === 'win32';
@@ -58,10 +62,47 @@ function daemonCalls(api: WslCareTestApi): string[] {
 const RUNNING = { distros: [{ name: 'Ubuntu', running: true }], startable: false };
 const STOPPED = { distros: [{ name: 'Ubuntu', running: false }], startable: false };
 
+/** Every mode: the running bundle is the one built for this manifest's version (scripts/bundle.mjs's stamp). */
+const STAMPED: Scenario = {
+  name: 'the running bundle carries the build stamp of the manifest version',
+  run: async (api) => assert.equal(api.buildVersion(), MANIFEST.version),
+};
+
+/** Runs the Install daemon command and waits until the recorder saw `settled` hold. */
+async function install(api: WslCareTestApi, answer: boolean, settled: () => boolean): Promise<void> {
+  api.install().answer = answer;
+  await vscode.commands.executeCommand('wslCare.installDaemon');
+  await until('Install daemon finished', settled);
+}
+
 const WINDOWS_FAKE: readonly Scenario[] = [
   {
     name: 'activates in Test mode with the fake runner',
     run: async (api) => assert.equal(api.runnerKind(), 'fake'),
+  },
+  STAMPED,
+  {
+    name: 'Install daemon, declined: the modal is shown with the pinned command, and no terminal is opened',
+    run: async (api) => {
+      scenario(RUNNING);
+      const before = api.install().prompts.length;
+      await install(api, false, () => api.install().prompts.length > before);
+      assert.ok(api.install().prompts.at(-1)?.detail.includes(INSTALL_COMMAND));
+      assert.equal(api.install().terminals.length, 0);
+    },
+  },
+  {
+    name: 'Install daemon, confirmed: ONE terminal wsl.exe -d Ubuntu, the pinned command TYPED (no newline), never executed',
+    run: async (api) => {
+      await install(api, true, () => api.install().terminals.length > 0);
+      const terminal = api.install().terminals.at(-1);
+      assert.ok(terminal !== undefined);
+      assert.match(terminal.spec.shellPath, /^[A-Za-z]:\\.*\\System32\\wsl\.exe$/i);
+      assert.deepEqual(terminal.spec.shellArgs, ['-d', 'Ubuntu']);
+      assert.equal(terminal.shown, true);
+      assert.deepEqual(terminal.typed, [{ text: INSTALL_COMMAND, addNewLine: false }]);
+      assert.deepEqual(daemonCalls(api).filter((c) => c.includes('install')), [], 'nothing of it reached the runner');
+    },
   },
   {
     name: 'the focused window asks status and the status-bar item shows the RAM line, uncoloured',
@@ -126,6 +167,15 @@ const WINDOWS_FAKE: readonly Scenario[] = [
 ];
 
 const WINDOWS_CLOSED: readonly Scenario[] = [
+  STAMPED,
+  {
+    name: 'Install daemon with nothing to ask: the list question fails at the closed runner, it is reported, no modal, no terminal',
+    run: async (api) => {
+      await install(api, true, () => api.install().reports.length > 0);
+      assert.equal(api.install().prompts.length, 0);
+      assert.equal(api.install().terminals.length, 0);
+    },
+  },
   {
     name: 'Test mode without the fake starts nothing: every request ends at the closed runner, the fake never ran',
     run: async (api) => {
@@ -141,6 +191,15 @@ const WINDOWS_CLOSED: readonly Scenario[] = [
 ];
 
 const ELSEWHERE: readonly Scenario[] = [
+  STAMPED,
+  {
+    name: 'off Windows, Install daemon says so and opens nothing',
+    run: async (api) => {
+      await install(api, true, () => api.install().reports.length > 0);
+      assert.match(api.install().reports.at(-1) ?? '', /Windows/);
+      assert.equal(api.install().terminals.length, 0);
+    },
+  },
   {
     name: 'off Windows: the bar says "Windows + WSL only", nothing reaches the runner, and the panel still renders',
     run: async (api) => {

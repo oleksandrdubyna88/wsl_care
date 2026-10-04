@@ -156,3 +156,22 @@ test('the view is plain data: it survives structuredClone unchanged (what postMe
   const view = buildPanelView(snapshot(goldenOutcomes()));
   assert.deepEqual(structuredClone(view), view);
 });
+
+test('E5.S3: a daemon that is not installed offers "Install daemon" first — and only then', () => {
+  const missing = { kind: 'notInstalled' as const, distro: 'Ubuntu' };
+  const view = buildPanelView(snapshot({ status: failed('status', missing) }));
+  assert.deepEqual(view.actions, [{ id: 'installDaemon', label: 'Install daemon' }, { id: 'refresh', label: 'Refresh' }, { id: 'openSettings', label: 'Settings' }]);
+  assert.match(view.notice, /not installed/);
+  const old = { kind: 'unsupportedDistro' as const, distro: 'Ubuntu', detail: 'GLIBC_2.38' };
+  assert.deepEqual(buildPanelView(snapshot({ status: failed('status', old) })).actions.map((a) => a.id), ['refresh', 'openSettings'], 'an unsupported distribution gets no install button');
+});
+
+test('§15h #1: a crowded machine\'s preview timeout shows "too many containers for a quick preview (<n>)" on the cleanup rows', () => {
+  const crowded = { kind: 'previewTooManyContainers' as const, containers: 140, timeoutMs: 330_000 };
+  const view = buildPanelView(snapshot({ ...goldenOutcomes(), preview: failed('preview', crowded) }));
+  const previewRows = allRows(view).filter((row) => FIELD_MAP.some((f) => f.id === row.id && !isArriving(f) && f.verb === 'preview'));
+  assert.ok(previewRows.length > 0);
+  for (const row of previewRows) {
+    assert.equal(row.value, 'too many containers for a quick preview (140)', row.id);
+  }
+});

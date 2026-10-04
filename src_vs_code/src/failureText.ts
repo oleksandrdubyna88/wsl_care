@@ -1,4 +1,5 @@
 import type { Failure } from './client/outcome';
+import { PREVIEW_CONTAINER_ASSUMPTION } from './client/verbs';
 
 /**
  * The words for each way a verb can fail to answer (`client/outcome.ts`): a short LABEL for the status bar and the
@@ -31,6 +32,7 @@ const WORDS: Words = {
   internalDefect: (f) => ({ label: 'daemon defect', sentence: `The daemon hit an internal error.${lines(f.messages)}` }),
   interrupted: () => ({ label: 'interrupted', sentence: 'The daemon was stopped by a signal before it answered.' }),
   timedOut: (f) => ({ label: 'timed out', sentence: `The daemon did not answer within ${Math.round(f.timeoutMs / 1000)} s; wsl.exe was stopped.` }),
+  previewTooManyContainers: (f) => ({ label: `too many containers for a quick preview (${f.containers})`, sentence: `The cleanup preview did not finish within ${Math.round(f.timeoutMs / 1000)} s: ${f.containers} containers are running, more than the ${PREVIEW_CONTAINER_ASSUMPTION} its ceiling allows for — too many containers for a quick preview; wsl.exe was stopped.` }),
   unknownFailure: (f) => ({ label: 'failed', sentence: `The daemon call failed (exit ${f.code ?? 'unknown'}).${lines(f.messages)}` }),
   unparseable: (f) => ({ label: 'unreadable answer', sentence: `The daemon's answer could not be read: ${f.detail}.` }),
   needsNewerExtension: (f) => ({ label: 'needs a newer extension', sentence: `The daemon answers in schema ${f.schemaVersion}, which this extension does not know — update the extension.` }),

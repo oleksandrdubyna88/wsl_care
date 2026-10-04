@@ -60,17 +60,18 @@ test('the webview options: scripts on, command URIs OFF, local resources only fr
   assert.deepEqual(panelOptions(media), { enableScripts: true, enableCommandUris: false, localResourceRoots: [media] });
 });
 
-test('the page may send only ready, rendered, refresh, openSettings and startWsl — each in its exact shape', () => {
+test('the page may send only ready, rendered, refresh, openSettings, startWsl and installDaemon — each in its exact shape', () => {
   assert.deepEqual(parsePageMessage({ type: 'ready' }), { type: 'ready' });
   assert.deepEqual(parsePageMessage({ type: 'refresh' }), { type: 'refresh' });
   assert.deepEqual(parsePageMessage({ type: 'openSettings' }), { type: 'openSettings' });
   assert.deepEqual(parsePageMessage({ type: 'startWsl' }), { type: 'startWsl' });
+  assert.deepEqual(parsePageMessage({ type: 'installDaemon' }), { type: 'installDaemon' });
   assert.deepEqual(parsePageMessage({ type: 'rendered', rows: 42 }), { type: 'rendered', rows: 42 });
 });
 
 test('anything else from the page is dropped: unknown types, extra keys, a smuggled argument, bad counts, non-objects', () => {
   const refused: unknown[] = [
-    { type: 'act', id: 'A4' }, { type: 'installDaemon' }, { type: 'refresh', distro: 'Ubuntu' }, { type: 'startWsl', args: ['-u', 'x'] },
+    { type: 'act', id: 'A4' }, { type: 'refresh', distro: 'Ubuntu' }, { type: 'startWsl', args: ['-u', 'x'] },
     { type: 'rendered', rows: -1 }, { type: 'rendered', rows: 1.5 }, { type: 'rendered', rows: '3' }, { type: 'rendered' },
     { type: 'ready', extra: true }, null, undefined, 'refresh', ['refresh'], 7, {},
   ];

@@ -73,6 +73,8 @@ export type Failure =
   | { readonly kind: 'interrupted' }
   /** The verb's ceiling passed; `wsl.exe` was killed (which ends the Linux process — measured). */
   | { readonly kind: 'timedOut'; readonly timeoutMs: number }
+  /** `preview` timed out with more running containers than its ceiling assumes (§15h #1). */
+  | { readonly kind: 'previewTooManyContainers'; readonly containers: number; readonly timeoutMs: number }
   /** Any other ending: the exit code and only the daemon's `wsl-care:` lines. */
   | { readonly kind: 'unknownFailure'; readonly code: number | undefined; readonly messages: readonly string[] }
   /** Exit 0, but the answer is not what the verb promises (not JSON, no `schemaVersion`, too large). */

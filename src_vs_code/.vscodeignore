@@ -1,0 +1,12 @@
+# An ALLOWLIST (plan §15g M8): everything is excluded, then exactly what the .vsix needs is let back in. A file added to
+# src_vs_code/ ships only when it is named here — the opposite of a denylist, where a new folder (goldens, fixtures,
+# research, a .vscode-test/ download) ships until somebody remembers to exclude it. CI holds `vsce ls --no-dependencies`
+# equal to vsix-files.txt and unzips the built .vsix for paths, names, e-mail addresses, source maps and the build stamp
+# (scripts/check-vsix.mjs).
+**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!dist/extension.js
+!media/**

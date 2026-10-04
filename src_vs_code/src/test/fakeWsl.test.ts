@@ -185,3 +185,18 @@ test('startable: a -d to a stopped distribution starts it, as the real wsl.exe d
     assert.equal(exitOf(await ask(world, ['--list', '--running', '--quiet'])).stdout.toString('utf16le'), 'Ubuntu\r\n');
   });
 });
+
+test('§15h #4: a -d value starting with "-" is refused, naming why — wsl.exe would read it as an option', async () => {
+  await within({ distros: [{ name: '-x', running: true }], binary: 'present' }, async (world) => {
+    const { code, stderr } = exitOf(await ask(world, ['-d', '-x', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', 'status', '--json']));
+    assert.equal(code, FAKE_EXIT.refused);
+    assert.match(stderr, /read by wsl\.exe as an option/);
+  });
+});
+
+test('§15h #4: a LISTED distribution with a name outside the setting pattern is answered as it is (the positive)', async () => {
+  await within({ distros: [{ name: 'Ubuntu+Dev~2', running: true }], defaultDistro: 'Ubuntu+Dev~2', binary: 'present' }, async (world) => {
+    const { code } = exitOf(await ask(world, ['-d', 'Ubuntu+Dev~2', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', 'status', '--json']));
+    assert.equal(code, 0);
+  });
+});

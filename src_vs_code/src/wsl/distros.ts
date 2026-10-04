@@ -1,12 +1,13 @@
 import { textLines } from './wslText';
 
 /**
- * The distributions `wsl.exe` reports, and the shape a distribution name must have before it may reach a `-d`
- * (plan §15f #2, §15g M3).
+ * The distributions `wsl.exe` reports, and the shape the `wslCare.distro` SETTING must have before anything is started
+ * (plan §15f #2, §15g M3). A name `wsl.exe` itself LISTS is taken as it is (§15h #4, `WslCareClient`): argv reaches
+ * `wsl.exe` without a shell, so the listing is the authority — only a leading `-` is refused there.
  */
 
 /**
- * A distribution name: letters, digits, `.`, `_` and `-`, at most 64, starting with a letter or digit. Never starting
+ * The setting's shape: letters, digits, `.`, `_` and `-`, at most 64, starting with a letter or digit. Never starting
  * with `-` is the point — a name is placed right after `-d`, and one that began with a dash would be read by
  * `wsl.exe` as an option (`-u`). The VS Code setting's schema uses this same pattern (`manifest.test.ts`).
  */

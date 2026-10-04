@@ -6,15 +6,36 @@
   "publisher": "publisher-tbd",
   "preview": true,
   "license": "MIT",
+  "icon": "media/icon.png",
+  "pricing": "Free",
   "repository": {
     "type": "git",
     "url": "https://github.com/oleksandrdubyna88/wsl_care.git"
+  },
+  "bugs": {
+    "url": "https://github.com/oleksandrdubyna88/wsl_care/issues"
+  },
+  "homepage": "https://github.com/oleksandrdubyna88/wsl_care#readme",
+  "galleryBanner": {
+    "color": "#1e2a36",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "wsl",
+    "wsl2",
+    "memory",
+    "docker",
+    "disk",
+    "cleanup",
+    "monitoring",
+    "windows"
   ],
   "extensionKind": [
     "ui"
@@ -64,6 +85,11 @@
         "command": "wslCare.startWsl",
         "title": "Start WSL and check",
         "category": "WSL Care"
+      },
+      {
+        "command": "wslCare.installDaemon",
+        "title": "Install daemon…",
+        "category": "WSL Care"
       }
     ],
     "menus": {
@@ -101,17 +127,21 @@
     "compile": "node scripts/clean.mjs out && tsc -p ./",
     "typecheck": "tsc -p ./ --noEmit",
     "lint": "eslint .",
-    "bundle": "node scripts/clean.mjs dist && esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --target=node18",
+    "bundle": "node scripts/clean.mjs dist && node scripts/bundle.mjs",
     "test": "npm run compile && npm run bundle && node scripts/run-tests.mjs",
     "vscode:prepublish": "npm run bundle",
     "test:host": "npm run compile && npm run bundle && node scripts/run-host.mjs",
-    "fieldmap:doc": "npm run compile && node scripts/field-map-doc.mjs"
+    "fieldmap:doc": "npm run compile && node scripts/field-map-doc.mjs",
+    "package": "vsce package --no-dependencies",
+    "check:vsix": "node scripts/check-vsix.mjs",
+    "icon:make": "npm run compile && node scripts/make-icon.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "18.19.130",
     "@types/vscode": "1.85.0",
     "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.0.0",
     "esbuild": "0.28.2",
     "eslint": "10.12.0",
     "globals": "17.13.0",
