@@ -1,0 +1,322 @@
+name: release · extension
+
+# ---------------------------------------------------------------------------
+# PUBLISHES AN EXTENSION RELEASE — `extension-v<version>` — to the VS Code Marketplace and as a GitHub release carrying
+# the .vsix, its .sha256 and a build-provenance attestation, and nothing else publishes one (plan §9 as amended by §15g
+# M4/M5 and §15h #0; E5.S3). A file of its own, not a leg of release.yml: ReleaseWorkflowTests pins release.yml's
+# triggers, install.sh trusts `release.yml@refs/tags/daemon-v…`, and the Marketplace secret lives in an Environment no
+# daemon job may ever see.
+#
+# THE TRIGGER IS THE TAG PUSH, exactly as for the daemon: release-please (with the release App's token, `draft` +
+# `force-tag-creation`) creates the tag ref `extension-v<version>` and then a DRAFT release on it. No pull_request, no
+# workflow_dispatch: no fork and no button reaches `id-token`, the attestation, `contents: write` or the Marketplace
+# Environment (ReleaseExtensionWorkflowTests fails the suite if a trigger is added). Only the release App may create an
+# `extension-v*` tag once .github/rulesets/tags-extension.json is applied (docs/repo-settings.md).
+#
+#   guard               the tag is extension-v<version>, src_vs_code/package.json says the same, the publisher is real,
+#                       the commit is on main — and THE MECHANICAL LIVE GATE: the minimum daemon (MIN_DAEMON_FOR_RENDER)
+#                       is a published non-draft release and POST_DEPLOY.md names it as last verified
+#                       (.github/scripts/release-extension-guard.sh)
+#   build               npm ci, typecheck, lint, every test (unit, page, structural, bundle scans; the extension-host tier
+#                       under xvfb), `vsce package` ONCE, the leak checks on that .vsix (--release: the placeholder publisher
+#                       refused), its .sha256, the attestation of that file, a workflow artifact. The only job with
+#                       `id-token: write` + `attestations: write`, and it writes nothing to the repository.
+#   github-draft        uploads the .vsix + .sha256 onto release-please's DRAFT, downloads them back and checks the set —
+#                       FIRST, so a Marketplace success can never leave the rollback source missing (§15h #0).
+#   publish-marketplace `environment: marketplace` (required reviewer, extension-v* tags only), `contents: read`: skipped
+#                       when the Marketplace already serves this version; otherwise `vsce publish --packagePath` of THE
+#                       ATTESTED FILE, then a bounded wait until the Marketplace serves it.
+#   github-public       makes the draft public — last, after the Marketplace serves the version.
+#
+# EVERY STEP IS RE-RUNNABLE ("Re-run failed jobs" replays the same tag event): the draft upload is `--clobber` onto a draft
+# and a no-op on an already-public release whose assets are the same bytes (refused if they differ — published bytes are
+# never replaced); the Marketplace job skips a version it already serves; making public is a no-op on a public release.
+# Nothing is ever deleted and no tag is moved. A release that fails before github-public is an invisible draft — fixed
+# forward with the next patch, never by moving the tag.
+#
+# THE MARKETPLACE CREDENTIAL (plan §15g m9, checked 2026-10-04). Today: `VSCE_PAT` in the `marketplace` Environment, a
+# Personal Access Token of the publisher's Azure DevOps account with scope Marketplace (Manage) and organisation "All
+# accessible organizations" — a GLOBAL PAT, which Azure DevOps decommissions on 2026-12-01 (creation is no longer blocked
+# before that date; microsoft/vsmarketplace#2121 — org-scoped PATs for the Marketplace — is open). So the PAT's expiry
+# is recorded in POST_DEPLOY.md and cannot be later than 2026-12-01. THE OIDC ALTERNATIVE, no stored secret: an Entra
+# application (or user-assigned managed identity) added as a member of the Marketplace publisher, with a federated
+# credential for `repo:oleksandrdubyna88/wsl_care:environment:marketplace`; then in publish-marketplace add
+# `id-token: write`, an `azure/login` step (client-id / tenant-id / allow-no-subscriptions: true, SHA-pinned) before the
+# publish, and replace `VSCE_PAT` with `--azure-credential` on `vsce show` and `vsce publish`. That widens the signing
+# scope to a second job, which ReleaseExtensionWorkflowTests pins — change both in one pull request
+# (docs/repo-settings.md, step 9).
+# ---------------------------------------------------------------------------
+
+on:
+  push:
+    tags:
+      - 'extension-v*'
+
+concurrency:
+  group: release-extension-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: release · extension · guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.guard.outputs.version }}
+      publisher: ${{ steps.guard.outputs.publisher }}
+    steps:
+      # The whole history: "is this commit on main" is answered by git, and a shallow clone has no main to answer it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The job's token is read-only (contents: read): enough to ask whether daemon-v<MIN> is a published release.
+      - id: guard
+        name: The tag, package.json, the publisher, main, and the minimum daemon published and verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash .github/scripts/release-extension-guard.sh "$GITHUB_REF_NAME" origin/main
+
+  build:
+    name: release · extension · build
+    needs: guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      # Signs the provenance statement of the .vsix through GitHub's OIDC issuer and stores it — here and in no other job.
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: src_vs_code
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install (the lock file, exactly)
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Never publish a package whose code has not passed its own tests: compile, bundle, every compiled test.
+      - name: Test
+        run: npm test
+
+      - name: Extension-host scenarios (under xvfb; 1.85.0 + stable)
+        run: xvfb-run -a npm run test:host
+
+      # vsce package ONCE — it runs vscode:prepublish (the bundle, stamped with this version) — and this one file is what
+      # is checked, attested, uploaded and published. Packaging twice builds two archives, and only one was released.
+      - name: Package (once)
+        run: |
+          set -euo pipefail
+          npm run package
+          test -f "wsl-care-$VERSION.vsix"
+          mkdir -p ../release-extension
+          mv "wsl-care-$VERSION.vsix" ../release-extension/
+          (cd ../release-extension && sha256sum "wsl-care-$VERSION.vsix" > "wsl-care-$VERSION.vsix.sha256")
+
+      # The ARTEFACT, not the source: exactly the allowlist, no machine path / user name / e-mail / source map, the build
+      # stamp equal to the version, and (--release) a real publisher.
+      - name: Leak checks on the .vsix
+        run: node scripts/check-vsix.mjs "../release-extension/wsl-care-$VERSION.vsix" --release
+
+      - name: The asset set
+        run: bash ../.github/scripts/verify-extension-assets.sh "$VERSION" ../release-extension
+
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release-extension/wsl-care-${{ needs.guard.outputs.version }}.vsix
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: extension-vsix
+          path: release-extension/
+          if-no-files-found: error
+          retention-days: 7
+
+  github-draft:
+    name: release · extension · github draft
+    needs: [guard, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # Uploads onto the draft. One of the two jobs that write the repository; neither can publish to the Marketplace.
+      contents: write
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # For the verification script only; the job runs nothing else from the tree.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: extension-vsix
+          path: from-build
+
+      - name: The build produced the set
+        run: bash .github/scripts/verify-extension-assets.sh "$VERSION" from-build
+
+      # release-please made this release a DRAFT when it cut the tag. On a re-run after it went public, the release must
+      # already hold these very bytes — published bytes are never replaced.
+      - name: Upload onto the draft (re-runnable)
+        run: |
+          set -euo pipefail
+          draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" || {
+            echo "::error::there is no release for $GITHUB_REF_NAME — release-please creates it as a draft when it cuts the tag"
+            exit 1
+          }
+          if [ "$draft" = "true" ]; then
+            gh release upload "$GITHUB_REF_NAME" from-build/* --clobber
+          else
+            echo "$GITHUB_REF_NAME is already public — checking it holds the same bytes, uploading nothing"
+          fi
+
+      - name: The release holds the set, byte for byte the build's
+        run: |
+          set -euo pipefail
+          gh release download "$GITHUB_REF_NAME" --dir from-release
+          bash .github/scripts/verify-extension-assets.sh "$VERSION" from-release
+          cmp "from-build/wsl-care-$VERSION.vsix" "from-release/wsl-care-$VERSION.vsix"
+
+  publish-marketplace:
+    name: release · extension · marketplace
+    needs: [guard, build, github-draft]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # The protected Environment: a required reviewer approves, and only extension-v* tags may deploy to it. VSCE_PAT is
+    # an Environment secret, so no other job — and no daemon job — can read it.
+    environment: marketplace
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+      EXTENSION_ID: ${{ needs.guard.outputs.publisher }}.wsl-care
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      # vsce from the lock file, and NO install scripts: this job holds the Marketplace secret, and a dependency's
+      # postinstall has no business running beside it.
+      - name: vsce from the lock file, without install scripts
+        working-directory: src_vs_code
+        run: npm ci --ignore-scripts
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: extension-vsix
+          path: from-build
+
+      - name: The attested file, checked again
+        run: bash .github/scripts/verify-extension-assets.sh "$VERSION" from-build
+
+      # Idempotent: a re-run after a successful publish (or a publish by hand) skips. `vsce show` asks the Marketplace's
+      # public gallery — no credential. For an extension it does not know, vsce 4.0.0 prints `undefined` and exits 0
+      # (observed 2026-10-04), so an answer that is not JSON with versions reads as "not served".
+      - id: served
+        name: Does the Marketplace already serve this version?
+        run: |
+          set -euo pipefail
+          node src_vs_code/node_modules/@vscode/vsce/vsce show "$EXTENSION_ID" --json > shown.json 2> shown.err || true
+          served="$(node -e 'let v=[]; try { v=JSON.parse(require("fs").readFileSync("shown.json","utf8")).versions||[]; } catch { v=[]; } process.stdout.write(v.some(x=>x.version===process.argv[1])?"true":"false")' "$VERSION")"
+          echo "served=$served" >> "$GITHUB_OUTPUT"
+          echo "the Marketplace serves $EXTENSION_ID $VERSION: $served"
+
+      - name: Publish the attested .vsix to the Marketplace
+        if: steps.served.outputs.served != 'true'
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VSCE_PAT" ]; then
+            echo "::error::VSCE_PAT is not set in the marketplace Environment — docs/repo-settings.md, step 9"
+            exit 1
+          fi
+          node src_vs_code/node_modules/@vscode/vsce/vsce publish --packagePath "from-build/wsl-care-$VERSION.vsix"
+
+      # Bounded: the Marketplace validates a new version for some minutes before it serves it. A timeout here leaves the
+      # release a draft; re-running this job skips the publish (above) and waits again.
+      - name: Wait until the Marketplace serves it (at most 15 minutes)
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if node src_vs_code/node_modules/@vscode/vsce/vsce show "$EXTENSION_ID" --json > shown.json 2> /dev/null \
+              && node -e 'const v=JSON.parse(require("fs").readFileSync("shown.json","utf8")).versions||[]; process.exit(v.some(x=>x.version===process.argv[1])?0:1)' "$VERSION"; then
+              echo "the Marketplace serves $EXTENSION_ID $VERSION (attempt $attempt)"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::the Marketplace did not serve $EXTENSION_ID $VERSION within 15 minutes — re-run this job"
+          exit 1
+
+  github-public:
+    name: release · extension · github public
+    needs: [guard, github-draft, publish-marketplace]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # Makes the draft public. The other job that writes the repository.
+      contents: write
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Asserted from the RELEASE: what goes public is what is checked, once more, immediately before.
+      - name: The draft still holds the set
+        run: |
+          set -euo pipefail
+          gh release download "$GITHUB_REF_NAME" --dir from-release
+          bash .github/scripts/verify-extension-assets.sh "$VERSION" from-release
+
+      # ONLY NOW is it downloadable — and a re-run on a public release changes nothing.
+      - name: Make the release public (re-runnable)
+        run: |
+          set -euo pipefail
+          draft="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)"
+          if [ "$draft" = "true" ]; then
+            gh release edit "$GITHUB_REF_NAME" --draft=false
+          else
+            echo "$GITHUB_REF_NAME is already public"
+          fi
