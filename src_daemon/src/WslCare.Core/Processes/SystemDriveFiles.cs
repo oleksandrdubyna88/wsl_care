@@ -104,12 +104,28 @@ public static class SystemDriveFiles
 
     private static string HeadProblem(string path, Reading<FileStatus> checkedPath, Reading<FileHead> head, SystemDriveMount mount) => head switch
     {
-        Reading<FileHead>.Available { Value: var h } when !(checkedPath is Reading<FileStatus>.Available { Value: var c } && c.SameFileAs(h.Status)) => $"{path} changed between its check and its open",
-        Reading<FileHead>.Available { Value: var h } when !OnTheMount(h.Status, mount) => OffTheMount(path, h.Status, mount),
-        Reading<FileHead>.Available { Value.Status.Permissions: var mode } when (mode & AnyExecute) == 0 => $"{path} has no execute bit (exec(2) would refuse it)",
-        Reading<FileHead>.Available { Value.Bytes: var bytes } when !bytes.SequenceEqual("MZ"u8.ToArray()) => $"{path} is not a Windows program (no MZ header); only WSL interop may start a file found there",
+        Reading<FileHead>.Available { Value: var opened } => OpenedFileProblem(path, checkedPath, opened, mount),
         var reading => reading.ReasonOrEmpty,
     };
+
+    /// <summary>Identity first (is it the file the path check saw, on the mount), then content.</summary>
+    private static string OpenedFileProblem(string path, Reading<FileStatus> checkedPath, FileHead opened, SystemDriveMount mount) =>
+        HeadIdentityProblem(path, checkedPath, opened, mount) is { Length: > 0 } identity ? identity : HeadContentProblem(path, opened);
+
+    /// <summary>The opened file is the one the path check described (device and inode), and lives on the drive's mount.</summary>
+    private static string HeadIdentityProblem(string path, Reading<FileStatus> checkedPath, FileHead opened, SystemDriveMount mount) =>
+        !SameFile(checkedPath, opened.Status) ? $"{path} changed between its check and its open"
+        : !OnTheMount(opened.Status, mount) ? OffTheMount(path, opened.Status, mount)
+        : string.Empty;
+
+    /// <summary>The opened file carries an execute bit (exec(2)'s requirement) and starts with the <c>MZ</c> magic.</summary>
+    private static string HeadContentProblem(string path, FileHead opened) =>
+        (opened.Status.Permissions & AnyExecute) == 0 ? $"{path} has no execute bit (exec(2) would refuse it)"
+        : !opened.Bytes.SequenceEqual("MZ"u8.ToArray()) ? $"{path} is not a Windows program (no MZ header); only WSL interop may start a file found there"
+        : string.Empty;
+
+    private static bool SameFile(Reading<FileStatus> checkedPath, FileStatus opened) =>
+        checkedPath is Reading<FileStatus>.Available { Value: var seen } && seen.SameFileAs(opened);
 
     private static bool OnTheMount(FileStatus status, SystemDriveMount mount) =>
         status.DeviceMajor == mount.DeviceMajor && status.DeviceMinor == mount.DeviceMinor;

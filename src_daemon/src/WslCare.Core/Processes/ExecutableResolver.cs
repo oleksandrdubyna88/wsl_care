@@ -159,11 +159,14 @@ public static class ExecutableResolver
     /// <summary>
     /// <paramref name="lookup"/> under <paramref name="ceiling"/>: its answer, or a refusal naming the ceiling. A read blocked
     /// in the kernel (a 9p share the host stopped serving) cannot be cancelled, so the lookup's thread is left to finish on its
-    /// own — once per resolve, its answer ignored and any fault observed — rather than holding the run.
+    /// own on a thread of its own (never the pool's) — once per resolve, its answer ignored and any fault observed — rather than
+    /// holding the run.
     /// </summary>
     private static ResolvedExecutable Bounded(Func<ResolvedExecutable> lookup, TimeSpan ceiling, string notOnPath, CancellationToken cancellationToken)
     {
-        var running = Task.Run(lookup, CancellationToken.None);
+        // Its own thread, never the pool's: a read the host stopped answering may never return, and an abandoned lookup must
+        // not hold a thread-pool thread for the life of the process (measured: blocked pool threads delayed unrelated work).
+        var running = Task.Factory.StartNew(lookup, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         _ = running.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
         return running.Wait(ceiling, cancellationToken)
             ? running.GetAwaiter().GetResult()
