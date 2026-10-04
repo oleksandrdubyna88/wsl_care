@@ -271,22 +271,28 @@ assumed:
    tag starts `release-extension.yml`: record the run ids BEFORE (`gh run list -R "$REPO" --workflow release-extension.yml
    --limit 5 --json databaseId`) and accept only a NEW run on event `push` for `refs/tags/extension-v0.1.0`. Push no other
    tag in the same minute (more than three tags in one push trigger nothing).
-6. `release-extension.yml`, observed job by job: guard (tag, package.json, publisher, main, the minimum daemon published
-   and stamped) → build (tests, the extension-host tier, `vsce package` once, the leak checks with `--release`, the
-   attestation) → **github-draft** (the `.vsix` + `.sha256` on the draft, read back and compared — the rollback source
-   exists before anything is public) → **publish-marketplace** (approve it: the Environment waits for you; it skips if
-   the Marketplace already serves 0.1.0, otherwise publishes the attested file and waits until the Marketplace serves it)
-   → **github-public** (the draft goes public).
+6. `release-extension.yml`, observed job by job: guard (tag, package.json, publisher, main, the minimum daemon from
+   `src_vs_code/min-daemon.json` published and stamped) → build (tests, the extension-host tier, `vsce package` once, the
+   leak checks with `--release --min-daemon`; `contents: read` only) → **attest** (the only signing job: the build's
+   `.vsix` checked against its `.sha256` and attested, no npm) → **github-draft** (the `.vsix` + `.sha256` on the draft,
+   read back and compared — the rollback source exists before anything is public) → **publish-marketplace** (approve it:
+   the Environment waits for you; it skips if the Marketplace already serves 0.1.0, otherwise publishes the attested file
+   and waits until the Marketplace serves it) → **github-public** (the draft compared with the attested build once more,
+   then public).
 7. `POST_DEPLOY.md` items 3, 6 and 12 against the Marketplace build installed in VS Code
    (`code --install-extension <publisher>.wsl-care`), then the stamp extended to `… · daemon 0.1.0 · extension 0.1.0`.
 
-**Every job is re-runnable** ("Re-run failed jobs" replays the same tag event): github-draft uploads `--clobber` onto a
-draft and only COMPARES on a public release (published bytes are never replaced); publish-marketplace skips a version the
-Marketplace already serves and waits again; github-public is a no-op on a public release. A failure before github-public
+**Every job is re-runnable with "Re-run FAILED jobs"** — it replays the same tag event and reuses the successful build's
+artifact. **Never "Re-run all jobs"**: it rebuilds, and a rebuilt `.vsix` is not byte-identical while the Marketplace may
+already serve the first. So no asset on a release is ever replaced, draft or public: github-draft uploads only what the
+draft lacks and COMPARES the rest with this run's build, refusing on a difference with exactly that advice;
+publish-marketplace skips a version the Marketplace already serves and waits again; github-public compares the draft with
+the attested build before making it public and is a no-op on a public release. A failure before github-public
 leaves an invisible draft (and, at worst, a Marketplace version whose `.vsix` is already on that draft). Fix forward: the
 next patch through release-please. **Never move or delete an `extension-v*` tag** — the ruleset refuses it.
 
-**Rollback** never builds: install a previous version's attested `.vsix` from its GitHub release —
-`gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix'` then
+**Rollback** never builds: install a previous version's `.vsix` from its GitHub release, its attestation verified first —
+`gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix'`, then
+`gh attestation verify wsl-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml` (it must say the bytes were built by `release-extension.yml`), then
 `code --install-extension wsl-care-<previous>.vsix` — or ship the next patch. Every release keeps its `.vsix` (a release
 asset does not expire, unlike a workflow artifact).

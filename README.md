@@ -347,8 +347,8 @@ the E5 live gate; the Marketplace listing is the owner's, [docs/repo-settings.md
 - ***Install daemon*** (the panel's button when the daemon is not installed, and *WSL Care: Install daemon…*): the
   distribution is validated first (the setting's pattern, then `wsl.exe --list`); a modal shows the exact command and
   what the distribution needs (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0 or newer, `sudo`); on confirmation a
-  terminal opens in that distribution with the command TYPED, never run — `curl -fsSL
-  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/daemon-v0.1.0/install.sh | sudo sh -s -- --version 0.1.0`,
+  terminal opens in that distribution, in your home folder, with the command TYPED, never run — `curl -fsSL
+  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.0/install.sh | sudo sh -s -- --version 0.1.0`,
   pinned to the minimum daemon the extension renders, never `--skip-attestation`.
 - **The package** is one universal `.vsix` (`npm run package`) holding exactly `vsix-files.txt` (`.vscodeignore` is an
   allowlist); `npm run check:vsix` opens it and refuses machine paths, this machine's user name, e-mail addresses,
@@ -362,8 +362,9 @@ the E5 live gate; the Marketplace listing is the owner's, [docs/repo-settings.md
   Container starts, Cleanup (read-only: what each cleanup would free — no buttons yet), Health, AI agents and Last
   cleanup. A row the daemon cannot fill yet says when it arrives ("arrives in E6 — …"); a figure the daemon could not
   read says why ("unavailable — <reason>"); nothing is ever shown as a made-up 0. Its buttons: **Refresh**, **Settings**
-  and, when the distribution is stopped, **Start WSL and check** — the only thing in the extension that starts WSL.
-- **When it asks.** Only the focused VS Code window polls, every `wslCare.refreshSeconds` (default 120), and only for
+  and, when the distribution is stopped, **Start WSL and check**. That button and *Install daemon*'s terminal (you
+  confirmed opening a shell in that distribution) are the only two things in the extension that start WSL.
+- **When it asks.** Only the focused VS Code window polls, every `wslCare.refreshSeconds` (default 120, 30 to 86 400), and only for
   `status`; the cleanup and health figures are read when the panel opens or Refresh is pressed. A stopped distribution
   is never asked anything (each `status` the daemon answers writes one run-log file — the cost is measured in
   [research/2026-10-04_extension_poll_churn.md](research/2026-10-04_extension_poll_churn.md)).
@@ -454,29 +455,33 @@ An extension release is the tag `extension-v<version>`: release-please's `extens
 **`release-extension.yml`** — a file of its own, so the Marketplace secret is never in a workflow a daemon release runs:
 
 1. **guard** — the tag matches `package.json`'s version, the publisher is real, the commit is on `main`, and the
-   **minimum daemon** (`MIN_DAEMON_FOR_RENDER`, the version *Install daemon* types) is a published release that
-   `POST_DEPLOY.md` names as last verified (`release-extension-guard.sh`);
-2. **build** — every test, `vsce package` once, the leak checks with `--release`, the `.vsix`'s `.sha256` and its
-   build-provenance attestation;
-3. **github-draft** — the `.vsix` and `.sha256` uploaded to the draft and read back FIRST, so the rollback source exists
+   **minimum daemon** (`src_vs_code/min-daemon.json` — the `MIN_DAEMON_FOR_RENDER` *Install daemon* types, as the bundle
+   step emits it) is a published release that `POST_DEPLOY.md` names as last verified (`release-extension-guard.sh`);
+2. **build** — every test, `vsce package` once, the leak checks with `--release` and the guard's minimum, the `.vsix`'s
+   `.sha256`; it can read the repository and nothing more;
+3. **attest** — the only job that can sign: it downloads the build's `.vsix`, checks it against its `.sha256` and
+   attests it — no npm, no dependency checkout;
+4. **github-draft** — the `.vsix` and `.sha256` uploaded to the draft and read back FIRST, so the rollback source exists
    before anything is public;
-4. **publish-marketplace** — in the protected `marketplace` Environment: skipped when the Marketplace already serves the
+5. **publish-marketplace** — in the protected `marketplace` Environment: skipped when the Marketplace already serves the
    version, otherwise `vsce publish --packagePath` of the attested file, then a bounded wait until it is served;
-5. **github-public** — the draft made public, last.
+6. **github-public** — the draft compared once more with the attested build, then made public, last.
 
-Every job is re-runnable (*Re-run failed jobs*): the draft upload compares rather than replaces once the release is
-public, the Marketplace job skips a version it already serves, making public is a no-op the second time. A failure
-leaves a draft; it is fixed forward with the next patch — an `extension-v*` tag is never moved or deleted.
+Re-run with **Re-run failed jobs** only — never *Re-run all jobs*, which rebuilds a `.vsix` that is not byte-identical
+while the Marketplace may already serve the first. An asset on a release is never replaced, draft or public: the draft
+upload adds only what is missing, and both GitHub jobs refuse a release that holds other bytes than this run's build; the
+Marketplace job skips a version it already serves; making public is a no-op the second time. A failure leaves a draft;
+it is fixed forward with the next patch — an `extension-v*` tag is never moved or deleted.
 
-**Rollback — one command, nothing built:** install a previous release's attested `.vsix` from GitHub,
+**Rollback — one command, nothing built:** install a previous release's `.vsix` from GitHub, its attestation verified
+first — that `release-extension.yml` built exactly these bytes:
 
 ```bash
-gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && code --install-extension wsl-care-<previous>.vsix
+gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && gh attestation verify wsl-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml && code --install-extension wsl-care-<previous>.vsix
 ```
 
 — or ship the next patch. Every extension release keeps its `.vsix` and `.sha256` as release assets, which do not
-expire (a workflow artifact does); `gh attestation verify wsl-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care`
-checks one before it is installed.
+expire (a workflow artifact does).
 
 ## Build and test
 
