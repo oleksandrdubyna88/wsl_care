@@ -9,7 +9,7 @@ import { Poller, type Timers } from './poll/poller';
 import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSelection';
 import { OutcomeStore } from './state/outcomeStore';
 import { StatusBar } from './statusBar/statusBar';
-import { loggedRunner, type WslCareTestApi } from './testApi';
+import { clientRunner, type WslCareTestApi } from './testApi';
 
 /**
  * WSL Care — the read-only extension over the `wsl-care` daemon (plan §7, E5). It runs on the Windows side
@@ -55,7 +55,7 @@ function build(context: vscode.ExtensionContext): Parts {
   const choice = chooseRunner(testMode, process.env);
   const calls: string[] = [];
   const client = new WslCareClient({
-    runner: loggedRunner(runnerFor(choice), calls),
+    runner: clientRunner(testMode, runnerFor(choice), calls),
     platform: process.platform,
     env: process.env,
     distroSetting: () => settings().get<string>('distro', ''),

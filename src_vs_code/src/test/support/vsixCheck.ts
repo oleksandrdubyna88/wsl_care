@@ -179,3 +179,36 @@ export function machineUserNames(candidates: readonly (string | undefined)[]): s
 
   return [...new Set(names.map((n) => n.toLowerCase()))];
 }
+
+/** The minimum daemon as each place that holds it says it (E5 code round #2/#5). */
+export interface MinDaemonInputs {
+  /** `MIN_DAEMON_FOR_RENDER` of the compiled `out/client/handshake.js` — the source of truth. */
+  readonly constant: string;
+  /** `dist/min-daemon.json` as parsed — what the bundle step that built this .vsix emitted. */
+  readonly emitted: unknown;
+  /** `src_vs_code/min-daemon.json` as parsed — the artefact the release guard reads at the tag. */
+  readonly checkedIn: unknown;
+  /** The release guard's `min_daemon` output (`--min-daemon`): the minimum it found published and verified. */
+  readonly released?: string | undefined;
+}
+
+function minDaemonOf(json: unknown): string | undefined {
+  const value = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>).minDaemonForRender : undefined;
+
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * The four must agree: the compiled constant, what the bundle step emitted, the checked-in artefact the guard read and —
+ * at a release — the minimum the guard verified. One finding per place that disagrees, naming it and what to do.
+ */
+export function minDaemonFindings(inputs: MinDaemonInputs): string[] {
+  const { constant, emitted, checkedIn, released } = inputs;
+  const shown = (value: string | undefined): string => (value === undefined ? 'nothing readable' : value);
+
+  return [
+    ...(minDaemonOf(emitted) === constant ? [] : [`dist/min-daemon.json says ${shown(minDaemonOf(emitted))}, handshake.ts says ${constant} — the bundle step that built this .vsix saw another constant (run npm run bundle)`]),
+    ...(minDaemonOf(checkedIn) === constant ? [] : [`src_vs_code/min-daemon.json (what the release guard reads at the tag) says ${shown(minDaemonOf(checkedIn))}, handshake.ts says ${constant} — change both in one commit`]),
+    ...(released === undefined || released === constant ? [] : [`the release guard verified the minimum daemon ${released}, but this .vsix renders and installs ${constant}`]),
+  ];
+}

@@ -94,3 +94,9 @@ button:focus-visible {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
+
+/* The notice is the page's one live region and stays in the page even when it has nothing to say (media/panel.js):
+   empty, it takes no room. */
+p[data-notice]:empty {
+  margin: 0;
+}

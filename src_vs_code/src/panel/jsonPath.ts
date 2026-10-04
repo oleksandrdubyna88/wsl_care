@@ -44,3 +44,32 @@ function take(value: unknown, step: Step): unknown {
 export function at(body: unknown, path: string): unknown {
   return stepsOf(path).reduce<unknown>((value, step) => take(value, step), body);
 }
+
+/**
+ * When the value at `path` is missing because an ANCESTOR was answered `{ available: false, reason }` (the daemon writes a
+ * part it could not read — `vm`, `vm.memory` — that way, with no children), that ancestor: the deepest one on the path.
+ * `undefined` when no ancestor says so — the field is then genuinely absent (an older daemon).
+ */
+export function unavailableAncestor(body: unknown, path: string): Readonly<Record<string, unknown>> | undefined {
+  return stepsOf(path).reduce<Walk>(stepInto, { value: body, found: undefined }).found;
+}
+
+/** Where a walk down a path is: the value reached, and the deepest `{ available: false }` met on the way. */
+interface Walk {
+  readonly value: unknown;
+  readonly found: Readonly<Record<string, unknown>> | undefined;
+}
+
+function isUnavailablePart(value: unknown): value is Readonly<Record<string, unknown>> {
+  return isObject(value) && value.available === false;
+}
+
+/** One step further down; a walk that already left the answer stays where it stopped. */
+function stepInto(walk: Walk, step: Step): Walk {
+  if (walk.value === undefined) {
+    return walk;
+  }
+  const value = take(walk.value, step);
+
+  return { value, found: isUnavailablePart(value) ? value : walk.found };
+}

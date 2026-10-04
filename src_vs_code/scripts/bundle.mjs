@@ -11,19 +11,41 @@
  *   - no source map and no sourcesContent — nothing of the sources or this machine's paths ships;
  *   - not minified — the bundle scan reads it, and a reader of the .vsix can too.
  *
+ * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>" }`, the minimum daemon this build renders and
+ * installs (E5 code round #2/#5). The value is read by RUNNING src/client/handshake.ts (esbuild's transform, then a
+ * bounded node:vm with an empty context — the module imports types only), never with a pattern over its text.
+ * scripts/check-vsix.mjs compares it with the compiled constant and with the checked-in src_vs_code/min-daemon.json —
+ * the artefact the release guard reads at the tag, with a JSON parser, instead of parsing TypeScript.
+ *
  * Run through `npm run bundle` (which cleans dist/ first) and, from vsce, through `vscode:prepublish`. manifest.test.ts
  * reads these options back with the TypeScript parser.
  */
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildSync } from 'esbuild';
+import { runInNewContext } from 'node:vm';
+import { buildSync, transformSync } from 'esbuild';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const RELEASE_VERSION = /^\d+\.\d+\.\d+$/;
 const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) {
+if (typeof version !== 'string' || !RELEASE_VERSION.test(version)) {
   console.error(`bundle: package.json carries no x.y.z version (${String(version)})`);
   process.exit(1);
+}
+
+/** MIN_DAEMON_FOR_RENDER as the module itself exports it — transformed by esbuild and run, not matched as text. */
+function minDaemonForRender() {
+  const { code } = transformSync(readFileSync(join(ROOT, 'src', 'client', 'handshake.ts'), 'utf8'), { loader: 'ts', format: 'cjs', target: 'node18' });
+  const module = { exports: {} };
+  runInNewContext(code, { module, exports: module.exports }, { timeout: 5000 });
+  const value = module.exports.MIN_DAEMON_FOR_RENDER;
+  if (typeof value !== 'string' || !RELEASE_VERSION.test(value)) {
+    console.error(`bundle: src/client/handshake.ts exports no x.y.z MIN_DAEMON_FOR_RENDER (${String(value)})`);
+    process.exit(1);
+  }
+
+  return value;
 }
 
 buildSync({
@@ -40,4 +62,8 @@ buildSync({
   logLevel: 'warning',
   define: { WSL_CARE_BUILD_STAMP: JSON.stringify(`wsl-care-build ${version}`) },
 });
-console.log(`bundle: dist/extension.js built for ${version}`);
+
+const minDaemon = minDaemonForRender();
+mkdirSync(join(ROOT, 'dist'), { recursive: true });
+writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify({ minDaemonForRender: minDaemon }, null, 2)}\n`);
+console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says ${minDaemon}`);

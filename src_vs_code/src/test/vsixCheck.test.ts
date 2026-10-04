@@ -5,7 +5,7 @@ import { test } from 'node:test';
 
 import { iconPng } from './support/iconPng';
 import { BUNDLE, EXTENSION_ROOT } from './support/paths';
-import { listLines, machineUserNames, PUBLISHER_PLACEHOLDER, VSIX_OWN_FILES, vsixEntryName, vsixFindings, type VsixCheckOptions } from './support/vsixCheck';
+import { listLines, machineUserNames, minDaemonFindings, PUBLISHER_PLACEHOLDER, VSIX_OWN_FILES, vsixEntryName, vsixFindings, type VsixCheckOptions } from './support/vsixCheck';
 import { readZip, writeZip } from './support/zipFile';
 
 /**
@@ -179,4 +179,22 @@ test('the packaged .vsix, when one is present here, is read by the reader and pa
     return;
   }
   assert.deepEqual(vsixFindings(readZip(fs.readFileSync(vsix)), OPTIONS), []);
+});
+
+// ---- E5 code round #2/#5: the minimum daemon, as an artefact the release guard reads ----
+
+const AGREED = { constant: '0.1.0', emitted: { minDaemonForRender: '0.1.0' }, checkedIn: { minDaemonForRender: '0.1.0' }, released: '0.1.0' };
+
+test('the minimum daemon: the constant, the emitted artefact, the checked-in one and the guard\'s verified one agree — clean', () => {
+  assert.deepEqual(minDaemonFindings(AGREED), []);
+  assert.deepEqual(minDaemonFindings({ ...AGREED, released: undefined }), [], 'a pull request has no guard: three places, not four');
+});
+
+test('each place that disagrees is named — the stale bundle, the checked-in artefact, the guard\'s minimum — and an unreadable one says so', () => {
+  assert.deepEqual(minDaemonFindings({ ...AGREED, emitted: { minDaemonForRender: '0.0.9' } }).map((f) => f.split(' ')[0]), ['dist/min-daemon.json']);
+  assert.match(minDaemonFindings({ ...AGREED, emitted: undefined })[0] ?? '', /dist\/min-daemon\.json says nothing readable/);
+  assert.match(minDaemonFindings({ ...AGREED, checkedIn: { minDaemonForRender: '0.2.0' } })[0] ?? '', /src_vs_code\/min-daemon\.json \(what the release guard reads at the tag\) says 0\.2\.0/);
+  assert.match(minDaemonFindings({ ...AGREED, checkedIn: { other: '0.1.0' } })[0] ?? '', /says nothing readable/);
+  assert.match(minDaemonFindings({ ...AGREED, released: '0.2.0' })[0] ?? '', /the release guard verified the minimum daemon 0\.2\.0, but this \.vsix renders and installs 0\.1\.0/);
+  assert.equal(minDaemonFindings({ constant: '0.1.0', emitted: {}, checkedIn: [], released: '9.9.9' }).length, 3);
 });

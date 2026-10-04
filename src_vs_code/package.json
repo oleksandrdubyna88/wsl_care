@@ -116,8 +116,9 @@
           "type": "integer",
           "default": 120,
           "minimum": 30,
+          "maximum": 86400,
           "scope": "application",
-          "markdownDescription": "How often the focused window asks the daemon for `status`, in seconds (at least 30). Application-wide: a workspace's `.vscode/settings.json` cannot change it."
+          "markdownDescription": "How often the focused window asks the daemon for `status`, in seconds (at least 30, at most 86400 — one day). Application-wide: a workspace's `.vscode/settings.json` cannot change it."
         }
       }
     }

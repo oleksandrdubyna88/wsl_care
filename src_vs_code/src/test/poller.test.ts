@@ -146,6 +146,19 @@ test('the interval setting: default 120, never below 30, whole seconds; a change
   assert.deepEqual(w.clock.armed(), [45_000]);
 });
 
+test('a huge interval is clamped to one day — above 2^31-1 ms setInterval overflows and fires every millisecond', () => {
+  const overflowing = Math.floor((2 ** 31) / 1000) + 1;
+  assert.equal(effectiveSeconds(overflowing), 86_400);
+  assert.equal(effectiveSeconds(1e12), 86_400);
+  assert.equal(effectiveSeconds(86_400), 86_400);
+  assert.equal(effectiveSeconds(Number.POSITIVE_INFINITY), DEFAULT_REFRESH_SECONDS, 'not a finite number: the default');
+  const w = world();
+  w.seconds = overflowing;
+  w.poller.start();
+  assert.deepEqual(w.clock.armed(), [86_400_000]);
+  assert.ok((w.clock.armed()[0] ?? 0) <= 2 ** 31 - 1, 'what setInterval is handed stays within its 32-bit delay');
+});
+
 test('opening the panel asks status, then preview and doctor — and puts all three in the store', async () => {
   const w = world();
   await w.poller.refreshPanel();
