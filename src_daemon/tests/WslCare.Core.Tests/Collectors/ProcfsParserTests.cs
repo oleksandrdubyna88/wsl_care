@@ -187,7 +187,7 @@ public sealed class ProcfsParserTests
         var argv = CommandLineText.Arguments(FixtureBytes("proc/7203/cmdline"));
 
         string.Join(' ', argv).Length.Should().BeGreaterThan(CommandLineText.ShownLength, "the fixture's claude command line is long");
-        CommandLineText.Shown(argv).Should().HaveLength(CommandLineText.ShownLength).And.StartWith("/home/jinx/.vscode-server/extensions/anthropic.claude-code-2.1.287-linux-x64/resources/native-binary/claude");
+        CommandLineText.Shown(argv).Should().HaveLength(CommandLineText.ShownLength).And.StartWith("/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude");
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class ProcfsParserTests
     [Fact]
     public void Passwd_names_the_fixtures_owners()
     {
-        Passwd.Parse(Fixture("etc/passwd")).Should().Contain(0, "root").And.Contain(1000, "jinx");
+        Passwd.Parse(Fixture("etc/passwd")).Should().Contain(0, "root").And.Contain(1000, "user");
     }
 
     /// <summary>The real file system, sandboxed at the fixture (reads only).</summary>

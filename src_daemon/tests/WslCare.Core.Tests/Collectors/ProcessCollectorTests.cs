@@ -45,14 +45,14 @@ public sealed class ProcessCollectorTests
         var snapshot = FromFixture();
         var server = Pid(snapshot, 1169);
 
-        server.User.Should().Be("jinx");
+        server.User.Should().Be("user");
         server.ParentPid.Should().Be(571);
         server.State.Should().Be('S');
         server.CpuSeconds.Should().Be(Reading.Of((9123 + 4169) / 100.0));
         var started = DateTimeOffset.FromUnixTimeSeconds(1_790_948_339).AddSeconds(1948 / 100.0);
         server.Age.Should().Be(Reading.Of(ProcfsFixture.CapturedAt - started), "proc(5): starttime is clock ticks after btime");
         server.Cwd.Should().Be(Reading.Of(ProcfsFixture.Links["proc/1169/cwd"]));
-        server.CommandLine.Should().StartWith("/home/jinx/.vscode-server/bin/").And.Contain("bootstrap-fork").And.HaveLength(CommandLineText.ShownLength);
+        server.CommandLine.Should().StartWith("/home/user/.vscode-server/bin/").And.Contain("bootstrap-fork").And.HaveLength(CommandLineText.ShownLength);
         server.HasTty.Should().BeTrue("its tty_nr is 34816 (a pts)");
     }
 

@@ -25,3 +25,22 @@ Redacted after capture (and nothing else changed):
   the values of --connection-token= (VS Code server) and --csrf_token= (an agent hub) -> REDACTED,
   the value of "CollectorApiKey" inside VS Code's /TelemetrySession: argument -> REDACTED,
   a company Atlassian site name -> example.atlassian.net.
+
+Anonymised 2026-10-04 (E5 code round - this repository is public) through the ONE identity list,
+src_daemon/tests/WslCare.TestSupport/FixtureIdentity.cs (rules by shape, no original value in it), applied to
+every text file of src_daemon/tests/fixtures/ by FixtureAnonymisationTests (WSL_CARE_ANONYMISE_FIXTURES=1
+rewrites; otherwise the test fails on any fixture the list would still change). Deterministic and consistent
+across files, so every join still holds (a process's cwd in links.txt and its argv name the same project):
+  - the login account (passwd uid 1000) -> user, and every /home/<name> -> /home/user;
+  - the Windows profile /mnt/c/Users/<name> -> /mnt/c/Users/user;
+  - each project / repository folder under /home/user/git/ -> project-a ... project-r (ordinal order of the
+    original names);
+  - each editor extension folder <publisher>.<name>[-<version>][-<platform>] under extensions/, globalStorage/,
+    workspaceStorage/<hash>/ -> vendor.extension-a ... vendor.extension-k[-1.0.0][-<platform>], and the same id
+    where it recurs (an extension host's log folder);
+  - the capture's scratchpad folder (a Windows temporary folder) -> /tmp/x (its script keeps its file name). Its
+    process (pid 11049, the capturing shell) is therefore no longer a /mnt/ walker.
+Unchanged: every number (pids, uids, sizes, ticks, times), every id (container 64-hex, VS Code's commit, session
+uuids), comm/stat/status, the cgroup tree, process and binary names. FixturePrivacyTests scans every committed
+fixture and golden for a /home or profile name other than "user", an e-mail address and the user name of the
+machine running it. The data before this lies in git history (a history rewrite is the owner's decision).

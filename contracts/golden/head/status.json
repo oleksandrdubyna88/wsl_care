@@ -122,7 +122,7 @@
         {
           "pid": 5949,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 5431156736,
@@ -138,9 +138,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist"
+            "value": "/home/user/.vscode-server/extensions/vendor.extension-f-1.0.0/dist"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist/server.bundle.js --cancellationReceive=file:3faf",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-f-1.0.0/dist/server.bundle.js --cancellationReceive=file:3fafe6b0f7c1e",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -149,7 +149,7 @@
         {
           "pid": 1169,
           "ppid": 571,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 1345765376,
@@ -165,9 +165,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node --dns-result-order=ipv4first /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --typ",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node --dns-result-order=ipv4first /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --typ",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -176,7 +176,7 @@
         {
           "pid": 972,
           "ppid": 571,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 538861568,
@@ -192,9 +192,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=fileWatcher",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=fileWatcher",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -203,7 +203,7 @@
         {
           "pid": 6825,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "atlassian_cli_r",
           "state": "S",
           "rssAnonBytes": 283344896,
@@ -219,9 +219,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/data/User/workspaceStorage/74e55d12aa25f727550896adc29ed54d/atlassian.atlascode/atlascode-rovodev-bin/202607.24.1/atlassian_cli_rovodev serve 40489 --xid rovodev-ide-vscode -",
+          "commandLine": "/home/user/.vscode-server/data/User/workspaceStorage/74e55d12aa25f727550896adc29ed54d/vendor.extension-b/atlascode-rovodev-bin/202607.24.1/atlassian_cli_rovodev serve 40489 --xid rovodev-ide-vscode --",
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -230,7 +230,7 @@
         {
           "pid": 571,
           "ppid": 567,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 247001088,
@@ -246,9 +246,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js --host=127.0.0.1 --port=0 --connec",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js --host=127.0.0.1 --port=0 --connec",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -257,7 +257,7 @@
         {
           "pid": 7203,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "claude",
           "state": "S",
           "rssAnonBytes": 170545152,
@@ -273,9 +273,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/extensions/anthropic.claude-code-2.1.287-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <reda",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>",
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -284,7 +284,7 @@
         {
           "pid": 8290,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "claude",
           "state": "S",
           "rssAnonBytes": 156176384,
@@ -300,9 +300,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/extensions/anthropic.claude-code-2.1.287-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <reda",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>",
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -311,7 +311,7 @@
         {
           "pid": 6612,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "Microsoft.CodeA",
           "state": "S",
           "rssAnonBytes": 94179328,
@@ -327,9 +327,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csharp-2.160.4-linux-x64/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information --sourceGeneratorExecutionPreference Balanced --devKit",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-e-1.0.0-linux-x64/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information --sourceGeneratorExecutionPreference Balanced --devKitDepen",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": false,
@@ -338,7 +338,7 @@
         {
           "pid": 5814,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "agy",
           "state": "S",
           "rssAnonBytes": 95440896,
@@ -354,9 +354,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.gemini/bin/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=<redacted> --add-dir=/home/jinx/git/scoreMeter --add-dir=/home/jinx/git/knowledge_base --add-dir=/home/jinx/gi",
+          "commandLine": "/home/user/.gemini/bin/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=<redacted> --add-dir=/home/user/git/project-p --add-dir=/home/user/git/project-h --add-dir=/home/user/git/proj",
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -365,7 +365,7 @@
         {
           "pid": 8486,
           "ppid": 8176,
-          "user": "jinx",
+          "user": "user",
           "name": "Microsoft.Visua",
           "state": "S",
           "rssAnonBytes": 63029248,
@@ -381,9 +381,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/servicehub"
+            "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/servicehub"
           },
-          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft.VisualS",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -392,7 +392,7 @@
         {
           "pid": 1175,
           "ppid": 571,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 91455488,
@@ -408,9 +408,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=agentHost --logsPath /home/",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=agentHost --logsPath /home/",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -419,7 +419,7 @@
         {
           "pid": 7472,
           "ppid": 7471,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 91402240,
@@ -435,9 +435,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "node /home/jinx/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp",
+          "commandLine": "node /home/user/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp",
           "family": "node",
           "orphaned": false,
           "hasTty": true,
@@ -446,7 +446,7 @@
         {
           "pid": 8477,
           "ppid": 8476,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 90427392,
@@ -462,9 +462,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "node /home/jinx/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp",
+          "commandLine": "node /home/user/.npm/_npx/9833c18b2d85bc59/node_modules/.bin/playwright-mcp",
           "family": "node",
           "orphaned": false,
           "hasTty": true,
@@ -473,7 +473,7 @@
         {
           "pid": 8124,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "Microsoft.Visua",
           "state": "S",
           "rssAnonBytes": 44400640,
@@ -489,9 +489,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64"
+            "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64"
           },
-          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-server.linux-x64/Microsoft.VisualStu",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-server.linux-x64/Microsoft.VisualStudio.Code",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -500,7 +500,7 @@
         {
           "pid": 8592,
           "ppid": 8176,
-          "user": "jinx",
+          "user": "user",
           "name": "Microsoft.Visua",
           "state": "S",
           "rssAnonBytes": 30674944,
@@ -516,9 +516,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft.VisualS",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -527,7 +527,7 @@
         {
           "pid": 7377,
           "ppid": 7203,
-          "user": "jinx",
+          "user": "user",
           "name": "npm exec @playw",
           "state": "S",
           "rssAnonBytes": 51834880,
@@ -543,7 +543,7 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
           "commandLine": "npm exec @playwright/mcp@latest                                           ",
           "family": "other",
@@ -554,7 +554,7 @@
         {
           "pid": 8415,
           "ppid": 8290,
-          "user": "jinx",
+          "user": "user",
           "name": "npm exec @playw",
           "state": "S",
           "rssAnonBytes": 51515392,
@@ -570,7 +570,7 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
           "commandLine": "npm exec @playwright/mcp@latest                                           ",
           "family": "other",
@@ -581,7 +581,7 @@
         {
           "pid": 8176,
           "ppid": 8124,
-          "user": "jinx",
+          "user": "user",
           "name": "Microsoft.Visua",
           "state": "S",
           "rssAnonBytes": 28770304,
@@ -597,9 +597,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/servicehub"
+            "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/servicehub"
           },
-          "commandLine": "/home/jinx/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-controller.linux-x64/Microsoft.Visua",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-controller.linux-x64/Microsoft.VisualStudio.",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -608,7 +608,7 @@
         {
           "pid": 4965,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 44126208,
@@ -624,9 +624,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/extensions/redhat.vscode-yaml-1.24.0/dist/languageserver.js --node-ipc --clientProcessId=1169",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-i-1.0.0/dist/languageserver.js --node-ipc --clientProcessId=1169",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -635,7 +635,7 @@
         {
           "pid": 860,
           "ppid": 854,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 38989824,
@@ -651,9 +651,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -662,7 +662,7 @@
         {
           "pid": 8648,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 37322752,
@@ -678,9 +678,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/extensions/github.vscode-github-actions-0.32.3/dist/server-node.js --node-ipc --clientProcessId=11",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-c-1.0.0/dist/server-node.js --node-ipc --clientProcessId=1169",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -689,7 +689,7 @@
         {
           "pid": 792,
           "ppid": 782,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 34213888,
@@ -705,9 +705,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -743,7 +743,7 @@
         {
           "pid": 7329,
           "ppid": 7203,
-          "user": "jinx",
+          "user": "user",
           "name": "coai-mcp",
           "state": "S",
           "rssAnonBytes": 25583616,
@@ -759,9 +759,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/data/User/globalStorage/remsoftdev.connect-other-ais/coai-mcp",
+          "commandLine": "/home/user/.vscode-server/data/User/globalStorage/vendor.extension-j/coai-mcp",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -770,7 +770,7 @@
         {
           "pid": 8380,
           "ppid": 8290,
-          "user": "jinx",
+          "user": "user",
           "name": "coai-mcp",
           "state": "S",
           "rssAnonBytes": 25571328,
@@ -786,9 +786,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/data/User/globalStorage/remsoftdev.connect-other-ais/coai-mcp",
+          "commandLine": "/home/user/.vscode-server/data/User/globalStorage/vendor.extension-j/coai-mcp",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -797,7 +797,7 @@
         {
           "pid": 6592,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 23351296,
@@ -813,9 +813,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/extensions/json-language-features/server/dist/node/js",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/extensions/json-language-features/server/dist/node/js",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -824,7 +824,7 @@
         {
           "pid": 4999,
           "ppid": 571,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 22306816,
@@ -840,9 +840,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=ptyHost --logsPath /home/ji",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=ptyHost --logsPath /home/user",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -878,7 +878,7 @@
         {
           "pid": 2369,
           "ppid": 2232,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 17301504,
@@ -894,9 +894,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-remote-containers/dist/vscode-remote-containers-server-0.469.0.js",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-remote-containers/dist/vscode-remote-containers-server-0.469.0.js",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -905,7 +905,7 @@
         {
           "pid": 1568,
           "ppid": 1175,
-          "user": "jinx",
+          "user": "user",
           "name": "copilot-runtime",
           "state": "S",
           "rssAnonBytes": 12931072,
@@ -921,9 +921,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/copilot-runtime --headless --no-auto-update --log-level info --std",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/copilot-runtime --headless --no-auto-update --log-level info --std",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -961,7 +961,7 @@
         {
           "pid": 1169,
           "ppid": 571,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 1345765376,
@@ -977,9 +977,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node --dns-result-order=ipv4first /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --typ",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node --dns-result-order=ipv4first /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --typ",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -988,7 +988,7 @@
         {
           "pid": 972,
           "ppid": 571,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 538861568,
@@ -1004,9 +1004,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=fileWatcher",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=fileWatcher",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1015,7 +1015,7 @@
         {
           "pid": 571,
           "ppid": 567,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 247001088,
@@ -1031,9 +1031,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js --host=127.0.0.1 --port=0 --connec",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/server-main.js --host=127.0.0.1 --port=0 --connec",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1042,7 +1042,7 @@
         {
           "pid": 1175,
           "ppid": 571,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 91455488,
@@ -1058,9 +1058,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=agentHost --logsPath /home/",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=agentHost --logsPath /home/",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1069,7 +1069,7 @@
         {
           "pid": 860,
           "ppid": 854,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 38989824,
@@ -1085,9 +1085,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1096,7 +1096,7 @@
         {
           "pid": 792,
           "ppid": 782,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 34213888,
@@ -1112,9 +1112,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node -e const net = require('net'); process.stdin.pause(); const client = net.createConnection({ host: '127.0.0.1', port: 41304 }",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1150,7 +1150,7 @@
         {
           "pid": 4999,
           "ppid": 571,
-          "user": "jinx",
+          "user": "user",
           "name": "MainThread",
           "state": "S",
           "rssAnonBytes": 22306816,
@@ -1166,9 +1166,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=ptyHost --logsPath /home/ji",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/out/bootstrap-fork --type=ptyHost --logsPath /home/user",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1177,7 +1177,7 @@
         {
           "pid": 1568,
           "ppid": 1175,
-          "user": "jinx",
+          "user": "user",
           "name": "copilot-runtime",
           "state": "S",
           "rssAnonBytes": 12931072,
@@ -1193,9 +1193,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/copilot-runtime --headless --no-auto-update --log-level info --std",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node_modules/@github/copilot-sdk-linux-x64/prebuilds/linux-x64/copilot-runtime --headless --no-auto-update --log-level info --std",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1204,7 +1204,7 @@
         {
           "pid": 9276,
           "ppid": 9270,
-          "user": "jinx",
+          "user": "user",
           "name": "creds",
           "state": "S",
           "rssAnonBytes": 5033984,
@@ -1220,9 +1220,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.local/share/creds-cli/creds relay",
+          "commandLine": "/home/user/.local/share/creds-cli/creds relay",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1231,7 +1231,7 @@
         {
           "pid": 7741,
           "ppid": 559,
-          "user": "jinx",
+          "user": "user",
           "name": "creds-mcp.exe",
           "state": "S",
           "rssAnonBytes": 126976,
@@ -1247,9 +1247,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/init /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe",
+          "commandLine": "/init /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1258,7 +1258,7 @@
         {
           "pid": 8389,
           "ppid": 8378,
-          "user": "jinx",
+          "user": "user",
           "name": "creds-mcp.exe",
           "state": "S",
           "rssAnonBytes": 126976,
@@ -1274,9 +1274,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/init /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe",
+          "commandLine": "/init /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1285,7 +1285,7 @@
         {
           "pid": 5252,
           "ppid": 559,
-          "user": "jinx",
+          "user": "user",
           "name": "creds-mcp.exe",
           "state": "S",
           "rssAnonBytes": 122880,
@@ -1301,9 +1301,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/init /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe",
+          "commandLine": "/init /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1312,7 +1312,7 @@
         {
           "pid": 7334,
           "ppid": 7327,
-          "user": "jinx",
+          "user": "user",
           "name": "creds-mcp.exe",
           "state": "S",
           "rssAnonBytes": 122880,
@@ -1328,9 +1328,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/jinx/git/scoreMeter"
+            "value": "/home/user/git/project-p"
           },
-          "commandLine": "/init /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/strug/AppData/Local/Programs/creds/creds-mcp.exe",
+          "commandLine": "/init /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe /mnt/c/Users/user/AppData/Local/Programs/creds/creds-mcp.exe",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1339,7 +1339,7 @@
         {
           "pid": 9344,
           "ppid": 9276,
-          "user": "jinx",
+          "user": "user",
           "name": "creds.exe",
           "state": "S",
           "rssAnonBytes": 118784,
@@ -1355,9 +1355,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/init /mnt/c/Users/strug/AppData/Roaming/Code/User/globalStorage/remsoftdev.creds-for-devs/bin/creds.exe /mnt/c/Users/strug/AppData/Roaming/Code/User/globalStorage/remsoftdev.creds-for-devs/bin/creds.",
+          "commandLine": "/init /mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe /mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe relay-pipe",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1366,7 +1366,7 @@
         {
           "pid": 5171,
           "ppid": 1169,
-          "user": "jinx",
+          "user": "user",
           "name": "pet",
           "state": "S",
           "rssAnonBytes": 1118208,
@@ -1382,9 +1382,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/jinx/.vscode-server/extensions/ms-python.vscode-python-envs-1.38.0-linux-x64/python-env-tools/bin/pet server",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-g-1.0.0-linux-x64/python-env-tools/bin/pet server",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1393,7 +1393,7 @@
         {
           "pid": 561,
           "ppid": 560,
-          "user": "jinx",
+          "user": "user",
           "name": "sh",
           "state": "S",
           "rssAnonBytes": 126976,
@@ -1409,36 +1409,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "sh /mnt/c/Users/strug/.vscode/extensions/ms-vscode-remote.remote-wsl-0.104.3/scripts/wslServer.sh 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 -",
-          "family": "other",
-          "orphaned": false,
-          "hasTty": true,
-          "underMnt": true
-        },
-        {
-          "pid": 11049,
-          "ppid": 11047,
-          "user": "jinx",
-          "name": "sh",
-          "state": "S",
-          "rssAnonBytes": 126976,
-          "rssShmemBytes": 0,
-          "heldBytes": 126976,
-          "ageSeconds": {
-            "available": true,
-            "value": 0
-          },
-          "cpuSeconds": {
-            "available": true,
-            "value": 0.13
-          },
-          "cwd": {
-            "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Temp/claude/d--rsd-ClaudeRag/50ac00d9-f505-4dc1-81bc-af9b9e359991/scratchpad"
-          },
-          "commandLine": "sh /mnt/c/Users/strug/AppData/Local/Temp/claude/d--rsd-ClaudeRag/50ac00d9-f505-4dc1-81bc-af9b9e359991/scratchpad/capture.sh",
+          "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1447,7 +1420,7 @@
         {
           "pid": 567,
           "ppid": 561,
-          "user": "jinx",
+          "user": "user",
           "name": "sh",
           "state": "S",
           "rssAnonBytes": 110592,
@@ -1463,9 +1436,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "sh /home/jinx/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/code-server --host=127.0.0.1 --port=0 --connection-token=<redacted> --use-host-proxy --without-browser-env-var --disable-w",
+          "commandLine": "sh /home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/bin/code-server --host=127.0.0.1 --port=0 --connection-token=<redacted> --use-host-proxy --without-browser-env-var --disable-w",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1474,7 +1447,7 @@
         {
           "pid": 560,
           "ppid": 559,
-          "user": "jinx",
+          "user": "user",
           "name": "sh",
           "state": "S",
           "rssAnonBytes": 106496,
@@ -1490,7 +1463,7 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Programs/Microsoft VS Code"
+            "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
           "commandLine": "sh -c \"$VSCODE_WSL_EXT_LOCATION/scripts/wslServer.sh\" 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-token=REDACTED --use-host-proxy ",
           "family": "other",
@@ -1501,7 +1474,7 @@
         {
           "pid": 1252,
           "ppid": 1251,
-          "user": "jinx",
+          "user": "user",
           "name": "sh",
           "state": "S",
           "rssAnonBytes": 106496,
@@ -1517,7 +1490,7 @@
           },
           "cwd": {
             "available": true,
-            "value": "/mnt/c/Users/strug/AppData/Local/Docker"
+            "value": "/mnt/c/Users/user/AppData/Local/Docker"
           },
           "commandLine": "sh",
           "family": "other",
@@ -1800,14 +1773,14 @@
     "folders": [
       {
         "id": "npm-cache",
-        "path": "/golden-root/home/me/.npm",
+        "path": "/golden-root/home/user/.npm",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/.npm does not exist"
+          "reason": "/golden-root/home/user/.npm does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/.npm does not exist"
+          "reason": "/golden-root/home/user/.npm does not exist"
         }
       },
       {
@@ -1824,62 +1797,62 @@
       },
       {
         "id": "git-worktrees",
-        "path": "/golden-root/home/me/git/_wt",
+        "path": "/golden-root/home/user/git/_wt",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/git/_wt does not exist"
+          "reason": "/golden-root/home/user/git/_wt does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/git/_wt does not exist"
+          "reason": "/golden-root/home/user/git/_wt does not exist"
         }
       },
       {
         "id": "nuget-packages",
-        "path": "/golden-root/home/me/.nuget/packages",
+        "path": "/golden-root/home/user/.nuget/packages",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/.nuget/packages does not exist"
+          "reason": "/golden-root/home/user/.nuget/packages does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/.nuget/packages does not exist"
+          "reason": "/golden-root/home/user/.nuget/packages does not exist"
         }
       },
       {
         "id": "user-cache",
-        "path": "/golden-root/home/me/.cache",
+        "path": "/golden-root/home/user/.cache",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/.cache does not exist"
+          "reason": "/golden-root/home/user/.cache does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/.cache does not exist"
+          "reason": "/golden-root/home/user/.cache does not exist"
         }
       },
       {
         "id": "vscode-server",
-        "path": "/golden-root/home/me/.vscode-server",
+        "path": "/golden-root/home/user/.vscode-server",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/.vscode-server does not exist"
+          "reason": "/golden-root/home/user/.vscode-server does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/.vscode-server does not exist"
+          "reason": "/golden-root/home/user/.vscode-server does not exist"
         }
       },
       {
         "id": "git-build-output",
-        "path": "/golden-root/home/me/git",
+        "path": "/golden-root/home/user/git",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/git does not exist"
+          "reason": "/golden-root/home/user/git does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/git does not exist"
+          "reason": "/golden-root/home/user/git does not exist"
         }
       },
       {
@@ -2037,7 +2010,7 @@
     {
       "id": "journal.history",
       "level": "warn",
-      "value": "<days since the oldest entry> (oldest entry 2026-10-01 22:10Z)",
+      "value": "0.8 days (oldest entry 2026-10-01 22:10Z)",
       "limit": "warn when the oldest entry is less than 7 days old",
       "reason": "how far back the journal reaches (clock jumps erase it, plan finding 4)",
       "basis": {
@@ -2063,9 +2036,9 @@
     {
       "id": "clock.drift",
       "level": "ok",
-      "value": "<captured clock minus now> s (launch latency 0.75 s subtracted)",
+      "value": "+0.19 s (launch latency 0.75 s subtracted)",
       "limit": "warn: |offset| > 5 s on two observations at least 5 minutes apart (clock.maxDriftSeconds)",
-      "reason": "one observation above the threshold; a second, at least 5 minutes later, is needed before a drift is reported",
+      "reason": "the distro's clock agrees with Windows'",
       "basis": {
         "source": "fullRun",
         "runId": "20000101T000000Z-1",

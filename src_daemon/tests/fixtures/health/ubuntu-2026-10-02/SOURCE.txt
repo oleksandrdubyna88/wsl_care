@@ -25,7 +25,7 @@ Files (renamed from the capture's command names, which several files share):
   powershell-clock.out          powershell.exe -NoProfile -NonInteractive -Command <HealthCommands.ClockScript>
 
 Redacted, by hand, and nothing else changed:
-  - powershell-clock.out: the Windows user name in the profile path, C:\Users\<name> -> C:\Users\owner.
+  - powershell-clock.out: the Windows user name in the profile path, C:\Users\<name> -> C:\Users\user
 
 Measured and NOT kept as a fixture:
   - docker events --since <now-24h> --until <now> --format {{json .}} (DockerCommands.Backfill, unfiltered): 248 events,
@@ -36,3 +36,7 @@ Measured and NOT kept as a fixture:
     pretending to backfill (plan §15b #0). The tests use synthetic lines in this shape (TestSupport/DockerEventLines).
   - docker events with a FUTURE --until (DockerCommands.EventStream): the stream stayed open and ended by itself, exit 0,
     at --until - the follower's bounded segments rest on that (HealthContractTests).
+
+Anonymised 2026-10-04 (E5 code round) through src_daemon/tests/WslCare.TestSupport/FixtureIdentity.cs, as the procfs
+tree's SOURCE.txt describes: the profile path the clock probe prints is C:\Users\user (before, it carried another
+neutral name chosen by hand; the one list makes every user name "user").
