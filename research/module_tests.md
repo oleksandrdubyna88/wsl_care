@@ -821,9 +821,11 @@ on Linux (WSL) with `WSL_CARE_WRITE_GOLDENS=1 ./src_daemon/tests/WslCare.Scenari
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
-> against a strict fake `wsl.exe` — and the structural, manifest and bundle checks. The extension-host tier
-> (`@vscode/test-electron`: activation, the status bar, the panel) is E5.S2's; packaging and the `.vsix` content checks
-> are E5.S3's. Every fact the fake reproduces was measured first: [2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md).
+> against a strict fake `wsl.exe` — and the structural, manifest and bundle checks. E5.S2 (2026-10-04): the views'
+> unit tests over the goldens (status bar, view model, field map held equal to `architecture.md`, poller on a manual
+> clock, webview shell / CSP / messages), the panel's page script RUN in a strict `node:vm` harness, and the
+> EXTENSION-HOST tier — `@vscode/test-electron` against VS Code 1.85.0 and stable. Packaging and the `.vsix` content
+> checks are E5.S3's. Every fact the fake reproduces was measured first: [2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md).
 
 ### Where it is and how it runs
 
@@ -832,7 +834,14 @@ CI's (`ci · extension`, `windows-latest` and `ubuntu-24.04`):
 
 ```bash
 cd src_vs_code && npm ci && npm run typecheck && npm run lint && npm test
+npm run test:host        # the extension-host tier: VS Code 1.85.0 + stable (xvfb-run -a on Linux)
 ```
+
+`npm run test:host` = compile → bundle → `scripts/run-host.mjs`, which downloads each VS Code into `.vscode-test/`
+(git-ignored; CI caches it per month) and launches it TWICE per version with `src/test/host/suite.js` as the extension
+tests: once in Test mode with the strict fake named (`WSL_CARE_TEST_FAKE_WSL`, over a scenario file the suite rewrites
+between scenarios), once in Test mode WITHOUT it (the runner must be the closed one). No mocha: test-electron only
+downloads and launches; the suite reports by throwing, and an empty scenario list throws.
 
 `npm test` = compile → bundle (`esbuild`, `dist/extension.js`, node18, `vscode` external, no source map) →
 `scripts/run-tests.mjs`, which walks `out/test` for every `*.test.js` (no glob: it cannot forget a file, and prints the
@@ -846,12 +855,17 @@ count) and starts ONE `node --test` with `--require out/test/support/noRealWsl.j
 | `src/test/support/recordingRunner.ts` | a runner that starts nothing: scripted answers by exact argv, every request recorded |
 | `src/test/support/sourceScan.ts` | the TypeScript parser naming every import (all forms: `import`, `import =`, `require`, `import()`, `export from`) and every string literal of a source — the structural tests read programs, not text |
 | `src/test/scenarios/clientFlows.test.ts` | **the client flows**: the real client, the real runner, the fake; the flow list DERIVED from `VERB_NAMES`, the golden sets from `contracts/golden/*/` |
+| `src/test/support/pageHarness.ts` | **the page harness** (E5.S2), ported from dew_flow_vscode_kit's `pageHarness.ts` and made stricter: `node:vm` with three globals (`document`, `window`, `acquireVsCodeApi` — no `require`, `process`, `fetch`, `setTimeout`), a 5 s deadline on the script AND on every dispatched message / click, and a PROXY per element that throws on any member it does not model — every HTML sink (`innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`), `style`, `on*`, `src`, `href`; `createElement` of a text page's tags only; `setAttribute` of `role` / `scope` / `title` / `type` / `colspan` / `aria-*` / `data-*` only; `textContent` of a string only (as in a browser, it replaces the children). Its own tests: `harness.test.ts` |
+| `src/test/support/outcomes.ts` | golden bodies (or edited copies) read through the client's own `parseAnswer` — the view tests see exactly the typed answers the product receives |
+| `src/test/support/fieldMapDoc.ts` | the field map as the Markdown block `architecture.md` carries — generated, never typed (`npm run fieldmap:doc` writes it) |
+| `src/test/host/suite.ts` + `scripts/run-host.mjs` | **the extension-host tier**: the extension as it ships (`dist/extension.js`) in a real VS Code; observed through the runner seam's call log and the test API `activate` returns in Test mode only (`testApi.ts`) |
 
 ### Extension flow catalogue
 
 A row for every client verb (`client <verb>`), every contributed command (`command <id>`) and view (`view <id>`) —
 derived from `VERB_NAMES` and `package.json`'s `contributes`; `catalogue.test.ts` fails, naming the flow, when one is
-missing (E5.S1 contributes none yet; its planted companion shows a command or view without a row is reported).
+missing (E5.S2 contributes the view `wslCare.panel` and three commands; it was red with exactly those four missing
+before the rows below were written — its planted companion still shows a command or view without a row is reported).
 
 | Flow | Covered | By |
 |---|---|---|
@@ -859,6 +873,10 @@ missing (E5.S1 contributes none yet; its planted companion shows a command or vi
 | `client preview` — `preview --all --json`, 330 s ceiling; over every golden set; an unknown `schemaVersion` blanks preview ONLY (status still answered); stopped / not installed / old glibc | covered | `clientFlows.test.ts`, `client.test.ts`, `handshake.test.ts` |
 | `client doctor` — `doctor --json`, 100 s ceiling; over every golden set; the daemon version from an earlier status or ONE `--version` call per distribution; stopped / not installed / old glibc | covered | `clientFlows.test.ts`, `client.test.ts`, `handshake.test.ts` |
 | `client version` — `--version`, 20 s ceiling; read as `x.y.z(+sha)?`, `unknown` (unstamped), `0.0.0+sha` (a build before the first release) | covered | `clientFlows.test.ts`, `client.test.ts`, `handshake.test.ts` |
+| `view wslCare.panel` — the read-only panel (`WebviewView`, activity-bar container *WSL Care*): opening it (or making it visible) asks `status`, then `preview` + `doctor` unless `status` stopped at a target failure; renders every field-map row ("arrives in E#", "unavailable — reason", "update the daemon to see this", the verb's own failure, "checking…"); a static shell with a per-render nonce and a strict CSP; data only by `postMessage`; the page's DOM by `createElement` / `textContent`; the closed page→host message set | covered | `viewModel.test.ts`, `fieldMap.test.ts`, `panelPage.test.ts` (the page RUN in the strict harness over every golden set and hostile strings), `webviewHost.test.ts`, `poller.test.ts`; in a real VS Code 1.85.0 + stable: `host/suite.ts` (*opening the panel asks preview and doctor once and the webview renders every field-map row*) |
+| `command wslCare.openPanel` — the status-bar item's click; focuses `wslCare.panel` | covered | `host/suite.ts` (executes it, the webview reports its rows) |
+| `command wslCare.refresh` — the panel title's Refresh: the same round as a panel open (`status`, then `preview` + `doctor`); never starts a stopped distribution | covered | `poller.test.ts` (*opening the panel asks status, then preview and doctor*; *a stopped distribution: the panel asks status only*), `host/suite.ts` (*a stopped distribution: NO -d call … on a panel refresh*) |
+| `command wslCare.startWsl` — *Start WSL and check*: `status` with `startIfStopped`, the ONE `-d` that may start a stopped distribution, because the user asked; every distribution check still applies; never folded into a poll in flight | covered | `client.test.ts` (*startIfStopped …*), `poller.test.ts` (*"Start WSL and check" passes startIfStopped to status ONLY*), `fakeWsl.test.ts` (*startable …*), `host/suite.ts` (*"Start WSL and check" makes the one -d the user asked for*) |
 
 ### What each guarantee rests on
 
@@ -890,6 +908,43 @@ first against the finished client (157 tests today):
 | the TS doctrine's `scriptInterpolation` scan, ready before the first webview (E5.S2) | `scriptInterpolation.test.ts` | ported from the kit; empty allowlist; its fixture companion finds both spellings |
 | the fake is stricter than `wsl.exe`, never more permissive | `fakeWsl.test.ts` | stub run: every fake answer red through the stub runner (`{"kind":"failedToStart","reason":"stub"}`) |
 
+### What each E5.S2 guarantee rests on
+
+The E5.S2 tests were written FIRST against compiling stubs (2026-10-04: 275 tests, **60 red** for their own symptom — the
+bar, the view model, the field map, the poller, the shell and the messages, the page — while the 15 harness tests, the
+harness being test code written whole, were green but one: *a selector … that matches nothing … other shapes are
+refused* was red against the finished harness, because an empty element answered `[]` for `.hidden` without parsing the
+selector — a defect of the harness, fixed). The catalogue test was red with exactly the four new flows missing before
+their rows were written. Then each guarantee was broken by ONE production line and seen red — 21 mutations, each rebuilt
+(`npm test`: compile, bundle, run), run and restored byte for byte (SHA-256 equal); four first attempts were red only
+because `noUnusedLocals` refused the compile, and were redone as behavioural mutations (the table records those). One
+more mutation was run through the EXTENSION HOST.
+
+| Guarantee | Test | Red observed (the one line broken) |
+|---|---|---|
+| only the focused window polls; a timer firing after focus was lost asks nothing | `poller.test.ts`; `host/suite.ts` | the focus check in `tick` removed → *a timer that fires after focus was lost (the race) asks nothing*; in VS Code 1.85.0 → `FAIL an unfocused window starts nothing when the interval fires` (the host run exit 1) |
+| a panel refresh after a stop asks neither `preview` nor `doctor` | `poller.test.ts` | `stopsTheOthers(status) && false` → *a stopped distribution: the panel asks status only …* |
+| the interval never goes below 30 s | `poller.test.ts` | the floor removed → *the interval setting: default 120, never below 30 …* |
+| `startIfStopped` lets exactly the user's `-d` through; a start is never folded into a poll in flight | `client.test.ts` | `running \|\| (startIfStopped && false)` → *startIfStopped: a stopped distribution gets the ONE -d …* and *a poll in flight is not shared …*; the in-flight key without `+start` → the latter |
+| only memory / kernel verdicts colour the bar; `unknown` colours nothing | `statusBar.test.ts` | the relevant prefixes widened to every verdict → 3 red, among them *only the verdicts about what the bar shows colour it …* |
+| no verdicts → uncoloured with "update the daemon to see warnings" | `statusBar.test.ts` | the hint removed → *a daemon without verdicts …* |
+| an absent field reads "update the daemon to see this", never 0 | `viewModel.test.ts` | the absent-path branch disabled → *a field an older daemon does not send reads "update the daemon to see this" …* |
+| `available: false` reads "unavailable — <reason>" | `viewModel.test.ts` | the branch disabled → *a whole figure answered available:false reads "unavailable — <reason>"* |
+| refusal is per verb: each row reads its OWN verb | `viewModel.test.ts` | every row read from `status` → 3 red, among them *an unknown preview schema blanks ONLY the preview rows …* |
+| control and bidi characters are made visible; long strings clipped | `format.test.ts`, `viewModel.test.ts`, `panelPage.test.ts` | the replacement made the identity → *safeText makes control and bidi-override characters visible …*, *hostile … reach the view as clipped, visible TEXT*, *hostile … render as inert TEXT …* |
+| the page writes text only | `panelPage.test.ts` | `node.textContent` → `node.innerHTML` in `media/panel.js` → 8 red, each throwing `strict DOM: writing TD.innerHTML (an HTML sink) is not modelled`, and the source scan red |
+| the page renders only a view message | `panelPage.test.ts` | `isView` loosened → *a message that is not a view is ignored …* |
+| CSP scripts by nonce only; command URIs off | `webviewHost.test.ts` | `'unsafe-inline'` added → *the CSP: default-src none; scripts and styles ONLY by this render's nonce …*; `enableCommandUris: true` → *the webview options …* |
+| the page→host message set is exact | `webviewHost.test.ts` | the key-count check loosened → *anything else from the page is dropped …* |
+| the document's field map is the code's | `fieldMap.test.ts` | a label changed in `fieldMap.ts` only → *research/architecture.md carries exactly the field map …* |
+| every read row names a real field | `viewModel.test.ts` | a path re-pointed to `vm.memory.swapTotl` → *every row the field map READS exists at its path …* (and the document test) |
+| the harness refuses HTML sinks and loading tags | `harness.test.ts` | `innerHTML` modelled as a member → both *an HTML sink throws: el.innerHTML…* red; `createElement` of any tag → all 7 *createElement('<tag>') throws* red |
+| the fake never starts a stopped distribution unless the scenario is `startable` | `fakeWsl.test.ts` | the guard disabled → *a -d to a STOPPED distribution is refused …* |
+| the shipped bundle carries no forbidden word | `bundleScan.test.ts` | caught for real, not planted: the shell's first draft `<main id="root">` → *the shipped bundle spells no root, timer, confirm, manual or config word* (`+ ['root']`); the element is `id="panel"` |
+
+**The extension-host tier, green locally** (Windows, 2026-10-04): VS Code 1.85.0 and stable 1.140.0, each launched
+with the fake (6 scenarios) and without it (1 scenario) — 14 scenario runs, `npm run test:host` exit 0.
+
 ### What the extension's tests do not prove
 
 - **No real `wsl.exe` is ever started by a test** — by design (the tripwire). The fake's answers are the measured ones of
@@ -902,10 +957,18 @@ first against the finished client (157 tests today):
 - **Whether `wsl-care` itself ends when `wsl.exe` is killed** — measured for `sleep` (it does) and for a process
   ignoring SIGHUP (it does not); the AOT binary is not installed here.
 - **Which settings file a UI-kind extension reads in a Remote-WSL window** — an E5 live-gate observation.
-- **Nothing runs inside VS Code yet**: `extension.ts` is thin wiring (`context.extensionMode` → `chooseRunner`,
-  `getConfiguration('wslCare')`), covered from E5.S2 by `@vscode/test-electron` against 1.85.0 and stable.
-- **The page harness** (a `node:vm` DOM shim, the kit's `pageHarness.ts` pattern) is not ported: there is no page to run
-  until E5.S2.
+- **The page harness is not a browser.** It runs `media/panel.js` against a modelled DOM that is stricter than a
+  browser; it does not lay out, paint or apply the CSP. The CSP is asserted over the shell's TEXT (parsed into
+  directives), and the real webview — the page under its nonce-only CSP inside VS Code — is exercised by the
+  extension-host tier, which observes only the row count the page reports (no VS Code API exposes a webview's DOM).
+- **The extension-host tier ran locally on Windows only** (2026-10-04: 1.85.0 and stable 1.140.0, both launches green);
+  the Linux leg runs it in CI under xvfb, where the platform gate means it proves the "Windows + WSL only" notice and
+  that nothing reaches the runner — not the panel's figures.
+- **Window focus in the extension host** is set through the test API's override (a test runner cannot focus a window):
+  the scenarios prove what the poller does for a given focus state, not that VS Code reports focus correctly — the real
+  `onDidChangeWindowState` wiring is thin and is the E5 live gate's to observe.
+- **The run-log churn** (M1) is measured over the poller on a simulated day; what one `status` run costs the daemon in
+  bytes and time is read in its source, not observed (the daemon is not installed here) — an E5 live-gate check.
 
 ## Flow catalogue
 

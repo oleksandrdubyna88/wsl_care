@@ -175,3 +175,13 @@ test('started as anything but an absolute ...\\System32\\wsl.exe, the fake refus
     assert.equal(exitOf(await ask(world, ['--list', '--quiet'], 15_000, 'D:\\Win\\System32\\WSL.EXE')).code, 0, 'another SystemRoot is still System32\\wsl.exe');
   });
 });
+
+test('startable: a -d to a stopped distribution starts it, as the real wsl.exe does — answered, and running from then on', async () => {
+  await within({ distros: [{ name: 'Ubuntu', running: false }], binary: 'present', startable: true }, async (world) => {
+    assert.equal(exitOf(await ask(world, ['--list', '--running', '--quiet'])).stdout.toString('utf16le'), '');
+    const { code, stdout } = exitOf(await ask(world, [...DAEMON_CALL, 'status', '--json']));
+    assert.equal(code, 0);
+    assert.equal(JSON.parse(stdout.toString('utf8')).schemaVersion, 1);
+    assert.equal(exitOf(await ask(world, ['--list', '--running', '--quiet'])).stdout.toString('utf16le'), 'Ubuntu\r\n');
+  });
+});

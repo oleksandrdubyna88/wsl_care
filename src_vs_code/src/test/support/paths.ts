@@ -55,3 +55,6 @@ export function fromExtensionRoot(file: string): string {
 export function shippedSources(): string[] {
   return tsFilesUnder(SOURCE_ROOT).filter((file) => !fromExtensionRoot(file).startsWith('src/test/'));
 }
+
+/** The panel's page script — what the webview runs, loaded from `media/` (`localResourceRoots`). */
+export const PAGE_SCRIPT = path.join(EXTENSION_ROOT, 'media', 'panel.js');
