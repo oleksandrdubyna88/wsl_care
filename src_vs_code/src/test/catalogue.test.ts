@@ -9,8 +9,8 @@ import { EXTENSION_ROOT, REPOSITORY_ROOT } from './support/paths';
 /**
  * The extension's flow catalogue is DERIVED (`common.scenario-tests` rule 4, plan §15g m6): every client verb, every
  * contributed command and every contributed view must have a row in research/module_tests.md's extension section —
- * a flow added without a row is a red build, not a stale document. E5.S1 contributes no command or view yet; the
- * planted companion shows the check bites the day E5.S2 adds one.
+ * a flow added without a row is a red build, not a stale document. Since E5.S2 / E5.S3 the manifest contributes four
+ * commands and one view, each with its row; the planted companion shows the check bites for the next one added.
  */
 
 const MODULE_TESTS = path.join(REPOSITORY_ROOT, 'research', 'module_tests.md');
