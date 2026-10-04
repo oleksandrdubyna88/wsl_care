@@ -1,0 +1,87 @@
+import type { VerbOutcome } from '../client/outcome';
+import { failureText } from '../failureText';
+import type { Snapshot } from '../state/outcomeStore';
+import { FIELD_MAP, isArriving, SECTIONS, type FieldRow, type ReadRow } from './fieldMap';
+import { at } from './jsonPath';
+import { isUnavailable, unavailableText } from './read';
+import { RENDERERS, type Rendered } from './rowRenderers';
+import type { PanelView, ViewLevel, ViewRow, ViewSection } from './view';
+
+/**
+ * The panel's view, a pure function of the store's snapshot and `FIELD_MAP` — so what the page shows is exactly what
+ * the table (and the document generated from it) says. For each row, in this order:
+ *
+ * 1. it `arrives` in a later epic → "arrives in E# — why";
+ * 2. its verb was not asked yet → "checking…";
+ * 3. its verb failed (stopped, not installed, a newer schema …) → that failure's short state — per verb, so an unknown
+ *    `preview` major blanks only the rows read from `preview` (plan §6);
+ * 4. its path is absent from the answer → "update the daemon to see this" (the compatibility rule: never 0);
+ * 5. the figure is `available: false` → "unavailable — <reason>";
+ * 6. otherwise its kind's renderer.
+ */
+
+const MISSING = 'update the daemon to see this';
+
+const PLAIN: Omit<ViewRow, 'id' | 'label' | 'value'> = { state: 'value', level: 'none', headers: [], items: [] };
+
+function row(field: FieldRow, rendered: Rendered): ViewRow {
+  return { ...PLAIN, ...rendered, id: field.id, label: field.label };
+}
+
+function fromAnswer(field: ReadRow, outcome: Extract<VerbOutcome, { kind: 'answered' }>): Rendered {
+  const value = at('body' in outcome.answer ? outcome.answer.body : undefined, field.path);
+  if (value === undefined) {
+    return { value: MISSING, state: 'missing' };
+  }
+
+  return isUnavailable(value) ? { value: unavailableText(value), state: 'unavailable' } : RENDERERS[field.kind](value);
+}
+
+function fromOutcome(field: ReadRow, outcome: VerbOutcome | undefined): Rendered {
+  if (outcome === undefined) {
+    return { value: 'checking…', state: 'checking' };
+  }
+
+  return outcome.kind === 'answered' ? fromAnswer(field, outcome) : { value: failureText(outcome).label, state: 'blocked' };
+}
+
+function rowFor(field: FieldRow, snapshot: Snapshot): ViewRow {
+  if (isArriving(field)) {
+    return row(field, { value: `arrives in ${field.arrives} — ${field.why}`, state: 'arrives' });
+  }
+
+  return row(field, fromOutcome(field, snapshot[field.verb]));
+}
+
+function sections(snapshot: Snapshot): ViewSection[] {
+  return SECTIONS.map((section) => ({ id: section.id, title: section.title, rows: FIELD_MAP.filter((f) => f.section === section.id).map((f) => rowFor(f, snapshot)) }));
+}
+
+function distroOf(snapshot: Snapshot): string {
+  const status = snapshot.status;
+  return status !== undefined && status.kind === 'answered' ? ` — ${status.distro}` : '';
+}
+
+function failureNotice(status: Exclude<VerbOutcome, { kind: 'answered' }>): { notice: string; noticeLevel: ViewLevel } {
+  return { notice: failureText(status).sentence, noticeLevel: status.kind === 'stopped' ? 'warn' : 'critical' };
+}
+
+/** The sentence above the sections: the status failure's, or "asking", or nothing. */
+function notice(snapshot: Snapshot): { notice: string; noticeLevel: ViewLevel } {
+  const status = snapshot.status;
+  if (status !== undefined && status.kind !== 'answered') {
+    return failureNotice(status);
+  }
+
+  return { notice: snapshot.checking ? 'Asking the daemon…' : '', noticeLevel: 'none' };
+}
+
+function actions(snapshot: Snapshot): PanelView['actions'] {
+  const start = snapshot.status?.kind === 'stopped' ? [{ id: 'startWsl' as const, label: 'Start WSL and check' }] : [];
+
+  return [...start, { id: 'refresh', label: 'Refresh' }, { id: 'openSettings', label: 'Settings' }];
+}
+
+export function buildPanelView(snapshot: Snapshot): PanelView {
+  return { heading: `WSL Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot) };
+}
