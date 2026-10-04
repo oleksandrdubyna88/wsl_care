@@ -8,6 +8,9 @@ using FluentAssertions;
 using WslCare.Cli;
 using WslCare.Core.Docker;
 using WslCare.Core.Health;
+using WslCare.Core.Hosting;
+using WslCare.Core.Systemd;
+using WslCare.FakeTool;
 using WslCare.TestSupport;
 
 using static System.FormattableString;
@@ -210,6 +213,14 @@ internal static partial class GoldenContracts
         using (morning)
         {
             files.Add(Answered("act-a4-preview.json", morning, await morning.RunAsync("act", "A4", "--preview", "--json"), matched));
+        }
+
+        // E6.S1: the answer a detach hands the panel — the run id it follows and the unit systemd runs it in.
+        using (var detach = new ScenarioHome("golden-detach") { ClaimsRoot = true })
+        {
+            detach.Answer(new FakeAnswer(SystemdCommands.Systemctl, ["start", "--no-block"], 0, string.Empty, string.Empty) { Prefix = true });
+            Directory.CreateDirectory(((LinuxHostPaths)detach.Paths).DistroPath("/run/systemd/system"));
+            files.Add(Answered("act-detach-accepted.json", detach, await detach.RunAsync("act", "A10", "--confirm", "--manual", "--detach", "--json"), matched));
         }
 
         using var journal = ReadContractScenes.Journal("golden-runs-show");

@@ -105,13 +105,14 @@ public sealed class ActionEngine(EngineContext c)
     {
         var started = c.Clock.GetUtcNow();
         var notes = new List<string>();
-        var runId = RunId.New(started, c.ProcessId);
+        var runId = request.RunId ?? RunId.New(started, c.ProcessId);
         if (Sweep(notes, started, runId) is { } refusal)
         {
             return refusal;
         }
 
         Reconcile(notes, started);
+        notes.AddRange(await request.UnderLock(runId, cancellationToken).ConfigureAwait(false));
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         var recorded = Record(Detail(runId, request.Trigger, started, pass.Dry, pass.Target, pass.Outcomes, notes, pass.Outcome));
         var result = pass.RunningWritten ? RemoveRunning(recorded) : recorded;
@@ -179,6 +180,7 @@ public sealed class ActionEngine(EngineContext c)
             return new Pass(target, dry, [], RunOutcome.Failed, RunningWritten: false);
         }
 
+        request.OnRunningWritten();
         var outcomes = new List<ActionOutcome>();
         var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes)) { IdleSource = SampleIdle };
         var outcome = await ActAllAsync(request, run, running, notes, outcomes, cancellationToken).ConfigureAwait(false);

@@ -9,6 +9,18 @@ public sealed record ActRequest(IReadOnlyList<ActionId> Ids, RunTrigger Trigger,
     /// <summary>The volumes the panel SHOWED and the person confirmed (<c>--volume</c> / <c>--only</c>): A4 removes only
     /// those that are still candidates; none given for the timer and a terminal (E3.S2).</summary>
     public ShownList ShownVolumes { get; init; } = ShownList.None;
+
+    /// <summary>The run id <c>--detach</c> allocated and wrote into the request (E6.S1): the run records itself under it, so the
+    /// panel can follow it from the moment it was accepted. <c>null</c>: a new id from this run's start and pid.</summary>
+    public RunId? RunId { get; init; }
+
+    /// <summary>Called once this run's <c>running.json</c> is written — <c>act --request</c> removes its request THEN, so a reader
+    /// moving request → running.json → history never finds neither (E6.S0 review D4).</summary>
+    public Action OnRunningWritten { get; init; } = static () => { };
+
+    /// <summary>Housekeeping run UNDER the lock, after the running.json sweep and the reconcile — <c>act --request</c> sweeps the
+    /// request folder here (plan §15k #15); its notes join the run's. Nothing by default.</summary>
+    public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>> UnderLock { get; init; } = static (_, _) => Task.FromResult<IReadOnlyList<string>>([]);
 }
 
 /// <summary>What became of one action in a run — the closed set of <see cref="ActionStatus"/> names.</summary>

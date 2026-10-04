@@ -35,7 +35,9 @@ public sealed class CommandPolicyPropertyTests
     internal static PolicyRun JudgePolicy(Func<CommandRequest, CommandVerdict> review, CommandCatalogue catalogue, int seed, int cases)
     {
         var inputs = new HostileInputs(seed);
-        var violations = new List<string>();
+        // One list per kind of violation, each capped: a flood of one kind (undeclared argv, the common one) must never crowd
+        // the other out of what a test can see (E6.S1 added three templates and shifted the seeded sequence enough to show it).
+        var (neverAllowed, undeclared) = (new List<string>(), new List<string>());
         var (never, allowed, instances) = (0, 0, 0);
         for (var i = 0; i < cases; i++)
         {
@@ -50,11 +52,11 @@ public sealed class CommandPolicyPropertyTests
             allowed++;
             var declared = IsDeclaredInstance(request, catalogue);
             instances += declared ? 1 : 0;
-            Add(violations, isNever, $"case {i}: ALLOWED a never-command: {Shown(request.Argv)}");
-            Add(violations, !declared, $"case {i}: ALLOWED an argv no declared template matches: {Shown(request.Argv)}");
+            Add(neverAllowed, isNever, $"case {i}: ALLOWED a never-command: {Shown(request.Argv)}");
+            Add(undeclared, !declared, $"case {i}: ALLOWED an argv no declared template matches: {Shown(request.Argv)}");
         }
 
-        return new PolicyRun(violations, never, allowed, instances);
+        return new PolicyRun([.. neverAllowed, .. undeclared], never, allowed, instances);
     }
 
     /// <summary>The template property: every declared template, instantiated with values its slots ACCEPT, is never a never-command.</summary>

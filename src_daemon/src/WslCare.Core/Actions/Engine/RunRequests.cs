@@ -23,6 +23,18 @@ public sealed record RunRequestFile(int SchemaVersion, RunId RunId, string Kind,
     public IReadOnlyList<string> Shown { get; init; } = [];
 }
 
+/// <summary>
+/// The answer of a command that hands a run to systemd (E6.S1): <c>act … --detach</c> / <c>collect --detach</c> —
+/// <c>accepted</c>, the run id the run will record itself under and its unit (plan §15j B2) — and <c>act --stop</c> —
+/// <c>stopping</c>, the unit systemd was asked to stop. Its own <c>schemaVersion</c> 1.
+/// </summary>
+/// <param name="Result"><c>accepted</c> or <c>stopping</c>.</param>
+/// <param name="Kind"><c>act</c>, <c>collect</c> or <c>stop</c>.</param>
+public sealed record HandOffReport(int SchemaVersion, string Result, string Kind, string RunId, string Unit)
+{
+    public string? ProductVersion { get; init; }
+}
+
 /// <summary>One request file as read: parsed, or why it cannot be used — a closed set.</summary>
 public abstract record RunRequestRead
 {
@@ -51,11 +63,55 @@ public static class RunRequests
     /// unprivileged <c>status</c> reads them.</summary>
     public const int MaxRequestsRead = 64;
 
+    /// <summary>The growth budget (plan §15k #8 + #17): at most 32 requests wait at once — ≤ 32 MiB in the folder — and a 33rd
+    /// is refused at <c>--detach</c> with its own exit code. Every terminal path removes its request, the sweep included.</summary>
+    public const int MaxQueued = 32;
+
     private const string Extension = ".json";
+
+    private const string Action = "run-request";
 
     public static string Directory(IHostPaths paths) => paths.Rules.Join(paths.StateDirectory, Folder);
 
     public static string File(IHostPaths paths, RunId runId) => paths.Rules.Join(Directory(paths), runId.Text + Extension);
+
+    /// <summary>
+    /// Writes a request for root's template unit to act on (E6.S1, plan §15k #1 / #14): EXCLUSIVELY — temporary sibling, then
+    /// linked to <c>&lt;runId&gt;.json</c>, which fails if the name exists — 0644 in a folder made 0755, so a reader sees the
+    /// whole request or none and a second writer never replaces it.
+    /// </summary>
+    public static ExclusiveCreate Create(IHostPaths paths, IFileSystem files, RunRequestFile request) =>
+        files.CreateFileExclusively(File(paths, request.RunId), JsonSerializer.SerializeToUtf8Bytes(request, WslCareJsonContext.Default.RunRequestFile), Scope(paths));
+
+    /// <summary>Removes the request of <paramref name="runId"/> when it is there (every terminal path); empty when it went or
+    /// was not there, otherwise why not.</summary>
+    public static string Remove(IHostPaths paths, IFileSystem files, RunId runId)
+    {
+        var path = File(paths, runId);
+        try
+        {
+            return !files.FileExists(path) || files.DeleteFile(path, Scope(paths)).IsAllowed ? string.Empty : $"the request {path} could not be removed (refused by the deletion policy)";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return $"the request {path} could not be removed ({e.Message})";
+        }
+    }
+
+    /// <summary>How many files of the folder are named for a run — what the budget counts (unread: a broken one counts too).</summary>
+    public static int Count(IHostPaths paths, IFileSystem files)
+    {
+        try
+        {
+            return files.ListFiles(Directory(paths)).Count(path => FiledRunId(path) is not null);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return MaxQueued;
+        }
+    }
+
+    private static Files.Deletion.DeletionScope Scope(IHostPaths paths) => new(Directory(paths), Action);
 
     /// <summary>Every file of the folder named <c>&lt;runId&gt;.json</c>, read — in ordinal (= run id) order; a temporary
     /// file or a stray name is not a request. A folder that cannot be listed is one <see cref="RunRequestRead.Bad"/>

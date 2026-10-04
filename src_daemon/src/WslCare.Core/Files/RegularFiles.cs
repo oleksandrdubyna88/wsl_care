@@ -65,6 +65,22 @@ public static partial class RegularFiles
     /// <summary>This process's effective uid on Linux (what a sandboxed test trusts as the state's owner); 0 elsewhere.</summary>
     public static uint EffectiveUid() => OperatingSystem.IsLinux() ? Native.GetEffectiveUid() : 0;
 
+    /// <summary>Linux only: <c>link(2)</c> of <paramref name="from"/> to <paramref name="to"/> — 0, or the errno (17 = the name
+    /// exists). Used by <see cref="PhysicalFileSystem.CreateFileExclusively"/> only.</summary>
+    internal static int LinkErrno(string from, string to) => Native.Link(from, to) == 0 ? 0 : Marshal.GetLastPInvokeError();
+
+    /// <summary><c>EEXIST</c>.</summary>
+    internal const int NameExists = Native.Exists;
+
+    /// <summary>0644 on Linux — readable by the unprivileged status — whatever the umask; nothing on Windows.</summary>
+    internal static void MakeReadable(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+        }
+    }
+
     /// <summary>Why a state file with this owner and mode may not be trusted; empty when it may (pure, so it is a unit test).</summary>
     public static string OwnershipProblem(uint fileOwner, int mode, uint owner) =>
         fileOwner != owner ? $"owned by uid {fileOwner}, not uid {owner}"
@@ -224,6 +240,12 @@ public static partial class RegularFiles
 
         [LibraryImport(Libc, EntryPoint = "geteuid")]
         internal static partial uint GetEffectiveUid();
+
+        /// <summary><c>EEXIST</c>.</summary>
+        public const int Exists = 17;
+
+        [LibraryImport(Libc, EntryPoint = "link", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int Link(string from, string to);
 
         [LibraryImport(Libc, EntryPoint = "open", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
         internal static partial int Open(string path, int flags, int mode);

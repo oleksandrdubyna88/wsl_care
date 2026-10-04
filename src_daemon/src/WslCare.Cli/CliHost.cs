@@ -46,6 +46,12 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// <see cref="ShutdownSignals.Cause"/>, so an interrupted run's record names the signal (plan §15j B2).</summary>
     public Func<string> InterruptCause { get; init; } = static () => "a signal";
 
+    /// <summary>This process's stdin — what <c>act … --only -</c> reads A4's shown list from (E6.S1). A test hands its own stream.</summary>
+    public Func<Stream> StandardInput { get; init; } = Console.OpenStandardInput;
+
+    /// <summary>How long <c>--only -</c> waits for the end of stdin (plan §15j M2: 10 s); a test shortens it.</summary>
+    public TimeSpan StdinCeiling { get; init; } = StdinList.Ceiling;
+
     /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names. The runner is the
     /// product's ONE policy (<see cref="CommandPolicy.Product"/>: the never-list over the declared templates); inside the
     /// distro, as root, the per-user paths are the TARGET user's (E3.S2), and every login account's home is protected besides

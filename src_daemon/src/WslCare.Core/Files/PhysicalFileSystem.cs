@@ -244,6 +244,78 @@ public sealed class PhysicalFileSystem : IFileSystem
         return target.Verdict;
     }
 
+    public ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+    {
+        EnsureParent(path);
+        var target = Judge(FileOperation.Delete, path, string.Empty, scope);
+        var temp = target.Verdict.IsAllowed ? JudgeTemp(target, scope) : target;
+        if (!temp.Verdict.IsAllowed)
+        {
+            return new ExclusiveCreate.Refused(Reason(temp.Verdict));
+        }
+
+        WriteNew(temp.RealPath, content);
+        RegularFiles.MakeReadable(temp.RealPath);
+        var recheck = Revalidate(path, target, scope);
+        if (!recheck.IsAllowed)
+        {
+            return new ExclusiveCreate.Refused(Reason(Abandon(temp.RealPath, scope, recheck)));
+        }
+
+        var created = LinkNew(temp.RealPath, target.RealPath);
+        DeleteFile(temp.RealPath, scope);
+        return created ? new ExclusiveCreate.Created() : new ExclusiveCreate.AlreadyExists();
+    }
+
+    /// <summary>A second name <paramref name="to"/> for <paramref name="from"/> only when <paramref name="to"/> does not exist —
+    /// atomically: <c>link(2)</c> on Linux, a non-replacing move on Windows. False when the name existed.</summary>
+    private static bool LinkNew(string from, string to)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                File.Move(from, to, overwrite: false);
+                return true;
+            }
+            catch (IOException) when (File.Exists(to))
+            {
+                return false;
+            }
+        }
+
+        return RegularFiles.LinkErrno(from, to) switch
+        {
+            0 => true,
+            RegularFiles.NameExists => false,
+            var errno => throw new IOException($"link {from} -> {to} failed (errno {errno})"),
+        };
+    }
+
+    /// <summary>The parent of an exclusively created file: made when missing — 0755 on Linux, whatever the umask.</summary>
+    private static void EnsureParent(string path)
+    {
+        var parent = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (parent is null || Directory.Exists(parent))
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(parent);
+            return;
+        }
+
+        // mkdir(2) masks the mode with the umask (a root shell with umask 077 made it 0700, and the unprivileged status could no
+        // longer see the queue — E6.S1, DetachFlows): the mode is SET after the folder exists.
+        const UnixFileMode Mode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
+        Directory.CreateDirectory(parent, Mode);
+        File.SetUnixFileMode(parent, Mode);
+    }
+
+    private static string Reason(DeletionVerdict verdict) => verdict is DeletionVerdict.Refused refused ? refused.Reason : "refused by the deletion policy";
+
     /// <summary>
     /// The atomic write's rename over the target. On Windows a rename onto a file another handle holds open is refused
     /// (access denied) even when that handle shares delete — a reader of <c>running.json</c> or the history holds it for

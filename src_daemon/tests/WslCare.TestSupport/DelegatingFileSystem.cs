@@ -46,6 +46,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.WriteFileAtomically(path, content, scope);
 
+    public virtual ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.CreateFileExclusively(path, content, scope);
+
     public virtual void AppendLine(string path, string line, TimeSpan lockTimeout) => inner.AppendLine(path, line, lockTimeout);
 
     public virtual DeletionVerdict DeleteFile(string path, DeletionScope scope) => inner.DeleteFile(path, scope);
