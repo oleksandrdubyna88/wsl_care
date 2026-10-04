@@ -238,6 +238,8 @@ and the actions in the SAME run: one detail (with a `timerPass` part listing eve
 history line. A `collect` you start yourself, or the panel's *Run full check now*, measures only; a button's `act` is its
 own run. An action that fails there is recorded and logged; the exit code stays 0.
 
+`sudo wsl-care collect --detach [--json]` hands the same run to systemd and answers at once — see *Detached runs* below.
+
 Exit codes: 0 recorded (or read-only) · 1 the run could not be recorded (the reason on stderr) · 2 usage · 75 another
 run holds the lock · 70 a defect.
 
@@ -336,6 +338,35 @@ with a clean environment.
 
 Exit codes: 0 previewed / recorded · 1 not recorded · 2 usage (unknown or unbuilt action, the other side's action) ·
 3 an action failed · 75 busy · 76 wedged · 77 needs root · 78 observe-only (an invalid configuration layer) · 130 interrupted.
+
+### Detached runs — what the panel's buttons use
+
+```bash
+sudo wsl-care act A10 --confirm --manual --detach --json          # answers {"result":"accepted","runId":…,"unit":"wsl-care-act@<runId>.service"} at once
+printf '%s\n' <64-hex>… | sudo wsl-care act A4 --confirm --manual --detach --only - --json   # A4's shown list on stdin
+sudo wsl-care collect --detach --json                              # the full run, the same way
+wsl-care runs show <runId> --json                                  # follow it: queued → running → done / refused / interrupted
+sudo wsl-care act --stop <runId> --json                            # a WEDGED run only: systemd stops its unit
+```
+
+A confirm started from a window that may close (a VS Code reload) must outlive it, so `--detach` never runs the work
+itself: it writes the REQUEST `/var/lib/wsl-care/requests/<runId>.json` (0644, created exclusively — the persisted
+*queued* state `status` and `runs show` read) and runs `systemctl start --no-block wsl-care-act@<runId>.service`, the
+template unit this install ships, whose `ExecStart` is `wsl-care act --request <runId>`. That run re-reads the request
+through the same hardened reader `status` uses (root's, no group / other write, at most 1 MiB, validated), records
+itself under THAT run id, and removes the request once its `running.json` stands. When another run holds the lock it is
+recorded `refused` with the reason — never a silent busy. Every root run (`collect`, `act --request`) first sweeps the
+request folder: a request whose run has a history line only loses its file; one older than 15 minutes whose unit has no
+queued job and is not active is recorded `interrupted` and goes. `--only -` reads the shown list from stdin under the
+same 1 MiB cap and a 10 s ceiling for the end of input. There is no synchronous fallback: without systemd a detach is
+refused (69). At most 32 requests wait at once (73). `act --stop` asks systemd to stop a wedged run's unit — only when
+its process lives in `wsl-care.service` or its own `wsl-care-act@<runId>.service`; SIGTERM lets it record itself
+`interrupted`, and one that is still there after 90 s is killed and recorded by the next root run's sweep with that reason.
+
+Exit codes of the detached verbs: 0 accepted / recorded / stopping · 2 usage, or nothing to stop · 69 no systemd · 71 the
+unit would not start (its request removed) · 73 the request budget is full · 75 / 76 / 79 busy / wedged / state unreadable
+(at `--request` time RECORDED as `refused`, and a success for the unit) · 77 needs root · 80 no request names the run
+(a no-op).
 
 ## Logs and runs — what the runs of a period did
 

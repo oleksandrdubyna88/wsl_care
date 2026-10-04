@@ -22,8 +22,8 @@
 > (section *The verdicts in `status`*), and from E5.S1 the VS Code extension's skeleton — the runner seam, `WslCareClient` over
 four read-only verbs, the strict fake `wsl.exe` and `ci-extension.yml` (section *The extension: client, runner and fake*),
 and from E5.S2 its status bar, the read-only panel driven by one field map, and the focused-window polling (section *The
-extension: status bar, read-only panel and polling*), and from E5.S3 *Install daemon*, the universal `.vsix` with its leak checks, and the extension's own release pipeline as files and tests (section *The extension: Install daemon, packaging and its release*), and from E6.S0 the daemon read contract — `status`'s `actions`, `capabilities`, `running` and `lastCleanup`, A4's full `shown` list, `runs show`, the instant range, `RunLine.metrics`, SIGHUP as a cancellation and `contracts/*.json` (section *The daemon read contract*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
-> `events follow`, `act`, `logs`, `runs` and `runs show`, and refuses everything else; the extension shows the daemon's state read-only (E5.S2). This file describes
+extension: status bar, read-only panel and polling*), and from E5.S3 *Install daemon*, the universal `.vsix` with its leak checks, and the extension's own release pipeline as files and tests (section *The extension: Install daemon, packaging and its release*), and from E6.S0 the daemon read contract — `status`'s `actions`, `capabilities`, `running` and `lastCleanup`, A4's full `shown` list, `runs show`, the instant range, `RunLine.metrics`, SIGHUP as a cancellation and `contracts/*.json` (section *The daemon read contract*), and from E6.S1 the detached runs — `act` / `collect --detach`, the request files, `act --request`, the request sweep, `act --stop`, `--only -` and the template unit `wsl-care-act@.service` (section *Detached runs*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+> `events follow`, `act` (with `--detach`, `--request`, `--stop`), `logs`, `runs` and `runs show`, and refuses everything else; the extension shows the daemon's state read-only (E5.S2). This file describes
 > what exists and is rewritten as each part lands.
 
 ## What exists
@@ -2056,7 +2056,7 @@ Nothing here writes: every new read is unprivileged and takes no lock.
   - `actions` — the ids THIS binary's registry holds for its own side, in `ActionId.ExecutionOrder` (the distro's binary:
     every built action, A13 not yet; the Windows binary: none — its actions are E12's).
   - `capabilities` — `Status/Capabilities.All`: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange`. The
-    AUTHORITY a client acts on (§15j M5), never the version; E6.S1 adds `act.detach`, `act.onlyStdin`, `act.stop`.
+    AUTHORITY a client acts on (§15j M5), never the version; E6.S1 added `act.detach`, `act.onlyStdin`, `act.stop`.
   - `running` — `Status/RunningReports.Read`: `RunningState.Read` (the same judge the engine uses; it writes nothing) over
     `running.json`, else `Actions/Engine/RunRequests.List` over `{state}/requests/<runId>.json` (the request files E6.S1's
     `--detach` will write — the reader exists now, the folder is empty until then). It NEVER calls `RunningSweep`: a dead
@@ -2168,6 +2168,119 @@ of UTC midnight). Normalisation rules added, each matched: `running.pid` (4242),
   that never ran as `interrupted / not run`; `logs` counts an interrupted action's real deletions.
 - **One run, one id** (`RunId.TryParse` refuses a leading zero), and A4's preview outcome carries `shownTruncated: true`
   past 10 000 names (coai E6 plan round #11).
+
+## Detached runs, the request, the stop (E6.S1)
+
+A confirm the panel starts must survive the window that asked for it (a VS Code reload kills `wsl.exe`, and the AOT
+binary dies with it — facts note), so the panel never runs the work in its own process tree: it asks root to HAND the run
+to systemd (plan §15j B2, M2, M4, M9; the coai E6 plan round §15k). Nothing here falls back to a synchronous run.
+
+- **`act <A#>… --confirm --detach [--only -]` / `collect --detach`** (`Cli/Commands/DetachedRuns.Detach` /
+  `CollectDetach`, root first): refuses without systemd — `/run/systemd/system` (sd_booted) absent, exit 69; with the
+  request folder at its budget (`RunRequests.MaxQueued` = 32 files, exit 73 — checked BEFORE the running state, so a full
+  folder answers its own code); while a run is live or queued (75), wedged or uninspectable (76), unreadable (79). Then it
+  writes `{state}/requests/<runId>.json` through `IFileSystem.CreateFileExclusively` — a temporary sibling, 0644, then
+  `link(2)` to the final name (a non-replacing move on Windows), which fails when the name exists, so a reader sees a
+  whole request or none and nothing replaces one; the folder 0755 SET after `mkdir` (the umask would mask it) — and runs
+  `systemctl start --no-block wsl-care-act@<runId>.service` (`Systemd/UnitCommands.Start`). A start that does not exit 0
+  removes the request again and exits 71 (§15k #1). The answer is `HandOffReport` (`schemaVersion` 1): `accepted`,
+  `kind`, `runId`, `unit`, `productVersion` — golden `act-detach-accepted.json`. The run id is the detaching process's
+  (`RunId.New(now, pid)`); the run that executes it is another process and keeps that id.
+- **`--only -`** (`Cli/StdinList`): A4's shown list from stdin, read on a worker under the same 1 MiB cap as an
+  `--only` file (one byte more is a refusal) and a 10 s ceiling for the end of input (`CliHost.StdinCeiling`); a line is
+  refused by its NUMBER, never echoed; all of it before any state is touched. The relay through `wsl.exe` was measured
+  (facts note row 20: 650 000 bytes with the EOF).
+- **The template unit** `src_daemon/systemd/wsl-care-act@.service` (installed beside the others, never enabled):
+  `ExecStart=/opt/wsl-care/bin/wsl-care act --request %i` — the instance name IS the run id, the only variable, validated
+  by the CLI's parse. `TimeoutStartSec=infinity` (a confirm is never time-killed as a whole — every command it starts has
+  its own ceiling with a tree kill, §15k #0), `TimeoutStopSec=90` (both units, §15k #18), `SuccessExitStatus=3 75 76 78
+  79 80` (the RECORDED answers — an action failed, a refusal recorded `refused`, a missing request — are not unit failures,
+  §15k #8), `CollectMode=inactive-or-failed` (a finished instance is unloaded, failed or not, so none lingers in
+  `systemctl --failed` — systemd's own mechanism standing for §15k #8's `reset-failed`), and the hardening of
+  `wsl-care.service` (`Nice`, `IOSchedulingClass`, `MemoryMax`, `NoNewPrivileges`, `KillMode`, `TimeoutStopSec`) —
+  held EQUAL by `ShippedFilesTests` (§15k #9).
+- **`act --request <runId>`** (`DetachedRuns.FromRequest`, what the unit runs): no request → exit 80, a named no-op, no
+  history line (§15k #2); a request the hardened reader refuses (`RunRequests.Find` → `ReadStateFile`: root's, no group
+  / other write, ≤ 1 MiB, schema 1, known ids, 64-hex shown names) → exit 2, nothing run; a request whose run already has a
+  history line (it recorded itself and died before removing the file) → removed, exit 80 — never run twice. Otherwise the engine (or
+  `CollectRun`) runs under the request's run id (`ActRequest.RunId` / `CollectContext.RunId`) with the persisted shown
+  list, and the request is removed by `OnRunningWritten` — once `running.json` stands, never before (the E6.S0 review
+  round: states move request → `running.json` → history line, with no gap) — and again on every other way out. Meeting
+  the lock, a wedged or unreadable state, or observe-only, it appends ONE history line with the outcome `refused` and the
+  reason, removes the request and exits with the refusal's code (never a silent busy).
+- **The request sweep** (`Actions/Engine/RequestSweep`), at the start of every ROOT run under the lock — `collect` (timer
+  or detached) and `act --request` (through `ActRequest.UnderLock`) — never by `status` (§15k #15): history FIRST (a
+  request whose run has a line only loses its file); a request younger than 15 minutes is left alone; an older one is
+  pending while `systemctl show --property=ActiveState --property=Job wsl-care-act@<runId>.service` shows a queued job or
+  an active / activating / deactivating / reloading state (`UnitCommands.Busy`; a queued start has no active state yet);
+  otherwise ONE `interrupted` line ("swept: the detached run never recorded itself — its unit … is <state> with no queued
+  job, and its request is N min old") and the request goes. A unit whose state cannot be read keeps its request; the run's
+  own request is never swept. Notes land in `housekeeping.requests` (collect) or the run's notes (act).
+- **`act --stop <runId> [--json]`** (`DetachedRuns.Stop`): only a WEDGED holder of `running.json` (a live one → 75, any
+  other → 2), and only when `/proc/<pid>/cgroup` puts its process in `wsl-care.service` or its own
+  `wsl-care-act@<runId>.service` — otherwise nothing is stopped and its pid is named. It writes a stop marker
+  `{state}/stops/<runId>` (`StopMarkers`), then `systemctl stop <unit>` (`UnitCommands.Stop`, a 120 s ceiling above
+  systemd's 90 s); SIGTERM lets the run record itself `interrupted` (the E6.S0 cancellation path); a run SIGKILLed after
+  90 s leaves `running.json`, and the next root run's `RunningSweep` records it `interrupted` with the reason "stopped:
+  act --stop asked systemd to stop it (…) and it did not exit within 90 s of SIGTERM". A refused stop removes the marker;
+  the sweep removes markers whose run has a line, or older than a day. Never a kill by pid.
+- **The commands** — `UnitCommands.All` (start `--no-block`, stop, show), in `CommandCatalogue.Product`, each with the
+  CLOSED unit slot `SlotKind.ActUnit` (`wsl-care-act@` + a run id `RunId.TryParse` accepts + `.service`; a stop also
+  `wsl-care.service`), judged by the property tests and `UnitCommandsTests` over hostile names. Never `systemd-run`.
+- **A full run cut off during the measurement** now leaves ONE `interrupted` line ("interrupted by <signal> during the
+  measurement: nothing was recorded but this line", `CollectRun.RecordCutOff`) — the E6.S0 durable review's item; before,
+  `runs show` answered `unknown`.
+- **Capabilities** `act.detach`, `act.onlyStdin`, `act.stop` join `status`'s list (the authority a client acts on).
+  **Exit codes** 69 `detachUnavailable`, 71 `detachStartFailed`, 73 `queueFull`, 80 `requestGone` join
+  `contracts/exit-codes.json`.
+- **`install.sh`** installs and removes the template with the other units (uninstall first stops every loaded
+  `wsl-care-act@*.service`); installs the binary as `…/wsl-care.new` and RENAMES it over the old one (never an in-place
+  overwrite of a running file); and an upgrade waits — bounded, 10 minutes (`WSL_CARE_INSTALL_RUN_WAIT_SECONDS`) — while
+  the installed binary's `status --json` reports a run `live` or `queued`, then refuses at step `upgrade-wait` with
+  nothing replaced (§15k #16). The request schema stays 1 and additive, so a queued request survives an upgrade.
+
+```mermaid
+sequenceDiagram
+    participant P as panel (E6.S3)
+    participant D as wsl-care act --detach (root, via wsl.exe)
+    participant FS as {state}/requests/
+    participant S as systemd
+    participant R as wsl-care act --request (wsl-care-act@runId)
+    participant H as running.json / history.jsonl
+    P->>D: act A4 --confirm --manual --detach --only - (stdin)
+    D->>D: root? systemd? budget? nothing live / queued / wedged?
+    D->>FS: create <runId>.json exclusively (0644)
+    D->>S: systemctl start --no-block wsl-care-act@<runId>.service
+    alt the start failed
+        D->>FS: remove the request
+        D-->>P: exit 71
+    else queued
+        D-->>P: accepted {runId, unit}
+    end
+    S->>R: ExecStart act --request <runId>
+    R->>FS: read through the hardened reader, re-validate
+    alt the lock is held / wedged / observe-only
+        R->>H: ONE refused line
+        R->>FS: remove the request
+    else
+        R->>H: running.json (pre-allocated runId)
+        R->>FS: remove the request
+        R->>R: request sweep, then the actions
+        R->>H: detail + history line, running.json removed
+    end
+    P->>H: runs show <runId> — queued, running, done / refused / interrupted
+```
+
+```mermaid
+flowchart TB
+    start(["root run: collect / act --request, under the lock"]) --> each{"each request<br/>but its own"}
+    each -->|its run has a history line| rmonly["remove the file only"]
+    each -->|younger than 15 min| keep1["leave it"]
+    each -->|older| show["systemctl show ActiveState, Job"]
+    show -->|a queued job, or active / activating / deactivating / reloading| keep2["pending: leave it"]
+    show -->|unreadable| keep3["keep it, note why"]
+    show -->|inactive / failed / unknown, no job| swept["ONE interrupted line, then remove it"]
+```
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 
