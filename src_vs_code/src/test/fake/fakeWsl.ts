@@ -46,6 +46,12 @@ export interface FakeScenario {
   readonly wslUtf8?: boolean;
   /** A file every call is appended to, one JSON line `{ argv, file }`. */
   readonly log?: string;
+  /**
+   * A `-d` to a stopped distribution STARTS it, as the real `wsl.exe` does — for the one call the user asks for
+   * ("Start WSL and check", `startIfStopped`). Off by default: then such a `-d` is refused (95), because no other
+   * call may start the VM. When on, the fake rewrites its scenario file so the distribution runs from then on.
+   */
+  readonly startable?: boolean;
 }
 
 /** Exit codes the fake refuses with — none of them is a code the daemon or `wsl.exe` uses. */
@@ -165,7 +171,7 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
   if (known === undefined) {
     return { code: -1, stdout: wslText(scenario, NO_SUCH_DISTRO) };
   }
-  if (!known.running) {
+  if (!known.running && scenario.startable !== true) {
     return { code: FAKE_EXIT.wouldStart, stderr: `fake wsl: -d ${distro} would START the stopped distribution\n` };
   }
 
@@ -217,7 +223,21 @@ function main(): void {
     emit({ code: FAKE_EXIT.wrongFile, stderr: `fake wsl: started as ${JSON.stringify(file)}, not as an absolute ...\\System32\\wsl.exe\n` });
     return;
   }
-  emit(decide(scenario, argv));
+  const reply = decide(scenario, argv);
+  if (reply.code === 0) {
+    markStarted(scenarioFile, scenario, argv);
+  }
+  emit(reply);
+}
+
+/** A `startable` scenario's answered `-d` to a stopped distribution started it: written back, so it runs from now on. */
+function markStarted(file: string, scenario: FakeScenario, argv: readonly string[]): void {
+  const stopped = argv[0] === '-d' ? scenario.distros.find((d) => d.name === argv[1] && !d.running) : undefined;
+  if (stopped === undefined) {
+    return;
+  }
+  const distros = scenario.distros.map((d) => (d === stopped ? { ...d, running: true } : d));
+  fs.writeFileSync(file, JSON.stringify({ ...scenario, distros }));
 }
 
 if (require.main === module) {

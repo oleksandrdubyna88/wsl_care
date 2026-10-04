@@ -13,7 +13,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['out/**', 'dist/**', 'node_modules/**'],
+    ignores: ['out/**', 'dist/**', 'node_modules/**', '.vscode-test/**'],
   },
   {
     // A disable that has stopped being needed is an exemption nobody granted.
@@ -59,6 +59,19 @@ export default tseslint.config(
       'max-lines': 'off',
       complexity: 'off',
       'max-lines-per-function': 'off',
+    },
+  },
+  {
+    // The panel's page script (E5.S2): plain browser JavaScript run inside the webview, outside the TypeScript
+    // program — the same complexity and length limits as src/**, and only the webview's globals.
+    files: ['media/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: { ...globals.browser, acquireVsCodeApi: 'readonly' },
+    },
+    rules: {
+      complexity: ['error', 4],
+      'max-lines-per-function': ['error', 50],
     },
   },
   {

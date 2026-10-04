@@ -105,3 +105,25 @@ test('the bundle is CommonJS for node 18 with vscode left external and no source
 test('the extension carries the repository\'s licence, byte for byte', () => {
   assert.deepEqual(fs.readFileSync(path.join(EXTENSION_ROOT, 'LICENSE')), fs.readFileSync(path.join(REPOSITORY_ROOT, 'LICENSE')));
 });
+
+interface Contributions {
+  readonly commands: readonly { readonly command: string; readonly title: string }[];
+  readonly views: Readonly<Record<string, readonly { readonly id: string; readonly type?: string }[]>>;
+  readonly viewsContainers: { readonly activitybar: readonly { readonly id: string; readonly icon: string }[] };
+  readonly menus: Readonly<Record<string, readonly { readonly command: string }[]>>;
+}
+
+const contributed = (manifest as unknown as { contributes: Contributions }).contributes;
+
+test('E5.S2 contributes the read-only surface only: the panel view and three argument-free commands, no URI handler', () => {
+  assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl']);
+  assert.deepEqual(contributed.views.wslCare, [{ type: 'webview', id: 'wslCare.panel', name: 'WSL Care' }]);
+  assert.equal(contributed.viewsContainers.activitybar[0]?.id, 'wslCare');
+  assert.ok(fs.existsSync(path.join(EXTENSION_ROOT, contributed.viewsContainers.activitybar[0]?.icon ?? '')), 'the activity-bar icon ships');
+  assert.ok(manifest.activationEvents.every((e) => !e.startsWith('onUri')), 'no URI handler (plan §15f #2)');
+  for (const menu of Object.values(contributed.menus)) {
+    for (const item of menu) {
+      assert.ok(contributed.commands.some((c) => c.command === item.command), item.command);
+    }
+  }
+});
