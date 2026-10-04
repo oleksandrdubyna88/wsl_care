@@ -51,7 +51,8 @@ export type InstallResult =
 
 export const CONFIRM_LABEL = 'Open a terminal and type it';
 
-/** The modal's text for `distro` (already validated — a name of letters, digits, `.`, `_` and `-`). */
+/** The modal's text for `distro` — already validated: a setting that passed the strict pattern, or a name `wsl.exe --list`
+ * reported, taken as it is (anything not starting with `-`, §15h #4); it reaches VS Code's modal as text, never a shell. */
 export function installPrompt(distro: string): InstallPrompt {
   return {
     message: `Install the wsl-care daemon ${INSTALL_VERSION} in "${distro}"?`,

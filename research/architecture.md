@@ -62,6 +62,11 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
     the live contract on 2026-10-02 for exactly the product's argv, redacted by
     `research/diagnostics/docker_fixture_redact.mjs` (its `SOURCE.txt`), linked into the three test outputs and
     replayed by the scenario fakes.
+  - **Every captured fixture is anonymised** (E5 code round, 2026-10-04 — this repository is public) through ONE
+    identity list, `tests/WslCare.TestSupport/FixtureIdentity.cs` (rules by shape, no original value in it), applied by
+    `FixtureAnonymisationTests` (`WSL_CARE_ANONYMISE_FIXTURES=1` rewrites; otherwise it fails on any fixture the list
+    would still change) and by the golden writer; `FixturePrivacyTests` scans every committed `fixtures` / `golden` tree
+    on every OS (section *Fixture privacy*).
   - `tests/WslCare.LiveContract` — **the live contract check** (xUnit v3 MTP executable, in the solution, NOT in
     the CI test steps): the real tools of this machine through `ProcessCommandRunner` (30 s ceiling, tree
     kill), parsed by the product's parsers; an absent tool skips with its reason, `WSL_CARE_REQUIRE_LIVE=1`
@@ -77,7 +82,9 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   `src_daemon/config/machine.json` (the empty machine layer) — what a release archive carries (section *The installer
   and the units*).
 - **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `family-checks.yml`, `pr-title.yml`, since E5.S1
-  `ci-extension.yml`, `dependabot.yml` (below); since E4.S2 the release pipeline: `release-please.yml`, `release.yml`, the scripts both
+  `ci-extension.yml`, `dependabot.yml` (below); since E5.S3 `release-extension.yml` with `scripts/release-extension-guard.sh`,
+  `verify-extension-assets.sh`, `lib/versions.sh` (since the E5 code round) and `rulesets/tags-extension.json` (section *The
+  extension: Install daemon, packaging and its release*); since E4.S2 the release pipeline: `release-please.yml`, `release.yml`, the scripts both
   CI and the release run (`scripts/smoke-daemon.sh`, `package-daemon.sh`, `release-guard.sh`, `verify-release-assets.sh`,
   `lib/daemon-assets.sh`), `sonarcloud.yml` + `sonar.properties`, `coderabbit-review.yml`, and the owner-applied ruleset
   bodies `rulesets/tags-daemon.json` and `rulesets/branch-main.json` — with `release-please-config.json`,
@@ -91,7 +98,10 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   (section *The extension: client, runner and fake*); since E5.S2 `src/statusBar/`, `src/panel/` (the field map, the
   view model, the webview shell and provider), `src/poll/`, `src/state/`, `media/` (the page script, its styles, the
   activity-bar icon), the page harness and the extension-host suite (`src/test/host/`, `scripts/run-host.mjs`) (section
-  *The extension: status bar, read-only panel and polling*).
+  *The extension: status bar, read-only panel and polling*); since E5.S3 `src/install/` (*Install daemon*),
+  `scripts/bundle.mjs` (the build stamp and `dist/min-daemon.json`), `scripts/check-vsix.mjs` with `vsix-files.txt` /
+  `vsix-denylist.txt`, `media/icon.png`, `CHANGELOG.md`, `LICENSE`, and since the E5 code round the checked-in
+  `min-daemon.json` the release guard reads (section *The extension: Install daemon, packaging and its release*).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
@@ -1493,7 +1503,7 @@ E5.S0 adds two members to it, both additive, `schemaVersion` still 1, riding `da
     detail, through a narrow DTO (`RunDetailVerdicts`: the head and `thresholds`), normalising null strings (C# doctrine
     §4a). `status` reads `history.jsonl` once for the slow parts and the verdicts (`LastFullRun.From`).
 - **`productVersion`** — the assembly's informational version, `Program.VersionText`, the ONE expression `--version` prints
-  too (`0.0.0+<sha>` before the first release). The default JSON encoder writes the `+` as `+`; a reader parses.
+  too (`0.0.0+<sha>` before the first release). The default JSON encoder writes the `+` as `\u002B`; a reader parses.
 - The text form adds one line, `verdicts: 1 critical (memory.fragmentation), 2 warn (…), 12 ok, 8 unknown`.
 
 ```mermaid
@@ -1523,7 +1533,8 @@ flowchart LR
 `schemaVersion` changes only on a BREAKING change (a field removed, renamed, retyped or its meaning changed); an
 ADDITIVE field never bumps it. A client ignores keys it does not know and treats every field added after 0.1.0 —
 `verdicts` and `productVersion` are the first two — as optional, an absent one reading as "update the daemon to see
-this", never as 0 or an error. Refusal is per verb. The extension's client tests replay two golden sets.
+this", never as 0 or an error. Refusal is per verb. The extension's client tests replay every golden set present: `head`
+now, and `daemon-0.1.0` once it is frozen at the E5 live gate.
 
 **The golden contracts** (`contracts/golden/head/{status,preview,doctor}.json`, plan §15f #10, §15g m7). Written by
 `WslCare.Scenarios/GoldenContracts` on the Linux legs: the BUILT CLI over the captured procfs, Docker and health
@@ -1533,7 +1544,14 @@ fixed value of the same type, through a NAMED, reviewed list — paths (`**.samp
 `**.ageSeconds`, `**.ageSeconds.value`, `**.evaluatedAt`, `**.runId`, `checkedAt`, `productVersion`, `vm.disk.*`,
 `slow.windowsClock.offsetSeconds`, `containerStarts.from|to`, `containerStarts.gaps[*].from|to`), objects picked by a key
 (`id: disk.root`, `id: journal.history`, `id: clock.drift`, `component: wsl-care`) and run ids quoted inside sentences;
-the sandbox root becomes `/golden-root`. `productVersion` and doctor's own version become `unknown` — the release number
+the sandbox root becomes `/golden-root`. A verdict whose figure moves with the clock is fixed to the CONCRETE value it had
+at the capture — `journal.history` 0.8 days (the health capture's instant minus the oldest entry), `clock.drift` +0.19 s
+(the clock probe's process start minus that instant, so `ok` with the product's own sentence) — never to placeholder
+prose a client would render as a figure (E5 code round #1). Part 4 of the list is IDENTITY: `FixtureIdentity.Rules`, the
+same rules the captured fixtures were anonymised with, applied to every string after the sandbox root is rewritten —
+the sandbox's own home (`/golden-root/home/me`) becomes `/home/user` like any other — so a golden regenerated from a new
+capture is anonymised by the code that anonymised the capture; part-4 rules need not match (they guard a future
+capture, and `FixturePrivacyTests` proves the files). `productVersion` and doctor's own version become `unknown` — the release number
 moves at every release-please bump and a golden pinned to it would turn the release pull request red. `GoldenContractTests`
 fails when a checked-in file is not what the CLI answers at that commit (naming the file and the first differing line)
 and when a rule no longer matches anything; `WSL_CARE_WRITE_GOLDENS=1` regenerates them. The set frozen at the tag,
@@ -1579,11 +1597,14 @@ words. `bundleScan.test.ts` parses the SHIPPED bundle and fails on any string ca
   the listed names and the pattern —, `--list --running --quiet` — and when the
   distribution is not running (or the question fails) it STOPS: no `-d` call, so polling never starts the VM. Then
   `-d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care <verb>` (`--exec`, never `--`: measured, `--` hands argv to the
-  distro's shell). One call per verb in flight (a second caller shares the first's outcome).
+  distro's shell). One call per verb in flight (a second caller shares the first's outcome), and the `--version` the
+  handshake may need is shared the same way — `preview` and `doctor` asked at once with no version known make ONE
+  `--version` call (E5 code round).
 - **Reading the ending** (`client/failures.ts`, `client/handshake.ts`, `wsl/*`) — `wsl.exe`'s own output is decoded from
   its bytes (UTF-16LE when a BOM leads or a NUL sits at an odd offset; UTF-8 otherwise, which is what `WSL_UTF8=1` and
-  the Linux side produce). One of the three WSL questions failing in any way (a non-zero exit, no answer within 15 s) is a
-  WSL failure with `wsl.exe`'s own sentence. For a daemon call: exit -1 → `wsl.exe` refused (its sentence from STDOUT); exit 1 with the measured relay
+  the Linux side produce). `--list --quiet` or `-l -v` failing in any way (a non-zero exit, no answer within 15 s) is a
+  WSL failure with `wsl.exe`'s own sentence; the RUNNING check (`--list --running --quiet`) failing reads as NOT
+  running — *stopped*, and no `-d` call — never as a WSL failure. For a daemon call: exit -1 → `wsl.exe` refused (its sentence from STDOUT); exit 1 with the measured relay
   signature for OUR path → *not installed* (exit 1 is also the daemon's `RunFailed`, so nothing else reads as not
   installed); a `GLIBC_… not found` line → *unsupported distribution*; 2 → refused, 70 → a daemon defect, 130 →
   interrupted, anything else → unknown — each showing only the daemon's `wsl-care:` lines, colour stripped. Exit 0 →
@@ -1599,7 +1620,7 @@ words. `bundleScan.test.ts` parses the SHIPPED bundle and fails on any string ca
 
 ```mermaid
 flowchart LR
-    ext["extension.ts<br/>activate: wires, starts nothing"]
+    ext["extension.ts<br/>activate: wires; one status when focused (E5.S2)"]
     sel["process/runnerSelection.ts<br/>chooseRunner(isTestMode, env)"]
     run["process/runner.ts<br/>spawnRunner · nodeScriptRunner · closedRunner<br/>the ONLY child_process import"]
     client["client/WslCareClient.ts<br/>the ONLY argv builder"]
@@ -1873,14 +1894,18 @@ seen working. Nothing is released yet (the publisher, the Environment and the ta
 ### *Install daemon* (plan §15g m2, §15f #5)
 
 - **One module builds the command** (`install/installCommand.ts`): `curl -fsSL
-  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/daemon-v<MIN>/install.sh | sudo sh -s -- --version <MIN>`,
+  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v<MIN>/install.sh | sudo sh -s -- --version <MIN>`,
   `MIN` = the compiled `MIN_DAEMON_FOR_RENDER` (0.1.0), checked `x.y.z` when the module loads; never `--skip-attestation`,
-  never `main`, no argument at all. The prerequisites are TEXT (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0+, `sudo`):
+  never `main`, no argument at all. The ref is spelt in full, `refs/tags/…`, so no branch of that name can be served
+  instead (observed 2026-10-04: raw.githubusercontent.com answers 200 for an existing tag in that form, 404 for a missing
+  one). If the installer then stops for want of `gh`, its last-resort `--skip-attestation` line repeats the SAME ref and
+  version (`install.sh`'s `rerun_command`), never main's installer. The prerequisites are TEXT (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0+, `sudo`):
   `gh --version` is outside the four verbs, and the installer checks each one itself before it changes anything.
 - **The flow** (`install/installDaemon.ts`, collaborators injected): the client's `terminalTarget()` validates the
   distribution — the setting's pattern before any spawn, then `wsl.exe --list` (no VM start) — and refuses before anything
   opens; a MODAL (`showWarningMessage({ modal: true })`) shows the command and the prerequisites; on its one confirm button
-  ONE terminal `createTerminal({ shellPath: %SystemRoot%\System32\wsl.exe, shellArgs: ['-d', <distro>] })` and
+  ONE terminal `createTerminal({ shellPath: %SystemRoot%\System32\wsl.exe, shellArgs: ['-d', <distro>, '--cd', '~'] })` —
+  the user's home, not the Windows folder VS Code was started from (observed: `--cd ~` lands in `/home/<user>`) — and
   `sendText(command, false)` — typed, not run. `terminalTarget` lives in the client so it stays the only module that
   spells a `wsl.exe` argument.
 - **Its surfaces** — the command `wslCare.installDaemon` and the panel's first button when `status` answers *daemon not
@@ -1906,10 +1931,10 @@ sequenceDiagram
     C->>C: setting pattern — refused here, nothing started
     C->>W: --list --quiet (no VM start)
     W-->>C: listed names
-    C-->>H: shellPath + ['-d', distro], or a refusal (reported, no modal)
+    C-->>H: shellPath + ['-d', distro, '--cd', '~'], or a refusal (reported, no modal)
     H->>User: modal — the exact command, the prerequisites
     User->>H: Open a terminal and type it
-    H->>T: createTerminal(wsl.exe -d distro)
+    H->>T: createTerminal(wsl.exe -d distro --cd ~)
     H->>T: sendText(command, false) — typed, NOT run
     User->>T: reads it, presses Enter (sudo asks for the password)
 ```
@@ -1919,7 +1944,10 @@ sequenceDiagram
 - **One universal `.vsix`** (`npm run package` = `vsce package --no-dependencies`, `@vscode/vsce` 4.0.0 pinned):
   `vscode:prepublish` runs `scripts/bundle.mjs` — esbuild's API with the CLI's old options (CommonJS, node18, `vscode`
   external, no source map) plus a **build stamp**: `WSL_CARE_BUILD_STAMP` := `"wsl-care-build <package.json version>"`
-  (`src/buildStamp.ts`; the test API reads it back in the extension host).
+  (`src/buildStamp.ts`; the test API reads it back in the extension host). It also EMITS `dist/min-daemon.json` —
+  `{ "minDaemonForRender": "<x.y.z>" }` — read by RUNNING `src/client/handshake.ts` (esbuild's transform in a bounded
+  `node:vm`), never matched as text; the checked-in `src_vs_code/min-daemon.json` is the copy the release guard reads at
+  the tag with a JSON parser (E5 code round #2/#5), held equal to the constant by `minDaemon.test.ts` on every pull request.
 - **`.vscodeignore` is an ALLOWLIST** (`**`, then `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE`,
   `dist/extension.js`, `media/**`). `vsix-files.txt` is what `vsce ls --no-dependencies` must print, exactly.
 - **`scripts/check-vsix.mjs`** (logic in `src/test/support/vsixCheck.ts`, a dependency-free ZIP reader in
@@ -1928,7 +1956,9 @@ sequenceDiagram
   `\\wsl`; no user name of the machine running the check (derived then — `os.userInfo()`, `USERNAME`, `USER`, the home
   folder — never stored) nor a word of `vsix-denylist.txt` (the bundle's string LITERALS only: an identifier named
   `runner` is code, and `runner` is a CI account); no e-mail address; no source map; exactly one build stamp, equal to the
-  `.vsix`'s version; with `--release`, a real publisher. A denied word is reported by its index, never printed.
+  `.vsix`'s version; with `--release`, a real publisher; the minimum daemon equal in the compiled constant, the emitted
+  `dist/min-daemon.json` and the checked-in `min-daemon.json` — and, with `--min-daemon <x.y.z>` (the release guard's
+  output), the minimum the guard found published and verified. A denied word is reported by its index, never printed.
 - **Marketplace metadata** — `icon` (`media/icon.png`, 256 px, drawn by `src/test/support/iconPng.ts`: no third-party art,
   only IHDR/IDAT/IEND, held to its recipe by its pixels), `pricing: Free`, `repository` / `bugs` / `homepage` (https),
   `categories`, `keywords`, `galleryBanner`, `preview: true`; a README with no images (screenshots are a live-gate item:
@@ -1942,15 +1972,17 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     tag["push: tags extension-v* — the only trigger"]
-    guard["guard · contents: read<br/>release-extension-guard.sh: tag = package.json version · real publisher · on main<br/>daemon-v&lt;MIN_DAEMON_FOR_RENDER&gt; published non-draft (gh api, read-only token)<br/>POST_DEPLOY.md 'Last verified: date · … · daemon x.y.z' with x.y.z ≥ MIN"]
-    build["build · contents: read + id-token: write + attestations: write<br/>npm ci → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release → .sha256<br/>→ attest-build-provenance(.vsix) → artifact"]
-    draft["github-draft · contents: write<br/>verify set → upload --clobber onto the DRAFT (compare only if already public)<br/>→ download back → verify + cmp"]
+    guard["guard · contents: read<br/>release-extension-guard.sh: tag = package.json version · real publisher · on main<br/>min-daemon.json (JSON) → daemon-v&lt;MIN&gt; published non-draft (gh api, read-only token)<br/>POST_DEPLOY.md 'Last verified: date · … · daemon x.y.z', x.y.z ≥ MIN (lib/versions.sh)<br/>outputs: version · publisher · min_daemon"]
+    build["build · contents: read ONLY<br/>npm ci → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release --min-daemon → .sha256 → artifact"]
+    attest["attest · contents: read + id-token: write + attestations: write<br/>sparse checkout of .github/scripts · NO npm, no node<br/>download artifact → verify the pair → attest-build-provenance(.vsix)"]
+    draft["github-draft · contents: write<br/>verify set → upload only what the DRAFT lacks (never replace; nothing if public)<br/>→ download back → verify + cmp (a difference: re-run FAILED jobs only)"]
     mkt["publish-marketplace · environment: marketplace · contents: read<br/>npm ci --ignore-scripts → verify set → vsce show: served?<br/>not served → vsce publish --packagePath the attested file (VSCE_PAT)<br/>→ wait until served (≤ 15 min)"]
-    pub["github-public · contents: write<br/>verify the draft's set → --draft=false (no-op if public)"]
-    stop["red run: the release stays a draft — re-run the job, or fix forward;<br/>never move or delete the tag"]
-    tag --> guard --> build --> draft --> mkt --> pub
+    pub["github-public · contents: write<br/>download the attested artifact → the draft's set + cmp → --draft=false (no-op if public)"]
+    stop["red run: the release stays a draft — re-run FAILED jobs, or fix forward;<br/>never re-run all jobs, never move or delete the tag"]
+    tag --> guard --> build --> attest --> draft --> mkt --> pub
     guard -. refuses .-> stop
     build -. fails .-> stop
+    attest -. fails .-> stop
     draft -. fails .-> stop
     mkt -. fails .-> stop
 ```
@@ -1958,7 +1990,18 @@ flowchart TD
 - **A file of its own** — `release.yml` is untouched (its triggers are pinned, `install.sh` trusts its identity), and the
   `VSCE_PAT` Environment secret is named by one job of one workflow (`ReleaseExtensionWorkflowTests`).
 - **The order** puts the rollback source first: the `.vsix` is on the draft before the Marketplace serves anything, and
-  the release goes public only after it does. Every job is re-runnable; published bytes are never replaced.
+  the release goes public only after it does — compared once more with the attested build immediately before.
+- **The signing scope** (E5 code round #3): the build runs `npm ci` with dependency install scripts, every test and a
+  downloaded VS Code, so it holds `contents: read` only; the ONLY job with `id-token` / `attestations: write` is
+  `attest`, which checks out `.github/scripts` alone, downloads the build's artifact, checks the pair and attests it.
+- **Re-runs** — "Re-run FAILED jobs" only: it reuses the successful build's artifact. "Re-run all jobs" rebuilds a
+  .vsix that is not byte-identical while the Marketplace may already serve the first, so an asset on the release is
+  NEVER replaced (draft or public): the draft upload adds only what is missing, and both GitHub jobs compare the release
+  with this run's build and refuse on a difference, saying to re-run failed jobs only.
+- **The guard's minimum** comes from `src_vs_code/min-daemon.json` (JSON, `python3`), never from TypeScript with a line
+  pattern, and its comparisons — and POST_DEPLOY item 6's ranking of the versions the Marketplace serves — go through ONE
+  POSIX file, `.github/scripts/lib/versions.sh` (`version_at_least`, `highest_version`, `is_top_version`). Every line the
+  guard prints is a declared output; the build checks its .vsix against `min_daemon`.
 - **The credential**: `VSCE_PAT` today (a global Azure DevOps PAT — those stop working on 2026-12-01, so its expiry is
   `POST_DEPLOY.md` item 12); the recommended alternative is OIDC (`azure/login` + `vsce publish --azure-credential`), a
   one-pull-request switch written in the workflow's header and `docs/repo-settings.md` step 9.
@@ -1976,13 +2019,50 @@ flowchart TD
 - **Listed distribution names** are taken as `wsl.exe --list` reports them (§15h #4); only a leading `-` is refused, and
   the strict pattern applies to the setting's value only.
 
+### What the E5 code round changed in the extension (2026-10-04)
+
+- **The interval is clamped to a day** — `effectiveSeconds` keeps `wslCare.refreshSeconds` within 30–86 400
+  (`MAX_REFRESH_SECONDS`, also the schema's `maximum`): above 2^31-1 ms `setInterval` overflows and fires every
+  millisecond.
+- **An unavailable PARENT** — a part the daemon could not read (`vm`, `vm.memory`) arrives as `{ available: false,
+  reason }` with no children; `jsonPath.unavailableAncestor` finds the deepest such ancestor of a missing path, so every row
+  under it reads "unavailable — <its reason>" (never "update the daemon to see this") and the bar shows `?` with that
+  reason in its tooltip.
+- **The notice is the page's one live region** — `aria-live="polite"` moved from `<main>` (whose whole tree is rebuilt
+  on every render) to the notice, which is ONE element for the page's life whose text changes only when it differs.
+- **The call log exists in Test mode only** — `clientRunner(testMode, …)` hands the real runner over unwrapped outside it;
+  before, every request of a long-lived window was appended to a list nobody read.
+
 ### Tests (details: [module_tests.md](module_tests.md) § *The extension*)
 
 `installDaemon.test.ts`, `vsixCheck.test.ts`, `icon.test.ts`, the new rows of `structure.test.ts`, `bundleScan.test.ts`,
-`manifest.test.ts`, `client.test.ts`, `fakeWsl.test.ts` and `viewModel.test.ts`; the host suite's *Install daemon*
-scenarios on 1.85.0 and stable; and in C#, `ReleaseExtensionWorkflowTests` (the workflow's structure),
-`ReleaseExtensionScriptFlows` (the guard and the asset set, run under bash on Linux) and the widened
-`ReleaseWorkflowTests` / `ReleaseConfigTests`.
+`manifest.test.ts`, `client.test.ts`, `fakeWsl.test.ts` and `viewModel.test.ts`; since the E5 code round
+`minDaemon.test.ts` and `testApi.test.ts`; the host suite's *Install daemon* scenarios on 1.85.0 and stable; and in C#,
+`ReleaseExtensionWorkflowTests` (the workflow's structure, the attest job, the re-run rule, POST_DEPLOY item 6),
+`ReleaseExtensionScriptFlows` (the guard, `lib/versions.sh` and the asset set, run under bash / sh on Linux) and the
+widened `ReleaseWorkflowTests` / `ReleaseConfigTests`.
+
+## Fixture privacy (E5 code round, 2026-10-04)
+
+The repository is public, and the captured fixtures and the goldens built from them carried the owner's Linux and
+Windows user names, home and profile paths, project and repository names, installed extension ids and versions, and a
+Claude scratchpad path. Since the code round:
+
+- **ONE identity list** — `WslCare.TestSupport/FixtureIdentity`: eight named rules (`tempFolder`, `linuxHome`,
+  `windowsProfile`, `passwdAccount`, `accountToken`, `projectDirectory`, `extensionId`, `email`), each a SHAPE; the
+  mappings (projects → `project-a`…, extension ids → `vendor.extension-a`…) are LEARNT from the corpus at run time, in
+  ordinal order, so the file holds no original value and every file is rewritten the same way (a cwd in `links.txt` and
+  an argv in `cmdline` still name the same project). Numbers, ids, sizes, times and structure are kept.
+- **Applied twice, by the same code** — to the captured fixtures by `FixtureAnonymisationTests` (it fails while any text
+  fixture would still change; `WSL_CARE_ANONYMISE_FIXTURES=1` rewrites), and as part 4 of the golden writer's list.
+- **Detected apart** — `FixturePrivacyTests` (Scenarios, every OS) walks every `fixtures` / `golden` / `goldens` directory
+  of the repository (build output, `node_modules`, the editor downloads and the shared-rules submodule excluded) and fails
+  on a `/home/<name>` or a Windows profile path whose name is not `user`, an e-mail address (a systemd template instance
+  is not one) and the user name of the machine RUNNING it (read from the environment and the home folder, like
+  check-vsix, never stored); a finding names file, line and rule, never the value. Each rule has a planted instance, and a
+  known file proves the walk still reaches the trees.
+- **Not undone by this**: the data before the code round remains in git history (main and the pull-request branches);
+  removing it needs a history rewrite and a force-push — the owner's decision.
 
 ## Fail-closed resolution and the atomic write
 
@@ -2290,8 +2370,8 @@ FluentAssertions held below 8.x.
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
-| golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
-| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); packaging and the release (E5.S3) planned |
+| golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); anonymised through the identity list and held by `FixturePrivacyTests` (2026-10-04); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
+| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate |
 
 ## Cross-repository
 
