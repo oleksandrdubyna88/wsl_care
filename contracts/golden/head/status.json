@@ -138,9 +138,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/user/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist"
+            "value": "/home/user/.vscode-server/extensions/vendor.extension-f-1.0.0/dist"
           },
-          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/ms-python.vscode-pylance-2026.4.1/dist/server.bundle.js --cancellationReceive=file:3faf",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-f-1.0.0/dist/server.bundle.js --cancellationReceive=file:3fafe6b0f7c1e",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -221,7 +221,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/data/User/workspaceStorage/74e55d12aa25f727550896adc29ed54d/atlassian.atlascode/atlascode-rovodev-bin/202607.24.1/atlassian_cli_rovodev serve 40489 --xid rovodev-ide-vscode -",
+          "commandLine": "/home/user/.vscode-server/data/User/workspaceStorage/74e55d12aa25f727550896adc29ed54d/vendor.extension-b/atlascode-rovodev-bin/202607.24.1/atlassian_cli_rovodev serve 40489 --xid rovodev-ide-vscode --",
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -275,7 +275,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/extensions/anthropic.claude-code-2.1.287-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <reda",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>",
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -302,7 +302,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/extensions/anthropic.claude-code-2.1.287-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <reda",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>",
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -329,7 +329,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/extensions/ms-dotnettools.csharp-2.160.4-linux-x64/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information --sourceGeneratorExecutionPreference Balanced --devKit",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-e-1.0.0-linux-x64/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information --sourceGeneratorExecutionPreference Balanced --devKitDepen",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": false,
@@ -356,7 +356,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.gemini/bin/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=<redacted> --add-dir=/home/user/git/project-p --add-dir=/home/user/git/project-h --add-dir=/home/user/gi",
+          "commandLine": "/home/user/.gemini/bin/agy --hub --hub-port=41790 --app_data_dir=antigravity --csrf_token=<redacted> --add-dir=/home/user/git/project-p --add-dir=/home/user/git/project-h --add-dir=/home/user/git/proj",
           "family": "ai-agents",
           "orphaned": false,
           "hasTty": true,
@@ -381,9 +381,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/servicehub"
+            "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/servicehub"
           },
-          "commandLine": "/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft.VisualS",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -489,9 +489,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64"
+            "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64"
           },
-          "commandLine": "/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-server.linux-x64/Microsoft.VisualStu",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-server.linux-x64/Microsoft.VisualStudio.Code",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -518,7 +518,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-code-servicehost.linux-x64/Microsoft.VisualS",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -597,9 +597,9 @@
           },
           "cwd": {
             "available": true,
-            "value": "/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/servicehub"
+            "value": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/servicehub"
           },
-          "commandLine": "/home/user/.vscode-server/extensions/ms-dotnettools.csdevkit-3.40.210-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-controller.linux-x64/Microsoft.Visua",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-d-1.0.0-linux-x64/components/vs-green-server/platforms/linux-x64/node_modules/@microsoft/visualstudio-controller.linux-x64/Microsoft.VisualStudio.",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -626,7 +626,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/redhat.vscode-yaml-1.24.0/dist/languageserver.js --node-ipc --clientProcessId=1169",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-i-1.0.0/dist/languageserver.js --node-ipc --clientProcessId=1169",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -680,7 +680,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/github.vscode-github-actions-0.32.3/dist/server-node.js --node-ipc --clientProcessId=11",
+          "commandLine": "/home/user/.vscode-server/bin/07f806f999227108933c2e30515b26eecc1fda74/node /home/user/.vscode-server/extensions/vendor.extension-c-1.0.0/dist/server-node.js --node-ipc --clientProcessId=1169",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -761,7 +761,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/data/User/globalStorage/remsoftdev.connect-other-ais/coai-mcp",
+          "commandLine": "/home/user/.vscode-server/data/User/globalStorage/vendor.extension-j/coai-mcp",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -788,7 +788,7 @@
             "available": true,
             "value": "/home/user/git/project-p"
           },
-          "commandLine": "/home/user/.vscode-server/data/User/globalStorage/remsoftdev.connect-other-ais/coai-mcp",
+          "commandLine": "/home/user/.vscode-server/data/User/globalStorage/vendor.extension-j/coai-mcp",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1357,7 +1357,7 @@
             "available": true,
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/init /mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/remsoftdev.creds-for-devs/bin/creds.exe /mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/remsoftdev.creds-for-devs/bin/creds.",
+          "commandLine": "/init /mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe /mnt/c/Users/user/AppData/Roaming/Code/User/globalStorage/vendor.extension-k/bin/creds.exe relay-pipe",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1384,7 +1384,7 @@
             "available": true,
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "/home/user/.vscode-server/extensions/ms-python.vscode-python-envs-1.38.0-linux-x64/python-env-tools/bin/pet server",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-g-1.0.0-linux-x64/python-env-tools/bin/pet server",
           "family": "vscode-server",
           "orphaned": false,
           "hasTty": true,
@@ -1411,34 +1411,7 @@
             "available": true,
             "value": "/mnt/c/Users/user/AppData/Local/Programs/Microsoft VS Code"
           },
-          "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/ms-vscode-remote.remote-wsl-0.104.3/scripts/wslServer.sh 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 -",
-          "family": "other",
-          "orphaned": false,
-          "hasTty": true,
-          "underMnt": true
-        },
-        {
-          "pid": 11049,
-          "ppid": 11047,
-          "user": "user",
-          "name": "sh",
-          "state": "S",
-          "rssAnonBytes": 126976,
-          "rssShmemBytes": 0,
-          "heldBytes": 126976,
-          "ageSeconds": {
-            "available": true,
-            "value": 0
-          },
-          "cpuSeconds": {
-            "available": true,
-            "value": 0.13
-          },
-          "cwd": {
-            "available": true,
-            "value": "/tmp/x"
-          },
-          "commandLine": "sh /tmp/x/capture.sh",
+          "commandLine": "sh /mnt/c/Users/user/.vscode/extensions/vendor.extension-h-1.0.0/scripts/wslServer.sh 07f806f999227108933c2e30515b26eecc1fda74 stable code-server .vscode-server --host=127.0.0.1 --port=0 --connection-",
           "family": "other",
           "orphaned": false,
           "hasTty": true,
@@ -1800,14 +1773,14 @@
     "folders": [
       {
         "id": "npm-cache",
-        "path": "/golden-root/home/me/.npm",
+        "path": "/golden-root/home/user/.npm",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/.npm does not exist"
+          "reason": "/golden-root/home/user/.npm does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/.npm does not exist"
+          "reason": "/golden-root/home/user/.npm does not exist"
         }
       },
       {
@@ -1824,62 +1797,62 @@
       },
       {
         "id": "git-worktrees",
-        "path": "/golden-root/home/me/git/_wt",
+        "path": "/golden-root/home/user/git/_wt",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/git/_wt does not exist"
+          "reason": "/golden-root/home/user/git/_wt does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/git/_wt does not exist"
+          "reason": "/golden-root/home/user/git/_wt does not exist"
         }
       },
       {
         "id": "nuget-packages",
-        "path": "/golden-root/home/me/.nuget/packages",
+        "path": "/golden-root/home/user/.nuget/packages",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/.nuget/packages does not exist"
+          "reason": "/golden-root/home/user/.nuget/packages does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/.nuget/packages does not exist"
+          "reason": "/golden-root/home/user/.nuget/packages does not exist"
         }
       },
       {
         "id": "user-cache",
-        "path": "/golden-root/home/me/.cache",
+        "path": "/golden-root/home/user/.cache",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/.cache does not exist"
+          "reason": "/golden-root/home/user/.cache does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/.cache does not exist"
+          "reason": "/golden-root/home/user/.cache does not exist"
         }
       },
       {
         "id": "vscode-server",
-        "path": "/golden-root/home/me/.vscode-server",
+        "path": "/golden-root/home/user/.vscode-server",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/.vscode-server does not exist"
+          "reason": "/golden-root/home/user/.vscode-server does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/.vscode-server does not exist"
+          "reason": "/golden-root/home/user/.vscode-server does not exist"
         }
       },
       {
         "id": "git-build-output",
-        "path": "/golden-root/home/me/git",
+        "path": "/golden-root/home/user/git",
         "size": {
           "available": false,
-          "reason": "/golden-root/home/me/git does not exist"
+          "reason": "/golden-root/home/user/git does not exist"
         },
         "growthSincePrevious": {
           "available": false,
-          "reason": "/golden-root/home/me/git does not exist"
+          "reason": "/golden-root/home/user/git does not exist"
         }
       },
       {
@@ -2037,7 +2010,7 @@
     {
       "id": "journal.history",
       "level": "warn",
-      "value": "<days since the oldest entry> (oldest entry 2026-10-01 22:10Z)",
+      "value": "0.8 days (oldest entry 2026-10-01 22:10Z)",
       "limit": "warn when the oldest entry is less than 7 days old",
       "reason": "how far back the journal reaches (clock jumps erase it, plan finding 4)",
       "basis": {
@@ -2063,9 +2036,9 @@
     {
       "id": "clock.drift",
       "level": "ok",
-      "value": "<captured clock minus now> s (launch latency 0.75 s subtracted)",
+      "value": "+0.19 s (launch latency 0.75 s subtracted)",
       "limit": "warn: |offset| > 5 s on two observations at least 5 minutes apart (clock.maxDriftSeconds)",
-      "reason": "one observation above the threshold; a second, at least 5 minutes later, is needed before a drift is reported",
+      "reason": "the distro's clock agrees with Windows'",
       "basis": {
         "source": "fullRun",
         "runId": "20000101T000000Z-1",
