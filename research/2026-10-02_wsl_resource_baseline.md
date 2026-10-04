@@ -2,6 +2,8 @@
 
 > Status: **measured 2026-10-02**, read-only diagnostics, nothing was changed on the machine.
 > Scripts that produced every number below: [diagnostics/](diagnostics/).
+> Account and project names are anonymised (2026-10-04 — this repository is public: `user`, `project-a`); every number
+> is as measured.
 >
 > Plan built on this: [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md).
 
@@ -122,7 +124,7 @@ VHDX files never shrink by themselves; space freed inside stays allocated on `C:
 - `Microsoft.VisualStudio.Code.Server` (C# Dev Kit ServiceHub) wrote **236 000** syslog lines;
   `Microsoft.CodeAnalysis.LanguageServer` 21 700.
 - Boot: `WaitForBootProcess: /sbin/init failed to start within 10000ms` on 7 days; systemd startup 4–13 s;
-  `getty@tty1` failed 49× (timeout), `snapd` 15×. Lingering for `jinx` is on (an earlier fix, see the
+  `getty@tty1` failed 49× (timeout), `snapd` 15×. Lingering for `user` is on (an earlier fix, see the
   `XDG_RUNTIME_DIR` incident).
 - `snapd` runs with only `core22` + `snapd` installed (no user snaps); `snapfuse` uses CPU at boot.
 - `misc dxg: dxgkio_query_adapter_info: Ioctl failed` ×600 — GPU paravirtualisation noise.
@@ -136,7 +138,7 @@ Measured 2026-10-02 (`ai_agents.sh` for WSL, a PowerShell inventory for Windows)
 | WSL | `claude` 2.1.223 (nvm), `codex` 0.155.0 (nvm), `gemini` (the Windows npm shim) | `~/.claude` 1.6 GB, `~/.gemini` 0.9 GB (`antigravity-cli` 666 MB), `~/.codex` 174 MB, `~/.rovodev` 6.7 MB, `~/.copilot`, `~/.cache/antigravity` | Claude: 32 project folders, 732 session files (2026-08-31 → now); Codex: 33 |
 | Windows | `claude`, `codex`, `gemini`, `agy` (Antigravity), `ollama` | `.claude` 2.8 GB, `AnthropicClaude` 1.2 GB, `.gemini` 0.5 GB, `.codex` 0.45 GB, `Roaming\Claude` 0.3 GB | Claude: **477** project folders, **2 631** session files; Codex: 385 |
 
-- One Claude project, `-home-jinx-git-scoreMeter`, holds **1.4 GB** — almost all of WSL's `~/.claude`.
+- One Claude project, `-home-user-git-project-a`, holds **1.4 GB** — almost all of WSL's `~/.claude`.
 - Every coai gate run leaves its own Claude project folder (`…-coai-wt-<hash>-r1`), so the count only grows.
 - Agents live on both sides; the Windows side is larger.
 

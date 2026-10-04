@@ -1,5 +1,5 @@
 #!/bin/bash
-# User-approved 2026-10-02: old stopped containers, all build cache, unused images, npm cache. Run as jinx.
+# User-approved 2026-10-02: old stopped containers, all build cache, unused images, npm cache. Run as user.
 S() { echo; echo "===== $1 ====="; }
 S "before"; docker system df; du -sh ~/.npm
 S "stopped/created containers idle >= 7 days (docker rm -v: anonymous volumes go, named stay)"

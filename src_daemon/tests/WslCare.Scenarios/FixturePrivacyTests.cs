@@ -29,6 +29,70 @@ public sealed class FixturePrivacyTests
             string.Join('\n', findings.Take(40)));
     }
 
+    /// <summary>
+    /// The repository-wide scan's ONE allowlist: names the tests and docs INVENT for a /home or profile path — synthetic
+    /// accounts, never a person's. Each entry says where it is used; a name not here, other than <c>user</c>, is a finding.
+    /// The running machine's user names are checked regardless of this list.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> SyntheticNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "me",      // the sandbox's own home (LinuxEnvironment.Sandboxed: <root>/home/me) and the target user of the action,
+                   // config, path-rule and scenario tests
+        "ann",     // a second invented login account (ActionEngineTests, UserCacheTests)
+        "sam",     // a third (TargetHomeTests)
+        "alice",   // invented accounts of the installer, path, privacy and identity tests (InstallWorld, HostPathsTests,
+                   // HealthTests, FixturePrivacyTests, FixtureIdentityTests, GoldenContractTests); case-insensitive, as
+                   // every entry: PathRulesTests folds "me" to "ME" on purpose
+        "Bob",     // the invented Windows profile of FixtureIdentityTests
+        "zed",     // the invented --set-default-user of InstallWorld
+        "u",       // the one-letter home of GoldenContractTests' normaliser input
+        "x",       // a placeholder home in the scanners' own planted instances (vsixCheck.test.ts, FixturePrivacy.cs)
+        "planted", // the planted name of this class's allowlist test
+    };
+
+    /// <summary>The same rules over EVERY tracked text file — the README, the plan, POST_DEPLOY, docs, workflows, the
+    /// extension, research notes and sources alike — with only <see cref="SyntheticNames"/> admitted besides <c>user</c>.
+    /// A finding is counted per file and rule, never shown with its value.</summary>
+    [Fact]
+    public void No_tracked_text_file_carries_a_real_home_or_profile_name_an_e_mail_address_or_this_machines_user_name()
+    {
+        var names = FixturePrivacy.MachineUserNames();
+        var files = FixturePrivacy.RepositoryTextFiles(ReleaseFiles.Root);
+        var findings = files.SelectMany(f => FixturePrivacy.Findings(f.Path, f.Text, names, SyntheticNames)).ToList();
+        var byFile = findings
+            .GroupBy(f => System.Text.RegularExpressions.Regex.Replace(f, @":\d+ holds ", " holds "), StringComparer.Ordinal)
+            .Select(g => $"{g.Count(),4} × {g.Key}")
+            .Order(StringComparer.Ordinal);
+
+        files.Should().Contain(f => f.Path == "README.md").And.Contain(f => f.Path == "todo/PLAN_wsl_care_daemon.md")
+            .And.Contain(f => f.Path == ".github/workflows/release-extension.yml").And.Contain(f => f.Path == "src_vs_code/src/extension.ts")
+            .And.Contain(f => f.Path == "contracts/golden/head/status.json", "the walk reaches every kind of tracked text file");
+        findings.Should().BeEmpty("no tracked text file of this public repository may carry a person — {0} finding(s), by file and rule:\n{1}",
+            findings.Count, string.Join('\n', byFile));
+    }
+
+    [Fact]
+    public void The_repository_scan_admits_only_the_listed_synthetic_names_besides_user()
+    {
+        string[] none = [];
+        var unlisted = new HashSet<string>(StringComparer.Ordinal) { "planted" };
+
+        FixturePrivacy.Findings("f", "cwd /home/planted/x", none, unlisted).Should().BeEmpty("an allowlisted synthetic name is admitted");
+        // Spelt in two parts so this source file does not itself hold a foreign home for the repository scan to find.
+        const string stranger = "/home/" + "stranger/x and /mnt/c/Users/" + "stranger";
+        FixturePrivacy.Findings("f", $"cwd {stranger}", none, unlisted).Should().HaveCount(2, "anything else is a finding");
+        FixturePrivacy.Findings("f", "cwd /home/planted/x", none).Should().ContainSingle("the fixture scan stays strict: only user");
+    }
+
+    [Theory]
+    [InlineData("Co-Authored-By: Claude <noreply@anthropic.com>")]
+    [InlineData("GIT_AUTHOR_EMAIL=test@example.invalid; contact x.y@example.org; a@b.example.com")]
+    [InlineData("user@example.invalid and root@host.test")]
+    public void Service_and_reserved_example_addresses_are_not_findings(string line)
+    {
+        FixturePrivacy.Findings("f", line, NoMachineNames).Should().BeEmpty();
+    }
+
     [Fact]
     public void The_walk_reaches_the_captured_trees_and_the_goldens_it_exists_for()
     {
@@ -53,7 +117,8 @@ public sealed class FixturePrivacyTests
     [InlineData("/mnt/c/Users/alice/AppData/Local/Temp", "a Windows profile path")]
     [InlineData("C:\\Users\\alice", "a Windows profile path")]
     [InlineData("\"profile\": \"C:\\\\Users\\\\alice\\\\.wslconfig\"", "a Windows profile path")]
-    [InlineData("contact a.person@example.org", "an e-mail address")]
+    // A non-reserved domain, spelt in two parts so this file holds no address for the repository scan to find.
+    [InlineData("contact a.person@" + "mailbox.local", "an e-mail address")]
     public void Each_rule_catches_its_planted_instance(string line, string rule)
     {
         FixturePrivacy.Findings("planted.txt", $"first line\n{line}\n", NoMachineNames)

@@ -17,7 +17,7 @@ namespace WslCare.Core.Tests.Actions;
 /// </summary>
 public sealed class TargetHomeTests : IDisposable
 {
-    private const string Accounts = "root:x:0:0::/root:/bin/bash\njinx:x:1000:1000::/home/jinx:/bin/bash\nsam:x:1001:1001::/home/sam:/bin/bash\n";
+    private const string Accounts = "root:x:0:0::/root:/bin/bash\nalice:x:1000:1000::/home/alice:/bin/bash\nsam:x:1001:1001::/home/sam:/bin/bash\n";
 
     private readonly LinuxSandbox _sandbox = new("target-home");
 
@@ -27,14 +27,14 @@ public sealed class TargetHomeTests : IDisposable
     public void As_root_the_folder_walk_and_the_user_layer_follow_the_target_users_home_and_roots_home_stays_protected()
     {
         _sandbox.Write("/etc/passwd", Accounts);
-        _sandbox.Write("/etc/wsl.conf", "[user]\ndefault=jinx\n");
+        _sandbox.Write("/etc/wsl.conf", "[user]\ndefault=alice\n");
 
         var (paths, owner) = TargetHome.Resolve(_sandbox.Paths, _sandbox.Files, privileged: true);
 
-        owner.Should().BeOfType<HomeOwner.Target>().Which.User.Name.Should().Be("jinx");
-        paths.Home.Should().Be(_sandbox.Paths.DistroPath("/home/jinx"));
-        paths.UserConfigFile.Should().StartWith(_sandbox.Paths.DistroPath("/home/jinx")).And.EndWith("config.json");
-        FolderSizes.Targets(paths).Single(t => t.Id == FolderSizes.NpmCache).Path.Should().StartWith(_sandbox.Paths.DistroPath("/home/jinx"));
+        owner.Should().BeOfType<HomeOwner.Target>().Which.User.Name.Should().Be("alice");
+        paths.Home.Should().Be(_sandbox.Paths.DistroPath("/home/alice"));
+        paths.UserConfigFile.Should().StartWith(_sandbox.Paths.DistroPath("/home/alice")).And.EndWith("config.json");
+        FolderSizes.Targets(paths).Single(t => t.Id == FolderSizes.NpmCache).Path.Should().StartWith(_sandbox.Paths.DistroPath("/home/alice"));
         paths.GitRoots.Should().Contain(r => r.StartsWith(_sandbox.Paths.Home, StringComparison.Ordinal), "the home it replaced is still protected");
     }
 
@@ -44,7 +44,7 @@ public sealed class TargetHomeTests : IDisposable
         // Gate finding #2 (plan 15c #2): ambiguity makes every USER-scoped action refuse with the reason; machine-scoped actions
         // still run. The run used to go observe-only as a whole, so an ambiguous account list stopped A1 / A4 / A10 too.
         _sandbox.Write("/etc/passwd", Accounts);
-        _sandbox.Write("/home/jinx/.config/wsl-care/config.json", "{ not json");
+        _sandbox.Write("/home/alice/.config/wsl-care/config.json", "{ not json");
         var journal = new List<string>();
 
         var (paths, owner) = TargetHome.Resolve(_sandbox.Paths, _sandbox.Files, privileged: true);
@@ -57,14 +57,14 @@ public sealed class TargetHomeTests : IDisposable
         loaded.IsObserveOnly.Should().BeFalse("without a single target user the user layer is left out, not made an error that stops every action");
         var actions = result.Should().BeOfType<ActResult.Done>().Subject.Detail.Actions;
         actions.Single(a => a.Id == "A10").Status.Should().Be(ActionStatus.Ran, "a machine-scoped action needs no target user");
-        actions.Single(a => a.Id == "A8").Should().Match<ActionOutcome>(a => a.Status == ActionStatus.Refused && a.Reason.Contains("jinx") && a.Reason.Contains("sam"));
+        actions.Single(a => a.Id == "A8").Should().Match<ActionOutcome>(a => a.Status == ActionStatus.Refused && a.Reason.Contains("alice") && a.Reason.Contains("sam"));
     }
 
     [Fact]
     public void Unprivileged_the_paths_are_this_processs_own_whatever_wsl_conf_says()
     {
         _sandbox.Write("/etc/passwd", Accounts);
-        _sandbox.Write("/etc/wsl.conf", "[user]\ndefault=jinx\n");
+        _sandbox.Write("/etc/wsl.conf", "[user]\ndefault=alice\n");
 
         var (paths, owner) = TargetHome.Resolve(_sandbox.Paths, _sandbox.Files, privileged: false);
 

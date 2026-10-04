@@ -165,7 +165,7 @@ starting points, re-tuned after one week of recorded data.
   | apt cache + disabled snap revisions | `snap list --all` disabled | `/var/cache/apt` + snap file sizes | A9 |
 
 - **Kept, report-only:** named volumes not attached to any container, with their sizes (2026-10-02:
-  ~16 GB, `mindex_qdrant_data` 10.3 GB alone) — a human decides per volume; no action exists for them.
+  ~16 GB, `named-volume-a` 10.3 GB alone) — a human decides per volume; no action exists for them.
 - `docker_data.vhdx` size and how much of it is free inside (= what compaction would return).
 - `docker system df -v` takes seconds to minutes; the full numbers come from the 4-hour run and are cached;
   `status --json` reports their age.
