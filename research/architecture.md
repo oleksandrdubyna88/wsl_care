@@ -20,9 +20,10 @@
 > owner-applied rulesets, Sonar and CodeRabbit settings (section *The release pipeline*), and from E5.S0 the threshold
 > verdicts and the product version in `status --json` and the golden contracts the extension's client tests replay
 > (section *The verdicts in `status`*), and from E5.S1 the VS Code extension's skeleton — the runner seam, `WslCareClient` over
-four read-only verbs, the strict fake `wsl.exe` and `ci-extension.yml` (section *The extension: client, runner and fake*);
-nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
-> `events follow`, `act`, `logs` and `runs`, and refuses everything else; the extension wires its client and shows nothing yet (E5.S2). This file describes
+four read-only verbs, the strict fake `wsl.exe` and `ci-extension.yml` (section *The extension: client, runner and fake*),
+and from E5.S2 its status bar, the read-only panel driven by one field map, and the focused-window polling (section *The
+extension: status bar, read-only panel and polling*); nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` verbs, `status`, `preview`, `collect`, `doctor`,
+> `events follow`, `act`, `logs` and `runs`, and refuses everything else; the extension shows the daemon's state read-only (E5.S2). This file describes
 > what exists and is rewritten as each part lands.
 
 ## What exists
@@ -87,7 +88,10 @@ nothing is released yet. `wsl-care` answers `--help`, `--version`, the `config` 
   `src/process/runnerSelection.ts`, `src/client/` (`WslCareClient`, the closed `VERBS`, the handshake, the failure
   reading, the exit-code names), `src/wsl/` (the launcher path, UTF-16LE, distribution names), `src/test/` (unit,
   structural, bundle and client-scenario tests, the strict fake, the tripwire), esbuild into `dist/extension.js`
-  (section *The extension: client, runner and fake*).
+  (section *The extension: client, runner and fake*); since E5.S2 `src/statusBar/`, `src/panel/` (the field map, the
+  view model, the webview shell and provider), `src/poll/`, `src/state/`, `media/` (the page script, its styles, the
+  activity-bar icon), the page harness and the extension-host suite (`src/test/host/`, `scripts/run-host.mjs`) (section
+  *The extension: status bar, read-only panel and polling*).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*).
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
@@ -1540,7 +1544,7 @@ and when a rule no longer matches anything; `WSL_CARE_WRITE_GOLDENS=1` regenerat
 `src_vs_code/` holds the VS Code extension's skeleton: TypeScript (the family's strict set, `noEmitOnError`), built
 in place into `out/` for the tests and bundled by esbuild into ONE file, `dist/extension.js` (CommonJS, `--platform=node
 --target=node18` — the Node of VS Code 1.85 —, `vscode` external, no source map). No runtime dependency. E5.S1 wires the
-client and shows nothing; the status bar and the panel are E5.S2's, *Install daemon* and packaging E5.S3's.
+client; the status bar and the panel are E5.S2's (next section), *Install daemon* and packaging E5.S3's.
 
 **The process model.** `extensionKind: ["ui"]`: the extension runs in the WINDOWS extension host whether the window is
 local or *Remote – WSL*. It reaches the daemon only by starting `%SystemRoot%\System32\wsl.exe` (absolute; `PATH` holds a
@@ -1656,6 +1660,205 @@ pinned, Node 22), `npm ci`, a clean `tsc`, the linter, `npm test`. Its two job c
 `.github/rulesets/branch-main.json` (`ReleaseConfigTests` derives the gating workflows and holds the list equal). Dependabot
 watches `/src_vs_code` weekly, holding `@types/vscode` at 1.85.0 (major and minor ignored), `typescript` on 6.x,
 `@types/node` on 18.x.
+
+## The extension: status bar, read-only panel and polling (E5.S2)
+
+E5.S2 hangs the first visible surface on E5.S1's client: a **status-bar item**, a **read-only panel** (a `WebviewView`
+in its own activity-bar container "WSL Care"), and the **poller** that decides when the daemon is asked. All three read
+ONE store of the newest outcome per verb, so the bar and the panel can never disagree about what the daemon last said.
+Still read-only and root-free: the same four verbs, the bundle scan unchanged (it caught the shell's first draft —
+`<main id="root">` spells the forbidden word — and the element became `id="panel"`).
+
+| Module | Role |
+|---|---|
+| `state/outcomeStore.ts` | the newest `status` / `preview` / `doctor` outcome and a "checking" flag; listeners |
+| `poll/poller.ts` | WHEN the daemon is asked (below); the only caller of `client.run` |
+| `statusBar/statusBarModel.ts` + `statusBar.ts` | the bar as a pure function of the `status` outcome; thin VS Code wiring |
+| `panel/fieldMap.ts` | THE field map — every row, its section, verb, JSON path, refresh trigger, or the epic it arrives in |
+| `panel/viewModel.ts`, `rowRenderers.ts`, `read.ts`, `jsonPath.ts`, `format.ts` | the view as a pure function of the store's snapshot and the field map |
+| `panel/panelHtml.ts`, `messages.ts`, `panelProvider.ts` | the static shell + CSP + webview options, the closed page→host message set, the `WebviewViewProvider` |
+| `media/panel.js`, `panel.css`, `wsl-care.svg` | the page script (DOM by `createElement` / `textContent` only), its theme-variable styles, the activity-bar icon |
+| `failureText.ts` | the short label and the sentence for every client failure kind, one typed table |
+| `testApi.ts` | what `activate` returns in Test mode only — the extension-host scenarios' handles |
+
+**The status bar** — `WSL RAM <used>% · swap <x>G · <n> containers` from `status --json` (`used` = 100 − `availablePercent`),
+coloured by the worst RELEVANT verdict (§15g B1): the `memory.*` and `kernel.*` verdicts — what the bar shows, plus the
+allocation-failure / OOM alerts — as `statusBarItem.warningBackground` (warn) or `statusBarItem.errorBackground`
+(critical), theme colours; `ok` and `unknown` colour nothing, and the clock / systemd / collector warnings of the head
+golden leave it uncoloured on purpose. A daemon without `verdicts` → uncoloured, the tooltip says "update the daemon to
+see warnings". A figure answered `available: false` is `?`, never 0, with its reason in the tooltip. Failures are their
+short state: "WSL stopped" (no call was made into the distribution), "WSL Care: daemon not installed", "… unsupported
+distro", "… needs a newer extension", "… Windows + WSL only" (the non-win32 notice — nothing is asked off Windows). A
+click opens the panel (`wslCare.openPanel`).
+
+**The panel** renders the field map below. Each row is, in this order: "arrives in E# — why" for a row the four verbs
+cannot fill; "checking…" before its verb was asked; its verb's failure label (per verb — an unknown `preview` major
+blanks only the `preview` rows, plan §6); "update the daemon to see this" when the answering daemon lacks the path (the
+compatibility rule — never 0); "unavailable — <reason>" for an `available: false` figure; otherwise its renderer. Lists
+(top processes, families, container stats, folders, cleanup rows, kept volumes, hygiene, checks, versions, verdicts)
+render as sub-tables. Slow parts say which full run measured them and how long ago. *Cleanup* is READ-ONLY: no
+checkboxes, no buttons ("the cleanup buttons arrive in E6"). The panel's buttons are Refresh, Settings and — only when
+the distribution is stopped — **Start WSL and check**.
+
+### The panel's field map (plan §15g B2)
+
+Generated from `src_vs_code/src/panel/fieldMap.ts` — the table the renderer reads — by `npm run fieldmap:doc`;
+`fieldMap.test.ts` fails while this block and the code differ, and `viewModel.test.ts` fails when a READ row's path is
+absent from the head goldens. *Refresh trigger*: a `status` row is refreshed by every poll of the focused window and on
+panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
+
+<!-- field-map:begin (generated from src_vs_code/src/panel/fieldMap.ts by npm run fieldmap:doc) -->
+| Section | Row | JSON path | Verb | Refresh trigger | In E5 |
+|---|---|---|---|---|---|
+| Memory | VM ceiling (MemTotal) | `vm.memory.total` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Available (MemAvailable) | `vm.memory.memAvailable` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Available, share of the ceiling | `vm.memory.availablePercent` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Free | `vm.memory.free` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Page cache | `vm.memory.pageCache` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Inactive anonymous | `vm.memory.inactiveAnon` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Anonymous | `vm.memory.anonPages` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Shared memory (shmem) | `vm.memory.shmem` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Fragmentation | `vm.memory.fragmentation` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | Unattributed | `vm.unattributed` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Memory | MemAvailable today (sparkline) | — | — | — | arrives in E6 — needs the logs / runs verbs |
+| Memory | vmmemWSL | — | — | — | arrives in E7 — read by wsl-care.exe on the Windows side (E7.S3) |
+| Memory | Host RAM | — | — | — | arrives in E7 — read by wsl-care.exe on the Windows side (E7.S3) |
+| Top holders | Top processes by held memory | `vm.processes.top` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Top holders | Process families | `vm.processes.families` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Top holders | Containers by memory (docker stats) | `slow.containerStats` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Top holders | Processes working under /mnt | `vm.processes.mntWalkers` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Swap | Swap used | `vm.memory.swapUsed` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Swap | Swap total | `vm.memory.swapTotal` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Swap | Swap trend today | — | — | — | arrives in E6 — needs the logs / runs verbs |
+| Disk | The distribution's / file system | `vm.disk` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Disk | C: free | — | — | — | arrives in E7 — read by wsl-care.exe on the Windows side (E7.S3) |
+| Disk | .vhdx sizes | — | — | — | arrives in E11 — read by the Windows collectors (E11) |
+| Folders | Big folders (the daily walk) | `folders` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Containers | Running now | `vm.containers` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Containers | Docker engine | `docker` | `preview --all --json` | panel open / Refresh | yes |
+| Containers | Docker totals (docker system df) | `totals` | `preview --all --json` | panel open / Refresh | yes |
+| Container starts | Started in the last 24 h | `containerStarts` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Cleanup (read-only) | Cleanup candidates | `rows` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup (read-only) | Kept named volumes (never cleaned) | `kept` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup (read-only) | Containers logging without max-size | `hygiene.unboundedLogs` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup (read-only) | Builder garbage collection (daemon.json) | `hygiene.builderGc` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup (read-only) | Forgotten buildx builders | `hygiene.buildkit` | `preview --all --json` | panel open / Refresh | yes |
+| Health | Daemon version | `productVersion` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Health | Healthy | `healthy` | `doctor --json` | panel open / Refresh | yes |
+| Health | Last full run | `checks[id=lastRun]` | `doctor --json` | panel open / Refresh | yes |
+| Health | Configuration error | `configError` | `doctor --json` | panel open / Refresh | yes |
+| Health | Checks | `checks` | `doctor --json` | panel open / Refresh | yes |
+| Health | Versions | `versions` | `doctor --json` | panel open / Refresh | yes |
+| Health | Verdicts | `verdicts` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Health | Clock jumps | `verdicts[id=clock.jumps]` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Health | Journal history | `verdicts[id=journal.history]` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
+| Health | Warnings since the last full run | — | — | — | arrives in E6 — needs the logs / runs verbs |
+| AI agents | AI agents (both sides, Add CLI path) | — | — | — | arrives in E7 — needs the agents list verb (E7) |
+| Last cleanup | Last cleanup (freed, Docker after) | — | — | — | arrives in E6 — needs the logs / runs verbs and the cleanup buttons (E6) |
+<!-- field-map:end -->
+
+### Webview rules (§15g M7, m10)
+
+- **A static shell** (`panelShell`): no daemon data in the HTML at all — the data arrives only by `postMessage` as a
+  plain view object (strings, numbers, arrays), so there is nothing to escape and the TypeScript doctrine's
+  `scriptInterpolation` scan stays green with an EMPTY allowlist.
+- **CSP** `default-src 'none'; script-src 'nonce-N'; style-src 'nonce-N'` with a fresh 128-bit nonce per render
+  (`crypto.randomBytes`); one script and one stylesheet, both from `media/`, both carrying the nonce; no inline code, no
+  inline handler, no inline style. The shell refuses a nonce that is not 32 hex characters and a URI with a quote or
+  angle bracket.
+- **Options**: `enableScripts: true`, `enableCommandUris: false`, `localResourceRoots: [media/]`.
+- **The page builds its DOM with `createElement` / `textContent` / `setAttribute('data-…')` only.** Every daemon string
+  is first passed through `safeText` in the host: C0/C1 controls, DEL and the bidi embedding / override / isolate
+  characters become a visible U+FFFD (a process name chosen by any distro process cannot re-order what the panel shows),
+  and anything past 500 characters is clipped with an ellipsis.
+- **A closed message set from the page**, validated EXACTLY in the host (`parsePageMessage`: no extra key, no other
+  type): `ready` (send the current view), `rendered {rows}` (how many rows the page drew — what the extension-host
+  scenarios read), `refresh`, `openSettings`, `startWsl`. E5.S3 adds `installDaemon`. Nothing from the page becomes
+  argv: each message maps to a host action built from the host's own closed verb set.
+
+### The polling policy (§15f #8, §15g M1, m3)
+
+- Only the **focused** window polls (`window.state.focused`): once when it gains focus (and at activation, if
+  focused), then every `wslCare.refreshSeconds` (default 120, schema minimum 30; a non-number reads as 120) while it
+  keeps focus; losing focus disarms the timer, and a timer that fires just after focus was lost asks nothing.
+- A poll asks **`status` only**. `preview` and `doctor` are asked when the panel opens (or becomes visible again) or
+  Refresh is pressed — `status` first; when it ends in a target failure (stopped, not installed, unsupported, WSL
+  missing / failed, distribution refused) the other two are NOT asked and their rows show the same state.
+- Every call goes through the client, which asks `wsl.exe --list --running --quiet` first and makes **no `-d` call**
+  when the distribution is not running — so neither a poll nor opening the panel starts the VM. **Start WSL and check**
+  (`wslCare.startWsl`, the panel's button) is the one call that may: `status` with `startIfStopped`, which keeps every
+  check but lets the `-d` that starts the distribution through, because the user asked for exactly that.
+- **The race, stated:** a distribution that stops between the running check and the `-d` call is started again by
+  that call; the window is the ~50 ms between two `wsl.exe` starts (each answers in 46–59 ms, measured 2026-10-03).
+- **The churn** this costs the daemon (every `status` run opens one run-log file): measured over a simulated day by
+  the real poller — 721 runs per fully focused day at 120 s, 241 for an 8-hour focused day, 2 881 at the 30 s floor —
+  [2026-10-04_extension_poll_churn.md](2026-10-04_extension_poll_churn.md). Accepting it or recording a logging-rule
+  exception is the **owner's open M1 decision**.
+
+```mermaid
+flowchart LR
+    focus["window focus<br/>onDidChangeWindowState"]
+    timer["interval<br/>wslCare.refreshSeconds"]
+    panelOpen["panel open / visible<br/>Refresh · Start WSL and check"]
+    poller["poll/poller.ts<br/>focused only · status only"]
+    client["WslCareClient<br/>running check first, no -d when stopped"]
+    store["state/outcomeStore.ts<br/>status · preview · doctor"]
+    barModel["statusBarModel.ts<br/>text · tooltip · level"]
+    bar["status-bar item<br/>theme colours"]
+    vm["panel/viewModel.ts<br/>FIELD_MAP rows"]
+    provider["panelProvider.ts<br/>static shell · nonce · CSP"]
+    page["media/panel.js<br/>createElement · textContent"]
+
+    focus --> poller
+    timer --> poller
+    panelOpen --> poller
+    poller -->|"run(verb)"| client
+    client -->|"outcome"| store
+    store --> barModel --> bar
+    store --> vm --> provider
+    provider -->|"postMessage view"| page
+    page -->|"ready · rendered · refresh · openSettings · startWsl"| provider
+    provider -->|"refresh or startIfStopped"| poller
+```
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant P as Poller
+    participant C as WslCareClient
+    participant W as wsl.exe
+    participant S as Store
+    participant V as Webview page
+    U->>P: opens the panel
+    P->>C: run status
+    C->>W: --list --quiet, --list --running --quiet
+    alt distribution stopped
+        C-->>P: stopped, no -d call
+        P->>S: status, preview, doctor are stopped
+        S-->>V: view with Start WSL and check
+        U->>V: presses Start WSL and check
+        V->>P: startWsl message
+        P->>C: run status with startIfStopped
+        C->>W: -d distro --exec wsl-care status --json
+    else running
+        C->>W: -d distro --exec wsl-care status --json
+        C-->>P: answered
+        P->>C: run preview and run doctor
+        C-->>P: answered
+    end
+    P->>S: outcomes
+    S-->>V: postMessage view, rendered with textContent
+    V-->>P: rendered rows
+```
+
+### Tests (details: [module_tests.md](module_tests.md) § *The extension*)
+
+Unit tests over the goldens for the bar, the view model, the field map (held equal to this document), the poller (a
+manual clock), the shell / CSP / options and the message set; the page script RUN in a ported `node:vm` harness that is
+stricter than a browser (every HTML sink and unmodelled member throws), over every golden set and over hostile process /
+container strings; and `@vscode/test-electron` against **1.85.0 and stable** (`npm run test:host`, two launches per
+version: with the strict fake, and in Test mode without it — which must start nothing), wired into `ci · extension` on
+both legs (xvfb on `ubuntu-24.04`, the downloads cached).
 
 ## Fail-closed resolution and the atomic write
 
@@ -1964,14 +2167,15 @@ FluentAssertions held below 8.x.
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
-| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar and panel (E5.S2), packaging and the release (E5.S3) planned |
+| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); packaging and the release (E5.S3) planned |
 
 ## Cross-repository
 
 | Repository | Relationship |
 |---|---|
-| `dew_flow_vscode_kit` | the extension's help page and display controls come from its npm package (E8). E5.S1 PORTED, not depended on: the strict tsconfig, the eslint config, `scripts/run-tests.mjs` (made recursive, with the tripwire) and `scriptInterpolation.test.ts` (`dew_flow_vscode_kit · src/test/scriptInterpolation.test.ts`, 2026-10-03); its `pageHarness.ts` waits for E5.S2's first page |
+| `dew_flow_vscode_kit` | the extension's help page and display controls come from its npm package (E8). E5.S1 PORTED, not depended on: the strict tsconfig, the eslint config, `scripts/run-tests.mjs` (made recursive, with the tripwire) and `scriptInterpolation.test.ts` (`dew_flow_vscode_kit · src/test/scriptInterpolation.test.ts`, 2026-10-03); E5.S2 PORTED its `pageHarness.ts` (`node:vm`, allowlisted globals, the deadline, `null` for a miss) and made it stricter — a proxy per element that throws on every member it does not model, every HTML sink included, plus `createElement` / `appendChild` / `replaceChildren` |
 | `dew_flow_creds_for_devs` (extension) | the model for the absolute `%SystemRoot%System32wsl.exe` and the UTF-16LE list decoding (`dew_flow_creds_for_devs · src_vs_code/src/wslProcess.ts`, `wslRelay.ts`); wsl_care decodes from the bytes (also handling `WSL_UTF8=1`), has no `windir` / `C:Windows` fallback, and kills `wsl.exe` alone — measured to end the Linux process — where the model tree-kills |
 | `dew_flow_creds_for_devs` | the model for this repository's build files, CI/CD, the logging sinks (`AnsiConsoleSink`, `DailyRunFileSink`, `LogRetention` are ports) and `install.sh` (its structure: POSIX sh, the newest tag of ONE component through the releases API, the `.sha256` check, a trap-cleaned temporary folder — `dew_flow_creds_for_devs · install.sh`; wsl_care's REQUIRES the `.sha256` where the model warns without one, adds the attestation, and never calls sudo) |
 | `dew_flow_creds_for_devs` (release) | the model for E4.S2: `release-please-config.json` (`draft` + `force-tag-creation`, `separate-pull-requests`, `simple` + `version.txt`; its `exclude-paths: [".github"]` was copied and then removed here as inert, E4 review), the App-token `release-please.yml`, the per-RID AOT release legs, ONE publish job that asserts every RID from the release and flips the draft last, the tag ruleset with the App as the only bypass, `sonarcloud.yml`, `.coderabbit.yaml` / `coderabbit-review.yml`. wsl_care differs: the build job cannot write the repository (it uploads a run artifact, the publish job uploads), every archive is attested, the `.sha256` is checked again FROM the draft, the smoke and the packing are scripts the scenario suite runs, and `main` is protected by a ruleset rather than classic branch protection |
+| `dew_flow_connect_other_ais` (extension) | the model for E5.S2's extension-host harness: `scripts/run-host.mjs` drives `@vscode/test-electron` without mocha (test-electron only downloads and launches; the scenario list inside throws, and an empty list is red), strips the `ELECTRON_RUN_AS_NODE` / `VSCODE_*` variables a run started from inside VS Code inherits, and runs under `xvfb-run -a` on Linux (`dew_flow_connect_other_ais · src_vs_code/scripts/run-host.mjs`, `src/test/host/scenarios.ts`). wsl_care runs it against 1.85.0 AND stable, twice per version (with the strict fake, and in Test mode without it) |
 | `dew_flow_vscode_kit` (release) | its `release-please.yml` (the loud missing-secret refusal, `contents: read` with every write the App token's) and its first-version bootstrap reasoning, applied here as manifest `0.0.0` + `initial-version: 0.1.0` |

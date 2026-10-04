@@ -229,3 +229,35 @@ test('the distribution is read at every call: a setting changed between calls is
   assert.ok(outcome.kind === 'answered');
   assert.equal(outcome.distro, 'Debian');
 });
+
+test('startIfStopped: a stopped distribution gets the ONE -d the user asked for ("Start WSL and check"), still after the running check', async () => {
+  const { c, rec } = client({ ...wslAnswers(['Ubuntu'], [], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.status)]: exited(0, STATUS) });
+  const outcome = await c.run('status', { startIfStopped: true });
+  assert.equal(outcome.kind, 'answered', JSON.stringify(outcome));
+  assert.deepEqual(rec.argvs(), [LIST_QUIET, LIST_VERBOSE, LIST_RUNNING, daemonArgv('Ubuntu', VERBS.status)]);
+});
+
+test('startIfStopped never lifts the distribution checks: an unlisted or out-of-pattern distribution is still refused before any -d', async () => {
+  const unlisted = client({ ...wslAnswers(['Ubuntu'], [], 'Ubuntu') }, 'Debian');
+  assert.equal(failureKind(await unlisted.c.run('status', { startIfStopped: true })), 'distroRefused');
+  assert.ok(unlisted.rec.argvs().every((a) => !a.startsWith('-d ')));
+  const shaped = client({}, '-u');
+  assert.equal(failureKind(await shaped.c.run('status', { startIfStopped: true })), 'distroRefused');
+  assert.deepEqual(shaped.rec.argvs(), []);
+});
+
+test('a poll in flight is not shared with a start the user asked for — the two are separate calls', async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const { c, rec } = client({
+    ...wslAnswers(['Ubuntu'], [], 'Ubuntu'),
+    [LIST_RUNNING]: async () => { await gate; return exitedUtf16(0, ''); },
+    [daemonArgv('Ubuntu', VERBS.status)]: exited(0, STATUS),
+  });
+  const poll = c.run('status');
+  const start = c.run('status', { startIfStopped: true });
+  release();
+  assert.equal((await poll).kind, 'stopped');
+  assert.equal((await start).kind, 'answered');
+  assert.equal(rec.argvs().filter((a) => a.startsWith('-d ')).length, 1);
+});

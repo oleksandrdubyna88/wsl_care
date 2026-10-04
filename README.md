@@ -7,7 +7,7 @@ extension that shows the state and runs cleanups on demand.
 | Folder | Holds |
 |---|---|
 | `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
-| `src_vs_code/` | the VS Code extension WSL Care — in development, read-only: today its client of the daemon and its tests — [Extension (preview)](#extension-preview) below |
+| `src_vs_code/` | the VS Code extension WSL Care — in development, read-only: its client of the daemon, the status bar and the read-only panel, and their tests — [Extension (preview)](#extension-preview) below |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -340,8 +340,22 @@ too) · 2 a period that is none of these · 4 the history exists but cannot be r
 ## Extension (preview)
 
 `src_vs_code/` is the VS Code extension **WSL Care** — in development (E5), not published yet. What exists today
-(E5.S1) is its skeleton and its client; the status bar and the panel arrive in E5.S2, packaging and the Marketplace
-release in E5.S3 (the publisher id in `package.json` is a placeholder until the owner creates it — the E5 live gate).
+(E5.S1, E5.S2): its client, a **status-bar item** and a **read-only panel**; packaging and the Marketplace release arrive
+in E5.S3 (the publisher id in `package.json` is a placeholder until the owner creates it — the E5 live gate).
+
+- **The status bar** reads `WSL RAM <used>% · swap <x>G · <n> containers`, coloured (theme colours) by the worst memory
+  or kernel verdict the daemon reports; "WSL stopped" when the distribution is not running; "daemon not installed",
+  "unsupported distro" or "needs a newer extension" when that is the answer. A daemon too old to report verdicts leaves
+  it uncoloured and says so in the tooltip. A click opens the panel.
+- **The panel** (the *WSL Care* icon in the activity bar) shows Memory, Top holders, Swap, Disk, Folders, Containers,
+  Container starts, Cleanup (read-only: what each cleanup would free — no buttons yet), Health, AI agents and Last
+  cleanup. A row the daemon cannot fill yet says when it arrives ("arrives in E6 — …"); a figure the daemon could not
+  read says why ("unavailable — <reason>"); nothing is ever shown as a made-up 0. Its buttons: **Refresh**, **Settings**
+  and, when the distribution is stopped, **Start WSL and check** — the only thing in the extension that starts WSL.
+- **When it asks.** Only the focused VS Code window polls, every `wslCare.refreshSeconds` (default 120), and only for
+  `status`; the cleanup and health figures are read when the panel opens or Refresh is pressed. A stopped distribution
+  is never asked anything (each `status` the daemon answers writes one run-log file — the cost is measured in
+  [research/2026-10-04_extension_poll_churn.md](research/2026-10-04_extension_poll_churn.md)).
 
 - **Read-only.** It asks the daemon four questions and nothing else: `status --json`, `preview --all --json`,
   `doctor --json`, `--version`. It never runs a cleanup, never runs anything as root, never changes the daemon's
@@ -361,6 +375,8 @@ cd src_vs_code
 npm ci
 npm run typecheck && npm run lint
 npm test        # compile, bundle (dist/extension.js), then every test — no test can start the real wsl.exe
+npm run test:host   # the extension in a real VS Code 1.85.0 and stable (downloads into .vscode-test/; xvfb-run on Linux)
+npm run fieldmap:doc   # rewrite the panel's field-map table in research/architecture.md from src/panel/fieldMap.ts
 ```
 
 What it measured about `wsl.exe` before the client was written: [research/2026-10-03_wsl_exe_facts.md](research/2026-10-03_wsl_exe_facts.md).

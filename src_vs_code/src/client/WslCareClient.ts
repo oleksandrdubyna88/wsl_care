@@ -23,7 +23,9 @@ import { VERB_TIMEOUT_MS, VERBS, type Verb } from './verbs';
  * <p>The distribution is validated against a strict pattern BEFORE anything starts and against `--list` before any
  * `-d`. One call per verb is in flight: a second `run` of a verb still running shares the first's outcome.
  * Remaining race, stated (§15g m3): a distribution that stops between the running check and the `-d` call is started
- * again by that call — the window is the ~50 ms between two `wsl.exe` starts.</p>
+ * again by that call — the window is the ~50 ms between two `wsl.exe` starts. The one deliberate exception is
+ * `startIfStopped` ("Start WSL and check", E5.S2): the running check is still asked, and its "not running" no longer
+ * stops the call, because starting the distribution is what the user asked for.</p>
  */
 
 export interface ClientOptions {
@@ -33,6 +35,11 @@ export interface ClientOptions {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** The `wslCare.distro` setting, read at every call; empty means WSL's default distribution. */
   readonly distroSetting: () => string;
+}
+
+/** How one call may treat a stopped distribution. */
+export interface RunOptions {
+  readonly startIfStopped?: boolean;
 }
 
 /** The ceiling of each of the three WSL questions (measured: each answers in about 50 ms). */
@@ -74,25 +81,31 @@ function startFailure(result: ProcessResult): Failure {
 }
 
 export class WslCareClient {
-  private readonly inFlight = new Map<Verb, Promise<VerbOutcome>>();
+  private readonly inFlight = new Map<string, Promise<VerbOutcome>>();
   private knownVersion: { readonly distro: string; readonly version: DaemonVersion } | undefined;
 
   constructor(private readonly options: ClientOptions) {}
 
-  /** Run `verb`; a run of the same verb already in flight is shared, never doubled. */
-  run(verb: Verb): Promise<VerbOutcome> {
-    const running = this.inFlight.get(verb);
+  /**
+   * Run `verb`; a run of the same verb already in flight is shared, never doubled — except that a run the user asked
+   * to START a stopped distribution is never folded into a poll (which would answer "stopped"), so the two are keyed
+   * apart.
+   */
+  run(verb: Verb, options: RunOptions = {}): Promise<VerbOutcome> {
+    const startIfStopped = options.startIfStopped === true;
+    const key = `${verb}${startIfStopped ? '+start' : ''}`;
+    const running = this.inFlight.get(key);
     if (running !== undefined) {
       return running;
     }
-    const started = this.runOnce(verb).finally(() => this.inFlight.delete(verb));
-    this.inFlight.set(verb, started);
+    const started = this.runOnce(verb, startIfStopped).finally(() => this.inFlight.delete(key));
+    this.inFlight.set(key, started);
 
     return started;
   }
 
-  private async runOnce(verb: Verb): Promise<VerbOutcome> {
-    const target = await this.target();
+  private async runOnce(verb: Verb, startIfStopped: boolean): Promise<VerbOutcome> {
+    const target = await this.target(startIfStopped);
     if (!target.ok) {
       return { ...target.failure, verb };
     }
@@ -104,8 +117,12 @@ export class WslCareClient {
     return this.judged(target.value.wsl, target.value.distro, verb, answer.value);
   }
 
-  /** Where to run: the launcher and a validated, listed, RUNNING distribution — or why not. */
-  private async target(): Promise<Step<{ wsl: string; distro: string }>> {
+  /**
+   * Where to run: the launcher and a validated, listed, RUNNING distribution — or why not. With `startIfStopped` (the
+   * user's "Start WSL and check") a listed distribution that is not running is still the target: the `-d` call that
+   * follows starts it, because the user asked for exactly that. Every other check stands.
+   */
+  private async target(startIfStopped: boolean): Promise<Step<{ wsl: string; distro: string }>> {
     const wsl = this.launcher();
     if (!wsl.ok) {
       return wsl;
@@ -116,7 +133,7 @@ export class WslCareClient {
     }
     const running = await this.isRunning(wsl.value, distro.value);
 
-    return running ? ok({ wsl: wsl.value, distro: distro.value }) : fail({ kind: 'stopped', distro: distro.value });
+    return targetOf(wsl.value, distro.value, running || startIfStopped);
   }
 
   private launcher(): Step<string> {
@@ -229,6 +246,11 @@ function exitedAnswer(result: Extract<ProcessResult, { kind: 'exited' }>, distro
   const parsed = parseAnswer(verb, result.stdout.toString('utf8'));
 
   return 'kind' in parsed ? fail(parsed) : ok(parsed);
+}
+
+/** The target when the distribution may be asked (running, or the user asked to start it); "stopped" otherwise. */
+function targetOf(wsl: string, distro: string, mayAsk: boolean): Step<{ wsl: string; distro: string }> {
+  return mayAsk ? ok({ wsl, distro }) : fail({ kind: 'stopped', distro });
 }
 
 function notAName(distro: string): Failure {
