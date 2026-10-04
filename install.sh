@@ -348,6 +348,20 @@ unsnappy() {
 }
 
 # --- preflight, shared -------------------------------------------------------------------------------
+
+# The command that starts THIS installer again: from the ref it is pinned to — the tag of --version, spelt
+# refs/tags/daemon-v<version> so no branch of that name can be served instead; main when no version was given — with
+# the arguments it was given (printable) plus $1, when there is one. Every "re-run" line this script prints is this one.
+rerun_command() {
+  if [ -n "$VERSION" ]; then
+    rerun_ref="refs/tags/daemon-v$VERSION"
+  else
+    rerun_ref="main"
+  fi
+  rerun_args="$ARGS_SHOWN${1:+ $1}"
+  printf 'curl -fsSL https://raw.githubusercontent.com/%s/%s/install.sh | sudo sh -s -- %s' "$REPO" "$rerun_ref" "${rerun_args# }"
+}
+
 preflight_common() {
   os=$(uname -s)
   [ "$os" = Linux ] || fail preflight "this installs into a WSL Linux distro; this is $(printable "$os")"
@@ -355,7 +369,7 @@ preflight_common() {
     say "dry run: nothing will be changed, and root is not needed for it"
   elif [ "$(id -u)" != 0 ]; then
     fail preflight "run it as root — it installs units and packages. It never calls sudo itself; re-run:
-  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sudo sh -s -- $ARGS_SHOWN"
+  $(rerun_command)"
   fi
   # sd_booted(3): systemd is PID 1 exactly when this directory exists.
   [ -d "$ROOT/run/systemd/system" ] || fail preflight "systemd is not running in this distro. Add
@@ -474,13 +488,16 @@ wsl_conf_preflight() {
 }
 
 # How to get a gh that can verify, said once for every refusal below: GitHub's own apt repository — Ubuntu's
-# package (2.45.0 on 24.04) is the one that is too old.
+# package (2.45.0 on 24.04) is the one that is too old. The skip line is the LAST resort and names the SAME installer
+# and release this run was started with (E5 code round, security #3): an install pinned with --version — what the
+# extension's *Install daemon* types — is never pointed at main's installer and the newest daemon, unverified.
 gh_advice() {
   printf '%s' "Nothing was installed. Install gh $GH_MIN_VERSION or newer from GitHub's apt repository
 (https://cli.github.com/packages; the steps: https://github.com/cli/cli/blob/trunk/docs/install_linux.md) —
-Ubuntu's own gh package is older than that — and run this again; no gh login is needed. Or proceed knowingly
-WITHOUT the attestation (the .sha256 integrity check still applies):
-  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sudo sh -s -- --skip-attestation"
+Ubuntu's own gh package is older than that — and run this again; no gh login is needed.
+LAST RESORT, knowingly WITHOUT the attestation (the .sha256 integrity check still applies) — the same installer and
+release you started, with --skip-attestation added:
+  $(rerun_command --skip-attestation)"
 }
 
 # BEFORE anything is downloaded: a gh that can verify a bundle against today's trusted root, with the flags the
