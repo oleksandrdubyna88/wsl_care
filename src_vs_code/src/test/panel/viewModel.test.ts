@@ -175,3 +175,18 @@ test('§15h #1: a crowded machine\'s preview timeout shows "too many containers 
     assert.equal(row.value, 'too many containers for a quick preview (140)', row.id);
   }
 });
+
+test('an unavailable PARENT reads "unavailable — <its reason>" on every row under it, never "update the daemon"', () => {
+  const memory = setAt(headBody('status'), 'vm.memory', { available: false, reason: '/proc/meminfo could not be read' });
+  const view = buildPanelView(snapshot({ ...goldenOutcomes(), status: answered('status', memory) }));
+  for (const id of ['memory.total', 'memory.availablePercent', 'memory.fragmentation', 'swap.used', 'swap.total']) {
+    assert.equal(rowOf(view, id).value, 'unavailable — /proc/meminfo could not be read', id);
+    assert.equal(rowOf(view, id).state, 'unavailable', id);
+  }
+
+  const vm = setAt(headBody('status'), 'vm', { available: false, reason: 'no procfs to read' });
+  const whole = buildPanelView(snapshot({ ...goldenOutcomes(), status: answered('status', vm) }));
+  for (const id of ['memory.total', 'memory.unattributed', 'holders.processes', 'disk.distro', 'containers.now']) {
+    assert.equal(rowOf(whole, id).value, 'unavailable — no procfs to read', id);
+  }
+});

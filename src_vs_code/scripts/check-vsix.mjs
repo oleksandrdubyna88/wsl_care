@@ -6,9 +6,14 @@
  *   2. the .vsix itself is unzipped and its entries are checked by src/test/support/vsixCheck.ts — exactly the allowlist,
  *      no drive / home / mnt / wsl-share path, no user name of THIS machine (derived now, never stored) or word of
  *      vsix-denylist.txt, no e-mail address, no source map, and a build stamp equal to the package version;
- *   3. with --release, the placeholder publisher is refused.
+ *   3. with --release, the placeholder publisher is refused;
+ *   4. the minimum daemon agrees everywhere it is held (E5 code round #2/#5): MIN_DAEMON_FOR_RENDER of the compiled
+ *      out/client/handshake.js, the dist/min-daemon.json the bundle step emitted, the checked-in min-daemon.json the
+ *      release guard reads at the tag, and — with --min-daemon <x.y.z>, the guard's own output — the minimum the guard
+ *      found published and verified.
  *
- *     node scripts/check-vsix.mjs [<file.vsix>] [--release]      (default: wsl-care-<version>.vsix; reads out/ — compile first)
+ *     node scripts/check-vsix.mjs [<file.vsix>] [--release] [--min-daemon <x.y.z>]
+ *                                  (default: wsl-care-<version>.vsix; reads out/ and dist/ — compile and bundle first)
  *
  * Exit 0 clean, 1 findings (each printed), 2 usage / missing inputs. The findings name the entry and the kind of leak;
  * a denied word itself is never printed.
@@ -32,12 +37,18 @@ function fail(message, code) {
 if (!existsSync(join(SUPPORT, 'vsixCheck.js'))) {
   fail('out/test/support/vsixCheck.js is missing — run `npm run compile` (or npm test) first', 2);
 }
-const { listLines, machineUserNames, vsixFindings } = require(join(SUPPORT, 'vsixCheck.js'));
+const { listLines, machineUserNames, minDaemonFindings, vsixFindings } = require(join(SUPPORT, 'vsixCheck.js'));
+const { MIN_DAEMON_FOR_RENDER } = require(join(ROOT, 'out', 'client', 'handshake.js'));
 const { readZip } = require(join(SUPPORT, 'zipFile.js'));
 
 const args = process.argv.slice(2);
 const release = args.includes('--release');
-const positional = args.filter((a) => a !== '--release');
+const minAt = args.indexOf('--min-daemon');
+const released = minAt < 0 ? undefined : args[minAt + 1];
+if (minAt >= 0 && (released === undefined || !/^\d+\.\d+\.\d+$/.test(released))) {
+  fail("--min-daemon takes the release guard's x.y.z", 2);
+}
+const positional = args.filter((a, i) => a !== '--release' && a !== '--min-daemon' && (minAt < 0 || i !== minAt + 1));
 const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const vsix = positional[0] ?? join(ROOT, `wsl-care-${version}.vsix`);
 if (positional.length > 1 || !existsSync(vsix)) {
@@ -59,9 +70,25 @@ if (JSON.stringify([...lsLines].sort()) !== JSON.stringify([...expected].sort())
   lsFindings.push(`vsce ls --no-dependencies lists [${lsLines.join(', ')}], vsix-files.txt says [${expected.join(', ')}]`);
 }
 
+/** A JSON file as parsed, or undefined when it is missing or not JSON — minDaemonFindings names either as unreadable. */
+function jsonOrUndefined(file) {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return undefined;
+  }
+}
+
 const names = machineUserNames([userInfo().username, process.env.USERNAME, process.env.USER, basename(homedir())]);
+const minDaemon = minDaemonFindings({
+  constant: MIN_DAEMON_FOR_RENDER,
+  emitted: jsonOrUndefined(join(ROOT, 'dist', 'min-daemon.json')),
+  checkedIn: jsonOrUndefined(join(ROOT, 'min-daemon.json')),
+  released,
+});
 const findings = [
   ...lsFindings,
+  ...minDaemon,
   ...vsixFindings(readZip(readFileSync(vsix)), { expectedFiles: expected, deniedWords: [...names, ...denylist], release }),
 ];
 
@@ -72,4 +99,4 @@ if (findings.length > 0) {
   }
   process.exit(1);
 }
-console.log(`check-vsix: ${basename(vsix)} — ${expected.length} allowlisted files, no leak, build stamp ${version}${release ? ', publisher set' : ''}; ${names.length} machine user name(s) and ${denylist.length} denylist word(s) checked`);
+console.log(`check-vsix: ${basename(vsix)} — ${expected.length} allowlisted files, no leak, build stamp ${version}${release ? ', publisher set' : ''}, minimum daemon ${MIN_DAEMON_FOR_RENDER}${released === undefined ? '' : ' (the guard verified it)'}; ${names.length} machine user name(s) and ${denylist.length} denylist word(s) checked`);

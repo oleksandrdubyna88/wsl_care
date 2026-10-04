@@ -14,7 +14,9 @@ import { MIN_DAEMON_FOR_RENDER } from '../client/handshake';
  *       a strict `x.y.z` pattern when the module loads — a constant outside it is a defect, refused loudly, never
  *       typed;</li>
  *   <li>the script is fetched from the TAG `daemon-v&lt;MIN&gt;`, not from `main`, so the installer is the one released
- *       with that daemon, and `--version &lt;MIN&gt;` installs exactly that release;</li>
+ *       with that daemon, and `--version &lt;MIN&gt;` installs exactly that release; the URL spells the ref in full,
+ *       `refs/tags/daemon-v&lt;MIN&gt;`, so a branch of the same name can never be served instead (raw.githubusercontent.com
+ *       answers that form — observed 2026-10-04: 200 for an existing tag of cli/cli, 404 for a missing one);</li>
  *   <li>never `--skip-attestation`: the installer verifies the archive's build-provenance attestation (plan §15e A1–A3),
  *       which is why `gh` 2.56.0 or newer is a prerequisite;</li>
  *   <li>no value from the page, a setting or the daemon reaches the text — it takes no argument at all.</li>
@@ -38,7 +40,7 @@ function pinnedVersion(version: string): string {
 export const INSTALL_VERSION = pinnedVersion(MIN_DAEMON_FOR_RENDER);
 
 /** The command typed into the terminal, verbatim. */
-export const INSTALL_COMMAND = `curl -fsSL https://raw.githubusercontent.com/${REPOSITORY}/daemon-v${INSTALL_VERSION}/install.sh | sudo sh -s -- --version ${INSTALL_VERSION}`;
+export const INSTALL_COMMAND = `curl -fsSL https://raw.githubusercontent.com/${REPOSITORY}/refs/tags/daemon-v${INSTALL_VERSION}/install.sh | sudo sh -s -- --version ${INSTALL_VERSION}`;
 
 /**
  * What the distribution must have, shown as TEXT in the modal. Nothing here is probed: `gh --version` and the like are

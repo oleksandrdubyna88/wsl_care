@@ -6,25 +6,33 @@
 #      that disagrees would publish another version to the Marketplace than the tag says);
 #   3. the publisher is a real Marketplace id, not the placeholder (the owner creates it at the E5 live gate, step 1);
 #   4. when a main ref is given, the tagged commit is on main;
-#   5. THE MECHANICAL LIVE GATE (M4): the minimum daemon this extension renders — `MIN_DAEMON_FOR_RENDER`, read from
-#      src_vs_code/src/client/handshake.ts, the one place it is defined — is a PUBLISHED, non-draft GitHub release
-#      `daemon-v<MIN>` (asked through `gh api` with the job's read-only token), AND POST_DEPLOY.md's `Last verified:`
-#      line names a date and a verified daemon at or above that minimum (`… · daemon <x.y.z> …`). An extension whose
-#      *Install daemon* types `--version <MIN>` must never ship before that daemon is out and was seen working.
+#   5. THE MECHANICAL LIVE GATE (M4): the minimum daemon this extension renders — read from the checked-in artefact
+#      src_vs_code/min-daemon.json (`{ "minDaemonForRender": "x.y.z" }`) with a JSON parser, never from TypeScript with a
+#      line pattern (E5 code round #2/#5; scripts/bundle.mjs emits the same value from `MIN_DAEMON_FOR_RENDER` at bundle
+#      time, and the extension's tests and check-vsix hold the checked-in copy equal to it) — is a PUBLISHED, non-draft
+#      GitHub release `daemon-v<MIN>` (asked through `gh api` with the job's read-only token), AND POST_DEPLOY.md's
+#      `Last verified:` line names a date and a verified daemon at or above that minimum (`… · daemon <x.y.z> …`, compared
+#      by lib/versions.sh, the functions POST_DEPLOY item 6 ranks versions with). An extension whose *Install daemon*
+#      types `--version <MIN>` must never ship before that daemon is out and was seen working.
 #
 #   release-extension-guard.sh <tag> [<main-ref>]
 #
 # Run from the repository root of the tag's checkout, with GH_REPO (owner/name) and GH_TOKEN set for `gh api`. On
-# success prints `version=…`, `publisher=…` and `min_daemon=…` — appended to $GITHUB_OUTPUT too when that is set — and
-# exits 0; any refusal exits 1 naming the reason. The tag reaches this script as an argument from the environment, never
-# pasted into shell source.
+# success prints `version=…`, `publisher=…` and `min_daemon=…` — appended to $GITHUB_OUTPUT too when that is set; each is
+# a declared output of release-extension.yml's guard job, and the build checks its .vsix against min_daemon — and exits 0;
+# any refusal exits 1 naming the reason. The tag reaches this script as an argument from the environment, never pasted
+# into shell source.
 set -euo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source-path=SCRIPTDIR source=lib/versions.sh
+. "$here/lib/versions.sh"
 
 readonly EXTENSION_VERSION_PATTERN='^[0-9]+\.[0-9]+\.[0-9]+$'
 readonly PUBLISHER_PATTERN='^[a-z0-9][a-z0-9-]*$'
 readonly PUBLISHER_PLACEHOLDER='publisher-tbd'
 readonly MANIFEST='src_vs_code/package.json'
-readonly HANDSHAKE='src_vs_code/src/client/handshake.ts'
+readonly MIN_DAEMON_FILE='src_vs_code/min-daemon.json'
 readonly STAMP_FILE='POST_DEPLOY.md'
 
 refuse() {
@@ -61,9 +69,19 @@ if [ "$#" -eq 2 ]; then
   git merge-base --is-ancestor HEAD "$2" 2> /dev/null || refuse "the tagged commit is not on $2 — a release is cut from main only"
 fi
 
-[ -f "$HANDSHAKE" ] || refuse "$HANDSHAKE is missing at this checkout"
-min="$(sed -n "s/^export const MIN_DAEMON_FOR_RENDER = '\\([0-9][0-9]*\\.[0-9][0-9]*\\.[0-9][0-9]*\\)';\$/\\1/p" "$HANDSHAKE")"
-[ -n "$min" ] && [ "$(printf '%s\n' "$min" | wc -l)" -eq 1 ] || refuse "$HANDSHAKE defines no single MIN_DAEMON_FOR_RENDER = 'x.y.z'"
+# The minimum daemon, from the JSON artefact, read by a JSON parser (python3, on every Ubuntu runner): neither a
+# reformatted TypeScript source nor a second matching line can change what the guard believes.
+[ -f "$MIN_DAEMON_FILE" ] || refuse "$MIN_DAEMON_FILE is missing at this checkout — the minimum daemon this extension renders, emitted by scripts/bundle.mjs from MIN_DAEMON_FOR_RENDER and checked in beside it"
+min="$(python3 -c '
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as f:
+        value = json.load(f).get("minDaemonForRender")
+except (ValueError, AttributeError):
+    value = None
+print(value if isinstance(value, str) else "")
+' "$MIN_DAEMON_FILE")"
+[[ "$min" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForRender \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_RENDER (npm test holds the two equal)"
 
 # The minimum daemon is a PUBLISHED release. GitHub answers a draft's tag with 404 to a read-only token, and the jq
 # filter makes a published one print `false<TAB>daemon-v<MIN>` — anything else is not a published release.
@@ -78,8 +96,7 @@ stamp="$(sed -n 's/^Last verified: //p' "$STAMP_FILE" | head -n 1)"
 [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\  ]] || refuse "$STAMP_FILE's 'Last verified:' line names no date — the minimum daemon $min was never verified live (run POST_DEPLOY.md and stamp it)"
 verified="$(printf '%s\n' "$stamp" | sed -n 's/.*daemon \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')"
 [ -n "$verified" ] || refuse "$STAMP_FILE's 'Last verified:' line names no 'daemon <x.y.z>' — stamp the verified daemon version"
-lowest="$(printf '%s\n%s\n' "$min" "$verified" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)"
-[ "$lowest" = "$min" ] || refuse "$STAMP_FILE last verified daemon $verified, older than the minimum $min this extension needs"
+version_at_least "$verified" "$min" || refuse "$STAMP_FILE last verified daemon $verified, older than the minimum $min this extension needs"
 
 for line in "version=$version" "publisher=$publisher" "min_daemon=$min"; do
   echo "$line"

@@ -106,3 +106,15 @@ test('every failure kind has a short label and a sentence, and the kind list is 
     assert.ok(text.label.length > 0 && text.sentence.length > 0, sample.kind);
   }
 });
+
+test('an unavailable PARENT (vm.memory, vm) gives "?" and ITS reason in the tooltip — never "not reported"', () => {
+  const memory = barView(answered('status', setAt(headBody('status'), 'vm.memory', { available: false, reason: '/proc/meminfo could not be read' })));
+  assert.match(memory.text, /^WSL RAM \?% · swap \?G · \d+ containers$/);
+  assert.match(memory.tooltip, /Not read: \/proc\/meminfo could not be read/);
+  assert.doesNotMatch(memory.tooltip, /not reported/);
+
+  const vm = barView(answered('status', setAt(headBody('status'), 'vm', { available: false, reason: 'no procfs to read' })));
+  assert.equal(vm.text, 'WSL RAM ?% · swap ?G · ? containers');
+  assert.match(vm.tooltip, /Not read: no procfs to read/);
+  assert.doesNotMatch(vm.tooltip, /not reported/);
+});

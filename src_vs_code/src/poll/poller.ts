@@ -7,7 +7,8 @@ import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
  * WHEN the daemon is asked (plan §15f #8, §15g M1, m3) — the one place that decides it:
  *
  * - only the FOCUSED window polls (`window.state.focused`): once when it gains focus (and at start, if focused), then
- *   every `wslCare.refreshSeconds` (default 120, never below 30) while it keeps it; losing focus disarms the timer;
+ *   every `wslCare.refreshSeconds` (default 120, never below 30, never above a day — setInterval overflows past
+ *   2^31-1 ms) while it keeps it; losing focus disarms the timer;
  * - a poll asks `status` ONLY — `preview` and `doctor` are asked when the panel opens or Refresh is pressed;
  * - every call goes through the client, which runs `wsl.exe --list --running --quiet` first and makes NO `-d` call when
  *   the distribution is not running — so neither a poll nor opening the panel ever starts the VM. A panel refresh that
@@ -22,6 +23,9 @@ import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
 
 export const DEFAULT_REFRESH_SECONDS = 120;
 export const MIN_REFRESH_SECONDS = 30;
+/** One day — the schema's `maximum` too. `setInterval` takes a 32-bit delay: above 2^31-1 ms (~24.8 days) Node clamps it to
+ * 1 ms, so an unclamped huge setting would poll the daemon every millisecond. */
+export const MAX_REFRESH_SECONDS = 86_400;
 
 /** A repeating timer, injectable so tests drive a manual clock; the returned function disarms it. */
 export interface Timers {
@@ -36,13 +40,13 @@ export interface PollerOptions {
   readonly timers: Timers;
 }
 
-/** The interval in whole seconds: the setting when it is a number, never below the floor; the default otherwise. */
+/** The interval in whole seconds: the setting when it is a number, between the floor and one day; the default otherwise. */
 export function effectiveSeconds(raw: unknown): number {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) {
     return DEFAULT_REFRESH_SECONDS;
   }
 
-  return Math.max(MIN_REFRESH_SECONDS, Math.floor(raw));
+  return Math.min(MAX_REFRESH_SECONDS, Math.max(MIN_REFRESH_SECONDS, Math.floor(raw)));
 }
 
 /** Failures that say where the daemon is (or is not) — `preview` / `doctor` would end the same way, so they are not asked. */

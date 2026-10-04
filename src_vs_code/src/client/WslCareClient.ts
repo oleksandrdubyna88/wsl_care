@@ -20,13 +20,14 @@ import { PREVIEW_CONTAINER_ASSUMPTION, VERB_TIMEOUT_MS, VERBS, type Verb } from 
  *   (measured 2026-10-03: `-- echo '$HOME'` printed `/home/<user>`, the distro's shell expanded it; `--exec echo
  *   '$HOME'` printed `$HOME` — §15f #1), never `-u`, never anything but `VERBS`.
  *
- * <p>It also builds the one other `wsl.exe` argv the extension has: `-d <distro>` for the terminal *Install daemon*
+ * <p>It also builds the one other `wsl.exe` argv the extension has: `-d <distro> --cd ~` for the terminal *Install daemon*
  * opens (`terminalTarget`, E5.S3) — built here so this stays the only module that spells a `wsl.exe` argument; the
  * client never starts that terminal itself.</p>
  *
  * <p>The distribution SETTING is validated against a strict pattern BEFORE anything starts; every distribution is
  * checked against `--list` before any `-d`, and a name WSL lists is taken as it is (only a leading `-` is refused —
- * §15h #4). One call per verb is in flight: a second `run` of a verb still running shares the first's outcome.
+ * §15h #4). One call per verb is in flight: a second `run` of a verb still running shares the first's outcome, and the
+ * `--version` the handshake may need is shared the same way.
  * Remaining race, stated (§15g m3): a distribution that stops between the running check and the `-d` call is started
  * again by that call — the window is the ~50 ms between two `wsl.exe` starts. The one deliberate exception is
  * `startIfStopped` ("Start WSL and check", E5.S2): the running check is still asked, and its "not running" no longer
@@ -48,9 +49,11 @@ export interface RunOptions {
 }
 
 /**
- * Where *Install daemon* opens its terminal (plan §15g m2): the absolute launcher and `-d <distro>` — a distribution
- * that passed the same pattern and `--list` checks as every daemon call. No `--exec`, no `-u`: the terminal is the
- * person's own login shell in that distribution, and what is typed into it is `install/installCommand.ts`'s.
+ * Where *Install daemon* opens its terminal (plan §15g m2): the absolute launcher and `-d <distro> --cd ~` — a
+ * distribution that passed the same pattern and `--list` checks as every daemon call, and its user's home folder rather
+ * than whatever Windows folder VS Code was started from (observed 2026-10-04, WSL 2.7.10.0: `--cd ~` lands in
+ * `/home/<user>`). No `--exec`, no `-u`: the terminal is the person's own login shell in that distribution, and what is
+ * typed into it is `install/installCommand.ts`'s.
  */
 export interface TerminalTarget {
   readonly kind: 'terminal';
@@ -99,6 +102,8 @@ function startFailure(result: ProcessResult): Failure {
 
 export class WslCareClient {
   private readonly inFlight = new Map<string, Promise<VerbOutcome>>();
+  /** The `--version` call in flight per distribution — `preview` and `doctor` asked at once share it (E5 code round). */
+  private readonly versionsInFlight = new Map<string, Promise<DaemonVersion>>();
   private knownVersion: { readonly distro: string; readonly version: DaemonVersion } | undefined;
   /** The running-container count of the newest `status` answer — what a timed-out `preview` is judged against. */
   private knownContainers: { readonly distro: string; readonly count: number } | undefined;
@@ -135,7 +140,7 @@ export class WslCareClient {
     }
     const distro = await this.listedDistro(wsl.value);
 
-    return distro.ok ? { kind: 'terminal', shellPath: wsl.value, shellArgs: ['-d', distro.value], distro: distro.value } : distro.failure;
+    return distro.ok ? { kind: 'terminal', shellPath: wsl.value, shellArgs: ['-d', distro.value, '--cd', '~'], distro: distro.value } : distro.failure;
   }
 
   private async runOnce(verb: Verb, startIfStopped: boolean): Promise<VerbOutcome> {
@@ -275,7 +280,20 @@ export class WslCareClient {
     return this.knownVersion?.distro === distro ? this.knownVersion.version : undefined;
   }
 
-  private async askVersion(wsl: string, distro: string): Promise<DaemonVersion> {
+  /** One `--version` per distribution at a time: a second asker (the other of `preview` / `doctor`) shares the call in
+   * flight instead of starting its own — the "one call per verb in flight" rule, for the verb `run` does not route. */
+  private askVersion(wsl: string, distro: string): Promise<DaemonVersion> {
+    const running = this.versionsInFlight.get(distro);
+    if (running !== undefined) {
+      return running;
+    }
+    const started = this.readVersion(wsl, distro).finally(() => this.versionsInFlight.delete(distro));
+    this.versionsInFlight.set(distro, started);
+
+    return started;
+  }
+
+  private async readVersion(wsl: string, distro: string): Promise<DaemonVersion> {
     const answer = await this.ask(wsl, distro, 'version');
 
     return answer.ok && answer.value.verb === 'version' ? answer.value.version : { kind: 'notRead', reason: answer.ok ? 'no version' : answer.failure.kind };
