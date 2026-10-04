@@ -2210,13 +2210,15 @@ to systemd (plan §15j B2, M2, M4, M9; the coai E6 plan round §15k). Nothing he
   reason, removes the request and exits with the refusal's code (never a silent busy).
 - **The request sweep** (`Actions/Engine/RequestSweep`), at the start of every ROOT run under the lock — `collect` (timer
   or detached) and `act --request` (through `ActRequest.UnderLock`) — never by `status` (§15k #15): history FIRST (a
-  request whose run has a line only loses its file); a request younger than 15 minutes is left alone; an older one is
+  request whose run has a line only loses its file); a request younger than 60 s (`RequestSweep.Grace`, on the MONOTONIC clock
+  within its boot — the request carries `bootId` and `createdMonotonicMs`; another boot is stale at once; only an unstamped
+  request falls back to the wall clock, and one stamped in the future is stale) is left alone; an older one is
   pending while `systemctl show --property=ActiveState --property=Job wsl-care-act@<runId>.service` shows a queued job or
   an active / activating / deactivating / reloading state (`UnitCommands.Busy`; a queued start has no active state yet);
   otherwise ONE `interrupted` line ("swept: the detached run never recorded itself — its unit … is <state> with no queued
   job, and its request is N min old") and the request goes. A unit whose state cannot be read keeps its request; the run's
   own request is never swept. Notes land in `housekeeping.requests` (collect) or the run's notes (act).
-- **`act --stop <runId> [--json]`** (`DetachedRuns.Stop`): only a WEDGED holder of `running.json` (a live one → 75, any
+- **`act --stop <runId> [--json]`** (`RunStops.Stop`): only a WEDGED holder of `running.json` (a live one → 75, any
   other → 2), and only when `/proc/<pid>/cgroup` puts its process in `wsl-care.service` or its own
   `wsl-care-act@<runId>.service` — otherwise nothing is stopped and its pid is named. It writes a stop marker
   `{state}/stops/<runId>` (`StopMarkers`), then `systemctl stop <unit>` (`UnitCommands.Stop`, a 120 s ceiling above
@@ -2275,12 +2277,31 @@ sequenceDiagram
 flowchart TB
     start(["root run: collect / act --request, under the lock"]) --> each{"each request<br/>but its own"}
     each -->|its run has a history line| rmonly["remove the file only"]
-    each -->|younger than 15 min| keep1["leave it"]
+    each -->|within 60 s, monotonic| keep1["leave it"]
     each -->|older| show["systemctl show ActiveState, Job"]
     show -->|a queued job, or active / activating / deactivating / reloading| keep2["pending: leave it"]
     show -->|unreadable| keep3["keep it, note why"]
     show -->|inactive / failed / unknown, no job| swept["ONE interrupted line, then remove it"]
 ```
+
+### What the E6.S1 review round changed (2026-10-04, plan §15l)
+
+- **`--detach` sweeps first** (D1): it takes THE run lock (busy → 75, or 76 when a wedged run holds it), runs the request sweep
+  under it, then asks the budget and the running state and writes the request; the lock is released before `systemctl start`.
+  An orphaned request no longer blocks the panel for hours: it is stale after the 60 s monotonic grace or at once from an earlier
+  boot, and the next detach records it `interrupted`.
+- **Records are kept on every way out** (D2, D4, D5): the sweep's `systemctl show` runs uncancelled; `act --request` /
+  a detached collect cut off by a signal append ONE `interrupted` "cut off before it started" line unless the run has one;
+  `collect`'s sweep is inside the cut-off guard; after the unit is seen done the history is read AGAIN before appending; an
+  unusable request is recorded `refused` and removed (by the sweep and by `act --request`).
+- **A timed-out start** (D6) asks the unit: busy → `accepted`; done → 71; unreadable → `result: unknown` (exit 0), request kept.
+- **Modes** (S1): temporaries created 0600 then made 0644 before the link / rename; every folder created 0755 level by level
+  (`PhysicalFileSystem.CreateDirectory`, `EnsureParent`); history, lock files and run logs created 0644 at most.
+- **The reader** (S2) refuses a trigger root never writes (`collect` → `manual`; `act` → `manual` / `cli`).
+- **`act --stop`** (S3) is `Cli/Commands/RunStops`: the whole cgroup path must be `/system.slice/wsl-care.service` or
+  `/system.slice/system-wsl\x2dcare\x2dact.slice/wsl-care-act@<runId>.service`.
+- **`install.sh`** (S4): no status answer counts as in flight (fails closed), `wedged` is waited on, a failed rename and
+  uninstall remove `wsl-care.new`.
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 

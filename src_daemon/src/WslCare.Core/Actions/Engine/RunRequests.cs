@@ -21,6 +21,14 @@ public sealed record RunRequestFile(int SchemaVersion, RunId RunId, string Kind,
     /// <summary>The names A4's preview showed and the person confirmed (E6.S1: <c>--only -</c>, persisted here); empty for
     /// every other request.</summary>
     public IReadOnlyList<string> Shown { get; init; } = [];
+
+    /// <summary>The boot the request was written in (<c>/proc/sys/kernel/random/boot_id</c>, E6.S1 review D3); empty when the
+    /// writer could not tell. A request of another boot is stale at once.</summary>
+    public string BootId { get; init; } = string.Empty;
+
+    /// <summary>The system-wide monotonic clock (ms since boot) when the request was written (E6.S1 review D3): within one boot
+    /// the sweep ages a request by THIS, never by the wall clock a step can move. Meaningful only with <see cref="BootId"/>.</summary>
+    public long CreatedMonotonicMs { get; init; }
 }
 
 /// <summary>
@@ -138,7 +146,8 @@ public static class RunRequests
     /// <summary>The request filed under <paramref name="runId"/>; <c>null</c> when there is none (or it vanished as it was read).</summary>
     public static RunRequestRead? Find(IHostPaths paths, IFileSystem files, RunId runId) => Read(files, File(paths, runId), runId);
 
-    private static RunId? FiledRunId(string path)
+    /// <summary>The run id a request file is named for; <c>null</c> for any other name (a temporary file, the folder itself).</summary>
+    public static RunId? FiledRunId(string path)
     {
         var name = Path.GetFileName(path);
         return name.EndsWith(Extension, StringComparison.Ordinal) ? RunId.TryParse(name[..^Extension.Length]) : null;
@@ -159,7 +168,7 @@ public static class RunRequests
         {
             return JsonSerializer.Deserialize(bytes, WslCareJsonContext.Default.RunRequestFile) switch
             {
-                { RunId: not null, Kind: not null, Actions: not null } file when file.RunId == filedAs => Validated(path, file with { Shown = file.Shown ?? [] }),
+                { RunId: not null, Kind: not null, Actions: not null } file when file.RunId == filedAs => Validated(path, file with { Shown = file.Shown ?? [], BootId = file.BootId ?? string.Empty }),
                 { RunId: not null } other => new RunRequestRead.Bad(path, $"names run {other.RunId} but is filed as {filedAs}"),
                 _ => new RunRequestRead.Bad(path, "does not parse: it is not a run request"),
             };
@@ -179,9 +188,16 @@ public static class RunRequests
     private static string ContentProblem(RunRequestFile file) =>
         file.SchemaVersion != SchemaVersion.Current ? $"has schemaVersion {file.SchemaVersion}, not {SchemaVersion.Current}"
         : file.Kind is not ("act" or "collect") ? "names a kind that is neither act nor collect"
+        : !KnownTrigger(file) ? $"names the trigger {file.Trigger}, which root never writes for a {file.Kind} request"
         : !KnownActions(file) ? $"names an action this daemon does not know for a {file.Kind} request"
         : !ValidShown(file.Shown) ? $"carries a shown list that is not at most {ShownList.MaxNames} anonymous volume names (64 lowercase hex digits)"
         : string.Empty;
+
+    /// <summary>What root writes (E6.S1 review S2): a detached act is the panel's (<c>manual</c>) or a terminal's (<c>cli</c>), a
+    /// detached collect is the panel's — never <c>timer</c>, whose full run ACTS (a <c>collect</c> request marked timer would make
+    /// <c>act --request</c> run the timer pass).</summary>
+    private static bool KnownTrigger(RunRequestFile file) =>
+        file.Kind == "collect" ? file.Trigger == RunTrigger.Manual : file.Trigger is RunTrigger.Manual or RunTrigger.Cli;
 
     private static bool KnownActions(RunRequestFile file) =>
         file.Kind == "collect" ? file.Actions.SequenceEqual(["collect"]) : file.Actions.Count > 0 && file.Actions.All(a => ActionId.Find(a) is not null);

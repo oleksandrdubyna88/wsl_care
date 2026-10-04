@@ -127,7 +127,7 @@ public static class CollectRun
 
         try
         {
-            var requests = await RequestSweep.ApplyAsync(c.Paths, c.Files, c.Commands, started, runId, cancellationToken).ConfigureAwait(false);
+            var requests = await SweptOrRecordedAsync(c, running, started, runId).ConfigureAwait(false);
             var housekeeping = Housekeep(c, started) with { Running = SweepNote(sweep, owned), Requests = requests };
             var measured = await MeasuredOrRecordedAsync(c, running, owned, housekeeping, cancellationToken).ConfigureAwait(false);
             var (detail, engine) = await TimerPassAsync(c, measured, runId, started, cancellationToken).ConfigureAwait(false);
@@ -156,18 +156,33 @@ public static class CollectRun
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            RecordCutOff(c, running);
+            RecordCutOff(c, running, "during the measurement");
             throw;
         }
     }
 
-    private static void RecordCutOff(CollectContext c, RunningFile running)
+    /// <summary>The request sweep — and when a cancellation cuts it off, the same ONE <c>interrupted</c> line as a cut-off
+    /// measurement (E6.S1 review D2: the sweep ran outside that guard, and a signal there left zero lines for the run).</summary>
+    private static async Task<IReadOnlyList<string>> SweptOrRecordedAsync(CollectContext c, RunningFile running, DateTimeOffset started, RunId runId)
+    {
+        try
+        {
+            return await RequestSweep.ApplyAsync(c.Paths, c.Files, c.Commands, c.Processes, started, runId).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            RecordCutOff(c, running, "while it swept the request folder");
+            throw;
+        }
+    }
+
+    private static void RecordCutOff(CollectContext c, RunningFile running, string when)
     {
         try
         {
             new RunRecordWriter(c.Paths, c.Files).Append(new RunRecord(Core.SchemaVersion.Current, running.RunId, running.Trigger, running.StartedAt, c.Clock.GetUtcNow(), RunOutcome.Interrupted, [])
             {
-                Reason = $"interrupted by {c.InterruptCause()} during the measurement: nothing was recorded but this line",
+                Reason = $"interrupted by {c.InterruptCause()} {when}: nothing was recorded but this line",
             });
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)

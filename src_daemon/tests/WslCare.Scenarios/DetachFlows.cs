@@ -152,6 +152,66 @@ public sealed class DetachFlows
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
     }
 
+    /// <summary>E6.S1 review D1: a request an earlier boot left behind (the distro stopped, its job dropped) is stale at once — the
+    /// next detach sweeps it (one interrupted line) and is accepted, instead of answering busy until a root collect hours later.</summary>
+    [Fact]
+    public async Task A_detach_sweeps_a_request_an_earlier_boot_left_behind_and_is_accepted()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), LinuxOnly);
+        using var home = Home("detach-orphan");
+        var created = DateTimeOffset.UtcNow.AddSeconds(-5);
+        var orphan = new RunRequestFile(SchemaVersion.Current, RunId.New(created, 4322), "act", ["A10"], RunTrigger.Manual, created) { BootId = "an-earlier-boot", CreatedMonotonicMs = 1_000 };
+        RunRequests.Create(home.Paths, Files(home), orphan).Should().BeOfType<ExclusiveCreate.Created>();
+        home.Answer(new FakeAnswer(SystemdCommands.Systemctl, ["show", "--property=ActiveState", "--property=Job", $"wsl-care-act@{orphan.RunId}.service"], 0, home.WriteFile("orphan.out", "ActiveState=inactive\nJob=\n"), string.Empty));
+
+        var answer = Accepted(await home.RunAsync("act", "A10", "--confirm", "--detach", "--json"));
+
+        var swept = History(home).Should().ContainSingle().Subject;
+        swept.RunId.Should().Be(orphan.RunId);
+        swept.Outcome.Should().Be(RunOutcome.Interrupted);
+        swept.Reason.Should().Contain("written in an earlier boot");
+        Requests(home).Should().Equal($"{answer.RunId}.json");
+    }
+
+    /// <summary>E6.S1 review S1: under a root umask of 000 nothing the daemon writes may come out group or world writable — the
+    /// request folder and request, the stop folder and marker, the state's folders, the history and a run's detail.</summary>
+    [Fact]
+    public async Task Under_umask_000_nothing_the_daemon_writes_is_group_or_world_writable()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            Assert.Skip(LinuxOnly);
+            return;
+        }
+
+        using var home = Home("detach-umask-000");
+        home.Answer(new FakeAnswer(SystemdCommands.Systemctl, ["stop"], 0, string.Empty, string.Empty) { Prefix = true });
+        Accepted(await Umask000(home, "act", "A10", "--confirm", "--detach", "--json"));
+        Requests(home).Should().ContainSingle();
+        File.Delete(Path.Combine(RunRequests.Directory(home.Paths), Requests(home)[0]));
+        (await Umask000(home, "act", "A10", "--confirm", "--json")).Exit.Should().Be((int)ExitCode.Ok);
+        ReadContractScenes.Stage(home, "wedged");
+        var wedged = System.Text.Json.JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(home.Paths)), WslCareJsonContext.Default.RunningFile)!.RunId.Text;
+        var cgroup = Path.Combine(((LinuxHostPaths)home.Paths).ProcRoot, Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture), "cgroup");
+        Directory.CreateDirectory(Path.GetDirectoryName(cgroup)!);
+        File.WriteAllText(cgroup, "0::/system.slice/wsl-care.service\n");
+        var stop = await Umask000(home, "act", "--stop", wedged, "--json");
+        stop.Exit.Should().Be((int)ExitCode.Ok, stop.Stderr);
+
+        var writable = Directory.EnumerateFileSystemEntries(home.Paths.StateDirectory, "*", SearchOption.AllDirectories).Prepend(home.Paths.StateDirectory)
+            .Select(p => (Path: p, Mode: ModeOf(p)))
+            .Where(e => (e.Mode & (UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0)
+            .Select(e => $"{Path.GetRelativePath(home.SandboxRoot, e.Path)} {e.Mode}");
+        writable.Should().BeEmpty("a root umask of 000 must not open the state to every account");
+        Directory.Exists(StopMarkers.Directory(home.Paths)).Should().BeTrue("the stop folder was made");
+        File.Exists(RunHistory.File(home.Paths)).Should().BeTrue("the act recorded");
+    }
+
+    private static UnixFileMode ModeOf(string path) => OperatingSystem.IsWindows() ? default : File.GetUnixFileMode(path);
+
+    private static Task<ChildResult> Umask000(ScenarioHome home, params string[] args) =>
+        ChildProcess.RunAsync("/bin/sh", ["-c", "umask 000 && exec \"$0\" \"$@\"", ChildProcess.BesideTheTests(CommandLine.BinaryName), .. args], home.Environment, home.WorkingDirectory);
+
     [Fact]
     public async Task Without_systemd_a_detach_is_refused_with_69_and_nothing_is_written_or_started()
     {

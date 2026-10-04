@@ -59,8 +59,12 @@ public sealed class DetachedRunTests : IDisposable
     private void UnitAnswers(RunRequestFile request, string showOutput, int exit = 0) =>
         _runner.Script(UnitCommands.Show(request.RunId).Argv, exit, showOutput, exit == 0 ? string.Empty : "Failed to connect to bus");
 
+    private FakeProcessTable _table = new();
+
     private Task<IReadOnlyList<string>> Sweep(RunId? own = null) =>
-        RequestSweep.ApplyAsync(_sandbox.Paths, _sandbox.Files, _runner, Now, own, CancellationToken.None);
+        RequestSweep.ApplyAsync(_sandbox.Paths, _sandbox.Files, _runner, _table, Now, own);
+
+    private const string ThisBoot = "boot-of-the-test";
 
     // ---------- the request, written exclusively (§15k #1 / #14) ----------
 
@@ -113,9 +117,9 @@ public sealed class DetachedRunTests : IDisposable
     }
 
     [Fact]
-    public async Task A_request_younger_than_fifteen_minutes_is_left_alone()
+    public async Task A_request_younger_than_its_grace_is_left_alone()
     {
-        var request = Plant(Request(4, RequestSweep.StaleAfter - TimeSpan.FromSeconds(1)));
+        var request = Plant(Request(4, RequestSweep.Grace - TimeSpan.FromSeconds(1)));
 
         (await Sweep()).Should().BeEmpty();
 
@@ -287,6 +291,161 @@ public sealed class DetachedRunTests : IDisposable
         result.Should().BeOfType<ActResult.Busy>();
         heard.Should().BeFalse();
         swept.Should().BeFalse("the sweep runs under the lock only");
+    }
+
+
+    // ---------- the E6.S1 review round ----------
+
+    /// <summary>D3: within one boot the MONOTONIC clock ages a request — a wall clock stepped two hours forward never sweeps a
+    /// request its unit has not taken yet.</summary>
+    [Fact]
+    public async Task A_stamped_request_is_aged_by_the_monotonic_clock_not_a_wall_clock_stepped_forward()
+    {
+        _table = new FakeProcessTable().Booted(ThisBoot, 10_000_000);
+        var request = Plant(Request(20, TimeSpan.FromHours(2)) with { BootId = ThisBoot, CreatedMonotonicMs = 10_000_000 - 20_000 });
+        UnitAnswers(request, "ActiveState=inactive\n");
+
+        (await Sweep()).Should().BeEmpty();
+
+        Queued(request).Should().BeTrue("20 s on the monotonic clock is inside the grace, whatever the wall clock says");
+        History().Should().BeEmpty();
+        _runner.Requests.Should().BeEmpty();
+    }
+
+    /// <summary>D3: a wall clock stepped BACK does not keep a stale request queued — two monotonic minutes are two minutes.</summary>
+    [Fact]
+    public async Task A_stamped_request_past_its_monotonic_grace_is_swept_though_the_wall_clock_says_it_is_new()
+    {
+        _table = new FakeProcessTable().Booted(ThisBoot, 10_000_000);
+        var request = Plant(Request(21, TimeSpan.Zero) with { BootId = ThisBoot, CreatedMonotonicMs = 10_000_000 - 120_000 });
+        UnitAnswers(request, "ActiveState=inactive\n");
+
+        await Sweep();
+
+        Queued(request).Should().BeFalse();
+        History().Should().ContainSingle().Which.Reason.Should().Contain("its request is 2 min old");
+    }
+
+    /// <summary>D3: a request of an earlier boot is stale at once (its unit cannot be running since) — still asked of systemd.</summary>
+    [Fact]
+    public async Task A_request_of_an_earlier_boot_is_stale_at_once_and_still_asked_of_systemd()
+    {
+        _table = new FakeProcessTable().Booted(ThisBoot, 5_000);
+        var request = Plant(Request(22, TimeSpan.Zero) with { BootId = "an-earlier-boot", CreatedMonotonicMs = 4_000 });
+        UnitAnswers(request, "ActiveState=inactive\n");
+
+        await Sweep();
+
+        Queued(request).Should().BeFalse();
+        History().Should().ContainSingle().Which.Reason.Should().Contain("written in an earlier boot");
+        _runner.Commands.Should().ContainSingle();
+    }
+
+    /// <summary>S2: a request stamped in the future is never held forever — it is past any grace, and its unit decides.</summary>
+    [Fact]
+    public async Task An_unstamped_request_claiming_a_future_creation_is_stale_not_held_forever()
+    {
+        var request = Plant(Request(23, -TimeSpan.FromDays(1)));
+        UnitAnswers(request, "ActiveState=inactive\n");
+
+        await Sweep();
+
+        Queued(request).Should().BeFalse();
+        History().Should().ContainSingle().Which.Reason.Should().Contain("in the future");
+    }
+
+    /// <summary>D4: the run recorded itself (here: refused) between the sweep's history snapshot and its look at the unit — the
+    /// sweep reads the history again and adds no second terminal line.</summary>
+    [Fact]
+    public async Task A_run_that_records_itself_while_the_sweep_looks_gets_no_second_terminal_line()
+    {
+        var request = Plant(Request(24, TimeSpan.FromHours(1)));
+        _runner.ScriptEffect(argv => argv.SequenceEqual(UnitCommands.Show(request.RunId).Argv), _ =>
+        {
+            new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Refused, []) { Reason = "busy: the timer" });
+            return RecordingCommandRunner.Exited(0, "ActiveState=inactive\n");
+        });
+
+        await Sweep();
+
+        History().Should().ContainSingle().Which.Outcome.Should().Be(RunOutcome.Refused, "one run id, one terminal line");
+        Queued(request).Should().BeFalse();
+    }
+
+    /// <summary>D5: a request that cannot be used is recorded refused naming why, then removed — it held the state unreadable and
+    /// refused every detach forever.</summary>
+    [Fact]
+    public async Task An_unusable_request_is_recorded_refused_with_its_reason_and_removed()
+    {
+        var runId = RunId.New(Now, 25);
+        var path = RunRequests.File(_sandbox.Paths, runId);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, $$"""{"schemaVersion":1,"runId":"{{runId}}","kind":"act","actions":["A99"],"trigger":"manual","createdAt":"2026-10-02T12:00:00+00:00"}""");
+
+        await Sweep();
+
+        File.Exists(path).Should().BeFalse();
+        var line = History().Should().ContainSingle().Subject;
+        line.RunId.Should().Be(runId);
+        line.Outcome.Should().Be(RunOutcome.Refused);
+        line.Reason.Should().Contain("could not be used").And.Contain("action");
+    }
+
+    /// <summary>S2: a request root never writes — a collect marked timer (whose full run ACTS), an act marked timer — is refused
+    /// by the reader.</summary>
+    [Theory]
+    [InlineData("collect", "collect", "timer")]
+    [InlineData("collect", "collect", "cli")]
+    [InlineData("act", "A10", "timer")]
+    public void A_request_with_a_trigger_root_never_writes_is_refused_by_the_reader(string kind, string action, string trigger)
+    {
+        var runId = RunId.New(Now, 26);
+        var path = RunRequests.File(_sandbox.Paths, runId);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, $$"""{"schemaVersion":1,"runId":"{{runId}}","kind":"{{kind}}","actions":["{{action}}"],"trigger":"{{trigger}}","createdAt":"2026-10-02T12:00:00+00:00"}""");
+
+        RunRequests.Find(_sandbox.Paths, _sandbox.Files, runId).Should().BeOfType<RunRequestRead.Bad>().Which.Why.Should().Contain("trigger");
+    }
+
+    /// <summary>D2: a signal during the collect's request sweep used to leave ZERO lines (the sweep ran outside the cut-off guard).</summary>
+    [Fact]
+    public async Task A_collect_cut_off_while_it_sweeps_the_request_folder_still_leaves_one_interrupted_line()
+    {
+        var stale = Plant(Request(27, TimeSpan.FromHours(1)));
+        var runner = new RecordingCommandRunner().ScriptEffect(argv => argv.SequenceEqual(UnitCommands.Show(stale.RunId).Argv), _ => throw new OperationCanceledException("a signal mid-sweep"));
+        var context = CollectContextFor(runner) with { InterruptCause = () => "SIGTERM" };
+
+        var run = async () => await CollectRun.RunAsync(context, CancellationToken.None);
+
+        await run.Should().ThrowAsync<OperationCanceledException>();
+        History().Should().ContainSingle().Which.Reason.Should().Be("interrupted by SIGTERM while it swept the request folder: nothing was recorded but this line");
+    }
+
+    /// <summary>S1: a temporary file is never group or world writable while it is filled — created 0600, made 0644 after.</summary>
+    [Fact]
+    public void A_temporary_file_is_created_owner_only_and_made_readable_only_once_written()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            Assert.Skip("mode bits are the distro's: run in WSL or on the Linux legs");
+            return;
+        }
+
+        var seen = new List<UnixFileMode>();
+        var files = new PhysicalFileSystem(_sandbox.Paths, PhysicalFileSystem.ReadLinkTarget, (step, path) =>
+        {
+            if (step == AtomicWriteStep.TempWritten && OperatingSystem.IsLinux())
+            {
+                seen.Add(File.GetUnixFileMode(path));
+            }
+        });
+        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
+
+        RunRequests.Create(_sandbox.Paths, files, Request(28, TimeSpan.Zero)).Should().BeOfType<ExclusiveCreate.Created>();
+        RunningState.Write(_sandbox.Paths, files, new RunningFile(1, RunId.New(Now, 28), RunTrigger.Manual, ["A10"], "A10", Pid, OwnStart, Now, Now));
+
+        seen.Should().Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        File.GetUnixFileMode(RunningState.File(_sandbox.Paths)).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead, "the unprivileged status reads it");
     }
 
     // ---------- a detached collect ----------
