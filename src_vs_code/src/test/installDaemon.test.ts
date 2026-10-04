@@ -60,13 +60,13 @@ function deps(target: () => Promise<TerminalTarget | Failure>, answer: boolean):
   };
 }
 
-const UBUNTU: TerminalTarget = { kind: 'terminal', shellPath: WSL, shellArgs: ['-d', 'Ubuntu'], distro: 'Ubuntu' };
+const UBUNTU: TerminalTarget = { kind: 'terminal', shellPath: WSL, shellArgs: ['-d', 'Ubuntu', '--cd', '~'], distro: 'Ubuntu' };
 
 test('the command is pinned to the compiled minimum daemon: the installer from its TAG and --version of the same', () => {
   assert.equal(INSTALL_VERSION, MIN_DAEMON_FOR_RENDER);
   assert.equal(
     INSTALL_COMMAND,
-    `curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/daemon-v${MIN_DAEMON_FOR_RENDER}/install.sh | sudo sh -s -- --version ${MIN_DAEMON_FOR_RENDER}`,
+    `curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v${MIN_DAEMON_FOR_RENDER}/install.sh | sudo sh -s -- --version ${MIN_DAEMON_FOR_RENDER}`,
   );
 });
 
@@ -81,7 +81,7 @@ test('confirmed: the distribution is resolved first, then the modal, then ONE te
   const { deps: d, seen } = deps(() => Promise.resolve(UBUNTU), true);
   assert.deepEqual(await installDaemon(d), { kind: 'typed', distro: 'Ubuntu' });
   assert.deepEqual(seen.events, ['target', 'confirm', 'openTerminal', 'show', 'sendText']);
-  assert.deepEqual(seen.terminals, [{ name: 'WSL Care — install (Ubuntu)', shellPath: WSL, shellArgs: ['-d', 'Ubuntu'] }]);
+  assert.deepEqual(seen.terminals, [{ name: 'WSL Care — install (Ubuntu)', shellPath: WSL, shellArgs: ['-d', 'Ubuntu', '--cd', '~'] }]);
   assert.deepEqual(seen.typed, [{ text: INSTALL_COMMAND, addNewLine: false }], 'sendText(command, false): typed, never run');
 });
 
@@ -116,7 +116,7 @@ test('with the real client: the terminal is opened in the LISTED distribution, b
   const { deps: d, seen } = deps(() => client.terminalTarget(), true);
   assert.deepEqual(await installDaemon(d), { kind: 'typed', distro: 'Debian' });
   assert.deepEqual(rec.argvs(), [LIST_QUIET]);
-  assert.deepEqual(seen.terminals[0]?.shellArgs, ['-d', 'Debian']);
+  assert.deepEqual(seen.terminals[0]?.shellArgs, ['-d', 'Debian', '--cd', '~'], 'the terminal starts in the home folder, not in whatever folder VS Code was started from');
   assert.equal(seen.terminals[0]?.shellPath, WSL);
 });
 

@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import * as ts from 'typescript';
 
+import { MAX_REFRESH_SECONDS } from '../poll/poller';
 import { DISTRO_NAME } from '../wsl/distros';
 import { decodePng } from './support/iconPng';
 import { EXTENSION_ROOT, REPOSITORY_ROOT } from './support/paths';
@@ -19,6 +20,7 @@ interface Setting {
   readonly default: unknown;
   readonly scope?: string;
   readonly minimum?: number;
+  readonly maximum?: number;
   readonly pattern?: string;
 }
 
@@ -115,11 +117,12 @@ test('wslCare.distro: empty means WSL\'s default; the schema pattern is the clie
   assert.equal(distro?.pattern, `^$|${DISTRO_NAME.source}`);
 });
 
-test('wslCare.refreshSeconds: 120 by default, never below 30', () => {
+test('wslCare.refreshSeconds: 120 by default, never below 30, never above a day (setInterval overflows past 2^31-1 ms)', () => {
   const refresh = settings['wslCare.refreshSeconds'];
   assert.equal(refresh?.type, 'integer');
   assert.equal(refresh?.default, 120);
   assert.equal(refresh?.minimum, 30);
+  assert.equal(refresh?.maximum, MAX_REFRESH_SECONDS, 'the schema and the clamp say the same day');
 });
 
 test('no runtime dependency ships, and every development dependency is pinned to one version', () => {

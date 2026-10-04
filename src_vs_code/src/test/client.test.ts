@@ -212,6 +212,30 @@ test('preview and doctor reuse the version status already read; with none known 
   assert.equal(warm.rec.argvs().filter((x) => x === daemonArgv('Ubuntu', VERBS.version)).length, 0, 'status already said which daemon it is');
 });
 
+test('preview and doctor asked AT ONCE with no version known share ONE --version call — never two in flight', async () => {
+  let release: (result: ProcessResult) => void = () => undefined;
+  const pending = new Promise<ProcessResult>((resolve) => { release = resolve; });
+  const script = {
+    ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'),
+    [daemonArgv('Ubuntu', VERBS.doctor)]: exited(0, JSON.stringify(golden('head', 'doctor'))),
+    [daemonArgv('Ubuntu', VERBS.preview)]: exited(0, JSON.stringify(golden('head', 'preview'))),
+    [daemonArgv('Ubuntu', VERBS.version)]: () => pending,
+  };
+  const { c, rec } = client(script);
+  const both = Promise.all([c.run('preview'), c.run('doctor')]);
+  for (let i = 0; i < 50 && rec.argvs().filter((x) => x === daemonArgv('Ubuntu', VERBS.doctor) || x === daemonArgv('Ubuntu', VERBS.preview)).length < 2; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  for (let i = 0; i < 50; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  release(exited(0, '0.1.0\n'));
+  const [preview, doctor] = await both;
+  assert.ok(preview.kind === 'answered' && doctor.kind === 'answered', JSON.stringify([preview.kind, doctor.kind]));
+  assert.equal(rec.argvs().filter((x) => x === daemonArgv('Ubuntu', VERBS.version)).length, 1, 'one --version for both verbs');
+  assert.deepEqual(preview.daemonVersion, doctor.daemonVersion);
+});
+
 test('an unknown schemaVersion blanks ONLY that verb: preview refused, status and doctor still answered', async () => {
   const preview2 = JSON.stringify({ ...golden('head', 'preview'), schemaVersion: 2 });
   const { c } = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', VERBS.status)]: exited(0, STATUS), [daemonArgv('Ubuntu', VERBS.preview)]: exited(0, preview2), [daemonArgv('Ubuntu', VERBS.doctor)]: exited(0, JSON.stringify(golden('head', 'doctor'))) });
@@ -300,7 +324,7 @@ test('an unlisted setting is refused naming both the distributions WSL lists and
 
 test('terminalTarget: the absolute launcher and -d <the listed distribution> — asked of --list only, never -d, never running', async () => {
   const { c, rec } = client(wslAnswers(['Ubuntu', 'Debian'], [], 'Ubuntu'), 'Debian');
-  assert.deepEqual(await c.terminalTarget(), { kind: 'terminal', shellPath: WSL, shellArgs: ['-d', 'Debian'], distro: 'Debian' });
+  assert.deepEqual(await c.terminalTarget(), { kind: 'terminal', shellPath: WSL, shellArgs: ['-d', 'Debian', '--cd', '~'], distro: 'Debian' });
   assert.deepEqual(rec.argvs(), [LIST_QUIET], 'a stopped distribution is still a target: the person asked for a shell there');
 });
 

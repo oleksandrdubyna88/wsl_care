@@ -27,11 +27,19 @@ public sealed class ReleaseExtensionScriptFlows
     private sealed record Checkout(string Dir, IReadOnlyDictionary<string, string?> Env, string GhLog);
 
     /// <summary>A checkout of the tag: package.json, the handshake's minimum, POST_DEPLOY.md — and a fake gh.</summary>
-    private static Checkout Make(TempRoot root, string version = "0.1.0", string publisher = "wsl-care-dev", string min = "0.1.0", string stamp = Verified, string? ghAnswer = Published)
+    /// <summary>The checked-in artefact the guard reads the minimum daemon from (E5 code round #2/#5).</summary>
+    private static string MinDaemonJson(string min) => $"{{\n  \"minDaemonForRender\": \"{min}\"\n}}\n";
+
+    private static Checkout Make(TempRoot root, string version = "0.1.0", string publisher = "wsl-care-dev", string min = "0.1.0", string stamp = Verified, string? ghAnswer = Published, string? handshake = null, string? minDaemonJson = "")
     {
         var dir = root.Dir("checkout");
         root.File("checkout/src_vs_code/package.json", $"{{\n  \"name\": \"wsl-care\",\n  \"displayName\": \"WSL Care\",\n  \"version\": \"{version}\",\n  \"publisher\": \"{publisher}\",\n  \"scripts\": {{\n    \"version\": \"not-the-top-level-one\"\n  }}\n}}\n");
-        root.File("checkout/src_vs_code/src/client/handshake.ts", $"export const SUPPORTED_SCHEMA: readonly number[] = [1];\n\nexport const MIN_DAEMON_FOR_RENDER = '{min}';\n");
+        root.File("checkout/src_vs_code/src/client/handshake.ts", handshake ?? $"export const SUPPORTED_SCHEMA: readonly number[] = [1];\n\nexport const MIN_DAEMON_FOR_RENDER = '{min}';\n");
+        if (minDaemonJson is not null)
+        {
+            root.File("checkout/src_vs_code/min-daemon.json", minDaemonJson.Length == 0 ? MinDaemonJson(min) : minDaemonJson);
+        }
+
         root.File("checkout/POST_DEPLOY.md", $"# Post-deploy checks\n\nTarget: x\n{stamp}\n\n| # | a | b | c |\n");
         var log = root.Under("gh.log");
         var gh = root.File("bin/gh", "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\n[ -n \"$FAKE_GH_FAIL\" ] && { echo 'HTTP 404: Not Found' >&2; exit 1; }\nprintf '%s\\n' \"$FAKE_GH_ANSWER\"\n");
@@ -139,6 +147,66 @@ public sealed class ReleaseExtensionScriptFlows
 
         result.Exit.Should().Be(0, result.Stdout + result.Stderr);
         result.StdoutLines.Should().Contain("min_daemon=0.2.0");
+    }
+
+    /// <summary>E5 code round #6: ONE version comparison (<c>lib/versions.sh</c>, POSIX sh) for the guard's "verified daemon
+    /// at or above the minimum" and POST_DEPLOY item 6's "the tag's version is served and nothing above it" — run under
+    /// <c>/bin/sh</c>, as post-deploy-check runs the item.</summary>
+    [Fact]
+    public async Task The_shared_version_ranking_compares_numbers_and_says_whether_a_version_is_listed_with_none_above_it()
+    {
+        Linux();
+        const string script = """
+            . "$1"
+            version_at_least 0.10.0 0.9.0 && echo at-least-ten
+            version_at_least 0.1.0 0.1.0 && echo at-least-equal
+            version_at_least 0.0.9 0.1.0 || echo below
+            printf '0.9.0\n0.10.0\n0.2.0\n' | highest_version
+            printf '0.1.0\n0.2.0\n' | is_top_version 0.2.0 && echo top
+            printf '0.1.0\n0.3.0\n0.2.0\n' | is_top_version 0.2.0 || echo something-above
+            printf '0.1.0\n0.3.0\n' | is_top_version 0.2.0 || echo not-listed
+            printf '' | is_top_version 0.2.0 || echo nothing-served
+            """;
+
+        var result = await ChildProcess.RunAsync("/bin/sh", ["-c", script, "sh", ReleaseFiles.Script(Path.Combine("lib", "versions.sh"))], new Dictionary<string, string?>());
+
+        result.Exit.Should().Be(0, result.Stderr);
+        result.StdoutLines.Should().Equal("at-least-ten", "at-least-equal", "below", "0.10.0", "top", "something-above", "not-listed", "nothing-served");
+    }
+
+    /// <summary>E5 code round #2/#5: the guard reads the minimum from the JSON artefact, never TypeScript with a line pattern —
+    /// a handshake.ts reformatted by a person or a formatter (a type annotation, double quotes) no longer stops every
+    /// release.</summary>
+    [Fact]
+    public async Task A_reformatted_handshake_does_not_stop_a_release_because_the_guard_reads_the_json_artefact()
+    {
+        Linux();
+        using var root = new TempRoot("ext-guard-reformatted");
+        var checkout = Make(root, handshake: "export const MIN_DAEMON_FOR_RENDER: string = \"0.1.0\"; // reformatted\n");
+
+        var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
+
+        result.Exit.Should().Be(0, result.Stdout + result.Stderr);
+        result.StdoutLines.Should().Contain("min_daemon=0.1.0");
+    }
+
+    [Theory]
+    [InlineData(null, "is missing")]
+    [InlineData("{}\n", "carries no minDaemonForRender")]
+    [InlineData("{ \"minDaemonForRender\": \"0.1\" }\n", "carries no minDaemonForRender")]
+    [InlineData("{ \"minDaemonForRender\": 1 }\n", "carries no minDaemonForRender")]
+    [InlineData("not json\n", "carries no minDaemonForRender")]
+    public async Task The_guard_refuses_a_missing_or_malformed_minimum_daemon_artefact_naming_it(string? json, string says)
+    {
+        Linux();
+        using var root = new TempRoot("ext-guard-min-json");
+        var checkout = Make(root, minDaemonJson: json);
+
+        var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
+
+        result.Exit.Should().Be(1, result.Stdout);
+        result.Stdout.Should().Contain("src_vs_code/min-daemon.json").And.Contain(says);
+        File.Exists(checkout.GhLog).Should().BeFalse("refused before GitHub is asked");
     }
 
     [Fact]

@@ -79,3 +79,9 @@ test('anything else from the page is dropped: unknown types, extra keys, a smugg
     assert.equal(parsePageMessage(raw), undefined, JSON.stringify(raw));
   }
 });
+
+test('the shell announces nothing by itself: no aria-live on <main>, whose whole tree is rebuilt on every render (the page makes the notice the one live region)', () => {
+  const html = panelShell(SHELL);
+  assert.match(html, /<main id="panel"><\/main>/);
+  assert.doesNotMatch(html, /aria-live/);
+});

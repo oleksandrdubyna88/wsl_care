@@ -32,12 +32,24 @@
     return node;
   }
 
+  // The notice is the page's ONE live region, and it is the SAME element for the page's whole life: every render rebuilds
+  // the rest of the tree, and a live region that is replaced each time is either announced whole or not at all. Only its
+  // text changes — and only when it differs — so a screen reader announces the new sentence and nothing else.
+  const notice = element('p', '', { notice: '', level: 'none' });
+  notice.setAttribute('aria-live', 'polite');
+
+  function updateNotice(view) {
+    if (notice.textContent !== view.notice) {
+      notice.textContent = view.notice;
+    }
+    notice.setAttribute('data-level', view.noticeLevel);
+  }
+
   function header(view) {
     const top = element('header', undefined, { part: 'header' });
     top.appendChild(element('h1', view.heading, { heading: '' }));
-    if (view.notice !== '') {
-      top.appendChild(element('p', view.notice, { notice: '', level: view.noticeLevel }));
-    }
+    updateNotice(view);
+    top.appendChild(notice);
     const bar = element('div', undefined, { part: 'actions' });
     view.actions.forEach(function (action) {
       bar.appendChild(button(action));

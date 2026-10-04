@@ -50,7 +50,7 @@ export function panelShell(parts: ShellParts): string {
     '<title>WSL Care</title>',
     '</head>',
     '<body>',
-    '<main id="panel" aria-live="polite"></main>',
+    '<main id="panel"></main>',
     `<script nonce="${nonce}" src="${scriptUri}"></script>`,
     '</body>',
     '</html>',

@@ -116,12 +116,13 @@ public sealed partial class ReleaseWorkflowTests
         workflow.Has("permissions") || Jobs(workflow).Entries.All(e => e.Value.Map.Has("permissions"));
 
     [Fact]
-    public void Only_the_two_release_build_jobs_can_sign_and_they_write_nothing_to_the_repository()
+    public void Only_the_daemon_build_and_the_extension_attest_job_can_sign_and_they_write_nothing_to_the_repository()
     {
         var signers = AllJobs().Where(j => SignsWith(Permissions(j.Job))).Select(j => $"{j.File}/{j.Id}").ToList();
         var workflowLevel = ReleaseFiles.AllWorkflows.Where(p => SignsWith(Permissions(WorkflowYaml.Load(p)))).ToList();
 
-        signers.Should().BeEquivalentTo([$"{Release}/build", $"{ExtensionRelease}/build"], "id-token / attestations are each release's build job's alone (plan §15e #0, §15g M5)");
+        signers.Should().BeEquivalentTo([$"{Release}/build", $"{ExtensionRelease}/attest"],
+            "id-token / attestations are the daemon's build job's and the extension's attest job's alone (plan §15e #0, §15g M5; E5 code round #3: the extension's build runs npm install scripts and a downloaded VS Code, so it signs nothing)");
         workflowLevel.Should().BeEmpty("no workflow grants a signing scope to all its jobs");
         Permissions(Job(Release, "build")).Should().Equal(new Dictionary<string, string>
         {
