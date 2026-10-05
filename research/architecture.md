@@ -106,7 +106,9 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   `min-daemon.json` the release guard reads (section *The extension: Install daemon, packaging and its release*); since
   E6.S2 `src/root/` (the closed root union `rootCall.ts`, the cleanup controller, the gate, the answer and failure readers,
   the typed ids, the root words), `src/text/safeText.ts` (the one sanitiser), `src/client/enumValue.ts`, and the runner's
-  stdin (section *The extension: the root boundary*).
+  stdin (section *The extension: the root boundary*); since E6.S3 `src/cleanup/` (the cleanup buttons' host transaction,
+  the `globalState` journal, the durable poll, the controls' derivation, the modals' and results' words) and the client's two
+  run reads (section *The extension: the cleanup buttons*).
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,
@@ -1825,9 +1827,11 @@ cannot fill; "checking…" before its verb was asked; its verb's failure label (
 blanks only the `preview` rows, plan §6); "update the daemon to see this" when the answering daemon lacks the path (the
 compatibility rule — never 0); "unavailable — <reason>" for an `available: false` figure; otherwise its renderer. Lists
 (top processes, families, container stats, folders, cleanup rows, kept volumes, hygiene, checks, versions, verdicts)
-render as sub-tables. Slow parts say which full run measured them and how long ago. *Cleanup* is READ-ONLY: no
-checkboxes, no buttons ("the cleanup buttons arrive in E6"). The panel's buttons are Refresh, Settings and — only when
-the distribution is stopped — **Start WSL and check**.
+render as sub-tables. Slow parts say which full run measured them and how long ago. Since E6.S3 *Cleanup* carries a
+*Clean* and a *Select* per row, *Clean selected (n)*, *Run full check now* and — for a wedged run the daemon can stop —
+*Stop*, and *Last cleanup* the results this window showed and "Docker after" (section *The extension: the cleanup
+buttons*). The panel's header buttons are Refresh, Settings and — only when the distribution is stopped — **Start WSL and
+check**.
 
 ### The panel's field map (plan §15g B2)
 
@@ -2460,15 +2464,14 @@ flowchart LR
 ## The extension: the root boundary (E6.S2)
 
 E6.S2 (2026-10-04, plan §15f #1–#3, §15j M1, M2, M5, m1, m4, m5, m9, m11, B3; §15k #3, #7, #10, #11, #19) gives the
-extension the ONE place a root call can come from, and the host-side API the cleanup buttons of E6.S3 will call. **No
-button calls it yet**: the controller is wired in `extension.ts` (and reachable through the Test-mode API), nothing in the
-product invokes it. The boundary is a confused-deputy boundary, not a malware one — any process of this Windows user can
+extension the ONE place a root call can come from, and the host-side API the cleanup buttons call (since E6.S3 — section
+*The extension: the cleanup buttons*; until then it was wired but nothing in the product invoked it). The boundary is a confused-deputy boundary, not a malware one — any process of this Windows user can
 already run `wsl -u root`; what must never happen is a webview, a workspace setting or a daemon answer steering WHICH root
 call is made.
 
 ```mermaid
 flowchart TD
-  B["E6.S3 buttons (none yet) / Test-mode API"] --> C["root/cleanupController.ts<br/>preview · confirm · stop · runFullCheck · rootCheck"]
+  B["cleanup/cleanFlow.ts (E6.S3 buttons) / Test-mode API"] --> C["root/cleanupController.ts<br/>preview · confirm · stop · runFullCheck · rootCheck"]
   C -->|"1 rootTarget(): validated, listed, RUNNING distro"| WC["client/WslCareClient.ts"]
   C -->|"2 one root op in flight per distro"| C
   C -->|"3 fresh status → gate"| G["root/actionGate.ts<br/>capabilities = authority<br/>ids = registry ∩ status.actions"]
@@ -2583,6 +2586,87 @@ relay cites its measurement (facts row 20); and an expired no-run-id follow is E
 `structure.test.ts`, `bundleScan.test.ts`, `fakeWsl.test.ts` (root shapes), `scenarios/rootFlows.test.ts` (derived from
 `ROOT_OPS`), `minDaemon.test.ts`, `vsixCheck.test.ts`, `installDaemon.test.ts`, `manifest.test.ts`, `catalogue.test.ts`; in
 C#, `ReleaseExtensionScriptFlows` (Linux legs) and `ReleaseExtensionWorkflowTests`, `GoldenContractTests`.
+
+## The extension: the cleanup buttons (E6.S3)
+
+E6.S3 (2026-10-05, plan §15j M4, M6, M7, M8, M9, m3, m8, m9; §15k #3, #4, #12, #19; the coai E6.S2 plan round #3 contract)
+hangs the buttons on the root boundary. The page sends only closed messages; everything after them is the host's, and every
+state the panel shows is DERIVED from what the daemon reported and what the host persisted — never only from a flag a window
+holds (`common.durable-status`).
+
+```mermaid
+sequenceDiagram
+    participant W as webview (media/panel.js)
+    participant M as panel/messages.ts
+    participant F as cleanup/cleanFlow.ts
+    participant C as root/cleanupController.ts
+    participant J as cleanup/journal.ts (globalState)
+    participant P as cleanup/runFollower.ts
+    participant D as daemon (via wsl.exe)
+    W->>M: {type: clean | cleanSelected, rowIds} (closed RowId enum)
+    M->>F: clean(rowIds) — one flow at a time per window (m9)
+    F->>C: preview(ids)
+    C->>D: -u root act ids --preview --json
+    F->>F: native modal, a second modal for A5, A6Unused, A8, A11, A12 (setting named)
+    F->>F: preview age re-checked AFTER the last modal (5 min, expired → previewed again)
+    F->>J: add {unresolved, ids, since} — BEFORE the call
+    F->>C: confirm(held preview) — ONE act call
+    C->>D: -u root act ids --confirm --manual --detach [--only -] --json (A4's names on stdin)
+    C-->>F: accepted / outcomeUnknown{runId?} / a refusal
+    F->>J: run {runId} — or keep unresolved — or remove (a refusal, told in its own words, a piped-list refusal with Retry)
+    loop every 4 s while something is in flight (M6)
+        P->>D: status --json (through the poller and the store)
+        P->>D: ONCE, when the run is no longer queued / live / wedged: runs show runId --json
+    end
+    P->>J: remove — after the terminal answer was SHOWN (notification + Last cleanup)
+    P->>D: the panel round once more (preview's totals = "Docker after")
+```
+
+**The parts** (`src/cleanup/`, which may import `root/` — only the controller imports `rootCall.ts`, and no panel, bar,
+poller, install or store module imports `root/`):
+
+- **`rowIds.ts`** — the closed `ROW_IDS` enum: the rows `preview --all` reports (A4, A5, A5Testcontainers, A6, A6Unused, A7,
+  A8, A9), held equal to the golden's rows and each in the action registry. The panel's validator reads it.
+- **`cleanFlow.ts`** — the host transaction (the sequence above): Clean / Clean selected, Stop (a modal, then `act --stop`;
+  a run the journal already follows is not followed twice) and Run full check now (no modal: a full run that is not the
+  timer's measures and does not act — `CollectRun.TimerPassAsync`).
+- **`modalText.ts`** — the modals' words: A4 bound to its list (and the cap line past 10 000), A5 / A6 / A7 "re-checked at run
+  time", the second confirmation naming `containers.stoppedOlderThanDays`, `images.unusedOlderThanDays`, `auto.A8`,
+  `processes.idleOlderThanHours`, `auto.A12`; every daemon string through `safeText` and cut (names to 80 characters).
+- **`journal.ts`** — `globalState` key `wslCare.cleanup.journal.v1`: the runs this extension started that have had no terminal
+  answer SHOWN, and the unresolved confirms; read as untrusted on every load (an invalid entry is dropped); at most 32.
+- **`runFollower.ts`** — the durable poll (M6): only while a journal entry is open (another window's only while focused) or,
+  focused, `status.running` is queued / live; every 4 s; `status` only, and ONE `runs show` when a followed run is no longer
+  in flight; `unknown` (and a state this build does not know) is terminal; past 30 minutes an entry ends "state unknown"
+  with its run id. An unresolved confirm is adopted from `status.running` (trigger `manual`, exactly its actions) or, after
+  the request grace (90 s), resolved from `runs --from <the confirm> --to <now>`: one match is the run, none "never ran",
+  several shown as candidates. A full check's history line records NO action (its running block names `["collect"]`).
+- **`runAnswers.ts`** — `runs show` / `runs` read as untrusted (enums through `readEnum`, run ids through `runIdOf`).
+- **`cleanupView.ts`** — the controls: "Cleaning… A4" / "Queued… A4" / "Wedged: …" from `status.running`; a dead run says it
+  died and leaves the buttons enabled; the capability gate's "Update daemon" sentence; a journal entry of this distribution
+  greys the buttons ("Waiting for the result of …"); the window's flag adds only "Confirming…"; Stop only for a wedged run of
+  the daemon's own units (`manual` / `timer`) on a daemon advertising `act.stop`, else text with its pid; the results this
+  window showed; "Docker after" — the preview's reclaimable total and the time it was read.
+- **`resultText.ts`** — the hand-off and the terminal answer in words; a refusal's words are `rootFailureText.ts`'s (now in
+  the bundle), each exit code of the plan's m3 list distinct.
+- **`cleanupHost.ts`** / **`cleanUi.ts`** / **`cleanRecorder.ts`** — the wiring, the native modal and notifications, and the
+  Test-mode recorder the test API and the node scenarios share.
+
+**The client's two run reads** (`client/verbs.ts`, `WslCareClient.read`): `runs show <runId> --json` and `runs --from <instant>
+--to <instant> --json`, unprivileged, 20 s each; the run id and the instants (`yyyy-MM-ddTHH:mm:ssZ`) checked before any spawn;
+exit 4 with a readable answer is an answer. **`status.lastCleanup`** fills the *Last cleanup* row (M7).
+
+**Not yet measured, so not relied on:** whether a detached run survives every `wsl.exe` closing (§15k #5 + #13) is the E6
+daemon live gate's first measurement; the reload promise rests on it. A dead or vanished run still ends — `interrupted` or
+`unknown` — so nothing sticks either way.
+
+### Tests (details: [module_tests.md](module_tests.md) § *What each E6.S3 guarantee rests on*)
+
+`runReads.test.ts`, `journal.test.ts`, `runFollower.test.ts` (the M6 churn measured), `modalText.test.ts`, `resultText.test.ts`,
+`cleanFlow.test.ts`, `cleanupView.test.ts`, `panel/webviewHost.test.ts` (the messages), `panelPage.test.ts` (the controls RUN in
+the strict harness), `fakeWsl.test.ts` (the run-read shapes), `scenarios/clientFlows.test.ts`, `scenarios/cleanupFlows.test.ts`
+(the reload, dead, refused, 387 names, one act call), `catalogue.test.ts` (the run reads and the page messages derived), and in
+VS Code 1.85.0 + stable `host/suite.ts` (*Clean A4 through the host*).
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 

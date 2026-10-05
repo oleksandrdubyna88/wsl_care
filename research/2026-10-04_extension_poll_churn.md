@@ -57,3 +57,29 @@ per machine-day, 241 for an 8-hour focused day.
 
 What is NOT measured: the daemon's own wall time and disk bytes per `status` run on this machine (not installed here) —
 the E5 live gate's check, together with whether `wsl-care` ends when `wsl.exe` is killed.
+
+## E6.S3: the poll during a cleanup (plan §15j M6) — measured 2026-10-05
+
+> Still for the OWNER: the M6 churn decision is **open**, with §15g M1 above. E6.S3 implements the poll exactly as M6
+> specifies and adds no family-rule exception; these are the numbers it costs.
+
+- **Subject:** branch `feat/wc-e6-cleanup-logs`, `src_vs_code/src/cleanup/runFollower.ts` (the policy).
+- **Method:** the real `RunFollower` over a journal and a scripted daemon on a manual clock — `runFollower.test.ts`, *M6 churn,
+  measured* — not computed by hand. What one run writes is as above: one run-log file per `status` (and per `runs show`).
+- **The policy:** a poll only while something is in flight (a run this extension started that has had no terminal answer
+  shown, an unresolved confirm, or — in the focused window — `status.running` queued / live); every 4 s; `status` only; ONE
+  `runs show` when a followed run is no longer in flight; a 30-minute ceiling per run; a poll armed before the run ended asks
+  nothing (the defect the extension-host tier found).
+
+| A followed run | `status` runs | `runs show` runs | Run-log files |
+|---|---|---|---|
+| 2 minutes, then done | **30** | **1** | 31, + 3 for the panel round after the answer |
+| 10 minutes, then done | **150** | **1** | 151, + 3 |
+| never ends (wedged) — the 30-minute ceiling | **451** | **0** | 451, + 3 |
+
+**Per cleanup**, then, roughly 15 files a minute of the run plus 4; against the M1 polling above (721 a focused day at the
+default), a day with two 5-minute cleanups adds about 160. The run's OWN unit writes its own log as any run does — not counted
+here. The owner's choices remain those of the M1 section: accept, record a family-rule exception for the read-only `status`
+(or a new `status --running`), or change the interval (M6 allows 3–5 s; 5 s would make the 10-minute run 120 + 1).
+
+What is NOT measured: the daemon's wall time and bytes per `status` run on this machine (the daemon is not installed here).
