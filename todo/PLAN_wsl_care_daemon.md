@@ -975,8 +975,8 @@ All 9 findings ACCEPTED and fixed red → green (`research/module_tests.md`, *Th
 
 ### 15o. A full check's history line names itself — `kind` (daemon follow-up of the E6.S3 review round, B2; 2026-10-05)
 
-> Status: **built 2026-10-05, awaiting the coai code round** (the code round, the pull request and the extension's half are
-> still open, so the section stays here). **Deviations:** the three "a requested run that never did its work" writers
+> Status: **built 2026-10-05; coai code round proceed and its review round fixed (table at the end of this section)** — the
+> extension's half (E6.S4) is still open, so the section stays here. **Deviations:** the three "a requested run that never did its work" writers
 > (`DetachedRuns.Refused`, `DetachedRuns.CutOff`, `RequestSweep`'s swept request) take ONE line from a new
 > `RunRequestFile.TerminalLine` instead of three copies; the prefixes are `Records/HistoryReasons` (the unusable prefix a
 > named `RequestSweep.UnusablePrefix`); the RED test and the reason enumeration live in a new `Cli.Tests/FullCheckLineTests`
@@ -1050,16 +1050,25 @@ real results on a timer line and a `collect` entry into `perAction` for every fu
    `"collect"` (the engine writes registry ids and starts `current` empty) — else absent (plan round #2). **The name
    `collect` is reserved** as the meta name of a full check: no action may be named it — said in `ActionId`'s doc comment
    and held by a test over `ActionId.All` and `contracts/actions.json` (compared ignoring case).
-4. **The reconcile** takes the kind from the orphaned detail: `act` when the detail's `kind` is `act`, `collect` otherwise —
-   the rule `RunLogs.IsAct` (`RunLogs.cs:231`) already applies, reused rather than restated; unreadable → absent.
+4. **The reconcile** takes the kind from the orphaned detail: `act` when the detail's `kind` is `act`, `collect` when it
+   has NO `kind` member (a full run's detail), and absent for any other value — a future detail kind is never filed as a
+   full check (review G1) — the rule `RunLogs.IsAct` (`RunLogs.cs:231`) already applies, reused rather than restated;
+   unreadable → absent. The request's kind likewise (review G2): `collect` / `act` exactly, anything else no kind AND no
+   action rows (its "actions" would be guesses).
 5. **The compiler names every writer:** `Kind` is a POSITIONAL parameter (`RunKind?`, no default) of `RunRecord`
    (`RunRecord.cs:116`) and `RunningFile` (`Actions/Engine/RunningState.cs:19`), so a construction that does not decide does
    not compile — the "decision applied at some of its sites" defect closed by construction, not by a scan. A line or file
    without the member binds `null` on read (the source generator does not require constructor parameters).
 6. **The wire:** `RunLine.kind` (`runs`, `runs show`; `History/LogsReports.cs:29`, filled in `RunLogs.Line`, `:102`), absent
    when the line has none. `RunKind` is an enum with `JsonStringEnumMemberName`, strict like `RunTrigger` / `RunOutcome`.
-   Residual, stated: a line with a kind this build does not know is unparseable (counted in `unparseableLines`) — reachable
-   only after a downgrade, the same residual `RunOutcome` carries.
+   **Residual, stated in full (review O5) — reachable only after a downgrade (`install.sh --version <older>`) to a build that
+   does not know a kind a newer one wrote; the same class `RunOutcome` carries, no code change:** (a) an unknown `kind` in
+   `running.json` makes it UNREADABLE (the strict enum fails the parse), and an unreadable running state refuses every `act`
+   and every timer pass until the file is removed by hand; (b) a history line with an unknown kind is unparseable (counted in
+   `unparseableLines`), and every history-first check treats an unparseable line as NO line — `RunningSweep.SweepDead`
+   (`RunningSweep.cs:70`), the request sweep (`RequestSweep.cs:144` / `:154`), `act --request`'s own check
+   (`DetachedRuns.cs:195`-`196`) and the reconcile (`RunReconcile.cs:28`-`30`) — so after such a downgrade a run could get a
+   SECOND terminal line, or `act --request` could run a request whose run had already recorded itself.
 
 **Not changed:** the request file (`kind`, `actions: ["collect"]`, its reader), `status.running` (still `actions:
 ["collect"]` while a full check measures; exposing `running.kind` is a possible follow-up this fix does not need), `logs`'
@@ -1139,6 +1148,23 @@ file.
       `research/module_tests.md`.
 - [ ] Goldens regenerated only where the wire changed; docs updated (README, `architecture.md`, `module_tests.md`, §6).
 - [ ] Whole suites green on Windows and WSL, `dotnet format` clean, family checks green.
+
+**§15o review round (2026-10-05): the coai code round (verdict proceed, 4 of 4 reviewers answered) and an own review.**
+Every finding ACCEPTED and fixed on this branch; each behaviour seen red for the real symptom (before the fix, or by
+reverting it), green, and its load-bearing line broken and seen red again — the record is `research/module_tests.md`,
+*A full check's history line names itself*.
+
+| # | Finding | Disposition |
+|---|---|---|
+| G1 (Major, coai) | `RunKinds.OfDetailKind` filed any non-`act` detail kind as a full check | **Fixed** — `RunKind?`: `act` → act, no member → collect, any other value → absent. `RunKindTests` (an `archive` and an `Act` detail → a kind-less line) |
+| G2 (Major, coai) | `RunKinds.OfRequest` filed any non-`collect` request kind as an act — a mislabelled line with the old row shape | **Fixed** — `RunKind?`: `collect` / `act` exactly, else absent; `TerminalLine` then writes NO kind and NO action rows (decided: an unknown kind's "actions" are guesses). `RunKindTests` (`archive`, `Collect`, `""`) |
+| G3 (Minor, coai) | `FullCheckLineTests.End` at cyclomatic complexity 5 | **Fixed** — a lookup of one handler per `Ending`; every method ≤ 4 |
+| G4 (Nit, coai) | `KindOrMarker` null-safety unexplained; `SweepDead`'s `file.Actions` could be null? | **Fixed** — both commented: the one reader (`RunningState.Read`) admits no file without `actions` / `current`, so a broken file is unreadable and never swept; a list pattern is false on null. Pinned by `RunKindTests.A_running_json_without_actions_is_unreadable_…` |
+| O1 (Important, own) | `FullCheckLineTests` copied ~30 lines of the `DetachedRunsTests` fixture | **Fixed** — one `Cli.Tests/DetachedRunHarness` (sandbox, runner, root host, request planting, records) used by both; `DetachedRunsTests` is 680 lines |
+| O2 (own) | no writer-side test that `act --timer` stays `act` in `running.json` | **Fixed** — `ActionEngineTests.An_act_names_itself_act_…` over Cli / Manual / Timer, running.json read while the act runs and the line |
+| O3 (own) | the "cut off before it started" ending never called `DetachedRuns.CutOff` | **Fixed** — the reachable path is driven: an ACT request cut off inside its request sweep → ONE `act` line, the asked ids interrupted (`FullCheckLineTests.An_act_request_cut_off_inside_its_request_sweep_…`); the full check's shape of that line stays an `Ending` built through the same expression (no path reaches it from outside) |
+| O4 (own) | the follower check ran in the weak direction and nothing froze the reason text on disk | **Fixed** — `ContractFilesTests.The_reasons_already_on_disk_are_frozen` pins the three reasons (and the contract's list) to literals ("these strings are on disk; a change is a contract break"); the companion asserts the reasons AS WRITTEN start with the follower's prefixes |
+| O5 (own) | the downgrade residual understated | **Documented** — decision 6 and `research/architecture.md` state both halves (an unreadable `running.json` blocks every act / timer pass until removed by hand; an unparseable line is "no line" to every history-first check) |
 
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 

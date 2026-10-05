@@ -66,12 +66,27 @@ public static class RunKinds
     /// while it measures. RESERVED: no action id may carry it (<c>ActionId</c> says so, a test holds it).</summary>
     public const string FullCheckName = "collect";
 
-    /// <summary>A request's <c>kind</c> (its reader admits <c>act</c> and <c>collect</c> only).</summary>
-    public static RunKind OfRequest(string kind) => kind == FullCheckName ? RunKind.Collect : RunKind.Act;
+    /// <summary>An act's name, as a request's <c>kind</c> and an act's detail spell it.</summary>
+    public const string ActName = "act";
 
-    /// <summary>A run detail's kind from its <c>kind</c> member: an act's detail says <c>act</c>; a full run's detail carries
-    /// none. The one rule the reconcile and <c>logs</c> / <c>runs show</c> read a detail by.</summary>
-    public static RunKind OfDetailKind(string? kind) => kind == "act" ? RunKind.Act : RunKind.Collect;
+    /// <summary>A request's <c>kind</c>: <c>collect</c> or <c>act</c> exactly, anything else UNKNOWN (<c>null</c>) — never guessed
+    /// into either (§15o review G2; the reader refuses such a request already, the mapping does not lean on it).</summary>
+    public static RunKind? OfRequest(string kind) => kind switch
+    {
+        FullCheckName => RunKind.Collect,
+        ActName => RunKind.Act,
+        _ => null,
+    };
+
+    /// <summary>A run detail's kind from its <c>kind</c> member: an act's detail says <c>act</c>; a full run's detail carries NO
+    /// member; any other value is a kind this build does not know (a future one) and is unknown, never a full check (§15o
+    /// review G1). The one rule the reconcile and <c>logs</c> / <c>runs show</c> read a detail by.</summary>
+    public static RunKind? OfDetailKind(string? kind) => kind switch
+    {
+        null => RunKind.Collect,
+        ActName => RunKind.Act,
+        _ => null,
+    };
 }
 
 /// <summary>A run's identity: the UTC second it started and the process that ran it (plan §6).</summary>

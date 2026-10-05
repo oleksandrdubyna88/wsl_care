@@ -33,13 +33,14 @@ public sealed record RunRequestFile(int SchemaVersion, RunId RunId, string Kind,
     /// <summary>
     /// The ONE terminal line of a requested run that never did its work (plan §15o) — refused, cut off before it started, or
     /// swept: the request's kind, and per-action results only — an act's asked ids each marked <paramref name="status"/>, a full
-    /// check NONE (its <c>["collect"]</c> names the run, not an action). Shared by <c>DetachedRuns</c> and
-    /// <see cref="RequestSweep"/>, so the three writers cannot shape it apart.
+    /// check NONE (its <c>["collect"]</c> names the run, not an action), and a kind this build does not know neither a kind nor
+    /// rows — its "actions" would be guesses (§15o review G2). Shared by <c>DetachedRuns</c> and <see cref="RequestSweep"/>, so
+    /// the three writers cannot shape it apart.
     /// </summary>
     public RunRecord TerminalLine(DateTimeOffset startedAt, DateTimeOffset endedAt, RunOutcome outcome, string status, string reason)
     {
         var kind = RunKinds.OfRequest(Kind);
-        IReadOnlyList<ActionRecord> actions = kind == RunKind.Collect ? [] : [.. Actions.Select(a => new ActionRecord(a, 0, 0) { Status = status })];
+        IReadOnlyList<ActionRecord> actions = kind == RunKind.Act ? [.. Actions.Select(a => new ActionRecord(a, 0, 0) { Status = status })] : [];
         return new RunRecord(Core.SchemaVersion.Current, RunId, Trigger, startedAt, endedAt, outcome, actions, kind) { Reason = reason };
     }
 }

@@ -65,20 +65,20 @@ public sealed class ContractFilesTests
             .Should().NotContain(id => string.Equals(id, Core.Records.RunKinds.FullCheckName, StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>The prefixes the contract carries cover the ones the extension's follower was written against on the E6.S3
-    /// branch (<c>src_vs_code/src/cleanup/runMatching.ts</c>, <c>NOT_A_FULL_CHECK</c>, origin/feat/wc-e6-cleanup-logs, copied
-    /// here as of 2026-10-05) — each begins one of ours, so a follower moving to the contract loses no line it excluded.</summary>
+    /// <summary>§15o review O4: the reason texts the contract hands out are ALREADY ON DISK — every history line written with them
+    /// stays for 90 days — so they are frozen here as literals, never read back from the constants they guard. Changing one is
+    /// a contract break (old lines keep the old words): add a contract entry for the new text, never edit these.</summary>
     [Fact]
-    public void The_contract_covers_every_prefix_the_follower_was_written_against()
+    public void The_reasons_already_on_disk_are_frozen()
     {
-        string[] followerPrefixes =
-        [
-            "refused: its request could not be used",
-            "the run wrote its detail and ended before its history line",
-            "the run left a detail that cannot be read",
-        ];
+        const string Frozen = "these strings are on disk; a change is a contract break";
 
-        followerPrefixes.Should().OnlyContain(f => Core.Records.HistoryReasons.NotAFullCheckWithoutKind.Any(p => p.Prefix.StartsWith(f, StringComparison.Ordinal)));
+        Core.Actions.Engine.RequestSweep.UnusablePrefix.Should().Be("refused: its request could not be used", Frozen);
+        Core.Records.RunReconcile.InterruptedReason.Should().Be("the run wrote its detail and ended before its history line (found by the next run's reconcile)", Frozen);
+        Core.Records.RunReconcile.UnreadableDetailReason.Should().Be("the run left a detail that cannot be read; its start is the second its id names", Frozen);
+        Core.Records.HistoryReasons.NotAFullCheckWithoutKind.Select(p => p.Prefix).Should().Equal(
+            ["refused: its request could not be used", "the run wrote its detail and ended before its history line (found by the next run's reconcile)", "the run left a detail that cannot be read; its start is the second its id names"],
+            Frozen);
     }
 
     [Fact]

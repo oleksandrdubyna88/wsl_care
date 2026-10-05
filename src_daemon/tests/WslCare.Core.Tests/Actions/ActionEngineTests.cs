@@ -105,6 +105,34 @@ public sealed class ActionEngineTests : IDisposable
         History().Last().Outcome.Should().Be(RunOutcome.Completed, "a failing action is logged and the run continues (plan §5)");
     }
 
+    /// <summary>§15o review O2: an <c>act</c> is an act whatever started it — <c>act --timer</c> holds ids like the timer's own pass
+    /// inside a full check, and only <c>kind</c> tells the two apart, in <c>running.json</c> and on the line.</summary>
+    [Theory]
+    [InlineData(RunTrigger.Cli)]
+    [InlineData(RunTrigger.Manual)]
+    [InlineData(RunTrigger.Timer)]
+    public async Task An_act_names_itself_act_in_running_json_and_on_its_line_whatever_its_trigger(RunTrigger trigger)
+    {
+        UserConfig("""{ "dryRun": false }""");
+        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
+        File.WriteAllText(DryRunWindow.File(_sandbox.Paths), $$"""{ "schemaVersion": 1, "at": "{{FixedTimeProvider.DefaultNow.AddDays(-30):O}}" }""");
+        var kinds = new List<RunKind?>();
+        var action = new ScriptedAction("A10", _journal)
+        {
+            OnRun = _ =>
+            {
+                kinds.Add(JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)!.Kind);
+                return Task.FromResult(new ActionRun(1, 100, "scripted", 200, 100, [], [], string.Empty));
+            },
+        };
+
+        var result = await Engine(action).ExecuteAsync(Run(trigger, "A10"), CancellationToken.None);
+
+        Statuses(result).Should().Equal("A10:ran");
+        kinds.Should().Equal([RunKind.Act], "running.json was read while the act ran");
+        History().Single().Kind.Should().Be(RunKind.Act);
+    }
+
     [Fact]
     public async Task The_timer_honours_each_auto_switch_and_each_trigger_and_a_button_runs_regardless()
     {
