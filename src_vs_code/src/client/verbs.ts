@@ -1,3 +1,6 @@
+import { DEFAULT_NUMBERS } from '../settings/numbers';
+import { ceilingMs } from './ceilings';
+
 /**
  * The CLOSED set of daemon verbs this extension may run — the one module that holds it (plan §15f #5, §15g m1).
  *
@@ -22,24 +25,24 @@ export const VERBS: { readonly [V in Verb]: readonly string[] } = {
 
 /**
  * How long the client waits for each verb before it kills `wsl.exe` (which ends the Linux process — measured,
- * research/2026-10-03_wsl_exe_facts.md) and reports a timeout. Each is ABOVE the sum of the daemon's own ceilings on
- * that verb's path, so the extension never kills an answer the daemon would still have given:
+ * research/2026-10-03_wsl_exe_facts.md) and reports a timeout — the DEFAULTS of the `wslCare.timeouts.*` settings. Each
+ * is derived and held STRICTLY above the daemon's own worst case on that verb's path, every killed command counted with
+ * its drain (`client/worstCases.ts`, `ceilings.test.ts`; plan §15q N-1 found `doctor`'s old 100 s below its 109 s):
  *
- * - `status` starts no child process at all (plan §15b #5, the < 2 s budget) — 20 s is ten times its budget plus the
- *   `wsl.exe` relay start (≈ 0.13 s measured).
+ * - `status` starts no child process at all (plan §15b #5, the < 2 s budget) — 20 s.
  * - `--version` answers before the machine is read, with no log file — the same 20 s.
- * - `doctor` runs, one after another, `systemctl show` for four units (15 s ceiling each, `SystemdCommands.Ceiling`),
- *   `systemctl --version` (15 s) and `docker version` (10 s, `DockerCommands.ProbeCeiling`): 85 s → 100 s.
- * - `preview --all` runs `docker version` (10 s), `system df` and `system df -v` (2 min each,
- *   `DockerCommands.DiskUsageCeiling`), the dangling-volume listing (30 s) and one `container inspect` per 100
- *   containers (30 s each): 280 s + one batch = 310 s → 330 s. A machine with more than 100 containers can exceed it,
- *   and is then told the preview timed out rather than waited on forever.
+ * - `doctor` runs four `systemctl show`, `systemctl --version` (15 s each) and `docker version` (10 s): 109 s → 120 s.
+ * - `preview --all` runs ONE Docker snapshot — `docker version`, `system df`, `system df -v`, the dangling-volume
+ *   listing and one `container inspect` per 100 containers: 330 s with the drains → 350 s. A machine with more than
+ *   100 containers can exceed it, and is then told the preview timed out rather than waited on forever.
+ *
+ * The client reads the settings at every call (`ClientOptions.numbers`); these are what a test that sets nothing sees.
  */
 export const VERB_TIMEOUT_MS: { readonly [V in Verb]: number } = {
-  status: 20_000,
-  version: 20_000,
-  doctor: 100_000,
-  preview: 330_000,
+  status: ceilingMs(DEFAULT_NUMBERS, { call: 'status' }),
+  version: ceilingMs(DEFAULT_NUMBERS, { call: 'version' }),
+  doctor: ceilingMs(DEFAULT_NUMBERS, { call: 'doctor' }),
+  preview: ceilingMs(DEFAULT_NUMBERS, { call: 'preview' }),
 };
 
 /**
@@ -97,7 +100,7 @@ export function runReadTail(read: RunRead): readonly string[] {
  * file reads `status` already makes (it reads the history for `lastCleanup`), so `status`'s 20 s holds for each.
  */
 export const RUN_READ_TIMEOUT_MS: { readonly [K in RunReadName]: number } = {
-  runsShow: 20_000,
-  runs: 20_000,
-  logs: 20_000,
+  runsShow: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
+  runs: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
+  logs: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
 };

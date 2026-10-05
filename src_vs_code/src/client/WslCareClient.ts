@@ -7,7 +7,9 @@ import { DAEMON_EXIT } from './exitCodes';
 import { classifyExit, launchFailure, wslRefusal } from './failures';
 import { checkedBody, parseAnswer, parseDaemonVersion, versionRefusal } from './handshake';
 import type { Answer, DaemonVersion, Failure, JsonObject, ReadOutcome, VerbOutcome } from './outcome';
-import { PREVIEW_CONTAINER_ASSUMPTION, RUN_READ_TIMEOUT_MS, runReadTail, VERB_TIMEOUT_MS, VERBS, type RunRead, type Verb } from './verbs';
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import { ceilingMs } from './ceilings';
+import { PREVIEW_CONTAINER_ASSUMPTION, runReadTail, VERBS, type RunRead, type Verb } from './verbs';
 
 /**
  * The extension's one client of the `wsl-care` daemon — and the ONLY module that builds `wsl.exe` argv
@@ -44,6 +46,8 @@ export interface ClientOptions {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** The `wslCare.distro` setting, read at every call; empty means WSL's default distribution. */
   readonly distroSetting: () => unknown;
+  /** The number settings (`settings/numbers.ts`), read at every call — the call ceilings come from them; the defaults when absent. */
+  readonly numbers?: () => Numbers;
 }
 
 /** How one call may treat a stopped distribution. */
@@ -187,8 +191,9 @@ export class WslCareClient {
       return { ...target.failure, read: request.read };
     }
     const { wsl, distro } = target.value;
-    const result = await this.options.runner({ file: wsl, args: daemonArgv(distro, runReadTail(request)), timeoutMs: RUN_READ_TIMEOUT_MS[request.read] });
-    const read = readAnswerOf(result, distro, RUN_READ_TIMEOUT_MS[request.read]);
+    const timeoutMs = this.ceiling('runRead');
+    const result = await this.options.runner({ file: wsl, args: daemonArgv(distro, runReadTail(request)), timeoutMs });
+    const read = readAnswerOf(result, distro, timeoutMs);
 
     return 'body' in read ? { kind: 'read', read: request.read, distro, body: read.body } : { ...read, read: request.read };
   }
@@ -220,7 +225,7 @@ export class WslCareClient {
    * still reads as a plain timeout.
    */
   private explained(verb: Verb, distro: string, failure: Failure): Failure {
-    return verb === 'preview' && failure.kind === 'timedOut' ? crowdedPreview(this.containersIn(distro), failure) : failure;
+    return verb === 'preview' && failure.kind === 'timedOut' ? crowdedPreview(this.containersIn(distro), failure, failure.timeoutMs) : failure;
   }
 
   private containersIn(distro: string): number {
@@ -301,9 +306,15 @@ export class WslCareClient {
 
   /** One daemon verb in `distro`, its answer parsed and its schema checked. */
   private async ask(wsl: string, distro: string, verb: Verb): Promise<Step<Answer>> {
-    const result = await this.options.runner({ file: wsl, args: daemonArgs(distro, verb), timeoutMs: VERB_TIMEOUT_MS[verb] });
+    const timeoutMs = this.ceiling(verb);
+    const result = await this.options.runner({ file: wsl, args: daemonArgs(distro, verb), timeoutMs });
 
-    return answerOf(result, distro, verb);
+    return answerOf(result, distro, verb, timeoutMs);
+  }
+
+  /** The call's ceiling, from the number settings as they are NOW (`client/ceilings.ts`). */
+  private ceiling(call: Verb | 'runRead'): number {
+    return ceilingMs(this.options.numbers?.() ?? DEFAULT_NUMBERS, { call });
   }
 
   /** The answer, judged against the daemon version: a released daemon below the minimum blanks the view. */
@@ -350,10 +361,10 @@ export class WslCareClient {
 }
 
 /** What one daemon call ended in: the parsed, schema-checked answer, or the failure it reads as. */
-function answerOf(result: ProcessResult, distro: string, verb: Verb): Step<Answer> {
+function answerOf(result: ProcessResult, distro: string, verb: Verb, timeoutMs: number): Step<Answer> {
   switch (result.kind) {
     case 'timedOut':
-      return fail({ kind: 'timedOut', timeoutMs: VERB_TIMEOUT_MS[verb] });
+      return fail({ kind: 'timedOut', timeoutMs });
     case 'exited':
       return exitedAnswer(result, distro, verb);
     default:
@@ -437,8 +448,8 @@ function fieldOf(value: unknown, key: string): unknown {
 }
 
 /** A timed-out preview with more running containers than its ceiling assumes, said with the count. */
-function crowdedPreview(containers: number, failure: Failure): Failure {
-  return containers > PREVIEW_CONTAINER_ASSUMPTION ? { kind: 'previewTooManyContainers', containers, timeoutMs: VERB_TIMEOUT_MS.preview } : failure;
+function crowdedPreview(containers: number, failure: Failure, timeoutMs: number): Failure {
+  return containers > PREVIEW_CONTAINER_ASSUMPTION ? { kind: 'previewTooManyContainers', containers, timeoutMs } : failure;
 }
 
 /** The SETTING's value fails the strict pattern — refused before anything starts, so no list was asked. */

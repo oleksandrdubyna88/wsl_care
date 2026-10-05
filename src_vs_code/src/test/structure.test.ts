@@ -227,7 +227,7 @@ test('no panel, status-bar, poller, install, store or Logs-page module imports a
 test('rootCall.ts imports only the client\'s argv builder, the verbs, the runner\'s types and the typed ids — no process API', () => {
   const source = sources().find((s) => s.file === ROOT_CALL);
   assert.ok(source !== undefined);
-  assert.deepEqual(resolvedImports(source).sort(), ['src/client/WslCareClient.ts', 'src/client/verbs.ts', 'src/process/runner.ts', 'src/root/rootIds.ts']);
+  assert.deepEqual(resolvedImports(source).sort(), ['src/client/WslCareClient.ts', 'src/client/ceilings.ts', 'src/client/verbs.ts', 'src/process/runner.ts', 'src/root/rootIds.ts', 'src/settings/numbers.ts'], '§15q: the ceilings and the number settings, both pure');
   assert.deepEqual(importsOf(source.text).filter((m) => !m.startsWith('.')), []);
 });
 

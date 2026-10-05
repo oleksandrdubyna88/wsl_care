@@ -1,0 +1,76 @@
+import { MARGIN_S, WORST_CASE_S } from '../client/worstCases';
+
+/**
+ * Every number of the extension's E6 work is a setting (the owner's standing rule, 2026-10-05): the call ceilings, the
+ * durable poll's interval, ceiling and grace, the preview's expiry, the journal's budget and the Logs page's index bound —
+ * application scope (a workspace's `.vscode/settings.json` cannot steer them), each with its range and default. ONE table:
+ * `package.json`'s `contributes.configuration` is held EQUAL to it by `numbers.test.ts`, and a ceiling's MINIMUM is its
+ * call's derived worst case plus the margin (`client/worstCases.ts`) — so no setting can put a ceiling at or below the
+ * daemon's own worst case (`ceilings.test.ts`).
+ */
+
+export interface NumberSetting {
+  /** The key under `wslCare.`. */
+  readonly key: string;
+  readonly default: number;
+  readonly minimum: number;
+  readonly maximum: number;
+  readonly description: string;
+}
+
+/** A ceiling's minimum: strictly above the daemon's worst case for its call. */
+function above(worstS: number): number {
+  return worstS + MARGIN_S;
+}
+
+const TIMEOUTS = {
+  statusSeconds: { key: 'timeouts.statusSeconds', default: 20, minimum: above(WORST_CASE_S.status), maximum: 600, description: 'How long `status --json` may take before `wsl.exe` is stopped and the call reads "timed out", in seconds.' },
+  versionSeconds: { key: 'timeouts.versionSeconds', default: 20, minimum: above(WORST_CASE_S.version), maximum: 600, description: 'How long `--version` may take (also the privileged check before a cleanup), in seconds.' },
+  doctorSeconds: { key: 'timeouts.doctorSeconds', default: 120, minimum: above(WORST_CASE_S.doctor), maximum: 3600, description: 'How long `doctor --json` may take, in seconds — at least its worst case: four `systemctl show`, `systemctl --version` and `docker version`, each to its ceiling.' },
+  previewSeconds: { key: 'timeouts.previewSeconds', default: 350, minimum: above(WORST_CASE_S.preview), maximum: 7200, description: 'How long `preview --all --json` (one Docker snapshot, up to 100 containers) may take, in seconds.' },
+  previewPerDockerRowSeconds: { key: 'timeouts.previewPerDockerRowSeconds', default: 350, minimum: above(WORST_CASE_S.preview), maximum: 7200, description: 'A cleanup\'s preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9\'s snap listing and a margin.' },
+  runReadSeconds: { key: 'timeouts.runReadSeconds', default: 20, minimum: above(WORST_CASE_S.runRead), maximum: 600, description: 'How long `runs show`, `runs` and `logs` may take, in seconds.' },
+  detachSeconds: { key: 'timeouts.detachSeconds', default: 690, minimum: above(WORST_CASE_S.detach), maximum: 7200, description: 'How long a cleanup\'s confirm or *Run full check now* may take to hand the run to its unit, in seconds — at least the daemon\'s worst case: the shown list, one `systemctl show` per queued request (up to 32), the start and one more `systemctl show`. A detach that outruns it is followed as "outcome unknown", never reported as failed.' },
+  stopSeconds: { key: 'timeouts.stopSeconds', default: 150, minimum: above(WORST_CASE_S.stop), maximum: 3600, description: 'How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds.' },
+} as const satisfies Readonly<Record<string, NumberSetting>>;
+
+const CLEANUP = {
+  followPollSeconds: { key: 'cleanup.followPollSeconds', default: 4, minimum: 2, maximum: 60, description: 'While a cleanup is in flight, how often the focused window asks `status`, in seconds.' },
+  unknownDetachFollowSeconds: { key: 'cleanup.unknownDetachFollowSeconds', default: 60, minimum: 10, maximum: 600, description: 'A detach whose outcome is unknown and named no run id: how long the panel looks for its run in `status.running` before it hands the question to the durable poll, in seconds.' },
+  followCeilingMinutes: { key: 'cleanup.followCeilingMinutes', default: 30, minimum: 5, maximum: 1440, description: 'How long a cleanup is followed before it reads "state unknown" with its run id, in minutes (after one last read of its record).' },
+  // The daemon sweeps a request after its own grace, `RequestSweep.Grace` (60 s): the host waits past it before it resolves
+  // an unresolved confirm from the history.
+  requestGraceSeconds: { key: 'cleanup.requestGraceSeconds', default: 90, minimum: 60 + MARGIN_S, maximum: 900, description: 'How long a confirm whose run id was never seen waits before it is resolved from the run history, in seconds (above the daemon\'s own 60 s request grace).' },
+  previewExpiryMinutes: { key: 'cleanup.previewExpiryMinutes', default: 5, minimum: 1, maximum: 60, description: 'A preview older than this when you confirm is taken again first, in minutes.' },
+  journalEntries: { key: 'cleanup.journalEntries', default: 32, minimum: 4, maximum: 256, description: 'How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped.' },
+} as const satisfies Readonly<Record<string, NumberSetting>>;
+
+const LOGS = {
+  maxRunIndex: { key: 'logs.maxRunIndex', default: 9_999, minimum: 100, maximum: 100_000, description: 'The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read).' },
+} as const satisfies Readonly<Record<string, NumberSetting>>;
+
+/** Every number setting, by the name the code uses. */
+export const NUMBER_SETTINGS = { ...TIMEOUTS, ...CLEANUP, ...LOGS } as const;
+
+export type NumberName = keyof typeof NUMBER_SETTINGS;
+
+export type Numbers = { readonly [K in NumberName]: number };
+
+export const NUMBER_NAMES = Object.keys(NUMBER_SETTINGS) as readonly NumberName[];
+
+/** The defaults — what the extension uses when nothing is set, and what every test that sets nothing sees. */
+export const DEFAULT_NUMBERS: Numbers = Object.fromEntries(NUMBER_NAMES.map((name) => [name, NUMBER_SETTINGS[name].default])) as Numbers;
+
+/** One setting's value as read: an integer kept inside its range (a hand-edited value outside it is clamped), else the default. */
+export function numberOf(setting: NumberSetting, value: unknown): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    return setting.default;
+  }
+
+  return Math.min(setting.maximum, Math.max(setting.minimum, value));
+}
+
+/** Every number, read through `get` (`getConfiguration('wslCare').get`) — at each use, so a changed setting applies at once. */
+export function readNumbers(get: (key: string) => unknown): Numbers {
+  return Object.fromEntries(NUMBER_NAMES.map((name) => [name, numberOf(NUMBER_SETTINGS[name], get(NUMBER_SETTINGS[name].key))])) as Numbers;
+}
