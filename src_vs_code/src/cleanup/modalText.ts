@@ -1,5 +1,6 @@
 import { MAX_SHOWN_VOLUMES, type ActionId } from '../root/rootIds';
 import type { HeldPreview, PreviewedAction } from '../root/rootOutcome';
+import { gb } from '../text/format';
 import { safeText } from '../text/safeText';
 
 /**
@@ -37,10 +38,6 @@ const SECOND: Partial<Record<ActionId, string>> = {
   A11: 'A11 ends idle processes of the configured families — idle for at least processes.idleOlderThanHours.',
   A12: 'A12 removes Playwright browsers no project references and the NuGet http-cache; they are downloaded again (the timer runs it only when auto.A12 is on).',
 };
-
-function gb(bytes: number): string {
-  return `${(bytes / 1e9).toFixed(1)} GB`;
-}
 
 function figures(action: PreviewedAction): string {
   if (!action.available) {

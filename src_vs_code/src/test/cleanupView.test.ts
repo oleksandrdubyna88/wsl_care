@@ -119,3 +119,23 @@ test('Last cleanup: the results this window showed, newest first, with their lev
   assert.match(deriveCleanup(snapshot(status), IDLE).controls.dockerAfter, /^Docker after the last cleanup: /);
   assert.equal(deriveCleanup(snapshot(headBody('status'), null), IDLE).controls.dockerAfter, '');
 });
+
+test('E6.S3 review C2: absent is not zero — an unread count reads "? objects" (no button), unread bytes "? GB"; a real 0 is "nothing to clean"', () => {
+  const preview = headBody('preview');
+  const rows = preview.rows as Body[];
+  rows[0] = { ...rows[0], count: undefined, reclaimableBytes: 5e9 };
+  rows[1] = { ...rows[1], count: 3, reclaimableBytes: undefined };
+  rows[2] = { ...rows[2], count: 0, reclaimableBytes: 0 };
+  const { controls } = deriveCleanup(snapshot(headBody('status'), preview), IDLE);
+  const [first, second, third] = controls.rows;
+  assert.deepEqual([first?.note, first?.enabled], ['? objects · 5.0 GB', false]);
+  assert.deepEqual([second?.note, second?.enabled], ['3 · ? GB', true]);
+  assert.deepEqual([third?.note, third?.enabled], ['nothing to clean', false]);
+});
+
+test('E6.S3 review C2: "Docker after" with a type Docker could not size says "at least" and how many were not read — never a smaller total as the whole', () => {
+  const preview = headBody('preview');
+  const types = (preview.totals as { types: Body[] }).types;
+  types[0] = { ...types[0], reclaimable: { available: false, reason: 'not read' } };
+  assert.match(deriveCleanup(snapshot(headBody('status'), preview), IDLE).controls.dockerAfter, /: at least \d+\.\d GB reclaimable, 1 type not read \(docker system df, read at /);
+});

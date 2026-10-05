@@ -167,7 +167,10 @@
 
   function cleanRow(row, controls, selectedButton) {
     const line = element('div', undefined, { 'clean-row': row.rowId });
-    const tick = actionButton('Select ' + row.rowId, { select: row.rowId }, !row.enabled, function () { return { type: 'none' }; });
+    // A tick is a page-local selection: it toggles and posts NOTHING (review C15).
+    const tick = element('button', 'Select ' + row.rowId, { select: row.rowId });
+    tick.setAttribute('type', 'button');
+    tick.disabled = !row.enabled;
     tick.setAttribute('aria-pressed', selected.has(row.rowId) ? 'true' : 'false');
     tick.addEventListener('click', function () {
       if (!tick.disabled) {

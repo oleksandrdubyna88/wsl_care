@@ -8,6 +8,7 @@ import { CAPABILITIES, FULL_CHECK_ACTIONS } from '../root/cleanupController';
 import { rootFailureText } from '../root/rootFailureText';
 import type { RunningBlock } from '../root/rootOutcome';
 import type { Snapshot } from '../state/outcomeStore';
+import { gb, minuteOf } from '../text/format';
 import { safeText } from '../text/safeText';
 import type { StopTarget } from './cleanFlow';
 import type { JournalEntry } from './journal';
@@ -120,16 +121,19 @@ function inFlightOf(running: RunningBlock | undefined, entries: readonly Journal
   return flowBusy ? { state: 'Confirming…', level: 'none', reason: 'a cleanup is being confirmed' } : daemon;
 }
 
-function gb(bytes: number): string {
-  return `${(bytes / 1e9).toFixed(1)} GB`;
-}
-
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function number(value: unknown): number {
-  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+/** A figure the daemon answered — or `undefined`: absent is not zero (review C2), it is shown as "?". */
+function known(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function bytesText(value: unknown): string {
+  const bytes = known(value);
+
+  return bytes === undefined ? '? GB' : gb(bytes);
 }
 
 function previewBody(snapshot: Snapshot): JsonObject | undefined {
@@ -143,12 +147,25 @@ function rowNote(row: JsonObject): string {
     return `unavailable — ${safeText(typeof row.reason === 'string' ? row.reason : '', RUN_TEXT)}`;
   }
 
-  return number(row.count) > 0 ? `${number(row.count)} · ${gb(number(row.reclaimableBytes))}` : 'nothing to clean';
+  return countNote(known(row.count), row.reclaimableBytes);
+}
+
+function countNote(count: number | undefined, bytes: unknown): string {
+  if (count === undefined) {
+    return `? objects · ${bytesText(bytes)}`;
+  }
+
+  return count > 0 ? `${count} · ${bytesText(bytes)}` : 'nothing to clean';
+}
+
+/** Something to clean, as the daemon counted it: readable and a known count above 0 (an unread count is no button). */
+function hasSomething(row: JsonObject): boolean {
+  return row.available !== false && (known(row.count) ?? 0) > 0;
 }
 
 function cleanRow(row: JsonObject, offered: boolean, reported: readonly string[]): CleanRow {
   const id = String(row.id);
-  const can = offered && row.available !== false && number(row.count) > 0 && reported.includes(id);
+  const can = offered && hasSomething(row) && reported.includes(id);
 
   return { rowId: id, label: `Clean ${id}`, enabled: can, note: rowNote(row) };
 }
@@ -199,18 +216,17 @@ function stopOf(stoppable: readonly StopTarget[]): CleanupControls['stop'] {
   return first === undefined ? undefined : { index: 0, label: `Stop run ${first.runId}` };
 }
 
-/** `2026-10-05 10:31 UTC` — an instant as the daemon's records spell it, cut to the minute. */
-function minuteOf(instant: string): string {
-  const ms = Date.parse(instant);
-
-  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC` : 'an unknown time';
-}
-
-function reclaimable(preview: JsonObject): number {
+/** The reclaimable total — and how many types Docker could not size, which the text then says (review C2). */
+function reclaimable(preview: JsonObject): { readonly bytes: number; readonly unread: number } {
   const totals = isObject(preview.totals) ? preview.totals : {};
   const types = Array.isArray(totals.types) ? totals.types.filter(isObject) : [];
+  const sizes = types.map((t) => known(isObject(t.reclaimable) ? t.reclaimable.bytes : undefined));
 
-  return types.reduce((sum, t) => sum + number(isObject(t.reclaimable) ? t.reclaimable.bytes : 0), 0);
+  return { bytes: sizes.reduce<number>((sum, b) => sum + (b ?? 0), 0), unread: sizes.filter((b) => b === undefined).length };
+}
+
+function reclaimableText(total: { readonly bytes: number; readonly unread: number }): string {
+  return total.unread === 0 ? `${gb(total.bytes)} reclaimable` : `at least ${gb(total.bytes)} reclaimable, ${total.unread} ${total.unread === 1 ? 'type' : 'types'} not read`;
 }
 
 /** M7: "Docker after" — the preview's totals, labelled with the time they were read, and whether that is after the last cleanup. */
@@ -221,7 +237,7 @@ function dockerAfterOf(preview: JsonObject | undefined, status: JsonObject): str
   const read = typeof preview.sampledAt === 'string' ? preview.sampledAt : '';
   const after = Date.parse(read) > lastCleanupStart(status);
 
-  return `${after ? 'Docker after the last cleanup' : 'Docker now'}: ${gb(reclaimable(preview))} reclaimable (docker system df, read at ${minuteOf(read)})`;
+  return `${after ? 'Docker after the last cleanup' : 'Docker now'}: ${reclaimableText(reclaimable(preview))} (docker system df, read at ${minuteOf(read)})`;
 }
 
 /** When the newest recorded cleanup started — +∞ when there is none, so nothing reads as "after" it. */

@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 import type { JournalEntry } from '../cleanup/journal';
 import { handOffNotice, resultNotice } from '../cleanup/resultText';
+import type { RunResult } from '../cleanup/runFollower';
 import { parseRunShow } from '../cleanup/runAnswers';
 import { DAEMON_EXIT, WSL_EXE_FAILED } from '../client/exitCodes';
 import { exitFailure } from '../root/rootFailures';
@@ -21,6 +22,11 @@ function runId(text: string): RunId {
   const id = runIdOf(text);
   assert.ok(id !== undefined);
   return id;
+}
+
+/** The words at the 30-minute ceiling the follower uses. */
+function noticeOf(result: RunResult): ReturnType<typeof resultNotice> {
+  return resultNotice(result, 30 * 60_000);
 }
 
 const ENTRY: JournalEntry = { id: 'e', kind: 'run', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: '2026-10-05T10:00:00.000Z', runId: runId('20261005T100000Z-77') };
@@ -49,20 +55,20 @@ test('the hand-off: accepted names its run id and says the panel follows it; unk
 });
 
 test('a terminal answer: done with what it freed, refused and interrupted with the daemon\'s reason, unknown, the ceiling, never-ran, ambiguous', () => {
-  const done = resultNotice({ kind: 'run', entry: ENTRY, show: { ...show('runs-show-done.json'), line: { runId: ENTRY.kind === 'run' ? ENTRY.runId : undefined, trigger: 'manual', startedAt: '', outcome: 'completed', freedBytes: 59_598_000_000, actions: [{ id: 'A4', status: 'ran', count: 387, freedBytes: 59_598_000_000 }], reason: '' } } });
+  const done = noticeOf({ kind: 'run', entry: ENTRY, show: { ...show('runs-show-done.json'), line: { runId: ENTRY.kind === 'run' ? ENTRY.runId : undefined, trigger: 'manual', startedAt: '', outcome: 'completed', freedBytes: 59_598_000_000, actions: [{ id: 'A4', status: 'ran', count: 387, freedBytes: 59_598_000_000 }], reason: '' } } });
   assert.deepEqual(done, { level: 'info', sentence: 'Run 20261005T100000Z-77 (A4) is done: freed 59.6 GB, 387 objects removed.' });
-  const interrupted = resultNotice({ kind: 'run', entry: ENTRY, show: show('runs-show-interrupted.json') });
+  const interrupted = noticeOf({ kind: 'run', entry: ENTRY, show: show('runs-show-interrupted.json') });
   assert.equal(interrupted.level, 'warn');
   assert.match(interrupted.sentence, /^Run 20261005T100000Z-77 \(A4\) was interrupted: swept: pid 4242 is gone/);
-  const refused = resultNotice({ kind: 'run', entry: ENTRY, show: { ...show('runs-show-unknown.json'), state: { kind: 'known', value: 'refused' }, reason: 'busy: run X holds the lock' } });
+  const refused = noticeOf({ kind: 'run', entry: ENTRY, show: { ...show('runs-show-unknown.json'), state: { kind: 'known', value: 'refused' }, reason: 'busy: run X holds the lock' } });
   assert.match(refused.sentence, /was refused: busy: run X holds the lock$/);
-  assert.match(resultNotice({ kind: 'run', entry: ENTRY, show: show('runs-show-unknown.json') }).sentence, /^The daemon does not know run 20261005T100000Z-77: no history line/);
-  assert.match(resultNotice({ kind: 'run', entry: ENTRY, show: { ...show('runs-show-unknown.json'), state: { kind: 'unknown', label: 'unknown (paused)' } } }).sentence, /a state this extension does not know: unknown \(paused\)/);
-  const ceiling = resultNotice({ kind: 'ceiling', entry: ENTRY });
+  assert.match(noticeOf({ kind: 'run', entry: ENTRY, show: show('runs-show-unknown.json') }).sentence, /^The daemon does not know run 20261005T100000Z-77: no history line/);
+  assert.match(noticeOf({ kind: 'run', entry: ENTRY, show: { ...show('runs-show-unknown.json'), state: { kind: 'unknown', label: 'unknown (paused)' } } }).sentence, /a state this extension does not know: unknown \(paused\)/);
+  const ceiling = noticeOf({ kind: 'ceiling', entry: ENTRY });
   assert.equal(ceiling.level, 'warn');
   assert.match(ceiling.sentence, /^Run 20261005T100000Z-77 \(A4\): state unknown — no answer that it ended within 30 minutes/);
   const unresolved: JournalEntry = { id: 'u', kind: 'unresolved', op: 'clean', distro: 'Ubuntu', actions: ['A4', 'A5'], since: '2026-10-05T10:00:00.000Z' };
-  assert.match(resultNotice({ kind: 'neverRan', entry: unresolved }).sentence, /^The cleanup of A4, A5 confirmed at 2026-10-05 10:00 UTC never ran: the daemon recorded no run of it\.$/);
-  assert.match(resultNotice({ kind: 'ambiguous', entry: unresolved, candidates: [runId('20261005T100000Z-80'), runId('20261005T100001Z-81')] }).sentence, /runs 20261005T100000Z-80, 20261005T100001Z-81 each match/);
-  assert.match(resultNotice({ kind: 'neverRan', entry: { ...unresolved, op: 'fullCheck', actions: ['collect'] } }).sentence, /^The full check confirmed at/);
+  assert.match(noticeOf({ kind: 'neverRan', entry: unresolved }).sentence, /^The cleanup of A4, A5 confirmed at 2026-10-05 10:00 UTC never ran: the daemon recorded no run of it\.$/);
+  assert.match(noticeOf({ kind: 'ambiguous', entry: unresolved, candidates: [runId('20261005T100000Z-80'), runId('20261005T100001Z-81')] }).sentence, /runs 20261005T100000Z-80, 20261005T100001Z-81 each match/);
+  assert.match(noticeOf({ kind: 'neverRan', entry: { ...unresolved, op: 'fullCheck', actions: ['collect'] } }).sentence, /^The full check confirmed at/);
 });
