@@ -1512,6 +1512,72 @@ Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red an
 - **Capability `agents.list`** ships with E7.S1 (the story row put it in E7.S2 with the others); `agents.probe` and
   `config.agentsExtra` stay E7.S2's.
 
+#### E7.S2b — orphaned AI-agent processes (owner decision 2026-10-05)
+
+**The ask.** AI-agent CLI processes (`claude`, and the other members of the `ai-agents` process family) left behind on WSL
+— their terminal gone, re-parented to init, doing nothing — hold memory for days. The owner wants them cleanable. A11
+excludes the family today and Q13 assumed it stays excluded; this amendment answers Q13: **not through the general
+`processes.families` list (its exclusion of `ai-agents` stays, E7.S0's B1 test holds it), but through a dedicated path of
+its own.** Built AFTER E7.S2, as its own story.
+
+**Decided:**
+
+1. **A new action id, `A18` — "orphaned AI-agent processes", a BUTTON only.** Not a section of A11: A11 has a timer
+   switch (`auto.A11`), and a part of it that must never run on the timer would be an exception inside one action. A18 has
+   no `auto` key; its `Trigger` never fires (as A12's, `BrowserAndHttpCaches.cs:77`), and the timer pass and
+   `collect --timer` never select it, whatever any setting says — a test holds both. Its own preview row; `contracts/actions.json`
+   and the extension's registry gain `A18` (generated / held equal as today); the reserved name `collect` stays reserved.
+   Execution order: beside A11 (after the Docker actions, before A1 / A2), user-scoped (`CommandScope.User` — the target user).
+2. **Eligibility — ALL of:** the process is in the `ai-agents` family (`Collectors/ProcessFamilies.cs`, the catalogue's
+   binaries); it belongs to the TARGET user (E7.S0 review S7 — never another account's, never root's); its parent is gone
+   (re-parented to init / the session's subreaper, as A11 judges "orphaned"); no controlling TTY; **no CPU for N hours,
+   measured** (item 3); and **no live session of that agent**: the agent's session layout (E7.S1, D2) is CONFIRMED and no
+   session file of that agent under the target home was modified within the last N hours (listing + stat only, as E7.S1's
+   `SessionGlob`; a listing cut by its ceiling or its time = "cannot tell" = not eligible). An agent whose layout is
+   unconfirmed (monitor only), or a process the catalogue cannot attribute to ONE agent, is **never eligible**.
+3. **"No CPU for N hours" is measured, not approximated.** A11 judges "older than N h and < 1 CPU-second over the last
+   interval"; A18 does not. Every run (timer or button, preview included) records, for each `ai-agents` candidate of the
+   target user, its cumulative CPU ticks (`/proc/<pid>/stat` utime + stime) keyed by its IDENTITY — `(pid, boot_id, start
+   ticks = /proc/<pid>/stat field 22)`. A process is idle for N h only when the state holds a sample of the SAME identity
+   taken ≥ N h ago whose CPU ticks equal now's. Missing history, a different boot, a different start time (a reused pid) →
+   not eligible; so the first runs after install never end anything.
+   **State file** `/var/lib/wsl-care/agent-cpu.json` — root-owned 0600, written atomically (temp + rename, the state-file
+   reader on the way back: `ReadStateFile`, uid 0, no link, no wait, a cap); per identity the OLDEST sample whose ticks
+   still equal the newest (so "unchanged since" is one comparison) and the newest; entries for live processes only, pruned
+   on every run; capped (≤ 512 identities, ≤ 64 KiB) — over the cap the oldest identities drop and are simply "no history".
+   An unprivileged run neither reads nor writes it (its preview says "measured by the root runs only").
+4. **A new setting `processes.aiAgentsIdleHours`**, default **4**, range **1–168** h, `KeyTrust.Higher` (a longer idle
+   requirement is stricter — a user layer may only raise it when root does not trust it, R1.2), in `default.json`,
+   `ConfigKeys`, `contracts/config-keys.json`; mirrored by E7.S3 like every other key. The SAME N is the CPU window and the
+   session window.
+5. **The confirmation** (the button's modal, E6's host modal) names every process: agent, pid, idle hours (the measured
+   "unchanged since"), its project folder when the session listing attributes one — every string sanitised (R2.4, E6's
+   `safeText`). The run re-checks each target's identity and ticks (as A11, `SuspectTermination.cs:176-186`): a process
+   that used CPU, gained a terminal, changed owner or is a different identity is KEPT, with why.
+6. **Signals as A11:** SIGTERM through the pidfd sender by pid AND start time, SIGKILL after 10 s if still the same
+   identity; the run detail lists every process with its outcome (ended by SIGTERM, by SIGKILL, kept, already gone).
+
+**Files:** `Actions/ActionId.cs` (A18 in `All` and the execution order), `Actions/Suspects/AgentOrphans.cs` (new, the
+action — reusing `SuspectTermination`'s sampling and signal path by extraction, not copy), `Actions/Suspects/AgentCpuHistory.cs`
+(new, the state file), `Agents/AgentCatalogue.cs` + `Agents/SessionGlob.cs` (the "live session" check),
+`Collectors/ProcessFamilies.cs` (agent attribution), `Config/ConfigKeys.cs` + `default.json`, `Actions/Engine/ActionRegistry`
+(registration; the timer's selection), `contracts/actions.json`, `contracts/config-keys.json`, the extension's action
+registry (generated), `research/module_tests.md`, `research/architecture.md`, `README.md`.
+
+**RED tests** (each red for its real symptom first, then the teeth): `Ai_agent_orphan_is_eligible_only_after_N_hours_without_cpu_by_identity`;
+`Missing_history_never_makes_a_process_eligible`; `A_reused_pid_is_never_treated_as_idle` (same pid, another start time /
+boot); `A_live_session_keeps_the_agent_process` (a session file modified within N h); `An_unconfirmed_layout_keeps_the_agent_process`;
+`Another_accounts_agent_process_is_never_a_candidate`; `A_process_with_a_terminal_or_a_live_parent_is_kept`;
+`The_timer_never_ends_an_agent_process` (`collect --timer` with every `auto` on); `The_run_rechecks_identity_and_cpu_before_each_signal`;
+`The_cpu_history_is_root_only_bounded_and_pruned_to_live_processes`; `processes_aiAgentsIdleHours_is_1_to_168_default_4_safe_higher`;
+the families exclusion of E7.S0 still green (`ai-agents` NOT choosable in `processes.families`).
+
+**DoD:** the RED tests above seen red then green, each guard broken and seen red again; A18 a button only by structure and
+by test; the history file bounded, root-only, pruned; the setting in the contract; the modal's strings sanitised; docs,
+goldens (the preview row, `capabilities` unchanged unless the extension needs one — decided at build), module_tests flows.
+**Windows** (W-A11, E12) stays separate; the same rule should apply there — a setting defaulting to 4 h, a button only
+(recorded in *Boundaries*). The coai code round after E7.S2 covers E7.S2b if it is built by then; otherwise it gets its own.
+
 #### Stories
 
 | # | Story | Files (verified above) | Acceptance | Model, reviews |
@@ -1519,6 +1585,7 @@ Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red an
 | **E7.S0** | **The config trust and contract (daemon) — R1.** FIRST the live bug of R1.3 (B1): closed text / list keys, `processes.families` without `other` / `ai-agents`, `archive.baseFolder` machine-only, the slot-bounds and no-config-in-policy tests; then the hardened read of both layers (owner per layer, 256 KiB) and the bounded `ReadCurrent`; the sweep of the six sibling root reads under the per-class reader policy (M2) + the call-site classification test; interop-off ⇒ the safe-direction rule (M3); the logging keys' safe direction; the user-layer digest in `status`; run detail `config` provenance (additive); `contracts/config-keys.json` (name, shape, min, max, allowed, default, `rootEffect` and its safe direction — what the extension's loosening modal keys on) + `ContractFilesTests`; the test that no key reaches a policy, template or path slot; capability `config.contract` | `ConfigLoader.cs`, `RegularFiles.cs`, `PhysicalFileSystem.cs`, `IFileSystem.cs`, `CliHost.cs`, `TargetUser.cs`, `WindowsSystemDrive.cs` (reuse only), `TargetUserCommands.cs`, `BrowserAndHttpCaches.cs`, `EditorServerCleanup.cs`, `HealthCollector.cs`, `DockerHygiene.cs`, `Collect/RunDetail.cs`, `ConfigKeys.cs` (metadata), `ConfigValidation.cs`, `ProcessFamilies.cs`, `SuspectTermination.cs` (tests only), `Cli/Logging/WslCareLogging.cs`, `UserConfigWriter.cs`, `Status/StatusReport.cs`, `Status/Capabilities.cs:36`, `contracts/config-keys.json` (new) | `config set processes.families other` refused (RED today) and a user layer holding it is a `ConfigError`; a FIFO, a link, a foreign-owned or group-writable user layer → observe-only naming why, within 1 s, root never blocks; the drvfs reads still read a 0777 `.wslconfig`; interop disabled → a loosening user value ignored with the sentence, a tightening one applied, user-scoped actions still run; a timer run under a user value names it in `runs show`; contract drift red with one renamed key | **Fable** if its monthly limit has reset, else **Opus** (recorded, §15j M10); two own reviews: security / confused deputy, crash / durable state |
 | **E7.S1** | **The agent catalogue, discovery, the daily walk (daemon) — R2.** `Agents/agents.json` (embedded data: binaries, npm packages, data folders per OS, session layout per D2, `neverEnter`); discovery (PATH as the invoking user — the target user's fixed bin list as root, `TargetUserCommands`; npm global folders by existence, no `npm` process; folders); `slow.agents` (totals, counts, dates) on the 20 h walk under the 3 min total ceiling; `agents list [--measure] --json` (both RIDs); D3's version from disk, nothing executed; `memory` never entered for any agent, the prefix exclusion, the per-directory device check; catalogue → protected roots + never-list names | `Agents/` (new), `FolderSizes.cs` (the walk joins `collect`, not `FolderSizes`' own list), `SlowParts.cs`, `CollectRun.cs:344`, `LinuxHostPaths.cs:127/137`, `WindowsHostPaths.cs:77`, `NeverList.cs:31`, `Files/TreeWalk.cs`, `Files/IFileSystem.cs`, `PhysicalFileSystem.cs` and the file-system fakes, `Json/WslCareJsonContext.cs`, `CommandLine.cs` (verb), contracts goldens | `agents list` on the fixture home finds each entry by binary, by npm package, by folder alone; the §4.6 per-agent fields; sessions per layout, "—" when unconfirmed; growth vs the previous sample; no process started by discovery (a recording runner); the syscall-level no-open scenario (H3); a nested mount → "excluding <subdir> (different filesystem)"; the walk stops at the total ceiling with the rest "not measured this run" | **Opus**; two own reviews: agent-folder safety (H1–H3), privacy |
 | **E7.S2** | **`aiAgents.extra` and `agents probe` (daemon) — R2.** A fifth value shape (`AgentListKey`: `{cli, side, name, dataFolders[], sessionGlob}`) with R2.1's validation; `config set aiAgents.extra -` reading compact JSON from stdin (the bounded stdin reader of `--only -`, `Cli/StdinList.cs:20`, widened, 1 MiB / 10 s); `agents probe <path> --json` unprivileged only (C3's refusal text); the declared cleanup roots (M8); the two-phase host (M1); extras in the walk and — failing or not — in the protected roots (B2); capabilities `agents.list`, `agents.probe`, `config.agentsExtra` | `ConfigKey.cs`, `ConfigValidation.cs`, `ConfigDocument.cs`, `UserConfigWriter.cs`, `StdinList.cs`, `Agents/`, `ProtectedRoots.cs`, `CliHost.cs`, `Program.cs`, `Capabilities.cs`, `ICleanupAction.cs`, `CacheFolders.cs`, `NpmCacheClean.cs`, `ToolCacheTrims.cs`, `BrowserAndHttpCaches.cs` | each R2.1 refusal names the rule (the product's own folders included); a manual folder makes A12 / A17 refuse under it; a valid extra, then a new overlapping cleanup root → the action refuses (B2); the run's policy holds the extras (M1); every user-home action declares its roots; the probe refuses as root naming uid 0 and the fix; the probe opens nothing; `cli` never a path argument in a root run | **Opus**; two own reviews: path validation / confused deputy, data safety |
+| **E7.S2b** | **Orphaned AI-agent processes (daemon) — owner decision 2026-10-05.** A18, a button only: the target user's `ai-agents` processes that are orphaned, have no TTY, used NO CPU for `processes.aiAgentsIdleHours` (default 4) MEASURED by identity `(pid, boot_id, start ticks)` against the root-only `agent-cpu.json`, and whose agent (confirmed layout only) has no session file modified within that window; SIGTERM then SIGKILL after 10 s; every process in the record | see *E7.S2b* above | the RED tests listed there | **Opus**; the coai code round after E7.S2 (or its own) |
 | — | *(gate)* the daemon parts merge; `extension-v0.1.0` tagged (E5 live gate) and E6.S2 merged (PR #12) before E7.S3 | | | |
 | **E7.S3** | **Settings ↔ config (extension) — R1's other half.** `package.json` settings generated from / held equal to `contracts/config-keys.json` (`application`, `ignoreSync`); ONE module `src/config/configCall.ts` (only `config get --json`, `config set <key> <value>`, `config reset <key>`, `config set aiAgents.extra -`, no `-u`); the bundle scan amended: `config` allowed ONLY in that region, forbidden in the root region and everywhere else; `-u`, `root`, `--timer` forbidden in the config region; the reconcile + one-time notice; mirror-on-change, revert-on-refusal, the loosening modal; a daemon without `config.contract` → the settings shown read-only "update the daemon" | `src/config/` (new), `client/verbs.ts`, `client/WslCareClient.ts`, `extension.ts`, `package.json`, `test/bundleScan.test.ts`, `test/structure.test.ts`, the fake `wsl.exe` | each mirrored setting's exact argv; the scan red with `config` planted outside its region, `-u` planted inside it; a refused value reverted with its message; one notice per digest across a reload; no `-u` anywhere on the path | **Opus**; two own reviews: confused deputy (argv, scopes, sync), durable state of the notice / revert loop |
 | **E7.S4** | **The AI-agents section and *Add CLI path…* (extension, WSL side).** The panel section of §7.2 from `agents list --json` (on panel open / refresh, never polled — §15g M1); D4's flow; the manual badge and Remove; warnings (`aiAgents.warnGb`, `sessionWarnMb`); "—" for unconfirmed sessions; R2.4 sanitising | `src/agents/` (new), `panel/fieldMap.ts`, `panel/viewModel.ts`, `panel/messages.ts`, `panel/panelHtml.ts`, `media/panel.js`, `research/architecture.md` field map (:1830) | the path-mapping table (UNC, `\\wsl$`, another distro, `X:\`, a control character, a leading `-`); the probe's exact argv with no `-u`; the webview's two messages only; a crafted project name renders inert | **Opus**; two own reviews: confused deputy (path → argv), webview / rendering |
@@ -1573,6 +1640,7 @@ deviations).
 |---|---|---|
 | the agent catalogue, session layouts (D2), `aiAgents.extra` with `sessionGlob`, the protected roots | E7 (this section) | E9 ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md) §3) adds each entry's `archive` block and the move; it reads E7's `sessionGlob` (validated by E7, R2.1) and must not redefine "one session" |
 | the Windows agents walk and its one-file cache | E7.S5 | the Windows collectors, task and history are E11 ([PLAN_windows_care.md](PLAN_windows_care.md)); `%TEMP%\claude\` and every TEMP cleanup are E12 (W-A2's guard) |
+| orphaned AI-agent processes | E7.S2b (A18, the distro's) | Windows' W-A11 (E12, [PLAN_windows_care.md](PLAN_windows_care.md)) is separate; the same rule should apply there — a setting defaulting to 4 h, a button only, idle measured by identity |
 | the bundle scan's regions | E6.S2 (root region), E7.S3 (config region) | E7.S3 widens E6.S2's rule "config forbidden everywhere" to "everywhere but the config region"; the root region stays as E6 left it |
 
 Order: E7's daemon parts first (additive), then the extension parts after both release gates above. Disjoint otherwise.
@@ -1586,6 +1654,7 @@ Order: E7's daemon parts first (additive), then the extension parts after both r
 | `slow.agents` on the history line (totals, counts, dates — no session names) | once per 20 h: ~6 tracked agents × ~300 B ≈ 2 KB/day → ~0.2 MB over the 90-day history retention; worst case (every catalogue entry + 16 extras) ≈ 11 KB/day → ~1 MB | the history's 90-day retention | the line is written whole or not at all (write order §15b #1) |
 | run detail `config` provenance | ≤ ~50 entries × ~80 B ≈ 4 KB per run | the run details' 90-day retention | as the detail |
 | `%LOCALAPPDATA%\wsl-care\agents-last.json` | ONE file, two samples (newest + the one ≥ 20 h older, for growth), ≤ 64 KiB | replaced on every walk; E11 retires the file (its history takes over) | atomic temp + rename |
+| `/var/lib/wsl-care/agent-cpu.json` (E7.S2b: per process identity, the oldest unchanged and the newest CPU sample) | live `ai-agents` processes of the target user only, ≤ 512 identities, ≤ 64 KiB; ~10 entries × ~120 B ≈ 1 KiB typical | pruned on every run to live identities; the cap drops the oldest | atomic temp + rename; a torn or unreadable file = "no history" (nothing eligible), rewritten whole |
 | extension `globalState` | one digest per distribution | replaced when the digest changes | — |
 | unprivileged run logs of `agents list` / `config get` / `agents probe` | one file per call (§15g M1); on panel open / refresh / a click only — never polled | the existing log retention | — |
 
@@ -1595,7 +1664,7 @@ measures the added time on the fixture and the live gate on this machine, agains
 
 #### Build order
 
-1. E7.S0 (everything later writes through it) → 2. E7.S1 → 3. E7.S2 → the daemon release carrying them →
+1. E7.S0 (everything later writes through it) → 2. E7.S1 → 3. E7.S2 → 3b. E7.S2b → the daemon release carrying them →
 4. *(wait for `extension-v0.1.0` and PR #12)* → 5. E7.S3 → 6. E7.S4 → 7. E7.S5 → 8. the E7 live gate.
 
 #### The E7 live gate (owner; each step observed, stamped with date, build and outcome)
@@ -1648,7 +1717,10 @@ measures the added time on the fixture and the live gate on this machine, agains
 - [ ] *Add CLI path…* by picker (by URI scheme, M12) and by typed path; the path never in a root argv, never opened by root.
 - [ ] Mirrored only for "our" changes (C2), by one window (M4), through one write function (M5), without starting the VM
       (M6); a partial *Keep VS Code's* reported "k of N" (C4).
-- [ ] The owner's ask (2), "older than N", met for the EXISTING age keys only (no new knob, Q7).
+- [ ] The owner's ask (2), "older than N", met for the EXISTING age keys only (no new knob, Q7) — plus the one knob the
+      owner decided on 2026-10-05, `processes.aiAgentsIdleHours` (E7.S2b).
+- [ ] E7.S2b: an orphaned `ai-agents` process ends only by the button, only after N h without CPU measured by identity,
+      never with a live session of its agent; the timer never ends one (test).
 - [ ] `wsl-care.exe` bundled byte-for-byte from the attested asset (S5a); the Windows agents rows (S5b) and the Windows
       Memory / Disk rows (S5c, or recorded as moved to E11) filled.
 - [ ] The extension parts merged only after `extension-v0.1.0` (and PR #12); the widened release check proves it.
@@ -1663,7 +1735,8 @@ A5 / A6Unused / A8 / A11 / A12 / A17 and any families change, a notice with Undo
 unused keys, `daemonUnused` in the contract; Q7 no new knobs; Q8 names shown live in the panel only, never persisted in
 history; Q9 the Windows walk at panel open, ≤ hourly, in the background, under a total ceiling, the cached result shown at
 once; Q10 E6 first → `extension-v0.3.0`; Q11 DECIDED (C5): the sweep is in E7.S0; Q12 stays with the open churn decision.
-Added by the review: **Q13** may `ai-agents` be a choosable A11 family (assumed: no)?
+Added by the review: **Q13** may `ai-agents` be a choosable A11 family (assumed: no)? **ANSWERED by the owner 2026-10-05:** not via the
+general families list; via E7.S2b's dedicated button-only action A18 (see *E7.S2b*).
 
 1. **Memory folders:** never entered at all (proposed — their size is not counted, the total says "excluding memory"), or
    may their SIZE be measured by stat (still never opened)?
