@@ -20,6 +20,10 @@ export interface RunningBlock {
   readonly trigger: string;
   readonly actions: readonly string[];
   readonly reason: string;
+  /** The action in flight (`current`), when the daemon names one. */
+  readonly current: string;
+  /** The run's process — reported for live and wedged runs only (E6.S0 review S3); a stop the daemon cannot make shows it. */
+  readonly pid: number | undefined;
 }
 
 export type RootFailure =

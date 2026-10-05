@@ -4,7 +4,8 @@
 // no innerHTML, no markup strings, nothing parsed. Every value is text; a process name of '</script><img …>' is shown
 // as those characters (src/test/panelPage.test.ts runs this file in a strict DOM that throws on every HTML sink).
 //
-// It sends the host only its closed set (src/panel/messages.ts): ready, rendered, and the id of a pressed button.
+// It sends the host only its closed set (src/panel/messages.ts): ready, rendered, the id of a pressed button — and, since
+// E6.S3, the cleanup messages: clean / cleanSelected with row ids, runFullCheck, stop with the index the host gave it.
 (function () {
   'use strict';
 
@@ -116,6 +117,123 @@
     return node;
   }
 
+  // ---- E6.S3: the cleanup controls (src/panel/view.ts CleanupControls) — every state the host derived; the page holds
+  // only which rows are ticked for "Clean selected", a selection, never a status. Each button posts one message of the
+  // closed set (src/panel/messages.ts): row ids of the compiled enum, an index the host gave it, or nothing at all. ----
+
+  /** The rows ticked for "Clean selected" — kept across renders, dropped once a row is no longer enabled. */
+  const selected = new Set();
+
+  /** A button that posts `message` when pressed — and nothing while it is disabled, as a browser would not fire it. */
+  function actionButton(label, data, disabled, message) {
+    const node = element('button', label, data);
+    node.setAttribute('type', 'button');
+    node.disabled = disabled;
+    node.addEventListener('click', function () {
+      if (!node.disabled) {
+        vscode.postMessage(message());
+      }
+    });
+    return node;
+  }
+
+  function selectedIds(rows) {
+    return rows.filter(function (row) { return selected.has(row.rowId); }).map(function (row) { return row.rowId; });
+  }
+
+  function selectedLabel(rows) {
+    return 'Clean selected (' + selectedIds(rows).length + ')';
+  }
+
+  function cleanSelected(controls) {
+    const node = actionButton(selectedLabel(controls.rows), { 'clean-selected': '' }, true, function () {
+      return { type: 'cleanSelected', rowIds: selectedIds(controls.rows) };
+    });
+    node.disabled = !controls.enabled || selectedIds(controls.rows).length === 0;
+    return node;
+  }
+
+  /** Ticking a row: its pressed state, and the "Clean selected" button's count and state, changed in place. */
+  function toggle(row, toggleButton, controls, selectedButton) {
+    if (selected.has(row.rowId)) {
+      selected.delete(row.rowId);
+    } else {
+      selected.add(row.rowId);
+    }
+    toggleButton.setAttribute('aria-pressed', selected.has(row.rowId) ? 'true' : 'false');
+    selectedButton.textContent = selectedLabel(controls.rows);
+    selectedButton.disabled = !controls.enabled || selectedIds(controls.rows).length === 0;
+  }
+
+  function cleanRow(row, controls, selectedButton) {
+    const line = element('div', undefined, { 'clean-row': row.rowId });
+    const tick = actionButton('Select ' + row.rowId, { select: row.rowId }, !row.enabled, function () { return { type: 'none' }; });
+    tick.setAttribute('aria-pressed', selected.has(row.rowId) ? 'true' : 'false');
+    tick.addEventListener('click', function () {
+      if (!tick.disabled) {
+        toggle(row, tick, controls, selectedButton);
+      }
+    });
+    line.appendChild(tick);
+    line.appendChild(actionButton(row.label, { clean: row.rowId }, !row.enabled, function () { return { type: 'clean', rowIds: [row.rowId] }; }));
+    line.appendChild(element('span', row.note, { note: '' }));
+    return line;
+  }
+
+  function pruneSelection(rows) {
+    Array.from(selected).forEach(function (id) {
+      if (!rows.some(function (row) { return row.rowId === id && row.enabled; })) {
+        selected.delete(id);
+      }
+    });
+  }
+
+  function stopPart(controls) {
+    if (controls.stop !== undefined && controls.stop !== null) {
+      const index = controls.stop.index;
+      return actionButton(controls.stop.label, { stop: '' }, false, function () { return { type: 'stop', index: index }; });
+    }
+    return element('p', controls.stopText, { 'stop-text': '' });
+  }
+
+  function cleanupControls(controls) {
+    pruneSelection(controls.rows);
+    const box = element('div', undefined, { cleanup: '' });
+    box.appendChild(element('p', controls.state, { 'cleanup-state': '', level: controls.stateLevel }));
+    box.appendChild(element('p', controls.reason, { 'cleanup-reason': '' }));
+    const selectedButton = cleanSelected(controls);
+    controls.rows.forEach(function (row) {
+      box.appendChild(cleanRow(row, controls, selectedButton));
+    });
+    box.appendChild(selectedButton);
+    box.appendChild(actionButton('Run full check now', { 'full-check': '' }, !controls.fullCheck, function () { return { type: 'runFullCheck' }; }));
+    box.appendChild(stopPart(controls));
+    return box;
+  }
+
+  function lastCleanupParts(controls) {
+    const box = element('div', undefined, { 'last-cleanup': '' });
+    const list = element('ul', undefined, { results: '' });
+    controls.results.forEach(function (result) {
+      list.appendChild(element('li', result.sentence, { result: '', level: result.level }));
+    });
+    box.appendChild(list);
+    box.appendChild(element('p', controls.dockerAfter, { 'docker-after': '' }));
+    return box;
+  }
+
+  /** The two sections the controls belong to — by the ids of src/panel/fieldMap.ts's SECTIONS. */
+  const EXTRAS = { cleanup: cleanupControls, lastCleanup: lastCleanupParts };
+
+  function sectionWithExtras(model, controls) {
+    const node = section(model);
+    const extra = Object.prototype.hasOwnProperty.call(EXTRAS, model.id) ? EXTRAS[model.id] : undefined;
+    if (extra !== undefined && isObject(controls)) {
+      node.appendChild(extra(controls));
+    }
+    return node;
+  }
+
   function isObject(value) {
     return value !== null && typeof value === 'object';
   }
@@ -126,7 +244,7 @@
   }
 
   function render(view) {
-    root.replaceChildren(header(view), ...view.sections.map(section));
+    root.replaceChildren(header(view), ...view.sections.map(function (model) { return sectionWithExtras(model, view.cleanup); }));
     const rows = view.sections.reduce(function (sum, model) {
       return sum + model.rows.length;
     }, 0);

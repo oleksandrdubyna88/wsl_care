@@ -6,6 +6,8 @@ import { installDaemon } from './install/installDaemon';
 import { installUiFor, newInstallRecorder, type InstallRecorder } from './install/installUi';
 import { performance } from 'node:perf_hooks';
 
+import { CleanupHost } from './cleanup/cleanupHost';
+import { cleanUiFor, newCleanRecorder, type CleanRecorder } from './cleanup/cleanUi';
 import { PanelProvider } from './panel/panelProvider';
 import { Poller, type Timers } from './poll/poller';
 import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSelection';
@@ -18,10 +20,11 @@ import { distroSettingText } from './wsl/distros';
 /**
  * AI OS Care — the extension over the `wsl-care` daemon (plan §7, E5–E6). It runs on the Windows side
  * (`extensionKind: ["ui"]`) and reaches the daemon only through `WslCareClient`, which starts the absolute
- * `%SystemRoot%\System32\wsl.exe` with one of four read-only verbs — and, since E6.S2, through the cleanup controller
- * (`root/cleanupController.ts`), the ONE host-side holder of the root boundary (`root/rootCall.ts`: a closed union of five
- * root calls). No button calls the controller yet — E6.S3 adds them; until then it is wired, and in Test mode reachable
- * through the test API, but nothing in the product invokes it.
+ * `%SystemRoot%\System32\wsl.exe` with one of four read-only verbs (and, since E6.S3, the two run reads) — and, since E6.S2,
+ * through the cleanup controller (`root/cleanupController.ts`), the ONE host-side holder of the root boundary
+ * (`root/rootCall.ts`: a closed union of five root calls). E6.S3 hangs the buttons on it (`cleanup/cleanupHost.ts`): the
+ * panel's closed messages reach the host transaction (`cleanup/cleanFlow.ts`), whose runs are written to `globalState`
+ * and followed by the durable poll (`cleanup/runFollower.ts`) to their end — across a reload.
  *
  * E5.S2 hangs on it: the status bar (`statusBar/`), the read-only panel (`panel/`), both reading ONE store of the newest
  * outcomes (`state/outcomeStore.ts`), and the poller (`poll/poller.ts`) that decides when the daemon is asked — the
@@ -41,6 +44,13 @@ const REAL_TIMERS: Timers = {
   },
 };
 
+const ONE_SHOT = {
+  after: (ms: number, run: () => void): (() => void) => {
+    const handle = setTimeout(run, ms);
+    return () => clearTimeout(handle);
+  },
+};
+
 function settings(): vscode.WorkspaceConfiguration {
   // Application-scoped (package.json): a workspace's .vscode/settings.json cannot steer either setting.
   return vscode.workspace.getConfiguration('wslCare');
@@ -57,6 +67,8 @@ interface Parts {
   readonly client: WslCareClient;
   readonly cleanup: CleanupController;
   readonly install: InstallRecorder;
+  readonly cleanRecorder: CleanRecorder;
+  readonly host: CleanupHost;
   readonly choice: RunnerChoice;
   readonly calls: string[];
   readonly store: OutcomeStore;
@@ -88,7 +100,14 @@ function build(context: vscode.ExtensionContext): Parts {
     target: () => distroSettingText(distroSetting()),
   });
 
-  return { testMode, client, cleanup, install: newInstallRecorder(), choice, calls, store, poller, focus };
+  const cleanRecorder = newCleanRecorder();
+  const host = new CleanupHost({
+    durable: context.globalState, controller: cleanup, read: (request) => client.read(request), outcomes: store,
+    askStatus: () => poller.askStatus(), refreshPanel: () => poller.refreshPanel(), focused: () => focus.override ?? vscode.window.state.focused,
+    ui: cleanUiFor(testMode, cleanRecorder), timers: ONE_SHOT, now: () => performance.now(), wallNow: () => Date.now(),
+  });
+
+  return { testMode, client, cleanup, install: newInstallRecorder(), cleanRecorder, host, choice, calls, store, poller, focus };
 }
 
 /** *Install daemon*: the client resolves the distribution, the modal and the terminal are real — or recorded in Test mode. */
@@ -99,24 +118,30 @@ function installer(parts: Parts): () => void {
 }
 
 function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar; panel: PanelProvider } {
-  const { poller, store, focus } = parts;
+  const { poller, store, focus, host } = parts;
   const install = installer(parts);
   const bar = new StatusBar(store, OPEN_PANEL);
   const panel = new PanelProvider(context.extensionUri, store, {
     refresh: (options) => poller.refreshPanel(options),
     openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'wslCare'); },
     installDaemon: install,
+    clean: (rowIds, selected) => { void host.clean(rowIds, selected); },
+    runFullCheck: () => { void host.runFullCheck(); },
+    stop: (index) => { void host.stop(index); },
+    cleanup: () => host.controls(),
+    onCleanupChange: (listener) => host.onChange(listener),
   });
   context.subscriptions.push(
     bar,
     panel,
     { dispose: () => poller.dispose() },
+    { dispose: () => host.dispose() },
     vscode.window.registerWebviewViewProvider(PanelProvider.viewId, panel),
     vscode.commands.registerCommand(OPEN_PANEL, () => vscode.commands.executeCommand(`${PanelProvider.viewId}.focus`)),
     vscode.commands.registerCommand('wslCare.refresh', () => poller.refreshPanel()),
     vscode.commands.registerCommand('wslCare.startWsl', () => poller.refreshPanel({ startIfStopped: true })),
     vscode.commands.registerCommand('wslCare.installDaemon', install),
-    vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); } }),
+    vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
     vscode.workspace.onDidChangeConfiguration((event) => configurationChanged(event, parts, panel)),
   );
 
@@ -140,7 +165,7 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider): WslCareTes
     resetCalls: () => { calls.length = 0; },
     runnerKind: () => parts.choice.kind,
     statusBar: () => bar.view(),
-    setFocused: (focused) => { focus.override = focused; poller.focusChanged(focused); },
+    setFocused: (focused) => { focus.override = focused; poller.focusChanged(focused); parts.host.start(); },
     tick: () => poller.tick(),
     refreshPanel: () => poller.refreshPanel(),
     startWsl: () => poller.refreshPanel({ startIfStopped: true }),
@@ -148,6 +173,8 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider): WslCareTes
     lastRendered: () => panel.lastRendered(),
     install: () => parts.install,
     cleanup: () => parts.cleanup,
+    cleanupHost: () => parts.host,
+    cleanRecorder: () => parts.cleanRecorder,
     buildVersion,
   };
 }
@@ -156,6 +183,7 @@ export function activate(context: vscode.ExtensionContext): WslCareTestApi | und
   const parts = build(context);
   const { bar, panel } = wire(context, parts);
   parts.poller.start();
+  parts.host.start();
 
   return context.extensionMode === vscode.ExtensionMode.Test ? testApi(parts, bar, panel) : undefined;
 }

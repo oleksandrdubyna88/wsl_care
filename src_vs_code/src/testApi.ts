@@ -1,3 +1,5 @@
+import type { CleanupHost } from './cleanup/cleanupHost';
+import type { CleanRecorder } from './cleanup/cleanUi';
 import type { InstallRecorder } from './install/installUi';
 import type { ProcessRequest, Runner } from './process/runner';
 import type { RunnerChoice } from './process/runnerSelection';
@@ -28,6 +30,10 @@ export interface WslCareTestApi {
   install(): InstallRecorder;
   /** The host-side cleanup controller (E6.S2) — the API E6.S3's buttons will call; in Test mode the host suite reaches it here. */
   cleanup(): CleanupController;
+  /** E6.S3: the cleanup buttons' host side — its journal, follower and transaction — as the panel's messages reach it. */
+  cleanupHost(): CleanupHost;
+  /** E6.S3: the cleanup flow's recorded modals and notifications — and the answers they give. */
+  cleanRecorder(): CleanRecorder;
   /** The version the running bundle was built for (`buildStamp.ts`). */
   buildVersion(): string;
 }

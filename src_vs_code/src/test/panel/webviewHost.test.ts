@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { ROW_IDS } from '../../cleanup/rowIds';
 import { parsePageMessage } from '../../panel/messages';
 import { newNonce, panelOptions, panelShell } from '../../panel/panelHtml';
 
@@ -84,4 +85,29 @@ test('the shell announces nothing by itself: no aria-live on <main>, whose whole
   const html = panelShell(SHELL);
   assert.match(html, /<main id="panel"><\/main>/);
   assert.doesNotMatch(html, /aria-live/);
+});
+
+// ---- E6.S3: the cleanup messages (plan §15j M8, m10 extended) — row ids of a CLOSED enum, an index, never a name or argv ----
+
+test('E6.S3: clean and cleanSelected carry row ids of the compiled enum; runFullCheck is bare; stop carries an index into host data', () => {
+  assert.deepEqual(parsePageMessage({ type: 'clean', rowIds: ['A4'] }), { type: 'clean', rowIds: ['A4'] });
+  assert.deepEqual(parsePageMessage({ type: 'cleanSelected', rowIds: ['A5', 'A4', 'A6Unused'] }), { type: 'cleanSelected', rowIds: ['A5', 'A4', 'A6Unused'] });
+  assert.deepEqual(parsePageMessage({ type: 'cleanSelected', rowIds: [...ROW_IDS] }), { type: 'cleanSelected', rowIds: [...ROW_IDS] }, 'every row at once');
+  assert.deepEqual(parsePageMessage({ type: 'runFullCheck' }), { type: 'runFullCheck' });
+  assert.deepEqual(parsePageMessage({ type: 'stop', index: 0 }), { type: 'stop', index: 0 });
+});
+
+test('E6.S3: every other cleanup message is dropped — an id outside the enum, a name, argv, a run id, duplicates, none, extra keys, a bad index', () => {
+  const refused: unknown[] = [
+    { type: 'clean', rowIds: ['A10'] }, { type: 'clean', rowIds: ['A4 --volume x'] }, { type: 'clean', rowIds: ['a4'] },
+    { type: 'clean', rowIds: [] }, { type: 'clean', rowIds: ['A4', 'A4'] }, { type: 'clean', rowIds: 'A4' }, { type: 'clean' },
+    { type: 'clean', rowIds: ['A4'], previewToken: 'x' }, { type: 'clean', rowIds: ['A4'], names: ['ab'.repeat(32)] },
+    { type: 'cleanSelected', rowIds: [...ROW_IDS, 'A4'] }, { type: 'cleanSelected', rowIds: [7] },
+    { type: 'runFullCheck', timer: true }, { type: 'stop', runId: '20000101T000000Z-1' }, { type: 'stop', index: -1 },
+    { type: 'stop', index: 1.5 }, { type: 'stop', index: '0' }, { type: 'stop', index: 99 }, { type: 'stop' },
+    { type: 'act', ids: ['A4'] }, { type: 'confirm' },
+  ];
+  for (const raw of refused) {
+    assert.equal(parsePageMessage(raw), undefined, JSON.stringify(raw));
+  }
 });

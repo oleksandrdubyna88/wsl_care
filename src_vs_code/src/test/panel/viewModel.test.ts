@@ -58,7 +58,7 @@ test('the rows the E5 verbs cannot fill say "arrives in E#" with why — never b
     assert.equal(shown.state, 'arrives');
     assert.equal(shown.value, `arrives in ${row.arrives} — ${row.why}`);
   }
-  assert.deepEqual(FIELD_MAP.filter(isArriving).map((r) => r.arrives).sort(), ['E11', 'E6', 'E6', 'E6', 'E6', 'E7', 'E7', 'E7', 'E7']);
+  assert.deepEqual(FIELD_MAP.filter(isArriving).map((r) => r.arrives).sort(), ['E11', 'E6', 'E6', 'E6', 'E7', 'E7', 'E7', 'E7'], 'E6.S3 filled Last cleanup; the logs rows are E6.S4');
 });
 
 test('the head goldens\' own available:false figures read "unavailable — <reason>": the npm folder, A8\'s cleanup row', () => {
@@ -189,4 +189,23 @@ test('an unavailable PARENT reads "unavailable — <its reason>" on every row un
   for (const id of ['memory.total', 'memory.unattributed', 'holders.processes', 'disk.distro', 'containers.now']) {
     assert.equal(rowOf(whole, id).value, 'unavailable — no procfs to read', id);
   }
+});
+
+// ---- E6.S3: Last cleanup from status.lastCleanup (plan §15j M7) ----
+
+test('E6.S3: Last cleanup reads status.lastCleanup — freed, objects, who ran it and when; the head golden says none is recorded yet', () => {
+  const none = rowOf(buildPanelView(snapshot(goldenOutcomes())), 'lastCleanup.run');
+  assert.equal(none.state, 'unavailable');
+  assert.equal(none.value, 'unavailable — no cleanup is recorded in the history yet (no action has removed or freed anything)');
+  const body = headBody('status');
+  body.lastCleanup = { available: true, runId: '20261005T100000Z-77', startedAt: '2026-10-05T10:00:00+00:00', trigger: 'manual', freedBytes: 59_598_000_000, count: 387 };
+  const row = rowOf(buildPanelView(snapshot({ ...goldenOutcomes(), status: answered('status', body) })), 'lastCleanup.run');
+  assert.equal(row.state, 'value');
+  assert.equal(row.value, 'freed 59.6 GB, 387 objects — from the panel, run 20261005T100000Z-77, started 2026-10-05 10:00 UTC');
+});
+
+test('E6.S3: the cleanup section is no longer "read-only"', () => {
+  const view = buildPanelView(snapshot(goldenOutcomes()));
+  assert.equal(view.sections.find((s) => s.id === 'cleanup')?.title, 'Cleanup');
+  assert.doesNotMatch(rowOf(view, 'cleanup.rows').value, /read-only|arrive in E6/);
 });

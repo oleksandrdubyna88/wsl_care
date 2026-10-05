@@ -3,6 +3,9 @@ import * as fs from 'node:fs';
 import { test } from 'node:test';
 import * as ts from 'typescript';
 
+import * as path from 'node:path';
+
+import { deriveCleanup, type CleanupState } from '../cleanup/cleanupView';
 import { FIELD_MAP, isArriving, SECTIONS } from '../panel/fieldMap';
 import { MAX_TEXT } from '../panel/format';
 import type { PanelView } from '../panel/view';
@@ -10,7 +13,7 @@ import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
 import { Element, runPageScript, type Page } from './support/pageHarness';
 import { answered, failed, goldenOutcomes, headBody } from './support/outcomes';
-import { goldenSets, PAGE_SCRIPT } from './support/paths';
+import { GOLDEN_ROOT, goldenSets, PAGE_SCRIPT } from './support/paths';
 
 /**
  * The panel's page script RUN in the strict harness (plan §16 E5.S2 acceptance; `common.generated-code-tests` §1):
@@ -105,7 +108,7 @@ test('hostile process names, command lines and container names render as inert T
   assert.ok(root.one('tr[data-items-for="holders.containers"]').all('td[data-cell]').some((td) => td.textContent === '"><svg onload=alert(3)>'));
   const tags = new Set([root, ...root.descendants()].map((e) => e.tagName));
   for (const tag of tags) {
-    assert.ok(['MAIN', 'HEADER', 'H1', 'H2', 'P', 'DIV', 'BUTTON', 'SECTION', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD'].includes(tag), `the page made a ${tag}`);
+    assert.ok(['MAIN', 'HEADER', 'H1', 'H2', 'P', 'DIV', 'BUTTON', 'SECTION', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'UL', 'LI', 'SPAN'].includes(tag), `the page made a ${tag}`);
   }
 });
 
@@ -187,4 +190,101 @@ test('the notice is the ONE live region, and the same element across renders —
   page.message({ type: 'view', view: buildPanelView(snapshot(goldenOutcomes())) });
   assert.equal(root.one('p[data-notice]'), notice);
   assert.equal(notice.textContent, '', 'no notice: the live region stays, empty');
+});
+
+// ---- E6.S3: the cleanup controls, RUN in the strict harness over the goldens (plan §16 E6.S3 acceptance) ----
+
+const IDLE_CLEANUP: CleanupState = { entries: [], results: [], flowBusy: false };
+
+function cleanupView(status: Record<string, unknown> = headBody('status'), state: CleanupState = IDLE_CLEANUP): PanelView {
+  const snap = snapshot({ ...goldenOutcomes(), status: answered('status', status) });
+  return buildPanelView(snap, deriveCleanup(snap, state).controls);
+}
+
+function goldenBody(name: string): Record<string, unknown> {
+  return JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, 'head', name), 'utf8')) as Record<string, unknown>;
+}
+
+for (const set of goldenSets()) {
+  test(`E6.S3 over the ${set} goldens: a Clean and a Select per cleanup row, inside the Cleanup section; a row's Clean posts ONLY its row id`, () => {
+    const outcomes = goldenOutcomes(set);
+    const snap = snapshot(outcomes);
+    const view = buildPanelView(snap, deriveCleanup(snap, IDLE_CLEANUP).controls);
+    const { page, root } = show(view);
+    const box = root.one('section[data-section="cleanup"]').one('div[data-cleanup]');
+    assert.deepEqual(box.all('div[data-clean-row]').map((d) => d.dataset.cleanRow), view.cleanup.rows.map((r) => r.rowId));
+    for (const row of view.cleanup.rows) {
+      const button = box.one(`button[data-clean="${row.rowId}"]`);
+      assert.equal(button.textContent, row.label);
+      assert.equal(button.disabled, !row.enabled, row.rowId);
+      assert.equal(button.attributes.type, 'button');
+    }
+    const enabled = view.cleanup.rows.find((r) => r.enabled);
+    assert.ok(enabled !== undefined, 'the golden has a row to clean');
+    page.click(box.one(`button[data-clean="${enabled.rowId}"]`));
+    assert.deepEqual(page.posted.at(-1), { type: 'clean', rowIds: [enabled.rowId] });
+  });
+}
+
+test('E6.S3: ticking rows enables "Clean selected (n)", which posts the ticked row ids in row order as ONE message; none ticked, it is disabled', () => {
+  const { page, root } = show(cleanupView());
+  const selectedButton = root.one('button[data-clean-selected]');
+  assert.equal(selectedButton.disabled, true);
+  assert.equal(selectedButton.textContent, 'Clean selected (0)');
+  page.click(root.one('button[data-select="A5"]'));
+  page.click(root.one('button[data-select="A4"]'));
+  assert.equal(root.one('button[data-select="A4"]').attributes['aria-pressed'], 'true');
+  assert.equal(selectedButton.textContent, 'Clean selected (2)');
+  assert.equal(selectedButton.disabled, false);
+  page.click(selectedButton);
+  assert.deepEqual(page.posted.at(-1), { type: 'cleanSelected', rowIds: ['A4', 'A5'] });
+  page.click(root.one('button[data-select="A5"]'));
+  assert.equal(root.one('button[data-select="A5"]').attributes['aria-pressed'], 'false');
+  assert.equal(selectedButton.textContent, 'Clean selected (1)');
+});
+
+test('E6.S3: a ticked row stays ticked across a re-render — and is dropped once the host says the row cannot be cleaned', () => {
+  const { page, root } = show(cleanupView());
+  page.click(root.one('button[data-select="A4"]'));
+  page.message({ type: 'view', view: structuredClone(cleanupView()) });
+  assert.equal(root.one('button[data-select="A4"]').attributes['aria-pressed'], 'true');
+  page.message({ type: 'view', view: structuredClone(cleanupView(goldenBody('status-running-live.json'))) });
+  assert.equal(root.one('button[data-select="A4"]').attributes['aria-pressed'], 'false');
+});
+
+test('E6.S3 the reload case on the page: status.running live reads "Cleaning… A4"; every Clean, Select and the full check disabled — and a press posts nothing', () => {
+  const { page, root } = show(cleanupView(goldenBody('status-running-live.json')));
+  assert.equal(root.one('p[data-cleanup-state]').textContent, 'Cleaning… A4');
+  const buttons = root.one('div[data-cleanup]').all('button[data-clean]');
+  assert.ok(buttons.length > 0 && buttons.every((b) => b.disabled));
+  assert.equal(root.one('button[data-full-check]').disabled, true);
+  const before = page.posted.length;
+  page.click(buttons[0] as Element);
+  page.click(root.one('button[data-full-check]'));
+  assert.equal(page.posted.length, before, 'a disabled button posts nothing');
+});
+
+test('E6.S3: "Run full check now" posts the bare message when enabled', () => {
+  const { page, root } = show(cleanupView());
+  page.click(root.one('button[data-full-check]'));
+  assert.deepEqual(page.posted.at(-1), { type: 'runFullCheck' });
+});
+
+test('E6.S3 §15j M4: a wedged run of the daemon\'s units shows Stop, which posts the INDEX the host gave; one outside them, the text with its pid', () => {
+  const wedged = goldenBody('status-running-wedged.json');
+  const { page, root } = show(cleanupView(wedged));
+  page.click(root.one('button[data-stop]'));
+  assert.deepEqual(page.posted.at(-1), { type: 'stop', index: 0 });
+  const outside = show(cleanupView({ ...wedged, running: { ...(wedged.running as Record<string, unknown>), trigger: 'cli' } })).root;
+  assert.deepEqual(outside.all('button[data-stop]'), []);
+  assert.match(outside.one('p[data-stop-text]').textContent, /pid 4242/);
+});
+
+test('E6.S3: Last cleanup shows the results this window showed and "Docker after" with its time — hostile text as inert TEXT', () => {
+  const hostile = '</script><img src=x onerror=alert(1)>';
+  const { root } = show(cleanupView(headBody('status'), { ...IDLE_CLEANUP, results: [{ level: 'warn', sentence: hostile }, { level: 'info', sentence: 'Run Y is done' }] }));
+  const box = root.one('section[data-section="lastCleanup"]').one('div[data-last-cleanup]');
+  assert.deepEqual(box.all('li[data-result]').map((li) => [li.textContent, li.dataset.level]), [[hostile, 'warn'], ['Run Y is done', 'ok']]);
+  assert.match(box.one('p[data-docker-after]').textContent, /reclaimable \(docker system df, read at /);
+  assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
 });

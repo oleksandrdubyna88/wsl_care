@@ -42,6 +42,40 @@ export interface ViewSection {
 /** The buttons the page may show; each posts its own id back, and the host accepts only these (`messages.ts`). */
 export type PageAction = 'refresh' | 'openSettings' | 'startWsl' | 'installDaemon';
 
+/** One cleanup row's button (E6.S3): the row id of the closed enum, its label, and why it is greyed when it is. */
+export interface CleanRow {
+  readonly rowId: string;
+  readonly label: string;
+  readonly enabled: boolean;
+  /** "387 · 59.6 GB", "nothing to clean", "unavailable — <reason>". */
+  readonly note: string;
+}
+
+/**
+ * The cleanup controls (E6.S3, `common.durable-status`): every state here is DERIVED by the host from what the daemon
+ * reported (`status.running`, `status.capabilities`, the preview's rows) and the host's persisted journal — never only from
+ * a flag the page or the window holds — so a reload shows the same "Cleaning… A4" the daemon reports.
+ */
+export interface CleanupControls {
+  /** Whether a cleanup may be started now (each row also needs something to clean). */
+  readonly enabled: boolean;
+  /** What is in flight: "Cleaning… A4", "Queued… A4", "Wedged: …", "Waiting for run …'s result…" — or ''. */
+  readonly state: string;
+  readonly stateLevel: ViewLevel;
+  /** Why the buttons are greyed ('' when they are not). */
+  readonly reason: string;
+  readonly rows: readonly CleanRow[];
+  readonly fullCheck: boolean;
+  /** A wedged run the daemon can stop: the index the page sends back, and the button's label. */
+  readonly stop: { readonly index: number; readonly label: string } | undefined;
+  /** A wedged run the daemon cannot stop (outside its units): the words, with its pid. */
+  readonly stopText: string;
+  /** The terminal answers this window showed, newest first. */
+  readonly results: readonly { readonly sentence: string; readonly level: ViewLevel }[];
+  /** "Docker after": the preview's reclaimable total, labelled with the time it was read. */
+  readonly dockerAfter: string;
+}
+
 export interface PanelView {
   readonly heading: string;
   /** One sentence above the sections ('' when there is nothing to say). */
@@ -49,4 +83,5 @@ export interface PanelView {
   readonly noticeLevel: ViewLevel;
   readonly actions: readonly { readonly id: PageAction; readonly label: string }[];
   readonly sections: readonly ViewSection[];
+  readonly cleanup: CleanupControls;
 }

@@ -35,7 +35,7 @@ export const SECTIONS: readonly { readonly id: SectionId; readonly title: string
   { id: 'folders', title: 'Folders' },
   { id: 'containers', title: 'Containers' },
   { id: 'containerStarts', title: 'Container starts' },
-  { id: 'cleanup', title: 'Cleanup (read-only)' },
+  { id: 'cleanup', title: 'Cleanup' },
   { id: 'health', title: 'Health' },
   { id: 'aiAgents', title: 'AI agents' },
   { id: 'lastCleanup', title: 'Last cleanup' },
@@ -68,7 +68,8 @@ export type RowKind =
   | 'checks'
   | 'versions'
   | 'verdicts'
-  | 'verdict';
+  | 'verdict'
+  | 'lastCleanup';
 
 /** The three JSON verbs a row can be read from. */
 export type RowVerb = 'status' | 'preview' | 'doctor';
@@ -159,5 +160,5 @@ export const FIELD_MAP: readonly FieldRow[] = [
   read('health', 'health.journalSpan', 'Journal history', 'status', 'verdicts[id=journal.history]', 'verdict'),
   arriving('health', 'health.warningsSince', 'Warnings since the last full run', 'E6', NEEDS_LOGS),
   arriving('aiAgents', 'agents.all', 'AI agents (both sides, Add CLI path)', 'E7', 'needs the agents list verb (E7)'),
-  arriving('lastCleanup', 'lastCleanup.run', 'Last cleanup (freed, Docker after)', 'E6', 'needs the logs / runs verbs and the cleanup buttons (E6)'),
+  read('lastCleanup', 'lastCleanup.run', 'Last cleanup', 'status', 'lastCleanup', 'lastCleanup'),
 ];
