@@ -241,3 +241,14 @@ test('a full check or a stop before any status answered says so and starts nothi
   assert.equal((await w.flow.fullCheck()).kind, 'noStatus');
   assert.deepEqual(w.runner.argvs(), []);
 });
+
+test('E6.S3 review A3: a preview that does not describe every asked id is NOT confirmed — told, nothing written', async () => {
+  const preview = `${ROOT} act A4,A5 --preview --json`;
+  const w = world({ [preview]: exited(0, previewText()) });
+  const outcome = await w.flow.clean(['A5', 'A4'], true);
+  assert.equal(outcome.kind, 'incomplete');
+  assert.equal(w.modals.length, 0, 'no modal over a preview that does not describe A5');
+  assert.equal(w.runner.argvs().filter((a) => a.includes('--confirm')).length, 0);
+  assert.equal(w.store.writes, 0);
+  assert.match(w.notices.at(-1)?.sentence ?? '', /did not describe A5/);
+});

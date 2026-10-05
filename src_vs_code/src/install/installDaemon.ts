@@ -1,6 +1,7 @@
 import type { Failure } from '../client/outcome';
 import type { TerminalTarget } from '../client/WslCareClient';
 import { failureText } from '../failureText';
+import { noticeText } from '../text/safeText';
 import { INSTALL_COMMAND, INSTALL_PREREQUISITES, INSTALL_VERSION } from './installCommand';
 
 /**
@@ -73,7 +74,7 @@ export function installPrompt(distro: string): InstallPrompt {
 export async function installDaemon(deps: InstallDeps): Promise<InstallResult> {
   const target = await deps.target();
   if (target.kind !== 'terminal') {
-    deps.report(`AI OS Care cannot open an install terminal: ${failureText(target).sentence}`);
+    deps.report(noticeText(`AI OS Care cannot open an install terminal: ${failureText(target).sentence}`));
     return { kind: 'refused', failure: target };
   }
   if (!(await deps.confirm(installPrompt(target.distro)))) {

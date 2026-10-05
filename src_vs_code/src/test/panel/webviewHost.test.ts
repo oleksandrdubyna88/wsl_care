@@ -111,3 +111,9 @@ test('E6.S3: every other cleanup message is dropped — an id outside the enum, 
     assert.equal(parsePageMessage(raw), undefined, JSON.stringify(raw));
   }
 });
+
+test('E6.S3 review A2: a row\'s clean carries exactly ONE row id — several are cleanSelected\'s, whose modal names them all', () => {
+  assert.equal(parsePageMessage({ type: 'clean', rowIds: ['A7', 'A9'] }), undefined);
+  assert.deepEqual(parsePageMessage({ type: 'clean', rowIds: ['A7'] }), { type: 'clean', rowIds: ['A7'] });
+  assert.deepEqual(parsePageMessage({ type: 'cleanSelected', rowIds: ['A7', 'A9'] }), { type: 'cleanSelected', rowIds: ['A7', 'A9'] });
+});

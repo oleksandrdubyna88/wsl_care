@@ -59,7 +59,7 @@ function openWindow(world: FakeWorld, durable: MapStore): Window {
   const host = new CleanupHost({
     durable, controller, read: (request) => client.read(request), outcomes, askStatus,
     refreshPanel: async () => { await askStatus(); outcomes.set('preview', await client.run('preview')); },
-    focused: () => true, ui: recordingCleanUi(recorder), timers: new ManualTimers(), now: () => mono, wallNow: () => Date.parse('2026-10-05T10:00:00.000Z'),
+    focused: () => true, ui: recordingCleanUi(recorder), timers: new ManualTimers(), now: () => mono, wallNow: () => Date.parse('2026-10-05T10:00:00.000Z'), log: () => undefined,
   });
   return { host, outcomes, recorder };
 }
@@ -78,7 +78,7 @@ test('the RELOAD scenario: start A4, reload, the new window shows "Cleaning… A
     const durable = new MapStore();
     const first = openWindow(world, durable);
     const outcome = await first.host.clean(['A4'], false);
-    assert.equal(outcome.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
+    assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
     assert.equal(first.host.journal.entries()[0]?.kind, 'run', 'the started run is persisted');
     first.host.dispose();
 
@@ -135,7 +135,7 @@ test('a 387-volume A4 pipes all 387 names; Clean selected is ONE act call throug
     world.rewrite({ runsShow: 'runs-show-done.json' });
     await window.host.follower.tick();
     const outcome = await window.host.clean(['A5', 'A4'], true);
-    assert.equal(outcome.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
+    assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
     assert.deepEqual(confirms().slice(before), [`${ROOT} act A4,A5 --confirm --manual --detach --only - --json`]);
   });
 });

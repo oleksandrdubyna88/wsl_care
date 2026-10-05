@@ -82,7 +82,7 @@ function block(action: PreviewedAction, preview: HeldPreview): string {
 export function firstModal(preview: HeldPreview, selected: boolean): Modal {
   const distro = safeText(preview.distro, 64);
   const message = selected ? `Clean the ${preview.ids.length} selected rows in "${distro}"?` : `Clean ${preview.ids[0]} in "${distro}"?`;
-  const blocks = preview.actions.map((action) => block(action, preview));
+  const blocks = preview.ids.flatMap((id) => preview.actions.filter((a) => a.id === id).slice(0, 1)).map((action) => block(action, preview));
 
   return { message, detail: [...blocks, 'The cleanup runs in the daemon\'s own unit; the panel follows it to its result.'].join('\n\n'), confirm: CLEAN_LABEL };
 }
@@ -101,4 +101,12 @@ export function stopModal(runId: string): Modal {
     detail: "The daemon stops the wedged run's unit (systemd sends it SIGTERM). The run records itself interrupted; what it already removed stays removed.",
     confirm: 'Stop',
   };
+}
+
+/**
+ * The ids a confirm would act on that the preview does NOT describe (review A3): the modal is built from the confirmed ids,
+ * so an id without a previewed entry would be confirmed unseen — the flow refuses instead.
+ */
+export function missingFromPreview(preview: HeldPreview): readonly ActionId[] {
+  return preview.ids.filter((id) => !preview.actions.some((a) => a.id === id));
 }
