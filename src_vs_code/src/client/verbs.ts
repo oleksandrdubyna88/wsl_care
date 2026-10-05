@@ -70,6 +70,16 @@ export const RUN_READ_NAMES = ['runsShow', 'runs', 'logs'] as const;
 
 export type RunReadName = (typeof RUN_READ_NAMES)[number];
 
+/**
+ * Each run read's CLI verb words (review K2) — an explicit table, so a read added to `RUN_READ_NAMES` does not compile until
+ * its verb is written here, and its union tag can never reach argv by accident.
+ */
+export const RUN_READ_VERBS: { readonly [K in RunReadName]: readonly string[] } = {
+  runsShow: ['runs', 'show'],
+  runs: ['runs'],
+  logs: ['logs'],
+};
+
 export type RunRead =
   | { readonly read: 'runsShow'; readonly runId: string }
   | { readonly read: 'runs'; readonly from: string; readonly to: string }
@@ -77,7 +87,7 @@ export type RunRead =
 
 /** The daemon tail of a run read — appended after `--exec /opt/wsl-care/bin/wsl-care`. Pure; the values are checked by the caller. */
 export function runReadTail(read: RunRead): readonly string[] {
-  return read.read === 'runsShow' ? ['runs', 'show', read.runId, '--json'] : [read.read, '--from', read.from, '--to', read.to, '--json'];
+  return read.read === 'runsShow' ? [...RUN_READ_VERBS.runsShow, read.runId, '--json'] : [...RUN_READ_VERBS[read.read], '--from', read.from, '--to', read.to, '--json'];
 }
 
 /**

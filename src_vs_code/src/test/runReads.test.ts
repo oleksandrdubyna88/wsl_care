@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { isTerminal, parseRuns, parseRunShow, RUN_SHOW_STATES } from '../cleanup/runAnswers';
 import { readEnum } from '../client/enumValue';
 import type { ReadOutcome } from '../client/outcome';
-import { RUN_READ_NAMES, RUN_READ_TIMEOUT_MS, runReadTail, type RunRead } from '../client/verbs';
+import { RUN_READ_NAMES, RUN_READ_TIMEOUT_MS, RUN_READ_VERBS, runReadTail, type RunRead } from '../client/verbs';
 import { WslCareClient } from '../client/WslCareClient';
 import { TEST_ENV } from './support/fakeWorld';
 import { GOLDEN_ROOT } from './support/paths';
@@ -77,6 +77,21 @@ test('logs --from --to (E6.S4): the instant window of the Logs page, exactly as 
   assert.deepEqual(rec.argvs(), [LIST_QUIET, LIST_VERBOSE, LIST_RUNNING, LOGS]);
   assert.equal(rec.requests.at(-1)?.timeoutMs, RUN_READ_TIMEOUT_MS.logs);
   assert.ok(rec.requests.every((r) => !r.args.includes('-u') && !r.args.includes('--detail')), 'unprivileged, and the object lists come lazily through runs show');
+});
+
+test('review K2: each run read names its CLI verb in an explicit table — a tag is never sent as a verb', () => {
+  assert.deepEqual(RUN_READ_VERBS, { runsShow: ['runs', 'show'], runs: ['runs'], logs: ['logs'] });
+  const reads: { readonly [K in RunRead['read']]: RunRead } = { runsShow: { read: 'runsShow', runId: RUN }, runs: { read: 'runs', from: FROM, to: TO }, logs: { read: 'logs', from: FROM, to: TO } };
+  for (const name of RUN_READ_NAMES) {
+    assert.deepEqual(runReadTail(reads[name]).slice(0, RUN_READ_VERBS[name].length), [...RUN_READ_VERBS[name]], name);
+  }
+});
+
+test('review C1: exit 4 WITH a readable answer on logs and runs is an answer — its `problem` reaches the caller, nothing is dropped', async () => {
+  const body = (name: string) => JSON.stringify({ ...JSON.parse(goldenText(name)), problem: 'history.jsonl could not be read: permission denied' });
+  const { c } = client({ ...wsl(true), [LOGS]: exited(4, body('logs-local-day.json'), 'wsl-care: the history cannot be read\n'), [RUNS]: exited(4, body('runs-local-day.json'), 'wsl-care: the history cannot be read\n') });
+  assert.equal(bodyOf(await c.read({ read: 'logs', from: FROM, to: TO })).problem, 'history.jsonl could not be read: permission denied');
+  assert.equal(bodyOf(await c.read({ read: 'runs', from: FROM, to: TO })).problem, 'history.jsonl could not be read: permission denied');
 });
 
 test('every run read\'s tail is built from its typed parts, and each has a stated ceiling', () => {
