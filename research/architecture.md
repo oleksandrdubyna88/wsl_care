@@ -1390,7 +1390,7 @@ embedded defaults: a copy would freeze every default at the installed version, s
 get`, and — the moment a later release renames a key — make the layer invalid and every run observe-only. Its comment
 documents an example that `ShippedFilesTests` runs through the real loader.
 
-**The test harness** is `InstallWorld` / `InstallFlows` in `WslCare.Scenarios` (C#, the product's language, no new
+**The test harness** is `InstallWorld` / the `Install*Flows` classes in `WslCare.Scenarios` (C#, the product's language, no new
 dependency): the real script under `/bin/sh` over a temporary prefix `WSL_CARE_INSTALL_ROOT` (every path the script
 reads or writes as a file sits under it), `TMPDIR` the world's own, a `PATH` of exactly two folders — the fake tool under
 the names of everything that changes the machine or reaches the network (curl, gh, systemctl, apt-get, debconf,
@@ -2532,7 +2532,7 @@ flowchart LR
     ciF -->|node| conv
     inst -->|installs| unitsF
     inst -->|"installs when absent"| machine
-    scn -->|"InstallFlows: runs under /bin/sh over a prefix"| inst
+    scn -->|"Install*Flows: runs under /bin/sh over a prefix"| inst
     ciW -->|shellcheck| inst
     ciD -->|"systemd-analyze verify"| unitsF
     ciD -->|"smoke the published binary"| smoke
