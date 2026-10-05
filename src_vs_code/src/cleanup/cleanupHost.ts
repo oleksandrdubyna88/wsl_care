@@ -2,7 +2,9 @@ import type { ReadOutcome, VerbOutcome } from '../client/outcome';
 import type { RunRead } from '../client/verbs';
 import type { CleanupControls } from '../panel/view';
 import type { CleanupController } from '../root/cleanupController';
+import { runningOf } from '../root/rootAnswers';
 import { runIdOf } from '../root/rootIds';
+import type { RunningBlock } from '../root/rootOutcome';
 import type { OutcomeStore } from '../state/outcomeStore';
 import { CleanFlow, type CleanUi, type FlowOutcome } from './cleanFlow';
 import { deriveCleanup } from './cleanupView';
@@ -47,6 +49,13 @@ function sanitised(ui: CleanUi): CleanUi {
   };
 }
 
+/** The running block of the store's newest status, whoever asked it (review C4: the poll can start from idle). */
+function runningInStore(outcomes: OutcomeStore): RunningBlock | undefined {
+  const status = outcomes.snapshot().status;
+
+  return status !== undefined && status.kind === 'answered' && status.answer.verb === 'status' ? runningOf(status.answer.body) : undefined;
+}
+
 function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -65,7 +74,7 @@ export class CleanupHost {
     this.journal = new CleanupJournal(options.durable, options.wallNow);
     this.follower = new RunFollower({
       journal: this.journal, status: options.askStatus, read: options.read, show: (result) => this.shown(result),
-      afterTerminal: options.refreshPanel, focused: options.focused, wallNow: options.wallNow, timers: options.timers,
+      afterTerminal: options.refreshPanel, focused: options.focused, running: () => runningInStore(options.outcomes), wallNow: options.wallNow, timers: options.timers,
       fault: (error) => this.faulted('following a cleanup', error),
     });
     this.flow = new CleanFlow({

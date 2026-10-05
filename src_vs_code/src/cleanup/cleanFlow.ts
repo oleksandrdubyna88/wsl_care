@@ -89,6 +89,12 @@ const NO_STATUS = "WSL Care has not read the daemon's status yet; press Refresh,
 /** The hand-off kinds that may leave a run behind; every other answer is a refusal that wrote nothing. */
 const HANDED: ReadonlySet<string> = new Set(['accepted', 'acceptedObserved', 'outcomeUnknown', 'stopping']);
 
+function sameActions(a: readonly string[], b: readonly string[]): boolean {
+  const sorted = [...b].sort();
+
+  return a.length === b.length && [...a].sort().every((x, i) => x === sorted[i]);
+}
+
 export class CleanFlow {
   private inFlight = false;
 
@@ -189,10 +195,27 @@ export class CleanFlow {
     if (distro === undefined || !(await this.options.ui.confirm(stopModal(target.runId)))) {
       return this.notStarted(distro);
     }
-    const followed = this.options.journal.entries().find((e) => e.kind === 'run' && e.runId === target.runId);
+    const followed = await this.followedFor(target, distro);
     const stop = async (entry: JournalEntry): Promise<Pass> => this.handedOff(entry, await this.options.controller.stop(target.runId), `run ${target.runId}`, followed === undefined);
 
     return followed === undefined ? this.persisted({ kind: 'run', op: 'stop', distro, actions: target.actions, since: this.since(), runId: target.runId }, stop) : stop(followed);
+  }
+
+  /**
+   * The entry that already follows this run (review B4): its run entry — or an UNRESOLVED confirm of this distribution with
+   * exactly its actions, which this run is, adopted here so the stop and the confirm are one entry, never two.
+   */
+  private async followedFor(target: StopTarget, distro: string): Promise<JournalEntry | undefined> {
+    const entries = this.options.journal.entries();
+    const run = entries.find((e) => e.kind === 'run' && e.runId === target.runId);
+    const waiting = run === undefined ? entries.find((e) => e.kind === 'unresolved' && e.distro === distro && sameActions(e.actions, target.actions)) : undefined;
+    if (waiting === undefined) {
+      return run;
+    }
+    const { id, ...rest } = waiting;
+    await this.options.journal.replace(id, { ...rest, kind: 'run', runId: target.runId });
+
+    return { ...rest, id, kind: 'run', runId: target.runId };
   }
 
   private async fullCheckOnce(): Promise<Pass> {

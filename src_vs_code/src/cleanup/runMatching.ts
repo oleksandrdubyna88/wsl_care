@@ -1,0 +1,115 @@
+import type { RunId } from '../root/rootIds';
+import type { RunningBlock } from '../root/rootOutcome';
+import { FULL_CHECK_ACTIONS } from '../root/cleanupController';
+import type { JournalEntry } from './journal';
+import type { RunLine } from './runAnswers';
+
+/**
+ * The follower's pure decisions (E6.S3 and its review round): which running block names a followed run, which run an
+ * unresolved confirm may adopt, which history lines can be that confirm's run, and the window a resolution reads. No clock,
+ * no I/O — every value comes in.
+ */
+
+/** How far apart this window's clock (Windows) and the daemon's (WSL) may lie — the daemon's own `RequestSweep.FutureSkew` (review B3). */
+export const CLOCK_SKEW_MS = 5 * 60_000;
+
+/** The daemon keeps 90 days of history; a runs window never reaches further back (review B1). */
+export const RETENTION_MS = 90 * 86_400_000;
+
+function stateOf(running: RunningBlock | undefined): string {
+  return running !== undefined && running.state.kind === 'known' ? running.state.value : '';
+}
+
+export function isQueuedOrLive(running: RunningBlock | undefined): boolean {
+  return ['queued', 'live'].includes(stateOf(running));
+}
+
+/** queued, live or wedged — a run that has not ended (a wedged one is followed until its stop or the ceiling). */
+export function inFlight(running: RunningBlock | undefined): boolean {
+  return ['queued', 'live', 'wedged'].includes(stateOf(running));
+}
+
+/** In flight, naming THIS run. */
+export function inFlightNaming(running: RunningBlock | undefined, runId: RunId): boolean {
+  return inFlight(running) && running?.runId === runId;
+}
+
+function sameActions(a: readonly string[], b: readonly string[]): boolean {
+  const sorted = [...b].sort();
+
+  return a.length === b.length && [...a].sort().every((x, i) => x === sorted[i]);
+}
+
+/** A run the panel started (`trigger: manual`) holding exactly the confirmed actions. */
+function isPanelRunOf(running: RunningBlock, entry: JournalEntry): boolean {
+  return running.trigger === 'manual' && sameActions(running.actions, entry.actions);
+}
+
+/** The run an unresolved confirm adopts from `status.running`: the panel's, exactly its actions, in flight (wedged too — review B4), with a run id. */
+export function adoptable(running: RunningBlock | undefined, entry: JournalEntry): RunId | undefined {
+  return running !== undefined && inFlight(running) && isPanelRunOf(running, entry) ? running.runId : undefined;
+}
+
+/**
+ * Whether a resolution must WAIT (review B4): the running block cannot be read (`unknown` / `unreadable` — it may well be
+ * this run), or it shows the panel's run of exactly these actions still in flight without a run id to adopt.
+ */
+export function mustWait(running: RunningBlock | undefined, entry: JournalEntry): boolean {
+  if (running === undefined) {
+    return false;
+  }
+
+  return unreadableBlock(running) || (inFlight(running) && isPanelRunOf(running, entry));
+}
+
+/** A block that cannot tell what runs: `unknown`, `unreadable`, or a state this build does not know. */
+function unreadableBlock(running: RunningBlock): boolean {
+  return running.state.kind === 'unknown' || ['unknown', 'unreadable'].includes(running.state.value);
+}
+
+/**
+ * The reasons of history lines a full check must NOT be matched by although they carry no action (review B2): a request the
+ * daemon could not use (`RequestSweep.Unusable`) and an orphaned detail the next run reconciled (`RunReconcile`). The
+ * daemon's own words — `research/module_tests.md` cites where each is written.
+ */
+const NOT_A_FULL_CHECK: readonly ((reason: string) => boolean)[] = [
+  (reason) => reason.startsWith('refused: its request could not be used'),
+  (reason) => reason.startsWith('the run wrote its detail and ended before its history line'),
+  (reason) => reason.startsWith('the run left a detail that cannot be read'),
+];
+
+/**
+ * A history line's actions as a confirm of this entry writes them (review B2): a full check's line is `[]` when it completed
+ * or its measurement was cut off (`CollectRun`), `["collect"]` when it was refused, cut off before it started or swept
+ * (`DetachedRuns`, `RequestSweep`, `RunningSweep` copy the request's actions) — either, but never the shapes above.
+ */
+function actionsMatch(line: RunLine, entry: JournalEntry): boolean {
+  const ids = line.actions.map((a) => a.id);
+  if (entry.op !== 'fullCheck') {
+    return sameActions(ids, entry.actions);
+  }
+
+  return (ids.length === 0 || sameActions(ids, FULL_CHECK_ACTIONS)) && !NOT_A_FULL_CHECK.some((excluded) => excluded(line.reason));
+}
+
+/** A history line that can be this entry's run: the panel's, its actions, started no earlier than the confirm less the skew (B3). */
+export function matches(line: RunLine, entry: JournalEntry): boolean {
+  const since = Date.parse(entry.since) - CLOCK_SKEW_MS;
+
+  return line.trigger === 'manual' && actionsMatch(line, entry) && Date.parse(line.startedAt) >= since;
+}
+
+/** `yyyy-MM-ddTHH:mm:ssZ` at or before `ms`. */
+function floorInstant(ms: number): string {
+  return new Date(Math.floor(ms / 1000) * 1000).toISOString().replace('.000Z', 'Z');
+}
+
+/** One second past `ms`, whole — the window's end is exclusive. */
+function ceilInstant(ms: number): string {
+  return new Date((Math.ceil(ms / 1000) + 1) * 1000).toISOString().replace('.000Z', 'Z');
+}
+
+/** The runs window of an unresolved confirm: from the confirm less the skew (no further back than the retention) to now plus the skew. */
+export function windowOf(entry: JournalEntry, now: number): { readonly from: string; readonly to: string } {
+  return { from: floorInstant(Math.max(Date.parse(entry.since) - CLOCK_SKEW_MS, now - RETENTION_MS)), to: ceilInstant(now + CLOCK_SKEW_MS) };
+}
