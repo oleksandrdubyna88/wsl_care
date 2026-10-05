@@ -413,6 +413,17 @@ test('run reads: every other shape is refused — a bad run id, an instant witho
   });
 });
 
+test('logs (E6.S4): logs --from --to --json answers the scenario\'s logs file — logs-local-day.json by default (the positives)', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const logs = json(await ask(world, [...DAEMON_CALL, 'logs', '--from', '2026-10-04T21:00:00Z', '--to', '2026-10-05T21:00:00Z', '--json']));
+    assert.equal(logs.freedBytes, 308003000);
+  });
+  await within({ ...UBUNTU_RUNNING, logs: 'runs-local-day.json' }, async (world) => {
+    const answered = json(await ask(world, [...DAEMON_CALL, 'logs', '--from', '2026-10-04T21:00:00Z', '--to', '2026-10-05T21:00:00Z', '--json']));
+    assert.equal(answered.count, 3, 'the scenario names the file');
+  });
+});
+
 test('§15o: the fake carries a line\'s kind through unchanged — runs show (whose run id it rewrites) and runs', async () => {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'wsl-care-kind-'));
   try {
@@ -428,6 +439,27 @@ test('§15o: the fake carries a line\'s kind through unchanged — runs show (wh
   } finally {
     fs.rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test('logs (E6.S4): every other shape is refused — --period, --detail, --action, a bare day, a window ending first, -u, no --json', async () => {
+  const from = '2026-10-04T21:00:00Z';
+  const to = '2026-10-05T21:00:00Z';
+  const never: readonly (readonly string[])[] = [
+    [...DAEMON_CALL, 'logs', '--period', 'today', '--json'],
+    [...DAEMON_CALL, 'logs', '--from', from, '--to', to, '--json', '--detail'],
+    [...DAEMON_CALL, 'logs', '--from', from, '--to', to, '--action', 'A4', '--json'],
+    [...DAEMON_CALL, 'logs', '--from', '2026-10-05', '--to', '2026-10-06', '--json'],
+    [...DAEMON_CALL, 'logs', '--from', to, '--to', from, '--json'],
+    [...DAEMON_CALL, 'logs', '--from', from, '--to', to],
+    [...DAEMON_CALL, 'logs', '--json'],
+    [...ROOT_CALL, 'logs', '--from', from, '--to', to, '--json'],
+  ];
+  await within(UBUNTU_RUNNING, async (world) => {
+    for (const argv of never) {
+      const { code, stderr } = exitOf(await ask(world, argv));
+      assert.equal(code, FAKE_EXIT.refused, `${argv.join(' ')} → ${code} ${stderr}`);
+    }
+  });
 });
 
 test('run reads: a run read to a STOPPED distribution is refused like every -d', async () => {
