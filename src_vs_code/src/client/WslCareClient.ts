@@ -19,6 +19,8 @@ import { PREVIEW_CONTAINER_ASSUMPTION, RUN_READ_TIMEOUT_MS, runReadTail, VERB_TI
  * - `wsl.exe -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care <one of the four closed verbs>` — never `--`
  *   (measured 2026-10-03: `-- echo '$HOME'` printed `/home/<user>`, the distro's shell expanded it; `--exec echo
  *   '$HOME'` printed `$HOME` — §15f #1), never `-u`, never anything but `VERBS`.
+ * - since E6.S3, the two run reads with the same prefix: `runs show <runId> --json` and `runs --from <instant> --to
+ *   <instant> --json` (`read`, `RUN_READ_NAMES`) — values checked before any spawn, never `-u`.
  *
  * <p>It also builds the one other `wsl.exe` argv the extension has: `-d <distro> --cd ~` for the terminal *Install daemon*
  * opens (`terminalTarget`, E5.S3) — built here so this stays the only module that spells a `wsl.exe` argument; the

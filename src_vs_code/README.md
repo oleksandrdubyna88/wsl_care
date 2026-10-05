@@ -10,7 +10,8 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
 - **The status bar** — `WSL RAM <used>% · swap <x>G · <n> containers`, coloured by the worst memory or kernel warning
   the daemon reports; "WSL stopped" when the distribution is not running. A click opens the panel.
 - **The panel** (the *AI OS Care* icon in the activity bar) — Memory, Top holders, Swap, Disk, Folders, Containers,
-  Container starts, Cleanup (what each cleanup would free, read-only), Health. A figure the daemon could not read says
+  Container starts, Cleanup (what each cleanup would free, with **Clean**, **Select**, **Clean selected** and **Run full
+  check now**), Health, Last cleanup. A figure the daemon could not read says
   why ("unavailable — reason"); a row this version cannot fill yet says so; nothing is shown as a made-up 0.
 
 ## What it runs, and when
@@ -23,8 +24,12 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   the preview showed handed over on stdin), stopping a wedged run (`act --stop <run>`), *Run full check now*
   (`collect --detach`) and a root check (`--version`). It never sends the timer's mark, never changes the daemon's
   settings, and never acts on an action the daemon does not offer. A confirmed cleanup runs in the daemon's own systemd
-  unit, so closing or reloading the window does not cut it off. The buttons that start them arrive with the cleanup panel;
-  this build holds the boundary they will use.
+  unit, so reloading the window does not cut it off: the panel writes the run down before it starts and follows it to its
+  result — "Cleaning… A4" after a reload, then what it freed; a run that died says *interrupted*. (Whether the run also
+  survives closing every WSL window is measured before the first release.)
+- **Each cleanup shows its preview first** — a modal with what each action removes and how much, and a second one for the
+  actions that touch your own data or force downloads (A5, A6Unused, A8, A11, A12), naming the setting they use. A preview
+  older than five minutes when you confirm is taken again. *Clean selected* runs all ticked rows as one run.
 - **The daemon must be new enough to clean.** Whether it may act is decided by what the daemon says it can do; an older
   one reads "Update daemon" and nothing is run.
 - **A stopped WSL is never started.** Before each question it asks `wsl.exe` whether the distribution is running; when
@@ -58,7 +63,7 @@ Both are user settings only (`"scope": "application"`), so a repository's `.vsco
 
 ## Workspace trust
 
-WSL Care works in untrusted (Restricted Mode) workspaces too, and that is deliberate: no input from the workspace reaches a
+AI OS Care works in untrusted (Restricted Mode) workspaces too, and that is deliberate: no input from the workspace reaches a
 root call. Every setting it reads is `"scope": "application"` — a user setting, which a repository's
 `.vscode/settings.json` cannot set — and none of its calls takes a value from the open folder, its files or its tasks.
 What a cleanup acts on comes from the daemon's own preview and your confirmation in a VS Code dialog, never from the

@@ -7,7 +7,7 @@ extension that shows the state and runs cleanups on demand.
 | Folder | Holds |
 |---|---|
 | `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17, and the button-only A18 of E7.S2b) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
-| `src_vs_code/` | the VS Code extension **AI OS Care** (Marketplace id `remsoftdev.ai-os-care`) — in development: its client of the daemon, the status bar and the read-only panel, since E6.S2 the root boundary its cleanups will use (no button yet), and their tests — [Extension (preview)](#extension-preview) below |
+| `src_vs_code/` | the VS Code extension **AI OS Care** (Marketplace id `remsoftdev.ai-os-care`) — in development: its client of the daemon, the status bar and the panel, since E6.S2 the root boundary, since E6.S3 the cleanup buttons on it, and their tests — [Extension (preview)](#extension-preview) below |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -571,7 +571,7 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   "unsupported distro" or "needs a newer extension" when that is the answer. A daemon too old to report verdicts leaves
   it uncoloured and says so in the tooltip. A click opens the panel.
 - **The panel** (the *AI OS Care* icon in the activity bar) shows Memory, Top holders, Swap, Disk, Folders, Containers,
-  Container starts, Cleanup (read-only: what each cleanup would free — no buttons yet), Health, AI agents and Last
+  Container starts, Cleanup (what each cleanup would free, and its buttons — below), Health, AI agents and Last
   cleanup. A row the daemon cannot fill yet says when it arrives ("arrives in E6 — …"); a figure the daemon could not
   read says why ("unavailable — <reason>"); nothing is ever shown as a made-up 0. Its buttons: **Refresh**, **Settings**
   and, when the distribution is stopped, **Start WSL and check**. That button and *Install daemon*'s terminal (you
@@ -583,7 +583,18 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
 
 - **Reading.** It asks the daemon four questions as your own user: `status --json`, `preview --all --json`,
   `doctor --json`, `--version`. It never changes the daemon's configuration.
-- **The root boundary (E6.S2; no button uses it yet — the cleanup buttons are E6.S3).** A cleanup needs root, so the
+- **The cleanup buttons (E6.S3).** Each cleanup row has **Clean** and **Select**; **Clean selected (n)** runs every ticked
+  row as ONE run; **Run full check now** starts a full measurement (it does not clean); a wedged run of the daemon's own
+  units gets **Stop** (any other wedged run is named with its pid). A press asks the daemon for a fresh preview, shows it in
+  a modal (what each action removes, how much; A4 removes exactly the volumes listed; A5 / A6 / A7 are re-checked when they
+  run) and — for A5, A6Unused, A8, A11 and A12 — a second modal naming the setting they use; a preview older than five
+  minutes when you confirm is taken again first. Only then is the cleanup confirmed. The run is written to VS Code's
+  `globalState` before the call goes out and followed — `status` every 4 s while it is in flight, then ONE `runs show` — until
+  its result is shown, so a reload shows "Cleaning… A4" from the daemon and then the result; a run that died reads
+  *interrupted*, a refused one its reason, one with no answer in 30 minutes "state unknown" with its run id. *Last cleanup*
+  shows the daemon's newest cleanup (`status.lastCleanup`), the results this window showed and "Docker after" with the time
+  it was read. Every button's state comes from what the daemon reports, never from the button alone.
+- **The root boundary (E6.S2).** A cleanup needs root, so the
   extension holds exactly five root calls, built in ONE module (`src/root/rootCall.ts`) from a closed set and started only
   through the runner seam: `-d <distro> -u root --cd / --exec /opt/wsl-care/bin/wsl-care` followed by
   `act <ids> --preview --json`, `act <ids> --confirm --manual --detach [--only -] --json` (A4's volumes, exactly the ones
