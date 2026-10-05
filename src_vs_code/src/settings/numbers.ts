@@ -48,6 +48,7 @@ const CLEANUP = {
   recordReadBackoffSeconds: { key: 'cleanup.recordReadBackoffSeconds', default: 8, minimum: 1, maximum: 300, description: 'How much longer each new try of a failed record read waits than the one before, in seconds (the first try at once).' },
   settleAtOnce: { key: 'cleanup.settleAtOnce', default: 4, minimum: 1, maximum: 32, description: 'How many followed cleanups are settled at the same time in one poll.' },
   tombstoneMinutes: { key: 'cleanup.tombstoneMinutes', default: 10, minimum: 1, maximum: 1440, description: 'How long a cleanup another window removed from the shared journal is remembered as removed, so a stale list in a second window does not write it back, in minutes.' },
+  resultsKept: { key: 'cleanup.resultsKept', default: 5, minimum: 1, maximum: 50, description: 'How many past cleanup results *Last cleanup* in the panel lists (newest first; the daemon keeps them all).' },
   journalEntries: { key: 'cleanup.journalEntries', default: 32, minimum: 4, maximum: 256, description: 'How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped.' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 

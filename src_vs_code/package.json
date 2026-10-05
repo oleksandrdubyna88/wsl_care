@@ -299,6 +299,14 @@
           "maximum": 1440,
           "scope": "application",
           "markdownDescription": "How long a cleanup another window removed from the shared journal is remembered as removed, so a stale list in a second window does not write it back, in minutes."
+        },
+        "wslCare.cleanup.resultsKept": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 50,
+          "scope": "application",
+          "markdownDescription": "How many past cleanup results *Last cleanup* in the panel lists (newest first; the daemon keeps them all)."
         }
       }
     }
