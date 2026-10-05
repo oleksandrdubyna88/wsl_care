@@ -113,7 +113,7 @@ jobs:
       # The scenario harness (research/module_tests.md): the BUILT CLI as a child process over a
       # temporary WSL_CARE_ROOT, fake docker/systemctl/journalctl/powershell alone on its PATH, and the derived
       # verb register that fails when a verb has no row in module_tests.md. Since E4.S1 it also runs install.sh end to
-      # end (InstallFlows: the real script under /bin/sh over a temporary prefix, curl / gh / systemctl / apt-get faked)
+      # end (Install*Flows: the real script under /bin/sh over a temporary prefix, curl / gh / systemctl / apt-get faked)
       # — on the two Linux legs; the Windows leg skips those flows with the reason (POSIX sh, GNU coreutils and tar).
       - name: Test the scenarios
         run: |
