@@ -578,7 +578,8 @@ no new dependency — bats was not taken). `InstallWorld` runs the REAL script w
 |---|---|
 | `root/` | `WSL_CARE_INSTALL_ROOT`, the stand-in for `/`: every path the script reads or writes as a file sits under it. Seeded with `/run/systemd/system` (systemd booted), an `/etc/passwd` with `alice` and `zed`, and `/etc/default/sysstat` with `ENABLED="true"` |
 | `fakebin/` | the fake tool (`WslCare.FakeTool`) as `curl`, `gh`, `systemctl`, `apt-get`, `debconf-set-selections`, `dpkg-reconfigure`, `runuser`, `sudo`, `id`, `uname`, `sar`, `atop` — everything that changes the machine, reaches the network, or answers who and where the script runs (so a test can be root, or arm64, without being either). A test leaves one out to stand for a tool that is not installed |
-| `realbin/` | links to an ALLOWLIST of real text and file tools (`awk`, `cat`, `chmod`, `cut`, `grep`, `gzip`, `head`, `install`, `ln`, `ls`, `mkdir`, `mktemp`, `mv`, `od`, `readlink`, `rm`, `rmdir`, `sed`, `sha256sum`, `sleep`, `sort`, `tar`, `timeout`, `tr`, `wc`). `PATH` is exactly `fakebin:realbin`, so a script change that reaches for another tool fails here first. A world may link `awk` to a named one (`/usr/bin/mawk`, `/usr/bin/gawk`) — the snappy decoder is run under both |
+| `realbin/` | links to an ALLOWLIST of real text and file tools (`awk`, `cat`, `chmod`, `cut`, `grep`, `gzip`, `head`, `install`, `ln`, `ls`, `mkdir`, `mktemp`, `mv`, `od`, `readlink`, `rm`, `rmdir`, `sed`, `sha256sum`, `sleep`, `date`, `sort`, `tar`, `timeout`, `tr`, `wc`). `PATH` is exactly `fakebin:realbin`, so a script change that reaches for another tool fails here first. A world may link `awk` to a named one (`/usr/bin/mawk`, `/usr/bin/gawk`) — the snappy decoder is run under both |
+| the scripted clock | since 2026-10-05, `UseScriptedClock()`: `realbin/date` and `realbin/sleep` become two POSIX sh scripts over one file — `date +%s` answers the second in it (start `ScriptedClockStart`, 2026-10-04T12:00:00Z), `sleep N` adds N and returns at once — so a wait's output and its refusal depend on the seconds the script SLEPT, not on how long its status calls took. Stricter than the real tools: any other `date` form and any `sleep` that is not one whole number exits 2 naming what it was asked (`ScriptedClockTests`). Used by the progress flow; the wall-clock ceiling flow keeps the real clock on purpose |
 | the attestations | since the E4 review: every published release carries one attestation per signer — a bundle in Sigstore's shape (`AttestationBundles`: a self-signed certificate with the SAN and the Fulcio extensions, a DSSE statement naming the archive's digest), snappy-compressed (literals only), served at a bundle URL that the fake attestation API names (`bundle: null`, `&` written `\u0026`). The fake `gh` VERIFIES (`VerifiesAttestation`, `FakeAttestation`): `--cert-identity` exact, `--signer-workflow` a literal prefix, `--repo`, `--source-ref`, `--deny-self-hosted-runners`, the artifact's digest — gh's semantics as measured on gh 2.97.0. Every fake call records `HOME`, `GH_CONFIG_DIR`, `XDG_*_HOME`, `GH_TOKEN`, `GITHUB_TOKEN` (`WSL_CARE_FAKE_RECORD_ENV`), so whose configuration gh ran under is asserted. A captured cli/cli bundle (`src_daemon/tests/fixtures/attestation/`, 64 literal + 69 copy elements, bytes above 127) is served where the decoder's copies must be right |
 | `tmp/` | the script's `TMPDIR`; every flow asserts it is EMPTY afterwards (the trap removed the temporary folder on success, on failure and on refusal) |
 | the release | built per test with `System.Formats.Tar` from THIS repository's units and machine layer and served by the fake `curl` (a new answer option, `OutputFlag`: the fixture goes to the file after `--output`); its `.sha256` computed, or replaced by a test |
@@ -1041,6 +1042,45 @@ against the OLD `install.sh` (the file at `bef4ba4`) in WSL:
 | 8 (WSL) | `InstallFlows.The_wait_ceiling_is_measured_on_the_wall_clock_…` (a status that takes 6 s, ceiling 10 s) | *Expected (DateTime.UtcNow - started) to be less than 24s …, but found 28s, 832ms* |
 
 All green after the fixes (the new `install.sh` restored and compared byte for byte), on Windows and in WSL.
+
+### The progress flow made deterministic (2026-10-05)
+
+`InstallFlows.A_long_wait_says_every_progress_period_…` (finding 4 above) failed once in a full WSL Scenarios run under
+load and passed alone. Not a flake — a test that read the WALL clock in whole seconds. It ran with a 6 s ceiling and a 1 s
+period against the script's fixed 5 s poll: `started=$(date +%s)`, status call 1, the first note, `sleep 5`, status call 2,
+`now=$(date +%s)`. Whenever the part of a second already gone at `started` plus the two status calls (each a `timeout`, the
+old binary and a `tr`/`grep`/`sed` pipeline) passed 1 s, `now - started` was already 6 on the second poll, so the wait
+refused there and never printed a `still waiting:` line. **Reproduced** on `origin/main` (`c49b571`) in WSL `Ubuntu`
+(Release, a `/tmp` copy, the one test in a loop): **1 failure in 20 runs alone, 4 in 20 under 24 CPU burners** — each
+*Expected result.Stdout "… a wsl-care run is live (20261004T120000Z-4242); waiting (at most 6s)" to contain "still waiting:
+live 20261004T120000Z-4242, "*, the refusal arriving at the second poll (the failed runs took 6.2 s alone, 11–15 s loaded).
+
+**The fix is in the TEST WORLD, not in `install.sh`:** the flow runs on the scripted clock (§ *The installer harness*), with a
+30 s ceiling and a 10 s period. Time moves only by the script's own sleeps, so the outcome is exact and can be asserted
+whole: the note, then `still waiting: live 20261004T120000Z-4242, 10s of 30s` and `…, 20s of 30s` and NOTHING on the polls at
+5, 15 and 25 s (the period, not the poll), the refusal `a wsl-care run is live (20261004T120000Z-4242), still after 30s`,
+the clock at exactly start + 30 (the refusal on the poll that reaches the ceiling, before another sleep), and the old binary
+untouched. The ceiling measured on the WALL clock keeps its own flow (`The_wait_ceiling_is_measured_on_the_wall_clock_…`),
+which is why that one stays on the real clock.
+
+**Teeth** (in the WSL copy, one `sed` per mutation of `install.sh`, the file checked changed, the one test run, the file
+restored and compared by SHA-256 — every restore byte-identical):
+
+| Mutation | Red |
+|---|---|
+| the `say "still waiting: …"` line deleted | *… but {"…; waiting (at most 30s)"} contains 2 item(s) less* |
+| the period check `-ge "$PROGRESS_SECONDS"` → `-ge 0` (a line every poll) | *… contains 3 item(s) too many* (lines at 5, 15 and 25 s) |
+| `, ${elapsed}s of ${RUN_WAIT_SECONDS}s` dropped from the line | *… differs at index 1* (`still waiting: live 20261004T120000Z-4242`) |
+| `${STATE…}${RUN_ID…}, ` dropped from the line | *… differs at index 1* (`still waiting: 10s of 30s`) |
+| the ceiling check `-ge` → `-gt` (refuses one poll late) | *… contains 1 item(s) too many* (`…, 30s of 30s`) |
+
+**After the fix**, in WSL: the flow 30 of 30 alone, 30 of 30 under 24 CPU burners and 20 of 20 under 48; the scripted clock's own tests
+(`ScriptedClockTests`: both forms answered, 30 scripted seconds slept at once, eight other forms refused with exit 2 and
+the clock unmoved) green. The whole Scenarios suite in WSL, three times: 301 passed and 1 skipped of 302 in runs 2 and 3; run
+1 failed ONE other flow, `LogsFlows.The_timers_full_run_acts_after_measuring_…`, which is not touched here. Looped under 24
+CPU burners it failed 2 runs in 10 with *System.TimeoutException : …/wsl-care collect --timer --json did not exit within
+30 s* — the child ceiling of `ChildProcess` — against 6.6 s for the whole test alone. Recorded as an open finding (a
+wall-clock budget, or a slow timer pass under load — not yet traced), not fixed in this change.
 
 ## The extension (`src_vs_code/`)
 

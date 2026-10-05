@@ -124,6 +124,57 @@ internal sealed class InstallWorld : IDisposable
     /// <summary><c>WSL_CARE_INSTALL_SKIP_RUN_WAIT</c>: the escape for an installed binary that cannot answer.</summary>
     public bool SkipRunWait { get; set; }
 
+    /// <summary>The second the scripted clock starts at (<see cref="UseScriptedClock"/>): 2026-10-04T12:00:00Z.</summary>
+    public const long ScriptedClockStart = 1_791_115_200;
+
+    /// <summary>The file the scripted clock keeps its second in.</summary>
+    public string ClockFile => _root.Under("scripted-clock");
+
+    /// <summary>The second the scripted clock reads now: <see cref="ScriptedClockStart"/> plus every second the script slept.</summary>
+    public long ClockSeconds => long.Parse(File.ReadAllText(ClockFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Puts a SCRIPTED clock on the script's PATH in place of the real <c>date</c> and <c>sleep</c>: <c>date +%s</c> answers
+    /// the second in <see cref="ClockFile"/>, and <c>sleep N</c> adds N to it and returns at once. Time then moves only when
+    /// the script sleeps, so what a wait prints and when it refuses no longer depend on how long its other commands took.
+    /// </summary>
+    /// <remarks>Stricter than the real tools, never more permissive: any other <c>date</c> form, and a <c>sleep</c> that is
+    /// not one whole number of seconds, exits 2 naming what it was asked — a script change that reads the clock another way
+    /// fails here instead of silently reading a stopped one.</remarks>
+    public void UseScriptedClock()
+    {
+        File.WriteAllText(ClockFile, $"{ScriptedClockStart}\n");
+        WriteScriptedTool("date", $$"""
+            #!/bin/sh
+            if [ "$#" -ne 1 ] || [ "$1" != "+%s" ]; then
+              printf 'scripted clock: date answers only +%%s, not: %s\n' "$*" >&2
+              exit 2
+            fi
+            read -r now < '{{ClockFile}}'
+            printf '%s\n' "$now"
+
+            """);
+        WriteScriptedTool("sleep", $$"""
+            #!/bin/sh
+            case "$#:${1-}" in
+              1:'' | 1:*[!0-9]*) printf 'scripted clock: sleep takes one whole number of seconds, not: %s\n' "$*" >&2; exit 2 ;;
+              1:*) ;;
+              *) printf 'scripted clock: sleep takes one whole number of seconds, not: %s\n' "$*" >&2; exit 2 ;;
+            esac
+            read -r now < '{{ClockFile}}'
+            printf '%s\n' "$((now + $1))" > '{{ClockFile}}'
+
+            """);
+    }
+
+    private void WriteScriptedTool(string name, string script)
+    {
+        var path = Path.Combine(RealBin, name);
+        File.Delete(path);
+        File.WriteAllText(path, script);
+        File.SetUnixFileMode(path, Executable);
+    }
+
     public IReadOnlyList<FakeCall> Calls => FakeCallLog.ReadAll(CallsFile);
 
     public IReadOnlyList<FakeCall> CallsOf(string tool) => [.. Calls.Where(c => c.Tool == tool)];
