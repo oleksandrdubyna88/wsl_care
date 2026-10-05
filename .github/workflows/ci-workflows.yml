@@ -18,7 +18,7 @@ name: ci · workflows
 # Standalone shell scripts: `install.sh` (E4.S1) — the one a person pipes into `sudo sh` — is linted by
 # the pinned shellcheck image below, at its default severity (info and up), as POSIX sh (its shebang); so are the
 # release scripts under .github/scripts/ (E4.S2, bash), which PackageFlows and ReleaseScriptFlows run.
-# Its behaviour is tested by the scenario harness (ci · daemon, InstallFlows). The scripts under
+# Its behaviour is tested by the scenario harness (ci · daemon, Install*Flows). The scripts under
 # research/diagnostics/ are the record of a measurement — they produced the 2026-10-02 baselines
 # exactly as they are — and are deliberately not linted or rewritten here (koalaman/shellcheck:v0.11.0
 # reports info/warning findings in them).
