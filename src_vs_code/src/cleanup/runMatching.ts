@@ -3,6 +3,7 @@ import type { RunningBlock } from '../root/rootOutcome';
 import { FULL_CHECK_ACTIONS, RUN_KINDS } from '../root/cleanupController';
 import type { JournalEntry } from './journal';
 import type { RunLine } from './runAnswers';
+import { DAY_MS, RETENTION_DAYS, utcInstantOf } from '../shared/instants';
 
 /**
  * The follower's pure decisions (E6.S3 and its review round): which running block names a followed run, which run an
@@ -14,7 +15,7 @@ import type { RunLine } from './runAnswers';
 export const CLOCK_SKEW_MS = 5 * 60_000;
 
 /** The daemon keeps 90 days of history; a runs window never reaches further back (review B1). */
-export const RETENTION_MS = 90 * 86_400_000;
+export const RETENTION_MS = RETENTION_DAYS * DAY_MS;
 
 function stateOf(running: RunningBlock | undefined): string {
   return running !== undefined && running.state.kind === 'known' ? running.state.value : '';
@@ -110,17 +111,13 @@ export function matches(line: RunLine, entry: JournalEntry): boolean {
   return line.trigger === 'manual' && actionsMatch(line, entry) && Date.parse(line.startedAt) >= since;
 }
 
-/** `yyyy-MM-ddTHH:mm:ssZ` at or before `ms`. */
-function floorInstant(ms: number): string {
-  return new Date(Math.floor(ms / 1000) * 1000).toISOString().replace('.000Z', 'Z');
-}
 
 /** One second past `ms`, whole — the window's end is exclusive. */
 function ceilInstant(ms: number): string {
-  return new Date((Math.ceil(ms / 1000) + 1) * 1000).toISOString().replace('.000Z', 'Z');
+  return utcInstantOf((Math.ceil(ms / 1000) + 1) * 1000);
 }
 
 /** The runs window of an unresolved confirm: from the confirm less the skew (no further back than the retention) to now plus the skew. */
 export function windowOf(entry: JournalEntry, now: number): { readonly from: string; readonly to: string } {
-  return { from: floorInstant(Math.max(Date.parse(entry.since) - CLOCK_SKEW_MS, now - RETENTION_MS)), to: ceilInstant(now + CLOCK_SKEW_MS) };
+  return { from: utcInstantOf(Math.max(Date.parse(entry.since) - CLOCK_SKEW_MS, now - RETENTION_MS)), to: ceilInstant(now + CLOCK_SKEW_MS) };
 }

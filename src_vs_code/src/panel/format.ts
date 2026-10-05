@@ -11,17 +11,7 @@ import { safeText as safeTextUpTo } from '../text/safeText';
 /** The longest daemon string the page is given; longer ones end in an ellipsis. */
 export const MAX_TEXT = 500;
 
-const GIB = 1024 ** 3;
-
-export function gib(bytes: number): string {
-  return `${(bytes / GIB).toFixed(1)} GiB`;
-}
-
-export { gb } from '../text/format';
-
-export function percent(value: number): string {
-  return `${Number(value.toFixed(1))} %`;
-}
+export { gb, gib, percent } from '../text/format';
 
 /** How long ago, as a person says it. */
 export function age(seconds: number): string {
