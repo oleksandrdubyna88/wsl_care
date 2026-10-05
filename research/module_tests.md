@@ -23,8 +23,9 @@ Shared doubles live in `src_daemon/tests/WslCare.TestSupport` (`TempRoot`, `Sand
 denial on one directory, `chmod 000` on Linux and an inherited `icacls` deny for the current user's
 SID on Windows, lifted on dispose and reported as unavailable when it does not take — `TerminalText`
 — stderr with the console sink's colour removed and whatever control characters are left — and
-`ChildProcess` — the one launcher the process-level tests share: argv list, 30 s ceiling, the whole
-tree killed on timeout, UTF-8 streams — and since E3.S1 `HostileInputs` — the seeded generator of the command-policy
+`ChildProcess` — the one launcher the process-level tests share: argv list, 30 s ceiling — or, since 2026-10-05, a
+`ProgressWait`: killed after a silence, or at a cap, which every scenario CLI run uses — the whole tree killed on timeout,
+UTF-8 streams — and since E3.S1 `HostileInputs` — the seeded generator of the command-policy
 property tests — `FakeProcessTable` and `LinuxSandbox` — the distro's layout over a temporary root on either
 operating system). E3.S2's action tests keep their worlds beside them in `WslCare.Core.Tests`: `Actions/DockerWorld` (the
 captured Docker under the product policy, edited as text), `Actions/UserWorld` (a target user `me`, tools in their bin
@@ -215,6 +216,7 @@ checklist in `POST_DEPLOY.md`; and whenever the Docker or systemd version on the
 | The read-only queries the collectors added to the file-system seam: a directory link answers its target, a directory or an absent path is not a link, a link that cannot be inspected is unreadable (fail closed, as the deletion policy); the volume holding a directory is measured in one call; a volume that does not exist is unreadable | `WslCare.Core.Tests/Files/ReadOnlyQueriesTests.cs` |
 | `status [--json]` in-process over the captured tree: the JSON answer with `schemaVersion`, the fixture's figures, the host named as the other binary, no slow part yet — and the recording command runner received NOTHING; the slow parts of a recorded full run come back with their age, still with nothing started; the text form's lines (ASCII only); a broken configuration layer is named (`observeOnly`, `configError`) and status still answers | `WslCare.Cli.Tests/StatusCommandTests.cs` |
 | The harness's own fakes: a bare `docker` looked up by a real shell on the scenario `PATH` reaches the fake, which records its argv and prints the scripted fixture byte for byte with the scripted exit code and stderr; each of `docker`, `systemctl`, `journalctl`, `powershell` (installed as `powershell.exe` on Linux, the name WSL interop uses) answers as itself, records argv exactly (spaces included) and refuses an unscripted call (98); `git` is NOT reachable on the scenario `PATH`; a fake started outside a scenario refuses (97) | `WslCare.Scenarios/FakeToolFlows.cs` |
+| The harness's wait on progress (`TestSupport/ProgressWait` through `ChildProcess`, every OS, the child a fake scripted to sleep): a child whose mark keeps changing runs past a 1 s silence to its own exit; a silent one is killed at the silence (*… made no progress for 1 s*) long before its cap; one that progresses for ever ends at its cap (*… did not exit within 3 s*); a ceiling and a progress wait together are refused; a scenario CLI run that calls no fake for its silence is killed for it, though the product would have cut the hung fake at its own ceiling and finished; a fake call grows the scenario's mark, and the scenario's silence is 30 s and its cap 5 min | `WslCare.Scenarios/ProgressWaitTests.cs` |
 | The BUILT CLI starts the `docker` on its `PATH`, never one in its current directory: with a decoy fake planted in the scenario's working directory (the CLI's current directory, not on `PATH`) every docker call records the `fakebin/` location; with no docker on `PATH` and the decoy present, `preview` answers `notInstalled` and nothing is started. The scenario child runs WITHOUT `NoDefaultCurrentDirectoryInExePath` (an agent's shell sets it; with it set, `CreateProcess` skips the current directory and the first run of this test passed against the unfixed launcher). **Observed red first** (2026-10-02, Windows, unfixed `ProcessCommandRunner`): `Expected docker to contain only items matching SameFolder(c.Location, …FakeBin) … but {FakeCall { Argv = {"version", "--format", "{{json .}}"}, Location = "…\wsl-care-test-scn-resolve-path-wins-…" }} do(es) not match` and `Expected property report.Docker.Kind … (actual) "commandFailed" "notInstalled" (expected)` — the decoy answered (unscripted, 98) — the shape of CI run 37045304356's nine failures, where System32's real `docker.exe` answered. Green after the fix | `WslCare.Scenarios/ToolResolutionFlows.cs` |
 | Docker's human spellings: sizes in the base their suffix names (`MB` = 10⁶, `MiB` = 2²⁰; the summary `9.806GB (48%)`, the `20.5kB (virtual 306MB)` of `ps`), N/A and garbage unavailable, never 0; both timestamp shapes (`2026-10-02 14:23:39 +0200 CEST`, nine-digit RFC 3339) to the same UTC instant; Go's zero time is "never"; percentages; a label value holding a comma; a listing with a non-JSON line unavailable naming the line | `WslCare.Core.Tests/Docker/DockerTextTests.cs` |
 | Every failure kind with Docker 29.6.1's REAL stderr: missing socket, missing named pipe, the pre-29 wording → `daemonStopped`; permission denied, connection refused → `socketRefused`; Docker's i/o timeout and our ceiling → `timedOut` ("its process tree was killed"); no executable → `notInstalled`; a policy refusal; a cut answer → `unparseable`; an unknown message → `commandFailed` quoted; `"Server": null` → `daemonStopped` whatever the exit code; an inspect naming only vanished containers is read for the others, the same stderr on another command (or mixed with a refusal) still fails | `WslCare.Core.Tests/Docker/DockerCliTests.cs` |
@@ -1083,7 +1085,68 @@ the clock unmoved) green. The whole Scenarios suite in WSL, three times: 301 pas
 1 failed ONE other flow, `LogsFlows.The_timers_full_run_acts_after_measuring_…`, which is not touched here. Looped under 24
 CPU burners it failed 2 runs in 10 with *System.TimeoutException : …/wsl-care collect --timer --json did not exit within
 30 s* — the child ceiling of `ChildProcess` — against 6.6 s for the whole test alone. Recorded as an open finding (a
-wall-clock budget, or a slow timer pass under load — not yet traced), not fixed in this change.
+wall-clock budget, or a slow timer pass under load — not yet traced), not fixed in this change. Traced and closed in the
+next section: the budget, not the pass.
+
+### The timer's full run under load: the harness's wall budget, not the pass (2026-10-05)
+
+The open finding above, traced and closed. **Reproduced** on `origin/main` (`0d5aef9`) in WSL `Ubuntu` (Release, a `/tmp`
+copy, the one test in a loop): 0 failures in 5 runs alone and 0 in 10 under 24 CPU burners on that day (the machine was
+less loaded than on the day of the finding — the whole test took 23–30 s there), and **4 in 10 under 48 burners**, each
+*System.TimeoutException : …/wsl-care collect --timer --json did not exit within 30 s*.
+
+**Where the time goes** — measured in an instrumented copy only (the fake stamped its process start, its `Main` and its
+exit into a file beside the call log; the scenario's folder was kept): the pass makes **45 fake calls, one after the
+other**, and the time is the fakes', not the pass's:
+
+| | the fakes' calls | inside the fakes | between two calls (longest) | a single call (longest) | the pass (`collect` log, first line → record written) |
+|---|---|---|---|---|---|
+| alone | 45 in 3.8–5.3 s | 3.6–4.9 s | 0.07–0.12 s | 0.11–0.16 s | 4.2–5.7 s |
+| 24 burners | 45 in 12.5–16.4 s | 11.1–14.5 s | 0.26–0.55 s | 0.40–0.51 s | 14.0–18.3 s |
+| 48 burners | 42–45 in 19.0–29.1 s | 16.3–24.4 s | 0.63–1.30 s | 0.65–1.75 s | 21.7–28.9 s, or never (killed) |
+
+Each fake is a framework-dependent .NET process: 30–40 ms from its start to `Main` alone, 100–190 ms under 24 burners.
+No sleep, no lock wait, no ceiling: every call answered (none waited out a product ceiling), the longest silence between
+two calls was 1.3 s, and the CLI's own work between the last call and its record is milliseconds. The two killed runs had
+made 45 and 42 calls — still calling a fake every second when the 30 s total cut them off. **So it is (a): a legitimately
+slow pass, and a wall-clock budget that is a guess about how loaded the machine is.** Not a product defect.
+
+What the 45 calls are, for the record (not changed here): the measurement's own reads, then the action pass's — each
+docker action (A4, A5, A6, A7) takes its own LIVE look (`DockerLook.TakeAsync`: `version`, `system df`, `system df -v`,
+`volume ls`, `container inspect`), as plan §15a #0 requires, so 20 of the 45 repeat five of the measurement's six docker
+reads, four times; A7 asks `builder prune --help`; and six more repeat a read the measurement made: `snap list`,
+`journalctl --disk-usage`, `systemctl show fstrim.timer`, the host figures through `powershell`, `timedatectl` and
+`journalctl --since`.
+
+**The fix is in the harness, not the product:** `ChildProcess.RunAsync` takes a `ProgressWait` (`TestSupport`) —
+a mark that changes whenever the child does something, a silence after which it is killed with its tree, and a cap.
+`ScenarioHome.RunAsync` waits every CLI run on the length of its fakes' call log: **30 s without a new fake call** (the
+same 30 s a total gave a silent child) or **5 minutes in all** (ten times the slowest progressing pass measured; a child
+that calls fakes that long is a loop). A child still killed says which: *… made no progress for 30 s* or *… did not exit
+within 300 s*. Nothing the flow asserts changed.
+
+The wait's own tests, `ProgressWaitTests` (every OS; the child is a fake scripted to sleep): a child whose mark keeps
+changing runs past a 1 s silence to its own exit (4 s); a silent one is killed at the 1 s silence long before its 60 s
+cap; one that progresses for ever still ends at a 3 s cap; a ceiling and a progress wait together are refused; a
+scenario's CLI that calls no fake for its silence (`docker version` scripted to hang 20 s, which the product would cut
+at its own 10 s probe ceiling and carry on) is killed for it; and a fake call grows the scenario's mark.
+
+**Teeth** (in a WSL `/tmp` copy, one mutation at a time: the file checked changed, rebuilt, `ProgressWaitTests` run, the
+file restored and compared by SHA-256 — every restore byte-identical):
+
+| Mutation | Red |
+|---|---|
+| the wait ignores progress (a 30 s total again) | 3 of 6: the CLI scenario *Expected a* `System.TimeoutException` *to be thrown, but no exception was thrown*; the silent child *… "…/fakebin/docker sleep did not exit within 30 s" does not* match *made no progress for 1 s*; the cap *… did not exit within 30 s* where 3 s was asked |
+| a new mark never restarts the silence | 2 of 6: the busy child *System.TimeoutException : …/fakebin/docker sleep made no progress for 1 s*; the cap test killed for silence instead |
+| no silence kill (the check never true) | 2 of 6: the CLI scenario not killed; the silent child *… did not exit within 60 s* (waited out to its cap) |
+| no cap (a progressing child waited for ever) | 1 of 6: *Expected a* `System.TimeoutException` *to be thrown, but no exception was thrown* (the 60 s sleep ran out) |
+| `ScenarioHome.RunAsync` not waited on progress | 1 of 6: the CLI scenario *Expected a* `System.TimeoutException` *to be thrown, but no exception was thrown*; and **the timer flow under 48 burners failed 6 runs in 10** with the original *… collect --timer --json did not exit within 30 s* |
+
+**After the fix**, in WSL (Release, a fresh `/tmp` copy): the timer flow **10 of 10 alone, 20 of 20 under 24 CPU burners
+and 30 of 30 under 48** (against 4 failures in 10 under 48 before; 20 of the 48-burner runs and all of the others on the build before `ScenarioHome.Silence` existed, the
+last 10 on this one — the wait itself is the same). `ProgressWaitTests` 6 of 6 on Windows and in WSL. The whole Scenarios
+suite in WSL three times: 307 passed and 1 skipped of 308, each time. Windows (Release): Core 934 (914 passed, 20
+skipped), Cli 199 (197, 2), Scenarios 308 (183 passed, 125 skipped — the Linux-only flows).
 
 ## The extension (`src_vs_code/`)
 
@@ -1437,6 +1500,10 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 
 The extension's own limits are listed in its section (§ *The extension* — *What the extension's tests do not prove*).
 
+- **A scenario run is waited on its fakes, not on a clock** (since 2026-10-05, `ProgressWait`). A CLI that keeps calling
+  fakes is never cut off before 5 minutes, so a scenario no longer catches a pass that is merely SLOW — its duration is
+  nobody's assertion, and the product's own per-command ceilings are proved in their own tests. A CLI that does long
+  work without calling any fake (a folder walk, a procfs read) gets 30 s of silence, the same as the old total.
 - **The goldens are the fakes' answers, not this machine's.** `contracts/golden/head/` is the built CLI over the
   captured fixtures and the fake tools: doctor's unit checks answer `unknown` (no `systemctl show` of those units was
   captured, so the fake refuses), the clock offset and `df /` are normalised away, and a value the normalisation list

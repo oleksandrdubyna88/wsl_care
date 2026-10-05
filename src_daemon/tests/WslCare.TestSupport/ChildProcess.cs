@@ -43,20 +43,30 @@ public static class ChildProcess
         return path;
     }
 
+    /// <summary>How often a <see cref="ProgressWait"/> reads its mark.</summary>
+    private static readonly TimeSpan ProgressPoll = TimeSpan.FromMilliseconds(100);
+
     /// <summary>
     /// Runs <paramref name="executable"/> with <paramref name="args"/> as an argv list (never a
     /// shell string). <paramref name="environment"/> entries are set on top of this process's
     /// environment; a <c>null</c> value removes the variable. On the ceiling the WHOLE tree is
-    /// killed and a <see cref="TimeoutException"/> names the executable.
+    /// killed and a <see cref="TimeoutException"/> names the executable. With <paramref name="progress"/>
+    /// the ceiling is that wait's — silence, or its cap — and <paramref name="ceiling"/> must be left out.
     /// </summary>
     public static async Task<ChildResult> RunAsync(
         string executable,
         IReadOnlyList<string> args,
         IReadOnlyDictionary<string, string?> environment,
         string workingDirectory = "",
-        TimeSpan? ceiling = null)
+        TimeSpan? ceiling = null,
+        ProgressWait? progress = null)
     {
-        var limit = ceiling ?? DefaultCeiling;
+        if (ceiling is not null && progress is not null)
+        {
+            throw new ArgumentException("a child is waited on a ceiling OR on its progress, not both", nameof(progress));
+        }
+
+        var limit = progress?.Cap ?? ceiling ?? DefaultCeiling;
         var start = new ProcessStartInfo(executable)
         {
             RedirectStandardOutput = true,
@@ -98,6 +108,7 @@ public static class ChildProcess
         using var deadline = new CancellationTokenSource(limit);
         var stdout = process.StandardOutput.ReadToEndAsync(deadline.Token);
         var stderr = process.StandardError.ReadToEndAsync(deadline.Token);
+        var silenced = progress is null ? Task.FromResult(false) : WatchAsync(progress, process, deadline);
         try
         {
             await process.WaitForExitAsync(deadline.Token);
@@ -106,9 +117,50 @@ public static class ChildProcess
         {
             // A timeout that only stops WAITING leaves the child running; kill the whole tree.
             process.Kill(entireProcessTree: true);
-            throw new TimeoutException($"{executable} {string.Join(' ', args)} did not exit within {limit.TotalSeconds:0} s");
+            var display = $"{executable} {string.Join(' ', args)}";
+            throw new TimeoutException(await silenced
+                ? $"{display} made no progress for {progress!.Silence.TotalSeconds:0} s"
+                : $"{display} did not exit within {limit.TotalSeconds:0} s");
         }
 
+        await silenced;
         return new ChildResult(process.ExitCode, await stdout, await stderr);
+    }
+
+    /// <summary>Reads the mark every <see cref="ProgressPoll"/> while the child runs; when it has not changed for the wait's
+    /// silence, ends the wait (cancels <paramref name="deadline"/>) and answers true. False when the child exited or the cap
+    /// fired first.</summary>
+    private static async Task<bool> WatchAsync(ProgressWait progress, Process process, CancellationTokenSource deadline)
+    {
+        using var poll = new PeriodicTimer(ProgressPoll);
+        var quiet = new QuietSpell(progress.Mark());
+        while (await poll.WaitForNextTickAsync(CancellationToken.None) && !process.HasExited && !deadline.IsCancellationRequested)
+        {
+            if (quiet.LastedFor(progress.Mark()) >= progress.Silence)
+            {
+                await deadline.CancelAsync();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>How long a mark has stayed the same: restarted whenever a new one is seen.</summary>
+    private sealed class QuietSpell(long first)
+    {
+        private readonly Stopwatch _since = Stopwatch.StartNew();
+        private long _mark = first;
+
+        public TimeSpan LastedFor(long mark)
+        {
+            if (mark != _mark)
+            {
+                _mark = mark;
+                _since.Restart();
+            }
+
+            return _since.Elapsed;
+        }
     }
 }
