@@ -2258,6 +2258,17 @@ stable; the daemon's suites green on Windows (Core 884, Cli 194, Scenarios 177) 
 | golden | the 765 KB `act-a4-preview-capped.json` DROPPED: the C# test runs the capped scene in memory and asserts its shape; the host's 10 000-name case is generated in the test (and pipes 650 000 bytes) | `GoldenContractTests.The_built_cli_past_the_cap…`, `cleanupController.test.ts` (*a preview past the cap …*) | mutation (`CappedVolumes` = 10 000) → red (*shownTruncated … found False*); the drift test green without the file |
 | found while fixing | the structure scan caught the controller spelling `collect` (the full check's expected actions) | `structure.test.ts` | red naming `src/root/cleanupController.ts: ['collect']`; the words moved to `rootCall.ts` (`FULL_CHECK_ACTIONS`) |
 
+### The coai E6.S2 rounds (2026-10-05)
+
+The plan round's accepted findings #0 (cite the stdin-relay measurement — facts row 20, now linked from the code) and #3 (the
+terminal state of an expired no-run-id follow, written as E6.S3's contract) are documentation: no observable behaviour
+changed, so no test (`common.testing` § Scope). The code round had **2 of 8 reviewers answering** (both SecurityReliability
+reviewers timed out): the root boundary's security coverage is the two own reviews of *The E6.S2 review round* above.
+
+| # | Finding → guarantee | Test | Red observed |
+|---|---|---|---|
+| code #0 | the actions minimum is never below the render minimum — *Install daemon* types it | C# `ReleaseExtensionScriptFlows.The_guard_refuses_an_actions_minimum_below_the_render_minimum` (both daemon releases answered published, so only the order is wrong); TS `minDaemon.test.ts` (`versionAtLeast`, the extension's own comparison) | the flow against the previous guard red — it ADMITTED the release (*Expected result.Exit to be 1 … version=0.1.0*); the TS tests red against a stub comparison; mutations — the actions minimum planted at 0.0.9 → the invariant test red, the comparison inverted → its field-by-field test red |
+
 ### What the extension's tests do not prove
 
 - **No real `wsl.exe` is ever started by a test** — by design (the tripwire). The fake's answers are the measured ones of

@@ -26,7 +26,11 @@ export type RunId = string & { readonly __brand: 'RunId' };
 /** An anonymous Docker volume's full name — what A4's shown list holds. */
 export type VolumeName = string & { readonly __brand: 'VolumeName' };
 
-/** The most names A4's preview shows and a confirm may pipe back — the daemon's `ShownList.MaxNames` (plan §15k #11). */
+/**
+ * The most names A4's preview shows and a confirm may pipe back — the daemon's `ShownList.MaxNames` (plan §15k #11). A full
+ * list is 650 000 bytes on stdin; that it relays through `wsl.exe` byte for byte, with its end, was measured 2026-10-04
+ * (research/2026-10-03_wsl_exe_facts.md row 20; re-measured with `-u root` at the E6 live gate).
+ */
 export const MAX_SHOWN_VOLUMES = 10_000;
 
 /**

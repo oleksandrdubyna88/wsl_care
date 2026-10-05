@@ -45,6 +45,12 @@ import type { HandOffOutcome, HeldPreview, PreviewOutcome, RootCheckOutcome, Roo
  *   <li>the REAL bound: the loop stops starting polls at `FOLLOW.boundMs` (60 s) of the monotonic clock, and a poll in
  *       flight finishes — one `status` call is at most its three `wsl.exe` questions (15 s each) and the verb (20 s), so a
  *       follow ends within ~60 s + one interval (4 s) + one poll (65 s), about two minutes.</li>
+ *   <li><b>The terminal state when that follow expires</b> (coai E6.S2 plan round #3) is `outcomeUnknown` with NO run id —
+ *       the controller does not decide more. E6.S3 RESOLVES it on its next load from the daemon's own records: the runs
+ *       (`runs --from <the confirm's instant> --to <now>`, and `status.lastCleanup`) over the window since the confirm,
+ *       matching `trigger: manual` and exactly the confirmed ids (`["collect"]` for a full check) — one match is the run,
+ *       none after the request budget's grace means it never ran, more than one stays "unknown" with the candidates shown.
+ *       E6.S3 persists the confirm's instant and ids for exactly this (plan §16 E6.S3 row).</li>
  * </ul>
  */
 
