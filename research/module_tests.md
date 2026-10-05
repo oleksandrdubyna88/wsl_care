@@ -2381,6 +2381,30 @@ was green — recorded as open, not explained); the family checks OK.
 | **the wiring**: the Logs shell (`<main id="logs">`, its title, the same CSP); `openRunLogs` bare; *Logs* beside *Last cleanup*; `wslCare.openLogs` in the panel title; `onWebviewPanel:wslCare.logs`; `choose` for a new page (persisted, read once on `ready`) — *`choose` written with its test in one step* | `panel/webviewHost.test.ts` (*E6.S4* ×2), `manifest.test.ts`, `panelPage.test.ts` (*E6.S4: Last cleanup carries a Logs button*), `logsController.test.ts` (*choose*), `host/suite.ts` (*E6.S4: the Logs page*) | red: 5 (the manifest's commands and activation events, the shell's root, `openRunLogs` dropped, no Logs button). Teeth: `choose` reading too → 3 red; a refused `choose` still read → 1 red; the shell's root fixed to `panel` → 1 red; `openRunLogs` out of the set → 1 red |
 | **the flow catalogue**: `client logs`, `message openRunLogs`, `command wslCare.openLogs` and every `logs <type>` derived | `catalogue.test.ts` | red with exactly those 13 ids missing until their rows existed |
 
+### The E6.S4 review round
+
+The coai code round over E6.S4 (proceed, all 4 reviewers; K1–K3 accepted, three rejected), the own security review (no
+findings) and the own correctness review (C1–C7) — dispositions in the plan's §15p. Each accepted finding was written as a
+test first and seen RED against stubs that compiled (12 red), then GREEN, then RED again with its load-bearing line broken
+and restored by SHA-256. Totals after the round: `npm test` **708 tests (707 pass, 1 skipped)**; typecheck and lint 0;
+`npm run package` + `check-vsix` clean; the extension-host tier green on VS Code 1.85.0 and stable, fake and closed (no
+`EPERM` this time); the family checks OK.
+
+| Finding | Test | Red observed |
+|---|---|---|
+| **K1** `withZone` for an async body | `zone.test.ts` (a file of its own) | The first version of the test was GREEN against the old helper for the wrong reason: `delete process.env.TZ` does not reset Node's zone cache (measured — the clock kept reading Asia/Kolkata), so the zone LEAKED into every later test of a file and the "restored" check read the leaked zone. With the machine-zone assertion in a fresh file: red (`actual 05:30 (UTC+05:30)`, `expected 02:00 (UTC+02:00)`). Teeth: restoring before the promise settles → red; a delete-only restore → red |
+| **K2** an explicit verb table | `runReads.test.ts` (*review K2*) | red on the empty table; teeth: `logs` spelt `runs` → 3 red |
+| **K3** one panel | `logsPage/panelSlot.test.ts` (3) | red ×3 on the stub slot; teeth: no reveal of the open panel → 1 red; a restored extra never disposed → 1 red; any dispose emptying the slot → 1 red |
+| **C1** `problem` is its own state | `logsController.test.ts` (*review C1* ×2), `runReads.test.ts` (*review C1: exit 4*) | red: the all-zero figures shown as answered, `runs show`'s "unknown" shown; the client test green from the start (the client already answered exit 4) — teeth: exit 4 not an answer → 2 red; `problem` never matched → 2 red; `problem` not through `safeText` → 1 red |
+| **C2** the window kept with its answers | `logsController.test.ts` (*review C2*: 23:59 → 00:01 in Kyiv, then an expand) | red: the label became 2026-10-06; teeth: the window recomputed per render → 1 red |
+| **C3** three reasons, and a re-post | `logsController.test.ts` (*review C3*) | red; teeth: an unread `status` treated as answered → 1 red; `statusChanged` posting nothing → 1 red |
+| **C4** the inputs kept | `logsPage.test.ts` (*review C4*) | red: a new `<input>` each render; teeth: always overwrite the value → 1 red |
+| **C5** `ready` without a re-read | `logsController.test.ts` (*review C5*) | red: two more reads, the run collapsed; teeth: `ready` always reads → 1 red |
+| **C6** the selection begun before its await | `logsController.test.ts` (*review C6*) | red: Today's answered totals under the Yesterday label; teeth: the slots not cleared → 1 red |
+| **C7** an act line is never `collect` | `runFollower.test.ts` (*review C7*) | red: the `collect` line with A4 resolved the act entry; teeth: the kind check off → 1 red |
+| **stale detail** (green with a bug) | `logsController.test.ts` (*the stale-detail guard*) | green from the start; teeth: `details.has` dropped → 1 red. The generation check's mutant SURVIVED at first (a new selection clears the details, so it looked redundant) — the case it guards was then written (expand, Refresh, expand the same line again: the old list's late answer must not fill it) → 1 red |
+| **absent ≠ 0** (green with a bug) | `logsPage.test.ts` (*never 0*) | green from the start; teeth: a missing byte figure as `0.0 GB` → 1 red; a missing metric point as `0` → 1 red |
+
 ### What the extension's tests do not prove
 
 - **No real `wsl.exe` is ever started by a test** — by design (the tripwire). The fake's answers are the measured ones of
