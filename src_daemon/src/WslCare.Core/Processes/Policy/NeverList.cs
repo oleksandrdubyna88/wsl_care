@@ -28,7 +28,9 @@ public static class NeverList
     private static readonly string[] Deleters = ["rm", "rmdir", "unlink", "shred", "srm", "wipe", "del", "erase", "rd", "trash", "trash-put", "gio", "truncate", "mv", "remove-item"];
     private static readonly string[] Wrappers = ["sudo", "su", "doas", "pkexec", "env", "nohup", "setsid", "xargs", "chroot", "nsenter", "unshare", "timeout", "nice", "ionice", "stdbuf", "script", "flock", "watch", "chrt", "taskset", "systemd-run", "start-process", "runas", "wsl"];
     private static readonly string[] NameKillers = ["pkill", "killall", "taskkill", "skill", "pgrep"];
-    private static readonly string[] AgentFolders = [".claude", ".codex", ".gemini", ".copilot", ".rovodev", ".ollama", "anthropicclaude", "antigravity", "agy"];
+    /// <summary>The folder names that mark an AI agent's folder in an argument — DERIVED from the agent catalogue (E7.S1), so an
+    /// agent added there is protected here too; Claude's roaming <c>Claude</c> folder is the adjacency rule below.</summary>
+    private static readonly IReadOnlyList<string> AgentFolders = Agents.AgentCatalogue.NeverListNames;
 
     public static IReadOnlyList<NeverRule> Rules { get; } =
     [

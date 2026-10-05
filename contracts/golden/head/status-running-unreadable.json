@@ -343,7 +343,8 @@
     "act.detach",
     "act.onlyStdin",
     "act.stop",
-    "config.contract"
+    "config.contract",
+    "agents.list"
   ],
   "running": {
     "state": "unreadable",

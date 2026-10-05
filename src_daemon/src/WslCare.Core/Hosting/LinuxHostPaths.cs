@@ -121,9 +121,8 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     /// <summary>atop's daily raw files (<c>/var/log/atop</c>), read the same way.</summary>
     public string AtopDirectory => _rules.Join(environment.Var, "log", "atop");
 
-    /// <summary>Plan §4.6, the Linux column: Claude Code, Codex, Gemini CLI, Antigravity's cache,
-    /// GitHub Copilot CLI, Rovo Dev, Ollama's models — under the home AND every protected home (E3.S1). The agent
-    /// catalogue (E7) extends this list.</summary>
+    /// <summary>Plan §4.6, the Linux column: every data folder of the agent catalogue (<see cref="Agents.AgentCatalogue"/>,
+    /// E7.S1 — before it, a hand-typed list of seven) — under the home AND every protected home (E3.S1).</summary>
     public IReadOnlyList<string> AgentRoots { get; } = [.. HomesOf(environment).SelectMany(AgentRootsUnder)];
 
     public IReadOnlyList<string> GitRoots { get; } = [.. HomesOf(environment).Select(home => PathRules.Linux.Join(home, "git"))];
@@ -134,14 +133,5 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     private static IReadOnlyList<string> HomesOf(LinuxEnvironment environment) =>
         [.. new[] { environment.Home }.Concat(environment.ProtectedHomes).Where(h => h.Length > 0).Distinct(StringComparer.Ordinal)];
 
-    private static IReadOnlyList<string> AgentRootsUnder(string home) =>
-    [
-        PathRules.Linux.Join(home, ".claude"),
-        PathRules.Linux.Join(home, ".codex"),
-        PathRules.Linux.Join(home, ".gemini"),
-        PathRules.Linux.Join(home, ".cache", "antigravity"),
-        PathRules.Linux.Join(home, ".copilot"),
-        PathRules.Linux.Join(home, ".rovodev"),
-        PathRules.Linux.Join(home, ".ollama"),
-    ];
+    private static IReadOnlyList<string> AgentRootsUnder(string home) => Agents.AgentCatalogue.LinuxFolders(home);
 }

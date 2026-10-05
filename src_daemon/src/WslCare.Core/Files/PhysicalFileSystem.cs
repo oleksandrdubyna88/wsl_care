@@ -154,6 +154,30 @@ public sealed class PhysicalFileSystem : IFileSystem
     public TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken) =>
         TreeWalk.Measure(path, limits, countOnlyUnder, neverEnter, cancellationToken);
 
+    public TreeMeasure WalkTree(string path, TreeLimits limits, TreeRules rules, CancellationToken cancellationToken) =>
+        TreeWalk.Measure(path, limits, rules, TreeWalk.DeviceOf, cancellationToken);
+
+    public IReadOnlyList<FileEntry> ListEntries(string path)
+    {
+        try
+        {
+            return Directory.Exists(path) ? [.. Listing(path).OrderBy(e => e.Name, StringComparer.Ordinal)] : [];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>One non-recursive listing: the enumeration's own stat data, no entry opened, a link reported as one.</summary>
+    private static System.IO.Enumeration.FileSystemEnumerable<FileEntry> Listing(string path) =>
+        new(path, (ref System.IO.Enumeration.FileSystemEntry e) => new FileEntry(
+                e.FileName.ToString(),
+                e.Attributes.HasFlag(FileAttributes.ReparsePoint) ? EntryKind.Link : e.IsDirectory ? EntryKind.Directory : EntryKind.File,
+                e.IsDirectory ? 0 : e.Length,
+                e.LastWriteTimeUtc),
+            new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = true, AttributesToSkip = 0, ReturnSpecialDirectories = false });
+
     public WriteAccess ProbeWriteAccess(string directory)
     {
         try

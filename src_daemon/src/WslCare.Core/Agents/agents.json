@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "agents": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "binaries": ["claude"],
+      "npmPackages": ["@anthropic-ai/claude-code"],
+      "linux": ["~/.claude"],
+      "windows": ["%USERPROFILE%\\.claude", "%LOCALAPPDATA%\\AnthropicClaude", "%APPDATA%\\Claude"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "sessions": { "linuxUnder": "~/.claude", "windowsUnder": "%USERPROFILE%\\.claude", "glob": "projects/*/*.jsonl", "source": "archive plan §3, confirmed 2026-10-02" },
+      "versionInLinkTarget": "/versions/(?<v>[0-9][0-9A-Za-z.+-]*)$",
+      "confirmed": true
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "binaries": ["codex"],
+      "npmPackages": ["@openai/codex"],
+      "linux": ["~/.codex"],
+      "windows": ["%USERPROFILE%\\.codex"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "sessions": { "linuxUnder": "~/.codex", "windowsUnder": "%USERPROFILE%\\.codex", "glob": "sessions/*/*/*/rollout-*.jsonl", "source": "archive plan §3, confirmed 2026-10-02" },
+      "versionInLinkTarget": "",
+      "confirmed": true
+    },
+    {
+      "id": "gemini-cli",
+      "name": "Gemini CLI",
+      "binaries": ["gemini"],
+      "npmPackages": ["@google/gemini-cli"],
+      "linux": ["~/.gemini"],
+      "windows": ["%USERPROFILE%\\.gemini"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": ["antigravity"],
+      "sessions": { "linuxUnder": "~/.gemini", "windowsUnder": "%USERPROFILE%\\.gemini", "glob": "tmp/*/chats/session-*.jsonl", "source": "archive plan §3, confirmed 2026-10-02" },
+      "versionInLinkTarget": "",
+      "confirmed": true
+    },
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "binaries": ["agy", "antigravity"],
+      "npmPackages": [],
+      "linux": ["~/.gemini/antigravity-cli", "~/.gemini/antigravity", "~/.cache/antigravity"],
+      "windows": ["%APPDATA%\\Antigravity", "%LOCALAPPDATA%\\agy"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "sessions": { "linuxUnder": "~/.gemini/antigravity-cli", "windowsUnder": "", "glob": "conversations/*.db", "source": "archive plan §3, confirmed 2026-10-02 (Linux)" },
+      "versionInLinkTarget": "",
+      "confirmed": true
+    },
+    {
+      "id": "copilot-cli",
+      "name": "GitHub Copilot CLI",
+      "binaries": ["copilot"],
+      "npmPackages": ["@github/copilot"],
+      "linux": ["~/.copilot"],
+      "windows": ["%USERPROFILE%\\.copilot"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "versionInLinkTarget": "",
+      "confirmed": false
+    },
+    {
+      "id": "rovo-dev",
+      "name": "Rovo Dev",
+      "binaries": ["acli", "rovodev"],
+      "npmPackages": [],
+      "linux": ["~/.rovodev"],
+      "windows": ["%USERPROFILE%\\.rovodev"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "versionInLinkTarget": "",
+      "confirmed": false
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "binaries": ["ollama"],
+      "npmPackages": [],
+      "linux": ["~/.ollama"],
+      "windows": ["%USERPROFILE%\\.ollama"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "versionInLinkTarget": "",
+      "confirmed": false
+    },
+    {
+      "id": "cursor-agent",
+      "name": "Cursor agent",
+      "binaries": ["cursor-agent"],
+      "npmPackages": [],
+      "linux": ["~/.cursor"],
+      "windows": ["%USERPROFILE%\\.cursor"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "versionInLinkTarget": "/versions/(?<v>[0-9][0-9A-Za-z.+-]*)/",
+      "confirmed": false
+    },
+    {
+      "id": "qwen-code",
+      "name": "Qwen Code",
+      "binaries": ["qwen"],
+      "npmPackages": ["@qwen-code/qwen-code"],
+      "linux": ["~/.qwen"],
+      "windows": ["%USERPROFILE%\\.qwen"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "versionInLinkTarget": "",
+      "confirmed": false
+    },
+    {
+      "id": "kiro",
+      "name": "Kiro",
+      "binaries": ["kiro", "kiro-cli"],
+      "npmPackages": [],
+      "linux": ["~/.kiro"],
+      "windows": ["%USERPROFILE%\\.kiro"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "versionInLinkTarget": "",
+      "confirmed": false
+    },
+    {
+      "id": "aider",
+      "name": "Aider",
+      "binaries": ["aider"],
+      "npmPackages": [],
+      "linux": ["~/.aider"],
+      "windows": ["%USERPROFILE%\\.aider"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "versionInLinkTarget": "",
+      "confirmed": false
+    },
+    {
+      "id": "windsurf",
+      "name": "Windsurf",
+      "binaries": ["windsurf"],
+      "npmPackages": [],
+      "linux": ["~/.codeium"],
+      "windows": ["%USERPROFILE%\\.codeium"],
+      "neverEnter": ["memory"],
+      "neverEnterPrefixes": [],
+      "versionInLinkTarget": "",
+      "confirmed": false
+    }
+  ]
+}

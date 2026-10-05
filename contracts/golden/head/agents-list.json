@@ -1,0 +1,520 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "answeredAt": "2000-01-01T00:00:00+00:00",
+  "sizes": {
+    "source": "fullRun",
+    "sampledAt": "2000-01-01T00:00:00+00:00",
+    "ageSeconds": 0,
+    "runId": "20000101T000000Z-1"
+  },
+  "agents": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "tracked": true,
+      "confirmed": true,
+      "detectedBy": [
+        "folder"
+      ],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.claude",
+          "exists": true,
+          "size": {
+            "available": true,
+            "bytes": 400
+          },
+          "files": 2,
+          "complete": true,
+          "excluded": [
+            "memory (never entered)"
+          ]
+        }
+      ],
+      "sessions": {
+        "counted": true,
+        "count": 2,
+        "oldest": "2000-01-01T00:00:00+00:00",
+        "newest": "2000-01-02T00:00:00+00:00",
+        "largest": {
+          "available": true,
+          "bytes": 300
+        },
+        "complete": true
+      },
+      "totalBytes": {
+        "available": true,
+        "bytes": 400
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "tracked": false,
+      "confirmed": true,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.codex",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "gemini-cli",
+      "name": "Gemini CLI",
+      "tracked": false,
+      "confirmed": true,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.gemini",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "tracked": false,
+      "confirmed": true,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.gemini/antigravity-cli",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        },
+        {
+          "path": "/golden-root/home/user/.gemini/antigravity",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        },
+        {
+          "path": "/golden-root/home/user/.cache/antigravity",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "copilot-cli",
+      "name": "GitHub Copilot CLI",
+      "tracked": false,
+      "confirmed": false,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.copilot",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "rovo-dev",
+      "name": "Rovo Dev",
+      "tracked": false,
+      "confirmed": false,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.rovodev",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "tracked": false,
+      "confirmed": false,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.ollama",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "cursor-agent",
+      "name": "Cursor agent",
+      "tracked": false,
+      "confirmed": false,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.cursor",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "qwen-code",
+      "name": "Qwen Code",
+      "tracked": false,
+      "confirmed": false,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.qwen",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "kiro",
+      "name": "Kiro",
+      "tracked": false,
+      "confirmed": false,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.kiro",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "aider",
+      "name": "Aider",
+      "tracked": false,
+      "confirmed": false,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.aider",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    },
+    {
+      "id": "windsurf",
+      "name": "Windsurf",
+      "tracked": false,
+      "confirmed": false,
+      "detectedBy": [],
+      "binaries": [],
+      "version": {
+        "available": false,
+        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+      },
+      "dataFolders": [
+        {
+          "path": "/golden-root/home/user/.codeium",
+          "exists": false,
+          "size": {
+            "available": false,
+            "reason": "not tracked when the folders were walked"
+          },
+          "excluded": []
+        }
+      ],
+      "sessions": {
+        "counted": false,
+        "largest": {
+          "available": false,
+          "reason": "not tracked when the folders were walked"
+        },
+        "reason": "not tracked when the folders were walked"
+      },
+      "totalBytes": {
+        "available": false,
+        "reason": "not tracked when the folders were walked"
+      },
+      "growthBytes": {
+        "available": false,
+        "reason": "no earlier measurement of this agent to compare with"
+      },
+      "warnings": []
+    }
+  ]
+}

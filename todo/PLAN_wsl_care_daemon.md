@@ -1169,7 +1169,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
 > Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
-> below); E7.S1–E7.S5 and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> below); **E7.S1 built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; deviations in *E7.S1 as built*); E7.S2–E7.S5 and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1486,6 +1486,31 @@ real symptom, green, and its load-bearing line broken and seen red again — the
 | C3 (Minor) | only a group-writable layer got a fix hint; `config set` over a linked layer wrote through the link and then printed the default | **Fixed** — every refusal carries its fix (link, foreign owner, oversize, not regular, group-writable); `config set` replaces a LINK by a regular file holding the values read through it (`IFileSystem.ReplaceLinkWithFile`, judged where the link itself lives — the file it pointed at is untouched) and prints the value it wrote |
 | C4 (Minor) | an invalid machine-only value in the user layer made the whole run observe-only | **Fixed** — a machine-only key in the user layer is a notice BEFORE validation |
 | C5 (Minor, both) | `idle.minutes` declared "higher is safer" but the gate judged ONE load average, so a longer window could be looser | **Fixed** — busy is the HIGHEST average up to the window; the contract's direction is now true (no contract change) |
+
+#### E7.S1 as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The AI agents: catalogue, discovery, the walk (E7.S1)*, the design `research/architecture.md` § *The AI agents*.
+**Deviations from the text above:**
+
+- **As root, NO PATH lookup at all** — the story row's "the target user's fixed bin list as root" is replaced by D3 as the
+  review round amended it: root counts folders only; no binary, no npm package, no version is looked at as root.
+- **The walk runs on the Linux side only.** `collect` walks the agents found by FOLDER when its folder walk is due and
+  records `slow.agents`; the Windows binary answers `agents list --measure` (now, its own folders) and reads no history —
+  the hourly Windows walk and `agents-last.json` stay E7.S5's.
+- **Session names are relative to the layout's folder** (`projects/<project>/<id>.jsonl`) and appear only in a live
+  answer (`--measure`), at most five; the persisted sample keeps the largest session's SIZE only.
+- **The never-list's agent names** are each catalogue folder's first segment that is not a generic container (`.cache`,
+  `.config`, `.local`, `share`), lowercased — except Roaming's bare `Claude`, which the never-list already recognises by
+  its parent (a bare `claude` would refuse every binary of that name).
+- **The budget's time left is read once per folder** — the first version read the clock twice and could start a folder
+  with a negative ceiling (seen red, fixed).
+- **`agents list` text form** prints the tracked agents and "N more catalogue agent(s) not found here"; JSON carries all
+  twelve, `tracked: false` included, so a client can show what is looked for.
+- **Measured** on this machine (WSL, Release, `--measure`, a normal user): six agents, ~2.5 GiB, 685 sessions and
+  conversations, 1.3–2.3 s — the 3-minute budget is far from binding today.
+- **Capability `agents.list`** ships with E7.S1 (the story row put it in E7.S2 with the others); `agents.probe` and
+  `config.agentsExtra` stay E7.S2's.
 
 #### Stories
 

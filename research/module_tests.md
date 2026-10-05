@@ -1317,6 +1317,69 @@ refusal reads "a link … never followed".
 **Goldens** regenerated in WSL: `status.json` and `doctor.json` gained `configNotices` ("the root timer ignores this value:
 …" for the golden layer's five 0-day ages — the golden sandbox has no interop entry); additive, nothing else moved.
 
+### The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)
+
+What `agents list` and the daily walk may do inside an agent's folder — size and count, nothing else
+(`research/architecture.md` § *The AI agents*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| the catalogue is complete (ids unique, every folder spelt from a known root), a session layout starts in one of its agent's own folders and only a confirmed agent counts sessions | `Core.Tests/Agents/AgentCatalogueTests` |
+| every catalogue folder is a protected agent root on its side, and the protected roots are exactly the catalogue's (held equal) | `AgentCatalogueTests.Every_catalogue_folder_is_a_protected_agent_root_on_its_side` |
+| the never-list's agent names are DERIVED from the catalogue: every catalogue folder in an argument is refused, the names it had before are a subset, a bare `claude` is not one | `AgentCatalogueTests.The_never_list_protects_every_catalogue_folder_in_an_argument` |
+| `memory` is never entered for ANY agent — a manual entry without it in its own list too — and the size says it excludes it | `AgentWalkTests.Memory_is_never_entered_for_any_agent_and_the_size_says_it_excludes_it` |
+| an entry's prefix is never entered (Gemini CLI's `antigravity*`), so one agent is not counted inside another | `AgentWalkTests.An_entrys_prefix_is_never_entered_…` |
+| a link inside an agent folder is neither counted nor entered | `AgentWalkTests.A_link_inside_an_agent_folder_is_neither_counted_nor_entered` |
+| a folder on another filesystem is not entered and is named "(different filesystem)" (review C1; the device seam makes it a unit test on every OS) | `AgentWalkTests.A_folder_on_another_filesystem_is_not_entered_and_is_named` |
+| ONE total budget: the time left is read once per folder; a folder the budget did not reach says "not measured this run", never 0, and its sessions are not counted (review M7) | `AgentWalkTests.The_walk_stops_at_its_total_budget_and_names_what_it_did_not_reach` |
+| sessions of a confirmed layout counted from listings, with oldest / newest dates and the five largest by name; a `memory` folder where the layout's `*` would match it is not entered | `AgentWalkTests.Sessions_of_a_confirmed_layout_…` |
+| an unconfirmed layout is "—" with "monitor only"; a missing folder "does not exist", not 0 | `AgentWalkTests.An_unconfirmed_layout_…` |
+| what is persisted carries no session name (the size of the largest is kept) | `AgentWalkTests.A_persisted_sample_carries_no_session_name`; `AgentsFlows` (after a `collect`) |
+| discovery: by binary on PATH, by npm package (its version from `package.json`), by folder alone; a native install's version from its link target; otherwise "not asked … nothing is executed" | `Agents/AgentDiscoveryTests` (Linux for the PATH rule) |
+| as root only folders count, no version asked | `AgentDiscoveryTests.As_root_only_folders_count_and_no_version_is_asked` |
+| discovery and the walk have no way to start a process (no `ICommandRunner` in any signature) | `AgentDiscoveryTests.Discovery_and_the_walk_have_no_way_to_start_a_process` |
+| **H3 at the syscall level**: an inotify `IN_OPEN \| IN_ACCESS` watch on every folder of a Claude Code tree (memory included) sees no FILE opened during the walk and the session listing; the companion sees a file that is opened | `Agents/AgentNoOpenTests` (Linux) |
+| the built CLI: found by binary and folder, 100 bytes without `memory/`, one session named, version "not asked", the fake `claude` on PATH never started; text; usage; `none` before a full run, the run's totals after | `Scenarios/AgentsFlows` |
+| the new read sites are classified: `AgentDiscovery` (`ReadRegularFile` of the invoking user's own `package.json` — class `OwnUnprivileged` —, `ListEntries`), `AgentWalk` (`WalkTree`), `SessionGlob` (`ListEntries`) | `ArchitectureTests.Every_read_is_classified_…` |
+
+**Red first.** The behaviours were written with their tests; red was observed where it could be, and the rest proved by
+the teeth below:
+
+- `AgentWalkTests.The_walk_stops_at_its_total_budget_…` was red on the first run for a REAL defect: *Expected … Reason to
+  be "not measured this run: …", but "stopped after -60 s …"* — the walk read the clock twice (once for "out of time?",
+  once for "how much is left"), so a folder could start with a negative ceiling. Fixed: the time left is read ONCE.
+- `VerbRegisterTests` (2) red while the verb had no flow-catalogue row: *missing: agents list [--measure] [--json]*.
+- Two test-side corrections, not product defects: the session names are relative to the layout's folder
+  (`projects/b/two.jsonl`), and on Windows the PATH rule is the Windows one, so the PATH-detection facts run on the Linux
+  legs; Claude Code has three Windows folders, so the Windows flow asserts the one that exists.
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the guarding class run, the file restored byte-identical by
+SHA-256; Windows Debug unless marked WSL):
+
+| Mutation | Red |
+|---|---|
+| `memory` dropped from every entry's never-enter set | 1: *Expected sample.Find("manual")!.TotalBytes to be 7L because memory/ is never entered for ANY agent …, but found 50007L* |
+| the prefix rule matching nothing | 1: *Expected size.TotalBytes to be 40L, but found 9040L* |
+| `StayOnDevice = false` | 1: *Expected measured.Bytes to be 10L, but found 30010L* |
+| the budget's time left ignored (the per-folder ceiling only) | 1: *Expected late.Folders.Single().Reason to be "not measured this run: …", but "" …* |
+| the session listing entering `memory` | 1: *Expected size.Sessions to be …SessionFigures …* |
+| the persisted sample keeping the names | 1: *Expected persisted.Agents to contain only items matching (a.Largest == null) …* |
+| the same, through the built CLI after a `collect` (WSL) | 1 (`AgentsFlows`): *Expected Claude(after).Sessions.LargestSessions to be &lt;null&gt; …* |
+| root searching the PATH (WSL) | 1: *Expected Of(found, "claude-code").Tracked to be False because root never searches the user's PATH, but found True* |
+| the never-list missing one derived name | 1: *Expected unprotected to be empty, but found … {"/home/me/.aider"}* |
+| the Linux protected roots missing one catalogue folder | 1: *Expected linux.AgentRoots to be a collection with 14 item(s) …* |
+| the session listing opening each session file for one byte (WSL) | 1 (`AgentNoOpenTests`): *Expected watch.FileEvents() to be empty …, but found … {"…/home/me/.claude/projects/a/one.jsonl"}* |
+| `--measure` not parsed | 2 (`AgentsFlows`): *Expected report.Sizes.Source to be "now" …, but "none"*; the text without "measured now" |
+
+**Goldens** regenerated in WSL: `agents-list.json` is new (the golden sandbox plants a Claude Code folder before its
+`collect`: two sessions at fixed instants and a `memory` file, so the answer is the full run's — 400 bytes, 2 sessions,
+`excluded: ["memory (never entered)"]`, no session name); the seven `status*.json` gained `agents.list` in
+`capabilities`; nothing else moved. A new rule normalises `answeredAt`.
+
+**Measured** (2026-10-05, WSL, a normal user, the Release build, `agents list --measure` over the real home — totals only
+recorded): six agents tracked, ~2.5 GiB, 185 sessions (Claude Code, Codex) and 500 Antigravity conversations counted; three runs 2.26 s,
+1.29 s, 1.32 s — far inside the 60 s `--measure` budget and the 3-minute walk budget of a full run.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -1637,7 +1700,8 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care runs show <runId> [--json]` of a confirmed act (root claimed, the fake journalctl): exit 0, `done`, the detail `present`, A10's command `journalctl --vacuum-time=30d` with exit 0, the act's note that it swept a dead run; of that dead run (a `running.json` staged with a pid no process has): `interrupted` naming the gone pid; of a run id nothing names: `unknown`; every answer exit 0, `schemaVersion` 1 | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.Runs_show_answers_a_confirmed_act_done_the_run_it_swept_interrupted_and_a_stranger_unknown`; in-process on every OS: `RunShowTests` (done with removed / not-removed / commands and exits, a full run's timer pass, a lost detail, interrupted, refused, running, a dead holder = interrupted and NOT swept, queued from a request, history first, unknown), `ReadContractCommandTests.Runs_show_*` (parse, a malformed run id refused, text) |
 | `wsl-care runs show <runId> [--json]` of a QUEUED run (a request file E6.S1 will write) and of a RUNNING one (a live holder of `running.json`) | covered (in-process) | `RunShowTests.A_run_named_only_by_a_request_is_queued_with_its_request_counted_not_repeated`, `RunShowTests.A_run_holding_running_json_with_a_live_process_is_running_with_its_running_block`; against the built binary: `DetachFlows` (E6.S1), whose `--detach` writes the requests |
 | `wsl-care runs log <runId>` | not covered | CUT by plan §15j M3: `runs show` answers the commands a run ran and their exits |
-| `wsl-care agents list` / `agents probe <path>` | not covered | not built yet (E7) |
+| `wsl-care agents list [--measure] [--json]` with `--measure` over a planted Claude Code folder and a fake `claude` on PATH: exit 0, `schemaVersion` 1, `sizes.source` `now`, the agent detected by binary and folder, 100 bytes (its `memory/` never entered, named in `excluded`), one session counted and named, the version "not asked", and the fake never started; the text form; an unknown option refused (2); before a full run `none` with how to measure, after a `collect` the run's totals with no session name, no recorded file naming a session | covered (the full-run flow on the Linux legs; skipped on Windows with the reason) | `AgentsFlows` (4); in-process: `Agents/AgentCatalogueTests`, `AgentDiscoveryTests`, `AgentWalkTests`, `AgentNoOpenTests` (Linux); golden `agents-list.json` |
+| `wsl-care agents probe <path>` | not covered | not built yet (E7.S2) |
 | `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |
 | `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, the three units byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
 | `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |
