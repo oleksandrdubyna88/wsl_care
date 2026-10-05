@@ -34,8 +34,12 @@ public abstract record TextRule
 
         public override string Describe => Description;
 
+        /// <summary>E7.S0 review S5: .NET's <c>$</c> matches before a final newline, so "Ubuntu\n" passed <c>^…$</c> — the match
+        /// must cover the WHOLE value (the expression stays JavaScript-compatible for the extension's schema).</summary>
         public override string Problem(string value) =>
-            Regex.IsMatch(value, Expression, RegexOptions.CultureInvariant, MatchCeiling) ? string.Empty : $"not {Description}";
+            Regex.Match(value, Expression, RegexOptions.CultureInvariant, MatchCeiling) is { Success: true } m && m.Index == 0 && m.Length == value.Length
+                ? string.Empty
+                : $"not {Description}";
     }
 
     /// <summary>Empty, or an absolute path — <c>/…</c> or <c>X:\…</c> — of at most <see cref="MaxLength"/> characters, with no

@@ -19,7 +19,12 @@ public abstract record UserConfigWriteResult
     /// <param name="KeyWasPresent">Whether the key was in the file before (a reset of an absent key is a no-op that says so).</param>
     /// <param name="DroppedKeys">Keys the old file held that did not validate and were not carried over.</param>
     /// <param name="MovedAsideTo">Where an unparseable old file was moved; empty when it was readable.</param>
-    public sealed record Written(string File, bool KeyWasPresent, IReadOnlyList<string> DroppedKeys, string MovedAsideTo) : UserConfigWriteResult;
+    public sealed record Written(string File, bool KeyWasPresent, IReadOnlyList<string> DroppedKeys, string MovedAsideTo) : UserConfigWriteResult
+    {
+        /// <summary>The layer was a link (E7.S0 review C3): the LINK was replaced by a regular file holding the values read
+        /// through it — the file it pointed at untouched.</summary>
+        public bool ReplacedLink { get; init; }
+    }
 
     /// <summary>The deletion policy refused the write — a bug in the layout, since the user's config directory is never a protected place.</summary>
     public sealed record Refused(DeletionVerdict.Refused Verdict) : UserConfigWriteResult;
@@ -61,11 +66,16 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
         var current = ReadCurrent(file, directory);
         var next = change(current.Entries);
 
+        // E7.S0 review C3: root never follows a link, so a linked layer is one root refuses; the repair replaces the LINK (the
+        // file it points at is never written) with a regular file holding the values read through it.
+        var linked = files.ReadLink(file) is LinkReadResult.Target;
         files.CreateDirectory(directory);
-        var verdict = files.WriteFileAtomically(file, Render(next), new DeletionScope(directory, ActionName));
+        var verdict = linked
+            ? files.ReplaceLinkWithFile(file, Render(next), new DeletionScope(directory, ActionName))
+            : files.WriteFileAtomically(file, Render(next), new DeletionScope(directory, ActionName));
         return verdict is DeletionVerdict.Refused refused
             ? new UserConfigWriteResult.Refused(refused)
-            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, current.MovedAsideTo);
+            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, current.MovedAsideTo) { ReplacedLink = linked };
     }
 
     private sealed record Current(IReadOnlyDictionary<string, ConfigValue> Entries, IReadOnlyList<string> Dropped, string MovedAsideTo);

@@ -41,7 +41,7 @@ internal static class Program
         using var shutdown = new ShutdownSignals();
         var host = CliHost.ForThisMachine() with { InterruptCause = () => shutdown.Cause };
         var loaded = host.LoadConfig();
-        using var logger = WslCareLogging.Start(host, loaded.Config, AppName, Console.Error);
+        using var logger = WslCareLogging.Start(host, loaded, AppName, Console.Error);
         try
         {
             return Run(args, Console.Out, Console.Error, host, loaded, logger, shutdown.Token);

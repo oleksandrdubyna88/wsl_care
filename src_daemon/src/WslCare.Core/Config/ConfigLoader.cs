@@ -17,6 +17,10 @@ namespace WslCare.Core.Config;
 /// <param name="Skipped">Non-empty: the user layer is not read at all, and this says why (an ambiguous target user).</param>
 public sealed record UserLayerTrust(uint Owner, bool ForRoot, string LoosenRefused, string Skipped)
 {
+    /// <summary>E7.S0 review C2: how the ROOT timer reads this same layer, when this process is not root inside the distro —
+    /// its notices are added ("the root timer ignores this value: …") without changing this run's own configuration.</summary>
+    public UserLayerTrust? RootTimerReads { get; init; }
+
     /// <summary>This process's own layer, fully trusted — every unprivileged run.</summary>
     public static UserLayerTrust OwnLayer() => new(RegularFiles.EffectiveUid(), false, string.Empty, string.Empty);
 }
@@ -62,7 +66,7 @@ public static class ConfigLoader
             return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust);
         }
 
-        var user = Explained(files.ReadUserFile(paths.UserConfigFile, MaxLayerBytes, trust.Owner), paths.UserConfigFile);
+        var user = Explained(files.ReadUserFile(paths.UserConfigFile, MaxLayerBytes, trust.Owner, paths.Home), paths.UserConfigFile);
         return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine, (new ConfigLayerFile(ConfigLayer.User, paths.UserConfigFile), user)], trust)
             with
         { UserLayerDigest = Digest(user) };
@@ -82,8 +86,16 @@ public static class ConfigLoader
 
         var config = new EffectiveConfig(state.Merged);
         ConfigLoadResult result = state.Errors.Count == 0 ? new ConfigLoadResult.Valid(config) : new ConfigLoadResult.ObserveOnly(config, state.Errors);
-        return result with { Notices = state.Notices };
+        return result with { Notices = [.. state.Notices, .. RootTimerNotices(layers, trust, state.Notices)] };
     }
+
+    /// <summary>What the root timer would not take from this layer and this run did (E7.S0 review C2), each said once.</summary>
+    private static IEnumerable<ConfigNotice> RootTimerNotices(IReadOnlyList<(ConfigLayerFile File, FileReadResult Read)> layers, UserLayerTrust trust, IReadOnlyList<ConfigNotice> own) =>
+        trust.RootTimerReads is { } root
+            ? Load(layers, root with { RootTimerReads = null }).Notices
+                .Where(n => !own.Any(o => o.Key == n.Key))
+                .Select(n => n with { Message = $"the root timer ignores this value: {n.Message}" })
+            : [];
 
     public static byte[] EmbeddedDefaults()
     {
@@ -96,11 +108,19 @@ public static class ConfigLoader
 
     private sealed record LoadState(Dictionary<string, ConfigEntry> Merged, List<ConfigError> Errors, List<ConfigNotice> Notices, UserLayerTrust Trust);
 
-    /// <summary>A refusal of the hardened reader, with the fix where there is one (a group-writable layer: <c>chmod go-w</c>).</summary>
+    /// <summary>A refusal of the hardened reader with how to fix it (E7.S0 review C3) — every refusal, not only one.</summary>
     private static FileReadResult Explained(FileReadResult read, string path) =>
-        read is FileReadResult.Unreadable { Reason: var reason } && reason.Contains("writable by group or others", StringComparison.Ordinal)
-            ? new FileReadResult.Unreadable($"{reason}; run chmod go-w {path} (config set writes it 0644)")
-            : read;
+        read is FileReadResult.Unreadable { Reason: var reason } ? new FileReadResult.Unreadable($"{reason}; {FixFor(reason, path)}") : read;
+
+    private static string FixFor(string reason, string path) => reason switch
+    {
+        _ when reason.Contains("writable by group or others", StringComparison.Ordinal) => $"run chmod go-w {path} (config set writes it 0644)",
+        _ when reason.Contains("link", StringComparison.Ordinal) => "replace the link with a regular file — config set does that, keeping the values it can read; root never follows a link",
+        _ when reason.Contains("owned by uid", StringComparison.Ordinal) => "run config set as the account that owns this home, or give the file to that account (chown)",
+        _ when reason.Contains("larger than", StringComparison.Ordinal) => $"a layer holds at most {MaxLayerBytes / 1024} KiB: remove what is not a setting",
+        _ when reason.Contains(RegularFiles.NotRegular, StringComparison.Ordinal) => "remove it; config set writes a regular file in its place",
+        _ => "fix or remove the file; config set rewrites it",
+    };
 
     /// <summary>The SHA-256 of the user layer as read (plan §15q R1.7: <c>status</c> carries it so an outside change is noticed);
     /// empty when there is no readable layer.</summary>
@@ -146,6 +166,13 @@ public static class ConfigLoader
             return;
         }
 
+        if (file.Layer == ConfigLayer.User && key.Trust.MachineOnly)
+        {
+            // E7.S0 review C4: decided before validation — an old, invalid value here must not make the whole run observe-only.
+            state.Notices.Add(new ConfigNotice(file, entry.Line, key.Name, MachineOnlyNotice(key)));
+            return;
+        }
+
         switch (ConfigValidation.Check(key, entry.Value))
         {
             case ValueCheck.Ok ok:
@@ -173,9 +200,12 @@ public static class ConfigLoader
 
     /// <summary>Why a user-layer value is not taken; empty when it is.</summary>
     private static string UserValueRefusal(ConfigKey key, ConfigValue value, LoadState state) =>
-        key.Trust.MachineOnly ? $"{key.Name} is set only in the machine layer (/etc/wsl-care/config.json); the user value is ignored"
+        key.Trust.MachineOnly ? MachineOnlyNotice(key)
         : TightenOnly(key, state.Trust) is { Length: > 0 } why && !IsNoLooser(key, value, state) ? $"{key.Name} = {value.Describe()} is ignored: {why}"
         : string.Empty;
+
+    private static string MachineOnlyNotice(ConfigKey key) =>
+        $"{key.Name} is set only in the machine layer (/etc/wsl-care/config.json); the user value is ignored";
 
     /// <summary>Why this key's user value may only tighten; empty when it may move either way.</summary>
     private static string TightenOnly(ConfigKey key, UserLayerTrust trust) =>

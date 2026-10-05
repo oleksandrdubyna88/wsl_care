@@ -49,7 +49,7 @@ public sealed class SuspectTerminationTests : IDisposable
     private ActionContext Context(IReadOnlyList<ProcessEntry> processes, RecordingSignals signals, Action? duringWindow = null)
     {
         var config = ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config;
-        return new ActionContext(_sandbox.Paths, _sandbox.Files, new FixedTimeProvider(), config, RunTrigger.Manual, new TargetUserResult.None("machine-scoped"))
+        return new ActionContext(_sandbox.Paths, _sandbox.Files, new FixedTimeProvider(), config, RunTrigger.Manual, new TargetUserResult.Found(new TargetUser("me", 1000, "/home/me"), "test"))
         {
             Processes = _ => Reading.Of(UserWorld.Snapshot(processes)),
             Signals = signals,
@@ -71,7 +71,7 @@ public sealed class SuspectTerminationTests : IDisposable
             Entry(16) with { State = 'Z' }, Entry(17, family: "testhost"),
         ];
 
-        SuspectTermination.Candidates(all, families, TimeSpan.FromHours(8), ownPid: 17).Select(p => p.Pid).Should().Equal(10);
+        SuspectTermination.Candidates(all, families, TimeSpan.FromHours(8), ownPid: 17, targetUser: "me").Select(p => p.Pid).Should().Equal(10);
     }
 
     [Fact]

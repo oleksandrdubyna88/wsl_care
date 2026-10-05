@@ -76,10 +76,10 @@ public sealed class PhysicalFileSystem : IFileSystem
     /// owner a caller names is then this process's uid. False — the owner checked as named — on a machine.</summary>
     public bool OwnersAreThisProcess { get; init; }
 
-    public FileReadResult ReadUserFile(string path, int maxBytes, uint owner) =>
-        RegularFiles.ReadOwned(path, maxBytes, OwnersAreThisProcess ? RegularFiles.EffectiveUid() : owner);
+    public FileReadResult ReadUserFile(string path, int maxBytes, uint owner, string beneath) =>
+        BeneathFiles.Read(beneath, path, maxBytes, OwnersAreThisProcess ? RegularFiles.EffectiveUid() : owner);
 
-    public FileReadResult ReadNoFollowFile(string path, int maxBytes) => RegularFiles.ReadNoFollow(path, maxBytes);
+    public FileReadResult ReadNoFollowFile(string path, int maxBytes) => BeneathFiles.Read(BeneathFiles.DriveBase(path), path, maxBytes, owner: null);
 
     public bool FileExists(string path) => File.Exists(path);
 
@@ -287,6 +287,35 @@ public sealed class PhysicalFileSystem : IFileSystem
 
         MoveReplacing(temp.RealPath, target.RealPath);
         return target.Verdict;
+    }
+
+    /// <summary>
+    /// E7.S0 review C3: a regular file in place of the symbolic link at <paramref name="path"/> — the LINK is replaced, never the
+    /// file it points at. Judged where the link itself lives (its folder's real path and its own name, inside
+    /// <paramref name="scope"/>); the new file is written beside it 0600, made 0644 and renamed over the link. A path that is no
+    /// longer a link takes the ordinary atomic write.
+    /// </summary>
+    public DeletionVerdict ReplaceLinkWithFile(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+    {
+        var parent = Real(Path.GetDirectoryName(path) ?? path);
+        var root = Real(scope.Root);
+        if (FirstFailure(parent, root) is { } failure)
+        {
+            return DeletionPolicy.Unresolvable(FileOperation.Delete, scope.Action, path, failure.Component, failure.Reason);
+        }
+
+        var linkItself = Path.Combine(PathOf(parent), Path.GetFileName(path));
+        var verdict = _policy.Decide(new DeletionRequest(FileOperation.Delete, linkItself, string.Empty, PathOf(root), scope.Action, scope.Permit));
+        if (!verdict.IsAllowed || ReadLinkTarget(linkItself) is null)
+        {
+            return verdict.IsAllowed ? WriteFileAtomically(path, content, scope) : verdict;
+        }
+
+        var temp = $"{linkItself}.{Guid.NewGuid():N}.tmp";
+        WriteNew(temp, content);
+        RegularFiles.MakeReadable(temp);
+        MoveReplacing(temp, linkItself);
+        return verdict;
     }
 
     public ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope)

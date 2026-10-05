@@ -144,6 +144,11 @@ internal static class ConfigCommand
 
     private static void NoteRepairs(UserConfigWriteResult.Written written, TextWriter stderr)
     {
+        if (written.ReplacedLink)
+        {
+            Output.Note(stderr, "the user layer was a link, which root never follows; it was replaced by a regular file holding the values read through it (the file it pointed at is untouched).");
+        }
+
         if (written.MovedAsideTo.Length > 0)
         {
             Output.Note(stderr, $"the user layer could not be parsed; it was moved to {written.MovedAsideTo} and a valid file written in its place.");

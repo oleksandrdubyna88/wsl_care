@@ -27,7 +27,9 @@ internal static class DoctorCommand
         var text = new StringBuilder().AppendLine($"wsl-care doctor ({report.Side}): {(report.Healthy ? "healthy" : "NOT healthy")}");
         foreach (var check in report.Checks)
         {
-            text.AppendLine($"  {check.State,-10} {check.Id}: {check.Detail}");
+            // E7.S0 review S4: a detail can quote a user layer (an unknown key, a refused value): no terminal control reaches the
+            // admin's terminal — an OSC 52 sequence would write their clipboard.
+            text.AppendLine(CommandLine.Printable($"  {check.State,-10} {check.Id}: {check.Detail}"));
         }
 
         text.Append("versions: ").Append(string.Join(", ", report.Versions.Select(v => v.Available ? $"{v.Component} {v.Version}" : $"{v.Component} unknown")));

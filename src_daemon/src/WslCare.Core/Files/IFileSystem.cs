@@ -180,13 +180,14 @@ public interface IFileSystem
     FileReadResult ReadStateFile(string path, int maxBytes);
 
     /// <summary>A file ANOTHER account controls, read by this process (plan §15q R1.1): the user configuration layer and the
-    /// target user's own files read as root. As <see cref="ReadStateFile"/> does — regular, nonblocking, capped, never through a
-    /// link — and on Linux only when the open descriptor's owner is <paramref name="owner"/> and neither group nor others may
-    /// write it.</summary>
-    FileReadResult ReadUserFile(string path, int maxBytes, uint owner);
+    /// target user's own files read as root. Regular, nonblocking, capped, reached from <paramref name="beneath"/> (the home)
+    /// through NO link (E7.S0 review S6, <see cref="BeneathFiles"/>), and on Linux only when the open descriptor's owner is
+    /// <paramref name="owner"/> and neither group nor others may write it.</summary>
+    FileReadResult ReadUserFile(string path, int maxBytes, uint owner, string beneath);
 
     /// <summary>A file whose owner is no evidence (plan §15q R1.1, review M2: the Windows profile through drvfs): regular,
-    /// nonblocking, capped and never through a link, with no uid or mode check (<see cref="RegularFiles.ReadNoFollow"/>).</summary>
+    /// nonblocking, capped, reached from the folder that holds the drive letter's folder through NO link (E7.S0 review S1,
+    /// <see cref="BeneathFiles.DriveBase"/>), with no uid or mode check.</summary>
     FileReadResult ReadNoFollowFile(string path, int maxBytes);
 
     bool FileExists(string path);
@@ -213,6 +214,10 @@ public interface IFileSystem
     /// <summary>Full paths of the files directly in <paramref name="path"/> (no directories, no recursion), in ordinal
     /// order for the reason <see cref="ListDirectories"/> gives; empty when it does not exist.</summary>
     IReadOnlyList<string> ListFiles(string path);
+
+    /// <summary>A regular file in place of the symbolic link at <paramref name="path"/> — the link replaced, never what it points
+    /// at (E7.S0 review C3: <c>config set</c> repairs a linked user layer root refuses). Judged where the link itself lives.</summary>
+    DeletionVerdict ReplaceLinkWithFile(string path, ReadOnlySpan<byte> content, DeletionScope scope);
 
     /// <summary>
     /// The summed size of the files under <paramref name="path"/>, within <paramref name="limits"/>. Links are

@@ -63,10 +63,16 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     public static Reading<string> InDistro(string windowsPath, string automountRoot)
     {
         var path = windowsPath.Trim();
-        return path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':'
+        return IsPlainDrivePath(path)
             ? Reading.Of($"{automountRoot}{char.ToLowerInvariant(path[0])}{path[2..].Replace('\\', '/')}".TrimEnd('/'))
-            : Reading.Missing<string>($"\"{path}\" is not a path on a Windows drive");
+            : Reading.Missing<string>($"\"{path}\" is not a plain path on a Windows drive (a drive letter, no .. segment, no control character)");
     }
+
+    /// <summary>A drive letter and a colon, no <c>..</c> segment that could climb out of the drive's folder (E7.S0 review S1:
+    /// <c>C:\..\..\root</c> became <c>/mnt/c/../../root</c> = <c>/root</c>), no control character.</summary>
+    private static bool IsPlainDrivePath(string path) =>
+        path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':'
+        && !path.Split('\\', '/').Contains("..", StringComparer.Ordinal) && !path.Any(char.IsControl);
 
     /// <summary><c>.wslconfig</c> is a short INI file.</summary>
     public const int MaxWslConfigBytes = 1024 * 1024;

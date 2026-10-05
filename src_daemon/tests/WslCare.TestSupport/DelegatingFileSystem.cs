@@ -16,9 +16,11 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual FileReadResult ReadStateFile(string path, int maxBytes) => inner.ReadStateFile(path, maxBytes);
 
-    public virtual FileReadResult ReadUserFile(string path, int maxBytes, uint owner) => inner.ReadUserFile(path, maxBytes, owner);
+    public virtual FileReadResult ReadUserFile(string path, int maxBytes, uint owner, string beneath) => inner.ReadUserFile(path, maxBytes, owner, beneath);
 
     public virtual FileReadResult ReadNoFollowFile(string path, int maxBytes) => inner.ReadNoFollowFile(path, maxBytes);
+
+    public virtual DeletionVerdict ReplaceLinkWithFile(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.ReplaceLinkWithFile(path, content, scope);
 
     public virtual bool FileExists(string path) => inner.FileExists(path);
 
