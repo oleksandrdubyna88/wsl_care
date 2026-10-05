@@ -7,6 +7,7 @@ import { runIdOf, type RunId } from '../root/rootIds';
 import type { HandOffOutcome, PreviewOutcome } from '../root/rootOutcome';
 import { OutcomeStore } from '../state/outcomeStore';
 import { noticeText, safeText } from '../text/safeText';
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { ManualTimers, MapStore } from './support/memento';
 import { answered, headBody } from './support/outcomes';
 
@@ -92,4 +93,34 @@ test('C11: a fault at the detached edge is told (sanitised) and logged — never
   assert.match(recorder.notices.at(-1)?.sentence ?? '', /boom/);
   assert.equal((recorder.notices.at(-1)?.sentence ?? '').includes(BRACKET_PAREN), false);
   assert.ok(logged.some((line) => line.includes('boom')), JSON.stringify(logged));
+});
+
+// ---- §15p: how many past results Last cleanup lists is a setting (wslCare.cleanup.resultsKept) ----
+
+/** A host whose follower ends every followed run as done — so each journal entry becomes one result. */
+function endingHost(numbers: Numbers): CleanupHost {
+  const outcomes = new OutcomeStore();
+  const status = answered('status', headBody('status'));
+  outcomes.set('status', status);
+  const never = (): Promise<never> => Promise.reject(new Error('not asked in this test'));
+  return new CleanupHost({
+    durable: new MapStore(),
+    controller: { preview: never, confirm: never, stop: never, runFullCheck: never },
+    read: (request) => Promise.resolve({ kind: 'read', read: request.read, distro: 'Ubuntu', body: { schemaVersion: 1, runId: request.read === 'runsShow' ? request.runId : '', state: 'done', reason: '' } }),
+    outcomes, askStatus: () => Promise.resolve(status), refreshPanel: () => Promise.resolve(),
+    focused: () => true, ui: recordingCleanUi(newCleanRecorder()), timers: new ManualTimers(), now: () => 0, wallNow: () => Date.parse('2026-10-05T10:05:00.000Z'),
+    log: () => undefined, numbers: () => numbers,
+  });
+}
+
+test('§15p: Last cleanup lists wslCare.cleanup.resultsKept results — 3 runs end: 3 kept by default, the newest 1 with 1 set', async () => {
+  for (const [numbers, kept] of [[DEFAULT_NUMBERS, 3], [{ ...DEFAULT_NUMBERS, resultsKept: 1 }, 1]] as const) {
+    const host = endingHost(numbers);
+    for (const id of ['20261005T100001Z-11', '20261005T100002Z-12', '20261005T100003Z-13']) {
+      await host.journal.add({ kind: 'run', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: '2026-10-05T10:00:00.000Z', runId: run(id) });
+    }
+    await host.follower.tick();
+    assert.equal(host.controls().results.length, kept, JSON.stringify(numbers.resultsKept));
+    host.dispose();
+  }
 });

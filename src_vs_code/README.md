@@ -92,6 +92,7 @@ ceiling can never be set at or below the daemon's own worst case for that call: 
 | `wslCare.cleanup.recordReadBackoffSeconds` | 8 | 1–300 | How much longer each new try of a failed record read waits than the one before, in seconds (the first try at once). |
 | `wslCare.cleanup.settleAtOnce` | 4 | 1–32 | How many followed cleanups are settled at the same time in one poll. |
 | `wslCare.cleanup.tombstoneMinutes` | 10 | 1–1440 | How long a cleanup another window removed from the shared journal is remembered as removed, so a stale list in a second window does not write it back, in minutes. |
+| `wslCare.cleanup.resultsKept` | 5 | 1–50 | How many past cleanup results *Last cleanup* in the panel lists (newest first; the daemon keeps them all). |
 | `wslCare.cleanup.journalEntries` | 32 | 4–256 | How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped. |
 | `wslCare.logs.maxRunIndex` | 9999 | 100–100000 | The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read). |
 

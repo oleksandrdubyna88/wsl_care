@@ -42,8 +42,8 @@ export interface CleanupHostOptions {
   readonly numbers?: () => Numbers;
 }
 
-/** The terminal answers a window keeps for its *Last cleanup* section — the newest few, in memory (the daemon keeps the rest). */
-export const RESULTS_KEPT = 5;
+/** The DEFAULT of `wslCare.cleanup.resultsKept`: the terminal answers a window keeps for its *Last cleanup* section — the newest few, in memory (the daemon keeps the rest). */
+export const RESULTS_KEPT = DEFAULT_NUMBERS.resultsKept;
 
 /** Every cleanup surface through the ONE road (review A1): a notification's sentence sanitised and unlinked, a modal unlinked. */
 function sanitised(ui: CleanUi): CleanUi {
@@ -164,7 +164,7 @@ export class CleanupHost {
 
   private shown(result: RunResult): void {
     const notice = resultNotice(result, this.follower.poll().ceilingMs);
-    this.results = [notice, ...this.results].slice(0, RESULTS_KEPT);
+    this.results = [notice, ...this.results].slice(0, (this.options.numbers?.() ?? DEFAULT_NUMBERS).resultsKept);
     void this.ui.notify(notice.level, notice.sentence);
     this.emit();
   }
