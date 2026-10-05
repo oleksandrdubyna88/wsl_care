@@ -45,6 +45,11 @@ public sealed record RunLine(
     /// reclaimable, container starts) — what the Logs page's sparkline and trends read (§15j M7). Additive (E6.S0): absent on
     /// a line that recorded none (an <c>act</c>, a swept run, every line before E2.S3), never 0.</summary>
     public Records.RunMetrics? Metrics { get; init; }
+
+    /// <summary>What the run was (plan §15o): <c>collect</c> — a full check, whatever started or ended it — or <c>act</c>; the ONE
+    /// rule a reader tells a full check by. Additive: absent on a line that carries none (written before it existed, an unusable
+    /// request's, an unreadable orphan's).</summary>
+    public string? Kind { get; init; }
 }
 
 /// <summary>The answer of <c>runs [--period …] --json</c>: every run of the period, oldest first.</summary>

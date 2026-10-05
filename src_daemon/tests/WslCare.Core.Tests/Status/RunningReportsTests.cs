@@ -93,7 +93,7 @@ public sealed class RunningReportsTests : IDisposable
     {
         var file = Running(Now.AddMinutes(-1));
         Stage(file);
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, file.RunId, RunTrigger.Manual, file.StartedAt, Now, RunOutcome.Completed, []));
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, file.RunId, RunTrigger.Manual, file.StartedAt, Now, RunOutcome.Completed, [], null));
 
         var report = Read(new FakeProcessTable());
 
@@ -134,7 +134,7 @@ public sealed class RunningReportsTests : IDisposable
     }
 
     private RunningFile Running(DateTimeOffset heartbeat, int pid = Pid) =>
-        new(1, RunId.New(Now.AddMinutes(-2), pid), RunTrigger.Manual, ["A5", "A4"], "A4", pid, ProcessStart, Now.AddMinutes(-2), heartbeat);
+        new(1, RunId.New(Now.AddMinutes(-2), pid), RunTrigger.Manual, ["A5", "A4"], "A4", pid, ProcessStart, Now.AddMinutes(-2), heartbeat, RunKind.Act);
 
     private void Stage(RunningFile file) => RunningState.Write(_sandbox.Paths, _sandbox.Files, file);
 

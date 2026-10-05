@@ -480,7 +480,7 @@ public sealed class DetachedRunsTests : IDisposable
     public void A_request_whose_run_already_recorded_itself_is_removed_and_never_run_twice()
     {
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Completed, []));
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Completed, [], null));
 
         var (exit, _, stderr) = CliRun.Over(Host(), "act", "--request", request.RunId.Text);
 
@@ -613,7 +613,7 @@ public sealed class DetachedRunsTests : IDisposable
     public void A_live_run_is_not_stopped_and_a_run_that_is_not_wedged_here_is_nothing_to_stop()
     {
         var runId = RunId.New(Now.AddMinutes(-1), 999);
-        var live = new RunningFile(1, runId, RunTrigger.Manual, ["A10"], "A10", 999, Now.AddHours(-1), Now.AddMinutes(-1), Now.AddSeconds(-2));
+        var live = new RunningFile(1, runId, RunTrigger.Manual, ["A10"], "A10", 999, Now.AddHours(-1), Now.AddMinutes(-1), Now.AddSeconds(-2), RunKind.Act);
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
         File.WriteAllText(RunningState.File(_sandbox.Paths), JsonSerializer.Serialize(live, WslCareJsonContext.Default.RunningFile));
 
@@ -646,7 +646,7 @@ public sealed class DetachedRunsTests : IDisposable
 
     private void PlantWedged(RunId runId, int pid)
     {
-        var wedged = new RunningFile(1, runId, RunTrigger.Timer, ["A10"], "A10", pid, Now.AddHours(-1), Now.AddMinutes(-9), Now.AddMinutes(-5));
+        var wedged = new RunningFile(1, runId, RunTrigger.Timer, ["A10"], "A10", pid, Now.AddHours(-1), Now.AddMinutes(-9), Now.AddMinutes(-5), RunKind.Act);
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
         File.WriteAllText(RunningState.File(_sandbox.Paths), JsonSerializer.Serialize(wedged, WslCareJsonContext.Default.RunningFile));
     }

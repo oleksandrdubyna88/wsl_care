@@ -108,7 +108,7 @@ public sealed class DetachedRunTests : IDisposable
     public async Task A_request_whose_run_already_recorded_itself_only_loses_its_file_never_a_second_line()
     {
         var request = Plant(Request(3, TimeSpan.FromHours(1)));
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Completed, []));
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Completed, [], null));
 
         var notes = await Sweep();
 
@@ -231,7 +231,7 @@ public sealed class DetachedRunTests : IDisposable
             StopMarkers.Mark(_sandbox.Paths, _sandbox.Files, id, UnitCommands.TimerService, Now);
         }
 
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, recorded, RunTrigger.Timer, Now, Now, RunOutcome.Interrupted, []));
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, recorded, RunTrigger.Timer, Now, Now, RunOutcome.Interrupted, [], RunKind.Collect));
 
         var notes = await Sweep();
 
@@ -364,7 +364,7 @@ public sealed class DetachedRunTests : IDisposable
         var request = Plant(Request(24, TimeSpan.FromHours(1)));
         _runner.ScriptEffect(argv => argv.SequenceEqual(UnitCommands.Show(request.RunId).Argv), _ =>
         {
-            new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Refused, []) { Reason = "busy: the timer" });
+            new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Refused, [], null) { Reason = "busy: the timer" });
             return RecordingCommandRunner.Exited(0, "ActiveState=inactive\n");
         });
 
@@ -444,7 +444,7 @@ public sealed class DetachedRunTests : IDisposable
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
 
         RunRequests.Create(_sandbox.Paths, files, Request(28, TimeSpan.Zero)).Should().BeOfType<ExclusiveCreate.Created>();
-        RunningState.Write(_sandbox.Paths, files, new RunningFile(1, RunId.New(Now, 28), RunTrigger.Manual, ["A10"], "A10", Pid, OwnStart, Now, Now));
+        RunningState.Write(_sandbox.Paths, files, new RunningFile(1, RunId.New(Now, 28), RunTrigger.Manual, ["A10"], "A10", Pid, OwnStart, Now, Now, RunKind.Act));
 
         seen.Should().Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         File.GetUnixFileMode(RunningState.File(_sandbox.Paths)).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead, "the unprivileged status reads it");
@@ -593,7 +593,7 @@ public sealed class DetachedRunTests : IDisposable
 
     private void PlantRunning(RunId runId, int pid)
     {
-        var file = new RunningFile(1, runId, RunTrigger.Manual, ["A10"], "A10", pid, OwnStart, Now.AddMinutes(-10), Now.AddMinutes(-3));
+        var file = new RunningFile(1, runId, RunTrigger.Manual, ["A10"], "A10", pid, OwnStart, Now.AddMinutes(-10), Now.AddMinutes(-3), RunKind.Act);
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
         File.WriteAllText(RunningState.File(_sandbox.Paths), JsonSerializer.Serialize(file, WslCareJsonContext.Default.RunningFile), new UTF8Encoding(false));
     }

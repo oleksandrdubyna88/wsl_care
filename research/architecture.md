@@ -107,7 +107,9 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,
   and beside them `contracts/actions.json` / `contracts/exit-codes.json` held equal to `ActionId` / `ExitCode` by
-  `ContractFilesTests` (section *The daemon read contract*).
+  `ContractFilesTests` (section *The daemon read contract*), and since plan §15o `contracts/history-reasons.json` (the reason
+  prefixes of a kind-less history line that is not a full check, from `HistoryReasons`; section *A full check's history line
+  names itself*). There is no `RunLine` field list in `contracts/`: that wire is pinned by the `runs-*.json` goldens.
 - Read-only diagnostic scripts under `research/diagnostics/`, which produced the baselines.
 - Plans: the daemon and extension (`todo/PLAN_wsl_care_daemon.md`), the Windows side
   (`todo/PLAN_windows_care.md`), the AI-session archive (`todo/PLAN_ai_session_archive.md`), the shared
@@ -126,7 +128,7 @@ Everything a later story does to the machine goes through one of these. Each is 
 | `DeletionPolicy` | `Core.Files.Deletion` | the one class | the never-list as a pure decision over resolved paths: never `projects/*/memory/` (even for the archive), never under an AI agent folder except an archive MOVE with the permit, never under `~/git`, never under `%TEMP%\claude` / `/tmp/claude`, never outside the action's declared root (strictly inside), never a root that is `/`, `C:\` or the home; move destinations are judged too |
 | `ICommandRunner` + `CommandPolicy` | `Core.Processes` (+ `.Policy`) | `ProcessCommandRunner`, whose ONLY constructor takes the sealed `CommandPolicy` (E3.S1: the never-list, then deny by default against the declared templates — § *The action engine, the command policy and `act`*) | argv list only, a bare executable name resolved on `PATH` ALONE and started by its full path (`ExecutableResolver`, below), a required ceiling, (since E2.S2 every collector command is a named `ToolCommand` — executable, argv, ceiling, output cap — built in ONE place per tool), the WHOLE process tree killed on timeout, bounded capture of both streams, a closed outcome (`Exited` / `TimedOut` / `FailedToStart` / `Refused`), the caller's cancellation thrown as such after the kill; the policy is asked before any start; since E2.S3 `StreamAsync` — the same launcher for a child whose stdout is a stream (`docker events`), each line handed to a callback as it arrives and cut at the output cap |
 | `IHostProbe` | `Core.Hosting` | `Collectors.LinuxProbe`, `Collectors.WindowsProbe` (E2.S1) | the platform split of plan §8: ONE fast `Sample` per binary, its own side read, the other side unavailable naming the other binary; a probe holds no command runner, so it starts no process (§ *The collectors and `status`*) |
-| run records | `Core.Records` | `RunRecordWriter` → `{state}/history.jsonl` | `RunRecord` (schemaVersion, `RunId` = UTC second + pid, trigger `timer|manual|cli`, UTC start/end, outcome `completed|failed|interrupted|observeOnly`, actions) as one JSON line, source-generated; since E2.S3 the line names its detail (`detail`), carries `dryRun`, `reason`, the non-ok `warnings` and headline `metrics`; `RunDetailStore` writes `{state}/runs/{day}/{runId}.json` atomically FIRST; `RunHistory` is the one parser; `RunReconcile` and `RunRetention` (§ *The full run*) |
+| run records | `Core.Records` | `RunRecordWriter` → `{state}/history.jsonl` | `RunRecord` (schemaVersion, `RunId` = UTC second + pid, trigger `timer|manual|cli`, UTC start/end, outcome `completed|failed|interrupted|observeOnly`, actions — per-action RESULTS only — and since plan §15o `kind` `collect|act`, a positional member every writer decides) as one JSON line, source-generated; since E2.S3 the line names its detail (`detail`), carries `dryRun`, `reason`, the non-ok `warnings` and headline `metrics`; `RunDetailStore` writes `{state}/runs/{day}/{runId}.json` atomically FIRST; `RunHistory` is the one parser; `RunReconcile` and `RunRetention` (§ *The full run*) |
 | configuration | `Core.Config` | `ConfigLoader`, `UserConfigWriter`, `ConfigKeys` | three layers (embedded `default.json` < machine < user), validated against the one register in code; an invalid layer makes the result **observe-only** with `configError {file, line, message}` and the layer's valid keys still in force (plan §15a #1); `config set`/`reset` rewrite the user layer atomically and repair it (invalid keys dropped and named, an unparseable file moved aside with a UTC stamp, `-2`, `-3`, … appended when a repair in the same second already took that name — an aside file is never overwritten) |
 
 **Which file a tool name means** (`ExecutableResolver`, since the E2 CI fix). The runner never hands the operating
@@ -2360,6 +2362,44 @@ flowchart TB
 - **`install.sh`**: the running block's state is read without layout; in flight unless `none` / `dead` (fails closed for any other
   state); the wait is measured on the wall clock, prints progress every 30 s, and when the installed binary cannot answer names
   the manual escape (`WSL_CARE_INSTALL_SKIP_RUN_WAIT=1`, or removing `running.json` / `requests/*.json` by hand).
+
+### A full check's history line names itself — `kind` (2026-10-05, plan §15o)
+
+Before, a reader could not tell a full check's line by one rule: a completed or measurement-cut full check wrote `actions:
+[]`, every other terminal line of a detached one a pseudo-row `{id: "collect"}`, and an unusable request or a reconciled
+orphan `[]` too. `actions` means per-action RESULTS (plan §6; `logs`' `perAction`, `IsCleanup`, the cleanup details and A15
+read it so), so the fix is a second member, additive, `schemaVersion` 1:
+
+- **`kind`** (`RunKind`: `collect` | `act`) on `RunRecord` and on `RunningFile` — a POSITIONAL parameter of both, so every
+  writer decides (`null` only where it cannot be known). Read back absent from older lines and files.
+- **`actions` holds results only.** The `collect` pseudo-row is no longer written; a refused, cut-off or swept full check
+  writes `actions: []` with `kind: "collect"`. `collect` is RESERVED (`RunKinds.FullCheckName`, `ActionId`'s doc): no action
+  id may carry it, which `RunKindTests` and `ContractFilesTests` hold.
+- **One road per shape:** a requested run that never did its work — `DetachedRuns.Refused` / `CutOff`, `RequestSweep`'s swept
+  request — takes ONE line from `RunRequestFile.TerminalLine` (the request's kind; an act's asked ids each marked, a full
+  check none). The timer's pass rewrites `running.json` with the registry's ids and `kind: collect` (`ActRequest.Kind`, set
+  only by `ActionEngine.TimerPassAsync`), so the sweep of a dead holder can tell it from an `act --timer` of the same ids. A
+  file from an older writer is a full check only in the exact shape `CollectRun` writes (`["collect"]` and current
+  `collect`: `RunningFile.KindOrMarker`). The reconcile takes an orphan's kind from its detail (`RunKinds.OfDetailKind`, the
+  rule `logs` / `runs show` read a detail by).
+- **Who carries no kind:** the line of an unusable request (`RequestSweep.Unusable`) and of an orphan whose detail cannot be
+  read. Their reasons — and the readable orphan's — begin with the prefixes `contracts/history-reasons.json` carries
+  (`HistoryReasons.NotAFullCheckWithoutKind`, from the daemon's constants): the fallback a reader uses for a line WITHOUT a
+  kind. A line with a kind is told by it alone — a reconciled full-check orphan carries `kind: collect` AND the reconcile's
+  prefix, and kind wins.
+- **The wire:** `RunLine.kind` on `runs` / `runs show` (absent when the line has none); the `runs-*.json` goldens pin it.
+
+| Writer | `kind` | `actions` |
+|---|---|---|
+| `CollectRun.Line` (completed / observeOnly / failed), `CollectRun.RecordCutOff` | `collect` | the timer pass's results, else `[]` |
+| `RunRequestFile.TerminalLine` (`DetachedRuns.Refused`, `DetachedRuns.CutOff`, `RequestSweep` swept) | the request's | an act's ids marked refused / interrupted; a full check `[]` |
+| `RunningSweep.SweepDead` | `running.json`'s (or the older shape) | its ids marked interrupted, `collect` never a row |
+| `ActionEngine.Line` | `act` | each action's result |
+| `RunReconcile.InterruptedLine` | from the detail; none when unreadable | `[]` |
+| `RequestSweep.Unusable` | none | `[]` |
+
+The extension's follower still matches by its own copy of the reasons (E6.S3 branch); moving it to kind-first with the
+contract's prefixes as the fallback is the extension's half (E6.S4), named in plan §15o.
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 

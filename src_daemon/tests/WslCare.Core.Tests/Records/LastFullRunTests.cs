@@ -18,7 +18,7 @@ public sealed class LastFullRunTests
     private static readonly DateTimeOffset Now = FixedTimeProvider.DefaultNow;
 
     private static RunRecord Run(DateTimeOffset at, SlowParts? slow, int pid = 1) =>
-        new RunRecord(SchemaVersion.Current, RunId.New(at, pid), RunTrigger.Timer, at, at.AddSeconds(30), RunOutcome.Completed, []) { Slow = slow };
+        new RunRecord(SchemaVersion.Current, RunId.New(at, pid), RunTrigger.Timer, at, at.AddSeconds(30), RunOutcome.Completed, [], RunKind.Collect) { Slow = slow };
 
     private static ContainerStatsSample Stats(DateTimeOffset at, string unavailable = "") =>
         new(at, [new ContainerStat("0e456d1dc8c0", "pg", 712_196_096, 1.5)], unavailable);

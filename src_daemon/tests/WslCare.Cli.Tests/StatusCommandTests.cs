@@ -59,7 +59,7 @@ public sealed class StatusCommandTests
         var now = ProcfsFixture.CapturedAt;
         var sampled = now.AddMinutes(-150);
         new RunRecordWriter(sandbox.Paths, sandbox.Files).Append(
-            new RunRecord(SchemaVersion.Current, RunId.New(sampled, 77), RunTrigger.Timer, sampled, sampled.AddSeconds(40), RunOutcome.Completed, [])
+            new RunRecord(SchemaVersion.Current, RunId.New(sampled, 77), RunTrigger.Timer, sampled, sampled.AddSeconds(40), RunOutcome.Completed, [], RunKind.Collect)
             {
                 Slow = new SlowParts
                 {

@@ -1148,6 +1148,50 @@ last 10 on this one — the wait itself is the same). `ProgressWaitTests` 6 of 6
 suite in WSL three times: 307 passed and 1 skipped of 308, each time. Windows (Release): Core 934 (914 passed, 20
 skipped), Cli 199 (197, 2), Scenarios 308 (183 passed, 125 skipped — the Linux-only flows).
 
+### A full check's history line names itself — `kind` (2026-10-05, plan §15o)
+
+What a reader of `history.jsonl` sees, at the wire. `Cli.Tests/FullCheckLineTests` drives EVERY writer of a full check's
+terminal line — its `Ending` enum is that list (completed, observe-only, failed on its detail, refused at the lock, cut off
+during the measurement, cut off while sweeping, cut off before it started, a swept request, a swept dead holder, one after
+`act --stop`) — reads the line as raw JSON and asserts: the outcome and reason the ending names (proof the staging reached
+that writer), `kind: "collect"`, no `collect` row in `actions`, and (coai plan round #1) a reason that starts with none of
+`HistoryReasons.NotAFullCheckWithoutKind` — the prefixes `contracts/history-reasons.json` carries. Its companion asserts
+the prefixes DO mark the unusable request's and the reconciled orphans' lines, and that a readable full-check orphan
+carries `kind: collect` beside the reconcile's prefix (kind first). "Cut off before it started" is not reachable from
+outside for a full check (`CollectRun` records its own cut-offs first): its line is built by the very expression
+`DetachedRuns.CutOff` appends. `Core.Tests/Records/RunKindTests`: an older `running.json` is a full check only in the exact
+shape `CollectRun` writes (five shapes); a dead holder's line takes its kind and lists only actions (a measuring full check,
+the timer's pass, an `act --timer` of the same ids, older files of both); a swept act request names `act` with its ids
+interrupted; the reconcile reads an orphan's kind from its detail; a line without `kind` parses and answers none; a line with
+an unknown kind is counted unparseable (the stated residual); `runs` answers each line's kind; a refused full check adds no
+`collect` entry to `perAction`; no action id is the reserved name. `ContractFilesTests` (Scenarios) holds
+`contracts/history-reasons.json`, checks the registry AND the checked-in `contracts/actions.json` for the reserved name, and
+that the contract covers the three prefixes the follower on the E6.S3 branch was written against. `TimerPassTests` and
+`ActionEngineTests` gained the kind of the timer's line and of its `running.json` during the pass, and of an act's line and
+`running.json`. `RefusingDetailWrites` moved to `TestSupport` (it was private to `CollectRunTests`).
+
+**Red first** (Windows, before the fix; the test reads raw JSON, so it compiled against the old code): 3 of 3 —
+*Expected Kind(line) to be "collect" … but "" has a length of 0* for the completed line (`"actions":[]`, no `kind`), the
+refused one (`"actions":[{"id":"collect",…,"status":"refused"}]`) and the one cut off while sweeping (`"actions":[]`).
+Green after the fix: 21 of 21.
+
+**Teeth** (Windows, one mutation at a time: the file checked changed, rebuilt, the class run, restored by writing it back and
+compared by SHA-256 — every restore byte-identical):
+
+| Mutation | Red |
+|---|---|
+| `CollectRun.Line`'s kind → `null` | 3 of 21: completed, observe-only, failed — *Expected Kind(line) to be "collect" …* |
+| the `collect` row back in `DetachedRuns.Refused` | 1: refused at the lock — *Expected ActionIds(line) {"collect"} to not contain "collect"* |
+| the older-file inference without its `current` check | 2 of 20 (`RunKindTests`): `["collect"]` with current `""` / `A10` — *Expected … KindOrMarker() to be <null>, but found RunKind.Collect* |
+| `DetachedRuns.CutOffReason` starting `refused: its request could not be used` | 1: *Expected HistoryReasons.MarksNotAFullCheck(reason) to be False …* (cut off before it started) |
+| the swept holder keeps the `collect` row | 2 (`RunKindTests`): *Expected line.Actions.Select(a => a.Id) to be equal to {empty} …, but found {"collect"}* |
+| the timer pass's `ActRequest.Kind` not set | 1 (`TimerPassTests`): *Expected duringThePass.Kind to be RunKind.Collect …, but found RunKind.Act* |
+| `RunRequestFile.TerminalLine` writing a full check as `act` with its row | 3: refused, cut off before it started, swept request — *Expected Kind(line) to be "collect" …* |
+
+**Goldens** regenerated in WSL (`WSL_CARE_WRITE_GOLDENS=1`, a `/tmp` copy, copied back and compared by SHA-256): only
+`runs-local-day.json` (`kind` on its three lines), `runs-show-done.json` and `runs-show-interrupted.json` (`kind: "act"`)
+changed — additive members, nothing else moved.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

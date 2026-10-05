@@ -17,7 +17,7 @@ public sealed class LastCleanupTests
     private static readonly DateTimeOffset Now = FixedTimeProvider.DefaultNow;
 
     private static RunRecord Run(DateTimeOffset at, RunTrigger trigger, params ActionRecord[] actions) =>
-        new(1, RunId.New(at, 7), trigger, at, at.AddMinutes(1), RunOutcome.Completed, actions);
+        new(1, RunId.New(at, 7), trigger, at, at.AddMinutes(1), RunOutcome.Completed, actions, null);
 
     private static ActionRecord Ran(string id, int count, long freed) => new(id, count, freed) { Status = ActionStatus.Ran };
 

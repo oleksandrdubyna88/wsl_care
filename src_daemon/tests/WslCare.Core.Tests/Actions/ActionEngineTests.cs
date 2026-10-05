@@ -62,9 +62,12 @@ public sealed class ActionEngineTests : IDisposable
     public async Task Actions_run_in_the_fixed_order_whatever_order_they_were_asked_in_and_running_json_names_each_while_it_runs()
     {
         var current = new List<string>();
+        var kinds = new List<RunKind?>();
         Func<ActionContext, Task<ActionRun>> note = _ =>
         {
-            current.Add(JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)!.Current);
+            var running = JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)!;
+            current.Add(running.Current);
+            kinds.Add(running.Kind);
             return Task.FromResult(new ActionRun(1, 100, "scripted", 200, 100, [], [], string.Empty));
         };
 
@@ -82,6 +85,8 @@ public sealed class ActionEngineTests : IDisposable
         line.RunId.Should().Be(done.Detail.RunId);
         line.Detail.Should().Be(done.DetailFile);
         line.Actions.Select(a => (a.Id, a.Status, a.FreedBytes)).Should().Equal(("A5", "ran", 100L), ("A4", "ran", 100L), ("A10", "ran", 100L));
+        line.Kind.Should().Be(RunKind.Act, "plan §15o: an act's line names it");
+        kinds.Should().AllBeEquivalentTo(RunKind.Act, "and so does its running.json");
     }
 
     [Fact]
@@ -569,7 +574,7 @@ public sealed class ActionEngineTests : IDisposable
     private string PlantRunning(int pid, TimeSpan heartbeatAge, DateTimeOffset? processStart = null, RunId? runId = null)
     {
         var now = _clock.GetUtcNow();
-        var file = new RunningFile(1, runId ?? RunId.New(now.AddMinutes(-10), pid), RunTrigger.Timer, ["A5", "A4"], "A4", pid, processStart ?? OwnStart, now.AddMinutes(-10), now - heartbeatAge);
+        var file = new RunningFile(1, runId ?? RunId.New(now.AddMinutes(-10), pid), RunTrigger.Timer, ["A5", "A4"], "A4", pid, processStart ?? OwnStart, now.AddMinutes(-10), now - heartbeatAge, RunKind.Act);
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
         var json = JsonSerializer.Serialize(file, WslCareJsonContext.Default.RunningFile);
         File.WriteAllText(RunningState.File(_sandbox.Paths), json, new UTF8Encoding(false));

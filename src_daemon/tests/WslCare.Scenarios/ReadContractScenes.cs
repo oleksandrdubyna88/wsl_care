@@ -72,7 +72,7 @@ internal static class ReadContractScenes
 
     /// <summary>A dead run's <c>running.json</c>: a pid no process has, fixed instants.</summary>
     public static RunningFile Dead() =>
-        new(1, RunId.New(Staged, GonePid), RunTrigger.Manual, ["A5", "A4"], "A4", GonePid, Staged.AddSeconds(-1), Staged, Staged.AddMinutes(1));
+        new(1, RunId.New(Staged, GonePid), RunTrigger.Manual, ["A5", "A4"], "A4", GonePid, Staged.AddSeconds(-1), Staged, Staged.AddMinutes(1), RunKind.Act);
 
     /// <summary>A run held by THIS test process — alive for the whole scenario — with its real start, so the CLI judges it by
     /// the real process table exactly as it would a running <c>act</c>.</summary>
@@ -80,7 +80,7 @@ internal static class ReadContractScenes
     {
         var pid = Environment.ProcessId;
         var start = new SystemProcessTable().Lookup(pid) is ProcessLookup.Alive alive ? alive.StartUtc : throw new InvalidOperationException("this test process cannot read its own start");
-        return new RunningFile(1, RunId.New(Staged, pid), RunTrigger.Manual, ["A5", "A4"], "A4", pid, start, Staged, heartbeat);
+        return new RunningFile(1, RunId.New(Staged, pid), RunTrigger.Manual, ["A5", "A4"], "A4", pid, start, Staged, heartbeat, RunKind.Act);
     }
 
     public static void Running(ScenarioHome home, RunningFile file) => RunningState.Write(home.Paths, new PhysicalFileSystem(home.Paths), file);
@@ -112,7 +112,7 @@ internal static class ReadContractScenes
         var files = new PhysicalFileSystem(home.Paths);
         var writer = new RunRecordWriter(home.Paths, files);
         void Line(DateTimeOffset at, RunTrigger trigger, IReadOnlyList<ActionRecord> actions, RunMetrics? metrics = null, string? detail = null, bool dry = false) =>
-            writer.Append(new RunRecord(1, RunId.New(at, 5), trigger, at, at.AddMinutes(1), RunOutcome.Completed, actions) { DryRun = dry, Metrics = metrics, Detail = detail });
+            writer.Append(new RunRecord(1, RunId.New(at, 5), trigger, at, at.AddMinutes(1), RunOutcome.Completed, actions, trigger == RunTrigger.Timer ? RunKind.Collect : RunKind.Act) { DryRun = dry, Metrics = metrics, Detail = detail });
 
         var before = new DateTimeOffset(2026, 10, 1, 20, 59, 59, TimeSpan.Zero);
         var first = new DateTimeOffset(2026, 10, 1, 21, 0, 0, TimeSpan.Zero);
