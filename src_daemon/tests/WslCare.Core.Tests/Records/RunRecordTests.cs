@@ -15,7 +15,7 @@ public sealed class RunRecordTests
     private static readonly DateTimeOffset Started = new(2026, 10, 2, 10, 15, 0, TimeSpan.Zero);
 
     private static RunRecord Record(RunOutcome outcome, int pid = 1234) =>
-        new(SchemaVersion.Current, RunId.New(Started, pid), RunTrigger.Timer, Started, Started.AddSeconds(42), outcome, [new ActionRecord("A4", 3, 123_456_789)]);
+        new(SchemaVersion.Current, RunId.New(Started, pid), RunTrigger.Timer, Started, Started.AddSeconds(42), outcome, [new ActionRecord("A4", 3, 123_456_789)], RunKind.Collect);
 
     [Fact]
     public void A_run_id_is_the_utc_second_and_the_pid()

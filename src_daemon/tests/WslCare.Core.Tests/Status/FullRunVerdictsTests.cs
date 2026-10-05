@@ -39,7 +39,7 @@ public sealed class FullRunVerdictsTests : IDisposable
         }
 
         new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(
-            new RunRecord(SchemaVersion.Current, id, RunTrigger.Timer, startedAt, startedAt.AddSeconds(40), RunOutcome.Completed, [])
+            new RunRecord(SchemaVersion.Current, id, RunTrigger.Timer, startedAt, startedAt.AddSeconds(40), RunOutcome.Completed, [], RunKind.Collect)
             {
                 Slow = new SlowParts(),
                 Detail = nameDetail ? relative : null,
@@ -51,7 +51,7 @@ public sealed class FullRunVerdictsTests : IDisposable
     {
         var id = RunId.New(startedAt, 99);
         new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(
-            new RunRecord(SchemaVersion.Current, id, RunTrigger.Manual, startedAt, startedAt.AddSeconds(5), RunOutcome.Completed, [new ActionRecord("A10", 0, 0)]) { Detail = RunDetailStore.RelativePath(id) });
+            new RunRecord(SchemaVersion.Current, id, RunTrigger.Manual, startedAt, startedAt.AddSeconds(5), RunOutcome.Completed, [new ActionRecord("A10", 0, 0)], RunKind.Act) { Detail = RunDetailStore.RelativePath(id) });
     }
 
     [Fact]

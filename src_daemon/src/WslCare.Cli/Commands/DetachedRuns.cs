@@ -256,10 +256,7 @@ internal static class DetachedRuns
             if (!AlreadyRecorded(host, file.RunId))
             {
                 var now = host.Clock.GetUtcNow();
-                new RunRecordWriter(host.Paths, host.Files).Append(new RunRecord(Core.SchemaVersion.Current, file.RunId, file.Trigger, now, now, RunOutcome.Interrupted, [.. file.Actions.Select(a => new ActionRecord(a, 0, 0) { Status = ActionStatus.Interrupted })])
-                {
-                    Reason = $"interrupted by {host.InterruptCause()} before it recorded anything (cut off before it started)",
-                });
+                new RunRecordWriter(host.Paths, host.Files).Append(file.TerminalLine(now, now, RunOutcome.Interrupted, ActionStatus.Interrupted, CutOffReason(host.InterruptCause())));
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
@@ -270,6 +267,9 @@ internal static class DetachedRuns
 
         RunRequests.Remove(host.Paths, host.Files, file.RunId);
     }
+
+    /// <summary>Why a requested run cut off before it recorded anything has its one line.</summary>
+    internal static string CutOffReason(string cause) => $"interrupted by {cause} before it recorded anything (cut off before it started)";
 
     private static int Finished(ActResult result, CliHost host, RunRequestFile file, TextWriter stdout, TextWriter stderr)
     {
@@ -307,10 +307,7 @@ internal static class DetachedRuns
         var now = host.Clock.GetUtcNow();
         try
         {
-            new RunRecordWriter(host.Paths, host.Files).Append(new RunRecord(Core.SchemaVersion.Current, file.RunId, file.Trigger, now, now, RunOutcome.Refused, [.. file.Actions.Select(a => new ActionRecord(a, 0, 0) { Status = ActionStatus.Refused })])
-            {
-                Reason = reason,
-            });
+            new RunRecordWriter(host.Paths, host.Files).Append(file.TerminalLine(now, now, RunOutcome.Refused, ActionStatus.Refused, reason));
         }
         finally
         {

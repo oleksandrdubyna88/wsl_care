@@ -43,7 +43,7 @@ public sealed class DoctorTests : IDisposable
         var files = new PhysicalFileSystem(paths);
         var id = RunId.New(lastRun, 1);
         RunDetailStore.Write(paths, files, id, """{"schemaVersion":1}"""u8);
-        new RunRecordWriter(paths, files).Append(new RunRecord(1, id, RunTrigger.Timer, lastRun, lastRun, RunOutcome.Completed, []) { Detail = RunDetailStore.RelativePath(id) });
+        new RunRecordWriter(paths, files).Append(new RunRecord(1, id, RunTrigger.Timer, lastRun, lastRun, RunOutcome.Completed, [], RunKind.Collect) { Detail = RunDetailStore.RelativePath(id) });
         new ContainerStartsStore(paths, files).Append(new CoverageLine.Covered(covered));
         File.SetLastWriteTimeUtc(_root.File("var/log/sysstat/sa02", "x"), Now.AddMinutes(-10).UtcDateTime);
         File.SetLastWriteTimeUtc(_root.File("var/log/atop/atop_20261002", "x"), Now.AddMinutes(-10).UtcDateTime);

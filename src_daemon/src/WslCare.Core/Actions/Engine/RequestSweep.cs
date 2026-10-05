@@ -58,15 +58,20 @@ public static class RequestSweep
         return [.. notes.Where(n => n.Length > 0)];
     }
 
+    /// <summary>How the line of an unusable request's run begins — a contract (<c>contracts/history-reasons.json</c>, plan §15o):
+    /// a reader tells this kind-less line by it.</summary>
+    public const string UnusablePrefix = "refused: its request could not be used";
+
     /// <summary>A request that cannot be used (review D5): ONE <c>refused</c> line naming why — unless its run has a line — then it
-    /// goes. Shared with <c>act --request</c>, which meets its own.</summary>
+    /// goes. Shared with <c>act --request</c>, which meets its own. Its kind cannot be known (the request did not read), so the line
+    /// carries none (plan §15o).</summary>
     public static string Unusable(IHostPaths paths, IFileSystem files, DateTimeOffset now, RunId runId, string why)
     {
         if (!Recorded(paths, files).Contains(runId))
         {
-            new RunRecordWriter(paths, files).Append(new RunRecord(Core.SchemaVersion.Current, runId, RunTrigger.Manual, now, now, RunOutcome.Refused, [])
+            new RunRecordWriter(paths, files).Append(new RunRecord(Core.SchemaVersion.Current, runId, RunTrigger.Manual, now, now, RunOutcome.Refused, [], Kind: null)
             {
-                Reason = $"refused: its request could not be used ({why}); nothing was run",
+                Reason = $"{UnusablePrefix} ({why}); nothing was run",
             });
         }
 
@@ -141,11 +146,8 @@ public static class RequestSweep
             return Joined($"removed the request of run {request.RunId}: the run recorded itself while the sweep looked", RunRequests.Remove(paths, files, request.RunId));
         }
 
-        var line = new RunRecord(Core.SchemaVersion.Current, request.RunId, request.Trigger, request.CreatedAt, now, RunOutcome.Interrupted, [.. request.Actions.Select(a => new ActionRecord(a, 0, 0) { Status = ActionStatus.Interrupted })])
-        {
-            Reason = $"swept: the detached run never recorded itself - its unit {Processes.Policy.SlotKind.ActUnit.Of(request.RunId)} is {(activeState.Length > 0 ? activeState : "unknown to systemd")} with no queued job, and {stale}",
-        };
-        new RunRecordWriter(paths, files).Append(line);
+        var reason = $"swept: the detached run never recorded itself - its unit {Processes.Policy.SlotKind.ActUnit.Of(request.RunId)} is {(activeState.Length > 0 ? activeState : "unknown to systemd")} with no queued job, and {stale}";
+        new RunRecordWriter(paths, files).Append(request.TerminalLine(request.CreatedAt, now, RunOutcome.Interrupted, ActionStatus.Interrupted, reason));
         return Joined($"swept the request of run {request.RunId}: its unit is not running (recorded as interrupted)", RunRequests.Remove(paths, files, request.RunId));
     }
 

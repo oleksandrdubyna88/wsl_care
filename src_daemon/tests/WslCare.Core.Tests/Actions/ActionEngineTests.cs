@@ -62,9 +62,12 @@ public sealed class ActionEngineTests : IDisposable
     public async Task Actions_run_in_the_fixed_order_whatever_order_they_were_asked_in_and_running_json_names_each_while_it_runs()
     {
         var current = new List<string>();
+        var kinds = new List<RunKind?>();
         Func<ActionContext, Task<ActionRun>> note = _ =>
         {
-            current.Add(JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)!.Current);
+            var running = JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)!;
+            current.Add(running.Current);
+            kinds.Add(running.Kind);
             return Task.FromResult(new ActionRun(1, 100, "scripted", 200, 100, [], [], string.Empty));
         };
 
@@ -82,6 +85,8 @@ public sealed class ActionEngineTests : IDisposable
         line.RunId.Should().Be(done.Detail.RunId);
         line.Detail.Should().Be(done.DetailFile);
         line.Actions.Select(a => (a.Id, a.Status, a.FreedBytes)).Should().Equal(("A5", "ran", 100L), ("A4", "ran", 100L), ("A10", "ran", 100L));
+        line.Kind.Should().Be(RunKind.Act, "plan §15o: an act's line names it");
+        kinds.Should().AllBeEquivalentTo(RunKind.Act, "and so does its running.json");
     }
 
     [Fact]
@@ -98,6 +103,34 @@ public sealed class ActionEngineTests : IDisposable
         Done(result).Detail.Actions[0].Reason.Should().Contain("docker answered nonsense");
         Done(result).Detail.Actions[1].Reason.Should().Be("docker volume rm exited 1");
         History().Last().Outcome.Should().Be(RunOutcome.Completed, "a failing action is logged and the run continues (plan §5)");
+    }
+
+    /// <summary>§15o review O2: an <c>act</c> is an act whatever started it — <c>act --timer</c> holds ids like the timer's own pass
+    /// inside a full check, and only <c>kind</c> tells the two apart, in <c>running.json</c> and on the line.</summary>
+    [Theory]
+    [InlineData(RunTrigger.Cli)]
+    [InlineData(RunTrigger.Manual)]
+    [InlineData(RunTrigger.Timer)]
+    public async Task An_act_names_itself_act_in_running_json_and_on_its_line_whatever_its_trigger(RunTrigger trigger)
+    {
+        UserConfig("""{ "dryRun": false }""");
+        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
+        File.WriteAllText(DryRunWindow.File(_sandbox.Paths), $$"""{ "schemaVersion": 1, "at": "{{FixedTimeProvider.DefaultNow.AddDays(-30):O}}" }""");
+        var kinds = new List<RunKind?>();
+        var action = new ScriptedAction("A10", _journal)
+        {
+            OnRun = _ =>
+            {
+                kinds.Add(JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)!.Kind);
+                return Task.FromResult(new ActionRun(1, 100, "scripted", 200, 100, [], [], string.Empty));
+            },
+        };
+
+        var result = await Engine(action).ExecuteAsync(Run(trigger, "A10"), CancellationToken.None);
+
+        Statuses(result).Should().Equal("A10:ran");
+        kinds.Should().Equal([RunKind.Act], "running.json was read while the act ran");
+        History().Single().Kind.Should().Be(RunKind.Act);
     }
 
     [Fact]
@@ -569,7 +602,7 @@ public sealed class ActionEngineTests : IDisposable
     private string PlantRunning(int pid, TimeSpan heartbeatAge, DateTimeOffset? processStart = null, RunId? runId = null)
     {
         var now = _clock.GetUtcNow();
-        var file = new RunningFile(1, runId ?? RunId.New(now.AddMinutes(-10), pid), RunTrigger.Timer, ["A5", "A4"], "A4", pid, processStart ?? OwnStart, now.AddMinutes(-10), now - heartbeatAge);
+        var file = new RunningFile(1, runId ?? RunId.New(now.AddMinutes(-10), pid), RunTrigger.Timer, ["A5", "A4"], "A4", pid, processStart ?? OwnStart, now.AddMinutes(-10), now - heartbeatAge, RunKind.Act);
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
         var json = JsonSerializer.Serialize(file, WslCareJsonContext.Default.RunningFile);
         File.WriteAllText(RunningState.File(_sandbox.Paths), json, new UTF8Encoding(false));

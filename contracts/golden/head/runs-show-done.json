@@ -20,7 +20,8 @@
         "count": 0,
         "freedBytes": 0
       }
-    ]
+    ],
+    "kind": "act"
   },
   "detailState": "present",
   "detail": {

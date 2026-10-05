@@ -98,8 +98,8 @@ public sealed class LogsFlows
         var writer = new RunRecordWriter(home.Paths, files);
         var late = new DateTimeOffset(2026, 10, 1, 23, 59, 59, TimeSpan.Zero);
         var early = new DateTimeOffset(2026, 10, 2, 0, 0, 0, TimeSpan.Zero);
-        writer.Append(new RunRecord(1, RunId.New(late, 11), RunTrigger.Manual, late, late, RunOutcome.Completed, [new ActionRecord("A4", 3, 3_000_000_000) { Status = ActionStatus.Ran }]));
-        writer.Append(new RunRecord(1, RunId.New(early, 12), RunTrigger.Timer, early, early, RunOutcome.Completed, [new ActionRecord("A10", 0, 0) { Status = ActionStatus.DryRun, WouldFreeBytes = 700 }]) { DryRun = true });
+        writer.Append(new RunRecord(1, RunId.New(late, 11), RunTrigger.Manual, late, late, RunOutcome.Completed, [new ActionRecord("A4", 3, 3_000_000_000) { Status = ActionStatus.Ran }], RunKind.Act));
+        writer.Append(new RunRecord(1, RunId.New(early, 12), RunTrigger.Timer, early, early, RunOutcome.Completed, [new ActionRecord("A10", 0, 0) { Status = ActionStatus.DryRun, WouldFreeBytes = 700 }], RunKind.Collect) { DryRun = true });
         var before = StateFiles(home);
 
         var day = await home.RunAsync("logs", "--period", "2026-10-01", "--json");

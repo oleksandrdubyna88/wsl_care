@@ -56,9 +56,9 @@ public sealed class ReadContractCommandTests : IDisposable
     [Fact]
     public void Status_reports_a_dead_run_and_the_last_cleanup_without_sweeping_or_writing_anything()
     {
-        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-9), 555), RunTrigger.Manual, ["A4"], "A4", 555, Now.AddMinutes(-10), Now.AddMinutes(-9), Now.AddMinutes(-8));
+        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-9), 555), RunTrigger.Manual, ["A4"], "A4", 555, Now.AddMinutes(-10), Now.AddMinutes(-9), Now.AddMinutes(-8), RunKind.Act);
         RunningState.Write(_sandbox.Paths, _sandbox.Files, file);
-        Line(new RunRecord(1, RunId.New(Now.AddHours(-1), 7), RunTrigger.Timer, Now.AddHours(-1), Now.AddHours(-1), RunOutcome.Completed, [new ActionRecord("A10", 4, 4_000) { Status = ActionStatus.Ran }]));
+        Line(new RunRecord(1, RunId.New(Now.AddHours(-1), 7), RunTrigger.Timer, Now.AddHours(-1), Now.AddHours(-1), RunOutcome.Completed, [new ActionRecord("A10", 4, 4_000) { Status = ActionStatus.Ran }], RunKind.Collect));
         var before = Directory.GetFiles(_sandbox.Paths.StateDirectory, "*", SearchOption.AllDirectories).Select(f => (f, File.GetLastWriteTimeUtc(f), new FileInfo(f).Length)).ToList();
 
         var (exit, stdout, stderr) = CliRun.Over(Host(), "status", "--json");
@@ -97,7 +97,7 @@ public sealed class ReadContractCommandTests : IDisposable
     public void Runs_show_of_a_recorded_run_answers_done_with_its_line_and_of_an_unknown_one_answers_unknown_both_exit_0()
     {
         var id = RunId.New(Now.AddHours(-2), 8);
-        Line(new RunRecord(1, id, RunTrigger.Manual, Now.AddHours(-2), Now.AddHours(-2), RunOutcome.Completed, [new ActionRecord("A4", 3, 3_000) { Status = ActionStatus.Ran }]));
+        Line(new RunRecord(1, id, RunTrigger.Manual, Now.AddHours(-2), Now.AddHours(-2), RunOutcome.Completed, [new ActionRecord("A4", 3, 3_000) { Status = ActionStatus.Ran }], RunKind.Act));
 
         var (doneExit, done, doneErr) = CliRun.Over(Host(), "runs", "show", id.Text, "--json");
         var (unknownExit, unknown, _) = CliRun.Over(Host(), "runs", "show", RunId.New(Now, 9).Text, "--json");
@@ -135,8 +135,8 @@ public sealed class ReadContractCommandTests : IDisposable
     [Fact]
     public void Runs_over_an_instant_range_answers_the_runs_started_inside_it_and_a_bad_instant_is_a_usage_refusal()
     {
-        Line(new RunRecord(1, RunId.New(Now.AddHours(-12).AddMinutes(-1), 1), RunTrigger.Timer, Now.AddHours(-12).AddMinutes(-1), Now, RunOutcome.Completed, []));
-        Line(new RunRecord(1, RunId.New(Now.AddHours(-11), 2), RunTrigger.Timer, Now.AddHours(-11), Now, RunOutcome.Completed, []));
+        Line(new RunRecord(1, RunId.New(Now.AddHours(-12).AddMinutes(-1), 1), RunTrigger.Timer, Now.AddHours(-12).AddMinutes(-1), Now, RunOutcome.Completed, [], RunKind.Collect));
+        Line(new RunRecord(1, RunId.New(Now.AddHours(-11), 2), RunTrigger.Timer, Now.AddHours(-11), Now, RunOutcome.Completed, [], RunKind.Collect));
 
         var (exit, stdout, stderr) = CliRun.Over(Host(), "runs", "--from", "2026-10-02T00:00:00Z", "--to", "2026-10-02T12:00:00Z", "--json");
         var (badExit, _, badErr) = CliRun.Over(Host(), "runs", "--from", "2026-10-02T00:00:00", "--to", "2026-10-02T12:00:00Z", "--json");

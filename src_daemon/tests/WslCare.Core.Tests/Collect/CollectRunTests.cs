@@ -190,12 +190,6 @@ public sealed class CollectRunTests : IDisposable
         }
     }
 
-    private sealed class RefusingDetailWrites(IFileSystem inner) : DelegatingFileSystem(inner)
-    {
-        public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>
-            path.Contains(RunDetailStore.Folder, StringComparison.Ordinal) ? throw new IOException("disk full (test)") : base.WriteFileAtomically(path, content, scope);
-    }
-
     private sealed class FailingHistoryAppends(IFileSystem inner) : DelegatingFileSystem(inner)
     {
         public override void AppendLine(string path, string line, TimeSpan lockTimeout) =>
