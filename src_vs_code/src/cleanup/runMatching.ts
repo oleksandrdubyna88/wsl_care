@@ -1,6 +1,6 @@
 import type { RunId } from '../root/rootIds';
 import type { RunningBlock } from '../root/rootOutcome';
-import { FULL_CHECK_ACTIONS } from '../root/cleanupController';
+import { FULL_CHECK_ACTIONS, RUN_KINDS } from '../root/cleanupController';
 import type { JournalEntry } from './journal';
 import type { RunLine } from './runAnswers';
 
@@ -79,17 +79,28 @@ const NOT_A_FULL_CHECK: readonly ((reason: string) => boolean)[] = [
 ];
 
 /**
- * A history line's actions as a confirm of this entry writes them (review B2): a full check's line is `[]` when it completed
- * or its measurement was cut off (`CollectRun`), `["collect"]` when it was refused, cut off before it started or swept
- * (`DetachedRuns`, `RequestSweep`, `RunningSweep` copy the request's actions) — either, but never the shapes above.
+ * A full check's line by the rule of a daemon OLDER than plan §15o (review B2): `[]` when it completed or its measurement was
+ * cut off (`CollectRun`), `["collect"]` when it was refused, cut off before it started or swept (`DetachedRuns`,
+ * `RequestSweep`, `RunningSweep` copied the request's actions) — either, but never the shapes above.
  */
-function actionsMatch(line: RunLine, entry: JournalEntry): boolean {
+function legacyFullCheck(line: RunLine): boolean {
   const ids = line.actions.map((a) => a.id);
-  if (entry.op !== 'fullCheck') {
-    return sameActions(ids, entry.actions);
-  }
 
   return (ids.length === 0 || sameActions(ids, FULL_CHECK_ACTIONS)) && !NOT_A_FULL_CHECK.some((excluded) => excluded(line.reason));
+}
+
+/**
+ * A full check's line, KIND FIRST (plan §15o, the extension half of its boundary): a line that names its kind is decided by
+ * it alone — `collect` is the full check whatever its actions and reason, `act` never is; a line without one (an older
+ * daemon, or a kind this build does not know — `runAnswers.ts` reads it as absent) keeps the old rule exactly.
+ */
+function isFullCheckLine(line: RunLine): boolean {
+  return line.kind === undefined ? legacyFullCheck(line) : line.kind === RUN_KINDS.fullCheck;
+}
+
+/** A history line's actions as a confirm of this entry writes them: an act's ids exactly, or a full check's line. */
+function actionsMatch(line: RunLine, entry: JournalEntry): boolean {
+  return entry.op === 'fullCheck' ? isFullCheckLine(line) : sameActions(line.actions.map((a) => a.id), entry.actions);
 }
 
 /** A history line that can be this entry's run: the panel's, its actions, started no earlier than the confirm less the skew (B3). */

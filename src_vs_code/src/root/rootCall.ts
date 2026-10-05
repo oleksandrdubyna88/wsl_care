@@ -72,6 +72,12 @@ export const ROOT_TIMEOUT_MS: { readonly [K in RootOpName]: number } = {
 /** What a full check's run holds as its actions in `status.running` (`["collect"]`) — what a follow with no run id may adopt. */
 export const FULL_CHECK_ACTIONS: readonly string[] = ['collect'];
 
+/**
+ * What a history line says the run WAS (plan §15o, the additive `kind`): a full check or an `act`. Spelt here because the
+ * two values are the root verbs' own words, which only this module spells (`structure.test.ts`).
+ */
+export const RUN_KINDS = { fullCheck: 'collect', act: 'act' } as const;
+
 const AS_ROOT = ['-u', 'root'];
 
 /** Taken out of every root call's environment (review S2): `wsl.exe` would carry the Windows variables it names into root's. */

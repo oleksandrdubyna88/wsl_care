@@ -2649,10 +2649,13 @@ poller, install or store module imports `root/`):
   adopted from `status.running` (trigger `manual`, exactly its actions, queued / live / wedged), waited on while a matching
   run may be in flight or the block cannot be read, and otherwise — after the request grace (90 s) — resolved from `runs` over
   its window, both ends widened by a 5-minute clock skew and no further back than the 90-day retention: one match is the run,
-  none "never ran", several candidates. A full check's line is `[]` (completed) or `["collect"]` (refused / cut off / swept);
-  an unusable-request or reconciled-orphan line never matches. A run no entry follows (the timer's) is watched while focused
+  none "never ran", several candidates. A full check's line is matched KIND FIRST (plan §15o, additive): a line carrying
+  `kind` is a full check exactly when it is `collect` (`act` never is), whatever its actions and reason; a line without it
+  (a daemon older than §15o, or a kind this build does not know) is a full check when it is `[]` (completed) or
+  `["collect"]` (refused / cut off / swept) and is not an unusable-request or reconciled-orphan line. A run no entry follows (the timer's) is watched while focused
   and its result shown once.
-- **`runAnswers.ts`** — `runs show` / `runs` read as untrusted (enums through `readEnum`, run ids through `runIdOf`).
+- **`runAnswers.ts`** — `runs show` / `runs` read as untrusted (enums through `readEnum`, run ids through `runIdOf`, §15o's
+  `kind` strictly: exactly `collect` or `act`, anything else absent).
 - **`cleanupView.ts`** — the controls: "Cleaning… A4" / "Queued… A4" / "Wedged: …" from `status.running`; a dead run says it
   died and leaves the buttons enabled; the capability gate's "Update daemon" sentence; a journal entry of this distribution
   greys the buttons ("Waiting for the result of …"); the window's flag adds only "Confirming…"; Stop only for a wedged run of
