@@ -320,5 +320,6 @@ read it so), so the fix is a second member, additive, `schemaVersion` 1:
 | `RunReconcile.InterruptedLine` | from the detail; none when unreadable or of an unknown kind | `[]` |
 | `RequestSweep.Unusable` | none | `[]` |
 
-The extension's follower still matches by its own copy of the reasons (E6.S3 branch); moving it to kind-first with the
-contract's prefixes as the fallback is the extension's half (E6.S4), named in plan §15o.
+The extension's half is built on `feat/wc-e6-cleanup-logs` (E6.S3 row, E6.S4 review C7): the follower matches a full check
+KIND FIRST and an act's line only without a kind or with `act`; a line without a kind falls back to the prefixes, a compiled
+copy of `contracts/history-reasons.json` held equal to it by `runFollower.test.ts`.

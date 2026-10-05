@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 import { CleanupJournal, type JournalEntry, type NewEntry } from '../cleanup/journal';
 import { FOLLOW_POLL, RunFollower, type RunResult } from '../cleanup/runFollower';
+import { NOT_A_FULL_CHECK_PREFIXES } from '../cleanup/runMatching';
 import type { ReadOutcome, VerbOutcome } from '../client/outcome';
 import type { RunRead } from '../client/verbs';
 import { runningOf } from '../root/rootAnswers';
@@ -12,7 +13,7 @@ import { runIdOf, type RunId } from '../root/rootIds';
 import type { RunningBlock } from '../root/rootOutcome';
 import { ManualTimers, MapStore } from './support/memento';
 import { answered, failed, headBody } from './support/outcomes';
-import { GOLDEN_ROOT } from './support/paths';
+import { GOLDEN_ROOT, REPOSITORY_ROOT } from './support/paths';
 
 /**
  * The durable poll (E6.S3, plan §15j M6, §15k #3 / #4, the coai E6.S2 plan round #3 contract; the E6.S3 review round's B1–B5,
@@ -597,4 +598,25 @@ test('review B1 + B4: an unresolved confirm past the ceiling whose block cannot 
   await poll(w);
   assert.equal(w.reads.filter((r) => r.read === 'runs').length, 1);
   assert.equal(w.shown[0]?.kind, 'ceiling');
+});
+
+test('§15o (daemon #16): a reconciled full-check orphan whose detail was readable carries kind "collect" AND the reconcile\'s prefix — kind wins, it is the full check', async () => {
+  const contract = JSON.parse(fs.readFileSync(path.join(REPOSITORY_ROOT, 'contracts', 'history-reasons.json'), 'utf8')) as { notAFullCheckWithoutKind: { writer: string; prefix: string }[] };
+  const reconciled = contract.notAFullCheckWithoutKind.filter((r) => r.writer === 'RunReconcile.InterruptedLine').map((r) => r.prefix);
+  assert.equal(reconciled.length, 2, 'the known instances: both reconcile prefixes');
+  for (const [prefix, kind, adopted] of [[reconciled[0], 'collect', true], [reconciled[0], undefined, false], [reconciled[1], 'collect', true], [reconciled[1], undefined, false]] as const) {
+    const w = new World();
+    await ours(w, FULL_CHECK);
+    w.answer = () => listing([{ runId: RUN, trigger: 'manual', startedAt: '2026-10-05T10:00:01+00:00', outcome: 'interrupted', actions: [], reason: `${prefix ?? ''}.`, ...(kind === undefined ? {} : { kind }) }]);
+    w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
+    w.follower.kick();
+    await poll(w);
+    assert.equal(w.journal.entries()[0]?.kind === 'run', adopted, `${String(kind)} ${prefix ?? ''}`);
+  }
+});
+
+test('§15o (daemon #16): the fallback reason prefixes for a line WITHOUT a kind are exactly the daemon\'s contract file\'s', () => {
+  const contract = JSON.parse(fs.readFileSync(path.join(REPOSITORY_ROOT, 'contracts', 'history-reasons.json'), 'utf8')) as { notAFullCheckWithoutKind: { prefix: string }[] };
+  assert.deepEqual([...NOT_A_FULL_CHECK_PREFIXES], contract.notAFullCheckWithoutKind.map((r) => r.prefix));
+  assert.equal(NOT_A_FULL_CHECK_PREFIXES.length, 3, 'the known instances');
 });

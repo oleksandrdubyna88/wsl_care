@@ -2386,7 +2386,7 @@ was green — recorded as open, not explained); the family checks OK.
 The coai code round over E6.S4 (proceed, all 4 reviewers; K1–K3 accepted, three rejected), the own security review (no
 findings) and the own correctness review (C1–C7) — dispositions in the plan's §15p. Each accepted finding was written as a
 test first and seen RED against stubs that compiled (12 red), then GREEN, then RED again with its load-bearing line broken
-and restored by SHA-256. Totals after the round: `npm test` **708 tests (707 pass, 1 skipped)**; typecheck and lint 0;
+and restored by SHA-256. Totals after the round (rebased onto `main`): `npm test` **710 tests (709 pass, 1 skipped)**; typecheck and lint 0;
 `npm run package` + `check-vsix` clean; the extension-host tier green on VS Code 1.85.0 and stable, fake and closed (no
 `EPERM` this time); the family checks OK.
 
@@ -2403,6 +2403,7 @@ and restored by SHA-256. Totals after the round: `npm test` **708 tests (707 pas
 | **C6** the selection begun before its await | `logsController.test.ts` (*review C6*) | red: Today's answered totals under the Yesterday label; teeth: the slots not cleared → 1 red |
 | **C7** an act line is never `collect` | `runFollower.test.ts` (*review C7*) | red: the `collect` line with A4 resolved the act entry; teeth: the kind check off → 1 red |
 | **stale detail** (green with a bug) | `logsController.test.ts` (*the stale-detail guard*) | green from the start; teeth: `details.has` dropped → 1 red. The generation check's mutant SURVIVED at first (a new selection clears the details, so it looked redundant) — the case it guards was then written (expand, Refresh, expand the same line again: the old list's late answer must not fill it) → 1 red |
+| **after rebasing onto `main` (daemon #16, §15o)**: the fallback prefixes for a line without a kind; a reconciled orphan with `kind: collect` | `runFollower.test.ts` (*the fallback reason prefixes … are exactly the daemon's contract file's*, *a reconciled full-check orphan … kind wins*), `runReads.test.ts` (the goldens' kinds) | red: two of the three prefixes were shorter copies of the contract's (`… history line` without its parenthesis, `… cannot be read` without its second clause); green with the contract's text; the strict-kind test was red after the rebase because the goldens now carry `kind` (its assertion had pinned a golden line WITHOUT one) and now reads the kinds the goldens carry; the orphan test green from the start (kind-first already decides) — teeth: the prefixes applied even to a line WITH a kind → 2 red |
 | **absent ≠ 0** (green with a bug) | `logsPage.test.ts` (*never 0*) | green from the start; teeth: a missing byte figure as `0.0 GB` → 1 red; a missing metric point as `0` → 1 red |
 
 ### What the extension's tests do not prove

@@ -205,5 +205,8 @@ test('§15o: a line\'s kind is read STRICTLY — "collect" or "act"; any other v
   const kinds = parseRuns({ schemaVersion: 1, runs: ['collect', 'act', 'Collect', 'sweep', 7, null, undefined, `collect${String.fromCharCode(0x202e)}`].map((kind) => ({ runId: RUN, kind })) }).map((l) => l.kind);
   assert.deepEqual(kinds, ['collect', 'act', undefined, undefined, undefined, undefined, undefined, undefined]);
   assert.equal(parseRunShow({ schemaVersion: 1, runId: RUN, state: 'done', run: { runId: RUN, kind: 'act' } }).line?.kind, 'act', 'runs show\'s line too');
-  assert.equal(parseRuns(JSON.parse(goldenText('runs-local-day.json')) as Record<string, unknown>)[0]?.kind, undefined, 'a line from a daemon older than §15o has none');
+  const golden = JSON.parse(goldenText('runs-local-day.json')) as { runs: { kind?: string }[] };
+  assert.deepEqual(parseRuns(golden).map((l) => l.kind), golden.runs.map((r) => r.kind), 'the goldens carry §15o\'s kind (daemon #16), read as written');
+  assert.deepEqual(golden.runs.map((r) => r.kind), ['collect', 'act', 'collect'], 'the known instances');
+  assert.equal(parseRuns({ schemaVersion: 1, runs: [{ runId: RUN }] })[0]?.kind, undefined, 'a line from a daemon older than §15o has none');
 });
