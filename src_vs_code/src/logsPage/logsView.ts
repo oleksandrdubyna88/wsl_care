@@ -104,6 +104,8 @@ export interface LogsState {
   /** The window of a day period (undefined for *This run*). */
   readonly window: PeriodWindow | undefined;
   readonly retained: { readonly oldest: string; readonly newest: string };
+  /** The days of history the daemon keeps — its own value, or 90 until it answers one. */
+  readonly retentionDays: number;
   readonly logs: ReadState;
   readonly runs: ReadState;
   /** *This run*'s `runs show`. */

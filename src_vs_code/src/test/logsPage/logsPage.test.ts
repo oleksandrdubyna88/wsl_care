@@ -40,6 +40,7 @@ function state(parts: Partial<LogsState> = {}, period: Period = { kind: 'today' 
     period,
     window: period.kind === 'thisRun' ? undefined : windowOf(period, NOW),
     retained: retainedDays(NOW),
+    retentionDays: 90,
     logs: answered(golden('logs-local-day.json')),
     runs: answered(golden('runs-local-day.json')),
     show: { kind: 'idle' },

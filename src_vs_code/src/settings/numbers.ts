@@ -1,4 +1,4 @@
-import { MARGIN_S, WORST_CASE_S } from '../client/worstCases';
+import { MARGIN_S, WORST_CASE_S, WSL_LIST_MINIMUM_S } from '../client/worstCases';
 
 /**
  * Every number of the extension's E6 work is a setting (the owner's standing rule, 2026-10-05): the call ceilings, the
@@ -31,6 +31,7 @@ const TIMEOUTS = {
   previewPerDockerRowSeconds: { key: 'timeouts.previewPerDockerRowSeconds', default: 350, minimum: above(WORST_CASE_S.preview), maximum: 7200, description: 'A cleanup\'s preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9\'s snap listing and a margin.' },
   runReadSeconds: { key: 'timeouts.runReadSeconds', default: 20, minimum: above(WORST_CASE_S.runRead), maximum: 600, description: 'How long `runs show`, `runs` and `logs` may take, in seconds.' },
   detachSeconds: { key: 'timeouts.detachSeconds', default: 690, minimum: above(WORST_CASE_S.detach), maximum: 7200, description: 'How long a cleanup\'s confirm or *Run full check now* may take to hand the run to its unit, in seconds — at least the daemon\'s worst case: the shown list, one `systemctl show` per queued request (up to 32), the start and one more `systemctl show`. A detach that outruns it is followed as "outcome unknown", never reported as failed.' },
+  wslListSeconds: { key: 'timeouts.wslListSeconds', default: 15, minimum: WSL_LIST_MINIMUM_S, maximum: 300, description: 'How long each of the three `wsl.exe --list` questions asked before a daemon call may take, in seconds (measured: about 50 ms each, warm).' },
   stopSeconds: { key: 'timeouts.stopSeconds', default: 150, minimum: above(WORST_CASE_S.stop), maximum: 3600, description: 'How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds.' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
@@ -41,7 +42,12 @@ const CLEANUP = {
   // The daemon sweeps a request after its own grace, `RequestSweep.Grace` (60 s): the host waits past it before it resolves
   // an unresolved confirm from the history.
   requestGraceSeconds: { key: 'cleanup.requestGraceSeconds', default: 90, minimum: 60 + MARGIN_S, maximum: 900, description: 'How long a confirm whose run id was never seen waits before it is resolved from the run history, in seconds (above the daemon\'s own 60 s request grace).' },
+  previewRounds: { key: 'cleanup.previewRounds', default: 3, minimum: 1, maximum: 10, description: 'How many times a preview that expired before the last confirmation is taken again before the cleanup is given up, saying so.' },
   previewExpiryMinutes: { key: 'cleanup.previewExpiryMinutes', default: 5, minimum: 1, maximum: 60, description: 'A preview older than this when you confirm is taken again first, in minutes.' },
+  recordReadTries: { key: 'cleanup.recordReadTries', default: 3, minimum: 1, maximum: 10, description: 'How many times the record of a finished cleanup is read (`runs show`, `runs`) before it reads "the record could not be read".' },
+  recordReadBackoffSeconds: { key: 'cleanup.recordReadBackoffSeconds', default: 8, minimum: 1, maximum: 300, description: 'How much longer each new try of a failed record read waits than the one before, in seconds (the first try at once).' },
+  settleAtOnce: { key: 'cleanup.settleAtOnce', default: 4, minimum: 1, maximum: 32, description: 'How many followed cleanups are settled at the same time in one poll.' },
+  tombstoneMinutes: { key: 'cleanup.tombstoneMinutes', default: 10, minimum: 1, maximum: 1440, description: 'How long a cleanup another window removed from the shared journal is remembered as removed, so a stale list in a second window does not write it back, in minutes.' },
   journalEntries: { key: 'cleanup.journalEntries', default: 32, minimum: 4, maximum: 256, description: 'How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped.' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 

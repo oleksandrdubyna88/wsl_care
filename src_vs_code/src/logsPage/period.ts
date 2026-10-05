@@ -92,11 +92,11 @@ function localMidnight(day: string): number {
   return new Date(year, month - 1, date).getTime();
 }
 
-/** The local days the daemon still holds: today and the `RETENTION_DAYS - 1` before it. */
-export function retainedDays(now: number): { readonly oldest: string; readonly newest: string } {
+/** The local days the daemon still holds: today and the `retentionDays - 1` before it (the daemon's own value, `shared/daemonLimits.ts`; 90 when it does not say). */
+export function retainedDays(now: number, retentionDays: number = RETENTION_DAYS): { readonly oldest: string; readonly newest: string } {
   const newest = localToday(now);
 
-  return { oldest: addDays(newest, 1 - RETENTION_DAYS), newest };
+  return { oldest: addDays(newest, 1 - retentionDays), newest };
 }
 
 /** The day inside the kept history: `yyyy-MM-dd` texts order as their days. */
@@ -119,8 +119,8 @@ function daysOf(period: DayPeriod, today: string): readonly [string, string] {
 }
 
 /** The instant window of a day period: from its first day's local midnight to the midnight after its last day. */
-export function windowOf(period: DayPeriod, now: number): PeriodWindow {
-  const kept = retainedDays(now);
+export function windowOf(period: DayPeriod, now: number, retentionDays: number = RETENTION_DAYS): PeriodWindow {
+  const kept = retainedDays(now, retentionDays);
   const [first, last] = daysOf(period, kept.newest);
   const firstDay = clamp(first, kept);
   const lastDay = clamp(last, kept);

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { DEFAULT_NUMBERS } from '../settings/numbers';
+
 import type { VerbOutcome } from '../client/outcome';
 import { DISTRO_NAME } from '../wsl/distros';
 import { PREVIEW_CONTAINER_ASSUMPTION, VERB_NAMES, VERB_TIMEOUT_MS, VERBS } from '../client/verbs';
@@ -382,4 +384,11 @@ test('L1: a WSL question that timed out is WSL failing; a daemon call that timed
   const timedOut: ProcessResult = { kind: 'timedOut', timeoutMs: 15_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
   const { c } = client({ [LIST_QUIET]: timedOut });
   assert.deepEqual(await c.run('status'), { kind: 'wslFailed', message: 'wsl.exe did not answer within 15000 ms', verb: 'status' });
+});
+
+test('§15p: the wsl.exe questions\' ceiling reads its setting (wslCare.timeouts.wslListSeconds) — 40 s set, 40 s handed to the runner', async () => {
+  const rec = recordingRunner({ [LIST_QUIET]: exitedUtf16(0, 'Ubuntu' + String.fromCharCode(13, 10)), [LIST_VERBOSE]: exitedUtf16(0, verboseTable([{ name: 'Ubuntu', running: false }], 'Ubuntu')), [LIST_RUNNING]: exitedUtf16(0, '') });
+  const c = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '', numbers: () => ({ ...DEFAULT_NUMBERS, wslListSeconds: 40 }) });
+  await c.run('status');
+  assert.ok(rec.requests.length > 0 && rec.requests.every((r) => r.timeoutMs === 40_000), JSON.stringify(rec.requests.map((r) => r.timeoutMs)));
 });

@@ -139,6 +139,15 @@ test('Clean selected = ONE act call holding every selected id; the second confir
   assert.match(w.modals[0]?.message ?? '', /the 3 selected rows/);
 });
 
+test('§15p: the preview rounds read their setting — at 1, an expired preview is taken ONCE and then the flow says so', async () => {
+  let previews = 0;
+  const w = world({ [PREVIEW_A4]: () => { previews += 1; return exited(0, previewText()); } });
+  w.numbers = { ...DEFAULT_NUMBERS, previewRounds: 1 };
+  w.onModal = () => { w.clock.now += PREVIEW_EXPIRY_MS + 1; };
+  assert.equal((await w.flow.clean(['A4'], false)).kind, 'expired');
+  assert.equal(previews, 1);
+});
+
 test('§15q: the preview\'s expiry reads its setting — at 1 minute, a preview 61 s old is taken again', async () => {
   const w = world({ [PREVIEW_A4]: exited(0, previewText()) });
   w.numbers = { ...DEFAULT_NUMBERS, previewExpiryMinutes: 1 };

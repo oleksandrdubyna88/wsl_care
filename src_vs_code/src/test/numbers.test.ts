@@ -7,6 +7,7 @@ import { CleanupJournal } from '../cleanup/journal';
 import { followPollOf, FOLLOW_POLL } from '../cleanup/runFollower';
 import { parseLogsMessage } from '../logsPage/logsMessages';
 import { DEFAULT_NUMBERS, NUMBER_NAMES, NUMBER_SETTINGS, numberOf, readNumbers } from '../settings/numbers';
+import { WSL_LIST_MEASURED_S } from '../client/worstCases';
 import { MapStore } from './support/memento';
 import { EXTENSION_ROOT } from './support/paths';
 
@@ -70,11 +71,17 @@ test('a value read back is an integer inside its range: out of range clamped, an
 test('a configured number reaches its use: the poll, the journal\'s budget, the Logs page\'s index bound', async () => {
   assert.deepEqual(followPollOf({ ...DEFAULT_NUMBERS, followPollSeconds: 10, followCeilingMinutes: 60, requestGraceSeconds: 120 }), { intervalMs: 10_000, ceilingMs: 3_600_000, graceMs: 120_000 });
   assert.deepEqual(FOLLOW_POLL, { intervalMs: 4_000, ceilingMs: 1_800_000, graceMs: 90_000 }, 'the defaults');
-  const journal = new CleanupJournal(new MapStore(), () => Date.parse('2026-10-05T10:00:00Z'), () => 2);
+  const journal = new CleanupJournal(new MapStore(), () => Date.parse('2026-10-05T10:00:00Z'), () => ({ ...DEFAULT_NUMBERS, journalEntries: 2 }));
   const entry = { kind: 'unresolved', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: '2026-10-05T10:00:00.000Z' } as const;
   assert.ok(await journal.add(entry));
   assert.ok(await journal.add(entry));
   assert.equal(await journal.add(entry), undefined, 'a budget of 2 refuses the third');
   assert.deepEqual(parseLogsMessage({ type: 'expand', index: 150 }, 100), undefined);
   assert.deepEqual(parseLogsMessage({ type: 'expand', index: 150 }, 200), { type: 'expand', index: 150 });
+});
+
+test('§15p: the wsl.exe questions\' ceiling has a minimum above their measured time — a hundred times the measured 50 ms', () => {
+  assert.ok(NUMBER_SETTINGS.wslListSeconds.minimum > WSL_LIST_MEASURED_S);
+  assert.equal(NUMBER_SETTINGS.wslListSeconds.minimum, WSL_LIST_MEASURED_S * 100);
+  assert.equal(NUMBER_SETTINGS.wslListSeconds.default, 15, 'today\'s 15 s');
 });

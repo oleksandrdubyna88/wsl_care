@@ -430,3 +430,15 @@ test('review: a detail that comes back after its run was collapsed, or after the
     assert.equal(w.view().runList.rows[1]?.detail[0]?.state, 'answered');
   });
 });
+
+test('§15p: a daemon that answers `limits.historyRetentionDays` 30 — the picker, the clamp and its words use the daemon\'s 30, not a constant', async () => {
+  await withZone(KYIV, async () => {
+    const w = new World();
+    const status = statusWith(RUN);
+    w.status = status.kind === 'answered' && status.answer.verb === 'status' ? { ...status, answer: { ...status.answer, body: { ...status.answer.body, limits: { historyRetentionDays: 30 } } } } : status;
+    await w.controller.receive({ type: 'day', day: '2026-01-01' });
+    assert.equal(w.view().picker.min, '2026-09-06');
+    assert.equal(w.tails()[0], 'logs --from 2026-09-05T21:00:00Z --to 2026-09-06T21:00:00Z --json');
+    assert.match(w.view().periodLabel, /clamped to the 30 days the daemon keeps/);
+  });
+});

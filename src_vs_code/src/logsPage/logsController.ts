@@ -5,6 +5,7 @@ import { failureText } from '../failureText';
 import type { ViewLevel } from '../panel/view';
 import { isJson, list } from '../panel/read';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import { daemonLimitsOf } from '../shared/daemonLimits';
 import { RUN_ID_SHAPE } from '../shared/shapes';
 import { parseLogsMessage, type LogsMessage } from './logsMessages';
 import type { LogsState, LogsView, ReadState } from './logsView';
@@ -215,7 +216,7 @@ export class LogsController {
     this.show = IDLE;
     this.details.clear();
     this.runIds = [];
-    this.window = period.kind === 'thisRun' ? undefined : windowOf(period, this.options.wallNow());
+    this.window = period.kind === 'thisRun' ? undefined : windowOf(period, this.options.wallNow(), this.retentionDays());
 
     return ++this.generation;
   }
@@ -265,7 +266,7 @@ export class LogsController {
   private async readPeriod(period: Period): Promise<void> {
     const generation = ++this.generation;
     this.details.clear();
-    this.window = period.kind === 'thisRun' ? undefined : windowOf(period, this.options.wallNow());
+    this.window = period.kind === 'thisRun' ? undefined : windowOf(period, this.options.wallNow(), this.retentionDays());
     const reads = readsFor(period, this.window);
     this.mark(reads, READING);
     await this.post();
@@ -335,9 +336,14 @@ export class LogsController {
     return Promise.resolve();
   }
 
+  /** The days of history the DAEMON keeps, from its newest status (`shared/daemonLimits.ts`; 90 until it says). */
+  private retentionDays(): number {
+    return daemonLimitsOf(statusBody(this.options.status())).historyRetentionDays;
+  }
+
   /** The window the answers were read for — computed only before the first read of a persisted selection. */
   private windowOfCurrent(now: number): PeriodWindow | undefined {
-    return this.current.kind === 'thisRun' ? undefined : (this.window ?? windowOf(this.current, now));
+    return this.current.kind === 'thisRun' ? undefined : (this.window ?? windowOf(this.current, now, this.retentionDays()));
   }
 
   private state(): LogsState {
@@ -346,7 +352,8 @@ export class LogsController {
     return {
       period: this.current,
       window: this.windowOfCurrent(now),
-      retained: retainedDays(now),
+      retained: retainedDays(now, this.retentionDays()),
+      retentionDays: this.retentionDays(),
       logs: this.logs,
       runs: this.runs,
       show: this.show,
