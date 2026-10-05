@@ -62,7 +62,7 @@ export class CleanupHost {
 
   constructor(private readonly options: CleanupHostOptions) {
     this.ui = sanitised(options.ui);
-    this.journal = new CleanupJournal(options.durable);
+    this.journal = new CleanupJournal(options.durable, options.wallNow);
     this.follower = new RunFollower({
       journal: this.journal, status: options.askStatus, read: options.read, show: (result) => this.shown(result),
       afterTerminal: options.refreshPanel, focused: options.focused, wallNow: options.wallNow, timers: options.timers,
