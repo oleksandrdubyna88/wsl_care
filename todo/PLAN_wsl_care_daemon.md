@@ -1038,35 +1038,11 @@ round*).
 | coai #24 | the Select tick posted `{type: 'none'}` | **Fixed** — it toggles and posts nothing |
 | coai #25 | `runs show` every tick while status and history disagree | **Fixed** — one per leaving flight |
 
-### 15p. E6.S4 review round (coai code round + two own reviews, 2026-10-05)
-
-The coai code round over E6.S4 (verdict **proceed**, all 4 reviewers; 6 findings — 3 accepted, 3 rejected), the own
-security review (no findings; one note below the threshold, folded into K3) and the own correctness review (C1–C7), with
-the coordinator's dispositions. Every accepted finding landed RED → GREEN → RED (its load-bearing line broken, restored by
-SHA-256) — the record is `research/module_tests.md` § *The E6.S4 review round*. The owner's answers to E6.S4's open
-questions: the trend table instead of a drawn sparkline — **accepted**; ONE *Logs* button for the last cleanup — fine for
-now; the act side of §15o — **yes** (C7); the host tier's one `EPERM` while removing its temp folder — kept recorded,
-investigated if it recurs (it did not recur in this round's run).
-
-| # | Finding | Disposition |
-|---|---|---|
-| K1 (coai) | `logsController.test.ts` held its own async copy of `support/zone.ts`'s `withZone` | **Fixed** — `withZone` restores when a returned promise settles; the copy is gone. Found while giving the test teeth: `delete process.env.TZ` does NOT reset Node's zone cache, so the helper leaked its zone into every later test of a file (measured); it now SETS the machine's zone back before deleting the variable, and its test runs in a file of its own (`zone.test.ts`) |
-| K2 (coai) | `runReadTail` sent the union tag as the CLI verb | **Fixed** — `RUN_READ_VERBS`, an explicit `{ [K in RunReadName]: readonly string[] }` table; a new read does not compile until its verb is written |
-| K3 (coai) + the security review's note | a fast double press of *Logs* could create two `WebviewPanel`s (an await before `createWebviewPanel`); a restored panel replaced an open one | **Fixed** — `logsPage/panelSlot.ts`: the panel is created or revealed synchronously, before any await; a panel VS Code restores while one is open is disposed and the open one revealed; a late dispose of an older panel never empties the slot of a newer one |
-| R1–R3 (coai) | three findings whose premise was a 15-minute timer — the run list, the history read and the payload of a 90-day window treated as tens of thousands of lines | **Rejected** — the daemon's timer is `OnCalendar=*-*-* 00/4:00:00` (`src_daemon/systemd/wsl-care.timer`): six runs a day, 540 in the 90 days the daemon keeps, under ~1 000 with every button press — the bounds already in place (`MAX_RUN_INDEX` 9 999, the 20 s read ceiling, `logs` reading history lines only) hold with room |
-| C1 (Important) | an unreadable history (exit 4, the daemon's `problem` with all-zero figures, `RunLogs.Logs` / `RunShow.Read`) was shown as fact; `runs show` then said "unknown — it never existed" | **Fixed** — an answer carrying a string `problem` is its own state (`unreadable`): every block, the run list, *This run* and an expanded detail say "the run history could not be read: <problem> — no figures" (through `safeText`), and show no figure. The client already answered exit 4 with a body; a test now holds it for `logs` and `runs`. The fixtures are the goldens with `problem` added in the test (no daemon golden carries one) |
-| C2 | the window label was recomputed at every render — past local midnight day D's answers were relabelled D+1 | **Fixed** — the window is built when a read starts (`readsFor(period, window)`) and kept beside its answers; a render never recomputes it |
-| C3 | "no cleanup is recorded yet" when `status` had not answered or had failed | **Fixed** — three reasons: "status has not been read yet", "status did not answer: <label>", "no cleanup is recorded yet"; the panel's store change re-posts the Logs view (`statusChanged`) |
-| C4 | every render wiped the date inputs | **Fixed** — the header and the picker are built once and updated in place: `min` / `max` always, a value only while the input still holds what the page last set |
-| C5 | `ready` re-read and collapsed the expanded runs on every tab return | **Fixed** — `ready` posts the answers held for the current period and reads only when it holds none; `refresh` still reads |
-| C6 | a flash of the old period's answer under the new period's label (the selection set before the persist await, the generation bumped only when the read started) | **Fixed** — a selection begins synchronously: its generation, its cleared slots and its window before the await; a selection superseded while it was written is not read |
-| C7 (§15o, the open question) | an act entry could be resolved by a manual line of kind `collect` carrying its ids | **Fixed** — an act's line must be `kind === undefined || kind === "act"`, symmetric with the full check's. Precondition met: the daemon stamps `act` on every act-origin line (§15o on `fix/wc-full-check-line-names-collect` — the terminal line, the request sweep, the running-state sweep and the refusal carry the request's kind) |
-| tests green with a bug | absent ≠ 0, the stale-detail guard, the midnight rollover, exit 4 on run reads, the act negative case | **Added** — each with its teeth shown by mutation; the stale-detail guard's generation check first looked redundant (its mutant survived) until the case it guards was written: expand, Refresh, expand the same line again — the old list's late answer must not fill it |
-
 ### 15o. A full check's history line names itself — `kind` (daemon follow-up of the E6.S3 review round, B2; 2026-10-05)
 
 > Status: **built 2026-10-05; coai code round proceed and its review round fixed (table at the end of this section)** — the
-> extension's half (E6.S4) is still open, so the section stays here. **Deviations:** the three "a requested run that never did its work" writers
+> extension's half is built on `feat/wc-e6-cleanup-logs` (PR #12: kind first, and an act line without a kind or with `act`
+> — the E6.S3 row and §15p C7), not merged until `extension-v0.1.0` is tagged, so the section stays here. **Deviations:** the three "a requested run that never did its work" writers
 > (`DetachedRuns.Refused`, `DetachedRuns.CutOff`, `RequestSweep`'s swept request) take ONE line from a new
 > `RunRequestFile.TerminalLine` instead of three copies; the prefixes are `Records/HistoryReasons` (the unusable prefix a
 > named `RequestSweep.UnusablePrefix`); the RED test and the reason enumeration live in a new `Cli.Tests/FullCheckLineTests`
@@ -2590,6 +2566,32 @@ names; the text above was updated to match.
 | m-n | the owner's ask (2) is met only for existing keys | **Accepted**, in the DoD | D5, DoD |
 | m-o | a user-layer digest in `status` so an outside change is noticed | **Accepted** — added to E7.S0 | R1.7, E7.S0 |
 | Q1–Q12 | the proposed defaults | **Accepted as working assumptions**, still listed for the owner | open questions |
+
+### 15p. E6.S4 review round (coai code round + two own reviews, 2026-10-05)
+
+The coai code round over E6.S4 (verdict **proceed**, all 4 reviewers; 6 findings — 3 accepted, 3 rejected), the own
+security review (no findings; one note below the threshold, folded into K3) and the own correctness review (C1–C7), with
+the coordinator's dispositions. Every accepted finding landed RED → GREEN → RED (its load-bearing line broken, restored by
+SHA-256) — the record is `research/module_tests.md` § *The E6.S4 review round*. The owner's answers to E6.S4's open
+questions: the trend table instead of a drawn sparkline — **accepted**; ONE *Logs* button for the last cleanup — fine for
+now; the act side of §15o — **yes** (C7); the host tier's one `EPERM` while removing its temp folder — kept recorded,
+investigated if it recurs (it did not recur in this round's run).
+
+| # | Finding | Disposition |
+|---|---|---|
+| K1 (coai) | `logsController.test.ts` held its own async copy of `support/zone.ts`'s `withZone` | **Fixed** — `withZone` restores when a returned promise settles; the copy is gone. Found while giving the test teeth: `delete process.env.TZ` does NOT reset Node's zone cache, so the helper leaked its zone into every later test of a file (measured); it now SETS the machine's zone back before deleting the variable, and its test runs in a file of its own (`zone.test.ts`) |
+| K2 (coai) | `runReadTail` sent the union tag as the CLI verb | **Fixed** — `RUN_READ_VERBS`, an explicit `{ [K in RunReadName]: readonly string[] }` table; a new read does not compile until its verb is written |
+| K3 (coai) + the security review's note | a fast double press of *Logs* could create two `WebviewPanel`s (an await before `createWebviewPanel`); a restored panel replaced an open one | **Fixed** — `logsPage/panelSlot.ts`: the panel is created or revealed synchronously, before any await; a panel VS Code restores while one is open is disposed and the open one revealed; a late dispose of an older panel never empties the slot of a newer one |
+| R1–R3 (coai) | three findings whose premise was a 15-minute timer — the run list, the history read and the payload of a 90-day window treated as tens of thousands of lines | **Rejected** — the daemon's timer is `OnCalendar=*-*-* 00/4:00:00` (`src_daemon/systemd/wsl-care.timer`): six runs a day, 540 in the 90 days the daemon keeps, under ~1 000 with every button press — the bounds already in place (`MAX_RUN_INDEX` 9 999, the 20 s read ceiling, `logs` reading history lines only) hold with room |
+| C1 (Important) | an unreadable history (exit 4, the daemon's `problem` with all-zero figures, `RunLogs.Logs` / `RunShow.Read`) was shown as fact; `runs show` then said "unknown — it never existed" | **Fixed** — an answer carrying a string `problem` is its own state (`unreadable`): every block, the run list, *This run* and an expanded detail say "the run history could not be read: <problem> — no figures" (through `safeText`), and show no figure. The client already answered exit 4 with a body; a test now holds it for `logs` and `runs`. The fixtures are the goldens with `problem` added in the test (no daemon golden carries one) |
+| C2 | the window label was recomputed at every render — past local midnight day D's answers were relabelled D+1 | **Fixed** — the window is built when a read starts (`readsFor(period, window)`) and kept beside its answers; a render never recomputes it |
+| C3 | "no cleanup is recorded yet" when `status` had not answered or had failed | **Fixed** — three reasons: "status has not been read yet", "status did not answer: <label>", "no cleanup is recorded yet"; the panel's store change re-posts the Logs view (`statusChanged`) |
+| C4 | every render wiped the date inputs | **Fixed** — the header and the picker are built once and updated in place: `min` / `max` always, a value only while the input still holds what the page last set |
+| C5 | `ready` re-read and collapsed the expanded runs on every tab return | **Fixed** — `ready` posts the answers held for the current period and reads only when it holds none; `refresh` still reads |
+| C6 | a flash of the old period's answer under the new period's label (the selection set before the persist await, the generation bumped only when the read started) | **Fixed** — a selection begins synchronously: its generation, its cleared slots and its window before the await; a selection superseded while it was written is not read |
+| C7 (§15o, the open question) | an act entry could be resolved by a manual line of kind `collect` carrying its ids | **Fixed** — an act's line must be `kind === undefined || kind === "act"`, symmetric with the full check's. Precondition met: the daemon stamps `act` on every act-origin line (§15o on `fix/wc-full-check-line-names-collect` — the terminal line, the request sweep, the running-state sweep and the refusal carry the request's kind) |
+| main moved | `main` gained the daemon's §15o (#16, a629b37): the goldens carry `kind`, and `contracts/history-reasons.json` holds the reason prefixes a reader uses for a line WITHOUT a kind | **Rebased onto `main`**: the follower's fallback prefixes are now EXACTLY the contract file's (two of the three had been shorter copies) — a compiled copy held EQUAL to `contracts/history-reasons.json` by a test, the way `ACTION_IDS` is held to `contracts/actions.json` (the bundle reads no repository file at run time); a reconciled full-check orphan with a readable detail now carries `kind: collect` AND the reconcile's prefix — kind wins (tested); the strict-kind test reads the goldens' kinds |
+| tests green with a bug | absent ≠ 0, the stale-detail guard, the midnight rollover, exit 4 on run reads, the act negative case | **Added** — each with its teeth shown by mutation; the stale-detail guard's generation check first looked redundant (its mutant survived) until the case it guards was written: expand, Refresh, expand the same line again — the old list's late answer must not fill it |
 
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 

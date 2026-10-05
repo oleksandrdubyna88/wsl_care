@@ -71,12 +71,13 @@ function unreadableBlock(running: RunningBlock): boolean {
 /**
  * The reasons of history lines a full check must NOT be matched by although they carry no action (review B2): a request the
  * daemon could not use (`RequestSweep.Unusable`) and an orphaned detail the next run reconciled (`RunReconcile`). The
- * daemon's own words — `research/module_tests.md` cites where each is written.
+ * daemon's own words — since daemon #16 (§15o) its contract file `contracts/history-reasons.json`
+ * (`notAFullCheckWithoutKind`, generated from `HistoryReasons`), which `runFollower.test.ts` holds these equal to.
  */
-const NOT_A_FULL_CHECK: readonly ((reason: string) => boolean)[] = [
-  (reason) => reason.startsWith('refused: its request could not be used'),
-  (reason) => reason.startsWith('the run wrote its detail and ended before its history line'),
-  (reason) => reason.startsWith('the run left a detail that cannot be read'),
+export const NOT_A_FULL_CHECK_PREFIXES: readonly string[] = [
+  'refused: its request could not be used',
+  'the run wrote its detail and ended before its history line (found by the next run\'s reconcile)',
+  'the run left a detail that cannot be read; its start is the second its id names',
 ];
 
 /**
@@ -87,7 +88,7 @@ const NOT_A_FULL_CHECK: readonly ((reason: string) => boolean)[] = [
 function legacyFullCheck(line: RunLine): boolean {
   const ids = line.actions.map((a) => a.id);
 
-  return (ids.length === 0 || sameActions(ids, FULL_CHECK_ACTIONS)) && !NOT_A_FULL_CHECK.some((excluded) => excluded(line.reason));
+  return (ids.length === 0 || sameActions(ids, FULL_CHECK_ACTIONS)) && !NOT_A_FULL_CHECK_PREFIXES.some((prefix) => line.reason.startsWith(prefix));
 }
 
 /**
