@@ -6,8 +6,9 @@ import { randomBytes } from 'node:crypto';
  * `textContent` (`media/panel.js`) — so there is nothing here to escape, and the TypeScript doctrine's
  * `scriptInterpolation` scan stays green with an EMPTY allowlist.
  *
- * <p>The only values interpolated are this render's nonce (128 bits from `crypto.randomBytes`, checked to be hex) and
- * the two `media/` URIs VS Code produced (checked to hold no quote or angle bracket). The CSP allows nothing by
+ * <p>The only values interpolated are this render's nonce (128 bits from `crypto.randomBytes`, checked to be hex), the
+ * two `media/` URIs VS Code produced (checked to hold no quote or angle bracket) and — since E6.S4, when the shell is the
+ * Logs page's — the root id and title of a closed table of this module's own constants (`PAGES`). The CSP allows nothing by
  * default and scripts / styles only by that nonce: no inline handler, no `eval`, no remote load.</p>
  */
 
@@ -15,7 +16,17 @@ export interface ShellParts {
   readonly nonce: string;
   readonly scriptUri: string;
   readonly styleUri: string;
+  /** Which page the shell is for (E6.S4): the side panel (the default) or the Logs page — its root element and title. */
+  readonly page?: Page;
 }
+
+export type Page = 'panel' | 'logs';
+
+/** Each page's root element id (what its script fills) and its title. */
+const PAGES: { readonly [P in Page]: { readonly root: string; readonly title: string } } = {
+  panel: { root: 'panel', title: 'WSL Care' },
+  logs: { root: 'logs', title: 'WSL Care — Logs' },
+};
 
 const NONCE = /^[0-9a-f]{32}$/;
 const SAFE_URI = /^[^"'<>\s]+$/;
@@ -38,6 +49,7 @@ function checked(parts: ShellParts): ShellParts {
 
 export function panelShell(parts: ShellParts): string {
   const { nonce, scriptUri, styleUri } = checked(parts);
+  const page = PAGES[parts.page ?? 'panel'];
 
   return [
     '<!DOCTYPE html>',
@@ -47,10 +59,10 @@ export function panelShell(parts: ShellParts): string {
     `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}';">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<link rel="stylesheet" nonce="${nonce}" href="${styleUri}">`,
-    '<title>AI OS Care</title>',
+    `<title>${page.title}</title>`,
     '</head>',
     '<body>',
-    '<main id="panel"></main>',
+    `<main id="${page.root}"></main>`,
     `<script nonce="${nonce}" src="${scriptUri}"></script>`,
     '</body>',
     '</html>',

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { test } from 'node:test';
-import * as ts from 'typescript';
 
 import * as path from 'node:path';
 
@@ -12,6 +11,7 @@ import type { PanelView } from '../panel/view';
 import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
 import { Element, runPageScript, type Page } from './support/pageHarness';
+import { FORBIDDEN_NAMES, namesIn } from './support/pageSource';
 import { answered, failed, goldenOutcomes, headBody } from './support/outcomes';
 import { GOLDEN_ROOT, goldenSets, PAGE_SCRIPT } from './support/paths';
 
@@ -144,24 +144,6 @@ test('a message that is not a view is ignored — the page renders only what the
   assert.deepEqual(page.posted, [{ type: 'ready' }]);
 });
 
-const FORBIDDEN_NAMES = ['innerHTML', 'outerHTML', 'insertAdjacentHTML', 'write', 'writeln', 'eval', 'Function', 'srcdoc', 'setTimeout', 'setInterval', 'fetch'];
-
-function namesIn(text: string): string[] {
-  const found: string[] = [];
-  const visit = (node: ts.Node): void => {
-    if (ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) {
-      found.push(node.text);
-    }
-    if (ts.isStringLiteralLike(node)) {
-      found.push(node.text);
-    }
-    ts.forEachChild(node, visit);
-  };
-  visit(ts.createSourceFile('panel.js', text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS));
-
-  return found;
-}
-
 test('the page source names no HTML sink, no eval, no timer and no network — read by the parser, not as text', () => {
   const names = namesIn(fs.readFileSync(PAGE_SCRIPT, 'utf8'));
   assert.ok(names.includes('textContent') && names.includes('createElement'), 'the scan reads the real page (its known instances)');
@@ -287,6 +269,14 @@ test('E6.S3: Last cleanup shows the results this window showed and "Docker after
   assert.deepEqual(box.all('li[data-result]').map((li) => [li.textContent, li.dataset.level]), [[hostile, 'warn'], ['Run Y is done', 'ok']]);
   assert.match(box.one('p[data-docker-after]').textContent, /reclaimable \(docker system df, read at /);
   assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
+});
+
+test('E6.S4: Last cleanup carries a Logs button that posts the bare openRunLogs — the host opens THAT run (its id is the host\'s)', () => {
+  const { page, root } = show(cleanupView());
+  const box = root.one('section[data-section="lastCleanup"]').one('div[data-last-cleanup]');
+  page.click(box.one('button[data-run-logs]'));
+  assert.equal(box.one('button[data-run-logs]').textContent, 'Logs');
+  assert.deepEqual(page.posted.at(-1), { type: 'openRunLogs' });
 });
 
 test('E6.S3 review C15: a Select press toggles the tick and posts NOTHING', () => {

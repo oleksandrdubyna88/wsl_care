@@ -31,6 +31,8 @@ export interface PanelActions {
   readonly cleanup: () => CleanupControls;
   /** Called whenever the cleanup state changes (the journal, a result, the optimistic flag); returns an unsubscribe. */
   readonly onCleanupChange: (listener: () => void) => () => void;
+  /** E6.S4: *Logs* beside *Last cleanup* — the Logs page on the run `status.lastCleanup` names. */
+  readonly openRunLogs: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -90,6 +92,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       cleanSelected: (m) => this.actions.clean(m.rowIds, true),
       runFullCheck: () => this.actions.runFullCheck(),
       stop: (m) => this.actions.stop(m.index),
+      openRunLogs: () => this.actions.openRunLogs(),
     };
     if (message !== undefined) {
       (handlers[message.type] as (m: PageMessage) => void)(message);

@@ -48,7 +48,8 @@
   },
   "main": "./dist/extension.js",
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onWebviewPanel:wslCare.logs"
   ],
   "contributes": {
     "viewsContainers": {
@@ -90,12 +91,23 @@
         "command": "wslCare.installDaemon",
         "title": "Install daemon…",
         "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.openLogs",
+        "title": "Logs",
+        "category": "AI OS Care",
+        "icon": "$(history)"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "wslCare.refresh",
+          "when": "view == wslCare.panel",
+          "group": "navigation"
+        },
+        {
+          "command": "wslCare.openLogs",
           "when": "view == wslCare.panel",
           "group": "navigation"
         }

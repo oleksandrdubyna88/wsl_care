@@ -100,7 +100,7 @@ test('it runs on the Windows side, in untrusted and virtual workspaces, activate
   assert.deepEqual(manifest.extensionKind, ['ui']);
   assert.equal(manifest.capabilities.untrustedWorkspaces.supported, true);
   assert.equal(manifest.capabilities.virtualWorkspaces, true);
-  assert.deepEqual(manifest.activationEvents, ['onStartupFinished']);
+  assert.deepEqual(manifest.activationEvents, ['onStartupFinished', 'onWebviewPanel:wslCare.logs'], 'E6.S4: a Logs page open at a reload is restored by its serializer');
   assert.equal(manifest.main, './dist/extension.js');
 });
 
@@ -181,7 +181,8 @@ interface Contributions {
 const contributed = (manifest as unknown as { contributes: Contributions }).contributes;
 
 test('E5 contributes the read-only surface only: the panel view and four argument-free commands, no URI handler', () => {
-  assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl', 'wslCare.installDaemon']);
+  assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl', 'wslCare.installDaemon', 'wslCare.openLogs']);
+  assert.deepEqual(contributed.menus['view/title']?.map((m) => m.command), ['wslCare.refresh', 'wslCare.openLogs'], 'E6.S4: Logs in the panel title (§7.2)');
   assert.deepEqual(contributed.views.wslCare, [{ type: 'webview', id: 'wslCare.panel', name: 'AI OS Care' }]);
   assert.equal(contributed.viewsContainers.activitybar[0]?.id, 'wslCare');
   assert.ok(fs.existsSync(path.join(EXTENSION_ROOT, contributed.viewsContainers.activitybar[0]?.icon ?? '')), 'the activity-bar icon ships');
