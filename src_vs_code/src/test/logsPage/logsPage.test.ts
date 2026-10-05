@@ -280,3 +280,36 @@ test('the page source names no HTML sink, no eval, no timer and no network — r
   assert.ok(names.includes('textContent') && names.includes('createElement'), 'the scan reads the real page (its known instances)');
   assert.deepEqual(FORBIDDEN_NAMES.filter((n) => names.includes(n)), []);
 });
+
+// ---- the E6.S4 review round ----
+
+test('review C4: a render keeps the date inputs — a typed day survives a new view, min / max follow it, an untouched input takes the new value', () => {
+  const { page, root } = show(viewOf());
+  const day = root.one('[data-picker="day"]');
+  const from = root.one('[data-picker="from"]');
+  day.value = '2026-09-20';
+  const next = viewOf({}, { kind: 'yesterday' });
+  page.message({ type: 'view', view: structuredClone({ ...next, picker: { ...next.picker, min: '2026-07-06' } }) });
+  assert.equal(root.one('[data-picker="day"]'), day, 'the same element, not a new one');
+  assert.equal(day.value, '2026-09-20', 'what the person typed is kept');
+  assert.equal(day.attributes.min, '2026-07-06', 'the bounds follow the host');
+  assert.equal(from.value, next.picker.from, 'an input nobody touched shows the new period');
+  page.click(root.one('button[data-show="day"]'));
+  assert.deepEqual(page.posted.filter((m) => (m as { type: string }).type === 'day').at(-1), { type: 'day', day: '2026-09-20' });
+});
+
+test('review: a figure the answer does not carry reads "not answered" or "not recorded" — never 0', () => {
+  const logs = golden('logs-local-day.json');
+  const { freedBytes: _freed, objectsRemoved: _objects, ...withoutTotals } = logs;
+  const metrics = (logs.metrics as Json[]).map((metric, i) => (i === 0 ? { name: metric.name, unit: metric.unit, samples: metric.samples, min: metric.min } : metric));
+  const { timer: _timer, ...counts } = logs.runs as Json;
+  const runs = golden('runs-local-day.json');
+  const lines = (runs.runs as Json[]).map((run, i) => (i === 1 ? Object.fromEntries(Object.entries(run).filter(([key]) => key !== 'freedBytes')) : run));
+  const { root } = show(viewOf({ logs: answered({ ...withoutTotals, metrics, runs: counts }), runs: answered({ ...runs, runs: lines }) }));
+  assert.equal(lineValue(block(root, 'totals'), 'freed'), 'not answered');
+  assert.equal(lineValue(block(root, 'totals'), 'objects'), 'not answered');
+  assert.equal(lineValue(block(root, 'runs'), 'timer'), 'not answered');
+  assert.deepEqual(cells(block(root, 'extremes'), 'metrics')[0]?.slice(1, 3), ['not recorded', '—']);
+  const freed = block(root, 'runList').all('tr[data-run]')[1]?.all('[data-cell]')[4]?.textContent;
+  assert.equal(freed, 'not answered');
+});

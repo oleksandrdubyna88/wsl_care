@@ -59,41 +59,54 @@
     return node;
   }
 
+  // The header — and with it the date picker's inputs — is built ONCE and kept for the page's whole life (review C4): a
+  // render updates it in place, so a day the person is typing is not wiped by the next view. The bounds (min / max) always
+  // follow the host; an input's value only while nobody has changed it since the page last set it.
+
   /** A date input bounded by the retention (min / max): the browser's picker offers no day the daemon no longer keeps. */
-  function dateInput(name, label, value, picker) {
+  function dateInput(name, label) {
     const node = element('input', undefined, { picker: name });
     node.setAttribute('type', 'date');
-    node.setAttribute('min', picker.min);
-    node.setAttribute('max', picker.max);
     node.setAttribute('aria-label', label);
-    node.value = value;
-    return node;
+    return { node: node, shown: undefined };
   }
 
-  function pickerPart(picker) {
-    const box = element('div', undefined, { part: 'picker' });
-    const day = dateInput('day', 'Day', picker.day, picker);
-    const from = dateInput('from', 'From', picker.from, picker);
-    const to = dateInput('to', 'To', picker.to, picker);
-    const showDay = button('Show day', { show: 'day' }, false, function () { return { type: 'day', day: day.value }; });
-    showDay.setAttribute('aria-pressed', picker.dayPressed ? 'true' : 'false');
-    const showRange = button('Show range', { show: 'range' }, false, function () { return { type: 'range', from: from.value, to: to.value }; });
-    showRange.setAttribute('aria-pressed', picker.rangePressed ? 'true' : 'false');
-    [day, showDay, from, to, showRange].forEach(function (node) { box.appendChild(node); });
-    return box;
+  /** The bounds always; the value only when the input still holds what the page last put there (it is not the person's). */
+  function updateInput(input, value, picker) {
+    input.node.setAttribute('min', picker.min);
+    input.node.setAttribute('max', picker.max);
+    if (input.shown === undefined || input.node.value === input.shown) {
+      input.node.value = value;
+      input.shown = value;
+    }
   }
+
+  const inputs = { day: dateInput('day', 'Day'), from: dateInput('from', 'From'), to: dateInput('to', 'To') };
+  const showDay = button('Show day', { show: 'day' }, false, function () { return { type: 'day', day: inputs.day.node.value }; });
+  const showRange = button('Show range', { show: 'range' }, false, function () { return { type: 'range', from: inputs.from.node.value, to: inputs.to.node.value }; });
+  const picker = element('div', undefined, { part: 'picker' });
+  [inputs.day.node, showDay, inputs.from.node, inputs.to.node, showRange].forEach(function (node) { picker.appendChild(node); });
+
+  function updatePicker(model) {
+    updateInput(inputs.day, model.day, model);
+    updateInput(inputs.from, model.from, model);
+    updateInput(inputs.to, model.to, model);
+    showDay.setAttribute('aria-pressed', model.dayPressed ? 'true' : 'false');
+    showRange.setAttribute('aria-pressed', model.rangePressed ? 'true' : 'false');
+  }
+
+  const heading = element('h1', '', { heading: '' });
+  const periods = element('div', undefined, { part: 'periods' });
+  const periodLabel = element('p', '', { 'period-label': '' });
+  const top = element('header', undefined, { part: 'header' });
+  [heading, notice, periods, picker, periodLabel].forEach(function (node) { top.appendChild(node); });
 
   function header(view) {
-    const top = element('header', undefined, { part: 'header' });
-    top.appendChild(element('h1', view.heading, { heading: '' }));
+    heading.textContent = view.heading;
     updateNotice(view);
-    top.appendChild(notice);
-    const bar = element('div', undefined, { part: 'periods' });
-    view.periods.forEach(function (model) { bar.appendChild(periodButton(model)); });
-    bar.appendChild(button('Refresh', { action: 'refresh' }, false, function () { return { type: 'refresh' }; }));
-    top.appendChild(bar);
-    top.appendChild(pickerPart(view.picker));
-    top.appendChild(element('p', view.periodLabel, { 'period-label': '' }));
+    periods.replaceChildren(...view.periods.map(periodButton), button('Refresh', { action: 'refresh' }, false, function () { return { type: 'refresh' }; }));
+    updatePicker(view.picker);
+    periodLabel.textContent = view.periodLabel;
     return top;
   }
 

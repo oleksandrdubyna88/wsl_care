@@ -164,6 +164,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     vscode.commands.registerCommand('wslCare.installDaemon', install),
     logs,
     vscode.commands.registerCommand('wslCare.openLogs', () => logs.show()),
+    { dispose: store.onChange(() => logs.statusChanged()) },
     vscode.window.registerWebviewPanelSerializer(LogsPanel.viewType, { deserializeWebviewPanel: (restored) => { logs.restore(restored); return Promise.resolve(); } }),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
     vscode.workspace.onDidChangeConfiguration((event) => configurationChanged(event, parts, panel)),

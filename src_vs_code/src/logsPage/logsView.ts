@@ -94,7 +94,9 @@ export type ReadState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'reading' }
   | { readonly kind: 'answered'; readonly body: JsonObject }
-  | { readonly kind: 'failed'; readonly sentence: string };
+  | { readonly kind: 'failed'; readonly sentence: string }
+  /** The daemon answered, but could not read its history (`problem`, exit 4 — review C1): no figure is a fact. */
+  | { readonly kind: 'unreadable'; readonly problem: string };
 
 /** Everything the view is built from — the host's state, nothing the page holds. */
 export interface LogsState {

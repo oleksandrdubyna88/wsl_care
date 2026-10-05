@@ -8,7 +8,7 @@ import { RUN_ID_SHAPE } from '../shared/shapes';
 import { parseLogsMessage, type LogsMessage } from './logsMessages';
 import type { LogsState, LogsView, ReadState } from './logsView';
 import { buildLogsView } from './logsViewModel';
-import { periodOf, readsOf, retainedDays, windowOf, type Period } from './period';
+import { periodOf, readsFor, retainedDays, windowOf, type Period, type PeriodWindow } from './period';
 
 /**
  * The Logs page's host side (plan §7.4, §15j M7 / M8) — vscode-free, so every decision is tested without a window
@@ -22,7 +22,15 @@ import { periodOf, readsOf, retainedDays, windowOf, type Period } from './period
  *   dropped before anything happens; a well-formed one the host cannot honour (a range ending first, *This run* with no
  *   cleanup recorded, an index past the list, a line without a daemon run id, a daemon that does not advertise the
  *   capability) is told on the page and starts no process either.
- * - **Answers to a period no longer selected are dropped** (a generation count): the newest selection wins.
+ * - **Answers to a period no longer selected are dropped** (a generation count): the newest selection wins. A new
+ *   selection begins SYNCHRONOUSLY — its generation, its cleared slots and its window before the persist await — so no
+ *   render shows the old period's figures under the new label (review C6).
+ * - **The window shown is the one the answers were read for** (review C2): built when a read starts, never per render — so
+ *   past local midnight Today's answers are not relabelled as the next day.
+ * - **An answer carrying `problem`** (the daemon could not read its history, exit 4) is its own state, `unreadable`: its
+ *   zero figures and its "unknown" are never shown as facts (review C1).
+ * - **`status` not read, failed, or answered without a cleanup** are three different reasons for a greyed *This run*,
+ *   and a new `status` re-posts the view (`statusChanged`, review C3).
  */
 
 /** The `globalState` key of the selected period. Versioned: a later shape is a new key, never a reinterpretation. */
@@ -73,13 +81,25 @@ function advertised(status: VerbOutcome | undefined): readonly unknown[] | undef
   return Array.isArray(capabilities) ? capabilities : undefined;
 }
 
-/** Why *This run* is greyed: no cleanup recorded, or a daemon without `runs show` — '' while it shows a run already. */
+/**
+ * Why there is no last cleanup to open (review C3): `status` not read yet, `status` failed (its label), or answered
+ * without a `lastCleanup` — three different facts, never all "no cleanup is recorded".
+ */
+function noRunReason(status: VerbOutcome | undefined): string {
+  if (status === undefined) {
+    return 'status has not been read yet';
+  }
+
+  return status.kind === 'answered' ? 'no cleanup is recorded yet' : `status did not answer: ${failureText(status).label}`;
+}
+
+/** Why *This run* is greyed: no run to open, or a daemon without `runs show` — '' while it shows a run already. */
 function thisRunReason(period: Period, status: VerbOutcome | undefined): string {
   if (period.kind === 'thisRun') {
     return '';
   }
 
-  return lastCleanupRun(status) === undefined ? 'no cleanup is recorded yet' : missingCapability(status, 'run');
+  return lastCleanupRun(status) === undefined ? noRunReason(status) : missingCapability(status, 'run');
 }
 
 const NO_RUN_ID = 'That line carries no run id the daemon writes, so its objects cannot be read.';
@@ -91,8 +111,16 @@ export function lastCleanupPeriod(status: VerbOutcome | undefined): Period | und
   return runId === undefined ? undefined : { kind: 'thisRun', runId };
 }
 
+/**
+ * An answer, read: one carrying `problem` (the daemon could not read the history — exit 4, review C1) is its OWN state, so
+ * its zero figures and its "unknown" are never shown as facts.
+ */
+function answerOf(body: JsonObject): ReadState {
+  return typeof body.problem === 'string' && body.problem !== '' ? { kind: 'unreadable', problem: body.problem } : { kind: 'answered', body };
+}
+
 function stateOf(outcome: ReadOutcome): ReadState {
-  return outcome.kind === 'read' ? { kind: 'answered', body: outcome.body } : { kind: 'failed', sentence: failureText(outcome).sentence };
+  return outcome.kind === 'read' ? answerOf(outcome.body) : { kind: 'failed', sentence: failureText(outcome).sentence };
 }
 
 export class LogsController {
@@ -107,6 +135,8 @@ export class LogsController {
   private noticeLevel: ViewLevel = 'none';
   private generation = 0;
   private rendered: number | undefined;
+  /** The window the slots' reads were BUILT for (review C2) — never recomputed for a render, only when a read starts. */
+  private window: PeriodWindow | undefined;
 
   constructor(private readonly options: LogsControllerOptions) {
     this.current = periodOf(options.durable.get(LOGS_PERIOD_KEY)) ?? TODAY;
@@ -114,6 +144,11 @@ export class LogsController {
 
   period(): Period {
     return this.current;
+  }
+
+  /** The store's `status` changed (review C3): *This run* and the capability gate follow it — the view is re-posted. */
+  statusChanged(): void {
+    void this.post();
   }
 
   lastRendered(): number | undefined {
@@ -138,7 +173,7 @@ export class LogsController {
 
   private handle(message: LogsMessage): Promise<void> {
     const handlers: { readonly [K in LogsMessage['type']]: (m: Extract<LogsMessage, { type: K }>) => Promise<void> } = {
-      ready: () => this.refresh(),
+      ready: () => (this.hasAnswer() ? this.post() : this.refresh()),
       refresh: () => this.refresh(),
       today: () => this.select({ kind: 'today' }),
       yesterday: () => this.select({ kind: 'yesterday' }),
@@ -154,9 +189,32 @@ export class LogsController {
   }
 
   private thisRun(): Promise<void> {
-    const runId = lastCleanupRun(this.options.status());
+    const status = this.options.status();
+    const runId = lastCleanupRun(status);
 
-    return runId === undefined ? this.tell('There is no run to show: no cleanup is recorded yet.') : this.select({ kind: 'thisRun', runId });
+    return runId === undefined ? this.tell(`There is no run to show: ${noRunReason(status)}.`) : this.select({ kind: 'thisRun', runId });
+  }
+
+  /** Whether the slots hold an answer (or a read in flight) for the current selection — review C5: a returning tab is shown it. */
+  private hasAnswer(): boolean {
+    return this.current.kind === 'thisRun' ? this.show.kind !== 'idle' : this.logs.kind !== 'idle' || this.runs.kind !== 'idle';
+  }
+
+  /**
+   * The selection changes NOW, before any await (review C6): a new generation, the old answers dropped, the new window —
+   * so no render, of any cause, shows the old period's figures under the new period's label.
+   */
+  private begin(period: Period): number {
+    this.current = period;
+    this.notice = '';
+    this.logs = IDLE;
+    this.runs = IDLE;
+    this.show = IDLE;
+    this.details.clear();
+    this.runIds = [];
+    this.window = period.kind === 'thisRun' ? undefined : windowOf(period, this.options.wallNow());
+
+    return ++this.generation;
   }
 
   private range(from: string, to: string): Promise<void> {
@@ -172,7 +230,8 @@ export class LogsController {
 
   /**
    * Makes `period` the selection WITHOUT reading it — for a page about to load, whose `ready` reads it (so a new page is
-   * read once). Refused with its reason when the daemon may not be asked for it; true when it was persisted.
+   * read once). Refused with its reason when the daemon may not be asked for it; true when it was persisted and is still
+   * the selection (a later one may have begun while it was written).
    */
   async choose(period: Period): Promise<boolean> {
     const refusal = this.refusalFor(period);
@@ -180,11 +239,10 @@ export class LogsController {
       await this.tell(refusal);
       return false;
     }
-    this.current = period;
-    this.notice = '';
+    const generation = this.begin(period);
     await this.options.durable.update(LOGS_PERIOD_KEY, period);
 
-    return true;
+    return generation === this.generation;
   }
 
   /** A new selection: refused with its reason, or PERSISTED first and then read. */
@@ -204,7 +262,8 @@ export class LogsController {
   private async readPeriod(period: Period): Promise<void> {
     const generation = ++this.generation;
     this.details.clear();
-    const reads = readsOf(period, this.options.wallNow());
+    this.window = period.kind === 'thisRun' ? undefined : windowOf(period, this.options.wallNow());
+    const reads = readsFor(period, this.window);
     this.mark(reads, READING);
     await this.post();
     const outcomes = await Promise.all(reads.map((request) => this.options.read(request)));
@@ -273,12 +332,17 @@ export class LogsController {
     return Promise.resolve();
   }
 
+  /** The window the answers were read for — computed only before the first read of a persisted selection. */
+  private windowOfCurrent(now: number): PeriodWindow | undefined {
+    return this.current.kind === 'thisRun' ? undefined : (this.window ?? windowOf(this.current, now));
+  }
+
   private state(): LogsState {
     const now = this.options.wallNow();
 
     return {
       period: this.current,
-      window: this.current.kind === 'thisRun' ? undefined : windowOf(this.current, now),
+      window: this.windowOfCurrent(now),
       retained: retainedDays(now),
       logs: this.logs,
       runs: this.runs,
