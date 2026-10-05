@@ -2633,14 +2633,25 @@ poller, install or store module imports `root/`):
 - **`modalText.ts`** — the modals' words: A4 bound to its list (and the cap line past 10 000), A5 / A6 / A7 "re-checked at run
   time", the second confirmation naming `containers.stoppedOlderThanDays`, `images.unusedOlderThanDays`, `auto.A8`,
   `processes.idleOlderThanHours`, `auto.A12`; every daemon string through `safeText` and cut (names to 80 characters).
-- **`journal.ts`** — `globalState` key `wslCare.cleanup.journal.v1`: the runs this extension started that have had no terminal
-  answer SHOWN, and the unresolved confirms; read as untrusted on every load (an invalid entry is dropped); at most 32.
-- **`runFollower.ts`** — the durable poll (M6): only while a journal entry is open (another window's only while focused) or,
-  focused, `status.running` is queued / live; every 4 s; `status` only, and ONE `runs show` when a followed run is no longer
-  in flight; `unknown` (and a state this build does not know) is terminal; past 30 minutes an entry ends "state unknown"
-  with its run id. An unresolved confirm is adopted from `status.running` (trigger `manual`, exactly its actions) or, after
-  the request grace (90 s), resolved from `runs --from <the confirm> --to <now>`: one match is the run, none "never ran",
-  several shown as candidates. A full check's history line records NO action (its running block names `["collect"]`).
+- **`journal.ts`** — `globalState` key `wslCare.cleanup.journal.v2` (`{ entries, removed }`): the runs this extension started
+  that have had no terminal answer SHOWN, and the unresolved confirms; read as untrusted on every load (an invalid entry, an
+  instant that does not exist or lies more than 5 minutes ahead, is dropped); at most 32 — past it a new entry is REFUSED, none
+  evicted. Windows share it: no cached copy, serialised writes read back one turn later and re-applied, tombstones merged,
+  and a result is shown by the window whose claim stands. `vscode.Memento` has only `update(key, value)`, so this is advisory;
+  the residual race is in the module's header.
+- **`runFollower.ts`** + **`runMatching.ts`** (its pure decisions) — the durable poll (M6): only while a journal entry this
+  window may follow is open (its own always, another window's only while focused — the same predicate decides what a tick
+  settles) or, focused, the store's newest `status.running` is queued / live (so it starts from idle); every 4 s; `status`
+  only, and ONE `runs show` each time a followed run leaves flight; entries settled 4 at a time, each in its own `try`; one
+  panel round a tick; `unknown` (and a state this build does not know) is terminal. Nothing ends on no evidence: past 30
+  minutes an entry ends "state unknown" with its run id only after a status answered for its distribution and its record was
+  read once; a failing read is tried 3 times with backoff, then "the record could not be read". An unresolved confirm is
+  adopted from `status.running` (trigger `manual`, exactly its actions, queued / live / wedged), waited on while a matching
+  run may be in flight or the block cannot be read, and otherwise — after the request grace (90 s) — resolved from `runs` over
+  its window, both ends widened by a 5-minute clock skew and no further back than the 90-day retention: one match is the run,
+  none "never ran", several candidates. A full check's line is `[]` (completed) or `["collect"]` (refused / cut off / swept);
+  an unusable-request or reconciled-orphan line never matches. A run no entry follows (the timer's) is watched while focused
+  and its result shown once.
 - **`runAnswers.ts`** — `runs show` / `runs` read as untrusted (enums through `readEnum`, run ids through `runIdOf`).
 - **`cleanupView.ts`** — the controls: "Cleaning… A4" / "Queued… A4" / "Wedged: …" from `status.running`; a dead run says it
   died and leaves the buttons enabled; the capability gate's "Update daemon" sentence; a journal entry of this distribution
@@ -2650,7 +2661,11 @@ poller, install or store module imports `root/`):
 - **`resultText.ts`** — the hand-off and the terminal answer in words; a refusal's words are `rootFailureText.ts`'s (now in
   the bundle), each exit code of the plan's m3 list distinct.
 - **`cleanupHost.ts`** / **`cleanUi.ts`** / **`cleanRecorder.ts`** — the wiring, the native modal and notifications, and the
-  Test-mode recorder the test API and the node scenarios share.
+  Test-mode recorder the test API and the node scenarios share. Every surface goes through ONE road: `noticeText`
+  (`src/text/safeText.ts`) breaks markdown link syntax, so a daemon string can never become a clickable `command:` link; a
+  fault at a button's detached edge is told and logged to the *WSL Care* log output channel.
+- **`src/shared/shapes.ts`** (the run-id and instant shapes the client, the root ids and the fake share) and
+  **`src/text/format.ts`** (`gb`, `minuteOf`) — one place each.
 
 **The client's two run reads** (`client/verbs.ts`, `WslCareClient.read`): `runs show <runId> --json` and `runs --from <instant>
 --to <instant> --json`, unprivileged, 20 s each; the run id and the instants (`yyyy-MM-ddTHH:mm:ssZ`) checked before any spawn;
