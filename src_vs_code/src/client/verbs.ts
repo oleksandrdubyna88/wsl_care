@@ -49,3 +49,39 @@ export const VERB_TIMEOUT_MS: { readonly [V in Verb]: number } = {
  * gate (`POST_DEPLOY.md`).
  */
 export const PREVIEW_CONTAINER_ASSUMPTION = 100;
+
+/**
+ * The two read verbs about RUNS (E6.S3, plan §15j M3 / M7): read-only and unprivileged like the four above — never `-u`,
+ * never a write — but they take a value, so each is built here from typed parts rather than held as a fixed tail:
+ *
+ * - `runs show <runId> --json` — one run's state (queued / running / done / refused / interrupted / unknown), what the
+ *   panel's durable poll asks ONCE when a run it follows is no longer in flight (§15j M6);
+ * - `runs --from <instant> --to <instant> --json` — the runs of a window, what resolves a confirm whose run id was never
+ *   seen (the coai E6.S2 plan round #3 contract): two RFC 3339 instants, UTC, whole seconds.
+ *
+ * The values are checked by the client before a spawn (`WslCareClient.read`): a run id of the daemon's one spelling, an
+ * instant of exactly `yyyy-MM-ddTHH:mm:ssZ`.
+ */
+export const RUN_READ_NAMES = ['runsShow', 'runs'] as const;
+
+export type RunReadName = (typeof RUN_READ_NAMES)[number];
+
+export type RunRead =
+  | { readonly read: 'runsShow'; readonly runId: string }
+  | { readonly read: 'runs'; readonly from: string; readonly to: string };
+
+/** The daemon tail of a run read — appended after `--exec /opt/wsl-care/bin/wsl-care`. Pure; the values are checked by the caller. */
+export function runReadTail(read: RunRead): readonly string[] {
+  return read.read === 'runsShow' ? ['runs', 'show', read.runId, '--json'] : ['runs', '--from', read.from, '--to', read.to, '--json'];
+}
+
+/**
+ * The ceilings of the run reads (plan §15k #19). Neither starts a child process: `runs show` reads the request folder, the
+ * running state (at most four reads 100 ms apart, `RunningReadRetry.Default`), the history and ONE detail file; `runs` reads
+ * the history of the window's days. Both are the file reads `status` already makes (it reads the history for
+ * `lastCleanup`), so `status`'s 20 s holds for each.
+ */
+export const RUN_READ_TIMEOUT_MS: { readonly [K in RunReadName]: number } = {
+  runsShow: 20_000,
+  runs: 20_000,
+};

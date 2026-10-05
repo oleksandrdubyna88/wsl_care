@@ -1,4 +1,4 @@
-import type { Verb } from './verbs';
+import type { RunReadName, Verb } from './verbs';
 
 /** A JSON object as the client hands it on: keys it does not know are kept and ignored, never an error. */
 export type JsonObject = Readonly<Record<string, unknown>>;
@@ -82,7 +82,18 @@ export type Failure =
   /** A `schemaVersion` major this extension does not know: only THIS verb's view is blanked (plan §6). */
   | { readonly kind: 'needsNewerExtension'; readonly schemaVersion: number }
   /** A released daemon older than `MIN_DAEMON_FOR_RENDER`. */
-  | { readonly kind: 'daemonTooOld'; readonly version: string; readonly minimum: string };
+  | { readonly kind: 'daemonTooOld'; readonly version: string; readonly minimum: string }
+  /** A run read (E6.S3) whose value is not one the daemon writes — a run id or an instant of another shape; nothing was started. */
+  | { readonly kind: 'readRefused'; readonly detail: string };
+
+/**
+ * What one run read (`runs show`, `runs --from --to`, E6.S3) ends in: the answer's body — its schema checked, nothing else
+ * read here — or why not. Exit 4 with a readable answer is still an answer: `runs show` then says the history could not be
+ * read, and answers from the running state and the requests alone.
+ */
+export type ReadOutcome =
+  | { readonly kind: 'read'; readonly read: RunReadName; readonly distro: string; readonly body: JsonObject }
+  | (Failure & { readonly read: RunReadName });
 
 /** What one call of a verb ends in: its answer with the daemon version it was judged against, or why not. */
 export type VerbOutcome =

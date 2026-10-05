@@ -373,3 +373,47 @@ test('root: S2 — a root call that still carries WSLENV in its environment is r
     assert.equal(exitOf(await withEnv([...DAEMON_CALL, 'status', '--json'])).code, 0);
   });
 });
+
+// ---- E6.S3: the two run reads — unprivileged, their values the daemon's own shapes ----
+
+test('run reads: runs show answers the scenario\'s runs-show file with the asked run id; runs answers its window (the positives)', async () => {
+  await within({ ...UBUNTU_RUNNING, runsShow: 'runs-show-done.json' }, async (world) => {
+    const asked = '20261005T100000Z-77';
+    const show = json(await ask(world, [...DAEMON_CALL, 'runs', 'show', asked, '--json']));
+    assert.equal(show.state, 'done');
+    assert.equal(show.runId, asked, 'the asked run id is the one answered');
+    assert.equal((show.run as { runId: string }).runId, asked);
+    const runs = json(await ask(world, [...DAEMON_CALL, 'runs', '--from', '2026-10-05T10:00:00Z', '--to', '2026-10-05T10:05:00Z', '--json']));
+    assert.equal(runs.count, 3);
+  });
+  await within(UBUNTU_RUNNING, async (world) => {
+    assert.equal(json(await ask(world, [...DAEMON_CALL, 'runs', 'show', RUN, '--json'])).state, 'unknown', 'without a scenario file: unknown, as the daemon answers a run it never saw');
+  });
+});
+
+test('run reads: every other shape is refused — a bad run id, an instant without its offset, a window ending first, -u, --period, extra words', async () => {
+  const never: readonly (readonly string[])[] = [
+    [...DAEMON_CALL, 'runs', 'show', '20000101T000000Z-01', '--json'],
+    [...DAEMON_CALL, 'runs', 'show', RUN],
+    [...DAEMON_CALL, 'runs', 'show', RUN, '--json', '--detail'],
+    [...DAEMON_CALL, 'runs', '--from', '2026-10-05', '--to', '2026-10-06', '--json'],
+    [...DAEMON_CALL, 'runs', '--from', '2026-10-05T10:00:00', '--to', '2026-10-05T11:00:00', '--json'],
+    [...DAEMON_CALL, 'runs', '--from', '2026-10-05T11:00:00Z', '--to', '2026-10-05T10:00:00Z', '--json'],
+    [...DAEMON_CALL, 'runs', '--period', 'today', '--json'],
+    [...DAEMON_CALL, 'runs', '--json'],
+    [...DAEMON_CALL, 'runs', 'log', RUN, '--json'],
+    [...ROOT_CALL, 'runs', 'show', RUN, '--json'],
+  ];
+  await within(UBUNTU_RUNNING, async (world) => {
+    for (const argv of never) {
+      const { code, stderr } = exitOf(await ask(world, argv));
+      assert.equal(code, FAKE_EXIT.refused, `${argv.join(' ')} → ${code} ${stderr}`);
+    }
+  });
+});
+
+test('run reads: a run read to a STOPPED distribution is refused like every -d', async () => {
+  await within({ ...UBUNTU_RUNNING, distros: [{ name: 'Ubuntu', running: false }] }, async (world) => {
+    assert.equal(exitOf(await ask(world, [...DAEMON_CALL, 'runs', 'show', RUN, '--json'])).code, FAKE_EXIT.wouldStart);
+  });
+});

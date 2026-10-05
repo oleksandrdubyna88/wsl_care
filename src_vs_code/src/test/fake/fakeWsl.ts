@@ -62,6 +62,10 @@ export interface FakeScenario {
   readonly startable?: boolean;
   /** E6.S2: how the root calls answer — the detach's `result`, a root exit, the root check's exit. */
   readonly root?: FakeRoot;
+  /** E6.S3: the file (in `answers`) `runs show <runId> --json` answers, with the asked run id; `runs-show-unknown.json` by default. */
+  readonly runsShow?: string;
+  /** E6.S3: the file (in `answers`) `runs --from --to --json` answers; `runs-local-day.json` by default. */
+  readonly runs?: string;
 }
 
 /** The root calls' scripted answers (E6.S2); absent, every root call of the closed set answers as the goldens do. */
@@ -193,11 +197,50 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
   if (d !== '-d' || cd !== '--cd' || slash !== '/' || exec !== '--exec' || binary !== DAEMON) {
     return refuse('not the one shape the client sends: -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care <verb>', argv);
   }
+  const runRead = runReadOf(tail);
+  if (runRead !== undefined) {
+    return distroReply(scenario, argv) ?? runReadAnswer(scenario, runRead);
+  }
   if (!ALLOWED_TAILS.some((allowed) => sameTail(tail, allowed))) {
-    return refuse(`outside the four read-only verbs: ${JSON.stringify(tail)}`, argv);
+    return refuse(`outside the four read-only verbs and the two run reads: ${JSON.stringify(tail)}`, argv);
   }
 
   return distroReply(scenario, argv) ?? daemonAnswer(scenario, tail);
+}
+
+// ---- E6.S3: the two run reads — the fake's OWN copy of their shapes ----
+
+/** The one instant shape the client sends, with its offset spelt (the daemon's `LogPeriod.ParseInstants` takes more; the client sends this). */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+type RunReadShape = { readonly read: 'runsShow'; readonly runId: string } | { readonly read: 'runs' };
+
+/** `runs show <runId> --json`, or `runs --from <instant> --to <instant> --json` ending after it starts — or not a run read. */
+function runReadOf(tail: readonly string[]): RunReadShape | undefined {
+  const [verb, first, second, third, fourth, fifth, ...rest] = tail;
+  if (verb !== 'runs' || rest.length > 0) {
+    return undefined;
+  }
+  if (first === 'show' && third === '--json' && fourth === undefined) {
+    return RUN_ID.test(second ?? '') ? { read: 'runsShow', runId: second ?? '' } : undefined;
+  }
+
+  return first === '--from' && third === '--to' && fifth === '--json' && validWindow(second, fourth) ? { read: 'runs' } : undefined;
+}
+
+function validWindow(from: string | undefined, to: string | undefined): boolean {
+  return from !== undefined && to !== undefined && INSTANT.test(from) && INSTANT.test(to) && Date.parse(to) > Date.parse(from);
+}
+
+/** The scenario's answer file, with the asked run id written into it (the top level and its run line). */
+function runReadAnswer(scenario: FakeScenario, shape: RunReadShape): Reply {
+  if (shape.read === 'runs') {
+    return { code: 0, stdout: fs.readFileSync(path.join(scenario.answers, scenario.runs ?? 'runs-local-day.json')), ...delay(scenario) };
+  }
+  const body = readJson(path.join(scenario.answers, scenario.runsShow ?? 'runs-show-unknown.json'));
+  const run = typeof body.run === 'object' && body.run !== null ? { run: { ...(body.run as Record<string, unknown>), runId: shape.runId } } : {};
+
+  return { code: 0, stdout: Buffer.from(JSON.stringify({ ...body, runId: shape.runId, ...run }), 'utf8'), ...delay(scenario) };
 }
 
 /** The distribution of a `-d` call, as wsl.exe treats it — or nothing to say, when the call may go on. */

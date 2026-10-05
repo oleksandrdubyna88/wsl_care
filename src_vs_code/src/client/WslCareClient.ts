@@ -4,9 +4,9 @@ import { wslExecutable } from '../wsl/wslExecutable';
 import { decodeWslText } from '../wsl/wslText';
 import { DAEMON_EXIT } from './exitCodes';
 import { classifyExit, launchFailure, wslRefusal } from './failures';
-import { parseAnswer, parseDaemonVersion, versionRefusal } from './handshake';
-import type { Answer, DaemonVersion, Failure, VerbOutcome } from './outcome';
-import { PREVIEW_CONTAINER_ASSUMPTION, VERB_TIMEOUT_MS, VERBS, type Verb } from './verbs';
+import { checkedBody, parseAnswer, parseDaemonVersion, versionRefusal } from './handshake';
+import type { Answer, DaemonVersion, Failure, JsonObject, ReadOutcome, VerbOutcome } from './outcome';
+import { PREVIEW_CONTAINER_ASSUMPTION, RUN_READ_TIMEOUT_MS, runReadTail, VERB_TIMEOUT_MS, VERBS, type RunRead, type Verb } from './verbs';
 
 /**
  * The extension's one client of the `wsl-care` daemon — and the ONLY module that builds `wsl.exe` argv
@@ -98,6 +98,8 @@ function daemonArgs(distro: string, verb: Verb): string[] {
 
 export class WslCareClient {
   private readonly inFlight = new Map<string, Promise<VerbOutcome>>();
+  /** The run reads in flight, by their tail — two asks for one run share one call. */
+  private readonly readsInFlight = new Map<string, Promise<ReadOutcome>>();
   /** The `--version` call in flight per distribution — `preview` and `doctor` asked at once share it (E5 code round). */
   private readonly versionsInFlight = new Map<string, Promise<DaemonVersion>>();
   private knownVersion: { readonly distro: string; readonly version: DaemonVersion } | undefined;
@@ -150,6 +152,42 @@ export class WslCareClient {
     const target = await this.target(false, distroSettingText(this.options.distroSetting()));
 
     return target.ok ? target.value : target.failure;
+  }
+
+  /**
+   * A run read (E6.S3): `runs show <runId>` or `runs --from <instant> --to <instant>`, unprivileged, with the checks of every
+   * read-only verb and never `startIfStopped`. The values are checked BEFORE anything starts — a run id of the daemon's one
+   * spelling, instants of exactly `yyyy-MM-ddTHH:mm:ssZ` — so nothing a caller holds reaches argv unvalidated. One read of
+   * the same tail FOR THE SAME DISTRIBUTION SETTING in flight is shared, as `run` shares a verb (the setting is part of the
+   * key, as #23 made it for the verbs: a read asked after a switch never joins the previous distribution's).
+   */
+  read(request: RunRead): Promise<ReadOutcome> {
+    const refusal = readRefusal(request);
+    if (refusal !== undefined) {
+      return Promise.resolve({ kind: 'readRefused', detail: refusal, read: request.read });
+    }
+    const setting = distroSettingText(this.options.distroSetting());
+    const key = `${setting}|${runReadTail(request).join(' ')}`;
+    const running = this.readsInFlight.get(key);
+    if (running !== undefined) {
+      return running;
+    }
+    const started = this.readOnce(request, setting).finally(() => this.readsInFlight.delete(key));
+    this.readsInFlight.set(key, started);
+
+    return started;
+  }
+
+  private async readOnce(request: RunRead, setting: string): Promise<ReadOutcome> {
+    const target = await this.target(false, setting);
+    if (!target.ok) {
+      return { ...target.failure, read: request.read };
+    }
+    const { wsl, distro } = target.value;
+    const result = await this.options.runner({ file: wsl, args: daemonArgv(distro, runReadTail(request)), timeoutMs: RUN_READ_TIMEOUT_MS[request.read] });
+    const read = readAnswerOf(result, distro, RUN_READ_TIMEOUT_MS[request.read]);
+
+    return 'body' in read ? { kind: 'read', read: request.read, distro, body: read.body } : { ...read, read: request.read };
   }
 
   private async runOnce(verb: Verb, startIfStopped: boolean, setting: string): Promise<VerbOutcome> {
@@ -327,6 +365,58 @@ function exitedAnswer(result: Extract<ProcessResult, { kind: 'exited' }>, distro
   const parsed = parseAnswer(verb, result.stdout.toString('utf8'));
 
   return 'kind' in parsed ? fail(parsed) : ok(parsed);
+}
+
+/** The daemon's one spelling of a run id (`RunId.TryParse`: no leading zero in the pid) — the same shape `root/rootIds.ts` checks. */
+const RUN_ID = /^[0-9]{8}T[0-9]{6}Z-[1-9][0-9]{0,9}$/;
+
+/** The one instant shape the client sends: UTC, whole seconds — `LogPeriod.ParseInstants` takes it. */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+/** Why a run read may not be built, or `undefined` when it may. */
+function readRefusal(request: RunRead): string | undefined {
+  if (request.read === 'runsShow') {
+    return RUN_ID.test(request.runId) ? undefined : 'that run id is not one the daemon writes (yyyyMMddTHHmmssZ-<pid>)';
+  }
+
+  return instantsRefusal(request.from, request.to);
+}
+
+function instantsRefusal(from: string, to: string): string | undefined {
+  if (!INSTANT.test(from) || !INSTANT.test(to)) {
+    return 'a runs window takes two UTC instants of the shape yyyy-MM-ddTHH:mm:ssZ';
+  }
+
+  return Date.parse(to) > Date.parse(from) ? undefined : 'a runs window must end after it starts';
+}
+
+/** A run read's ending: the checked body — exit 0, or 4 with a readable answer (the history could not be read) — or why not. */
+function readAnswerOf(result: ProcessResult, distro: string, timeoutMs: number): { readonly body: JsonObject } | Failure {
+  if (result.kind === 'timedOut') {
+    return { kind: 'timedOut', timeoutMs };
+  }
+  if (result.kind !== 'exited') {
+    return launchFailure(result, 'daemonCall');
+  }
+
+  return exitedRead(result, distro);
+}
+
+/** The exits a run read answers with: 0, and 4 — the history unreadable, the answer read from the rest. */
+const READ_ANSWERS: ReadonlySet<number> = new Set([DAEMON_EXIT.ok, DAEMON_EXIT.recordsUnreadable]);
+
+function exitedRead(result: Extract<ProcessResult, { kind: 'exited' }>, distro: string): { readonly body: JsonObject } | Failure {
+  const checked = READ_ANSWERS.has(result.code) ? checkedBody(result.stdout.toString('utf8')) : undefined;
+  if (checked !== undefined && !('kind' in checked)) {
+    return { body: checked.body };
+  }
+
+  return unanswered(result, checked, distro);
+}
+
+/** An exit 0 whose answer could not be read is that reading; any other exit is the exit's. */
+function unanswered(result: Extract<ProcessResult, { kind: 'exited' }>, checked: Failure | undefined, distro: string): Failure {
+  return result.code === DAEMON_EXIT.ok && checked !== undefined ? checked : classifyExit(result.code, result.stdout, result.stderr, distro, DAEMON_PATH);
 }
 
 /** The target when the distribution may be asked (running, or the user asked to start it); "stopped" otherwise. */

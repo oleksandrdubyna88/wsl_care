@@ -37,6 +37,7 @@ const WORDS: Words = {
   unparseable: (f) => ({ label: 'unreadable answer', sentence: `The daemon's answer could not be read: ${f.detail}.` }),
   needsNewerExtension: (f) => ({ label: 'needs a newer extension', sentence: `The daemon answers in schema ${f.schemaVersion}, which this extension does not know — update the extension.` }),
   daemonTooOld: (f) => ({ label: 'daemon too old', sentence: `The daemon is ${f.version}; this extension needs ${f.minimum} or newer — update the daemon.` }),
+  readRefused: (f) => ({ label: 'not asked', sentence: `The daemon was not asked: ${f.detail}.` }),
 };
 
 /** Every failure kind, in the table's order — what the tests walk. */
