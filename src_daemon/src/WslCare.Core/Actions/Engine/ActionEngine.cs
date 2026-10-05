@@ -1,6 +1,7 @@
 using System.Text.Json;
 
 using WslCare.Core.Collect;
+using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
@@ -143,12 +144,30 @@ public sealed class ActionEngine(EngineContext c)
             }, notes);
         }
 
-        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
+        RecordAgentCpu(notes, started);
+
+        // A button-only action is never even selected by the timer (plan §15q E7.S2b); the auto gate refuses it as well.
+        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id).Where(id => !id.ButtonOnly)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         return new TimerPass(true, string.Empty, pass.Dry.DryRun, pass.Dry.Reason, TargetUserReport.From(pass.Target), pass.Outcomes, notes, pass.Outcome)
         {
             RunningWritten = pass.RunningWritten,
         };
+    }
+
+    /// <summary>Plan §15q E7.S2b: every timer run records the AI-agent processes' CPU ticks by identity, so A18 can tell — by
+    /// measurement — a process that used no CPU for hours. A failure is a note of the pass, never its end.</summary>
+    private void RecordAgentCpu(List<string> notes, DateTimeOffset now)
+    {
+        if (c.Paths is not LinuxHostPaths linux || c.Probe.Sample(CancellationToken.None).Vm.Bind(vm => vm.Processes) is not Reading<ProcessSnapshot>.Available { Value: var snapshot })
+        {
+            return;
+        }
+
+        if (Suspects.AgentCpuHistory.Record(linux, c.Files, snapshot.All, now) is { Length: > 0 } failure)
+        {
+            notes.Add($"the AI-agent CPU history was not recorded: {failure}");
+        }
     }
 
     /// <summary>The full run is recorded: the timer pass's <c>running.json</c> goes. Empty when it went; otherwise why not (the
@@ -306,8 +325,16 @@ public sealed class ActionEngine(EngineContext c)
 
     private Stop? ObserveOnlyStop() => c.Loaded.IsObserveOnly ? new Stop(ActionStatus.Skipped, ObserveOnlyReason) : null;
 
-    private Stop? AutoStop(ICleanupAction action, RunState run) =>
-        run.Trigger != RunTrigger.Timer || c.Loaded.Config.Bool(action.Id.AutoSwitch) ? null : new Stop(ActionStatus.Skipped, $"{action.Id.AutoSwitch.Name} is off: the timer does not run {action.Id}");
+    private Stop? AutoStop(ICleanupAction action, RunState run) => run.Trigger != RunTrigger.Timer ? null : TimerStop(action);
+
+    /// <summary>The timer's answer for one action: a button only never runs; an <c>auto</c> switch that is off skips it.</summary>
+    private Stop? TimerStop(ICleanupAction action) =>
+        action.Id.Timer switch
+        {
+            TimerSwitch.ButtonOnly button => new Stop(ActionStatus.Skipped, button.Why),
+            TimerSwitch.Auto auto when !c.Loaded.Config.Bool(auto.Key) => new Stop(ActionStatus.Skipped, $"{auto.Key.Name} is off: the timer does not run {action.Id}"),
+            _ => null,
+        };
 
     /// <summary>The gates asked of the LIVE preview, in order; <c>null</c> when the action may run now.</summary>
     private ActionOutcome? Judge(ICleanupAction action, ActionPreview preview, RunState run) =>

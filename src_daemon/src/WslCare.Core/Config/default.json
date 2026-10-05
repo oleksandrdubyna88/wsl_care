@@ -51,7 +51,8 @@
   },
   "processes": {
     "idleOlderThanHours": 8,
-    "families": ["dotnet-build-servers", "testhost"]
+    "families": ["dotnet-build-servers", "testhost"],
+    "aiAgentsIdleHours": 4
   },
   "thresholds": {
     "memAvailableWarnPercent": 25,

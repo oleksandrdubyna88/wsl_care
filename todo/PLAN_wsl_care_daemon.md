@@ -1169,7 +1169,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
 > Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
-> below); **E7.S1 and E7.S2 built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; deviations in *E7.S1 as built*, *E7.S2 as built*); E7.S2b–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*); E7.S2c–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1606,6 +1606,28 @@ goldens (the preview row, `capabilities` unchanged unless the extension needs on
 **Windows** (W-A11, E12) stays separate; the same rule should apply there — a setting defaulting to 4 h, a button only
 (recorded in *Boundaries*). The coai code round after E7.S2 covers E7.S2b if it is built by then; otherwise it gets its own.
 
+#### E7.S2b as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record is `research/module_tests.md` § *A18 — orphaned AI-agent processes (E7.S2b)*.
+**Deviations from the text above:**
+
+- **A preview writes no state.** The decided text had "every run, preview included" record the CPU history; the product's
+  standing rule is that `act --preview` touches no state (`ActFlows`), so ONLY the timer's full run records it
+  (`ActionEngine.RecordAgentCpu`, before the pass; a failure is a note of the pass). A18's preview reads the history and
+  merges the processes it sees NOW in memory — so a process first seen by the preview is "no history".
+- **`ActionId` has a closed `TimerSwitch`** (`Auto(key)` | `ButtonOnly(why)`); A18 is the one button-only id, not derived
+  from an `auto.*` key. The timer pass does not even select it, and the engine's timer gate skips it if asked directly.
+- **The history cap is 128 KiB, not 64 KiB:** a test sized a full 512-entry file at ~90 KiB — the planned cap would have
+  read a full history as "no history" (seen red, fixed; the growth row corrected).
+- **A18 is user-scoped** (it needs the target user) and declares no home folder (`ActionHomeRootsTests` names it).
+- **The signal path was EXTRACTED from A11** into `SuspectSignals` (re-read, one SIGTERM each, one shared grace, SIGKILL,
+  the verdicts) — A11's own tests unchanged and green.
+- **Agent attribution** is by the process's program or the script node runs (its first two arguments' file names, `.exe`
+  stripped) against the catalogue's binaries; none or more than one = kept.
+- **An unreadable boot id** makes the preview unavailable (no idle time can be told).
+- **The extension side** (A18 in its action registry, the modal naming each process sanitised) lands with E7.S3 / E7.S4 and
+  PR #12's registry; `contracts/actions.json` carries A18 now.
+
 #### E7.S2c — every number is configurable (owner rule 2026-10-05): the inventory
 
 > **The owner's rule (2026-10-05, verbatim):** "все цифры, которые у нас есть - должны быть настраиваемые" — *every number we
@@ -1831,7 +1853,7 @@ Order: E7's daemon parts first (additive), then the extension parts after both r
 | `slow.agents` on the history line (totals, counts, dates — no session names) | once per 20 h: ~6 tracked agents × ~300 B ≈ 2 KB/day → ~0.2 MB over the 90-day history retention; worst case (every catalogue entry + 16 extras) ≈ 11 KB/day → ~1 MB | the history's 90-day retention | the line is written whole or not at all (write order §15b #1) |
 | run detail `config` provenance | ≤ ~50 entries × ~80 B ≈ 4 KB per run | the run details' 90-day retention | as the detail |
 | `%LOCALAPPDATA%\wsl-care\agents-last.json` | ONE file, two samples (newest + the one ≥ 20 h older, for growth), ≤ 64 KiB | replaced on every walk; E11 retires the file (its history takes over) | atomic temp + rename |
-| `/var/lib/wsl-care/agent-cpu.json` (E7.S2b: per process identity, the oldest unchanged and the newest CPU sample) | live `ai-agents` processes of the target user only, ≤ 512 identities, ≤ 64 KiB; ~10 entries × ~120 B ≈ 1 KiB typical | pruned on every run to live identities; the cap drops the oldest | atomic temp + rename; a torn or unreadable file = "no history" (nothing eligible), rewritten whole |
+| `/var/lib/wsl-care/agent-cpu.json` (E7.S2b: per process identity, the oldest unchanged and the newest CPU sample) | live `ai-agents` processes of non-root accounts, ≤ 512 identities; a full file is ~90 KiB (measured by a test: ~180 B an entry), read under a 128 KiB cap; ~10 entries ≈ 2 KiB typical | pruned on every run to live identities; the cap drops the oldest | atomic temp + rename; a torn or unreadable file = "no history" (nothing eligible), rewritten whole |
 | extension `globalState` | one digest per distribution | replaced when the digest changes | — |
 | unprivileged run logs of `agents list` / `config get` / `agents probe` | one file per call (§15g M1); on panel open / refresh / a click only — never polled | the existing log retention | — |
 

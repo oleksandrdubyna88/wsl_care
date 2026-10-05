@@ -29,6 +29,7 @@ public sealed partial class ActionHomeRootsTests : IDisposable
     private static readonly IReadOnlyDictionary<string, string> NoHomeFolder = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["A3"] = "it shuts down build servers by their own command; no folder is cleaned",
+        ["A18"] = "it ends orphaned AI-agent processes by pid and start; no folder is cleaned",
     };
 
     private readonly LinuxSandbox _sandbox = new("home-roots");
