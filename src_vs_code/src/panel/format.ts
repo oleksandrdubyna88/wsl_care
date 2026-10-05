@@ -17,9 +17,7 @@ export function gib(bytes: number): string {
   return `${(bytes / GIB).toFixed(1)} GiB`;
 }
 
-export function gb(bytes: number): string {
-  return `${(bytes / 1e9).toFixed(1)} GB`;
-}
+export { gb } from '../text/format';
 
 export function percent(value: number): string {
   return `${Number(value.toFixed(1))} %`;

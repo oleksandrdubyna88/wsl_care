@@ -29,6 +29,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { RUN_ID_SHAPE, UTC_INSTANT_SHAPE } from '../../shared/shapes';
+
 export interface FakeDistro {
   readonly name: string;
   readonly running: boolean;
@@ -211,7 +213,7 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
 // ---- E6.S3: the two run reads — the fake's OWN copy of their shapes ----
 
 /** The one instant shape the client sends, with its offset spelt (the daemon's `LogPeriod.ParseInstants` takes more; the client sends this). */
-const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const INSTANT = UTC_INSTANT_SHAPE;
 
 type RunReadShape = { readonly read: 'runsShow'; readonly runId: string } | { readonly read: 'runs' };
 
@@ -354,7 +356,7 @@ export const ROOT_PREFIX: readonly string[] = ['-u', 'root', '--cd', '/', '--exe
 const NEVER_IN_ROOT = ['--timer', '--user', 'config'];
 
 const VOLUME_NAME = /^[0-9a-f]{64}$/;
-const RUN_ID = /^[0-9]{8}T[0-9]{6}Z-[1-9][0-9]{0,9}$/;
+const RUN_ID = RUN_ID_SHAPE;
 
 /** The daemon's published registry (`contracts/actions.json`), read from the repository the compiled fake lives in. */
 const CONTRACT_ACTIONS = path.resolve(__dirname, '..', '..', '..', '..', 'contracts', 'actions.json');
@@ -494,3 +496,6 @@ function rootReply(scenario: FakeScenario, argv: readonly string[], stdin: Buffe
 
   return distroReply(scenario, argv) ?? binaryReply(scenario) ?? rootAnswer(scenario, shape);
 }
+
+/** The shapes the fake checks run ids and instants against — the shared module's own objects (`sharedShapes.test.ts`). */
+export const FAKE_SHAPES = { runId: RUN_ID, instant: INSTANT } as const;

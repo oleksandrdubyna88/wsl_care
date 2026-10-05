@@ -1,4 +1,5 @@
 import type { ProcessResult, Runner } from '../process/runner';
+import { RUN_ID_SHAPE, UTC_INSTANT_SHAPE } from '../shared/shapes';
 import { DISTRO_NAME, distroSettingText, isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
 import { wslExecutable } from '../wsl/wslExecutable';
 import { decodeWslText } from '../wsl/wslText';
@@ -369,11 +370,9 @@ function exitedAnswer(result: Extract<ProcessResult, { kind: 'exited' }>, distro
   return 'kind' in parsed ? fail(parsed) : ok(parsed);
 }
 
-/** The daemon's one spelling of a run id (`RunId.TryParse`: no leading zero in the pid) — the same shape `root/rootIds.ts` checks. */
-const RUN_ID = /^[0-9]{8}T[0-9]{6}Z-[1-9][0-9]{0,9}$/;
-
-/** The one instant shape the client sends: UTC, whole seconds — `LogPeriod.ParseInstants` takes it. */
-const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+/** The daemon's run-id spelling and the client's instant shape — `shared/shapes.ts`, the one place both are written. */
+const RUN_ID = RUN_ID_SHAPE;
+const INSTANT = UTC_INSTANT_SHAPE;
 
 /** Why a run read may not be built, or `undefined` when it may. */
 function readRefusal(request: RunRead): string | undefined {

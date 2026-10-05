@@ -10,7 +10,7 @@ import { CleanupJournal, type DurableStore } from './journal';
 import { resultNotice, type Notice } from './resultText';
 import type { RowId } from './rowIds';
 import { noticeText, unlinked } from '../text/safeText';
-import { RunFollower, type OneShot, type RunResult } from './runFollower';
+import { FOLLOW_POLL, RunFollower, type OneShot, type RunResult } from './runFollower';
 
 /**
  * The host side of the cleanup buttons in one place (E6.S3): the journal over `globalState`, the durable poll, the host
@@ -141,7 +141,7 @@ export class CleanupHost {
   }
 
   private shown(result: RunResult): void {
-    const notice = resultNotice(result);
+    const notice = resultNotice(result, FOLLOW_POLL.ceilingMs);
     this.results = [notice, ...this.results].slice(0, RESULTS_KEPT);
     void this.ui.notify(notice.level, notice.sentence);
     this.emit();

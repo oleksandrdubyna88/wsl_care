@@ -48,39 +48,40 @@ function handOff(result = 'accepted'): string {
   return JSON.stringify({ schemaVersion: 1, result, kind: 'act', runId: RUN, unit: `wsl-care-act@${RUN}.service`, productVersion: '0.1.0' });
 }
 
-interface World {
-  readonly flow: CleanFlow;
+/** One test's world, built by its constructor — a typed factory, no cast (E6.S3 review C3, the TypeScript doctrine §3). */
+class World {
   readonly runner: ReturnType<typeof recordingRunner>;
-  readonly store: MapStore;
+  readonly store = new MapStore();
   readonly journal: CleanupJournal;
-  readonly modals: Modal[];
-  readonly notices: { level: NoticeLevel; sentence: string; actions: readonly string[] }[];
-  readonly started: string[];
-  readonly clock: { now: number };
-  answers: boolean[];
-  noticeAnswer: string | undefined;
-  onModal: (modal: Modal) => void;
-  kicks: number;
+  readonly modals: Modal[] = [];
+  readonly notices: { level: NoticeLevel; sentence: string; actions: readonly string[] }[] = [];
+  readonly started: string[] = [];
+  readonly clock = { now: 1_000_000 };
+  readonly flow: CleanFlow;
+  answers: boolean[] = [];
+  noticeAnswer: string | undefined = undefined;
+  onModal: (modal: Modal) => void = () => undefined;
+  kicks = 0;
+
+  constructor(script: Readonly<Record<string, Scripted>>, distro: () => string | undefined, status: () => Record<string, unknown>) {
+    this.runner = recordingRunner({ [ROOT_CHECK]: exited(0, '0.1.0\n'), ...script });
+    const client: CleanupClient = { rootTarget: () => Promise.resolve({ wsl: 'C:\\Windows\\System32\\wsl.exe', distro: 'Ubuntu' }), run: () => Promise.resolve(answered('status', status())) };
+    const controller = new CleanupController({ client, runner: this.runner.runner, now: () => this.clock.now, sleep: (ms) => { this.clock.now += ms; return Promise.resolve(); } });
+    this.journal = new CleanupJournal(this.store);
+    const ui: CleanUi = {
+      confirm: (modal) => { this.modals.push(modal); this.onModal(modal); return Promise.resolve(this.answers.length === 0 ? true : (this.answers.shift() ?? true)); },
+      notify: (level, sentence, actions = []) => { this.notices.push({ level, sentence, actions }); return Promise.resolve(this.noticeAnswer); },
+    };
+    this.flow = new CleanFlow({
+      controller, journal: this.journal, ui,
+      follower: { started: (id) => { this.started.push(id); }, kick: () => { this.kicks += 1; } },
+      now: () => this.clock.now, wallNow: () => Date.parse('2026-10-05T10:00:00.000Z'), distro, changed: () => undefined,
+    });
+  }
 }
 
 function world(script: Readonly<Record<string, Scripted>> = {}, distro: () => string | undefined = () => 'Ubuntu', status: () => Record<string, unknown> = () => headBody('status')): World {
-  const runner = recordingRunner({ [ROOT_CHECK]: exited(0, '0.1.0\n'), ...script });
-  const clock = { now: 1_000_000 };
-  const client: CleanupClient = { rootTarget: () => Promise.resolve({ wsl: 'C:\\Windows\\System32\\wsl.exe', distro: 'Ubuntu' }), run: () => Promise.resolve(answered('status', status())) };
-  const controller = new CleanupController({ client, runner: runner.runner, now: () => clock.now, sleep: (ms) => { clock.now += ms; return Promise.resolve(); } });
-  const store = new MapStore();
-  const journal = new CleanupJournal(store);
-  const w = { runner, store, journal, modals: [], notices: [], started: [], clock, answers: [], noticeAnswer: undefined, onModal: () => undefined, kicks: 0 } as unknown as World;
-  const ui: CleanUi = {
-    confirm: (modal) => { w.modals.push(modal); w.onModal(modal); return Promise.resolve(w.answers.length === 0 ? true : (w.answers.shift() ?? true)); },
-    notify: (level, sentence, actions = []) => { w.notices.push({ level, sentence, actions }); return Promise.resolve(w.noticeAnswer); },
-  };
-  (w as { flow: CleanFlow }).flow = new CleanFlow({
-    controller, journal, ui,
-    follower: { started: (id) => { w.started.push(id); }, kick: () => { w.kicks += 1; } },
-    now: () => clock.now, wallNow: () => Date.parse('2026-10-05T10:00:00.000Z'), distro, changed: () => undefined,
-  });
-  return w;
+  return new World(script, distro, status);
 }
 
 test('Clean A4: preview, ONE modal, the confirm — persisted UNRESOLVED before the call goes out, then the run; followed; told', async () => {

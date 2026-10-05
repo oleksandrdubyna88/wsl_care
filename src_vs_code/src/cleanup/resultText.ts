@@ -1,9 +1,10 @@
 import { rootFailureText } from '../root/rootFailureText';
 import type { HandOffOutcome, RootFailure } from '../root/rootOutcome';
+import { gb, minuteOf } from '../text/format';
 import { safeText } from '../text/safeText';
 import type { JournalEntry, JournalOp } from './journal';
 import type { RunShow } from './runAnswers';
-import { FOLLOW_POLL, type RunResult } from './runFollower';
+import type { RunResult } from './runFollower';
 
 /**
  * The words the panel and its notifications use for a cleanup's hand-off and its end (E6.S3): one sentence and a level per
@@ -59,15 +60,6 @@ function labelOf(entry: JournalEntry): string {
   return entry.op === 'fullCheck' ? 'full check' : entry.actions.join(', ');
 }
 
-function gb(bytes: number): string {
-  return `${(bytes / 1e9).toFixed(1)} GB`;
-}
-
-/** `2026-10-05 10:00 UTC` — the journal's instant, in the clock the daemon's records use. */
-function minuteOf(iso: string): string {
-  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
-}
-
 function doneSentence(name: string, show: RunShow): string {
   const line = show.line;
   if (line === undefined) {
@@ -101,18 +93,18 @@ function confirmed(entry: JournalEntry): string {
   return entry.op === 'fullCheck' ? `The full check confirmed at ${minuteOf(entry.since)}` : `The cleanup of ${labelOf(entry)} confirmed at ${minuteOf(entry.since)}`;
 }
 
-type Results = { readonly [K in RunResult['kind']]: (result: Extract<RunResult, { kind: K }>) => Notice };
+type Results = { readonly [K in RunResult['kind']]: (result: Extract<RunResult, { kind: K }>, ceilingMs: number) => Notice };
 
 const RESULTS: Results = {
   run: (r) => runNotice(r.entry, r.show),
-  ceiling: (r) => ({ level: 'warn', sentence: `Run ${r.entry.kind === 'run' ? r.entry.runId : '(no run id)'} (${labelOf(r.entry)}): state unknown — no answer that it ended within ${FOLLOW_POLL.ceilingMs / 60_000} minutes; the daemon's runs show says where it is.` }),
+  ceiling: (r, ceilingMs) => ({ level: 'warn', sentence: `Run ${r.entry.kind === 'run' ? r.entry.runId : '(no run id)'} (${labelOf(r.entry)}): state unknown — no answer that it ended within ${Math.round(ceilingMs / 60_000)} minutes; the daemon's runs show says where it is.` }),
   neverRan: (r) => ({ level: 'info', sentence: `${confirmed(r.entry)} never ran: the daemon recorded no run of it.` }),
   ambiguous: (r) => ({ level: 'warn', sentence: `${confirmed(r.entry)} cannot be told apart: runs ${r.candidates.join(', ')} each match; see them under Last cleanup.` }),
 };
 
 /** A followed run's terminal answer, as it is shown — once. */
-export function resultNotice(result: RunResult): Notice {
-  const words = RESULTS[result.kind] as (r: RunResult) => Notice;
+export function resultNotice(result: RunResult, ceilingMs: number): Notice {
+  const words = RESULTS[result.kind] as (r: RunResult, ceilingMs: number) => Notice;
 
-  return words(result);
+  return words(result, ceilingMs);
 }

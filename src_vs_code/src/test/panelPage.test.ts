@@ -288,3 +288,11 @@ test('E6.S3: Last cleanup shows the results this window showed and "Docker after
   assert.match(box.one('p[data-docker-after]').textContent, /reclaimable \(docker system df, read at /);
   assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
 });
+
+test('E6.S3 review C15: a Select press toggles the tick and posts NOTHING', () => {
+  const { page, root } = show(cleanupView());
+  const before = page.posted.length;
+  page.click(root.one('button[data-select="A4"]'));
+  assert.equal(page.posted.length, before);
+  assert.equal(root.one('button[data-select="A4"]').attributes['aria-pressed'], 'true');
+});

@@ -1,5 +1,6 @@
 import { readEnum, type EnumRead } from '../client/enumValue';
 import { checkedBody } from '../client/handshake';
+import { RUN_ID_BODY } from '../shared/shapes';
 import type { JsonObject } from '../client/outcome';
 import { actionIdOf, MAX_SHOWN_VOLUMES, runIdOf, volumeNameOf, type ActionId, type ActionIds, type RunId, type VolumeName } from './rootIds';
 import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
@@ -24,7 +25,7 @@ export interface HandOff {
 }
 
 /** A unit name as the daemon spells one (`wsl-care-act@<runId>.service`, `wsl-care.service`) — anything else is not shown. */
-const UNIT = /^wsl-care(?:-act@[0-9]{8}T[0-9]{6}Z-[1-9][0-9]{0,9})?\.service$/;
+const UNIT = new RegExp(`^wsl-care(?:-act@${RUN_ID_BODY})?\\.service$`);
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

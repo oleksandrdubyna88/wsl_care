@@ -1,3 +1,5 @@
+import { RUN_ID_SHAPE } from '../shared/shapes';
+
 /**
  * The typed values a root call may carry (E6.S2, plan §15f #2, §15j B1 / M1): each arrives as untrusted text — from a
  * daemon answer, from host state, later from a webview message's index — and becomes argv or a stdin line ONLY through
@@ -38,7 +40,7 @@ export const MAX_SHOWN_VOLUMES = 10_000;
  * review S4 — two spellings would name one run twice). Stricter than the daemon in one place: pid 0 is refused, because no
  * run has it.
  */
-const RUN_ID = /^[0-9]{8}T[0-9]{6}Z-[1-9][0-9]{0,9}$/;
+const RUN_ID = RUN_ID_SHAPE;
 
 /** 64 lowercase hex digits — the daemon's `DockerJson.IsFullId`, the only shape A4's `--only` lines may take. */
 const VOLUME_NAME = /^[0-9a-f]{64}$/;
