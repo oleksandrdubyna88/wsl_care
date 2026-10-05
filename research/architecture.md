@@ -2526,6 +2526,17 @@ flowchart LR
   `OwnUnprivileged`, never run as root — and one `ListEntries`), `AgentWalk` (`WalkTree`), `SessionGlob` (`ListEntries`) are
   rows of the read-site table (`ArchitectureTests.ReadSites.cs`); `WalkTree` and `ListEntries` are target-home metadata.
 
+## Numbers are configuration (standing convention, owner rule 2026-10-05)
+
+"Every number we have must be configurable" (the owner, 2026-10-05). From now on **a new behavioural number is a
+configuration key (daemon) or a VS Code setting (extension), never a literal** — with a range, a default (today's value)
+and, for the daemon, a `KeyTrust`: (A) behaviour → an ordinary key; (B) a limit on what ROOT reads, does or waits for →
+a machine-layer-only key that may be lowered freely and raised only up to a hard maximum; (C) a format, a contract or a
+unit (exit codes, `schemaVersion`, id shapes, `/proc` field indexes, unit conversions) stays a constant, listed with its
+reason. An extension timeout never sits below the daemon ceiling it waits on. The inventory and the build of the existing
+numbers are plan §15q *E7.S2c* (`todo/PLAN_wsl_care_daemon.md`); until it lands, existing literals are tracked there, and a
+NEW one is not added.
+
 ## Fixture privacy (E5 code round, 2026-10-04)
 
 The repository is public, and the captured fixtures and the goldens built from them carried the owner's Linux and
