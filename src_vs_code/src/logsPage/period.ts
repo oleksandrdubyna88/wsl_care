@@ -136,12 +136,16 @@ export function windowOf(period: DayPeriod, now: number): PeriodWindow {
 
 /** What the host asks the daemon for a period — `runs show` for one run; `logs` and `runs` over the window otherwise. */
 export function readsOf(period: Period, now: number): RunRead[] {
+  return readsFor(period, period.kind === 'thisRun' ? undefined : windowOf(period, now));
+}
+
+/** The reads of a period over the window ALREADY built for it (review C2: the view shows that same window). */
+export function readsFor(period: Period, window: PeriodWindow | undefined): RunRead[] {
   if (period.kind === 'thisRun') {
     return [{ read: 'runsShow', runId: period.runId }];
   }
-  const { from, to } = windowOf(period, now);
 
-  return [{ read: 'logs', from, to }, { read: 'runs', from, to }];
+  return window === undefined ? [] : [{ read: 'logs', from: window.from, to: window.to }, { read: 'runs', from: window.from, to: window.to }];
 }
 
 // ---- a period read back: from the memento, or built from a page message ----

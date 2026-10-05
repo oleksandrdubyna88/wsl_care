@@ -35,6 +35,7 @@ export function pendingBlock(id: string, title: string, read: ReadState): LogsBl
     reading: { state: 'reading', note: 'Reading…' },
     answered: { state: 'answered', note: '' },
     failed: { state: 'failed', note: `unavailable — ${read.kind === 'failed' ? safeText(read.sentence) : ''}` },
+    unreadable: { state: 'failed', note: `the run history could not be read: ${read.kind === 'unreadable' ? safeText(read.problem) : ''} — no figures` },
   };
   const { state, note } = states[read.kind];
 

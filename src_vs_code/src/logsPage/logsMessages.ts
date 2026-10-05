@@ -10,8 +10,9 @@ import { realDay } from './period';
  * - `day` / `range` carry real calendar `yyyy-MM-dd` texts (the date picker's values) — the host clamps them to the
  *   retention and checks the order before it builds the window;
  * - `expand` / `collapse` carry an INDEX into the run list the host read itself;
- * - `ready` asks for the current view, `refresh` reads the current period again, `rendered` reports how many blocks the
- *   page drew (the extension-host scenarios read it).
+ * - `ready` asks for the current view — the host posts the answers it holds for the current period and reads it only when
+ *   it holds none (review C5: a tab returning keeps its expanded runs and asks nothing); `refresh` reads the current period
+ *   again; `rendered` reports how many blocks the page drew (the extension-host scenarios read it).
  */
 
 export type LogsMessage =

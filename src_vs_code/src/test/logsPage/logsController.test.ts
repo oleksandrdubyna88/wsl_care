@@ -10,6 +10,7 @@ import type { LogsView } from '../../logsPage/logsView';
 import { answered, headBody } from '../support/outcomes';
 import { MapStore } from '../support/memento';
 import { GOLDEN_ROOT } from '../support/paths';
+import { withZone } from '../support/zone';
 
 /**
  * The Logs page's host side (plan §16 E6.S4 acceptance): what each period and each page message makes the host ASK — the
@@ -47,6 +48,7 @@ class World {
   readonly events: string[] = [];
   readonly views: LogsView[] = [];
   status: VerbOutcome | undefined = statusWith(RUN);
+  now = NOW;
   answer: (request: RunRead) => ReadOutcome | Promise<ReadOutcome> = (request) => ({ kind: 'read', read: request.read, distro: 'Ubuntu', body: golden(ANSWERS[request.read]) });
   readonly controller: LogsController;
 
@@ -63,7 +65,7 @@ class World {
       },
       status: () => this.status,
       post: (view) => { this.views.push(view); },
-      wallNow: () => NOW,
+      wallNow: () => this.now,
     });
   }
 
@@ -78,21 +80,11 @@ class World {
   }
 }
 
-function inKyiv<T>(body: () => Promise<T>): Promise<T> {
-  // The zone must hold across the awaits: set for the whole test, put back after.
-  const before = process.env.TZ;
-  process.env.TZ = 'Europe/Kyiv';
-  return body().finally(() => {
-    if (before === undefined) {
-      delete process.env.TZ;
-    } else {
-      process.env.TZ = before;
-    }
-  });
-}
+/** Every test runs in Kyiv, the zone held across its awaits (`withZone` restores it once the promise settles, review K1). */
+const KYIV = 'Europe/Kyiv';
 
 test('each period → its exact argv: Today and Yesterday as local midnights, a day, a range, This run as runs show of the LAST CLEANUP\'s id', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const w = new World();
     await w.controller.receive({ type: 'today' });
     await w.controller.receive({ type: 'yesterday' });
@@ -111,7 +103,7 @@ test('each period → its exact argv: Today and Yesterday as local midnights, a 
 });
 
 test('the selection is PERSISTED before it is read, and survives a reload: a new controller over the same store asks the same window', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const store = new MapStore();
     const first = new World(store);
     await first.controller.receive({ type: 'day', day: '2026-10-01' });
@@ -127,7 +119,7 @@ test('the selection is PERSISTED before it is read, and survives a reload: a new
 });
 
 test('This run survives a reload with ITS run id — the one the host read, even after status names a newer cleanup', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const store = new MapStore();
     const first = new World(store);
     await first.controller.receive({ type: 'thisRun' });
@@ -140,7 +132,7 @@ test('This run survives a reload with ITS run id — the one the host read, even
 });
 
 test('a persisted value that is not a period (tampered, or from another build) is no period: the page opens on Today', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     for (const stored of [{ kind: 'thisRun', runId: `${RUN} --json` }, { kind: 'day', day: '2026-02-30' }, 'today', 7, { kind: 'week' }]) {
       const store = new MapStore();
       store.values.set(LOGS_PERIOD_KEY, stored);
@@ -151,7 +143,7 @@ test('a persisted value that is not a period (tampered, or from another build) i
 });
 
 test('a malicious period, run id or extra field from the webview starts NO process — and nothing is written', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const bad: readonly unknown[] = [
       { type: 'thisRun', runId: '20261005T080000Z-1' },
       { type: 'day', day: '2026-10-01; rm -rf /' },
@@ -175,7 +167,7 @@ test('a malicious period, run id or extra field from the webview starts NO proce
 });
 
 test('a well-formed message the host cannot honour starts no process either — a range ending first, This run with no cleanup, a run index past the list', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const w = new World();
     await w.controller.receive({ type: 'range', from: '2026-10-02', to: '2026-09-30' });
     assert.deepEqual(w.reads, []);
@@ -183,7 +175,7 @@ test('a well-formed message the host cannot honour starts no process either — 
     w.status = statusWith(undefined);
     await w.controller.receive({ type: 'thisRun' });
     assert.deepEqual(w.reads, []);
-    assert.match(w.view().notice, /no cleanup is recorded yet/);
+    assert.match(w.view().notice, /no cleanup is recorded/);
     assert.equal(w.view().periods.find((p) => p.id === 'thisRun')?.enabled, false);
     await w.controller.receive({ type: 'today' });
     const before = w.reads.length;
@@ -193,7 +185,7 @@ test('a well-formed message the host cannot honour starts no process either — 
 });
 
 test('expanding a run reads runs show of the run id the HOST read at that index; collapsing drops it; a line with no daemon run id is not asked', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const w = new World();
     await w.controller.receive({ type: 'today' });
     await w.controller.receive({ type: 'expand', index: 1 });
@@ -215,7 +207,7 @@ test('expanding a run reads runs show of the run id the HOST read at that index;
 });
 
 test('a day older than the retention is clamped to the oldest kept day, and the page says so', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const w = new World();
     await w.controller.receive({ type: 'day', day: '2026-01-01' });
     assert.equal(w.tails()[0], 'logs --from 2026-07-07T21:00:00Z --to 2026-07-08T21:00:00Z --json');
@@ -224,7 +216,7 @@ test('a day older than the retention is clamped to the oldest kept day, and the 
 });
 
 test('a daemon that does not advertise logs.instantRange is not asked for a day; one without runs.show not for This run — the page says to update it', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const w = new World();
     w.status = statusWith(RUN, ['act.shownList', 'running.block']);
     await w.controller.receive({ type: 'today' });
@@ -238,7 +230,7 @@ test('a daemon that does not advertise logs.instantRange is not asked for a day;
 });
 
 test('a failed read is shown with its reason; an answer to a period no longer selected is dropped (the newest selection wins)', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const w = new World();
     w.answer = (request) => ({ kind: 'timedOut', timeoutMs: 20_000, read: request.read });
     await w.controller.receive({ type: 'today' });
@@ -262,7 +254,7 @@ test('a failed read is shown with its reason; an answer to a period no longer se
 });
 
 test('failure text from the daemon reaches the page sanitised', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const w = new World();
     w.answer = (request) => ({ kind: 'refused', messages: [`wsl-care: bad ${String.fromCharCode(0x202e)}argument`], read: request.read });
     await w.controller.receive({ type: 'today' });
@@ -279,7 +271,7 @@ test('the page\'s rendered count is kept for the extension-host scenarios', asyn
 });
 
 test('choose (a NEW page about to load): the period is persisted and nothing is read — the page\'s ready reads it, once', async () => {
-  await inKyiv(async () => {
+  await withZone(KYIV, async () => {
     const w = new World();
     const period = lastCleanupPeriod(w.status);
     assert.deepEqual(period, { kind: 'thisRun', runId: RUN }, 'the panel\'s Logs opens THE last cleanup');
@@ -289,5 +281,152 @@ test('choose (a NEW page about to load): the period is persisted and nothing is 
     await w.controller.receive({ type: 'ready' });
     assert.deepEqual(w.tails(), [`runs show ${RUN} --json`]);
     assert.equal(lastCleanupPeriod(statusWith(undefined)), undefined, 'no cleanup recorded: no run to open');
+  });
+});
+
+// ---- the E6.S4 review round ----
+
+/** A read held until the returned function is called — to observe what the host shows while it is out. */
+function gated(w: World, holds: (request: RunRead) => boolean): () => void {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const answers = w.answer;
+  w.answer = (request) => (holds(request) ? gate.then(() => answers(request)) : answers(request));
+  return () => release();
+}
+
+test('review C1: an answer with `problem` (the history could not be read, exit 4) is its own state — no figures, the reason shown', async () => {
+  await withZone(KYIV, async () => {
+    const w = new World();
+    const problem = `history.jsonl could not be read: permission denied${String.fromCharCode(0x202e)}`;
+    w.answer = (request) => ({ kind: 'read', read: request.read, distro: 'Ubuntu', body: { ...golden(ANSWERS[request.read]), freedBytes: 0, problem } });
+    await w.controller.receive({ type: 'today' });
+    const view = w.view();
+    const expected = `the run history could not be read: history.jsonl could not be read: permission denied${String.fromCharCode(0xfffd)} — no figures`;
+    for (const block of view.blocks) {
+      assert.equal(block.state, 'failed', block.id);
+      assert.deepEqual(block.lines, [], `${block.id}: no figure shown as fact`);
+      assert.deepEqual(block.tables, [], `${block.id}: no table shown as fact`);
+      assert.equal(block.notes[0], expected);
+    }
+    assert.equal(view.runList.state, 'failed');
+    assert.deepEqual(view.runList.rows, []);
+    assert.deepEqual(view.runList.notes, [expected]);
+    await w.controller.receive({ type: 'thisRun' });
+    assert.ok(w.view().blocks.every((b) => b.state === 'failed' && b.lines.length === 0), 'This run too');
+  });
+});
+
+test('review C1: an expanded run whose runs show answered with `problem` shows the problem, not "unknown — it never existed"', async () => {
+  await withZone(KYIV, async () => {
+    const w = new World();
+    await w.controller.receive({ type: 'today' });
+    w.answer = (request) => ({ kind: 'read', read: request.read, distro: 'Ubuntu', body: { ...golden('runs-show-unknown.json'), problem: 'the history could not be read' } });
+    await w.controller.receive({ type: 'expand', index: 0 });
+    const detail = w.view().runList.rows[0]?.detail[0];
+    assert.equal(detail?.state, 'failed');
+    assert.deepEqual(detail?.notes, ['the run history could not be read: the history could not be read — no figures']);
+  });
+});
+
+test('review C2: the window is the one the read was BUILT for — past local midnight an expand does not relabel day D\'s answers as D+1', async () => {
+  await withZone(KYIV, async () => {
+    const w = new World();
+    w.now = Date.parse('2026-10-05T20:59:00Z'); // 23:59 in Kyiv
+    await w.controller.receive({ type: 'today' });
+    const label = w.view().periodLabel;
+    assert.match(label, /2026-10-05/);
+    w.now = Date.parse('2026-10-05T21:01:00Z'); // 00:01 on the 6th
+    await w.controller.receive({ type: 'expand', index: 1 });
+    assert.equal(w.view().periodLabel, label, 'the answers are still the 5th\'s');
+    assert.equal(w.view().picker.day, '2026-10-05');
+    await w.controller.receive({ type: 'refresh' });
+    assert.match(w.view().periodLabel, /2026-10-06/, 'a NEW read is the new day');
+  });
+});
+
+test('review C3: status not answered yet, or failed, is not "no cleanup is recorded" — and the page is re-posted when status changes', async () => {
+  await withZone(KYIV, async () => {
+    const w = new World();
+    w.status = undefined;
+    await w.controller.receive({ type: 'today' });
+    const thisRun = () => w.view().periods.find((p) => p.id === 'thisRun');
+    assert.equal(thisRun()?.enabled, false);
+    assert.match(thisRun()?.reason ?? '', /status has not been read yet/);
+    await w.controller.receive({ type: 'thisRun' });
+    assert.match(w.view().notice, /status has not been read yet/);
+    w.status = { kind: 'timedOut', timeoutMs: 20_000, verb: 'status' };
+    w.controller.statusChanged();
+    assert.match(thisRun()?.reason ?? '', /status did not answer: timed out/);
+    assert.doesNotMatch(thisRun()?.reason ?? '', /no cleanup/);
+    const posted = w.views.length;
+    w.status = statusWith(RUN);
+    w.controller.statusChanged();
+    assert.equal(w.views.length, posted + 1, 'a status change re-posts the view');
+    assert.equal(thisRun()?.enabled, true);
+    w.status = statusWith(undefined);
+    w.controller.statusChanged();
+    assert.equal(thisRun()?.reason, 'no cleanup is recorded yet', 'answered, with no lastCleanup');
+  });
+});
+
+test('review C5: ready with an answer for the current period posts it — no second read, the expanded runs kept; refresh still reads', async () => {
+  await withZone(KYIV, async () => {
+    const w = new World();
+    await w.controller.receive({ type: 'today' });
+    await w.controller.receive({ type: 'expand', index: 1 });
+    const reads = w.reads.length;
+    await w.controller.receive({ type: 'ready' });
+    assert.equal(w.reads.length, reads, 'a tab returning asks nothing');
+    assert.equal(w.view().runList.rows[1]?.expanded, true, 'and keeps what was open');
+    await w.controller.receive({ type: 'refresh' });
+    assert.equal(w.reads.length, reads + 2);
+  });
+});
+
+test('review C6: a new selection never shows the old period\'s answer under its own label — even while its choice is being written', async () => {
+  await withZone(KYIV, async () => {
+    const w = new World();
+    await w.controller.receive({ type: 'today' });
+    assert.equal(w.controller.view().blocks[0]?.state, 'answered');
+    const yesterday = w.controller.receive({ type: 'yesterday' });
+    const during = w.controller.view();
+    assert.match(during.periodLabel, /^Yesterday/);
+    assert.notEqual(during.blocks[0]?.state, 'answered', 'Today\'s totals are not Yesterday\'s');
+    await yesterday;
+    assert.equal(w.view().blocks[0]?.state, 'answered');
+  });
+});
+
+test('review: a detail that comes back after its run was collapsed, or after the period changed, is dropped (the stale-detail guard)', async () => {
+  await withZone(KYIV, async () => {
+    const w = new World();
+    await w.controller.receive({ type: 'today' });
+    const release = gated(w, (request) => request.read === 'runsShow');
+    const expanding = w.controller.receive({ type: 'expand', index: 1 });
+    await w.controller.receive({ type: 'collapse', index: 1 });
+    release();
+    await expanding;
+    assert.equal(w.view().runList.rows[1]?.expanded, false, 'collapsed stays collapsed');
+
+    const again = gated(w, (request) => request.read === 'runsShow');
+    const late = w.controller.receive({ type: 'expand', index: 1 });
+    await w.controller.receive({ type: 'yesterday' });
+    again();
+    await late;
+    assert.ok(w.view().runList.rows.every((row) => !row.expanded), 'a detail of Today does not open in Yesterday\'s list');
+
+    // The list read again (Refresh) and the same line opened again: the FIRST read's late answer is not the line's detail.
+    const first = gated(w, (request) => request.read === 'runsShow');
+    const old = w.controller.receive({ type: 'expand', index: 1 });
+    await w.controller.receive({ type: 'refresh' });
+    const second = gated(w, (request) => request.read === 'runsShow');
+    const fresh = w.controller.receive({ type: 'expand', index: 1 });
+    first();
+    await old;
+    assert.equal(w.view().runList.rows[1]?.detail[0]?.state, 'reading', 'the old list\'s answer is dropped; the new read is still out');
+    second();
+    await fresh;
+    assert.equal(w.view().runList.rows[1]?.detail[0]?.state, 'answered');
   });
 });
