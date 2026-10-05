@@ -222,6 +222,8 @@
     });
     box.appendChild(list);
     box.appendChild(element('p', controls.dockerAfter, { 'docker-after': '' }));
+    // E6.S4 (§7.4): the Logs page on the run status.lastCleanup names — bare, the run id is the host's.
+    box.appendChild(actionButton('Logs', { 'run-logs': '' }, false, function () { return { type: 'openRunLogs' }; }));
     return box;
   }
 

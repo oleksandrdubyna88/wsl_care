@@ -12,6 +12,9 @@ import { ROW_IDS, rowIdOf, type RowId } from '../cleanup/rowIds';
  * holds the preview and confirms it itself; `runFullCheck` is bare; `stop` carries an INDEX into the list of stoppable runs
  * the host itself read from `status.running` — the run id never comes from the page (the host checks the one it holds
  * against the daemon's spelling once more before a call).</p>
+ *
+ * <p>E6.S4's `openRunLogs` (*Logs* beside *Last cleanup*) is bare too: the host opens the Logs page on the run
+ * `status.lastCleanup` names — the id is the host's.</p>
  */
 
 export type PageMessage =
@@ -21,12 +24,13 @@ export type PageMessage =
   | { readonly type: 'openSettings' }
   | { readonly type: 'startWsl' }
   | { readonly type: 'installDaemon' }
+  | { readonly type: 'openRunLogs' }
   | { readonly type: 'clean'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'cleanSelected'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'runFullCheck' }
   | { readonly type: 'stop'; readonly index: number };
 
-const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'runFullCheck']);
+const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'runFullCheck', 'openRunLogs']);
 
 /** The host holds at most this many stoppable runs plus one (the daemon has ONE running state; the list is a list for shape only). */
 export const MAX_STOP_INDEX = 3;

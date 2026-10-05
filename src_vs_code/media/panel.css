@@ -129,3 +129,54 @@ p[data-cleanup-state][data-level="critical"],
 li[data-result][data-level="critical"] {
   color: var(--vscode-errorForeground);
 }
+
+/* E6.S4: the Logs page (media/logs.js) shares this stylesheet — one look for both pages. */
+div[data-part="periods"],
+div[data-part="picker"] {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 6px 0;
+}
+
+input[type="date"] {
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, transparent);
+  padding: 2px 4px;
+}
+
+p[data-period-label] {
+  color: var(--vscode-descriptionForeground);
+}
+
+div[data-line] {
+  display: flex;
+  gap: 12px;
+  margin: 1px 0;
+}
+
+div[data-line] span[data-label] {
+  color: var(--vscode-descriptionForeground);
+  min-width: 40%;
+}
+
+section[data-state="reading"],
+section[data-state="failed"] {
+  color: var(--vscode-descriptionForeground);
+}
+
+section[data-state="failed"] p[data-note] {
+  color: var(--vscode-editorWarning-foreground);
+}
+
+h3 {
+  font-size: 0.95em;
+  margin: 8px 0 2px;
+}
+
+div[data-notes] p {
+  margin: 2px 0;
+  color: var(--vscode-descriptionForeground);
+}

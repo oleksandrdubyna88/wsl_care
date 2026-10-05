@@ -179,6 +179,21 @@ const WINDOWS_FAKE: readonly Scenario[] = [
     },
   },
   {
+    name: 'E6.S4: the Logs page opens from its title command on the persisted period, asks logs + runs unprivileged, and the page renders its five blocks',
+    run: async (api) => {
+      scenario(RUNNING);
+      api.resetCalls();
+      await vscode.commands.executeCommand('wslCare.openLogs');
+      const logs = api.logs().controller;
+      await until('the Logs page read its answers', () => logs.view().blocks[0]?.state === 'answered' && logs.view().runList.state === 'answered');
+      await until('the Logs page reported its blocks', () => logs.lastRendered() === 5);
+      const reads = daemonCalls(api).filter((c) => / (logs|runs) --from /.test(c));
+      assert.deepEqual(reads.map((c) => c.split(' ').slice(6, 7)[0]).sort(), ['logs', 'runs'], JSON.stringify(reads));
+      assert.ok(reads.every((c) => c.startsWith('-d Ubuntu --cd / --exec /opt/wsl-care/bin/wsl-care ') && c.endsWith(' --json')), JSON.stringify(reads));
+      assert.equal(logs.view().blocks[0]?.lines[0]?.value, '0.3 GB', 'the golden logs answer reached the page');
+    },
+  },
+  {
     name: '"Start WSL and check" makes the one -d the user asked for',
     run: async (api) => {
       scenario({ ...STOPPED, startable: true });

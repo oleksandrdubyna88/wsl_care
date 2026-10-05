@@ -1,6 +1,7 @@
 import type { CleanupHost } from './cleanup/cleanupHost';
 import type { CleanRecorder } from './cleanup/cleanRecorder';
 import type { InstallRecorder } from './install/installUi';
+import type { LogsPanel } from './logsPage/logsPanel';
 import type { ProcessRequest, Runner } from './process/runner';
 import type { RunnerChoice } from './process/runnerSelection';
 import type { CleanupController } from './root/cleanupController';
@@ -34,6 +35,8 @@ export interface WslCareTestApi {
   cleanupHost(): CleanupHost;
   /** E6.S3: the cleanup flow's recorded modals and notifications — and the answers they give. */
   cleanRecorder(): CleanRecorder;
+  /** E6.S4: the Logs page — its controller (period, rendered blocks) as the page's messages reach it. */
+  logs(): LogsPanel;
   /** The version the running bundle was built for (`buildStamp.ts`). */
   buildVersion(): string;
 }

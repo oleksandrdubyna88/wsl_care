@@ -117,3 +117,19 @@ test('E6.S3 review A2: a row\'s clean carries exactly ONE row id — several are
   assert.deepEqual(parsePageMessage({ type: 'clean', rowIds: ['A7'] }), { type: 'clean', rowIds: ['A7'] });
   assert.deepEqual(parsePageMessage({ type: 'cleanSelected', rowIds: ['A7', 'A9'] }), { type: 'cleanSelected', rowIds: ['A7', 'A9'] });
 });
+
+// ---- E6.S4: the Logs page's shell — the SAME static shell and CSP, its own root and title ----
+
+test('E6.S4: the Logs page is the same static shell under the same CSP — its own <main id="logs"> and title, nothing else changes', () => {
+  const logs = panelShell({ ...SHELL, scriptUri: 'https://file+.vscode-resource/media/logs.js', styleUri: 'https://file+.vscode-resource/media/logs.css', page: 'logs' });
+  assert.deepEqual(cspOf(logs), cspOf(panelShell(SHELL)));
+  assert.match(logs, /<main id="logs"><\/main>/);
+  assert.match(logs, /<title>WSL Care — Logs<\/title>/);
+  assert.doesNotMatch(logs, /<main id="panel"/);
+  assert.match(panelShell(SHELL), /<title>WSL Care<\/title>/, 'the panel keeps its own');
+});
+
+test('E6.S4: the panel may ask for the Logs of its last cleanup — bare, the run id is the host\'s', () => {
+  assert.deepEqual(parsePageMessage({ type: 'openRunLogs' }), { type: 'openRunLogs' });
+  assert.equal(parsePageMessage({ type: 'openRunLogs', runId: '20261005T080000Z-4242' }), undefined);
+});

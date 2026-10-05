@@ -193,7 +193,7 @@ function importersOf(all: readonly Source[], module: string): string[] {
 }
 
 /** Modules whose code a webview runs or whose output it renders, plus the poller and the install flow: none may touch root/. */
-const FAR_FROM_ROOT = ['src/panel/', 'src/statusBar/', 'src/poll/', 'src/install/', 'src/state/'];
+const FAR_FROM_ROOT = ['src/panel/', 'src/statusBar/', 'src/poll/', 'src/install/', 'src/state/', 'src/logsPage/'];
 
 test('only rootCall.ts spells a root argv word — and it spells every one of them (the scan is alive)', () => {
   assert.deepEqual(spellers(sources(), ROOT_WORDS), { [ROOT_CALL]: [...ROOT_WORDS].sort() });
@@ -218,7 +218,7 @@ test('only the host-side cleanup controller imports rootCall.ts', () => {
   assert.deepEqual(importersOf(sources(), ROOT_CALL), [CLEANUP_CONTROLLER]);
 });
 
-test('no panel, status-bar, poller, install or store module imports anything under src/root/', () => {
+test('no panel, status-bar, poller, install, store or Logs-page module imports anything under src/root/', () => {
   const offenders = sources().filter((s) => FAR_FROM_ROOT.some((dir) => s.file.startsWith(dir)) && resolvedImports(s).some((m) => m.startsWith('src/root/')));
   assert.deepEqual(offenders.map((s) => s.file), []);
   assert.ok(sources().some((s) => s.file.startsWith('src/panel/')), 'the scan sees the panel modules');
