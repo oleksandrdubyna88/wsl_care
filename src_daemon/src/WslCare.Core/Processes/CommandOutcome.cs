@@ -20,6 +20,11 @@ public abstract record CommandOutcome
     {
     }
 
+    /// <summary>The file the launcher started when it was found on the Windows system drive rather than on <c>PATH</c>
+    /// (<see cref="ResolvedExecutable.Found.OnTheSystemDrive"/>) — reported beside the bare program the policy judged;
+    /// empty otherwise.</summary>
+    public string StartedFrom { get; init; } = string.Empty;
+
     /// <summary>The process ran to its end.</summary>
     public sealed record Exited(int ExitCode, CapturedText Stdout, CapturedText Stderr, TimeSpan Elapsed) : CommandOutcome;
 
