@@ -140,6 +140,45 @@ scenarios measured the runner's real Docker instead of their fake. The same look
 `docker.exe` in whatever directory the daemon started from win; the family's `gh` resolver
 (`dew_flow_conventions/.github/scripts/lib/resolved.mjs`) records the same lesson.
 
+**The one fallback: Windows programs on the mounted system drive** (`WindowsSystemDrive`, `SystemDriveFiles`,
+`SystemDriveLookup`; live finding 2026-10-04, plan §17 #1). systemd gives `wsl-care.service` the PATH
+`/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin`; WSL appends the Windows folders to PATH only for
+interactive and login sessions, so under the timer `powershell.exe` was "not found on PATH", `clock.drift` unknown and
+A16 refused — on every machine. Now, inside the distro only, when PATH does not hold a name in the CLOSED list
+`WindowsSystemDrive.Programs` (`powershell.exe` → `Windows/System32/WindowsPowerShell/v1.0`, nothing else), the resolver
+asks four questions, in this order, under a 5 s ceiling (`WindowsSystemDrive.Ceiling` — the share is 9p served by the
+host; a lookup that does not answer is a named refusal, its blocked thread abandoned once per resolve):
+
+1. **Where is `C:` mounted?** From `/proc/self/mountinfo` (it carries each mount's root and device): a line whose root is
+   `/` (the whole drive, not a bound folder), at an absolute mount point, of type `9p` with `aname=drvfs` and a `path=`
+   option naming `C:\` or `C:` (the source label is not read — a manual `mount -t drvfs C:` writes `path=C:`), or of
+   type `drvfs` (WSL 1) with the source `C:\` or `C:`. Kernel octal escapes are decoded. One mount point is the answer;
+   several DIFFERENT ones are refused, naming them. WSL's virtiofs mode (a share mounted by tag, a child bound onto the
+   drive's folder) is not identified: the refusal names the filesystem found at the automount folder (read from
+   `/etc/wsl.conf` `[automount] root=` for that sentence only). Only root and WSL's init can mount, so a folder nobody
+   mounted is never searched. WHICH drive holds Windows is a documented assumption, `C:`: nothing a service can read names
+   `%SystemDrive%`, and searching every drive would let a folder a Windows user may create on a data drive be started by
+   the root daemon.
+2. **Can a Windows program run here?** WSL's binfmt_misc handler (`WSLInterop`, or `WSLInterop-late` on newer WSL) is
+   registered and its first line is `enabled` (observed: interpreter `/init`, magic `4d5a` = `MZ`).
+3. **Can anybody but root change what is under the mount point?** Every ancestor from `/` down is a directory, never a
+   link, owned by root and writable by neither its group nor others.
+4. **Is the file what may be started?** No component from the mount point down is a symbolic link, each is on the
+   mount's device; the file is opened once with `O_NONBLOCK` (a FIFO never blocks — `RegularFiles.ReadHead` /
+   `StatNoFollow`, the statx reader A4's `--only` list already uses) and from that descriptor it is a
+   regular file, the same file (device and inode) the path check saw, carries an execute bit (exec(2)'s own requirement,
+   not a protection — drvfs reports `0555` on the whole path) and starts with `MZ`. At most two bytes are read.
+
+What that rests on, and does not check: Windows lets only administrators change `C:\Windows\System32`. Residuals,
+recorded: an administrator can replace the file (already above the daemon); another `MZ` handler in binfmt_misc (wine,
+mono) could claim the file before interop; the file is checked by descriptor but started by path, so a swap in the
+milliseconds between is not excluded. PATH still wins, every other name is PATH-only, Windows is unchanged. The
+`CommandPolicy` judges the argv with the BARE name (it would refuse the absolute path — the catalogue declares bare
+names); the launcher starts the resolved path as found, never re-resolved, reports it as `CommandOutcome.StartedFrom`, and
+an action's command record names both (`powershell.exe -NoProfile … (started from /mnt/c/…/powershell.exe)`). The
+not-found reason names both searches (`… not found on PATH (5 directories searched, …); not started from the Windows
+system drive: …`).
+
 ```mermaid
 flowchart LR
     argv["argv[0]"]
@@ -147,14 +186,20 @@ flowchart LR
     rel{"a relative path?"}
     walk["each absolute PATH entry, in order<br/>Windows: name.exe, name.com · Linux: name + execute bit"]
     found["Process.Start(FULL path)"]
-    fail["FailedToStart<br/>'… not found on PATH (N directories searched)'"]
+    fail["FailedToStart<br/>'… not found on PATH (N directories searched)…'"]
+    listed{"Linux, and a name in<br/>WindowsSystemDrive.Programs?"}
+    drive["under a 5 s ceiling:<br/>1 mount of drive C (mountinfo)<br/>2 WSL interop enabled<br/>3 ancestors root-only<br/>4 no link · same device · regular · MZ"]
     argv --> abs
     abs -->|yes| found
     abs -->|no| rel
     rel -->|yes| fail
     rel -->|no, a bare name| walk
     walk -->|first hit| found
-    walk -->|none| fail
+    walk -->|none| listed
+    listed -->|no| fail
+    listed -->|yes| drive
+    drive -->|all hold: StartedFrom = path| found
+    drive -->|refused / no answer| fail
 ```
 
 Logging (`Cli.Logging`, per the family rule): Serilog configured in code before the verb runs; the
