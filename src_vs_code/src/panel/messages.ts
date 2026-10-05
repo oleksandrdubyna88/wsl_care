@@ -85,6 +85,9 @@ function valued(raw: Raw, keys: readonly string[]): PageMessage | undefined {
   return read !== undefined && keys.length === 2 ? read(raw) : undefined;
 }
 
+/** Every message type the page may send — what the flow catalogue derives its `message <type>` rows from. */
+export const PAGE_MESSAGE_TYPES: readonly PageMessage['type'][] = [...BARE, ...Object.keys(WITH_VALUE)] as PageMessage['type'][];
+
 /** The message, or `undefined` for anything outside the closed set — which the host drops. */
 export function parsePageMessage(raw: unknown): PageMessage | undefined {
   if (!isRecord(raw)) {
