@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 import type { CleanUi } from './cleanFlow';
-import type { Modal } from './modalText';
+import { recordingCleanUi, type CleanRecorder } from './cleanRecorder';
 import type { NoticeLevel } from './resultText';
 
 /**
@@ -10,22 +10,8 @@ import type { NoticeLevel } from './resultText';
  *
  * - **not Test mode** — `showWarningMessage(message, { modal: true, detail }, confirm)` for a confirmation, and an
  *   information / warning / error notification (with its buttons) for everything else;
- * - **Test mode** — a RECORDER: every modal and notification recorded, the modal answered from `answer` (declined unless
- *   a scenario says otherwise), a notification's button from `noticeAnswer`.
+ * - **Test mode** — the RECORDER of `cleanRecorder.ts`.
  */
-
-export interface CleanRecorder {
-  readonly modals: Modal[];
-  readonly notices: { readonly level: NoticeLevel; readonly sentence: string; readonly actions: readonly string[] }[];
-  /** How a recorded modal is answered. */
-  answer: boolean;
-  /** Which button a recorded notification answers (none by default). */
-  noticeAnswer: string | undefined;
-}
-
-export function newCleanRecorder(): CleanRecorder {
-  return { modals: [], notices: [], answer: false, noticeAnswer: undefined };
-}
 
 const SHOW: { readonly [L in NoticeLevel]: (message: string, ...items: string[]) => Thenable<string | undefined> } = {
   info: (message, ...items) => vscode.window.showInformationMessage(message, ...items),
@@ -40,19 +26,6 @@ function realUi(): CleanUi {
   };
 }
 
-function recordingUi(recorder: CleanRecorder): CleanUi {
-  return {
-    confirm: (modal) => {
-      recorder.modals.push(modal);
-      return Promise.resolve(recorder.answer);
-    },
-    notify: (level, sentence, actions = []) => {
-      recorder.notices.push({ level, sentence, actions });
-      return Promise.resolve(actions.length > 0 ? recorder.noticeAnswer : undefined);
-    },
-  };
-}
-
 export function cleanUiFor(isTestMode: boolean, recorder: CleanRecorder): CleanUi {
-  return isTestMode ? recordingUi(recorder) : realUi();
+  return isTestMode ? recordingCleanUi(recorder) : realUi();
 }

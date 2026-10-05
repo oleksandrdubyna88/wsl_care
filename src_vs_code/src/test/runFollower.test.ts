@@ -312,3 +312,18 @@ test('M6 churn, measured: a run followed for D minutes costs D × 15 status runs
   assert.deepEqual(await measure(10, 'done'), { status: 150, reads: 1 });
   assert.deepEqual(await measure(40, 'wedged'), { status: 451, reads: 0 }, 'the 30-minute ceiling ends it');
 });
+
+test('M6: a poll armed while a run was in flight asks NOTHING when it fires after that run ended (found by the extension-host tier)', async () => {
+  const w = world();
+  w.follower.started((await w.journal.add(RUN_ENTRY)).id);
+  w.follower.kick();
+  assert.equal(w.timers.pending(), 1);
+  w.answer = () => show('done');
+  await w.follower.tick();
+  assert.deepEqual(w.journal.entries(), [], 'ended by a tick of its own');
+  const asked = w.statusCalls;
+  assert.ok(w.timers.fire(), 'the poll armed before still fires');
+  await settle();
+  assert.equal(w.statusCalls, asked, 'nothing is in flight: no status');
+  assert.equal(w.timers.pending(), 0);
+});
