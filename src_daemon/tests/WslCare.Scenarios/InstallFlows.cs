@@ -873,12 +873,17 @@ public sealed class InstallFlows
         }
     }
 
-    /// <summary>coai E6 code round #4: a wait of up to 10 minutes says it is still waiting — the state, the run and the time.</summary>
+    /// <summary>coai E6 code round #4: a wait of up to 10 minutes says it is still waiting — the state, the run and the time —
+    /// once every progress period, and refuses at the ceiling. On the SCRIPTED clock (<see cref="InstallWorld.UseScriptedClock"/>):
+    /// on the wall clock a 6 s ceiling against the 5 s poll left the one progress line to the scheduler — whenever the two
+    /// status calls plus the part of a second already gone when the wait started passed 1 s, the second poll read 6 s and
+    /// refused with no line at all (WSL, 2026-10-05: 1 run in 20 alone, 4 in 20 under 24 CPU burners).</summary>
     [Fact]
     public async Task A_long_wait_says_every_progress_period_what_it_waits_for_and_how_long()
     {
         Linux();
-        using var world = new InstallWorld("upgrade-progress") { RunWaitSeconds = "6", ProgressSeconds = "1" };
+        using var world = new InstallWorld("upgrade-progress") { RunWaitSeconds = "30", ProgressSeconds = "10" };
+        world.UseScriptedClock();
         world.Write(InstallWorld.BinaryPath, OldBinaryAnswering("live"));
         File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), InstallWorld.Executable);
         world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
@@ -886,7 +891,17 @@ public sealed class InstallFlows
         var result = await world.RunAsync();
 
         FailedAt(result, "upgrade-wait");
-        result.Stdout.Should().Contain("still waiting: live 20261004T120000Z-4242, ").And.Contain("s of 6s");
+        string[] waiting =
+        [
+            "wsl-care-install: a wsl-care run is live (20261004T120000Z-4242); waiting (at most 30s)",
+            "wsl-care-install: still waiting: live 20261004T120000Z-4242, 10s of 30s",
+            "wsl-care-install: still waiting: live 20261004T120000Z-4242, 20s of 30s",
+        ];
+        result.StdoutLines.Where(l => l.Contains("waiting", StringComparison.Ordinal)).Should().Equal(
+            waiting, "the wait polls every 5 s and says so once per 10 s period — at 10 s and 20 s, never on the polls between");
+        result.Stderr.Should().Contain("a wsl-care run is live (20261004T120000Z-4242), still after 30s");
+        world.ClockSeconds.Should().Be(InstallWorld.ScriptedClockStart + 30, "the refusal comes on the poll that reaches the ceiling, before another sleep");
+        File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(OldBinaryAnswering("live"), "nothing was replaced");
     }
 
     /// <summary>coai E6 code round #8: the ceiling is WALL time — counting the 5 s sleeps let a status that hangs 30 s per call
