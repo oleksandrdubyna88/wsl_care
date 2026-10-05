@@ -351,10 +351,11 @@ public sealed class ActionEngine(EngineContext c)
             ],
             preview);
 
-    /// <summary>Plan §15q R2 (review B2): a preview whose action's cleanup folder overlaps an AI agent's folder carries that refusal
-    /// — the action's own refusal, if any, comes first.</summary>
+    /// <summary>Plan §15q R2 (review B2): a preview whose action's cleanup folder overlaps an AI agent's folder carries THAT refusal
+    /// — before the action's own refusal AND its skip (E7.S1/S2 review R8: the safety reason is the one a person must read, and
+    /// a skip would read as "nothing to do" where the truth is "refused").</summary>
     private static ActionPreview Guarded(ICleanupAction action, ActionContext context, ActionPreview preview) =>
-        preview.Refusal.Length == 0 && AgentFolderOverlap.Refusal(action, context) is { Length: > 0 } overlap ? preview with { Refusal = overlap } : preview;
+        AgentFolderOverlap.Refusal(action, context) is { Length: > 0 } overlap ? preview with { Refusal = overlap, Skip = string.Empty } : preview;
 
     private static Stop? UnreadStop(ActionPreview preview) => preview.Available ? null : new Stop(ActionStatus.Refused, $"its preview could not be read: {preview.Reason}");
 

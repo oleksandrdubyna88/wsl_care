@@ -96,7 +96,7 @@ public static class AgentsReports
             [.. presence.Folders.Select(f => Folder(f, size, sample))],
             Sessions(size, sample),
             total,
-            Growth(total, before),
+            Growth(size, before),
             Warnings(presence.Entry, size, config));
     }
 
@@ -104,16 +104,16 @@ public static class AgentsReports
     /// rules refused a manual agent), unavailable with that folder's reason: a part is never presented as the whole, nor 0 as
     /// a measurement. A folder that does not exist holds nothing and counts as 0.</summary>
     public static ByteFigure Total(AgentSize size) =>
-        size.Folders.FirstOrDefault(f => !Counted(f)) is { } unmeasured
-            ? new ByteFigure(false, null, unmeasured.Reason)
-            : new ByteFigure(true, size.TotalBytes, null);
+        size.Folders.FirstOrDefault(f => !Counted(f)) is { } unmeasured ? new ByteFigure(false, null, unmeasured.Reason)
+        : size.Folders.FirstOrDefault(f => f.Exists && !f.Complete) is { } cut ? new ByteFigure(true, size.TotalBytes, cut.Reason)
+        : new ByteFigure(true, size.TotalBytes, null);
 
-    /// <summary>Now minus the previous walk — only when both are whole measurements.</summary>
-    private static ByteFigure Growth(ByteFigure now, AgentSize? before) =>
-        before is null ? new ByteFigure(false, null, "no earlier measurement of this agent to compare with")
-        : now is not { Available: true, Bytes: { } bytes } ? new ByteFigure(false, null, now.Reason)
-        : Total(before) is { Available: true, Bytes: { } earlier } ? new ByteFigure(true, bytes - earlier, null)
-        : new ByteFigure(false, null, "the earlier measurement of this agent was not whole");
+    /// <summary>Now minus the previous walk — only when BOTH walks were whole (review R2: a lower bound minus a whole figure is
+    /// no growth).</summary>
+    private static ByteFigure Growth(AgentSize? now, AgentSize? before) =>
+        now is null || before is null ? new ByteFigure(false, null, "no earlier measurement of this agent to compare with")
+        : !now.Whole || !before.Whole || Total(now).Reason is not null ? new ByteFigure(false, null, "growth is taken between two whole walks; one of them was not whole")
+        : new ByteFigure(true, now.TotalBytes - before.TotalBytes, null);
 
     private static bool Counted(AgentFolderSize folder) =>
         folder.Exists
@@ -130,7 +130,9 @@ public static class AgentsReports
 
     /// <summary>One measured folder in the wire shape (also <c>agents probe</c>'s).</summary>
     public static AgentFolderReport FolderOf(AgentFolderSize measured) =>
-        new(measured.Path, measured.Exists, FolderBytes(measured), measured.Files, measured.Complete, measured.Excluded);
+        FolderBytes(measured) is { Available: true } bytes
+            ? new(measured.Path, measured.Exists, bytes, measured.Files, measured.Complete, measured.Excluded)
+            : new(measured.Path, measured.Exists, FolderBytes(measured), null, measured.Complete, measured.Excluded);
 
     /// <summary>A folder's bytes: whole; a lower bound with the ceiling that stopped the walk; or unavailable with the reason
     /// (missing, unreadable, not reached) — never 0 for a figure that was not taken.</summary>

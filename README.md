@@ -339,7 +339,14 @@ As root, every per-user path — the daily folder walk, the caches above, the us
 **target user's** home (`/etc/wsl.conf` `[user] default=`, else the single login account), never root's; when the target
 is ambiguous the user layer is skipped: machine-scoped actions still run, every user-scoped action refuses
 naming the accounts (set `[user] default=` in `/etc/wsl.conf`, or `install.sh --set-default-user <name>`). `config set` / `config reset` refuse to run as root for the target user (a
-root-owned file would lock them out of their own settings): run them as yourself.
+root-owned file would lock them out of their own settings) with exit **81**: run them as yourself.
+
+**A tool's own configuration can move its cache.** `npm` (`~/.npmrc` `cache=`), `pip` (`pip.conf` `cache-dir`), `uv`
+(`uv.toml`) and `pnpm` (`store-dir`) read their configuration files from the user's home, and A8 / A17 run them as that
+user. So before its own cleanup each tool is ASKED where its cache is (`npm config get cache`, `pip cache dir`, `uv cache
+dir`, `pnpm store path`); a cache inside an AI agent's folder — or an answer that cannot be read — means that tool is not
+run, said in the run. Not seen: a cache moved only by a variable in the user's shell — the tools run with a clean
+environment, so such a variable does not apply to them either.
 
 What a run does, in order: takes THE run lock (`/run/wsl-care.lock`, shared with `collect` — the second one refuses
 with exit 75 and waits for nothing); sweeps a `running.json` a dead run left (recorded as `interrupted`) or refuses when
@@ -461,7 +468,7 @@ wsl-care agents probe /home/me/.local/bin/mycli --json        # as YOU, never as
 wsl-care config set aiAgents.extra - < agents.json            # the list, from stdin only (JSON, at most 1 MiB, 10 s)
 ```
 
-`agents probe` looks at the file (a regular file this user may start — it is never started and no byte of it is read),
+`agents probe` looks at the file (a regular file this user may start — `access(X_OK)`; it is never started and no byte of it is read),
 takes a name from the FILE NAME, and lists the folders such a CLI conventionally keeps (`~/.<name>`, `~/.config/<name>`,
 `~/.local/share/<name>`, `~/.cache/<name>`) with their sizes and whether each could be a manual agent's folder. As root it
 refuses with exit **81**, naming uid 0 and the fix (set the distribution's default user).
@@ -473,8 +480,16 @@ a catalogue agent's folder ("already tracked"), any folder a cleanup cleans (`~/
 http-cache, the editor servers, the pnpm / uv / pip caches) or wsl-care's own folders. `config set` judges every entry and
 writes nothing when one is refused; the root timer judges them AGAIN on every run. A refused entry is not walked (the
 answer says why) — but its folders stay protected all the same: no cleanup deletes under a manual agent's folder, and a
-cleanup whose folder overlaps one refuses. The `cli` path is never looked at by the daemon. Windows entries are kept for the
-Windows binary (E7.S5b).
+cleanup whose folder overlaps one refuses. Protection is bounded: a folder outside every home, a filesystem root, or one that
+is or holds wsl-care's own folders is not protected at all (it would stop root writing its own state) and is reported as a
+configuration notice. The `cli` path is never looked at by the daemon. Windows entries are kept for the Windows binary (E7.S5b).
+
+`agents list` finds a binary in your own bin folders (`~/.local/bin`, `~/.cargo/bin`, `~/.npm-global/bin`, nvm's default)
+and the system's, whatever the `PATH` a `wsl.exe --exec` call gets; a `PATH` folder under `/mnt/` (Windows' own, on drvfs)
+is never searched. A version is read along the binary's own links — a native install's `…/versions/<v>`, or the npm package
+the binary runs. A walk or a listing never starts in a folder reached through a link below the home, nor on another
+filesystem than the home's; a session's size holds its companion files (Claude Code's session folder and file history,
+Antigravity's `brain/` and annotations).
 
 ## Extension (preview)
 

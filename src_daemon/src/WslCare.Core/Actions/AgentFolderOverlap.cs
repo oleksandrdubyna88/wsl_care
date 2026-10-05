@@ -27,6 +27,17 @@ public static class AgentFolderOverlap
             .FirstOrDefault() ?? string.Empty;
     }
 
+    /// <summary>Why a folder an action works in — <paramref name="display"/>, seen here as <paramref name="folder"/> — may not be
+    /// cleaned: it is, sits inside or holds an AI agent's folder; empty when it does not (review S4: the folder a TOOL says it uses).</summary>
+    public static string Refusal(ActionContext context, string folder, string display)
+    {
+        var real = RealOrFull(context.Files, folder);
+        return context.Paths.AgentRoots.Select(r => (Spelt: r, Real: RealOrFull(context.Files, r)))
+            .Where(a => ExtraAgentRules.Overlaps(real, a.Real))
+            .Select(a => $"the cache folder {display} overlaps the AI agent folder {a.Spelt}, under which nothing is ever deleted (plan §15q R2) — refused")
+            .FirstOrDefault() ?? string.Empty;
+    }
+
     private static IEnumerable<string> Clashes(HomeFolder root, string real, IReadOnlyList<(string Spelt, string Real)> agents) =>
         agents.Where(a => ExtraAgentRules.Overlaps(real, a.Real))
             .Select(a => $"its cleanup folder {root.Display} overlaps the AI agent folder {a.Spelt}, under which nothing is ever deleted (plan §15q R2) — refused");

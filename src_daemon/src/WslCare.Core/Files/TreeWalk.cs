@@ -66,10 +66,16 @@ internal static class TreeWalk
             return new TreeMeasure.Unreadable($"{root} is a link; a walk never follows one");
         }
 
-        return attributes.HasFlag(FileAttributes.Directory)
-            ? WalkOnDevice(root, limits, rules, deviceOf, cancellationToken)
-            : new TreeMeasure.Unreadable($"{root} is a file, not a folder");
+        return !attributes.HasFlag(FileAttributes.Directory) ? new TreeMeasure.Unreadable($"{root} is a file, not a folder")
+            : IsNeverEntered(rules, Path.GetFileName(Path.TrimEndingDirectorySeparator(root))) is { Length: > 0 } never ? new TreeMeasure.Unreadable($"{root} is a {never} folder, never entered (plan §15q H2)")
+            : WalkOnDevice(root, limits, rules, deviceOf, cancellationToken);
     }
+
+    /// <summary>The rule a folder of this name falls under — <c>memory</c>, a prefix — or empty (review S2: the ROOT itself too).</summary>
+    private static string IsNeverEntered(TreeRules rules, string name) =>
+        rules.NeverEnter.Contains(name) ? $"\"{name}\""
+        : rules.NeverEnterPrefixes.FirstOrDefault(p => name.StartsWith(p, StringComparison.OrdinalIgnoreCase)) is { } prefix ? $"\"{prefix}*\""
+        : string.Empty;
 
     /// <summary>The device the walk must stay on, read first; a root whose device cannot be read is not walked when the rules
     /// ask to stay on it (a guarantee that cannot be checked is not given).</summary>
@@ -151,7 +157,7 @@ internal static class TreeWalk
 
         private string? Reason(TreeRules rules, string name, string fullPath) =>
             rules.NeverEnter.Contains(name) ? $"{name} (never entered)"
-            : rules.NeverEnterPrefixes.FirstOrDefault(p => name.StartsWith(p, StringComparison.Ordinal)) is { } prefix ? $"{prefix}* (never entered)"
+            : rules.NeverEnterPrefixes.FirstOrDefault(p => name.StartsWith(p, StringComparison.OrdinalIgnoreCase)) is { } prefix ? $"{prefix}* (never entered)"
             : OnAnotherDevice(fullPath) ? $"{Path.GetRelativePath(root, fullPath).Replace('\\', '/')} (different filesystem)"
             : null;
 

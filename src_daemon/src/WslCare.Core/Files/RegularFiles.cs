@@ -97,6 +97,10 @@ public static partial class RegularFiles
     /// <summary>This process's effective uid on Linux (what a sandboxed test trusts as the state's owner); 0 elsewhere.</summary>
     public static uint EffectiveUid() => OperatingSystem.IsLinux() ? Native.GetEffectiveUid() : 0;
 
+    /// <summary>Whether THIS process may start <paramref name="path"/> — <c>access(X_OK)</c> on Linux (the kernel's answer for this
+    /// user, not "some execute bit"; E7.S1/S2 review R11); any existing file elsewhere. Nothing is opened or started.</summary>
+    public static bool MayExecute(string path) => OperatingSystem.IsLinux() ? Native.Access(path, Native.ExecuteOk) == 0 : File.Exists(path);
+
     /// <summary>Linux only: <c>link(2)</c> of <paramref name="from"/> to <paramref name="to"/> — 0, or the errno (17 = the name
     /// exists). Used by <see cref="PhysicalFileSystem.CreateFileExclusively"/> only.</summary>
     internal static int LinkErrno(string from, string to) => Native.Link(from, to) == 0 ? 0 : Marshal.GetLastPInvokeError();
@@ -344,6 +348,12 @@ public static partial class RegularFiles
 
         /// <summary><c>O_NOFOLLOW</c> differs by architecture: 0x20000 on x86-64, 0x8000 on arm64 (its own uapi fcntl.h).</summary>
         public static int NoFollow => RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? 0x8000 : 0x20000;
+
+        /// <summary><c>X_OK</c>.</summary>
+        public const int ExecuteOk = 1;
+
+        [LibraryImport(Libc, EntryPoint = "access", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int Access(string path, int mode);
 
         [LibraryImport(Libc, EntryPoint = "geteuid")]
         internal static partial uint GetEffectiveUid();

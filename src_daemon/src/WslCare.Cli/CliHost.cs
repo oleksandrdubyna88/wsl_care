@@ -72,23 +72,32 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     public CliHost WithAgentExtras(EffectiveConfig config)
     {
         var extras = config.Agents(ConfigKeys.AiAgents.Extra);
-        var paths = Paths switch
+        var chosen = Paths switch
         {
-            LinuxHostPaths linux when extras.Count > 0 => linux.WithExtraAgentRoots([.. Protected(extras, ExtraAgentShape.Wsl).Select(linux.DistroPath)]),
-            WindowsHostPaths windows when extras.Count > 0 => windows.WithExtraAgentRoots(Protected(extras, ExtraAgentShape.Windows)),
-            _ => Paths,
+            LinuxHostPaths linux => ExtraRoots.ForDistro(linux, Files, Folders(extras, ExtraAgentShape.Wsl)),
+            WindowsHostPaths windows => ExtraRoots.ForWindows(windows, Files, Folders(extras, ExtraAgentShape.Windows)),
+            _ => ExtraRoots.None,
         };
-        if (ReferenceEquals(paths, Paths))
+        if (chosen.Kept.Count == 0)
         {
-            return this;
+            return chosen.Dropped.Count == 0 ? this : this with { AgentExtrasDropped = chosen.Dropped };
         }
 
+        var paths = Paths switch
+        {
+            LinuxHostPaths linux => (IHostPaths)linux.WithExtraAgentRoots(chosen.Kept),
+            WindowsHostPaths windows => windows.WithExtraAgentRoots(chosen.Kept),
+            _ => Paths,
+        };
         var (files, signals) = Rewire(paths, this);
-        return this with { Paths = paths, Files = files, Signals = signals };
+        return this with { Paths = paths, Files = files, Signals = signals, AgentExtrasDropped = chosen.Dropped };
     }
 
-    private static IReadOnlyList<string> Protected(IReadOnlyList<ExtraAgent> extras, string side) =>
-        [.. extras.Where(e => e.Side == side).SelectMany(e => e.DataFolders)];
+    /// <summary>The manual agents' folders phase two did NOT protect, each with why (review S1) — said as a configuration notice.</summary>
+    public IReadOnlyList<string> AgentExtrasDropped { get; init; } = [];
+
+    private static IReadOnlyList<string> Folders(IReadOnlyList<ExtraAgent> extras, string side) =>
+        [.. extras.Where(e => e.Side == side).SelectMany(e => e.DataFolders).Distinct(StringComparer.Ordinal)];
 
     /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names. The runner is the
     /// product's ONE policy (<see cref="CommandPolicy.Product"/>: the never-list over the declared templates); inside the

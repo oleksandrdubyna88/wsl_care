@@ -2568,6 +2568,31 @@ flowchart LR
   `~/.config/<name>`, `~/.local/share/<name>`, `~/.cache/<name>` that exist, measured and judged by the same rules; the
   suggested entry holds the ones that pass. Capabilities `agents.probe`, `config.agentsExtra`.
 
+### What the E7.S1/S2 review round changed (2026-10-05, plan §15q *E7.S1/S2 review round*)
+
+- **Discovery's folders** (R1): the fixed bin list `TargetUserCommands` uses for the target user (nvm's default, `~/.local/bin`,
+  `~/.cargo/bin`, `~/.npm-global/bin`, `/usr/local/bin`, `/usr/bin`), then only the PATH entries that are neither under the
+  automount root nor on another filesystem than `/` — the PATH `wsl.exe --exec` gives holds none of the user's folders and 30+
+  Windows ones (`research/2026-10-03_wsl_exe_facts.md` row 21); the lookup is bounded by `Processes.Bounded.Run` (one helper,
+  shared with the system-drive lookup). **Versions** (R3) follow the found binary's whole link chain.
+- **Where a walk may start** (S3, S3d): `AgentWalk.PlaceProblem` before every folder walk and session listing, catalogue and
+  manual alike: the real path must be the spelled place under the home's real path, and on the home's device. The listing
+  (`SessionGlob`, R4) lists each folder once, keeps its device, asks the deadline and the token before every listing, and an
+  intermediate stop is "not counted". Never-enter names are compared case-insensitively (S8); a walk whose ROOT is a
+  never-enter folder is refused (S2); a manual folder at or under `memory` is refused by the rules (S2).
+- **One session** (R7): layouts carry `companions`; a session's size is its transcript plus its companions, measured by stat
+  and the walk's rules. **Persisted names** (R9): `slow.agents` keeps "N folder(s) on another filesystem", never the names.
+- **Figures** (R2, R6): a cut total keeps its reason; growth needs two whole walks; an unmeasured folder has no file count.
+- **Protection bounded** (S1): `Cli/ExtraRoots` keeps a manual folder (spelt and real) only inside a protected home, never a
+  filesystem root, never equal to or holding the product's folders — the rest a configuration notice. **The overlap refusal
+  first** (R8): `AgentFolderOverlap` replaces an action's own refusal, and a built-CLI scenario holds phase two.
+- **Command cleanups ask their tool** (S4): A8 and A17 run the tool's own "where is your cache" template as the target user
+  and refuse a cache inside an AI agent folder (`CacheFolders.ConfiguredCacheRefusal`, `AgentFolderOverlap.Refusal(context,
+  folder, display)`). Residual: a cache moved only by a shell variable is not seen (the tools run with a clean environment).
+- **Smaller** (R10–R13): a user layer that would render past its reader's cap is not written (`UserConfigWriteResult.TooLarge`);
+  the probe asks `access(X_OK)` (`RegularFiles.MayExecute`); `config set` / `config reset` as root exit 81 (`NotAsRoot`);
+  tuples became records and `DiscoverySide` a closed hierarchy.
+
 ## A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)
 
 ```mermaid

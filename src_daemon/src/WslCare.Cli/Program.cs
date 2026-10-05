@@ -43,6 +43,7 @@ internal static class Program
         var loaded = first.LoadConfig();
         // Phase two (plan §15q R2.2, review M1): the manual AI agents' folders join the protected roots BEFORE anything runs.
         var host = first.WithAgentExtras(loaded.Config);
+        loaded = WithDroppedExtras(loaded, host);
         using var logger = WslCareLogging.Start(host, loaded, AppName, Console.Error);
         try
         {
@@ -61,6 +62,12 @@ internal static class Program
             return Output.Internal(Console.Error, $"{e.GetType().Name}: {e.Message}");
         }
     }
+
+    /// <summary>The manual agents' folders phase two did not protect, said as configuration notices (E7.S1/S2 review S1).</summary>
+    internal static ConfigLoadResult WithDroppedExtras(ConfigLoadResult loaded, CliHost host) =>
+        host.AgentExtrasDropped.Count == 0
+            ? loaded
+            : loaded with { Notices = [.. loaded.Notices, .. host.AgentExtrasDropped.Select(m => new ConfigNotice(new ConfigLayerFile(ConfigLayer.User, host.Paths.UserConfigFile), 0, ConfigKeys.AiAgents.Extra.Name, m))] };
 
     /// <summary>The whole program, with its streams and its machine passed in so it is a unit test.</summary>
     internal static int Run(

@@ -64,10 +64,15 @@ public static class ExtraAgentRules
         };
 
     private static string PlaceRefusal(IFileSystem files, string spelt, string real, string home, IReadOnlyList<ForbiddenFolder> forbidden) =>
-        !Rules.IsStrictlyUnder(real, home) ? $"{spelt} is not inside the home (the home itself and anything outside it are refused)"
+        HasNeverEnterSegment(spelt) || HasNeverEnterSegment(real) ? $"{spelt} lies at or under a folder named {AgentCatalogue.Memory}, which is never entered (plan §15q H2) — refused"
+        : !Rules.IsStrictlyUnder(real, home) ? $"{spelt} is not inside the home (the home itself and anything outside it are refused)"
         : files.DeviceOf(real) is not { } device || files.DeviceOf(home) != device ? $"{spelt} is on another filesystem than the home (a mount, /mnt/c over 9p) — refused"
         : forbidden.FirstOrDefault(f => Overlaps(real, f.Path)) is { } clash ? $"{spelt} overlaps {clash.Whose} — refused"
         : string.Empty;
+
+    /// <summary>Review S2: a data folder AT or UNDER a never-enter folder would be walked although H2 says it is never entered.</summary>
+    private static bool HasNeverEnterSegment(string path) =>
+        path.Split('/', '\\').Any(segment => string.Equals(segment, AgentCatalogue.Memory, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Equal, inside, or containing.</summary>
     public static bool Overlaps(string a, string b) => Rules.IsSameOrUnder(a, b) || Rules.IsStrictlyUnder(b, a);

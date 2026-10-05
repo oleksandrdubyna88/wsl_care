@@ -29,7 +29,7 @@ public sealed class AgentWalkTests : IDisposable
     }
 
     private AgentsSample Walk(params AgentTarget[] targets) =>
-        new AgentWalk(_sandbox.Files, new FixedTimeProvider()).Measure(targets, AgentWalk.CollectBudget, withNames: true, CancellationToken.None);
+        new AgentWalk(_sandbox.Files, new FixedTimeProvider(), _sandbox.Paths.Home).Measure(targets, AgentWalk.CollectBudget, withNames: true, CancellationToken.None);
 
     private AgentTarget Claude() => new(Entry("claude-code"), [Home(".claude")], Home(".claude"));
 
@@ -103,7 +103,7 @@ public sealed class AgentWalkTests : IDisposable
         var stepping = new SteppingTimeProvider(TimeSpan.FromMinutes(2));
         var codex = new AgentTarget(Entry("codex"), [Home(".codex")], Home(".codex"));
 
-        var sample = new AgentWalk(_sandbox.Files, stepping).Measure([Claude(), codex], TimeSpan.FromMinutes(3), withNames: false, CancellationToken.None);
+        var sample = new AgentWalk(_sandbox.Files, stepping, _sandbox.Paths.Home).Measure([Claude(), codex], TimeSpan.FromMinutes(3), withNames: false, CancellationToken.None);
 
         sample.Find("claude-code")!.Folders.Single().Reason.Should().BeEmpty("the first folder is walked inside the budget");
         var late = sample.Find("codex")!;
@@ -146,7 +146,7 @@ public sealed class AgentWalkTests : IDisposable
     {
         Plant(".claude/projects/a/one.jsonl", 100);
 
-        var persisted = new AgentWalk(_sandbox.Files, new FixedTimeProvider()).Measure([Claude()], AgentWalk.CollectBudget, withNames: false, CancellationToken.None);
+        var persisted = new AgentWalk(_sandbox.Files, new FixedTimeProvider(), _sandbox.Paths.Home).Measure([Claude()], AgentWalk.CollectBudget, withNames: false, CancellationToken.None);
         persisted.Agents.Should().OnlyContain(a => a.Largest == null, "the five largest sessions by name are a live answer only (plan §15q D1)");
         persisted.Find("claude-code")!.Sessions.LargestBytes.Should().Be(100, "the size of the largest is a number, kept");
     }

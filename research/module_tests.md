@@ -1442,6 +1442,79 @@ only the inotify proof went red.
 **Goldens** regenerated in WSL: the seven `status*.json` gained `agents.probe` and `config.agentsExtra` in `capabilities`;
 nothing else moved (the golden sandbox has no manual agent, so `agents-list.json` is unchanged).
 
+### The E7.S1/S2 review round (2026-10-05, plan §15q *E7.S1/S2 review round*)
+
+Two own reviews (correctness: 3 High, 5 Medium, 5 Minor; safety/security: 5 Important, 4 Low), every finding accepted. The
+tests — `Core.Tests/Agents/AgentsReviewRoundTests` (23), `UserCacheTests.S4_*` (2), `AgentNoOpenTests` (the folder-event
+assertion), `Cli.Tests/AgentsCommandTests` (R12, S1 ×3), `ActCommandTests` (81), `Scenarios/AgentsExtraFlows` (R8) — and their
+red before the fix (Windows, and WSL for the Linux-only ones: a normal user, a `/tmp` copy, removed):
+
+| # | Red before the fix |
+|---|---|
+| R1 | WSL: `~/.local/bin/claude` not found under the measured exec PATH shape; a `/mnt/c/…/npm/codex` shim *Expected … DetectedBy {"binary"} to not contain "binary"* |
+| R2 | *Expected report.TotalBytes to be ByteFigure(true, 100, "stopped after …")* — the cut walk read as whole, growth taken |
+| R3 | WSL: *Expected codex.Version to be "0.44.0" …, but "0.30.0"* (the oldest nvm); *… "2.1.3" …, but "1.0.0"* (a stale package beat a two-hop native link) |
+| R4 | `**/**` accepted; a folder listed twice; *Expected sessions.Counted to be False …, but found True* for a listing stopped before the sessions' level; WSL: a linked `~/.claude` listed through the link |
+| R5 | *Expected … Count(NotReached) to be greater than 0 …, but found 0* — four candidates, four budgets |
+| R6 | a folder not measured reported `files: 0` |
+| R7 | *Expected size.Sessions.LargestBytes to be 5400L …, but found 2000L* — the companions not counted |
+| R9 | *… excluded {"projects/secret-client-project (different filesystem)"}* persisted |
+| R10 | *Expected type not to be …Written …, but it is* — a 786 KB layer written past its reader's 256 KiB cap |
+| R11 | WSL: a file with an execute bit for OTHERS only was "usable" for its owner |
+| R12 | *the path ; got "/home/me/.local/bin/a"* |
+| 81 | *Expected exit to be 81, but found 2* (`config set` as root for the target user) |
+| S1 | *Expected second.Paths.AgentRoots … not to contain …* for `/var/lib/wsl-care`, `/` and the home itself |
+| S2 | `~/.mycli/memory`, `~/.mycli/Memory`, `~/memory/mycli` accepted (3); *Expected type to be …Unreadable, but found …Measured* for a walk rooted at `memory` |
+| S3 | *Reason "" to contain "another filesystem"* — a catalogue folder on another device than the home walked |
+| S4 | *Expected preview.Refusal "" to contain "/home/me/.claude/npm-cache"*; *… Wrapped {"pip3 cache purge"} to not contain "pip3 cache purge"* |
+| S8 | *Expected …TotalBytes to be 10L, but found 9010L* — a `Memory` folder entered |
+
+Two reds were the TEST's, found and fixed before relying on them: the R1 PATH shape first mixed this machine's real `/usr/bin`
+with the sandbox (the WSL run found the owner's real `/usr/bin/codex`) — every entry is now inside the sandbox; and the
+strengthened S9 assertion first saw the memory folder "opened" by the watch's OWN set-up (it lists every folder to add its
+watches) — the set-up's events are drained before the walk.
+
+R8's scenario was red for a REAL defect of E7.S2: *Expected a12.Reason "nothing to remove; the Playwright part refuses: …" to
+contain "overlaps the AI agent folder"* — the action's SKIP was read before the overlap refusal, so A12 over an agent folder
+read as "nothing to do", not "refused". The overlap refusal now replaces the action's own refusal and its skip.
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the guarding class run, the file restored byte-identical by
+SHA-256; Windows Debug unless marked WSL) — 27 mutations, every one red:
+
+| Mutation | Red |
+|---|---|
+| the automount filter dropped (WSL) | 1 (R1 shim) |
+| the fixed bin list dropped (WSL) | 3 (R1 local bin, both R3) |
+| the cut total without its reason | 1 |
+| growth without the whole-walk rule | 1 |
+| the second `**` accepted | 1 |
+| the listing cache dropped | 1 (listed twice) |
+| the intermediate stop ignored | 1 |
+| the home-device rule dropped | 1 |
+| a budget per probe candidate | 1 |
+| an unmeasured folder's file count kept | 1 |
+| companions not counted | 1 |
+| persisted walks keeping folder names | 1 |
+| the layer-size check dropped | 1 |
+| the probe's "one path" rule dropped | 1 |
+| `config set` as root back to 2 | 1 |
+| protection unbounded | 3 |
+| a memory segment in a manual folder accepted | 3 |
+| a walk rooted at `memory` allowed | 1 |
+| the tool not asked (A8 / A17) | 2 |
+| `memory` compared by case | 1 |
+| the link-on-the-way rule dropped (WSL) | 1 |
+| only one link followed (WSL) | 1 |
+| the version from the npm roots first (WSL) | 2 |
+| any execute bit (WSL) | 1 |
+| `memory` not never-enter (WSL, the folder-event proof) | 1 |
+| `Program.Main` without phase two (WSL, the built CLI) | 1: the A12 reason without the overlap |
+| the overlap refusal leaving the action's skip in place (WSL, the built CLI) | 1: *… "nothing to remove; …" to contain "overlaps the AI agent folder"* |
+
+One first attempt (the listing cache mutated so it did not compile — a nullable warning is an error here) was redone.
+
+**Goldens:** `agents-list.json` — the "not asked" sentence names the new source rule; nothing else moved.
+
 ### A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)
 
 | Guarantee | Tests |

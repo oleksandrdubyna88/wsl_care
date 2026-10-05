@@ -1,7 +1,6 @@
 using WslCare.Core.Actions;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
-using WslCare.Core.Processes;
 using WslCare.Core.Status;
 
 namespace WslCare.Core.Agents;
@@ -43,12 +42,12 @@ public static class AgentProbe
         var local = paths.DistroPath(path);
         var name = NameOf(path);
         var link = files.ReadLink(local) is LinkReadResult.Target;
-        var (usable, reason) = Startable(files, local, path);
+        var startable = Startable(files, local, path);
         var tracked = AgentCatalogue.Agents.FirstOrDefault(a => a.Binaries.Contains(name, StringComparer.Ordinal))?.Name ?? string.Empty;
-        var folders = usable && name.Length > 0 ? Folders(paths, files, name, clock, cancellationToken) : [];
+        var folders = startable.Usable && name.Length > 0 ? Folders(paths, files, name, clock, cancellationToken) : [];
         var accepted = folders.Where(f => f.Refusal.Length == 0).Select(f => f.Spelt).ToList();
         var suggested = tracked.Length == 0 && accepted.Count > 0 ? new ExtraAgent(path, ExtraAgentShape.Wsl, name, accepted, string.Empty) : null;
-        return new AgentProbeReport(SchemaVersion.Current, "wsl", path, link, usable, NameReason(reason, name), name, tracked, [.. folders.Select(f => f.Probed)], suggested);
+        return new AgentProbeReport(SchemaVersion.Current, "wsl", path, link, startable.Usable, NameReason(startable.Reason, name), name, tracked, [.. folders.Select(f => f.Probed)], suggested);
     }
 
     /// <summary>A name from the FILE NAME: the characters a manual agent's name allows, at most its length; empty when none.</summary>
@@ -62,10 +61,15 @@ public static class AgentProbe
     private static string NameReason(string reason, string name) =>
         reason.Length > 0 ? reason : name.Length == 0 ? "no name can be derived from the file name" : string.Empty;
 
-    private static (bool Usable, string Reason) Startable(IFileSystem files, string local, string path) =>
-        !files.FileExists(local) ? (false, $"{path} is not a file that exists (a folder, or nothing)")
-        : !ExecutableResolver.IsStartable(local, windows: false) ? (false, $"{path} has no execute bit: this user cannot start it")
-        : (true, string.Empty);
+    /// <summary>Whether the CLI may be started by THIS user, and why not.</summary>
+    private sealed record StartCheck(bool Usable, string Reason);
+
+    /// <summary>A file that exists and that THIS user may start (review R11: <c>access(X_OK)</c> as the invoking user, not "any x
+    /// bit") — looked at, never started.</summary>
+    private static StartCheck Startable(IFileSystem files, string local, string path) =>
+        !files.FileExists(local) ? new StartCheck(false, $"{path} is not a file that exists (a folder, or nothing)")
+        : !RegularFiles.MayExecute(local) ? new StartCheck(false, $"{path} may not be started by this user (no execute permission for it)")
+        : new StartCheck(true, string.Empty);
 
     private sealed record Candidate(string Spelt, AgentProbeFolder Probed, string Refusal);
 
@@ -76,16 +80,14 @@ public static class AgentProbe
             .Where(files.DirectoryExists).ToList();
         var agent = new ExtraAgent("/probe", ExtraAgentShape.Wsl, name, existing, string.Empty);
         var judged = ExtraAgentRules.Judge(paths, files, [.. existing.Select(f => agent with { DataFolders = [Distro(paths, f)] })], ExtraAgentRules.CleanupRoots(ActionRegistry.Product, home, paths.Rules));
-        var walk = new AgentWalk(files, clock);
-        return [.. existing.Zip(judged).Select(pair => Measured(walk, pair.First, pair.Second, paths, cancellationToken))];
+        // Review R5: every candidate under ONE budget — one walk over all of them, not a fresh budget each.
+        var targets = existing.Zip(judged).Select(pair => new AgentTarget(ExtraAgents.EntryOf(pair.Second.Agent), [pair.First], string.Empty, pair.Second.Refusal)).ToList();
+        var sizes = new AgentWalk(files, clock, home).Measure(targets, AgentWalk.MeasureNowBudget, withNames: false, cancellationToken).Agents;
+        return [.. existing.Zip(judged, sizes).Select(t => Measured(t.First, t.Second, t.Third.Folders[0], paths))];
     }
 
-    private static Candidate Measured(AgentWalk walk, string local, ExtraJudgement judged, LinuxHostPaths paths, CancellationToken cancellationToken)
-    {
-        var target = new AgentTarget(ExtraAgents.EntryOf(judged.Agent), [local], string.Empty, judged.Refusal);
-        var size = walk.Measure([target], AgentWalk.MeasureNowBudget, withNames: false, cancellationToken).Agents[0].Folders[0];
-        return new Candidate(Distro(paths, local), new AgentProbeFolder(AgentsReports.FolderOf(size with { Path = Distro(paths, local) }), judged.Refusal), judged.Refusal);
-    }
+    private static Candidate Measured(string local, ExtraJudgement judged, AgentFolderSize size, LinuxHostPaths paths) =>
+        new(Distro(paths, local), new AgentProbeFolder(AgentsReports.FolderOf(size with { Path = Distro(paths, local) }), judged.Refusal), judged.Refusal);
 
     /// <summary>The path as the distro names it (what the extension saves), from one this process sees under the sandbox root.</summary>
     private static string Distro(LinuxHostPaths paths, string local)

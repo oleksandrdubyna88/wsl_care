@@ -32,6 +32,15 @@ public sealed class NpmCacheClean : ICleanupAction
         TimeSpan.FromMinutes(10),
         CommandRequest.DefaultOutputCapChars);
 
+    /// <summary>Where npm keeps its cache as the user's own configuration says (review S4) — asked, never assumed.</summary>
+    public static readonly CommandTemplate WhereCache = new(
+        "npm-config-get-cache",
+        CommandScope.User,
+        "npm",
+        [new ArgPart.Literal("config"), new ArgPart.Literal("get"), new ArgPart.Literal("cache")],
+        TimeSpan.FromSeconds(30),
+        64 * 1024);
+
     private const long Gib = 1L << 30;
 
     public ActionId Id { get; } = ActionId.Find("A8")!;
@@ -47,14 +56,16 @@ public sealed class NpmCacheClean : ICleanupAction
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];
 
-    public IReadOnlyList<CommandTemplate> Commands { get; } = [Clean];
+    public IReadOnlyList<CommandTemplate> Commands { get; } = [Clean, WhereCache];
 
-    public Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
+    public async Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
         var row = CleanupPreviews.A8Row(context.Config, LastFullRun.Read(context.Paths, context.Files, context.Clock).Folders);
         var cache = CacheFolders.UnderHome(context, ".npm");
-        var preview = RowPreviews.FromFolder(row, "npm cache", cache.Length > 0 ? cache : "~/.npm");
-        return Task.FromResult(Skipped(preview, context, commands));
+        var preview = Skipped(RowPreviews.FromFolder(row, "npm cache", cache.Length > 0 ? cache : "~/.npm"), context, commands);
+        return preview.Skip.Length > 0 || context.TargetUser is not TargetUserResult.Found
+            ? preview
+            : preview with { Refusal = await CacheFolders.ConfiguredCacheRefusal(context, commands, WhereCache, "npm", cancellationToken).ConfigureAwait(false) };
     }
 
     /// <summary>Plan §5 A8: <c>~/.npm</c> above <c>npm.maxCacheGb</c>.</summary>

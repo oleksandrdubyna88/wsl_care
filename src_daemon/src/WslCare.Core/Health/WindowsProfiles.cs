@@ -31,7 +31,10 @@ public static class WindowsProfiles
             return Reading.Missing<string>("the Windows profile is unknown: no full run has found it yet");
         }
 
-        var automount = ProcText.Read(files, paths.WslConfFile).Map(HealthParsers.AutomountRoot).ValueOr("/mnt/");
-        return HealthCollector.InDistro(windowsProfile, automount).Map(paths.DistroPath);
+        return HealthCollector.InDistro(windowsProfile, AutomountRoot(paths, files)).Map(paths.DistroPath);
     }
+
+    /// <summary>Where the Windows drives appear in the distro (<c>/etc/wsl.conf</c>'s <c>[automount] root</c>, <c>/mnt/</c> when unset).</summary>
+    public static string AutomountRoot(LinuxHostPaths paths, IFileSystem files) =>
+        ProcText.Read(files, paths.WslConfFile).Map(HealthParsers.AutomountRoot).ValueOr("/mnt/");
 }

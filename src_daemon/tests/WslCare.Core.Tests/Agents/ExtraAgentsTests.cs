@@ -33,7 +33,7 @@ public sealed class ExtraAgentsTests : IDisposable
         $$"""{ "cli": "{{Cli}}", "side": "wsl", "name": "{{name}}", "dataFolders": ["{{folder}}"], "sessionGlob": "{{glob}}" }""";
 
     private AgentsSample Walk(IFileSystem files, EffectiveConfig config) =>
-        new AgentWalk(files, new FixedTimeProvider()).Measure(
+        new AgentWalk(files, new FixedTimeProvider(), _sandbox.Paths.Home).Measure(
             [.. ExtraAgents.Discover(_sandbox.Paths, files, config, ActionRegistry.Product).Select(p => p.Target)], AgentWalk.CollectBudget, withNames: true, CancellationToken.None);
 
     [Fact]

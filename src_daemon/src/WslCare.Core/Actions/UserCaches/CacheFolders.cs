@@ -5,6 +5,8 @@ using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
 using WslCare.Core.Folders;
 using WslCare.Core.Hosting;
+using WslCare.Core.Processes;
+using WslCare.Core.Processes.Policy;
 
 namespace WslCare.Core.Actions.UserCaches;
 
@@ -98,6 +100,27 @@ public static class CacheFolders
         _ when context.Files.DirectoryExists(folder) => new FolderDeletion(false, "still there after the delete", string.Empty),
         _ => new FolderDeletion(true, string.Empty, string.Empty),
     };
+
+    /// <summary>
+    /// Review S4: a tool's own configuration FILE (<c>~/.npmrc</c> <c>cache=</c>, <c>pip.conf</c> <c>cache-dir</c>, <c>uv.toml</c>,
+    /// pnpm's <c>store-dir</c>) moves its cache — and the tool runs with HOME set, so the file applies. Before the tool's own
+    /// cleanup the tool is ASKED where its cache is (<paramref name="where"/>, a declared read template, as the target user,
+    /// bounded) and that folder is checked against every AI agent folder. Empty when it may run; otherwise why not — an answer
+    /// that cannot be read is a refusal too (a cache that may be an agent's folder is not cleaned).
+    /// </summary>
+    public static async Task<string> ConfiguredCacheRefusal(ActionContext context, ActionCommands commands, CommandTemplate where, string tool, CancellationToken cancellationToken)
+    {
+        var outcome = await commands.RunAsync(where, [], cancellationToken).ConfigureAwait(false);
+        return outcome is CommandOutcome.Exited { ExitCode: 0 } exited && FirstLine(exited.Stdout.Text) is { } folder && folder.StartsWith('/')
+            ? AgentFolderOverlap.Refusal(context, Folder(context, folder), folder)
+            : $"{tool} did not say where its cache is ({where.Shape}), so it is not run: its cache might be an AI agent's folder";
+    }
+
+    private static string? FirstLine(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault();
+
+    private static string Folder(ActionContext context, string distroPath) =>
+        context.Paths is LinuxHostPaths linux ? linux.DistroPath(distroPath) : distroPath;
 
     /// <summary>A size as a person reads it in a note.</summary>
     public static string Gb(long? bytes) =>

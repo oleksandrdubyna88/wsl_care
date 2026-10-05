@@ -23,6 +23,24 @@ public sealed record ExtraAgent(string Cli, string Side, string Name, IReadOnlyL
     public string Id => $"manual:{Name}";
 }
 
+/// <summary>A list of manual agents read from JSON, or why not (the first problem, named).</summary>
+public sealed record ExtraList(IReadOnlyList<ExtraAgent> Agents, string Problem)
+{
+    public static ExtraList Invalid(string problem) => new([], problem);
+}
+
+/// <summary>One entry read: valid, or the problem with it.</summary>
+public abstract record ExtraEntryRead
+{
+    private ExtraEntryRead()
+    {
+    }
+
+    public sealed record Ok(ExtraAgent Agent) : ExtraEntryRead;
+
+    public sealed record Bad(string Problem) : ExtraEntryRead;
+}
+
 /// <summary>
 /// The SHAPE of <c>aiAgents.extra</c> (plan §15q R2.1), checked at <c>config set</c> AND at every load — what a value must look
 /// like before anything looks at the disk. The filesystem rules (under the target user's real home, the same filesystem, no
@@ -44,68 +62,51 @@ public static partial class ExtraAgentShape
     private static readonly string[] Members = ["cli", "side", "name", "dataFolders", "sessionGlob"];
 
     /// <summary>The entries of <paramref name="value"/>, or why it is not a valid list (the first problem, named).</summary>
-    public static (IReadOnlyList<ExtraAgent> Agents, string Problem) Read(JsonElement value)
-    {
-        if (value.ValueKind != JsonValueKind.Array)
+    public static ExtraList Read(JsonElement value) =>
+        value.ValueKind != JsonValueKind.Array ? ExtraList.Invalid("must be a JSON list")
+        : value.GetArrayLength() > MaxEntries ? ExtraList.Invalid($"holds {value.GetArrayLength()} entries; at most {MaxEntries}")
+        : Entries([.. value.EnumerateArray().Select(ReadOne)]);
+
+    /// <summary>Every entry valid and each name once — or the first problem, named by the entry it is in.</summary>
+    private static ExtraList Entries(IReadOnlyList<ExtraEntryRead> reads) =>
+        reads.Select((r, i) => (Read: r, Index: i)).FirstOrDefault(x => x.Read is ExtraEntryRead.Bad) is { Read: ExtraEntryRead.Bad bad } first
+            ? ExtraList.Invalid($"entry {first.Index + 1}: {bad.Problem}")
+            : Named([.. reads.OfType<ExtraEntryRead.Ok>().Select(o => o.Agent)]);
+
+    private static ExtraList Named(IReadOnlyList<ExtraAgent> agents) =>
+        agents.GroupBy(a => a.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } twice
+            ? ExtraList.Invalid($"the name \"{twice.Key}\" is used twice")
+            : new ExtraList(agents, string.Empty);
+
+    private static ExtraEntryRead ReadOne(JsonElement entry) =>
+        entry.ValueKind != JsonValueKind.Object ? new ExtraEntryRead.Bad("must be an object")
+        : entry.EnumerateObject().Select(p => p.Name).FirstOrDefault(n => !Members.Contains(n, StringComparer.Ordinal)) is { } unknown ? new ExtraEntryRead.Bad($"unknown member \"{Printable(unknown)}\"")
+        : !HasStringMembers(entry) ? new ExtraEntryRead.Bad("cli, side, name and sessionGlob must be text, dataFolders a list of text")
+        : Checked(new ExtraAgent(Text(entry, "cli"), Text(entry, "side"), Text(entry, "name"), Folders(entry), Text(entry, "sessionGlob")));
+
+    private static ExtraEntryRead Checked(ExtraAgent agent) =>
+        Problem(agent) is { Length: > 0 } problem ? new ExtraEntryRead.Bad(problem) : new ExtraEntryRead.Ok(agent);
+
+    /// <summary>Why <paramref name="agent"/> is not a valid entry; empty when it is — the first rule it breaks.</summary>
+    public static string Problem(ExtraAgent agent) =>
+        new Func<string>[]
         {
-            return ([], "must be a JSON list");
-        }
+            () => agent.Side is Wsl or Windows ? string.Empty : $"side must be \"{Wsl}\" or \"{Windows}\"",
+            () => NameProblem(agent.Name),
+            () => PathProblem(agent.Cli, agent.Side) is { Length: > 0 } cli ? $"cli {cli}" : string.Empty,
+            () => FoldersProblem(agent),
+            () => GlobProblem(agent.SessionGlob),
+        }.Select(rule => rule()).FirstOrDefault(p => p.Length > 0) ?? string.Empty;
 
-        var entries = value.EnumerateArray().ToList();
-        if (entries.Count > MaxEntries)
-        {
-            return ([], $"holds {entries.Count} entries; at most {MaxEntries}");
-        }
-
-        var agents = new List<ExtraAgent>();
-        foreach (var (entry, index) in entries.Select((e, i) => (e, i)))
-        {
-            var (agent, problem) = ReadOne(entry);
-            if (problem.Length > 0)
-            {
-                return ([], $"entry {index + 1}: {problem}");
-            }
-
-            agents.Add(agent!);
-        }
-
-        return agents.GroupBy(a => a.Name, StringComparer.Ordinal).FirstOrDefault(g => g.Count() > 1) is { } twice
-            ? ([], $"the name \"{twice.Key}\" is used twice")
-            : (agents, string.Empty);
-    }
-
-    private static (ExtraAgent? Agent, string Problem) ReadOne(JsonElement entry)
-    {
-        if (entry.ValueKind != JsonValueKind.Object)
-        {
-            return (null, "must be an object");
-        }
-
-        if (entry.EnumerateObject().Select(p => p.Name).FirstOrDefault(n => !Members.Contains(n, StringComparer.Ordinal)) is { } unknown)
-        {
-            return (null, $"unknown member \"{Printable(unknown)}\"");
-        }
-
-        var agent = new ExtraAgent(Text(entry, "cli"), Text(entry, "side"), Text(entry, "name"), Folders(entry), Text(entry, "sessionGlob"));
-        return (agent, Problem(agent, entry));
-    }
-
-    /// <summary>Why <paramref name="agent"/> is not a valid entry; empty when it is.</summary>
-    public static string Problem(ExtraAgent agent) => Problem(agent, null);
-
-    private static string Problem(ExtraAgent agent, JsonElement? raw) =>
-        raw is { } r && !HasStringMembers(r) ? "cli, side, name and sessionGlob must be text, dataFolders a list of text"
-        : agent.Side is not (Wsl or Windows) ? $"side must be \"{Wsl}\" or \"{Windows}\""
-        : NameProblem(agent.Name) is { Length: > 0 } name ? name
-        : PathProblem(agent.Cli, agent.Side) is { Length: > 0 } cli ? $"cli {cli}"
-        : FoldersProblem(agent) is { Length: > 0 } folders ? folders
-        : GlobProblem(agent.SessionGlob);
+    private static readonly string[] TextMembers = ["cli", "side", "name"];
 
     private static bool HasStringMembers(JsonElement entry) =>
-        new[] { "cli", "side", "name" }.All(m => entry.TryGetProperty(m, out var v) && v.ValueKind == JsonValueKind.String)
-        && (!entry.TryGetProperty("sessionGlob", out var glob) || glob.ValueKind == JsonValueKind.String)
-        && entry.TryGetProperty("dataFolders", out var folders) && folders.ValueKind == JsonValueKind.Array
-        && folders.EnumerateArray().All(f => f.ValueKind == JsonValueKind.String);
+        TextMembers.All(m => IsText(entry, m)) && (!entry.TryGetProperty("sessionGlob", out _) || IsText(entry, "sessionGlob")) && IsTextList(entry, "dataFolders");
+
+    private static bool IsText(JsonElement entry, string member) => entry.TryGetProperty(member, out var v) && v.ValueKind == JsonValueKind.String;
+
+    private static bool IsTextList(JsonElement entry, string member) =>
+        entry.TryGetProperty(member, out var v) && v.ValueKind == JsonValueKind.Array && v.EnumerateArray().All(f => f.ValueKind == JsonValueKind.String);
 
     private static string NameProblem(string name) =>
         NamePattern().IsMatch(name) ? string.Empty : $"name must be 1 to {MaxNameLength} letters, digits, spaces, '.', '_', '+' or '-', starting with a letter or a digit";
@@ -115,21 +116,33 @@ public static partial class ExtraAgentShape
         : agent.DataFolders.Select(f => PathProblem(f, agent.Side)).FirstOrDefault(p => p.Length > 0) is { } bad ? $"a data folder {bad}"
         : string.Empty;
 
+    /// <summary>One rule of a path's shape: what it refuses, in the words of the refusal.</summary>
+    private sealed record PathRule(Func<string, string, bool> Refuses, Func<string, string> Says);
+
+    private static readonly PathRule[] PathShapeRules =
+    [
+        new((p, _) => p.Length is 0 or > MaxPathLength, _ => $"must be 1 to {MaxPathLength} characters"),
+        new((p, _) => p.Any(char.IsControl), _ => "holds a control character"),
+        new((p, _) => p.StartsWith('-'), _ => "starts with '-'"),
+        new((p, side) => !(side == Windows ? IsDrivePath(p) : p.StartsWith('/')), side => side == Windows ? "must be an absolute path X:\\…" : "must be an absolute path /…"),
+        new((p, _) => p.Split('/', '\\').Any(s => s is ".." or "."), _ => "holds a . or .. segment"),
+    ];
+
     /// <summary>Why <paramref name="path"/> is not an absolute path of <paramref name="side"/>; empty when it is.</summary>
     public static string PathProblem(string path, string side) =>
-        path.Length is 0 or > MaxPathLength ? $"must be 1 to {MaxPathLength} characters"
-        : path.Any(char.IsControl) ? "holds a control character"
-        : path.StartsWith('-') ? "starts with '-'"
-        : !(side == Windows ? IsDrivePath(path) : path.StartsWith('/')) ? (side == Windows ? "must be an absolute path X:\\…" : "must be an absolute path /…")
-        : path.Split('/', '\\').Any(s => s is ".." or ".") ? "holds a . or .. segment"
-        : string.Empty;
+        PathShapeRules.FirstOrDefault(r => r.Refuses(path, side)) is { } broken ? broken.Says(side) : string.Empty;
 
-    /// <summary>Empty, or relative segments of letters, digits, '.', '_', '-', '*', and whole <c>**</c> segments.</summary>
+    /// <summary>Empty, or relative segments of letters, digits, '.', '_', '-', '*', and AT MOST ONE whole <c>**</c> segment (review R4:
+    /// a second one would count a session once per way down to it).</summary>
     public static string GlobProblem(string glob) =>
         glob.Length == 0 ? string.Empty
         : glob.Length > MaxGlobLength ? $"sessionGlob is longer than {MaxGlobLength} characters"
-        : glob.Split('/').All(s => s == "**" || (s.Length > 0 && s is not ("." or "..") && GlobSegmentPattern().IsMatch(s))) ? string.Empty
+        : glob.Split('/').Count(s => s == "**") > 1 ? "sessionGlob may hold one '**' segment at most"
+        : glob.Split('/').All(IsGlobSegment) ? string.Empty
         : "sessionGlob must be relative segments of letters, digits, '.', '_', '-' and '*', or a whole '**' segment — no '..', no leading '/'";
+
+    private static bool IsGlobSegment(string segment) =>
+        segment == "**" || (segment.Length > 0 && segment is not ("." or "..") && GlobSegmentPattern().IsMatch(segment));
 
     private static bool IsDrivePath(string value) => value.Length >= 3 && char.IsAsciiLetter(value[0]) && value[1] == ':' && value[2] == '\\';
 

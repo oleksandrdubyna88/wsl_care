@@ -34,7 +34,7 @@ internal static class ConfigCommand
     {
         if (RootForTheUser(host) is { } refusal)
         {
-            return Output.Refuse(stderr, refusal);
+            return NotAsRoot(stderr, refusal);
         }
 
         var key = ConfigKeys.Find(request.Key);
@@ -94,7 +94,7 @@ internal static class ConfigCommand
     {
         if (RootForTheUser(host) is { } refusal)
         {
-            return Output.Refuse(stderr, refusal);
+            return NotAsRoot(stderr, refusal);
         }
 
         var key = ConfigKeys.Find(request.Key);
@@ -108,6 +108,14 @@ internal static class ConfigCommand
 
     /// <summary>Root working for the target user (plan §15c #2, E3.S2) must not write that user's layer: a root-owned file in their
     /// home would lock them out of their own settings. The panel writes the layer as the user, unprivileged.</summary>
+    /// <summary>E7.S1/S2 review round: its own exit code (81), so a client can tell "the distribution's default user is root" from a
+    /// refused value (2) — the extension reverts a setting on 2 only.</summary>
+    private static int NotAsRoot(TextWriter stderr, string refusal)
+    {
+        Output.Note(stderr, refusal);
+        return (int)ExitCode.NotAsRoot;
+    }
+
     private static string? RootForTheUser(CliHost host) =>
         host.HomeOwner is Core.Actions.HomeOwner.Target target
             ? $"config set and config reset write the user layer of {target.User.Name}; run them as {target.User.Name}, not as root (a root-owned file in their home would lock them out of it). Nothing was written."
@@ -166,6 +174,11 @@ internal static class ConfigCommand
     /// <summary>After a write: the notes about the repair, then the key's effective value, re-read from disk.</summary>
     private static int Report(UserConfigWriteResult result, ConfigKey key, CliHost host, TextWriter stdout, TextWriter stderr)
     {
+        if (result is UserConfigWriteResult.TooLarge large)
+        {
+            return Output.Refuse(stderr, $"{key.Name}: the user layer would be {large.Bytes} bytes, over the {large.Max}-byte cap its reader keeps (non-ASCII text is written escaped, six bytes a character). Nothing was written.");
+        }
+
         if (result is UserConfigWriteResult.Refused refused)
         {
             // The user's config directory is never a protected place: reaching here is a defect in the

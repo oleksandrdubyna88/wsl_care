@@ -164,16 +164,12 @@ public static class ExecutableResolver
     /// own on a thread of its own (never the pool's) — once per resolve, its answer ignored and any fault observed — rather than
     /// holding the run.
     /// </summary>
-    private static ResolvedExecutable Bounded(Func<ResolvedExecutable> lookup, TimeSpan ceiling, string notOnPath, CancellationToken cancellationToken)
-    {
-        // Its own thread, never the pool's: a read the host stopped answering may never return, and an abandoned lookup must
-        // not hold a thread-pool thread for the life of the process (measured: blocked pool threads delayed unrelated work).
-        var running = Task.Factory.StartNew(lookup, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        _ = running.ContinueWith(static t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously);
-        return running.Wait(ceiling, cancellationToken)
-            ? running.GetAwaiter().GetResult()
-            : new ResolvedExecutable.NotFound(string.Create(CultureInfo.InvariantCulture, $"{notOnPath}; the Windows system drive did not answer within {ceiling.TotalSeconds:0.###} s, so nothing there is started"));
-    }
+    private static ResolvedExecutable Bounded(Func<ResolvedExecutable> lookup, TimeSpan ceiling, string notOnPath, CancellationToken cancellationToken) =>
+        Processes.Bounded.Run(
+            lookup,
+            ceiling,
+            new ResolvedExecutable.NotFound(string.Create(CultureInfo.InvariantCulture, $"{notOnPath}; the Windows system drive did not answer within {ceiling.TotalSeconds:0.###} s, so nothing there is started")),
+            cancellationToken);
 
     private static ResolvedExecutable OnTheSystemDrive(string name, string folder, SystemDriveLookup systemDrive, string notOnPath) => systemDrive.Mount() switch
     {

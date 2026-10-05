@@ -491,6 +491,7 @@ internal static class CommandLine
     {
         [var path] when ProbePathProblem(path).Length == 0 => new Request.AgentsProbe(path, false),
         [var path, JsonFlag] when ProbePathProblem(path).Length == 0 => new Request.AgentsProbe(path, true),
+        [var path, var extra, ..] when ProbePathProblem(path).Length == 0 => new Request.Failed($"\"{BinaryName} agents probe\" takes one path and optionally {JsonFlag}; got an extra argument \"{Printable(extra)}\"."),
         [var path, ..] when !path.StartsWith('-') => new Request.Failed($"\"{BinaryName} agents probe\": the path {ProbePathProblem(path)}; got \"{Printable(path)}\"."),
         _ => new Request.Failed($"\"{BinaryName} agents probe\" needs exactly one <path> and optionally {JsonFlag}: {BinaryName} agents probe <path> [{JsonFlag}]."),
     };

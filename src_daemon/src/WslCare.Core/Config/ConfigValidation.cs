@@ -46,8 +46,8 @@ public static class ConfigValidation
     private static ValueCheck CheckAgents(ConfigKey.AgentListKey key, JsonElement value) =>
         Agents.ExtraAgentShape.Read(value) switch
         {
-            (_, { Length: > 0 } problem) => new ValueCheck.Invalid($"{key.Name}: {problem}"),
-            var (agents, _) => new ValueCheck.Ok(new ConfigValue.AgentList(agents)),
+            { Problem.Length: > 0 } invalid => new ValueCheck.Invalid($"{key.Name}: {invalid.Problem}"),
+            var list => new ValueCheck.Ok(new ConfigValue.AgentList(list.Agents)),
         };
 
     /// <summary>The JSON text <c>config set aiAgents.extra -</c> read from stdin.</summary>

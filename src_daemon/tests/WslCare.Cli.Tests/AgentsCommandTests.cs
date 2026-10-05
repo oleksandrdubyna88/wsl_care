@@ -135,7 +135,7 @@ public sealed class AgentsCommandTests : IDisposable
 
         var second = first.WithAgentExtras(first.LoadConfig().Config);
 
-        second.Paths.AgentRoots.Should().Contain(_sandbox.Paths.DistroPath("/home/me/.mycli"));
+        second.Paths.AgentRoots.Select(Path.GetFullPath).Should().Contain(Path.GetFullPath(_sandbox.Paths.DistroPath("/home/me/.mycli")));
         second.Files.DeleteDirectory(folder, scope).Should().BeOfType<DeletionVerdict.Refused>();
         Directory.Exists(folder).Should().BeTrue();
         first.Files.DeleteDirectory(folder, scope).Should().NotBeOfType<DeletionVerdict.Refused>("phase one's policy predates the extras — what phase two exists to fix");
@@ -147,5 +147,35 @@ public sealed class AgentsCommandTests : IDisposable
         var first = Host();
 
         first.WithAgentExtras(first.LoadConfig().Config).Should().BeSameAs(first);
+    }
+
+    // ---------- the E7.S1/S2 review round ----------
+
+    [Fact]
+    public void R12_agents_probe_with_an_extra_argument_names_it()
+    {
+        var probe = CliRun.Over(Host(), "agents", "probe", "/home/me/.local/bin/a", "/home/me/.local/bin/b");
+
+        probe.Exit.Should().Be((int)ExitCode.Usage);
+        probe.Stderr.Should().Contain("one path").And.Contain("extra argument").And.Contain("/home/me/.local/bin/b");
+    }
+
+    /// <summary>Review S1: an extra naming the product's state folder (or `/`) would make root refuse its OWN writes — it is not
+    /// protected; the run's file system still writes running.json.</summary>
+    [Theory]
+    [InlineData("/var/lib/wsl-care")]
+    [InlineData("/")]
+    [InlineData("/home/me")]
+    public void S1_an_extra_outside_the_home_or_on_the_products_folders_is_not_protected_and_root_still_writes_its_state(string folder)
+    {
+        _sandbox.Write("/home/me/.config/wsl-care/config.json", $$"""{ "aiAgents": { "extra": {{Extra(folder)}} } }""");
+        var first = Host();
+
+        var second = first.WithAgentExtras(first.LoadConfig().Config);
+
+        second.AgentExtrasDropped.Should().ContainSingle().Which.Should().Contain("is not protected");
+        second.Paths.AgentRoots.Should().NotContain(r => Path.GetFullPath(r).TrimEnd('/', '\\') == Path.GetFullPath(_sandbox.Paths.DistroPath(folder)).TrimEnd('/', '\\'));
+        Core.Actions.Engine.RunningState.Write(second.Paths, second.Files, new Core.Actions.Engine.RunningFile(1, Core.Records.RunId.New(FixedTimeProvider.DefaultNow, 7), Core.Records.RunTrigger.Cli, ["A10"], string.Empty, 7, FixedTimeProvider.DefaultNow, FixedTimeProvider.DefaultNow, FixedTimeProvider.DefaultNow, null))
+            .Should().NotBeOfType<DeletionVerdict.Refused>("root's own state is never an agent folder");
     }
 }

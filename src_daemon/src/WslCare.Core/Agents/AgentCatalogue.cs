@@ -11,7 +11,9 @@ namespace WslCare.Core.Agents;
 /// <param name="WindowsUnder">The same on Windows (<c>%USERPROFILE%\…</c>); empty = not counted on Windows.</param>
 /// <param name="Glob">Name patterns separated by <c>/</c> (<c>*</c> and <c>?</c> within one name); the last matches files.</param>
 /// <param name="Source">Where the layout was confirmed.</param>
-public sealed record AgentSessionLayout(string LinuxUnder, string WindowsUnder, string Glob, string Source);
+/// <param name="Companions">D2's one session beyond its transcript (review R7): files and folders relative to the layout's
+/// folder, <c>{dir}</c> the session file's folder and <c>{id}</c> its name without the extension — sized with the session.</param>
+public sealed record AgentSessionLayout(string LinuxUnder, string WindowsUnder, string Glob, string Source, IReadOnlyList<string> Companions);
 
 /// <summary>One agent of the catalogue (plan §4.6, §15q): data, not code.</summary>
 /// <param name="Linux">Data folders inside the distro, <c>~/…</c> (the TARGET user's home as root).</param>
@@ -116,5 +118,6 @@ public static class AgentCatalogue
         NeverEnter = entry.NeverEnter ?? [],
         NeverEnterPrefixes = entry.NeverEnterPrefixes ?? [],
         VersionInLinkTarget = entry.VersionInLinkTarget ?? string.Empty,
+        Sessions = entry.Sessions is { } layout ? layout with { Companions = layout.Companions ?? [] } : null,
     };
 }

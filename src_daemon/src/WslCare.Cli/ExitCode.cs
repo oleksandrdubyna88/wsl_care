@@ -71,8 +71,9 @@ internal enum ExitCode
     /// stray start. A no-op: no history line, nothing run (plan §15k #2); a success exit of the unit.</summary>
     RequestGone = 80,
 
-    /// <summary><c>agents probe</c> started as ROOT (plan §15q D4, review C3): refused whole — it runs as the user who owns the
-    /// CLI, never as uid 0; the message names the fix (the distribution's default user).</summary>
+    /// <summary>A verb that must run as the USER started as root (plan §15q D4, review C3; E7.S1/S2 review round): <c>agents probe</c>
+    /// (it runs as the user who owns the CLI, never as uid 0) and <c>config set</c> / <c>config reset</c> for the target user (a
+    /// root-owned file in their home would lock them out) — refused whole, naming the fix.</summary>
     NotAsRoot = 81,
 
     /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention).</summary>

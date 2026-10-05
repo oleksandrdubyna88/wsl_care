@@ -389,7 +389,7 @@ public static class CollectRun
         var tracked = Agents.AgentDiscovery.Discover(paths, c.Files, pathVariable: null, asRoot: true)
             .Concat(Agents.ExtraAgents.Discover(paths, c.Files, c.Loaded.Config, Actions.ActionRegistry.Product))
             .Where(p => p.Tracked).Select(p => p.Target).ToList();
-        return new Agents.AgentWalk(c.Files, c.Clock).Measure(tracked, Agents.AgentWalk.CollectBudget, withNames: false, cancellationToken);
+        return new Agents.AgentWalk(c.Files, c.Clock, paths.Home).Measure(tracked, Agents.AgentWalk.CollectBudget, withNames: false, cancellationToken);
     }
 
     private static ThresholdInputs Inputs(ProbeSample sample, HealthSample health, TimeSpan sinceLastRun, LastSlowParts last, PreviewResult docker, Reading<AgedPart<FolderSizesSample>> folders) =>
