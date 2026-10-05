@@ -399,6 +399,47 @@ test('review B2: a full check matches its history line as the daemon writes it �
   assert.ok(viaStatus.journal.entries()[0]?.kind === 'run', 'adopted from status.running');
 });
 
+test('§15o: kind FIRST — kind "collect" is the full check whatever its actions and reason; kind "act" never is; no kind or an unknown one keeps the old rule', async () => {
+  const line = (actions: unknown[], extra: Record<string, unknown> = {}) => ({ runId: RUN, trigger: 'manual', startedAt: '2026-10-05T10:00:01+00:00', outcome: 'refused', actions, ...extra });
+  const unusable = 'refused: its request could not be used (schema 9); nothing was run';
+  const cases: readonly [Record<string, unknown>, boolean][] = [
+    // kind decides: a refused full check written the §15o way, [] actions — even with a reason the old rule excludes.
+    [line([], { kind: 'collect', reason: 'busy: run X holds the lock' }), true],
+    [line([], { kind: 'collect', reason: unusable }), true],
+    [line([{ id: 'A4', status: 'interrupted', count: 0, freedBytes: 0 }], { kind: 'collect', outcome: 'interrupted', reason: 'swept' }), true],
+    // an act is never the full check, whatever shape its actions have.
+    [line([], { kind: 'act', reason: 'busy: run X holds the lock' }), false],
+    [line([{ id: 'collect', status: 'refused', count: 0, freedBytes: 0 }], { kind: 'act' }), false],
+    // no kind (a daemon older than §15o): today's rule exactly.
+    [line([], { reason: 'busy: run X holds the lock' }), true],
+    [line([], { reason: unusable }), false],
+    // an unknown kind reads as absent: the old rule, never a crash.
+    [line([], { kind: 'sweep', reason: 'busy: run X holds the lock' }), true],
+    [line([], { kind: 'sweep', reason: unusable }), false],
+    [line([{ id: 'A4', status: 'ran', count: 1, freedBytes: 5 }], { kind: 'Collect' }), false],
+    [line([], { kind: 7 }), true],
+  ];
+  for (const [candidate, adopted] of cases) {
+    const w = new World();
+    await ours(w, FULL_CHECK);
+    w.answer = () => listing([candidate]);
+    w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
+    w.follower.kick();
+    await poll(w);
+    assert.equal(w.journal.entries()[0]?.kind === 'run', adopted, JSON.stringify(candidate));
+  }
+});
+
+test('§15o: an act entry still matches by its actions — a kind on the line changes nothing for it', async () => {
+  const w = new World();
+  await ours(w, UNRESOLVED);
+  w.answer = () => listing([{ runId: RUN, trigger: 'manual', startedAt: '2026-10-05T10:00:01+00:00', outcome: 'completed', kind: 'act', actions: [{ id: 'A4', status: 'ran', count: 1, freedBytes: 5 }] }]);
+  w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
+  w.follower.kick();
+  await poll(w);
+  assert.ok(w.journal.entries()[0]?.kind === 'run');
+});
+
 // ---- bounded reads, dispose, per-entry faults, concurrency, one panel round, two windows ----
 
 test('review C8: a record read that keeps failing is tried 3 times with backoff — then ends as "state unknown — the record could not be read"', async () => {

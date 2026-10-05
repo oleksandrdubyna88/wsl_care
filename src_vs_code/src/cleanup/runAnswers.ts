@@ -3,6 +3,7 @@ import type { JsonObject } from '../client/outcome';
 import { runningOf } from '../root/rootAnswers';
 import { runIdOf, type RunId } from '../root/rootIds';
 import type { RunningBlock } from '../root/rootOutcome';
+import { RUN_KINDS } from '../root/cleanupController';
 
 /**
  * The two run reads' answers (E6.S3, plan §15j M3 / M7), read as untrusted input: every enum through `readEnum` (an unknown
@@ -24,9 +25,16 @@ export interface RunLineAction {
   readonly freedBytes: number;
 }
 
+/** What a run WAS (plan §15o, additive): a full check (`collect`) or an `act` — the values spelt by `root/rootCall.ts`. */
+export type RunKind = (typeof RUN_KINDS)[keyof typeof RUN_KINDS];
+
+const KNOWN_KINDS: readonly RunKind[] = Object.values(RUN_KINDS);
+
 /** One history line, as `runs` and `runs show` answer it. */
 export interface RunLine {
   readonly runId: RunId | undefined;
+  /** §15o's `kind` — absent on a line from a daemon older than it, and when the value is not one this build knows. */
+  readonly kind?: RunKind | undefined;
   readonly trigger: string;
   readonly startedAt: string;
   readonly outcome: string;
@@ -64,6 +72,11 @@ function actionOf(value: unknown): RunLineAction[] {
   return isObject(value) && typeof value.id === 'string' ? [{ id: value.id, status: stringOr(value.status), count: count(value.count), freedBytes: count(value.freedBytes) }] : [];
 }
 
+/** §15o's `kind`, strictly: exactly one of the known kinds — any other value (a later daemon's, a case variant) reads as absent. */
+function kindOf(value: unknown): RunKind | undefined {
+  return KNOWN_KINDS.find((kind) => kind === value);
+}
+
 /** One history line, or nothing when it is not an object. */
 function lineOf(value: unknown): RunLine[] {
   if (!isObject(value)) {
@@ -71,7 +84,7 @@ function lineOf(value: unknown): RunLine[] {
   }
   const actions = Array.isArray(value.actions) ? value.actions.flatMap(actionOf) : [];
 
-  return [{ runId: runIdOf(value.runId), trigger: stringOr(value.trigger), startedAt: stringOr(value.startedAt), outcome: stringOr(value.outcome), freedBytes: optionalCount(value.freedBytes), actions, reason: stringOr(value.reason) }];
+  return [{ runId: runIdOf(value.runId), kind: kindOf(value.kind), trigger: stringOr(value.trigger), startedAt: stringOr(value.startedAt), outcome: stringOr(value.outcome), freedBytes: optionalCount(value.freedBytes), actions, reason: stringOr(value.reason) }];
 }
 
 /** `runs show <runId> --json`, read. */

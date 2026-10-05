@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
@@ -410,6 +411,23 @@ test('run reads: every other shape is refused — a bad run id, an instant witho
       assert.equal(code, FAKE_EXIT.refused, `${argv.join(' ')} → ${code} ${stderr}`);
     }
   });
+});
+
+test('§15o: the fake carries a line\'s kind through unchanged — runs show (whose run id it rewrites) and runs', async () => {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'wsl-care-kind-'));
+  try {
+    const done = JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, 'head', 'runs-show-done.json'), 'utf8')) as { run: Record<string, unknown> };
+    fs.writeFileSync(path.join(folder, 'runs-show-kind.json'), JSON.stringify({ ...done, run: { ...done.run, kind: 'collect', actions: [] } }));
+    fs.writeFileSync(path.join(folder, 'runs-kind.json'), JSON.stringify({ schemaVersion: 1, count: 1, runs: [{ ...done.run, kind: 'act' }] }));
+    await within({ ...UBUNTU_RUNNING, answers: folder, runsShow: 'runs-show-kind.json', runs: 'runs-kind.json' }, async (world) => {
+      const show = json(await ask(world, [...DAEMON_CALL, 'runs', 'show', '20261005T100000Z-77', '--json']));
+      assert.deepEqual([(show.run as { kind: string }).kind, (show.run as { runId: string }).runId], ['collect', '20261005T100000Z-77']);
+      const runs = json(await ask(world, [...DAEMON_CALL, 'runs', '--from', '2026-10-05T10:00:00Z', '--to', '2026-10-05T10:05:00Z', '--json']));
+      assert.equal((runs.runs as { kind: string }[])[0]?.kind, 'act');
+    });
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 });
 
 test('run reads: a run read to a STOPPED distribution is refused like every -d', async () => {

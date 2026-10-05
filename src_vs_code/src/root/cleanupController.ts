@@ -6,7 +6,7 @@ import { DAEMON_PATH } from '../client/WslCareClient';
 import type { ProcessResult, Runner } from '../process/runner';
 import { actionGate, pickIds, type GateOpen } from './actionGate';
 import { parseHandOff, parsePreview, runningOf, type HandOff, type HandOffResult, type PreviewContext } from './rootAnswers';
-import { callRoot, FULL_CHECK_ACTIONS, type RootOp, type RootTarget } from './rootCall';
+import { callRoot, FULL_CHECK_ACTIONS, RUN_KINDS, type RootOp, type RootTarget } from './rootCall';
 import { exitFailure } from './rootFailures';
 import { runIdOf, volumeNameOf, type ActionIds, type RunId, type VolumeName } from './rootIds';
 import type { HandOffOutcome, HeldPreview, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
@@ -518,3 +518,6 @@ function freezePreview(preview: HeldPreview): HeldPreview {
 /** What a full check's run holds as its actions (`["collect"]`) — re-exported so the host's cleanup flow can name it
  * without importing the root module (only this controller imports `rootCall.ts`). */
 export { FULL_CHECK_ACTIONS };
+
+/** §15o's run kinds, re-exported for the follower's matching on the same terms. */
+export { RUN_KINDS };

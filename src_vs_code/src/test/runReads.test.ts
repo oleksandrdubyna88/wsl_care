@@ -170,3 +170,9 @@ test('runs over the local-day golden: every line, in order, with its trigger, st
   assert.equal(lines[1]?.freedBytes, 308000000);
   assert.deepEqual(parseRuns({ schemaVersion: 1, runs: [7, null, { runId: 'x' }] }).map((l) => l.runId), [undefined], 'non-objects dropped, a bad run id read as none');
 });
+test('§15o: a line\'s kind is read STRICTLY — "collect" or "act"; any other value, a case variant or a non-string reads as absent', () => {
+  const kinds = parseRuns({ schemaVersion: 1, runs: ['collect', 'act', 'Collect', 'sweep', 7, null, undefined, `collect${String.fromCharCode(0x202e)}`].map((kind) => ({ runId: RUN, kind })) }).map((l) => l.kind);
+  assert.deepEqual(kinds, ['collect', 'act', undefined, undefined, undefined, undefined, undefined, undefined]);
+  assert.equal(parseRunShow({ schemaVersion: 1, runId: RUN, state: 'done', run: { runId: RUN, kind: 'act' } }).line?.kind, 'act', 'runs show\'s line too');
+  assert.equal(parseRuns(JSON.parse(goldenText('runs-local-day.json')) as Record<string, unknown>)[0]?.kind, undefined, 'a line from a daemon older than §15o has none');
+});
