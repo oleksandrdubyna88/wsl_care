@@ -2315,7 +2315,7 @@ launches). The daemon was not changed, so its suites were not run for this story
 
 **The M6 run-log churn, measured for the owner** (`runFollower.test.ts`, *M6 churn, measured*): a run followed for D minutes
 costs 15 `status` runs a minute (one every 4 s) and ONE `runs show` — a 2-minute run 30 + 1, a 10-minute run 150 + 1; a run
-that never ends meets the 30-minute ceiling at 451 `status` runs and no `runs show`. Each terminal answer adds one panel round
+that never ends meets the 30-minute ceiling at 451 `status` runs and (since the review round, B1) ONE record read. Each terminal answer adds one panel round
 (3 runs). Recorded in [2026-10-04_extension_poll_churn.md](2026-10-04_extension_poll_churn.md) § E6.S3; the decision stays the
 owner's (§15j M6).
 
@@ -2324,6 +2324,25 @@ owner's (§15j M6).
 its message was cut off by the summary filter. The runner is untouched by this story; the test passed alone three times and in
 the five full runs after. The shared things the two runs share are the machine's CPU and its clock (the test bounds an elapsed
 time at 700 ms + the kill grace + 3 s while the other test files run in parallel) — an open item, not a fix.
+
+### The E6.S3 review round (coai code round + two own reviews, 2026-10-05)
+
+The coai code round (proceed, 7 of 8 reviewers, 26 findings — 25 accepted, #11 rejected) and two own reviews (security A1–A5;
+durable state B1–B5); the dispositions are the plan's §15n. Each group was written test-first, run against the code as it stood
+(red for the reported symptom), fixed (green), and the fix's load-bearing line broken by the mutation script (red again,
+restored by SHA-256). Totals after the round: `npm test` **636 tests (635 pass, 1 skipped)**; typecheck and lint 0;
+`npm run package` + `check-vsix` clean; the extension-host tier green on VS Code 1.85.0 and stable, fake and closed; the family
+checks (plan-lifecycle, adapter, build flags, pin) OK. The daemon was not changed.
+
+| Group | Test | Red observed |
+|---|---|---|
+| **security** (A1–A4, coai #19): a daemon string never reaches a notification as a `command:` link (`noticeText`, the host's one road, *Install daemon*'s report swept too); `safeText` replaces separators, direction marks and zero-width characters; `clean` is one row; the modal is the confirm's ids and a preview not describing one is not confirmed; the full check refused host-side when greyed; a fault at the detached edge told and logged | `cleanupHost.test.ts` (5), `panel/webviewHost.test.ts`, `modalText.test.ts`, `cleanFlow.test.ts`, `installDaemon.test.ts` | 10 red before the fix (cleanupHost 5/5, messages 1, modal 2, flow 1, install 1). Mutations, each red: `unlinked` off → 3, the host's wrapper bypassed → 2, invisible characters kept → 1, several rows for `clean` → 1, the modal from the answer's actions → 1, the missing-id refusal off → 1, the host-side full-check refusal off → 1, the edge rethrowing → 1 |
+| **one place per decision** (coai #0 / #5, #1 / #6, #2 / #13, #8 / #12 / #14, #18, #24): the run-id and instant shapes in `src/shared/shapes.ts` (the fake holds the same objects); `gb` / `minuteOf` in `src/text/format.ts`; the ceiling handed to the result words; absent figures as "?", a real 0 as "nothing to clean"; the Select tick posts nothing; the flow test's world a class, no casts | `sharedShapes.test.ts` (3), `cleanupView.test.ts` (2), `panelPage.test.ts` (1) | the scans red listing EXACTLY the duplicate sites (the run-id regex in the client, `rootAnswers.ts`, `rootIds.ts` and the fake; `gb` ×4, `minuteOf` ×3; `resultText.ts` importing `FOLLOW_POLL`); C2 2 red; C15 1 red. Mutations: the fake's own instant regex → 1, unread figures as 0 → 2, a tick posting → 1. The cast-free world is a test refactor — no behaviour, no red |
+| **the journal** (A5, coai #7 / #15 / #21, #17, #20): v2 `{ entries, removed }`; no cached copy; writes serialised, read back one turn later and re-applied; tombstones merged; refused past 32 (never evicting); at most 19 actions; an instant that exists and lies ≤ 5 min ahead; two journals over one store as two windows | `journal.test.ts` (10), `cleanFlow.test.ts` (*journal full*) | 7 of 10 red against the old journal (the 3 green are the unchanged guarantees). Mutations: no re-apply → 2, tombstones not honoured → 1 (the first version of this mutation was a NO-OP — it stayed green, and was rewritten), the skew ×1000 → 1, a non-existent date accepted → 1, the action cap → 1, the entry cap → 1 (journal) + 1 (flow). `Memento.update(key, fn)` was checked in `@types/vscode` 1.85: only `update(key, value)` exists, so the coordination is advisory and its residual race is in `journal.ts`'s header |
+| **the durable poll** (B1–B5, coai #3 / #9 / #16, #4, #10, #22, #23, #25, A5 per entry): no ending on no evidence; the daemon's real full-check lines; the skew; wait or adopt while a matching run may be in flight; dispose honoured; a run from idle; unfocused settles only its own; 3 tries with backoff; 4 at a time, each in its own `try`; one panel round a tick; one `runs show` per leaving flight; Stop adopts the unresolved entry | `runFollower.test.ts` (25), `runMatching.ts` through it, `cleanFlow.test.ts` (*Stop … adopts*), `resultText.test.ts` (*the record could not be read*) | the rewritten tests 15 of 23 red against the old follower (8 green: the unchanged guarantees); the Stop lookup 1 red; the unreadable words 1 red. While mutating, two B1 gaps were found and closed test-first: a status answering for ANOTHER distribution (the mutation ignoring the distribution survived until a test named it), and a REAL defect — an unresolved entry past the ceiling whose running block stays unreadable was waited on FOREVER (red: "ceiling" expected, nothing shown) — it now gets one last runs window, then "state unknown". 17 mutations red (distribution, claim, dispose, the store's running block, the focus predicate, the read bound, the concurrency cap, the C16 guard, the per-entry catch, one panel round, the excluded shapes, `["collect"]` lines, the skew, `mustWait`, the last look, the Stop lookup). **One survived and is recorded:** the ceiling's `recordTried` guard — every path past the ceiling now reads before that check, so the guard is defensive |
+
+The M6 churn after the round: a run followed for D minutes costs 15 `status` runs a minute and ONE `runs show`; a wedged run
+meets the 30-minute ceiling at 451 `status` runs and ONE record read (B1) — `runFollower.test.ts`, *M6 churn, measured*.
 
 ### What the extension's tests do not prove
 

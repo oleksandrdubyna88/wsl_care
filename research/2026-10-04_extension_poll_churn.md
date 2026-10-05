@@ -68,14 +68,16 @@ the E5 live gate's check, together with whether `wsl-care` ends when `wsl.exe` i
   measured* — not computed by hand. What one run writes is as above: one run-log file per `status` (and per `runs show`).
 - **The policy:** a poll only while something is in flight (a run this extension started that has had no terminal answer
   shown, an unresolved confirm, or — in the focused window — `status.running` queued / live); every 4 s; `status` only; ONE
-  `runs show` when a followed run is no longer in flight; a 30-minute ceiling per run; a poll armed before the run ended asks
-  nothing (the defect the extension-host tier found).
+  `runs show` when a followed run is no longer in flight (not again until status names it in flight once more); a 30-minute
+  ceiling per run, applied only after a status answered and the record was read once; a failing read tried 3 times with backoff;
+  a poll armed before the run ended asks nothing (the defect the extension-host tier found). Since the review round a run in
+  flight that no entry follows (the timer's) is also watched while the window is focused, and its ONE `runs show` shown.
 
 | A followed run | `status` runs | `runs show` runs | Run-log files |
 |---|---|---|---|
 | 2 minutes, then done | **30** | **1** | 31, + 3 for the panel round after the answer |
 | 10 minutes, then done | **150** | **1** | 151, + 3 |
-| never ends (wedged) — the 30-minute ceiling | **451** | **0** | 451, + 3 |
+| never ends (wedged) — the 30-minute ceiling | **451** | **1** (the one record read before the ceiling may end it — the E6.S3 review round, B1) | 452, + 3 |
 
 **Per cleanup**, then, roughly 15 files a minute of the run plus 4; against the M1 polling above (721 a focused day at the
 default), a day with two 5-minute cleanups adds about 160. The run's OWN unit writes its own log as any run does — not counted
