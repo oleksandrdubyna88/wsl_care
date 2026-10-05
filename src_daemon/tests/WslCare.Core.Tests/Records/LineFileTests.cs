@@ -19,7 +19,7 @@ public sealed class LineFileTests : IDisposable
 
     public void Dispose() => _sandbox.Dispose();
 
-    private static RunRecord Record(int pid) => new(1, RunId.New(At, pid), RunTrigger.Timer, At, At.AddSeconds(5), RunOutcome.Completed, []);
+    private static RunRecord Record(int pid) => new(1, RunId.New(At, pid), RunTrigger.Timer, At, At.AddSeconds(5), RunOutcome.Completed, [], RunKind.Collect);
 
     [Fact]
     public void A_half_written_last_history_line_is_ignored_not_counted_as_an_unparseable_line()

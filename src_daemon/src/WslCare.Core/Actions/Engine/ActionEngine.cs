@@ -143,7 +143,7 @@ public sealed class ActionEngine(EngineContext c)
             }, notes);
         }
 
-        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id)], RunTrigger.Timer, Execute: true);
+        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         return new TimerPass(true, string.Empty, pass.Dry.DryRun, pass.Dry.Reason, TargetUserReport.From(pass.Target), pass.Outcomes, notes, pass.Outcome)
         {
@@ -173,7 +173,7 @@ public sealed class ActionEngine(EngineContext c)
     {
         var target = DiscoverTarget();
         var dry = DryRunWindow.Decide(request.Trigger, c.Loaded.Config, c.Paths, c.Files, started);
-        var running = RunningState.Identified(new RunningFile(Core.SchemaVersion.Current, runId, request.Trigger, [.. request.Ids.Select(i => i.Text)], string.Empty, c.ProcessId, OwnStart(), started, started), c.Processes);
+        var running = RunningState.Identified(new RunningFile(Core.SchemaVersion.Current, runId, request.Trigger, [.. request.Ids.Select(i => i.Text)], string.Empty, c.ProcessId, OwnStart(), started, started, request.Kind), c.Processes);
         if (StartRunning(running) is { Length: > 0 } cannot)
         {
             notes.Add(cannot);
@@ -467,7 +467,7 @@ public sealed class ActionEngine(EngineContext c)
     }
 
     private static RunRecord Line(ActRunDetail d, string relative, string failure) =>
-        new(Core.SchemaVersion.Current, d.RunId, d.Trigger, d.StartedAt, d.EndedAt, failure.Length == 0 ? d.Outcome : RunOutcome.Failed, [.. d.Actions.Select(ActionLine)])
+        new(Core.SchemaVersion.Current, d.RunId, d.Trigger, d.StartedAt, d.EndedAt, failure.Length == 0 ? d.Outcome : RunOutcome.Failed, [.. d.Actions.Select(ActionLine)], RunKind.Act)
         {
             DryRun = d.DryRun,
             Detail = relative.Length > 0 ? relative : null,

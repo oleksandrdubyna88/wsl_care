@@ -37,7 +37,8 @@
         "rootUsedPercent": 12.1,
         "dockerReclaimableBytes": 21000000000,
         "containerStarts24h": 950
-      }
+      },
+      "kind": "collect"
     },
     {
       "runId": "20000101T000000Z-1",
@@ -57,7 +58,8 @@
           "count": 2,
           "freedBytes": 308000000
         }
-      ]
+      ],
+      "kind": "act"
     },
     {
       "runId": "20000101T000000Z-1",
@@ -85,7 +87,8 @@
         "rootUsedPercent": 12.2,
         "dockerReclaimableBytes": 19000000000,
         "containerStarts24h": 1000
-      }
+      },
+      "kind": "collect"
     }
   ],
   "unparseableLines": 0

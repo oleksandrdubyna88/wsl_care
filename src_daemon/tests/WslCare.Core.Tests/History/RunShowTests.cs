@@ -48,7 +48,7 @@ public sealed class RunShowTests : IDisposable
         var id = RunId.New(at, 9);
         var detail = new ActRunDetail(1, id, RunTrigger.Manual, at, at.AddSeconds(30), false, "act", outcome, "wsl", "a button never dry-runs", new TargetUserReport(true, "me", "/home/me", "test"), [action], ["a note"]);
         RunDetailStore.Write(_sandbox.Paths, _sandbox.Files, id, JsonSerializer.SerializeToUtf8Bytes(detail, WslCareJsonContext.Default.ActRunDetail));
-        Line(new RunRecord(1, id, RunTrigger.Manual, at, at.AddSeconds(30), outcome, [ActionRecords.Of(action)]) { Detail = RunDetailStore.RelativePath(id), DryRun = false });
+        Line(new RunRecord(1, id, RunTrigger.Manual, at, at.AddSeconds(30), outcome, [ActionRecords.Of(action)], null) { Detail = RunDetailStore.RelativePath(id), DryRun = false });
         return id;
     }
 
@@ -81,7 +81,7 @@ public sealed class RunShowTests : IDisposable
         var id = RunId.New(at, 9);
         var pass = new TimerPass(true, string.Empty, true, "the dry-run week", null, [new ActionOutcome("A10", "A10 summary", ActionStatus.DryRun, "dry run", null, null)], ["pass note"], RunOutcome.Completed);
         RunDetailStore.Write(_sandbox.Paths, _sandbox.Files, id, JsonSerializer.SerializeToUtf8Bytes(new TimerPassView(pass), WslCareJsonContext.Default.TimerPassView));
-        Line(new RunRecord(1, id, RunTrigger.Timer, at, at, RunOutcome.Completed, []) { Detail = RunDetailStore.RelativePath(id) });
+        Line(new RunRecord(1, id, RunTrigger.Timer, at, at, RunOutcome.Completed, [], RunKind.Collect) { Detail = RunDetailStore.RelativePath(id) });
 
         var show = Show(id);
 
@@ -97,7 +97,7 @@ public sealed class RunShowTests : IDisposable
     {
         var at = Now.AddHours(-3);
         var id = RunId.New(at, 9);
-        Line(new RunRecord(1, id, RunTrigger.Manual, at, at, RunOutcome.Completed, [new ActionRecord("A4", 1, 5) { Status = ActionStatus.Ran }]) { Detail = RunDetailStore.RelativePath(id) });
+        Line(new RunRecord(1, id, RunTrigger.Manual, at, at, RunOutcome.Completed, [new ActionRecord("A4", 1, 5) { Status = ActionStatus.Ran }], RunKind.Act) { Detail = RunDetailStore.RelativePath(id) });
 
         var show = Show(id);
 
@@ -112,8 +112,8 @@ public sealed class RunShowTests : IDisposable
         var at = Now.AddHours(-4);
         var swept = RunId.New(at, 21);
         var refused = RunId.New(at, 22);
-        Line(new RunRecord(1, swept, RunTrigger.Manual, at, at, RunOutcome.Interrupted, []) { Reason = "swept: pid 21 is gone" });
-        Line(new RunRecord(1, refused, RunTrigger.Manual, at, at, RunOutcome.Refused, []) { Reason = "another run holds the run lock" });
+        Line(new RunRecord(1, swept, RunTrigger.Manual, at, at, RunOutcome.Interrupted, [], null) { Reason = "swept: pid 21 is gone" });
+        Line(new RunRecord(1, refused, RunTrigger.Manual, at, at, RunOutcome.Refused, [], null) { Reason = "another run holds the run lock" });
 
         Show(swept).Should().Match<RunShowReport>(s => s.State == RunShowState.Interrupted && s.Reason == "swept: pid 21 is gone" && s.DetailState == "none");
         Show(refused).Should().Match<RunShowReport>(s => s.State == RunShowState.Refused && s.Reason == "another run holds the run lock");
@@ -122,7 +122,7 @@ public sealed class RunShowTests : IDisposable
     [Fact]
     public void A_run_holding_running_json_with_a_live_process_is_running_with_its_running_block()
     {
-        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-1), Pid), RunTrigger.Manual, ["A4"], "A4", Pid, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddSeconds(-3));
+        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-1), Pid), RunTrigger.Manual, ["A4"], "A4", Pid, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddSeconds(-3), RunKind.Act);
         RunningState.Write(_sandbox.Paths, _sandbox.Files, file);
 
         var show = Show(file.RunId, new FakeProcessTable().Alive(Pid, Now.AddMinutes(-2)));
@@ -135,7 +135,7 @@ public sealed class RunShowTests : IDisposable
     [Fact]
     public void A_run_holding_running_json_whose_process_is_gone_is_interrupted_never_running_and_is_not_swept()
     {
-        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-1), Pid), RunTrigger.Manual, ["A4"], "A4", Pid, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddMinutes(-1));
+        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-1), Pid), RunTrigger.Manual, ["A4"], "A4", Pid, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddMinutes(-1), RunKind.Act);
         RunningState.Write(_sandbox.Paths, _sandbox.Files, file);
 
         var show = Show(file.RunId);
@@ -165,7 +165,7 @@ public sealed class RunShowTests : IDisposable
     public void The_history_wins_a_recorded_run_whose_running_json_was_left_behind_is_done()
     {
         var id = ActRun(RunOutcome.Completed, A4Ran(), Now.AddMinutes(-1));
-        RunningState.Write(_sandbox.Paths, _sandbox.Files, new RunningFile(1, id, RunTrigger.Manual, ["A4"], "A4", 9, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddMinutes(-1)));
+        RunningState.Write(_sandbox.Paths, _sandbox.Files, new RunningFile(1, id, RunTrigger.Manual, ["A4"], "A4", 9, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddMinutes(-1), RunKind.Act));
 
         Show(id).State.Should().Be(RunShowState.Done);
     }
@@ -175,7 +175,7 @@ public sealed class RunShowTests : IDisposable
     [Fact]
     public void A_holder_whose_pid_cannot_be_inspected_is_running_with_an_unknown_block_never_a_stranger()
     {
-        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-1), Pid), RunTrigger.Manual, ["A4"], "A4", Pid, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddSeconds(-3));
+        var file = new RunningFile(1, RunId.New(Now.AddMinutes(-1), Pid), RunTrigger.Manual, ["A4"], "A4", Pid, Now.AddMinutes(-2), Now.AddMinutes(-1), Now.AddSeconds(-3), RunKind.Act);
         RunningState.Write(_sandbox.Paths, _sandbox.Files, file);
 
         var show = Show(file.RunId, new FakeProcessTable().Uninspectable(Pid, "hidepid"));
@@ -196,7 +196,7 @@ public sealed class RunShowTests : IDisposable
         var finishing = new FinishingFileSystem(_sandbox.Files, request, () =>
         {
             File.Delete(request);
-            Line(new RunRecord(1, id, RunTrigger.Manual, Now, Now, RunOutcome.Completed, []));
+            Line(new RunRecord(1, id, RunTrigger.Manual, Now, Now, RunOutcome.Completed, [], null));
         });
 
         var show = RunShow.Read(_sandbox.Paths, finishing, new FakeProcessTable(), Now, NoWait, id);

@@ -303,7 +303,7 @@ timestamp + pid) and writes:
 
 | File | Content | Kept |
 |---|---|---|
-| `/var/lib/wsl-care/history.jsonl` | one summary line per run: trigger, dryRun, metrics (§4), warnings, per-action `{id, count, freedBytes}` | 90 days |
+| `/var/lib/wsl-care/history.jsonl` | one summary line per run: trigger, dryRun, metrics (§4), warnings, per-action `{id, count, freedBytes}` (results only), and — amended by §15o — the run's `kind` (`collect` \| `act`) | 90 days |
 | `/var/lib/wsl-care/runs/{yyyy-MM-dd}/{runId}.json` | the full detail: **every** removed object (type, id, name, image, age, size), the preview that triggered it, before/after numbers | 90 days |
 | `/var/log/wsl-care/{yyyy-MM-dd}/wsl-care-{HH-mm-ss}-{pid}.log` | the human-readable run log (UTC, one file per run) | 30 days |
 | `/var/lib/wsl-care/container-starts/{yyyy-MM-dd}.jsonl` | §4.3 | 14 days |
@@ -975,7 +975,19 @@ All 9 findings ACCEPTED and fixed red → green (`research/module_tests.md`, *Th
 
 ### 15o. A full check's history line names itself — `kind` (daemon follow-up of the E6.S3 review round, B2; 2026-10-05)
 
-> Status: **plan only, nothing implemented yet, 2026-10-05.** Scope: the daemon's history line and `running.json` writers,
+> Status: **built 2026-10-05, awaiting the coai code round** (the code round, the pull request and the extension's half are
+> still open, so the section stays here). **Deviations:** the three "a requested run that never did its work" writers
+> (`DetachedRuns.Refused`, `DetachedRuns.CutOff`, `RequestSweep`'s swept request) take ONE line from a new
+> `RunRequestFile.TerminalLine` instead of three copies; the prefixes are `Records/HistoryReasons` (the unusable prefix a
+> named `RequestSweep.UnusablePrefix`); the RED test and the reason enumeration live in a new `Cli.Tests/FullCheckLineTests`
+> (one `Ending` per writer), the Core cases in `Core.Tests/Records/RunKindTests`; **found by the enumeration:** a READABLE
+> reconciled full-check orphan carries `kind: "collect"` AND the reconcile's prefix — correct under kind first (the prefixes
+> are the fallback for a kind-less line, which the contract's description says), so the reconcile is not in the "no
+> prefix" list; `DetachedRuns.CutOff` is not reachable from outside for a full check (`CollectRun` records its own cut-offs
+> first), so its line is tested through the expression it appends; `RefusingDetailWrites` moved to `TestSupport`.
+> Record: `research/module_tests.md`, *A full check's history line names itself*.
+>
+> Original status: **plan only, nothing implemented yet, 2026-10-05.** Scope: the daemon's history line and `running.json` writers,
 > `runs` / `runs show`'s `RunLine`, their goldens and docs. Branch `fix/wc-full-check-line-names-collect`. The extension is
 > not changed here (boundary below). **coai plan round (2026-10-05): verdict proceed, 3 findings, all accepted** — #1
 > (Major) prove the follower's exclusions cannot match a new full-check line, and both sides change (decision 2, the

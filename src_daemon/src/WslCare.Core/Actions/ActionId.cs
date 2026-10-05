@@ -7,6 +7,10 @@ namespace WslCare.Core.Actions;
 /// <c>A6Unused</c>, the second switches plan §5 gives A5 and A6 — the same names the cleanup rows carry). A CLOSED set,
 /// derived from <see cref="ConfigKeys"/> so an id and its switch cannot drift apart; user text becomes an id only through
 /// <see cref="Parse"/>, which names the legal values when it refuses.
+/// <para><b>Reserved:</b> no action may be named <c>collect</c> (in any case) — it is the meta name of a full check
+/// (<see cref="Records.RunKinds.FullCheckName"/>): a request's and <c>running.json</c>'s marker that the run is a full check,
+/// never an action (plan §15o; <c>RunKindTests</c> and <c>ContractFilesTests</c> hold it over <see cref="All"/> and
+/// <c>contracts/actions.json</c>).</para>
 /// </summary>
 public sealed record ActionId
 {

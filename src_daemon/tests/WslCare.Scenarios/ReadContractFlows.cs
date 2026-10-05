@@ -80,7 +80,7 @@ public sealed class ReadContractFlows
         using var home = new ScenarioHome("running-left-over");
         var dead = ReadContractScenes.Dead();
         ReadContractScenes.Running(home, dead);
-        new RunRecordWriter(home.Paths, new PhysicalFileSystem(home.Paths)).Append(new RunRecord(1, dead.RunId, RunTrigger.Manual, dead.StartedAt, dead.HeartbeatAt, RunOutcome.Completed, []));
+        new RunRecordWriter(home.Paths, new PhysicalFileSystem(home.Paths)).Append(new RunRecord(1, dead.RunId, RunTrigger.Manual, dead.StartedAt, dead.HeartbeatAt, RunOutcome.Completed, [], null));
 
         var status = Status(await home.RunAsync("status", "--json"));
         var show = Show(await home.RunAsync("runs", "show", dead.RunId.Text, "--json"));

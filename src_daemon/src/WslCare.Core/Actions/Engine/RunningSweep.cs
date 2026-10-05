@@ -76,7 +76,9 @@ public abstract record RunningSweep
 
         // E6.S1 (plan §15k #18): a run act --stop asked systemd to stop and that was killed after TimeoutStopSec says so.
         var stopped = StopMarkers.StoppedReason(paths, files, file.RunId);
-        var line = new RunRecord(Core.SchemaVersion.Current, file.RunId, file.Trigger, file.StartedAt, file.HeartbeatAt, RunOutcome.Interrupted, [.. file.Actions.Select(a => new ActionRecord(a, 0, 0) { Status = "interrupted" })])
+        // Plan §15o: per-action results only — a full check's own name (reserved, never an action id) is the run, not a row.
+        var actions = file.Actions.Where(a => a != RunKinds.FullCheckName).Select(a => new ActionRecord(a, 0, 0) { Status = ActionStatus.Interrupted });
+        var line = new RunRecord(Core.SchemaVersion.Current, file.RunId, file.Trigger, file.StartedAt, file.HeartbeatAt, RunOutcome.Interrupted, [.. actions], file.KindOrMarker())
         {
             Reason = $"{(stopped.Length > 0 ? stopped + "; swept" : "swept")}: {dead.Why}; it was on {(file.Current.Length > 0 ? file.Current : "no action yet")}, last heartbeat {file.HeartbeatAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z",
         };

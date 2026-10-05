@@ -33,7 +33,7 @@ public sealed class LogsCommandTests : IDisposable
     public void Dispose() => _sandbox.Dispose();
 
     private void Append(DateTimeOffset at, IReadOnlyList<ActionRecord> actions) =>
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 3), RunTrigger.Timer, at, at, RunOutcome.Completed, actions) { DryRun = false });
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 3), RunTrigger.Timer, at, at, RunOutcome.Completed, actions, RunKind.Collect) { DryRun = false });
 
     [Fact]
     public void The_verbs_parse_their_period_action_and_json_and_default_to_today()

@@ -46,6 +46,34 @@ public enum RunOutcome
     Refused,
 }
 
+/// <summary>What a run WAS (plan §15o): a full check (<c>collect</c>, whatever started it) or an <c>act</c>. It is the ONE rule a
+/// reader tells a full check's history line by; <see cref="RunRecord.Actions"/> holds per-action results only and never names
+/// the full check itself.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<RunKind>))]
+public enum RunKind
+{
+    [JsonStringEnumMemberName("collect")]
+    Collect,
+
+    [JsonStringEnumMemberName("act")]
+    Act,
+}
+
+/// <summary>The few places a run's kind is read from something that predates it, each one rule (plan §15o).</summary>
+public static class RunKinds
+{
+    /// <summary>The full check's meta name — the request's <c>kind</c> and only action, <c>running.json</c>'s action and step
+    /// while it measures. RESERVED: no action id may carry it (<c>ActionId</c> says so, a test holds it).</summary>
+    public const string FullCheckName = "collect";
+
+    /// <summary>A request's <c>kind</c> (its reader admits <c>act</c> and <c>collect</c> only).</summary>
+    public static RunKind OfRequest(string kind) => kind == FullCheckName ? RunKind.Collect : RunKind.Act;
+
+    /// <summary>A run detail's kind from its <c>kind</c> member: an act's detail says <c>act</c>; a full run's detail carries
+    /// none. The one rule the reconcile and <c>logs</c> / <c>runs show</c> read a detail by.</summary>
+    public static RunKind OfDetailKind(string? kind) => kind == "act" ? RunKind.Act : RunKind.Collect;
+}
+
 /// <summary>A run's identity: the UTC second it started and the process that ran it (plan §6).</summary>
 [JsonConverter(typeof(RunIdJsonConverter))]
 public sealed record RunId
@@ -113,6 +141,12 @@ public sealed record ActionRecord(string Id, int Count, long FreedBytes)
 }
 
 /// <summary>One line of <c>history.jsonl</c> (plan §6). Both instants are UTC.</summary>
+/// <param name="Actions">Per-action RESULTS (plan §6, §15o): the actions that ran, were skipped, refused, interrupted — never
+/// the full check itself. <c>[]</c> means no action produced a result; whether the run was a full check is <paramref name="Kind"/>'s
+/// answer.</param>
+/// <param name="Kind">What the run was (plan §15o). POSITIONAL so every writer decides; <c>null</c> only where it cannot be
+/// known (an unusable request, an orphan whose detail cannot be read) and on lines written before it existed (read back as
+/// absent — additive, schema 1).</param>
 public sealed record RunRecord(
     int SchemaVersion,
     RunId RunId,
@@ -120,7 +154,8 @@ public sealed record RunRecord(
     DateTimeOffset StartedAt,
     DateTimeOffset EndedAt,
     RunOutcome Outcome,
-    IReadOnlyList<ActionRecord> Actions)
+    IReadOnlyList<ActionRecord> Actions,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RunKind? Kind)
 {
     /// <summary>The slow parts a full run sampled (plan §15b #5); absent (<c>null</c>) on a run that sampled
     /// none, and on every line written before E2 — read only through <see cref="LastFullRun"/>.</summary>

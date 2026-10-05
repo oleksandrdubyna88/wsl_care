@@ -43,10 +43,11 @@ public static class RunReconcile
         return new ReconcileReport([.. orphans.Select(o => o.RunId.Text)], lost);
     }
 
+    /// <summary>The orphan's line: its kind from its detail (plan §15o) — none when the detail cannot be read.</summary>
     private static RunRecord InterruptedLine(StoredDetail orphan, RunDetailHead? head)
     {
         var started = head?.StartedAt ?? new DateTimeOffset(RunDetailStore.DayOf(orphan.RunId).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        return new RunRecord(Core.SchemaVersion.Current, orphan.RunId, head?.Trigger ?? RunTrigger.Timer, started, head?.EndedAt ?? started, RunOutcome.Interrupted, [])
+        return new RunRecord(Core.SchemaVersion.Current, orphan.RunId, head?.Trigger ?? RunTrigger.Timer, started, head?.EndedAt ?? started, RunOutcome.Interrupted, [], head is null ? null : RunKinds.OfDetailKind(head.Kind))
         {
             Detail = orphan.RelativePath,
             DryRun = head?.DryRun,

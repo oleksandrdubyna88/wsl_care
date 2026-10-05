@@ -27,7 +27,7 @@ public sealed class RunRetentionTests : IDisposable
 
         if (withLine)
         {
-            new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, id, RunTrigger.Timer, started, started, RunOutcome.Completed, []) { Detail = relative });
+            new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, id, RunTrigger.Timer, started, started, RunOutcome.Completed, [], RunKind.Collect) { Detail = relative });
         }
 
         return relative;
@@ -72,7 +72,7 @@ public sealed class RunRetentionTests : IDisposable
         var id = RunId.New(Now.AddDays(-200), 7);
         var relative = RunDetailStore.RelativePath(id);
         RunDetailStore.Write(_sandbox.Paths, _sandbox.Files, id, """{"schemaVersion":1}"""u8);
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, id, RunTrigger.Timer, Now, Now, RunOutcome.Completed, []) { Detail = relative });
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, id, RunTrigger.Timer, Now, Now, RunOutcome.Completed, [], RunKind.Collect) { Detail = relative });
 
         RunRetention.Sweep(_sandbox.Paths, _sandbox.Files, Now);
 
@@ -101,7 +101,7 @@ public sealed class RunRetentionTests : IDisposable
         // the read outside the lock it completes at once and the rewrite throws it away.
         Run(Now.AddDays(-RunRetention.RetentionDays - 3));
         var young = Run(Now.AddDays(-1));
-        var racing = new RunRecord(1, RunId.New(Now, 4242), RunTrigger.Timer, Now, Now, RunOutcome.Completed, []);
+        var racing = new RunRecord(1, RunId.New(Now, 4242), RunTrigger.Timer, Now, Now, RunOutcome.Completed, [], RunKind.Collect);
         Task? append = null;
         var files = new InterleavingFileSystem(_sandbox.Files, () =>
         {

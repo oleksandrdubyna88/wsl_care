@@ -58,7 +58,7 @@ public sealed class RunLogsTests : IDisposable
         });
 
     private void Line(DateTimeOffset at, RunTrigger trigger, bool dryRun, IReadOnlyList<ActionRecord> actions, double? memAvailable = null, long? swap = null, string? detail = null) =>
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 5), trigger, at, at.AddMinutes(1), RunOutcome.Completed, actions)
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 5), trigger, at, at.AddMinutes(1), RunOutcome.Completed, actions, null)
         {
             DryRun = dryRun,
             Detail = detail,

@@ -10,7 +10,12 @@ namespace WslCare.Core.Records;
 
 /// <summary>What a run detail file tells about its run even when nothing else of it is read — enough for the
 /// reconcile to write the <c>interrupted</c> history line of a detail that has none (plan §15b #1).</summary>
-public sealed record RunDetailHead(int SchemaVersion, RunId RunId, RunTrigger Trigger, DateTimeOffset StartedAt, DateTimeOffset EndedAt, bool DryRun);
+public sealed record RunDetailHead(int SchemaVersion, RunId RunId, RunTrigger Trigger, DateTimeOffset StartedAt, DateTimeOffset EndedAt, bool DryRun)
+{
+    /// <summary>The detail's own <c>kind</c> — <c>act</c> in an act's detail, absent in a full run's (read through
+    /// <see cref="RunKinds.OfDetailKind"/>, plan §15o).</summary>
+    public string? Kind { get; init; }
+}
 
 /// <summary>One detail file on disk: its path relative to the state directory, and the run it names.</summary>
 public sealed record StoredDetail(string RelativePath, RunId RunId);
