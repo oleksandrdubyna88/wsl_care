@@ -7,7 +7,7 @@ extension that shows the state and runs cleanups on demand.
 | Folder | Holds |
 |---|---|
 | `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17, and the button-only A18 of E7.S2b) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
-| `src_vs_code/` | the VS Code extension **AI OS Care** (Marketplace id `remsoftdev.ai-os-care`) — in development: its client of the daemon, the status bar and the panel, since E6.S2 the root boundary, since E6.S3 the cleanup buttons on it, and their tests — [Extension (preview)](#extension-preview) below |
+| `src_vs_code/` | the VS Code extension **AI OS Care** (Marketplace id `remsoftdev.ai-os-care`) — in development: its client of the daemon, the status bar and the panel, since E6.S2 the root boundary, since E6.S3 the cleanup buttons on it, since E6.S4 the Logs page, and their tests — [Extension (preview)](#extension-preview) below |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -594,6 +594,18 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   *interrupted*, a refused one its reason, one with no answer in 30 minutes "state unknown" with its run id. *Last cleanup*
   shows the daemon's newest cleanup (`status.lastCleanup`), the results this window showed and "Docker after" with the time
   it was read. Every button's state comes from what the daemon reports, never from the button alone.
+- **The Logs page (E6.S4).** *Logs* in the panel's title bar (*WSL Care: Logs*) and *Logs* beside *Last cleanup* open
+  it in the editor area. Periods: **This run** (the last cleanup, `runs show`), **Today**, **Yesterday**, a **day** or a
+  **range** from the date picker — LOCAL days, asked as the instants of their local midnights (`logs` and `runs --from
+  <instant> --to <instant> --json`), so a summer-time day of 23 or 25 hours is that day; the picker offers only the 90
+  days the daemon keeps, and an older day is clamped (and says so). It shows the daemon's answers as they came — nothing is
+  added up on the page: **Totals** (freed, objects, per action), **Runs** (with / without a cleanup, dry runs and what
+  they would have freed, by trigger, failed, interrupted), **Max / min** (the runs that freed the most and the least, each
+  figure's max and min with its time; `vmmemWSL` arrives in E7.S3 / E11), the **trend** (each full run's MemAvailable and
+  swap, as a table) and the **run list**; *Show objects* on a line reads that run's `runs show` — every object removed and
+  not removed, every command and its exit. The period is kept in VS Code's `globalState`, so it survives a reload. The
+  page sends the host only a period's name, the picker's days or a line's index — never a run id or an argument; all
+  three reads are unprivileged.
 - **The root boundary (E6.S2).** A cleanup needs root, so the
   extension holds exactly five root calls, built in ONE module (`src/root/rootCall.ts`) from a closed set and started only
   through the runner seam: `-d <distro> -u root --cd / --exec /opt/wsl-care/bin/wsl-care` followed by

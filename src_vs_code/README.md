@@ -13,11 +13,18 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   Container starts, Cleanup (what each cleanup would free, with **Clean**, **Select**, **Clean selected** and **Run full
   check now**), Health, Last cleanup. A figure the daemon could not read says
   why ("unavailable — reason"); a row this version cannot fill yet says so; nothing is shown as a made-up 0.
+- **The Logs page** (*Logs* in the panel's title, or beside *Last cleanup*) — what the runs of a period did: This run,
+  Today, Yesterday, a day or a range of your LOCAL days (the 90 the daemon keeps). Totals, runs with and without a
+  cleanup, the runs that freed the most and the least, each figure's max and min, the MemAvailable and swap trend, and the
+  run list — *Show objects* lists every object a run removed, and every command it ran with its exit. Shown exactly as the
+  daemon answers; the chosen period survives a reload.
 
 ## What it runs, and when
 
 - **Reading** — it asks the daemon four questions: `status --json`, `preview --all --json`, `doctor --json` and
-  `--version`. They run as your own user and change nothing.
+  `--version` — and, for the cleanups' results and the Logs page, three about runs: `runs show <run> --json`,
+  `runs --from <instant> --to <instant> --json` and `logs --from <instant> --to <instant> --json`. They run as your own
+  user and change nothing.
 - **Cleaning — only after you confirm, and only through five calls.** A cleanup needs root inside the distribution, so
   the extension has exactly five root calls, all built in one place and nowhere else: a cleanup's preview
   (`act <ids> --preview`), its run once you confirmed (`act <ids> --confirm --manual --detach`, with the list of volumes

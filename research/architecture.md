@@ -1908,6 +1908,9 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
   type): `ready` (send the current view), `rendered {rows}` (how many rows the page drew — what the extension-host
   scenarios read), `refresh`, `openSettings`, `startWsl`. E5.S3 adds `installDaemon`. Nothing from the page becomes
   argv: each message maps to a host action built from the host's own closed verb set.
+- **The Logs page (E6.S4) is the second webview under the SAME rules** — the same shell (page `logs`), CSP, options and
+  stylesheet, its own closed set (`logsPage/logsMessages.ts`) and its own strict-harness tests; one new element is modelled,
+  the date picker's `<input type="date">` with `min` / `max` (never a form). See *The extension: the Logs page (E6.S4)*.
 
 ### The polling policy (§15f #8, §15g M1, m3)
 
@@ -2686,6 +2689,79 @@ the strict harness), `fakeWsl.test.ts` (the run-read shapes), `scenarios/clientF
 (the reload, dead, refused, 387 names, one act call), `catalogue.test.ts` (the run reads and the page messages derived), and in
 VS Code 1.85.0 + stable `host/suite.ts` (*Clean A4 through the host*).
 
+## The extension: the Logs page (E6.S4)
+
+E6.S4 (2026-10-05, plan §7.4, §15j M3, M7, M8; §15k #19) is the second webview: a `WebviewPanel` in the editor area,
+opened by *Logs* in the panel's title bar (`wslCare.openLogs`) and by *Logs* beside *Last cleanup* (that run). It reads
+the daemon's history and NOTHING is computed on the page or in its view model — every figure is a field of an answer.
+
+```mermaid
+sequenceDiagram
+    participant W as webview (media/logs.js)
+    participant M as logsPage/logsMessages.ts
+    participant L as logsPage/logsController.ts
+    participant G as globalState
+    participant P as logsPage/period.ts
+    participant C as client/WslCareClient.read
+    participant D as daemon (via wsl.exe, no -u)
+    W->>M: {type: today | yesterday | thisRun | day{day} | range{from,to} | expand{index} | collapse{index} | ready | refresh}
+    M->>L: the closed set only (anything else dropped: nothing starts)
+    L->>L: refused? range ending first, no cleanup recorded, a capability the daemon does not advertise → told, nothing starts
+    L->>G: wslCare.logs.period.v1 — BEFORE the read
+    L->>P: the period → its reads (local midnights → UTC instants, clamped to the 90 kept days)
+    alt a day period
+        L->>C: logs --from <instant> --to <instant> --json
+        L->>C: runs --from <instant> --to <instant> --json
+    else This run
+        L->>C: runs show <runId> --json (the id the HOST read: status.lastCleanup)
+    end
+    C->>D: -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care …
+    L->>W: {type: view} — Totals, Runs, Max / min, the trend, the run list (an answer to an older selection is dropped)
+    W->>M: expand{index}
+    L->>C: runs show <the run id of line index> --json — the objects, lazily
+```
+
+**The parts** (`src/logsPage/` — imports nothing under `src/root/`, held by `structure.test.ts`):
+
+- **`period.ts`** — the ONE place a period becomes argv. *Today*, *Yesterday*, a date and a range are LOCAL calendar days
+  (`yyyy-MM-dd`, real: 30 February is no day), sent as the UTC instants of the first day's local midnight and the midnight
+  after the last day — so a 23- or 25-hour day under summer time is exactly that day, and a day whose midnight does not exist
+  (America/Santiago, 2026-09-06) starts at its first instant. Calendar steps are UTC-stamped, only the two midnights go
+  through the machine's zone (`common.utc-timestamps`). The days are clamped to the 90 the daemon keeps (today and the 89
+  before it). *This run* is `runs show <runId>`. `periodOf` reads a stored or built period back as the closed shape exactly.
+- **`logsMessages.ts`** — the page's closed set: a period by NAME, the picker's days as real calendar texts, a run as an
+  INDEX into the list the host read; a run id never comes from the page.
+- **`logsController.ts`** — vscode-free: the period persisted under `wslCare.logs.period.v1` before it is read (it survives a
+  reload; a tampered value is no period — Today), every read through the client's unprivileged run reads, a capability
+  gate on `status.capabilities` (`logs.instantRange` for a day, `runs.show` for a run), a generation count so the newest
+  selection wins, and `choose` for a page about to load (persisted, read once on its `ready`).
+- **`logsViewModel.ts`** + **`logsBlocks.ts`** + **`runDetail.ts`** — the view: Totals (freed, objects, per action), Runs (with
+  / without a cleanup, dry runs and what they would have freed, timer / button / CLI, failed, interrupted, unreadable lines),
+  Max / min (the runs that freed the most and the least, every metric's max and min with its time; `vmmemWSL` "arrives in
+  E7.S3 / E11"), the trend (each full run's `RunLine.metrics` MemAvailable and swap — the sparkline's points, drawn as a
+  table), the run list (time, trigger, dry run, actions, freed, outcome; the answer's `count`; `logs`' `detailsNotRead`
+  shown). An expanded line shows what `runs show` answered: every object removed and not removed (type, name, size, note —
+  the daemon's `ActionItem`; image and age are in its note) and every command with its outcome and exit. Times are local,
+  with their offset; every daemon string passes `safeText`; the failure sentences are `failureText`'s.
+- **`logsPanel.ts`** — the wiring: the panel's static shell (`panel/panelHtml.ts`, page `logs`: its own `<main id="logs">`
+  and title, the same nonce-only CSP), scripts on, command URIs off, resources only from `media/`, the panel's ONE
+  stylesheet; restored after a reload by `registerWebviewPanelSerializer` (`onWebviewPanel:wslCare.logs`) on the persisted
+  period; a fault at the page's edge is logged.
+- **`src/text/format.ts`** — now the one format module for both pages: `gb`, `gib`, `percent`, `minuteOf`, `localMinuteOf`
+  (`2026-10-02 02:59 (UTC+03:00)`) and `metricText` (a metric in its unit).
+
+**The client's third run read** (`client/verbs.ts`): `logs --from <instant> --to <instant> --json`, unprivileged, 20 s —
+never `--detail`, `--action` or `--period`.
+
+### Tests (details: [module_tests.md](module_tests.md) § *What each E6.S4 guarantee rests on*)
+
+`logsPage/period.test.ts` (each period's exact instants; DST in Berlin, a missing midnight in Santiago, UTC+14, the clamp),
+`logsPage/logsMessages.test.ts`, `logsPage/logsController.test.ts` (each period → its exact argv, persisted before read,
+survives a reload, a malicious message starts no process), `logsPage/logsPage.test.ts` (`media/logs.js` RUN in the strict
+harness over the goldens: every block equals the JSON, no arithmetic, `detailsNotRead` shown, hostile text inert),
+`textFormat.test.ts`, `runReads.test.ts` / `fakeWsl.test.ts` / `scenarios/clientFlows.test.ts` (the `logs` read),
+`catalogue.test.ts` (the Logs flows derived), and in VS Code 1.85.0 + stable `host/suite.ts` (*E6.S4: the Logs page*).
+
 ## Fixture privacy (E5 code round, 2026-10-04)
 
 The repository is public, and the captured fixtures and the goldens built from them carried the owner's Linux and
@@ -3078,7 +3154,7 @@ flowchart LR
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); anonymised through the identity list and held by `FixturePrivacyTests` (2026-10-04); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
-| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate. Module overview: [module_vs_code.md](module_vs_code.md) |
+| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate; the root boundary (E6.S2), the cleanup buttons and *Last cleanup* (E6.S3) and the Logs page (E6.S4) on `feat/wc-e6-cleanup-logs`, merging only after `extension-v0.1.0` is tagged. Module overview: [module_vs_code.md](module_vs_code.md) |
 | daemon module overview | [module_daemon.md](module_daemon.md) | the map from the daemon's purpose, entities, entry points and dependencies into this file's epic sections | added by the retro review of PR #7 (2026-10-06) |
 
 ## Cross-repository
