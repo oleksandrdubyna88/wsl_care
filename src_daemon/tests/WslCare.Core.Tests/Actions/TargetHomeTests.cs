@@ -48,7 +48,7 @@ public sealed class TargetHomeTests : IDisposable
         var journal = new List<string>();
 
         var (paths, owner) = TargetHome.Resolve(_sandbox.Paths, _sandbox.Files, privileged: true);
-        var loaded = ConfigLoader.Load(paths, _sandbox.Files, owner.UserLayerSkipped);
+        var loaded = ConfigLoader.Load(paths, _sandbox.Files, UserLayerTrusts.For(owner, static () => string.Empty));
         var engine = new ActionEngine(new EngineContext(paths, _sandbox.Files, new RecordingCommandRunner(), new FixedTimeProvider(), new FakeProbe(paths.Side, new FixedTimeProvider()), loaded,
             new FakeProcessTable().Alive(77, FixedTimeProvider.DefaultNow.AddMinutes(-1)), 77, new ActionRegistry([new ScriptedAction("A10", journal), new ScriptedAction("A8", journal) { Scope = CommandScope.User }])));
         var result = await engine.ExecuteAsync(new ActRequest([ActionId.Find("A10")!, ActionId.Find("A8")!], RunTrigger.Cli, Execute: true), CancellationToken.None);
@@ -70,6 +70,6 @@ public sealed class TargetHomeTests : IDisposable
 
         owner.Should().BeOfType<HomeOwner.ThisProcess>();
         paths.Should().BeSameAs(_sandbox.Paths);
-        ConfigLoader.Load(paths, _sandbox.Files, owner.UserLayerSkipped).IsObserveOnly.Should().BeFalse();
+        ConfigLoader.Load(paths, _sandbox.Files, UserLayerTrusts.For(owner, static () => string.Empty)).IsObserveOnly.Should().BeFalse();
     }
 }

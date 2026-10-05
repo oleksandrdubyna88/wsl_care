@@ -1749,6 +1749,7 @@
       "launchLatencySeconds": 0.7508915
     }
   },
+  "userLayerDigest": "331e2d3344a226e0148a339e325c39e3f877d7657fa4b379ec59292813fc6a7e",
   "containerStarts": {
     "from": "2000-01-01T00:00:00+00:00",
     "to": "2000-01-01T00:00:00+00:00",
@@ -2192,7 +2193,8 @@
     "logs.instantRange",
     "act.detach",
     "act.onlyStdin",
-    "act.stop"
+    "act.stop",
+    "config.contract"
   ],
   "running": {
     "state": "none"

@@ -164,10 +164,16 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         return ([.. names.Distinct(StringComparer.Ordinal)], string.Empty);
     }
 
+    /// <summary>A Playwright link file holds one path (plan §15q R1.1: the user's files, read owner-checked and capped).</summary>
+    private const int MaxLinkBytes = 64 * 1024;
+
+    /// <summary>Playwright's <c>browsers.json</c> is a few kilobytes.</summary>
+    private const int MaxBrowsersJsonBytes = 1024 * 1024;
+
     /// <summary>One link: the package folder it names; a package that is gone references nothing (stale).</summary>
     private static (IReadOnlyList<string> Names, string Problem) LinkRevisions(ActionContext context, string link)
     {
-        if (context.Files.ReadFile(link) is not FileReadResult.Content content)
+        if (context.Files.ReadUserFile(link, MaxLinkBytes, context.HomeFileOwner) is not FileReadResult.Content content)
         {
             return ([], $"the link {link} could not be read");
         }
@@ -186,7 +192,7 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
             return ([], string.Empty);
         }
 
-        return context.Files.ReadFile(linux.Rules.Join(folder, "browsers.json")) is FileReadResult.Content json && BrowserFolders(json.Bytes) is { } folders
+        return context.Files.ReadUserFile(linux.Rules.Join(folder, "browsers.json"), MaxBrowsersJsonBytes, context.HomeFileOwner) is FileReadResult.Content json && BrowserFolders(json.Bytes) is { } folders
             ? (folders, string.Empty)
             : ([], $"{package}/browsers.json is missing or not Playwright's browsers list, so what that project uses cannot be told");
     }

@@ -35,6 +35,10 @@ public sealed record ActionContext(
     RunTrigger Trigger,
     TargetUserResult TargetUser)
 {
+    /// <summary>Who must own a file this action reads in the home it works in (plan §15q R1.1): the target user when root works
+    /// for them, this process otherwise (<see cref="RegularFiles.HomeFileOwner"/>).</summary>
+    public uint HomeFileOwner => TargetUser is TargetUserResult.Found found ? RegularFiles.HomeFileOwner(found.User.Uid) : RegularFiles.EffectiveUid();
+
     /// <summary>The distro's process table, read fresh at each call (A11's suspects, A12 / A14's "in use"). Unavailable by
     /// default, which makes those actions refuse.</summary>
     public Func<CancellationToken, Reading<ProcessSnapshot>> Processes { get; init; } =

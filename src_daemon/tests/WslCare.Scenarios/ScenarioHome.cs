@@ -35,9 +35,15 @@ internal sealed class ScenarioHome : IDisposable
         CallsFile = _root.Under("fake-calls.jsonl");
         ScriptFile = _root.Under("fake-script.json");
         Paths = HostPaths.ForThisMachine(SandboxRoot);
+        InteropEntry = Path.Combine(SandboxRoot, "proc", "sys", "fs", "binfmt_misc", "WSLInterop");
         InstallFakes(FakeBin, tools ?? FakeToolProtocol.Tools);
         FakeScript.Write(ScriptFile, _answers);
     }
+
+    /// <summary>The sandbox's WSL interop entry (<c>/proc/sys/fs/binfmt_misc/WSLInterop</c>): written, enabled, when the scenario
+    /// claims root — a WSL distro has interop, as observed 2026-10-04 (plan §17a B), and only a root run asks (plan §15q R1.2:
+    /// without it another account's layer may only tighten a root run). A scenario that needs the other world deletes it.</summary>
+    public string InteropEntry { get; }
 
     /// <summary>The value of <c>WSL_CARE_ROOT</c> for every run in this scenario.</summary>
     public string SandboxRoot { get; }
@@ -80,7 +86,21 @@ internal sealed class ScenarioHome : IDisposable
 
     /// <summary>Whether the CLI answers "am I root" with yes inside this sandbox (<see cref="ProcessPrivilege.SandboxVariable"/>) —
     /// what lets a scenario drive <c>act</c> over fake tools without being root. Off by default: then the operating system decides.</summary>
-    public bool ClaimsRoot { get; set; }
+    public bool ClaimsRoot
+    {
+        get => _claimsRoot;
+        set
+        {
+            _claimsRoot = value;
+            if (value && !File.Exists(InteropEntry))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(InteropEntry)!);
+                File.WriteAllText(InteropEntry, "enabled\ninterpreter /init\nflags: PF\noffset 0\nmagic 4d5a\n");
+            }
+        }
+    }
+
+    private bool _claimsRoot;
 
     /// <summary>The Windows variable that makes <c>CreateProcess</c> skip the current directory for a bare name.</summary>
     internal const string NoCurrentDirectoryLookupVariable = "NoDefaultCurrentDirectoryInExePath";

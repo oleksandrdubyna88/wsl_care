@@ -102,11 +102,14 @@ public sealed class EditorServerCleanup : ICleanupAction
             .Select(b => new ActionItem(BuildKind, $"{Leaf(root)}/{Leaf(b.Path)}", CacheFolders.Measure(context.Files, b.Path, cancellationToken).CompleteBytes, $"last written {b.Written.UtcDateTime:yyyy-MM-dd}; no process uses it") { Key = $"{root}|{b.Path}" });
     }
 
+    /// <summary><c>.obsolete</c> is a small JSON object (plan §15q R1.1: the user's file, read owner-checked and capped).</summary>
+    private const int MaxObsoleteBytes = 1024 * 1024;
+
     /// <summary>The extension folders <c>extensions/.obsolete</c> lists that exist, are plain names and no process names.</summary>
     private static IEnumerable<ActionItem> Obsolete(ActionContext context, string root, ProcessSnapshot processes, CancellationToken cancellationToken)
     {
         var extensions = context.Paths.Rules.Join(root, "extensions");
-        if (context.Files.ReadFile(context.Paths.Rules.Join(extensions, ".obsolete")) is not FileReadResult.Content content)
+        if (context.Files.ReadUserFile(context.Paths.Rules.Join(extensions, ".obsolete"), MaxObsoleteBytes, context.HomeFileOwner) is not FileReadResult.Content content)
         {
             return [];
         }

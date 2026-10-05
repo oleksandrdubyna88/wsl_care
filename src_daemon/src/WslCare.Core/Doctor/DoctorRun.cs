@@ -31,7 +31,12 @@ public sealed record DoctorReport(
     bool ObserveOnly,
     IReadOnlyList<ConfigErrorReport> ConfigError,
     IReadOnlyList<DoctorCheck> Checks,
-    IReadOnlyList<VersionReport> Versions);
+    IReadOnlyList<VersionReport> Versions)
+{
+    /// <summary>User values this run did not take (plan §15q); absent when none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ConfigNoticeReport>? ConfigNotices { get; init; }
+}
 
 /// <summary>
 /// <c>doctor [--json]</c> (plan §6): is this installation doing its job — the timer, the events unit, sysstat and atop
@@ -79,7 +84,10 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
             loaded.IsObserveOnly,
             [.. loaded.Errors.Select(ConfigErrorReport.From)],
             checks,
-            versions);
+            versions)
+        {
+            ConfigNotices = ConfigNoticeReport.Of(loaded),
+        };
     }
 
     private static DoctorCheck Config(ConfigLoadResult loaded) =>

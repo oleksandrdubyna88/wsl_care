@@ -481,7 +481,11 @@ public sealed class ActionEngine(EngineContext c)
     private static ActionRecord ActionLine(ActionOutcome o) => ActionRecords.Of(o);
 
     private ActRunDetail Detail(RunId runId, RunTrigger trigger, DateTimeOffset started, DryRunDecision dry, TargetUserResult target, IReadOnlyList<ActionOutcome> outcomes, IReadOnlyList<string> notes, RunOutcome outcome) =>
-        new(Core.SchemaVersion.Current, runId, trigger, started, c.Clock.GetUtcNow(), dry.DryRun, "act", outcome, c.Paths.Side == HostSide.Wsl ? "wsl" : "windows", dry.Reason, TargetUserReport.From(target), outcomes, notes);
+        new(Core.SchemaVersion.Current, runId, trigger, started, c.Clock.GetUtcNow(), dry.DryRun, "act", outcome, c.Paths.Side == HostSide.Wsl ? "wsl" : "windows", dry.Reason, TargetUserReport.From(target), outcomes, notes)
+        {
+            Config = ConfigValueReport.NotDefault(c.Loaded),
+            ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
+        };
 
     private static ActionOutcome Outcome(ICleanupAction action, string status, string reason, ActionPreview? preview, ActionRun? run) =>
         new(action.Id.Text, action.Summary, status, reason, preview, run);

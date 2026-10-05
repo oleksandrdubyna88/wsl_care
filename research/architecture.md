@@ -129,7 +129,7 @@ Everything a later story does to the machine goes through one of these. Each is 
 | `ICommandRunner` + `CommandPolicy` | `Core.Processes` (+ `.Policy`) | `ProcessCommandRunner`, whose ONLY constructor takes the sealed `CommandPolicy` (E3.S1: the never-list, then deny by default against the declared templates — § *The action engine, the command policy and `act`*) | argv list only, a bare executable name resolved on `PATH` ALONE and started by its full path (`ExecutableResolver`, below), a required ceiling, (since E2.S2 every collector command is a named `ToolCommand` — executable, argv, ceiling, output cap — built in ONE place per tool), the WHOLE process tree killed on timeout, bounded capture of both streams, a closed outcome (`Exited` / `TimedOut` / `FailedToStart` / `Refused`), the caller's cancellation thrown as such after the kill; the policy is asked before any start; since E2.S3 `StreamAsync` — the same launcher for a child whose stdout is a stream (`docker events`), each line handed to a callback as it arrives and cut at the output cap |
 | `IHostProbe` | `Core.Hosting` | `Collectors.LinuxProbe`, `Collectors.WindowsProbe` (E2.S1) | the platform split of plan §8: ONE fast `Sample` per binary, its own side read, the other side unavailable naming the other binary; a probe holds no command runner, so it starts no process (§ *The collectors and `status`*) |
 | run records | `Core.Records` | `RunRecordWriter` → `{state}/history.jsonl` | `RunRecord` (schemaVersion, `RunId` = UTC second + pid, trigger `timer|manual|cli`, UTC start/end, outcome `completed|failed|interrupted|observeOnly`, actions — per-action RESULTS only — and since plan §15o `kind` `collect|act`, a positional member every writer decides) as one JSON line, source-generated; since E2.S3 the line names its detail (`detail`), carries `dryRun`, `reason`, the non-ok `warnings` and headline `metrics`; `RunDetailStore` writes `{state}/runs/{day}/{runId}.json` atomically FIRST; `RunHistory` is the one parser; `RunReconcile` and `RunRetention` (§ *The full run*) |
-| configuration | `Core.Config` | `ConfigLoader`, `UserConfigWriter`, `ConfigKeys` | three layers (embedded `default.json` < machine < user), validated against the one register in code; an invalid layer makes the result **observe-only** with `configError {file, line, message}` and the layer's valid keys still in force (plan §15a #1); `config set`/`reset` rewrite the user layer atomically and repair it (invalid keys dropped and named, an unparseable file moved aside with a UTC stamp, `-2`, `-3`, … appended when a repair in the same second already took that name — an aside file is never overwritten) |
+| configuration | `Core.Config` | `ConfigLoader`, `UserConfigWriter`, `ConfigKeys` | three layers (embedded `default.json` < machine < user), validated against the one register in code; an invalid layer makes the result **observe-only** with `configError {file, line, message}` and the layer's valid keys still in force (plan §15a #1); `config set`/`reset` rewrite the user layer atomically and repair it (invalid keys dropped and named, an unparseable file moved aside with a UTC stamp, `-2`, `-3`, … appended when a repair in the same second already took that name — an aside file is never overwritten). Since E7.S0 (plan §15q R1): every text / list key closed (`TextRule`, the families list without `other` / `ai-agents`), each key's `KeyTrust` (safe direction, machine-only, tighten-only-for-root), both layers read through hardened readers, the `UserLayerTrust` a root run applies, `configNotices`, and `contracts/config-keys.json` — § *The configuration trust (E7.S0)* |
 
 **Which file a tool name means** (`ExecutableResolver`, since the E2 CI fix). The runner never hands the operating
 system a bare name to search for: `docker` is looked up on `PATH` alone — each absolute entry in order, empty and
@@ -2408,6 +2408,58 @@ read it so), so the fix is a second member, additive, `schemaVersion` 1:
 
 The extension's follower still matches by its own copy of the reasons (E6.S3 branch); moving it to kind-first with the
 contract's prefixes as the fallback is the extension's half (E6.S4), named in plan §15o.
+
+## The configuration trust (E7.S0, 2026-10-05, plan §15q R1)
+
+The root timer reads the TARGET user's configuration layer every 4 h, and `config set` — run by that user — writes it. So
+the layer is a write path into what root does. The premise that makes trusting it acceptable is WSL interop: with it any
+process of that account can already run `wsl.exe -u root` (a confused-deputy boundary, not a privilege one — plan §15,
+§15f #2). The design rests on that premise and holds without it:
+
+```mermaid
+flowchart LR
+    owner["HomeOwner<br/>(TargetHome.Resolve)"] --> trust["UserLayerTrusts.For<br/>owner uid · ForRoot · LoosenRefused · Skipped"]
+    interop["binfmt_misc WSLInterop<br/>(WindowsSystemDrive.InteropRefusal)"] -- "root only" --> trust
+    machine["/etc/wsl-care/config.json"] -- "ReadStateFile: uid 0, no link, no wait, 256 KiB" --> loader
+    user["~/.config/wsl-care/config.json"] -- "ReadUserFile: the owner's, no g/o write, no link, no wait" --> loader
+    trust --> loader["ConfigLoader.Load"]
+    loader --> result["ConfigLoadResult<br/>Config · Errors (observe-only) · Notices · UserLayerDigest"]
+    keys["ConfigKeys + KeyTrust<br/>TextRule · allowed lists"] --> loader
+    keys --> contract["contracts/config-keys.json"]
+    result --> surfaces["status / doctor / config get: configNotices<br/>run details: config + configNotices"]
+```
+
+- **No key is free text** (review B1, a live bug before E7.S0): a `TextKey` carries a `TextRule` — `OneOf` (the log level),
+  `Matching` (the unused `distro`), `AbsolutePathOrEmpty` (`archive.baseFolder`) — and a `TextListKey` its allowed set.
+  `processes.families` ⊆ `ProcessFamilies.ChoosableForA11` = the catalogue without `other` (the catch-all: root's A11 would
+  have ended every account's idle orphans) and `ai-agents`. A path key is machine-only (`config set` refuses it, a user value
+  is a notice) until its reader validates the filesystem (E9). Tests: `ConfigKeyClosureTests`, `ConfigKeyShapeTests` (every
+  number slot a key fills accepts exactly that key's range), `ArchitectureTests.No_policy_or_protected_roots_type_reads_the_configuration`.
+- **`KeyTrust` per key**: the `SafeDirection` (`higher` / `lower` / `on` / `off` / `subset` / `none`), `TightenOnlyForRoot`
+  (`logging.*`: root's audit log is not the user's to steer), `MachineOnly`, `DaemonUnused` (`distro`, `refreshSeconds`),
+  `ZeroIsUnbounded` (`logging.retentionDays`). `KeySafety.IsNoLooser` is the ONE comparison; the extension's loosening
+  modal (E7.S3) reads the same direction from `contracts/config-keys.json`.
+- **`UserLayerTrust`** (decided once per host in `CliHost.LoadConfig`): an unprivileged run trusts its own layer fully;
+  root working for the target user requires that user to own the file and takes `TightenOnlyForRoot` keys only in their safe
+  direction; when interop is absent or disabled, EVERY root-effective user value is taken only in its safe direction —
+  the target user is kept (not `HomeOwner.Unknown`, which would refuse every user-scoped action, review M3). A value not
+  taken is a `ConfigNotice`, never an error: the run is not observe-only.
+- **The readers, per class** (review M2): the machine layer as root's own state file; the user layer and the target user's
+  own files (nvm's alias, Playwright's link files and `browsers.json`, the editor's `.obsolete`) by `ReadUserFile` — the
+  owner's, no group / other write, `O_NOFOLLOW` + `O_NONBLOCK`, one `statx` of the open descriptor, a cap; the Windows profile
+  through drvfs (`.wslconfig`, Docker Desktop's `daemon.json`) by `ReadNoFollowFile` — no link, no wait, a cap, and NO owner
+  or mode check (drvfs reports every file as the mount's uid, 0777). A group-writable user layer is refused naming
+  `chmod go-w` (`config set` writes 0644 whatever the umask; a WSL Ubuntu login shell's umask measured 0022). Under a sandbox
+  `PhysicalFileSystem.OwnersAreThisProcess` maps every owner to this process. `UserConfigWriter` reads the layer it rewrites
+  through the bounded `ReadRegularFile`, so a FIFO there is moved aside, never waited on.
+- **Every read classified** — `ArchitectureTests.Every_read_is_classified_by_whose_file_it_names_and_uses_that_class_s_reader`
+  holds a table of every read call in the product (file → call → count → whose file) and fails on a new or a stale site, and
+  on a class that someone else controls read without its hardened reader. Residual, stated in the table: a LISTING of a
+  target-home folder that is itself a link lists through it (names only, nothing read).
+- **Visible**: `status --json` carries `configNotices` and `userLayerDigest` (the SHA-256 of the user layer as read);
+  `doctor --json` and `config get --json` carry `configNotices`; every run detail (`collect`'s and `act`'s) carries `config`
+  — every setting the run used that did not come from the defaults, with its layer — and `configNotices`. All additive,
+  absent when empty (`schemaVersion` 1). Capability `config.contract`.
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 

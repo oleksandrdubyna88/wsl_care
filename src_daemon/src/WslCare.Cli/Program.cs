@@ -119,6 +119,11 @@ internal static class Program
             log.Error("configuration error, running observe-only: {ConfigError}", error.Display);
         }
 
+        foreach (var notice in loaded.Notices)
+        {
+            log.Warning("configuration value not taken: {ConfigNotice}", notice.Display);
+        }
+
         // At Information on purpose: a run log that holds no line is a file nobody can read anything from.
         log.Information("{Request}: wsl-care {Argv}", request.GetType().Name, string.Join(' ', args.Select(CommandLine.Printable)));
     }

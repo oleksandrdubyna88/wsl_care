@@ -1209,6 +1209,64 @@ G3 (the handler lookup in `FullCheckLineTests`) and O1 (`Cli.Tests/DetachedRunHa
 `FullCheckLineTests`) are refactors of tests with no behaviour of their own: both classes green before and after (54 and
 22). O5 is documentation (plan §15o decision 6, `research/architecture.md`).
 
+### The configuration trust (E7.S0, 2026-10-05, plan §15q R1)
+
+What a root run may take from another account's configuration layer, and what no setting may do at all
+(`research/architecture.md` § *The configuration trust (E7.S0)*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| no list key widens A11: `processes.families` ⊆ the catalogue without `other` / `ai-agents`, on the command line and in a file (review B1, a live bug) | `Core.Tests/Config/ConfigKeyClosureTests`; `ConfigTrustFlows` |
+| every list key closed; a path key machine-only; a pattern key read by no daemon code; every number slot a key fills accepts exactly that key's range (derived from the product catalogue's templates, an unmapped slot fails naming it) | `Config/ConfigKeyShapeTests` |
+| the never-list, the command policy and catalogue, the deletion policy and the protected roots reference no configuration type — with the companion that the pattern still finds one in `JournalVacuum.cs` | `ArchitectureTests.No_policy_or_protected_roots_type_reads_the_configuration` (+ companion) |
+| the user layer is refused at once when it is a FIFO, never followed when it is a link, refused naming `chmod go-w` when group-writable; an ordinary layer still read | `Config/ConfigLayerTrustTests` (Linux legs for the first three) |
+| root takes the target user's layer only when that user owns it | `UserLayerTrustTests.Root_reading_the_target_users_layer_requires_that_user_to_own_it` (Linux) |
+| without interop a root run takes a user value only in its safe direction — judged against the machine layer, not only the default — and says so as a notice, never observe-only; a tightening or a display value is taken | `UserLayerTrustTests` (three facts) |
+| with interop root takes the user's layer, but root's own log level and retention only tighten (0 = kept for ever); a user's own run takes its whole layer | `UserLayerTrustTests` (three facts) |
+| a machine-only key is taken from the machine layer and ignored, with a notice, from the user layer; `config set` refuses it | `UserLayerTrustTests`, `ConfigTrustFlows` |
+| the trust follows whose home the paths follow (`UserLayerTrusts.For`); the user layer's digest is the SHA-256 of what was read | `UserLayerTrustTests` |
+| a Windows-profile file through drvfs is read with no owner / mode check, but never through a link, never waited on (FIFO), never past its cap | `Files/NoFollowReaderTests` (Linux) |
+| `config set` over a FIFO moves it aside, never waits on it | `Config/UserConfigWriterBoundTests` (Linux) |
+| every read in the product classified by whose file it names, a file someone else controls read by its hardened reader — a new, a stale or a wrongly read site fails, naming it; the scan finds a planted read across lines and the known hardened ones | `ArchitectureTests.Every_read_is_classified_by_whose_file_it_names_and_uses_that_class_s_reader` (+ companion) |
+| an `act` run's detail names every setting not from the defaults with its layer, and the notices; a run under the defaults records exactly what it did before | `Actions/ConfigProvenanceTests` |
+| `contracts/config-keys.json` is what `ConfigKeys` + `default.json` enumerate; it carries every key, the closed families and the trust of the keys R1 is about | `ContractFilesTests` (+ `The_config_keys_contract_holds_every_key_with_its_trust`) |
+| a root-run scenario finds interop as a WSL distro has it: `ScenarioHome` writes the `WSLInterop` entry (enabled) when a scenario claims root, and a scenario deletes it for the other world | `ConfigTrustFlows` |
+
+**Red first** (before the fix):
+
+- `ConfigKeyClosureTests.A_families_list_cannot_widen_A11_beyond_the_named_families` (Windows): 4 of 4 — *Expected type
+  to be …ValueCheck+Invalid, but found …ValueCheck+Ok* for `other`, `ai-agents`, `testhost,other`, `anything-at-all`.
+- `ConfigLayerTrustTests` (WSL, a normal user, a `/tmp` copy): 3 of 4 — the FIFO: *Expected finished to be True because
+  the user layer is read without waiting on a FIFO, but found False* (the load blocked 5 s); the link and the
+  group-writable layer: *Expected type to be …ConfigLoadResult+ObserveOnly, but found …ConfigLoadResult+Valid*; the
+  ordinary layer green.
+- The other guarantees are new behaviour written with the code; each was proved by the teeth below instead.
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the guarding class run, the file restored by writing it back and
+compared by SHA-256 — every restore byte-identical; `scratchpad` runner, Windows Debug unless marked WSL):
+
+| Mutation | Red |
+|---|---|
+| `CheckMembers` accepting any member | 4 (`ConfigKeyClosureTests`): *Expected type to be …Invalid, but found …Ok* |
+| the user layer read with the plain `ReadFile` (WSL) | 3 (`ConfigLayerTrustTests`): the FIFO waited on, the link and the 0664 layer *Valid* |
+| `TightenOnly` ignoring `LoosenRefused` | 2 (`UserLayerTrustTests`): *Expected …DryRun to be True, but found False*; *…to be 30 because 14 is tighter than the default but looser than the machine's 30, but found 14* |
+| `RootsOwnKeyRule` never applying | 1: *Expected …MinimumLevel to be the same string, but they differ at index 0* |
+| the machine-only branch of the loader dropped | 1: *Expected fromUser.Config.Text(…BaseFolder) to be empty, but found "/srv/archive"* |
+| `config set`'s machine-only refusal dropped (built binary) | 1 (`ConfigTrustFlows`): *Expected refused.Exit to be 2, but found 0* |
+| `TargetUserCommands` back on the plain `ReadFile` | 1 (`ArchitectureTests`): *… found at least one item {"WslCare.Core/Actions/TargetUserCommands.cs: 1 x ReadFile"}* |
+| the act detail's `Config` set to null | 1 (`ConfigProvenanceTests`): *Expected detail.Config to contain a single item, but found &lt;null&gt;* |
+| `status`'s `ConfigNotices` set to null (WSL) | 1 (`ConfigTrustFlows`): *Expected statusJson["configNotices"] not to be &lt;null&gt; because status says which user values the run did not take* |
+| `CliHost`'s interop check wired to "available" (WSL) | 1 (`ConfigTrustFlows`): *Expected Value(report, "dryRun").GetBoolean() to be True, but found False* |
+| `ReadNoFollow` following links (WSL) | 1 (`NoFollowReaderTests`): *Expected type to be …Unreadable, but found …Content* |
+| `UserConfigWriter` back on the plain `ReadFile` (WSL) | 1 (`UserConfigWriterBoundTests`): *Expected finished to be True because config set never waits on a FIFO, but found False* |
+| the user-layer digest left empty | 1 (`UserLayerTrustTests`): *Expected …UserLayerDigest to be "44136fa3…" … but "" has a length of 0* |
+
+**Goldens** regenerated in WSL (`WSL_CARE_WRITE_GOLDENS=1`, a `/tmp` copy, copied back and compared byte for byte): the
+seven `status*.json` gained `config.contract` in `capabilities`, `status.json` also `userLayerDigest` (its scenario has a
+user layer) — additive members, nothing else moved; the extension's `npm test` (351, 1 skipped) replays them green.
+`contracts/config-keys.json` is new. The umask a WSL Ubuntu login shell gives a normal user was measured 0022 (2026-10-05,
+`bash -lc umask`), so a hand-made layer is 0644 there; `config set` writes 0644 whatever the umask.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -1465,6 +1523,10 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care config set <key> <value>` over a broken user layer: `config get` still answers, observe-only on stderr and in the JSON (`configError` naming the file); `set` repairs it, moves the bad file to `config.json.broken-*`, and the next `get` is valid | covered | `ConfigFlows.A_broken_user_layer_is_reported_observe_only_and_config_set_repairs_it` |
 | `wsl-care config reset <key>`: the key leaves the user file and `get` names `(default)` again | covered | `ConfigFlows.Config_reset_removes_the_key_from_the_user_layer_and_get_names_default_again` |
 | control characters typed into a key (`config get` / `set` / `reset`) or read from the user layer never reach stderr raw: one `wsl-care:` message per refusal, no unexplained line, no control character but the console sink's colour | covered | `ControlCharacterFlows.Control_characters_typed_into_a_key_or_read_from_the_user_layer_never_reach_stderr_raw`; also `ControlCharacterTests`, `OutputRoadTests`; AOT binary (`win-x64`): smoke by hand 2026-10-02 |
+| `wsl-care config set processes.families testhost,other` refused (plan §15q R1.3, review B1): exit 2, one message naming the key, the stranger and the allowed families; nothing written | covered | `ConfigTrustFlows.Config_set_refuses_a_family_list_that_would_widen_A11_and_writes_nothing`; also `ConfigKeyClosureTests` |
+| `wsl-care config set archive.baseFolder <path>` refused: a machine-only key, the machine layer named, nothing written | covered | `ConfigTrustFlows.Config_set_refuses_a_machine_only_key_naming_the_machine_layer` |
+| root (claimed) reading the target user's layer WITH interop: their values taken, no notice | covered | `ConfigTrustFlows.With_interop_a_root_run_takes_the_target_users_layer_as_their_intent` (Linux legs) |
+| root (claimed) reading the target user's layer WITHOUT interop: only tightening values taken, `config get --json` and `status --json` carry `configNotices` naming interop and the machine layer; `status` carries `userLayerDigest` | covered | `ConfigTrustFlows.Without_interop_a_root_run_takes_only_the_tightening_values_and_every_answer_says_why` (Linux legs) |
 | no `config` verb starts any tool: every config verb's example, a refused set, a broken layer and its repair leave the fakes' argv log empty | covered | `ConfigFlows.No_config_verb_starts_any_tool`; the log is proved alive by `FakeToolFlows` |
 | every registered verb's `Example` runs against the built CLI: exit 0 or 2, never 70 | covered | `VerbRegisterTests.Every_registered_verb_runs_its_example_against_the_built_cli_without_crashing` (one case per verb, derived) |
 | `wsl-care status [--json]` over the captured procfs tree (Linux): exit 0 in under 2 s wall clock (measured around the process, after one unmeasured warm-up start), `schemaVersion`, the fixture's `MemTotal`, 10 containers, 51 processes, a cwd read through a real symlink, `df` available — and the fakes' argv log EMPTY with `docker` and `powershell` on the `PATH` (plan §15b #5) | covered (Linux legs; skipped on Windows with the reason) | `StatusFlows.Status_json_over_the_captured_procfs_answers_within_the_budget_and_starts_no_slow_process`; in-process on every OS: `StatusCommandTests`; AOT binary: CI status smoke (Linux over the same tree) |

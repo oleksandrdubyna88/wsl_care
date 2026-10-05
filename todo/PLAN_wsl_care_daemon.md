@@ -31,7 +31,7 @@
 > bundle tests, `ci-extension.yml` — deviations in the E5.S1 row, 2026-10-03) and E5.S2 built (the status bar, the read-only
 > panel from one field map held equal to `research/architecture.md`, the webview rules, the focused-window polling, the
 > strict page harness, `@vscode/test-electron` on 1.85.0 + stable, the M1 churn measured for the owner — deviations in the
-> E5.S2 row, 2026-10-04) and E5.S3 built as files and tests (*Install daemon* typing the pinned command, the universal `.vsix` with its allowlist and leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` + the release-please package, with the coai gate's E5 plan round folded in as §15h — deviations in the E5.S3 row, 2026-10-04); and the E6 plan review folded in (§15j, 2026-10-04: an own Plan agent standing in for coai, every finding accepted; E6 re-split into E6.S0–E6.S4 with an E6 daemon live gate and an E6 live gate) and E6.S0 built (the daemon read contract — `status`'s `actions` / `capabilities` / `running` / `lastCleanup`, A4's `shown`, `runs show`, the instant range, `RunLine.metrics`, `contracts/*.json`, SIGHUP, exclusive marks — deviations in the E6.S0 row, 2026-10-04); and its review round fixed (§15j, 2026-10-04) and the coai gate's E6 plan round folded in (§15k, 2026-10-04: 20 findings accepted, E6 built as one unit) and E6.S1 built, its review round fixed (§15l) and the coai E6 code round fixed (§15m, verdict proceed) (the detached runs — `act` / `collect --detach`, the request files written exclusively, `act --request`, the request sweep, `act --stop` with its stop marker, `--only -`, the template unit `wsl-care-act@.service`, the installer's rename and bounded wait — deviations in the E6.S1 row, 2026-10-04; the distro-survival measurement moved to the E6 daemon live gate's first step); the E4 live gate — the owner's settings (`docs/repo-settings.md`), the cut of `daemon-v0.1.0`,
+> E5.S2 row, 2026-10-04) and E5.S3 built as files and tests (*Install daemon* typing the pinned command, the universal `.vsix` with its allowlist and leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` + the release-please package, with the coai gate's E5 plan round folded in as §15h — deviations in the E5.S3 row, 2026-10-04); and the E6 plan review folded in (§15j, 2026-10-04: an own Plan agent standing in for coai, every finding accepted; E6 re-split into E6.S0–E6.S4 with an E6 daemon live gate and an E6 live gate) and E6.S0 built (the daemon read contract — `status`'s `actions` / `capabilities` / `running` / `lastCleanup`, A4's `shown`, `runs show`, the instant range, `RunLine.metrics`, `contracts/*.json`, SIGHUP, exclusive marks — deviations in the E6.S0 row, 2026-10-04); and its review round fixed (§15j, 2026-10-04) and the coai gate's E6 plan round folded in (§15k, 2026-10-04: 20 findings accepted, E6 built as one unit) and E6.S1 built, its review round fixed (§15l) and the coai E6 code round fixed (§15m, verdict proceed) (the detached runs — `act` / `collect --detach`, the request files written exclusively, `act --request`, the request sweep, `act --stop` with its stop marker, `--only -`, the template unit `wsl-care-act@.service`, the installer's rename and bounded wait — deviations in the E6.S1 row, 2026-10-04; the distro-survival measurement moved to the E6 daemon live gate's first step); and E7.S0 built (the configuration trust and contract — §15q *E7.S0 as built*, 2026-10-05); the E4 live gate — the owner's settings (`docs/repo-settings.md`), the cut of `daemon-v0.1.0`,
 > the live install and its stamp — the owner's M1 decision, the E5 live gate, and the rest of §16 (E6 onwards) are still open.** Scope: a C# Native AOT daemon/CLI run by a
 > systemd timer inside the `Ubuntu` distro (`src_daemon/`), a VS Code extension that shows its state, its
 > logs and its help and runs cleanups on demand (`src_vs_code/`), CI/CD modelled on CredsForDevs, and the
@@ -1168,7 +1168,8 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
-> Status: **plan only, nothing implemented yet, 2026-10-05.** Scope: epic E7 — the daemon's `agents list` / `agents
+> Status: **in progress, 2026-10-05 — E7.S0 built** (the configuration trust and contract; deviations in *E7.S0 as built*
+> below); E7.S1–E7.S5 and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1440,6 +1441,30 @@ daemon adds an overlapping cleanup root). An overlap makes the cleanup action re
    attacker-settable (any process can create `~/.claude/projects/<anything>`): control and bidi characters stripped and
    lengths capped before a modal or the DOM (E6's `text/safeText.ts`, reused), `textContent` only (§15g M7). They never go
    into goldens or fixtures (§15i A: `FixtureIdentity`, `FixturePrivacyTests`).
+
+#### E7.S0 as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The configuration trust (E7.S0)*, the design `research/architecture.md` § *The configuration trust (E7.S0)*.
+**Deviations from the text above:**
+
+- **A third text shape.** Besides a closed set and a path, `distro` is a `TextRule.Matching` key (the extension's distribution
+  pattern) — free-shaped text is allowed ONLY for a `daemonUnused` key, and a test holds it so (`ConfigKeyShapeTests`).
+- **The group-writable layer:** refused with the fix in the message ("run chmod go-w <file>; config set writes it 0644"),
+  which `doctor`'s config check and `status`'s `configError` carry — chosen over accepting a private group (no `/etc/group`
+  parsing). Measured: a WSL Ubuntu login shell's umask for a normal user is 0022, so a hand-made layer is 0644.
+- **The machine layer** is read as root's own state file (`ReadStateFile`, uid 0, no group / other write): a machine layer
+  an administrator made group-writable now makes the run observe-only, naming the fix — the same class, swept.
+- **`UserConfigWriter`** reads the layer it rewrites with the bounded `ReadRegularFile` (regular, nonblocking, capped) and
+  still follows a link there — it is the user's own process; the atomic write replaces a linked layer as it did before.
+- **The slot-bounds rule** is EQUALITY: every number slot a key fills accepts exactly that key's range times its unit
+  (journal keep days, A6's hours, A7's cap), and every other number slot is declared "not configuration" by name.
+- **Surfaces:** `configNotices` in `status`, `doctor`, `config get` and both run details; `userLayerDigest` in `status` only;
+  the run details' `config` lists every non-default setting with its layer (not only the keys an action read). All additive,
+  absent when empty. Capability `config.contract`.
+- **The read-site classification** also covers listings and walks of target-home folders; its residual — a listing of a
+  folder that is itself a link lists through it (names only) — is stated in the table.
+- **Not changed:** the never-list's protected-path argv rule stays static (R2.2's residual is E7.S2's).
 
 #### Stories
 

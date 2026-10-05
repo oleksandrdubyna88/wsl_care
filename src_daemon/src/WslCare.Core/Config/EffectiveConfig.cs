@@ -53,6 +53,12 @@ public abstract record ConfigLoadResult
 
     public abstract IReadOnlyList<ConfigError> Errors { get; }
 
+    /// <summary>Valid user values this run did not take, each said (plan §15q R1.2, R1.3, R1.6).</summary>
+    public IReadOnlyList<ConfigNotice> Notices { get; init; } = [];
+
+    /// <summary>The SHA-256 of the user layer as read; empty when there was none (plan §15q R1.7).</summary>
+    public string UserLayerDigest { get; init; } = string.Empty;
+
     public bool IsObserveOnly => this is ObserveOnly;
 
     public sealed record Valid(EffectiveConfig Config) : ConfigLoadResult

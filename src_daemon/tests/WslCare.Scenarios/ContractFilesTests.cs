@@ -7,6 +7,8 @@ using FluentAssertions;
 
 using WslCare.Cli;
 using WslCare.Core.Actions;
+using WslCare.Core.Config;
+using WslCare.Core.Files;
 
 namespace WslCare.Scenarios;
 
@@ -49,8 +51,69 @@ public sealed class ContractFilesTests
         ["notAFullCheckWithoutKind"] = new JsonArray([.. Core.Records.HistoryReasons.NotAFullCheckWithoutKind.Select(p => (JsonNode)new JsonObject { ["writer"] = p.Writer, ["prefix"] = p.Prefix })]),
     });
 
+    /// <summary>The text <c>contracts/config-keys.json</c> must hold (plan §15q D5, R1): every configuration key with its shape,
+    /// range or allowed values, its default from the embedded <c>default.json</c>, and what it means to a root run — the safe
+    /// direction the loader applies and the extension's loosening modal keys on — from <see cref="ConfigKeys.All"/>.</summary>
+    internal static string ConfigKeysText()
+    {
+        var defaults = ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config;
+        return Indented(new JsonObject
+        {
+            ["schemaVersion"] = 1,
+            ["description"] = "Every configuration key the daemon knows: its shape, its bounds or allowed values, its default, and what it means to a root run (safeDirection: the direction of change a root run trusts from another account's layer; rootEffective; tightenOnlyForRoot; machineOnly; daemonUnused; zeroIsUnbounded). Generated from ConfigKeys and the embedded default.json by ContractFilesTests.",
+            ["keys"] = new JsonArray([.. ConfigKeys.All.Select(k => KeyNode(k, defaults.Entry(k).Value))]),
+        });
+    }
+
+    private static JsonNode KeyNode(ConfigKey key, ConfigValue fallback)
+    {
+        var node = new JsonObject { ["name"] = key.Name };
+        foreach (var (name, value) in Shape(key))
+        {
+            node[name] = value;
+        }
+
+        node["default"] = JsonNode.Parse(fallback.ToJsonElement().GetRawText());
+        node["safeDirection"] = Camel(key.Trust.Safe.ToString());
+        node["rootEffective"] = key.Trust.RootEffective;
+        node["tightenOnlyForRoot"] = key.Trust.TightenOnlyForRoot;
+        node["machineOnly"] = key.Trust.MachineOnly;
+        node["daemonUnused"] = key.Trust.DaemonUnused;
+        node["zeroIsUnbounded"] = key.Trust.ZeroIsUnbounded;
+        return node;
+    }
+
+    private static IReadOnlyList<(string Name, JsonNode? Value)> Shape(ConfigKey key) => key switch
+    {
+        ConfigKey.BoolKey => [("shape", "bool")],
+        ConfigKey.IntKey number => [("shape", "int"), ("min", number.Min), ("max", number.Max)],
+        ConfigKey.TextKey { Rule: TextRule.OneOf one } => [("shape", "text"), ("oneOf", new JsonArray([.. one.Values.Select(v => (JsonNode)v)]))],
+        ConfigKey.TextKey { Rule: TextRule.Matching matching } => [("shape", "text"), ("pattern", matching.Expression)],
+        ConfigKey.TextKey { Rule: TextRule.AbsolutePathOrEmpty } => [("shape", "path"), ("maxLength", TextRule.AbsolutePathOrEmpty.MaxLength)],
+        ConfigKey.TextListKey list => [("shape", "textList"), ("allowed", new JsonArray([.. list.Allowed.Select(v => (JsonNode)v)]))],
+        _ => throw new InvalidOperationException($"{key.Name}: a key shape the contract does not describe"),
+    };
+
     public static IReadOnlyList<(string File, string Text)> Expected =>
-        [("actions.json", ActionsText()), ("exit-codes.json", ExitCodesText()), ("history-reasons.json", HistoryReasonsText())];
+        [("actions.json", ActionsText()), ("exit-codes.json", ExitCodesText()), ("history-reasons.json", HistoryReasonsText()), ("config-keys.json", ConfigKeysText())];
+
+    /// <summary>The companion of the config-keys contract: it carries every key, the closed families list and the trust of the
+    /// keys R1 is about — a contract derived from nothing would pass the equality test as well.</summary>
+    [Fact]
+    public void The_config_keys_contract_holds_every_key_with_its_trust()
+    {
+        var keys = JsonNode.Parse(ConfigKeysText())!["keys"]!.AsArray().ToDictionary(k => (string)k!["name"]!, k => k!);
+
+        keys.Should().HaveCount(ConfigKeys.All.Count);
+        keys["dryRun"]["safeDirection"]!.GetValue<string>().Should().Be("on");
+        keys["auto.A5"]["safeDirection"]!.GetValue<string>().Should().Be("off");
+        keys["containers.stoppedOlderThanDays"]["min"]!.GetValue<int>().Should().Be(0);
+        keys["processes.families"]["allowed"]!.AsArray().Select(n => (string)n!).Should().NotContain(["other", "ai-agents"]).And.Contain("testhost");
+        keys["archive.baseFolder"]["machineOnly"]!.GetValue<bool>().Should().BeTrue();
+        keys["logging.retentionDays"]["zeroIsUnbounded"]!.GetValue<bool>().Should().BeTrue();
+        keys["distro"]["daemonUnused"]!.GetValue<bool>().Should().BeTrue();
+        keys["aiAgents.warnGb"]["rootEffective"]!.GetValue<bool>().Should().BeFalse();
+    }
 
     /// <summary>Plan §15o, coai plan round #2: <c>collect</c> is the full check's reserved meta name — a request's and
     /// <c>running.json</c>'s marker — so no action id may carry it, in the registry or in the contract the extension reads.</summary>

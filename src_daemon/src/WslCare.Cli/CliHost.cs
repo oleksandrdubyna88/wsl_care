@@ -38,9 +38,15 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// <summary>Whose home the per-user paths follow (plan §15c #2): the target user's when root.</summary>
     public HomeOwner HomeOwner { get; init; } = new HomeOwner.ThisProcess("a host built by a test");
 
-    /// <summary>The configuration this host runs under: the three layers, or — root with an ambiguous target user — the
-    /// defaults and the machine layer only (gate finding #2: user-scoped actions refuse, machine-scoped ones still run).</summary>
-    public ConfigLoadResult LoadConfig() => ConfigLoader.Load(Paths, Files, HomeOwner.UserLayerSkipped);
+    /// <summary>Why WSL interop is unavailable here — empty when it is (plan §15q R1.2: without it another account's layer may
+    /// only tighten a root run). Asked only for a root run; <see cref="ForThisMachine"/> wires the distro's binfmt_misc, a host
+    /// built by a test says "available".</summary>
+    public Func<string> InteropRefusal { get; init; } = static () => string.Empty;
+
+    /// <summary>The configuration this host runs under: the three layers, trusted as <see cref="UserLayerTrusts"/> decides — or,
+    /// root with an ambiguous target user, the defaults and the machine layer only (gate finding #2: user-scoped actions refuse,
+    /// machine-scoped ones still run).</summary>
+    public ConfigLoadResult LoadConfig() => ConfigLoader.Load(Paths, Files, UserLayerTrusts.For(HomeOwner, InteropRefusal));
 
     /// <summary>What cancelled this process, in words — asked only once it was cancelled; <c>Main</c> wires
     /// <see cref="ShutdownSignals.Cause"/>, so an interrupted run's record names the signal (plan §15j B2).</summary>
@@ -67,12 +73,13 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         var paths = WithLoginHomesProtected(owned);
         // State files another process trusts are root's on a machine; under a sandbox (WSL_CARE_ROOT: the scenarios) the
         // state there is this process's own (E6.S0 review S1).
-        var files = new PhysicalFileSystem(paths) { TrustedStateOwner = Sandboxed() ? RegularFiles.EffectiveUid() : 0 };
+        var files = new PhysicalFileSystem(paths) { TrustedStateOwner = Sandboxed() ? RegularFiles.EffectiveUid() : 0, OwnersAreThisProcess = Sandboxed() };
         return new CliHost(paths, files, TimeProvider.System, new ProcessCommandRunner(CommandPolicy.Product))
         {
             Privilege = privilege,
             HomeOwner = owner,
             Signals = SignalsFor(paths, files),
+            InteropRefusal = () => paths is LinuxHostPaths linux ? UserLayerTrusts.InteropRefusal(linux, files) : string.Empty,
         };
     }
 

@@ -60,10 +60,18 @@ public sealed class ConfigValidationTests
     }
 
     [Fact]
-    public void A_free_text_key_accepts_anything_including_empty()
+    public void A_text_key_accepts_only_its_declared_shape()
     {
         ConfigValidation.Parse(ConfigKeys.Archive.BaseFolder, "").Should().BeOfType<ValueCheck.Ok>();
+        ConfigValidation.Parse(ConfigKeys.Archive.BaseFolder, "/srv/archive").Should().BeOfType<ValueCheck.Ok>();
+        ConfigValidation.Parse(ConfigKeys.Archive.BaseFolder, @"D:\ai-archive").Should().BeOfType<ValueCheck.Ok>();
+        ConfigValidation.Parse(ConfigKeys.Archive.BaseFolder, "relative/folder").Should().BeOfType<ValueCheck.Invalid>();
+        ConfigValidation.Parse(ConfigKeys.Archive.BaseFolder, "/srv/../etc").Should().BeOfType<ValueCheck.Invalid>();
+        ConfigValidation.Parse(ConfigKeys.Archive.BaseFolder, "/srv/a\nb").Should().BeOfType<ValueCheck.Invalid>();
         ConfigValidation.Parse(ConfigKeys.Distro, "Ubuntu-26.04").Should().BeOfType<ValueCheck.Ok>();
+        ConfigValidation.Parse(ConfigKeys.Distro, "").Should().BeOfType<ValueCheck.Ok>();
+        ConfigValidation.Parse(ConfigKeys.Distro, "-d").Should().BeOfType<ValueCheck.Invalid>();
+        ConfigValidation.Parse(ConfigKeys.Distro, "a b").Should().BeOfType<ValueCheck.Invalid>();
     }
 
     [Fact]
@@ -82,8 +90,8 @@ public sealed class ConfigValidationTests
         ConfigValidation.Check(ConfigKeys.Volumes.AnonymousMaxGb, Json("20.5")).Should().BeOfType<ValueCheck.Invalid>();
         ConfigValidation.Check(ConfigKeys.Volumes.AnonymousMaxGb, Json("999999999")).Should().BeOfType<ValueCheck.Invalid>()
             .Which.Message.Should().Contain("got 999999999");
-        ConfigValidation.Check(ConfigKeys.Processes.Families, Json("[\"a\", 1]")).Should().BeOfType<ValueCheck.Invalid>();
-        ConfigValidation.Check(ConfigKeys.Processes.Families, Json("[\"a\", \"b\"]")).Should().BeOfType<ValueCheck.Ok>();
+        ConfigValidation.Check(ConfigKeys.Processes.Families, Json("[\"node\", 1]")).Should().BeOfType<ValueCheck.Invalid>();
+        ConfigValidation.Check(ConfigKeys.Processes.Families, Json("[\"node\", \"testhost\"]")).Should().BeOfType<ValueCheck.Ok>();
         ConfigValidation.Check(ConfigKeys.Distro, Json("{}")).Should().BeOfType<ValueCheck.Invalid>().Which.Message.Should().Contain("an object");
     }
 }

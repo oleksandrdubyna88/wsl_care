@@ -342,7 +342,8 @@
     "logs.instantRange",
     "act.detach",
     "act.onlyStdin",
-    "act.stop"
+    "act.stop",
+    "config.contract"
   ],
   "running": {
     "state": "wedged",

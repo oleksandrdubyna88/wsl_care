@@ -72,6 +72,15 @@ public sealed class PhysicalFileSystem : IFileSystem
 
     public FileReadResult ReadStateFile(string path, int maxBytes) => RegularFiles.ReadOwned(path, maxBytes, TrustedStateOwner);
 
+    /// <summary>Under a sandbox (a test, <c>WSL_CARE_ROOT</c>) every file is this process's own, whoever it is read for: the
+    /// owner a caller names is then this process's uid. False — the owner checked as named — on a machine.</summary>
+    public bool OwnersAreThisProcess { get; init; }
+
+    public FileReadResult ReadUserFile(string path, int maxBytes, uint owner) =>
+        RegularFiles.ReadOwned(path, maxBytes, OwnersAreThisProcess ? RegularFiles.EffectiveUid() : owner);
+
+    public FileReadResult ReadNoFollowFile(string path, int maxBytes) => RegularFiles.ReadNoFollow(path, maxBytes);
+
     public bool FileExists(string path) => File.Exists(path);
 
     public bool DirectoryExists(string path) => Directory.Exists(path);
