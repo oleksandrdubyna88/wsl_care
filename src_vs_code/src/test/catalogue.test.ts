@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { RUN_READ_NAMES, VERB_NAMES } from '../client/verbs';
+import { PAGE_MESSAGE_TYPES } from '../panel/messages';
 import { ROOT_OPS } from '../root/rootCall';
 import { EXTENSION_ROOT, REPOSITORY_ROOT } from './support/paths';
 
@@ -30,6 +31,7 @@ function flowIds(contributes: Contributes): string[] {
   return [
     ...VERB_NAMES.map((verb) => `client ${verb}`),
     ...RUN_READ_NAMES.map((read) => `client ${read}`),
+    ...PAGE_MESSAGE_TYPES.map((type) => `message ${type}`),
     ...ROOT_OPS.map((op) => `root ${op}`),
     ...(contributes.commands ?? []).map((c) => `command ${c.command}`),
     ...Object.values(contributes.views ?? {}).flat().map((v) => `view ${v.id}`),
@@ -64,6 +66,7 @@ test('the derivation sees the verbs (its known instances) and a planted command 
   assert.ok(flowIds({}).includes('client status'));
   assert.ok(flowIds({}).includes('root fullCheck'), 'the root ops are derived too');
   assert.ok(flowIds({}).includes('client runsShow'), 'the run reads are derived too (E6.S3)');
+  assert.ok(flowIds({}).includes('message cleanSelected'), 'the page messages are derived too (E6.S3)');
   const planted: Contributes = { commands: [{ command: 'wslCare.plantedRefresh' }], views: { explorer: [{ id: 'wslCare.plantedPanel' }] } };
   assert.deepEqual(missing(flowIds(planted), cells), ['command wslCare.plantedRefresh', 'view wslCare.plantedPanel']);
 });
