@@ -977,7 +977,10 @@ All 9 findings ACCEPTED and fixed red → green (`research/module_tests.md`, *Th
 
 > Status: **plan only, nothing implemented yet, 2026-10-05.** Scope: the daemon's history line and `running.json` writers,
 > `runs` / `runs show`'s `RunLine`, their goldens and docs. Branch `fix/wc-full-check-line-names-collect`. The extension is
-> not changed here (boundary below).
+> not changed here (boundary below). **coai plan round (2026-10-05): verdict proceed, 3 findings, all accepted** — #1
+> (Major) prove the follower's exclusions cannot match a new full-check line, and both sides change (decision 2, the
+> boundary, the test plan); #2 (Major) the name `collect` reserved and the older-file inference tightened (decision 3);
+> #3 (Minor) what `contracts/` pins and what the goldens pin (*Not changed*).
 
 **Symptom.** A reader cannot tell a full check's history line by one rule, and `actions: []` is ambiguous. The writers today
 (verified on `origin/main` 8cac31d):
@@ -1018,14 +1021,23 @@ real results on a timer line and a `collect` entry into `perAction` for every fu
    then means only "no action produced a result"; whether the run was a full check is `kind`'s answer. *Why the removal is
    safe:* no daemon release exists (`src_daemon/version.txt` 0.0.0, no tag, no release); the only reader keyed on the row
    is the unmerged extension follower, which already accepts `[]` for a full check, and none of the new lines' reasons hit
-   its exclusions. Lines written by pre-release builds keep their row and are reported AS STORED (no read-side rewriting);
-   they age out with the 90-day retention. *Alternative weighed:* keep the row (strictly additive) — rejected: two shapes
+   its exclusions — PROVED, not asserted (plan round #1): the follower's three "not a full check" prefixes become a
+   contract the daemon emits, `contracts/history-reasons.json`, generated from the daemon's own constants (`RunReconcile`'s
+   two reasons; the unusable request's prefix, made a named `RequestSweep` constant) and held equal by `ContractFilesTests`,
+   so both sides read ONE list instead of two copies; and `FullCheckLineTests` drives every writer of a `kind: "collect"`
+   line — `DetachedRuns.Refused` (the lock), `DetachedRuns.CutOff`, `RequestSweep.Interrupted`, `RunningSweep.SweepDead`
+   (with and without a stop marker), `CollectRun.RecordCutOff` (both moments), `CollectRun.Line` (completed, observe-only,
+   failed on its detail) — and asserts that no such line's reason starts with any of them. Lines written by pre-release
+   builds keep their row and are reported AS STORED (no read-side rewriting); they age out with the 90-day retention. *Alternative weighed:* keep the row (strictly additive) — rejected: two shapes
    for one fact forever, and the zero `collect` entry in `perAction` stays.
 3. **`kind` in `running.json` too** (`RunningFile`, additive): the sweep of a dead holder cannot otherwise tell the timer's
    pass (registry ids, trigger `timer`) from an `act --timer` of the same ids. `CollectRun` writes `collect`; the engine
    writes `collect` for the timer pass (`ActRequest` gains `Kind`, default `act`, set to `collect` only by
-   `ActionEngine.TimerPassAsync`, `ActionEngine.cs:146`) and `act` otherwise. A file from an older writer: `collect` when
-   its actions are exactly `["collect"]` (only `CollectRun` writes that), else absent.
+   `ActionEngine.TimerPassAsync`, `ActionEngine.cs:146`) and `act` otherwise. A file from an older writer: `collect` only
+   for the EXACT shape `CollectRun` writes (`CollectRun.cs:121`) — `actions` exactly `["collect"]` AND `current`
+   `"collect"` (the engine writes registry ids and starts `current` empty) — else absent (plan round #2). **The name
+   `collect` is reserved** as the meta name of a full check: no action may be named it — said in `ActionId`'s doc comment
+   and held by a test over `ActionId.All` and `contracts/actions.json` (compared ignoring case).
 4. **The reconcile** takes the kind from the orphaned detail: `act` when the detail's `kind` is `act`, `collect` otherwise —
    the rule `RunLogs.IsAct` (`RunLogs.cs:231`) already applies, reused rather than restated; unreadable → absent.
 5. **The compiler names every writer:** `Kind` is a POSITIONAL parameter (`RunKind?`, no default) of `RunRecord`
@@ -1039,18 +1051,23 @@ real results on a timer line and a `collect` entry into `perAction` for every fu
 
 **Not changed:** the request file (`kind`, `actions: ["collect"]`, its reader), `status.running` (still `actions:
 ["collect"]` while a full check measures; exposing `running.kind` is a possible follow-up this fix does not need), `logs`'
-aggregates (only new lines lose the pseudo-row), `lastCleanup`, `runs show`'s states, exit codes, `contracts/*.json`.
+aggregates (only new lines lose the pseudo-row), `lastCleanup`, `runs show`'s states, exit codes,
+`contracts/actions.json` / `exit-codes.json`. **What `contracts/` pins and what it does not** (plan round #3): it holds
+`actions.json`, `exit-codes.json` and, new here, `history-reasons.json` — no `RunLine` field list; the `RunLine` wire
+(`kind` included) is pinned by the head goldens regenerated in build step 5 (`runs-local-day.json`, `runs-show-*.json`).
 
-**The boundary with the extension** (named on both sides when the extension takes its half):
+**The boundary with the extension** — BOTH sides change (plan round #1); named here, and on the extension's side (E6.S4,
+PR #12) when it takes its half:
 
 | Item | Built by | The other side's part |
 |---|---|---|
-| `kind` on every history line and in `running.json`; no `collect` pseudo-row; `RunLine.kind` | this change (daemon) | none — the current follower keeps working unchanged |
-| the follower matches a full check by `kind === "collect"` when present, falling back to today's rule for a line without `kind` (a daemon older than this) | the extension, a follow-up (the E6.S3 branch or the next extension change) — NOT this PR | reads the additive field |
+| `kind` on every history line and in `running.json`; no `collect` pseudo-row; `RunLine.kind`; `contracts/history-reasons.json` | this change (daemon) | nothing needed in between — the current follower keeps working unchanged |
+| the follower matches a full check by `kind === "collect"` FIRST, falling back to today's rule only for a line without `kind` (a daemon older than this), its exclusion prefixes read from `contracts/history-reasons.json` instead of its own copy | the extension — E6.S4 on PR #12, NOT this PR | the daemon's additive field and contract |
 
 Order: the daemon first (additive; nothing breaks in between). Disjoint otherwise.
 
-**Files.** `Records/RunRecord.cs` (`RunKind`, positional `Kind`), `Actions/Engine/RunningState.cs` (`RunningFile.Kind`),
+**Files.** `Actions/ActionId.cs` (the reserved name, doc only), `contracts/history-reasons.json` (new, generated),
+`Records/RunRecord.cs` (`RunKind`, positional `Kind`), `Actions/Engine/RunningState.cs` (`RunningFile.Kind`),
 `Actions/Engine/ActRecords.cs` (`ActRequest.Kind`), `Actions/Engine/ActionEngine.cs`, `Collect/CollectRun.cs`,
 `Actions/Engine/RequestSweep.cs`, `Actions/Engine/RunningSweep.cs`, `Records/RunReconcile.cs` + `Records/RunDetailStore.cs`
 (the head's kind), `Cli/Commands/DetachedRuns.cs`, `History/LogsReports.cs`, `History/RunLogs.cs`; the tests constructing
@@ -1064,10 +1081,19 @@ regenerated (`WSL_CARE_WRITE_GOLDENS=1`), the diff read · 6 docs.
 
 **Test plan.**
 
-- **RED first, at the wire** (compiles against today's code — it reads `history.jsonl` lines as raw JSON):
-  `DetachedRunsTests.Every_terminal_line_of_a_detached_full_check_names_it_by_kind_and_carries_no_collect_row`, over a
-  completed detached full check, one refused at the lock and one cut off before it started. Expected today: the completed
-  line has no `kind`, the refused one carries the `collect` row — red naming that.
+- **RED first, at the wire** (compiles against today's code — it reads `history.jsonl` lines as raw JSON), in a new
+  `Cli.Tests/FullCheckLineTests` (`DetachedRunsTests` is near the 800-line cap):
+  `Every_terminal_line_of_a_detached_full_check_names_it_by_kind_and_carries_no_collect_row`, over a completed detached
+  full check, one refused at the lock and one cut off before it started. Expected today: the completed line has no `kind`,
+  the refused one carries the `collect` row — red naming that.
+- **The follower's exclusions cannot match a full check** (plan round #1): `FullCheckLineTests` drives every
+  `kind: "collect"` writer listed under decision 2 and asserts no reason starts with a prefix of
+  `contracts/history-reasons.json`; its companion asserts the prefixes DO match the two lines they are for (an unusable
+  request's, a reconciled orphan's) — a list that matched nothing would pass the first test forever.
+  `ContractFilesTests` holds the file equal to the constants.
+- **The reserved name** (plan round #2): no `ActionId.All` id and no `contracts/actions.json` id equals `collect` ignoring
+  case; an older `running.json` is read as `collect` only for `["collect"]` + `current: "collect"` — `["collect"]` with
+  another `current` is absent.
 - **Per writer** (Core / CLI tests beside the existing ones): `collect` completed manual and cli (`collect`, `[]`) and timer
   (`collect`, the pass's results, no `collect` row); cut off during the measurement and during the request sweep
   (`collect`, `[]`); a swept collect request (`collect`, `[]`) and a swept act request (`act`, its ids `interrupted`);
@@ -1094,6 +1120,9 @@ file.
 - [ ] No new line carries a `collect` row in `actions`; `actions` holds per-action results only.
 - [ ] `running.json` carries `kind`; a dead holder's swept line takes it (or the `["collect"]` marker of an older file).
 - [ ] `runs` / `runs show` answer `kind`; `schemaVersion` 1 everywhere.
+- [ ] `contracts/history-reasons.json` generated from the daemon's constants, and no reason of a `kind: "collect"` line
+      starts with one of its prefixes (tested over every writer, with the companion).
+- [ ] `collect` is a reserved name: no action id carries it (tested), `ActionId` says so.
 - [ ] The RED test seen failing for the real symptom, then green; the teeth check done; both observations recorded in
       `research/module_tests.md`.
 - [ ] Goldens regenerated only where the wire changed; docs updated (README, `architecture.md`, `module_tests.md`, §6).
