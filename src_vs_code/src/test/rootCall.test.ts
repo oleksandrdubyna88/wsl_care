@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { VERB_TIMEOUT_MS } from '../client/verbs';
-import { callRoot, DETACH_TIMEOUT_MS, ROOT_OPS, ROOT_TIMEOUT_MS, rootRequest, STOP_TIMEOUT_MS, type RootOp } from '../root/rootCall';
+import { callRoot, DETACH_TIMEOUT_MS, ROOT_OPS, rootRequest, rootTimeoutMs, STOP_TIMEOUT_MS, type RootOp } from '../root/rootCall';
+import { DEFAULT_NUMBERS } from '../settings/numbers';
 import { runIdOf, volumeNameOf, type RunId, type VolumeName } from '../root/rootIds';
 import { exited, recordingRunner } from './support/recordingRunner';
 
@@ -37,7 +38,7 @@ for (const { op, tail } of OPS) {
     assert.ok(request !== undefined);
     assert.equal(request.file, TARGET.wsl, 'the absolute System32 launcher the client resolved');
     assert.deepEqual(request.args, [...PREFIX, ...tail]);
-    assert.equal(request.timeoutMs, ROOT_TIMEOUT_MS[op.op]);
+    assert.equal(request.timeoutMs, rootTimeoutMs(op));
   });
 }
 
@@ -80,10 +81,19 @@ test('10 000 shown names (the cap) make 650 000 stdin bytes — beside an argv t
   assert.ok((request?.args.join(' ').length ?? 0) < 200);
 });
 
-test('the host\'s ceilings, stated (plan §15k #19): a detach answers well inside 90 s, a stop inside 150 s, a preview as preview --all', () => {
-  assert.equal(DETACH_TIMEOUT_MS, 90_000);
+test('the host\'s ceilings, stated (plan §15k #19, §15q N-2 / N-3): a detach 690 s, a stop 150 s, the root check as --version, a preview per Docker row', () => {
+  assert.equal(DETACH_TIMEOUT_MS, 690_000);
   assert.equal(STOP_TIMEOUT_MS, 150_000);
-  assert.deepEqual(ROOT_TIMEOUT_MS, { preview: VERB_TIMEOUT_MS.preview, confirm: DETACH_TIMEOUT_MS, stop: STOP_TIMEOUT_MS, fullCheck: DETACH_TIMEOUT_MS, rootCheck: VERB_TIMEOUT_MS.version });
+  assert.equal(rootTimeoutMs({ op: 'confirm', ids: ['A10'], shown: undefined }), DETACH_TIMEOUT_MS);
+  assert.equal(rootTimeoutMs({ op: 'fullCheck' }), DETACH_TIMEOUT_MS);
+  assert.equal(rootTimeoutMs({ op: 'rootCheck' }), VERB_TIMEOUT_MS.version);
+  assert.equal(rootTimeoutMs({ op: 'preview', ids: ['A4'] }), (350 + 20) * 1000, 'one Docker row: one snapshot and the base');
+  assert.equal(rootTimeoutMs({ op: 'preview', ids: ['A4', 'A5', 'A5Testcontainers', 'A6', 'A6Unused', 'A7', 'A8', 'A9'] }), (6 * 350 + 34 + 20) * 1000, 'Clean selected over every row: six snapshots, not one');
+});
+
+test('§15q: a root call takes its ceiling from the settings it is handed — a raised detach setting reaches the request', () => {
+  const request = rootRequest(TARGET, { op: 'fullCheck' }, { ...DEFAULT_NUMBERS, detachSeconds: 1200 });
+  assert.equal(request?.timeoutMs, 1_200_000);
 });
 
 test('callRoot spawns only through the runner seam it is handed — the one request, nothing else', async () => {

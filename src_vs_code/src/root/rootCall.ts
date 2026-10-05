@@ -1,6 +1,8 @@
 import { daemonArgv } from '../client/WslCareClient';
-import { VERB_TIMEOUT_MS, VERBS } from '../client/verbs';
+import { ceilingMs, rootOpCall } from '../client/ceilings';
+import { VERBS } from '../client/verbs';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { ActionIds, RunId, VolumeName } from './rootIds';
 
 /**
@@ -16,19 +18,20 @@ import type { ActionIds, RunId, VolumeName } from './rootIds';
  * and the bundle scan holds this module's region to an exact set of literals (`bundleScan.test.ts`). Prose belongs to
  * `rootFailureText.ts`, not here.</p>
  *
- * <p><b>The host's ceilings (plan §15k #19).</b> Every op is a SHORT call — the long work runs in the daemon's own unit:</p>
+ * <p><b>The host's ceilings (plan §15k #19, §15q N-2 / N-3)</b> come from `client/ceilings.ts` — the number settings, each
+ * held strictly above the daemon's worst case for its call (`client/worstCases.ts`, `ceilings.test.ts`). Every op is a
+ * SHORT call — the long work runs in the daemon's own unit:</p>
  * <ul>
- *   <li>`preview` — `act <ids> --preview --json` runs, for the ids asked, the same per-action previews `preview --all` runs
- *       (Docker's `system df -v`, the volume listing, the container inspection batches), so `preview --all`'s 330 s holds.</li>
- *   <li>`confirm` / `fullCheck` (`collect --detach`, the *Run full check now* button, §15j M9) — a DETACH: the daemon reads the shown list (its own 10 s stdin ceiling), sweeps the request
- *       folder under the run lock (one `systemctl show`, 15 s — one root operation at a time leaves at most a stale request
- *       or two), writes the request, starts the unit with `systemctl start --no-block` (30 s) and, when that start timed
- *       out, asks the unit once more (15 s): 70 s of daemon ceilings + the relay → 90 s. A detach that outruns it is
- *       OUTCOME UNKNOWN, never a failure: the caller follows `status.running` (plan §15k #3). The real time on the owner's
- *       machine is measured at the E6 live gate (`wsl.exe -u root` is not run outside it).</li>
- *   <li>`stop` — `act --stop` runs `systemctl stop <unit>` with its 120 s ceiling (the units carry `TimeoutStopSec=90`) →
- *       150 s.</li>
- *   <li>`rootCheck` — `--version` answers before the machine is read, as the read-only `--version` (20 s).</li>
+ *   <li>`preview` — `act <ids> --preview --json` runs each action's own preview, and EACH Docker row takes its own Docker
+ *       snapshot (`DockerLook.TakeAsync`): the ceiling is the per-Docker-row setting × the Docker rows asked, plus A9's
+ *       snap listing and a base — not `preview --all`'s one snapshot (N-2).</li>
+ *   <li>`confirm` / `fullCheck` (`collect --detach`, the *Run full check now* button, §15j M9) — a DETACH: the daemon reads
+ *       the shown list (10 s), sweeps the request folder under the run lock — ONE `systemctl show` per queued request, up
+ *       to 32 (N-3: two already outran the old 90 s) — writes the request, starts the unit (30 s) and, when that start
+ *       timed out, asks the unit once more (15 s). A detach that outruns its ceiling is OUTCOME UNKNOWN, never a failure:
+ *       the caller follows `status.running` (plan §15k #3).</li>
+ *   <li>`stop` — `act --stop` runs `systemctl stop <unit>` with its 120 s ceiling (the units carry `TimeoutStopSec=90`).</li>
+ *   <li>`rootCheck` — `--version` answers before the machine is read, as the read-only `--version`.</li>
  * </ul>
  */
 
@@ -55,19 +58,16 @@ export interface RootTarget {
   readonly distro: string;
 }
 
-/** The detach's ceiling — see the header. */
-export const DETACH_TIMEOUT_MS = 90_000;
+/** An op's ceiling under `numbers` — see the header. */
+export function rootTimeoutMs(op: RootOp, numbers: Numbers = DEFAULT_NUMBERS): number {
+  return ceilingMs(numbers, rootOpCall(op));
+}
 
-/** The stop's ceiling — see the header. */
-export const STOP_TIMEOUT_MS = 150_000;
+/** The detach's DEFAULT ceiling (`wslCare.timeouts.detachSeconds`). */
+export const DETACH_TIMEOUT_MS = DEFAULT_NUMBERS.detachSeconds * 1000;
 
-export const ROOT_TIMEOUT_MS: { readonly [K in RootOpName]: number } = {
-  preview: VERB_TIMEOUT_MS.preview,
-  confirm: DETACH_TIMEOUT_MS,
-  stop: STOP_TIMEOUT_MS,
-  fullCheck: DETACH_TIMEOUT_MS,
-  rootCheck: VERB_TIMEOUT_MS.version,
-};
+/** The stop's DEFAULT ceiling (`wslCare.timeouts.stopSeconds`). */
+export const STOP_TIMEOUT_MS = DEFAULT_NUMBERS.stopSeconds * 1000;
 
 /** What a full check's run holds as its actions in `status.running` (`["collect"]`) — what a follow with no run id may adopt. */
 export const FULL_CHECK_ACTIONS: readonly string[] = ['collect'];
@@ -117,15 +117,15 @@ function stdinOf(op: RootOp): { readonly stdin?: Buffer } {
 }
 
 /** The one request `op` makes in `target`, or `undefined` when the op cannot be built. Pure. */
-export function rootRequest(target: RootTarget, op: RootOp): ProcessRequest | undefined {
+export function rootRequest(target: RootTarget, op: RootOp, numbers: Numbers = DEFAULT_NUMBERS): ProcessRequest | undefined {
   const tail = tailOf(op);
 
-  return tail === undefined ? undefined : { file: target.wsl, args: daemonArgv(target.distro, tail, AS_ROOT), timeoutMs: ROOT_TIMEOUT_MS[op.op], withoutEnv: NOT_FOR_ROOT, ...stdinOf(op) };
+  return tail === undefined ? undefined : { file: target.wsl, args: daemonArgv(target.distro, tail, AS_ROOT), timeoutMs: rootTimeoutMs(op, numbers), withoutEnv: NOT_FOR_ROOT, ...stdinOf(op) };
 }
 
 /** Start `op` through `runner` — or nothing, when it cannot be built. */
-export async function callRoot(runner: Runner, target: RootTarget, op: RootOp): Promise<ProcessResult | undefined> {
-  const request = rootRequest(target, op);
+export async function callRoot(runner: Runner, target: RootTarget, op: RootOp, numbers: Numbers = DEFAULT_NUMBERS): Promise<ProcessResult | undefined> {
+  const request = rootRequest(target, op, numbers);
 
   return request === undefined ? undefined : runner(request);
 }
