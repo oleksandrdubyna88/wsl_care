@@ -2386,16 +2386,24 @@ read it so), so the fix is a second member, additive, `schemaVersion` 1:
   read. Their reasons — and the readable orphan's — begin with the prefixes `contracts/history-reasons.json` carries
   (`HistoryReasons.NotAFullCheckWithoutKind`, from the daemon's constants): the fallback a reader uses for a line WITHOUT a
   kind. A line with a kind is told by it alone — a reconciled full-check orphan carries `kind: collect` AND the reconcile's
-  prefix, and kind wins.
+  prefix, and kind wins. Those three reason texts are FROZEN (`ContractFilesTests` pins them to literals): they are on disk.
+- **Unknown is never guessed** (§15o review G1 / G2): `RunKinds.OfRequest` and `OfDetailKind` answer `collect` / `act` only
+  for the exact spellings (a full run's detail: no `kind` member at all) and NO kind for anything else — a request of an
+  unknown kind gets a line with no kind and no action rows.
 - **The wire:** `RunLine.kind` on `runs` / `runs show` (absent when the line has none); the `runs-*.json` goldens pin it.
+- **The downgrade residual** (the class `RunOutcome` already carries; no code): after `install.sh --version <older>` to a build
+  that does not know a kind a newer one wrote, an unknown `kind` in `running.json` makes it unreadable — every `act` and timer
+  pass refuses until it is removed by hand — and a history line with an unknown kind is unparseable, which every
+  history-first check (`RunningSweep.SweepDead`, the request sweep, `act --request`, the reconcile) reads as NO line: a run
+  could then get a second terminal line, or `act --request` run a request whose run had already recorded itself.
 
 | Writer | `kind` | `actions` |
 |---|---|---|
 | `CollectRun.Line` (completed / observeOnly / failed), `CollectRun.RecordCutOff` | `collect` | the timer pass's results, else `[]` |
-| `RunRequestFile.TerminalLine` (`DetachedRuns.Refused`, `DetachedRuns.CutOff`, `RequestSweep` swept) | the request's | an act's ids marked refused / interrupted; a full check `[]` |
+| `RunRequestFile.TerminalLine` (`DetachedRuns.Refused`, `DetachedRuns.CutOff`, `RequestSweep` swept) | the request's (none when unknown) | an act's ids marked refused / interrupted; a full check or an unknown kind `[]` |
 | `RunningSweep.SweepDead` | `running.json`'s (or the older shape) | its ids marked interrupted, `collect` never a row |
 | `ActionEngine.Line` | `act` | each action's result |
-| `RunReconcile.InterruptedLine` | from the detail; none when unreadable | `[]` |
+| `RunReconcile.InterruptedLine` | from the detail; none when unreadable or of an unknown kind | `[]` |
 | `RequestSweep.Unusable` | none | `[]` |
 
 The extension's follower still matches by its own copy of the reasons (E6.S3 branch); moving it to kind-first with the

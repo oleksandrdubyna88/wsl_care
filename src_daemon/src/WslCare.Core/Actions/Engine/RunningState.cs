@@ -33,7 +33,9 @@ public sealed record RunningFile(
 {
     /// <summary>The run's kind — or, for a file from an older writer, <c>collect</c> for the EXACT shape a full check writes
     /// while it measures (its one action and its step both <see cref="RunKinds.FullCheckName"/>; the engine writes registry ids
-    /// and starts its step empty), else unknown (plan §15o, coai plan round #2).</summary>
+    /// and starts its step empty), else unknown (plan §15o, coai plan round #2). Null-safe as written: the one reader
+    /// (<c>RunningState.Read</c>) admits no file without <c>actions</c> and <c>current</c>, and a list pattern is simply
+    /// false on a null list (§15o review G4).</summary>
     public RunKind? KindOrMarker() =>
         Kind ?? (Actions is [RunKinds.FullCheckName] && Current == RunKinds.FullCheckName ? RunKind.Collect : null);
 

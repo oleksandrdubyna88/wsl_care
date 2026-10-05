@@ -80,6 +80,19 @@ public sealed class RunKindTests : IDisposable
         line.Actions.Select(a => a.Status).Should().AllBe(ActionStatus.Interrupted, what);
     }
 
+    /// <summary>§15o review G4: the sweep's <c>file.Actions</c> is never null — a file without <c>actions</c> is unreadable, so
+    /// it blocks and is never swept into a line.</summary>
+    [Fact]
+    public void A_running_json_without_actions_is_unreadable_and_never_swept_into_a_line()
+    {
+        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
+        File.WriteAllText(RunningState.File(_sandbox.Paths), """{"schemaVersion":1,"runId":"20261002T115100Z-4321","trigger":"manual","current":"collect","pid":4321,"processStartUtc":"2026-10-02T11:50:00+00:00","startedAt":"2026-10-02T11:51:00+00:00","heartbeatAt":"2026-10-02T11:55:00+00:00"}""");
+
+        RunningSweep.Apply(_sandbox.Paths, _sandbox.Files, new FakeProcessTable(), Now, new RunningReadRetry(0, TimeSpan.Zero, static _ => { }), RunId.New(Now, 1), 1).Should().BeOfType<RunningSweep.Blocked>();
+
+        File.Exists(RunRecordWriter.HistoryFileIn(_sandbox.Paths)).Should().BeFalse("nothing was written for a file that cannot be read");
+    }
+
     // ---------- the request sweep, an act's request ----------
 
     [Fact]
@@ -96,12 +109,41 @@ public sealed class RunKindTests : IDisposable
         line.Actions.Select(a => (a.Id, a.Status)).Should().Equal(("A10", ActionStatus.Interrupted), ("A4", ActionStatus.Interrupted));
     }
 
-    // ---------- the reconcile ----------
+    /// <summary>§15o review G2: a request kind this build does not know is no kind at all — never filed as an act, and its
+    /// "actions" are not taken for action ids (the reader refuses such a request, but the mapping must not lean on that).</summary>
+    [Theory]
+    [InlineData("archive", new[] { "A13" })]
+    [InlineData("Collect", new[] { "collect" })]
+    [InlineData("", new[] { "collect" })]
+    public void A_request_of_an_unknown_kind_gets_a_line_with_no_kind_and_no_action_rows(string kind, string[] actions)
+    {
+        var request = new RunRequestFile(1, RunId.New(Now, 82), kind, actions, RunTrigger.Manual, Now);
+
+        var line = request.TerminalLine(Now, Now, RunOutcome.Refused, ActionStatus.Refused, "busy: a test");
+
+        line.Kind.Should().BeNull($"\"{kind}\" is neither act nor collect");
+        line.Actions.Should().BeEmpty("rows of an unknown kind would be guesses");
+    }
 
     [Theory]
     [InlineData("act", RunKind.Act)]
+    [InlineData("collect", RunKind.Collect)]
+    public void A_request_of_a_known_kind_gets_that_kind(string kind, RunKind expected)
+    {
+        var request = new RunRequestFile(1, RunId.New(Now, 83), kind, kind == "act" ? ["A10"] : ["collect"], RunTrigger.Manual, Now);
+
+        request.TerminalLine(Now, Now, RunOutcome.Refused, ActionStatus.Refused, "busy: a test").Kind.Should().Be(expected);
+    }
+
+    // ---------- the reconcile ----------
+
+    /// <summary>§15o review G1: a detail kind this build does not know (a future one) is no kind — never a full check.</summary>
+    [Theory]
+    [InlineData("act", RunKind.Act)]
     [InlineData(null, RunKind.Collect)]
-    public void A_reconciled_orphan_takes_its_kind_from_its_detail(string? detailKind, RunKind expected)
+    [InlineData("archive", null)]
+    [InlineData("Act", null)]
+    public void A_reconciled_orphan_takes_its_kind_from_its_detail(string? detailKind, RunKind? expected)
     {
         var runId = RunId.New(Now, 95);
         var path = RunDetailStore.Absolute(_sandbox.Paths, RunDetailStore.RelativePath(runId));
