@@ -131,7 +131,9 @@ function environmentOf(request: ProcessRequest): NodeJS.ProcessEnv {
 
 /**
  * Hand the child its stdin and END it — the end is what tells `act … --only -` the list is complete (the daemon refuses a
- * list with no end after 10 s, plan §15j M2). A child that exits without reading everything makes the pipe fail
+ * list with no end after 10 s, plan §15j M2) — measured through `wsl.exe` 2026-10-04: 650 000 bytes (a full 10 000-name
+ * list) arrive byte for byte with the end, exit 0, ~250 ms, also under `WSL_UTF8=1` (research/2026-10-03_wsl_exe_facts.md row 20; the same with
+ * `-u root` is an E6 live-gate item). A child that exits without reading everything makes the pipe fail
  * (EPIPE); that failure is not an outcome of its own: the child's exit — its refusal with a reason — is the answer the
  * caller reads, so the stream's error is taken here, where an unhandled one would end the extension host.
  */

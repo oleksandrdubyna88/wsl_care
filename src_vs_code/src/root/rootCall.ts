@@ -39,7 +39,8 @@ export type RootOpName = (typeof ROOT_OPS)[number];
 /**
  * The closed set of root calls. A confirm is ALWAYS detached (`--manual --detach`: the long run lives in the daemon's
  * template unit and survives a reload, §15j B2) and A4 is ALWAYS bound to the list its preview showed (`--only -`, the
- * names on stdin — never `--volume` argv: 387 names would near Windows' 32 767-character command line, §15f #7).
+ * names on stdin — never `--volume` argv: 387 names would near Windows' 32 767-character command line, §15f #7; a full
+ * 10 000-name list, 650 000 bytes, relays through `wsl.exe` byte for byte — research/2026-10-03_wsl_exe_facts.md row 20).
  */
 export type RootOp =
   | { readonly op: 'preview'; readonly ids: ActionIds }

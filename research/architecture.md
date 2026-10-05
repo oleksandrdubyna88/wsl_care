@@ -2572,6 +2572,11 @@ checked in first; the E6.S2 review round dropped it.)
 - **One launcher reading (L1)** — `client/failures.ts` `launchFailure`, the timeout's reading a parameter; the client now names
   a signal as the root paths do. **The root check (L2)** is "needs root" only for an exit (not 0, not −1).
 
+**The coai E6.S2 rounds** (2026-10-05): the release guard also refuses an artefact whose `minDaemonForActions` is below its
+`minDaemonForRender` (*Install daemon* types the actions minimum), held in TS by `handshake.versionAtLeast`; the stdin
+relay cites its measurement (facts row 20); and an expired no-run-id follow is E6.S3's to resolve from the daemon's records
+(the contract is in `cleanupController.ts`'s header and the E6.S3 row).
+
 ### Tests (details: [module_tests.md](module_tests.md) § *What each E6.S2 guarantee rests on*)
 
 `runner.test.ts` (stdin, `withoutEnv`), `rootIds.test.ts`, `rootCall.test.ts`, `cleanupController.test.ts`, `rootFailures.test.ts`,
