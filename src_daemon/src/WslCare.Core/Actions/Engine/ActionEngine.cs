@@ -279,7 +279,7 @@ public sealed class ActionEngine(EngineContext c)
         }
 
         var commands = Commands(action, run.Target);
-        var preview = await action.PreviewAsync(run.Context, commands, cancellationToken).ConfigureAwait(false);
+        var preview = Guarded(action, run.Context, await action.PreviewAsync(run.Context, commands, cancellationToken).ConfigureAwait(false));
         if (Judge(action, preview, run) is { } held)
         {
             return held;
@@ -323,6 +323,11 @@ public sealed class ActionEngine(EngineContext c)
                 () => DryRunStop(run),
             ],
             preview);
+
+    /// <summary>Plan §15q R2 (review B2): a preview whose action's cleanup folder overlaps an AI agent's folder carries that refusal
+    /// — the action's own refusal, if any, comes first.</summary>
+    private static ActionPreview Guarded(ICleanupAction action, ActionContext context, ActionPreview preview) =>
+        preview.Refusal.Length == 0 && AgentFolderOverlap.Refusal(action, context) is { Length: > 0 } overlap ? preview with { Refusal = overlap } : preview;
 
     private static Stop? UnreadStop(ActionPreview preview) => preview.Available ? null : new Stop(ActionStatus.Refused, $"its preview could not be read: {preview.Reason}");
 
@@ -373,7 +378,7 @@ public sealed class ActionEngine(EngineContext c)
             return Outcome(action, ActionStatus.Skipped, NotThisSide(action), null, null);
         }
 
-        var preview = await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false);
+        var preview = Guarded(action, context, await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false));
         var refusal = action.Scope == CommandScope.User ? target.Refusal : string.Empty;
         return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null) with
         {

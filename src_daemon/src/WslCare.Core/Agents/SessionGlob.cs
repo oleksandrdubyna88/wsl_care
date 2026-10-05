@@ -18,7 +18,9 @@ public static class SessionGlob
 
     public static SessionScan Find(IFileSystem files, string under, string glob, IReadOnlySet<string> neverEnter, Func<bool> outOfTime)
     {
-        var segments = glob.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        // A trailing ** is "every file at any depth": the folders expanded, then every name.
+        var given = glob.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        string[] segments = given.Length > 0 && given[^1] == AnyDepth ? [.. given, "*"] : given;
         var level = new List<(string Path, string Relative)> { (under, string.Empty) };
         var seen = 0;
         for (var i = 0; i < segments.Length - 1; i++)
@@ -36,6 +38,9 @@ public static class SessionGlob
         return Sessions(files, level, segments[^1], seen, outOfTime);
     }
 
+    /// <summary>A whole segment that matches the folder it is in and every folder below it (a manual agent's glob, plan §15q R2.1).</summary>
+    public const string AnyDepth = "**";
+
     /// <summary>Whether <paramref name="name"/> matches <paramref name="pattern"/>: <c>*</c> any run of characters, <c>?</c> one.</summary>
     public static bool Matches(string pattern, string name) => Matches(pattern.AsSpan(), name.AsSpan());
 
@@ -46,7 +51,26 @@ public static class SessionGlob
         _ => name.Length > 0 && (pattern[0] == '?' || pattern[0] == name[0]) && Matches(pattern[1..], name[1..]),
     };
 
-    private static (List<(string Path, string Relative)> Next, int Listed) Folders(IFileSystem files, List<(string Path, string Relative)> level, string pattern, IReadOnlySet<string> neverEnter)
+    private static (List<(string Path, string Relative)> Next, int Listed) Folders(IFileSystem files, List<(string Path, string Relative)> level, string pattern, IReadOnlySet<string> neverEnter) =>
+        pattern == AnyDepth ? Descendants(files, level, neverEnter) : Matching(files, level, pattern, neverEnter);
+
+    /// <summary>The folders of <paramref name="level"/> and every folder below them — breadth first, never a never-enter name,
+    /// never a link, bounded by <see cref="MaxEntries"/>.</summary>
+    private static (List<(string Path, string Relative)> Next, int Listed) Descendants(IFileSystem files, List<(string Path, string Relative)> level, IReadOnlySet<string> neverEnter)
+    {
+        var all = new List<(string Path, string Relative)>(level);
+        var listed = 0;
+        for (var at = 0; at < all.Count && listed <= MaxEntries; at++)
+        {
+            var (next, seen) = Matching(files, [all[at]], "*", neverEnter);
+            listed += seen;
+            all.AddRange(next);
+        }
+
+        return (all, listed);
+    }
+
+    private static (List<(string Path, string Relative)> Next, int Listed) Matching(IFileSystem files, List<(string Path, string Relative)> level, string pattern, IReadOnlySet<string> neverEnter)
     {
         var next = new List<(string, string)>();
         var listed = 0;

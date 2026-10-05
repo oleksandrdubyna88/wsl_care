@@ -60,7 +60,8 @@
   },
   "aiAgents": {
     "warnGb": 5,
-    "sessionWarnMb": 500
+    "sessionWarnMb": 500,
+    "extra": []
   },
   "archive": {
     "olderThanDays": 14,

@@ -128,7 +128,9 @@ public static class ExecutableResolver
             ? [name]
             : [.. WindowsExtensions.Select(e => name + e)];
 
-    private static bool IsStartable(string candidate, bool windows)
+    /// <summary>Whether <paramref name="candidate"/> exists as a file this account may start — looked at, never started (also
+    /// <c>agents probe</c>, plan §15q D4).</summary>
+    public static bool IsStartable(string candidate, bool windows)
     {
         try
         {

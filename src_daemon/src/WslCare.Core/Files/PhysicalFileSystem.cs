@@ -157,6 +157,10 @@ public sealed class PhysicalFileSystem : IFileSystem
     public TreeMeasure WalkTree(string path, TreeLimits limits, TreeRules rules, CancellationToken cancellationToken) =>
         TreeWalk.Measure(path, limits, rules, TreeWalk.DeviceOf, cancellationToken);
 
+    public RealPathResult ResolvePath(string path) => Real(path);
+
+    public (uint Major, uint Minor)? DeviceOf(string path) => TreeWalk.DeviceOf(path);
+
     public IReadOnlyList<FileEntry> ListEntries(string path)
     {
         try

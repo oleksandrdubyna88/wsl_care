@@ -39,6 +39,9 @@ public sealed class EditorServerCleanup : ICleanupAction
 
     public CommandScope Scope => CommandScope.User;
 
+    /// <summary>Every editor server folder whose old builds it deletes.</summary>
+    public IReadOnlyList<HomeFolder> HomeRoots { get; } = [.. EditorFolders.Select(f => HomeFolder.Of(f))];
+
     public IdleRule Idle => IdleRule.Never;
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];

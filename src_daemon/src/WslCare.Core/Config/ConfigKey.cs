@@ -5,7 +5,7 @@ namespace WslCare.Core.Config;
 
 /// <summary>
 /// One setting the daemon knows: its dotted name and what a valid value looks like. A closed set —
-/// the four shapes below are every shape the schema has, so validation is a <c>switch</c> over this
+/// the five shapes below are every shape the schema has, so validation is a <c>switch</c> over this
 /// type and nothing is reflected.
 /// </summary>
 /// <remarks>Plan §15q R1.3 (review B1): no shape takes free text. A text key carries a <see cref="TextRule"/> — a closed set
@@ -37,9 +37,14 @@ public abstract record ConfigKey(string Name)
     /// <summary>A list whose every member is one of <paramref name="Allowed"/>.</summary>
     public sealed record TextListKey(string Name, IReadOnlyList<string> Allowed)
         : ConfigKey(Name, $"a list of: {string.Join(", ", Allowed)} (comma-separated on the command line)");
+
+    /// <summary>The manual AI agents (<c>aiAgents.extra</c>, plan §15q R2): a structured list whose SHAPE is
+    /// <see cref="Agents.ExtraAgentShape"/>'s and whose folders are judged against the disk at every root read
+    /// (<see cref="Agents.ExtraAgentRules"/>) — never free text.</summary>
+    public sealed record AgentListKey(string Name) : ConfigKey(Name, Agents.ExtraAgentShape.Describe);
 }
 
-/// <summary>A setting's value — the same four shapes as <see cref="ConfigKey"/>.</summary>
+/// <summary>A setting's value — the same five shapes as <see cref="ConfigKey"/>.</summary>
 public abstract record ConfigValue
 {
     private ConfigValue()
@@ -103,5 +108,17 @@ public abstract record ConfigValue
         public bool Equals(TextList? other) => other is not null && Values.SequenceEqual(other.Values, StringComparer.Ordinal);
 
         public override int GetHashCode() => Values.Count;
+    }
+
+    /// <summary>The manual AI agents, as <see cref="ConfigKey.AgentListKey"/> accepts them.</summary>
+    public sealed record AgentList(IReadOnlyList<Agents.ExtraAgent> Agents) : ConfigValue
+    {
+        public override string Describe() => Agents.Count == 0 ? "(none)" : string.Join(", ", Agents.Select(a => a.Name));
+
+        public override void WriteTo(Utf8JsonWriter writer) => WslCare.Core.Agents.ExtraAgentShape.Write(Agents, writer);
+
+        public bool Equals(AgentList? other) => other is not null && Agents.SequenceEqual(other.Agents);
+
+        public override int GetHashCode() => Agents.Count;
     }
 }

@@ -254,6 +254,14 @@ public interface IFileSystem
     /// write — from the directory listing alone: no entry is opened. Empty when the folder does not exist or cannot be listed.</summary>
     IReadOnlyList<FileEntry> ListEntries(string path);
 
+    /// <summary>Where <paramref name="path"/> really is — every link followed, <c>..</c> applied to the real parent (the walk the
+    /// deletion policy decides on, <see cref="RealPath"/>); nothing is opened.</summary>
+    RealPathResult ResolvePath(string path);
+
+    /// <summary>The device (major, minor) of the filesystem holding <paramref name="path"/> itself — a link is not followed;
+    /// <c>null</c> when it cannot be asked; (0, 0) where the operating system has no such notion (plan §15q R2.1, review C1).</summary>
+    (uint Major, uint Minor)? DeviceOf(string path);
+
     /// <summary>
     /// Whether this process may create a file in <paramref name="directory"/> (creating the directory first when
     /// it is missing): a temporary file is opened with delete-on-close and closed at once. Nothing remains —

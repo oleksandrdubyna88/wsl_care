@@ -10,6 +10,10 @@ namespace WslCare.Core.Hosting;
 /// space the status reports as host <c>C:</c> (plan §4.4); the sandbox root under <c>WSL_CARE_ROOT</c>.</param>
 public sealed record WindowsEnvironment(string UserProfile, string AppData, string LocalAppData, string ProgramData, string Temp, string SystemDrive = "C:\\")
 {
+    /// <summary>The Windows data folders of the manual AI agents (<c>aiAgents.extra</c>, plan §15q R2.2), protected besides the
+    /// catalogue's. Empty by default.</summary>
+    public IReadOnlyList<string> ExtraAgentRoots { get; init; } = [];
+
     /// <summary>The real machine, through the shell-folder API.</summary>
     public static WindowsEnvironment FromThisMachine() =>
         new(
@@ -74,7 +78,10 @@ public sealed class WindowsHostPaths(WindowsEnvironment environment) : IHostPath
 
     /// <summary>Plan §4.6, the Windows column: every Windows data folder of the agent catalogue
     /// (<see cref="Agents.AgentCatalogue"/>, E7.S1 — before it, a hand-typed list of ten).</summary>
-    public IReadOnlyList<string> AgentRoots { get; } = Agents.AgentCatalogue.WindowsFolders(environment);
+    public IReadOnlyList<string> AgentRoots { get; } = [.. Agents.AgentCatalogue.WindowsFolders(environment), .. environment.ExtraAgentRoots];
+
+    /// <summary>The same layout with the manual agents' Windows folders protected as well (plan §15q R2.2, M1).</summary>
+    public WindowsHostPaths WithExtraAgentRoots(IReadOnlyList<string> folders) => new(environment with { ExtraAgentRoots = folders });
 
     /// <summary>The Windows folders the catalogue's spellings start from.</summary>
     public WindowsEnvironment Folders => environment;

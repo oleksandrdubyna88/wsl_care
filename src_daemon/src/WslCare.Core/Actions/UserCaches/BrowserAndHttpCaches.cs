@@ -52,6 +52,9 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
 
     public CommandScope Scope => CommandScope.User;
 
+    /// <summary>The Playwright browsers it deletes, and the NuGet http-cache <c>dotnet nuget locals</c> clears.</summary>
+    public IReadOnlyList<HomeFolder> HomeRoots { get; } = [HomeFolder.Of(".cache", "ms-playwright"), HomeFolder.Of(".local", "share", "NuGet", "http-cache")];
+
     public IdleRule Idle => IdleRule.Never;
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];

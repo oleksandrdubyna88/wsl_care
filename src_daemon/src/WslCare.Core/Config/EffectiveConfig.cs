@@ -33,6 +33,8 @@ public sealed class EffectiveConfig
     public string Text(ConfigKey.TextKey key) => ((ConfigValue.Text)_entries[key.Name].Value).Value;
 
     public IReadOnlyList<string> TextList(ConfigKey.TextListKey key) => ((ConfigValue.TextList)_entries[key.Name].Value).Values;
+
+    public IReadOnlyList<Agents.ExtraAgent> Agents(ConfigKey.AgentListKey key) => ((ConfigValue.AgentList)_entries[key.Name].Value).Agents;
 }
 
 /// <summary>

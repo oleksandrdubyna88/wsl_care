@@ -40,6 +40,9 @@ public sealed class NpmCacheClean : ICleanupAction
 
     public CommandScope Scope => CommandScope.User;
 
+    /// <summary><c>~/.npm</c>, which <c>npm cache clean</c> empties.</summary>
+    public IReadOnlyList<HomeFolder> HomeRoots { get; } = [HomeFolder.Of(".npm")];
+
     public IdleRule Idle => IdleRule.Never;
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];

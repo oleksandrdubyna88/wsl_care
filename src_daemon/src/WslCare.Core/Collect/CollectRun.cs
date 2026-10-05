@@ -386,7 +386,9 @@ public static class CollectRun
     /// under one total budget, persisted without a session's name.</summary>
     private static Agents.AgentsSample WalkAgents(CollectContext c, LinuxHostPaths paths, CancellationToken cancellationToken)
     {
-        var tracked = Agents.AgentDiscovery.Discover(paths, c.Files, pathVariable: null, asRoot: true).Where(p => p.Tracked).Select(p => p.Target).ToList();
+        var tracked = Agents.AgentDiscovery.Discover(paths, c.Files, pathVariable: null, asRoot: true)
+            .Concat(Agents.ExtraAgents.Discover(paths, c.Files, c.Loaded.Config, Actions.ActionRegistry.Product))
+            .Where(p => p.Tracked).Select(p => p.Target).ToList();
         return new Agents.AgentWalk(c.Files, c.Clock).Measure(tracked, Agents.AgentWalk.CollectBudget, withNames: false, cancellationToken);
     }
 

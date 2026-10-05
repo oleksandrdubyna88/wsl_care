@@ -2489,6 +2489,14 @@ flowchart LR
     sample -- "root collect, folders due (20 h)" --> history["history.jsonl slow.agents<br/>totals, counts, dates"]
     sample -- "agents list --measure" --> report["AgentsReport (agents list --json)"]
     history -- "agents list" --> report
+    extra["aiAgents.extra (user layer)<br/>ExtraAgentShape: the fifth key shape"] --> rules["ExtraAgentRules.Judge<br/>real path in the home · same device ·<br/>no overlap: ~/git, catalogue, HomeRoots, product"]
+    rules --> extras["ExtraAgents.Discover<br/>detectedBy manual · Refusal"]
+    extras --> walk
+    extra -- "every shape-valid folder,<br/>accepted or not (B2)" --> host["CliHost.WithAgentExtras<br/>(phase two, M1)"]
+    host --> roots
+    homeroots["ICleanupAction.HomeRoots (M8)"] --> rules
+    homeroots --> gate["AgentFolderOverlap<br/>(the engine refuses the action)"]
+    roots --> gate
 ```
 
 - **The catalogue** is data, not code: `Agents/agents.json`, embedded (`WslCare.Core.Agents.agents.json`), read once
@@ -2525,6 +2533,40 @@ flowchart LR
 - **Read sites**: `AgentDiscovery` (one `ReadRegularFile` of the invoking user's own `package.json` — the class
   `OwnUnprivileged`, never run as root — and one `ListEntries`), `AgentWalk` (`WalkTree`), `SessionGlob` (`ListEntries`) are
   rows of the read-site table (`ArchitectureTests.ReadSites.cs`); `WalkTree` and `ListEntries` are target-home metadata.
+- **An agent's total** is unavailable — with the reason — when any folder of it was not measured (not reached, unreadable,
+  a manual agent's folder refused); a folder that does not exist counts as nothing; `growthBytes` only between two whole
+  walks (E7.S2: before it, a not-reached folder added 0 to an "available" total).
+
+### Manual agents and `agents probe` (E7.S2, 2026-10-05, plan §15q D4, R2)
+
+- **`aiAgents.extra`** is the fifth key shape (`ConfigKey.AgentListKey`, `ConfigValue.AgentList`): at most 16 entries
+  `{cli, side, name, dataFolders[1–8], sessionGlob}`, the SHAPE checked by `ExtraAgentShape` at load and at `config set`
+  (absolute paths of their side, no `.`/`..` segment, no leading `-`, no control character, ≤ 1 024 characters; a name of
+  letters, digits, space, `.`, `_`, `+`, `-` anchored with `\z`; a glob of `[A-Za-z0-9._*-]` segments and whole `**`).
+  `config set aiAgents.extra -` reads the list from STDIN only (`StdinList`, 1 MiB, 10 s) and refuses an entry the rules
+  refuse, writing nothing. Its `KeyTrust` has no safe direction: root takes it as DATA and judges it again on every read,
+  and it can only ADD protection.
+- **The rules** (`ExtraAgentRules.Judge`, R2.1): every data folder's REAL path (`IFileSystem.ResolvePath`) must lie strictly
+  inside the target home's real path, on its device (`IFileSystem.DeviceOf`), and must not overlap (equal, inside,
+  containing) `~/git`, Claude's temp folders, a catalogue agent's folder, any `ICleanupAction.HomeRoots` folder of the
+  product registry (review M8: A8 `~/.npm`, A12 the Playwright and NuGet caches, A14 the editor servers, A17 the pnpm /
+  uv / pip caches — `ActionHomeRootsTests` holds every user-scoped action to its declaration by a source scan) or the
+  product's own folders (review M9). Only the distro's entries are judged by the Linux binary; Windows entries wait for
+  E7.S5b.
+- **Discovery and the walk** (`ExtraAgents.Discover`): one presence per entry, `detectedBy: ["manual"]`, id
+  `manual:<name>`; an accepted one is walked like a catalogue agent (memory never entered, its own glob — `**` supported —
+  under its first folder); a refused one stays in the answer, not walked, every figure saying "not walked: <rule>". The
+  entry's `cli` is never handed to the file system (a recording double holds it).
+- **Protection, two-phase host** (review M1, B2): `CliHost.WithAgentExtras` (called by `Program.Main` right after the
+  configuration is loaded) adds every shape-valid folder of this side — accepted or not — to `AgentRoots` and rebuilds the
+  file system (`CliHost.Rewire`), so the run's deletion policy holds them; `ProtectedRoots` keeps both the real path and the
+  spelling of every agent root. `AgentFolderOverlap` (asked by the engine for every preview) refuses an action whose
+  `HomeRoots` folder overlaps any agent root — a command-based cleanup cannot be policed by the deletion policy.
+- **`agents probe <path> [--json]`** (`AgentProbe`, D4): unprivileged only (as root: exit 81 `NotAsRoot`, naming uid 0
+  and the default-user fix); the file is looked at (`FileExists`, an execute bit via `ExecutableResolver.IsStartable`,
+  `ReadLink`) — never started, never read; a name from the FILE NAME; the conventional folders `~/.<name>`,
+  `~/.config/<name>`, `~/.local/share/<name>`, `~/.cache/<name>` that exist, measured and judged by the same rules; the
+  suggested entry holds the ones that pass. Capabilities `agents.probe`, `config.agentsExtra`.
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -2739,7 +2781,7 @@ flowchart TB
     host["CliHost<br/>IHostPaths · IFileSystem · TimeProvider · ICommandRunner"]
     loader["ConfigLoader<br/>default.json, then machine, then user"]
     logging["WslCareLogging<br/>AnsiConsoleSink (stderr) · DailyRunFileSink · LogRetention"]
-    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand · LogsCommand (logs, runs, runs show) · AgentsCommand"]
+    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand · LogsCommand (logs, runs, runs show) · AgentsCommand (list, probe)"]
     probe["IHostProbe<br/>LinuxProbe (procfs, cgroup fs) · WindowsProbe (Win32 counters)"]
     history["LastFullRun<br/>slow parts from history.jsonl"]
     writer["UserConfigWriter<br/>repair + atomic write"]

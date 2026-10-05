@@ -1380,6 +1380,68 @@ SHA-256; Windows Debug unless marked WSL):
 recorded): six agents tracked, ~2.5 GiB, 185 sessions (Claude Code, Codex) and 500 Antigravity conversations counted; three runs 2.26 s,
 1.29 s, 1.32 s — far inside the 60 s `--measure` budget and the 3-minute walk budget of a full run.
 
+### Manual agents and agents probe (E7.S2, 2026-10-05, plan §15q D4, R2)
+
+`aiAgents.extra`, the rules a manual agent's folder must pass at `config set` and at every root read, the two-phase host,
+the declared cleanup folders and the overlap refusal, and `agents probe` (`research/architecture.md` § *Manual agents and
+`agents probe`*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| the SHAPE of `aiAgents.extra` (the fifth key shape): a valid list taken with every member and written back unchanged; each rule refused naming the entry and the rule — a relative folder, a `.`/`..` segment, a leading `-`, a control character, 0 or 9 folders, a relative `cli`, an unknown side, a bad name (a trailing newline too: `\z`, not `$`), a `..` / absolute / bracketed glob, an unknown member, wrong member types, a Windows entry without a drive path; at most 16 entries, no name twice; not JSON, not a list | `Core.Tests/Agents/ExtraAgentShapeTests` (21) |
+| the FILESYSTEM rules (R2.1): accepted inside the home; refused outside it, the home itself, under `~/git`, a catalogue folder or inside one ("already tracked"), A8's `~/.npm`, inside A12's Playwright folder, A17's pnpm store, A14's editor server, wsl-care's own `~/.config/wsl-care` and a folder containing it (M9), a folder that does not exist, a folder on another device (review C1), a link inside the home pointing out of it (the REAL path decides; Linux); a Windows entry left to the Windows binary | `Agents/ExtraAgentRulesTests` (17) |
+| every user-scoped action declares the home folders it cleans (A3 the named exception), every `CacheFolders.UnderHome(context, "…")` literal in an action's source is declared (+ the companion that the scan finds A12's), no catalogue folder overlaps a declared cleanup folder (review M8) | `Actions/ActionHomeRootsTests` |
+| an action whose cleanup folder overlaps an agent's folder refuses and never runs; the run's deletion policy refuses a delete under a manual agent's folder, and the same delete without the extra is allowed (review B2) | `ActionHomeRootsTests` |
+| an accepted manual agent is walked without `memory`, its sessions counted by its own glob (with `**`); a refused one stays in the answer, not walked, every figure "not walked: <rule>"; the `cli` is never a file-system argument (a recording double); a Windows entry is neither listed nor walked by the distro's binary | `Agents/ExtraAgentsTests` |
+| an agent's total is unavailable with the folder's reason when a folder was not measured (not reached, refused), a missing folder counts as nothing, a cut walk as its lower bound; growth only between two whole walks | `Agents/AgentsReportTests` |
+| `agents probe`: usable, named by its file, the conventional folders that exist measured and judged, the suggested entry; a catalogue binary "already tracked"; a path that is no file not usable and nothing looked at; no execute bit (Linux); the name derivation; **the probe opens no file of the CLI or its folders** (inotify, Linux) | `Agents/AgentProbeTests` |
+| `config set aiAgents.extra -` reads stdin, judges, writes; a refused folder names its rule and writes nothing; stdin only (a JSON argument refused), not JSON refused; `agents probe` as root: exit 81 naming uid 0 and the fix; a path of the wrong shape refused; the JSON contract; **the second phase of the host protects the manual agents' folders**, and no extras = the same host (review M1) | `Cli.Tests/AgentsCommandTests` (11) |
+| the built CLI: the probe as root (81) on every OS; a probe of a CLI (the fake tool) never starts it; `agents list --measure` with an accepted and a refused manual agent; a root `collect` walks an accepted one and `agents list` reads its total | `Scenarios/AgentsExtraFlows` (the last three on the Linux legs) |
+| the contracts: `config-keys.json` gains `aiAgents.extra` (shape `agentList` and its limits), `exit-codes.json` gains `notAsRoot` 81 | `ContractFilesTests` |
+
+**Red first.** The behaviours were written with their tests and proved by the teeth below; red observed for a real
+symptom where it could be:
+
+- `AgentsExtraFlows.Agents_list_shows_the_manual_agents_…` (WSL) was red for a REAL defect, in E7.S1's report: *Expected
+  refused.TotalBytes.Available to be False, but found True* — an agent whose folders were not walked reported an
+  "available" total of 0 (the same held for a folder the budget did not reach). Fixed: `AgentsReports.Total`; growth only
+  between whole walks; `AgentsReportTests` pins it.
+- `ExtraAgentRulesTests.A_link_inside_the_home_pointing_out_of_it_…` was SKIPPED on Linux at first — the test created the
+  link before its parent folder existed, so `DirectoryLinks.TryCreate` failed and the test skipped instead of running.
+  Found by listing the skipped tests of the WSL run; fixed in the test, now it runs (green) on Linux.
+- `VerbRegisterTests` (2) red while `agents probe <path> [--json]` had no flow-catalogue row; `ContractFilesTests` red while
+  the contracts lacked `aiAgents.extra` and exit 81.
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the guarding class run, the file restored byte-identical by
+SHA-256; Windows Debug unless marked WSL):
+
+| Mutation | Red |
+|---|---|
+| the name pattern anchored with `$` instead of `\z` | 1: *Expected type to be …Invalid, but found …Ok* (the "x\n" name) |
+| the `.`/`..` segment check dropped | 1: *… Invalid, but found … Ok* |
+| the inside-the-home rule dropped | 2: *Refusal "/home/me overlaps ~/git …" to contain "is not inside the home"*; *Refusal "" to contain "/data/mycli"* |
+| the device rule dropped | 1: *Refusal "" to contain "another filesystem"* |
+| the declared cleanup folders left out of the rules (M8) | 4: `~/.npm`, the Playwright folder, `~/.vscode-server`, the pnpm store accepted |
+| the product's folders left out (M9) | 2: `~/.config/wsl-care` and `~/.config` accepted |
+| A12 not declaring the NuGet http-cache | 1: *undeclared … {"A12: ~/.local/share/NuGet/http-cache"}* |
+| the engine's overlap guard off (B2) | 1: *Expected outcome.Status to be "refused" …, but "ran"* |
+| the manual agents' folders left out of `AgentRoots` (B2) | 2: the overlap test ran the action; the delete under the extra *…+AllowedVerdict* |
+| the second phase of the host never applied (M1) | 1: *Expected second.Paths.AgentRoots … to contain …/.mycli* |
+| the probe's root refusal off | 1: *Expected probe.Exit to be 81, but found 0* |
+| `config set` taking a JSON argument | 1: the refusal named "not JSON" instead of "is read from stdin" |
+| a refused manual agent walked | 1: *Expected size.TotalBytes to be 0L, but found 5000L* |
+| discovery stat-ing the manual agent's `cli` | 1: *Expected recording.Asked … not to contain … .local/bin/mycli* |
+| the total available whatever a folder says | 2: *…TotalBytes.Available to be False because 100 bytes of one folder are not the agent's size, but found True*; growth from a partial walk |
+| the probe reading the CLI (WSL) | 1 (`AgentProbeTests`): *Expected watch.FileEvents() to be empty …, but found … {"…/home/me/.local/bin/mycli"}* |
+
+Two first attempts did not bite and were redone: the two-phase mutation did not compile (a nullable warning is an
+error here), and the first "probe reads the CLI" mutation changed the probe's answer instead of only reading — so four
+tests failed for the WRONG reason (a usable CLI reported unusable); the second version reads and answers as before, and
+only the inotify proof went red.
+
+**Goldens** regenerated in WSL: the seven `status*.json` gained `agents.probe` and `config.agentsExtra` in `capabilities`;
+nothing else moved (the golden sandbox has no manual agent, so `agents-list.json` is unchanged).
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -1701,7 +1763,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care runs show <runId> [--json]` of a QUEUED run (a request file E6.S1 will write) and of a RUNNING one (a live holder of `running.json`) | covered (in-process) | `RunShowTests.A_run_named_only_by_a_request_is_queued_with_its_request_counted_not_repeated`, `RunShowTests.A_run_holding_running_json_with_a_live_process_is_running_with_its_running_block`; against the built binary: `DetachFlows` (E6.S1), whose `--detach` writes the requests |
 | `wsl-care runs log <runId>` | not covered | CUT by plan §15j M3: `runs show` answers the commands a run ran and their exits |
 | `wsl-care agents list [--measure] [--json]` with `--measure` over a planted Claude Code folder and a fake `claude` on PATH: exit 0, `schemaVersion` 1, `sizes.source` `now`, the agent detected by binary and folder, 100 bytes (its `memory/` never entered, named in `excluded`), one session counted and named, the version "not asked", and the fake never started; the text form; an unknown option refused (2); before a full run `none` with how to measure, after a `collect` the run's totals with no session name, no recorded file naming a session | covered (the full-run flow on the Linux legs; skipped on Windows with the reason) | `AgentsFlows` (4); in-process: `Agents/AgentCatalogueTests`, `AgentDiscoveryTests`, `AgentWalkTests`, `AgentNoOpenTests` (Linux); golden `agents-list.json` |
-| `wsl-care agents probe <path>` | not covered | not built yet (E7.S2) |
+| `wsl-care agents probe <path> [--json]` as root: exit 81 (`NotAsRoot`), nothing on stdout, the refusal naming uid 0 and the default-user fix; of a CLI (the fake tool at `~/.local/bin/mycli` with an execute bit): exit 0, usable, the suggested entry with `~/.mycli`, and the CLI never started; a path of the wrong shape refused (2) | covered (the CLI probe on the Linux legs; the root refusal on every OS) | `AgentsExtraFlows` (2 facts); in-process: `AgentsCommandTests` (root, shape, JSON), `Agents/AgentProbeTests` (incl. the inotify no-open proof, Linux) |
 | `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |
 | `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, the three units byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
 | `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |

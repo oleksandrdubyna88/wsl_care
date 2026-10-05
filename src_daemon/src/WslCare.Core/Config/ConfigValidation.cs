@@ -27,6 +27,7 @@ public static class ConfigValidation
         ConfigKey.IntKey range => CheckInt(range, value),
         ConfigKey.TextKey text => CheckText(text, value),
         ConfigKey.TextListKey list => CheckList(list, value),
+        ConfigKey.AgentListKey agents => CheckAgents(agents, value),
         _ => new ValueCheck.Invalid($"{key.Name}: unsupported key shape"),
     };
 
@@ -37,8 +38,31 @@ public static class ConfigValidation
         ConfigKey.IntKey range => ParseInt(range, text),
         ConfigKey.TextKey allowed => CheckAllowed(allowed, text),
         ConfigKey.TextListKey list => CheckMembers(list, SplitList(text)),
+        ConfigKey.AgentListKey agents => ParseAgents(agents, text),
         _ => new ValueCheck.Invalid($"{key.Name}: unsupported key shape"),
     };
+
+    /// <summary>Plan §15q R2.1: the shape of every entry, the first problem named.</summary>
+    private static ValueCheck CheckAgents(ConfigKey.AgentListKey key, JsonElement value) =>
+        Agents.ExtraAgentShape.Read(value) switch
+        {
+            (_, { Length: > 0 } problem) => new ValueCheck.Invalid($"{key.Name}: {problem}"),
+            var (agents, _) => new ValueCheck.Ok(new ConfigValue.AgentList(agents)),
+        };
+
+    /// <summary>The JSON text <c>config set aiAgents.extra -</c> read from stdin.</summary>
+    private static ValueCheck ParseAgents(ConfigKey.AgentListKey key, string text)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            return CheckAgents(key, document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; what was given is not JSON");
+        }
+    }
 
     private static ValueCheck CheckBool(ConfigKey key, JsonElement value) => value.ValueKind switch
     {

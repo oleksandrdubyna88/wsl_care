@@ -53,6 +53,9 @@ public sealed class ToolCacheTrims : ICleanupAction
 
     public CommandScope Scope => CommandScope.User;
 
+    /// <summary>Each package manager's cache its own trim command works in (pnpm's store, uv's and pip's caches).</summary>
+    public IReadOnlyList<HomeFolder> HomeRoots { get; } = [.. Tools.Select(t => new HomeFolder(t.Cache)).Distinct()];
+
     public IdleRule Idle => IdleRule.Never;
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];
