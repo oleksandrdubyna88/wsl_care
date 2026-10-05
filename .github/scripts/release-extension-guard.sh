@@ -128,6 +128,8 @@ min="$(minimum_of minDaemonForRender)"
 [[ "$min" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForRender \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_RENDER (npm test holds the two equal)"
 min_actions="$(minimum_of minDaemonForActions)"
 [[ "$min_actions" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForActions \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_ACTIONS (npm test holds the two equal)"
+# Install daemon types the ACTIONS minimum, so it may never be below the render minimum (coai E6.S2 code round #0).
+version_at_least "$min_actions" "$min" || refuse "$MIN_DAEMON_FILE: minDaemonForActions $min_actions is below minDaemonForRender $min — Install daemon types the actions minimum, so it must be at or above the render minimum"
 
 # Each minimum is a PUBLISHED release. GitHub answers a draft's tag with 404 to a read-only token, and the jq filter makes a
 # published one print `false<TAB>daemon-v<MIN>` — anything else is not a published release.
