@@ -146,3 +146,16 @@ export function parseAnswer(verb: Verb, stdout: string): Answer | Failure {
 
   return verb === 'status' ? statusAnswer(checked.schemaVersion, checked.body) : { verb, schemaVersion: checked.schemaVersion, body: checked.body };
 }
+
+/**
+ * `have` is at or above `need`, both released `x.y.z` versions — the same field-by-field comparison the render check uses
+ * (`older`). Any other text (`unknown`, a pre-release, a `0.0.0` development build) is never "at least". The coai E6.S2 code
+ * round #0 holds `MIN_DAEMON_FOR_ACTIONS` at or above `MIN_DAEMON_FOR_RENDER` with it (`minDaemon.test.ts`; the release guard
+ * refuses the same in shell).
+ */
+export function versionAtLeast(have: string, need: string): boolean {
+  const a = parseDaemonVersion(have);
+  const b = parseDaemonVersion(need);
+
+  return a.kind === 'release' && b.kind === 'release' && !older(a.parts, b.parts);
+}
