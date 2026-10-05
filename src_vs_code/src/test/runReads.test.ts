@@ -67,9 +67,21 @@ test('runs --from --to: the instant window, exactly as built, 20 s', async () =>
   assert.equal(rec.requests.at(-1)?.timeoutMs, RUN_READ_TIMEOUT_MS.runs);
 });
 
+const LOGS = daemonArgv('Ubuntu', ['logs', '--from', FROM, '--to', TO, '--json']);
+
+test('logs --from --to (E6.S4): the instant window of the Logs page, exactly as built — no --detail, no --action, no -u, 20 s', async () => {
+  const { c, rec } = client({ ...wsl(true), [LOGS]: exited(0, goldenText('logs-local-day.json')) });
+  const outcome = await c.read({ read: 'logs', from: FROM, to: TO });
+  assert.equal(bodyOf(outcome).freedBytes, 308003000);
+  assert.ok(outcome.kind === 'read' && outcome.read === 'logs');
+  assert.deepEqual(rec.argvs(), [LIST_QUIET, LIST_VERBOSE, LIST_RUNNING, LOGS]);
+  assert.equal(rec.requests.at(-1)?.timeoutMs, RUN_READ_TIMEOUT_MS.logs);
+  assert.ok(rec.requests.every((r) => !r.args.includes('-u') && !r.args.includes('--detail')), 'unprivileged, and the object lists come lazily through runs show');
+});
+
 test('every run read\'s tail is built from its typed parts, and each has a stated ceiling', () => {
-  const reads: { readonly [K in RunRead['read']]: RunRead } = { runsShow: { read: 'runsShow', runId: RUN }, runs: { read: 'runs', from: FROM, to: TO } };
-  assert.deepEqual(RUN_READ_NAMES.map((name) => runReadTail(reads[name])), [['runs', 'show', RUN, '--json'], ['runs', '--from', FROM, '--to', TO, '--json']]);
+  const reads: { readonly [K in RunRead['read']]: RunRead } = { runsShow: { read: 'runsShow', runId: RUN }, runs: { read: 'runs', from: FROM, to: TO }, logs: { read: 'logs', from: FROM, to: TO } };
+  assert.deepEqual(RUN_READ_NAMES.map((name) => runReadTail(reads[name])), [['runs', 'show', RUN, '--json'], ['runs', '--from', FROM, '--to', TO, '--json'], ['logs', '--from', FROM, '--to', TO, '--json']]);
   for (const name of RUN_READ_NAMES) {
     assert.ok(RUN_READ_TIMEOUT_MS[name] > 0, name);
   }
@@ -91,6 +103,9 @@ test('a value the daemon would never write is refused BEFORE anything starts —
     { read: 'runs', from: FROM, to: '2026-10-05T10:05:00+02:00' },
     { read: 'runs', from: '--period', to: 'today' },
     { read: 'runs', from: TO, to: FROM },
+    { read: 'logs', from: '2026-10-05', to: '2026-10-06' },
+    { read: 'logs', from: FROM, to: `${TO} --detail` },
+    { read: 'logs', from: TO, to: FROM },
   ];
   for (const request of refused) {
     const { c, rec } = client(wsl(true));
@@ -170,6 +185,7 @@ test('runs over the local-day golden: every line, in order, with its trigger, st
   assert.equal(lines[1]?.freedBytes, 308000000);
   assert.deepEqual(parseRuns({ schemaVersion: 1, runs: [7, null, { runId: 'x' }] }).map((l) => l.runId), [undefined], 'non-objects dropped, a bad run id read as none');
 });
+
 test('§15o: a line\'s kind is read STRICTLY — "collect" or "act"; any other value, a case variant or a non-string reads as absent', () => {
   const kinds = parseRuns({ schemaVersion: 1, runs: ['collect', 'act', 'Collect', 'sweep', 7, null, undefined, `collect${String.fromCharCode(0x202e)}`].map((kind) => ({ runId: RUN, kind })) }).map((l) => l.kind);
   assert.deepEqual(kinds, ['collect', 'act', undefined, undefined, undefined, undefined, undefined, undefined]);

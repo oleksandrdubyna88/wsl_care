@@ -68,6 +68,8 @@ export interface FakeScenario {
   readonly runsShow?: string;
   /** E6.S3: the file (in `answers`) `runs --from --to --json` answers; `runs-local-day.json` by default. */
   readonly runs?: string;
+  /** E6.S4: the file (in `answers`) `logs --from --to --json` answers; `logs-local-day.json` by default. */
+  readonly logs?: string;
 }
 
 /** The root calls' scripted answers (E6.S2); absent, every root call of the closed set answers as the goldens do. */
@@ -204,30 +206,50 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
     return distroReply(scenario, argv) ?? runReadAnswer(scenario, runRead);
   }
   if (!ALLOWED_TAILS.some((allowed) => sameTail(tail, allowed))) {
-    return refuse(`outside the four read-only verbs and the two run reads: ${JSON.stringify(tail)}`, argv);
+    return refuse(`outside the four read-only verbs and the three run reads: ${JSON.stringify(tail)}`, argv);
   }
 
   return distroReply(scenario, argv) ?? daemonAnswer(scenario, tail);
 }
 
-// ---- E6.S3: the two run reads — the fake's OWN copy of their shapes ----
+// ---- E6.S3 / E6.S4: the three run reads — the fake's OWN copy of their shapes ----
 
 /** The one instant shape the client sends, with its offset spelt (the daemon's `LogPeriod.ParseInstants` takes more; the client sends this). */
 const INSTANT = UTC_INSTANT_SHAPE;
 
-type RunReadShape = { readonly read: 'runsShow'; readonly runId: string } | { readonly read: 'runs' };
+/** The two verbs that take the instant window — `runs` (E6.S3) and `logs` (E6.S4) — and the answer file each defaults to. */
+const WINDOW_READS = {
+  runs: (scenario: FakeScenario) => scenario.runs ?? 'runs-local-day.json',
+  logs: (scenario: FakeScenario) => scenario.logs ?? 'logs-local-day.json',
+} as const;
 
-/** `runs show <runId> --json`, or `runs --from <instant> --to <instant> --json` ending after it starts — or not a run read. */
+type WindowVerb = keyof typeof WINDOW_READS;
+
+type RunReadShape = { readonly read: 'runsShow'; readonly runId: string } | { readonly read: WindowVerb };
+
+function isWindowVerb(verb: string | undefined): verb is WindowVerb {
+  return verb !== undefined && Object.hasOwn(WINDOW_READS, verb);
+}
+
+/** `runs show <runId> --json` — exactly four words, the run id of the daemon's spelling. */
+function showOf(runId: string | undefined, json: string | undefined, more: string | undefined): RunReadShape | undefined {
+  return json === '--json' && more === undefined && RUN_ID.test(runId ?? '') ? { read: 'runsShow', runId: runId ?? '' } : undefined;
+}
+
+/**
+ * `runs show <runId> --json`, or `runs` / `logs --from <instant> --to <instant> --json` ending after it starts — or not a run
+ * read: `logs --period`, `--detail` and `--action` are never sent (the Logs page reads objects through `runs show`).
+ */
 function runReadOf(tail: readonly string[]): RunReadShape | undefined {
   const [verb, first, second, third, fourth, fifth, ...rest] = tail;
-  if (verb !== 'runs' || rest.length > 0) {
+  if (rest.length > 0) {
     return undefined;
   }
-  if (first === 'show' && third === '--json' && fourth === undefined) {
-    return RUN_ID.test(second ?? '') ? { read: 'runsShow', runId: second ?? '' } : undefined;
+  if (verb === 'runs' && first === 'show') {
+    return showOf(second, third, fourth);
   }
 
-  return first === '--from' && third === '--to' && fifth === '--json' && validWindow(second, fourth) ? { read: 'runs' } : undefined;
+  return isWindowVerb(verb) && first === '--from' && third === '--to' && fifth === '--json' && validWindow(second, fourth) ? { read: verb } : undefined;
 }
 
 function validWindow(from: string | undefined, to: string | undefined): boolean {
@@ -236,8 +258,8 @@ function validWindow(from: string | undefined, to: string | undefined): boolean 
 
 /** The scenario's answer file, with the asked run id written into it (the top level and its run line). */
 function runReadAnswer(scenario: FakeScenario, shape: RunReadShape): Reply {
-  if (shape.read === 'runs') {
-    return { code: 0, stdout: fs.readFileSync(path.join(scenario.answers, scenario.runs ?? 'runs-local-day.json')), ...delay(scenario) };
+  if (shape.read !== 'runsShow') {
+    return { code: 0, stdout: fs.readFileSync(path.join(scenario.answers, WINDOW_READS[shape.read](scenario))), ...delay(scenario) };
   }
   const body = readJson(path.join(scenario.answers, scenario.runsShow ?? 'runs-show-unknown.json'));
   const run = typeof body.run === 'object' && body.run !== null ? { run: { ...(body.run as Record<string, unknown>), runId: shape.runId } } : {};

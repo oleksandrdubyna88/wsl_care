@@ -155,6 +155,12 @@ const RUN_READS: { readonly [K in RunReadName]: { readonly request: RunRead; rea
     scenario: {},
     check: (body) => assert.equal(body.count, 3),
   },
+  logs: {
+    request: { read: 'logs', from: '2026-10-04T21:00:00Z', to: '2026-10-05T21:00:00Z' },
+    tail: ['logs', '--from', '2026-10-04T21:00:00Z', '--to', '2026-10-05T21:00:00Z', '--json'],
+    scenario: {},
+    check: (body) => { assert.equal(body.freedBytes, 308003000); assert.equal(body.detailsNotRead, 0); },
+  },
 };
 
 for (const name of RUN_READ_NAMES) {
