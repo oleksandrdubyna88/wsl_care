@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { CleanupJournal, type NewEntry } from '../cleanup/journal';
+import { CleanupJournal, type JournalEntry, type NewEntry } from '../cleanup/journal';
 import { FOLLOW_POLL, RunFollower, type RunResult } from '../cleanup/runFollower';
 import type { ReadOutcome, VerbOutcome } from '../client/outcome';
 import type { RunRead } from '../client/verbs';
@@ -64,7 +64,7 @@ interface World {
 
 function world(store = new MapStore()): World {
   const timers = new ManualTimers();
-  const journal = new CleanupJournal(store);
+  const journal = new CleanupJournal(store, () => w.clock.now);
   const w: World = {
     journal, store, timers, reads: [], shown: [], faults: [], clock: { now: T0 }, statusCalls: 0, afterTerminal: 0,
     status: statusWith(undefined), answer: () => show('unknown'), focused: true,
@@ -82,6 +82,12 @@ function world(store = new MapStore()): World {
     fault: (error) => { w.faults.push(error); },
   });
   return w;
+}
+
+async function addedTo(journal: CleanupJournal, entry: NewEntry): Promise<JournalEntry> {
+  const added = await journal.add(entry);
+  assert.ok(added !== undefined, 'the journal took it');
+  return added;
 }
 
 const RUN_ENTRY: NewEntry = { kind: 'run', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: new Date(T0).toISOString(), runId: runId(RUN) };
@@ -109,7 +115,7 @@ test('M6: nothing in flight — no journal entry, status.running none — arms n
 
 test('a run this window follows: status every 4 s while it is in flight, then ONE runs show at the terminal state, shown, removed, and the poll stops', async () => {
   const w = world();
-  const entry = await w.journal.add(RUN_ENTRY);
+  const entry = await addedTo(w.journal, RUN_ENTRY);
   w.follower.started(entry.id);
   w.status = statusWith(running('live'));
   w.follower.kick();
@@ -132,7 +138,7 @@ test('a run this window follows: status every 4 s while it is in flight, then ON
 
 test('queued, live and wedged naming the run all count as in flight; a runs show that still says running or queued keeps the poll', async () => {
   const w = world();
-  w.follower.started((await w.journal.add(RUN_ENTRY)).id);
+  w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
   for (const state of ['queued', 'live', 'wedged']) {
     w.status = statusWith(running(state));
     w.follower.kick();
@@ -152,7 +158,7 @@ test('queued, live and wedged naming the run all count as in flight; a runs show
 test('§15k #4: runs show answering unknown is terminal — shown, removed, the poll stops; a dead run reads interrupted', async () => {
   for (const [answer, state] of [[show('unknown', { reason: 'never existed here' }), 'unknown'], [{ kind: 'read', read: 'runsShow', distro: 'Ubuntu', body: golden('runs-show-interrupted.json') } as ReadOutcome, 'interrupted']] as const) {
     const w = world();
-    w.follower.started((await w.journal.add(RUN_ENTRY)).id);
+    w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
     w.status = statusWith(running('dead'));
     w.answer = () => answer;
     w.follower.kick();
@@ -167,7 +173,7 @@ test('§15k #4: runs show answering unknown is terminal — shown, removed, the 
 
 test('§15k #4: the hard ceiling — past 30 minutes an entry ends as "state unknown" WITH its run id, nothing more is asked of it', async () => {
   const w = world();
-  w.follower.started((await w.journal.add(RUN_ENTRY)).id);
+  w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
   w.status = statusWith(running('wedged'));
   w.follower.kick();
   await poll(w);
@@ -182,7 +188,7 @@ test('§15k #4: the hard ceiling — past 30 minutes an entry ends as "state unk
 
 test('a reload: a NEW follower over the same store resumes the run on its first kick, and a status that does not answer keeps the entry', async () => {
   const store = new MapStore();
-  await world(store).journal.add(RUN_ENTRY);
+  await addedTo(world(store).journal, RUN_ENTRY);
   const w = world(store);
   w.status = failed('status', { kind: 'timedOut', timeoutMs: 20_000 });
   w.follower.kick();
@@ -199,7 +205,7 @@ test('a reload: a NEW follower over the same store resumes the run on its first 
 test('focus: an entry ANOTHER window started is followed only while this window is focused; one it started, always', async () => {
   const store = new MapStore();
   const w = world(store);
-  const entry = await w.journal.add(RUN_ENTRY);
+  const entry = await addedTo(w.journal, RUN_ENTRY);
   w.focused = false;
   w.status = statusWith(running('live'));
   w.follower.kick();
@@ -229,7 +235,7 @@ test('a run in flight that is NOT the journal\'s (the timer\'s): polled while fo
 
 test('unresolved: a queued / live run of trigger manual holding EXACTLY the confirmed actions is adopted, then followed as any run', async () => {
   const w = world();
-  w.follower.started((await w.journal.add(UNRESOLVED)).id);
+  w.follower.started((await addedTo(w.journal, UNRESOLVED)).id);
   w.status = statusWith(running('queued'));
   w.follower.kick();
   await poll(w);
@@ -241,7 +247,7 @@ test('unresolved: a queued / live run of trigger manual holding EXACTLY the conf
 
 test('unresolved: the timer\'s run, or a run of other actions, is NOT adopted; before the grace nothing is listed', async () => {
   const w = world();
-  w.follower.started((await w.journal.add(UNRESOLVED)).id);
+  w.follower.started((await addedTo(w.journal, UNRESOLVED)).id);
   w.status = statusWith(running('live', { trigger: 'timer' }));
   w.follower.kick();
   await poll(w);
@@ -257,7 +263,7 @@ test('unresolved, after the grace: runs --from <the confirm> --to <now>; ONE mat
   const cases: readonly [unknown[], string][] = [[lines(1), 'adopted'], [[], 'neverRan'], [lines(2), 'ambiguous'], [[{ ...lines(1)[0], trigger: 'timer' }], 'neverRan']];
   for (const [runs, expected] of cases) {
     const w = world();
-    w.follower.started((await w.journal.add(UNRESOLVED)).id);
+    w.follower.started((await addedTo(w.journal, UNRESOLVED)).id);
     w.answer = (request) => (request.read === 'runs' ? listing(runs) : show('done'));
     w.follower.kick();
     await poll(w);
@@ -277,14 +283,14 @@ test('unresolved, after the grace: runs --from <the confirm> --to <now>; ONE mat
 test('unresolved full check: a manual run line with NO actions is a full check (its history line records none); status names it ["collect"]', async () => {
   const fullCheck: NewEntry = { ...UNRESOLVED, op: 'fullCheck', actions: ['collect'] };
   const w = world();
-  w.follower.started((await w.journal.add(fullCheck)).id);
+  w.follower.started((await addedTo(w.journal, fullCheck)).id);
   w.answer = () => ({ kind: 'read', read: 'runs', distro: 'Ubuntu', body: { schemaVersion: 1, runs: [{ runId: RUN, trigger: 'manual', startedAt: '2026-10-05T10:00:01+00:00', outcome: 'completed', actions: [] }] } });
   w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
   w.follower.kick();
   await poll(w);
   assert.ok(w.journal.entries()[0]?.kind === 'run');
   const viaStatus = world();
-  viaStatus.follower.started((await viaStatus.journal.add(fullCheck)).id);
+  viaStatus.follower.started((await addedTo(viaStatus.journal, fullCheck)).id);
   viaStatus.status = statusWith(running('live', { actions: ['collect'], current: 'collect' }));
   viaStatus.follower.kick();
   await poll(viaStatus);
@@ -296,7 +302,7 @@ test('unresolved full check: a manual run line with NO actions is a full check (
 test('M6 churn, measured: a run followed for D minutes costs D × 15 status runs + 1 runs show; the ceiling bounds a wedged run at 451', async () => {
   const measure = async (minutes: number, endState: 'done' | 'wedged'): Promise<{ status: number; reads: number }> => {
     const w = world();
-    w.follower.started((await w.journal.add(RUN_ENTRY)).id);
+    w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
     w.status = statusWith(running(endState === 'done' ? 'live' : 'wedged'));
     w.answer = () => show('done');
     w.follower.kick();
@@ -315,7 +321,7 @@ test('M6 churn, measured: a run followed for D minutes costs D × 15 status runs
 
 test('M6: a poll armed while a run was in flight asks NOTHING when it fires after that run ended (found by the extension-host tier)', async () => {
   const w = world();
-  w.follower.started((await w.journal.add(RUN_ENTRY)).id);
+  w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
   w.follower.kick();
   assert.equal(w.timers.pending(), 1);
   w.answer = () => show('done');

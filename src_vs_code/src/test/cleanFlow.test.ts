@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { CleanFlow, PREVIEW_EXPIRY_MS, RETRY_LABEL, type CleanUi } from '../cleanup/cleanFlow';
-import { CleanupJournal } from '../cleanup/journal';
+import { CleanupJournal, MAX_ENTRIES } from '../cleanup/journal';
 import type { Modal } from '../cleanup/modalText';
 import type { NoticeLevel } from '../cleanup/resultText';
 import type { ProcessRequest } from '../process/runner';
@@ -67,7 +67,7 @@ class World {
     this.runner = recordingRunner({ [ROOT_CHECK]: exited(0, '0.1.0\n'), ...script });
     const client: CleanupClient = { rootTarget: () => Promise.resolve({ wsl: 'C:\\Windows\\System32\\wsl.exe', distro: 'Ubuntu' }), run: () => Promise.resolve(answered('status', status())) };
     const controller = new CleanupController({ client, runner: this.runner.runner, now: () => this.clock.now, sleep: (ms) => { this.clock.now += ms; return Promise.resolve(); } });
-    this.journal = new CleanupJournal(this.store);
+    this.journal = new CleanupJournal(this.store, () => Date.parse('2026-10-05T10:00:00.000Z'));
     const ui: CleanUi = {
       confirm: (modal) => { this.modals.push(modal); this.onModal(modal); return Promise.resolve(this.answers.length === 0 ? true : (this.answers.shift() ?? true)); },
       notify: (level, sentence, actions = []) => { this.notices.push({ level, sentence, actions }); return Promise.resolve(this.noticeAnswer); },
@@ -252,4 +252,16 @@ test('E6.S3 review A3: a preview that does not describe every asked id is NOT co
   assert.equal(w.runner.argvs().filter((a) => a.includes('--confirm')).length, 0);
   assert.equal(w.store.writes, 0);
   assert.match(w.notices.at(-1)?.sentence ?? '', /did not describe A5/);
+});
+
+test('E6.S3 review C12: with the journal full the confirm is NOT sent — told to wait; no entry is evicted', async () => {
+  const w = world({ [PREVIEW_A4]: exited(0, previewText()), [CONFIRM_A4]: exited(0, handOff()) });
+  for (let i = 0; i < MAX_ENTRIES; i += 1) {
+    await w.journal.add({ kind: 'unresolved', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: '2026-10-05T09:59:00.000Z' });
+  }
+  const outcome = await w.flow.clean(['A4'], false);
+  assert.equal(outcome.kind, 'journalFull');
+  assert.equal(w.runner.argvs().filter((a) => a.includes('--confirm')).length, 0);
+  assert.equal(w.journal.entries().length, MAX_ENTRIES);
+  assert.match(w.notices.at(-1)?.sentence ?? '', /wait for one to end/);
 });
