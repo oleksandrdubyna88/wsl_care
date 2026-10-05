@@ -17,7 +17,8 @@ import { createContext, runInContext, Script, type Context } from 'node:vm';
  * touches is a PROXY that throws on any member the harness does not model. In particular every HTML sink —
  * `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write` — throws, `style` throws, `setAttribute` takes only
  * `role`, `scope`, `title`, `type`, `colspan`, `aria-*` and `data-*` (never `on*`, `style`, `src`, `href`), and
- * `createElement` only the tags a text page needs (never `script`, `img`, `iframe`, `a`, `style`, `link`). A page that
+ * `createElement` only the tags a text page needs (never `script`, `img`, `iframe`, `a`, `style`, `link`) — since E6.S4 an
+ * `input` too, the Logs page's date picker, with a string `value` and `min` / `max` (never a form, `formaction` or `select`). A page that
  * reached for any of them fails here, by name, even where a browser would have obliged. `textContent` takes only a
  * string (a browser would print `undefined` — the blank row this panel must never show) and, as in a browser,
  * replaces the element's children.</p>
@@ -26,10 +27,10 @@ import { createContext, runInContext, Script, type Context } from 'node:vm';
 const TIMEOUT_MS = 5000;
 
 /** What a page may create: a text page's elements, nothing that loads, runs or navigates. */
-export const CREATABLE = new Set(['DIV', 'SECTION', 'HEADER', 'H1', 'H2', 'H3', 'P', 'SPAN', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'BUTTON', 'UL', 'LI', 'SMALL', 'STRONG']);
+export const CREATABLE = new Set(['DIV', 'SECTION', 'HEADER', 'H1', 'H2', 'H3', 'P', 'SPAN', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', 'BUTTON', 'UL', 'LI', 'SMALL', 'STRONG', 'INPUT']);
 
-/** The attributes `setAttribute` takes; `data-*` and `aria-*` by prefix. */
-const ATTRIBUTES = new Set(['role', 'scope', 'title', 'type', 'colspan']);
+/** The attributes `setAttribute` takes; `data-*` and `aria-*` by prefix. `min` / `max`: the Logs page's date picker (E6.S4). */
+const ATTRIBUTES = new Set(['role', 'scope', 'title', 'type', 'colspan', 'min', 'max']);
 
 /** Event kinds a page may listen for on an element. */
 const ELEMENT_EVENTS = new Set(['click']);
@@ -58,6 +59,8 @@ export class Element {
   className = '';
   hidden = false;
   disabled = false;
+  /** An INPUT's value (E6.S4, the date picker): a string, as a browser holds it. */
+  value = '';
   readonly dataset: Record<string, string> = {};
   readonly attributes: Record<string, string> = {};
   readonly handlers: { kind: string; run: Handler }[] = [];
@@ -272,6 +275,7 @@ function elementMembers(element: Element, membrane: Membrane): Members {
     className: { get: () => element.className, set: (v) => { element.className = stringOnly(v, 'className'); } },
     hidden: { get: () => element.hidden, set: (v) => { element.hidden = booleanOnly(v, 'hidden'); } },
     disabled: { get: () => element.disabled, set: (v) => { element.disabled = booleanOnly(v, 'disabled'); } },
+    value: { get: () => element.value, set: (v) => { element.value = stringOnly(v, 'value'); } },
     dataset: { get: () => datasetView(element) },
     classList: { get: () => classListView(element) },
     setAttribute: { get: () => (name: unknown, value: unknown) => setAttribute(element, name, value) },

@@ -174,3 +174,27 @@ test('dataset writes take strings only, and classList keeps className in step', 
   assert.equal(root.className, 'b');
   assert.throws(() => withRoot("document.getElementById('root').dataset.n = 3;"), /dataset\.n takes a string/);
 });
+
+// ---- E6.S4: the date picker — an <input> with a value, and its min / max — and nothing more of a form ----
+
+test('E6.S4: an input may be created; its value is a string the page reads and writes; min, max and type are attributes', () => {
+  const { page, root } = withRoot(`
+    const el = document.getElementById('root');
+    const input = document.createElement('input');
+    input.setAttribute('type', 'date'); input.setAttribute('min', '2026-07-08'); input.setAttribute('max', '2026-10-05');
+    input.setAttribute('data-picker', 'day');
+    input.value = '2026-10-01';
+    el.appendChild(input);
+    acquireVsCodeApi().postMessage(input.value);`);
+  const input = root.one('[data-picker="day"]');
+  assert.deepEqual([input.tagName, input.attributes.type, input.attributes.min, input.attributes.max, input.value], ['INPUT', 'date', '2026-07-08', '2026-10-05', '2026-10-01']);
+  assert.deepEqual(page.posted, ['2026-10-01']);
+});
+
+test('E6.S4: an input\'s value takes a string only, and a form, a select or a textarea is still not creatable', () => {
+  assert.throws(() => withRoot("const i = document.createElement('input'); i.value = 7;"), /value takes a string/);
+  for (const tag of ['form', 'select', 'textarea']) {
+    assert.throws(() => runPageScript(`document.createElement('${tag}');`), /createElement.* is not modelled/);
+  }
+  assert.throws(() => withRoot("document.createElement('input').setAttribute('formaction', 'x');"), /setAttribute\(".*"\) is not modelled/);
+});
