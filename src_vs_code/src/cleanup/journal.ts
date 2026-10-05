@@ -1,3 +1,4 @@
+import { DEFAULT_NUMBERS } from '../settings/numbers';
 import { randomUUID } from 'node:crypto';
 
 import { FULL_CHECK_ACTIONS } from '../root/cleanupController';
@@ -32,8 +33,8 @@ import { ACTION_IDS, actionIdOf, runIdOf, type RunId } from '../root/rootIds';
  * `status.lastCleanup`) or, past the tombstone's life, bring a removed one back (the follower re-reads the journal before it
  * shows a result, so a result is shown once per window at most).</p>
  *
- * <p><b>Growth:</b> at most `MAX_ENTRIES` (32, the daemon's own request budget); past it a new entry is REFUSED and the
- * flow says to wait (review C12) — an unshown entry is never evicted; at most `MAX_TOMBSTONES` tombstones, each for 10 minutes.
+ * <p><b>Growth:</b> at most `wslCare.cleanup.journalEntries` (32 by default, the daemon's own request budget); past it a new entry is REFUSED and the
+ * flow says to wait (review C12) — an unshown entry is never evicted; at most two tombstones per entry of the budget, each for 10 minutes.
  * An entry leaves on its terminal answer or on the 30-minute poll ceiling (`runFollower.ts`).</p>
  */
 
@@ -41,7 +42,8 @@ import { ACTION_IDS, actionIdOf, runIdOf, type RunId } from '../root/rootIds';
 export const JOURNAL_KEY = 'wslCare.cleanup.journal.v2';
 
 /** The daemon accepts at most 32 waiting requests (plan §15k #8); more entries than that cannot all be real. */
-export const MAX_ENTRIES = 32;
+/** The DEFAULT budget (`wslCare.cleanup.journalEntries`); a journal reads the setting at each add. */
+export const MAX_ENTRIES = DEFAULT_NUMBERS.journalEntries;
 
 /** The most actions one entry may name: every id of the compiled registry once (review C9). */
 export const MAX_ACTIONS_PER_ENTRY = ACTION_IDS.length;
@@ -52,7 +54,8 @@ export const FUTURE_SKEW_MS = 5 * 60_000;
 /** How long a removal's tombstone is kept and merged. */
 export const TOMBSTONE_TTL_MS = 10 * 60_000;
 
-const MAX_TOMBSTONES = 2 * MAX_ENTRIES;
+/** Tombstones kept per entry of the budget. */
+const TOMBSTONES_PER_ENTRY = 2;
 
 /** What started the run: a cleanup's confirm, *Run full check now*, or a stop. */
 export const JOURNAL_OPS = ['clean', 'fullCheck', 'stop'] as const;
@@ -111,7 +114,7 @@ export class CleanupJournal {
   /** This journal's own mark on the tombstones it writes (one per window). */
   private readonly token = randomUUID();
 
-  constructor(private readonly store: DurableStore, private readonly wallNow: () => number = Date.now) {}
+  constructor(private readonly store: DurableStore, private readonly wallNow: () => number = Date.now, private readonly maxEntries: () => number = () => MAX_ENTRIES) {}
 
   /** Every valid entry, oldest first, read from the store each time (another window may have written it). */
   entries(): readonly JournalEntry[] {
@@ -128,7 +131,7 @@ export class CleanupJournal {
     const added: JournalEntry = { ...entry, id: randomUUID() };
     let full = false;
     await this.serialised((current) => {
-      full = current.entries.length >= MAX_ENTRIES;
+      full = current.entries.length >= this.maxEntries();
       return full ? undefined : { ...current, entries: [...current.entries, added] };
     }, (current) => full || current.entries.some((e) => e.id === added.id));
 
@@ -206,7 +209,7 @@ export class CleanupJournal {
   /** The tombstones still alive, and no entry they name. */
   private pruned(stored: Stored): Stored {
     const now = this.wallNow();
-    const removed = stored.removed.filter((t) => now - t.at < TOMBSTONE_TTL_MS).slice(-MAX_TOMBSTONES);
+    const removed = stored.removed.filter((t) => now - t.at < TOMBSTONE_TTL_MS).slice(-TOMBSTONES_PER_ENTRY * this.maxEntries());
     const gone = new Set(removed.map((t) => t.id));
 
     return { entries: stored.entries.filter((e) => !gone.has(e.id)), removed };

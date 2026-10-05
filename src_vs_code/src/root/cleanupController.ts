@@ -6,6 +6,7 @@ import { DAEMON_PATH } from '../client/WslCareClient';
 import type { ProcessResult, Runner } from '../process/runner';
 import { actionGate, pickIds, type GateOpen } from './actionGate';
 import { parseHandOff, parsePreview, runningOf, type HandOff, type HandOffResult, type PreviewContext } from './rootAnswers';
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { callRoot, FULL_CHECK_ACTIONS, RUN_KINDS, type RootOp, type RootTarget } from './rootCall';
 import { exitFailure } from './rootFailures';
 import { runIdOf, volumeNameOf, type ActionIds, type RunId, type VolumeName } from './rootIds';
@@ -65,10 +66,12 @@ export interface CleanupOptions {
   /** A monotonic clock in milliseconds (`performance.now()` in the product). */
   readonly now: () => number;
   readonly sleep: (ms: number) => Promise<void>;
+  /** The number settings, read at each call (`settings/numbers.ts`): the root ceilings and the unknown-detach follow; the defaults when absent. */
+  readonly numbers?: () => Numbers;
 }
 
-/** Following an unknown detach: `status` every 4 s (plan §15j M6's 3–5 s), for at most a minute. */
-export const FOLLOW = { intervalMs: 4_000, boundMs: 60_000 } as const;
+/** Following an unknown detach — the DEFAULTS: `status` every `wslCare.cleanup.followPollSeconds` (4 s, plan §15j M6's 3–5 s), for at most `wslCare.cleanup.unknownDetachFollowSeconds` (a minute). */
+export const FOLLOW = { intervalMs: DEFAULT_NUMBERS.followPollSeconds * 1000, boundMs: DEFAULT_NUMBERS.unknownDetachFollowSeconds * 1000 } as const;
 
 const BASE = ['running.block', 'runs.show'];
 
@@ -127,6 +130,11 @@ export class CleanupController {
   private readonly issued = new WeakSet<HeldPreview>();
 
   constructor(private readonly options: CleanupOptions) {}
+
+  /** The number settings as they are now. */
+  private numbers(): Numbers {
+    return this.options.numbers?.() ?? DEFAULT_NUMBERS;
+  }
 
   /** The root check alone (§15j m4): what root sees as the daemon's version, or why the actions are greyed "needs root". */
   rootCheck(): Promise<RootCheckOutcome> {
@@ -197,7 +205,7 @@ export class CleanupController {
     }
     const root = await this.checkedRoot(target);
 
-    return root.kind === 'rootOk' ? { op, result: await callRoot(this.options.runner, target, op) } : root;
+    return root.kind === 'rootOk' ? { op, result: await callRoot(this.options.runner, target, op, this.numbers()) } : root;
   }
 
   private async gated(target: RootTarget, required: readonly string[]): Promise<GateOpen | RootFailure> {
@@ -215,7 +223,7 @@ export class CleanupController {
     if (known !== undefined) {
       return { kind: 'rootOk', distro: target.distro, version: known };
     }
-    const outcome = rootCheckOf(await callRoot(this.options.runner, target, { op: 'rootCheck' }), target.distro);
+    const outcome = rootCheckOf(await callRoot(this.options.runner, target, { op: 'rootCheck' }, this.numbers()), target.distro);
     if (outcome.kind === 'rootOk') {
       this.rootOk.set(target.distro, outcome.version);
     }
@@ -312,10 +320,11 @@ export class CleanupController {
 
   /** Review M2 / L3: poll THIS distribution's status until a run provably ours is seen, or the bound passes. */
   private async follow(reason: string, expected: Expected): Promise<HandOffOutcome> {
-    const deadline = this.options.now() + FOLLOW.boundMs;
+    const numbers = this.numbers();
+    const deadline = this.options.now() + numbers.unknownDetachFollowSeconds * 1000;
     let watch = NO_WATCH;
     while (this.options.now() < deadline && watch.ours === undefined) {
-      await this.options.sleep(FOLLOW.intervalMs);
+      await this.options.sleep(numbers.followPollSeconds * 1000);
       watch = watched(watch, await this.poll(expected.distro), expected);
     }
 

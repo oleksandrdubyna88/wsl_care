@@ -8,6 +8,7 @@ import { MAX_REFRESH_SECONDS } from '../poll/poller';
 import { DISTRO_NAME } from '../wsl/distros';
 import { decodePng } from './support/iconPng';
 import { EXTENSION_ROOT, REPOSITORY_ROOT } from './support/paths';
+import { NUMBER_NAMES, NUMBER_SETTINGS } from '../settings/numbers';
 import { PUBLISHER_PLACEHOLDER } from './support/vsixCheck';
 
 /**
@@ -106,7 +107,7 @@ test('it runs on the Windows side, in untrusted and virtual workspaces, activate
 
 test('every wslCare setting is application-scoped — a cloned repository\'s .vscode/settings.json cannot steer it', () => {
   const names = Object.keys(settings);
-  assert.deepEqual(names.sort(), ['wslCare.distro', 'wslCare.refreshSeconds']);
+  assert.deepEqual(names.sort(), ['wslCare.distro', 'wslCare.refreshSeconds', ...NUMBER_NAMES.map((name) => `wslCare.${NUMBER_SETTINGS[name].key}`)].sort(), 'the two E5 settings and the number table (numbers.test.ts)');
   for (const name of names) {
     assert.equal(settings[name]?.scope, 'application', name);
   }

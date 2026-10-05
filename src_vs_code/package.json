@@ -131,6 +131,126 @@
           "maximum": 86400,
           "scope": "application",
           "markdownDescription": "How often the focused window asks the daemon for `status`, in seconds (at least 30, at most 86400 — one day). Application-wide: a workspace's `.vscode/settings.json` cannot change it."
+        },
+        "wslCare.timeouts.statusSeconds": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 10,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long `status --json` may take before `wsl.exe` is stopped and the call reads \"timed out\", in seconds."
+        },
+        "wslCare.timeouts.versionSeconds": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 10,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long `--version` may take (also the privileged check before a cleanup), in seconds."
+        },
+        "wslCare.timeouts.doctorSeconds": {
+          "type": "integer",
+          "default": 120,
+          "minimum": 119,
+          "maximum": 3600,
+          "scope": "application",
+          "markdownDescription": "How long `doctor --json` may take, in seconds — at least its worst case: four `systemctl show`, `systemctl --version` and `docker version`, each to its ceiling."
+        },
+        "wslCare.timeouts.previewSeconds": {
+          "type": "integer",
+          "default": 350,
+          "minimum": 340,
+          "maximum": 7200,
+          "scope": "application",
+          "markdownDescription": "How long `preview --all --json` (one Docker snapshot, up to 100 containers) may take, in seconds."
+        },
+        "wslCare.timeouts.previewPerDockerRowSeconds": {
+          "type": "integer",
+          "default": 350,
+          "minimum": 340,
+          "maximum": 7200,
+          "scope": "application",
+          "markdownDescription": "A cleanup's preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9's snap listing and a margin."
+        },
+        "wslCare.timeouts.runReadSeconds": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 10,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long `runs show`, `runs` and `logs` may take, in seconds."
+        },
+        "wslCare.timeouts.detachSeconds": {
+          "type": "integer",
+          "default": 690,
+          "minimum": 681,
+          "maximum": 7200,
+          "scope": "application",
+          "markdownDescription": "How long a cleanup's confirm or *Run full check now* may take to hand the run to its unit, in seconds — at least the daemon's worst case: the shown list, one `systemctl show` per queued request (up to 32), the start and one more `systemctl show`. A detach that outruns it is followed as \"outcome unknown\", never reported as failed."
+        },
+        "wslCare.timeouts.stopSeconds": {
+          "type": "integer",
+          "default": 150,
+          "minimum": 134,
+          "maximum": 3600,
+          "scope": "application",
+          "markdownDescription": "How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds."
+        },
+        "wslCare.cleanup.followPollSeconds": {
+          "type": "integer",
+          "default": 4,
+          "minimum": 2,
+          "maximum": 60,
+          "scope": "application",
+          "markdownDescription": "While a cleanup is in flight, how often the focused window asks `status`, in seconds."
+        },
+        "wslCare.cleanup.unknownDetachFollowSeconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "A detach whose outcome is unknown and named no run id: how long the panel looks for its run in `status.running` before it hands the question to the durable poll, in seconds."
+        },
+        "wslCare.cleanup.followCeilingMinutes": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 1440,
+          "scope": "application",
+          "markdownDescription": "How long a cleanup is followed before it reads \"state unknown\" with its run id, in minutes (after one last read of its record)."
+        },
+        "wslCare.cleanup.requestGraceSeconds": {
+          "type": "integer",
+          "default": 90,
+          "minimum": 70,
+          "maximum": 900,
+          "scope": "application",
+          "markdownDescription": "How long a confirm whose run id was never seen waits before it is resolved from the run history, in seconds (above the daemon's own 60 s request grace)."
+        },
+        "wslCare.cleanup.previewExpiryMinutes": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "scope": "application",
+          "markdownDescription": "A preview older than this when you confirm is taken again first, in minutes."
+        },
+        "wslCare.cleanup.journalEntries": {
+          "type": "integer",
+          "default": 32,
+          "minimum": 4,
+          "maximum": 256,
+          "scope": "application",
+          "markdownDescription": "How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped."
+        },
+        "wslCare.logs.maxRunIndex": {
+          "type": "integer",
+          "default": 9999,
+          "minimum": 100,
+          "maximum": 100000,
+          "scope": "application",
+          "markdownDescription": "The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read)."
         }
       }
     }

@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+
 import { MIN_DAEMON_FOR_ACTIONS } from '../client/handshake';
 import type { Failure, VerbOutcome } from '../client/outcome';
 import type { ProcessResult } from '../process/runner';
@@ -57,6 +59,7 @@ interface World {
 interface WorldInput {
   readonly script?: Readonly<Record<string, Scripted>>;
   readonly status?: Body | (() => VerbOutcome);
+  readonly numbers?: Numbers;
   readonly target?: typeof TARGET | Failure;
 }
 
@@ -72,7 +75,7 @@ function world(input: WorldInput = {}): World {
     },
   };
   const clock = { now: 1_000_000 };
-  const controller = new CleanupController({ client, runner: runner.runner, now: () => clock.now, sleep: (ms) => { clock.now += ms; return Promise.resolve(); } });
+  const controller = new CleanupController({ client, runner: runner.runner, now: () => clock.now, sleep: (ms) => { clock.now += ms; return Promise.resolve(); }, numbers: () => input.numbers ?? DEFAULT_NUMBERS });
 
   return { controller, runner, statusCalls: () => statusCalls, clock };
 }
@@ -378,6 +381,13 @@ test('M2: with no run id, a manual run of exactly the confirmed actions is adopt
     script: { [PREVIEW_A10]: exited(0, a10PreviewBody()), [CONFIRM_A10]: TIMED_OUT },
   });
   assert.equal((await w.controller.confirm(await heldA10(w))).kind, 'acceptedObserved');
+});
+
+test('§15q: the unknown-detach follow reads the settings — 10 s polls for 30 s are three polls', async () => {
+  const w = world({ script: { [FULL_CHECK]: TIMED_OUT }, numbers: { ...DEFAULT_NUMBERS, followPollSeconds: 10, unknownDetachFollowSeconds: 30 } });
+  const outcome = await w.controller.runFullCheck();
+  assert.ok(outcome.kind === 'outcomeUnknown', JSON.stringify(outcome));
+  assert.deepEqual(outcome.followed, { polls: 3, answered: 3 });
 });
 
 test('a detach that TIMED OUT and is never seen: outcome unknown after the bound, the polls counted, never a failure', async () => {

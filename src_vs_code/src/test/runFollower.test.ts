@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+
 import { CleanupJournal, type JournalEntry, type NewEntry } from '../cleanup/journal';
 import { FOLLOW_POLL, RunFollower, type RunResult } from '../cleanup/runFollower';
 import { NOT_A_FULL_CHECK_PREFIXES } from '../cleanup/runMatching';
@@ -76,6 +78,7 @@ class World {
   storeRunning: RunningBlock | undefined = undefined;
   answer: (request: RunRead) => ReadOutcome | Promise<ReadOutcome> = () => show('unknown');
   focused = true;
+  numbers: Numbers = DEFAULT_NUMBERS;
 
   constructor(readonly store = new MapStore()) {
     this.journal = new CleanupJournal(store, () => this.clock.now);
@@ -90,6 +93,7 @@ class World {
       wallNow: () => this.clock.now,
       timers: this.timers,
       fault: (error) => { this.faults.push(error); },
+      numbers: () => this.numbers,
     });
   }
 }
@@ -128,6 +132,16 @@ test('M6: nothing in flight — no journal entry, status.running none — arms n
   await settle();
   assert.equal(w.timers.pending(), 0);
   assert.equal(w.statusCalls, 0);
+});
+
+test('§15q: the durable poll reads its settings — a 10 s interval is armed, and a 60-minute ceiling is not reached at 31 minutes', async () => {
+  const w = new World();
+  w.numbers = { ...DEFAULT_NUMBERS, followPollSeconds: 10, followCeilingMinutes: 60 };
+  await ours(w, RUN_ENTRY);
+  w.status = statusWith(running('live'));
+  w.follower.kick();
+  assert.equal(w.timers.armed[0]?.ms, 10_000);
+  assert.equal(w.follower.poll().ceilingMs, 3_600_000);
 });
 
 test('a run this window follows: status every 4 s while it is in flight, then ONE runs show at the terminal state, shown, removed, and the poll stops', async () => {

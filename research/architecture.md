@@ -2759,6 +2759,16 @@ sequenceDiagram
 - **`src/text/format.ts`** — now the one format module for both pages: `gb`, `gib`, `percent`, `minuteOf`, `localMinuteOf`
   (`2026-10-02 02:59 (UTC+03:00)`) and `metricText` (a metric in its unit).
 
+**Every host ceiling from the daemon's worst case, every number a setting** (plan §15q N-1–N-3, the owner's rule; §15p):
+`client/worstCases.ts` derives each call's worst case from the daemon's per-command ceilings — every killed command
+counted with its 4 s drain — and what the call can do: a Docker snapshot 330 s; `doctor` 109 s; a detach 671 s (the shown
+list, ONE `systemctl show` per queued request up to 32, the start, one more `systemctl show`); a stop 124 s; a cleanup's
+preview the SUM of its rows (each Docker row its own snapshot, A9 a snap listing). `settings/numbers.ts` is the one table
+of `wslCare.timeouts.*` / `wslCare.cleanup.*` / `wslCare.logs.*` (application scope; `package.json` held equal to it), each
+ceiling's minimum its worst case + 10 s; `client/ceilings.ts` turns the settings into each call's ceiling, read at every
+call by the client, the root calls, the controller's unknown-detach follow, the durable poll, the flow's preview expiry,
+the journal's budget and the Logs page's index bound. A detach past its ceiling stays "outcome unknown", followed.
+
 **The client's third run read** (`client/verbs.ts`): `logs --from <instant> --to <instant> --json`, unprivileged, 20 s —
 never `--detail`, `--action` or `--period`. Each read's CLI verb comes from ONE explicit table, `RUN_READ_VERBS` (review K2).
 

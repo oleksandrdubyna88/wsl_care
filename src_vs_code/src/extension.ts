@@ -15,6 +15,7 @@ import { PanelProvider } from './panel/panelProvider';
 import { Poller, type Timers } from './poll/poller';
 import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSelection';
 import { CleanupController } from './root/cleanupController';
+import { readNumbers, type Numbers } from './settings/numbers';
 import { OutcomeStore } from './state/outcomeStore';
 import { StatusBar } from './statusBar/statusBar';
 import { clientRunner, type WslCareTestApi } from './testApi';
@@ -58,6 +59,11 @@ const ONE_SHOT = {
   },
 };
 
+/** Every number setting (`settings/numbers.ts`), read NOW — each user reads it at each use, so a change applies at once. */
+function numbers(): Numbers {
+  return readNumbers((key) => settings().get<unknown>(key));
+}
+
 function settings(): vscode.WorkspaceConfiguration {
   // Application-scoped (package.json): a workspace's .vscode/settings.json cannot steer either setting.
   return vscode.workspace.getConfiguration('wslCare');
@@ -95,8 +101,9 @@ function build(context: vscode.ExtensionContext): Parts {
     platform: process.platform,
     env: process.env,
     distroSetting,
+    numbers,
   });
-  const cleanup = new CleanupController({ client, runner, now: () => performance.now(), sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }) });
+  const cleanup = new CleanupController({ client, runner, now: () => performance.now(), sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }), numbers });
   const store = new OutcomeStore();
   const focus: { override: boolean | undefined } = { override: undefined };
   const poller = new Poller({
@@ -115,7 +122,7 @@ function build(context: vscode.ExtensionContext): Parts {
   const host = new CleanupHost({
     durable: context.globalState, controller: cleanup, read: (request) => client.read(request), outcomes: store,
     askStatus: () => poller.askStatus(), refreshPanel: () => poller.refreshPanel(), focused: () => focus.override ?? vscode.window.state.focused,
-    ui: cleanUiFor(testMode, cleanRecorder), timers: ONE_SHOT, now: () => performance.now(), wallNow: () => Date.now(), log: (line) => log.error(line),
+    ui: cleanUiFor(testMode, cleanRecorder), timers: ONE_SHOT, now: () => performance.now(), wallNow: () => Date.now(), log: (line) => log.error(line), numbers,
   });
 
   return { testMode, client, cleanup, install: newInstallRecorder(), cleanRecorder, host, choice, calls, store, poller, focus, log };
@@ -132,7 +139,7 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
   const { client, store, log } = parts;
 
   return new LogsPanel(context.extensionUri, {
-    durable: context.globalState, read: (request) => client.read(request), status: () => store.snapshot().status, wallNow: () => Date.now(),
+    durable: context.globalState, read: (request) => client.read(request), status: () => store.snapshot().status, wallNow: () => Date.now(), numbers,
   }, (line) => log.error(line));
 }
 

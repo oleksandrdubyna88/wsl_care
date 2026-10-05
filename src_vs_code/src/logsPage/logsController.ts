@@ -4,6 +4,7 @@ import type { DurableStore } from '../cleanup/journal';
 import { failureText } from '../failureText';
 import type { ViewLevel } from '../panel/view';
 import { isJson, list } from '../panel/read';
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { RUN_ID_SHAPE } from '../shared/shapes';
 import { parseLogsMessage, type LogsMessage } from './logsMessages';
 import type { LogsState, LogsView, ReadState } from './logsView';
@@ -43,6 +44,8 @@ export interface LogsControllerOptions {
   readonly status: () => VerbOutcome | undefined;
   readonly post: (view: LogsView) => void;
   readonly wallNow: () => number;
+  /** The number settings, read at each message (`wslCare.logs.maxRunIndex`); the defaults when absent. */
+  readonly numbers?: () => Numbers;
 }
 
 const TODAY: Period = { kind: 'today' };
@@ -166,7 +169,7 @@ export class LogsController {
 
   /** A message from the page: anything outside the closed set is dropped here, before anything starts. */
   receive(raw: unknown): Promise<void> {
-    const message = parseLogsMessage(raw);
+    const message = parseLogsMessage(raw, (this.options.numbers?.() ?? DEFAULT_NUMBERS).maxRunIndex);
 
     return message === undefined ? Promise.resolve() : this.handle(message);
   }

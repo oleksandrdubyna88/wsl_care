@@ -12,7 +12,8 @@ import { CleanupJournal, type DurableStore } from './journal';
 import { resultNotice, type Notice } from './resultText';
 import type { RowId } from './rowIds';
 import { noticeText, unlinked } from '../text/safeText';
-import { FOLLOW_POLL, RunFollower, type OneShot, type RunResult } from './runFollower';
+import { RunFollower, type OneShot, type RunResult } from './runFollower';
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 
 /**
  * The host side of the cleanup buttons in one place (E6.S3): the journal over `globalState`, the durable poll, the host
@@ -36,6 +37,8 @@ export interface CleanupHostOptions {
   readonly wallNow: () => number;
   /** One line to the extension's log (its output channel). */
   readonly log: (line: string) => void;
+  /** The number settings (`settings/numbers.ts`), read at each use; the defaults when absent. */
+  readonly numbers?: () => Numbers;
 }
 
 /** The terminal answers a window keeps for its *Last cleanup* section — the newest few, in memory (the daemon keeps the rest). */
@@ -71,15 +74,16 @@ export class CleanupHost {
 
   constructor(private readonly options: CleanupHostOptions) {
     this.ui = sanitised(options.ui);
-    this.journal = new CleanupJournal(options.durable, options.wallNow);
+    const numbers = (): Numbers => options.numbers?.() ?? DEFAULT_NUMBERS;
+    this.journal = new CleanupJournal(options.durable, options.wallNow, () => numbers().journalEntries);
     this.follower = new RunFollower({
       journal: this.journal, status: options.askStatus, read: options.read, show: (result) => this.shown(result),
       afterTerminal: options.refreshPanel, focused: options.focused, running: () => runningInStore(options.outcomes), wallNow: options.wallNow, timers: options.timers,
-      fault: (error) => this.faulted('following a cleanup', error),
+      fault: (error) => this.faulted('following a cleanup', error), numbers,
     });
     this.flow = new CleanFlow({
       controller: options.controller, journal: this.journal, follower: this.follower, ui: this.ui, now: options.now, wallNow: options.wallNow,
-      distro: () => this.distro(), changed: () => this.emit(),
+      distro: () => this.distro(), changed: () => this.emit(), numbers,
     });
     this.unsubscribe = [this.journal.onChange(() => this.emit()), options.outcomes.onChange(() => this.follower.kick())];
   }
@@ -150,7 +154,7 @@ export class CleanupHost {
   }
 
   private shown(result: RunResult): void {
-    const notice = resultNotice(result, FOLLOW_POLL.ceilingMs);
+    const notice = resultNotice(result, this.follower.poll().ceilingMs);
     this.results = [notice, ...this.results].slice(0, RESULTS_KEPT);
     void this.ui.notify(notice.level, notice.sentence);
     this.emit();

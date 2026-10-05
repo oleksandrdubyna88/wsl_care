@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+
 import { CleanFlow, PREVIEW_EXPIRY_MS, RETRY_LABEL, type CleanUi } from '../cleanup/cleanFlow';
 import { CleanupJournal, MAX_ENTRIES } from '../cleanup/journal';
 import type { Modal } from '../cleanup/modalText';
@@ -62,6 +64,7 @@ class World {
   noticeAnswer: string | undefined = undefined;
   onModal: (modal: Modal) => void = () => undefined;
   kicks = 0;
+  numbers: Numbers = DEFAULT_NUMBERS;
 
   constructor(script: Readonly<Record<string, Scripted>>, distro: () => string | undefined, status: () => Record<string, unknown>) {
     this.runner = recordingRunner({ [ROOT_CHECK]: exited(0, '0.1.0\n'), ...script });
@@ -75,7 +78,7 @@ class World {
     this.flow = new CleanFlow({
       controller, journal: this.journal, ui,
       follower: { started: (id) => { this.started.push(id); }, kick: () => { this.kicks += 1; } },
-      now: () => this.clock.now, wallNow: () => Date.parse('2026-10-05T10:00:00.000Z'), distro, changed: () => undefined,
+      now: () => this.clock.now, wallNow: () => Date.parse('2026-10-05T10:00:00.000Z'), distro, changed: () => undefined, numbers: () => this.numbers,
     });
   }
 }
@@ -134,6 +137,13 @@ test('Clean selected = ONE act call holding every selected id; the second confir
   assert.equal((await w.flow.clean(['A6Unused', 'A5', 'A4'], true)).kind, 'handedOff');
   assert.deepEqual(w.runner.argvs().filter((a) => a.includes(' act ')), [preview, confirm], 'ONE preview, ONE confirm');
   assert.match(w.modals[0]?.message ?? '', /the 3 selected rows/);
+});
+
+test('§15q: the preview\'s expiry reads its setting — at 1 minute, a preview 61 s old is taken again', async () => {
+  const w = world({ [PREVIEW_A4]: exited(0, previewText()) });
+  w.numbers = { ...DEFAULT_NUMBERS, previewExpiryMinutes: 1 };
+  w.onModal = () => { w.clock.now += 61_000; };
+  assert.equal((await w.flow.clean(['A4'], false)).kind, 'expired');
 });
 
 test('§15k #12: the preview\'s age is re-checked AFTER the last modal — expired, it is taken again and the NEW count shown before any confirm', async () => {

@@ -1,3 +1,4 @@
+import { DEFAULT_NUMBERS } from '../settings/numbers';
 import { realDay } from './period';
 
 /**
@@ -27,8 +28,8 @@ export type LogsMessage =
   | { readonly type: 'collapse'; readonly index: number }
   | { readonly type: 'rendered'; readonly blocks: number };
 
-/** The largest run index the page may name — a bound on the shape; the host checks it against the list it holds. */
-export const MAX_RUN_INDEX = 9_999;
+/** The largest run index the page may name by DEFAULT (`wslCare.logs.maxRunIndex`) — a bound on the shape; the host checks it against the list it holds. */
+export const MAX_RUN_INDEX = DEFAULT_NUMBERS.maxRunIndex;
 
 type Raw = Readonly<Record<string, unknown>>;
 
@@ -39,7 +40,7 @@ function isIndex(value: unknown, max: number): value is number {
 /** Each type's exact keys besides `type`, and the check of their values. */
 interface Shape {
   readonly keys: readonly string[];
-  readonly valid: (raw: Raw) => boolean;
+  readonly valid: (raw: Raw, maxRunIndex: number) => boolean;
 }
 
 const BARE: Shape = { keys: [], valid: () => true };
@@ -52,8 +53,8 @@ const SHAPES: { readonly [K in LogsMessage['type']]: Shape } = {
   thisRun: BARE,
   day: { keys: ['day'], valid: (raw) => realDay(raw.day) !== undefined },
   range: { keys: ['from', 'to'], valid: (raw) => realDay(raw.from) !== undefined && realDay(raw.to) !== undefined },
-  expand: { keys: ['index'], valid: (raw) => isIndex(raw.index, MAX_RUN_INDEX) },
-  collapse: { keys: ['index'], valid: (raw) => isIndex(raw.index, MAX_RUN_INDEX) },
+  expand: { keys: ['index'], valid: (raw, max) => isIndex(raw.index, max) },
+  collapse: { keys: ['index'], valid: (raw, max) => isIndex(raw.index, max) },
   rendered: { keys: ['blocks'], valid: (raw) => isIndex(raw.blocks, Number.MAX_SAFE_INTEGER) },
 };
 
@@ -74,13 +75,13 @@ function exactKeys(raw: Raw, shape: Shape): boolean {
   return keys.length === shape.keys.length && shape.keys.every((key) => keys.includes(key));
 }
 
-function checked(raw: Raw): LogsMessage | undefined {
+function checked(raw: Raw, maxRunIndex: number): LogsMessage | undefined {
   const shape = shapeOf(raw.type);
 
-  return shape !== undefined && exactKeys(raw, shape) && shape.valid(raw) ? ({ ...raw } as LogsMessage) : undefined;
+  return shape !== undefined && exactKeys(raw, shape) && shape.valid(raw, maxRunIndex) ? ({ ...raw } as LogsMessage) : undefined;
 }
 
 /** The message, or `undefined` for anything outside the closed set — which the host drops, starting nothing. */
-export function parseLogsMessage(raw: unknown): LogsMessage | undefined {
-  return isRecord(raw) ? checked(raw) : undefined;
+export function parseLogsMessage(raw: unknown, maxRunIndex: number = MAX_RUN_INDEX): LogsMessage | undefined {
+  return isRecord(raw) ? checked(raw, maxRunIndex) : undefined;
 }
