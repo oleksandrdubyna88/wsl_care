@@ -69,8 +69,30 @@ function previewedAction(value: unknown): PreviewedAction[] {
   if (!isObject(value) || id === undefined) {
     return [];
   }
+  const preview = previewOf(value);
 
-  return [{ id, status: stringOr(value.status, ''), reason: stringOr(value.reason, '') }];
+  return [{ id, status: stringOr(value.status, ''), reason: reasonOf(value, preview), ...figuresOf(preview) }];
+}
+
+/** The preview part of an action's answer, or an empty one. */
+function previewOf(action: JsonObject): JsonObject {
+  return isObject(action.preview) ? action.preview : {};
+}
+
+/** The action's own reason, or — when it gives none — its preview's (an unreadable preview says why there). */
+function reasonOf(action: JsonObject, preview: JsonObject): string {
+  return stringOr(action.reason, '') || stringOr(preview.reason, '');
+}
+
+/** What a preview says it would remove: its text, whether it could be read, the count, the bytes, the listed names. */
+function figuresOf(preview: JsonObject): Pick<PreviewedAction, 'what' | 'available' | 'count' | 'bytes' | 'items'> {
+  const items = Array.isArray(preview.items) ? preview.items.flatMap((item) => (isObject(item) && typeof item.name === 'string' ? [item.name] : [])) : [];
+
+  return { what: stringOr(preview.what, ''), available: preview.available !== false, count: countOrUndefined(preview.count), bytes: countOrUndefined(preview.bytes), items };
+}
+
+function countOrUndefined(value: unknown): number | undefined {
+  return isCount(value) ? value : undefined;
 }
 
 /** Every shown name validated, in order — or the position of the first that is not a 64-hex name. */

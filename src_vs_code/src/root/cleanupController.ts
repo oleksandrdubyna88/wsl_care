@@ -512,7 +512,7 @@ function isQueuedOrLive(running: RunningBlock): boolean {
 function freezePreview(preview: HeldPreview): HeldPreview {
   const a4 = preview.a4 === undefined ? undefined : Object.freeze({ ...preview.a4, names: Object.freeze([...preview.a4.names]) });
 
-  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map((a) => Object.freeze({ ...a }))), a4 });
+  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map((a) => Object.freeze({ ...a, items: Object.freeze([...a.items]) }))), a4 });
 }
 
 /** What a full check's run holds as its actions (`["collect"]`) — re-exported so the host's cleanup flow can name it

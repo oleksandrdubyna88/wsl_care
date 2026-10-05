@@ -72,11 +72,22 @@ export interface ShownSelection {
   readonly truncated: boolean;
 }
 
-/** One action of a preview, as far as the host reads it (the panel renders the rest from the same answer in E6.S3). */
+/**
+ * One action of a preview, as far as the host reads it — what its confirmation modal shows (E6.S3): what it removes, how
+ * many and how large, and the names of the first items the daemon listed (at most 20, its `MaxItems`). Every string is the
+ * daemon's, unsanitised here: `cleanup/modalText.ts` makes it printable and short before a native modal shows it.
+ */
 export interface PreviewedAction {
   readonly id: ActionId;
   readonly status: string;
   readonly reason: string;
+  readonly what: string;
+  /** `preview.available`: false when the daemon could not read what it would remove (`reason` then says why). */
+  readonly available: boolean;
+  readonly count: number | undefined;
+  readonly bytes: number | undefined;
+  /** The names of the items the preview listed, in its order. */
+  readonly items: readonly string[];
 }
 
 /**

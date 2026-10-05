@@ -149,8 +149,8 @@ test('a running run carries its running block; a value this build does not know 
   const running = parseRunShow({ schemaVersion: 1, runId: RUN, state: 'running', running: live.running });
   assert.equal(running.running?.runId, RUN);
   assert.deepEqual(running.running?.actions, ['A5', 'A4']);
-  const odd = parseRunShow({ schemaVersion: 1, runId: RUN, state: 'paused‮evil' });
-  assert.deepEqual(odd.state, { kind: 'unknown', label: 'unknown (paused�evil)' });
+  const odd = parseRunShow({ schemaVersion: 1, runId: RUN, state: 'paused\u202Eevil' });
+  assert.deepEqual(odd.state, { kind: 'unknown', label: 'unknown (paused\uFFFDevil)' });
   assert.equal(parseRunShow({ schemaVersion: 1, runId: 'not a run' }).runId, undefined);
 });
 
