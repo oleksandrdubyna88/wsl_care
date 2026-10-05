@@ -90,6 +90,9 @@ ROOT="${WSL_CARE_INSTALL_ROOT:-}"
 DOCTOR_SECONDS="${WSL_CARE_INSTALL_DOCTOR_SECONDS:-120}"
 # How long an upgrade waits for a live or queued run to end before it refuses (plan §15k #16: 10 minutes).
 RUN_WAIT_SECONDS="${WSL_CARE_INSTALL_RUN_WAIT_SECONDS:-600}"
+# How often the wait says it is still waiting (coai E6 code round #4), and the escape for an installed binary that cannot answer.
+PROGRESS_SECONDS="${WSL_CARE_INSTALL_PROGRESS_SECONDS:-30}"
+SKIP_RUN_WAIT="${WSL_CARE_INSTALL_SKIP_RUN_WAIT:-0}"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -645,34 +648,70 @@ unpack() {
   done
 }
 
-# The running block of the INSTALLED binary's `status --json` (E6.S0): "live", "queued" or "wedged" means a run is in flight.
-# It fails CLOSED (E6.S1 review S4): no answer — a status that timed out, crashed or printed nothing — counts as in flight too,
-# and only an answer WITHOUT a running block (a binary older than E6.S0) reads as nothing in flight. FLIGHT says which.
+# The running block of the INSTALLED binary's `status --json` (E6.S0), read without depending on its layout (coai E6 code
+# round #1): the answer is flattened and the first "state" / "runId" after the "running" key is taken. Sets STATE and RUN_ID;
+# fails (returns 1) when there is no answer at all — a status that crashed, timed out or printed nothing. An answer with no
+# running block (a binary older than E6.S0) leaves STATE empty; a running block whose state cannot be read is "unparsed".
+running_state() {
+  STATE=""
+  RUN_ID=""
+  answer=$(timeout 30 "$ROOT$BIN_PATH" status --json 2>/dev/null) || return 1
+  [ -n "$answer" ] || return 1
+  flat=$(printf '%s' "$answer" | tr -d '\r\n')
+  printf '%s' "$flat" | grep -q '"running"[[:space:]]*:[[:space:]]*{' || return 0
+  block=$(printf '%s' "$flat" | sed 's/.*"running"[[:space:]]*:[[:space:]]*{//')
+  STATE=$(printf '%s' "$block" | sed -n 's/^[^}]*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  RUN_ID=$(printf '%s' "$block" | sed -n 's/^[^}]*"runId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  [ -n "$STATE" ] || STATE="unparsed"
+  return 0
+}
+
+# Whether a run is in flight — failing CLOSED (E6.S1 review S4, coai E6 code round #1): in flight UNLESS the running block's
+# state is "none" or "dead", or there is no running block at all (an older binary); a state this installer does not know is in
+# flight too, so a new state can never silently switch the wait off. No answer counts as in flight (NO_ANSWER=1). FLIGHT says why.
 run_in_flight() {
+  NO_ANSWER=0
   [ -x "$ROOT$BIN_PATH" ] || return 1
-  if ! answer=$(timeout 30 "$ROOT$BIN_PATH" status --json 2>/dev/null) || [ -z "$answer" ]; then
+  if ! running_state; then
+    NO_ANSWER=1
     FLIGHT="the installed binary gave no status answer"
     return 0
   fi
-  printf '%s\n' "$answer" | grep -q '^  "running": {' || return 1
-  if printf '%s\n' "$answer" | grep -Eq '^    "state": "(live|queued|wedged)",?[[:space:]]*$'; then
-    FLIGHT="a wsl-care run is live, queued or wedged"
-    return 0
-  fi
-  return 1
+  case "$STATE" in
+    "" | none | dead) return 1 ;;
+  esac
+  FLIGHT="a wsl-care run is $STATE${RUN_ID:+ ($RUN_ID)}"
+  return 0
 }
 
-# An upgrade never replaces the daemon under a run in flight (plan §15k #16): it waits, bounded, and then REFUSES naming why.
+# An upgrade never replaces the daemon under a run in flight (plan §15k #16): it waits, bounded on the WALL clock (coai E6 code
+# round #8 — counting the sleeps let a hung status stretch the ceiling to over an hour), says so every PROGRESS_SECONDS (#4),
+# and then REFUSES naming why — with the manual escape when the installed binary itself cannot answer (#5).
 wait_for_runs() {
   [ "$DRY_RUN" = 1 ] && return 0
-  waited=0
+  if [ "$SKIP_RUN_WAIT" = 1 ]; then
+    warn "WSL_CARE_INSTALL_SKIP_RUN_WAIT=1: not checking for a run in flight"
+    return 0
+  fi
+  started=$(date +%s)
+  noted=""
   while run_in_flight; do
-    if [ "$waited" -ge "$RUN_WAIT_SECONDS" ]; then
-      fail upgrade-wait "$FLIGHT, still after ${waited}s (see: $BIN_PATH status); nothing was replaced - try again when it ends (a request a stopped distro left behind is swept by: sudo wsl-care collect)"
+    now=$(date +%s)
+    elapsed=$((now - started))
+    if [ "$elapsed" -ge "$RUN_WAIT_SECONDS" ]; then
+      if [ "$NO_ANSWER" = 1 ]; then
+        fail upgrade-wait "$FLIGHT for ${elapsed}s, so whether a run is in flight cannot be told; nothing was replaced. If no wsl-care run is in flight, remove $STATE_DIR/running.json and $STATE_DIR/requests/*.json by hand, or run this again with WSL_CARE_INSTALL_SKIP_RUN_WAIT=1 to skip this wait"
+      fi
+      fail upgrade-wait "$FLIGHT, still after ${elapsed}s (see: $BIN_PATH status); nothing was replaced - try again when it ends (a request a stopped distro left behind is swept by: sudo wsl-care collect)"
     fi
-    [ "$waited" = 0 ] && say "$FLIGHT; waiting (at most ${RUN_WAIT_SECONDS}s)"
+    if [ -z "$noted" ]; then
+      say "$FLIGHT; waiting (at most ${RUN_WAIT_SECONDS}s)"
+      noted=$now
+    elif [ $((now - noted)) -ge "$PROGRESS_SECONDS" ]; then
+      say "still waiting: ${STATE:-no answer}${RUN_ID:+ $RUN_ID}, ${elapsed}s of ${RUN_WAIT_SECONDS}s"
+      noted=$now
+    fi
     sleep 5
-    waited=$((waited + 5))
   done
 }
 

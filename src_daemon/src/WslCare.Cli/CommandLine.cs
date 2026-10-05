@@ -52,7 +52,9 @@ internal abstract record Request
 
     /// <summary><c>logs [--period … or --from … --to …] [--action &lt;A#&gt;] [--detail] [--json]</c> (plan §7.4): the period's
     /// totals and cleanups — the objects each removed only with <c>--detail</c> or one <c>--action</c> (gate finding #10); the
-    /// period text is checked against the clock by the verb.</summary>
+    /// period text is checked against the clock by the verb. INVARIANT (coai E6 code round #3): exactly one of the two modes is
+    /// set — <see cref="Period"/> (default <c>today</c>) with <see cref="From"/> / <see cref="To"/> empty, or the instant range
+    /// with <see cref="Period"/> EMPTY.</summary>
     internal sealed record Logs(string Period, Core.Actions.ActionId? Action, bool Json, bool Detail = false) : Request
     {
         /// <summary>The instant range's start (<c>--from</c>, §15j M7) as typed, checked by the verb; empty when not given.</summary>
@@ -62,7 +64,8 @@ internal abstract record Request
         public string To { get; init; } = string.Empty;
     }
 
-    /// <summary><c>runs [--period … or --from … --to …] [--json]</c> (plan §7.4): every run of the period.</summary>
+    /// <summary><c>runs [--period … or --from … --to …] [--json]</c> (plan §7.4): every run of the period. The same invariant as
+    /// <see cref="Logs"/>: <see cref="Period"/> is empty in the instant-range mode.</summary>
     internal sealed record Runs(string Period, bool Json) : Request
     {
         public string From { get; init; } = string.Empty;
@@ -72,7 +75,7 @@ internal abstract record Request
 
     /// <summary><c>runs show &lt;runId&gt; [--json]</c> (plan §15j M3): one run — queued, running, done with its full detail,
     /// refused, interrupted or unknown. The run id is already well formed (a <see cref="Core.Records.RunId"/>).</summary>
-    internal sealed record RunsShow(string RunId, bool Json) : Request;
+    internal sealed record RunsShow(Core.Records.RunId RunId, bool Json) : Request;
 
     /// <summary><c>act &lt;A#&gt;[,&lt;A#&gt;…] (--preview or --confirm) [--manual] [--volume &lt;name&gt;]... [--only &lt;file&gt;] [--json]</c>
     /// (plan §6): preview the actions, or run them — a destructive run from the CLI needs <c>--confirm</c> (the button passes it
@@ -105,10 +108,10 @@ internal abstract record Request
 
     /// <summary><c>act --request &lt;runId&gt;</c> (E6.S1, §15j B2): the template unit's start — run the request <c>--detach</c>
     /// wrote, under its run id. The run id is already well formed.</summary>
-    internal sealed record ActFromRequest(string RunId) : Request;
+    internal sealed record ActFromRequest(Core.Records.RunId RunId) : Request;
 
     /// <summary><c>act --stop &lt;runId&gt; [--json]</c> (E6.S1, §15j M4): stop a WEDGED run hosted by one of the units.</summary>
-    internal sealed record ActStop(string RunId, bool Json) : Request;
+    internal sealed record ActStop(Core.Records.RunId RunId, bool Json) : Request;
 }
 
 /// <summary>One thing the command line accepts: how it is spelt, what it does, how it is parsed.</summary>
@@ -300,18 +303,24 @@ internal static class CommandLine
             : new Request.Failed($"\"{BinaryName} collect\" takes {TimerFlag} or {DetachFlag} (not both) and {JsonFlag}, each once; got \"{Printable(string.Join(' ', rest))}\".");
 
     /// <summary><c>act --request &lt;runId&gt;</c>: exactly one well-formed run id.</summary>
-    private static Request ParseActFromRequest(IReadOnlyList<string> rest) => rest switch
-    {
-        [var id] when Core.Records.RunId.TryParse(id) is not null => new Request.ActFromRequest(id),
-        _ => new Request.Failed($"\"{BinaryName} act --request\" needs exactly one <runId> (yyyyMMddTHHmmssZ-<pid>); got \"{Printable(string.Join(' ', rest))}\"."),
-    };
+    private static Request ParseActFromRequest(IReadOnlyList<string> rest) =>
+        RunIdVerb("act --request", rest, takesJson: false, (runId, _) => new Request.ActFromRequest(runId));
 
     /// <summary><c>act --stop &lt;runId&gt; [--json]</c>: exactly one well-formed run id, then optionally <c>--json</c>.</summary>
-    private static Request ParseActStop(IReadOnlyList<string> rest) => rest switch
+    private static Request ParseActStop(IReadOnlyList<string> rest) =>
+        RunIdVerb("act --stop", rest, takesJson: true, (runId, json) => new Request.ActStop(runId, json));
+
+    /// <summary>The one parse of a verb that takes exactly one run id and maybe <c>--json</c> (coai E6 code round #0 / #2): the
+    /// TYPED id travels in the request — never the raw text — and a bad one is refused naming the value and the shape.</summary>
+    private static Request RunIdVerb(string verb, IReadOnlyList<string> rest, bool takesJson, Func<Core.Records.RunId, bool, Request> make) => rest switch
     {
-        [var id] when Core.Records.RunId.TryParse(id) is not null => new Request.ActStop(id, Json: false),
-        [var id, JsonFlag] when Core.Records.RunId.TryParse(id) is not null => new Request.ActStop(id, Json: true),
-        _ => new Request.Failed($"\"{BinaryName} act --stop\" needs exactly one <runId> (yyyyMMddTHHmmssZ-<pid>) and optionally {JsonFlag}; got \"{Printable(string.Join(' ', rest))}\"."),
+        [var id] when Core.Records.RunId.TryParse(id) is { } runId => make(runId, false),
+        [var id, JsonFlag] when takesJson && Core.Records.RunId.TryParse(id) is { } runId => make(runId, true),
+        [var id, ..] when !id.StartsWith('-') && Core.Records.RunId.TryParse(id) is null =>
+            new Request.Failed($"\"{BinaryName} {verb}\": \"{Printable(id)}\" is not a run id (yyyyMMddTHHmmssZ-<pid>, as runs and logs print it)."),
+        _ => new Request.Failed(takesJson
+            ? $"\"{BinaryName} {verb}\" needs exactly one <runId> and optionally {JsonFlag}: {BinaryName} {verb} <runId> [{JsonFlag}]."
+            : $"\"{BinaryName} {verb}\" needs exactly one <runId>: {BinaryName} {verb} <runId>."),
     };
 
     private static Request ParseEventsFollow(IReadOnlyList<string> rest) => rest switch
@@ -448,7 +457,7 @@ internal static class CommandLine
             var (options, _) when options.Values.TryGetValue(ActionFlag, out var id) && Core.Actions.ActionId.Find(id) is null =>
                 new Request.Failed($"\"{BinaryName} logs\": {ActionFlag} \"{Printable(id)}\" is not an action; the actions are {string.Join(", ", Core.Actions.ActionId.All.Select(a => a.Text))}."),
             var (options, _) => new Request.Logs(
-                options.Values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today),
+                PeriodOf(options),
                 options.Values.TryGetValue(ActionFlag, out var action) ? Core.Actions.ActionId.Find(action) : null,
                 options.Flags.Contains(JsonFlag),
                 options.Flags.Contains(DetailFlag))
@@ -463,12 +472,16 @@ internal static class CommandLine
         {
             (_, { } failure) => failure,
             var (options, _) when RangeFailure("runs", options) is { } failure => failure,
-            var (options, _) => new Request.Runs(options.Values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today), options.Flags.Contains(JsonFlag))
+            var (options, _) => new Request.Runs(PeriodOf(options), options.Flags.Contains(JsonFlag))
             {
                 From = options.Values.GetValueOrDefault(FromFlag, string.Empty),
                 To = options.Values.GetValueOrDefault(ToFlag, string.Empty),
             },
         };
+
+    /// <summary>The period text: empty in the instant-range mode (coai E6 code round #3), else <c>--period</c> or today.</summary>
+    private static string PeriodOf(Options options) =>
+        options.Values.ContainsKey(FromFlag) ? string.Empty : options.Values.GetValueOrDefault(PeriodFlag, Core.History.LogPeriod.Today);
 
     /// <summary>The instant range (plan §15j M7) comes whole — <c>--from</c> AND <c>--to</c> — and never beside <c>--period</c>;
     /// the instants themselves are checked by the verb (<see cref="Core.History.LogPeriod.ParseInstants"/>).</summary>
@@ -482,14 +495,8 @@ internal static class CommandLine
         };
 
     /// <summary><c>runs show &lt;runId&gt; [--json]</c>: exactly one well-formed run id, then optionally <c>--json</c>.</summary>
-    private static Request ParseRunsShow(IReadOnlyList<string> rest) => rest switch
-    {
-        [var id] when Core.Records.RunId.TryParse(id) is not null => new Request.RunsShow(id, Json: false),
-        [var id, JsonFlag] when Core.Records.RunId.TryParse(id) is not null => new Request.RunsShow(id, Json: true),
-        [var id, ..] when !id.StartsWith('-') && Core.Records.RunId.TryParse(id) is null =>
-            new Request.Failed($"\"{BinaryName} runs show\": \"{Printable(id)}\" is not a run id (yyyyMMddTHHmmssZ-<pid>, as runs and logs print it)."),
-        _ => new Request.Failed($"\"{BinaryName} runs show\" needs exactly one <runId> and optionally {JsonFlag}: {BinaryName} runs show <runId> [{JsonFlag}]."),
-    };
+    private static Request ParseRunsShow(IReadOnlyList<string> rest) =>
+        RunIdVerb("runs show", rest, takesJson: true, (runId, json) => new Request.RunsShow(runId, json));
 
     /// <summary>The options a verb was given: each valued one with its value, each switch present.</summary>
     private sealed record Options(IReadOnlyDictionary<string, string> Values, IReadOnlySet<string> Flags);

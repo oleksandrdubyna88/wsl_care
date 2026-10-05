@@ -50,8 +50,7 @@ internal static class LogsCommand
     /// 4 only when the history exists and cannot be read (the answer then comes from the running state and requests alone).</summary>
     public static int Show(Request.RunsShow request, CliHost host, TextWriter stdout, TextWriter stderr)
     {
-        var runId = Core.Records.RunId.TryParse(request.RunId) ?? throw new System.Diagnostics.UnreachableException("the parser admits a well-formed run id only");
-        var report = RunShow.Read(host.Paths, host.Files, host.Processes, host.Clock.GetUtcNow(), Core.Actions.Engine.RunningReadRetry.Default, runId);
+        var report = RunShow.Read(host.Paths, host.Files, host.Processes, host.Clock.GetUtcNow(), Core.Actions.Engine.RunningReadRetry.Default, request.RunId);
         Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.RunShowReport) : ShowText(report));
         return Exit(report.Problem, stderr);
     }

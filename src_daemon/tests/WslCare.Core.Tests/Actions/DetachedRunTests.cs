@@ -9,10 +9,12 @@ using WslCare.Core.Collect;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
+using WslCare.Core.History;
 using WslCare.Core.Json;
 using WslCare.Core.Processes;
 using WslCare.Core.Processes.Policy;
 using WslCare.Core.Records;
+using WslCare.Core.Status;
 using WslCare.Core.Systemd;
 using WslCare.TestSupport;
 
@@ -446,6 +448,92 @@ public sealed class DetachedRunTests : IDisposable
 
         seen.Should().Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         File.GetUnixFileMode(RunningState.File(_sandbox.Paths)).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead, "the unprivileged status reads it");
+    }
+
+    // ---------- the coai E6 code round ----------
+
+    /// <summary>#7: status is polled — the running block needs the OLDEST request and the count, so it reads ONE file, ordered and
+    /// counted by name, never all 32 (up to 32 MiB) on every poll.</summary>
+    [Fact]
+    public void The_running_block_reads_only_the_oldest_request_however_many_are_queued()
+    {
+        for (var pid = 1; pid <= RunRequests.MaxQueued; pid++)
+        {
+            Plant(Request(pid, TimeSpan.FromSeconds(pid)));
+        }
+
+        var counting = new CountingStateReads(_sandbox.Files);
+
+        var report = RunningReports.Read(_sandbox.Paths, counting, new FakeProcessTable(), Now, RunningReadRetry.Default, RunHistory.Read(_sandbox.Paths, _sandbox.Files));
+
+        report.State.Should().Be(RunningStateName.Queued);
+        report.Queued.Should().Be(RunRequests.MaxQueued);
+        report.RunId.Should().Be(RunId.New(Now - TimeSpan.FromSeconds(RunRequests.MaxQueued), RunRequests.MaxQueued).Text, "the oldest by name (the run id's time)");
+        counting.Reads.Should().Be(1);
+    }
+
+    [Fact]
+    public void When_the_oldest_request_cannot_be_used_the_next_one_is_read_and_no_more()
+    {
+        var bad = RunId.New(Now.AddMinutes(-9), 1);
+        var path = RunRequests.File(_sandbox.Paths, bad);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, "{ not json");
+        var next = Plant(Request(2, TimeSpan.FromMinutes(5)));
+        Plant(Request(3, TimeSpan.FromMinutes(1)));
+        var counting = new CountingStateReads(_sandbox.Files);
+
+        var report = RunningReports.Read(_sandbox.Paths, counting, new FakeProcessTable(), Now, RunningReadRetry.Default, RunHistory.Read(_sandbox.Paths, _sandbox.Files));
+
+        report.State.Should().Be(RunningStateName.Queued);
+        report.RunId.Should().Be(next.RunId.Text);
+        report.Queued.Should().Be(3);
+        counting.Reads.Should().Be(2);
+    }
+
+    /// <summary>#6: a request written in an EARLIER boot can never start (its job died with that boot) — the unprivileged status
+    /// reports it dead with the reason (it stays read-only; the next root run's sweep writes the line), and runs show answers it
+    /// interrupted, as it answers a dead holder.</summary>
+    [Fact]
+    public void A_request_of_an_earlier_boot_reports_dead_to_status_and_interrupted_to_runs_show()
+    {
+        var table = new FakeProcessTable().Booted(ThisBoot, 5_000);
+        var request = Plant(Request(30, TimeSpan.FromSeconds(5)) with { BootId = "an-earlier-boot", CreatedMonotonicMs = 4_000 });
+
+        var report = RunningReports.Read(_sandbox.Paths, _sandbox.Files, table, Now, RunningReadRetry.Default, RunHistory.Read(_sandbox.Paths, _sandbox.Files));
+        var show = RunShow.Read(_sandbox.Paths, _sandbox.Files, table, Now, RunningReadRetry.Default, request.RunId);
+
+        report.State.Should().Be(RunningStateName.Dead);
+        report.Reason.Should().Be(RunningReports.EarlierBootReason);
+        report.RunId.Should().Be(request.RunId.Text);
+        show.State.Should().Be(RunShowState.Interrupted);
+        show.Reason.Should().Be(RunningReports.EarlierBootReason);
+        Queued(request).Should().BeTrue("status and runs show never write");
+    }
+
+    [Fact]
+    public void A_request_of_this_boot_stays_queued()
+    {
+        var table = new FakeProcessTable().Booted(ThisBoot, 5_000);
+        Plant(Request(31, TimeSpan.FromSeconds(5)) with { BootId = ThisBoot, CreatedMonotonicMs = 4_000 });
+
+        RunningReports.Read(_sandbox.Paths, _sandbox.Files, table, Now, RunningReadRetry.Default, RunHistory.Read(_sandbox.Paths, _sandbox.Files))
+            .State.Should().Be(RunningStateName.Queued);
+    }
+
+    private sealed class CountingStateReads(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public int Reads { get; private set; }
+
+        public override FileReadResult ReadStateFile(string path, int maxBytes)
+        {
+            if (path.Contains(RunRequests.Folder, StringComparison.Ordinal))
+            {
+                Reads++;
+            }
+
+            return base.ReadStateFile(path, maxBytes);
+        }
     }
 
     // ---------- a detached collect ----------

@@ -31,7 +31,7 @@ internal static class ReadContractScenes
 
     /// <summary>The running states a scenario can stage against the real process table (<c>unknown</c> needs a pid the OS
     /// refuses to inspect, which an unprivileged test cannot make on cue).</summary>
-    public static IReadOnlyList<string> StagedRunningStates { get; } = ["live", "wedged", "dead", "unreadable", "queued"];
+    public static IReadOnlyList<string> StagedRunningStates { get; } = ["live", "wedged", "dead", "unreadable", "queued", "earlier-boot"];
 
     /// <summary>The local day 2026-10-02 at UTC+03:00 — it starts at 21:00Z the day before, so it crosses UTC midnight.</summary>
     public static IReadOnlyList<string> LocalDay { get; } = ["--from", "2026-10-02T00:00:00+03:00", "--to", "2026-10-03T00:00:00+03:00"];
@@ -59,6 +59,11 @@ internal static class ReadContractScenes
             case "queued":
                 var request = new RunRequestFile(1, RunId.New(Staged, 77), "act", ["A4"], RunTrigger.Manual, Staged) { Shown = SyntheticDocker.Names(3) };
                 Write(RunRequests.File(home.Paths, request.RunId), JsonSerializer.SerializeToUtf8Bytes(request, WslCareJsonContext.Default.RunRequestFile));
+                break;
+            case "earlier-boot":
+                // coai E6 code round #6: a request another boot wrote — reported dead by the real boot id the CLI reads.
+                var orphan = new RunRequestFile(1, RunId.New(Staged, 78), "act", ["A10"], RunTrigger.Manual, Staged) { BootId = "an-earlier-boot", CreatedMonotonicMs = 1_000 };
+                Write(RunRequests.File(home.Paths, orphan.RunId), JsonSerializer.SerializeToUtf8Bytes(orphan, WslCareJsonContext.Default.RunRequestFile));
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(state), state, "not a running state a scenario stages");

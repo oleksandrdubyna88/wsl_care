@@ -32,7 +32,7 @@ internal static class RunStops
             return DetachedRuns.Refuse(stderr, log, refused.Code, refused.Message);
         }
 
-        var runId = RunId.TryParse(request.RunId) ?? throw new System.Diagnostics.UnreachableException("the parser admits a well-formed run id only");
+        var runId = request.RunId;
         return RunningState.Read(host.Paths, host.Files, host.Processes, host.Clock.GetUtcNow()) switch
         {
             RunningStatus.Wedged wedged when wedged.File.RunId == runId => StopWedged(wedged.File, request.Json, host, stdout, stderr, log, cancellationToken),

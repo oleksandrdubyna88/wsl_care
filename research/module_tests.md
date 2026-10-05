@@ -1019,6 +1019,25 @@ Tests changed by the round: `A_detach_while_a_run_is_queued_…` and the budget 
 is swept now — the old test pinned the bug); the 79 test stages an unreadable `running.json` (an unusable request is swept now,
 `A_detach_records_an_unusable_request_refused_…`); the content and group-writable `--request` tests expect the `refused` line.
 
+### The coai E6 code round (2026-10-05, plan §15m)
+
+Tests written first and run against the unfixed code (Windows unless named), or — for the installer — the new tests run
+against the OLD `install.sh` (the file at `bef4ba4`) in WSL:
+
+| # | Test | Red message |
+|---|---|---|
+| 0 | `DetachedRunsTests.The_detach_shapes_parse_into_their_requests`, `ReadContractCommandTests.Runs_show_parses_…`, `ShippedFilesTests` | a type change — the tests now construct the requests with a `RunId`, which the old string-typed records do not compile against; no runtime red is possible |
+| 2 | `DetachedRunsTests.A_bad_run_id_is_refused_naming_the_value_and_the_shape_…` (3 verbs) | 2 red: *Expected failed.Message to be the same string, but they differ at index 24* (`act --request`) / *index 21* (`act --stop`); `runs show` already answered so |
+| 3 | `ReadContractCommandTests.Logs_and_runs_parse_an_instant_range_…` (it pinned `"today"`) | *Expected CommandLine.Parse(["logs", "--from", …]) to be …Request+Logs* (Period "today") |
+| 6 | `DetachedRunTests.A_request_of_an_earlier_boot_reports_dead_…` | *Expected string to be "dead" with a length of 4, but "queued" has a length of 6* |
+| 7 | `DetachedRunTests.The_running_block_reads_only_the_oldest_request_…`, `When_the_oldest_request_cannot_be_used_…` | *Expected counting.Reads to be 1, but found 32*; *Expected value to be 3, but found 2* (the count was of parsed requests, not files) |
+| 1 (WSL) | `InstallFlows.The_upgrade_wait_decides_every_running_state_golden_…` (each golden, indented and compact) | the old guard let the COMPACT `live` golden and the `unreadable` golden through (*Expected result.Exit to be 1 because the install should fail*), and its message named no state |
+| 4 (WSL) | `InstallFlows.A_long_wait_says_every_progress_period_…` | no `still waiting:` line |
+| 5 (WSL) | `InstallFlows.An_upgrade_whose_installed_binary_gives_no_status_answer_…`, `The_escape_skips_the_wait_…` | the refusal advised `sudo wsl-care collect`, naming no manual escape; the skip did not exist |
+| 8 (WSL) | `InstallFlows.The_wait_ceiling_is_measured_on_the_wall_clock_…` (a status that takes 6 s, ceiling 10 s) | *Expected (DateTime.UtcNow - started) to be less than 24s …, but found 28s, 832ms* |
+
+All green after the fixes (the new `install.sh` restored and compared byte for byte), on Windows and in WSL.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

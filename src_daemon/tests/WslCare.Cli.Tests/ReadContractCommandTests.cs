@@ -85,8 +85,8 @@ public sealed class ReadContractCommandTests : IDisposable
     [Fact]
     public void Runs_show_parses_a_run_id_and_json_and_refuses_anything_that_is_not_one()
     {
-        CommandLine.Parse(["runs", "show", "20261002T120000Z-123", "--json"]).Should().Be(new Request.RunsShow("20261002T120000Z-123", Json: true));
-        CommandLine.Parse(["runs", "show", "20261002T120000Z-123"]).Should().Be(new Request.RunsShow("20261002T120000Z-123", Json: false));
+        CommandLine.Parse(["runs", "show", "20261002T120000Z-123", "--json"]).Should().Be(new Request.RunsShow(RunId.TryParse("20261002T120000Z-123")!, Json: true));
+        CommandLine.Parse(["runs", "show", "20261002T120000Z-123"]).Should().Be(new Request.RunsShow(RunId.TryParse("20261002T120000Z-123")!, Json: false));
         CommandLine.Parse(["runs", "show"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("<runId>");
         CommandLine.Parse(["runs", "show", "../../etc/passwd"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("is not a run id");
         CommandLine.Parse(["runs", "show", "20261002T120000Z-123", "--period", "today"]).Should().BeOfType<Request.Failed>();
@@ -124,9 +124,9 @@ public sealed class ReadContractCommandTests : IDisposable
     public void Logs_and_runs_parse_an_instant_range_and_refuse_it_beside_a_period_or_half_given()
     {
         CommandLine.Parse(["logs", "--from", "2026-10-02T00:00:00+03:00", "--to", "2026-10-03T00:00:00+03:00", "--json"]).Should().Be(
-            new Request.Logs("today", null, Json: true) { From = "2026-10-02T00:00:00+03:00", To = "2026-10-03T00:00:00+03:00" });
+            new Request.Logs(string.Empty, null, Json: true) { From = "2026-10-02T00:00:00+03:00", To = "2026-10-03T00:00:00+03:00" });
         CommandLine.Parse(["runs", "--to", "2026-10-03T00:00:00Z", "--from", "2026-10-02T00:00:00Z"]).Should().Be(
-            new Request.Runs("today", Json: false) { From = "2026-10-02T00:00:00Z", To = "2026-10-03T00:00:00Z" });
+            new Request.Runs(string.Empty, Json: false) { From = "2026-10-02T00:00:00Z", To = "2026-10-03T00:00:00Z" });
         CommandLine.Parse(["logs", "--period", "today", "--from", "2026-10-02T00:00:00Z", "--to", "2026-10-03T00:00:00Z"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("not both");
         CommandLine.Parse(["logs", "--from", "2026-10-02T00:00:00Z"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("--to");
         CommandLine.Parse(["runs", "--to", "2026-10-02T00:00:00Z"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("--from");

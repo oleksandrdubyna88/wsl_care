@@ -170,7 +170,7 @@ internal static class DetachedRuns
             return Refuse(stderr, log, refused.Code, refused.Message);
         }
 
-        var runId = RunId.TryParse(request.RunId) ?? throw new System.Diagnostics.UnreachableException("the parser admits a well-formed run id only");
+        var runId = request.RunId;
         return RunRequests.Find(host.Paths, host.Files, runId) switch
         {
             null => Refuse(stderr, log, ExitCode.RequestGone, $"no request names run {runId} (swept, or a stray start): nothing to do"),
