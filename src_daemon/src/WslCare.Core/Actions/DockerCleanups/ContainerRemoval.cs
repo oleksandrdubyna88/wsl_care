@@ -58,7 +58,11 @@ public sealed class ContainerRemoval(bool testcontainers) : ICleanupAction
 
         var aliases = containers.ToDictionary(c => c.Key, c => c.Name, StringComparer.Ordinal);
         var removal = await DockerRemovals.RemoveAsync(commands, DockerCleanupCommands.ContainerRemove, containers, aliases, cancellationToken).ConfigureAwait(false);
-        var (volumesGone, volumeNote) = await VolumesGoneAsync(commands, preview, removal, cancellationToken).ConfigureAwait(false);
+        // Cut off by a signal (E6.S0 review D2): the confirmed containers count; their volumes are not asked about — nothing
+        // more runs while the run is being cancelled.
+        var (volumesGone, volumeNote) = removal.Interrupted
+            ? ((IReadOnlyList<ActionItem>)[], "cut off by a signal: the anonymous volumes of the removed containers were not asked about")
+            : await VolumesGoneAsync(commands, preview, removal, cancellationToken).ConfigureAwait(false);
         var removed = removal.Removed.Concat(volumesGone).ToList();
         return new ActionRun(
             removal.Removed.Count,
@@ -72,6 +76,7 @@ public sealed class ContainerRemoval(bool testcontainers) : ICleanupAction
         {
             NotRemoved = removal.NotRemoved,
             Notes = [volumeNote],
+            Interrupted = removal.Interrupted,
         };
     }
 

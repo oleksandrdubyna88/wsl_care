@@ -36,6 +36,16 @@ public sealed class RegularFilesTests : IDisposable
         lying.Served.Should().BeLessThanOrEqualTo(1025, "nothing past the cap is read");
     }
 
+    /// <summary>E6.S0 review S1: a state file another process trusts is the owner's alone — another uid, or a group / other
+    /// write bit, is a refusal naming which.</summary>
+    [Theory]
+    [InlineData(0u, 0x81A4, 0u, "")]
+    [InlineData(1000u, 0x81A4, 0u, "owned by uid 1000, not uid 0")]
+    [InlineData(0u, 0x81B4, 0u, "writable by group or others (mode 664)")]
+    [InlineData(0u, 0x81A6, 0u, "writable by group or others (mode 646)")]
+    public void A_state_file_is_trusted_only_when_its_owner_alone_may_write_it(uint fileOwner, int mode, uint owner, string problem) =>
+        RegularFiles.OwnershipProblem(fileOwner, mode, owner).Should().Be(problem);
+
     [Fact]
     public void A_directory_is_refused_as_not_a_regular_file()
     {

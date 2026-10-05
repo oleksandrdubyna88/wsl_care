@@ -66,6 +66,12 @@ public sealed class PhysicalFileSystem : IFileSystem
 
     public FileReadResult ReadRegularFile(string path, int maxBytes) => RegularFiles.Read(path, maxBytes);
 
+    /// <summary>The uid a state file must be owned by on Linux (<see cref="ReadStateFile"/>): root — unless a sandbox (a test,
+    /// <c>WSL_CARE_ROOT</c>) says the state there is its own process's.</summary>
+    public uint TrustedStateOwner { get; init; }
+
+    public FileReadResult ReadStateFile(string path, int maxBytes) => RegularFiles.ReadOwned(path, maxBytes, TrustedStateOwner);
+
     public bool FileExists(string path) => File.Exists(path);
 
     public bool DirectoryExists(string path) => Directory.Exists(path);
@@ -143,7 +149,7 @@ public sealed class PhysicalFileSystem : IFileSystem
     {
         try
         {
-            Directory.CreateDirectory(directory);
+            CreateDirectory(directory);
             using var probe = new FileStream(
                 Path.Combine(directory, $".wsl-care-write-probe-{Guid.NewGuid():N}"),
                 FileMode.CreateNew,
@@ -163,8 +169,8 @@ public sealed class PhysicalFileSystem : IFileSystem
     {
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(lockPath) ?? lockPath);
-            return new ExclusiveLock.Held(new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None));
+            CreateDirectory(Path.GetDirectoryName(lockPath) ?? lockPath);
+            return new ExclusiveLock.Held(new FileStream(lockPath, LockOptions()));
         }
         catch (IOException e)
         {
@@ -188,7 +194,42 @@ public sealed class PhysicalFileSystem : IFileSystem
         return WriteFileAtomically(path, Encoding.UTF8.GetBytes(text), scope);
     }
 
-    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+    /// <summary>On Linux every folder this makes is created 0755 — the umask can only tighten it, never leave it group or world
+    /// writable (E6.S1 review S1: under a root umask of 000 the state's folders came out 0777).</summary>
+    public void CreateDirectory(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(path);
+            return;
+        }
+
+        CreateEachLevel(path);
+    }
+
+    /// <summary>Every missing folder from the deepest existing ancestor down, each created with <see cref="FolderMode"/> —
+    /// <c>Directory.CreateDirectory(path, mode)</c> gives the mode to the LEAF only and makes the ancestors with the default (0777
+    /// under a umask of 000: the state directory came out world writable, E6.S1 review S1).</summary>
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static void CreateEachLevel(string path)
+    {
+        var missing = new Stack<string>();
+        for (var level = Path.GetFullPath(path); !Directory.Exists(level); level = Path.GetDirectoryName(level) ?? level)
+        {
+            missing.Push(level);
+            if (Path.GetDirectoryName(level) is null)
+            {
+                break;
+            }
+        }
+
+        while (missing.TryPop(out var level))
+        {
+            Directory.CreateDirectory(level, FolderMode);
+        }
+    }
+
+    private const UnixFileMode FolderMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
 
     /// <summary>
     /// Judge the target, build the temporary file inside the target's RESOLVED parent and judge it too,
@@ -228,6 +269,7 @@ public sealed class PhysicalFileSystem : IFileSystem
 
         WriteNew(temp.RealPath, content);
         _onAtomicWriteStep(AtomicWriteStep.TempWritten, temp.RealPath);
+        RegularFiles.MakeReadable(temp.RealPath);
         var recheck = Revalidate(path, target, scope);
         if (!recheck.IsAllowed)
         {
@@ -237,6 +279,78 @@ public sealed class PhysicalFileSystem : IFileSystem
         MoveReplacing(temp.RealPath, target.RealPath);
         return target.Verdict;
     }
+
+    public ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+    {
+        EnsureParent(path);
+        var target = Judge(FileOperation.Delete, path, string.Empty, scope);
+        var temp = target.Verdict.IsAllowed ? JudgeTemp(target, scope) : target;
+        if (!temp.Verdict.IsAllowed)
+        {
+            return new ExclusiveCreate.Refused(Reason(temp.Verdict));
+        }
+
+        WriteNew(temp.RealPath, content);
+        _onAtomicWriteStep(AtomicWriteStep.TempWritten, temp.RealPath);
+        RegularFiles.MakeReadable(temp.RealPath);
+        var recheck = Revalidate(path, target, scope);
+        if (!recheck.IsAllowed)
+        {
+            return new ExclusiveCreate.Refused(Reason(Abandon(temp.RealPath, scope, recheck)));
+        }
+
+        var created = LinkNew(temp.RealPath, target.RealPath);
+        DeleteFile(temp.RealPath, scope);
+        return created ? new ExclusiveCreate.Created() : new ExclusiveCreate.AlreadyExists();
+    }
+
+    /// <summary>A second name <paramref name="to"/> for <paramref name="from"/> only when <paramref name="to"/> does not exist —
+    /// atomically: <c>link(2)</c> on Linux, a non-replacing move on Windows. False when the name existed.</summary>
+    private static bool LinkNew(string from, string to)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                File.Move(from, to, overwrite: false);
+                return true;
+            }
+            catch (IOException) when (File.Exists(to))
+            {
+                return false;
+            }
+        }
+
+        return RegularFiles.LinkErrno(from, to) switch
+        {
+            0 => true,
+            RegularFiles.NameExists => false,
+            var errno => throw new IOException($"link {from} -> {to} failed (errno {errno})"),
+        };
+    }
+
+    /// <summary>The parent of an exclusively created file: made when missing — 0755 on Linux, whatever the umask.</summary>
+    private static void EnsureParent(string path)
+    {
+        var parent = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (parent is null || Directory.Exists(parent))
+        {
+            return;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(parent);
+            return;
+        }
+
+        // mkdir(2) masks the mode with the umask (a root shell with umask 077 made it 0700, and the unprivileged status could no
+        // longer see the queue — E6.S1, DetachFlows): the mode is SET after the folder exists.
+        CreateEachLevel(parent);
+        File.SetUnixFileMode(parent, FolderMode);
+    }
+
+    private static string Reason(DeletionVerdict verdict) => verdict is DeletionVerdict.Refused refused ? refused.Reason : "refused by the deletion policy";
 
     /// <summary>
     /// The atomic write's rename over the target. On Windows a rename onto a file another handle holds open is refused
@@ -273,7 +387,14 @@ public sealed class PhysicalFileSystem : IFileSystem
     {
         using var held = AcquireLock(path + ".lock", lockTimeout);
         var torn = EndsTorn(path);
-        using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read);
+        // Created 0644 at most (E6.S1 review S1): a root umask of 000 must not leave the history writable by every account.
+        var options = new FileStreamOptions { Mode = FileMode.Append, Access = FileAccess.Write, Share = FileShare.Read };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        }
+
+        using var stream = new FileStream(path, options);
         stream.Write(Encoding.UTF8.GetBytes((torn ? "\n" : string.Empty) + line + "\n"));
         stream.Flush(flushToDisk: true);
     }
@@ -376,9 +497,18 @@ public sealed class PhysicalFileSystem : IFileSystem
             : judged with { Verdict = DeletionPolicy.Changed(FileOperation.Delete, scope.Action, temp, judged.RealPath) };
     }
 
+    /// <summary>A new temporary file, created 0600 on Linux (the umask can only tighten it) — never group or world writable while
+    /// it is filled; the caller makes it 0644 once written (E6.S1 review S1: it was created 0666 minus the umask, then chmodded,
+    /// and under a loose root umask another account could open it for writing in between and keep the descriptor).</summary>
     private static void WriteNew(string path, ReadOnlySpan<byte> content)
     {
-        using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+
+        using var stream = new FileStream(path, options);
         stream.Write(content);
         stream.Flush(flushToDisk: true);
     }
@@ -446,6 +576,19 @@ public sealed class PhysicalFileSystem : IFileSystem
     internal static FileStream OpenForReading(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
     /// <summary>The exclusive open described on <see cref="IFileSystem.AppendLine"/>, retried until <paramref name="timeout"/>.</summary>
+    /// <summary>A lock file opened or created — created 0644 at most on Linux (E6.S1 review S1: never group or world writable
+    /// under a loose umask).</summary>
+    private static FileStreamOptions LockOptions()
+    {
+        var options = new FileStreamOptions { Mode = FileMode.OpenOrCreate, Access = FileAccess.ReadWrite, Share = FileShare.None };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        }
+
+        return options;
+    }
+
     private static FileStream AcquireLock(string lockPath, TimeSpan timeout)
     {
         var started = System.Diagnostics.Stopwatch.StartNew();
@@ -453,7 +596,7 @@ public sealed class PhysicalFileSystem : IFileSystem
         {
             try
             {
-                return new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                return new FileStream(lockPath, LockOptions());
             }
             catch (IOException) when (started.Elapsed < timeout)
             {

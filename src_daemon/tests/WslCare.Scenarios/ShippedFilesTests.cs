@@ -129,6 +129,62 @@ public sealed partial class ShippedFilesTests
         Unit("wsl-care.service")["Service"].Should().ContainKey("NoNewPrivileges", "the scan reads directives — it finds the one hardening line that IS set");
     }
 
+    /// <summary>The hardening a run gets (plan §15k #9): the same in both units that run the binary as root — a line added to
+    /// one and forgotten in the other is a red test, not a drift found on a live machine.</summary>
+    private static readonly string[] HardeningKeys = ["Nice", "IOSchedulingClass", "MemoryMax", "NoNewPrivileges", "KillMode", "TimeoutStopSec"];
+
+    private static Dictionary<string, string> Hardening(string name)
+    {
+        var service = Unit(name)["Service"];
+        return HardeningKeys.Where(service.ContainsKey).ToDictionary(k => k, k => Single(Unit(name), "Service", k), StringComparer.Ordinal);
+    }
+
+    [Fact]
+    public void The_timer_s_service_and_the_detached_run_s_template_carry_the_same_hardening()
+    {
+        Hardening("wsl-care-act@.service").Should().Equal(Hardening("wsl-care.service"), "plan §15k #9: one hardening set for every root run");
+    }
+
+    /// <summary>The companion: the equality above compares what was READ — every hardening key is there, with its value.</summary>
+    [Fact]
+    public void The_hardening_comparison_reads_every_key_it_compares()
+    {
+        Hardening("wsl-care.service").Should().Equal(new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Nice"] = "19",
+            ["IOSchedulingClass"] = "idle",
+            ["MemoryMax"] = "1G",
+            ["NoNewPrivileges"] = "yes",
+            ["KillMode"] = "control-group",
+            ["TimeoutStopSec"] = "90",
+        });
+    }
+
+    [Fact]
+    public void The_detached_run_s_template_runs_its_instance_s_request_as_the_cli_parses_it()
+    {
+        var words = ExecArgs("wsl-care-act@.service");
+        words.Should().Equal("act", "--request", "%i");
+        var request = CommandLine.Parse([.. words.Select(w => w == "%i" ? "20261004T120000Z-4321" : w)]);
+
+        request.Should().Be(new Request.ActFromRequest(Core.Records.RunId.TryParse("20261004T120000Z-4321")!), "systemd puts the instance name — the run id — where %i stands");
+        var unit = Unit("wsl-care-act@.service");
+        Single(unit, "Service", "Type").Should().Be("oneshot");
+        Single(unit, "Service", "TimeoutStartSec").Should().Be("infinity", "a confirm is never time-killed as a whole (§15f #9, §15k #0)");
+        Single(unit, "Service", "CollectMode").Should().Be("inactive-or-failed", "a finished instance never lingers in systemctl --failed (§15k #8)");
+        unit.Should().NotContainKey("Install", "started by --detach only, never enabled");
+    }
+
+    [Fact]
+    public void The_detached_run_s_template_counts_exactly_the_recorded_answers_as_success()
+    {
+        var codes = Single(Unit("wsl-care-act@.service"), "Service", "SuccessExitStatus").Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+        codes.Should().Equal(new[] { ExitCode.ActionFailed, ExitCode.Busy, ExitCode.Wedged, ExitCode.ObserveOnly, ExitCode.StateUnreadable, ExitCode.RequestGone }
+            .Select(c => ((int)c).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            "an action that failed (recorded), a refusal (recorded as refused) and a missing request (a no-op) are answers, not unit failures (§15k #8)");
+    }
+
     [Fact]
     public void The_installer_installs_exactly_the_units_this_repository_ships()
     {

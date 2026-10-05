@@ -2,6 +2,23 @@ using WslCare.Core.Files.Deletion;
 
 namespace WslCare.Core.Files;
 
+/// <summary>What creating a file EXCLUSIVELY produced (<see cref="IFileSystem.CreateFileExclusively"/>) — a closed set.</summary>
+public abstract record ExclusiveCreate
+{
+    private ExclusiveCreate()
+    {
+    }
+
+    /// <summary>The file did not exist and now holds the whole content, made visible in one step.</summary>
+    public sealed record Created : ExclusiveCreate;
+
+    /// <summary>A file of that name already existed; nothing was changed.</summary>
+    public sealed record AlreadyExists : ExclusiveCreate;
+
+    /// <summary>The deletion policy refused the path (or its temporary sibling); nothing was created.</summary>
+    public sealed record Refused(string Reason) : ExclusiveCreate;
+}
+
 /// <summary>What reading a file produced: its bytes, nothing there, or a file that is there and cannot be read.</summary>
 /// <remarks>Three facts, kept apart on purpose: a missing configuration layer is normal and silent, an
 /// unreadable one is a configuration error the daemon must report (plan §15a #1).</remarks>
@@ -156,6 +173,12 @@ public interface IFileSystem
     /// on, and a larger file is refused, whatever its length claims (<see cref="RegularFiles"/>).</summary>
     FileReadResult ReadRegularFile(string path, int maxBytes);
 
+    /// <summary>A file ROOT wrote under the state directory for another process to trust (the request files, E6.S0 review
+    /// S1): read as <see cref="ReadRegularFile"/> does, never through a symbolic link, and on Linux only when the open
+    /// descriptor's owner is the state's owner (root) and neither group nor others may write it
+    /// (<see cref="RegularFiles.ReadOwned"/>).</summary>
+    FileReadResult ReadStateFile(string path, int maxBytes);
+
     bool FileExists(string path);
 
     bool DirectoryExists(string path);
@@ -224,6 +247,15 @@ public interface IFileSystem
     /// before the rename, so a link swapped in after the decision is refused, not followed.
     /// </summary>
     DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope);
+
+    /// <summary>
+    /// Creates <paramref name="path"/> ONLY when it does not exist, with the whole content made visible in one step (plan
+    /// §15k #1, #14: a request file): the bytes go to a sibling temporary file (0644) first and are then LINKED to the final
+    /// name — <c>link(2)</c>, which fails on an existing name, on Linux; a non-replacing move on Windows — so a reader sees no
+    /// file or the whole file, and two writers can never both win. A missing parent is created (0755 on Linux). Judged by the
+    /// deletion policy like an atomic write.
+    /// </summary>
+    ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope);
 
     /// <summary>
     /// Appends one line so that two processes appending at once produce two whole lines.

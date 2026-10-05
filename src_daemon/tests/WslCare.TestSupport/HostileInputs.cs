@@ -29,6 +29,18 @@ public sealed class HostileInputs(int seed)
         "--shutdown", "--set-sparse", "prune", "worktree", "-c", "-ic", "/c", "-Command", "-EncodedCommand", "@0", "@-1", "0d", "3651d", "-1d", "30", "30 d",
     ];
 
+    /// <summary>Unit names a systemctl slot of the daemon must never take (E6.S1): only <c>wsl-care-act@&lt;runId&gt;.service</c>, and
+    /// for a stop also <c>wsl-care.service</c>. Kept apart from <see cref="HostileValues"/> so the seeded sequences of the
+    /// policy properties stay as they were.</summary>
+    public static readonly IReadOnlyList<string> HostileUnitNames =
+    [
+        "ssh.service", "docker.service", "wsl-care.timer", "wsl-care-events.service", "wsl-care-act@.service", "wsl-care-act@*.service",
+        "wsl-care-act@x.service", "wsl-care-act@../x.service", "wsl-care-act@20261004T120000Z-1", "wsl-care-act@20261004T120000Z-1.timer",
+        "wsl-care-act@20261004T120000Z-01.service", "wsl-care-act@20261004T120000Z--1.service", "wsl-care-act@20261004T120000Z-1.service;reboot",
+        "wsl-care-act@20261004T120000Z-1.service ssh.service", "wsl-care-act@20261004T120000Z-1.service\n", "WSL-CARE.SERVICE", "wsl-care.service\n",
+        "wsl-care.service ", "multi-user.target", "--all", "-a", "*", "wsl-care-act@2026-10-04T12:00:00Z-1.service", "wsl-care-act@20261304T120000Z-1.service",
+    ];
+
     /// <summary>One spelling per command of the never-list (plan §5 <i>Never</i>, §15c #3) — the generator varies them.</summary>
     public static readonly IReadOnlyList<IReadOnlyList<string>> NeverCommands =
     [
@@ -84,6 +96,7 @@ public sealed class HostileInputs(int seed)
         SlotKind.UnixSeconds => "@" + _random.NextInt64(0, 99_999_999_999).ToString(CultureInfo.InvariantCulture),
         SlotKind.Rfc3339Utc => new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(_random.NextInt64(0, 2_000_000_000)).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
         SlotKind.Hex h => new string([.. Enumerable.Range(0, h.Length).Select(_ => "0123456789abcdef"[_random.Next(16)])]),
+        SlotKind.ActUnit => SlotKind.ActUnit.Of(WslCare.Core.Records.RunId.New(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(_random.NextInt64(0, 2_000_000_000)), _random.Next(0, int.MaxValue))),
         SlotKind.UnitName u => Pick<string>(u.TypeRequired ? ["wsl-pro.service", "fstrim.timer", "a@b.service", "systemd-oomd.service", "x-y_z.socket"] : ["systemd-resolved", "wsl-pro.service", "kernel-x"]),
         SlotKind.UserName => Pick<string>(["me", "user", "_svc", "a-b", "u1000"]),
         SlotKind.SnapName => Pick<string>(["core22", "snapd", "firefox", "gnome-42-2204", "lxd", "a1"]),

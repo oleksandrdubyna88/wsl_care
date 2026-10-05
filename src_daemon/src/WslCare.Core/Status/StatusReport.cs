@@ -49,6 +49,21 @@ public sealed record StatusReport(
     /// <c>+&lt;commit&gt;</c>; <c>unknown</c> for an unstamped build). Additive (plan §15g B1, M2); absent from the sample
     /// a run detail embeds.</summary>
     public string? ProductVersion { get; init; }
+
+    /// <summary>The action ids THIS side's registry holds, in <see cref="WslCare.Core.Actions.ActionId.ExecutionOrder"/> (plan §15f #3,
+    /// §15j): the ids an <c>act</c> to this binary may name — the extension acts only on its own registry ∩ these. Additive
+    /// (E6.S0); absent from the sample a run detail embeds.</summary>
+    public IReadOnlyList<string>? Actions { get; init; }
+
+    /// <summary>What this build can do beyond the 0.1.0 verbs (<see cref="WslCare.Core.Status.Capabilities"/>) — the AUTHORITY for acting
+    /// (§15j M5). Additive (E6.S0).</summary>
+    public IReadOnlyList<string>? Capabilities { get; init; }
+
+    /// <summary>Which run is acting, queued, wedged or dead, read-only (§15j M3) — never a sweep. Additive (E6.S0).</summary>
+    public RunningReport? Running { get; init; }
+
+    /// <summary>The newest run with a cleanup (§15j M7). Additive (E6.S0).</summary>
+    public LastCleanupReport? LastCleanup { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>

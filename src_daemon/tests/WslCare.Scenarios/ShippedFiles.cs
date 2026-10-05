@@ -12,5 +12,5 @@ internal static class ShippedFiles
 
     public static string RepositoryRoot => ScenarioHome.Stamped("WslCare.RepositoryRoot");
 
-    public static IReadOnlyList<string> UnitNames => ["wsl-care.service", "wsl-care.timer", "wsl-care-events.service"];
+    public static IReadOnlyList<string> UnitNames => ["wsl-care.service", "wsl-care.timer", "wsl-care-events.service", "wsl-care-act@.service"];
 }

@@ -166,9 +166,20 @@ age (`basis.source: "fullRun"`), or are `unknown` with the reason when no full r
 reaches them at the next full run. The text form prints one line: `verdicts: 1 critical (memory.fragmentation), 2 warn
 (…), 12 ok, 8 unknown`. And `productVersion` names the build exactly as `--version` prints it.
 
-**Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts` and
-`productVersion`) never bumps it, so a reader ignores keys it does not know and treats an absent newer field as "update
-the daemon to see this".
+**What runs, what this build can do, the last cleanup.** `status --json` also answers `actions` (the action ids this
+binary holds for its own side, in the order a run takes them), `capabilities` (what this build can do beyond the first
+release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange` — what a client acts on, never the
+version number), `running` — `none`, `queued` (a run accepted and not started yet), `live` (acting: the run, its actions,
+the one it is on, its pid and how old its heartbeat is), `wedged` (alive, heartbeat older than 30 s — nothing is killed),
+`dead` (its process is gone and no run has swept it yet — status only REPORTS it; the next root run records it
+`interrupted`), `unknown` (the pid cannot be inspected) or `unreadable` — and `lastCleanup` (the newest run that removed
+or freed something: run id, start, trigger, objects removed, bytes freed; `available: false` with the reason before the
+first). `status` stays read-only and needs no root for any of it. The text form adds a `running:` and a `last cleanup:` line.
+
+**Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts`,
+`productVersion`, `actions`, `capabilities`, `running` and `lastCleanup`) never bumps it, so a reader ignores keys it does
+not know, treats an absent newer field as "update the daemon to see this", and reads an enum value it does not know as
+unknown, never as a crash.
 
 ## Preview
 
@@ -227,6 +238,8 @@ and the actions in the SAME run: one detail (with a `timerPass` part listing eve
 history line. A `collect` you start yourself, or the panel's *Run full check now*, measures only; a button's `act` is its
 own run. An action that fails there is recorded and logged; the exit code stays 0.
 
+`sudo wsl-care collect --detach [--json]` hands the same run to systemd and answers at once — see *Detached runs* below.
+
 Exit codes: 0 recorded (or read-only) · 1 the run could not be recorded (the reason on stderr) · 2 usage · 75 another
 run holds the lock · 70 a defect.
 
@@ -267,6 +280,13 @@ sudo wsl-care act A5,A4 --confirm --json       # do it (in the fixed order A5 ->
 sudo wsl-care act A4 --confirm --manual --only shown.txt --json   # the panel's button: only the volumes its preview SHOWED
 wsl-care act A10 --preview                     # as yourself: refused whole ("needs root", exit 77) - nothing read, nothing written
 ```
+
+Every answer names `productVersion`. A4's preview answer carries `shown` — EVERY volume name it selected (the 20
+`items` are for reading; `shown` is what a button sends back, at most 10 000 — past that `shownTruncated: true`, and only
+the shown names go). `--manual` (the panel) and `--timer` (the systemd timer) are exclusive: both together are refused. A
+confirm cut off by a signal — Ctrl+C, SIGTERM, or SIGHUP when the terminal or the `wsl.exe` that started it goes away —
+kills its child and records itself `interrupted` naming the signal: the action it was on is `interrupted` (with what Docker
+had already confirmed removed, for A4 / A5), the actions it never reached `interrupted / not run`; it exits 130.
 
 Every `act` runs as **root** (the timer is root; the panel's button reaches root through an argv allowlist). Started by
 anyone else it refuses the whole run before the lock or any state is touched. A destructive run from the CLI needs
@@ -319,6 +339,43 @@ with a clean environment.
 Exit codes: 0 previewed / recorded · 1 not recorded · 2 usage (unknown or unbuilt action, the other side's action) ·
 3 an action failed · 75 busy · 76 wedged · 77 needs root · 78 observe-only (an invalid configuration layer) · 130 interrupted.
 
+### Detached runs — what the panel's buttons use
+
+```bash
+sudo wsl-care act A10 --confirm --manual --detach --json          # answers {"result":"accepted","runId":…,"unit":"wsl-care-act@<runId>.service"} at once
+printf '%s\n' <64-hex>… | sudo wsl-care act A4 --confirm --manual --detach --only - --json   # A4's shown list on stdin
+sudo wsl-care collect --detach --json                              # the full run, the same way
+wsl-care runs show <runId> --json                                  # follow it: queued → running → done / refused / interrupted
+sudo wsl-care act --stop <runId> --json                            # a WEDGED run only: systemd stops its unit
+```
+
+A confirm started from a window that may close (a VS Code reload) must outlive it, so `--detach` never runs the work
+itself: it writes the REQUEST `/var/lib/wsl-care/requests/<runId>.json` (0644, created exclusively — the persisted
+*queued* state `status` and `runs show` read) and runs `systemctl start --no-block wsl-care-act@<runId>.service`, the
+template unit this install ships, whose `ExecStart` is `wsl-care act --request <runId>`. That run re-reads the request
+through the same hardened reader `status` uses (root's, no group / other write, at most 1 MiB, validated), records
+itself under THAT run id, and removes the request once its `running.json` stands. When another run holds the lock it is
+recorded `refused` with the reason — never a silent busy. Every root run (`collect`, `act --request`) first sweeps the
+request folder — and so does every `--detach`, under the lock: a request whose run has a history line only loses its file; one
+older than 60 s on the monotonic clock (or written in an earlier boot) whose unit has no queued job and is not active is
+recorded `interrupted` and goes; one that cannot be used is recorded `refused` and goes. `--only -` reads the shown list from stdin under the
+same 1 MiB cap and a 10 s ceiling for the end of input. There is no synchronous fallback: without systemd a detach is
+refused (69). At most 32 requests wait at once (73). `act --stop` asks systemd to stop a wedged run's unit — only when
+its process lives in `wsl-care.service` or its own `wsl-care-act@<runId>.service`; SIGTERM lets it record itself
+`interrupted`, and one that is still there after 90 s is killed and recorded by the next root run's sweep with that reason.
+
+A request an earlier boot left behind is reported `dead` by `status` (`interrupted` by `runs show`) until the next root run
+records it. An upgrade waits at most 10 minutes for a run in flight, saying so every 30 s; when the installed binary cannot
+answer at all, `WSL_CARE_INSTALL_SKIP_RUN_WAIT=1` skips that wait.
+
+A start that times out asks the unit: accepted when systemd holds the job, `result: unknown` (exit 0, the request kept) when
+its state cannot be read. Nothing the daemon writes is group or world writable, whatever the umask.
+
+Exit codes of the detached verbs: 0 accepted / unknown / recorded / stopping · 2 usage, or nothing to stop · 69 no systemd · 71 the
+unit would not start (its request removed) · 73 the request budget is full · 75 / 76 / 79 busy / wedged / state unreadable
+(at `--request` time RECORDED as `refused`, and a success for the unit) · 77 needs root · 80 no request names the run
+(a no-op).
+
 ## Logs and runs — what the runs of a period did
 
 ```bash
@@ -326,6 +383,8 @@ wsl-care logs --json                              # today (UTC): freed per actio
 wsl-care logs --period yesterday
 wsl-care logs --period 2026-10-01 --action A4     # one UTC day, one action, every volume it removed
 wsl-care runs --period 2026-09-28..2026-10-02 --json   # every run of a range: trigger, outcome, dry run, actions, freed
+wsl-care logs --from 2026-10-02T00:00:00+03:00 --to 2026-10-03T00:00:00+03:00 --json   # a LOCAL day, as two instants
+wsl-care runs show 20261002T040000Z-1234 --json     # one run: its state, every object removed and not, commands and exits
 ```
 
 Read-only: anyone may ask (no lock, nothing written). A run belongs to the UTC day it started. `logs` answers the Logs
@@ -334,8 +393,17 @@ dry runs apart with what they would have freed, the runs by trigger (timer, butt
 most and the least, each recorded figure's maximum and minimum with its time (`MemAvailable`, page cache, swap, `/`,
 Docker reclaimable, container starts) and, per cleanup, every object it removed — and those it did not, with why — from
 the run's detail file. Memory actions (A1, A2, A3, A11) free no disk and count no bytes. Periods: `today` (the
-default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (at most 366 days). Exit codes: 0 answered (an empty period
-too) · 2 a period that is none of these · 4 the history exists but cannot be read.
+default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (UTC days, at most 366) — or `--from <instant> --to
+<instant>`, two RFC 3339 instants with their offset spelt out (`Z` or `+03:00`; a bare date or a time without an offset is
+refused, never read in this machine's zone), half-open (from inclusive, to exclusive), at most 366 days: how a client asks
+for a LOCAL day, which crosses UTC midnight. `runs` lines carry the `metrics` their history line recorded (a full run's
+`MemAvailable`, page cache, swap, `/`, Docker reclaimable, container starts; none for an `act`).
+
+`runs show <runId>` answers one run: `done` (with its history line and its detail — every action, every object it removed
+and did not remove, every command it ran and its exit), `refused`, `interrupted` (also a run whose process died before
+anything recorded it), `running` (its `running` block), `queued`, or `unknown` (nothing names it — never existed here, or
+older than the 90-day retention). Read-only like `logs`. Exit codes: 0 answered (an empty period, an unknown run too) ·
+2 a period or a run id that is none of these · 4 the history exists but cannot be read.
 
 ## Extension (preview)
 

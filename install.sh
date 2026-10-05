@@ -73,7 +73,7 @@ readonly BIN_DIR="/opt/wsl-care/bin"
 readonly BIN_PATH="$BIN_DIR/wsl-care"
 readonly LINK_PATH="/usr/local/bin/wsl-care"
 readonly UNIT_DIR="/etc/systemd/system"
-readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service"
+readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service wsl-care-act@.service"
 readonly CONFIG_DIR="/etc/wsl-care"
 readonly CONFIG_FILE="$CONFIG_DIR/config.json"
 readonly STATE_DIR="/var/lib/wsl-care"
@@ -88,6 +88,11 @@ readonly SYSSTAT_DEFAULT="/etc/default/sysstat"
 ROOT="${WSL_CARE_INSTALL_ROOT:-}"
 # How long the final `doctor --json` may take to turn healthy (the follower's first marker, a first sample).
 DOCTOR_SECONDS="${WSL_CARE_INSTALL_DOCTOR_SECONDS:-120}"
+# How long an upgrade waits for a live or queued run to end before it refuses (plan §15k #16: 10 minutes).
+RUN_WAIT_SECONDS="${WSL_CARE_INSTALL_RUN_WAIT_SECONDS:-600}"
+# How often the wait says it is still waiting (coai E6 code round #4), and the escape for an installed binary that cannot answer.
+PROGRESS_SECONDS="${WSL_CARE_INSTALL_PROGRESS_SECONDS:-30}"
+SKIP_RUN_WAIT="${WSL_CARE_INSTALL_SKIP_RUN_WAIT:-0}"
 
 export DEBIAN_FRONTEND=noninteractive
 
@@ -396,6 +401,11 @@ uninstall() {
   if [ -f "$ROOT$UNIT_DIR/wsl-care.service" ]; then
     run systemctl stop wsl-care.service || fail units "systemctl stop wsl-care.service failed"
   fi
+  if [ -f "$ROOT$UNIT_DIR/wsl-care-act@.service" ]; then
+    # Every detached run still loaded (E6.S1): its unit file is about to go. systemctl matches the pattern against loaded
+    # units only, so none loaded is no error. Quoted: the pattern is systemctl's, never the shell's.
+    run systemctl stop 'wsl-care-act@*.service' || fail units "systemctl stop wsl-care-act@*.service failed"
+  fi
   for unit in $UNITS; do
     if [ -f "$ROOT$UNIT_DIR/$unit" ]; then run rm -f -- "$ROOT$UNIT_DIR/$unit"; fi
   done
@@ -407,6 +417,8 @@ uninstall() {
     warn "left $LINK_PATH alone: it is not the link this installer makes"
   fi
   if [ -e "$ROOT$BIN_PATH" ]; then run rm -f -- "$ROOT$BIN_PATH"; fi
+  # A .new an interrupted install left beside it (E6.S1 review).
+  if [ -e "$ROOT$BIN_PATH.new" ] || [ -h "$ROOT$BIN_PATH.new" ]; then run rm -f -- "$ROOT$BIN_PATH.new"; fi
   for dir in "$BIN_DIR" /opt/wsl-care; do
     if [ -d "$ROOT$dir" ] && [ -z "$(ls -A "$ROOT$dir")" ]; then run rmdir -- "$ROOT$dir"; fi
   done
@@ -631,17 +643,91 @@ unpack() {
   mkdir "$WORK/x"
   tar -xzf "$WORK/$ARCHIVE" -C "$WORK/x" --no-same-owner --no-same-permissions || fail unpack "could not extract $ARCHIVE"
   SRC="$WORK/x/$NAME"
-  for file in wsl-care systemd/wsl-care.service systemd/wsl-care.timer systemd/wsl-care-events.service config/machine.json; do
+  for file in wsl-care systemd/wsl-care.service systemd/wsl-care.timer systemd/wsl-care-events.service systemd/wsl-care-act@.service config/machine.json; do
     [ -f "$SRC/$file" ] && [ ! -h "$SRC/$file" ] || fail unpack "$ARCHIVE has no $NAME/$file"
+  done
+}
+
+# The running block of the INSTALLED binary's `status --json` (E6.S0), read without depending on its layout (coai E6 code
+# round #1): the answer is flattened and the first "state" / "runId" after the "running" key is taken. Sets STATE and RUN_ID;
+# fails (returns 1) when there is no answer at all — a status that crashed, timed out or printed nothing. An answer with no
+# running block (a binary older than E6.S0) leaves STATE empty; a running block whose state cannot be read is "unparsed".
+running_state() {
+  STATE=""
+  RUN_ID=""
+  answer=$(timeout 30 "$ROOT$BIN_PATH" status --json 2>/dev/null) || return 1
+  [ -n "$answer" ] || return 1
+  flat=$(printf '%s' "$answer" | tr -d '\r\n')
+  printf '%s' "$flat" | grep -q '"running"[[:space:]]*:[[:space:]]*{' || return 0
+  block=$(printf '%s' "$flat" | sed 's/.*"running"[[:space:]]*:[[:space:]]*{//')
+  STATE=$(printf '%s' "$block" | sed -n 's/^[^}]*"state"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  RUN_ID=$(printf '%s' "$block" | sed -n 's/^[^}]*"runId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+  [ -n "$STATE" ] || STATE="unparsed"
+  return 0
+}
+
+# Whether a run is in flight — failing CLOSED (E6.S1 review S4, coai E6 code round #1): in flight UNLESS the running block's
+# state is "none" or "dead", or there is no running block at all (an older binary); a state this installer does not know is in
+# flight too, so a new state can never silently switch the wait off. No answer counts as in flight (NO_ANSWER=1). FLIGHT says why.
+run_in_flight() {
+  NO_ANSWER=0
+  [ -x "$ROOT$BIN_PATH" ] || return 1
+  if ! running_state; then
+    NO_ANSWER=1
+    FLIGHT="the installed binary gave no status answer"
+    return 0
+  fi
+  case "$STATE" in
+    "" | none | dead) return 1 ;;
+  esac
+  FLIGHT="a wsl-care run is $STATE${RUN_ID:+ ($RUN_ID)}"
+  return 0
+}
+
+# An upgrade never replaces the daemon under a run in flight (plan §15k #16): it waits, bounded on the WALL clock (coai E6 code
+# round #8 — counting the sleeps let a hung status stretch the ceiling to over an hour), says so every PROGRESS_SECONDS (#4),
+# and then REFUSES naming why — with the manual escape when the installed binary itself cannot answer (#5).
+wait_for_runs() {
+  [ "$DRY_RUN" = 1 ] && return 0
+  if [ "$SKIP_RUN_WAIT" = 1 ]; then
+    warn "WSL_CARE_INSTALL_SKIP_RUN_WAIT=1: not checking for a run in flight"
+    return 0
+  fi
+  started=$(date +%s)
+  noted=""
+  while run_in_flight; do
+    now=$(date +%s)
+    elapsed=$((now - started))
+    if [ "$elapsed" -ge "$RUN_WAIT_SECONDS" ]; then
+      if [ "$NO_ANSWER" = 1 ]; then
+        fail upgrade-wait "$FLIGHT for ${elapsed}s, so whether a run is in flight cannot be told; nothing was replaced. If no wsl-care run is in flight, remove $STATE_DIR/running.json and $STATE_DIR/requests/*.json by hand, or run this again with WSL_CARE_INSTALL_SKIP_RUN_WAIT=1 to skip this wait"
+      fi
+      fail upgrade-wait "$FLIGHT, still after ${elapsed}s (see: $BIN_PATH status); nothing was replaced - try again when it ends (a request a stopped distro left behind is swept by: sudo wsl-care collect)"
+    fi
+    if [ -z "$noted" ]; then
+      say "$FLIGHT; waiting (at most ${RUN_WAIT_SECONDS}s)"
+      noted=$now
+    elif [ $((now - noted)) -ge "$PROGRESS_SECONDS" ]; then
+      say "still waiting: ${STATE:-no answer}${RUN_ID:+ $RUN_ID}, ${elapsed}s of ${RUN_WAIT_SECONDS}s"
+      noted=$now
+    fi
+    sleep 5
   done
 }
 
 install_files() {
   UPGRADE=0
   if [ -e "$ROOT$BIN_PATH" ]; then UPGRADE=1; fi
+  if [ "$UPGRADE" = 1 ]; then wait_for_runs; fi
   run install -d -m 0755 "$ROOT/opt/wsl-care" "$ROOT$BIN_DIR" "$ROOT/usr/local/bin" \
     || fail install-binary "could not create $BIN_DIR"
-  run install -m 0755 "$SRC/wsl-care" "$ROOT$BIN_PATH" || fail install-binary "could not install $BIN_PATH"
+  # Never over the running binary (plan §15k #16): a run in flight keeps its file, a new one starts the new file — the binary
+  # goes in beside it and is RENAMED over it, one atomic step.
+  run install -m 0755 "$SRC/wsl-care" "$ROOT$BIN_PATH.new" || fail install-binary "could not install $BIN_PATH.new"
+  if ! run mv -f "$ROOT$BIN_PATH.new" "$ROOT$BIN_PATH"; then
+    rm -f -- "$ROOT$BIN_PATH.new"
+    fail install-binary "could not rename $BIN_PATH.new over $BIN_PATH"
+  fi
   if [ ! -h "$ROOT$LINK_PATH" ]; then
     run ln -s "$BIN_PATH" "$ROOT$LINK_PATH" || fail install-binary "could not link $LINK_PATH"
   fi

@@ -12,6 +12,7 @@ namespace WslCare.TestSupport;
 public sealed partial class RunningChild : IDisposable
 {
     private const int SigTerm = 15;
+    private const int SigHup = 1;
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
     private readonly Process _process;
@@ -82,16 +83,22 @@ public sealed partial class RunningChild : IDisposable
     }
 
     /// <summary>SIGTERM to this child's pid — what systemd sends on <c>systemctl stop</c>. Linux only.</summary>
-    public void Terminate()
+    public void Terminate() => Signal(SigTerm, "SIGTERM");
+
+    /// <summary>SIGHUP to this child's pid — what a terminal (or the <c>wsl.exe</c> relay) that went away delivers (plan §15j
+    /// B2). Linux only.</summary>
+    public void Hangup() => Signal(SigHup, "SIGHUP");
+
+    private void Signal(int signal, string name)
     {
         if (!OperatingSystem.IsLinux())
         {
-            throw new PlatformNotSupportedException("SIGTERM is sent on Linux; the Windows binary is stopped otherwise");
+            throw new PlatformNotSupportedException($"{name} is sent on Linux; the Windows binary is stopped otherwise");
         }
 
-        if (Kill(_process.Id, SigTerm) != 0)
+        if (Kill(_process.Id, signal) != 0)
         {
-            throw new InvalidOperationException($"kill({_process.Id}, SIGTERM) failed with errno {Marshal.GetLastPInvokeError()}");
+            throw new InvalidOperationException($"kill({_process.Id}, {name}) failed with errno {Marshal.GetLastPInvokeError()}");
         }
     }
 

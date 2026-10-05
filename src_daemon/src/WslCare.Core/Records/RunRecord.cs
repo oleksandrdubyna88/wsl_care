@@ -38,6 +38,12 @@ public enum RunOutcome
     /// <summary>The configuration had an invalid layer, so the run collected and reported but did not act (plan §15a #1).</summary>
     [JsonStringEnumMemberName("observeOnly")]
     ObserveOnly,
+
+    /// <summary>A detached run that could not start (plan §15j B2): its <c>act --request</c> met the lock or a wedged run and
+    /// wrote this TERMINAL line with the reason instead of a silent busy. Written by E6.S1; read since E6.S0 (<c>runs show</c>
+    /// answers <c>refused</c>), so a history that carries one never makes a line unparseable.</summary>
+    [JsonStringEnumMemberName("refused")]
+    Refused,
 }
 
 /// <summary>A run's identity: the UTC second it started and the process that ran it (plan §6).</summary>
@@ -62,9 +68,15 @@ public sealed record RunId
         var dash = text.IndexOf('-');
         var wellFormed = dash > 0
             && DateTime.TryParseExact(text[..dash], StampFormat, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _)
-            && int.TryParse(text[(dash + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out _);
+            && CanonicalPid(text[(dash + 1)..]);
         return wellFormed ? new RunId(text) : null;
     }
+
+    /// <summary>A pid as <see cref="New"/> spells it — digits only, no leading zero — so one run has ONE id (E6.S0 review S4:
+    /// <c>…-0123</c> and <c>…-123</c> would name the same process twice; a real pid never has a leading zero).</summary>
+    private static bool CanonicalPid(string pid) =>
+        int.TryParse(pid, NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+        && pid == number.ToString(CultureInfo.InvariantCulture);
 
     public override string ToString() => Text;
 }

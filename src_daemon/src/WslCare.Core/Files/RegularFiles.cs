@@ -60,6 +60,98 @@ public static partial class RegularFiles
     }
 
     /// <summary>
+    /// A file root wrote under the state directory and another process will trust (E6.S0 review S1: the request files):
+    /// everything <see cref="Read"/> guarantees, and — not a symbolic link (<c>O_NOFOLLOW</c>; on Windows a reparse point is
+    /// refused) — and, on Linux, owned by <paramref name="owner"/> (uid 0 on an installed machine) with no group or other
+    /// write bit, all asked of the OPEN descriptor in one <c>statx</c>, so nothing can be swapped between the check and the read.
+    /// </summary>
+    public static FileReadResult ReadOwned(string path, int maxBytes, uint owner)
+    {
+        try
+        {
+            return OperatingSystem.IsLinux() ? ReadLinuxOwned(path, maxBytes, owner) : ReadOtherNoLink(path, maxBytes);
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return new FileReadResult.Missing();
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return new FileReadResult.Unreadable(e.Message);
+        }
+    }
+
+    /// <summary>This process's effective uid on Linux (what a sandboxed test trusts as the state's owner); 0 elsewhere.</summary>
+    public static uint EffectiveUid() => OperatingSystem.IsLinux() ? Native.GetEffectiveUid() : 0;
+
+    /// <summary>Linux only: <c>link(2)</c> of <paramref name="from"/> to <paramref name="to"/> — 0, or the errno (17 = the name
+    /// exists). Used by <see cref="PhysicalFileSystem.CreateFileExclusively"/> only.</summary>
+    internal static int LinkErrno(string from, string to) => Native.Link(from, to) == 0 ? 0 : Marshal.GetLastPInvokeError();
+
+    /// <summary><c>EEXIST</c>.</summary>
+    internal const int NameExists = Native.Exists;
+
+    /// <summary>0644 on Linux — readable by the unprivileged status — whatever the umask; nothing on Windows.</summary>
+    internal static void MakeReadable(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+        }
+    }
+
+    /// <summary>Why a state file with this owner and mode may not be trusted; empty when it may (pure, so it is a unit test).</summary>
+    public static string OwnershipProblem(uint fileOwner, int mode, uint owner) =>
+        fileOwner != owner ? $"owned by uid {fileOwner}, not uid {owner}"
+        : (mode & Native.GroupOrOtherWrite) != 0 ? $"writable by group or others (mode {Convert.ToString(mode & 0xFFF, 8)})"
+        : string.Empty;
+
+    private static FileReadResult ReadOtherNoLink(string path, int maxBytes) =>
+        File.Exists(path) && File.GetAttributes(path).HasFlag(FileAttributes.ReparsePoint)
+            ? new FileReadResult.Unreadable("a symbolic link or another reparse point, never followed")
+            : ReadOther(path, maxBytes);
+
+    [SupportedOSPlatform("linux")]
+    private static FileReadResult ReadLinuxOwned(string path, int maxBytes, uint owner)
+    {
+        var fd = Native.Open(path, Native.OpenReadOnlyNonBlocking | Native.NoFollow, 0);
+        if (fd < 0)
+        {
+            return OwnedErrno(Marshal.GetLastPInvokeError(), path);
+        }
+
+        using var handle = new SafeFileHandle(fd, ownsHandle: true);
+        if (Judged(fd, owner) is { Length: > 0 } problem)
+        {
+            return new FileReadResult.Unreadable(problem);
+        }
+
+        using var stream = new FileStream(handle, FileAccess.Read, bufferSize: 0);
+        return Capped(stream, maxBytes);
+    }
+
+    /// <summary>The descriptor's type, owner and mode judged in one <c>statx</c>; empty when the file may be read.</summary>
+    [SupportedOSPlatform("linux")]
+    private static string Judged(int fd, uint owner)
+    {
+        var buffer = new byte[Native.StatxSize];
+        if (Native.Statx(fd, string.Empty, Native.AtEmptyPath, Native.StatxType | Native.StatxMode | Native.StatxUid, buffer) != 0)
+        {
+            return $"its type and owner could not be read (errno {Marshal.GetLastPInvokeError()})";
+        }
+
+        var mode = BitConverter.ToUInt16(buffer, Native.StatxModeOffset);
+        var type = mode & Native.TypeMask;
+        return type != Native.TypeRegular ? $"{NotRegular} ({Describe(type)})" : OwnershipProblem(BitConverter.ToUInt32(buffer, Native.StatxUidOffset), mode, owner);
+    }
+
+    private static FileReadResult OwnedErrno(int errno, string path) => errno switch
+    {
+        Native.TooManyLinks => new FileReadResult.Unreadable("a symbolic link, never followed"),
+        _ => Errno(errno, path),
+    };
+
+    /// <summary>
     /// The status of <paramref name="path"/> itself — a final symbolic link is described, never followed
     /// (<c>statx(AT_FDCWD, path, AT_SYMLINK_NOFOLLOW)</c>) — or why not; a missing path says so in those words.
     /// </summary>
@@ -213,7 +305,30 @@ public static partial class RegularFiles
         public const int NoEntry = 2;
         public const int NotADirectory = 20;
 
+        /// <summary><c>STATX_MODE</c> and <c>STATX_UID</c>; <c>stx_uid</c> is the u32 at offset 20.</summary>
+        public const uint StatxMode = 2;
+        public const uint StatxUid = 8;
+        public const int StatxUidOffset = 20;
+
+        /// <summary><c>S_IWGRP | S_IWOTH</c>.</summary>
+        public const int GroupOrOtherWrite = 0x12;
+
+        /// <summary><c>ELOOP</c>: what <c>O_NOFOLLOW</c> answers for a symbolic link.</summary>
+        public const int TooManyLinks = 40;
+
         private const string Libc = "libc.so.6";
+
+        /// <summary><c>O_NOFOLLOW</c> differs by architecture: 0x20000 on x86-64, 0x8000 on arm64 (its own uapi fcntl.h).</summary>
+        public static int NoFollow => RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? 0x8000 : 0x20000;
+
+        [LibraryImport(Libc, EntryPoint = "geteuid")]
+        internal static partial uint GetEffectiveUid();
+
+        /// <summary><c>EEXIST</c>.</summary>
+        public const int Exists = 17;
+
+        [LibraryImport(Libc, EntryPoint = "link", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int Link(string from, string to);
 
         [LibraryImport(Libc, EntryPoint = "open", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
         internal static partial int Open(string path, int flags, int mode);

@@ -9,6 +9,18 @@ public sealed record ActRequest(IReadOnlyList<ActionId> Ids, RunTrigger Trigger,
     /// <summary>The volumes the panel SHOWED and the person confirmed (<c>--volume</c> / <c>--only</c>): A4 removes only
     /// those that are still candidates; none given for the timer and a terminal (E3.S2).</summary>
     public ShownList ShownVolumes { get; init; } = ShownList.None;
+
+    /// <summary>The run id <c>--detach</c> allocated and wrote into the request (E6.S1): the run records itself under it, so the
+    /// panel can follow it from the moment it was accepted. <c>null</c>: a new id from this run's start and pid.</summary>
+    public RunId? RunId { get; init; }
+
+    /// <summary>Called once this run's <c>running.json</c> is written — <c>act --request</c> removes its request THEN, so a reader
+    /// moving request → running.json → history never finds neither (E6.S0 review D4).</summary>
+    public Action OnRunningWritten { get; init; } = static () => { };
+
+    /// <summary>Housekeeping run UNDER the lock, after the running.json sweep and the reconcile — <c>act --request</c> sweeps the
+    /// request folder here (plan §15k #15); its notes join the run's. Nothing by default.</summary>
+    public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>> UnderLock { get; init; } = static (_, _) => Task.FromResult<IReadOnlyList<string>>([]);
 }
 
 /// <summary>What became of one action in a run — the closed set of <see cref="ActionStatus"/> names.</summary>
@@ -34,10 +46,25 @@ public static class ActionStatus
 
     /// <summary>It may not run: no target user, its preview could not be read, or it refuses on the live state.</summary>
     public const string Refused = "refused";
+
+    /// <summary>A cancellation (a signal) cut the run off: the action in flight — with what it had confirmed, when it knows —
+    /// and every requested action that never ran (E6.S0 review D2; the sweep of a dead run writes the same word).</summary>
+    public const string Interrupted = "interrupted";
 }
 
 /// <summary>One action's line of an <c>act</c> run: its status and why, the LIVE preview, and — when it ran — what it did.</summary>
-public sealed record ActionOutcome(string Id, string Summary, string Status, string Reason, ActionPreview? Preview, ActionRun? Run);
+public sealed record ActionOutcome(string Id, string Summary, string Status, string Reason, ActionPreview? Preview, ActionRun? Run)
+{
+    /// <summary>In an <c>act --preview</c> answer, for an action bound to its shown list (<see cref="IBoundToShownList"/>: A4):
+    /// EVERY name the preview selected (§15j B1) — what the panel sends back through <c>--only -</c>. Absent for every other
+    /// action and in every run detail.</summary>
+    public IReadOnlyList<string>? Shown { get; init; }
+
+    /// <summary>True when the preview selected more than <see cref="ShownList.MaxNames"/> names: <see cref="Shown"/> holds the
+    /// first that many and only those will be removed (coai E6 plan round #11 — the invariant is shown.length ==
+    /// min(count, 10 000)); absent otherwise.</summary>
+    public bool? ShownTruncated { get; init; }
+}
 
 /// <summary>Who the run's user-scoped actions were for (plan §15c #2), as the run detail keeps it.</summary>
 public sealed record TargetUserReport(bool Found, string? Name, string? Home, string Source)
@@ -115,6 +142,10 @@ public sealed record ActReport(
     TargetUserReport? TargetUser,
     IReadOnlyList<ActionOutcome> Actions)
 {
+    /// <summary>The build that answered — the text <c>--version</c> prints (plan §15f #3, §15j). Additive (E6.S0): the CLI sets
+    /// it on every answer, preview and run alike.</summary>
+    public string? ProductVersion { get; init; }
+
     public static ActReport From(ActResult result) => result switch
     {
         ActResult.Previewed p => new(Core.SchemaVersion.Current, "preview", "previewed", null, null, null, null, null, p.TargetUser, p.Actions),
@@ -163,6 +194,7 @@ public static class ActionRecords
     {
         ActionStatus.Ran => Measured(o),
         ActionStatus.Failed => Measured(o) with { Failure = Shortened(FailureOf(o)) },
+        ActionStatus.Interrupted => Measured(o),
         ActionStatus.DryRun => WouldFree(o),
         _ => new ActionRecord(o.Id, 0, 0) { Status = o.Status },
     };

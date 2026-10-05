@@ -42,6 +42,16 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// defaults and the machine layer only (gate finding #2: user-scoped actions refuse, machine-scoped ones still run).</summary>
     public ConfigLoadResult LoadConfig() => ConfigLoader.Load(Paths, Files, HomeOwner.UserLayerSkipped);
 
+    /// <summary>What cancelled this process, in words — asked only once it was cancelled; <c>Main</c> wires
+    /// <see cref="ShutdownSignals.Cause"/>, so an interrupted run's record names the signal (plan §15j B2).</summary>
+    public Func<string> InterruptCause { get; init; } = static () => "a signal";
+
+    /// <summary>This process's stdin — what <c>act … --only -</c> reads A4's shown list from (E6.S1). A test hands its own stream.</summary>
+    public Func<Stream> StandardInput { get; init; } = Console.OpenStandardInput;
+
+    /// <summary>How long <c>--only -</c> waits for the end of stdin (plan §15j M2: 10 s); a test shortens it.</summary>
+    public TimeSpan StdinCeiling { get; init; } = StdinList.Ceiling;
+
     /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names. The runner is the
     /// product's ONE policy (<see cref="CommandPolicy.Product"/>: the never-list over the declared templates); inside the
     /// distro, as root, the per-user paths are the TARGET user's (E3.S2), and every login account's home is protected besides
@@ -55,7 +65,9 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
             var other => (other, (HomeOwner)new HomeOwner.ThisProcess("the Windows binary")),
         };
         var paths = WithLoginHomesProtected(owned);
-        var files = new PhysicalFileSystem(paths);
+        // State files another process trusts are root's on a machine; under a sandbox (WSL_CARE_ROOT: the scenarios) the
+        // state there is this process's own (E6.S0 review S1).
+        var files = new PhysicalFileSystem(paths) { TrustedStateOwner = Sandboxed() ? RegularFiles.EffectiveUid() : 0 };
         return new CliHost(paths, files, TimeProvider.System, new ProcessCommandRunner(CommandPolicy.Product))
         {
             Privilege = privilege,
@@ -66,8 +78,10 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
 
     /// <summary>The real signal sender inside the distro; a refusing one under a sandbox (a fixture's pids are not this
     /// machine's) and on Windows.</summary>
+    private static bool Sandboxed() => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(HostPaths.SandboxRootVariable));
+
     private static IProcessSignals SignalsFor(IHostPaths paths, IFileSystem files) =>
-        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(HostPaths.SandboxRootVariable)) ? RefusingProcessSignals.Sandboxed
+        Sandboxed() ? RefusingProcessSignals.Sandboxed
         : paths is LinuxHostPaths linux && OperatingSystem.IsLinux() ? new PidfdProcessSignals(files, linux.ProcRoot)
         : new RefusingProcessSignals("the Windows binary signals no process (A11 is the distro's)");
 

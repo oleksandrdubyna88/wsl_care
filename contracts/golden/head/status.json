@@ -2164,5 +2164,41 @@
       }
     }
   ],
-  "productVersion": "unknown"
+  "productVersion": "unknown",
+  "actions": [
+    "A5Testcontainers",
+    "A5",
+    "A4",
+    "A6",
+    "A6Unused",
+    "A7",
+    "A8",
+    "A9",
+    "A12",
+    "A14",
+    "A17",
+    "A10",
+    "A15",
+    "A16",
+    "A3",
+    "A11",
+    "A1",
+    "A2"
+  ],
+  "capabilities": [
+    "act.shownList",
+    "runs.show",
+    "running.block",
+    "logs.instantRange",
+    "act.detach",
+    "act.onlyStdin",
+    "act.stop"
+  ],
+  "running": {
+    "state": "none"
+  },
+  "lastCleanup": {
+    "available": false,
+    "reason": "no cleanup is recorded in the history yet (no action has removed or freed anything)"
+  }
 }

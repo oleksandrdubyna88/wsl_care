@@ -55,6 +55,29 @@ public sealed class ActCommandTests : IDisposable
         CommandLine.Parse(argv).Should().BeOfType<Request.Failed>();
     }
 
+    /// <summary>§15j m2: the panel's mark and the timer's are exclusive — E3 let the timer win when both were given (more gates,
+    /// not fewer); a run that claims to be both is now refused as the usage error it is.</summary>
+    [Theory]
+    [InlineData("act", "A10", "--confirm", "--manual", "--timer")]
+    [InlineData("act", "A10", "--preview", "--timer", "--json", "--manual")]
+    public void Manual_and_timer_together_are_refused_naming_both(params string[] argv)
+    {
+        var failed = CommandLine.Parse(argv).Should().BeOfType<Request.Failed>().Subject;
+
+        failed.Message.Should().Contain("--manual").And.Contain("--timer").And.Contain("not both");
+    }
+
+    /// <summary>§15f #3, §15j: every act answer names the build that answered — the text --version prints.</summary>
+    [Fact]
+    public void Every_act_answer_names_the_product_version_exactly_as_version_prints_it()
+    {
+        var (_, preview, previewErr) = CliRun.Over(Host(Root), "act", "A10", "--preview", "--json");
+        var (_, run, runErr) = CliRun.Over(Host(Root), "act", "A10", "--confirm", "--json");
+
+        Report(preview).ProductVersion.Should().Be(Program.VersionText, previewErr);
+        Report(run).ProductVersion.Should().Be(Program.VersionText, runErr);
+    }
+
     [Fact]
     public void An_act_parses_its_actions_in_the_order_given_and_its_flags()
     {
@@ -197,7 +220,8 @@ public sealed class ActCommandTests : IDisposable
     [Fact]
     public void The_help_names_the_act_verb_and_the_actions_this_build_holds()
     {
-        CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--volume <name>]... [--only <file>] [--json]")
+        CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]")
+            .And.Contain("act --request <runId>").And.Contain("act --stop <runId> [--json]").And.Contain("collect [--timer or --detach] [--json]")
             .And.Contain("\"act\" holds these actions: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
     }
 

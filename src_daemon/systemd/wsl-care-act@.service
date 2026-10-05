@@ -1,0 +1,44 @@
+# wsl-care-act@<runId> — a DETACHED run the panel asked for (plan §15j B2, M9; §15k). Installed by install.sh to
+# /etc/systemd/system/ beside wsl-care.service; never enabled — started only by `wsl-care act … --confirm --detach` and
+# `wsl-care collect --detach`, which write {state}/requests/<runId>.json first and then run
+# `systemctl start --no-block wsl-care-act@<runId>.service`. The instance name IS the run id: `act --request %i` reads that
+# request through the hardened reader, re-validates it, and records the run under that id — or, when another run holds the
+# lock, records it REFUSED (a terminal line, never a silent busy).
+#
+# Not systemd-run: a generic wrapper the never-list forbids. A template whose only variable is a run id the CLI validated
+# (`wsl-care-act@<yyyyMMddTHHmmssZ>-<pid>.service`, the closed unit slot of every systemctl call the daemon makes).
+#
+# HARDENING — the SAME set as wsl-care.service (ShippedFilesTests holds the two equal: Nice, IOSchedulingClass, MemoryMax,
+# NoNewPrivileges, KillMode, TimeoutStopSec); what is not set, and why, is written there. Each line is a REQUEST to systemd
+# until the live install observes it (the E6 daemon live gate: `systemctl show -p KillMode,TimeoutStartUSec,MemoryMax
+# wsl-care-act@x`).
+#
+# What differs from wsl-care.service, and why:
+#   TimeoutStartSec=infinity  a confirm is never time-killed as a whole (§15f #9): every command a run starts has its OWN
+#                             ceiling with a tree kill (§15k #0), so no hang keeps it alive forever; the heartbeat says
+#                             live / wedged meanwhile
+#   SuccessExitStatus=…       the RECORDED answers are not failures (§15k #8): 3 an action failed (recorded, the rest ran),
+#                             75 / 76 / 78 / 79 the run was refused and that is on its history line, 80 its request was gone (a
+#                             no-op)
+#   CollectMode=inactive-or-failed  an instance that ended — failed or not — is unloaded, so no finished run lingers in
+#                             `systemctl --failed` (the health collector counts failed units). It stands for §15k #8's
+#                             reset-failed: systemd's own mechanism, no command of ours
+#   TimeoutStopSec=90 (both units, §15k #18): `act --stop` → SIGTERM → the run records itself interrupted; one that does
+#                             not exit in 90 s is SIGKILLed, and the next root run's sweep records why from the stop marker
+#   KillMode=control-group    a stop ends every child the run started (the default, spelt out for the equality test)
+[Unit]
+Description=wsl-care: a detached run the panel asked for (%i)
+Documentation=https://github.com/oleksandrdubyna88/wsl_care
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wsl-care/bin/wsl-care act --request %i
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=1G
+NoNewPrivileges=yes
+KillMode=control-group
+TimeoutStartSec=infinity
+TimeoutStopSec=90
+SuccessExitStatus=3 75 76 78 79 80
+CollectMode=inactive-or-failed
