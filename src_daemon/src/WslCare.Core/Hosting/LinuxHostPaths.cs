@@ -19,6 +19,10 @@ public sealed record LinuxEnvironment(string Home, string Etc, string Var, strin
     /// account's home is protected, whoever the target turns out to be). Empty by default.</summary>
     public IReadOnlyList<string> ProtectedHomes { get; init; } = [];
 
+    /// <summary>The data folders of the manual AI agents (<c>aiAgents.extra</c>, plan §15q R2.2) as this process sees them —
+    /// protected besides the catalogue's, whether or not they pass the walk's rules (review B2). Empty by default.</summary>
+    public IReadOnlyList<string> ExtraAgentRoots { get; init; } = [];
+
     /// <summary>The real machine: <c>$HOME</c>, <c>/etc</c>, <c>/var</c>, <c>/tmp</c>.</summary>
     public static LinuxEnvironment FromThisMachine()
     {
@@ -72,6 +76,9 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     /// <summary>The same layout with <paramref name="homes"/> protected as well (<see cref="LinuxEnvironment.ProtectedHomes"/>).</summary>
     public LinuxHostPaths WithProtectedHomes(IReadOnlyList<string> homes) => new(environment with { ProtectedHomes = homes });
 
+    /// <summary>The same layout with the manual agents' folders protected as well (the two-phase host, plan §15q R2.2, M1).</summary>
+    public LinuxHostPaths WithExtraAgentRoots(IReadOnlyList<string> folders) => new(environment with { ExtraAgentRoots = folders });
+
     /// <summary>The same layout for another account's home, as this process sees it (plan §15c #2, E3.S2: root working for the
     /// target user): <see cref="Home"/>, the user configuration layer (<c>~/.config</c>, never root's <c>XDG_CONFIG_HOME</c>)
     /// and the user's own state folder follow it; the machine paths do not move, and the previous home stays protected.</summary>
@@ -123,7 +130,7 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
 
     /// <summary>Plan §4.6, the Linux column: every data folder of the agent catalogue (<see cref="Agents.AgentCatalogue"/>,
     /// E7.S1 — before it, a hand-typed list of seven) — under the home AND every protected home (E3.S1).</summary>
-    public IReadOnlyList<string> AgentRoots { get; } = [.. HomesOf(environment).SelectMany(AgentRootsUnder)];
+    public IReadOnlyList<string> AgentRoots { get; } = [.. HomesOf(environment).SelectMany(AgentRootsUnder), .. environment.ExtraAgentRoots];
 
     public IReadOnlyList<string> GitRoots { get; } = [.. HomesOf(environment).Select(home => PathRules.Linux.Join(home, "git"))];
 

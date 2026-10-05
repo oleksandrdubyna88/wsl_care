@@ -1169,7 +1169,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
 > Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
-> below); **E7.S1 built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; deviations in *E7.S1 as built*); E7.S2–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> below); **E7.S1 and E7.S2 built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; deviations in *E7.S1 as built*, *E7.S2 as built*); E7.S2b–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1511,6 +1511,34 @@ Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red an
   conversations, 1.3–2.3 s — the 3-minute budget is far from binding today.
 - **Capability `agents.list`** ships with E7.S1 (the story row put it in E7.S2 with the others); `agents.probe` and
   `config.agentsExtra` stay E7.S2's.
+
+#### E7.S2 as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *Manual agents and agents probe (E7.S2)*, the design `research/architecture.md` § *Manual agents and `agents probe`*.
+**Deviations from the text above:**
+
+- **`aiAgents.extra` has no safe direction** (`KeyTrust` `none`, not root-effective in the contract): root takes it as DATA,
+  judges every entry again on every read, and the key can only ADD protection; a refused entry leaves the walk only.
+- **`config set aiAgents.extra` takes `-` only** (stdin, the `StdinList` cap and ceiling, widened with a shared
+  `StdinList.MaxBytes`); a JSON value on the command line is refused naming the stdin form.
+- **The probe's own exit code** — `81 NotAsRoot` (added to `ExitCode` and `contracts/exit-codes.json`) rather than the
+  usage code: the extension can tell "you asked as root" from "a malformed path". On the Windows binary the probe answers
+  "arrives with E7.S5b" (usage).
+- **The probe's candidate folders** are `~/.<name>`, `~/.config/<name>`, `~/.local/share/<name>`, `~/.cache/<name>` that
+  exist; the suggested entry holds the ones the rules accept; a catalogue binary name answers "already tracked".
+- **Windows entries** pass the shape check; the Linux binary neither lists nor walks them (they are not its side); the
+  Windows binary protects their folders as spelt (`WindowsHostPaths.WithExtraAgentRoots`) — their rules and walk are E7.S5b's.
+- **The `cli` field is never looked at, by any run** — not only root's: `agents list` run by the user does not stat it either.
+- **The overlap refusal is the ENGINE's** (`AgentFolderOverlap`, asked for every preview of an action with `HomeRoots`), not
+  each action's; `HomeRoots` is a default interface member (empty), declared by A8, A12, A14, A17, with A3 the one named
+  user-scoped exception.
+- **`ProtectedRoots` keeps the real path AND the spelling of every agent root** (catalogue ones too), not only of extras.
+- **`SessionGlob` gained `**`** (a whole segment: the folder it is in and every folder below, breadth first, `memory` and
+  links never entered, the entry cap applies).
+- **An agent's total became unavailable when any folder of it was not measured** (and growth needs two whole walks) — an
+  E7.S1 behaviour found wrong by this story's refused-entry scenario (an "available" 0 for a refused agent), fixed here.
+- **Capabilities** `agents.probe` and `config.agentsExtra` (`agents.list` shipped with E7.S1).
 
 #### E7.S2b — orphaned AI-agent processes (owner decision 2026-10-05)
 

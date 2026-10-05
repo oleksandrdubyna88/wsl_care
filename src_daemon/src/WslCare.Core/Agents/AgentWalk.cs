@@ -4,8 +4,8 @@ using WslCare.Core.Folders;
 namespace WslCare.Core.Agents;
 
 /// <summary>One agent to measure: its catalogue entry, its data folders as paths on this side, and where its session layout
-/// starts (empty = sessions not counted here).</summary>
-public sealed record AgentTarget(AgentEntry Entry, IReadOnlyList<string> Folders, string SessionsUnder);
+/// starts (empty = sessions not counted here), and — for a manual agent the rules refused — why it is not walked.</summary>
+public sealed record AgentTarget(AgentEntry Entry, IReadOnlyList<string> Folders, string SessionsUnder, string Refusal = "");
 
 /// <summary>
 /// Measures the AI agents' data folders (plan §4.6, §15q D1, R2.3) — sizes and counts, nothing read, moved or deleted
@@ -47,6 +47,11 @@ public sealed class AgentWalk(IFileSystem files, TimeProvider clock)
 
     private AgentSize MeasureOne(AgentTarget target, Func<bool> outOfTime, Func<TimeSpan> left, bool withNames, CancellationToken cancellationToken)
     {
+        if (target.Refusal.Length > 0)
+        {
+            return Refused(target);
+        }
+
         var folders = target.Folders.Select(f => MeasureFolder(f, RulesFor(target.Entry), left, cancellationToken)).ToList();
         var (sessions, largest) = CountSessions(target, outOfTime);
         return new AgentSize(target.Entry.Id, folders, sessions) { Largest = withNames ? largest : null };
@@ -64,6 +69,13 @@ public sealed class AgentWalk(IFileSystem files, TimeProvider clock)
         return remaining <= TimeSpan.Zero
             ? new AgentFolderSize(path, true, 0, 0, false, [], NotReached)
             : Sized(path, files.WalkTree(path, new TreeLimits(FolderSizes.Limits.MaxEntries, Shorter(FolderSizes.Limits.MaxDuration, remaining)), rules, cancellationToken));
+    }
+
+    /// <summary>A manual agent the rules refused (plan §15q R2.1): nothing under it is entered, and every figure says why.</summary>
+    private static AgentSize Refused(AgentTarget target)
+    {
+        var why = $"not walked: {target.Refusal}";
+        return new AgentSize(target.Entry.Id, [.. target.Folders.Select(f => new AgentFolderSize(f, false, 0, 0, false, [], why))], SessionFigures.NotCounted(why));
     }
 
     private static TimeSpan Shorter(TimeSpan a, TimeSpan b) => a < b ? a : b;

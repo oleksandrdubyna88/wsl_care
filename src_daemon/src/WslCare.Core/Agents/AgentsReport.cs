@@ -84,7 +84,7 @@ public static class AgentsReports
     {
         var size = sample?.Find(presence.Entry.Id);
         var before = previous?.Find(presence.Entry.Id);
-        var total = size is null ? Unmeasured(sample) : new ByteFigure(true, size.TotalBytes, null);
+        var total = size is null ? Unmeasured(sample) : Total(size);
         return new AgentReport(
             presence.Entry.Id,
             presence.Entry.Name,
@@ -96,17 +96,41 @@ public static class AgentsReports
             [.. presence.Folders.Select(f => Folder(f, size, sample))],
             Sessions(size, sample),
             total,
-            size is not null && before is not null ? new ByteFigure(true, size.TotalBytes - before.TotalBytes, null) : new ByteFigure(false, null, "no earlier measurement of this agent to compare with"),
+            Growth(total, before),
             Warnings(presence.Entry, size, config));
     }
+
+    /// <summary>The agent's bytes — or, when a folder of it was not measured (the budget did not reach it, it could not be read, the
+    /// rules refused a manual agent), unavailable with that folder's reason: a part is never presented as the whole, nor 0 as
+    /// a measurement. A folder that does not exist holds nothing and counts as 0.</summary>
+    public static ByteFigure Total(AgentSize size) =>
+        size.Folders.FirstOrDefault(f => !Counted(f)) is { } unmeasured
+            ? new ByteFigure(false, null, unmeasured.Reason)
+            : new ByteFigure(true, size.TotalBytes, null);
+
+    /// <summary>Now minus the previous walk — only when both are whole measurements.</summary>
+    private static ByteFigure Growth(ByteFigure now, AgentSize? before) =>
+        before is null ? new ByteFigure(false, null, "no earlier measurement of this agent to compare with")
+        : now is not { Available: true, Bytes: { } bytes } ? new ByteFigure(false, null, now.Reason)
+        : Total(before) is { Available: true, Bytes: { } earlier } ? new ByteFigure(true, bytes - earlier, null)
+        : new ByteFigure(false, null, "the earlier measurement of this agent was not whole");
+
+    private static bool Counted(AgentFolderSize folder) =>
+        folder.Exists
+            ? folder.Reason.Length == 0 || folder.Reason.Contains("lower bound", StringComparison.Ordinal)
+            : folder.Reason.EndsWith("does not exist", StringComparison.Ordinal);
 
     private static ByteFigure Unmeasured(AgentsSample? sample) =>
         new(false, null, sample is null ? "not measured yet: the daily full run walks the agents' folders, or ask agents list --measure" : "not tracked when the folders were walked");
 
     private static AgentFolderReport Folder(string path, AgentSize? size, AgentsSample? sample) =>
         size?.Folders.FirstOrDefault(f => f.Path == path) is { } measured
-            ? new AgentFolderReport(path, measured.Exists, FolderBytes(measured), measured.Files, measured.Complete, measured.Excluded)
+            ? FolderOf(measured)
             : new AgentFolderReport(path, false, Unmeasured(sample), null, null, []);
+
+    /// <summary>One measured folder in the wire shape (also <c>agents probe</c>'s).</summary>
+    public static AgentFolderReport FolderOf(AgentFolderSize measured) =>
+        new(measured.Path, measured.Exists, FolderBytes(measured), measured.Files, measured.Complete, measured.Excluded);
 
     /// <summary>A folder's bytes: whole; a lower bound with the ceiling that stopped the walk; or unavailable with the reason
     /// (missing, unreadable, not reached) — never 0 for a figure that was not taken.</summary>

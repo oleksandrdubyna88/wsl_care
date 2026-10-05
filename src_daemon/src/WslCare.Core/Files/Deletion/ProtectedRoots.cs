@@ -27,7 +27,9 @@ public sealed record ProtectedRoots(
     public static ProtectedRoots From(IHostPaths paths, Func<string, string> resolve) =>
         new(
             resolve(paths.Home),
-            [.. paths.AgentRoots.Select(resolve)],
+            // Both the real place and the spelling (plan §15q R2, review B2): a manual agent's folder that is a link stays protected
+            // where it points now AND where it is spelt, should the link be re-pointed. Over-protection is the safe side.
+            [.. paths.AgentRoots.SelectMany(r => new[] { resolve(r), Path.GetFullPath(r) }).Distinct(StringComparer.Ordinal)],
             [.. paths.GitRoots.Select(resolve)],
             [.. paths.ClaudeTempRoots.Select(resolve)]);
 }

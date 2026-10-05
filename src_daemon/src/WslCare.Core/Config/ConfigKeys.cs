@@ -113,6 +113,11 @@ public static class ConfigKeys
     {
         public static readonly ConfigKey.IntKey WarnGb = new("aiAgents.warnGb", 0, GbCeiling);
         public static readonly ConfigKey.IntKey SessionWarnMb = new("aiAgents.sessionWarnMb", 0, CountCeiling);
+
+        /// <summary>The manual AI agents (plan §15q D4, R2). Root takes it as DATA — re-judged against the disk at every root read
+        /// — and it can only ADD protection (a failing entry leaves the walk, never the protected roots, review B2), so it has no
+        /// loosening direction; <c>config set</c> reads it from stdin only.</summary>
+        public static readonly ConfigKey.AgentListKey Extra = new("aiAgents.extra");
     }
 
     public static class Archive
@@ -164,7 +169,7 @@ public static class ConfigKeys
         BuildServers.IdleHours,
         Processes.IdleOlderThanHours, Processes.Families,
         Thresholds.MemAvailableWarnPercent, Thresholds.MemAvailableActPercent, Thresholds.SwapWarnGb,
-        AiAgents.WarnGb, AiAgents.SessionWarnMb,
+        AiAgents.WarnGb, AiAgents.SessionWarnMb, AiAgents.Extra,
         Archive.OlderThanDays, Archive.BaseFolder,
         Idle.CpuPercent, Idle.Minutes,
         Clock.MaxDriftSeconds,

@@ -1,5 +1,6 @@
 using WslCare.Core.Actions;
 using WslCare.Core.Actions.Engine;
+using WslCare.Core.Agents;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
@@ -59,6 +60,36 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// <summary>How long <c>--only -</c> waits for the end of stdin (plan §15j M2: 10 s); a test shortens it.</summary>
     public TimeSpan StdinCeiling { get; init; } = StdinList.Ceiling;
 
+    /// <summary>The file system and the signal sender for another layout of the same machine — what the second phase of the
+    /// host (<see cref="WithAgentExtras"/>) rebuilds once the configuration names the manual agents' folders (plan §15q R2.2,
+    /// review M1). A host built by a test keeps what it was given.</summary>
+    public Func<IHostPaths, CliHost, (IFileSystem Files, IProcessSignals Signals)> Rewire { get; init; } = static (_, host) => (host.Files, host.Signals);
+
+    /// <summary>Phase two of the host (plan §15q R2.2, review M1): the deletion policy is built with the file system, which phase
+    /// one built BEFORE the configuration was read — so once <paramref name="config"/> names manual AI agents, the layout gains
+    /// their data folders as protected roots (every shape-valid entry of this side, whether or not it passes the walk's rules —
+    /// review B2) and the file system and what holds it are rebuilt over it. The same host when there are none.</summary>
+    public CliHost WithAgentExtras(EffectiveConfig config)
+    {
+        var extras = config.Agents(ConfigKeys.AiAgents.Extra);
+        var paths = Paths switch
+        {
+            LinuxHostPaths linux when extras.Count > 0 => linux.WithExtraAgentRoots([.. Protected(extras, ExtraAgentShape.Wsl).Select(linux.DistroPath)]),
+            WindowsHostPaths windows when extras.Count > 0 => windows.WithExtraAgentRoots(Protected(extras, ExtraAgentShape.Windows)),
+            _ => Paths,
+        };
+        if (ReferenceEquals(paths, Paths))
+        {
+            return this;
+        }
+
+        var (files, signals) = Rewire(paths, this);
+        return this with { Paths = paths, Files = files, Signals = signals };
+    }
+
+    private static IReadOnlyList<string> Protected(IReadOnlyList<ExtraAgent> extras, string side) =>
+        [.. extras.Where(e => e.Side == side).SelectMany(e => e.DataFolders)];
+
     /// <summary>The real machine, or the sandbox <see cref="HostPaths.SandboxRootVariable"/> names. The runner is the
     /// product's ONE policy (<see cref="CommandPolicy.Product"/>: the never-list over the declared templates); inside the
     /// distro, as root, the per-user paths are the TARGET user's (E3.S2), and every login account's home is protected besides
@@ -74,9 +105,10 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         var paths = WithLoginHomesProtected(owned);
         // State files another process trusts are root's on a machine; under a sandbox (WSL_CARE_ROOT: the scenarios) the
         // state there is this process's own (E6.S0 review S1).
-        var files = new PhysicalFileSystem(paths) { TrustedStateOwner = Sandboxed() ? RegularFiles.EffectiveUid() : 0, OwnersAreThisProcess = Sandboxed() };
+        var files = FilesFor(paths);
         return new CliHost(paths, files, TimeProvider.System, new ProcessCommandRunner(CommandPolicy.Product))
         {
+            Rewire = static (layout, _) => FilesAndSignalsFor(layout),
             Privilege = privilege,
             HomeOwner = owner,
             Signals = SignalsFor(paths, files),
@@ -92,6 +124,15 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         Sandboxed() ? RefusingProcessSignals.Sandboxed
         : paths is LinuxHostPaths linux && OperatingSystem.IsLinux() ? new PidfdProcessSignals(files, linux.ProcRoot)
         : new RefusingProcessSignals("the Windows binary signals no process (A11 is the distro's)");
+
+    private static (IFileSystem, IProcessSignals) FilesAndSignalsFor(IHostPaths paths)
+    {
+        var files = FilesFor(paths);
+        return (files, SignalsFor(paths, files));
+    }
+
+    private static PhysicalFileSystem FilesFor(IHostPaths paths) =>
+        new(paths) { TrustedStateOwner = Sandboxed() ? RegularFiles.EffectiveUid() : 0, OwnersAreThisProcess = Sandboxed() };
 
     private static IHostPaths WithLoginHomesProtected(IHostPaths paths) =>
         paths is LinuxHostPaths linux ? linux.WithProtectedHomes(TargetUserDiscovery.ProtectedHomes(new PhysicalFileSystem(linux), linux)) : paths;

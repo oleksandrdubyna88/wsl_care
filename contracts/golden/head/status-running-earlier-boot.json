@@ -344,7 +344,9 @@
     "act.onlyStdin",
     "act.stop",
     "config.contract",
-    "agents.list"
+    "agents.list",
+    "agents.probe",
+    "config.agentsExtra"
   ],
   "running": {
     "state": "dead",

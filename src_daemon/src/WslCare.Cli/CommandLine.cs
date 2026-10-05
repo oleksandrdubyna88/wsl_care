@@ -48,6 +48,10 @@ internal abstract record Request
     /// the newest full run — or measured now with <c>--measure</c>.</summary>
     internal sealed record AgentsList(bool Measure, bool Json) : Request;
 
+    /// <summary><c>agents probe &lt;path&gt; [--json]</c> (plan §15q D4): what a CLI the person picked is, as this user — the path
+    /// is checked for its shape here and never reaches a root process.</summary>
+    internal sealed record AgentsProbe(string Path, bool Json) : Request;
+
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
 
@@ -191,6 +195,7 @@ internal static class CommandLine
         new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["logs", "--period", "today", "--json"], ParseLogs),
         new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
         new([["agents", "list"]], "agents list [--measure] [--json]", "the AI agents found here (by binary, npm package or folder), their version read from disk, their folders' sizes and sessions from the newest full run — or measured now with --measure (read-only: nothing inside an agent's folder is opened, nothing is run)", ["agents", "list", "--json"], ParseAgentsList),
+        new([["agents", "probe"]], "agents probe <path> [--json]", "what the CLI at <path> is, as this user and never as root: a file it may start (looked at, never run, never read), a name from its file name, and its conventional data folders with their sizes and whether they could be a manual agent's (read-only)", ["agents", "probe", "/home/me/.local/bin/mycli", "--json"], ParseAgentsProbe),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
 
@@ -479,6 +484,19 @@ internal static class CommandLine
             (_, { } failure) => failure,
             var (options, _) => new Request.AgentsList(options.Flags.Contains(MeasureFlag), options.Flags.Contains(JsonFlag)),
         };
+
+    /// <summary>Exactly one absolute distro path (plan §15q R2.1's shape: no control character, no leading '-', no '.' or '..'
+    /// segment, at most 1 024 characters), then optionally <c>--json</c>.</summary>
+    private static Request ParseAgentsProbe(IReadOnlyList<string> rest) => rest switch
+    {
+        [var path] when ProbePathProblem(path).Length == 0 => new Request.AgentsProbe(path, false),
+        [var path, JsonFlag] when ProbePathProblem(path).Length == 0 => new Request.AgentsProbe(path, true),
+        [var path, ..] when !path.StartsWith('-') => new Request.Failed($"\"{BinaryName} agents probe\": the path {ProbePathProblem(path)}; got \"{Printable(path)}\"."),
+        _ => new Request.Failed($"\"{BinaryName} agents probe\" needs exactly one <path> and optionally {JsonFlag}: {BinaryName} agents probe <path> [{JsonFlag}]."),
+    };
+
+    private static string ProbePathProblem(string path) =>
+        Core.Agents.ExtraAgentShape.PathProblem(path, Core.Agents.ExtraAgentShape.Wsl) is { Length: > 0 } problem ? problem : string.Empty;
 
     private static Request ParseRuns(IReadOnlyList<string> rest) =>
         ReadOptions("runs", rest, [PeriodFlag, FromFlag, ToFlag], [JsonFlag]) switch

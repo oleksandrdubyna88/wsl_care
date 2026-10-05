@@ -39,7 +39,7 @@ namespace WslCare.Cli.Commands;
 internal static class ActCommand
 {
     /// <summary>The largest <c>--only</c> file read: 10 000 names of 65 bytes, with room to spare.</summary>
-    private const int MaxOnlyFileBytes = 1024 * 1024;
+    private const int MaxOnlyFileBytes = StdinList.MaxBytes;
 
     public static int Run(Request.Act request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, ILogger logger, CancellationToken cancellationToken)
     {

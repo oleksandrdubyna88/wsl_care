@@ -503,6 +503,26 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "aiAgents.extra",
+      "shape": "agentList",
+      "maxEntries": 16,
+      "maxFolders": 8,
+      "maxPathLength": 1024,
+      "maxGlobLength": 128,
+      "maxNameLength": 64,
+      "sides": [
+        "wsl",
+        "windows"
+      ],
+      "default": [],
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "archive.olderThanDays",
       "shape": "int",
       "min": 1,

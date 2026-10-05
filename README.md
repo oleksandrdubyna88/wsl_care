@@ -189,7 +189,7 @@ reaches them at the next full run. The text form prints one line: `verdicts: 1 c
 
 **What runs, what this build can do, the last cleanup.** `status --json` also answers `actions` (the action ids this
 binary holds for its own side, in the order a run takes them), `capabilities` (what this build can do beyond the first
-release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange`, … `config.contract`, `agents.list` — what a client acts on, never the
+release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange`, … `config.contract`, `agents.list`, `agents.probe`, `config.agentsExtra` — what a client acts on, never the
 version number), `running` — `none`, `queued` (a run accepted and not started yet), `live` (acting: the run, its actions,
 the one it is on, its pid and how old its heartbeat is), `wedged` (alive, heartbeat older than 30 s — nothing is killed),
 `dead` (its process is gone and no run has swept it yet — status only REPORTS it; the next root run records it
@@ -447,10 +447,33 @@ with why, never 0.
 
 The root timer's daily full run walks the agents' folders too (one 3-minute budget for all of them; what it does not
 reach says "not measured this run"), and records totals, counts and dates — never a session's name. Without `--measure`
-the answer reads that run; before the first full run it says so and how to measure. `growthBytes` compares with the
-previous walk, and `aiAgents.warnGb` / `aiAgents.sessionWarnMb` add a warning. As root only folders count (root neither
-searches the user's `PATH` nor reads their packages). Read-only: nothing is written. Every catalogue folder is a protected
-root (no cleanup deletes under it) and a never-list name (no command naming it runs). Exit codes: 0 answered · 2 usage.
+the answer reads that run; before the first full run it says so and how to measure. An agent with a folder that was not
+measured has no total (the reason is given), never a part shown as the whole. `growthBytes` compares two whole walks, and
+`aiAgents.warnGb` / `aiAgents.sessionWarnMb` add a warning. As root only folders count (root neither searches the user's
+`PATH` nor reads their packages). Read-only: nothing is written. Every catalogue folder is a protected root (no cleanup
+deletes under it) and a never-list name (no command naming it runs). Exit codes: 0 answered · 2 usage.
+
+### Your own AI agents — `aiAgents.extra` and `agents probe`
+
+```bash
+wsl-care agents probe /home/me/.local/bin/mycli --json        # as YOU, never as root: what the CLI is, its folders, sizes
+wsl-care config set aiAgents.extra - < agents.json            # the list, from stdin only (JSON, at most 1 MiB, 10 s)
+```
+
+`agents probe` looks at the file (a regular file this user may start — it is never started and no byte of it is read),
+takes a name from the FILE NAME, and lists the folders such a CLI conventionally keeps (`~/.<name>`, `~/.config/<name>`,
+`~/.local/share/<name>`, `~/.cache/<name>`) with their sizes and whether each could be a manual agent's folder. As root it
+refuses with exit **81**, naming uid 0 and the fix (set the distribution's default user).
+
+`aiAgents.extra` holds at most 16 entries `{ "cli", "side": "wsl" | "windows", "name", "dataFolders": [1–8 absolute paths],
+"sessionGlob" }` (a glob relative to the first folder: letters, digits, `.`, `_`, `-`, `*`, and whole `**` segments). Each
+data folder must really lie inside your home, on the home's own filesystem, and must not be, sit inside or contain `~/git`,
+a catalogue agent's folder ("already tracked"), any folder a cleanup cleans (`~/.npm`, `~/.cache/ms-playwright`, the NuGet
+http-cache, the editor servers, the pnpm / uv / pip caches) or wsl-care's own folders. `config set` judges every entry and
+writes nothing when one is refused; the root timer judges them AGAIN on every run. A refused entry is not walked (the
+answer says why) — but its folders stay protected all the same: no cleanup deletes under a manual agent's folder, and a
+cleanup whose folder overlaps one refuses. The `cli` path is never looked at by the daemon. Windows entries are kept for the
+Windows binary (E7.S5b).
 
 ## Extension (preview)
 

@@ -25,7 +25,10 @@ public sealed record AgentPresence(
 {
     public bool Tracked => DetectedBy.Count > 0;
 
-    public AgentTarget Target => new(Entry, Folders, SessionsUnder);
+    /// <summary>Why a manual agent may not be walked (plan §15q R2.1); empty for every catalogue agent and an accepted one.</summary>
+    public string Refusal { get; init; } = string.Empty;
+
+    public AgentTarget Target => new(Entry, Folders, SessionsUnder, Refusal);
 }
 
 /// <summary>

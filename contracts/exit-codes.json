@@ -63,6 +63,10 @@
       "code": 80
     },
     {
+      "name": "notAsRoot",
+      "code": 81
+    },
+    {
       "name": "interrupted",
       "code": 130
     }

@@ -135,6 +135,23 @@ public sealed record ActionPreview(
         new(what, true, null, count, bytes, basis, facts, refusal, [.. targets.Take(MaxItems)]) { Targets = targets };
 }
 
+/// <summary>A folder under the TARGET user's home that an action cleans (plan §15q R2.1, review M8), spelt as segments under
+/// the home — what a manual AI agent's data folder may neither be, sit inside, nor contain.</summary>
+public sealed record HomeFolder(IReadOnlyList<string> Segments)
+{
+    public static HomeFolder Of(params string[] segments) => new(segments);
+
+    /// <summary>As a person reads it: <c>~/.cache/ms-playwright</c>.</summary>
+    public string Display => "~/" + string.Join('/', Segments);
+
+    /// <summary>The folder under <paramref name="home"/>.</summary>
+    public string Under(string home, PathRules rules) => rules.Join(home, [.. Segments]);
+
+    public bool Equals(HomeFolder? other) => other is not null && Segments.SequenceEqual(other.Segments, StringComparer.Ordinal);
+
+    public override int GetHashCode() => Segments.Count;
+}
+
 /// <summary>The timer's trigger: fired, or why not (plan §5's <i>Auto trigger</i> column).</summary>
 public sealed record TriggerDecision(bool Fired, string Reason);
 
@@ -199,6 +216,11 @@ public interface ICleanupAction
 
     /// <summary>Every argv template it may run — read and write alike.</summary>
     IReadOnlyList<CommandTemplate> Commands { get; }
+
+    /// <summary>The folders under the target user's home it cleans — by deleting through the policy OR by a command (npm, pnpm,
+    /// pip, uv, dotnet) the deletion policy cannot see into (plan §15q R2.1, review M8). None for an action that touches no
+    /// home folder; <c>ActionHomeRootsTests</c> holds every user-scoped action to its declaration.</summary>
+    IReadOnlyList<HomeFolder> HomeRoots => [];
 
     Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken);
 

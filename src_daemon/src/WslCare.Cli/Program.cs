@@ -39,8 +39,10 @@ internal static class Program
         }
 
         using var shutdown = new ShutdownSignals();
-        var host = CliHost.ForThisMachine() with { InterruptCause = () => shutdown.Cause };
-        var loaded = host.LoadConfig();
+        var first = CliHost.ForThisMachine() with { InterruptCause = () => shutdown.Cause };
+        var loaded = first.LoadConfig();
+        // Phase two (plan §15q R2.2, review M1): the manual AI agents' folders join the protected roots BEFORE anything runs.
+        var host = first.WithAgentExtras(loaded.Config);
         using var logger = WslCareLogging.Start(host, loaded, AppName, Console.Error);
         try
         {
@@ -88,6 +90,7 @@ internal static class Program
             Request.Collect collect => CollectCommand.Run(collect, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Doctor doctor => DoctorCommand.Run(doctor, host, loaded, stdout, cancellationToken),
             Request.AgentsList agents => AgentsCommand.Run(agents, host, loaded, stdout, cancellationToken),
+            Request.AgentsProbe probe => AgentsCommand.Probe(probe, host, stdout, stderr, cancellationToken),
             Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),
             Request.Act act => ActCommand.Run(act, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Logs logs => LogsCommand.Logs(logs, host, stdout, stderr),
