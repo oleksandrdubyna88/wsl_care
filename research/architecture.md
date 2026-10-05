@@ -2568,6 +2568,31 @@ flowchart LR
   `~/.config/<name>`, `~/.local/share/<name>`, `~/.cache/<name>` that exist, measured and judged by the same rules; the
   suggested entry holds the ones that pass. Capabilities `agents.probe`, `config.agentsExtra`.
 
+## A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)
+
+```mermaid
+flowchart LR
+    timer["timer full run<br/>ActionEngine.RecordAgentCpu"] -- "ai-agents processes of non-root accounts:<br/>pid · start ticks · CPU ticks (ProcText)" --> history["/var/lib/wsl-care/agent-cpu.json<br/>AgentCpuHistory (root state, 128 KiB, 512 ids)"]
+    button["act A18 --preview / --confirm<br/>(a button only)"] --> a18["AgentOrphans"]
+    history -- "ReadStateFile" --> a18
+    a18 -- "SessionGlob over the agent's confirmed layout" --> sessions["no session written in N h"]
+    a18 --> signals["SuspectSignals (shared with A11)<br/>re-read · SIGTERM · grace · SIGKILL"]
+    timerpass["the timer pass"] -. "never selects A18<br/>(TimerSwitch.ButtonOnly)" .-x a18
+```
+
+- **Button only, by structure:** `ActionId.Timer` is `Auto(key)` or `ButtonOnly(why)`; A18 has no `auto.*` key, the timer pass
+  selects only `Auto` ids, and the engine's timer gate skips a button-only id asked directly; its trigger never fires.
+- **Idle is measured:** every TIMER full run records each `ai-agents` process of a non-root account by identity — pid, the boot
+  id, start ticks (stat field 22) — with its CPU ticks and since when they have not changed (`AgentCpuHistory.Next`: a new
+  identity, a moved tick, another start or another boot starts the clock now; dead identities are pruned). A process is
+  eligible only when `now − unchanged since ≥ processes.aiAgentsIdleHours` (default 4, 1–168, safe higher). A preview writes
+  no state.
+- **Eligible = all of:** the target user's, re-parented, no terminal, not a zombie, attributed to exactly one catalogue agent
+  whose session layout is confirmed, idle as above, and no session file of that agent written in the same window (listing
+  + stat; a cut listing keeps it). Every kept process is counted with its reason in the preview's basis.
+- **Ending:** `SuspectSignals` — extracted from A11, used by both: each target re-read (same start, no CPU since the preview,
+  no terminal, not root's), one SIGTERM each, one shared 10 s grace, SIGKILL to the survivors, each outcome in the record.
+
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
 "Every number we have must be configurable" (the owner, 2026-10-05). From now on **a new behavioural number is a

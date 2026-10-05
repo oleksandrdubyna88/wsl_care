@@ -1442,6 +1442,47 @@ only the inotify proof went red.
 **Goldens** regenerated in WSL: the seven `status*.json` gained `agents.probe` and `config.agentsExtra` in `capabilities`;
 nothing else moved (the golden sandbox has no manual agent, so `agents-list.json` is unchanged).
 
+### A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)
+
+| Guarantee | Tests |
+|---|---|
+| eligible only after N hours with NO CPU measured by identity across the timer's records; the first sight and 3 h are not enough, 4.5 h is, the item names the agent, the measured hours and the folder | `Core.Tests/Actions/AgentOrphansTests.Ai_agent_orphan_is_eligible_only_after_N_hours_without_cpu_by_identity` |
+| missing history is never idle — 30 days of uptime with no record ends nothing | `…Missing_history_never_makes_a_process_eligible` |
+| a CPU tick, a reused pid (another start) or another boot restarts the clock; idle again only N hours later | `…A_reused_pid_or_a_cpu_tick_or_another_boot_restarts_the_idle_clock` (3) |
+| a live session of its agent keeps it; an unconfirmed layout keeps it; a terminal or a live parent keeps it; another account's process is never judged | `…A_live_session_keeps_the_agent_process`, `…An_unconfirmed_layout_…`, `…A_process_with_a_terminal_or_a_live_parent_is_kept` (2), `…Another_accounts_agent_process_is_never_a_candidate` |
+| the run re-reads each target: one that used CPU since the preview is kept, the other is signalled by pid and start | `…The_run_rechecks_identity_and_cpu_before_each_signal` |
+| the timer never ends an agent process: the timer pass does not select A18, asking the timer engine for it directly is skipped, the trigger never fires | `…The_timer_never_ends_an_agent_process`; over the built CLI: `Scenarios/AgentOrphansFlows` (every `auto` on, dry run off, 1 h window: the pass holds no A18, the history was recorded, a preview after it ends nothing and writes no state; Linux legs) |
+| the history is root state, pruned to live identities, capped at 512, and a full file fits its read cap | `…The_cpu_history_is_root_state_bounded_and_pruned_to_live_processes` |
+| `processes.aiAgentsIdleHours` 1–168, default 4, safe higher; `ai-agents` still not choosable for A11 | `…Processes_aiAgentsIdleHours_is_1_to_168_default_4_safe_higher`; `ConfigKeyClosureTests` |
+| A18 is the one button-only id; asking its auto switch is a defect | `EnginePartsTests.The_action_ids_are_exactly_the_auto_switches_and_the_button_only_ones_…` |
+| A11's signal path, now shared (`SuspectSignals`), behaves as before | `SuspectTerminationTests`, `ActionsReviewRoundTests` (unchanged, green) |
+
+**Red first:** the cap test was red for a REAL defect — *a full 512-entry history serialises to 90 618 bytes, over the planned
+64 KiB cap*, which would have read a full history as "no history"; the cap is 128 KiB. The scenario was red once for its own
+set-up (the sandbox had no `/proc/sys/kernel/random` folder). The rest was written with its code and proved by the teeth.
+
+**Teeth** (Windows Debug, `AgentOrphansTests`, each file restored byte-identical):
+
+| Mutation | Red |
+|---|---|
+| the timer pass selecting button-only ids | 1: the pass held A18 |
+| the timer gate letting a button-only id run | 1: the scripted A18 ran |
+| the history keyed by pid alone | 1 (the start case) |
+| the history surviving another boot | 1: *a changed boot … found 1* |
+| a new identity starting "idle for a year" (missing history = idle) | 5: the first sight, 30 days, every restart case |
+| the live-session check never matching | 1: *Expected preview.Count to be 0, but found 1* |
+| the confirmed-layout rule dropped | 1 |
+| the target-user filter dropped | 1: *… found 1* |
+| the live-parent rule dropped | 1: *… found 1* |
+| the run's CPU re-check dropped (shared path) | 1: the process that used CPU was signalled |
+| dead identities kept | 1 |
+| the trigger firing | 1 |
+
+Two first attempts (the identity and missing-history rules mutated in `IdleFor`) did not bite: the in-memory merge of
+`Next` already enforces both, so the teeth moved to `Next`, where the rule lives.
+
+**Goldens:** the seven `status*.json` gained `A18` in `actions`; `contracts/actions.json` and `config-keys.json` regenerated.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

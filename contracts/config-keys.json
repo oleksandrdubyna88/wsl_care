@@ -438,6 +438,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "processes.aiAgentsIdleHours",
+      "shape": "int",
+      "min": 1,
+      "max": 168,
+      "default": 4,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "thresholds.memAvailableWarnPercent",
       "shape": "int",
       "min": 0,

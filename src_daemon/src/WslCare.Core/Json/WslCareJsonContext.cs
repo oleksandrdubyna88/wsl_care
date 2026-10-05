@@ -52,6 +52,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Agents.AgentCatalogueFile))]
 [JsonSerializable(typeof(Agents.AgentsReport))]
 [JsonSerializable(typeof(Agents.AgentProbeReport))]
+[JsonSerializable(typeof(Actions.Suspects.AgentCpuFile))]
 public sealed partial class WslCareJsonContext : JsonSerializerContext
 {
     public static readonly WslCareJsonContext Compact = new(new JsonSerializerOptions

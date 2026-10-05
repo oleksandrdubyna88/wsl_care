@@ -6,7 +6,7 @@ extension that shows the state and runs cleanups on demand.
 
 | Folder | Holds |
 |---|---|
-| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
+| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17, and the button-only A18 of E7.S2b) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
 | `src_vs_code/` | the VS Code extension WSL Care — in development, read-only: its client of the daemon, the status bar and the read-only panel, and their tests — [Extension (preview)](#extension-preview) below |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
@@ -325,6 +325,7 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 | `A9` | `apt-get clean`; `snap remove <name> --revision=<n>` of revisions STILL disabled | `/var/cache/apt` before/after + the snap files gone | a missing tool skips its part |
 | `A10` | `journalctl --vacuum-time=<journal.keepDays>d` | the journal files gone after | archived files only |
 | `A11` | `SIGTERM`, `SIGKILL` after 10 s — by pid AND start time (a `pidfd`), never by name | memory, not disk (not counted) | off by default; only suspects: orphaned, in `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not root's — and only the TARGET user's processes (no single target user: no suspects) — no CPU in a 5 s window and none since |
+| `A18` | the same signals, of the target user's ORPHANED AI-agent processes (claude, codex, gemini, …) — a **button only**: the timer never selects it, whatever any setting says (it has no `auto` switch) | memory, not disk (not counted) | only when ALL hold: the `ai-agents` family, the target user's, re-parented, no terminal, attributable to one catalogue agent whose session layout is confirmed, **no CPU for `processes.aiAgentsIdleHours` (default 4 h) measured** — the timer's full runs record each such process's CPU by pid + boot + start time in `/var/lib/wsl-care/agent-cpu.json`, so the first runs end nothing — and no session of that agent written in the same window; each re-read just before its signal |
 | `A12` | deletes the Playwright browsers no project's `browsers.json` references; `dotnet nuget locals http-cache --clear` as the user | each folder before, counted when gone | a button only; refuses the Playwright part when what is referenced cannot be told |
 | `A14` | deletes VS Code / Cursor / Windsurf server builds no process uses, keeping the newest 2, and `.obsolete` extensions | each folder before, counted when gone | every delete judged by the deletion policy |
 | `A17` | `pnpm store prune`, `uv cache prune`, `pip cache purge` as the target user | each cache before/after | `cargo sweep` is not run (it would delete under `~/git`); Gradle prunes its own caches |
@@ -413,7 +414,7 @@ page: what was freed in total and per action (with object counts), how many runs
 dry runs apart with what they would have freed, the runs by trigger (timer, button, terminal), the run that freed the
 most and the least, each recorded figure's maximum and minimum with its time (`MemAvailable`, page cache, swap, `/`,
 Docker reclaimable, container starts) and, per cleanup, every object it removed — and those it did not, with why — from
-the run's detail file. Memory actions (A1, A2, A3, A11) free no disk and count no bytes. Periods: `today` (the
+the run's detail file. Memory actions (A1, A2, A3, A11, A18) free no disk and count no bytes. Periods: `today` (the
 default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (UTC days, at most 366) — or `--from <instant> --to
 <instant>`, two RFC 3339 instants with their offset spelt out (`Z` or `+03:00`; a bare date or a time without an offset is
 refused, never read in this machine's zone), half-open (from inclusive, to exclusive), at most 366 days: how a client asks

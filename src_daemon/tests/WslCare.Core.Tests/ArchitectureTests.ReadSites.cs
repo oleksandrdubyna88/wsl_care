@@ -116,6 +116,7 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Actions/Engine/IdleGate.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/Actions/Memory/MemoryNow.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Actions/Suspects/SuspectTermination.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
+        ["WslCare.Core/Actions/Suspects/AgentCpuHistory.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState), ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/LinuxProbe.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/MemoryCollector.cs"] = new() { ["ProcText.Read"] = (3, ReadClass.System) },
         ["WslCare.Core/Config/UserLayerTrusts.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
