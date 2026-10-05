@@ -92,7 +92,16 @@ internal sealed class ScenarioHome : IDisposable
     public Task<ChildResult> RunAsync(params string[] args) => RunAsync((IReadOnlyList<string>)args);
 
     public Task<ChildResult> RunAsync(IReadOnlyList<string> args) =>
-        ChildProcess.RunAsync(ChildProcess.BesideTheTests(CommandLine.BinaryName), args, Environment, WorkingDirectory);
+        ChildProcess.RunAsync(ChildProcess.BesideTheTests(CommandLine.BinaryName), args, Environment, WorkingDirectory, progress: Wait);
+
+    /// <summary>How every run of the CLI is waited for: a fake call is progress (the call log grows), so a pass that walks
+    /// many fakes on a loaded machine is not cut off by a wall-clock total, and a CLI that calls nothing for
+    /// <see cref="ChildProcess.DefaultCeiling"/> is killed as before (<see cref="ProgressWait"/> has the measurement).</summary>
+    internal ProgressWait Wait => new(() => File.Exists(CallsFile) ? new FileInfo(CallsFile).Length : 0, Silence, ProgressWait.DefaultCap);
+
+    /// <summary>How long a run may call no fake before it is killed: <see cref="ChildProcess.DefaultCeiling"/>, shorter only
+    /// in the harness's own test of this wait.</summary>
+    internal TimeSpan Silence { get; init; } = ChildProcess.DefaultCeiling;
 
     /// <summary>Scripts what <paramref name="tool"/> answers to exactly <paramref name="argv"/>.</summary>
     public ScenarioHome Script(string tool, IReadOnlyList<string> argv, int exitCode, string stdoutFixture = "", string stderr = "", int delayMilliseconds = 0)
