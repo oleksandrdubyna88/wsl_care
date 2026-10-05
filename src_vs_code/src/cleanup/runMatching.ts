@@ -99,9 +99,19 @@ function isFullCheckLine(line: RunLine): boolean {
   return line.kind === undefined ? legacyFullCheck(line) : line.kind === RUN_KINDS.fullCheck;
 }
 
-/** A history line's actions as a confirm of this entry writes them: an act's ids exactly, or a full check's line. */
+/**
+ * An act's line, symmetric with the full check's (review C7): a line that names its kind must be an `act`; one without a kind
+ * (or with one this build does not know) keeps the old rule. The daemon stamps `act` on EVERY act-origin line — plan §15o on
+ * `fix/wc-full-check-line-names-collect`: the terminal line, the request sweep, the running-state sweep and the refusal all
+ * carry the request's kind — so a manual full check that happens to carry these ids never resolves an act entry.
+ */
+function isActLine(line: RunLine, entry: JournalEntry): boolean {
+  return (line.kind === undefined || line.kind === RUN_KINDS.act) && sameActions(line.actions.map((a) => a.id), entry.actions);
+}
+
+/** A history line's actions as a confirm of this entry writes them: an act's line with its ids exactly, or a full check's line. */
 function actionsMatch(line: RunLine, entry: JournalEntry): boolean {
-  return entry.op === 'fullCheck' ? isFullCheckLine(line) : sameActions(line.actions.map((a) => a.id), entry.actions);
+  return entry.op === 'fullCheck' ? isFullCheckLine(line) : isActLine(line, entry);
 }
 
 /** A history line that can be this entry's run: the panel's, its actions, started no earlier than the confirm less the skew (B3). */

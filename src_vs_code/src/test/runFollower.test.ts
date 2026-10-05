@@ -430,6 +430,20 @@ test('§15o: kind FIRST — kind "collect" is the full check whatever its action
   }
 });
 
+test('review C7 (§15o): an act entry is never resolved by a line of kind "collect" carrying its ids; kind "act", no kind or an unknown kind keep matching by ids', async () => {
+  const line = (kind: unknown) => ({ runId: RUN, trigger: 'manual', startedAt: '2026-10-05T10:00:01+00:00', outcome: 'completed', ...(kind === undefined ? {} : { kind }), actions: [{ id: 'A4', status: 'ran', count: 1, freedBytes: 5 }] });
+  const cases: readonly [unknown, boolean][] = [['collect', false], ['act', true], [undefined, true], ['sweep', true]];
+  for (const [kind, adopted] of cases) {
+    const w = new World();
+    await ours(w, UNRESOLVED);
+    w.answer = () => listing([line(kind)]);
+    w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
+    w.follower.kick();
+    await poll(w);
+    assert.equal(w.journal.entries()[0]?.kind === 'run', adopted, String(kind));
+  }
+});
+
 test('§15o: an act entry still matches by its actions — a kind on the line changes nothing for it', async () => {
   const w = new World();
   await ours(w, UNRESOLVED);
