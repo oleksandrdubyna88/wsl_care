@@ -80,14 +80,24 @@ ceiling can never be set at or below the daemon's own worst case for that call: 
 | `wslCare.timeouts.previewPerDockerRowSeconds` | 350 | 340–7200 | A cleanup's preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9's snap listing and a margin. |
 | `wslCare.timeouts.runReadSeconds` | 20 | 10–600 | How long `runs show`, `runs` and `logs` may take, in seconds. |
 | `wslCare.timeouts.detachSeconds` | 690 | 681–7200 | How long a cleanup's confirm or *Run full check now* may take to hand the run to its unit, in seconds — at least the daemon's worst case: the shown list, one `systemctl show` per queued request (up to 32), the start and one more `systemctl show`. A detach that outruns it is followed as "outcome unknown", never reported as failed. |
+| `wslCare.timeouts.wslListSeconds` | 15 | 5–300 | How long each of the three `wsl.exe --list` questions asked before a daemon call may take, in seconds (measured: about 50 ms each, warm). |
 | `wslCare.timeouts.stopSeconds` | 150 | 134–3600 | How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds. |
 | `wslCare.cleanup.followPollSeconds` | 4 | 2–60 | While a cleanup is in flight, how often the focused window asks `status`, in seconds. |
 | `wslCare.cleanup.unknownDetachFollowSeconds` | 60 | 10–600 | A detach whose outcome is unknown and named no run id: how long the panel looks for its run in `status.running` before it hands the question to the durable poll, in seconds. |
 | `wslCare.cleanup.followCeilingMinutes` | 30 | 5–1440 | How long a cleanup is followed before it reads "state unknown" with its run id, in minutes (after one last read of its record). |
 | `wslCare.cleanup.requestGraceSeconds` | 90 | 70–900 | How long a confirm whose run id was never seen waits before it is resolved from the run history, in seconds (above the daemon's own 60 s request grace). |
+| `wslCare.cleanup.previewRounds` | 3 | 1–10 | How many times a preview that expired before the last confirmation is taken again before the cleanup is given up, saying so. |
 | `wslCare.cleanup.previewExpiryMinutes` | 5 | 1–60 | A preview older than this when you confirm is taken again first, in minutes. |
+| `wslCare.cleanup.recordReadTries` | 3 | 1–10 | How many times the record of a finished cleanup is read (`runs show`, `runs`) before it reads "the record could not be read". |
+| `wslCare.cleanup.recordReadBackoffSeconds` | 8 | 1–300 | How much longer each new try of a failed record read waits than the one before, in seconds (the first try at once). |
+| `wslCare.cleanup.settleAtOnce` | 4 | 1–32 | How many followed cleanups are settled at the same time in one poll. |
+| `wslCare.cleanup.tombstoneMinutes` | 10 | 1–1440 | How long a cleanup another window removed from the shared journal is remembered as removed, so a stale list in a second window does not write it back, in minutes. |
 | `wslCare.cleanup.journalEntries` | 32 | 4–256 | How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped. |
 | `wslCare.logs.maxRunIndex` | 9999 | 100–100000 | The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read). |
+
+Two numbers are NOT settings, because they mirror the daemon and a second copy could drift: the days of history it keeps
+and the clock skew it allows. They are read from the daemon's own `status` answer (`limits`) and are 90 days and 5
+minutes until a daemon says otherwise.
 
 ## Workspace trust
 
