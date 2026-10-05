@@ -8,6 +8,9 @@ using FluentAssertions;
 using WslCare.Cli;
 using WslCare.Core.Docker;
 using WslCare.Core.Health;
+using WslCare.Core.Hosting;
+using WslCare.Core.Systemd;
+using WslCare.FakeTool;
 using WslCare.TestSupport;
 
 using static System.FormattableString;
@@ -96,6 +99,11 @@ internal static partial class GoldenContracts
         new("containerStarts.to", "the 24-hour window ends now", _ => FixedInstant),
         new("containerStarts.gaps[*].from", "the gap spans the window, which ends now", _ => FixedInstant),
         new("containerStarts.gaps[*].to", "the gap spans the window, which ends now", _ => FixedInstant),
+        new("running.pid", "a live or wedged run is staged on THIS test process's pid (E6.S0) — fixed to a pid that is not init's", _ => 4242),
+        new("running.heartbeatAt", "a live or wedged run's heartbeat is staged relative to now — it is judged against the clock (E6.S0)", _ => FixedInstant),
+        new("running.heartbeatAgeSeconds", "now minus the staged heartbeat: fresh for live (0), ten minutes for wedged (600)", age => age.GetValue<double>() >= 30 ? 600 : 0),
+        new("run.startedAt", "runs show: the confirmed act started now (E6.S0)", _ => FixedInstant),
+        new("run.endedAt", "runs show: the confirmed act ended now (E6.S0)", _ => FixedInstant),
     ];
 
     /// <summary>THE normalisation list, part 2 — objects picked out by a key member, whose figure is the runner's or the
@@ -128,6 +136,9 @@ internal static partial class GoldenContracts
     public static IReadOnlyList<GoldenTextRule> TextRules { get; } =
     [
         new("runIdInText", "a run id quoted in a reason or a basis (its start instant and the CLI's pid)", RunIdInText(), FixedRunId),
+        new("pidInText", "a pid quoted in a running state's reason — a live or wedged run is staged on THIS test process (E6.S0)", PidInText(), "pid 4242"),
+        new("heartbeatAgeInText", "a wedged run's heartbeat age quoted in its reason: now minus the staged heartbeat (E6.S0)", HeartbeatAgeInText(), "heartbeat is 600 s old"),
+        new("detailDayInText", "a run detail's day folder in its path: the UTC day the confirmed act ran (E6.S0)", DetailDayInText(), "runs/2000-01-01/"),
     ];
 
     /// <summary>
@@ -177,7 +188,61 @@ internal static partial class GoldenContracts
             files.Add((file, Normalise(result.Stdout, home.SandboxRoot, matched)));
         }
 
+        files.AddRange(await ReadContractAsync(matched));
         return (files, matched);
+    }
+
+    /// <summary>
+    /// E6.S0's read contract (plan §15j): <c>status --json</c> in every running state a scenario stages against the real
+    /// process table (each over an otherwise EMPTY sandbox — the running block is what differs; the main <c>status.json</c>
+    /// is the <c>none</c> state over the captured tree), <c>act A4 --preview --json</c> over the 387 synthetic volumes,
+    /// <c>runs show</c> of a confirmed act (done), of the dead run it swept (interrupted) and of a stranger (unknown), and
+    /// <c>runs</c> / <c>logs</c> over a local day that crosses UTC midnight.
+    /// </summary>
+    private static async Task<IReadOnlyList<(string File, string Text)>> ReadContractAsync(ISet<string> matched)
+    {
+        var files = new List<(string, string)>();
+        foreach (var state in ReadContractScenes.StagedRunningStates)
+        {
+            using var staged = new ScenarioHome($"golden-running-{state}");
+            ReadContractScenes.Stage(staged, state);
+            files.Add(Answered($"status-running-{state}.json", staged, await staged.RunAsync("status", "--json"), matched));
+        }
+
+        var (morning, _) = ReadContractScenes.A4Morning("golden-a4");
+        using (morning)
+        {
+            files.Add(Answered("act-a4-preview.json", morning, await morning.RunAsync("act", "A4", "--preview", "--json"), matched));
+        }
+
+        // E6.S1: the answer a detach hands the panel — the run id it follows and the unit systemd runs it in.
+        using (var detach = new ScenarioHome("golden-detach") { ClaimsRoot = true })
+        {
+            detach.Answer(new FakeAnswer(SystemdCommands.Systemctl, ["start", "--no-block"], 0, string.Empty, string.Empty) { Prefix = true });
+            Directory.CreateDirectory(((LinuxHostPaths)detach.Paths).DistroPath("/run/systemd/system"));
+            files.Add(Answered("act-detach-accepted.json", detach, await detach.RunAsync("act", "A10", "--confirm", "--manual", "--detach", "--json"), matched));
+        }
+
+        using var journal = ReadContractScenes.Journal("golden-runs-show");
+        ReadContractScenes.Running(journal, ReadContractScenes.Dead());
+        var act = await journal.RunAsync("act", "A10", "--confirm", "--json");
+        act.Exit.Should().Be((int)ExitCode.Ok, act.Stderr);
+        var runId = JsonNode.Parse(act.Stdout)!["runId"]!.GetValue<string>();
+        files.Add(Answered("runs-show-done.json", journal, await journal.RunAsync("runs", "show", runId, "--json"), matched));
+        files.Add(Answered("runs-show-interrupted.json", journal, await journal.RunAsync("runs", "show", ReadContractScenes.Dead().RunId.Text, "--json"), matched));
+        files.Add(Answered("runs-show-unknown.json", journal, await journal.RunAsync("runs", "show", ReadContractScenes.StrangerRunId, "--json"), matched));
+
+        using var day = new ScenarioHome("golden-local-day");
+        ReadContractScenes.LocalDayHistory(day);
+        files.Add(Answered("runs-local-day.json", day, await day.RunAsync(["runs", .. ReadContractScenes.LocalDay, "--json"]), matched));
+        files.Add(Answered("logs-local-day.json", day, await day.RunAsync(["logs", .. ReadContractScenes.LocalDay, "--detail", "--json"]), matched));
+        return files;
+    }
+
+    private static (string File, string Text) Answered(string file, ScenarioHome home, ChildResult result, ISet<string> matched)
+    {
+        result.Exit.Should().Be((int)ExitCode.Ok, $"{file}: {result.Stderr}");
+        return (file, Normalise(result.Stdout, home.SandboxRoot, matched));
     }
 
     /// <summary>Every rule's name as <see cref="Normalise"/> records a match of it.</summary>
@@ -283,6 +348,15 @@ internal static partial class GoldenContracts
 
     [GeneratedRegex(@"\b\d{8}T\d{6}Z-\d+\b")]
     private static partial Regex RunIdInText();
+
+    [GeneratedRegex(@"\bpid \d+\b")]
+    private static partial Regex PidInText();
+
+    [GeneratedRegex(@"heartbeat is \d+ s old")]
+    private static partial Regex HeartbeatAgeInText();
+
+    [GeneratedRegex(@"\bruns/\d{4}-\d{2}-\d{2}/")]
+    private static partial Regex DetailDayInText();
 
     [GeneratedRegex(@"^\d+(\.\d+)? days")]
     private static partial Regex LeadingDays();

@@ -427,6 +427,64 @@ public sealed class ActionEngineTests : IDisposable
         File.Exists(RunningState.File(_sandbox.Paths)).Should().BeFalse();
     }
 
+    private ActRunDetail RecordedDetail() =>
+        JsonSerializer.Deserialize(File.ReadAllBytes(RunDetailStore.Absolute(_sandbox.Paths, History().Single().DetailPath)), WslCareJsonContext.Default.ActRunDetail)!;
+
+    /// <summary>E6.S0 review D2: the interrupted record names the action that was IN FLIGHT and every requested action that
+    /// never ran — before, it held neither, so nobody could tell what a cut-off run had been doing.</summary>
+    [Fact]
+    public async Task A_signal_mid_action_records_the_action_in_flight_and_the_ones_never_run_as_interrupted()
+    {
+        using var signal = new CancellationTokenSource();
+        var stopping = new ScriptedAction("A5", _journal)
+        {
+            OnRun = async _ =>
+            {
+                await signal.CancelAsync();
+                signal.Token.ThrowIfCancellationRequested();
+                return new ActionRun(0, 0, "x", null, null, [], [], string.Empty);
+            },
+        };
+
+        var act = () => Engine(stopping, Action("A10")).ExecuteAsync(Run(RunTrigger.Cli, "A5", "A10"), signal.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        var detail = RecordedDetail();
+        detail.Actions.Select(a => $"{a.Id}:{a.Status}").Should().Equal("A5:interrupted", "A10:interrupted");
+        detail.Actions[0].Reason.Should().Contain("cut off by a signal while it ran");
+        detail.Actions[1].Reason.Should().Contain("not run");
+        History().Single().Actions.Select(a => $"{a.Id}:{a.Status}").Should().Equal("A5:interrupted", "A10:interrupted");
+    }
+
+    /// <summary>E6.S0 review D2: an action that was cut off but knows what it had already removed (A4 / A5's confirmed
+    /// batches) records it — the deletions are real, the history counts them, and the run stops there.</summary>
+    [Fact]
+    public async Task An_action_cut_off_with_confirmed_removals_records_them_as_interrupted_and_the_run_stops()
+    {
+        using var signal = new CancellationTokenSource();
+        var partial = new ScriptedAction("A5", _journal)
+        {
+            OnRun = async _ =>
+            {
+                await signal.CancelAsync();
+                return new ActionRun(2, 300, "measured", null, null, [new ActionItem("container", "a", 100), new ActionItem("container", "b", 200)], [], string.Empty)
+                {
+                    Interrupted = true,
+                    NotRemoved = [new ActionItem("container", "c", 50, "unknown: cut off mid-command")],
+                };
+            },
+        };
+
+        var act = () => Engine(partial, Action("A10")).ExecuteAsync(Run(RunTrigger.Cli, "A5", "A10"), signal.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _journal.Should().NotContain("run A10");
+        var a5 = RecordedDetail().Actions[0];
+        a5.Status.Should().Be(ActionStatus.Interrupted);
+        a5.Run!.Removed.Should().HaveCount(2);
+        History().Single().Actions[0].Should().Match<ActionRecord>(r => r.Status == ActionStatus.Interrupted && r.Count == 2 && r.FreedBytes == 300);
+    }
+
     [Fact]
     public async Task The_heartbeat_keeps_running_json_fresh_while_an_action_runs()
     {

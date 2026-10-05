@@ -1,0 +1,362 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "sampledAt": "2000-01-01T00:00:00+00:00",
+  "sampleMilliseconds": 0,
+  "observeOnly": false,
+  "configError": [],
+  "vm": {
+    "available": true,
+    "memory": {
+      "available": false,
+      "reason": "/golden-root/proc/meminfo does not exist"
+    },
+    "processes": {
+      "available": false,
+      "reason": "/golden-root/proc does not exist: no procfs to read processes from"
+    },
+    "containers": {
+      "available": false,
+      "reason": "/golden-root/sys/fs/cgroup does not exist: no cgroup v2 mount to read container memory from"
+    },
+    "unattributed": {
+      "state": "unavailable",
+      "reason": "/golden-root/proc/meminfo does not exist"
+    },
+    "disk": {
+      "available": true,
+      "path": "/golden-root",
+      "totalBytes": 100000000000,
+      "usedBytes": 13000000000,
+      "availableBytes": 87000000000,
+      "usedPercent": 13
+    }
+  },
+  "host": {
+    "available": false,
+    "reason": "Windows-side figures (host RAM, C:, vmmemWSL, the .vhdx files) are read by wsl-care.exe on Windows, not from inside the VM"
+  },
+  "slow": {
+    "containerStats": {
+      "available": false,
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one"
+    },
+    "windowsClock": {
+      "available": false,
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one"
+    }
+  },
+  "containerStarts": {
+    "from": "2000-01-01T00:00:00+00:00",
+    "to": "2000-01-01T00:00:00+00:00",
+    "starts": 0,
+    "testcontainers": 0,
+    "topImages": [],
+    "complete": false,
+    "gaps": [
+      {
+        "from": "2000-01-01T00:00:00+00:00",
+        "to": "2000-01-01T00:00:00+00:00",
+        "reason": "no 24-hour summary has been written: the events follower has not recorded anything yet"
+      }
+    ]
+  },
+  "folders": {
+    "available": false,
+    "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+    "measuredThisRun": false
+  },
+  "verdicts": [
+    {
+      "id": "memory.available",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn < 25 %, critical < 15 %",
+      "reason": "/golden-root/proc/meminfo does not exist",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.pageCache",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 15 GiB",
+      "reason": "/golden-root/proc/meminfo does not exist",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.inactiveAnon",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 15 GiB",
+      "reason": "/golden-root/proc/meminfo does not exist",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.swap",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 4 GiB",
+      "reason": "/golden-root/proc/meminfo does not exist",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.fragmentation",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn < 32 free order-7 blocks, critical = 0 (zone Normal)",
+      "reason": "/golden-root/proc/meminfo does not exist",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.pressure",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn: memory some avg60 or avg300 > 10",
+      "reason": "/golden-root/proc/meminfo does not exist",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "wslconfig.memory",
+      "level": "unknown",
+      "value": "",
+      "limit": "critical > 90 % of the VM's ceiling; recommended .wslconfig memory=36GB (shown, never written)",
+      "reason": "/golden-root/proc/meminfo does not exist; .wslconfig not read: status does not read it; the full run (collect) does",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "disk.root",
+      "level": "ok",
+      "value": "13.0 %",
+      "limit": "warn > 80 %",
+      "reason": "df / of the distro",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "kernel.allocationFailures",
+      "level": "unknown",
+      "value": "",
+      "limit": "critical at 1 or more",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "kernel.oomKills",
+      "level": "unknown",
+      "value": "",
+      "limit": "critical at 1 or more",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "journal.size",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 1 GiB",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "journal.history",
+      "level": "warn",
+      "value": "",
+      "limit": "warn when the oldest entry is less than 7 days old",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "clock.jumps",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 100 per 4 h",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "clock.drift",
+      "level": "ok",
+      "value": "",
+      "limit": "warn: |offset| > 5 s on two observations at least 5 minutes apart (clock.maxDriftSeconds)",
+      "reason": "the distro's clock agrees with Windows'",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "systemd.failedUnits",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn at 1 or more",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "systemd.wslPro",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn when wsl-pro.service is not masked and runs (plan 0.4)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "collectors.sysstat",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn when the last sample is 30 minutes old or older",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "collectors.atop",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn when the last sample is 30 minutes old or older",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "disk.discard",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn when / is mounted without discard and fstrim.timer is not enabled",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "docker.A4",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 100 volumes or > 20 GB (volumes.anonymousMaxCount / anonymousMaxGb, A4's trigger)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "docker.A6Unused",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 10 GB",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "docker.buildCache",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 20 GB",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "npm.cache",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 5 GB",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    }
+  ],
+  "productVersion": "unknown",
+  "actions": [
+    "A5Testcontainers",
+    "A5",
+    "A4",
+    "A6",
+    "A6Unused",
+    "A7",
+    "A8",
+    "A9",
+    "A12",
+    "A14",
+    "A17",
+    "A10",
+    "A15",
+    "A16",
+    "A3",
+    "A11",
+    "A1",
+    "A2"
+  ],
+  "capabilities": [
+    "act.shownList",
+    "runs.show",
+    "running.block",
+    "logs.instantRange",
+    "act.detach",
+    "act.onlyStdin",
+    "act.stop"
+  ],
+  "running": {
+    "state": "queued",
+    "reason": "run 20000101T000000Z-1 (A4) was accepted and has not started yet",
+    "runId": "20000101T000000Z-1",
+    "actions": [
+      "A4"
+    ],
+    "trigger": "manual",
+    "queuedAt": "2026-10-01T10:00:00+00:00",
+    "queued": 1
+  },
+  "lastCleanup": {
+    "available": false,
+    "reason": "no cleanup is recorded in the history yet (no action has removed or freed anything)"
+  }
+}

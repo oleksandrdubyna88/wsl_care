@@ -36,6 +36,10 @@ public sealed record EngineContext(
 
     /// <summary>How an unreadable <c>running.json</c> is read again before any verdict (gate finding #7).</summary>
     public RunningReadRetry RunningRetry { get; init; } = RunningReadRetry.Default;
+
+    /// <summary>What cancelled the run, in words, asked only once it was cancelled — the CLI names the signal (SIGHUP when
+    /// the terminal or the <c>wsl.exe</c> that started it went away, §15j B2), so the <c>interrupted</c> record says which.</summary>
+    public Func<string> InterruptCause { get; init; } = static () => "a signal";
 }
 
 /// <summary>
@@ -101,13 +105,14 @@ public sealed class ActionEngine(EngineContext c)
     {
         var started = c.Clock.GetUtcNow();
         var notes = new List<string>();
-        var runId = RunId.New(started, c.ProcessId);
+        var runId = request.RunId ?? RunId.New(started, c.ProcessId);
         if (Sweep(notes, started, runId) is { } refusal)
         {
             return refusal;
         }
 
         Reconcile(notes, started);
+        notes.AddRange(await request.UnderLock(runId, cancellationToken).ConfigureAwait(false));
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         var recorded = Record(Detail(runId, request.Trigger, started, pass.Dry, pass.Target, pass.Outcomes, notes, pass.Outcome));
         var result = pass.RunningWritten ? RemoveRunning(recorded) : recorded;
@@ -168,13 +173,14 @@ public sealed class ActionEngine(EngineContext c)
     {
         var target = DiscoverTarget();
         var dry = DryRunWindow.Decide(request.Trigger, c.Loaded.Config, c.Paths, c.Files, started);
-        var running = new RunningFile(Core.SchemaVersion.Current, runId, request.Trigger, [.. request.Ids.Select(i => i.Text)], string.Empty, c.ProcessId, OwnStart(), started, started);
+        var running = RunningState.Identified(new RunningFile(Core.SchemaVersion.Current, runId, request.Trigger, [.. request.Ids.Select(i => i.Text)], string.Empty, c.ProcessId, OwnStart(), started, started), c.Processes);
         if (StartRunning(running) is { Length: > 0 } cannot)
         {
             notes.Add(cannot);
             return new Pass(target, dry, [], RunOutcome.Failed, RunningWritten: false);
         }
 
+        request.OnRunningWritten();
         var outcomes = new List<ActionOutcome>();
         var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes)) { IdleSource = SampleIdle };
         var outcome = await ActAllAsync(request, run, running, notes, outcomes, cancellationToken).ConfigureAwait(false);
@@ -198,26 +204,47 @@ public sealed class ActionEngine(EngineContext c)
     /// <summary>Every action, under a beating heart; a cancellation ends the loop as <c>interrupted</c> (recorded, then rethrown by the caller).</summary>
     private async Task<RunOutcome> ActAllAsync(ActRequest request, RunState run, RunningFile running, List<string> notes, List<ActionOutcome> outcomes, CancellationToken cancellationToken)
     {
-        var heartbeat = new Heartbeat(c.Paths, c.Files, c.Clock, running, c.HeartbeatPeriod);
+        var ordered = c.Registry.InExecutionOrder(request.Ids);
+        var heartbeat = new Heartbeat(c.Paths, c.Files, c.Clock, c.Processes, running, c.HeartbeatPeriod);
         await using (heartbeat.ConfigureAwait(false))
         {
+            await ActEachAsync(ordered, run, heartbeat, outcomes, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            return Completed(heartbeat.Failure, notes);
+        }
+
+        RecordNotRun(ordered, outcomes);
+        notes.Add($"interrupted by {c.InterruptCause()} before every action had run");
+        return RunOutcome.Interrupted;
+    }
+
+    /// <summary>The actions one by one, until a cancellation: the action it cuts off is recorded <c>interrupted</c> — with what
+    /// it had confirmed when it returned a partial run, without when it threw (E6.S0 review D2).</summary>
+    private async Task ActEachAsync(IReadOnlyList<ICleanupAction> ordered, RunState run, Heartbeat heartbeat, List<ActionOutcome> outcomes, CancellationToken cancellationToken)
+    {
+        foreach (var action in ordered.TakeWhile(_ => !cancellationToken.IsCancellationRequested))
+        {
+            heartbeat.Current(action.Id.Text);
             try
             {
-                foreach (var action in c.Registry.InExecutionOrder(request.Ids))
-                {
-                    heartbeat.Current(action.Id.Text);
-                    outcomes.Add(await OneAsync(action, run, cancellationToken).ConfigureAwait(false));
-                }
+                outcomes.Add(await OneAsync(action, run, cancellationToken).ConfigureAwait(false));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                notes.Add("interrupted by a signal before every action had run");
-                return RunOutcome.Interrupted;
+                outcomes.Add(Outcome(action, ActionStatus.Interrupted, $"cut off by {c.InterruptCause()} while it ran; what it did before the signal is not known", null, null));
+                return;
             }
         }
-
-        return Completed(heartbeat.Failure, notes);
     }
+
+    /// <summary>Every requested action the cancellation came before: <c>interrupted</c>, not run — so the record says what the
+    /// run was going to do, as the sweep of a dead run does.</summary>
+    private void RecordNotRun(IReadOnlyList<ICleanupAction> ordered, List<ActionOutcome> outcomes) =>
+        outcomes.AddRange([.. ordered.Where(a => outcomes.All(o => o.Id != a.Id.Text))
+            .Select(a => Outcome(a, ActionStatus.Interrupted, $"not run: the run was interrupted by {c.InterruptCause()} before it", null, null))]);
 
     /// <summary>How a pass that reached its end ended: observe-only or completed — with the heartbeat's failure noted.</summary>
     private RunOutcome Completed(string heartbeatFailure, List<string> notes)
@@ -261,10 +288,12 @@ public sealed class ActionEngine(EngineContext c)
         return Ran(action, preview, await action.RunAsync(run.Context, preview, commands, cancellationToken).ConfigureAwait(false));
     }
 
-    private static ActionOutcome Ran(ICleanupAction action, ActionPreview preview, ActionRun done) =>
-        done.Succeeded
-            ? Outcome(action, ActionStatus.Ran, preview.Urgent.Length > 0 ? $"ran at once, without waiting for idle: {preview.Urgent}" : "ran", preview, done)
-            : Outcome(action, ActionStatus.Failed, done.Failure, preview, done);
+    private ActionOutcome Ran(ICleanupAction action, ActionPreview preview, ActionRun done) => done switch
+    {
+        { Interrupted: true } => Outcome(action, ActionStatus.Interrupted, $"cut off by {c.InterruptCause()} while it ran: {done.Count} confirmed before the signal, the command in flight and the rest are under notRemoved", preview, done),
+        { Succeeded: true } => Outcome(action, ActionStatus.Ran, preview.Urgent.Length > 0 ? $"ran at once, without waiting for idle: {preview.Urgent}" : "ran", preview, done),
+        _ => Outcome(action, ActionStatus.Failed, done.Failure, preview, done),
+    };
 
     /// <summary>A gate's answer: the status and reason that stop the action here, or <c>null</c> to go on.</summary>
     private sealed record Stop(string Status, string Reason);
@@ -346,8 +375,22 @@ public sealed class ActionEngine(EngineContext c)
 
         var preview = await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false);
         var refusal = action.Scope == CommandScope.User ? target.Refusal : string.Empty;
-        return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null);
+        return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null) with
+        {
+            Shown = ShownOf(action, preview),
+            ShownTruncated = ShownTruncatedOf(action, preview),
+        };
     }
+
+    /// <summary>coai E6 plan round #11: true when the preview selected more names than a shown list carries — <c>count</c>
+    /// stays the total, <c>shown</c> the first <see cref="ShownList.MaxNames"/>; absent otherwise.</summary>
+    private static bool? ShownTruncatedOf(ICleanupAction action, ActionPreview preview) =>
+        action is IBoundToShownList && preview.Available && ShownList.Truncates(preview.Count) ? true : null;
+
+    /// <summary>§15j B1: for an action bound to its shown list (A4), every name its available preview selected — what the
+    /// panel sends back; absent (null) for every other action and for a preview that could not be read.</summary>
+    private static IReadOnlyList<string>? ShownOf(ICleanupAction action, ActionPreview preview) =>
+        action is IBoundToShownList bound && preview.Available ? bound.Shown(preview) : null;
 
     /// <summary>The <c>running.json</c> a previous run left (<see cref="RunningSweep"/>, shared with every full run's
     /// housekeeping): swept when its process is dead, a refusal when it is not; this run's own file (a full run's, met by its

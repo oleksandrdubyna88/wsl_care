@@ -41,6 +41,15 @@ public sealed record CollectContext(
 
     /// <summary>How A11 signals a process; refuses by default.</summary>
     public IProcessSignals Signals { get; init; } = RefusingProcessSignals.NotWired;
+
+    /// <summary>The run id <c>collect --detach</c> allocated and wrote into its request (E6.S1); <c>null</c>: a new one.</summary>
+    public RunId? RunId { get; init; }
+
+    /// <summary>Called once this run's <c>running.json</c> is written — a detached run removes its request THEN (review D4).</summary>
+    public Action OnRunningWritten { get; init; } = static () => { };
+
+    /// <summary>What cancelled the run, in words — the CLI names the signal (E6.S0 review: a full run cut off records why).</summary>
+    public Func<string> InterruptCause { get; init; } = static () => "a signal";
 }
 
 /// <summary>How a full run ended for its records, and its detail (none when another run held the lock).</summary>
@@ -77,7 +86,7 @@ public static class CollectRun
     public static async Task<CollectResult> RunAsync(CollectContext c, CancellationToken cancellationToken)
     {
         var started = c.Clock.GetUtcNow();
-        var runId = RunId.New(started, c.ProcessId);
+        var runId = c.RunId ?? RunId.New(started, c.ProcessId);
         if (c.Files.ProbeWriteAccess(c.Paths.StateDirectory) is WriteAccess.NotWritable denied)
         {
             var measured = await MeasureAsync(c, runId, started, NoHousekeeping(), mayRecord: false, cancellationToken).ConfigureAwait(false);
@@ -109,12 +118,18 @@ public static class CollectRun
     private static async Task<CollectResult> UnderLockAsync(CollectContext c, RunId runId, DateTimeOffset started, CancellationToken cancellationToken)
     {
         var sweep = RunningSweep.Apply(c.Paths, c.Files, c.Processes, started, RunningReadRetry.Default, runId, c.ProcessId);
-        var running = new RunningFile(Core.SchemaVersion.Current, runId, c.Trigger, [RunningAction], RunningAction, c.ProcessId, OwnStart(c), started, started);
+        var running = RunningState.Identified(new RunningFile(Core.SchemaVersion.Current, runId, c.Trigger, [RunningAction], RunningAction, c.ProcessId, OwnStart(c), started, started), c.Processes);
         var owned = sweep is RunningSweep.Clear && StartRunning(c, running);
+        if (owned)
+        {
+            c.OnRunningWritten();
+        }
+
         try
         {
-            var housekeeping = Housekeep(c, started) with { Running = SweepNote(sweep, owned) };
-            var measured = await MeasureBeatingAsync(c, running, owned, housekeeping, cancellationToken).ConfigureAwait(false);
+            var requests = await SweptOrRecordedAsync(c, running, started, runId).ConfigureAwait(false);
+            var housekeeping = Housekeep(c, started) with { Running = SweepNote(sweep, owned), Requests = requests };
+            var measured = await MeasuredOrRecordedAsync(c, running, owned, housekeeping, cancellationToken).ConfigureAwait(false);
             var (detail, engine) = await TimerPassAsync(c, measured, runId, started, cancellationToken).ConfigureAwait(false);
             var result = Record(c, detail);
             var left = EndPass(engine);
@@ -127,13 +142,62 @@ public static class CollectRun
         }
     }
 
+    /// <summary>
+    /// The measurement — and when a cancellation (a signal: Ctrl+C, SIGTERM from <c>systemctl stop</c>, SIGHUP) cuts it off, ONE
+    /// <c>interrupted</c> history line naming why BEFORE the cancellation flies on (E6.S0 durable review, on E6.S1's list): a
+    /// full run cut off mid-measurement used to leave no record at all, its <c>running.json</c> removed by the <c>finally</c>, so
+    /// <c>runs show</c> answered "unknown".
+    /// </summary>
+    private static async Task<RunDetail> MeasuredOrRecordedAsync(CollectContext c, RunningFile running, bool owned, HousekeepingReport housekeeping, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await MeasureBeatingAsync(c, running, owned, housekeeping, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            RecordCutOff(c, running, "during the measurement");
+            throw;
+        }
+    }
+
+    /// <summary>The request sweep — and when a cancellation cuts it off, the same ONE <c>interrupted</c> line as a cut-off
+    /// measurement (E6.S1 review D2: the sweep ran outside that guard, and a signal there left zero lines for the run).</summary>
+    private static async Task<IReadOnlyList<string>> SweptOrRecordedAsync(CollectContext c, RunningFile running, DateTimeOffset started, RunId runId)
+    {
+        try
+        {
+            return await RequestSweep.ApplyAsync(c.Paths, c.Files, c.Commands, c.Processes, started, runId).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            RecordCutOff(c, running, "while it swept the request folder");
+            throw;
+        }
+    }
+
+    private static void RecordCutOff(CollectContext c, RunningFile running, string when)
+    {
+        try
+        {
+            new RunRecordWriter(c.Paths, c.Files).Append(new RunRecord(Core.SchemaVersion.Current, running.RunId, running.Trigger, running.StartedAt, c.Clock.GetUtcNow(), RunOutcome.Interrupted, [])
+            {
+                Reason = $"interrupted by {c.InterruptCause()} {when}: nothing was recorded but this line",
+            });
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
+        {
+            // The cancellation still flies; with no line, the next run's reconcile and sweep are what is left.
+        }
+    }
+
     /// <summary>The timer pass's <c>running.json</c> removed once the run is recorded; empty when there was no pass or it went.</summary>
     private static string EndPass(ActionEngine? engine) => engine?.EndTimerPass() ?? string.Empty;
 
     /// <summary>The measurement under this run's heartbeat (when it owns <c>running.json</c>).</summary>
     private static async Task<RunDetail> MeasureBeatingAsync(CollectContext c, RunningFile running, bool owned, HousekeepingReport housekeeping, CancellationToken cancellationToken)
     {
-        IAsyncDisposable heartbeat = owned ? new Heartbeat(c.Paths, c.Files, c.Clock, running, RunningState.HeartbeatPeriod) : NoHeartbeat.Instance;
+        IAsyncDisposable heartbeat = owned ? new Heartbeat(c.Paths, c.Files, c.Clock, c.Processes, running, RunningState.HeartbeatPeriod) : NoHeartbeat.Instance;
         await using (heartbeat.ConfigureAwait(false))
         {
             return await MeasureAsync(c, running.RunId, running.StartedAt, housekeeping, mayRecord: true, cancellationToken).ConfigureAwait(false);

@@ -20,6 +20,10 @@ public sealed record HousekeepingReport(ReconcileReport Reconcile, RetentionRepo
     /// <summary>What the <c>running.json</c> sweep did (gate finding #8: every full run sweeps a dead run's file): swept, or the
     /// other run's state that stood in the way; empty when there was nothing to sweep.</summary>
     public string Running { get; init; } = string.Empty;
+
+    /// <summary>What the request sweep did (E6.S1, plan §15k #15): every root full run sweeps the request folder; empty when
+    /// nothing was swept.</summary>
+    public IReadOnlyList<string> Requests { get; init; } = [];
 }
 
 /// <summary>

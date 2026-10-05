@@ -14,7 +14,7 @@ public sealed class SandboxHost : IDisposable
     {
         Root = new TempRoot(purpose);
         Paths = HostPaths.ForThisMachine(Root.Path);
-        Files = new PhysicalFileSystem(Paths);
+        Files = new PhysicalFileSystem(Paths) { TrustedStateOwner = RegularFiles.EffectiveUid() };
     }
 
     public TempRoot Root { get; }

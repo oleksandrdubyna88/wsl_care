@@ -130,6 +130,73 @@ public sealed class DockerCleanupTests : IDisposable
         RunHistory.Read(_sandbox.Paths, _sandbox.Files).Records.Should().OnlyContain(r => r.Trigger == RunTrigger.Manual);
     }
 
+    /// <summary>§15j B1: the preview's items stop at 20, so a button that sent back the ITEMS would pass 20 of 387. A4's
+    /// preview outcome carries <c>shown</c> — every name it selected, the keys its run matches — and no other action's does.</summary>
+    [Fact]
+    public async Task A4s_preview_outcome_carries_every_selected_name_as_shown_and_no_other_actions_outcome_carries_one()
+    {
+        var engine = Engine(new DockerWorld());
+
+        var result = await engine.PreviewAsync(new ActRequest([ActionId.Find("A4")!, ActionId.Find("A5")!, ActionId.Find("A10")!], RunTrigger.Cli, Execute: false), CancellationToken.None);
+
+        var outcomes = result.Should().BeOfType<ActResult.Previewed>().Subject.Actions;
+        var a4 = outcomes.Single(o => o.Id == "A4");
+        a4.Shown.Should().BeEquivalentTo(DockerWorld.DanglingAnonymous, "every anonymous volume the preview selected, by the name its run matches");
+        a4.Shown!.Count.Should().Be(a4.Preview!.Count);
+        a4.ShownTruncated.Should().BeNull("three names fit a shown list: the flag is absent, not false");
+        outcomes.Where(o => o.Id != "A4").Should().OnlyContain(o => o.Shown == null, "only A4 is bound to its shown list (plan §15f #11)");
+    }
+
+    /// <summary>The cap: a preview selecting more than <see cref="ShownList.MaxNames"/> names lists the first that many — the
+    /// most a shown list can carry back.</summary>
+    [Fact]
+    public void A4s_shown_list_is_every_target_key_in_order_capped_at_the_most_a_shown_list_carries()
+    {
+        var targets = Enumerable.Range(0, ShownList.MaxNames + 5).Select(i => new ActionItem("volume", $"v{i}", 1) { Key = i.ToString("x64", System.Globalization.CultureInfo.InvariantCulture) }).ToList();
+        var preview = ActionPreview.Of("what", targets.Count, targets.Count, "basis", new Dictionary<string, long>(), string.Empty, targets);
+
+        var shown = new VolumeRemoval().Shown(preview);
+
+        shown.Should().HaveCount(ShownList.MaxNames);
+        shown[0].Should().Be(targets[0].Key);
+        shown[^1].Should().Be(targets[ShownList.MaxNames - 1].Key);
+        ShownList.Truncates(preview.Count).Should().BeTrue("count stays the total; shownTruncated says only the first 10 000 go (coai #11)");
+        ShownList.Truncates(ShownList.MaxNames).Should().BeFalse();
+    }
+
+    /// <summary>E6.S0 review D2: a removal cut off by a signal keeps what Docker CONFIRMED in the batches before — those
+    /// deletions are real — and names the batch in flight as unknown and the rest as not attempted, instead of throwing
+    /// everything it knew away.</summary>
+    [Fact]
+    public async Task A_removal_cut_off_mid_batch_keeps_the_confirmed_batches_and_names_the_rest()
+    {
+        using var signal = new CancellationTokenSource();
+        var world = new DockerWorld();
+        var targets = Enumerable.Range(1, DockerCleanupCommands.Batch * 2 + 1)
+            .Select(i => i.ToString("x64", System.Globalization.CultureInfo.InvariantCulture))
+            .Select(name => new ActionItem("volume", name, 10) { Key = name }).ToList();
+        var calls = 0;
+        world.Runner.ScriptEffect(argv => argv is ["docker", "volume", "rm", ..], r =>
+        {
+            if (++calls == 1)
+            {
+                return Removed(r.Argv.Skip(3));
+            }
+
+            signal.Cancel();
+            throw new OperationCanceledException(signal.Token);
+        });
+        var context = DockerWorld.Context(_sandbox);
+        var commands = world.Commands(new VolumeRemoval(), context);
+
+        var removal = await DockerRemovals.RemoveAsync(commands, DockerCleanupCommands.VolumeRemove, targets, new Dictionary<string, string>(StringComparer.Ordinal), signal.Token);
+
+        removal.Interrupted.Should().BeTrue();
+        removal.Removed.Should().HaveCount(DockerCleanupCommands.Batch, "the first batch was confirmed before the signal");
+        removal.NotRemoved.Where(n => n.Note.StartsWith("unknown: cut off mid-command", StringComparison.Ordinal)).Should().HaveCount(DockerCleanupCommands.Batch);
+        removal.NotRemoved.Where(n => n.Note.StartsWith("not attempted", StringComparison.Ordinal)).Should().ContainSingle();
+    }
+
     [Fact]
     public async Task A4_keeps_a_volume_docker_refuses_as_in_use_and_fails_only_on_an_answer_it_cannot_read()
     {

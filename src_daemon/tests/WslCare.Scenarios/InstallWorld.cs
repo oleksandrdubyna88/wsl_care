@@ -49,7 +49,7 @@ internal sealed class InstallWorld : IDisposable
     /// <summary>The real tools linked onto the script's PATH: text and file tools only, acting on the temporary folder
     /// and the prefix.</summary>
     public static readonly IReadOnlyList<string> RealTools =
-        ["awk", "cat", "chmod", "cut", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "sort", "tail", "tar", "timeout", "tr", "wc"];
+        ["awk", "cat", "chmod", "cut", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "date", "sort", "tail", "tar", "timeout", "tr", "wc"];
 
     private readonly TempRoot _root;
     private readonly List<FakeAnswer> _answers = [];
@@ -113,6 +113,16 @@ internal sealed class InstallWorld : IDisposable
 
     /// <summary>A <c>GH_TOKEN</c> in the script's environment; none unless a test sets it.</summary>
     public string GhToken { get; set; } = string.Empty;
+
+    /// <summary><c>WSL_CARE_INSTALL_RUN_WAIT_SECONDS</c>: how long an upgrade waits for a run in flight; the script's own
+    /// 10 minutes unless a test sets it.</summary>
+    public string RunWaitSeconds { get; set; } = string.Empty;
+
+    /// <summary><c>WSL_CARE_INSTALL_PROGRESS_SECONDS</c>: how often the wait says so; the script's 30 s unless a test sets it.</summary>
+    public string ProgressSeconds { get; set; } = string.Empty;
+
+    /// <summary><c>WSL_CARE_INSTALL_SKIP_RUN_WAIT</c>: the escape for an installed binary that cannot answer.</summary>
+    public bool SkipRunWait { get; set; }
 
     public IReadOnlyList<FakeCall> Calls => FakeCallLog.ReadAll(CallsFile);
 
@@ -310,6 +320,9 @@ internal sealed class InstallWorld : IDisposable
         [FakeToolProtocol.RecordEnvironmentVariable] = string.Join(',', RecordedVariables),
         ["SUDO_USER"] = SudoUser.Length == 0 ? null : SudoUser,
         ["GH_TOKEN"] = GhToken.Length == 0 ? null : GhToken,
+        ["WSL_CARE_INSTALL_RUN_WAIT_SECONDS"] = RunWaitSeconds.Length == 0 ? null : RunWaitSeconds,
+        ["WSL_CARE_INSTALL_PROGRESS_SECONDS"] = ProgressSeconds.Length == 0 ? null : ProgressSeconds,
+        ["WSL_CARE_INSTALL_SKIP_RUN_WAIT"] = SkipRunWait ? "1" : null,
     };
 
     /// <summary>Every entry under the prefix: path → kind, mode, link target or content hash. Equal before and after a

@@ -30,8 +30,11 @@ namespace WslCare.Cli.Commands;
 /// configuration layer is invalid); 130 interrupted.</para>
 /// <para>The trigger is <c>timer</c> with <c>--timer</c> (the timer unit's mark, as for <c>collect</c>; never <c>INVOCATION_ID</c>) — then the <c>auto</c>
 /// switches, the triggers and the 7-day dry run apply — <c>manual</c> when the panel's button passes <c>--manual</c> (E3.S2;
-/// the timer wins if both are true: more gates, not fewer), and <c>cli</c> otherwise. A4 on a <c>manual</c> run removes
-/// only the volumes passed with <c>--volume</c> / <c>--only</c> — what its preview SHOWED — and refuses without them.</para>
+/// the two marks are exclusive since E6.S0, plan §15j m2 — the parser refuses both), and <c>cli</c> otherwise. A4 on a
+/// <c>manual</c> run removes only the volumes passed with <c>--volume</c> / <c>--only</c> — what its preview SHOWED, every one of
+/// them in the preview's <c>shown</c> (§15j B1) — and refuses without them.</para>
+/// <para>Every answer names <c>productVersion</c> (§15f #3). A run cut off by a signal records itself <c>interrupted</c> with the
+/// signal named — SIGHUP included, which a terminal or the <c>wsl.exe</c> relay delivers when it goes away (§15j B2).</para>
 /// </remarks>
 internal static class ActCommand
 {
@@ -56,7 +59,16 @@ internal static class ActCommand
             return (int)ExitCode.Usage;
         }
 
-        var engine = new ActionEngine(new EngineContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, host.Processes, Environment.ProcessId, host.Actions) { Signals = host.Signals });
+        if (request.Detach)
+        {
+            return DetachedRuns.Detach(request, Trigger(request), shown.List, host, stdout, stderr, log);
+        }
+
+        var engine = new ActionEngine(new EngineContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, host.Processes, Environment.ProcessId, host.Actions)
+        {
+            Signals = host.Signals,
+            InterruptCause = host.InterruptCause,
+        });
         var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List };
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = Dispatch(engine, act, cancellationToken).GetAwaiter().GetResult();
@@ -68,15 +80,15 @@ internal static class ActCommand
     private static Task<ActResult> Dispatch(ActionEngine engine, ActRequest act, CancellationToken cancellationToken) =>
         act.Execute ? engine.ExecuteAsync(act, cancellationToken) : engine.PreviewAsync(act, cancellationToken);
 
-    private static string Answer(ActResult result, bool json) =>
-        json ? JsonSerializer.Serialize(ActReport.From(result), WslCareJsonContext.Default.ActReport) : ActText.Render(result);
+    internal static string Answer(ActResult result, bool json) =>
+        json ? JsonSerializer.Serialize(ActReport.From(result) with { ProductVersion = Program.VersionText }, WslCareJsonContext.Default.ActReport) : ActText.Render(result);
 
     /// <summary>A refusal of the whole request and its code; <c>null</c> when it may go on. Root FIRST: nothing else is
     /// asked of an unprivileged process (plan §15c #0).</summary>
     private static (ExitCode Code, string Message)? Refusal(Request.Act request, CliHost host, ConfigLoadResult loaded) =>
         NotRoot(host) ?? Unbuilt(request, host) ?? OtherSide(request, host) ?? ObserveOnly(request, loaded);
 
-    private static (ExitCode Code, string Message)? NotRoot(CliHost host) =>
+    internal static (ExitCode Code, string Message)? NotRoot(CliHost host) =>
         host.Privilege.IsRoot ? null : (ExitCode.NeedsRoot, $"needs root: every act runs as root (plan 15c #0) and {host.Privilege.Basis}; nothing was done");
 
     private static (ExitCode Code, string Message)? Unbuilt(Request.Act request, CliHost host)
@@ -121,11 +133,12 @@ internal static class ActCommand
     private static (ShownList List, string Failure) WithOnlyFile(Request.Act request, CliHost host)
     {
         // Read as ROOT: a regular file only (a FIFO or a device is refused, never waited on) and never past the cap, whatever
-        // its length claims (independent review of E3, 2026-10-03).
-        var read = host.Files.ReadRegularFile(request.OnlyFile, MaxOnlyFileBytes);
+        // its length claims (independent review of E3, 2026-10-03) — or, with "--only -", stdin under the same cap and a time
+        // ceiling (E6.S1, §15j M2).
+        var read = request.ShownOnStdin ? StdinList.Read(host.StandardInput(), MaxOnlyFileBytes, host.StdinCeiling) : host.Files.ReadRegularFile(request.OnlyFile, MaxOnlyFileBytes);
         if (read is not FileReadResult.Content content)
         {
-            return (ShownList.None, $"act: the --only file {CommandLine.Printable(request.OnlyFile)} {CommandLine.Printable(Unusable(read))}; nothing was done");
+            return (ShownList.None, $"act: {(request.ShownOnStdin ? "the shown list on stdin" : $"the --only file {CommandLine.Printable(request.OnlyFile)}")} {CommandLine.Printable(Unusable(read))}; nothing was done");
         }
 
         var (names, failure) = CommandLine.ShownVolumesFile(Encoding.UTF8.GetString(content.Bytes));
@@ -140,7 +153,7 @@ internal static class ActCommand
         _ => "is missing",
     };
 
-    private static int Exit(ActResult result, TextWriter stderr)
+    internal static int Exit(ActResult result, TextWriter stderr)
     {
         var (code, note) = Verdict(result);
         if (note.Length > 0)
@@ -163,7 +176,7 @@ internal static class ActCommand
         _ => (ExitCode.Ok, string.Empty),
     };
 
-    private static void Log(ILogger log, ActResult result)
+    internal static void Log(ILogger log, ActResult result)
     {
         foreach (var outcome in Outcomes(result))
         {

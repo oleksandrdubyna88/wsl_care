@@ -80,11 +80,28 @@ internal sealed class DailyRunFileSink : ILogEventSink, IDisposable
     private static string FilePath(string logRoot, string appName, DateOnly utcDay, string time)
     {
         var folder = Path.Combine(logRoot, utcDay.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-        Directory.CreateDirectory(folder);
+        // 0755 / 0644 at most on Linux (E6.S1 review S1): a root umask of 000 must not leave the run logs writable by every account.
+        if (OperatingSystem.IsWindows())
+        {
+            Directory.CreateDirectory(folder);
+        }
+        else
+        {
+            Directory.CreateDirectory(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
+
         return Path.Combine(folder, $"{appName}-{time}-{Environment.ProcessId}.log");
     }
 
     /// <summary>Append, shared for reading: a <c>tail -f</c> on the live file is the normal way to watch a run.</summary>
-    private static StreamWriter Open(string file) =>
-        new(new FileStream(file, FileMode.Append, FileAccess.Write, FileShare.Read), new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    private static StreamWriter Open(string file)
+    {
+        var options = new FileStreamOptions { Mode = FileMode.Append, Access = FileAccess.Write, Share = FileShare.Read };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead;
+        }
+
+        return new(new FileStream(file, options), new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    }
 }

@@ -2,7 +2,7 @@ namespace WslCare.Core.Processes.Policy;
 
 /// <summary>
 /// Every argv template the product declares — the allowlist the <see cref="CommandPolicy"/> matches against. The
-/// product's catalogue is the read commands of the collectors (<see cref="ReadCommandTemplates"/>) and the templates
+/// product's catalogue is the read commands of the collectors (<see cref="ReadCommandTemplates"/>), the detached-run unit commands (<see cref="Systemd.UnitCommands"/>, E6.S1) and the templates
 /// every registered action declares (<see cref="Actions.ActionRegistry"/>); nothing else.
 /// </summary>
 public sealed class CommandCatalogue
@@ -39,5 +39,5 @@ public sealed class CommandCatalogue
         Templates.FirstOrDefault(t => t.Scope == CommandScope.User && string.Equals(t.Executable, wrapped.ExecutableName, StringComparison.Ordinal) && t.Matches(wrapped.Arguments));
 
     private static readonly Lazy<CommandCatalogue> ProductCatalogue = new(() =>
-        new CommandCatalogue([.. ReadCommandTemplates.All, .. Actions.ActionRegistry.Product.Actions.SelectMany(a => a.Commands)]));
+        new CommandCatalogue([.. ReadCommandTemplates.All, .. Actions.ActionRegistry.Product.Actions.SelectMany(a => a.Commands), .. Systemd.UnitCommands.All]));
 }

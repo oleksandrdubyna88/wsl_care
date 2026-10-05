@@ -25,12 +25,26 @@ internal enum ExitCode
     /// action is logged and the run continues). The answer names which and why.</summary>
     ActionFailed = 3,
 
-    /// <summary><c>logs</c> / <c>runs</c>: <c>history.jsonl</c> exists but could not be read (permissions, I/O); the answer
-    /// says why and holds no run. A history that does not exist yet is an empty answer, exit 0.</summary>
+    /// <summary><c>logs</c> / <c>runs</c> / <c>runs show</c>: <c>history.jsonl</c> exists but could not be read (permissions,
+    /// I/O); the answer says why and holds no run from it. A history that does not exist yet is an empty answer, exit 0.</summary>
     RecordsUnreadable = 4,
+
+    /// <summary><c>act --detach</c> / <c>collect --detach</c> on a machine without systemd (no <c>/run/systemd/system</c>): a
+    /// detached run needs its template unit, and there is NO synchronous fallback (plan §15j B2). Nothing was written.
+    /// 69 is <c>EX_UNAVAILABLE</c>.</summary>
+    DetachUnavailable = 69,
 
     /// <summary>A defect in this binary: something it should have handled escaped. Always a bug.</summary>
     Internal = 70,
+
+    /// <summary><c>--detach</c>: the request was written but <c>systemctl start --no-block wsl-care-act@&lt;runId&gt;.service</c> did
+    /// not succeed — the request was REMOVED again, so nothing waits for a unit that will never run (plan §15k #1). 71 is
+    /// <c>EX_OSERR</c>.</summary>
+    DetachStartFailed = 71,
+
+    /// <summary><c>--detach</c>: the request folder already holds its budget of requests (plan §15k #8 + #17: 32); nothing
+    /// was written. 73 is <c>EX_CANTCREAT</c>.</summary>
+    QueueFull = 73,
 
     /// <summary>Another run holds the run lock (<c>collect</c> or <c>act</c> — the second one refuses, it never waits), a
     /// live run is acting, or another follower runs (<c>events follow</c>); nothing was done. 75 is <c>EX_TEMPFAIL</c>:
@@ -52,6 +66,10 @@ internal enum ExitCode
     /// <summary><c>act</c>: <c>running.json</c> cannot be read or parsed, even after brief retries (gate finding #7) — its own
     /// state, not a wedged live run. Nothing was done and nothing was killed; the answer names the file and the reason.</summary>
     StateUnreadable = 79,
+
+    /// <summary><c>act --request &lt;runId&gt;</c> (the template unit's start): no request names that run — it was swept, or a
+    /// stray start. A no-op: no history line, nothing run (plan §15k #2); a success exit of the unit.</summary>
+    RequestGone = 80,
 
     /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention).</summary>
     Interrupted = 130,

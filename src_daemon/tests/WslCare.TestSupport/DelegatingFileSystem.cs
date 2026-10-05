@@ -14,6 +14,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual FileReadResult ReadRegularFile(string path, int maxBytes) => inner.ReadRegularFile(path, maxBytes);
 
+    public virtual FileReadResult ReadStateFile(string path, int maxBytes) => inner.ReadStateFile(path, maxBytes);
+
     public virtual bool FileExists(string path) => inner.FileExists(path);
 
     public virtual bool DirectoryExists(string path) => inner.DirectoryExists(path);
@@ -43,6 +45,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
     public virtual void CreateDirectory(string path) => inner.CreateDirectory(path);
 
     public virtual DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.WriteFileAtomically(path, content, scope);
+
+    public virtual ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.CreateFileExclusively(path, content, scope);
 
     public virtual void AppendLine(string path, string line, TimeSpan lockTimeout) => inner.AppendLine(path, line, lockTimeout);
 

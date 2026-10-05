@@ -14,7 +14,8 @@
 # tools are never touched; nothing destructive runs — act is PREVIEW only:
 #   1. --help lists --help and --version; --version prints src_daemon/version.txt
 #   2. the configuration round trip: set, read back from the user layer, a refused set exits 2 with one line
-#   3. status --json: schemaVersion 1, its verdicts and the productVersion --version prints (E5.S0); on Linux over the
+#   3. status --json: schemaVersion 1, its verdicts and the productVersion --version prints (E5.S0), the running block and
+#      the capabilities (E6.S0), and runs show of a stranger answering unknown; on Linux over the
 #      captured procfs tree (its MemTotal), on Windows the host side
 #   4. the full run: collect --json records (one history line naming a run detail), status names that run, doctor answers
 #   5. act <every action --help names> --preview --json with root CLAIMED inside the sandbox; Windows refuses (exit 2)
@@ -98,7 +99,7 @@ smoke_config_round_trip() {
 }
 
 smoke_status() {
-  local status version py
+  local status version py shown
   sandbox status
   with_procfs_fixture
   status="$("$bin" status --json | tr -d '\r')"
@@ -114,7 +115,12 @@ ids = [verdict["id"] for verdict in answer["verdicts"]]
 assert "memory.available" in ids and "clock.jumps" in ids, "verdicts lack the sample or the full-run thresholds: %s" % ids
 assert all(verdict["level"] in ("ok", "warn", "critical", "unknown") for verdict in answer["verdicts"]), "a verdict level outside the four"
 assert answer["productVersion"] == os.environ["WSL_CARE_SMOKE_VERSION"], "productVersion %r is not what --version prints" % answer["productVersion"]
-' || { printf '%s\n' "$status" | head -c 4000; fail "status --json: its verdicts or its productVersion are not what --version and the thresholds say"; }
+assert answer["running"]["state"] == "none", "the running block of an empty sandbox is %r, not none" % answer["running"]
+assert "running.block" in answer["capabilities"] and isinstance(answer["actions"], list), "status lacks its capabilities or its actions (plan 15j)"
+' || { printf '%s\n' "$status" | head -c 4000; fail "status --json: its verdicts, productVersion, running block or capabilities are not what --version, the thresholds and E6.S0 say"; }
+  # runs show through the published binary's own JSON code (plan §15j M3): a run nothing names answers unknown, exit 0.
+  shown="$("$bin" runs show 20000101T000000Z-1 --json | tr -d '\r')"
+  case "$shown" in *'"state": "unknown"'*) ;; *) printf '%s\n' "$shown"; fail "runs show of a run nothing names is not unknown (plan §15j M3)" ;; esac
   if [ "$os" = "Linux" ]; then
     case "$status" in *"\"bytes\": $FIXTURE_MEMTOTAL_BYTES"*) ;; *) printf '%s\n' "$status"; fail "status --json did not report the fixture's MemTotal" ;; esac
   else
