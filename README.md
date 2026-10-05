@@ -364,6 +364,10 @@ refused (69). At most 32 requests wait at once (73). `act --stop` asks systemd t
 its process lives in `wsl-care.service` or its own `wsl-care-act@<runId>.service`; SIGTERM lets it record itself
 `interrupted`, and one that is still there after 90 s is killed and recorded by the next root run's sweep with that reason.
 
+A request an earlier boot left behind is reported `dead` by `status` (`interrupted` by `runs show`) until the next root run
+records it. An upgrade waits at most 10 minutes for a run in flight, saying so every 30 s; when the installed binary cannot
+answer at all, `WSL_CARE_INSTALL_SKIP_RUN_WAIT=1` skips that wait.
+
 A start that times out asks the unit: accepted when systemd holds the job, `result: unknown` (exit 0, the request kept) when
 its state cannot be read. Nothing the daemon writes is group or world writable, whatever the umask.
 

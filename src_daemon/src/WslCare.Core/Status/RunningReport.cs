@@ -80,6 +80,9 @@ public sealed record RunningReport(string State, string? Reason)
 /// </summary>
 public static class RunningReports
 {
+    /// <summary>Why a request of an earlier boot is reported dead (coai E6 code round #6).</summary>
+    public const string EarlierBootReason = "written in an earlier boot; systemd never started it - the next root run records it interrupted";
+
     /// <summary>The block: <c>running.json</c> judged; with no holder, the requests — and when they show nothing (or a file
     /// vanished as it was read), <c>running.json</c> ONCE more, because states move request → running.json → history line and
     /// a request that just disappeared has just become a run (E6.S0 review D4). <paramref name="history"/> is what the caller
@@ -88,7 +91,7 @@ public static class RunningReports
         OfHolder(RunningState.Read(paths, files, processes, now, retry), history) ?? AfterRequests(paths, files, processes, now, retry, history);
 
     private static RunningReport AfterRequests(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry, HistoryRead history) =>
-        FromRequests(RunRequests.List(paths, files)) is { State: not RunningStateName.None } fromRequests
+        FromRequests(RunRequests.Peek(paths, files), processes.Boot()) is { State: not RunningStateName.None } fromRequests
             ? fromRequests
             : OfHolder(RunningState.Read(paths, files, processes, now, retry), history) ?? new RunningReport(RunningStateName.None, null);
 
@@ -142,17 +145,25 @@ public static class RunningReports
             Queued = waiting,
         };
 
-    /// <summary>No run holds <c>running.json</c>: the oldest readable request is queued; only unreadable ones make the state
-    /// unreadable (naming them); none at all is <c>none</c>.</summary>
-    private static RunningReport FromRequests(IReadOnlyList<RunRequestRead> requests)
+    /// <summary>Whether a request was written in another boot than this one — its job died with that boot, so systemd never
+    /// starts it (coai E6 code round #6). False when either side cannot tell.</summary>
+    public static bool OfAnEarlierBoot(RunRequestFile request, BootClock boot) =>
+        request.BootId.Length > 0 && boot.Known && request.BootId != boot.BootId;
+
+    /// <summary>No run holds <c>running.json</c>: the oldest request by name (<see cref="RunRequests.Peek"/>, the next one only when
+    /// the oldest cannot be used) is queued — or DEAD when an earlier boot wrote it (#6; read-only: the next root run's sweep
+    /// records it interrupted); unusable ones make the state unreadable, naming the first; none at all is <c>none</c>. The count
+    /// is every request filed.</summary>
+    private static RunningReport FromRequests((IReadOnlyList<RunRequestRead> Oldest, int Count) requests, BootClock boot)
     {
-        var parsed = requests.OfType<RunRequestRead.Parsed>().Select(p => p.File).OrderBy(f => f.CreatedAt).ThenBy(f => f.RunId.Text, StringComparer.Ordinal).ToList();
-        if (parsed.Count > 0)
+        if (requests.Oldest.OfType<RunRequestRead.Parsed>().FirstOrDefault() is { } parsed)
         {
-            return OfRequest(parsed[0], parsed.Count);
+            return OfAnEarlierBoot(parsed.File, boot)
+                ? OfRequest(parsed.File, requests.Count) with { State = RunningStateName.Dead, Reason = EarlierBootReason }
+                : OfRequest(parsed.File, requests.Count);
         }
 
-        return requests.OfType<RunRequestRead.Bad>().FirstOrDefault() is { } bad
+        return requests.Oldest.OfType<RunRequestRead.Bad>().FirstOrDefault() is { } bad
             ? new RunningReport(RunningStateName.Unreadable, $"the request {bad.Path} {bad.Why}; nothing else is in flight")
             : new RunningReport(RunningStateName.None, null);
     }

@@ -143,6 +143,41 @@ public static class RunRequests
             : [.. reads];
     }
 
+    /// <summary>What the polled running block needs (coai E6 code round #7): how many requests are filed, and the OLDEST read —
+    /// ordered and counted by FILE NAME (a run id starts with its UTC second, so ordinal order is time order; only
+    /// <c>&lt;runId&gt;.json</c> counts), the oldest read through the hardened reader, and the next only when the oldest cannot be
+    /// used. Never every file: a status poll does not read up to 32 MiB. The full read stays with the root sweep and
+    /// <c>act --request</c>.</summary>
+    public static (IReadOnlyList<RunRequestRead> Oldest, int Count) Peek(IHostPaths paths, IFileSystem files)
+    {
+        IReadOnlyList<(string Path, RunId Id)> filed;
+        try
+        {
+            filed = [.. files.ListFiles(Directory(paths)).SelectMany(path => FiledRunId(path) is { } id ? [(path, id)] : Array.Empty<(string, RunId)>()).OrderBy(f => f.Item1, StringComparer.Ordinal)];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return ([new RunRequestRead.Bad(Directory(paths), $"the request folder cannot be listed ({e.Message})")], 0);
+        }
+
+        var read = new List<RunRequestRead>();
+        foreach (var (path, id) in filed)
+        {
+            if (Read(files, path, id) is not { } one)
+            {
+                continue;
+            }
+
+            read.Add(one);
+            if (one is RunRequestRead.Parsed || read.Count == 2)
+            {
+                break;
+            }
+        }
+
+        return (read, filed.Count);
+    }
+
     /// <summary>The request filed under <paramref name="runId"/>; <c>null</c> when there is none (or it vanished as it was read).</summary>
     public static RunRequestRead? Find(IHostPaths paths, IFileSystem files, RunId runId) => Read(files, File(paths, runId), runId);
 

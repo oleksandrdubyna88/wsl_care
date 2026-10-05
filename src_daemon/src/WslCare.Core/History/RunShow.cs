@@ -87,7 +87,7 @@ public static class RunShow
         var history = RunHistory.Read(paths, files);
         var report = history.Records.LastOrDefault(r => r.RunId == runId) is { } line
             ? Recorded(paths, files, line)
-            : Holding(holder, runId) ?? Requested(request, runId);
+            : Holding(holder, runId) ?? Requested(request, runId, processes.Boot());
         return report with { Problem = history.Problem.Length > 0 ? history.Problem : null };
     }
 
@@ -124,8 +124,10 @@ public static class RunShow
             ? new RunShowReport(SchemaVersion.Current, runId.Text, running.State == RunningStateName.Dead ? RunShowState.Interrupted : RunShowState.Running, running.Reason) { Running = running }
             : null;
 
-    private static RunShowReport Requested(RunRequestRead? request, RunId runId) => request switch
+    private static RunShowReport Requested(RunRequestRead? request, RunId runId, BootClock boot) => request switch
     {
+        RunRequestRead.Parsed parsed when RunningReports.OfAnEarlierBoot(parsed.File, boot) =>
+            new RunShowReport(SchemaVersion.Current, runId.Text, RunShowState.Interrupted, RunningReports.EarlierBootReason),
         RunRequestRead.Parsed parsed => Queued(parsed.File),
         RunRequestRead.Bad bad => new RunShowReport(SchemaVersion.Current, runId.Text, RunShowState.Unknown, $"its request {bad.Path} {bad.Why}"),
         _ => new RunShowReport(SchemaVersion.Current, runId.Text, RunShowState.Unknown, NothingNamesIt),

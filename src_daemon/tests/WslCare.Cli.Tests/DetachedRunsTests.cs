@@ -89,6 +89,18 @@ public sealed class DetachedRunsTests : IDisposable
         CommandLine.Parse(argv).Should().BeOfType<Request.Failed>();
     }
 
+    /// <summary>coai E6 code round #2: a bad run id names the value and the shape, one helper for every verb that takes one.</summary>
+    [Theory]
+    [InlineData("act", "--request")]
+    [InlineData("act", "--stop")]
+    [InlineData("runs", "show")]
+    public void A_bad_run_id_is_refused_naming_the_value_and_the_shape_the_same_way_for_every_verb(string verb, string sub)
+    {
+        var failed = CommandLine.Parse([verb, sub, "not-a-run-id"]).Should().BeOfType<Request.Failed>().Subject;
+
+        failed.Message.Should().Be($"\"wsl-care {verb} {sub}\": \"not-a-run-id\" is not a run id (yyyyMMddTHHmmssZ-<pid>, as runs and logs print it).");
+    }
+
     [Fact]
     public void The_detach_shapes_parse_into_their_requests()
     {
@@ -96,8 +108,8 @@ public sealed class DetachedRunsTests : IDisposable
         act.Detach.Should().BeTrue();
         act.ShownOnStdin.Should().BeTrue();
         act.Manual.Should().BeTrue();
-        CommandLine.Parse(["act", "--request", "20261004T120000Z-1"]).Should().Be(new Request.ActFromRequest("20261004T120000Z-1"));
-        CommandLine.Parse(["act", "--stop", "20261004T120000Z-1", "--json"]).Should().Be(new Request.ActStop("20261004T120000Z-1", Json: true));
+        CommandLine.Parse(["act", "--request", "20261004T120000Z-1"]).Should().Be(new Request.ActFromRequest(RunId.TryParse("20261004T120000Z-1")!));
+        CommandLine.Parse(["act", "--stop", "20261004T120000Z-1", "--json"]).Should().Be(new Request.ActStop(RunId.TryParse("20261004T120000Z-1")!, Json: true));
         CommandLine.Parse(["collect", "--detach", "--json"]).Should().BeOfType<Request.Collect>().Which.Detach.Should().BeTrue();
     }
 

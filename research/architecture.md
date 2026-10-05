@@ -2131,7 +2131,7 @@ stateDiagram-v2
 ```
 
 **The goldens it adds** (`contracts/golden/head/`, written by `GoldenContracts` on the Linux legs, staged by
-`ReadContractScenes`): `status-running-{live,wedged,dead,unreadable,queued}.json` — `status --json` over an otherwise
+`ReadContractScenes`): `status-running-{live,wedged,dead,unreadable,queued,earlier-boot}.json` — `status --json` over an otherwise
 EMPTY sandbox with the running state staged against the REAL process table (live / wedged on the test process's own pid
 and start; dead on a pid no process has; unreadable = `{}`; queued = a request file); the main `status.json` is the `none`
 state over the captured tree — `act-a4-preview.json` (`act A4 --preview --json` over 387 SYNTHETIC anonymous volumes,
@@ -2302,6 +2302,18 @@ flowchart TB
   `/system.slice/system-wsl\x2dcare\x2dact.slice/wsl-care-act@<runId>.service`.
 - **`install.sh`** (S4): no status answer counts as in flight (fails closed), `wedged` is waited on, a failed rename and
   uninstall remove `wsl-care.new`.
+
+### What the coai E6 code round changed (2026-10-05, plan §15m)
+
+- **Typed run ids**: `Request.ActFromRequest` / `ActStop` / `RunsShow` carry `Core.Records.RunId` (one parse, `CommandLine.RunIdVerb`,
+  one refusal sentence for a bad id).
+- **`status` reads one request** (`RunRequests.Peek`): ordered and counted by file name, the oldest read (the next only when it
+  cannot be used); a request written in an earlier boot is reported `dead` (`RunningReports.EarlierBootReason`) and
+  `runs show` answers it `interrupted` — still read-only; the root sweep records it.
+- **`logs` / `runs`**: `Period` is empty in the instant-range mode.
+- **`install.sh`**: the running block's state is read without layout; in flight unless `none` / `dead` (fails closed for any other
+  state); the wait is measured on the wall clock, prints progress every 30 s, and when the installed binary cannot answer names
+  the manual escape (`WSL_CARE_INSTALL_SKIP_RUN_WAIT=1`, or removing `running.json` / `requests/*.json` by hand).
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 

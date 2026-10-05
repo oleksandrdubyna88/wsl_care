@@ -747,7 +747,8 @@ public sealed class InstallFlows
           "schemaVersion": 1,
           "running": {
             "state": "{{state}}",
-            "reason": "a test"
+            "reason": "a test",
+            "runId": "20261004T120000Z-4242"
           }
         }
         EOF
@@ -770,7 +771,8 @@ public sealed class InstallFlows
         var result = await world.RunAsync();
 
         FailedAt(result, "upgrade-wait");
-        result.Stderr.Should().Contain("a wsl-care run is live, queued or wedged, still after").And.Contain("nothing was replaced");
+        result.Stderr.Should().Contain($"a wsl-care run is {state}").And.Contain("still after").And.Contain("nothing was replaced")
+            .And.NotContain("SKIP_RUN_WAIT", "the manual escape is only for a binary that cannot answer");
         File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(before, "the running binary stays");
         File.Exists(world.At(InstallWorld.BinaryPath + ".new")).Should().BeFalse();
         world.CallsOf("systemctl").Should().BeEmpty("no unit was touched");
@@ -794,7 +796,115 @@ public sealed class InstallFlows
 
         FailedAt(result, "upgrade-wait");
         result.Stderr.Should().Contain("the installed binary gave no status answer");
+        // coai E6 code round #5: the binary cannot answer, so advice that runs it again is useless — the manual escape is named.
+        result.Stderr.Should().Contain("remove /var/lib/wsl-care/running.json and /var/lib/wsl-care/requests/*.json by hand")
+            .And.Contain("WSL_CARE_INSTALL_SKIP_RUN_WAIT=1").And.NotContain("sudo wsl-care collect");
         File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(oldBinary);
+    }
+
+    [Fact]
+    public async Task The_escape_skips_the_wait_for_an_installed_binary_that_cannot_answer_and_says_so()
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-skip-wait") { RunWaitSeconds = "0", SkipRunWait = true };
+        world.Write(InstallWorld.BinaryPath, "#!/bin/sh\nexit 70\n");
+        File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), InstallWorld.Executable);
+        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+        world.Override("systemctl", ["try-restart", "wsl-care-events.service"], 0);
+
+        var result = await world.RunAsync();
+
+        Succeeded(result);
+        result.Stderr.Should().Contain("WSL_CARE_INSTALL_SKIP_RUN_WAIT=1: not checking");
+        File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(world.StubScript());
+    }
+
+    /// <summary>coai E6 code round #1: the wait decides from the STATE, never from the layout — each running-state golden (what
+    /// the binary really prints) is put through the real guard: none / dead proceed, every other state waits, and a state with no
+    /// decision here fails this test before it can silently switch the wait off.</summary>
+    private static readonly IReadOnlyDictionary<string, bool> Waits = new Dictionary<string, bool>(StringComparer.Ordinal)
+    {
+        [Core.Status.RunningStateName.None] = false,
+        [Core.Status.RunningStateName.Dead] = false,
+        [Core.Status.RunningStateName.Queued] = true,
+        [Core.Status.RunningStateName.Live] = true,
+        [Core.Status.RunningStateName.Wedged] = true,
+        [Core.Status.RunningStateName.Unknown] = true,
+        [Core.Status.RunningStateName.Unreadable] = true,
+    };
+
+    public static TheoryData<string> StatusGoldens() =>
+        [.. Directory.GetFiles(Path.Combine(ShippedFiles.RepositoryRoot, "contracts", "golden", "head"), "status*.json").Select(Path.GetFileName).OfType<string>().Order(StringComparer.Ordinal)];
+
+    [Fact]
+    public void Every_running_state_has_a_wait_decision()
+    {
+        Waits.Keys.Should().BeEquivalentTo(Core.Status.RunningStateName.All, "a new state needs its decision here — and in install.sh, whose guard fails closed");
+    }
+
+    [Theory]
+    [MemberData(nameof(StatusGoldens))]
+    public async Task The_upgrade_wait_decides_every_running_state_golden_by_its_state_never_by_its_layout(string golden)
+    {
+        Linux();
+        var path = Path.Combine(ShippedFiles.RepositoryRoot, "contracts", "golden", "head", golden);
+        var state = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!["running"]!["state"]!.GetValue<string>();
+        Waits.Should().ContainKey(state, $"{golden} holds a state with no decision");
+        foreach (var compact in new[] { false, true })
+        {
+            using var world = new InstallWorld($"upgrade-golden-{state}-{(compact ? "compact" : "indented")}") { RunWaitSeconds = "0" };
+            var text = compact ? System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.ToJsonString() : File.ReadAllText(path);
+            world.Write(InstallWorld.BinaryPath, $"#!/bin/sh\ncat '{world.Answer($"{golden}.{compact}", text)}'\n");
+            File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), InstallWorld.Executable);
+            world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+            world.Override("systemctl", ["try-restart", "wsl-care-events.service"], 0);
+
+            var result = await world.RunAsync();
+
+            if (Waits[state])
+            {
+                FailedAt(result, "upgrade-wait");
+                result.Stderr.Should().Contain($"a wsl-care run is {state}", $"{golden} ({(compact ? "compact" : "indented")})");
+            }
+            else
+            {
+                Succeeded(result);
+            }
+        }
+    }
+
+    /// <summary>coai E6 code round #4: a wait of up to 10 minutes says it is still waiting — the state, the run and the time.</summary>
+    [Fact]
+    public async Task A_long_wait_says_every_progress_period_what_it_waits_for_and_how_long()
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-progress") { RunWaitSeconds = "6", ProgressSeconds = "1" };
+        world.Write(InstallWorld.BinaryPath, OldBinaryAnswering("live"));
+        File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), InstallWorld.Executable);
+        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+
+        var result = await world.RunAsync();
+
+        FailedAt(result, "upgrade-wait");
+        result.Stdout.Should().Contain("still waiting: live 20261004T120000Z-4242, ").And.Contain("s of 6s");
+    }
+
+    /// <summary>coai E6 code round #8: the ceiling is WALL time — counting the 5 s sleeps let a status that hangs 30 s per call
+    /// stretch 600 s to about 70 minutes. Here every call takes 6 s: counted sleeps refuse after ~28 s, the wall clock at ~17 s.</summary>
+    [Fact]
+    public async Task The_wait_ceiling_is_measured_on_the_wall_clock_not_by_counting_sleeps()
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-wall-clock") { RunWaitSeconds = "10" };
+        world.Write(InstallWorld.BinaryPath, "#!/bin/sh\nsleep 6\n" + OldBinaryAnswering("live")["#!/bin/sh\n".Length..]);
+        File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), InstallWorld.Executable);
+        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+
+        var started = DateTime.UtcNow;
+        var result = await world.RunAsync();
+
+        FailedAt(result, "upgrade-wait");
+        (DateTime.UtcNow - started).Should().BeLessThan(TimeSpan.FromSeconds(24), "the refusal comes at the advertised ceiling plus one status call and one sleep");
     }
 
     [Fact]

@@ -167,7 +167,7 @@ public sealed partial class ShippedFilesTests
         words.Should().Equal("act", "--request", "%i");
         var request = CommandLine.Parse([.. words.Select(w => w == "%i" ? "20261004T120000Z-4321" : w)]);
 
-        request.Should().Be(new Request.ActFromRequest("20261004T120000Z-4321"), "systemd puts the instance name — the run id — where %i stands");
+        request.Should().Be(new Request.ActFromRequest(Core.Records.RunId.TryParse("20261004T120000Z-4321")!), "systemd puts the instance name — the run id — where %i stands");
         var unit = Unit("wsl-care-act@.service");
         Single(unit, "Service", "Type").Should().Be("oneshot");
         Single(unit, "Service", "TimeoutStartSec").Should().Be("infinity", "a confirm is never time-killed as a whole (§15f #9, §15k #0)");
