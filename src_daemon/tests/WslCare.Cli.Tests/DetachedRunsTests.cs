@@ -28,47 +28,31 @@ namespace WslCare.Cli.Tests;
 /// </summary>
 public sealed class DetachedRunsTests : IDisposable
 {
-    private static readonly ProcessPrivilege Root = new(true, "a test says so");
-    private static readonly ProcessPrivilege NotRoot = new(false, "this process does not run as root (a test)");
-    private static readonly DateTimeOffset Now = FixedTimeProvider.DefaultNow;
+    private static readonly ProcessPrivilege Root = DetachedRunHarness.Root;
+    private static readonly ProcessPrivilege NotRoot = DetachedRunHarness.NotRoot;
+    private static readonly DateTimeOffset Now = DetachedRunHarness.Now;
 
-    private readonly LinuxSandbox _sandbox = new("detach-cli");
-    private readonly RecordingCommandRunner _runner = new RecordingCommandRunner { Policy = CommandPolicy.Product }
-        .Script(SystemdCommands.JournalDiskUsage.Argv, 0, "Archived and active journals take up 1.5G in the file system.");
+    private readonly DetachedRunHarness _harness = new("detach-cli");
 
-    public DetachedRunsTests()
-    {
-        _sandbox.Write("/etc/passwd", "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\n");
-        Directory.CreateDirectory(_sandbox.Paths.DistroPath("/run/systemd/system"));
-    }
+    public void Dispose() => _harness.Dispose();
 
-    public void Dispose() => _sandbox.Dispose();
+    private LinuxSandbox Sandbox => _harness.Sandbox;
 
-    private CliHost Host(ProcessPrivilege? privilege = null, string stdin = "") =>
-        new(_sandbox.Paths, _sandbox.Files, new FixedTimeProvider(), _runner)
-        {
-            Privilege = privilege ?? Root,
-            Processes = new FakeProcessTable(),
-            Probe = new FakeProbe(HostSide.Wsl, new FixedTimeProvider()),
-            StandardInput = () => new MemoryStream(Encoding.UTF8.GetBytes(stdin)),
-        };
+    private RecordingCommandRunner Runner => _harness.Runner;
+
+    private CliHost Host(ProcessPrivilege? privilege = null, string stdin = "") => _harness.Host(privilege, stdin);
 
     private static string Names(int count) => string.Concat(Enumerable.Range(0, count).Select(i => i.ToString("x64", CultureInfo.InvariantCulture) + "\n"));
 
-    private IReadOnlyList<RunRequestRead> Requests() => RunRequests.List(_sandbox.Paths, _sandbox.Files);
+    private IReadOnlyList<RunRequestRead> Requests() => _harness.Requests();
 
-    private IReadOnlyList<RunRecord> History() => RunHistory.Read(_sandbox.Paths, _sandbox.Files).Records;
+    private IReadOnlyList<RunRecord> History() => _harness.History();
 
-    private IEnumerable<string> Starts() => _runner.Commands.Where(c => c.StartsWith("systemctl start", StringComparison.Ordinal));
+    private IEnumerable<string> Starts() => Runner.Commands.Where(c => c.StartsWith("systemctl start", StringComparison.Ordinal));
 
     private static HandOffReport HandOff(string stdout) => JsonSerializer.Deserialize(stdout, WslCareJsonContext.Default.HandOffReport)!;
 
-    private RunRequestFile Plant(string kind, IReadOnlyList<string> actions, TimeSpan age, int pid = 77)
-    {
-        var request = new RunRequestFile(1, RunId.New(Now - age, pid), kind, actions, RunTrigger.Manual, Now - age);
-        RunRequests.Create(_sandbox.Paths, _sandbox.Files, request).Should().BeOfType<ExclusiveCreate.Created>();
-        return request;
-    }
+    private RunRequestFile Plant(string kind, IReadOnlyList<string> actions, TimeSpan age, int pid = 77) => _harness.Plant(kind, actions, age, pid);
 
     // ---------- the parse ----------
 
@@ -130,7 +114,7 @@ public sealed class DetachedRunsTests : IDisposable
         request.RunId.Text.Should().Be(answer.RunId, "the run records itself under the id the panel was given");
         request.Actions.Should().Equal("A10");
         request.Trigger.Should().Be(RunTrigger.Manual);
-        _runner.Commands.Should().Equal($"systemctl start --no-block {answer.Unit}");
+        Runner.Commands.Should().Equal($"systemctl start --no-block {answer.Unit}");
         History().Should().BeEmpty("nothing ran here: the unit runs it");
     }
 
@@ -147,7 +131,7 @@ public sealed class DetachedRunsTests : IDisposable
     [Fact]
     public void Without_systemd_a_detach_is_refused_with_69_and_never_falls_back_to_a_synchronous_run()
     {
-        Directory.Delete(_sandbox.Paths.DistroPath("/run/systemd/system"));
+        Directory.Delete(Sandbox.Paths.DistroPath("/run/systemd/system"));
 
         var (exit, stdout, stderr) = CliRun.Over(Host(), "act", "A10", "--confirm", "--detach");
 
@@ -156,7 +140,7 @@ public sealed class DetachedRunsTests : IDisposable
         stderr.Should().Contain("needs systemd").And.Contain("no synchronous fallback");
         Requests().Should().BeEmpty();
         History().Should().BeEmpty("nothing ran");
-        _runner.Requests.Should().BeEmpty("not even the journal's preview");
+        Runner.Requests.Should().BeEmpty("not even the journal's preview");
     }
 
     [Fact]
@@ -187,8 +171,8 @@ public sealed class DetachedRunsTests : IDisposable
     [Fact]
     public void A_detach_meeting_an_unreadable_running_json_is_refused_with_79()
     {
-        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
-        File.WriteAllText(RunningState.File(_sandbox.Paths), "{}");
+        Directory.CreateDirectory(Sandbox.Paths.StateDirectory);
+        File.WriteAllText(RunningState.File(Sandbox.Paths), "{}");
 
         var (exit, _, stderr) = CliRun.Over(Host(), "act", "A10", "--confirm", "--detach");
 
@@ -202,7 +186,7 @@ public sealed class DetachedRunsTests : IDisposable
     public void A_detach_records_an_unusable_request_refused_removes_it_and_is_accepted()
     {
         var bad = RunId.New(Now, 5);
-        var path = RunRequests.File(_sandbox.Paths, bad);
+        var path = RunRequests.File(Sandbox.Paths, bad);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, "{ not json");
 
@@ -221,7 +205,7 @@ public sealed class DetachedRunsTests : IDisposable
     public void A_detach_sweeps_an_orphaned_request_whose_unit_is_gone_and_is_accepted()
     {
         var orphan = Plant("act", ["A9"], TimeSpan.FromMinutes(2), pid: 60);
-        _runner.Script(UnitCommands.Show(orphan.RunId).Argv, 0, "ActiveState=inactive\nJob=\n");
+        Runner.Script(UnitCommands.Show(orphan.RunId).Argv, 0, "ActiveState=inactive\nJob=\n");
 
         var (exit, stdout, stderr) = CliRun.Over(Host(), "act", "A10", "--confirm", "--detach", "--json");
 
@@ -234,7 +218,7 @@ public sealed class DetachedRunsTests : IDisposable
     [Fact]
     public void A_detach_while_another_run_holds_the_lock_is_busy_or_wedged_and_writes_nothing()
     {
-        var held = (ExclusiveLock.Held)RunLock.TryTake(_sandbox.Paths, _sandbox.Files);
+        var held = (ExclusiveLock.Held)RunLock.TryTake(Sandbox.Paths, Sandbox.Files);
         int busy, wedged;
         string busyErr;
         using (held.Handle)
@@ -259,7 +243,7 @@ public sealed class DetachedRunsTests : IDisposable
         var stale = Plant("act", ["A9"], TimeSpan.FromMinutes(30), pid: 61);
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5), pid: 62);
         using var cancel = new CancellationTokenSource();
-        _runner.ScriptEffect(argv => argv.SequenceEqual(UnitCommands.Show(stale.RunId).Argv), _ =>
+        Runner.ScriptEffect(argv => argv.SequenceEqual(UnitCommands.Show(stale.RunId).Argv), _ =>
         {
             cancel.Cancel();
             throw new OperationCanceledException(cancel.Token);
@@ -271,7 +255,7 @@ public sealed class DetachedRunsTests : IDisposable
         var line = History().Should().ContainSingle(r => r.RunId == request.RunId).Subject;
         line.Outcome.Should().Be(RunOutcome.Interrupted);
         line.Reason.Should().Contain("cut off before it started");
-        File.Exists(RunRequests.File(_sandbox.Paths, request.RunId)).Should().BeFalse();
+        File.Exists(RunRequests.File(Sandbox.Paths, request.RunId)).Should().BeFalse();
     }
 
     /// <summary>E6.S1 review D6: a start that TIMED OUT may have queued the job — the unit is asked before anything is removed.</summary>
@@ -281,8 +265,8 @@ public sealed class DetachedRunsTests : IDisposable
     [InlineData("", 1, (int)ExitCode.Ok, "unknown", true)]
     public void A_timed_out_start_asks_the_unit_before_it_removes_the_request(string show, int showExit, int expected, string result, bool kept)
     {
-        _runner.Script(argv => argv is ["systemctl", "start", ..], new CommandOutcome.TimedOut(CapturedText.Empty, CapturedText.Empty, UnitCommands.StartCeiling));
-        _runner.Script(argv => argv is ["systemctl", "show", ..], RecordingCommandRunner.Exited(showExit, show, showExit == 0 ? string.Empty : "Failed to connect to bus"));
+        Runner.Script(argv => argv is ["systemctl", "start", ..], new CommandOutcome.TimedOut(CapturedText.Empty, CapturedText.Empty, UnitCommands.StartCeiling));
+        Runner.Script(argv => argv is ["systemctl", "show", ..], RecordingCommandRunner.Exited(showExit, show, showExit == 0 ? string.Empty : "Failed to connect to bus"));
 
         var (exit, stdout, stderr) = CliRun.Over(Host(), "act", "A10", "--confirm", "--detach", "--json");
 
@@ -314,7 +298,7 @@ public sealed class DetachedRunsTests : IDisposable
     [Fact]
     public void A_unit_that_will_not_start_takes_its_request_with_it_and_exits_71()
     {
-        _runner.Script(argv => argv is ["systemctl", "start", ..], RecordingCommandRunner.Exited(5, stderr: "Unit wsl-care-act@.service not found."));
+        Runner.Script(argv => argv is ["systemctl", "start", ..], RecordingCommandRunner.Exited(5, stderr: "Unit wsl-care-act@.service not found."));
 
         var (exit, stdout, stderr) = CliRun.Over(Host(), "act", "A10", "--confirm", "--detach", "--json");
 
@@ -334,7 +318,7 @@ public sealed class DetachedRunsTests : IDisposable
         collectExit.Should().Be((int)ExitCode.NeedsRoot);
         collectErr.Should().Contain("collect --detach needs root");
         Requests().Should().BeEmpty();
-        _runner.Requests.Should().BeEmpty();
+        Runner.Requests.Should().BeEmpty();
     }
 
     // ---------- --only - (stdin) ----------
@@ -361,7 +345,7 @@ public sealed class DetachedRunsTests : IDisposable
         stdout.Should().BeEmpty();
         stderr.Should().Contain(reason);
         Requests().Should().BeEmpty();
-        _runner.Requests.Should().BeEmpty();
+        Runner.Requests.Should().BeEmpty();
     }
 
     [Fact]
@@ -403,7 +387,7 @@ public sealed class DetachedRunsTests : IDisposable
         report.Result.Should().Be("recorded");
         History().Should().ContainSingle().Which.Should().Match<RunRecord>(r => r.RunId == request.RunId && r.Trigger == RunTrigger.Manual);
         Requests().Should().BeEmpty();
-        File.Exists(RunningState.File(_sandbox.Paths)).Should().BeFalse();
+        File.Exists(RunningState.File(Sandbox.Paths)).Should().BeFalse();
     }
 
     /// <summary>States move request → running.json → history line, never with a gap (E6.S0 review round): while the run acts,
@@ -413,10 +397,10 @@ public sealed class DetachedRunsTests : IDisposable
     {
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
         var (requestThere, runningThere) = (true, false);
-        _runner.ScriptEffect(argv => argv is ["journalctl", "--vacuum-time=30d"], _ =>
+        Runner.ScriptEffect(argv => argv is ["journalctl", "--vacuum-time=30d"], _ =>
         {
-            requestThere = File.Exists(RunRequests.File(_sandbox.Paths, request.RunId));
-            runningThere = File.Exists(RunningState.File(_sandbox.Paths));
+            requestThere = File.Exists(RunRequests.File(Sandbox.Paths, request.RunId));
+            runningThere = File.Exists(RunningState.File(Sandbox.Paths));
             return RecordingCommandRunner.Exited(0);
         });
 
@@ -443,7 +427,7 @@ public sealed class DetachedRunsTests : IDisposable
     public void A_request_that_meets_the_lock_is_recorded_refused_and_removed_never_a_silent_busy()
     {
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
-        var held = (ExclusiveLock.Held)RunLock.TryTake(_sandbox.Paths, _sandbox.Files);
+        var held = (ExclusiveLock.Held)RunLock.TryTake(Sandbox.Paths, Sandbox.Files);
         int exit;
         string stderr;
         using (held.Handle)
@@ -464,7 +448,7 @@ public sealed class DetachedRunsTests : IDisposable
     [Fact]
     public void A_request_under_an_invalid_configuration_is_recorded_refused_as_observe_only()
     {
-        _sandbox.Write("/home/me/.config/wsl-care/config.json", "{ \"journal\": { \"keepDays\": 0 } }");
+        Sandbox.Write("/home/me/.config/wsl-care/config.json", "{ \"journal\": { \"keepDays\": 0 } }");
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
 
         var (exit, _, _) = CliRun.Over(Host(), "act", "--request", request.RunId.Text);
@@ -480,7 +464,7 @@ public sealed class DetachedRunsTests : IDisposable
     public void A_request_whose_run_already_recorded_itself_is_removed_and_never_run_twice()
     {
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Completed, []));
+        new RunRecordWriter(Sandbox.Paths, Sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Completed, [], null));
 
         var (exit, _, stderr) = CliRun.Over(Host(), "act", "--request", request.RunId.Text);
 
@@ -488,7 +472,7 @@ public sealed class DetachedRunsTests : IDisposable
         stderr.Should().Contain("already recorded itself");
         History().Should().ContainSingle("one run id, one terminal line");
         Requests().Should().BeEmpty();
-        _runner.Commands.Should().NotContain(c => c.Contains("--vacuum-time", StringComparison.Ordinal));
+        Runner.Commands.Should().NotContain(c => c.Contains("--vacuum-time", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -500,14 +484,14 @@ public sealed class DetachedRunsTests : IDisposable
         stdout.Should().BeEmpty();
         stderr.Should().Contain("no request names run 20261004T120000Z-1");
         History().Should().BeEmpty();
-        _runner.Requests.Should().BeEmpty();
+        Runner.Requests.Should().BeEmpty();
     }
 
     [Fact]
     public void A_request_whose_content_is_not_what_root_writes_is_refused_and_nothing_runs()
     {
         var runId = RunId.New(Now, 6);
-        var path = RunRequests.File(_sandbox.Paths, runId);
+        var path = RunRequests.File(Sandbox.Paths, runId);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, $$"""{"schemaVersion":1,"runId":"{{runId}}","kind":"act","actions":["A4"],"trigger":"manual","createdAt":"2026-10-02T12:00:00+00:00","shown":["../../etc/passwd"]}""");
 
@@ -517,7 +501,7 @@ public sealed class DetachedRunsTests : IDisposable
         stderr.Should().Contain("cannot be used").And.Contain("shown");
         History().Should().ContainSingle().Which.Should().Match<RunRecord>(r => r.RunId == runId && r.Outcome == RunOutcome.Refused, "E6.S1 review D5: recorded, never left to block every detach");
         File.Exists(path).Should().BeFalse();
-        _runner.Requests.Should().BeEmpty();
+        Runner.Requests.Should().BeEmpty();
     }
 
     [Fact]
@@ -530,21 +514,21 @@ public sealed class DetachedRunsTests : IDisposable
         }
 
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
-        File.SetUnixFileMode(RunRequests.File(_sandbox.Paths, request.RunId), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.OtherRead);
+        File.SetUnixFileMode(RunRequests.File(Sandbox.Paths, request.RunId), UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.OtherRead);
 
         var (exit, _, stderr) = CliRun.Over(Host(), "act", "--request", request.RunId.Text);
 
         exit.Should().Be((int)ExitCode.Usage);
         stderr.Should().Contain("cannot be used");
         History().Should().ContainSingle().Which.Outcome.Should().Be(RunOutcome.Refused, "nothing ran; the refusal is recorded and the request removed");
-        File.Exists(RunRequests.File(_sandbox.Paths, request.RunId)).Should().BeFalse();
+        File.Exists(RunRequests.File(Sandbox.Paths, request.RunId)).Should().BeFalse();
     }
 
     [Fact]
     public void A_request_sweeps_another_stale_request_whose_unit_is_gone_before_it_runs()
     {
         var stale = Plant("act", ["A9"], TimeSpan.FromMinutes(30), pid: 70);
-        _runner.Script(UnitCommands.Show(stale.RunId).Argv, 0, "ActiveState=inactive\nJob=\n");
+        Runner.Script(UnitCommands.Show(stale.RunId).Argv, 0, "ActiveState=inactive\nJob=\n");
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5), pid: 71);
 
         var (exit, _, stderr) = CliRun.Over(Host(), "act", "--request", request.RunId.Text);
@@ -564,14 +548,14 @@ public sealed class DetachedRunsTests : IDisposable
         var runId = RunId.New(Now.AddMinutes(-9), 999);
         var unit = timer ? UnitCommands.TimerService : SlotKind.ActUnit.Of(runId);
         PlantWedged(runId, pid: 999);
-        _sandbox.Write("/proc/999/cgroup", $"0::{(timer ? RunStops.TimerCgroup : RunStops.ActSlice + unit)}\n");
+        Sandbox.Write("/proc/999/cgroup", $"0::{(timer ? RunStops.TimerCgroup : RunStops.ActSlice + unit)}\n");
 
         var (exit, stdout, stderr) = CliRun.Over(Host() with { Processes = WedgedTable(999) }, "act", "--stop", runId.Text, "--json");
 
         exit.Should().Be((int)ExitCode.Ok, stderr);
         HandOff(stdout).Should().Match<HandOffReport>(r => r.Result == "stopping" && r.Kind == "stop" && r.RunId == runId.Text && r.Unit == unit);
-        _runner.Commands.Should().Equal($"systemctl stop {unit}");
-        StopMarkers.List(_sandbox.Paths, _sandbox.Files).Should().Equal(runId);
+        Runner.Commands.Should().Equal($"systemctl stop {unit}");
+        StopMarkers.List(Sandbox.Paths, Sandbox.Files).Should().Equal(runId);
     }
 
     [Fact]
@@ -579,14 +563,14 @@ public sealed class DetachedRunsTests : IDisposable
     {
         var runId = RunId.New(Now.AddMinutes(-9), 999);
         PlantWedged(runId, pid: 999);
-        _sandbox.Write("/proc/999/cgroup", "0::/user.slice/user-1000.slice/session-1.scope\n");
+        Sandbox.Write("/proc/999/cgroup", "0::/user.slice/user-1000.slice/session-1.scope\n");
 
         var (exit, _, stderr) = CliRun.Over(Host() with { Processes = WedgedTable(999) }, "act", "--stop", runId.Text);
 
         exit.Should().Be((int)ExitCode.Usage);
         stderr.Should().Contain("not in the system's wsl-care.service nor in").And.Contain("session-1.scope").And.Contain("pid 999");
-        _runner.Requests.Should().BeEmpty("nothing is killed, by pid or by unit");
-        StopMarkers.List(_sandbox.Paths, _sandbox.Files).Should().BeEmpty();
+        Runner.Requests.Should().BeEmpty("nothing is killed, by pid or by unit");
+        StopMarkers.List(Sandbox.Paths, Sandbox.Files).Should().BeEmpty();
     }
 
     /// <summary>E6.S1 review S3: only the last path component was compared — a user's own systemd --user unit named
@@ -600,22 +584,22 @@ public sealed class DetachedRunsTests : IDisposable
     {
         var runId = RunId.New(Now.AddMinutes(-9), 999);
         PlantWedged(runId, pid: 999);
-        _sandbox.Write("/proc/999/cgroup", cgroup + "\n");
+        Sandbox.Write("/proc/999/cgroup", cgroup + "\n");
 
         var (exit, _, stderr) = CliRun.Over(Host() with { Processes = WedgedTable(999) }, "act", "--stop", runId.Text);
 
         exit.Should().Be((int)ExitCode.Usage);
         stderr.Should().Contain("nothing was stopped");
-        _runner.Requests.Should().BeEmpty();
+        Runner.Requests.Should().BeEmpty();
     }
 
     [Fact]
     public void A_live_run_is_not_stopped_and_a_run_that_is_not_wedged_here_is_nothing_to_stop()
     {
         var runId = RunId.New(Now.AddMinutes(-1), 999);
-        var live = new RunningFile(1, runId, RunTrigger.Manual, ["A10"], "A10", 999, Now.AddHours(-1), Now.AddMinutes(-1), Now.AddSeconds(-2));
-        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
-        File.WriteAllText(RunningState.File(_sandbox.Paths), JsonSerializer.Serialize(live, WslCareJsonContext.Default.RunningFile));
+        var live = new RunningFile(1, runId, RunTrigger.Manual, ["A10"], "A10", 999, Now.AddHours(-1), Now.AddMinutes(-1), Now.AddSeconds(-2), RunKind.Act);
+        Directory.CreateDirectory(Sandbox.Paths.StateDirectory);
+        File.WriteAllText(RunningState.File(Sandbox.Paths), JsonSerializer.Serialize(live, WslCareJsonContext.Default.RunningFile));
 
         var (liveExit, _, liveErr) = CliRun.Over(Host() with { Processes = WedgedTable(999) }, "act", "--stop", runId.Text);
         var (otherExit, _, otherErr) = CliRun.Over(Host() with { Processes = WedgedTable(999) }, "act", "--stop", "20261004T120000Z-5");
@@ -624,7 +608,7 @@ public sealed class DetachedRunsTests : IDisposable
         liveErr.Should().Contain("is acting, not wedged");
         otherExit.Should().Be((int)ExitCode.Usage);
         otherErr.Should().Contain("is not wedged here");
-        _runner.Requests.Should().BeEmpty();
+        Runner.Requests.Should().BeEmpty();
     }
 
     [Fact]
@@ -632,23 +616,23 @@ public sealed class DetachedRunsTests : IDisposable
     {
         var runId = RunId.New(Now.AddMinutes(-9), 999);
         PlantWedged(runId, pid: 999);
-        _sandbox.Write("/proc/999/cgroup", "0::/system.slice/wsl-care.service\n");
-        _runner.Script(argv => argv is ["systemctl", "stop", ..], RecordingCommandRunner.Exited(1, stderr: "Access denied"));
+        Sandbox.Write("/proc/999/cgroup", "0::/system.slice/wsl-care.service\n");
+        Runner.Script(argv => argv is ["systemctl", "stop", ..], RecordingCommandRunner.Exited(1, stderr: "Access denied"));
 
         var (exit, _, stderr) = CliRun.Over(Host() with { Processes = WedgedTable(999) }, "act", "--stop", runId.Text);
 
         exit.Should().Be((int)ExitCode.RunFailed);
         stderr.Should().Contain("Access denied");
-        StopMarkers.List(_sandbox.Paths, _sandbox.Files).Should().BeEmpty();
+        StopMarkers.List(Sandbox.Paths, Sandbox.Files).Should().BeEmpty();
     }
 
     private static FakeProcessTable WedgedTable(int pid) => new FakeProcessTable().Alive(pid, Now.AddHours(-1));
 
     private void PlantWedged(RunId runId, int pid)
     {
-        var wedged = new RunningFile(1, runId, RunTrigger.Timer, ["A10"], "A10", pid, Now.AddHours(-1), Now.AddMinutes(-9), Now.AddMinutes(-5));
-        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
-        File.WriteAllText(RunningState.File(_sandbox.Paths), JsonSerializer.Serialize(wedged, WslCareJsonContext.Default.RunningFile));
+        var wedged = new RunningFile(1, runId, RunTrigger.Timer, ["A10"], "A10", pid, Now.AddHours(-1), Now.AddMinutes(-9), Now.AddMinutes(-5), RunKind.Act);
+        Directory.CreateDirectory(Sandbox.Paths.StateDirectory);
+        File.WriteAllText(RunningState.File(Sandbox.Paths), JsonSerializer.Serialize(wedged, WslCareJsonContext.Default.RunningFile));
     }
 
     /// <summary>A stdin whose writer never closes: every read blocks until the test ends.</summary>

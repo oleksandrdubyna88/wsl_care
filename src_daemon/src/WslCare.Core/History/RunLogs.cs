@@ -120,6 +120,7 @@ public static class RunLogs
             r.Reason)
         {
             Metrics = r.Metrics,
+            Kind = r.Kind is { } kind ? Camel(kind.ToString()) : null,
         };
     }
 
@@ -228,7 +229,7 @@ public static class RunLogs
         }
     }
 
-    internal static bool IsAct(byte[] json) => JsonSerializer.Deserialize(json, WslCareJsonContext.Default.DetailKindView)?.Kind == "act";
+    internal static bool IsAct(byte[] json) => RunKinds.OfDetailKind(JsonSerializer.Deserialize(json, WslCareJsonContext.Default.DetailKindView)?.Kind) == RunKind.Act;
 
     private static IReadOnlyList<ActionOutcome> ActOutcomes(byte[] json) => JsonSerializer.Deserialize(json, WslCareJsonContext.Default.ActRunDetail)?.Actions ?? [];
 

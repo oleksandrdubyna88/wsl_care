@@ -34,7 +34,7 @@ public sealed class FilesystemTrimTests : IDisposable
         _runner.Script(Systemd.SystemdCommands.ShowUnit("fstrim.timer").Argv, RecordingCommandRunner.Exited(0, $"Id=fstrim.timer\nLoadState=loaded\nActiveState=inactive\nSubState=dead\nUnitFileState={state}\n"));
 
     private void TrimmedAt(DateTimeOffset at) =>
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 7), RunTrigger.Timer, at, at, RunOutcome.Completed, [new ActionRecord("A15", 1, 0) { Status = ActionStatus.Ran }]));
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 7), RunTrigger.Timer, at, at, RunOutcome.Completed, [new ActionRecord("A15", 1, 0) { Status = ActionStatus.Ran }], RunKind.Collect));
 
     private (ActionContext Context, ActionCommands Commands) For()
     {

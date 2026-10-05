@@ -104,7 +104,7 @@ public sealed class StatusFlows
         using var home = new ScenarioHome("status-slow");
         var sampled = DateTimeOffset.UtcNow.AddHours(-2);
         new RunRecordWriter(home.Paths, new Core.Files.PhysicalFileSystem(home.Paths)).Append(
-            new RunRecord(SchemaVersion.Current, RunId.New(sampled, 4242), RunTrigger.Timer, sampled, sampled.AddSeconds(30), RunOutcome.Completed, [])
+            new RunRecord(SchemaVersion.Current, RunId.New(sampled, 4242), RunTrigger.Timer, sampled, sampled.AddSeconds(30), RunOutcome.Completed, [], RunKind.Collect)
             {
                 Slow = new SlowParts { ContainerStats = new ContainerStatsSample(sampled, [new ContainerStat("0e456d1dc8c0", "pg", 712_196_096, 0.4)], string.Empty) },
             });

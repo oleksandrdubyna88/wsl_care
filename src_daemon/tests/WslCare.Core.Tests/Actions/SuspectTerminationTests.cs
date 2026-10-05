@@ -104,7 +104,7 @@ public sealed class SuspectTerminationTests : IDisposable
         var preview = await action.PreviewAsync(context, new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []), CancellationToken.None);
         var at = new DateTimeOffset(2026, 9, 26, 9, 0, 0, TimeSpan.Zero);
         var record = Core.Actions.Engine.ActionRecords.Of(new Core.Actions.Engine.ActionOutcome("A11", action.Summary, Core.Actions.Engine.ActionStatus.DryRun, "dry run", preview, null));
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 5), RunTrigger.Timer, at, at, RunOutcome.Completed, [record]) { DryRun = true });
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 5), RunTrigger.Timer, at, at, RunOutcome.Completed, [record], RunKind.Collect) { DryRun = true });
 
         var logs = Core.History.RunLogs.Logs(_sandbox.Paths, _sandbox.Files, ((Core.History.PeriodParse.Parsed)Core.History.LogPeriod.Parse("2026-09-26", at)).Period, action: null);
 

@@ -26,7 +26,8 @@
         "freedBytes": 0
       }
     ],
-    "reason": "swept: pid 4242 is gone; it was on A4, last heartbeat 2026-10-01 10:01:00Z"
+    "reason": "swept: pid 4242 is gone; it was on A4, last heartbeat 2026-10-01 10:01:00Z",
+    "kind": "act"
   },
   "detailState": "none"
 }

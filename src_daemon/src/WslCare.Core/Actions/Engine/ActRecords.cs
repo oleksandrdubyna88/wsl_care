@@ -14,6 +14,10 @@ public sealed record ActRequest(IReadOnlyList<ActionId> Ids, RunTrigger Trigger,
     /// panel can follow it from the moment it was accepted. <c>null</c>: a new id from this run's start and pid.</summary>
     public RunId? RunId { get; init; }
 
+    /// <summary>What the run is, as <c>running.json</c> names it (plan §15o): an <c>act</c> — or the timer's pass inside a full
+    /// check, the ONE place that sets <see cref="RunKind.Collect"/> (<see cref="ActionEngine.TimerPassAsync"/>).</summary>
+    public RunKind Kind { get; init; } = RunKind.Act;
+
     /// <summary>Called once this run's <c>running.json</c> is written — <c>act --request</c> removes its request THEN, so a reader
     /// moving request → running.json → history never finds neither (E6.S0 review D4).</summary>
     public Action OnRunningWritten { get; init; } = static () => { };

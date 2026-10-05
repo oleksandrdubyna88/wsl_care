@@ -77,8 +77,9 @@ public static class CollectRun
 {
     public const string ReadOnlyNote = "read-only: run as root to record";
 
-    /// <summary>What a full run's <c>running.json</c> names as its action and its current step (gate finding #11).</summary>
-    public const string RunningAction = "collect";
+    /// <summary>What a full run's <c>running.json</c> names as its action and its current step (gate finding #11) — the reserved
+    /// meta name of a full check (<see cref="RunKinds.FullCheckName"/>, plan §15o).</summary>
+    public const string RunningAction = RunKinds.FullCheckName;
 
     /// <summary>The "since the last run" window when there is no last run: the timer's period (plan §8).</summary>
     public static readonly TimeSpan DefaultWindow = TimeSpan.FromHours(4);
@@ -118,7 +119,7 @@ public static class CollectRun
     private static async Task<CollectResult> UnderLockAsync(CollectContext c, RunId runId, DateTimeOffset started, CancellationToken cancellationToken)
     {
         var sweep = RunningSweep.Apply(c.Paths, c.Files, c.Processes, started, RunningReadRetry.Default, runId, c.ProcessId);
-        var running = RunningState.Identified(new RunningFile(Core.SchemaVersion.Current, runId, c.Trigger, [RunningAction], RunningAction, c.ProcessId, OwnStart(c), started, started), c.Processes);
+        var running = RunningState.Identified(new RunningFile(Core.SchemaVersion.Current, runId, c.Trigger, [RunningAction], RunningAction, c.ProcessId, OwnStart(c), started, started, RunKind.Collect), c.Processes);
         var owned = sweep is RunningSweep.Clear && StartRunning(c, running);
         if (owned)
         {
@@ -180,7 +181,7 @@ public static class CollectRun
     {
         try
         {
-            new RunRecordWriter(c.Paths, c.Files).Append(new RunRecord(Core.SchemaVersion.Current, running.RunId, running.Trigger, running.StartedAt, c.Clock.GetUtcNow(), RunOutcome.Interrupted, [])
+            new RunRecordWriter(c.Paths, c.Files).Append(new RunRecord(Core.SchemaVersion.Current, running.RunId, running.Trigger, running.StartedAt, c.Clock.GetUtcNow(), RunOutcome.Interrupted, [], RunKind.Collect)
             {
                 Reason = $"interrupted by {c.InterruptCause()} {when}: nothing was recorded but this line",
             });
@@ -298,7 +299,7 @@ public static class CollectRun
     }
 
     private static RunRecord Line(RunDetail d, RunOutcome outcome) =>
-        new(Core.SchemaVersion.Current, d.RunId, d.Trigger, d.StartedAt, d.EndedAt, outcome, d.Actions)
+        new(Core.SchemaVersion.Current, d.RunId, d.Trigger, d.StartedAt, d.EndedAt, outcome, d.Actions, RunKind.Collect)
         {
             Slow = d.Slow,
             DryRun = d.DryRun,
@@ -352,7 +353,7 @@ public static class CollectRun
         var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders };
         var verdicts = ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow), c.Loaded.Config);
         var ended = c.Clock.GetUtcNow();
-        var thisRun = LastFullRun.FromRecords([new RunRecord(Core.SchemaVersion.Current, runId, c.Trigger, started, ended, RunOutcome.Completed, []) { Slow = slow }, .. newestFirst], ended);
+        var thisRun = LastFullRun.FromRecords([new RunRecord(Core.SchemaVersion.Current, runId, c.Trigger, started, ended, RunOutcome.Completed, [], RunKind.Collect) { Slow = slow }, .. newestFirst], ended);
         var folderReport = FoldersReports.From(foldersNow, foldersBefore, folders is not null);
         return new RunDetail(
             Core.SchemaVersion.Current,

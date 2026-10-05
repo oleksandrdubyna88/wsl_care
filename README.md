@@ -397,7 +397,10 @@ default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (UTC days, at most
 <instant>`, two RFC 3339 instants with their offset spelt out (`Z` or `+03:00`; a bare date or a time without an offset is
 refused, never read in this machine's zone), half-open (from inclusive, to exclusive), at most 366 days: how a client asks
 for a LOCAL day, which crosses UTC midnight. `runs` lines carry the `metrics` their history line recorded (a full run's
-`MemAvailable`, page cache, swap, `/`, Docker reclaimable, container starts; none for an `act`).
+`MemAvailable`, page cache, swap, `/`, Docker reclaimable, container starts; none for an `act`), and its `kind`: `collect` for
+a full check — whatever started or ended it — or `act`; a line's `actions` list only what its actions did, so a full check
+that never reached its actions (refused, cut off, swept) has none. A line written before `kind` existed, or whose kind
+cannot be known (a request that could not be read), has no `kind`.
 
 `runs show <runId>` answers one run: `done` (with its history line and its detail — every action, every object it removed
 and did not remove, every command it ran and its exit), `refused`, `interrupted` (also a run whose process died before

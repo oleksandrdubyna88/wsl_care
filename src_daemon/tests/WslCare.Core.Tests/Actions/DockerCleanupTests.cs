@@ -392,7 +392,7 @@ public sealed class DockerCleanupTests : IDisposable
     {
         // A folder sample, so A8 / A9 compare figures, not two equal "unavailable"s.
         var sampledAt = DockerWorld.Now.AddHours(-2);
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(SchemaVersion.Current, RunId.New(sampledAt, 5), RunTrigger.Timer, sampledAt, sampledAt, RunOutcome.Completed, [])
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(SchemaVersion.Current, RunId.New(sampledAt, 5), RunTrigger.Timer, sampledAt, sampledAt, RunOutcome.Completed, [], RunKind.Collect)
         {
             Slow = new SlowParts { Folders = new FolderSizesSample(sampledAt, [new("npm-cache", "/home/me/.npm", 5_300_000_000, 41_000, true, string.Empty), new("apt-cache", "/var/cache/apt", 116_815_541, 40, true, string.Empty), new("snap-disabled", "/var/lib/snapd/snaps", 300_000_000, 2, true, string.Empty)]) },
         });

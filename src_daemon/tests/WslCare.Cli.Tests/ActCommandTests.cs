@@ -174,7 +174,7 @@ public sealed class ActCommandTests : IDisposable
     {
         var processes = new FakeProcessTable().Alive(999, FixedTimeProvider.DefaultNow.AddHours(-1));
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
-        var wedged = new RunningFile(1, RunId.New(FixedTimeProvider.DefaultNow.AddMinutes(-9), 999), RunTrigger.Timer, ["A10"], "A10", 999, FixedTimeProvider.DefaultNow.AddHours(-1), FixedTimeProvider.DefaultNow.AddMinutes(-9), FixedTimeProvider.DefaultNow.AddMinutes(-5));
+        var wedged = new RunningFile(1, RunId.New(FixedTimeProvider.DefaultNow.AddMinutes(-9), 999), RunTrigger.Timer, ["A10"], "A10", 999, FixedTimeProvider.DefaultNow.AddHours(-1), FixedTimeProvider.DefaultNow.AddMinutes(-9), FixedTimeProvider.DefaultNow.AddMinutes(-5), RunKind.Act);
         File.WriteAllText(RunningState.File(_sandbox.Paths), JsonSerializer.Serialize(wedged, WslCareJsonContext.Default.RunningFile));
 
         var (exit, _, stderr) = CliRun.Over(Host(Root) with { Processes = processes }, "act", "A10", "--confirm");

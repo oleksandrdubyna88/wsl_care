@@ -45,7 +45,7 @@ public sealed class ClockFixTests : IDisposable
 
     /// <summary>A full run recorded at <paramref name="at"/> that observed <paramref name="offsetSeconds"/>.</summary>
     private void FullRunObserved(DateTimeOffset at, double offsetSeconds) =>
-        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 9), RunTrigger.Timer, at, at, RunOutcome.Completed, [])
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 9), RunTrigger.Timer, at, at, RunOutcome.Completed, [], RunKind.Collect)
         {
             Slow = new SlowParts { WindowsClock = new WindowsClockSample(at, offsetSeconds, 0.5, string.Empty) },
         });

@@ -1148,6 +1148,67 @@ last 10 on this one — the wait itself is the same). `ProgressWaitTests` 6 of 6
 suite in WSL three times: 307 passed and 1 skipped of 308, each time. Windows (Release): Core 934 (914 passed, 20
 skipped), Cli 199 (197, 2), Scenarios 308 (183 passed, 125 skipped — the Linux-only flows).
 
+### A full check's history line names itself — `kind` (2026-10-05, plan §15o)
+
+What a reader of `history.jsonl` sees, at the wire. `Cli.Tests/FullCheckLineTests` drives EVERY writer of a full check's
+terminal line — its `Ending` enum is that list (completed, observe-only, failed on its detail, refused at the lock, cut off
+during the measurement, cut off while sweeping, cut off before it started, a swept request, a swept dead holder, one after
+`act --stop`) — reads the line as raw JSON and asserts: the outcome and reason the ending names (proof the staging reached
+that writer), `kind: "collect"`, no `collect` row in `actions`, and (coai plan round #1) a reason that starts with none of
+`HistoryReasons.NotAFullCheckWithoutKind` — the prefixes `contracts/history-reasons.json` carries. Its companion asserts
+the prefixes DO mark the unusable request's and the reconciled orphans' lines, and that a readable full-check orphan
+carries `kind: collect` beside the reconcile's prefix (kind first). "Cut off before it started" is not reachable from
+outside for a full check (`CollectRun` records its own cut-offs first): its line is built by the very expression
+`DetachedRuns.CutOff` appends. `Core.Tests/Records/RunKindTests`: an older `running.json` is a full check only in the exact
+shape `CollectRun` writes (five shapes); a dead holder's line takes its kind and lists only actions (a measuring full check,
+the timer's pass, an `act --timer` of the same ids, older files of both); a swept act request names `act` with its ids
+interrupted; the reconcile reads an orphan's kind from its detail; a line without `kind` parses and answers none; a line with
+an unknown kind is counted unparseable (the stated residual); `runs` answers each line's kind; a refused full check adds no
+`collect` entry to `perAction`; no action id is the reserved name. `ContractFilesTests` (Scenarios) holds
+`contracts/history-reasons.json`, checks the registry AND the checked-in `contracts/actions.json` for the reserved name, and
+(review round) freezes the three on-disk reasons to literals; the companion asserts the reasons as written start with the
+prefixes the follower on the E6.S3 branch matches. `TimerPassTests` and
+`ActionEngineTests` gained the kind of the timer's line and of its `running.json` during the pass, and of an act's line and
+`running.json`. `RefusingDetailWrites` moved to `TestSupport` (it was private to `CollectRunTests`).
+
+**Red first** (Windows, before the fix; the test reads raw JSON, so it compiled against the old code): 3 of 3 —
+*Expected Kind(line) to be "collect" … but "" has a length of 0* for the completed line (`"actions":[]`, no `kind`), the
+refused one (`"actions":[{"id":"collect",…,"status":"refused"}]`) and the one cut off while sweeping (`"actions":[]`).
+Green after the fix: 21 of 21.
+
+**Teeth** (Windows, one mutation at a time: the file checked changed, rebuilt, the class run, restored by writing it back and
+compared by SHA-256 — every restore byte-identical):
+
+| Mutation | Red |
+|---|---|
+| `CollectRun.Line`'s kind → `null` | 3 of 21: completed, observe-only, failed — *Expected Kind(line) to be "collect" …* |
+| the `collect` row back in `DetachedRuns.Refused` | 1: refused at the lock — *Expected ActionIds(line) {"collect"} to not contain "collect"* |
+| the older-file inference without its `current` check | 2 of 20 (`RunKindTests`): `["collect"]` with current `""` / `A10` — *Expected … KindOrMarker() to be <null>, but found RunKind.Collect* |
+| `DetachedRuns.CutOffReason` starting `refused: its request could not be used` | 1: *Expected HistoryReasons.MarksNotAFullCheck(reason) to be False …* (cut off before it started) |
+| the swept holder keeps the `collect` row | 2 (`RunKindTests`): *Expected line.Actions.Select(a => a.Id) to be equal to {empty} …, but found {"collect"}* |
+| the timer pass's `ActRequest.Kind` not set | 1 (`TimerPassTests`): *Expected duringThePass.Kind to be RunKind.Collect …, but found RunKind.Act* |
+| `RunRequestFile.TerminalLine` writing a full check as `act` with its row | 3: refused, cut off before it started, swept request — *Expected Kind(line) to be "collect" …* |
+
+**Goldens** regenerated in WSL (`WSL_CARE_WRITE_GOLDENS=1`, a `/tmp` copy, copied back and compared by SHA-256): only
+`runs-local-day.json` (`kind` on its three lines), `runs-show-done.json` and `runs-show-interrupted.json` (`kind: "act"`)
+changed — additive members, nothing else moved.
+
+**The §15o review round** (coai code round + an own review, 2026-10-05; plan §15o's table). Each behaviour red → green →
+red (Windows, Debug; the mutation checked applied, the file restored by writing it back, SHA-256 byte-identical):
+
+| # | Test | Red before the fix | Teeth (the fix's line broken) |
+|---|---|---|---|
+| G1 | `RunKindTests.A_reconciled_orphan_takes_its_kind_from_its_detail` (`archive`, `Act`) | 2: *Expected History() to be <null>, but found RunKind.Collect* | `_ => RunKind.Collect` back in `OfDetailKind`: the same 2 |
+| G2 | `RunKindTests.A_request_of_an_unknown_kind_gets_a_line_with_no_kind_and_no_action_rows` (`archive`, `Collect`, `""`) | 3: *Did not expect line.Kind to have a value … but found RunKind.Act* | `_ => RunKind.Act` back: the same 3; the rows written for an unknown kind (`!= Collect`): 3, *Expected line.Actions to be empty …* |
+| G4 | `RunKindTests.A_running_json_without_actions_is_unreadable_and_never_swept_into_a_line` | none — the guard already held (the test pins the stated reason) | `Actions: not null` dropped from `RunningState.Read`: *System.ArgumentNullException : Value cannot be null. (Parameter 'source')* in the sweep |
+| O2 | `ActionEngineTests.An_act_names_itself_act_in_running_json_and_on_its_line_whatever_its_trigger` (Cli, Manual, Timer) | none — already true; the theory is the missing writer-side test | `ActRequest.Kind` defaulting to `Collect`: 3, *Expected kinds to be equal to {RunKind.Act} … but {RunKind.Collect} differs at index 0* |
+| O3 | `FullCheckLineTests.An_act_request_cut_off_inside_its_request_sweep_gets_ONE_act_line_from_DetachedRuns_CutOff` | none — the path was right, it was untested | `DetachedRuns.CutOff`'s line `with { Kind = null }`: *Expected Kind(line) to be "act" … but "" has a length of 0* |
+| O4 | `ContractFilesTests.The_reasons_already_on_disk_are_frozen`; the companion's "as written" assertions | none — a new pin | `RunReconcile.InterruptedReason` reworded: *… these strings are on disk; a change is a contract break, but they differ at index 29* |
+
+G3 (the handler lookup in `FullCheckLineTests`) and O1 (`Cli.Tests/DetachedRunHarness`, shared by `DetachedRunsTests` and
+`FullCheckLineTests`) are refactors of tests with no behaviour of their own: both classes green before and after (54 and
+22). O5 is documentation (plan §15o decision 6, `research/architecture.md`).
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

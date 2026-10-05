@@ -48,10 +48,15 @@ public sealed class TimerPassTests : IDisposable
     public async Task The_timer_measures_then_acts_under_the_same_lock_and_the_dry_run_week_is_recorded_in_the_one_run_record()
     {
         var lockHeldDuringPreview = false;
+        RunningFile? duringThePass = null;
         var action = new ScriptedAction("A10", _journal)
         {
             PreviewBytes = 5_000,
-            OnPreview = _ => lockHeldDuringPreview = RunLock.TryTake(_sandbox.Paths, _sandbox.Files) is ExclusiveLock.Busy,
+            OnPreview = _ =>
+            {
+                lockHeldDuringPreview = RunLock.TryTake(_sandbox.Paths, _sandbox.Files) is ExclusiveLock.Busy;
+                duringThePass = JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile);
+            },
         };
 
         var result = await CollectRun.RunAsync(Context(RunTrigger.Timer, action), CancellationToken.None);
@@ -63,6 +68,9 @@ public sealed class TimerPassTests : IDisposable
         line.DryRun.Should().BeTrue();
         line.Actions.Should().ContainSingle().Which.Should().Match<ActionRecord>(a => a.Id == "A10" && a.Status == ActionStatus.DryRun && a.WouldFreeBytes == 5_000);
         line.Metrics.Should().NotBeNull("the measurement is in the same line");
+        line.Kind.Should().Be(RunKind.Collect, "plan §15o: the timer's line is a full check's, its actions the pass's results");
+        duringThePass!.Actions.Should().Equal("A10");
+        duringThePass.Kind.Should().Be(RunKind.Collect, "the pass holds the registry's ids like an act --timer would - only kind tells them apart");
         var pass = Detail(result).TimerPass!;
         pass.Ran.Should().BeTrue();
         pass.DryRunReason.Should().Contain("dryRun is on");
@@ -103,7 +111,7 @@ public sealed class TimerPassTests : IDisposable
     {
         var other = 777;
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
-        var running = new RunningFile(1, RunId.New(FixedTimeProvider.DefaultNow, other), RunTrigger.Manual, ["A5"], "A5", other, FixedTimeProvider.DefaultNow.AddMinutes(-2), FixedTimeProvider.DefaultNow, FixedTimeProvider.DefaultNow);
+        var running = new RunningFile(1, RunId.New(FixedTimeProvider.DefaultNow, other), RunTrigger.Manual, ["A5"], "A5", other, FixedTimeProvider.DefaultNow.AddMinutes(-2), FixedTimeProvider.DefaultNow, FixedTimeProvider.DefaultNow, RunKind.Act);
         File.WriteAllBytes(RunningState.File(_sandbox.Paths), JsonSerializer.SerializeToUtf8Bytes(running, WslCareJsonContext.Default.RunningFile));
         var context = Context(RunTrigger.Timer, new ScriptedAction("A10", _journal)) with
         {
@@ -127,7 +135,7 @@ public sealed class TimerPassTests : IDisposable
         // running.json in place — and the extension went on showing "Cleaning..." for a run that was long gone.
         var dead = 999;
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
-        var running = new RunningFile(1, RunId.New(FixedTimeProvider.DefaultNow.AddHours(-1), dead), RunTrigger.Manual, ["A5"], "A5", dead, FixedTimeProvider.DefaultNow.AddHours(-2), FixedTimeProvider.DefaultNow.AddHours(-1), FixedTimeProvider.DefaultNow.AddHours(-1));
+        var running = new RunningFile(1, RunId.New(FixedTimeProvider.DefaultNow.AddHours(-1), dead), RunTrigger.Manual, ["A5"], "A5", dead, FixedTimeProvider.DefaultNow.AddHours(-2), FixedTimeProvider.DefaultNow.AddHours(-1), FixedTimeProvider.DefaultNow.AddHours(-1), RunKind.Act);
         File.WriteAllBytes(RunningState.File(_sandbox.Paths), JsonSerializer.SerializeToUtf8Bytes(running, WslCareJsonContext.Default.RunningFile));
 
         var result = await CollectRun.RunAsync(Context(trigger), CancellationToken.None);
@@ -159,6 +167,7 @@ public sealed class TimerPassTests : IDisposable
         seen.Should().NotBeNull("running.json exists while the full run measures");
         seen!.Actions.Should().Equal(CollectRun.RunningAction);
         seen.Current.Should().Be(CollectRun.RunningAction);
+        seen.Kind.Should().Be(RunKind.Collect);
         seen.Pid.Should().Be(Pid);
         seen.RunId.Text.Should().Be(History().Single().RunId.Text);
         File.Exists(RunningState.File(_sandbox.Paths)).Should().BeFalse("it goes when the run ends");
