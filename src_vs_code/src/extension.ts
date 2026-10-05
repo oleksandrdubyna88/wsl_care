@@ -7,7 +7,8 @@ import { installUiFor, newInstallRecorder, type InstallRecorder } from './instal
 import { performance } from 'node:perf_hooks';
 
 import { CleanupHost } from './cleanup/cleanupHost';
-import { cleanUiFor, newCleanRecorder, type CleanRecorder } from './cleanup/cleanUi';
+import { newCleanRecorder, type CleanRecorder } from './cleanup/cleanRecorder';
+import { cleanUiFor } from './cleanup/cleanUi';
 import { PanelProvider } from './panel/panelProvider';
 import { Poller, type Timers } from './poll/poller';
 import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSelection';

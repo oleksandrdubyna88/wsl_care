@@ -1,5 +1,5 @@
 import type { CleanupHost } from './cleanup/cleanupHost';
-import type { CleanRecorder } from './cleanup/cleanUi';
+import type { CleanRecorder } from './cleanup/cleanRecorder';
 import type { InstallRecorder } from './install/installUi';
 import type { ProcessRequest, Runner } from './process/runner';
 import type { RunnerChoice } from './process/runnerSelection';

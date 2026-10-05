@@ -117,9 +117,16 @@ export class RunFollower {
     this.cancel = undefined;
   }
 
-  /** The detached edge (`common.reliability`): the poll's fault is reported, and the next kick decides whether to go on. */
+  /**
+   * The detached edge (`common.reliability`): the poll's fault is reported, and the next kick decides whether to go on. A
+   * poll armed while something was in flight asks nothing when that ended meanwhile (M6 — found by the extension-host tier:
+   * a timer armed by a confirm fired after the run had ended, and asked one status too many).
+   */
   private fired(): void {
     this.cancel = undefined;
+    if (!this.shouldPoll()) {
+      return;
+    }
     void this.tick().catch((error: unknown) => this.options.fault(error)).finally(() => this.kick());
   }
 

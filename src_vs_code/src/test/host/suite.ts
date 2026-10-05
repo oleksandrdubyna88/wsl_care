@@ -158,6 +158,27 @@ const WINDOWS_FAKE: readonly Scenario[] = [
     },
   },
   {
+    name: 'E6.S3: Clean A4 through the host: the recorded modal, ONE confirm piping its list, then the run followed to ONE runs show',
+    run: async (api) => {
+      scenario(RUNNING);
+      await api.refreshPanel();
+      await api.settled();
+      const host = api.cleanupHost();
+      assert.ok(host.controls().rows.some((r) => r.rowId === 'A4' && r.enabled), JSON.stringify(host.controls()).slice(0, 300));
+      api.cleanRecorder().answer = true;
+      api.resetCalls();
+      const outcome = await host.clean(['A4'], false);
+      assert.equal(outcome.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
+      assert.equal(api.cleanRecorder().modals.at(-1)?.message, 'Clean A4 in "Ubuntu"?');
+      assert.deepEqual(daemonCalls(api).filter((c) => c.includes('--confirm')), ['-d Ubuntu -u root --cd / --exec /opt/wsl-care/bin/wsl-care act A4 --confirm --manual --detach --only - --json']);
+      assert.equal(host.journal.entries().length, 1, 'the started run is in globalState');
+      await host.follower.tick();
+      await api.settled();
+      assert.equal(daemonCalls(api).filter((c) => c.includes(' runs show ')).length, 1);
+      assert.deepEqual(host.journal.entries(), [], 'its terminal answer was shown');
+    },
+  },
+  {
     name: '"Start WSL and check" makes the one -d the user asked for',
     run: async (api) => {
       scenario({ ...STOPPED, startable: true });
