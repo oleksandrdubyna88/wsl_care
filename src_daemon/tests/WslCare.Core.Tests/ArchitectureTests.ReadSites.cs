@@ -41,6 +41,10 @@ public sealed partial class ArchitectureTests
         /// <summary>A file a person named on the command line, or the user's own layer rewritten by the user: regular, capped.</summary>
         Named,
 
+        /// <summary>A file an UNPRIVILEGED run reads of its own account (an npm package's <c>package.json</c> for an agent's version,
+        /// E7.S1) — the caller asks only when not root.</summary>
+        OwnUnprivileged,
+
         /// <summary>Names and sizes under the target home — a walk that never follows a link, or a listing of names. Residual,
         /// stated: a listing of a folder that is itself a link lists through it (names only, nothing read).</summary>
         TargetHomeMetadata,
@@ -56,7 +60,8 @@ public sealed partial class ArchitectureTests
         [ReadClass.TargetHome] = ["ReadUserFile"],
         [ReadClass.WindowsProfile] = ["ReadNoFollowFile"],
         [ReadClass.Named] = ["ReadRegularFile"],
-        [ReadClass.TargetHomeMetadata] = ["MeasureTree", "ListDirectories", "ListFiles"],
+        [ReadClass.TargetHomeMetadata] = ["MeasureTree", "WalkTree", "ListDirectories", "ListFiles", "ListEntries"],
+        [ReadClass.OwnUnprivileged] = ["ReadRegularFile"],
     };
 
     /// <summary>Every read site of the product: file (relative to the source root) → call → (how many, whose file).</summary>
@@ -100,6 +105,12 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Records/RunHistory.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/Records/RunRetention.cs"] = new() { ["ListDirectories"] = (2, ReadClass.RootState), ["ListFiles"] = (3, ReadClass.RootState) },
         ["WslCare.Core/Status/FullRunVerdicts.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
+        // E7.S1: the agents — walks and listings of their folders (names and sizes, nothing opened), and a package.json read
+        // only when not root.
+        ["WslCare.Core/Agents/AgentDiscovery.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Agents/AgentWalk.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Agents/SessionGlob.cs"] = new() { ["ListEntries"] = (2, ReadClass.TargetHomeMetadata) },
+
         // Review S2: the reads through a wrapper — procfs, /etc, binfmt_misc, the drive's powershell.exe head — all the kernel's or root's.
         ["WslCare.Core/Actions/Disk/FilesystemTrim.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Actions/Engine/IdleGate.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },

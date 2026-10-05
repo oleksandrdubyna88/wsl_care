@@ -65,6 +65,10 @@ public sealed record SlowParts
 
     /// <summary>The daily folder sizes (plan §4.4) — present only on the run that measured them (once a day).</summary>
     public FolderSizesSample? Folders { get; init; }
+
+    /// <summary>The AI agents' data folders (plan §4.6, §15q D1) — totals, counts and dates only, never a session's name; present
+    /// only on the run that walked them (with the folders, once a day).</summary>
+    public Agents.AgentsSample? Agents { get; init; }
 }
 
 /// <summary>A slow part as <c>status</c> reports it: the value, the run it came from, when it was
@@ -79,6 +83,12 @@ public sealed record LastSlowParts(Reading<AgedPart<ContainerStatsSample>> Conta
 
     /// <summary>The sample before <see cref="Folders"/> — what "grew since yesterday" (plan §4.5) is measured against.</summary>
     public Reading<FolderSizesSample> PreviousFolders { get; init; } = Reading.Missing<FolderSizesSample>("no earlier folder sample is recorded");
+
+    /// <summary>The agents' folders of the newest run that walked them (plan §4.6); unavailable before the first.</summary>
+    public Reading<AgedPart<Agents.AgentsSample>> Agents { get; init; } = Reading.Missing<AgedPart<Agents.AgentsSample>>(LastFullRun.NoFullRunYet);
+
+    /// <summary>The agents' sample before <see cref="Agents"/> — what an agent's growth is measured against.</summary>
+    public Reading<Agents.AgentsSample> PreviousAgents { get; init; } = Reading.Missing<Agents.AgentsSample>("no earlier agent sample is recorded");
 }
 
 /// <summary>
@@ -111,6 +121,10 @@ public static class LastFullRun
             PreviousFolders = newestFirst.Select(r => r.Slow?.Folders).Where(f => f is not null).Skip(1).FirstOrDefault() is { } previous
                 ? Reading.Of(previous)
                 : Reading.Missing<FolderSizesSample>("no earlier folder sample is recorded"),
+            Agents = Newest(newestFirst, r => r.Slow?.Agents, s => s.SampledAt, _ => string.Empty, now, "the AI agents' folders"),
+            PreviousAgents = newestFirst.Select(r => r.Slow?.Agents).Where(a => a is not null).Skip(1).FirstOrDefault() is { } previousAgents
+                ? Reading.Of(previousAgents)
+                : Reading.Missing<Agents.AgentsSample>("no earlier agent sample is recorded"),
         };
 
     private static Reading<AgedPart<T>> Newest<T>(IReadOnlyList<RunRecord> newestFirst, Func<RunRecord, T?> part, Func<T, DateTimeOffset> sampledAt, Func<T, string?> unavailable, DateTimeOffset now, string what)
@@ -133,5 +147,6 @@ public static class LastFullRun
         new(Reading.Missing<AgedPart<ContainerStatsSample>>(reason), Reading.Missing<AgedPart<WindowsClockSample>>(reason))
         {
             Folders = Reading.Missing<AgedPart<FolderSizesSample>>(reason),
+            Agents = Reading.Missing<AgedPart<Agents.AgentsSample>>(reason),
         };
 }

@@ -20,6 +20,9 @@
          and `config get` can name the layer a value came from. Its keys are held to ConfigKeys by a
          test in both directions. -->
     <EmbeddedResource Include="Config\default.json" LogicalName="WslCare.Core.Config.default.json" />
+    <!-- The AI-agent catalogue (plan §4.6, §15q E7.S1): data, not code — discovery, the daily walk and the protected roots
+         all read it. -->
+    <EmbeddedResource Include="Agents\agents.json" LogicalName="WslCare.Core.Agents.agents.json" />
   </ItemGroup>
 
   <ItemGroup>

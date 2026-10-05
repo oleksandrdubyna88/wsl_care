@@ -36,6 +36,9 @@ public static class Capabilities
     /// list key closed, the user layer read owner-checked, a value a root run does not take answered as a notice.</summary>
     public const string ConfigContract = "config.contract";
 
+    /// <summary><c>agents list [--measure] --json</c> answers the catalogue agents found here and their folders (plan §15q E7.S1).</summary>
+    public const string AgentsList = "agents.list";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList];
 }

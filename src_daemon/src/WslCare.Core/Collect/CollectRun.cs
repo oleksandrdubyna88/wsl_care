@@ -344,13 +344,14 @@ public static class CollectRun
         var folders = c.Paths is LinuxHostPaths linux && FolderSizes.Due(last.Folders, started)
             ? await new FolderSizes(c.Files, c.Commands, c.Clock).MeasureAsync(linux, cancellationToken).ConfigureAwait(false)
             : null;
+        var agents = folders is null || c.Paths is not LinuxHostPaths agentPaths ? null : WalkAgents(c, agentPaths, cancellationToken);
         var foldersNow = folders is null ? last.Folders : Reading.Of(new AgedPart<FolderSizesSample>(folders, runId, folders.SampledAt, TimeSpan.Zero));
         var foldersBefore = folders is null ? last.PreviousFolders : last.Folders.Map(a => a.Value);
         var profile = health.WindowsClock.Measured ? health.WindowsClock.Profile : last.WindowsClock.Map(a => a.Value.Profile).ValueOr(string.Empty);
         var docker = await PreviewRun.CollectAsync(c.Paths, c.Files, c.Commands, c.Clock, c.Loaded, new PreviewExtras(foldersNow, WindowsProfiles.DockerDesktopConfig(c.Paths, c.Files, profile)) { MayRecord = mayRecord }, cancellationToken).ConfigureAwait(false);
         var stats = await DockerStats.SampleAsync(new DockerCli(c.Commands), c.Clock, cancellationToken).ConfigureAwait(false);
         var starts = Coverage.Last24h(new ContainerStartsStore(c.Paths, c.Files).ReadAll(), c.Clock.GetUtcNow());
-        var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders };
+        var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders, Agents = agents };
         var verdicts = ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow), c.Loaded.Config);
         var ended = c.Clock.GetUtcNow();
         var thisRun = LastFullRun.FromRecords([new RunRecord(Core.SchemaVersion.Current, runId, c.Trigger, started, ended, RunOutcome.Completed, [], RunKind.Collect) { Slow = slow }, .. newestFirst], ended);
@@ -378,6 +379,15 @@ public static class CollectRun
             Config = ConfigValueReport.NotDefault(c.Loaded),
             ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
         };
+    }
+
+    /// <summary>The AI agents' folders (plan §4.6, §15q D1), on the daily walk's day: every catalogue agent whose folder exists
+    /// in the home the paths follow (the TARGET user's as root) — folders only, nothing looked up on a PATH, nothing executed —
+    /// under one total budget, persisted without a session's name.</summary>
+    private static Agents.AgentsSample WalkAgents(CollectContext c, LinuxHostPaths paths, CancellationToken cancellationToken)
+    {
+        var tracked = Agents.AgentDiscovery.Discover(paths, c.Files, pathVariable: null, asRoot: true).Where(p => p.Tracked).Select(p => p.Target).ToList();
+        return new Agents.AgentWalk(c.Files, c.Clock).Measure(tracked, Agents.AgentWalk.CollectBudget, withNames: false, cancellationToken);
     }
 
     private static ThresholdInputs Inputs(ProbeSample sample, HealthSample health, TimeSpan sinceLastRun, LastSlowParts last, PreviewResult docker, Reading<AgedPart<FolderSizesSample>> folders) =>

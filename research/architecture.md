@@ -2471,6 +2471,61 @@ flowchart LR
   — every setting the run used that did not come from the defaults, with its layer — and `configNotices`. All additive,
   absent when empty (`schemaVersion` 1). Capability `config.contract`.
 
+## The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)
+
+Which AI coding agents live in this home, and how much their folders hold — measured without reading, moving or
+deleting anything inside them (plan §4.6 H1–H3).
+
+```mermaid
+flowchart LR
+    catalogue["Agents/agents.json (embedded)<br/>AgentCatalogue: 12 entries"] --> discovery["AgentDiscovery.Discover<br/>binary on PATH · npm package · folder"]
+    catalogue --> roots["LinuxHostPaths.AgentRootsUnder<br/>WindowsHostPaths.AgentRoots<br/>(protected roots)"]
+    catalogue --> never["NeverList: AgentCatalogue.NeverListNames"]
+    discovery -- "ExecutableResolver (look up, never start)<br/>ReadLink · ReadRegularFile(package.json)" --> fs["IFileSystem"]
+    discovery --> walk["AgentWalk.Measure<br/>one total budget"]
+    walk -- "WalkTree: TreeRules NeverEnter memory + entry's,<br/>prefixes, StayOnDevice; no link followed" --> fs
+    walk -- "SessionGlob: ListEntries per level" --> fs
+    walk --> sample["AgentsSample<br/>sizes · sessions · (names: live only)"]
+    sample -- "root collect, folders due (20 h)" --> history["history.jsonl slow.agents<br/>totals, counts, dates"]
+    sample -- "agents list --measure" --> report["AgentsReport (agents list --json)"]
+    history -- "agents list" --> report
+```
+
+- **The catalogue** is data, not code: `Agents/agents.json`, embedded (`WslCare.Core.Agents.agents.json`), read once
+  (`AgentCatalogue.Agents`). Per agent: binaries, npm packages, data folders per side (`~/…`; `%USERPROFILE%`,
+  `%APPDATA%`, `%LOCALAPPDATA%` …), `neverEnter` names and `neverEnterPrefixes` (Gemini CLI's `antigravity*`, so one agent
+  is not counted inside another), a version regular expression over a link target, and the session layout of the four
+  CONFIRMED agents (D2: a glob of one name pattern per level under a folder). The protected roots of both sides and the
+  never-list's agent names are DERIVED from it — before E7.S1 they were two hand-typed lists — and
+  `AgentCatalogueTests` holds them equal.
+- **Discovery** (`AgentDiscovery.Discover(paths, files, PATH, asRoot)`) takes no command runner — the structure is D3's
+  guarantee, and a test holds it: a binary is looked up with `ExecutableResolver`, never started; a version comes from
+  the binary's link target (`…/versions/<v>`) or the npm package's `package.json` (`ReadRegularFile`, 1 MiB cap), else
+  "not asked". As ROOT only folders count: root neither searches the user's `PATH` nor reads their packages.
+- **The walk** (`AgentWalk`): per folder `IFileSystem.WalkTree` → `TreeWalk.Measure` with `AgentWalk.RulesFor(entry)` —
+  `memory` never entered for ANY agent (a manual entry too, H2), the entry's names and prefixes never entered, no link
+  followed, and `StayOnDevice`: every folder's device (`statx`, no follow) compared with the root's, a different one not
+  entered and named "<subdir> (different filesystem)" (review C1 — a nested bind mount onto `/mnt/c` would drag the walk
+  onto 9p). ONE budget for the whole walk (review M7): 3 min inside `collect`, 60 s for `agents list --measure`; each folder
+  gets the per-folder ceiling or what is left, whichever is less, and a folder the budget did not reach says
+  `NotReached`, never 0. Sessions (`SessionGlob`) are counted from LISTINGS only: each level's matching folders entered
+  (never `memory`), the matching files of the last level taken with the length and last write the listing gives — no
+  file is opened (`AgentNoOpenTests`: an inotify `IN_OPEN | IN_ACCESS` watch on every folder sees nothing during a walk,
+  and its companion sees a file opened).
+- **Recording** (`CollectRun.WalkAgents`): a root `collect` whose folder walk is due walks the agents found by FOLDER
+  (discovery as root) and records `slow.agents` on the history line — totals, counts, dates; the five largest sessions by
+  name are a live answer only (`AgentSize.Largest` is null in what is persisted). `LastFullRun` reads it back with its age,
+  and the previous one for growth. The walk runs on the Linux side only; the Windows binary answers `agents list
+  --measure` and reads no history.
+- **`agents list [--measure] [--json]`** (`AgentsCommand`): discovery as the invoking process, sizes from the newest full
+  run (`sizes.source: fullRun`, its run id and age), measured now (`now`), or `none` with the reason; per agent the
+  detection, binaries, version, data folders (size, files, complete, excluded), sessions (counted or "—" with why),
+  `totalBytes`, `growthBytes`, warnings (`aiAgents.warnGb`, `aiAgents.sessionWarnMb`). Capability `agents.list`;
+  `contracts/golden/head/agents-list.json` is its golden.
+- **Read sites**: `AgentDiscovery` (one `ReadRegularFile` of the invoking user's own `package.json` — the class
+  `OwnUnprivileged`, never run as root — and one `ListEntries`), `AgentWalk` (`WalkTree`), `SessionGlob` (`ListEntries`) are
+  rows of the read-site table (`ArchitectureTests.ReadSites.cs`); `WalkTree` and `ListEntries` are target-home metadata.
+
 ## Fixture privacy (E5 code round, 2026-10-04)
 
 The repository is public, and the captured fixtures and the goldens built from them carried the owner's Linux and
@@ -2673,7 +2728,7 @@ flowchart TB
     host["CliHost<br/>IHostPaths · IFileSystem · TimeProvider · ICommandRunner"]
     loader["ConfigLoader<br/>default.json, then machine, then user"]
     logging["WslCareLogging<br/>AnsiConsoleSink (stderr) · DailyRunFileSink · LogRetention"]
-    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand · LogsCommand (logs, runs, runs show)"]
+    verbs["CommandLine.Parse → ConfigCommand get / set / reset · StatusCommand · PreviewCommand<br/>CollectCommand · DoctorCommand · EventsCommand · ActCommand · LogsCommand (logs, runs, runs show) · AgentsCommand"]
     probe["IHostProbe<br/>LinuxProbe (procfs, cgroup fs) · WindowsProbe (Win32 counters)"]
     history["LastFullRun<br/>slow parts from history.jsonl"]
     writer["UserConfigWriter<br/>repair + atomic write"]
@@ -2687,6 +2742,9 @@ flowchart TB
     main --> verbs
     verbs -->|status| probe
     verbs -->|status| history
+    agents["AgentDiscovery · AgentWalk · SessionGlob<br/>(no command runner)"]
+    verbs -->|agents list| agents
+    agents -->|WalkTree · ListEntries · ReadLink · ReadRegularFile| fs
     probe -->|ReadFile · ListDirectories · ReadLink · MeasureVolume| fs
     history -->|ReadFile| fs
     loader -->|ReadFile| fs

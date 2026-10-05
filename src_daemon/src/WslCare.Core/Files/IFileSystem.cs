@@ -112,6 +112,19 @@ public abstract record WriteAccess
     public sealed record NotWritable(string Reason) : WriteAccess;
 }
 
+/// <summary>What one directory entry is, as a listing reports it — never by opening it.</summary>
+public enum EntryKind
+{
+    File,
+    Directory,
+
+    /// <summary>A symbolic link or another reparse point — named, never followed.</summary>
+    Link,
+}
+
+/// <summary>One entry of a directory listing (plan §15q D2: a session is found by its name and its stat, never by its content).</summary>
+public sealed record FileEntry(string Name, EntryKind Kind, long Length, DateTimeOffset LastWriteUtc);
+
 /// <summary>The ceiling on one walk of a tree (reliability rule: every wait has a ceiling): how many entries it
 /// may visit and how long it may take. A walk that reaches either stops and says so.</summary>
 public sealed record TreeLimits(int MaxEntries, TimeSpan MaxDuration);
@@ -128,7 +141,12 @@ public abstract record TreeMeasure
     /// <param name="Complete">The walk reached its end — <c>false</c> when a limit stopped it, and then
     /// <paramref name="Note"/> says which; the figures are a lower bound.</param>
     /// <param name="Note">Why it is incomplete; empty when complete.</param>
-    public sealed record Measured(long Bytes, long Files, bool Complete, string Note) : TreeMeasure;
+    public sealed record Measured(long Bytes, long Files, bool Complete, string Note) : TreeMeasure
+    {
+        /// <summary>What the walk declined to enter, each named once (plan §15q R2.3): <c>memory (never entered)</c>, a prefix,
+        /// <c>&lt;folder&gt; (different filesystem)</c>. Empty for a walk under no such rule.</summary>
+        public IReadOnlyList<string> Excluded { get; init; } = [];
+    }
 
     public sealed record Missing : TreeMeasure;
 
@@ -227,6 +245,14 @@ public interface IFileSystem
     /// <paramref name="neverEnter"/> are not walked at all (<c>node_modules</c>, <c>.git</c>).
     /// </summary>
     TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken);
+
+    /// <summary>The same bounded walk under <paramref name="rules"/> (plan §15q R2.3): names and prefixes never entered, and —
+    /// with <see cref="TreeRules.StayOnDevice"/> — no folder on another filesystem than the root's, each exclusion named.</summary>
+    TreeMeasure WalkTree(string path, TreeLimits limits, TreeRules rules, CancellationToken cancellationToken);
+
+    /// <summary>The entries directly in <paramref name="path"/> — name, kind (a link is a link, never followed), length and last
+    /// write — from the directory listing alone: no entry is opened. Empty when the folder does not exist or cannot be listed.</summary>
+    IReadOnlyList<FileEntry> ListEntries(string path);
 
     /// <summary>
     /// Whether this process may create a file in <paramref name="directory"/> (creating the directory first when

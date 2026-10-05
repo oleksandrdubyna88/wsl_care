@@ -189,7 +189,7 @@ reaches them at the next full run. The text form prints one line: `verdicts: 1 c
 
 **What runs, what this build can do, the last cleanup.** `status --json` also answers `actions` (the action ids this
 binary holds for its own side, in the order a run takes them), `capabilities` (what this build can do beyond the first
-release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange` — what a client acts on, never the
+release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange`, … `config.contract`, `agents.list` — what a client acts on, never the
 version number), `running` — `none`, `queued` (a run accepted and not started yet), `live` (acting: the run, its actions,
 the one it is on, its pid and how old its heartbeat is), `wedged` (alive, heartbeat older than 30 s — nothing is killed),
 `dead` (its process is gone and no run has swept it yet — status only REPORTS it; the next root run records it
@@ -428,6 +428,29 @@ and did not remove, every command it ran and its exit), `refused`, `interrupted`
 anything recorded it), `running` (its `running` block), `queued`, or `unknown` (nothing names it — never existed here, or
 older than the 90-day retention). Read-only like `logs`. Exit codes: 0 answered (an empty period, an unknown run too) ·
 2 a period or a run id that is none of these · 4 the history exists but cannot be read.
+
+## AI agents — which are here, and how much they hold
+
+```bash
+wsl-care agents list --json             # the catalogue agents found here, sizes from the newest full run (with its age)
+wsl-care agents list --measure --json   # the same, the folders walked NOW (at most 60 s), with the five largest sessions
+```
+
+An agent is found by a binary on `PATH`, an npm global package, or a data folder (`~/.claude`, `~/.codex`, `~/.gemini`,
+… — the catalogue, `src_daemon/src/WslCare.Core/Agents/agents.json`, twelve agents). **Nothing is ever started**: a
+version is read from disk — a native install's link target (`…/versions/2.1.3`) or the npm package's `package.json` — or
+it says "not asked". Every data folder is measured by listing and `stat` alone, never opening a file (a test proves it at
+the system-call level with inotify): no link is followed, a folder named `memory` is never entered (of any agent), nor a
+folder on another filesystem (a bind mount onto `/mnt/c`, named "different filesystem"). Sessions are counted only where
+the layout is confirmed (Claude Code, Codex, Gemini CLI, Antigravity), with the oldest and newest date; elsewhere "—"
+with why, never 0.
+
+The root timer's daily full run walks the agents' folders too (one 3-minute budget for all of them; what it does not
+reach says "not measured this run"), and records totals, counts and dates — never a session's name. Without `--measure`
+the answer reads that run; before the first full run it says so and how to measure. `growthBytes` compares with the
+previous walk, and `aiAgents.warnGb` / `aiAgents.sessionWarnMb` add a warning. As root only folders count (root neither
+searches the user's `PATH` nor reads their packages). Read-only: nothing is written. Every catalogue folder is a protected
+root (no cleanup deletes under it) and a never-list name (no command naming it runs). Exit codes: 0 answered · 2 usage.
 
 ## Extension (preview)
 

@@ -69,6 +69,7 @@ internal static partial class GoldenContracts
         ("status.json", ["status", "--json"]),
         ("preview.json", ["preview", "--all", "--json"]),
         ("doctor.json", ["doctor", "--json"]),
+        ("agents-list.json", ["agents", "list", "--json"]),
     ];
 
     public static string HeadDirectory => Path.Combine(ReleaseFiles.Root, "contracts", "golden", "head");
@@ -88,6 +89,7 @@ internal static partial class GoldenContracts
         new("**.evaluatedAt", "when a verdict was evaluated (this sample, or the end of the full run)", _ => FixedInstant),
         new("**.runId", "a run's id is its start instant and the CLI's pid", _ => FixedRunId),
         new("checkedAt", "the instant doctor answered", _ => FixedInstant),
+        new("answeredAt", "the instant agents list answered (E7.S1)", _ => FixedInstant),
         new("productVersion", "the commit after +, and the release number, which every release-please bump moves (a golden pinned to it would turn the release pull request red)", _ => FixedVersion),
         new("vm.disk.path", "df / is the sandbox's filesystem", _ => FixedRoot),
         new("vm.disk.totalBytes", "df / is the runner's own disk", _ => 100_000_000_000L),
@@ -177,6 +179,7 @@ internal static partial class GoldenContracts
         Directory.CreateDirectory(Path.GetDirectoryName(home.Paths.UserConfigFile)!);
         await File.WriteAllTextAsync(home.Paths.UserConfigFile, PreviewFlows.AllAges, TestContext.Current.CancellationToken);
         ProcfsFixture.CopyTo(home.SandboxRoot);
+        PlantAgent(home);
         (await home.RunAsync("collect")).Exit.Should().Be((int)ExitCode.Ok, "the goldens follow one recorded full run");
 
         var matched = new HashSet<string>(StringComparer.Ordinal);
@@ -190,6 +193,22 @@ internal static partial class GoldenContracts
 
         files.AddRange(await ReadContractAsync(matched));
         return (files, matched);
+    }
+
+    /// <summary>A Claude Code folder in the sandbox's home for <c>agents-list.json</c> (E7.S1): two sessions written at fixed
+    /// instants (their dates are in the answer) and a memory file that is never entered.</summary>
+    private static void PlantAgent(ScenarioHome home)
+    {
+        var projects = Path.Combine(home.Paths.Home, ".claude", "projects", "p");
+        Directory.CreateDirectory(Path.Combine(projects, "memory"));
+        foreach (var (name, bytes, day) in new[] { ("s1.jsonl", 100, 1), ("s2.jsonl", 300, 2) })
+        {
+            var file = Path.Combine(projects, name);
+            File.WriteAllText(file, new string('x', bytes));
+            File.SetLastWriteTimeUtc(file, new DateTime(2000, 1, day, 0, 0, 0, DateTimeKind.Utc));
+        }
+
+        File.WriteAllText(Path.Combine(projects, "memory", "notes.md"), new string('m', 5000));
     }
 
     /// <summary>

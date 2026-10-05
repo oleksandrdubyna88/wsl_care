@@ -44,6 +44,10 @@ internal abstract record Request
         public bool Detach { get; init; }
     }
 
+    /// <summary><c>agents list [--measure] [--json]</c> (plan §4.6, §15q E7.S1): the catalogue agents found here, their sizes from
+    /// the newest full run — or measured now with <c>--measure</c>.</summary>
+    internal sealed record AgentsList(bool Measure, bool Json) : Request;
+
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
 
@@ -163,6 +167,7 @@ internal static class CommandLine
     private const string RequestFlag = "--request";
     private const string StopFlag = "--stop";
     private const string StdinMarker = "-";
+    private const string MeasureFlag = "--measure";
 
     /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — the same cap a
     /// preview's <c>shown</c> list keeps (<see cref="Core.Actions.ShownList.MaxNames"/>, plan §15j B1).</summary>
@@ -185,6 +190,7 @@ internal static class CommandLine
         new([["act", "--stop"]], "act --stop <runId> [--json]", "as root: stop a WEDGED run through systemd, only when its process lives in wsl-care.service or that run's own unit", ["act", "--stop", "20261002T120000Z-123", "--json"], ParseActStop),
         new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["logs", "--period", "today", "--json"], ParseLogs),
         new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
+        new([["agents", "list"]], "agents list [--measure] [--json]", "the AI agents found here (by binary, npm package or folder), their version read from disk, their folders' sizes and sessions from the newest full run — or measured now with --measure (read-only: nothing inside an agent's folder is opened, nothing is run)", ["agents", "list", "--json"], ParseAgentsList),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
 
@@ -465,6 +471,13 @@ internal static class CommandLine
                 From = options.Values.GetValueOrDefault(FromFlag, string.Empty),
                 To = options.Values.GetValueOrDefault(ToFlag, string.Empty),
             },
+        };
+
+    private static Request ParseAgentsList(IReadOnlyList<string> rest) =>
+        ReadOptions("agents list", rest, [], [MeasureFlag, JsonFlag]) switch
+        {
+            (_, { } failure) => failure,
+            var (options, _) => new Request.AgentsList(options.Flags.Contains(MeasureFlag), options.Flags.Contains(JsonFlag)),
         };
 
     private static Request ParseRuns(IReadOnlyList<string> rest) =>

@@ -41,6 +41,11 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
     public virtual TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken) =>
         inner.MeasureTree(path, limits, countOnlyUnder, neverEnter, cancellationToken);
 
+    public virtual TreeMeasure WalkTree(string path, TreeLimits limits, TreeRules rules, CancellationToken cancellationToken) =>
+        inner.WalkTree(path, limits, rules, cancellationToken);
+
+    public virtual IReadOnlyList<FileEntry> ListEntries(string path) => inner.ListEntries(path);
+
     public virtual WriteAccess ProbeWriteAccess(string directory) => inner.ProbeWriteAccess(directory);
 
     public virtual ExclusiveLock TryLockExclusive(string lockPath) => inner.TryLockExclusive(lockPath);
