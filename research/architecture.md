@@ -53,7 +53,8 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
     70 internal, 130 interrupted).
   - `tests/WslCare.TestSupport` — the doubles and fixtures the test projects share (a temp root, a
     frozen clock, the recording command runner, a sandboxed host, a directory-link maker, and
-    `ChildProcess` — the one launcher for a built executable: argv list, ceiling, tree kill).
+    `ChildProcess` — the one launcher for a built executable: argv list, a ceiling or a progress wait
+    (`ProgressWait`: killed after a silence, or at a cap), tree kill).
   - `tests/WslCare.Core.Tests`, `tests/WslCare.Cli.Tests` — xUnit v3 on Microsoft Testing Platform,
     run as executables.
   - `tests/fixtures/procfs/ubuntu-2026-10-02` — the procfs / cgroup tree CAPTURED from WSL `Ubuntu` on
@@ -2633,7 +2634,7 @@ flowchart TB
 flowchart LR
     test["a scenario test<br/>HelpAndVersionFlows · ConfigFlows · StatusFlows · VerbRegisterTests"]
     home["ScenarioHome<br/>temp dir per test"]
-    launcher["TestSupport.ChildProcess<br/>argv · ceiling · tree kill"]
+    launcher["TestSupport.ChildProcess<br/>argv · progress wait · tree kill"]
     cli["built wsl-care<br/>(apphost beside the harness)"]
     root["root/ = WSL_CARE_ROOT<br/>config layers · logs · state"]
     bin["fakebin/ = the WHOLE PATH<br/>docker · systemctl · journalctl · powershell"]
@@ -2650,12 +2651,14 @@ flowchart LR
     bin -->|append| log
     bin -->|answer from| script
     test -->|asserts| log
+    launcher -.->|"progress: the log grew (silence 30 s, cap 5 min)"| log
     test -->|"enumerates verbs, runs each Example"| register
     test -->|"every verb has a row"| catalogue
 ```
 
 Every run gets `WSL_CARE_ROOT`, so nothing real is read or written, and a `PATH` holding only the
-fakes, so a verb can reach no real tool. The harness reads the product's own types (the verb register,
+fakes, so a verb can reach no real tool. A run is waited on its PROGRESS, not on a wall-clock total: the CLI is killed
+after 30 s in which no fake was called, or at 5 minutes whatever it does (`ProgressWait`, 2026-10-05). The harness reads the product's own types (the verb register,
 `ExitCode`, `ConfigKeys`, `ConfigValidation`, the source-generated JSON context) instead of retyping
 them. What it covers and what it does not prove: [module_tests.md](module_tests.md).
 
