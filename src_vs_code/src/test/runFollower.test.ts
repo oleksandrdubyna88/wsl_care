@@ -7,16 +7,19 @@ import { CleanupJournal, type JournalEntry, type NewEntry } from '../cleanup/jou
 import { FOLLOW_POLL, RunFollower, type RunResult } from '../cleanup/runFollower';
 import type { ReadOutcome, VerbOutcome } from '../client/outcome';
 import type { RunRead } from '../client/verbs';
+import { runningOf } from '../root/rootAnswers';
 import { runIdOf, type RunId } from '../root/rootIds';
+import type { RunningBlock } from '../root/rootOutcome';
 import { ManualTimers, MapStore } from './support/memento';
 import { answered, failed, headBody } from './support/outcomes';
 import { GOLDEN_ROOT } from './support/paths';
 
 /**
- * The durable poll (E6.S3, plan §15j M6, §15k #3 / #4, the coai E6.S2 plan round #3 contract): against a journal over a
- * `globalState`-shaped store, a scripted `status` (the head golden with the running block a test sets), scripted run reads,
- * a manual one-shot timer and a wall clock the test moves. Every read the follower makes is recorded, so "status only,
- * and ONE runs show at the terminal state" is a count, and "it stops itself" is the absence of an armed timer.
+ * The durable poll (E6.S3, plan §15j M6, §15k #3 / #4, the coai E6.S2 plan round #3 contract; the E6.S3 review round's B1–B5,
+ * C4, C5, C8, C13, C14, C16): against a journal over a `globalState`-shaped store, a scripted `status` (the head golden with
+ * the running block a test sets), scripted run reads, a manual one-shot timer and a wall clock the test moves. Every read the
+ * follower makes is recorded, so "status only, and ONE runs show at the terminal state" is a count, and "it stops itself" is
+ * the absence of an armed timer.
  */
 
 const T0 = Date.parse('2026-10-05T10:00:00.000Z');
@@ -46,42 +49,48 @@ function show(state: string, extra: Record<string, unknown> = {}): ReadOutcome {
   return { kind: 'read', read: 'runsShow', distro: 'Ubuntu', body: { schemaVersion: 1, runId: RUN, state, ...extra } };
 }
 
-interface World {
-  readonly follower: RunFollower;
-  readonly journal: CleanupJournal;
-  readonly store: MapStore;
-  readonly timers: ManualTimers;
-  readonly reads: RunRead[];
-  readonly shown: RunResult[];
-  readonly faults: unknown[];
-  readonly clock: { now: number };
-  statusCalls: number;
-  afterTerminal: number;
-  status: VerbOutcome;
-  answer: (request: RunRead) => ReadOutcome;
-  focused: boolean;
+function done(): ReadOutcome {
+  return { kind: 'read', read: 'runsShow', distro: 'Ubuntu', body: golden('runs-show-done.json') };
 }
 
-function world(store = new MapStore()): World {
-  const timers = new ManualTimers();
-  const journal = new CleanupJournal(store, () => w.clock.now);
-  const w: World = {
-    journal, store, timers, reads: [], shown: [], faults: [], clock: { now: T0 }, statusCalls: 0, afterTerminal: 0,
-    status: statusWith(undefined), answer: () => show('unknown'), focused: true,
-    follower: undefined as unknown as RunFollower,
-  };
-  (w as { follower: RunFollower }).follower = new RunFollower({
-    journal,
-    status: () => { w.statusCalls += 1; return Promise.resolve(w.status); },
-    read: (request) => { w.reads.push(request); return Promise.resolve(w.answer(request)); },
-    show: (result) => { w.shown.push(result); },
-    afterTerminal: () => { w.afterTerminal += 1; return Promise.resolve(); },
-    focused: () => w.focused,
-    wallNow: () => w.clock.now,
-    timers,
-    fault: (error) => { w.faults.push(error); },
-  });
-  return w;
+function listing(runs: unknown[]): ReadOutcome {
+  return { kind: 'read', read: 'runs', distro: 'Ubuntu', body: { schemaVersion: 1, count: runs.length, runs } };
+}
+
+const NOT_READ: ReadOutcome = { kind: 'timedOut', timeoutMs: 20_000, read: 'runsShow' };
+
+/** One test's world, built by its constructor — no cast (the TypeScript doctrine §3). */
+class World {
+  readonly timers = new ManualTimers();
+  readonly journal: CleanupJournal;
+  readonly reads: RunRead[] = [];
+  readonly shown: RunResult[] = [];
+  readonly faults: unknown[] = [];
+  readonly clock = { now: T0 };
+  readonly follower: RunFollower;
+  statusCalls = 0;
+  afterTerminal = 0;
+  status: VerbOutcome = statusWith(undefined);
+  /** What the store's newest status says is running — the follower's `running()` (review C4). */
+  storeRunning: RunningBlock | undefined = undefined;
+  answer: (request: RunRead) => ReadOutcome | Promise<ReadOutcome> = () => show('unknown');
+  focused = true;
+
+  constructor(readonly store = new MapStore()) {
+    this.journal = new CleanupJournal(store, () => this.clock.now);
+    this.follower = new RunFollower({
+      journal: this.journal,
+      status: () => { this.statusCalls += 1; return Promise.resolve(this.status); },
+      read: (request) => { this.reads.push(request); return Promise.resolve(this.answer(request)); },
+      show: (result) => { this.shown.push(result); },
+      afterTerminal: () => { this.afterTerminal += 1; return Promise.resolve(); },
+      focused: () => this.focused,
+      running: () => this.storeRunning,
+      wallNow: () => this.clock.now,
+      timers: this.timers,
+      fault: (error) => { this.faults.push(error); },
+    });
+  }
 }
 
 async function addedTo(journal: CleanupJournal, entry: NewEntry): Promise<JournalEntry> {
@@ -92,6 +101,7 @@ async function addedTo(journal: CleanupJournal, entry: NewEntry): Promise<Journa
 
 const RUN_ENTRY: NewEntry = { kind: 'run', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: new Date(T0).toISOString(), runId: runId(RUN) };
 const UNRESOLVED: NewEntry = { kind: 'unresolved', op: 'clean', distro: 'Ubuntu', actions: ['A4'], since: new Date(T0).toISOString() };
+const FULL_CHECK: NewEntry = { ...UNRESOLVED, op: 'fullCheck', actions: ['collect'] };
 
 /** Fires the armed poll and waits for its tick to finish. */
 async function poll(w: World): Promise<void> {
@@ -100,13 +110,19 @@ async function poll(w: World): Promise<void> {
 }
 
 async function settle(): Promise<void> {
-  for (let i = 0; i < 20; i += 1) {
+  for (let i = 0; i < 30; i += 1) {
     await new Promise((resolve) => setImmediate(resolve));
   }
 }
 
+async function ours(w: World, entry: NewEntry): Promise<JournalEntry> {
+  const added = await addedTo(w.journal, entry);
+  w.follower.started(added.id);
+  return added;
+}
+
 test('M6: nothing in flight — no journal entry, status.running none — arms nothing and asks nothing', async () => {
-  const w = world();
+  const w = new World();
   w.follower.kick();
   await settle();
   assert.equal(w.timers.pending(), 0);
@@ -114,9 +130,8 @@ test('M6: nothing in flight — no journal entry, status.running none — arms n
 });
 
 test('a run this window follows: status every 4 s while it is in flight, then ONE runs show at the terminal state, shown, removed, and the poll stops', async () => {
-  const w = world();
-  const entry = await addedTo(w.journal, RUN_ENTRY);
-  w.follower.started(entry.id);
+  const w = new World();
+  await ours(w, RUN_ENTRY);
   w.status = statusWith(running('live'));
   w.follower.kick();
   assert.equal(w.timers.armed[0]?.ms, FOLLOW_POLL.intervalMs);
@@ -124,21 +139,21 @@ test('a run this window follows: status every 4 s while it is in flight, then ON
   await poll(w);
   await poll(w);
   assert.deepEqual(w.reads, [], 'status only, while the run is in flight');
-  w.answer = () => ({ kind: 'read', read: 'runsShow', distro: 'Ubuntu', body: golden('runs-show-done.json') });
+  w.answer = done;
   w.status = statusWith(undefined);
   await poll(w);
   assert.deepEqual(w.reads, [{ read: 'runsShow', runId: RUN }]);
   assert.equal(w.shown.length, 1);
   assert.equal(w.shown[0]?.kind, 'run');
-  assert.deepEqual(new CleanupJournal(w.store).entries(), [], 'the entry left with its terminal answer');
+  assert.deepEqual(new CleanupJournal(w.store, () => w.clock.now).entries(), [], 'the entry left with its terminal answer');
   assert.equal(w.afterTerminal, 1, 'the panel re-read once (Docker after)');
   assert.equal(w.timers.pending(), 0, 'it stopped itself');
   assert.equal(w.statusCalls, 3);
 });
 
-test('queued, live and wedged naming the run all count as in flight; a runs show that still says running or queued keeps the poll', async () => {
-  const w = world();
-  w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
+test('queued, live and wedged naming the run all count as in flight; C16: a runs show that says running is NOT asked again until status names the run once more', async () => {
+  const w = new World();
+  await ours(w, RUN_ENTRY);
   for (const state of ['queued', 'live', 'wedged']) {
     w.status = statusWith(running(state));
     w.follower.kick();
@@ -148,17 +163,24 @@ test('queued, live and wedged naming the run all count as in flight; a runs show
   w.status = statusWith(running('live', { runId: '20261005T100500Z-78' }));
   w.answer = () => show('running');
   await poll(w);
+  await poll(w);
+  const ofRun = (): number => w.reads.filter((r) => r.read === 'runsShow' && r.runId === RUN).length;
+  assert.equal(ofRun(), 1, 'one runs show after it left flight — not one every tick while status and history disagree');
+  w.status = statusWith(running('live'));
+  await poll(w);
+  w.status = statusWith(undefined);
   w.answer = () => show('queued');
   await poll(w);
-  assert.equal(w.reads.length, 2, 'another run in flight is not this one: runs show asked, and it is not over');
+  assert.equal(ofRun(), 2, 'status named it again, it left again: one more (the other run in flight is observed on its own, review C4)');
   assert.equal(w.shown.length, 0);
   assert.equal(w.timers.pending(), 1, 'still polling');
 });
 
 test('§15k #4: runs show answering unknown is terminal — shown, removed, the poll stops; a dead run reads interrupted', async () => {
-  for (const [answer, state] of [[show('unknown', { reason: 'never existed here' }), 'unknown'], [{ kind: 'read', read: 'runsShow', distro: 'Ubuntu', body: golden('runs-show-interrupted.json') } as ReadOutcome, 'interrupted']] as const) {
-    const w = world();
-    w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
+  const cases: readonly [ReadOutcome, string][] = [[show('unknown', { reason: 'never existed here' }), 'unknown'], [{ kind: 'read', read: 'runsShow', distro: 'Ubuntu', body: golden('runs-show-interrupted.json') }, 'interrupted']];
+  for (const [answer, state] of cases) {
+    const w = new World();
+    await ours(w, RUN_ENTRY);
     w.status = statusWith(running('dead'));
     w.answer = () => answer;
     w.follower.kick();
@@ -171,25 +193,58 @@ test('§15k #4: runs show answering unknown is terminal — shown, removed, the 
   }
 });
 
-test('§15k #4: the hard ceiling — past 30 minutes an entry ends as "state unknown" WITH its run id, nothing more is asked of it', async () => {
-  const w = world();
-  w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
+test('§15k #4 + review B1: past 30 minutes a run in flight gets ONE record read; only then does it end as "state unknown" WITH its run id', async () => {
+  const w = new World();
+  await ours(w, RUN_ENTRY);
   w.status = statusWith(running('wedged'));
+  w.answer = () => show('running');
   w.follower.kick();
   await poll(w);
+  assert.deepEqual(w.reads, []);
   w.clock.now = T0 + FOLLOW_POLL.ceilingMs + 1;
   await poll(w);
+  assert.deepEqual(w.reads, [{ read: 'runsShow', runId: RUN }], 'the one record read before the ceiling may end it');
   assert.equal(w.shown[0]?.kind, 'ceiling');
   assert.equal(w.shown[0]?.entry.kind === 'run' ? w.shown[0].entry.runId : '', RUN);
-  assert.deepEqual(w.reads, []);
   assert.deepEqual(w.journal.entries(), []);
   assert.equal(w.timers.pending(), 0);
 });
 
+test('review B1: an entry past the ceiling is KEPT while no status has answered for its distribution (VS Code open before WSL) — nothing shown, nothing read', async () => {
+  const w = new World();
+  await ours(w, RUN_ENTRY);
+  w.clock.now = T0 + FOLLOW_POLL.ceilingMs + 1;
+  w.status = failed('status', { kind: 'timedOut', timeoutMs: 20_000 });
+  w.follower.kick();
+  await poll(w);
+  await poll(w);
+  assert.equal(w.shown.length, 0);
+  assert.equal(w.reads.length, 0);
+  assert.equal(w.journal.entries().length, 1);
+  w.status = statusWith(undefined);
+  w.answer = done;
+  await poll(w);
+  assert.equal(w.shown[0]?.kind, 'run', 'the long-closed window still gets its real answer');
+});
+
+test('review B1: an unresolved confirm older than the ceiling is resolved by ONE runs window — clamped to the 90-day retention', async () => {
+  const w = new World();
+  await ours(w, UNRESOLVED);
+  w.clock.now = T0 + 100 * 86_400_000;
+  w.answer = () => listing([]);
+  w.follower.kick();
+  await poll(w);
+  assert.equal(w.reads.length, 1);
+  const read = w.reads[0];
+  assert.ok(read?.read === 'runs');
+  assert.equal(read.from, new Date(w.clock.now - 90 * 86_400_000).toISOString().replace('.000Z', 'Z'));
+  assert.equal(w.shown[0]?.kind, 'neverRan');
+});
+
 test('a reload: a NEW follower over the same store resumes the run on its first kick, and a status that does not answer keeps the entry', async () => {
   const store = new MapStore();
-  await addedTo(world(store).journal, RUN_ENTRY);
-  const w = world(store);
+  await addedTo(new World(store).journal, RUN_ENTRY);
+  const w = new World(store);
   w.status = failed('status', { kind: 'timedOut', timeoutMs: 20_000 });
   w.follower.kick();
   await poll(w);
@@ -203,8 +258,7 @@ test('a reload: a NEW follower over the same store resumes the run on its first 
 });
 
 test('focus: an entry ANOTHER window started is followed only while this window is focused; one it started, always', async () => {
-  const store = new MapStore();
-  const w = world(store);
+  const w = new World();
   const entry = await addedTo(w.journal, RUN_ENTRY);
   w.focused = false;
   w.status = statusWith(running('live'));
@@ -215,27 +269,44 @@ test('focus: an entry ANOTHER window started is followed only while this window 
   assert.equal(w.timers.pending(), 1, 'this window started it: polled unfocused');
 });
 
-test('a run in flight that is NOT the journal\'s (the timer\'s): polled while focused, never while unfocused, and it ends with the run', async () => {
-  const w = world();
-  w.status = statusWith(running('live', { trigger: 'timer' }));
+test('review C5: an unfocused window does not SETTLE another window\'s entry — not even on a tick it makes for its own', async () => {
+  const w = new World();
+  await addedTo(w.journal, RUN_ENTRY);
+  await ours(w, { ...RUN_ENTRY, runId: runId('20261005T100500Z-78') });
   w.focused = false;
-  w.follower.kick();
-  assert.equal(w.timers.pending(), 0);
-  w.focused = true;
+  w.answer = () => show('done');
   await w.follower.tick();
+  assert.deepEqual(w.reads.map((r) => (r.read === 'runsShow' ? r.runId : '')), ['20261005T100500Z-78'], 'only its own entry was asked about');
+  assert.equal(w.journal.entries().length, 1, 'the other window\'s entry is left for it');
+});
+
+test('review C4: a run the daemon reports in flight starts the poll FROM IDLE (the store\'s status, no tick yet) — followed, and its result shown once', async () => {
+  const w = new World();
+  w.storeRunning = runningOf({ running: running('live', { trigger: 'timer' }) });
+  w.status = statusWith(running('live', { trigger: 'timer' }));
   w.follower.kick();
-  assert.equal(w.timers.pending(), 1);
-  w.status = statusWith(undefined);
+  assert.equal(w.timers.pending(), 1, 'armed from the store\'s answer alone');
   await poll(w);
-  assert.equal(w.timers.pending(), 0, 'nothing in flight any more');
-  assert.deepEqual(w.reads, [], 'not ours: no runs show');
+  w.status = statusWith(undefined);
+  w.storeRunning = undefined;
+  w.answer = done;
+  await poll(w);
+  await w.follower.tick();
+  assert.equal(w.shown.length, 1, 'its result, once');
+  assert.equal(w.reads.length, 1);
+  assert.equal(w.timers.pending(), 0);
+  const unfocused = new World();
+  unfocused.focused = false;
+  unfocused.storeRunning = runningOf({ running: running('live', { trigger: 'timer' }) });
+  unfocused.follower.kick();
+  assert.equal(unfocused.timers.pending(), 0, 'never while unfocused');
 });
 
 // ---- the unresolved confirm (the controller's outcomeUnknown with no run id) ----
 
 test('unresolved: a queued / live run of trigger manual holding EXACTLY the confirmed actions is adopted, then followed as any run', async () => {
-  const w = world();
-  w.follower.started((await addedTo(w.journal, UNRESOLVED)).id);
+  const w = new World();
+  await ours(w, UNRESOLVED);
   w.status = statusWith(running('queued'));
   w.follower.kick();
   await poll(w);
@@ -246,31 +317,51 @@ test('unresolved: a queued / live run of trigger manual holding EXACTLY the conf
 });
 
 test('unresolved: the timer\'s run, or a run of other actions, is NOT adopted; before the grace nothing is listed', async () => {
-  const w = world();
-  w.follower.started((await addedTo(w.journal, UNRESOLVED)).id);
+  const w = new World();
+  await ours(w, UNRESOLVED);
   w.status = statusWith(running('live', { trigger: 'timer' }));
   w.follower.kick();
   await poll(w);
   w.status = statusWith(running('live', { actions: ['A4', 'A5'] }));
   await poll(w);
   assert.equal(w.journal.entries()[0]?.kind, 'unresolved');
-  assert.deepEqual(w.reads, []);
+  assert.equal(w.reads.filter((r) => r.read === 'runs').length, 0);
 });
 
-test('unresolved, after the grace: runs --from <the confirm> --to <now>; ONE match is the run, NONE means it never ran, SEVERAL are shown as candidates', async () => {
-  const lines = (n: number, actions = [{ id: 'A4', status: 'ran', count: 1, freedBytes: 5 }]) => Array.from({ length: n }, (_, i) => ({ runId: `20261005T10000${i}Z-${80 + i}`, trigger: 'manual', startedAt: `2026-10-05T10:00:0${i}+00:00`, outcome: 'completed', actions }));
-  const listing = (runs: unknown[]): ReadOutcome => ({ kind: 'read', read: 'runs', distro: 'Ubuntu', body: { schemaVersion: 1, count: runs.length, runs } });
-  const cases: readonly [unknown[], string][] = [[lines(1), 'adopted'], [[], 'neverRan'], [lines(2), 'ambiguous'], [[{ ...lines(1)[0], trigger: 'timer' }], 'neverRan']];
+test('review B4: at the grace, a matching run that is WEDGED is adopted, and one whose block is unknown / unreadable is waited on — never "never ran"', async () => {
+  const cases: readonly [Record<string, unknown>, string][] = [
+    [running('wedged'), 'run'],
+    [{ state: 'unknown', reason: 'the pid cannot be inspected' }, 'unresolved'],
+    [{ state: 'unreadable', reason: 'running.json does not parse' }, 'unresolved'],
+    [running('live', { runId: undefined }), 'unresolved'],
+  ];
+  for (const [block, expected] of cases) {
+    const w = new World();
+    await ours(w, UNRESOLVED);
+    w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
+    w.status = statusWith(block);
+    w.answer = () => listing([]);
+    w.follower.kick();
+    await poll(w);
+    assert.equal(w.journal.entries()[0]?.kind, expected, JSON.stringify(block));
+    assert.deepEqual(w.shown, [], 'nothing decided while a matching run may be in flight');
+  }
+});
+
+test('unresolved, after the grace: runs over the window, widened by the clock skew (review B3); ONE match is the run, NONE "never ran", SEVERAL candidates', async () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => ({ runId: `20261005T10000${i}Z-${80 + i}`, trigger: 'manual', startedAt: `2026-10-05T10:00:0${i}+00:00`, outcome: 'completed', actions: [{ id: 'A4', status: 'ran', count: 1, freedBytes: 5 }] }));
+  const earlier = { ...lines(1)[0], startedAt: '2026-10-05T09:59:50+00:00' };
+  const cases: readonly [unknown[], string][] = [[lines(1), 'adopted'], [[], 'neverRan'], [lines(2), 'ambiguous'], [[{ ...lines(1)[0], trigger: 'timer' }], 'neverRan'], [[earlier], 'adopted']];
   for (const [runs, expected] of cases) {
-    const w = world();
-    w.follower.started((await addedTo(w.journal, UNRESOLVED)).id);
+    const w = new World();
+    await ours(w, UNRESOLVED);
     w.answer = (request) => (request.read === 'runs' ? listing(runs) : show('done'));
     w.follower.kick();
     await poll(w);
     assert.deepEqual(w.reads, [], 'not before the grace');
     w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
     await poll(w);
-    assert.deepEqual(w.reads[0], { read: 'runs', from: '2026-10-05T10:00:00Z', to: '2026-10-05T10:01:32Z' });
+    assert.deepEqual(w.reads[0], { read: 'runs', from: '2026-10-05T09:55:00Z', to: '2026-10-05T10:06:32Z' }, 'both ends widened by 5 minutes');
     const outcome = w.journal.entries()[0]?.kind === 'run' ? 'adopted' : w.shown[0]?.kind;
     assert.equal(outcome, expected, JSON.stringify(runs));
     if (expected === 'ambiguous') {
@@ -280,31 +371,141 @@ test('unresolved, after the grace: runs --from <the confirm> --to <now>; ONE mat
   }
 });
 
-test('unresolved full check: a manual run line with NO actions is a full check (its history line records none); status names it ["collect"]', async () => {
-  const fullCheck: NewEntry = { ...UNRESOLVED, op: 'fullCheck', actions: ['collect'] };
-  const w = world();
-  w.follower.started((await addedTo(w.journal, fullCheck)).id);
-  w.answer = () => ({ kind: 'read', read: 'runs', distro: 'Ubuntu', body: { schemaVersion: 1, runs: [{ runId: RUN, trigger: 'manual', startedAt: '2026-10-05T10:00:01+00:00', outcome: 'completed', actions: [] }] } });
-  w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
-  w.follower.kick();
-  await poll(w);
-  assert.ok(w.journal.entries()[0]?.kind === 'run');
-  const viaStatus = world();
-  viaStatus.follower.started((await addedTo(viaStatus.journal, fullCheck)).id);
+test('review B2: a full check matches its history line as the daemon writes it — [] when it completed, ["collect"] when refused, cut off or swept — and never a refused unusable request or a reconciled orphan', async () => {
+  const line = (actions: unknown[], extra: Record<string, unknown> = {}) => ({ runId: RUN, trigger: 'manual', startedAt: '2026-10-05T10:00:01+00:00', outcome: 'completed', actions, ...extra });
+  const cases: readonly [Record<string, unknown>, boolean][] = [
+    [line([]), true],
+    [line([{ id: 'collect', status: 'refused', count: 0, freedBytes: 0 }], { outcome: 'refused', reason: 'busy: run X holds the lock' }), true],
+    [line([{ id: 'collect', status: 'interrupted', count: 0, freedBytes: 0 }], { outcome: 'interrupted', reason: 'swept: the detached run never recorded itself' }), true],
+    [line([], { outcome: 'interrupted', reason: 'interrupted by SIGTERM during the measurement: nothing was recorded but this line' }), true],
+    [line([], { outcome: 'refused', reason: 'refused: its request could not be used (schema 9); nothing was run' }), false],
+    [line([], { outcome: 'interrupted', reason: 'the run wrote its detail and ended before its history line (found by the next run\'s reconcile)' }), false],
+    [line([], { outcome: 'interrupted', reason: 'the run left a detail that cannot be read; its start is the second its id names' }), false],
+  ];
+  for (const [candidate, adopted] of cases) {
+    const w = new World();
+    await ours(w, FULL_CHECK);
+    w.answer = () => listing([candidate]);
+    w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
+    w.follower.kick();
+    await poll(w);
+    assert.equal(w.journal.entries()[0]?.kind === 'run', adopted, JSON.stringify(candidate));
+  }
+  const viaStatus = new World();
+  await ours(viaStatus, FULL_CHECK);
   viaStatus.status = statusWith(running('live', { actions: ['collect'], current: 'collect' }));
   viaStatus.follower.kick();
   await poll(viaStatus);
   assert.ok(viaStatus.journal.entries()[0]?.kind === 'run', 'adopted from status.running');
 });
 
+// ---- bounded reads, dispose, per-entry faults, concurrency, one panel round, two windows ----
+
+test('review C8: a record read that keeps failing is tried 3 times with backoff — then ends as "state unknown — the record could not be read"', async () => {
+  const w = new World();
+  await ours(w, RUN_ENTRY);
+  w.answer = () => NOT_READ;
+  w.follower.kick();
+  for (let i = 1; i <= 40; i += 1) {
+    w.clock.now = T0 + i * FOLLOW_POLL.intervalMs;
+    if (w.timers.pending() > 0) {
+      await poll(w);
+    }
+  }
+  assert.equal(w.reads.length, 3, 'three tries, not one every 4 s');
+  const result = w.shown[0];
+  assert.ok(result?.kind === 'unreadable', JSON.stringify(result));
+  assert.match(result.reason, /timedOut|did not answer/);
+  assert.deepEqual(w.journal.entries(), []);
+});
+
+test('review B5: a follower disposed while its read is out shows nothing, removes nothing and re-reads no panel', async () => {
+  const w = new World();
+  await ours(w, RUN_ENTRY);
+  let release: (value: ReadOutcome) => void = () => undefined;
+  w.answer = () => new Promise<ReadOutcome>((resolve) => { release = resolve; });
+  const tick = w.follower.tick();
+  await settle();
+  w.follower.dispose();
+  release(show('done'));
+  await tick;
+  await settle();
+  assert.deepEqual(w.shown, []);
+  assert.equal(w.journal.entries().length, 1);
+  assert.equal(w.afterTerminal, 0);
+});
+
+test('review A5: one entry whose settling throws is reported, and the others are still settled (per entry, never the whole loop)', async () => {
+  const w = new World();
+  await ours(w, RUN_ENTRY);
+  await ours(w, { ...RUN_ENTRY, runId: runId('20261005T100500Z-78') });
+  w.answer = (request) => {
+    if (request.read === 'runsShow' && request.runId === RUN) {
+      throw new Error('a defect in one entry');
+    }
+    return done();
+  };
+  await w.follower.tick();
+  assert.equal(w.faults.length, 1);
+  assert.equal(w.shown.length, 1, 'the other entry still ended');
+});
+
+test('review C13 / C14: entries are settled concurrently, at most 4 at a time — and a tick that ends several re-reads the panel ONCE', async () => {
+  const w = new World();
+  for (let i = 0; i < 6; i += 1) {
+    await ours(w, { ...RUN_ENTRY, runId: runId(`20261005T10000${i}Z-${90 + i}`) });
+  }
+  let open = 0;
+  let most = 0;
+  w.answer = async () => {
+    open += 1;
+    most = Math.max(most, open);
+    await settle();
+    open -= 1;
+    return done();
+  };
+  await w.follower.tick();
+  assert.ok(most > 1 && most <= 4, `at most 4 at once, more than 1 (${most})`);
+  assert.equal(w.shown.length, 6);
+  assert.equal(w.afterTerminal, 1, 'one panel round for the tick');
+});
+
+test('review C6: two windows ending the same entry at the same moment show its result ONCE between them', async () => {
+  const store = new MapStore();
+  const a = new World(store);
+  const b = new World(store);
+  const entry = await ours(a, RUN_ENTRY);
+  b.follower.started(entry.id);
+  a.answer = done;
+  b.answer = done;
+  await Promise.all([a.follower.tick(), b.follower.tick()]);
+  await settle();
+  assert.equal(a.shown.length + b.shown.length, 1);
+});
+
+test('M6: a poll armed while a run was in flight asks NOTHING when it fires after that run ended (found by the extension-host tier)', async () => {
+  const w = new World();
+  await ours(w, RUN_ENTRY);
+  w.follower.kick();
+  assert.equal(w.timers.pending(), 1);
+  w.answer = () => show('done');
+  await w.follower.tick();
+  assert.deepEqual(w.journal.entries(), [], 'ended by a tick of its own');
+  const asked = w.statusCalls;
+  assert.ok(w.timers.fire(), 'the poll armed before still fires');
+  await settle();
+  assert.equal(w.statusCalls, asked, 'nothing is in flight: no status');
+  assert.equal(w.timers.pending(), 0);
+});
+
 // ---- M6's churn, measured for the owner (research/2026-10-04_extension_poll_churn.md § E6.S3) ----
 
-test('M6 churn, measured: a run followed for D minutes costs D × 15 status runs + 1 runs show; the ceiling bounds a wedged run at 451', async () => {
+test('M6 churn, measured: a run followed for D minutes costs D × 15 status runs + 1 runs show; the ceiling bounds a wedged run at 451 (+ its one record read)', async () => {
   const measure = async (minutes: number, endState: 'done' | 'wedged'): Promise<{ status: number; reads: number }> => {
-    const w = world();
-    w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
+    const w = new World();
+    await ours(w, RUN_ENTRY);
     w.status = statusWith(running(endState === 'done' ? 'live' : 'wedged'));
-    w.answer = () => show('done');
+    w.answer = () => show(endState === 'done' ? 'done' : 'running');
     w.follower.kick();
     const ticks = Math.round((minutes * 60_000) / FOLLOW_POLL.intervalMs);
     for (let i = 1; i <= ticks && w.timers.pending() > 0; i += 1) {
@@ -316,20 +517,29 @@ test('M6 churn, measured: a run followed for D minutes costs D × 15 status runs
   };
   assert.deepEqual(await measure(2, 'done'), { status: 30, reads: 1 });
   assert.deepEqual(await measure(10, 'done'), { status: 150, reads: 1 });
-  assert.deepEqual(await measure(40, 'wedged'), { status: 451, reads: 0 }, 'the 30-minute ceiling ends it');
+  assert.deepEqual(await measure(40, 'wedged'), { status: 451, reads: 1 }, 'the 30-minute ceiling ends it, after one record read');
 });
 
-test('M6: a poll armed while a run was in flight asks NOTHING when it fires after that run ended (found by the extension-host tier)', async () => {
-  const w = world();
-  w.follower.started((await addedTo(w.journal, RUN_ENTRY)).id);
+test('review B1: a status that answers for ANOTHER distribution is no evidence either — an old entry is kept', async () => {
+  const w = new World();
+  await ours(w, RUN_ENTRY);
+  w.clock.now = T0 + FOLLOW_POLL.ceilingMs + 1;
+  w.status = answered('status', headBody('status'), 'Debian');
   w.follower.kick();
-  assert.equal(w.timers.pending(), 1);
-  w.answer = () => show('done');
-  await w.follower.tick();
-  assert.deepEqual(w.journal.entries(), [], 'ended by a tick of its own');
-  const asked = w.statusCalls;
-  assert.ok(w.timers.fire(), 'the poll armed before still fires');
-  await settle();
-  assert.equal(w.statusCalls, asked, 'nothing is in flight: no status');
-  assert.equal(w.timers.pending(), 0);
+  await poll(w);
+  assert.equal(w.shown.length, 0);
+  assert.equal(w.reads.length, 0);
+  assert.equal(w.journal.entries().length, 1);
+});
+
+test('review B1 + B4: an unresolved confirm past the ceiling whose block cannot be read gets ONE runs window, then ends "state unknown" — never "never ran", never stuck', async () => {
+  const w = new World();
+  await ours(w, UNRESOLVED);
+  w.clock.now = T0 + FOLLOW_POLL.ceilingMs + 1;
+  w.status = statusWith({ state: 'unreadable', reason: 'running.json does not parse' });
+  w.answer = () => listing([]);
+  w.follower.kick();
+  await poll(w);
+  assert.equal(w.reads.filter((r) => r.read === 'runs').length, 1);
+  assert.equal(w.shown[0]?.kind, 'ceiling');
 });

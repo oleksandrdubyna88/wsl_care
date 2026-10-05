@@ -72,3 +72,9 @@ test('a terminal answer: done with what it freed, refused and interrupted with t
   assert.match(noticeOf({ kind: 'ambiguous', entry: unresolved, candidates: [runId('20261005T100000Z-80'), runId('20261005T100001Z-81')] }).sentence, /runs 20261005T100000Z-80, 20261005T100001Z-81 each match/);
   assert.match(noticeOf({ kind: 'neverRan', entry: { ...unresolved, op: 'fullCheck', actions: ['collect'] } }).sentence, /^The full check confirmed at/);
 });
+
+test('review C8: a record that could not be read ends with words that say so, with the run id and the reason', () => {
+  const notice = noticeOf({ kind: 'unreadable', entry: ENTRY, reason: 'timedOut' });
+  assert.equal(notice.level, 'warn');
+  assert.equal(notice.sentence, 'Run 20261005T100000Z-77 (A4): state unknown — the record could not be read (timedOut); the daemon\'s runs show says where it is.');
+});

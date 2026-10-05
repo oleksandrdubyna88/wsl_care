@@ -84,6 +84,8 @@ export interface DurableStore {
 interface Tombstone {
   readonly id: string;
   readonly at: number;
+  /** The journal (window) that removed it — whose claim stands when two remove it at once. */
+  readonly by: string;
 }
 
 /** What the key holds. */
@@ -106,6 +108,8 @@ function nextTurn(): Promise<void> {
 export class CleanupJournal {
   private readonly listeners = new Set<() => void>();
   private queue: Promise<void> = Promise.resolve();
+  /** This journal's own mark on the tombstones it writes (one per window). */
+  private readonly token = randomUUID();
 
   constructor(private readonly store: DurableStore, private readonly wallNow: () => number = Date.now) {}
 
@@ -143,10 +147,24 @@ export class CleanupJournal {
 
   /** Remove the entry `id` — its terminal answer was shown — leaving a tombstone. */
   remove(id: string): Promise<void> {
-    return this.serialised(
-      (current) => (current.entries.some((e) => e.id === id) ? { entries: current.entries.filter((e) => e.id !== id), removed: [...current.removed, { id, at: this.wallNow() }] } : undefined),
-      (current) => !current.entries.some((e) => e.id === id),
-    );
+    return this.serialised((current) => this.removing(current, id), (current) => !current.entries.some((e) => e.id === id));
+  }
+
+  /**
+   * Remove the entry `id` and say whether THIS window's removal stands (review C6): when two windows end one entry at once,
+   * the store keeps one tombstone — the last write — and only its writer shows the result. False when the entry was gone.
+   */
+  async claim(id: string): Promise<boolean> {
+    if (!this.has(id)) {
+      return false;
+    }
+    await this.remove(id);
+
+    return this.read().removed.some((t) => t.id === id && t.by === this.token);
+  }
+
+  private removing(current: Stored, id: string): Stored | undefined {
+    return current.entries.some((e) => e.id === id) ? { entries: current.entries.filter((e) => e.id !== id), removed: [...current.removed, { id, at: this.wallNow(), by: this.token }] } : undefined;
   }
 
   /** Called after every change this journal made; the returned function unsubscribes. */
@@ -223,7 +241,11 @@ function isTime(value: unknown): value is number {
 }
 
 function tombstoneOf(value: unknown): Tombstone[] {
-  return isRaw(value) && typeof value.id === 'string' && isTime(value.at) ? [{ id: value.id, at: value.at }] : [];
+  return isRaw(value) && typeof value.id === 'string' && isTime(value.at) ? [{ id: value.id, at: value.at, by: textOr(value.by) }] : [];
+}
+
+function textOr(value: unknown): string {
+  return typeof value === 'string' ? value : '';
 }
 
 /** An instant as the journal writes it — `Date.toISOString()` — and nothing looser. */

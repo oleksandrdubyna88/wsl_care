@@ -265,3 +265,15 @@ test('E6.S3 review C12: with the journal full the confirm is NOT sent — told t
   assert.equal(w.journal.entries().length, MAX_ENTRIES);
   assert.match(w.notices.at(-1)?.sentence ?? '', /wait for one to end/);
 });
+
+test('E6.S3 review B4: Stop of a run an UNRESOLVED confirm is waiting for adopts that entry — one entry, never a second', async () => {
+  const stop = `${ROOT} act --stop ${RUN} --json`;
+  const stopping = JSON.stringify({ schemaVersion: 1, result: 'stopping', kind: 'act', runId: RUN, unit: `wsl-care-act@${RUN}.service`, productVersion: '0.1.0' });
+  const w = world({ [stop]: exited(0, stopping) });
+  const waiting = await w.journal.add({ kind: 'unresolved', op: 'clean', distro: 'Ubuntu', actions: ['A4', 'A5'], since: '2026-10-05T09:59:00.000Z' });
+  assert.ok(waiting !== undefined);
+  assert.equal((await w.flow.stop({ runId: runId(RUN), actions: ['A5', 'A4'] })).kind, 'handedOff');
+  const entries = w.journal.entries();
+  assert.equal(entries.length, 1, JSON.stringify(entries));
+  assert.ok(entries[0]?.kind === 'run' && entries[0].runId === runId(RUN) && entries[0].id === waiting.id);
+});
