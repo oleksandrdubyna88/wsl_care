@@ -61,10 +61,13 @@ function rowIdsOf(value: unknown): readonly RowId[] | undefined {
 
 type WithValue = (raw: Raw) => PageMessage | undefined;
 
+/** A row's `clean` is ONE row (review A2: its modal names one); several are `cleanSelected`'s. */
+const MOST_ROWS: { readonly [K in 'clean' | 'cleanSelected']: number } = { clean: 1, cleanSelected: ROW_IDS.length };
+
 function withRows(type: 'clean' | 'cleanSelected', raw: Raw): PageMessage | undefined {
   const rowIds = rowIdsOf(raw.rowIds);
 
-  return rowIds === undefined ? undefined : { type, rowIds };
+  return rowIds === undefined || rowIds.length > MOST_ROWS[type] ? undefined : { type, rowIds };
 }
 
 /** The messages that carry ONE value besides their type — exactly two keys each. */

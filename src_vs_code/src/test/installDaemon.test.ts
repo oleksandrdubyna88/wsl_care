@@ -163,3 +163,11 @@ test('E6.S2 (plan §15j M5): the command installs the ACTIONS minimum — the in
   assert.match(source, /export const INSTALL_VERSION = pinnedVersion\(MIN_DAEMON_FOR_ACTIONS\);/);
   assert.equal(/MIN_DAEMON_FOR_RENDER/.test(source), false, 'while both minima are 0.1.0 the value cannot tell them apart; the source can');
 });
+
+test('E6.S3 review A1 (the class swept): a report built from wsl.exe text reaches the notification with its link syntax broken', async () => {
+  const linked: Failure = { kind: 'wslFailed', message: 'see [here](command:workbench.action.reloadWindow)' };
+  const { deps: d, seen } = deps(() => Promise.resolve(linked), true);
+  await installDaemon(d);
+  assert.equal((seen.reports[0] ?? '').includes(String.fromCharCode(93, 40)), false, seen.reports[0]);
+  assert.match(seen.reports[0] ?? '', /here/);
+});

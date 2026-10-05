@@ -168,7 +168,7 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       api.cleanRecorder().answer = true;
       api.resetCalls();
       const outcome = await host.clean(['A4'], false);
-      assert.equal(outcome.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
+      assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
       assert.equal(api.cleanRecorder().modals.at(-1)?.message, 'Clean A4 in "Ubuntu"?');
       assert.deepEqual(daemonCalls(api).filter((c) => c.includes('--confirm')), ['-d Ubuntu -u root --cd / --exec /opt/wsl-care/bin/wsl-care act A4 --confirm --manual --detach --only - --json']);
       assert.equal(host.journal.entries().length, 1, 'the started run is in globalState');

@@ -3,7 +3,7 @@ import { rootFailureText } from '../root/rootFailureText';
 import type { RunId } from '../root/rootIds';
 import type { HandOffOutcome, HeldPreview, RootFailure } from '../root/rootOutcome';
 import type { CleanupJournal, JournalEntry, NewEntry } from './journal';
-import { firstModal, secondModal, stopModal, type Modal } from './modalText';
+import { firstModal, missingFromPreview, secondModal, stopModal, type Modal } from './modalText';
 import { handOffNotice, type NoticeLevel } from './resultText';
 import type { RowId } from './rowIds';
 import type { RunFollower } from './runFollower';
@@ -69,7 +69,9 @@ export type FlowOutcome =
   | { readonly kind: 'expired' }
   | { readonly kind: 'refused'; readonly failure: RootFailure }
   | { readonly kind: 'handedOff'; readonly outcome: HandOffOutcome; readonly entry: JournalEntry | undefined }
-  | { readonly kind: 'noStatus' };
+  | { readonly kind: 'noStatus' }
+  /** The preview did not describe every id the confirm would act on (review A3): nothing was confirmed. */
+  | { readonly kind: 'incomplete'; readonly missing: readonly string[] };
 
 /** One pass of a flow, and whether the person asked to run it again. */
 interface Pass {
@@ -154,11 +156,22 @@ export class CleanFlow {
       this.tell('error', rootFailureText(outcome).sentence);
       return { kind: 'refused', failure: outcome };
     }
-    if (!(await this.modals(outcome.preview, selected))) {
+    const missing = missingFromPreview(outcome.preview);
+    if (missing.length > 0) {
+      this.tell('error', `The daemon's preview did not describe ${missing.join(', ')}; nothing was confirmed — Refresh and try again.`);
+      return { kind: 'incomplete', missing };
+    }
+
+    return this.confirmedRound(outcome.preview, selected);
+  }
+
+  /** The modals, then the age check (§15k #12). */
+  private async confirmedRound(preview: HeldPreview, selected: boolean): Promise<HeldPreview | FlowOutcome | 'expired'> {
+    if (!(await this.modals(preview, selected))) {
       return DECLINED;
     }
 
-    return this.options.now() - outcome.preview.takenAtMs > PREVIEW_EXPIRY_MS ? 'expired' : outcome.preview;
+    return this.options.now() - preview.takenAtMs > PREVIEW_EXPIRY_MS ? 'expired' : preview;
   }
 
   private async modals(preview: HeldPreview, selected: boolean): Promise<boolean> {

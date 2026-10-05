@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { firstModal, secondModal } from '../cleanup/modalText';
+import { firstModal, missingFromPreview, secondModal } from '../cleanup/modalText';
 import { ROW_IDS } from '../cleanup/rowIds';
 import { parsePreview } from '../root/rootAnswers';
 import { ACTION_IDS, type ActionIds } from '../root/rootIds';
@@ -116,4 +116,17 @@ test('the row ids are the rows preview --all reports, and each is an action of t
   for (const id of ROW_IDS) {
     assert.ok((ACTION_IDS as readonly string[]).includes(id), id);
   }
+});
+
+test('E6.S3 review A3: the modal has ONE block per id the confirm acts on — in that order — whatever the daemon answered', () => {
+  const body = withActions(action('A9', 'apt', 1, 1), action('A8', 'npm', 1, 1), action('A7', 'not asked', 9, 9));
+  const modal = firstModal(held(['A4', 'A8', 'A9'], body), true);
+  const heads = modal.detail.split('\n\n').filter((b) => /^A\d/.test(b)).map((b) => b.split(' ')[0]);
+  assert.deepEqual(heads, ['A4', 'A8', 'A9'], 'the confirmed ids, not the answer\'s entries');
+  assert.doesNotMatch(modal.detail, /not asked/);
+});
+
+test('E6.S3 review A3: missingFromPreview names the confirmed ids the daemon\'s preview did not describe', () => {
+  assert.deepEqual(missingFromPreview(held(['A4', 'A8'])), ['A8']);
+  assert.deepEqual(missingFromPreview(held(['A4'])), []);
 });

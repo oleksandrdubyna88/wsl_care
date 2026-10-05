@@ -9,6 +9,7 @@ import { deriveCleanup } from './cleanupView';
 import { CleanupJournal, type DurableStore } from './journal';
 import { resultNotice, type Notice } from './resultText';
 import type { RowId } from './rowIds';
+import { noticeText, unlinked } from '../text/safeText';
 import { RunFollower, type OneShot, type RunResult } from './runFollower';
 
 /**
@@ -31,10 +32,24 @@ export interface CleanupHostOptions {
   readonly timers: OneShot;
   readonly now: () => number;
   readonly wallNow: () => number;
+  /** One line to the extension's log (its output channel). */
+  readonly log: (line: string) => void;
 }
 
 /** The terminal answers a window keeps for its *Last cleanup* section — the newest few, in memory (the daemon keeps the rest). */
 export const RESULTS_KEPT = 5;
+
+/** Every cleanup surface through the ONE road (review A1): a notification's sentence sanitised and unlinked, a modal unlinked. */
+function sanitised(ui: CleanUi): CleanUi {
+  return {
+    confirm: (modal) => ui.confirm({ ...modal, message: unlinked(modal.message), detail: unlinked(modal.detail) }),
+    notify: (level, sentence, actions) => ui.notify(level, noticeText(sentence), actions),
+  };
+}
+
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export class CleanupHost {
   readonly journal: CleanupJournal;
@@ -43,16 +58,18 @@ export class CleanupHost {
   private results: readonly Notice[] = [];
   private readonly listeners = new Set<() => void>();
   private readonly unsubscribe: readonly (() => void)[];
+  private readonly ui: CleanUi;
 
   constructor(private readonly options: CleanupHostOptions) {
+    this.ui = sanitised(options.ui);
     this.journal = new CleanupJournal(options.durable);
     this.follower = new RunFollower({
       journal: this.journal, status: options.askStatus, read: options.read, show: (result) => this.shown(result),
       afterTerminal: options.refreshPanel, focused: options.focused, wallNow: options.wallNow, timers: options.timers,
-      fault: (error) => { void options.ui.notify('error', `WSL Care could not follow a cleanup: ${error instanceof Error ? error.message : String(error)}`); },
+      fault: (error) => this.faulted('following a cleanup', error),
     });
     this.flow = new CleanFlow({
-      controller: options.controller, journal: this.journal, follower: this.follower, ui: options.ui, now: options.now, wallNow: options.wallNow,
+      controller: options.controller, journal: this.journal, follower: this.follower, ui: this.ui, now: options.now, wallNow: options.wallNow,
       distro: () => this.distro(), changed: () => this.emit(),
     });
     this.unsubscribe = [this.journal.onChange(() => this.emit()), options.outcomes.onChange(() => this.follower.kick())];
@@ -67,23 +84,31 @@ export class CleanupHost {
     return deriveCleanup(this.options.outcomes.snapshot(), this.state()).controls;
   }
 
-  clean(rowIds: readonly RowId[], selected: boolean): Promise<FlowOutcome> {
-    return this.flow.clean(rowIds, selected);
+  /** A row's *Clean* or *Clean selected* — never rejects: a fault is told and logged (review C11, the detached edge). */
+  clean(rowIds: readonly RowId[], selected: boolean): Promise<FlowOutcome | undefined> {
+    return this.edge('a cleanup', () => this.flow.clean(rowIds, selected));
   }
 
-  runFullCheck(): Promise<FlowOutcome> {
-    return this.flow.fullCheck();
+  /** *Run full check now* — refused here when the controls grey it (review A4), whatever the page sent. */
+  runFullCheck(): Promise<FlowOutcome | undefined> {
+    const controls = this.controls();
+    if (!controls.fullCheck) {
+      void this.ui.notify('warn', `Run full check now is not available: ${controls.reason === '' ? controls.state : controls.reason}.`);
+      return Promise.resolve(undefined);
+    }
+
+    return this.edge('a full check', () => this.flow.fullCheck());
   }
 
   /** `index` names a run of the stoppable list the host derives NOW; its run id is checked once more before the call. */
   stop(index: number): Promise<FlowOutcome | undefined> {
     const target = deriveCleanup(this.options.outcomes.snapshot(), this.state()).stoppable[index];
     if (target === undefined || runIdOf(target.runId) === undefined) {
-      void this.options.ui.notify('warn', 'That run can no longer be stopped from here — the daemon reports it differently now.');
+      void this.ui.notify('warn', 'That run can no longer be stopped from here — the daemon reports it differently now.');
       return Promise.resolve(undefined);
     }
 
-    return this.flow.stop(target);
+    return this.edge('a stop', () => this.flow.stop(target));
   }
 
   onChange(listener: () => void): () => void {
@@ -96,6 +121,21 @@ export class CleanupHost {
     this.unsubscribe.forEach((unsubscribe) => unsubscribe());
   }
 
+  /** The detached edge of a button's work: whatever it throws is told (sanitised) and logged, never swallowed. */
+  private async edge(what: string, work: () => Promise<FlowOutcome>): Promise<FlowOutcome | undefined> {
+    try {
+      return await work();
+    } catch (error) {
+      this.faulted(what, error);
+      return undefined;
+    }
+  }
+
+  private faulted(what: string, error: unknown): void {
+    this.options.log(`cleanup: ${what} failed: ${reasonOf(error)}${error instanceof Error && error.stack !== undefined ? `\n${error.stack}` : ''}`);
+    void this.ui.notify('error', `WSL Care could not complete ${what}: ${reasonOf(error)}`);
+  }
+
   private state(): { entries: ReturnType<CleanupJournal['entries']>; results: readonly Notice[]; flowBusy: boolean } {
     return { entries: this.journal.entries(), results: this.results, flowBusy: this.flow.busy() };
   }
@@ -103,7 +143,7 @@ export class CleanupHost {
   private shown(result: RunResult): void {
     const notice = resultNotice(result);
     this.results = [notice, ...this.results].slice(0, RESULTS_KEPT);
-    void this.options.ui.notify(notice.level, notice.sentence);
+    void this.ui.notify(notice.level, notice.sentence);
     this.emit();
   }
 
