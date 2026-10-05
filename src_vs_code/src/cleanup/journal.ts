@@ -1,4 +1,5 @@
-import { DEFAULT_NUMBERS } from '../settings/numbers';
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import { FALLBACK_LIMITS } from '../shared/daemonLimits';
 import { randomUUID } from 'node:crypto';
 
 import { FULL_CHECK_ACTIONS } from '../root/cleanupController';
@@ -26,7 +27,7 @@ import { ACTION_IDS, actionIdOf, runIdOf, type RunId } from '../root/rootIds';
  * `@types/vscode` 1.85: there is no compare-and-swap and no callback form — so this is ADVISORY coordination, and its
  * residual race is stated here, where a caller reads it. What it does: no copy is ever cached (every operation reads the
  * store afresh and applies itself to what is there); this host's writes are serialised; a removal leaves a TOMBSTONE for
- * `TOMBSTONE_TTL_MS`, merged into every write, so an entry another window removed is not written back by a stale list;
+ * `wslCare.cleanup.tombstoneMinutes`, merged into every write, so an entry another window removed is not written back by a stale list;
  * after each write the store is read again one turn later and the operation re-applied if a concurrent write took it away.
  * The residual: a write by another window landing later than that turn, from a list read before ours, can still drop an
  * entry we added (a lost entry is a run that is not followed — its result still reaches *Last cleanup* through
@@ -49,10 +50,12 @@ export const MAX_ENTRIES = DEFAULT_NUMBERS.journalEntries;
 export const MAX_ACTIONS_PER_ENTRY = ACTION_IDS.length;
 
 /** How far ahead of this window's clock an instant may lie and still be read — the daemon's `RequestSweep.FutureSkew`. */
-export const FUTURE_SKEW_MS = 5 * 60_000;
+/** The clock-skew allowance's FALLBACK — the daemon's own value (`shared/daemonLimits.ts`) wins when it answers one. */
+export const FUTURE_SKEW_MS = FALLBACK_LIMITS.futureSkewMs;
 
 /** How long a removal's tombstone is kept and merged. */
-export const TOMBSTONE_TTL_MS = 10 * 60_000;
+/** The DEFAULT of `wslCare.cleanup.tombstoneMinutes`. */
+export const TOMBSTONE_TTL_MS = DEFAULT_NUMBERS.tombstoneMinutes * 60_000;
 
 /** Tombstones kept per entry of the budget. */
 const TOMBSTONES_PER_ENTRY = 2;
@@ -114,7 +117,12 @@ export class CleanupJournal {
   /** This journal's own mark on the tombstones it writes (one per window). */
   private readonly token = randomUUID();
 
-  constructor(private readonly store: DurableStore, private readonly wallNow: () => number = Date.now, private readonly maxEntries: () => number = () => MAX_ENTRIES) {}
+  constructor(
+    private readonly store: DurableStore,
+    private readonly wallNow: () => number = Date.now,
+    private readonly numbers: () => Numbers = () => DEFAULT_NUMBERS,
+    private readonly futureSkew: () => number = () => FUTURE_SKEW_MS,
+  ) {}
 
   /** Every valid entry, oldest first, read from the store each time (another window may have written it). */
   entries(): readonly JournalEntry[] {
@@ -131,7 +139,7 @@ export class CleanupJournal {
     const added: JournalEntry = { ...entry, id: randomUUID() };
     let full = false;
     await this.serialised((current) => {
-      full = current.entries.length >= this.maxEntries();
+      full = current.entries.length >= this.numbers().journalEntries;
       return full ? undefined : { ...current, entries: [...current.entries, added] };
     }, (current) => full || current.entries.some((e) => e.id === added.id));
 
@@ -209,7 +217,7 @@ export class CleanupJournal {
   /** The tombstones still alive, and no entry they name. */
   private pruned(stored: Stored): Stored {
     const now = this.wallNow();
-    const removed = stored.removed.filter((t) => now - t.at < TOMBSTONE_TTL_MS).slice(-TOMBSTONES_PER_ENTRY * this.maxEntries());
+    const removed = stored.removed.filter((t) => now - t.at < this.numbers().tombstoneMinutes * 60_000).slice(-TOMBSTONES_PER_ENTRY * this.numbers().journalEntries);
     const gone = new Set(removed.map((t) => t.id));
 
     return { entries: stored.entries.filter((e) => !gone.has(e.id)), removed };
@@ -219,7 +227,7 @@ export class CleanupJournal {
   private read(): Stored {
     const raw = this.store.get(JOURNAL_KEY);
     const removed = listOf(raw, 'removed').flatMap(tombstoneOf);
-    const entries = listOf(raw, 'entries').flatMap((e) => entryOf(e, this.wallNow()));
+    const entries = listOf(raw, 'entries').flatMap((e) => entryOf(e, this.wallNow() + this.futureSkew()));
     const gone = new Set(removed.map((t) => t.id));
 
     return { entries: entries.filter((e) => !gone.has(e.id)), removed };
@@ -266,11 +274,11 @@ function isText(value: unknown, max: number): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= max;
 }
 
-/** An instant that EXISTS (the shape alone lets 2026-13-01 through, review A5) and is not ahead of `now` by more than the skew. */
-function isReadableInstant(value: unknown, now: number): boolean {
+/** An instant that EXISTS (the shape alone lets 2026-13-01 through, review A5) and is not later than `latest` (now plus the skew allowance). */
+function isReadableInstant(value: unknown, latest: number): boolean {
   const ms = isoMs(value);
 
-  return isTime(ms) && roundTrips(ms, value) && ms <= now + FUTURE_SKEW_MS;
+  return isTime(ms) && roundTrips(ms, value) && ms <= latest;
 }
 
 function isoMs(value: unknown): number {

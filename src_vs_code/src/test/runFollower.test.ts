@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
 
 import { CleanupJournal, type JournalEntry, type NewEntry } from '../cleanup/journal';
 import { FOLLOW_POLL, RunFollower, type RunResult } from '../cleanup/runFollower';
@@ -79,6 +80,7 @@ class World {
   answer: (request: RunRead) => ReadOutcome | Promise<ReadOutcome> = () => show('unknown');
   focused = true;
   numbers: Numbers = DEFAULT_NUMBERS;
+  limits: DaemonLimits = FALLBACK_LIMITS;
 
   constructor(readonly store = new MapStore()) {
     this.journal = new CleanupJournal(store, () => this.clock.now);
@@ -94,6 +96,7 @@ class World {
       timers: this.timers,
       fault: (error) => { this.faults.push(error); },
       numbers: () => this.numbers,
+      limits: () => this.limits,
     });
   }
 }
@@ -633,4 +636,65 @@ test('§15o (daemon #16): the fallback reason prefixes for a line WITHOUT a kind
   const contract = JSON.parse(fs.readFileSync(path.join(REPOSITORY_ROOT, 'contracts', 'history-reasons.json'), 'utf8')) as { notAFullCheckWithoutKind: { prefix: string }[] };
   assert.deepEqual([...NOT_A_FULL_CHECK_PREFIXES], contract.notAFullCheckWithoutKind.map((r) => r.prefix));
   assert.equal(NOT_A_FULL_CHECK_PREFIXES.length, 3, 'the known instances');
+});
+
+test('§15p: the follower takes the daemon\'s skew from its limits — a line 2 minutes before the confirm matches only when the daemon allows 5, not 1', async () => {
+  const line = { runId: RUN, trigger: 'manual', startedAt: '2026-10-05T09:58:00+00:00', outcome: 'completed', actions: [{ id: 'A4', status: 'ran', count: 1, freedBytes: 5 }] };
+  for (const [limits, adopted] of [[{ historyRetentionDays: 90, futureSkewMs: 300_000 }, true], [{ historyRetentionDays: 90, futureSkewMs: 60_000 }, false]] as const) {
+    const w = new World();
+    w.limits = limits;
+    await ours(w, UNRESOLVED);
+    w.answer = () => listing([line]);
+    w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
+    w.follower.kick();
+    await poll(w);
+    assert.equal(w.journal.entries()[0]?.kind === 'run', adopted, JSON.stringify(limits));
+    assert.match((w.reads[0] as { from: string }).from, limits.futureSkewMs === 60_000 ? /09:59:00Z$/ : /09:55:00Z$/);
+  }
+});
+
+test('§15p: the follower\'s internals read their settings — 2 entries settled at a time, 1 try with no backoff before "could not be read"', async () => {
+  const w = new World();
+  w.numbers = { ...DEFAULT_NUMBERS, settleAtOnce: 2 };
+  for (let i = 0; i < 5; i += 1) {
+    await ours(w, { ...RUN_ENTRY, runId: runId(`20261005T10000${i}Z-${90 + i}`) });
+  }
+  let open = 0;
+  let most = 0;
+  w.answer = async () => {
+    open += 1;
+    most = Math.max(most, open);
+    await settle();
+    open -= 1;
+    return done();
+  };
+  await w.follower.tick();
+  assert.equal(most, 2, 'at most the setting at once');
+
+  const once = new World();
+  once.numbers = { ...DEFAULT_NUMBERS, recordReadTries: 1 };
+  await ours(once, RUN_ENTRY);
+  once.answer = () => NOT_READ;
+  once.follower.kick();
+  await poll(once);
+  assert.equal(once.reads.length, 1);
+  assert.equal(once.shown[0]?.kind, 'unreadable', 'one try, then the words — not three');
+});
+
+test('§15p: the read backoff reads its setting — a 20 s step means the second try waits 20 s, not 8', async () => {
+  const w = new World();
+  w.numbers = { ...DEFAULT_NUMBERS, recordReadBackoffSeconds: 20 };
+  await ours(w, RUN_ENTRY);
+  w.answer = () => NOT_READ;
+  w.follower.kick();
+  await poll(w);
+  assert.equal(w.reads.length, 1);
+  for (let i = 1; i <= 4; i += 1) {
+    w.clock.now = T0 + i * FOLLOW_POLL.intervalMs;
+    await poll(w);
+  }
+  assert.equal(w.reads.length, 1, '16 s later: still waiting out the 20 s step');
+  w.clock.now = T0 + 6 * FOLLOW_POLL.intervalMs;
+  await poll(w);
+  assert.equal(w.reads.length, 2, 'past 20 s: the second try');
 });

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { CleanupJournal, JOURNAL_KEY, MAX_ACTIONS_PER_ENTRY, MAX_ENTRIES, type NewEntry } from '../cleanup/journal';
 import { ACTION_IDS, runIdOf, type RunId } from '../root/rootIds';
+import { DEFAULT_NUMBERS } from '../settings/numbers';
 import { MapStore } from './support/memento';
 
 /**
@@ -153,4 +154,15 @@ test('C6: an entry whose id is tombstoned is never read — and a later write do
   await added(journal, UNRESOLVED);
   const value = store.values.get(JOURNAL_KEY) as { entries: { id: string }[] };
   assert.ok(!value.entries.some((e) => e.id === 'x'), JSON.stringify(value));
+});
+
+test('§15p: a tombstone lives `wslCare.cleanup.tombstoneMinutes` — 3 minutes old, it is pruned at 2 and kept at 10', async () => {
+  for (const [minutes, kept] of [[2, false], [10, true]] as const) {
+    const store = new MapStore();
+    store.values.set(JOURNAL_KEY, { entries: [], removed: [{ id: 'gone', at: NOW - 3 * 60_000 }] });
+    const journal = new CleanupJournal(store, () => NOW, () => ({ ...DEFAULT_NUMBERS, tombstoneMinutes: minutes }));
+    await added(journal, UNRESOLVED);
+    const value = store.values.get(JOURNAL_KEY) as { removed: { id: string }[] };
+    assert.equal(value.removed.some((t) => t.id === 'gone'), kept, String(minutes));
+  }
 });

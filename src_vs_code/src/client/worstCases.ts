@@ -91,3 +91,12 @@ export function previewShareS(id: string): number {
 export function previewWorstCaseS(ids: readonly string[]): number {
   return ids.reduce((sum, id) => sum + previewShareS(id), 0);
 }
+
+/**
+ * `wsl.exe --list`'s questions (`--list --quiet`, `-l -v`, `--list --running --quiet`) are not the daemon's: measured at about
+ * 50 ms each on a warm WSL (research/2026-10-03_wsl_exe_facts.md, `WslCareClient.ts`). A cold WSL service start is NOT
+ * measured — the E5 live gate's. The setting's minimum is a hundred times the measured time.
+ */
+export const WSL_LIST_MEASURED_S = 0.05;
+
+export const WSL_LIST_MINIMUM_S = 5;

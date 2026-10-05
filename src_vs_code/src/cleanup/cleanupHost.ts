@@ -14,6 +14,7 @@ import type { RowId } from './rowIds';
 import { noticeText, unlinked } from '../text/safeText';
 import { RunFollower, type OneShot, type RunResult } from './runFollower';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import { daemonLimitsOf, type DaemonLimits } from '../shared/daemonLimits';
 
 /**
  * The host side of the cleanup buttons in one place (E6.S3): the journal over `globalState`, the durable poll, the host
@@ -52,6 +53,13 @@ function sanitised(ui: CleanUi): CleanUi {
   };
 }
 
+/** The daemon's own retention and clock-skew allowance, from the store's newest status (`shared/daemonLimits.ts`: the fallback until it says). */
+function limitsInStore(outcomes: OutcomeStore): DaemonLimits {
+  const status = outcomes.snapshot().status;
+
+  return daemonLimitsOf(status !== undefined && status.kind === 'answered' && status.answer.verb === 'status' ? status.answer.body : undefined);
+}
+
 /** The running block of the store's newest status, whoever asked it (review C4: the poll can start from idle). */
 function runningInStore(outcomes: OutcomeStore): RunningBlock | undefined {
   const status = outcomes.snapshot().status;
@@ -75,11 +83,12 @@ export class CleanupHost {
   constructor(private readonly options: CleanupHostOptions) {
     this.ui = sanitised(options.ui);
     const numbers = (): Numbers => options.numbers?.() ?? DEFAULT_NUMBERS;
-    this.journal = new CleanupJournal(options.durable, options.wallNow, () => numbers().journalEntries);
+    const limits = (): DaemonLimits => limitsInStore(options.outcomes);
+    this.journal = new CleanupJournal(options.durable, options.wallNow, numbers, () => limits().futureSkewMs);
     this.follower = new RunFollower({
       journal: this.journal, status: options.askStatus, read: options.read, show: (result) => this.shown(result),
       afterTerminal: options.refreshPanel, focused: options.focused, running: () => runningInStore(options.outcomes), wallNow: options.wallNow, timers: options.timers,
-      fault: (error) => this.faulted('following a cleanup', error), numbers,
+      fault: (error) => this.faulted('following a cleanup', error), numbers, limits,
     });
     this.flow = new CleanFlow({
       controller: options.controller, journal: this.journal, follower: this.follower, ui: this.ui, now: options.now, wallNow: options.wallNow,

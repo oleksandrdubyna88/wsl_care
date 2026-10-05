@@ -19,7 +19,7 @@ import type { RunFollower } from './runFollower';
  * 3. the **native modal** (`showWarningMessage({ modal: true })`): what each action removes, A4 bound to its list, A5 / A6 /
  *    A7 "re-checked at run time" — and a **second** modal naming the setting for A5, A6Unused, A8, A11, A12;
  * 4. the preview's **age re-checked after the LAST modal**, immediately before the confirm (§15k #12): older than five
- *    minutes, it is taken again and the modals shown over the new numbers (at most `PREVIEW_ROUNDS` times);
+ *    minutes, it is taken again and the modals shown over the new numbers (at most `wslCare.cleanup.previewRounds` times);
  * 5. the in-flight state **persisted** — an `unresolved` journal entry — BEFORE the call goes out (`common.durable-status`
  *    rule 1), then the **confirm** (ONE `act` call for every id: *Clean selected* is one run);
  * 6. the answer: a run id becomes a `run` entry the follower polls to its end; an unknown outcome without one stays
@@ -56,7 +56,8 @@ export interface CleanFlowOptions {
 export const PREVIEW_EXPIRY_MS = DEFAULT_NUMBERS.previewExpiryMinutes * 60_000;
 
 /** How many times an expired preview is taken again before the flow gives up and says so. */
-export const PREVIEW_ROUNDS = 3;
+/** The DEFAULT of `wslCare.cleanup.previewRounds`. */
+export const PREVIEW_ROUNDS = DEFAULT_NUMBERS.previewRounds;
 
 export const RETRY_LABEL = 'Retry';
 
@@ -153,9 +154,10 @@ export class CleanFlow {
     return this.persisted({ kind: 'unresolved', op: 'clean', distro: held.distro, actions: held.ids, since: this.since() }, async (entry) => this.handedOff(entry, await this.options.controller.confirm(held), held.ids.join(', '), true));
   }
 
-  /** Steps 2–4, at most `PREVIEW_ROUNDS` times: a preview confirmed in time, or why there is none. */
+  /** Steps 2–4, at most `previewRounds` times: a preview confirmed in time, or why there is none. */
   private async confirmedPreview(rowIds: readonly RowId[], selected: boolean): Promise<HeldPreview | FlowOutcome> {
-    for (let round = 0; round < PREVIEW_ROUNDS; round += 1) {
+    const rounds = this.numbers().previewRounds;
+    for (let round = 0; round < rounds; round += 1) {
       const step = await this.previewRound(rowIds, selected);
       if (step !== 'expired') {
         return step;

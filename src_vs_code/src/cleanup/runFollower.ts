@@ -6,7 +6,8 @@ import type { RunId } from '../root/rootIds';
 import type { RunningBlock } from '../root/rootOutcome';
 import type { CleanupJournal, JournalEntry } from './journal';
 import { isTerminal, parseRuns, parseRunShow, type RunShow } from './runAnswers';
-import { adoptable, CLOCK_SKEW_MS, inFlightNaming, isQueuedOrLive, matches, mustWait, windowOf } from './runMatching';
+import { adoptable, inFlightNaming, isQueuedOrLive, matches, mustWait, windowOf } from './runMatching';
+import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
 
 /**
  * The panel's DURABLE poll (E6.S3, plan §15j M6, §15k #3 / #4, `common.durable-status` rules 3 and 4; the E6.S3 review round)
@@ -24,8 +25,8 @@ import { adoptable, CLOCK_SKEW_MS, inFlightNaming, isQueuedOrLive, matches, must
  *   request grace — resolved from `runs` over its window, both ends widened by the clock skew (review B3);
  * - it NEVER sticks, and never ends an entry on no evidence: past `FOLLOW_POLL.ceilingMs` an entry ends "state unknown" with
  *   its run id — but only once a status has answered for its distribution AND its record was read once (review B1); a record
- *   that cannot be read is tried `READ_TRIES` times with backoff, then ends "the record could not be read" (review C8);
- * - entries are settled concurrently, at most `SETTLE_AT_ONCE` at a time (review C13), each in its own `try` (review A5: one
+ *   that cannot be read is tried `wslCare.cleanup.recordReadTries` times with a growing backoff, then ends "the record could not be read" (review C8);
+ * - entries are settled concurrently, at most `wslCare.cleanup.settleAtOnce` at a time (review C13), each in its own `try` (review A5: one
  *   bad entry never stops the others); a disposed follower shows, removes and re-reads nothing (review B5).
  *
  * It stops itself when nothing is in flight. The run-log churn it costs the daemon is measured by `runFollower.test.ts`.
@@ -49,11 +50,12 @@ export function followPollOf(numbers: Numbers): FollowPoll {
 export const FOLLOW_POLL: FollowPoll = followPollOf(DEFAULT_NUMBERS);
 
 /** How often a record read that fails is tried (review C8), and the waits before the second and the third try. */
-export const READ_TRIES = 3;
-const READ_BACKOFF_MS: readonly number[] = [0, 8_000, 16_000];
+/** The DEFAULT of `wslCare.cleanup.recordReadTries`. */
+export const READ_TRIES = DEFAULT_NUMBERS.recordReadTries;
 
 /** At most this many entries are settled at once (review C13). */
-export const SETTLE_AT_ONCE = 4;
+/** The DEFAULT of `wslCare.cleanup.settleAtOnce`. */
+export const SETTLE_AT_ONCE = DEFAULT_NUMBERS.settleAtOnce;
 
 /** A terminal answer the follower SHOWS — after which the entry is gone. */
 export type RunResult =
@@ -87,6 +89,8 @@ export interface FollowerOptions {
   readonly fault: (error: unknown) => void;
   /** The number settings, read at each use; the defaults when absent. */
   readonly numbers?: () => Numbers;
+  /** The daemon's own retention and clock-skew allowance (`shared/daemonLimits.ts`), from the store's newest status; the fallback when absent. */
+  readonly limits?: () => DaemonLimits;
 }
 
 /** What one status poll saw, when it answered: the distribution and its running block. */
@@ -211,7 +215,7 @@ export class RunFollower {
     const focused = this.options.focused();
     this.endedThisTick = 0;
     const entries = this.options.journal.entries().filter((e) => this.mayFollow(e, focused));
-    await eachAtMost(SETTLE_AT_ONCE, entries, (entry) => this.guarded(() => this.settle(entry, seen)));
+    await eachAtMost(this.numbers().settleAtOnce, entries, (entry) => this.guarded(() => this.settle(entry, seen)));
     await this.guarded(() => this.observe(seen, focused));
     if (this.endedThisTick > 0 && !this.disposed) {
       await this.options.afterTerminal();
@@ -276,9 +280,18 @@ export class RunFollower {
     return !Number.isFinite(age) || age >= this.poll().graceMs;
   }
 
+  /** The daemon's limits as its newest status says them. */
+  private limits(): DaemonLimits {
+    return this.options.limits?.() ?? FALLBACK_LIMITS;
+  }
+
   /** The poll's numbers as the settings are now. */
   poll(): FollowPoll {
-    return followPollOf(this.options.numbers?.() ?? DEFAULT_NUMBERS);
+    return followPollOf(this.numbers());
+  }
+
+  private numbers(): Numbers {
+    return this.options.numbers?.() ?? DEFAULT_NUMBERS;
   }
 
   /** In flight → wait (an entry past the ceiling still gets its one record read); otherwise ONE `runs show` per leaving flight. */
@@ -331,7 +344,7 @@ export class RunFollower {
    * else decides nothing here, and the ceiling then ends it "state unknown" — never "never ran" for a run that may be running.
    */
   private async lastLook(entry: JournalEntry, track: Track): Promise<boolean> {
-    const candidates = candidatesOf(await this.boundedRead(track, { read: 'runs', ...windowOf(entry, this.options.wallNow()) }), entry);
+    const candidates = candidatesOf(await this.boundedRead(track, { read: 'runs', ...windowOf(entry, this.options.wallNow(), this.limits()) }), entry, this.limits());
     const [only] = candidates;
     if (candidates.length === 1 && only !== undefined) {
       await this.adopt(entry, only);
@@ -341,11 +354,11 @@ export class RunFollower {
   }
 
   private async listed(entry: JournalEntry, track: Track): Promise<boolean> {
-    const read = await this.boundedRead(track, { read: 'runs', ...windowOf(entry, this.options.wallNow()) });
+    const read = await this.boundedRead(track, { read: 'runs', ...windowOf(entry, this.options.wallNow(), this.limits()) });
     if (read === undefined || read.kind !== 'read') {
       return this.unreadable(entry, track, read);
     }
-    return this.resolved(entry, candidatesOf(read, entry));
+    return this.resolved(entry, candidatesOf(read, entry, this.limits()));
   }
 
   /** A read — or `undefined` while the backoff says to wait; a failure is counted (review C8). */
@@ -356,14 +369,15 @@ export class RunFollower {
     const read = await this.options.read(request);
     track.recordTried = true;
     track.failures = read.kind === 'read' ? 0 : track.failures + 1;
-    track.nextReadAt = this.options.wallNow() + (READ_BACKOFF_MS[track.failures] ?? 0);
+    // The n-th try waits n − 1 steps after the failure before it (the defaults: 0, 8 s, 16 s).
+    track.nextReadAt = this.options.wallNow() + track.failures * this.numbers().recordReadBackoffSeconds * 1000;
 
     return read;
   }
 
-  /** A read that did not come (yet): after `READ_TRIES` failures the entry ends, saying why. */
+  /** A read that did not come (yet): after `recordReadTries` failures the entry ends, saying why. */
   private async unreadable(entry: JournalEntry, track: Track, read: ReadOutcome | undefined): Promise<boolean> {
-    if (read === undefined || track.failures < READ_TRIES) {
+    if (read === undefined || track.failures < this.numbers().recordReadTries) {
       return false;
     }
 
@@ -454,7 +468,7 @@ export class RunFollower {
   /** ONE runs show; a terminal state shown once; a non-terminal answer or the read's last failure ends the watch quietly. */
   private async readObserved(observed: Observed): Promise<void> {
     const show = showOf(await this.boundedRead(observed.track, { read: 'runsShow', runId: observed.runId }));
-    if (this.disposed || stillTrying(show, observed.track)) {
+    if (this.disposed || stillTrying(show, observed.track, this.numbers().recordReadTries)) {
       return;
     }
     this.observed.delete(observed.runId);
@@ -463,20 +477,20 @@ export class RunFollower {
 
   private showObserved(observed: Observed, show: RunShow | undefined): void {
     if (show !== undefined && isTerminal(show.state)) {
-      this.options.show({ kind: 'run', entry: observedEntry(observed, this.options.wallNow()), show });
+      this.options.show({ kind: 'run', entry: observedEntry(observed, this.options.wallNow(), this.limits().futureSkewMs), show });
       this.endedThisTick += 1;
     }
   }
 }
 
 /** An observed run as the words of a result need it — never written to the journal. */
-function observedEntry(observed: Observed, now: number): JournalEntry {
-  return { id: `observed:${observed.runId}`, kind: 'run', op: 'clean', distro: observed.distro, actions: observed.running.actions, since: new Date(now - CLOCK_SKEW_MS).toISOString(), runId: observed.runId };
+function observedEntry(observed: Observed, now: number, skewMs: number): JournalEntry {
+  return { id: `observed:${observed.runId}`, kind: 'run', op: 'clean', distro: observed.distro, actions: observed.running.actions, since: new Date(now - skewMs).toISOString(), runId: observed.runId };
 }
 
 /** The history lines of a runs window that can be this entry's run — their run ids. */
-function candidatesOf(read: ReadOutcome | undefined, entry: JournalEntry): readonly RunId[] {
-  return read !== undefined && read.kind === 'read' ? parseRuns(read.body).filter((line) => matches(line, entry)).flatMap((line) => line.runId ?? []) : [];
+function candidatesOf(read: ReadOutcome | undefined, entry: JournalEntry, limits: DaemonLimits): readonly RunId[] {
+  return read !== undefined && read.kind === 'read' ? parseRuns(read.body).filter((line) => matches(line, entry, limits)).flatMap((line) => line.runId ?? []) : [];
 }
 
 function answeredFor(seen: Seen | undefined, distro: string): seen is Seen {
@@ -488,8 +502,8 @@ function showOf(read: ReadOutcome | undefined): RunShow | undefined {
 }
 
 /** No answer yet and tries left: the watch goes on. */
-function stillTrying(show: RunShow | undefined, track: Track): boolean {
-  return show === undefined && track.failures < READ_TRIES;
+function stillTrying(show: RunShow | undefined, track: Track, tries: number): boolean {
+  return show === undefined && track.failures < tries;
 }
 
 function seenOf(status: VerbOutcome): Seen | undefined {

@@ -69,8 +69,8 @@ export interface TerminalTarget {
   readonly distro: string;
 }
 
-/** The ceiling of each of the three WSL questions (measured: each answers in about 50 ms). */
-export const LIST_TIMEOUT_MS = 15_000;
+/** The DEFAULT ceiling of each of the three WSL questions (`wslCare.timeouts.wslListSeconds`; measured: each answers in about 50 ms). */
+export const LIST_TIMEOUT_MS = DEFAULT_NUMBERS.wslListSeconds * 1000;
 
 /** Where the daemon is installed (E4.S1's `install.sh`). */
 export const DAEMON_PATH = '/opt/wsl-care/bin/wsl-care';
@@ -296,7 +296,7 @@ export class WslCareClient {
 
   /** One of `wsl.exe`'s own questions, decoded; a failure is a WSL failure. */
   private async wslText(wsl: string, args: readonly string[]): Promise<Step<string>> {
-    const result = await this.options.runner({ file: wsl, args, timeoutMs: LIST_TIMEOUT_MS });
+    const result = await this.options.runner({ file: wsl, args, timeoutMs: this.listCeilingMs() });
     if (result.kind !== 'exited') {
       return fail(launchFailure(result, 'wslQuestion'));
     }
@@ -310,6 +310,11 @@ export class WslCareClient {
     const result = await this.options.runner({ file: wsl, args: daemonArgs(distro, verb), timeoutMs });
 
     return answerOf(result, distro, verb, timeoutMs);
+  }
+
+  /** The `wsl.exe --list` questions' ceiling (`wslCare.timeouts.wslListSeconds`), as the settings are NOW. */
+  private listCeilingMs(): number {
+    return (this.options.numbers?.() ?? DEFAULT_NUMBERS).wslListSeconds * 1000;
   }
 
   /** The call's ceiling, from the number settings as they are NOW (`client/ceilings.ts`). */

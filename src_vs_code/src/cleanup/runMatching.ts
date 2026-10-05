@@ -3,7 +3,8 @@ import type { RunningBlock } from '../root/rootOutcome';
 import { FULL_CHECK_ACTIONS, RUN_KINDS } from '../root/cleanupController';
 import type { JournalEntry } from './journal';
 import type { RunLine } from './runAnswers';
-import { DAY_MS, RETENTION_DAYS, utcInstantOf } from '../shared/instants';
+import { DAY_MS, utcInstantOf } from '../shared/instants';
+import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
 
 /**
  * The follower's pure decisions (E6.S3 and its review round): which running block names a followed run, which run an
@@ -11,11 +12,11 @@ import { DAY_MS, RETENTION_DAYS, utcInstantOf } from '../shared/instants';
  * no I/O — every value comes in.
  */
 
-/** How far apart this window's clock (Windows) and the daemon's (WSL) may lie — the daemon's own `RequestSweep.FutureSkew` (review B3). */
-export const CLOCK_SKEW_MS = 5 * 60_000;
+/** How far apart this window's clock (Windows) and the daemon's (WSL) may lie — the daemon's own `RequestSweep.FutureSkew` (review B3), its FALLBACK: the value read from the daemon (`shared/daemonLimits.ts`) wins. */
+export const CLOCK_SKEW_MS = FALLBACK_LIMITS.futureSkewMs;
 
-/** The daemon keeps 90 days of history; a runs window never reaches further back (review B1). */
-export const RETENTION_MS = RETENTION_DAYS * DAY_MS;
+/** The daemon keeps 90 days of history (the FALLBACK of `daemonLimits`); a runs window never reaches further back (review B1). */
+export const RETENTION_MS = FALLBACK_LIMITS.historyRetentionDays * DAY_MS;
 
 function stateOf(running: RunningBlock | undefined): string {
   return running !== undefined && running.state.kind === 'known' ? running.state.value : '';
@@ -116,8 +117,8 @@ function actionsMatch(line: RunLine, entry: JournalEntry): boolean {
 }
 
 /** A history line that can be this entry's run: the panel's, its actions, started no earlier than the confirm less the skew (B3). */
-export function matches(line: RunLine, entry: JournalEntry): boolean {
-  const since = Date.parse(entry.since) - CLOCK_SKEW_MS;
+export function matches(line: RunLine, entry: JournalEntry, limits: DaemonLimits = FALLBACK_LIMITS): boolean {
+  const since = Date.parse(entry.since) - limits.futureSkewMs;
 
   return line.trigger === 'manual' && actionsMatch(line, entry) && Date.parse(line.startedAt) >= since;
 }
@@ -128,7 +129,9 @@ function ceilInstant(ms: number): string {
   return utcInstantOf((Math.ceil(ms / 1000) + 1) * 1000);
 }
 
-/** The runs window of an unresolved confirm: from the confirm less the skew (no further back than the retention) to now plus the skew. */
-export function windowOf(entry: JournalEntry, now: number): { readonly from: string; readonly to: string } {
-  return { from: utcInstantOf(Math.max(Date.parse(entry.since) - CLOCK_SKEW_MS, now - RETENTION_MS)), to: ceilInstant(now + CLOCK_SKEW_MS) };
+/** The runs window of an unresolved confirm: from the confirm less the daemon's skew (no further back than its retention) to now plus the skew. */
+export function windowOf(entry: JournalEntry, now: number, limits: DaemonLimits = FALLBACK_LIMITS): { readonly from: string; readonly to: string } {
+  const skew = limits.futureSkewMs;
+
+  return { from: utcInstantOf(Math.max(Date.parse(entry.since) - skew, now - limits.historyRetentionDays * DAY_MS)), to: ceilInstant(now + skew) };
 }

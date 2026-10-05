@@ -1,7 +1,6 @@
 import { safeText } from '../panel/format';
 import { list, text, type Json } from '../panel/read';
 import { minuteOf } from '../text/format';
-import { RETENTION_DAYS } from '../shared/instants';
 import { blockOf, extremes, pendingBlock, runCounts, totals, trend } from './logsBlocks';
 import type { LogsBlock, LogsState, LogsView, PeriodButton, Picker, ReadState, RunList, RunRow } from './logsView';
 import type { Period } from './period';
@@ -28,7 +27,7 @@ function daysText(state: LogsState): string {
     return '';
   }
   const days = window.firstDay === window.lastDay ? window.firstDay : `${window.firstDay} to ${window.lastDay}`;
-  const clamped = window.clamped ? ` (clamped to the ${RETENTION_DAYS} days the daemon keeps)` : '';
+  const clamped = window.clamped ? ` (clamped to the ${state.retentionDays} days the daemon keeps)` : '';
 
   return `${days}${clamped} — local days, asked as ${minuteOf(window.from)} to ${minuteOf(window.to)}`;
 }
