@@ -3,6 +3,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { DEFAULT_NUMBERS } from '../settings/numbers';
+
 import { isTerminal, parseRuns, parseRunShow, RUN_SHOW_STATES } from '../cleanup/runAnswers';
 import { readEnum } from '../client/enumValue';
 import type { ReadOutcome } from '../client/outcome';
@@ -100,6 +102,13 @@ test('every run read\'s tail is built from its typed parts, and each has a state
   for (const name of RUN_READ_NAMES) {
     assert.ok(RUN_READ_TIMEOUT_MS[name] > 0, name);
   }
+});
+
+test('§15q: a run read\'s ceiling reads the settings — 45 s set, 45 s handed to the runner', async () => {
+  const rec = recordingRunner({ ...wsl(true), [SHOW]: exited(0, goldenText('runs-show-done.json')) });
+  const c = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '', numbers: () => ({ ...DEFAULT_NUMBERS, runReadSeconds: 45 }) });
+  await c.read({ read: 'runsShow', runId: RUN });
+  assert.equal(rec.requests.at(-1)?.timeoutMs, 45_000);
 });
 
 test('a stopped distribution: no -d call at all, the read answers "stopped"', async () => {

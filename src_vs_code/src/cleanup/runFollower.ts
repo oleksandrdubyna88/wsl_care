@@ -1,3 +1,4 @@
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { ReadOutcome, VerbOutcome } from '../client/outcome';
 import type { RunRead } from '../client/verbs';
 import { runningOf } from '../root/rootAnswers';
@@ -30,14 +31,22 @@ import { adoptable, CLOCK_SKEW_MS, inFlightNaming, isQueuedOrLive, matches, must
  * It stops itself when nothing is in flight. The run-log churn it costs the daemon is measured by `runFollower.test.ts`.
  */
 
-export const FOLLOW_POLL = {
-  /** M6: every 3–5 s. */
-  intervalMs: 4_000,
-  /** §15k #4: the hard ceiling of one entry, then "state unknown". */
-  ceilingMs: 30 * 60_000,
-  /** The daemon's request grace (60 s, `RequestSweep.Grace`) and a margin: before it, an unresolved confirm is not listed. */
-  graceMs: 90_000,
-} as const;
+/** The durable poll's numbers, in milliseconds — from the number settings (`settings/numbers.ts`). */
+export interface FollowPoll {
+  /** M6: every 3–5 s (`wslCare.cleanup.followPollSeconds`). */
+  readonly intervalMs: number;
+  /** §15k #4: the hard ceiling of one entry, then "state unknown" (`wslCare.cleanup.followCeilingMinutes`). */
+  readonly ceilingMs: number;
+  /** The daemon's request grace (60 s, `RequestSweep.Grace`) and a margin: before it, an unresolved confirm is not listed (`wslCare.cleanup.requestGraceSeconds`). */
+  readonly graceMs: number;
+}
+
+export function followPollOf(numbers: Numbers): FollowPoll {
+  return { intervalMs: numbers.followPollSeconds * 1000, ceilingMs: numbers.followCeilingMinutes * 60_000, graceMs: numbers.requestGraceSeconds * 1000 };
+}
+
+/** The DEFAULTS (4 s, 30 min, 90 s) — what a test that sets nothing sees. */
+export const FOLLOW_POLL: FollowPoll = followPollOf(DEFAULT_NUMBERS);
 
 /** How often a record read that fails is tried (review C8), and the waits before the second and the third try. */
 export const READ_TRIES = 3;
@@ -76,6 +85,8 @@ export interface FollowerOptions {
   readonly timers: OneShot;
   /** A poll or an entry that threw (a journal write refused, a defect): reported, never swallowed. */
   readonly fault: (error: unknown) => void;
+  /** The number settings, read at each use; the defaults when absent. */
+  readonly numbers?: () => Numbers;
 }
 
 /** What one status poll saw, when it answered: the distribution and its running block. */
@@ -136,7 +147,7 @@ export class RunFollower {
   /** Something may be in flight: start polling if it is and nothing polls yet. */
   kick(): void {
     if (this.cancel === undefined && !this.disposed && this.shouldPoll()) {
-      this.cancel = this.options.timers.after(FOLLOW_POLL.intervalMs, () => this.fired());
+      this.cancel = this.options.timers.after(this.poll().intervalMs, () => this.fired());
     }
   }
 
@@ -256,13 +267,18 @@ export class RunFollower {
   private pastCeiling(entry: JournalEntry): boolean {
     const age = this.ageOf(entry);
 
-    return !Number.isFinite(age) || age > FOLLOW_POLL.ceilingMs;
+    return !Number.isFinite(age) || age > this.poll().ceilingMs;
   }
 
   private pastGrace(entry: JournalEntry): boolean {
     const age = this.ageOf(entry);
 
-    return !Number.isFinite(age) || age >= FOLLOW_POLL.graceMs;
+    return !Number.isFinite(age) || age >= this.poll().graceMs;
+  }
+
+  /** The poll's numbers as the settings are now. */
+  poll(): FollowPoll {
+    return followPollOf(this.options.numbers?.() ?? DEFAULT_NUMBERS);
   }
 
   /** In flight → wait (an entry past the ceiling still gets its one record read); otherwise ONE `runs show` per leaving flight. */
@@ -426,7 +442,7 @@ export class RunFollower {
   }
 
   private async settleObserved(observed: Observed, running: RunningBlock | undefined): Promise<void> {
-    if (this.options.wallNow() - observed.seenAt > FOLLOW_POLL.ceilingMs) {
+    if (this.options.wallNow() - observed.seenAt > this.poll().ceilingMs) {
       this.observed.delete(observed.runId);
       return;
     }

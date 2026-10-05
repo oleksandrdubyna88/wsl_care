@@ -61,12 +61,33 @@ installer checks each of these and stops before it changes anything when one is 
 
 ## Settings
 
-Both are user settings only (`"scope": "application"`), so a repository's `.vscode/settings.json` cannot change them:
+All are user settings only (`"scope": "application"`), so a repository's `.vscode/settings.json` cannot change them:
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `wslCare.distro` | empty | The distribution to show. Empty means WSL's default distribution. A name `wsl.exe --list` does not report is refused before anything starts. |
 | `wslCare.refreshSeconds` | 120 | How often the focused window asks for `status`, in seconds (at least 30). |
+
+Every other number the extension uses is a setting too — each with its range; a value outside it is clamped. A call's
+ceiling can never be set at or below the daemon's own worst case for that call: its minimum is that worst case plus 10 s.
+
+| Setting | Default | Range | Meaning |
+|---|---|---|---|
+| `wslCare.timeouts.statusSeconds` | 20 | 10–600 | How long `status --json` may take before `wsl.exe` is stopped and the call reads "timed out", in seconds. |
+| `wslCare.timeouts.versionSeconds` | 20 | 10–600 | How long `--version` may take (also the privileged check before a cleanup), in seconds. |
+| `wslCare.timeouts.doctorSeconds` | 120 | 119–3600 | How long `doctor --json` may take, in seconds — at least its worst case: four `systemctl show`, `systemctl --version` and `docker version`, each to its ceiling. |
+| `wslCare.timeouts.previewSeconds` | 350 | 340–7200 | How long `preview --all --json` (one Docker snapshot, up to 100 containers) may take, in seconds. |
+| `wslCare.timeouts.previewPerDockerRowSeconds` | 350 | 340–7200 | A cleanup's preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9's snap listing and a margin. |
+| `wslCare.timeouts.runReadSeconds` | 20 | 10–600 | How long `runs show`, `runs` and `logs` may take, in seconds. |
+| `wslCare.timeouts.detachSeconds` | 690 | 681–7200 | How long a cleanup's confirm or *Run full check now* may take to hand the run to its unit, in seconds — at least the daemon's worst case: the shown list, one `systemctl show` per queued request (up to 32), the start and one more `systemctl show`. A detach that outruns it is followed as "outcome unknown", never reported as failed. |
+| `wslCare.timeouts.stopSeconds` | 150 | 134–3600 | How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds. |
+| `wslCare.cleanup.followPollSeconds` | 4 | 2–60 | While a cleanup is in flight, how often the focused window asks `status`, in seconds. |
+| `wslCare.cleanup.unknownDetachFollowSeconds` | 60 | 10–600 | A detach whose outcome is unknown and named no run id: how long the panel looks for its run in `status.running` before it hands the question to the durable poll, in seconds. |
+| `wslCare.cleanup.followCeilingMinutes` | 30 | 5–1440 | How long a cleanup is followed before it reads "state unknown" with its run id, in minutes (after one last read of its record). |
+| `wslCare.cleanup.requestGraceSeconds` | 90 | 70–900 | How long a confirm whose run id was never seen waits before it is resolved from the run history, in seconds (above the daemon's own 60 s request grace). |
+| `wslCare.cleanup.previewExpiryMinutes` | 5 | 1–60 | A preview older than this when you confirm is taken again first, in minutes. |
+| `wslCare.cleanup.journalEntries` | 32 | 4–256 | How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped. |
+| `wslCare.logs.maxRunIndex` | 9999 | 100–100000 | The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read). |
 
 ## Workspace trust
 

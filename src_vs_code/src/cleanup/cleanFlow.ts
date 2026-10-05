@@ -2,7 +2,8 @@ import { FULL_CHECK_ACTIONS, type CleanupController } from '../root/cleanupContr
 import { rootFailureText } from '../root/rootFailureText';
 import type { RunId } from '../root/rootIds';
 import type { HandOffOutcome, HeldPreview, RootFailure } from '../root/rootOutcome';
-import { MAX_ENTRIES, type CleanupJournal, type JournalEntry, type NewEntry } from './journal';
+import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import type { CleanupJournal, JournalEntry, NewEntry } from './journal';
 import { firstModal, missingFromPreview, secondModal, stopModal, type Modal } from './modalText';
 import { handOffNotice, type NoticeLevel } from './resultText';
 import type { RowId } from './rowIds';
@@ -47,10 +48,12 @@ export interface CleanFlowOptions {
   readonly distro: () => string | undefined;
   /** The optimistic in-flight flag changed (the panel re-renders). */
   readonly changed: () => void;
+  /** The number settings, read at each use (the preview's expiry, the journal's budget in its words); the defaults when absent. */
+  readonly numbers?: () => Numbers;
 }
 
-/** m8 / §15k #12: a preview older than this when the last modal resolves is taken again before anything is confirmed. */
-export const PREVIEW_EXPIRY_MS = 5 * 60_000;
+/** m8 / §15k #12: a preview older than this when the last modal resolves is taken again before anything is confirmed — the DEFAULT of `wslCare.cleanup.previewExpiryMinutes`. */
+export const PREVIEW_EXPIRY_MS = DEFAULT_NUMBERS.previewExpiryMinutes * 60_000;
 
 /** How many times an expired preview is taken again before the flow gives up and says so. */
 export const PREVIEW_ROUNDS = 3;
@@ -70,7 +73,7 @@ export type FlowOutcome =
   | { readonly kind: 'refused'; readonly failure: RootFailure }
   | { readonly kind: 'handedOff'; readonly outcome: HandOffOutcome; readonly entry: JournalEntry | undefined }
   | { readonly kind: 'noStatus' }
-  /** The journal holds `MAX_ENTRIES` unshown entries (review C12): nothing was started. */
+  /** The journal holds its budget of unshown entries (review C12): nothing was started. */
   | { readonly kind: 'journalFull' }
   /** The preview did not describe every id the confirm would act on (review A3): nothing was confirmed. */
   | { readonly kind: 'incomplete'; readonly missing: readonly string[] };
@@ -83,7 +86,9 @@ interface Pass {
 
 const BUSY: FlowOutcome = { kind: 'busy' };
 const DECLINED: FlowOutcome = { kind: 'declined' };
-const JOURNAL_FULL = `WSL Care already follows ${MAX_ENTRIES} cleanups whose result has not appeared yet; wait for one to end, then try again. Nothing was started.`;
+function journalFull(entries: number): string {
+  return `WSL Care already follows ${entries} cleanups whose result has not appeared yet; wait for one to end, then try again. Nothing was started.`;
+}
 const NO_STATUS = "WSL Care has not read the daemon's status yet; press Refresh, then try again.";
 
 /** The hand-off kinds that may leave a run behind; every other answer is a refusal that wrote nothing. */
@@ -99,6 +104,11 @@ export class CleanFlow {
   private inFlight = false;
 
   constructor(private readonly options: CleanFlowOptions) {}
+
+  /** The number settings as they are now. */
+  private numbers(): Numbers {
+    return this.options.numbers?.() ?? DEFAULT_NUMBERS;
+  }
 
   /** In-memory, OPTIMISTIC only (`common.durable-status`): a modal is open or a call is out in this window. */
   busy(): boolean {
@@ -150,7 +160,7 @@ export class CleanFlow {
       if (step !== 'expired') {
         return step;
       }
-      this.tell('info', 'The preview was older than 5 minutes when it was confirmed, so it was taken again — check the new numbers.');
+      this.tell('info', `The preview was older than ${this.numbers().previewExpiryMinutes} minutes when it was confirmed, so it was taken again — check the new numbers.`);
     }
     this.tell('warn', 'The preview kept expiring before it was confirmed; nothing was cleaned.');
 
@@ -178,7 +188,7 @@ export class CleanFlow {
       return DECLINED;
     }
 
-    return this.options.now() - preview.takenAtMs > PREVIEW_EXPIRY_MS ? 'expired' : preview;
+    return this.options.now() - preview.takenAtMs > this.numbers().previewExpiryMinutes * 60_000 ? 'expired' : preview;
   }
 
   private async modals(preview: HeldPreview, selected: boolean): Promise<boolean> {
@@ -240,7 +250,7 @@ export class CleanFlow {
   private async persisted(entry: NewEntry, call: (entry: JournalEntry) => Promise<Pass>): Promise<Pass> {
     const added = await this.options.journal.add(entry);
     if (added === undefined) {
-      this.tell('warn', JOURNAL_FULL);
+      this.tell('warn', journalFull(this.numbers().journalEntries));
       return { result: { kind: 'journalFull' }, retry: false };
     }
     this.options.follower.started(added.id);

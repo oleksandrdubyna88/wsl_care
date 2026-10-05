@@ -576,6 +576,10 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   read says why ("unavailable — <reason>"); nothing is ever shown as a made-up 0. Its buttons: **Refresh**, **Settings**
   and, when the distribution is stopped, **Start WSL and check**. That button and *Install daemon*'s terminal (you
   confirmed opening a shell in that distribution) are the only two things in the extension that start WSL.
+- **Every number is a setting** (application scope, each with its range — `src_vs_code/README.md` lists them): the call
+  ceilings (`wslCare.timeouts.*`), the durable poll (`wslCare.cleanup.*`), the Logs page's index bound. A ceiling's minimum
+  is the daemon's own worst case for that call plus 10 s, derived from the daemon's per-command ceilings in ONE place
+  (`src/client/worstCases.ts`); a cleanup's preview waits for one Docker snapshot PER Docker row it asks.
 - **When it asks.** Only the focused VS Code window polls, every `wslCare.refreshSeconds` (default 120, 30 to 86 400), and only for
   `status`; the cleanup and health figures are read when the panel opens or Refresh is pressed. A stopped distribution
   is never asked anything (each `status` the daemon answers writes one run-log file — the cost is measured in
