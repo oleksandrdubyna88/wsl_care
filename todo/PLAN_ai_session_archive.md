@@ -55,6 +55,11 @@ Consequences:
 The catalogue entry of each agent (parent plan §4.6) gains an `archive` block: which files form one
 session, and what must **never** move.
 
+**Boundary with the parent's E7 (parent plan §15q, *Boundaries with the neighbouring plans*):** E7 builds the catalogue
+(`agents.json`), its session layouts — taken from the table below for the four confirmed agents, "monitor only" for the
+rest — the protected roots, and `aiAgents.extra` with a VALIDATED `sessionGlob` (relative, no `..`). This plan adds the
+`archive` block and the move, reads E7's definitions, and does not redefine "one session". E7 goes first.
+
 | Agent | One session = | Never moved |
 |---|---|---|
 | Claude Code | `projects/<project>/<sessionId>.jsonl` **plus** `projects/<project>/<sessionId>/` (subagent transcripts, tool results) when present, and `file-history/<sessionId>/` | `projects/*/memory/` (the agent's long-term memory), `settings*.json`, `plugins/`, `skills/`, `security/`, the project folder itself (removed only when it is left empty) |

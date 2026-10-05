@@ -54,7 +54,7 @@ over Memory (Available MBytes, Committed Bytes, Pool Nonpaged/Paged Bytes, Stand
 | Event signals | crash loops (`.NET Runtime 1026`, `Application Error 1000` per app per day), `disk 11/51/153` per device, `WHEA`, display TDR `4101`, `Kernel-Power 41`, bugchecks, `Volsnap 25`, BitLocker PCR mismatch, `HttpEvent 15005` storms | crash loop ≥ 10/day; any WHEA/TDR/bugcheck |
 | Health | reliability index trend, pending reboot, Windows Update state, Defender status (+ exclusions and Dev Drive trust when elevated), Search service and scope, power mode, event-log sizes | index < 5 |
 | WSL from outside | VHDX sizes vs. used inside, `.wslconfig` audit (cap, `autoMemoryReclaim`, no `sparseVhd`), Docker Desktop `daemon.json` (log rotation, builder GC) | |
-| AI agents | Windows side of the parent plan §4.6 and the archive plan | |
+| AI agents | Windows side of the parent plan §4.6 and the archive plan — the Windows agents walk and its one-file cache are built by the parent's E7.S5 (parent plan §15q, *Boundaries*); the Windows collectors, task and history stay here (E11); `%TEMP%\claude\` is never walked or cleaned | |
 | Dev caches | NuGet (`global-packages`, `http-cache`, `v3-cache`), npm, pnpm, pip, VS Code (`Cache`, `CachedData`, `GPUCache`, logs, `CachedExtensionVSIXs`, `workspaceStorage` of missing folders), Playwright, .NET SDK/workload inventory | |
 
 ## 4. Actions (Windows)
