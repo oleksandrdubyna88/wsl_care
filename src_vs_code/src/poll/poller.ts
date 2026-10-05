@@ -123,6 +123,14 @@ export class Poller {
     return this.track(this.ask(this.begin(), 'status').then(() => undefined));
   }
 
+  /**
+   * E6.S3: ONE `status`, whatever the focus — the cleanup follower's question (`cleanup/runFollower.ts` decides when, by
+   * plan §15j M6: only while something is in flight). Recorded in the store, so the bar and the panel see the answer.
+   */
+  askStatus(): Promise<VerbOutcome> {
+    return this.track(this.ask('status'));
+  }
+
   /** Panel open / Refresh / "Start WSL and check": `status` first, then `preview` and `doctor` unless it stopped. */
   refreshPanel(options: RunOptions = {}): Promise<void> {
     return this.track(this.panelRound(options));

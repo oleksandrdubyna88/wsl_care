@@ -5,7 +5,7 @@ import { FIELD_MAP, isArriving, SECTIONS, type FieldRow, type ReadRow } from './
 import { at, unavailableAncestor } from './jsonPath';
 import { isUnavailable, unavailableText } from './read';
 import { RENDERERS, type Rendered } from './rowRenderers';
-import type { PanelView, ViewLevel, ViewRow, ViewSection } from './view';
+import type { CleanupControls, PanelView, ViewLevel, ViewRow, ViewSection } from './view';
 
 /**
  * The panel's view, a pure function of the store's snapshot and `FIELD_MAP` — so what the page shows is exactly what
@@ -98,6 +98,10 @@ function actions(snapshot: Snapshot): PanelView['actions'] {
   return [...(first === undefined ? [] : [first]), { id: 'refresh', label: 'Refresh' }, { id: 'openSettings', label: 'Settings' }];
 }
 
-export function buildPanelView(snapshot: Snapshot): PanelView {
-  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot) };
+/** The controls before the host has derived any (the page greys every cleanup button). */
+export const NO_CLEANUP: CleanupControls = { enabled: false, state: '', stateLevel: 'none', reason: 'checking…', rows: [], fullCheck: false, stop: undefined, stopText: '', results: [], dockerAfter: '' };
+
+/** `cleanup` is the host's derivation (`cleanup/cleanupView.ts`) — this module reads nothing of the root paths. */
+export function buildPanelView(snapshot: Snapshot, cleanup: CleanupControls = NO_CLEANUP): PanelView {
+  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), cleanup };
 }

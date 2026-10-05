@@ -100,3 +100,32 @@ button:focus-visible {
 p[data-notice]:empty {
   margin: 0;
 }
+
+/* E6.S3: the cleanup controls. A disabled button looks disabled; a ticked row's Select reads as pressed. */
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button[aria-pressed="true"] {
+  outline: 1px solid var(--vscode-focusBorder);
+}
+
+div[data-clean-row] {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 2px 0;
+}
+
+p[data-cleanup-state]:empty,
+p[data-cleanup-reason]:empty,
+p[data-stop-text]:empty,
+p[data-docker-after]:empty {
+  margin: 0;
+}
+
+p[data-cleanup-state][data-level="critical"],
+li[data-result][data-level="critical"] {
+  color: var(--vscode-errorForeground);
+}

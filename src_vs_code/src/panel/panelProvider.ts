@@ -4,7 +4,9 @@ import type { RunOptions } from '../client/WslCareClient';
 import type { OutcomeStore } from '../state/outcomeStore';
 import { parsePageMessage, type PageMessage } from './messages';
 import { newNonce, panelOptions, panelShell } from './panelHtml';
+import type { CleanupControls } from './view';
 import { buildPanelView } from './viewModel';
+import type { RowId } from '../cleanup/rowIds';
 
 /**
  * The read-only panel, a `WebviewView` in the AI OS Care side bar (plan §7.2). Thin wiring: the page is the static shell
@@ -20,6 +22,15 @@ export interface PanelActions {
   readonly refresh: (options?: RunOptions) => Promise<void>;
   readonly openSettings: () => void;
   readonly installDaemon: () => void;
+  /** E6.S3: a row's *Clean* (`selected` false) or *Clean selected* — the host's transaction from here on. */
+  readonly clean: (rowIds: readonly RowId[], selected: boolean) => void;
+  readonly runFullCheck: () => void;
+  /** The index into the stoppable runs the host read itself — never a run id from the page. */
+  readonly stop: (index: number) => void;
+  /** The cleanup controls, derived by the host from the daemon's state and its journal. */
+  readonly cleanup: () => CleanupControls;
+  /** Called whenever the cleanup state changes (the journal, a result, the optimistic flag); returns an unsubscribe. */
+  readonly onCleanupChange: (listener: () => void) => () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -27,10 +38,10 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
 
   private view: vscode.WebviewView | undefined;
   private rendered: number | undefined;
-  private readonly unsubscribe: () => void;
+  private readonly unsubscribe: readonly (() => void)[];
 
   constructor(private readonly extensionUri: vscode.Uri, private readonly store: OutcomeStore, private readonly actions: PanelActions) {
-    this.unsubscribe = store.onChange(() => this.post());
+    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post())];
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -58,7 +69,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   }
 
   dispose(): void {
-    this.unsubscribe();
+    this.unsubscribe.forEach((unsubscribe) => unsubscribe());
   }
 
   private visibilityChanged(): void {
@@ -75,6 +86,10 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       startWsl: () => { void this.actions.refresh({ startIfStopped: true }); },
       openSettings: () => this.actions.openSettings(),
       installDaemon: () => this.actions.installDaemon(),
+      clean: (m) => this.actions.clean(m.rowIds, false),
+      cleanSelected: (m) => this.actions.clean(m.rowIds, true),
+      runFullCheck: () => this.actions.runFullCheck(),
+      stop: (m) => this.actions.stop(m.index),
     };
     if (message !== undefined) {
       (handlers[message.type] as (m: PageMessage) => void)(message);
@@ -82,6 +97,6 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot()) });
+    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup()) });
   }
 }

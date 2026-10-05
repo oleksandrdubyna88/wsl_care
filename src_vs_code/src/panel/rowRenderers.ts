@@ -126,7 +126,7 @@ function cleanupRows(value: unknown): Rendered {
   const rows = list(value);
   const total = rows.reduce((sum, r) => sum + (amount(r, 'reclaimableBytes')), 0);
   return {
-    value: `${plural(rows.length, 'row', 'rows')}, ${gb(total)} reclaimable — read-only: the cleanup buttons arrive in E6`,
+    value: `${plural(rows.length, 'row', 'rows')}, ${gb(total)} reclaimable — each row cleans after a preview and your confirmation`,
     headers: ['Row', 'What', 'Count', 'Reclaimable', 'Auto', 'Basis'],
     items: rows.map(cleanupLine),
   };
@@ -212,6 +212,23 @@ function verdict(value: unknown): Rendered {
   return { value: `${text(fields, 'value')} — measured by ${measured(fields.basis)}${reason === '' ? '' : ` (${reason})`}`, level: levelOf(fields.level) };
 }
 
+/** Who started a run, as `status.lastCleanup.trigger` names it. */
+const STARTED_BY: Readonly<Record<string, string>> = { manual: 'from the panel', timer: 'by the timer', cli: 'from a terminal' };
+
+/** `2026-10-05 10:00 UTC` — the daemon's instant, to the minute, in the clock its records use. */
+function minuteOf(instant: string): string {
+  const ms = Date.parse(instant);
+
+  return Number.isFinite(ms) ? `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC` : '—';
+}
+
+/** `status.lastCleanup` (plan §15j M7): what the newest cleanup freed and removed, who ran it, when. */
+function lastCleanup(value: unknown): Rendered {
+  const by = STARTED_BY[text(value, 'trigger', '')] ?? `by ${text(value, 'trigger')}`;
+
+  return { value: `freed ${gb(amount(value, 'freedBytes'))}, ${text(value, 'count')} objects — ${by}, run ${text(value, 'runId')}, started ${minuteOf(text(value, 'startedAt', ''))}` };
+}
+
 export const RENDERERS: { readonly [K in RowKind]: Renderer } = {
   gib: (v) => ({ value: sized(v) }),
   percent: (v) => ({ value: reading(v, percent) }),
@@ -239,4 +256,5 @@ export const RENDERERS: { readonly [K in RowKind]: Renderer } = {
   versions,
   verdicts,
   verdict,
+  lastCleanup,
 };

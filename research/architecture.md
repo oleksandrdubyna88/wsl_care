@@ -1867,11 +1867,11 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
 | Containers | Docker engine | `docker` | `preview --all --json` | panel open / Refresh | yes |
 | Containers | Docker totals (docker system df) | `totals` | `preview --all --json` | panel open / Refresh | yes |
 | Container starts | Started in the last 24 h | `containerStarts` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
-| Cleanup (read-only) | Cleanup candidates | `rows` | `preview --all --json` | panel open / Refresh | yes |
-| Cleanup (read-only) | Kept named volumes (never cleaned) | `kept` | `preview --all --json` | panel open / Refresh | yes |
-| Cleanup (read-only) | Containers logging without max-size | `hygiene.unboundedLogs` | `preview --all --json` | panel open / Refresh | yes |
-| Cleanup (read-only) | Builder garbage collection (daemon.json) | `hygiene.builderGc` | `preview --all --json` | panel open / Refresh | yes |
-| Cleanup (read-only) | Forgotten buildx builders | `hygiene.buildkit` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup | Cleanup candidates | `rows` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup | Kept named volumes (never cleaned) | `kept` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup | Containers logging without max-size | `hygiene.unboundedLogs` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup | Builder garbage collection (daemon.json) | `hygiene.builderGc` | `preview --all --json` | panel open / Refresh | yes |
+| Cleanup | Forgotten buildx builders | `hygiene.buildkit` | `preview --all --json` | panel open / Refresh | yes |
 | Health | Daemon version | `productVersion` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Health | Healthy | `healthy` | `doctor --json` | panel open / Refresh | yes |
 | Health | Last full run | `checks[id=lastRun]` | `doctor --json` | panel open / Refresh | yes |
@@ -1883,7 +1883,7 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
 | Health | Journal history | `verdicts[id=journal.history]` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 | Health | Warnings since the last full run | — | — | — | arrives in E6 — needs the logs / runs verbs |
 | AI agents | AI agents (both sides, Add CLI path) | — | — | — | arrives in E7 — needs the agents list verb (E7) |
-| Last cleanup | Last cleanup (freed, Docker after) | — | — | — | arrives in E6 — needs the logs / runs verbs and the cleanup buttons (E6) |
+| Last cleanup | Last cleanup | `lastCleanup` | `status --json` | status poll (focused window) + panel open / Refresh | yes |
 <!-- field-map:end -->
 
 ### Webview rules (§15g M7, m10)
