@@ -514,3 +514,7 @@ function freezePreview(preview: HeldPreview): HeldPreview {
 
   return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map((a) => Object.freeze({ ...a }))), a4 });
 }
+
+/** What a full check's run holds as its actions (`["collect"]`) — re-exported so the host's cleanup flow can name it
+ * without importing the root module (only this controller imports `rootCall.ts`). */
+export { FULL_CHECK_ACTIONS };

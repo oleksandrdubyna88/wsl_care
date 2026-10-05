@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import type { VerbOutcome } from '../../client/outcome';
-import { VERB_NAMES, VERB_TIMEOUT_MS, VERBS, type Verb } from '../../client/verbs';
+import { RUN_READ_NAMES, VERB_NAMES, VERB_TIMEOUT_MS, VERBS, type RunRead, type RunReadName, type Verb } from '../../client/verbs';
 import { WslCareClient } from '../../client/WslCareClient';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from '../support/fakeWorld';
 import { golden, GOLDEN_ROOT, goldenSets } from '../support/paths';
@@ -139,3 +139,34 @@ test('flow · a hung daemon: the runner kills wsl.exe at the ceiling and the cal
   }
 });
 
+
+// ---- E6.S3: the two run reads, through the real client, runner and fake — the flow list derived from RUN_READ_NAMES ----
+
+const RUN_READS: { readonly [K in RunReadName]: { readonly request: RunRead; readonly tail: readonly string[]; readonly scenario: Partial<ScenarioInput>; readonly check: (body: Record<string, unknown>) => void } } = {
+  runsShow: {
+    request: { read: 'runsShow', runId: '20261005T100000Z-77' },
+    tail: ['runs', 'show', '20261005T100000Z-77', '--json'],
+    scenario: { runsShow: 'runs-show-interrupted.json' },
+    check: (body) => { assert.equal(body.state, 'interrupted'); assert.equal(body.runId, '20261005T100000Z-77'); },
+  },
+  runs: {
+    request: { read: 'runs', from: '2026-10-05T10:00:00Z', to: '2026-10-05T10:05:00Z' },
+    tail: ['runs', '--from', '2026-10-05T10:00:00Z', '--to', '2026-10-05T10:05:00Z', '--json'],
+    scenario: {},
+    check: (body) => assert.equal(body.count, 3),
+  },
+};
+
+for (const name of RUN_READ_NAMES) {
+  test(`flow · run read ${name}: answered through the fake, ONE unprivileged daemon call, the System32 launcher`, async () => {
+    const read = RUN_READS[name];
+    await flow({ ...UBUNTU_RUNNING, ...read.scenario }, '', async (client, world) => {
+      const outcome = await client.read(read.request);
+      assert.equal(outcome.kind, 'read', JSON.stringify(outcome).slice(0, 300));
+      assert.ok(outcome.kind === 'read');
+      read.check(outcome.body);
+      assert.deepEqual(daemonCalls(world), [['-d', 'Ubuntu', '--cd', '/', '--exec', '/opt/wsl-care/bin/wsl-care', ...read.tail].join(' ')]);
+      assert.ok(world.files().every((f) => f === ['C:', 'Windows', 'System32', 'wsl.exe'].join(String.fromCharCode(92))));
+    });
+  });
+}
