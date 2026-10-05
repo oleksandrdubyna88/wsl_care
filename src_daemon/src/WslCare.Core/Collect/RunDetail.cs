@@ -55,6 +55,16 @@ public sealed record RunDetail(
     /// in detail. Absent on a full run the timer did not start (and on every detail written before E3.S3).</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public Actions.Engine.TimerPass? TimerPass { get; init; }
+
+    /// <summary>Plan §15q R1.4: every setting this run used whose value did NOT come from the embedded defaults, with the layer
+    /// that set it — so a run the timer did under a user's value says so ("A5 ran with containers.stoppedOlderThanDays = 0, user
+    /// layer"). Absent when every value is a default.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Config.ConfigValueReport>? Config { get; init; }
+
+    /// <summary>User values this run did not take (plan §15q); absent when none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Config.ConfigNoticeReport>? ConfigNotices { get; init; }
 }
 
 /// <summary>What became of the run's records: written, not written because this process may not (read-only), a

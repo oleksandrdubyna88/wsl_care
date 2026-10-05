@@ -373,7 +373,11 @@ public static class CollectRun
             starts,
             slow,
             housekeeping,
-            []);
+            [])
+        {
+            Config = ConfigValueReport.NotDefault(c.Loaded),
+            ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
+        };
     }
 
     private static ThresholdInputs Inputs(ProbeSample sample, HealthSample health, TimeSpan sinceLastRun, LastSlowParts last, PreviewResult docker, Reading<AgedPart<FolderSizesSample>> folders) =>

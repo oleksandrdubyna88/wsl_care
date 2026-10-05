@@ -33,6 +33,25 @@ public sealed record ConfigError(ConfigLayerFile File, int Line, string Message)
     public string Display => Line > 0 ? $"{File.Path}:{Line}: {Message}" : $"{File.Path}: {Message}";
 }
 
+/// <summary>
+/// A valid user-layer value this run did NOT take (plan §15q R1.2, R1.3, R1.6): a machine-only key, or a loosening of a
+/// root-effective key that a root run does not trust. Not an error — the run is not observe-only — but always said.
+/// </summary>
+public sealed record ConfigNotice(ConfigLayerFile File, int Line, string Key, string Message)
+{
+    public string Display => Line > 0 ? $"{File.Path}:{Line}: {Message}" : $"{File.Path}: {Message}";
+}
+
+/// <summary>The <c>configNotices</c> element: the file, the line, the key and the sentence.</summary>
+public sealed record ConfigNoticeReport(string File, int Line, string Key, string Message)
+{
+    public static ConfigNoticeReport From(ConfigNotice notice) => new(notice.File.Path, notice.Line, notice.Key, notice.Message);
+
+    /// <summary>The notices as a JSON answer carries them: absent when there are none, so every older answer stays as it was.</summary>
+    public static IReadOnlyList<ConfigNoticeReport>? Of(ConfigLoadResult loaded) =>
+        loaded.Notices.Count == 0 ? null : [.. loaded.Notices.Select(From)];
+}
+
 /// <summary>One setting as the effective configuration holds it: the value and the layer it came from.</summary>
 public sealed record ConfigEntry(ConfigKey Key, ConfigValue Value, ConfigLayer Layer);
 
@@ -46,6 +65,11 @@ public sealed record ConfigErrorReport(string File, int Line, string Message)
 public sealed record ConfigValueReport(string Key, JsonElement Value, ConfigLayer Layer)
 {
     public static ConfigValueReport From(ConfigEntry entry) => new(entry.Key.Name, entry.Value.ToJsonElement(), entry.Layer);
+
+    /// <summary>The settings a run used that a layer above the defaults set (plan §15q R1.4); <c>null</c> when there are none, so
+    /// a run under the defaults records exactly what it did before.</summary>
+    public static IReadOnlyList<ConfigValueReport>? NotDefault(ConfigLoadResult loaded) =>
+        loaded.Config.Entries.Where(e => e.Layer != ConfigLayer.Default).Select(From).ToList() is { Count: > 0 } set ? set : null;
 }
 
 /// <summary>The answer of <c>config get --json</c> (plan §6: every JSON answer carries <c>schemaVersion</c>).</summary>
@@ -53,4 +77,9 @@ public sealed record ConfigReport(
     int SchemaVersion,
     bool ObserveOnly,
     IReadOnlyList<ConfigErrorReport> ConfigError,
-    IReadOnlyList<ConfigValueReport> Values);
+    IReadOnlyList<ConfigValueReport> Values)
+{
+    /// <summary>User values this process did not take (plan §15q); absent when none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<ConfigNoticeReport>? ConfigNotices { get; init; }
+}

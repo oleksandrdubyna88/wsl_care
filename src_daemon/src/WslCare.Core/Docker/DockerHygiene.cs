@@ -38,6 +38,9 @@ public static class DockerHygiene
     private const string BuildkitPrefix = "buildx_buildkit_";
     private const string StateSuffix = "_state";
 
+    /// <summary>Docker Desktop's <c>daemon.json</c> is a small JSON object.</summary>
+    private const int MaxDaemonJsonBytes = 1024 * 1024;
+
     public static DockerHygieneAudit Audit(DockerSnapshot snapshot, IHostPaths paths, IFileSystem files) =>
         Audit(snapshot, paths, files, paths.DockerDesktopConfigFile);
 
@@ -73,7 +76,8 @@ public static class DockerHygiene
             return Reading.Missing<BuilderGc>("Docker Desktop's daemon.json is on the Windows side (%USERPROFILE%\\.docker\\daemon.json); wsl-care.exe reads it, and the distro once a full run has found the Windows profile");
         }
 
-        return files.ReadFile(file) switch
+        // The Windows profile through drvfs (plan §15q R1.1, review M2): no link, no wait, a cap — and no owner or mode check.
+        return files.ReadNoFollowFile(file, MaxDaemonJsonBytes) switch
         {
             FileReadResult.Content content => ParseBuilderGc(content.Bytes, file),
             FileReadResult.Missing => Reading.Of(new BuilderGc(false, string.Empty, string.Empty)),

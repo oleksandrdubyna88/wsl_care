@@ -25,7 +25,11 @@ public static class StatusReports
             [.. loaded.Errors.Select(ConfigErrorReport.From)],
             Vm(sample.Vm),
             Host(sample.Host),
-            new SlowReport(ContainerStats(slow.ContainerStats), WindowsClock(slow.WindowsClock)));
+            new SlowReport(ContainerStats(slow.ContainerStats), WindowsClock(slow.WindowsClock)))
+        {
+            ConfigNotices = ConfigNoticeReport.Of(loaded),
+            UserLayerDigest = loaded.UserLayerDigest.Length == 0 ? null : loaded.UserLayerDigest,
+        };
 
     public static ByteFigure Bytes(Reading<long> reading) => reading switch
     {

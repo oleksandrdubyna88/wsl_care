@@ -70,7 +70,9 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
 
     private sealed record Current(IReadOnlyDictionary<string, ConfigValue> Entries, IReadOnlyList<string> Dropped, string MovedAsideTo);
 
-    private Current ReadCurrent(string file, string directory) => files.ReadFile(file) switch
+    /// <remarks>Bounded (plan §15q R1.1, review minor): a FIFO in the layer's place is refused at once and moved aside, never
+    /// waited on; a larger file than a layer may hold is moved aside too.</remarks>
+    private Current ReadCurrent(string file, string directory) => files.ReadRegularFile(file, ConfigLoader.MaxLayerBytes) switch
     {
         FileReadResult.Missing => new Current(new Dictionary<string, ConfigValue>(), [], string.Empty),
         FileReadResult.Unreadable => new Current(new Dictionary<string, ConfigValue>(), [], MoveAside(file, directory)),

@@ -70,12 +70,16 @@ public static class TargetUserCommands
             ["PATH"] = string.Join(':', folders.Select(f => f.DistroPath)),
         };
 
+    /// <summary>nvm's default alias is one short line.</summary>
+    private const int MaxAliasBytes = 4096;
+
     /// <summary><c>~/.nvm/versions/node/&lt;the default version&gt;/bin</c> (distro path), or <c>null</c>.</summary>
     private static string? NvmDefaultBin(TargetUser user, LinuxHostPaths paths, IFileSystem files)
     {
         var rules = paths.Rules;
         var versionsDir = rules.Join(user.Home, ".nvm", "versions", "node");
-        var alias = files.ReadFile(paths.DistroPath(rules.Join(user.Home, ".nvm", "alias", "default")));
+        // The target user's own file, read by root: owner-checked, never through a link, never waited on (plan §15q R1.1).
+        var alias = files.ReadUserFile(paths.DistroPath(rules.Join(user.Home, ".nvm", "alias", "default")), MaxAliasBytes, RegularFiles.HomeFileOwner(user.Uid));
         if (alias is not FileReadResult.Content content)
         {
             return null;

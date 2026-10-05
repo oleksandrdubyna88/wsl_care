@@ -100,7 +100,18 @@ public sealed record ActRunDetail(
     string DryRunReason,
     TargetUserReport TargetUser,
     IReadOnlyList<ActionOutcome> Actions,
-    IReadOnlyList<string> Notes);
+    IReadOnlyList<string> Notes)
+{
+    /// <summary>Plan §15q R1.4: every setting this run used whose value did NOT come from the embedded defaults, with the layer
+    /// that set it — so a run the timer did under a user's value says so ("A5 ran with containers.stoppedOlderThanDays = 0, user
+    /// layer"). Absent when every value is a default.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Config.ConfigValueReport>? Config { get; init; }
+
+    /// <summary>User values this run did not take (plan §15q); absent when none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Config.ConfigNoticeReport>? ConfigNotices { get; init; }
+}
 
 /// <summary>How an <c>act</c> ended — a closed set.</summary>
 public abstract record ActResult

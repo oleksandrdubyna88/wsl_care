@@ -35,18 +35,22 @@ internal static class ConfigCommand
         }
 
         var key = ConfigKeys.Find(request.Key);
-        if (key is null)
-        {
-            return Output.Refuse(stderr, $"unknown key \"{request.Key}\"; {UnknownKeyHint}.");
-        }
-
-        return ConfigValidation.Parse(key, request.Value) switch
-        {
-            ValueCheck.Invalid invalid => Output.Refuse(stderr, invalid.Message),
-            ValueCheck.Ok ok => Report(new UserConfigWriter(host.Paths, host.Files, host.Clock).Set(key, ok.Value), key, host, stdout, stderr),
-            _ => throw new System.Diagnostics.UnreachableException("ValueCheck is a closed set"),
-        };
+        return key is null
+            ? Output.Refuse(stderr, $"unknown key \"{request.Key}\"; {UnknownKeyHint}.")
+            : SetKnown(key, request.Value, host, stdout, stderr);
     }
+
+    /// <summary>A key the register knows: refused when only the machine layer may set it (plan §15q R1.3, review B1 — a value
+    /// root writes into is set by root until its reader validates it), else validated and written.</summary>
+    private static int SetKnown(ConfigKey key, string value, CliHost host, TextWriter stdout, TextWriter stderr) =>
+        key.Trust.MachineOnly
+            ? Output.Refuse(stderr, $"{key.Name} is set only in the machine layer (/etc/wsl-care/config.json, as root); the user layer would be ignored. Nothing was written.")
+            : ConfigValidation.Parse(key, value) switch
+            {
+                ValueCheck.Invalid invalid => Output.Refuse(stderr, invalid.Message),
+                ValueCheck.Ok ok => Report(new UserConfigWriter(host.Paths, host.Files, host.Clock).Set(key, ok.Value), key, host, stdout, stderr),
+                _ => throw new System.Diagnostics.UnreachableException("ValueCheck is a closed set"),
+            };
 
     public static int Reset(Request.ConfigReset request, CliHost host, TextWriter stdout, TextWriter stderr)
     {
@@ -77,7 +81,10 @@ internal static class ConfigCommand
             SchemaVersion.Current,
             loaded.IsObserveOnly,
             [.. loaded.Errors.Select(ConfigErrorReport.From)],
-            [.. entries.Select(ConfigValueReport.From)]);
+            [.. entries.Select(ConfigValueReport.From)])
+        {
+            ConfigNotices = ConfigNoticeReport.Of(loaded),
+        };
         return Output.Answer(stdout, JsonSerializer.Serialize(report, WslCareJsonContext.Default.ConfigReport));
     }
 
@@ -86,6 +93,11 @@ internal static class ConfigCommand
         foreach (var error in loaded.Errors)
         {
             Output.Note(stderr, $"config error: {error.Display}");
+        }
+
+        foreach (var notice in loaded.Notices)
+        {
+            Output.Note(stderr, $"config notice: {notice.Display}");
         }
 
         if (loaded.IsObserveOnly)

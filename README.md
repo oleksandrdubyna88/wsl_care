@@ -121,6 +121,24 @@ still read, drops the rest by name, and moves a file it cannot parse to `config.
 overwritten). Every `wsl-care:` message is one line: control characters in what it quotes — a key
 you typed, a key read from the file, a path — are shown as `?`.
 
+**What a setting can and cannot do** (plan §15q R1). No setting is free text: `processes.families` takes only the named
+families (`dotnet-build-servers`, `testhost`, `docker-desktop-proxy`, `vscode-server`, `node` — never `other`, the
+catch-all, and never `ai-agents`), `distro` a distribution name, `archive.baseFolder` an absolute path — and that one only
+in the MACHINE file (`config set` refuses it; a user-file value is ignored). No setting changes what may run or be
+deleted — only when a declared cleanup runs and with which bounded number. `contracts/config-keys.json` lists every key
+with its range, its default and what it means to a root run.
+
+**The user file and root.** The root timer reads your user file every 4 h, so it reads it the way root reads a file
+another account controls: a regular file you own, nobody else may write it, never through a link, never waited on, at
+most 256 KiB. Anything else — a symbolic link, a FIFO, a group-writable file (`chmod go-w` it; `config set` writes 0644)
+— is a `configError` and the run is observe-only. Two more rules, each said as `configNotices {file, line, key, message}`
+in `status`, `doctor`, `config get` and the run's detail, never an error: root's own log level and log retention only
+tighten from your file (a level no higher, a retention no shorter than the layers below; 0 keeps for ever); and when
+WSL interop is DISABLED in the distro — then your account cannot become root on its own — every root-effective value of
+your file only tightens (`dryRun` on, an `auto` off, a longer age, a larger trigger). Every run's detail lists the
+settings it used that did not come from the defaults, with their layer (`config`), and `status` carries the user file's
+SHA-256 (`userLayerDigest`).
+
 Run logs go to `/var/log/wsl-care/{yyyy-MM-dd}/wsl-care-{HH-mm-ss}-{pid}.log` (Linux) or
 `%LOCALAPPDATA%\wsl-care\logs\…` (Windows), one file per run, UTC — a run that may not write
 `/var/log/wsl-care` (yours, without root) logs to `$XDG_STATE_HOME/wsl-care/logs` instead; `logging.minimumLevel` and

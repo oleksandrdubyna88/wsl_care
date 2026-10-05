@@ -179,6 +179,16 @@ public interface IFileSystem
     /// (<see cref="RegularFiles.ReadOwned"/>).</summary>
     FileReadResult ReadStateFile(string path, int maxBytes);
 
+    /// <summary>A file ANOTHER account controls, read by this process (plan §15q R1.1): the user configuration layer and the
+    /// target user's own files read as root. As <see cref="ReadStateFile"/> does — regular, nonblocking, capped, never through a
+    /// link — and on Linux only when the open descriptor's owner is <paramref name="owner"/> and neither group nor others may
+    /// write it.</summary>
+    FileReadResult ReadUserFile(string path, int maxBytes, uint owner);
+
+    /// <summary>A file whose owner is no evidence (plan §15q R1.1, review M2: the Windows profile through drvfs): regular,
+    /// nonblocking, capped and never through a link, with no uid or mode check (<see cref="RegularFiles.ReadNoFollow"/>).</summary>
+    FileReadResult ReadNoFollowFile(string path, int maxBytes);
+
     bool FileExists(string path);
 
     bool DirectoryExists(string path);
