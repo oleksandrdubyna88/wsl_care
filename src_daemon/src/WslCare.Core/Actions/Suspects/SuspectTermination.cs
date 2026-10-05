@@ -60,12 +60,18 @@ public sealed class SuspectTermination : ICleanupAction
         var families = context.Config.TextList(ConfigKeys.Processes.Families);
         var hours = context.Config.Int(ConfigKeys.Processes.IdleOlderThanHours);
         var what = string.Create(CultureInfo.InvariantCulture, $"suspect processes: orphaned, in the families {string.Join(", ", families)}, older than {hours} h, no terminal, not root's, no CPU in {CpuWindow.TotalSeconds:0} s - SIGTERM, then SIGKILL after {Grace.TotalSeconds:0} s");
+        if (context.TargetUser is not TargetUserResult.Found { User.Name: var owner })
+        {
+            // E7.S0 review S7 (decided): A11 is root and ends the TARGET user's processes only, never another account's.
+            return ActionPreview.Unavailable(what, $"A11 ends only the target user's processes, and there is no single target user ({context.TargetUser.Refusal})");
+        }
+
         if (context.Paths is not LinuxHostPaths linux || context.Processes(cancellationToken) is not Reading<ProcessSnapshot>.Available { Value: var snapshot })
         {
             return ActionPreview.Unavailable(what, "the process table could not be read");
         }
 
-        var candidates = Candidates(snapshot.All, families, TimeSpan.FromHours(hours), Environment.ProcessId);
+        var candidates = Candidates(snapshot.All, families, TimeSpan.FromHours(hours), Environment.ProcessId, owner);
         var first = candidates.Select(c => (Entry: c, Sample: Sample(context, linux, c.Pid))).Where(c => c.Sample is not null).ToList();
         if (first.Count > 0)
         {
@@ -111,8 +117,8 @@ public sealed class SuspectTermination : ICleanupAction
     }
 
     /// <summary>The candidates of plan §4.2, before the CPU window: orphaned, in an allowed family, old enough, no terminal,
-    /// not a zombie, not root's, not this process.</summary>
-    public static IReadOnlyList<ProcessEntry> Candidates(IEnumerable<ProcessEntry> processes, IReadOnlyList<string> families, TimeSpan olderThan, int ownPid) =>
+    /// not a zombie, not root's, not this process — and the TARGET user's own (E7.S0 review S7: never another account's).</summary>
+    public static IReadOnlyList<ProcessEntry> Candidates(IEnumerable<ProcessEntry> processes, IReadOnlyList<string> families, TimeSpan olderThan, int ownPid, string targetUser) =>
         [.. processes.Where(p => Checks.All(
             p,
             x => x.Orphaned,
@@ -121,6 +127,7 @@ public sealed class SuspectTermination : ICleanupAction
             x => x.Pid != ownPid,
             x => x.Pid > 1,
             x => x.User != "root",
+            x => string.Equals(x.User, targetUser, StringComparison.Ordinal),
             x => families.Contains(x.Family, StringComparer.Ordinal),
             x => IsOlderThan(x, olderThan)))];
 

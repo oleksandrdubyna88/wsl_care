@@ -173,7 +173,7 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
     /// <summary>One link: the package folder it names; a package that is gone references nothing (stale).</summary>
     private static (IReadOnlyList<string> Names, string Problem) LinkRevisions(ActionContext context, string link)
     {
-        if (context.Files.ReadUserFile(link, MaxLinkBytes, context.HomeFileOwner) is not FileReadResult.Content content)
+        if (context.Files.ReadUserFile(link, MaxLinkBytes, context.HomeFileOwner, context.Paths.Home) is not FileReadResult.Content content)
         {
             return ([], $"the link {link} could not be read");
         }
@@ -192,7 +192,7 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
             return ([], string.Empty);
         }
 
-        return context.Files.ReadUserFile(linux.Rules.Join(folder, "browsers.json"), MaxBrowsersJsonBytes, context.HomeFileOwner) is FileReadResult.Content json && BrowserFolders(json.Bytes) is { } folders
+        return context.Files.ReadUserFile(linux.Rules.Join(folder, "browsers.json"), MaxBrowsersJsonBytes, context.HomeFileOwner, context.Paths.Home) is FileReadResult.Content json && BrowserFolders(json.Bytes) is { } folders
             ? (folders, string.Empty)
             : ([], $"{package}/browsers.json is missing or not Playwright's browsers list, so what that project uses cannot be told");
     }

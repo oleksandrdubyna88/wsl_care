@@ -940,8 +940,9 @@ and a planted action that builds a shell string from a preview name.
 - **The lock rule between `collect` and `act`: one file (`/run/wsl-care.lock`), and the second one refuses (75), it
   never waits.** A run that waited would be a run nobody sees; the timer runs again at its next tick, a button shows
   busy.
-- **"CPU below `idle.cpuPercent` for `idle.minutes`" is the kernel's load average** — the shortest of its 1 / 5 /
-  15-minute windows covering `idle.minutes` (15 when longer), divided by the CPUs of `/proc/stat`, capped at 100 %. A
+- **"CPU below `idle.cpuPercent` for `idle.minutes`" is the kernel's load average** — the HIGHEST of its 1 / 5 /
+  15-minute averages up to the shortest window covering `idle.minutes` (15 when longer; since the E7.S0 review round, C5,
+  so a longer `idle.minutes` is never looser), divided by the CPUs of `/proc/stat`, capped at 100 %. A
   run is a moment, and the load average is the only CPU history the kernel keeps; it counts I/O wait as busy, the
   conservative direction. Builds are `docker … build|bake`, `dotnet build|test|publish|pack|msbuild`, `npm ci|install`
   among the distro's processes (the fast probe's table). An unread figure defers.
@@ -2456,6 +2457,15 @@ flowchart LR
   holds a table of every read call in the product (file → call → count → whose file) and fails on a new or a stale site, and
   on a class that someone else controls read without its hardened reader. Residual, stated in the table: a LISTING of a
   target-home folder that is itself a link lists through it (names only, nothing read).
+- **The E7.S0 review round** (plan §15q) tightened four things: (S1, S6) `BeneathFiles` — a file someone else controls
+  is reached from a trusted folder (the home; the folder holding a drive letter's folder) through NO link: every folder
+  below it opened from the previous descriptor with `O_PATH | O_DIRECTORY | O_NOFOLLOW`, the file with `O_NOFOLLOW |
+  O_NONBLOCK`, so a linked `~/.config/wsl-care` or `…/.docker` cannot take root's read elsewhere, and the refusal names the
+  component only; a Windows profile with a `..` segment is not a drive path. (C2) An unprivileged run inside the distro
+  also reads its layer as the root timer would (`UserLayerTrust.RootTimerReads`) and says which values root ignores.
+  (C3) `config set` replaces a linked layer's LINK with a regular file (`IFileSystem.ReplaceLinkWithFile`, judged where the
+  link itself lives). (C1) An observe-only run prunes no log folder. And outside this module: A11's suspects are the
+  TARGET user's processes only (S7), and `doctor`'s text is printable (S4).
 - **Visible**: `status --json` carries `configNotices` and `userLayerDigest` (the SHA-256 of the user layer as read);
   `doctor --json` and `config get --json` carry `configNotices`; every run detail (`collect`'s and `act`'s) carries `config`
   — every setting the run used that did not come from the defaults, with its layer — and `configNotices`. All additive,

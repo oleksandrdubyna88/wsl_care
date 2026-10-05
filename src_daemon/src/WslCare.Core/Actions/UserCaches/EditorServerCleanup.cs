@@ -109,7 +109,7 @@ public sealed class EditorServerCleanup : ICleanupAction
     private static IEnumerable<ActionItem> Obsolete(ActionContext context, string root, ProcessSnapshot processes, CancellationToken cancellationToken)
     {
         var extensions = context.Paths.Rules.Join(root, "extensions");
-        if (context.Files.ReadUserFile(context.Paths.Rules.Join(extensions, ".obsolete"), MaxObsoleteBytes, context.HomeFileOwner) is not FileReadResult.Content content)
+        if (context.Files.ReadUserFile(context.Paths.Rules.Join(extensions, ".obsolete"), MaxObsoleteBytes, context.HomeFileOwner, context.Paths.Home) is not FileReadResult.Content content)
         {
             return [];
         }

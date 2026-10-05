@@ -1168,7 +1168,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
-> Status: **in progress, 2026-10-05 — E7.S0 built** (the configuration trust and contract; deviations in *E7.S0 as built*
+> Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
 > below); E7.S1–E7.S5 and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
@@ -1465,6 +1465,27 @@ Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red an
 - **The read-site classification** also covers listings and walks of target-home folders; its residual — a listing of a
   folder that is itself a link lists through it (names only) — is stated in the table.
 - **Not changed:** the never-list's protected-path argv rule stays static (R2.2's residual is E7.S2's).
+
+#### E7.S0 review round (2026-10-05) — two own reviews (security; correctness)
+
+Every finding ACCEPTED and fixed in its own commit (`fix(daemon): E7.S0 review round …`), each behaviour seen red for the
+real symptom, green, and its load-bearing line broken and seen red again — the record is `research/module_tests.md`,
+*The E7.S0 review round*.
+
+| # | Finding | Disposition |
+|---|---|---|
+| S1 (Medium) | the drvfs reader's `O_NOFOLLOW` guarded the LAST component only — `…/Users/me/.docker` → `/root/.docker` took root's read to a root file with no owner check; a profile `C:\..\..\root` became `/root` | **Fixed** — `BeneathFiles`: every folder below the one holding the drive letter's folder is opened from the previous descriptor with `O_PATH \| O_DIRECTORY \| O_NOFOLLOW`, the file with `O_NOFOLLOW \| O_NONBLOCK` from the last; a profile path with a `..` segment or a control character is not a drive path (`HealthCollector.InDistro`). **Deviation:** the folder chain was chosen over the review's device comparison — it refuses a link on the same filesystem too |
+| S2 (Medium) | the read-site table missed reads through a wrapper | **Fixed** — the scan also matches `ProcText.Read` / `Bytes`, `RegularFiles.Read` / `ReadHead` / `ReadOwned` / `ReadNoFollow`, `BeneathFiles.Read` and a bare `ReadText`; 24 more sites classified (all the kernel's or root's); a planted companion for each wrapper. The typed-system-path alternative was not taken (22 call sites for no further guarantee) |
+| S3 (Low) | = C5 | see C5 |
+| S4 (Low) | `doctor`'s text printed a user layer's unknown key raw — an OSC 52 sequence reached the admin's terminal | **Fixed** — every `doctor` text line goes through `CommandLine.Printable` |
+| S5 (Low) | .NET's `$` matches before a final newline: `distro` took "Ubuntu\n" | **Fixed** — a `TextRule.Matching` value is accepted only when the match covers the WHOLE value (the expression stays JavaScript-compatible for the contract) |
+| S6 (Low) | a linked `~/.config/wsl-care` let the user learn a root-only file's owner and mode from the run's reason | **Fixed** — the user layer and every target-home file are read through the same folder chain from the home (`ReadUserFile(…, beneath)`): a link anywhere below the home is refused naming the component, nothing beyond it described |
+| S7 (design → decided) | A11 ended idle orphans of ANY non-root account | **Fixed** — A11's candidates are the TARGET user's processes only; with no single target user its preview is unavailable, naming why |
+| C1 (Important) | a refused (observe-only) configuration pruned the run logs with the DEFAULT 14 days, deleting an admin's longer retention | **Fixed** — an observe-only run prunes nothing and logs one warning saying so |
+| C2 (Important) | without interop an UNPRIVILEGED answer showed a user value the root timer would ignore, with no notice | **Fixed** — `UserLayerTrust.RootTimerReads`: an unprivileged run inside the distro also reads the layer as the root timer would and adds those notices ("the root timer ignores this value: …") without changing its own configuration; the head goldens of `status` / `doctor` carry them (the golden sandbox has no interop entry) |
+| C3 (Minor) | only a group-writable layer got a fix hint; `config set` over a linked layer wrote through the link and then printed the default | **Fixed** — every refusal carries its fix (link, foreign owner, oversize, not regular, group-writable); `config set` replaces a LINK by a regular file holding the values read through it (`IFileSystem.ReplaceLinkWithFile`, judged where the link itself lives — the file it pointed at is untouched) and prints the value it wrote |
+| C4 (Minor) | an invalid machine-only value in the user layer made the whole run observe-only | **Fixed** — a machine-only key in the user layer is a notice BEFORE validation |
+| C5 (Minor, both) | `idle.minutes` declared "higher is safer" but the gate judged ONE load average, so a longer window could be looser | **Fixed** — busy is the HIGHEST average up to the window; the contract's direction is now true (no contract change) |
 
 #### Stories
 

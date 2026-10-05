@@ -46,7 +46,8 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// <summary>The configuration this host runs under: the three layers, trusted as <see cref="UserLayerTrusts"/> decides — or,
     /// root with an ambiguous target user, the defaults and the machine layer only (gate finding #2: user-scoped actions refuse,
     /// machine-scoped ones still run).</summary>
-    public ConfigLoadResult LoadConfig() => ConfigLoader.Load(Paths, Files, UserLayerTrusts.For(HomeOwner, InteropRefusal));
+    public ConfigLoadResult LoadConfig() =>
+        ConfigLoader.Load(Paths, Files, UserLayerTrusts.For(HomeOwner, InteropRefusal, rootTimerReadsThisLayer: Paths is LinuxHostPaths && !Privilege.IsRoot));
 
     /// <summary>What cancelled this process, in words — asked only once it was cancelled; <c>Main</c> wires
     /// <see cref="ShutdownSignals.Cause"/>, so an interrupted run's record names the signal (plan §15j B2).</summary>

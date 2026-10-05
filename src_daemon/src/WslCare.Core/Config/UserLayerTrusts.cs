@@ -18,10 +18,16 @@ public static class UserLayerTrusts
 {
     /// <summary>The trust for a process whose per-user paths follow <paramref name="owner"/>; <paramref name="interopRefusal"/>
     /// answers why WSL interop is unavailable (empty when it is available) and is asked only for a root run.</summary>
-    public static UserLayerTrust For(HomeOwner owner, Func<string> interopRefusal) => owner switch
+    public static UserLayerTrust For(HomeOwner owner, Func<string> interopRefusal) => For(owner, interopRefusal, rootTimerReadsThisLayer: false);
+
+    /// <param name="rootTimerReadsThisLayer">This process is NOT root inside the distro, so the layer it reads is the one the
+    /// root timer reads as the target user's (E7.S0 review C2): the trust then also carries how root reads it, and the answer
+    /// says which values root ignores.</param>
+    public static UserLayerTrust For(HomeOwner owner, Func<string> interopRefusal, bool rootTimerReadsThisLayer) => owner switch
     {
         HomeOwner.Target target => new((uint)target.User.Uid, true, LoosenRefused(interopRefusal()), string.Empty),
         HomeOwner.Unknown => new(RegularFiles.EffectiveUid(), true, string.Empty, owner.UserLayerSkipped),
+        _ when rootTimerReadsThisLayer => UserLayerTrust.OwnLayer() with { RootTimerReads = new(RegularFiles.EffectiveUid(), true, LoosenRefused(interopRefusal()), string.Empty) },
         _ => UserLayerTrust.OwnLayer(),
     };
 

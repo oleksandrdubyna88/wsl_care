@@ -79,7 +79,7 @@ public static class TargetUserCommands
         var rules = paths.Rules;
         var versionsDir = rules.Join(user.Home, ".nvm", "versions", "node");
         // The target user's own file, read by root: owner-checked, never through a link, never waited on (plan §15q R1.1).
-        var alias = files.ReadUserFile(paths.DistroPath(rules.Join(user.Home, ".nvm", "alias", "default")), MaxAliasBytes, RegularFiles.HomeFileOwner(user.Uid));
+        var alias = files.ReadUserFile(paths.DistroPath(rules.Join(user.Home, ".nvm", "alias", "default")), MaxAliasBytes, RegularFiles.HomeFileOwner(user.Uid), paths.DistroPath(user.Home));
         if (alias is not FileReadResult.Content content)
         {
             return null;

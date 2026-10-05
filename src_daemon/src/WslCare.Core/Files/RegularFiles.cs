@@ -133,6 +133,14 @@ public static partial class RegularFiles
             return OwnedErrno(Marshal.GetLastPInvokeError(), path);
         }
 
+        return ReadOpened(fd, maxBytes, owner);
+    }
+
+    /// <summary>A descriptor already opened without following a link, judged (type, and owner / mode when given) and read up
+    /// to the cap; the descriptor is closed here. <see cref="BeneathFiles"/> opens it through its folder chain.</summary>
+    [SupportedOSPlatform("linux")]
+    internal static FileReadResult ReadOpened(int fd, int maxBytes, uint? owner)
+    {
         using var handle = new SafeFileHandle(fd, ownsHandle: true);
         if (Judged(fd, owner) is { Length: > 0 } problem)
         {

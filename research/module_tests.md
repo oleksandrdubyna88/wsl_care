@@ -1267,6 +1267,56 @@ user layer) — additive members, nothing else moved; the extension's `npm test`
 `contracts/config-keys.json` is new. The umask a WSL Ubuntu login shell gives a normal user was measured 0022 (2026-10-05,
 `bash -lc umask`), so a hand-made layer is 0644 there; `config set` writes 0644 whatever the umask.
 
+### The E7.S0 review round (2026-10-05, plan §15q *E7.S0 review round*)
+
+Two own reviews (security; correctness), every finding accepted. The tests — `Core.Tests/Config/ConfigReviewRoundTests`,
+`Core.Tests/Files/DriveReaderTests`, `Core.Tests/Actions/ActionsReviewRoundTests`, `ArchitectureTests.The_read_scan_finds_a_read_through_a_wrapper`,
+`Scenarios/ConfigReviewRoundFlows` — and their red before the fix (Windows, and WSL for the Linux-only ones: a normal user,
+a `/tmp` copy, removed):
+
+| # | Test | Red before the fix |
+|---|---|---|
+| S1 | `DriveReaderTests.A_link_in_a_parent_folder_of_a_drive_file_is_never_followed` (WSL) | *Expected type to be …Unreadable, but found …Content* — `.docker` a link to another folder, read through |
+| S1 | `DriveReaderTests.A_windows_profile_with_a_parent_segment_is_not_a_path_on_the_drive` (3 cases) | *Expected HealthCollector.InDistro(profile, "/mnt/").IsAvailable to be False, but found True* |
+| S2 | `ArchitectureTests.The_read_scan_finds_a_read_through_a_wrapper` | the scan found none of `ProcText.Read` / `Bytes`, `RegularFiles.Read` / `ReadHead`, `ReadText` |
+| S4 | `ConfigReviewRoundFlows.Doctor_text_never_carries_a_terminal_control_sequence_from_the_user_layer` | *Did not expect doctor.Stdout … to contain "\u001b"* — the unknown key `ESC]52;c;…` printed raw |
+| S5 | `ConfigReviewRoundTests.A_pattern_key_refuses_a_value_with_a_trailing_newline` (2 cases) | *Expected type to be …Invalid, but found …Ok* for "Ubuntu\n", "x\n" |
+| S6 | `ConfigReviewRoundTests.A_link_on_the_way_to_the_user_layer_is_refused_and_nothing_beyond_it_is_described` (WSL) | *Expected type to be …ObserveOnly, but found …Valid* — a linked `~/.config/wsl-care` followed |
+| S7 | `ActionsReviewRoundTests.An_idle_orphan_of_another_non_root_account_is_never_a_suspect` | *Expected preview.Targets … {"10 p10"}, but {"10 p10", "20 p20"} contains 1 item(s) too many* |
+| C1 | `ConfigReviewRoundFlows.A_refused_configuration_never_prunes_the_logs_with_the_default_retention` (Windows) | *Expected Directory.Exists(old) to be True …, but found False* |
+| C2 | `ConfigReviewRoundFlows.Without_interop_an_unprivileged_answer_says_which_user_values_the_root_timer_ignores` (WSL) | *Expected config["configNotices"] not to be &lt;null&gt; …* |
+| C3 | `ConfigReviewRoundTests.A_linked_user_layer_is_refused_with_how_to_fix_it` (WSL) | *Expected result.Errors "cannot be read: a symbolic link, never followed" to contain "replace the link with a regular file"* |
+| C3 | `ConfigReviewRoundFlows.Config_set_over_a_linked_user_layer_writes_a_regular_file_and_prints_the_value_it_wrote` (WSL) | *Expected set.Exit to be 0* — the layer refused, the set printed the default; the first fix attempt (moving the link aside) failed 70: the deletion policy judged the link's TARGET, outside the scope — hence `ReplaceLinkWithFile`, judged where the link lives |
+| C4 | `ConfigReviewRoundTests.An_invalid_machine_only_value_in_the_user_layer_is_a_notice_not_an_error` | *Expected result.IsObserveOnly to be False, but found True* |
+| C5 | `ActionsReviewRoundTests.A_machine_busy_a_minute_ago_is_not_idle_over_a_longer_window` | *Expected IdleGate.Judge(…).Idle to be False … but found True* |
+
+The C1 test first passed VACUOUSLY on Linux — the old folder was planted in the user log root while the sandbox's `/var/log`
+(writable by the test) was the one logged to; it now plants the folder in BOTH roots and asserts the run logged. Three older
+tests changed with a decided behaviour: `SuspectTerminationTests` / `PidfdSignalsTests` name the target user (S7), and
+`ActionEngineTests`' deferral reads 97.5 % (load1 3.9 on 4 CPUs — the highest average, C5); `ConfigLayerTrustTests`' link
+refusal reads "a link … never followed".
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the class run, the file restored byte-identical by SHA-256):
+
+| Mutation | Red |
+|---|---|
+| the drive reader back to a last-component `O_NOFOLLOW` (WSL) | 1: *Expected type to be …Unreadable, but found …Content* |
+| `IsPlainDrivePath` without the `..` check | 3: *…IsAvailable to be False, but found True* |
+| the scan without the `ProcText` alternative | 2: the companion, and the table *… ContainerCgroups.cs: ProcText.Read (in the table, not in the source)* |
+| `doctor`'s line without `Printable` | 1 (`ConfigReviewRoundFlows`) |
+| the whole-value match back to `IsMatch` | 2: *Expected type to be …Invalid, but found …Ok* |
+| `ReadUserFile` back to the last-component reader (WSL) | 1: *Expected type to be …ObserveOnly, but found …Valid* |
+| A11's target-user check dropped | 1: *… contains 1 item(s) too many* |
+| the observe-only prune guard off | 1: *Expected olds to contain only items matching Exists(old) …* |
+| `CliHost` not asking how root reads the layer (WSL) | 1: *Expected config["configNotices"] not to be &lt;null&gt;* |
+| the link fix text not chosen (WSL) | 1: *… "…; fix or remove the file; config set rewrites it" to contain "replace the link with a regular file"* |
+| `config set` not replacing the link (WSL) | 1: *Expected set.Exit to be 0* |
+| the machine-only notice after validation | 1: *Expected result.IsObserveOnly to be False, but found True* |
+| the idle gate back to one average | 1: *Expected IdleGate.Judge(…).Idle to be False … but found True* |
+
+**Goldens** regenerated in WSL: `status.json` and `doctor.json` gained `configNotices` ("the root timer ignores this value:
+…" for the golden layer's five 0-day ages — the golden sandbox has no interop entry); additive, nothing else moved.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

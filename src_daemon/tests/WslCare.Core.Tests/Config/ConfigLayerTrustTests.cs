@@ -51,7 +51,7 @@ public sealed class ConfigLayerTrustTests : IDisposable
         var result = ConfigLoader.Load(_sandbox.Paths, _sandbox.Files);
 
         result.Should().BeOfType<ConfigLoadResult.ObserveOnly>();
-        result.Errors.Should().ContainSingle().Which.Message.Should().Contain("symbolic link");
+        result.Errors.Should().ContainSingle().Which.Message.Should().Contain("link").And.Contain("never followed");
         result.Config.Bool(ConfigKeys.DryRun).Should().BeTrue("nothing the link points at may reach the run");
     }
 

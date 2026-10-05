@@ -129,13 +129,16 @@ deleted — only when a declared cleanup runs and with which bounded number. `co
 with its range, its default and what it means to a root run.
 
 **The user file and root.** The root timer reads your user file every 4 h, so it reads it the way root reads a file
-another account controls: a regular file you own, nobody else may write it, never through a link, never waited on, at
-most 256 KiB. Anything else — a symbolic link, a FIFO, a group-writable file (`chmod go-w` it; `config set` writes 0644)
-— is a `configError` and the run is observe-only. Two more rules, each said as `configNotices {file, line, key, message}`
+another account controls: a regular file you own, nobody else may write it, reached from your home through NO link
+(a linked `~/.config/wsl-care` counts too), never waited on, at most 256 KiB. Anything else — a link, a FIFO, a
+group-writable file — is a `configError` saying how to fix it, and the run is observe-only; `config set` repairs a linked
+layer by replacing the LINK with a regular file holding the values it read (the file it pointed at is untouched). A run
+whose configuration was refused prunes no log folder (it does not know your retention). Two more rules, each said as `configNotices {file, line, key, message}`
 in `status`, `doctor`, `config get` and the run's detail, never an error: root's own log level and log retention only
 tighten from your file (a level no higher, a retention no shorter than the layers below; 0 keeps for ever); and when
 WSL interop is DISABLED in the distro — then your account cannot become root on its own — every root-effective value of
-your file only tightens (`dryRun` on, an `auto` off, a longer age, a larger trigger). Every run's detail lists the
+your file only tightens (`dryRun` on, an `auto` off, a longer age, a larger trigger) — and your own unprivileged
+`status` / `config get` / `doctor` then say which of your values the root timer ignores. Every run's detail lists the
 settings it used that did not come from the defaults, with their layer (`config`), and `status` carries the user file's
 SHA-256 (`userLayerDigest`).
 
@@ -321,7 +324,7 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 | `A8` | `npm cache clean --force` as the target user | `~/.npm` walked before and after | npm not installed = a skip |
 | `A9` | `apt-get clean`; `snap remove <name> --revision=<n>` of revisions STILL disabled | `/var/cache/apt` before/after + the snap files gone | a missing tool skips its part |
 | `A10` | `journalctl --vacuum-time=<journal.keepDays>d` | the journal files gone after | archived files only |
-| `A11` | `SIGTERM`, `SIGKILL` after 10 s — by pid AND start time (a `pidfd`), never by name | memory, not disk (not counted) | off by default; only suspects: orphaned, in `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not root's, no CPU in a 5 s window and none since |
+| `A11` | `SIGTERM`, `SIGKILL` after 10 s — by pid AND start time (a `pidfd`), never by name | memory, not disk (not counted) | off by default; only suspects: orphaned, in `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not root's — and only the TARGET user's processes (no single target user: no suspects) — no CPU in a 5 s window and none since |
 | `A12` | deletes the Playwright browsers no project's `browsers.json` references; `dotnet nuget locals http-cache --clear` as the user | each folder before, counted when gone | a button only; refuses the Playwright part when what is referenced cannot be told |
 | `A14` | deletes VS Code / Cursor / Windsurf server builds no process uses, keeping the newest 2, and `.obsolete` extensions | each folder before, counted when gone | every delete judged by the deletion policy |
 | `A17` | `pnpm store prune`, `uv cache prune`, `pip cache purge` as the target user | each cache before/after | `cargo sweep` is not run (it would delete under `~/git`); Gradle prunes its own caches |
