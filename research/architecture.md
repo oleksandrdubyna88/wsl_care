@@ -2655,7 +2655,8 @@ poller, install or store module imports `root/`):
   none "never ran", several candidates. A full check's line is matched KIND FIRST (plan §15o, additive): a line carrying
   `kind` is a full check exactly when it is `collect` (`act` never is), whatever its actions and reason; a line without it
   (a daemon older than §15o, or a kind this build does not know) is a full check when it is `[]` (completed) or
-  `["collect"]` (refused / cut off / swept) and is not an unusable-request or reconciled-orphan line. A run no entry follows (the timer's) is watched while focused
+  `["collect"]` (refused / cut off / swept) and is not an unusable-request or reconciled-orphan line; an act's line, symmetric,
+  must carry no kind or `act` (review C7: a `collect` line with the act's ids never resolves it). A run no entry follows (the timer's) is watched while focused
   and its result shown once.
 - **`runAnswers.ts`** — `runs show` / `runs` read as untrusted (enums through `readEnum`, run ids through `runIdOf`, §15o's
   `kind` strictly: exactly `collect` or `act`, anything else absent).
@@ -2743,6 +2744,14 @@ sequenceDiagram
   shown). An expanded line shows what `runs show` answered: every object removed and not removed (type, name, size, note —
   the daemon's `ActionItem`; image and age are in its note) and every command with its outcome and exit. Times are local,
   with their offset; every daemon string passes `safeText`; the failure sentences are `failureText`'s.
+- **The E6.S4 review round** (plan §15p): an answer carrying `problem` (the daemon could not read its history, exit 4) is
+  its own `unreadable` state — "the run history could not be read: <problem> — no figures", no figure shown; the window
+  shown is the one its answers were READ for (kept beside them, never recomputed per render, so midnight does not
+  relabel them); a selection begins synchronously (generation, cleared slots, window) before its persist await; `ready`
+  posts what is held and reads only when nothing is; *This run* greyed for one of three reasons (`status` not read,
+  `status` failed, no cleanup recorded) and the view re-posted on every store change; the page keeps its header and
+  date inputs across renders (a typed day survives); exactly one panel (`panelSlot.ts`: created or revealed before any
+  await, a restored extra disposed).
 - **`logsPanel.ts`** — the wiring: the panel's static shell (`panel/panelHtml.ts`, page `logs`: its own `<main id="logs">`
   and title, the same nonce-only CSP), scripts on, command URIs off, resources only from `media/`, the panel's ONE
   stylesheet; restored after a reload by `registerWebviewPanelSerializer` (`onWebviewPanel:wslCare.logs`) on the persisted
@@ -2751,7 +2760,7 @@ sequenceDiagram
   (`2026-10-02 02:59 (UTC+03:00)`) and `metricText` (a metric in its unit).
 
 **The client's third run read** (`client/verbs.ts`): `logs --from <instant> --to <instant> --json`, unprivileged, 20 s —
-never `--detail`, `--action` or `--period`.
+never `--detail`, `--action` or `--period`. Each read's CLI verb comes from ONE explicit table, `RUN_READ_VERBS` (review K2).
 
 ### Tests (details: [module_tests.md](module_tests.md) § *What each E6.S4 guarantee rests on*)
 
