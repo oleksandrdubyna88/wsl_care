@@ -101,7 +101,7 @@ public sealed class TargetUserTests : IDisposable
         var environment = request.Environment.Should().BeOfType<CommandEnvironment.Clean>().Subject.Variables;
         environment.Keys.Should().BeEquivalentTo(["HOME", "USER", "LOGNAME", "PATH"], "nothing of this process's environment reaches the child");
         environment["HOME"].Should().Be("/home/me");
-        environment["PATH"].Should().Be("/home/me/.local/bin:/home/me/.cargo/bin:/usr/local/bin:/usr/bin");
+        environment["PATH"].Should().Be("/home/me/.local/bin:/home/me/.cargo/bin:/home/me/.npm-global/bin:/usr/local/bin:/usr/bin");
         CommandPolicy.Over(new CommandCatalogue([template])).Review(request).Should().Be(CommandVerdict.Allowed);
     }
 

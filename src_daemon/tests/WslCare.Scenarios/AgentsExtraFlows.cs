@@ -110,4 +110,25 @@ public sealed class AgentsExtraFlows
         report.Sizes.Source.Should().Be("fullRun");
         report.Agents.Single(a => a.Id == "manual:mycli").TotalBytes.Bytes.Should().Be(40);
     }
+
+    /// <summary>Review R8 / S5: the two-phase host, through the BUILT binary — a manual agent's folder inside A12's Playwright folder
+    /// (refused by the rules, so not walked, but still protected) makes the root's A12 refuse, naming the overlap. Without
+    /// <c>Program.Main</c>'s second phase the run's layout would not hold the folder and A12 would be previewed as usual.</summary>
+    [Fact]
+    public async Task A_manual_agent_folder_inside_a_cleanup_folder_makes_the_root_cleanup_refuse_through_the_built_cli()
+    {
+        using var home = new ScenarioHome("extra-a12") { ClaimsRoot = true };
+        Assert.SkipWhen(home.Paths.Side == HostSide.Windows, LinuxOnly);
+        Directory.CreateDirectory(Under(home, "/etc"));
+        File.WriteAllText(Under(home, "/etc/passwd"), "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\n");
+        Directory.CreateDirectory(Under(home, "/home/me/.cache/ms-playwright/agent-data"));
+        Directory.CreateDirectory(Under(home, "/home/me/.cache/ms-playwright/chromium-1"));
+        UserLayer(home, $"[{Entry("inplaywright", "/home/me/.cache/ms-playwright/agent-data")}]");
+
+        var result = await home.RunAsync("act", "A12", "--preview", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        var a12 = JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.ActReport)!.Actions.Single();
+        a12.Reason.Should().Contain("overlaps the AI agent folder").And.Contain("agent-data");
+    }
 }

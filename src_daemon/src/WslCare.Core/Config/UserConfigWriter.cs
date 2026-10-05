@@ -28,6 +28,9 @@ public abstract record UserConfigWriteResult
 
     /// <summary>The deletion policy refused the write — a bug in the layout, since the user's config directory is never a protected place.</summary>
     public sealed record Refused(DeletionVerdict.Refused Verdict) : UserConfigWriteResult;
+
+    /// <summary>The rendered layer would be larger than its own reader takes (E7.S1/S2 review R10): nothing was written.</summary>
+    public sealed record TooLarge(int Bytes, int Max) : UserConfigWriteResult;
 }
 
 /// <summary>
@@ -68,11 +71,17 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
 
         // E7.S0 review C3: root never follows a link, so a linked layer is one root refuses; the repair replaces the LINK (the
         // file it points at is never written) with a regular file holding the values read through it.
+        var rendered = Render(next);
+        if (rendered.Length > ConfigLoader.MaxLayerBytes)
+        {
+            return new UserConfigWriteResult.TooLarge(rendered.Length, ConfigLoader.MaxLayerBytes);
+        }
+
         var linked = files.ReadLink(file) is LinkReadResult.Target;
         files.CreateDirectory(directory);
         var verdict = linked
-            ? files.ReplaceLinkWithFile(file, Render(next), new DeletionScope(directory, ActionName))
-            : files.WriteFileAtomically(file, Render(next), new DeletionScope(directory, ActionName));
+            ? files.ReplaceLinkWithFile(file, rendered, new DeletionScope(directory, ActionName))
+            : files.WriteFileAtomically(file, rendered, new DeletionScope(directory, ActionName));
         return verdict is DeletionVerdict.Refused refused
             ? new UserConfigWriteResult.Refused(refused)
             : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, current.MovedAsideTo) { ReplacedLink = linked };

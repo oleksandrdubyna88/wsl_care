@@ -316,8 +316,11 @@ public sealed class ActCommandTests : IDisposable
         var host = Host(Root) with { HomeOwner = new HomeOwner.Target(new TargetUser("me", 1000, "/home/me"), "test") };
 
         var (exit, _, stderr) = CliRun.Over(host, "config", "set", "dryRun", "false");
+        var reset = CliRun.Over(host, "config", "reset", "dryRun");
 
-        exit.Should().Be((int)ExitCode.Usage);
+        // E7.S1/S2 review round: its own exit code, so a client can tell "the distribution's default user is root" from a bad value.
+        exit.Should().Be((int)ExitCode.NotAsRoot);
+        reset.Exit.Should().Be((int)ExitCode.NotAsRoot);
         stderr.Should().Contain("run them as me, not as root");
         File.Exists(_sandbox.Paths.UserConfigFile).Should().BeFalse();
     }

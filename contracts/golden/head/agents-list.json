@@ -20,7 +20,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -67,7 +67,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -107,7 +107,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -147,7 +147,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -205,7 +205,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -245,7 +245,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -285,7 +285,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -325,7 +325,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -365,7 +365,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -405,7 +405,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -445,7 +445,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {
@@ -485,7 +485,7 @@
       "binaries": [],
       "version": {
         "available": false,
-        "reason": "not asked: no link target names a version and no npm package.json was found (nothing is executed to ask)"
+        "reason": "not asked: no binary or npm package names a version on disk (nothing is executed to ask)"
       },
       "dataFolders": [
         {

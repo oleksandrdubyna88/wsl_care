@@ -77,7 +77,7 @@ public sealed class AgentProbeTests : IDisposable
         Assert.SkipUnless(OperatingSystem.IsLinux(), "an execute bit is the distro's rule: run in WSL or on the Linux legs");
         _sandbox.Write("/home/me/.local/bin/plain", "#!/bin/sh\n");
 
-        Probe("/home/me/.local/bin/plain").Reason.Should().Contain("no execute bit");
+        Probe("/home/me/.local/bin/plain").Reason.Should().Contain("may not be started by this user");
     }
 
     [Theory]

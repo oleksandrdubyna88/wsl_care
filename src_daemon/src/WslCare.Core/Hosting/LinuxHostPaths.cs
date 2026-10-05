@@ -100,6 +100,19 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
 
     public string DistroPath(string absoluteLinuxPath) => _rules.Join(environment.Root, absoluteLinuxPath.TrimStart('/'));
 
+    /// <summary>The distro's spelling of a path this process sees under <see cref="LinuxEnvironment.Root"/> — the inverse of
+    /// <see cref="DistroPath"/> (the same path on the machine; without the sandbox root in a test).</summary>
+    public string ToDistro(string onDisk)
+    {
+        var root = Path.TrimEndingDirectorySeparator(environment.Root);
+        return root is "" or "/" || !onDisk.StartsWith(root, StringComparison.Ordinal)
+            ? onDisk
+            : "/" + onDisk[root.Length..].TrimStart('/', '\\').Replace('\\', '/');
+    }
+
+    /// <summary>Every home this layout protects: the home and the other login accounts' (plan §15c #2).</summary>
+    public IReadOnlyList<string> Homes => HomesOf(environment);
+
     /// <summary>The procfs mount the memory and process collectors read (<c>/proc</c>).</summary>
     public string ProcRoot => _rules.Join(environment.Root, "proc");
 

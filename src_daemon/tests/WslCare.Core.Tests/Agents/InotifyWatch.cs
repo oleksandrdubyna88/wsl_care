@@ -29,35 +29,47 @@ internal sealed partial class InotifyWatch : IDisposable
             watch._folders[wd] = folder;
         }
 
+        // The watch's own set-up opened every folder (to list it, adding the watches): those events are not the walk's.
+        _ = watch.Drain();
+        watch._seen.Clear();
         return watch;
     }
 
+    /// <summary>Every folder OPENED (to be listed or entered) seen so far, as its path — review S9: H2 says a never-enter folder is
+    /// not even opened.</summary>
+    public IReadOnlyList<string> FolderEvents() => [.. Drain().Where(e => e.Folder).Select(e => e.Path)];
+
     /// <summary>Every open or read of a FILE seen so far, as "folder/name".</summary>
-    public IReadOnlyList<string> FileEvents()
+    public IReadOnlyList<string> FileEvents() => [.. Drain().Where(e => !e.Folder).Select(e => e.Path)];
+
+    private readonly List<(string Path, bool Folder)> _seen = [];
+
+    /// <summary>The queue read to its end into what was seen so far (both lists answer from it).</summary>
+    private IReadOnlyList<(string Path, bool Folder)> Drain()
     {
-        var events = new List<string>();
         var buffer = new byte[64 * 1024];
         int read;
         while ((read = Read(_fd, buffer, buffer.Length)) > 0)
         {
-            events.AddRange(Parse(buffer.AsSpan(0, read)));
+            _seen.AddRange(Parse(buffer.AsSpan(0, read)));
         }
 
-        return events;
+        return _seen;
     }
 
-    private IEnumerable<string> Parse(ReadOnlySpan<byte> bytes)
+    private List<(string Path, bool Folder)> Parse(ReadOnlySpan<byte> bytes)
     {
-        var found = new List<string>();
+        var found = new List<(string, bool)>();
         for (var at = 0; at + 16 <= bytes.Length;)
         {
             var wd = BitConverter.ToInt32(bytes[at..]);
             var mask = BitConverter.ToUInt32(bytes[(at + 4)..]);
             var length = BitConverter.ToInt32(bytes[(at + 12)..]);
             var name = System.Text.Encoding.UTF8.GetString(bytes.Slice(at + 16, length)).TrimEnd('\0');
-            if ((mask & InIsDir) == 0 && (mask & (InOpen | InAccess)) != 0)
+            if ((mask & (InOpen | InAccess)) != 0)
             {
-                found.Add($"{_folders.GetValueOrDefault(wd, "?")}/{name}");
+                var folder = _folders.GetValueOrDefault(wd, "?");
+                found.Add((name.Length == 0 ? folder : $"{folder}/{name}", (mask & InIsDir) != 0));
             }
 
             at += 16 + length;

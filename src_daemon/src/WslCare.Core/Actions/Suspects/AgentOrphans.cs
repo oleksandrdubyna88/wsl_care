@@ -119,8 +119,15 @@ public sealed class AgentOrphans : ICleanupAction
             return Unconfirmed;
         }
 
+        var under = AgentCatalogue.LinuxFolder(layout.LinuxUnder, home);
+        if (AgentWalk.PlaceProblem(context.Files, home, under).Length > 0)
+        {
+            return CannotTell;
+        }
+
         var started = context.Clock.GetTimestamp();
-        var scan = SessionGlob.Find(context.Files, AgentCatalogue.LinuxFolder(layout.LinuxUnder, home), layout.Glob, AgentWalk.NeverEnterOf(agent), () => context.Clock.GetElapsedTime(started) >= AgentWalk.MeasureNowBudget);
+        var listing = new SessionListing(context.Files, AgentWalk.NeverEnterOf(agent), () => context.Clock.GetElapsedTime(started) >= AgentWalk.MeasureNowBudget, CancellationToken.None) { Device = context.Files.DeviceOf(under) };
+        var scan = SessionGlob.Find(listing, under, layout.Glob);
         return !scan.Complete ? CannotTell
             : scan.Sessions.Any(s => s.LastWrite >= now - window) ? LiveSession
             : string.Empty;

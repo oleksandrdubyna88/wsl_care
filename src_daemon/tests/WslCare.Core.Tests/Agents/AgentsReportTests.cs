@@ -42,7 +42,7 @@ public sealed class AgentsReportTests : IDisposable
     {
         var report = Report(Sample(new AgentFolderSize("/a", true, 100, 1, false, [], "stopped after 2000000 entries; a lower bound"), new AgentFolderSize("/b", false, 0, 0, true, [], "/b does not exist")));
 
-        report.TotalBytes.Should().Be(new Core.Status.ByteFigure(true, 100, null));
+        report.TotalBytes.Should().Be(new Core.Status.ByteFigure(true, 100, "stopped after 2000000 entries; a lower bound"), "a lower bound says so (E7.S1/S2 review R2)");
     }
 
     [Fact]

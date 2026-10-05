@@ -108,8 +108,8 @@ public sealed partial class ArchitectureTests
         // E7.S1: the agents — walks and listings of their folders (names and sizes, nothing opened), and a package.json read
         // only when not root.
         ["WslCare.Core/Agents/AgentDiscovery.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
-        ["WslCare.Core/Agents/AgentWalk.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
-        ["WslCare.Core/Agents/SessionGlob.cs"] = new() { ["ListEntries"] = (2, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Agents/AgentWalk.cs"] = new() { ["WalkTree"] = (2, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Agents/SessionGlob.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
 
         // Review S2: the reads through a wrapper — procfs, /etc, binfmt_misc, the drive's powershell.exe head — all the kernel's or root's.
         ["WslCare.Core/Actions/Disk/FilesystemTrim.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },

@@ -74,7 +74,7 @@ internal static class AgentsCommand
     private static (AgentSizes, AgentsSample?) Measured(CliHost host, IReadOnlyList<AgentPresence> found, LastSlowParts last, CancellationToken cancellationToken)
     {
         var targets = found.Where(p => p.Tracked).Select(p => p.Target).ToList();
-        var sample = new AgentWalk(host.Files, host.Clock).Measure(targets, AgentWalk.MeasureNowBudget, withNames: true, cancellationToken);
+        var sample = new AgentWalk(host.Files, host.Clock, host.Paths.Home).Measure(targets, AgentWalk.MeasureNowBudget, withNames: true, cancellationToken);
         return (new AgentSizes.Now(sample), last.Agents.Map(a => a.Value).ValueOr(null!));
     }
 

@@ -42,7 +42,7 @@ public static class ExtraAgents
             [],
             [],
             [],
-            agent.SessionGlob.Length == 0 ? null : new AgentSessionLayout(string.Empty, string.Empty, agent.SessionGlob, "aiAgents.extra (the person's own layout)"),
+            agent.SessionGlob.Length == 0 ? null : new AgentSessionLayout(string.Empty, string.Empty, agent.SessionGlob, "aiAgents.extra (the person's own layout)", []),
             string.Empty,
             false);
 

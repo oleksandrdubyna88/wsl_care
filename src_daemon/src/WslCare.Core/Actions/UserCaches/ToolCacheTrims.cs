@@ -7,12 +7,15 @@ using WslCare.Core.Processes.Policy;
 
 namespace WslCare.Core.Actions.UserCaches;
 
-/// <summary>One package manager A17 trims: its own safe command and the cache that command shrinks (its default place —
-/// the tool runs with a clean environment, so no variable moves it).</summary>
+/// <summary>One package manager A17 trims: its own safe command, the cache that command shrinks by default, and how to ask
+/// the tool where its cache really is. The tool runs with a clean ENVIRONMENT (no variable moves its cache) but with HOME set,
+/// so its own configuration FILE can (<c>pip.conf</c> <c>cache-dir</c>, <c>uv.toml</c>, pnpm's <c>store-dir</c>) — which is
+/// why the tool is asked before it runs (E7.S1/S2 review S4).</summary>
 /// <param name="Tool">The name a person reads.</param>
 /// <param name="Command">The user-scoped template (the tool's own command, never a delete of ours).</param>
-/// <param name="Cache">The cache folder under the target user's home.</param>
-public sealed record CacheTool(string Tool, CommandTemplate Command, IReadOnlyList<string> Cache);
+/// <param name="Cache">The DEFAULT cache folder under the target user's home (what is measured).</param>
+/// <param name="Where">The tool's own answer to "where is your cache".</param>
+public sealed record CacheTool(string Tool, CommandTemplate Command, IReadOnlyList<string> Cache, CommandTemplate Where);
 
 /// <summary>
 /// A17 (plan §5): the package managers' OWN cache trims, run AS THE TARGET USER through <c>runuser</c> (plan §15c #2) —
@@ -41,10 +44,10 @@ public sealed class ToolCacheTrims : ICleanupAction
 
     public static IReadOnlyList<CacheTool> Tools { get; } =
     [
-        new("pnpm", User("pnpm-store-prune", "pnpm", "store", "prune"), [".local", "share", "pnpm", "store"]),
-        new("uv", User("uv-cache-prune", "uv", "cache", "prune"), [".cache", "uv"]),
-        new("pip", User("pip-cache-purge", "pip", "cache", "purge"), [".cache", "pip"]),
-        new("pip3", User("pip3-cache-purge", "pip3", "cache", "purge"), [".cache", "pip"]),
+        new("pnpm", User("pnpm-store-prune", "pnpm", "store", "prune"), [".local", "share", "pnpm", "store"], Where("pnpm-store-path", "pnpm", "store", "path")),
+        new("uv", User("uv-cache-prune", "uv", "cache", "prune"), [".cache", "uv"], Where("uv-cache-dir", "uv", "cache", "dir")),
+        new("pip", User("pip-cache-purge", "pip", "cache", "purge"), [".cache", "pip"], Where("pip-cache-dir", "pip", "cache", "dir")),
+        new("pip3", User("pip3-cache-purge", "pip3", "cache", "purge"), [".cache", "pip"], Where("pip3-cache-dir", "pip3", "cache", "dir")),
     ];
 
     public ActionId Id { get; } = ActionId.Find("A17")!;
@@ -60,7 +63,7 @@ public sealed class ToolCacheTrims : ICleanupAction
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];
 
-    public IReadOnlyList<CommandTemplate> Commands { get; } = [.. Tools.Select(t => t.Command)];
+    public IReadOnlyList<CommandTemplate> Commands { get; } = [.. Tools.SelectMany(t => new[] { t.Command, t.Where })];
 
     public Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
@@ -89,15 +92,22 @@ public sealed class ToolCacheTrims : ICleanupAction
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
         var trims = new List<(ActionItem Item, string Failure)>();
+        var kept = new List<string>();
         foreach (var tool in Installed(commands))
         {
+            if (await CacheFolders.ConfiguredCacheRefusal(context, commands, tool.Where, tool.Tool, cancellationToken).ConfigureAwait(false) is { Length: > 0 } refusal)
+            {
+                kept.Add($"{tool.Tool} not run: {refusal}");
+                continue;
+            }
+
             trims.Add(await TrimAsync(context, commands, tool, cancellationToken).ConfigureAwait(false));
         }
 
         IReadOnlyList<ActionItem> removed = [.. trims.Select(t => t.Item)];
         return new ActionRun(removed.Count, Freed(removed), "each tool's cache folder walked right before and right after its own command", null, null, removed, commands.Ran, string.Join("; ", trims.Select(t => t.Failure).Where(f => f.Length > 0)))
         {
-            Notes = [NotRun],
+            Notes = [.. kept, NotRun],
         };
     }
 
@@ -128,6 +138,10 @@ public sealed class ToolCacheTrims : ICleanupAction
         var cache = CacheFolders.Measure(context.Files, CacheFolders.UnderHome(context, [.. tool.Cache]), cancellationToken);
         return new ActionItem("cache", tool.Tool, cache.CompleteBytes, cache.Complete ? cache.Path : $"{cache.Path} (walk cut or unreadable: size unknown)");
     }
+
+    /// <summary>A tool's "where is your cache" — read-only, short, its answer one line.</summary>
+    private static CommandTemplate Where(string name, string executable, params string[] words) =>
+        new(name, CommandScope.User, executable, [.. words.Select(w => new ArgPart.Literal(w))], TimeSpan.FromSeconds(30), 64 * 1024);
 
     private static CommandTemplate User(string name, string executable, params string[] words) =>
         new(name, CommandScope.User, executable, [.. words.Select(w => new ArgPart.Literal(w))], Ceiling, CommandRequest.DefaultOutputCapChars);

@@ -4,6 +4,7 @@ using WslCare.Core.Actions;
 using WslCare.Core.Actions.UserCaches;
 using WslCare.Core.Files.Deletion;
 using WslCare.Core.Processes;
+using WslCare.Core.Processes.Policy;
 using WslCare.Core.Records;
 using WslCare.TestSupport;
 
@@ -48,7 +49,13 @@ public sealed class UserCacheTests : IDisposable
     {
         var a = _world.File("/home/me/.npm/_cacache/a", 3000);
         _world.File("/home/me/.npm/_cacache/b", 1000);
-        _world.Tool("npm", "/usr/bin").OnTool("npm", () => Remove(a));
+        _world.Tool("npm", "/usr/bin");
+        Asks("npm", ["config", "get", "cache"], "/home/me/.npm");
+        _world.Runner.ScriptEffect(argv => TargetUserArgv.Parse(argv) is { ExecutableName: "npm", Arguments: ["cache", "clean", "--force"] }, _ =>
+        {
+            Remove(a);
+            return RecordingCommandRunner.Exited(0);
+        });
         var action = new NpmCacheClean();
         var context = _world.Context();
         var commands = _world.Commands(action, context);
@@ -57,11 +64,50 @@ public sealed class UserCacheTests : IDisposable
 
         run.Succeeded.Should().BeTrue(run.Failure);
         run.FreedBytes.Should().Be(3000, "the size of ~/.npm before minus after, not an estimate");
-        var request = _world.Runner.Requests.Should().ContainSingle().Subject;
+        _world.Wrapped.Should().Equal("npm config get cache", "npm cache clean --force");
+        var request = _world.Runner.Requests[^1];
         request.Argv.Take(4).Should().Equal("runuser", "-u", "me", "--");
         request.Argv.Skip(5).Should().Equal("cache", "clean", "--force");
         request.Environment.Should().BeOfType<CommandEnvironment.Clean>().Which.Variables["HOME"].Should().Be("/home/me");
         Core.Processes.Policy.CommandPolicy.Product.Review(request).IsAllowed.Should().BeTrue();
+    }
+
+    // ---------- review S4: a tool's own configuration can move its cache into an agent folder ----------
+
+    private UserCacheTests Asks(string tool, IReadOnlyList<string> arguments, string answer)
+    {
+        _world.Runner.Script(argv => TargetUserArgv.Parse(argv) is { } w && w.ExecutableName == tool && w.Arguments.SequenceEqual(arguments), RecordingCommandRunner.Exited(0, answer + "\n", string.Empty));
+        return this;
+    }
+
+    [Fact]
+    public async Task S4_A8_refuses_when_npms_own_configuration_puts_its_cache_in_an_agent_folder()
+    {
+        _world.File("/home/me/.claude/npm-cache/_cacache/x", 10);
+        _world.Tool("npm", "/usr/bin");
+        Asks("npm", ["config", "get", "cache"], "/home/me/.claude/npm-cache");
+        var action = new NpmCacheClean();
+        var context = _world.Context();
+
+        var preview = await action.PreviewAsync(context, _world.Commands(action, context), CancellationToken.None);
+
+        preview.Refusal.Should().Contain("/home/me/.claude/npm-cache").And.Contain("AI agent folder");
+    }
+
+    [Fact]
+    public async Task S4_A17_does_not_run_a_tool_whose_configured_cache_is_in_an_agent_folder()
+    {
+        _world.File("/home/me/.codex/pip/wheels/y", 700);
+        _world.Tool("pip3", "/usr/bin");
+        Asks("pip3", ["cache", "dir"], "/home/me/.codex/pip");
+        var action = new ToolCacheTrims();
+        var context = _world.Context();
+        var commands = _world.Commands(action, context);
+
+        var run = await action.RunAsync(context, await action.PreviewAsync(context, commands, CancellationToken.None), commands, CancellationToken.None);
+
+        _world.Wrapped.Should().NotContain("pip3 cache purge");
+        run.Notes.Should().Contain(n => n.Contains("/home/me/.codex/pip", StringComparison.Ordinal) && n.Contains("AI agent folder", StringComparison.Ordinal));
     }
 
     // ---------- A17 ----------
@@ -83,14 +129,26 @@ public sealed class UserCacheTests : IDisposable
     {
         var store = _world.File("/home/me/.local/share/pnpm/store/v3/x", 5000);
         var wheel = _world.File("/home/me/.cache/pip/wheels/y", 700);
-        _world.Tool("pnpm").Tool("pip3", "/usr/bin").OnTool("pnpm", () => Remove(store)).OnTool("pip3", () => Remove(wheel));
+        _world.Tool("pnpm").Tool("pip3", "/usr/bin");
+        Asks("pnpm", ["store", "path"], "/home/me/.local/share/pnpm/store/v3");
+        Asks("pip3", ["cache", "dir"], "/home/me/.cache/pip");
+        _world.Runner.ScriptEffect(argv => TargetUserArgv.Parse(argv) is { ExecutableName: "pnpm", Arguments: ["store", "prune"] }, _ =>
+        {
+            Remove(store);
+            return RecordingCommandRunner.Exited(0);
+        });
+        _world.Runner.ScriptEffect(argv => TargetUserArgv.Parse(argv) is { ExecutableName: "pip3", Arguments: ["cache", "purge"] }, _ =>
+        {
+            Remove(wheel);
+            return RecordingCommandRunner.Exited(0);
+        });
         var action = new ToolCacheTrims();
         var context = _world.Context();
         var commands = _world.Commands(action, context);
 
         var run = await action.RunAsync(context, await action.PreviewAsync(context, commands, CancellationToken.None), commands, CancellationToken.None);
 
-        _world.Wrapped.Should().Equal("pnpm store prune", "pip3 cache purge");
+        _world.Wrapped.Should().Equal("pnpm store path", "pnpm store prune", "pip3 cache dir", "pip3 cache purge");
         run.FreedBytes.Should().Be(5700);
         run.Notes.Should().ContainSingle().Which.Should().Contain("cargo sweep");
     }
