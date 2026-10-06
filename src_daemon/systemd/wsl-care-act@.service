@@ -22,7 +22,10 @@
 #                             no-op)
 #   CollectMode=inactive-or-failed  an instance that ended — failed or not — is unloaded, so no finished run lingers in
 #                             `systemctl --failed` (the health collector counts failed units). It stands for §15k #8's
-#                             reset-failed: systemd's own mechanism, no command of ours
+#                             reset-failed: systemd's own mechanism, no command of ours. It sits in [Unit], the only
+#                             section systemd.unit(5) reads it from: daemon 0.1.0 had it under [Service], where systemd
+#                             255 ignores it ("Unknown key name 'CollectMode' in section 'Service', ignoring."), so a
+#                             failed detached run stayed in `systemctl --failed` (POST_DEPLOY item 7; fixed in 0.1.1)
 #   TimeoutStopSec=90 (both units, §15k #18): `act --stop` → SIGTERM → the run records itself interrupted; one that does
 #                             not exit in 90 s is SIGKILLed, and the next root run's sweep records why from the stop marker
 #   KillMode=control-group    a stop ends every child the run started (the default, spelt out for the equality test)
@@ -31,6 +34,7 @@
 [Unit]
 Description=wsl-care: a detached run the panel asked for (%i)
 Documentation=https://github.com/oleksandrdubyna88/wsl_care
+CollectMode=inactive-or-failed
 
 [Service]
 Type=oneshot
@@ -43,4 +47,3 @@ KillMode=control-group
 TimeoutStartSec=infinity
 TimeoutStopSec=90
 SuccessExitStatus=3 75 76 78 79 80
-CollectMode=inactive-or-failed
