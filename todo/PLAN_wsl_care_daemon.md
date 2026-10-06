@@ -2423,6 +2423,11 @@ cap was reached. Fixed in `fix/wc-retro-pr17-cli`:
 | F1, F3 | The act parser's `ActSplit` appended to mutable lists AND copied the whole list per `--process` value (402 MB for 10 000 keys) | `ImmutableList` — no mutation, a shared tree per add — red first on the allocation |
 | F0 | `AgentsCommand` forced `null!` through `Reading.ValueOr` | the report's own "no sample" spelt as such (`Sample(…)`) |
 
+Observed (2026-10-06, Windows, Debug): RED — the doctor test failed with the ESC printed (`Expected stdout … not to contain
+"" because no control character of a version answer reaches the terminal`) and the parse test with
+`Expected allocated to be less than 67108864L … but found 402604896L`; GREEN after the fix — `RetroPr17Tests` 2/2; the whole
+suite Core 1335/1335, Cli 257/257, Scenarios 370/370 (1 skipped by design).
+
 ## 14. Definition of Done
 
 - [ ] Phase 0 steps done or explicitly declined, each with before/after numbers in `research/`.
