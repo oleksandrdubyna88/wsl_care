@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 
 namespace WslCare.Cli;
@@ -380,7 +381,9 @@ internal static class CommandLine
     };
 
     /// <summary>An act's options apart: its flags, the <c>--volume</c> values, the <c>--only</c> file, the <c>--process</c> keys.</summary>
-    private sealed record ActSplit(List<string> Flags, List<string> Volumes, string Only, List<string> Processes, Request.Failed? Failure);
+    /// <remarks>Retro gate over PR #17: immutable lists, so taking a value neither mutates the split nor copies the whole list
+    /// (an <see cref="ImmutableList{T}"/> add shares its tree: ten thousand <c>--process</c> keys copied 400 MB before).</remarks>
+    private sealed record ActSplit(ImmutableList<string> Flags, ImmutableList<string> Volumes, string Only, ImmutableList<string> Processes, Request.Failed? Failure);
 
     /// <summary>The flags, the <c>--volume</c> values, the <c>--only</c> file and the <c>--process</c> keys, apart — or the first refusal.</summary>
     private static ActSplit SplitActOptions(IReadOnlyList<string> rest)
@@ -399,7 +402,7 @@ internal static class CommandLine
     {
         if (rest[i] is not (VolumeFlag or OnlyFlag or ProcessFlag))
         {
-            split.Flags.Add(rest[i]);
+            split = split with { Flags = split.Flags.Add(rest[i]) };
             return 1;
         }
 
@@ -410,9 +413,9 @@ internal static class CommandLine
     /// <summary>A <c>--volume</c>, <c>--only</c> or <c>--process</c> value taken.</summary>
     private static ActSplit WithValue(ActSplit split, string flag, string value) => flag switch
     {
-        ProcessFlag => split with { Processes = [.. split.Processes, value] },
+        ProcessFlag => split with { Processes = split.Processes.Add(value) },
         OnlyFlag => split with { Only = value },
-        _ => split with { Volumes = [.. split.Volumes, value] },
+        _ => split with { Volumes = split.Volumes.Add(value) },
     };
 
     /// <summary>Why <c>--volume</c> / <c>--only</c> at <paramref name="i"/> cannot be taken: no value, or a second <c>--only</c>.</summary>

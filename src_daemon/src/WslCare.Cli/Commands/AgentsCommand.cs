@@ -79,14 +79,18 @@ internal static class AgentsCommand
         Output.Note(stderr, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"measuring {targets.Sum(t => t.Folders.Count)} agent folder(s), up to {AgentWalk.MeasureNowBudget.TotalSeconds:0} s…"));
         var walk = new AgentWalk(host.Files, host.Clock, host.Paths.Home) { OnFolder = folder => Output.Note(stderr, CommandLine.Printable($"measuring {folder}")) };
         var sample = walk.Measure(targets, AgentWalk.MeasureNowBudget, withNames: true, cancellationToken);
-        return (new AgentSizes.Now(sample), last.Agents.Map(a => a.Value).ValueOr(null!));
+        return (new AgentSizes.Now(sample), Sample(last.Agents.Map(a => a.Value)));
     }
 
     private static (AgentSizes, AgentsSample?) Recorded(LastSlowParts last) => last.Agents switch
     {
-        Reading<AgedPart<AgentsSample>>.Available { Value: var aged } => (new AgentSizes.FullRun(aged), last.PreviousAgents.ValueOr(null!)),
+        Reading<AgedPart<AgentsSample>>.Available { Value: var aged } => (new AgentSizes.FullRun(aged), Sample(last.PreviousAgents)),
         var missing => (new AgentSizes.None($"{missing.ReasonOrEmpty}; agents list --measure walks the folders now"), null),
     };
+
+    /// <summary>A recorded sample, or none: the report's own "not found" (<c>AgentsSample?</c>), spelt as such — never a
+    /// <c>null!</c> forced through a non-nullable fallback (retro gate over PR #17).</summary>
+    private static AgentsSample? Sample(Reading<AgentsSample> recorded) => recorded is Reading<AgentsSample>.Available { Value: var sample } ? sample : null;
 
     private static string Render(AgentsReport report)
     {

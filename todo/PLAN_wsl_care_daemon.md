@@ -2408,6 +2408,21 @@ F2 (log retention under observe-only) was real at the merge and is already fixed
 to pin `dryRun = true`; the consultant preferred refusing a lossy repair outright (the person edits the file, or a future
 explicit `config repair`). Pinning keeps the panel able to repair; refusing never changes a setting the person did not name.
 
+### 17f. Retro gate over PR #17 (E7, the daemon half) — coai codex, 2026-10-06
+
+Plan round session `2c1df544` (1/1 reviewer, `proceed`, 2 findings, both rejected: `wsl.exe -u root` asks no password by
+WSL's design and interop-off already makes the user layer tighten-only; a component swapped under the home during the walk
+can only be swapped by the home's owner, and the walk opens no file — kept as a residual). The plan text given was §15q's
+design part verbatim; the E7.S2b and E7.S2c sections were named for the reviewer to read in the checkout (§15q is 129 KB).
+Code round (4/4 reviewers, `proceed`, 4 findings, all accepted). The consultation for this round is OWED — the shared consult
+cap was reached. Fixed in `fix/wc-retro-pr17-cli`:
+
+| # | Defect in what shipped (still on main) | Fix |
+|---|---|---|
+| F2 | `doctor`'s versions line skipped `CommandLine.Printable`: a version a tool answered reached the terminal raw (OSC 52) | the whole line passes it — red first |
+| F1, F3 | The act parser's `ActSplit` appended to mutable lists AND copied the whole list per `--process` value (402 MB for 10 000 keys) | `ImmutableList` — no mutation, a shared tree per add — red first on the allocation |
+| F0 | `AgentsCommand` forced `null!` through `Reading.ValueOr` | the report's own "no sample" spelt as such (`Sample(…)`) |
+
 ## 14. Definition of Done
 
 - [ ] Phase 0 steps done or explicitly declined, each with before/after numbers in `research/`.
