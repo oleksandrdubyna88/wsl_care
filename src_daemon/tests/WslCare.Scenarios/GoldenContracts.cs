@@ -252,6 +252,17 @@ internal static partial class GoldenContracts
         files.Add(Answered("runs-show-interrupted.json", journal, await journal.RunAsync("runs", "show", ReadContractScenes.Dead().RunId.Text, "--json"), matched));
         files.Add(Answered("runs-show-unknown.json", journal, await journal.RunAsync("runs", "show", ReadContractScenes.StrangerRunId, "--json"), matched));
 
+        // E9.S0: where the archive may live — a Windows drive path placed at its drvfs mount (the owner's network drive, observed).
+        using (var archive = new ScenarioHome("golden-archive-check-base"))
+        {
+            var paths = (LinuxHostPaths)archive.Paths;
+            var mountInfo = paths.DistroPath("/proc/self/mountinfo");
+            Directory.CreateDirectory(Path.GetDirectoryName(mountInfo)!);
+            File.WriteAllText(mountInfo, "523 504 8:96 / / rw,relatime - ext4 /dev/sdg rw\n479 523 0:154 / /mnt/v rw,relatime - 9p V: rw,aname=drvfs;path=V:;uid=1000;gid=1000;metadata;symlinkroot=/mnt/\n");
+            Directory.CreateDirectory(paths.DistroPath("/mnt/v/ai-archive"));
+            files.Add(Answered("archive-check-base.json", archive, await archive.RunAsync("archive", "check-base", @"V:\ai-archive", "--json"), matched));
+        }
+
         using var day = new ScenarioHome("golden-local-day");
         ReadContractScenes.LocalDayHistory(day);
         files.Add(Answered("runs-local-day.json", day, await day.RunAsync(["runs", .. ReadContractScenes.LocalDay, "--json"]), matched));

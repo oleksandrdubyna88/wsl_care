@@ -140,8 +140,9 @@ you typed, a key read from the file, a path — are shown as `?`.
 **What a setting can and cannot do** (plan §15q R1). No setting is free text: `processes.families` takes only the named
 families (`dotnet-build-servers`, `testhost`, `docker-desktop-proxy`, `language-servers` — the C# language server, an A11 suspect once its VS Code window closed —, `vscode-server` — which
 also matches the VS Code server itself, daemonised and so "orphaned": do not list it for A11 —, `node` — never `other`, the
-catch-all, and never `ai-agents`), `distro` a distribution name, `archive.baseFolder` an absolute path — and that one only
-in the MACHINE file (`config set` refuses it; a user-file value is ignored). No setting changes what may run or be
+catch-all, and never `ai-agents`), `distro` a distribution name, `archive.baseFolder` an absolute path (or a Windows share)
+that `config set` writes only when the archive's folder rules accept it (*AI-session archive* below), `archive.agents` only
+agents whose session layout was confirmed. No setting changes what may run or be
 deleted — only when a declared cleanup runs and with which bounded number. `contracts/config-keys.json` lists every key
 with its range, its default and what it means to a root run.
 
@@ -674,6 +675,30 @@ is never searched. A version is read along the binary's own links — a native i
 the binary runs. A walk or a listing never starts in a folder reached through a link below the home, nor on another
 filesystem than the home's; a session's size holds its companion files (Claude Code's session folder and file history,
 Antigravity's `brain/` and annotations).
+
+## AI-session archive — where it may live (E9.S0; the moving arrives with E9.S2)
+
+```bash
+wsl-care archive check-base 'V:\ai-archive' --json             # as YOU, never as root: may the archive live there?
+wsl-care config set archive.baseFolder /mnt/v/ai-archive       # written only when the same rules accept the folder
+```
+
+The archive MOVES old AI sessions into `<base>/<agent>/<yyyy>/<MM>/…` — and the process that moves them is YOURS, never root's
+(plan §15r D1), so the folder is judged as you: it must already exist (it is never created), be reached through no link, be no
+drive, share or filesystem root and not your home, not be, hold or sit inside an AI agent's folder, `~/git`, Claude's temporary
+folder, the temporary folder, a folder a cleanup removes or wsl-care's own folders, lie on a filesystem that survives a
+shutdown (never `tmpfs`), and be writable by you. Inside the distribution a Windows path is answered with the folder it is
+mounted at (`V:\ai-archive` → `/mnt/v/ai-archive`, from the mount table); a drive the distribution has not mounted is refused.
+An accepted folder may come with warnings — other accounts may read it (archived sessions hold what the agents saw:
+`chmod 700` it; on Windows, the folder's Everyone / Users / Authenticated Users permissions), or it lies on the distribution's
+own disk — and notes (a FAT drive's 2-second times, a drvfs mount's reported modes). A refused folder is an answer (exit 0,
+`accepted: false` and its `rule`); as root the verb refuses with exit **81**.
+
+Which agents are archived is `archive.agents` (Claude Code, Codex, Gemini CLI, Antigravity — the layouts confirmed on
+2026-10-02). The ages are settings with a rule between them: a session is copied when its newest file is older than
+`archive.olderThanDays` (14), removed from your side `archive.removeAfterHours` (24) later, and both stay
+`archive.marginDays` (7) ahead of the agent's own deletion, `archive.agentRetentionDays` (30, Claude Code's default
+`cleanupPeriodDays` — raise it with that setting). A value that breaks the rule is not taken.
 
 ## Extension (preview)
 

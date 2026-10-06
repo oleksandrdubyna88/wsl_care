@@ -625,6 +625,71 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey RunLimitMinutes = new("mcpWatchdog.runLimitMinutes", 2, 60) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
+    /// <summary>The AI-session archive (plan §15r, E9.S0). Group A: the ages and the base's free space, the user's to choose;
+    /// group B: what bounds a run root starts and waits on — the budget, the ceilings, the caps of what root reads back.</summary>
+    public static partial class Archive
+    {
+        /// <summary>Phase 2 (§15r D2) removes a source only this long after its copy was indexed, once the copy is read again. Default 24.</summary>
+        public static readonly ConfigKey.IntKey RemoveAfterHours = new("archive.removeAfterHours", 1, 720) { Trust = KeyTrust.Higher };
+
+        /// <summary>Days kept between a source's removal and the agent's own deletion (§15r D10). Default 7.</summary>
+        public static readonly ConfigKey.IntKey MarginDays = new("archive.marginDays", 1, 365) { Trust = KeyTrust.Higher };
+
+        /// <summary>The shortest own-retention of an archived agent — Claude Code's cleanupPeriodDays default; raise it with that
+        /// setting (§15r D10). Default 30.</summary>
+        public static readonly ConfigKey.IntKey AgentRetentionDays = new("archive.agentRetentionDays", 3, 3650) { Trust = KeyTrust.Lower };
+
+        /// <summary>Within this many days of an agent's retention the timer does not wait for an idle machine (§15r D8). Default 7.</summary>
+        public static readonly ConfigKey.IntKey UrgentWithinDays = new("archive.urgentWithinDays", 0, 365) { Trust = KeyTrust.Higher };
+
+        /// <summary>The base keeps this much free; a session that would go below it is not started (§15r D7). Default 5.</summary>
+        public static readonly ConfigKey.IntKey MinFreeGb = new("archive.minFreeGb", 0, GbCeiling) { Trust = KeyTrust.Higher };
+
+        /// <summary>The copy's read size. Default 1024.</summary>
+        public static readonly ConfigKey.IntKey CopyBufferKib = new("archive.copyBufferKib", 64, 16384) { Trust = KeyTrust.Display };
+
+        /// <summary>The most the archive child takes of one timer run — from the run limit's slack, never a term of its sum (§15r D8).
+        /// Default 30.</summary>
+        public static readonly ConfigKey.IntKey RunBudgetMinutes = new("archive.runBudgetMinutes", 1, 55) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The session in flight may finish this long past the budget. Default 5.</summary>
+        public static readonly ConfigKey.IntKey FinishGraceMinutes = new("archive.finishGraceMinutes", 1, 30) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>Below this much slack in a timer run A13 skips "no time left in this run". Default 2.</summary>
+        public static readonly ConfigKey.IntKey MinRunMinutes = new("archive.minRunMinutes", 1, 60) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
+
+        /// <summary>The preview child's ceiling — counted in a timer run's worst case. Default 120.</summary>
+        public static readonly ConfigKey.IntKey PreviewTimeoutSeconds = new("archive.previewTimeoutSeconds", 10, 600) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The one-<c>stat</c> child that asks whether the base answers at all, before the long one (§15r D1, review M11). Default 10.</summary>
+        public static readonly ConfigKey.IntKey ReachabilitySeconds = new("archive.reachabilitySeconds", 1, 60) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The archive child prints a line at least this often, mid-file too — the progress watchdog counts it (§15r D8). Default 60.</summary>
+        public static readonly ConfigKey.IntKey ProgressSilenceSeconds = new("archive.progressSilenceSeconds", 10, 600) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>A19's restore child's ceiling — a button, never in a timer run; within the least maximum a request accepts
+        /// (<c>commands.maxTimeoutHours</c>' minimum, 1 h). Default 60.</summary>
+        public static readonly ConfigKey.IntKey RestoreLimitMinutes = new("archive.restoreLimitMinutes", 1, 60) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The most sessions one run takes — bounds the in-flight file and the answer root reads. Default 5000.</summary>
+        public static readonly ConfigKey.IntKey MaxSessionsPerRun = new("archive.maxSessionsPerRun", 1, 100000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>One month index read. Default 67108864.</summary>
+        public static readonly ConfigKey.IntKey MaxIndexBytes = new("archive.maxIndexBytes", 1048576, 268435456) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The archive's local state files (the in-flight file, the summary, the restored map). Default 4194304.</summary>
+        public static readonly ConfigKey.IntKey MaxStateFileBytes = new("archive.maxStateFileBytes", 65536, 67108864) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The archive child's answer root reads. Default 1048576.</summary>
+        public static readonly ConfigKey.IntKey ChildOutputCapBytes = new("archive.childOutputCapBytes", 65536, 16777216) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>One progress line root reads (it carries no name). Default 256.</summary>
+        public static readonly ConfigKey.IntKey ProgressLineMaxBytes = new("archive.progressLineMaxBytes", 64, 4096) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The open-file scan (<c>/proc/*/fd</c>) or the Restart Manager query of one run. Default 20.</summary>
+        public static readonly ConfigKey.IntKey InUseScanSeconds = new("archive.inUseScanSeconds", 1, 120) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+    }
+
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
     private static IReadOnlyList<ConfigKey> NumberKeys() =>
     [
@@ -785,5 +850,24 @@ public static partial class ConfigKeys
         McpWatchdog.BusyMinutes,
         McpWatchdog.PeriodMinutes,
         McpWatchdog.RunLimitMinutes,
+        Archive.RemoveAfterHours,
+        Archive.MarginDays,
+        Archive.AgentRetentionDays,
+        Archive.UrgentWithinDays,
+        Archive.MinFreeGb,
+        Archive.CopyBufferKib,
+        Archive.RunBudgetMinutes,
+        Archive.FinishGraceMinutes,
+        Archive.MinRunMinutes,
+        Archive.PreviewTimeoutSeconds,
+        Archive.ReachabilitySeconds,
+        Archive.ProgressSilenceSeconds,
+        Archive.RestoreLimitMinutes,
+        Archive.MaxSessionsPerRun,
+        Archive.MaxIndexBytes,
+        Archive.MaxStateFileBytes,
+        Archive.ChildOutputCapBytes,
+        Archive.ProgressLineMaxBytes,
+        Archive.InUseScanSeconds,
     ];
 }

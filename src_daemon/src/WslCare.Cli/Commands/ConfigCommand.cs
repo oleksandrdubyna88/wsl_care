@@ -50,8 +50,16 @@ internal static class ConfigCommand
         {
             { Trust.MachineOnly: true } => Output.Refuse(stderr, $"{key.Name} is set only in the machine layer (/etc/wsl-care/config.json, as root); the user layer would be ignored. Nothing was written."),
             ConfigKey.AgentListKey agents => SetAgents(agents, value, host, stdout, stderr),
+            _ when key == ConfigKeys.Archive.BaseFolder => SetBaseFolder(key, value, host, stdout, stderr),
             _ => Checked(key, ConfigValidation.Parse(key, value), host, stdout, stderr),
         };
+
+    /// <summary><c>config set archive.baseFolder &lt;path&gt;</c> (plan §15r D1, D7): the shape, then the base rules judged by this user's
+    /// process — the one that will write the archive; a refusal names its rule and nothing is written. Empty clears it.</summary>
+    private static int SetBaseFolder(ConfigKey key, string value, CliHost host, TextWriter stdout, TextWriter stderr) =>
+        ConfigValidation.Parse(key, value) is ValueCheck.Ok && value.Length > 0 && ArchiveCommand.Judge(host, value) is { Accepted: false } refused
+            ? Output.Refuse(stderr, $"{key.Name}: refused ({refused.Rule}): {refused.Refusal}. Nothing was written.")
+            : Checked(key, ConfigValidation.Parse(key, value), host, stdout, stderr);
 
     private static int Checked(ConfigKey key, ValueCheck check, CliHost host, TextWriter stdout, TextWriter stderr) => check switch
     {

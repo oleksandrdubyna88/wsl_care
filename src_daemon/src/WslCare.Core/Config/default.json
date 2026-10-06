@@ -97,7 +97,32 @@
   },
   "archive": {
     "olderThanDays": 14,
-    "baseFolder": ""
+    "baseFolder": "",
+    "agents": [
+      "claude-code",
+      "codex",
+      "gemini-cli",
+      "antigravity"
+    ],
+    "removeAfterHours": 24,
+    "marginDays": 7,
+    "agentRetentionDays": 30,
+    "urgentWithinDays": 7,
+    "minFreeGb": 5,
+    "copyBufferKib": 1024,
+    "runBudgetMinutes": 30,
+    "finishGraceMinutes": 5,
+    "minRunMinutes": 2,
+    "previewTimeoutSeconds": 120,
+    "reachabilitySeconds": 10,
+    "progressSilenceSeconds": 60,
+    "restoreLimitMinutes": 60,
+    "maxSessionsPerRun": 5000,
+    "maxIndexBytes": 67108864,
+    "maxStateFileBytes": 4194304,
+    "childOutputCapBytes": 1048576,
+    "progressLineMaxBytes": 256,
+    "inUseScanSeconds": 20
   },
   "idle": {
     "cpuPercent": 20,

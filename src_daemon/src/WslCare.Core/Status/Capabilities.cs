@@ -49,6 +49,10 @@ public static class Capabilities
     /// <summary><c>status --json</c> carries the <c>mcpServers</c> block and the three <c>mcp.*</c> verdicts (plan §15q E7.S2d).</summary>
     public const string StatusMcpServers = "status.mcpServers";
 
+    /// <summary><c>archive check-base &lt;path&gt; --json</c> judges where the AI-session archive may live, as the user, and
+    /// <c>config set archive.baseFolder</c> takes the user layer behind the same rules (plan §15r D1, D7, E9.S0).</summary>
+    public const string ArchiveCheckBase = "archive.checkBase";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase];
 }

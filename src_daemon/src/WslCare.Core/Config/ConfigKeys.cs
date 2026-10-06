@@ -145,13 +145,20 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.TextListKey Programs = new("mcpServers.programs", [], new TextRule.McpProgramName(), Mcp.McpUserPrograms.MaxMembers) { Trust = KeyTrust.Display };
     }
 
-    public static class Archive
+    public static partial class Archive
     {
         public static readonly ConfigKey.IntKey OlderThanDays = new("archive.olderThanDays", 1, DaysCeiling) { Trust = KeyTrust.Higher };
 
-        /// <summary>Empty means no archive is configured and A13 does not run. A path root's A13 will write into (E9), so only the
-        /// MACHINE layer may set it until E9 adds its own validation (§15q R1.3, review B1).</summary>
-        public static readonly ConfigKey.TextKey BaseFolder = new("archive.baseFolder", new TextRule.AbsolutePathOrEmpty()) { Trust = new(SafeDirection.None, MachineOnly: true) };
+        /// <summary>Empty means no archive is configured and A13 does not run. The folder as THIS side sees it. An ordinary key since
+        /// plan §15r D1 (E9.S0): root never opens, writes or removes anything under it — the TARGET USER's own process moves — so the
+        /// user layer may name it; the base rules (§15r D7, <c>Archive.BaseFolderRules</c>) are judged by that user's process at
+        /// <c>config set</c>, by <c>archive check-base</c> and at the start of every run, never trusted because they held once. It
+        /// was machine-layer only until then (§15q R1.3, review B1).</summary>
+        public static readonly ConfigKey.TextKey BaseFolder = new("archive.baseFolder", new TextRule.AbsolutePathOrEmpty()) { Trust = KeyTrust.Display };
+
+        /// <summary>Which agents are archived (plan §15r): only agents whose catalogue entry carries an <c>archive</c> block — never one
+        /// whose layout nobody confirmed. Fewer is the safe direction.</summary>
+        public static readonly ConfigKey.TextListKey Agents = new("archive.agents", WslCare.Core.Agents.AgentCatalogue.ArchivableIds) { Trust = new(SafeDirection.Subset) };
     }
 
     public static class Idle
@@ -211,7 +218,7 @@ public static partial class ConfigKeys
         Thresholds.MemAvailableWarnPercent, Thresholds.MemAvailableActPercent, Thresholds.SwapWarnGb,
         AiAgents.WarnGb, AiAgents.SessionWarnMb, AiAgents.Extra,
         McpServers.Watched, McpServers.Programs,
-        Archive.OlderThanDays, Archive.BaseFolder,
+        Archive.OlderThanDays, Archive.BaseFolder, Archive.Agents,
         Idle.CpuPercent, Idle.Minutes,
         Clock.ReferenceUrl, Clock.ReferenceToleranceSeconds, Clock.ManualStartWarns,
         Clock.MaxDriftSeconds,

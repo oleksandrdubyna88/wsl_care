@@ -248,19 +248,40 @@ public sealed class PhysicalFileSystem : IFileSystem
         try
         {
             CreateDirectory(directory);
-            using var probe = new FileStream(
-                Path.Combine(directory, $".wsl-care-write-probe-{Guid.NewGuid():N}"),
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 1,
-                FileOptions.DeleteOnClose);
-            return new WriteAccess.Writable();
+            return ProbeFolder(directory);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return new WriteAccess.NotWritable($"{directory} is not writable by this process ({e.Message})");
         }
+    }
+
+    /// <summary>Plan §15r D7: the archive's base is never created — a missing folder (or one removed between a check and this
+    /// probe) is not writable, because the probe file is created INSIDE the folder and nothing above it is made.</summary>
+    public WriteAccess ProbeExistingWriteAccess(string directory)
+    {
+        try
+        {
+            return ProbeFolder(directory);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new WriteAccess.NotWritable(e is DirectoryNotFoundException ? $"{directory} does not exist; it is never created" : $"{directory} is not writable by this process ({e.Message})");
+        }
+    }
+
+    /// <summary>A temporary file created in <paramref name="directory"/> with delete-on-close and closed at once — throws when it
+    /// cannot be created there.</summary>
+    private static WriteAccess.Writable ProbeFolder(string directory)
+    {
+        using var probe = new FileStream(
+            Path.Combine(directory, $".wsl-care-write-probe-{Guid.NewGuid():N}"),
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 1,
+            FileOptions.DeleteOnClose);
+        return new WriteAccess.Writable();
     }
 
     public ExclusiveLock TryLockExclusive(string lockPath)

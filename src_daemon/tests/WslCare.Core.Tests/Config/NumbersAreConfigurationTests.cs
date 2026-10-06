@@ -34,6 +34,8 @@ public sealed class NumbersAreConfigurationTests
         "thresholds.memoryPressureWarn", "thresholds.rootUsedWarnPercent", "journal.maxGb", "thresholds.journalHistoryWarnDays",
         "thresholds.clockJumpsWarnPer4h", "thresholds.collectorFreshMinutes", "wslConfig.recommendedMemoryGb",
         "thresholds.wslMemoryCriticalPercent", "processes.topCount",
+        "archive.removeAfterHours", "archive.marginDays", "archive.agentRetentionDays", "archive.urgentWithinDays", "archive.minFreeGb",
+        "archive.copyBufferKib",
     ];
 
     /// <summary>The inventory's group B (root-safety limits) — machine-layer-only keys.</summary>
@@ -60,6 +62,10 @@ public sealed class NumbersAreConfigurationTests
         "running.heartbeatSeconds", "running.wedgedAfterSeconds", "running.readRetries", "running.readRetryMilliseconds",
         "config.maxLayerBytes", "patterns.matchTimeoutMilliseconds", "files.renameRetryMilliseconds", "files.renameRetrySleepMilliseconds",
         "files.lockJitterMinMilliseconds", "files.lockJitterMaxMilliseconds", "agentCpu.maxEntries", "agentCpu.maxBytes", "requests.maxBytes", "events.startsRetentionDays", "timer.runLimitMinutes", "running.noProgressMinutes",
+        "archive.runBudgetMinutes", "archive.finishGraceMinutes", "archive.minRunMinutes", "archive.previewTimeoutSeconds",
+        "archive.reachabilitySeconds", "archive.progressSilenceSeconds", "archive.restoreLimitMinutes", "archive.maxSessionsPerRun",
+        "archive.maxIndexBytes", "archive.maxStateFileBytes", "archive.childOutputCapBytes", "archive.progressLineMaxBytes",
+        "archive.inUseScanSeconds",
     ];
 
     [Theory]

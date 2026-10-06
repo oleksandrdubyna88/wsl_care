@@ -321,6 +321,11 @@ public interface IFileSystem
     /// </summary>
     WriteAccess ProbeWriteAccess(string directory);
 
+    /// <summary>The same probe of a folder that must ALREADY exist — nothing is ever created but the probe file (plan §15r D7: the
+    /// archive's base is never created). A test's own file system without its own checks existence first.</summary>
+    WriteAccess ProbeExistingWriteAccess(string directory) =>
+        DirectoryExists(directory) ? ProbeWriteAccess(directory) : new WriteAccess.NotWritable($"{directory} does not exist; it is never created");
+
     /// <summary>
     /// Takes an exclusive lock file and holds it until the handle is disposed. The atomic operation it rests on
     /// is an exclusive open (<c>FileShare.None</c> — <c>flock</c> on Linux, a sharing violation on Windows); the

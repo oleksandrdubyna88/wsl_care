@@ -107,6 +107,7 @@ internal static class Program
             Request.Watch watch => WatchCommand.Run(watch, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.AgentsList agents => AgentsCommand.Run(agents, host, loaded, stdout, stderr, cancellationToken),
             Request.AgentsProbe probe => AgentsCommand.Probe(probe, host, stdout, stderr, cancellationToken),
+            Request.ArchiveCheckBase check => ArchiveCommand.CheckBase(check, host, stdout, stderr),
             Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),
             Request.Act act => ActCommand.Run(act, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Logs logs => LogsCommand.Logs(logs, host, stdout, stderr),

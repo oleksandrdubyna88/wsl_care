@@ -463,7 +463,8 @@
     "agents.list",
     "agents.probe",
     "config.agentsExtra",
-    "status.mcpServers"
+    "status.mcpServers",
+    "archive.checkBase"
   ],
   "running": {
     "state": "queued",

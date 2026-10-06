@@ -1,6 +1,7 @@
 # PLAN — move old AI-agent sessions into a dated archive instead of losing them
 
-> Status: **plan only, nothing implemented yet (2026-10-02).** Scope: a new `archive` capability of the
+> Status: **in progress, 2026-10-06 — E9.S0 built** (the catalogue's archive blocks, the archive's keys, the base folder rules
+> and `archive check-base`; the parent plan's §15r *E9.S0 as built*); nothing is moved yet. Planned 2026-10-02. Scope: a new `archive` capability of the
 > `wsl-care` daemon on **both** sides (WSL and Windows), its settings, its page in the VS Code extension.
 >
 > Parent plan: [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) (§4.6 AI-agent monitoring).

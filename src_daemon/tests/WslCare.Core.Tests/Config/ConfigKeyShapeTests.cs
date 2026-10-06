@@ -27,11 +27,13 @@ public sealed class ConfigKeyShapeTests
     }
 
     [Fact]
-    public void A_path_key_is_machine_only_and_a_pattern_key_is_read_by_no_daemon_code()
+    public void A_path_key_steers_no_root_write_and_a_pattern_key_is_read_by_no_daemon_code()
     {
         var texts = ConfigKeys.All.OfType<ConfigKey.TextKey>().ToList();
 
-        texts.Where(k => k.Rule is TextRule.AbsolutePathOrEmpty).Should().OnlyContain(k => k.Trust.MachineOnly)
+        // Plan §15r D1: the base folder is written by the TARGET USER's process, never by root, so it is an ordinary key — its
+        // rules (D7) are judged by that process. A path key root would write into is machine-only (§15q R1.3); none exists.
+        texts.Where(k => k.Rule is TextRule.AbsolutePathOrEmpty).Should().OnlyContain(k => !k.Trust.RootEffective)
             .And.Contain(ConfigKeys.Archive.BaseFolder);
         texts.Where(k => k.Rule is TextRule.HttpsUrlOrEmpty).Should().OnlyContain(k => k.Trust.MachineOnly, "root sends the request (PLAN_windows_time_guard.md D2)")
             .And.Contain(ConfigKeys.Clock.ReferenceUrl);

@@ -53,6 +53,10 @@ internal abstract record Request
     /// is checked for its shape here and never reaches a root process.</summary>
     internal sealed record AgentsProbe(string Path, bool Json) : Request;
 
+    /// <summary><c>archive check-base &lt;path&gt; [--json]</c> (plan §15r D7, E9.S0): whether the archive may live at a folder, judged
+    /// by THIS user's process — the one that will write there (D1); never as root.</summary>
+    internal sealed record ArchiveCheckBase(string Path, bool Json) : Request;
+
     /// <summary><c>units dropin &lt;unit&gt;</c> (E7.S2c): the drop-in install.sh writes for one unit, from the machine
     /// configuration — the timer's period, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec.</summary>
     internal sealed record UnitsDropIn(string Unit) : Request;
@@ -222,6 +226,7 @@ internal static class CommandLine
         new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
         new([["agents", "list"]], "agents list [--measure] [--json]", "the AI agents found here (by binary, npm package or folder), their version read from disk, their folders' sizes and sessions from the newest full run — or measured now with --measure (read-only: nothing inside an agent's folder is opened, nothing is run)", ["agents", "list", "--json"], ParseAgentsList),
         new([["agents", "probe"]], "agents probe <path> [--json]", "what the CLI at <path> is, as this user and never as root: a file it may start (looked at, never run, never read), a name from its file name, and its conventional data folders with their sizes and whether they could be a manual agent's (read-only)", ["agents", "probe", "/home/me/.local/bin/mycli", "--json"], ParseAgentsProbe),
+        new([["archive", "check-base"]], "archive check-base <path> [--json]", "whether the AI-session archive may live at <path>, as this user (never as root): an existing folder (never created), no link on the way, no root, nothing it moves or a cleanup removes, a filesystem that survives a shutdown, writable — a Windows drive path answered with the folder it is mounted at; who else may read it (read-only)", ["archive", "check-base", "/mnt/v/ai-archive", "--json"], ParseArchiveCheckBase),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
@@ -545,6 +550,15 @@ internal static class CommandLine
 
     /// <summary>Exactly one absolute distro path (plan §15q R2.1's shape: no control character, no leading '-', no '.' or '..'
     /// segment, at most 1 024 characters), then optionally <c>--json</c>.</summary>
+    private static Request ParseArchiveCheckBase(IReadOnlyList<string> rest) => rest switch
+    {
+        [var path] when IsPathArgument(path) => new Request.ArchiveCheckBase(path, false),
+        [var path, JsonFlag] when IsPathArgument(path) => new Request.ArchiveCheckBase(path, true),
+        _ => new Request.Failed($"\"{BinaryName} archive check-base\" needs exactly one <path> (not starting with -, no control character) and optionally {JsonFlag}: {BinaryName} archive check-base <path> [{JsonFlag}]."),
+    };
+
+    private static bool IsPathArgument(string path) => path.Length > 0 && !path.StartsWith('-') && !path.Any(char.IsControl);
+
     private static Request ParseAgentsProbe(IReadOnlyList<string> rest) => rest switch
     {
         [var path] when ProbePathProblem(path).Length == 0 => new Request.AgentsProbe(path, false),

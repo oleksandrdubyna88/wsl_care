@@ -152,6 +152,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Actions/Engine/RequestSweep.cs: [..16]"] = "a run id's timestamp part (yyyyMMddTHHmmssZ, 16 characters) — the id's format",
         ["WslCare.Core/Actions/UserCaches/EditorServerCleanup.cs: <= 255"] = "the kernel's longest file name (NAME_MAX)",
         ["WslCare.Core/Actions/UserCaches/EditorServerCleanup.cs: <= 64"] = "a commit id's length (7 to 64 hex digits) — git's format",
+        ["WslCare.Core/Config/NumberRules.cs: BytesPerInflightSession"] = "a coupled-limit rule's factor: one in-flight session of the archive serialised (plan §15r E9.S0)",
         ["WslCare.Core/Config/NumberRules.cs: BytesPerCpuEntry"] = "a coupled-limit rule's factor or margin — part of the rule itself (E7.S2b/S2c review)",
         ["WslCare.Core/Config/NumberRules.cs: CeilingMarginSeconds"] = "a coupled-limit rule's factor or margin — part of the rule itself (E7.S2b/S2c review)",
         ["WslCare.Core/Config/NumberRules.cs: HistoryBytesPerDay"] = "a coupled-limit rule's factor or margin — part of the rule itself (E7.S2b/S2c review)",
@@ -169,7 +170,8 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 32"] = "a Linux account name's length (useradd's 32) — the system's format",
         ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 40"] = "a command-policy slot bound — the closed policy is never configuration (plan §15q R1.3)",
         ["WslCare.Core/Processes/Policy/SlotKind.cs: == 20"] = "an RFC 3339 UTC instant to the second is 20 characters — a format",
-        ["WslCare.Core/Processes/WindowsSystemDrive.cs: >= 10"] = "the fields of a /proc/self/mountinfo line — the kernel's format",
+        ["WslCare.Core/Archive/BaseFolderRules.cs: Take(2)"] = "a share path's first two segments, its server and its share — the UNC format",
+        ["WslCare.Core/Files/MountTable.cs: >= 10"] = "the fields of a /proc/self/mountinfo line — the kernel's format",
         ["WslCare.Core/Thresholds/ThresholdRules.cs: Gb"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
     };
 

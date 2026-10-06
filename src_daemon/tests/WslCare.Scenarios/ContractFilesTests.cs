@@ -138,7 +138,10 @@ public sealed class ContractFilesTests
         keys["auto.A5"]["safeDirection"]!.GetValue<string>().Should().Be("off");
         keys["containers.stoppedOlderThanDays"]["min"]!.GetValue<int>().Should().Be(0);
         keys["processes.families"]["allowed"]!.AsArray().Select(n => (string)n!).Should().NotContain(["other", "ai-agents"]).And.Contain("testhost");
-        keys["archive.baseFolder"]["machineOnly"]!.GetValue<bool>().Should().BeTrue();
+        keys["archive.baseFolder"]["machineOnly"]!.GetValue<bool>().Should().BeFalse("plan §15r D1: the user's own process writes the archive, so the user layer names it");
+        keys["archive.baseFolder"]["rootEffective"]!.GetValue<bool>().Should().BeFalse();
+        keys["archive.agents"]["allowed"]!.AsArray().Select(n => (string)n!).Should().Equal("claude-code", "codex", "gemini-cli", "antigravity");
+        keys["archive.runBudgetMinutes"]["machineOnly"]!.GetValue<bool>().Should().BeTrue();
         keys["logging.retentionDays"]["zeroIsUnbounded"]!.GetValue<bool>().Should().BeTrue();
         keys["distro"]["daemonUnused"]!.GetValue<bool>().Should().BeTrue();
         keys["aiAgents.warnGb"]["rootEffective"]!.GetValue<bool>().Should().BeFalse();

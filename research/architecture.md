@@ -2236,7 +2236,7 @@ flowchart LR
   `Matching` (the unused `distro`), `AbsolutePathOrEmpty` (`archive.baseFolder`) — and a `TextListKey` its allowed set.
   `processes.families` ⊆ `ProcessFamilies.ChoosableForA11` = the catalogue without `other` (the catch-all: root's A11 would
   have ended every account's idle orphans) and `ai-agents`. A path key is machine-only (`config set` refuses it, a user value
-  is a notice) until its reader validates the filesystem (E9). Tests: `ConfigKeyClosureTests`, `ConfigKeyShapeTests` (every
+  is a notice). None exists today: `archive.baseFolder` was one until E9.S0, when the archive's mover became the target user's own process (plan §15r D1) and its folder rules a judgement of that process (*The AI-session archive* below). Tests: `ConfigKeyClosureTests`, `ConfigKeyShapeTests` (every
   number slot a key fills accepts exactly that key's range), `ArchitectureTests.No_policy_or_protected_roots_type_reads_the_configuration`.
 - **`KeyTrust` per key**: the `SafeDirection` (`higher` / `lower` / `on` / `off` / `subset` / `none`), `TightenOnlyForRoot`
   (`logging.*`: root's audit log is not the user's to steer), `MachineOnly`, `DaemonUnused` (`distro`, `refreshSeconds`),
@@ -2456,6 +2456,64 @@ configuration and nothing else (no process walk, no write but its own run log, a
 after `memory.pressure`, from the sample's own PSI. The agent-side contract (exit 0 go, 83 wait with a jittered bounded
 backoff, any other code a broken signal: say so and go) is in the README's *Busy* section. Advice only: nothing is started or
 stopped because of it.
+
+## The AI-session archive (E9.S0, 2026-10-06, plan §15r)
+
+E9.S0 lands what everything later in E9 reads: what the catalogue says the archive may move, the archive's keys and the rules
+between them, and where the archive may live. Nothing is moved yet (the move is E9.S2a/S2b; A13 in the engine E9.S4).
+
+**The catalogue's `archive` blocks** (`Agents/agents.json`, `Agents/AgentArchive.cs`). An entry may carry `archive: { units,
+neverMove, retention }`: a `session` unit is the entry's own session layout with its companions — never redefined (§15q D2) —
+and a `file` unit is a glob of its own, each file aged on its own last write (Antigravity's `log/cli-*.log`); `skipWhilePresent`
+names companions whose presence keeps a unit in place (Antigravity's `{dir}/{id}.db-wal`); `neverMove` the archive plan's
+"never moved" column (`memory` for every agent whatever a block says); `retention` where the agent keeps its own deletion
+(`claude-settings`, 30 days by default) or `none` with what was checked. Claude Code, Codex, Gemini CLI and Antigravity carry
+one (`AgentCatalogue.ArchivableIds`); the one-time run's Windows Antigravity layout (`%USERPROFILE%\.gemini\antigravity-cli`) and
+the conversation's SQLite sidecars joined the catalogue here. `AgentArchiveRules.Problems` holds the blocks sound — no unit's
+literal name matches a never-move name, the kinds and sources are the closed sets — and `AgentArchiveRules.IsNeverMoved` is the
+check the selection (E9.S1) applies to every concrete path.
+
+**The keys** (`Config/ConfigKeys.cs`, `Config/ConfigKeys.Numbers.cs` → `Archive`): the ages (`olderThanDays` 14,
+`removeAfterHours` 24, `marginDays` 7, `agentRetentionDays` 30, `urgentWithinDays` 7), `minFreeGb`, `copyBufferKib` — the
+user's; the budget, the ceilings and the caps of what root reads back (`runBudgetMinutes`, `finishGraceMinutes`,
+`minRunMinutes`, `previewTimeoutSeconds`, `reachabilitySeconds`, `progressSilenceSeconds`, `restoreLimitMinutes`,
+`maxSessionsPerRun`, `maxIndexBytes`, `maxStateFileBytes`, `childOutputCapBytes`, `progressLineMaxBytes`, `inUseScanSeconds`) —
+machine-layer only. `archive.agents` is a closed list over the archivable ids (safe direction: a subset). The coupled rules
+(`Config/NumberRules.cs` → `ArchiveRules`, held per layer like every rule): ⌈removeAfterHours / 24⌉ + olderThanDays +
+marginDays ≤ agentRetentionDays (1 + 14 + 7 ≤ 30); urgentWithinDays ≤ marginDays; noProgressMinutes × 60 ≥
+progressSilenceSeconds + 60 s; (runBudgetMinutes + finishGraceMinutes) × 60 + 60 s ≤ commands.maxTimeoutHours × 3600;
+maxStateFileBytes ≥ 600 B × maxSessionsPerRun.
+
+**`archive.baseFolder` is an ordinary key** (was machine-only, §15q R1.3): root never opens, writes or removes anything under it
+— the target user's own process moves (§15r D1) — so the user layer may name it. Its shape (`TextRule.AbsolutePathOrEmpty`) now
+takes a Windows share too (`\\server\share\…`, never a device path); its filesystem rules are `Archive/BaseFolderRules.cs`.
+
+```mermaid
+flowchart TD
+    given["archive check-base &lt;path&gt; / config set archive.baseFolder<br/>(as the user; root refused, exit 81)"] --> shape{"shape:<br/>/…, X:\…, \\server\share\…"}
+    shape -- distro --> table["/proc/self/mountinfo<br/>(MountTable, shared with the system-drive lookup)"]
+    table --> drive{"X:\… ?"}
+    drive -- yes --> place["placed at the drvfs mount of X:<br/>(drive-not-mounted otherwise)"]
+    drive -- no --> place
+    shape -- windows --> wplace["the drive's kind and format,<br/>or the share"]
+    place --> rules
+    wplace --> rules
+    rules["in order: missing (never created) · not a folder · link on the way · too broad (fs / drive / share root, the home) ·<br/>overlap (agent folders, ~/git, Claude temp, the temp folder, cleanup folders, wsl-care's own) ·<br/>volatile filesystem (tmpfs, ramfs, …, a RAM disk) · not writable (a probe that never creates the folder)"]
+    rules -- accepted --> warn["warnings: other accounts may read it (modes on Linux, not on drvfs; ACLs on Windows),<br/>the distribution's own disk · notes: FAT's 2-s times, drvfs modes"]
+    rules -- refused --> answer["accepted: false, rule, refusal (exit 0)"]
+```
+
+- **`Files/MountTable.cs`** is the ONE mountinfo parser (extracted from `WindowsSystemDrive`, which now asks
+  `MountTable.IsWholeDrive(entry, 'C')`): the escapes decoded once, `Holding` the deepest mount a path lies on,
+  `IsWholeDrive` a drvfs mount of a whole drive letter.
+- **`ExtraAgentRules.ProtectedPlaces`** is the shared list a manual agent's folder and the base both stay clear of; the base adds
+  every agent root of its side and the temporary folder.
+- **`IFileSystem.ProbeExistingWriteAccess`** writes the probe file inside an EXISTING folder only (`ProbeWriteAccess` creates a
+  missing one).
+- **`Archive/WindowsAccess.cs`** reads a folder's access rules on Windows and names Everyone / Users / Authenticated Users when
+  they may read it.
+- **The answer** is `BaseFolderReport` (`contracts/golden/head/archive-check-base.json`), the capability `archive.checkBase`.
+  Its mount is reported, not yet recorded: `base.json` and its check at every run are E9.S2b's.
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -2916,7 +2974,7 @@ flowchart LR
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)), their CPU over the interval since the previous sample (E14 S1, [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) and A19 stopping the idle ones (E14 S2a); the Windows Time guard — which clock is wrong, A16 never stepping to a wrong host (2026-10-08, [module_daemon.md](module_daemon.md) § *The Windows Time guard*) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)), their CPU over the interval since the previous sample (E14 S1, [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) and A19 stopping the idle ones (E14 S2a); the Windows Time guard — which clock is wrong, A16 never stepping to a wrong host (2026-10-08, [module_daemon.md](module_daemon.md) § *The Windows Time guard*); the archive's catalogue blocks, keys and base folder rules, `archive check-base` (E9.S0) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3); the status verdicts and the golden contracts' writer and drift test (E5.S0) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |

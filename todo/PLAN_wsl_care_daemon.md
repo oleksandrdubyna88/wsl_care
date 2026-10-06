@@ -2679,7 +2679,9 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **plan only, nothing implemented yet, 2026-10-06 — the review round folded in** (*§15r review round* at the end of
+> Status: **in progress, 2026-10-06 — E9.S0 built** (the catalogue's archive blocks, the keys and their rules, the base folder
+> rules and `archive check-base`; deviations in *E9.S0 as built*); E9.S1–E9.S5 and the E9 live gate open. Originally: plan only,
+> nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
 > Scope: epic E9 — the `archive` capability of the daemon on both sides (`wsl-care` in the distro, `wsl-care.exe` on Windows):
@@ -3057,6 +3059,41 @@ verbs closed, their slots typed), and the planted-link / FIFO / two-link scenari
 (`A_link_fifo_or_multi_linked_file_in_a_session_is_never_copied`). *What would be expensive if wrong:* `runuser` from the service
 (it already runs A8 / A17), and whether `/mnt/<drive>` of a NETWORK drive exists for a process the timer starts with nobody
 logged in — a live-gate observation; when it does not, the recorded mount differs and the run refuses with that reason.
+
+#### E9.S0 as built (2026-10-06)
+
+Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The AI-session archive: catalogue blocks, keys, base folder (E9.S0)*, the design `research/architecture.md` § *The AI-session
+archive*. **Deviations from the text above:**
+
+- **The catalogue's block** is `archive: { units, neverMove, retention }` with `retention: { source, defaultDays, checked }`
+  (`Agents/AgentArchive.cs`): a session unit carries no glob of its own (one session stays the layout's, §15q D2), a file unit
+  does. `AgentArchiveRules.Problems` holds every block to the shape and to "no literal unit name matches a never-move name";
+  `AgentArchiveRules.IsNeverMoved` is the per-path check E9.S1 applies. Antigravity's older `%USERPROFILE%\.gemini\antigravity`
+  joined its Windows folders beside `antigravity-cli`. Codex's and Antigravity's retention are `none` with what was checked
+  (no deletion of their own seen on 2026-10-02 — Antigravity's removals that day followed no rule found; documentation NOT read).
+- **Two key ranges are narrower than the table** so no machine value can break a request's own maximum: `archive.runBudgetMinutes`
+  1–55 (with a fifth coupled rule: budget + grace + 60 s ≤ `commands.maxTimeoutHours`), `archive.restoreLimitMinutes` 1–60 (the
+  least `commands.maxTimeoutHours`). `archive.agentRetentionDays` starts at 3 (the least sum the first rule allows). The B keys
+  have no reader yet beyond their rules — E9.S1–S4 read them.
+- **`check-base` REPORTS the mount; it does not record it.** `base.json` and the "not mounted as when it was checked" refusal are
+  E9.S2b's (the first run that writes records it) — a read-only verb writes no state.
+- **A refused folder is an answer** (exit 0, `accepted: false`, its `rule`), as `agents probe`'s unusable path is; `config set`
+  of a refused base exits 2 naming the rule. As root both refuse with 81 (`NotAsRoot`).
+- **A missing or unreadable mount table, or one naming no filesystem holding the folder, refuses** (`mount-unreadable`): what the
+  base lies on is the one fact D7 needs before anything else.
+- **The temporary folder is forbidden on the distro too** (D7 named only Windows' `%TEMP%`): `/tmp` is the distro's.
+- **Who may read it is built on BOTH sides in S0** (D7's Windows ACL report was S5's): mode bits of the folder and every parent on
+  Linux (skipped on drvfs, whose modes are the mount's report — a note says so), the folder's access rules for Everyone / Users /
+  Authenticated Users on Windows (`Archive/WindowsAccess.cs`).
+- **Extracted, not copied:** the mountinfo parser moved from `WindowsSystemDrive` to `Files/MountTable.cs`
+  (`WindowsSystemDriveTests` unchanged and green); the list of places a user-named folder stays clear of became
+  `ExtraAgentRules.ProtectedPlaces`, shared by a manual agent's folder and the base. `IFileSystem.ProbeExistingWriteAccess`
+  beside `ProbeWriteAccess` (which creates a missing folder).
+- **The shape widened**: `TextRule.AbsolutePathOrEmpty` takes `\\server\share\…` (never `\\?\`, `\\.\`); on the distro a share is
+  refused naming its mount instead.
+- **Additions:** the capability `archive.checkBase`; the golden `contracts/golden/head/archive-check-base.json`; the tests that
+  used `archive.baseFolder` as THE machine-only example now use `walk.maxEntries` (the behaviour they hold is unchanged).
 
 #### Stories
 
@@ -3463,7 +3500,7 @@ tagged (B3). Then, after the E6 daemon live gate's stamp:
 | E7.S4 | AI-agents section, Add CLI path (extension, WSL side) | Opus + two own reviews |
 | E7.S5 | bundling `wsl-care.exe`, a `--target win32-x64` `.vsix` (moved here from E5 by §15f #5, #13), Windows numbers in Memory/Disk, the Windows agents | Opus + one own review |
 | E8.S1–S3 | help via the kit, zoom + tone everywhere, ru/uk/de/es + stale stamps | Opus |
-| E9.S0 | the catalogue's `archive` blocks, the `archive.*` keys and coupled rules, the base rules, `archive check-base` — §15r (re-split 2026-10-06: the three rows planned on 2026-10-02 became S0–S5, S2 split by the §15r review round) | Opus + two own reviews |
+| E9.S0 | the catalogue's `archive` blocks, the `archive.*` keys and coupled rules, the base rules, `archive check-base` — §15r (re-split 2026-10-06: the three rows planned on 2026-10-02 became S0–S5, S2 split by the §15r review round). **Built 2026-10-06** — deviations in §15r *E9.S0 as built* | Opus + two own reviews |
 | E9.S1 | selection, the effective age, in-use checks, `archive preview` (read-only) — §15r | Opus + two own reviews |
 | E9.S2a | the seam: no-link streaming copy and exclusive create, no-replace renames, the verified removal (Linux and Windows semantics), the policy, the widened scan, the fault seam — §15r R1 | Opus (Fable asked for by the gate; its monthly limit is spent — recorded) + two own reviews — irreplaceable data |
 | E9.S2b | the two-phase protocol, the index (merged, MAC'd), the in-flight file, the lease, the reconcile, `archive run` / `status` / `reconcile --scan` — §15r R1 | Opus (Fable spent, recorded) + two own reviews |
