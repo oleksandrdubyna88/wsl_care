@@ -32,6 +32,11 @@ public enum DeletionRule
     /// <summary>Re-resolved just before the final step of an atomic write, the path no longer named
     /// the place that was approved — a link was swapped in after the decision.</summary>
     PathChanged,
+
+    /// <summary>An archive permit was asked for something it does not allow: a rename that is not to or from its quarantine name in
+    /// the same folder, a removal of a file that is not quarantined or names no archived copy outside the protected folders, the
+    /// agent's own folder (E9.S2a).</summary>
+    ArchiveShape,
 }
 
 /// <summary>Allowed, or refused by one named rule with a sentence a person can read.</summary>

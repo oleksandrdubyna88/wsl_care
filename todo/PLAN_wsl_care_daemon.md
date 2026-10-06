@@ -2679,9 +2679,10 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-06 — E9.S0 and E9.S1 built, both review rounds fixed** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-06 — E9.S0, E9.S1 and E9.S2a built, the S0 and S1 review rounds fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
-> as built*, *E9.S1 as built*, *E9.S0 review round* and *E9.S1 review round*); E9.S2a–E9.S5 and the E9 live gate open. Originally: plan only,
+> as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built* and *Risk consult
+> 9/9.4*); E9.S2b–E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3126,6 +3127,65 @@ Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and
 - **Additions:** the side folder (`ArchiveNames.SideName`, §15r D4) is in the answer already; the capability `archive.preview`;
   the golden `contracts/golden/head/archive-preview.json`; the `phase-2 candidates` of the story text are not listed yet —
   nothing has been copied, so there is no phase 2 to propose (E9.S2b adds them to the answer).
+
+#### Risk consult 9/9.2 (2026-10-06) — the move protocol, before the move is built
+
+The coai cadence named 9/9.2 (the move on irreplaceable data) a risk to consult. A first consultation ran from the main checkout
+and could not read §15r; its four points were verified here and a second consultation (`47e283b3…`, codex gpt-6-astra, three
+turns, closed **solved**) was run from this worktree over §15r and the uncommitted E9.S2a seam. What survived verification, and
+what did not:
+
+| # | Point | Verification | Decision | Where |
+|---|---|---|---|---|
+| 1 | a writer the open-file scan never saw appends to the quarantined file after its final hash | **Real, and destructive in the seam as first written:** a child that inherited the descriptor by fork AFTER the scan's pid snapshot (its parent closed its own), or a writable `MAP_SHARED` mapping whose descriptor was closed, is invisible to a `/proc/*/fd` scan; a test holding a writer descriptor and appending at `RemovalHashed` got `Removed` on Linux (red, WSL 2) | **Fixed in E9.S2a:** the removal takes an `fcntl` WRITE LEASE on the opened quarantined file — the kernel grants it only when no OTHER open file description of the inode exists (a fork-inherited descriptor and a mapping keep theirs); refused → kept. Breaks are routed to SIGURG (ignored by default — SIGIO would end the process); after the hash the lease must still be whole, then the inode re-check, then `unlinkat`. Tests: a pre-opened writer, another process, a forked child only, a mapping only — all kept. Windows: the one handle shares READ only, so an open writer refuses it. **Residual, stated:** a NEW opener of the quarantine name (no agent knows it) after the final lease check, with the remover stalled for `fs.lease-break-time` (45 s) at exactly that point. The claim is narrowed to "no writer that existed, or opened before the final check, loses a byte" | E9.S2a |
+| 1b | the scan reads a listing or link failure as absent, so "complete" does not prove every descriptor was seen | Real (`ListEntries` answers an empty list on an error) | **Recorded as a selection residual:** removal no longer depends on the scan (the lease decides); a descriptor missed at COPY time only means a session copied while in use — a snapshot whose removal is lease-guarded later | E9.S1 residual |
+| 2 | the quarantine inside the agent folder is unsafe; move it to a product-owned folder; a durable manifest for the separate companions | The name `<name>.wsl-care-q-<runId>` matches no agent's session glob; an agent deleting it does no harm (its archived copy was re-hashed in phase 2 before any rename); an agent recreating the ORIGINAL name is kept by the no-replace rename (split); moving agent data out of its folder BEFORE verification needs a path map in every recovery and revokes no descriptor (the consultant agreed) | **Relocation rejected.** **Accepted:** D3's "without the in-flight file" branch must RENAME BACK (no-replace; the original present → keep both, report) every quarantined file unless an in-flight `removing` entry says the commit point passed — it must never unlink before the commit (a half-removed session). Kill after each rename: kill points 8 and 9 | E9.S2b (D3) |
+| 3 | a reconcile whose archived copy fails re-verification | Consistent with D2/D3 | **Accepted as E9.S2b requirements:** a re-verification failure is `damaged`, never expired; a `recovery-required` state blocks removal of the WHOLE session; nothing is overwritten; restore create-only (D6); repair into a new destination. RED test: one archived companion corrupted or missing, one original recreated, the run restarted twice — every byte survives | E9.S2b |
+| 4 | durability before the source's names are removed | The seam discarded `fsync` errors and never synced a new level's entry into its parent (real) | **Fixed in E9.S2a:** `FlushFolder` answers `Done` / `Failed` (the errno); every NEW destination level's entry is synced in its parent (the levels below the base are opened `O_RDONLY \| O_DIRECTORY \| O_NOFOLLOW` so they can be). **E9.S2b:** every created file, its directory, the index file and its directory flushed before the commit point; an archived file without an index line never authorises a removal (D3 already). **Rejected:** a monotonic quarantine age (monotonic time restarts at boot; the guard against an early removal is phase 2's re-hash a day later) and a local copy as standard (the ack-then-lose share is the stated residual the re-hash answers). An injected `EIO` is not built (no fault point inside `fsync`) | E9.S2a, E9.S2b |
+| 5 | keep the deletion policy's boundary — a narrow verified operation, not an exemption | Holds: the permits rename only to or from the mark in the same folder, and remove only a mark-named file whose archived copy lies outside every protected place, which the seam hashes before it acts | — | E9.S2a |
+
+#### E9.S2a as built (2026-10-06)
+
+Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The archive's seam (E9.S2a)*, the design `research/architecture.md` § *The archive's seam*. **Deviations from the text above:**
+
+- **The seam is its own interface, `IArchiveFiles`**, implemented by `PhysicalFileSystem` in a partial file
+  (`Files/PhysicalFileSystem.Archive.cs`), with the natives in `Files/BeneathWrites.cs` — not new members of `IFileSystem` (no
+  test double has to delegate them; E9.S2b's mover takes `IArchiveFiles`). `BeneathFiles.OpenStream` became
+  `IArchiveFiles.OpenSource`; `QuarantineRename` / `RenameBack` share one no-replace rename; `RemoveOwnCopy` (a copy that failed
+  its verification) and `FlushFolder` were added.
+- **The removal takes a write lease** (risk consult 9/9.2) — beyond the plan's "hash then unlink".
+- **The policy's permits:** `ArchiveQuarantine` (a rename to or from `<name>.wsl-care-q-<runId>` in the same folder),
+  `ArchiveRemoval` (a mark-named file with its archived copy named outside every protected place, or an empty folder strictly
+  inside an agent's — never the agent's folder itself), `RestoreIntoAgentFolder` (a create); `FileOperation.Create`; the
+  rule `ArchiveShape`. A plain delete under an agent's folder stays refused by every permit; memory by all of them. The old
+  `MoveOutOfAgentFolder` permit stays (unused by the protocol, which copies and removes).
+- **The scan** forbids, outside the seam's four files, `File.Copy` / `File.Replace`, a `FileInfo`'s `CopyTo` / `Replace` (chained
+  or on a name declared as one), `FileOptions.DeleteOnClose`, `SetFileInformationByHandle`, `FileDisposition*`, and the native
+  entry points `rename`, `renameat(2)`, `unlink(at)`, `link(at)`, `rmdir`, `MoveFileEx`, `DeleteFile`, `RemoveDirectory`,
+  `CopyFile(2)`, `ReplaceFile`; the first scan's seam is the same four files.
+- **The fault seam** is an `Action<ArchiveFileStep, string>` asked between the primitive steps (`SourceOpened`,
+  `FolderLevelReady`, `FolderLevelSynced`, `ExclusiveCreated`, `ReadBackChunk`, `OwnCopyRemoved`, `FolderFlushed`, `Renamed`,
+  `RemovalOpened`, `RemovalHashChunk`, `RemovalHashed`, `Removed`, `FolderRemoved`); it throws in-process here — the BUILT child
+  killed at the 14 points is E9.S2b's.
+- **Windows residuals:** a reparse point made between a level's check and the next level's create is not seen (the Windows
+  side writes into its own user's base; the descriptor chain has no such window on Linux); `FlushFolder` is a no-op on Windows
+  (NTFS journals its metadata; a directory handle for `FlushFileBuffers` is not opened).
+- **Read-back on Windows** reads past the cache (`FILE_FLAG_NO_BUFFERING`) into a sector-aligned pinned buffer; on Linux it reads
+  through the page cache (no `O_DIRECT`) — the stated residual phase 2's re-hash a day later answers.
+
+#### Risk consult 9/9.4 (2026-10-06) — the root → user boundary, before E9.S4 is built
+
+Consultation `e7a972b4…` (codex gpt-6-astra, two turns, closed **solved**) over D1, D7, R2 and the E9.S4 row. It found no
+privilege escalation in the split (root never touches a session or the base); what it found is process CONTAINMENT. Verified and
+folded in as E9.S4 requirements:
+
+| # | Point | Verification | Decision |
+|---|---|---|---|
+| 1 | a child stuck in uninterruptible sleep outlives its ceiling; runs could pile up survivors | **Confirmed by reading** `ProcessCommandRunner.KillAndReapAsync`: it waits for "exit or the grace" and never checks which came first — its comment "the child is gone" is false for a child in state `D` (E6 code, reached by E9.S4) | **E9.S4:** root records each archive child's identity — pid, start time, boot id — in ROOT-owned state at launch, AND the worker's under it (the consultant's second turn: the launched pid is `runuser`, the worker its child — killing the wrapper can leave the worker in `D`); a later run that finds a recorded identity alive skips "the last archive child is stuck in the kernel" and never launches a second; the reachability child takes the side's local lock before it touches the base; the comment is corrected. The blackholed-share check (during the probe and during a copy, two invocations) is a live-gate step — it needs a share |
+| 2 | is `runuser` from a service clean (PAM session, environment, cgroup)? | **Read** `/etc/pam.d/runuser` on Ubuntu 24.04 (WSL): `pam_rootok`; session `pam_keyinit` (revoke), `pam_limits`, `pam_unix` — **no `pam_systemd`** (only `runuser-l` has it, and `-l` is never used): no session scope is created, the child stays in the service's cgroup, its environment is the one passed plus HOME/SHELL/USER/LOGNAME | **Kept `runuser`** (A8 / A17 already launch through it — one launcher). **E9.S4:** `doctor` and the A13 / A19 preview refuse when the distribution's `runuser` stack names `pam_systemd`; stdin is `/dev/null` for A13 and a bounded, cancelled pipe for A19; no PTY. `setpriv` (explicit credentials, cleared capabilities, `no_new_privs`) recorded as the alternative |
+| 3 | user-controlled metadata (a lease file, the child's answer) naming another pid or cgroup could become root's signal target | Not yet a defect (nothing acts on it) | **Rule for E9.S4:** root signals ONLY identities its own launcher recorded; the child's JSON and every file on the base are data. RED test: another process's valid pid and start time, a foreign cgroup and root-only paths in the child's answer and in lease metadata → zero root opens, writes or signals |
+| 4 | a streamed child bounds each line, not the count | **Confirmed by reading** `PumpLinesAsync` | **E9.S4:** `archive.childOutputCapBytes` bounds the TOTAL (past it the stream stops and the child is killed); a cut or truncated line is rejected as a record, never parsed as a prefix; A19's stdin writer is cancelled with the ceiling. RED: a flood of tiny lines, an oversized line with a valid-looking prefix, a child that stops reading its stdin |
 
 #### Stories
 
@@ -3603,7 +3663,7 @@ tagged (B3). Then, after the E6 daemon live gate's stamp:
 | E8.S1–S3 | help via the kit, zoom + tone everywhere, ru/uk/de/es + stale stamps | Opus |
 | E9.S0 | the catalogue's `archive` blocks, the `archive.*` keys and coupled rules, the base rules, `archive check-base` — §15r (re-split 2026-10-06: the three rows planned on 2026-10-02 became S0–S5, S2 split by the §15r review round). **Built 2026-10-06** — deviations in §15r *E9.S0 as built*; **the review round fixed 2026-10-06** (§15r *E9.S0 review round*) | Opus + two own reviews |
 | E9.S1 | selection, the effective age, in-use checks, `archive preview` (read-only) — §15r. **Built 2026-10-06** — deviations in §15r *E9.S1 as built* | Opus + two own reviews |
-| E9.S2a | the seam: no-link streaming copy and exclusive create, no-replace renames, the verified removal (Linux and Windows semantics), the policy, the widened scan, the fault seam — §15r R1 | Opus (Fable asked for by the gate; its monthly limit is spent — recorded) + two own reviews — irreplaceable data |
+| E9.S2a | the seam: no-link streaming copy and exclusive create, no-replace renames, the verified removal (Linux and Windows semantics), the policy, the widened scan, the fault seam — §15r R1. **Built 2026-10-06** — deviations in §15r *E9.S2a as built* (the removal takes a write lease: risk consult 9/9.2) | Opus (Fable asked for by the gate; its monthly limit is spent — recorded) + two own reviews — irreplaceable data |
 | E9.S2b | the two-phase protocol, the index (merged, MAC'd), the in-flight file, the lease, the reconcile, `archive run` / `status` / `reconcile --scan` — §15r R1 | Opus (Fable spent, recorded) + two own reviews |
 | E9.S3 | restore (create-only), `archive list` — §15r R1 | Opus (Fable spent, recorded) + two own reviews — the reverse move |
 | E9.S4 | A13 and A19 in the engine, the root → user child boundary, streaming, the budget — §15r R2 | Opus + two own reviews |

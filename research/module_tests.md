@@ -2325,6 +2325,43 @@ ignored — 1; the listing budget not derived — 3; companions walked with a fr
 — 1. **Not break-it checked:** P1's matcher (its red against the old matcher is its check); B1's placement on the real path
 (defence in depth — the link rule refuses every spelling whose real path differs, so no test can tell it apart).
 
+### The archive's seam (E9.S2a, 2026-10-06, plan §15r R1, review M12, risk consult 9/9.2)
+
+The only way the archive touches a file (`research/architecture.md` § *The archive's seam*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| the policy as a table: a session file renamed to its quarantine name in its own folder and back; to any other name, folder, an empty run id, or into the base — `ArchiveShape`; a quarantined file with its archived copy named removed; without the mark, without a copy, with a copy in an agent's folder, in the repositories or relative — `ArchiveShape`; an empty folder strictly inside removed, the agent's folder itself never (even with a wider root); a plain delete refused by every permit; a restore creates, nothing else does; memory refused by every permit; a create in the base judged inside its root | `Files/ArchivePermitTests` (20) |
+| copying never replaces: a second create of the same name and a create over an already archived file answer `Exists`, both contents untouched; the read-back hash is the bytes written | `Files/ArchiveFilesTests.Copying_into_the_archive_never_replaces_a_file` |
+| no link on the way to a destination (a junction or symlink at a level → refused naming the level, nothing created through it); a link at the final name never written through (Linux) | `ArchiveFilesTests` (2) |
+| a source is a regular file of this account with ONE link, reached through no link: a plain file opened and read; a hard-linked one refused; a missing one `Gone`; a FIFO and a file symlink refused (Linux); a folder link on the way refused | `ArchiveFilesTests` (3) |
+| review B1: renaming back never replaces the file the agent wrote at the original name meanwhile (`NameTaken`, both kept); a quarantine rename never replaces an earlier run's quarantined file; renaming back to a free name works | `ArchiveFilesTests` (2) |
+| the verified removal: a hash that differs keeps the file; an equal one removes it; a second removal finds it `Gone` | `ArchiveFilesTests` |
+| review B2: a removal stopped mid-hash (the fault seam throws at `RemovalHashChunk`) leaves the file whole | `ArchiveFilesTests.A_kill_mid_hash_on_windows_leaves_the_source_present` |
+| risk consult 9/9.2: a writer descriptor opened before the removal (appending at `RemovalHashed`), another process holding it, a forked CHILD only holding it, a writable shared MAPPING only holding it — kept every time | `ArchiveFilesTests` (2 facts + a 2-row theory; the process, child and mapping rows on the Linux legs) |
+| a refused removal or rename touches nothing (an unquarantined file, a rename under memory, a removal without the permit); only an EMPTY folder is removed, never the agent's folder | `ArchiveFilesTests` (2) |
+| durability: each new destination level's entry synced into its parent (Linux), the destination's flush answering `Done`; the fault seam asked between the primitive steps of a removal in order | `ArchiveFilesTests` (2) |
+| the scan: a planted `File.Copy`, `File.Replace` across lines, a chained and a named `FileInfo` copy/replace, `DeleteOnClose`, a delete disposition and five native entry points all found; a string `Replace`, a stream `CopyTo` and the word "rename" not; no file outside the seam's four files holds one; the seam's own natives still found | `ArchitectureTests` (4 new; the first scan now takes the same four seam files) |
+
+**Red first:** the policy tests against the permits with no logic behind them (every allowing row refused by `AgentFolder`, every shape row answering `AgentFolder` instead of `ArchiveShape` — the quarantine
+rename, the removal of a quarantined file, the empty folder, the restore's create); the seam tests against stubs that answered
+`E9.S2a: not built yet` (every verb refused); the scan's planted companion (`found empty collection`). **Against the built seam
+(risk consult 9/9.2):** the pre-opened writer appending at `RemovalHashed` and another process holding the file got `Removed`
+on Linux — before the write lease; the per-level sync test found no `FolderLevelSynced` step before the parent syncs. **Fixed
+on the way:** a symlink at the final name pointing OUTSIDE the base was refused by the policy (its real path is outside the
+root) — the test now points inside the base so the exclusive create itself is what refuses; `mklink /H` needed Windows
+separators.
+**Teeth** (each line broken, the guarding class run, the file restored byte-identical — `sha256` compared). Linux (in a `/tmp`
+copy of the worktree, `nice 19`): the rename without `RENAME_NOREPLACE` — 2 red; the lease removed entirely — 4 (the writer,
+the other process, the child, the mapping); the create without `O_EXCL` — 2; the hash not compared — 1; folders followed through
+links — 2; hard links copied — 1; non-regular files copied — 1; new levels not synced — 1. Windows: the rename with
+`MOVEFILE_REPLACE_EXISTING` — 2; the create with `FileMode.Create` — 1; `FILE_FLAG_DELETE_ON_CLOSE` on the removal handle — 2;
+the hash not compared — 1; the removal handle sharing writes — 1; a junction level followed — 1; hard links copied — 1. The policy:
+any rename in an agent's folder — 3; any file removed — 1; a copy anywhere — 4; the agent's folder itself removed — 1; a create
+with any permit — 1. The scan: a missed copy pattern — 1; missed natives — 2. **Not break-it checked:** the lease's re-check
+after the hash (no test can open the quarantine name between the lease and the check without a race of its own — the stated
+residual).
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

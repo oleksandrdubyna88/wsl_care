@@ -1,0 +1,299 @@
+using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+
+using Microsoft.Win32.SafeHandles;
+
+namespace WslCare.Core.Files;
+
+/// <summary>
+/// The archive seam's native calls (plan §15r E9.S2a) — the ONLY place outside <see cref="PhysicalFileSystem"/> that may name
+/// <c>renameat2</c>, <c>unlinkat</c>, <c>mkdirat</c>, <c>MoveFileExW</c> or a delete disposition (the architecture scan holds every
+/// other file to that). Linux: every folder below a trusted one is opened from the previous one's descriptor with
+/// <c>O_NOFOLLOW</c>, so a link on the way is refused, never followed, and nothing can be swapped between the open and the act.
+/// Windows: a handle opened for exactly the access it needs, a reparse point never followed.
+/// </summary>
+internal static partial class BeneathWrites
+{
+    /// <summary>A Linux call's answer: a descriptor (or 0 for a call that returns none), or the errno.</summary>
+    internal readonly record struct Native(int Value, int Errno)
+    {
+        public bool Failed => Value < 0;
+    }
+
+    internal const int NoEntry = 2;
+    internal const int Exists = 17;
+    internal const int InvalidArgument = 22;
+    internal const int NotEmpty = 39;
+    internal const int TooManyLinks = 40;
+    internal const int NotSupported = 95;
+
+    /// <summary>The folder at <paramref name="start"/> (its last component never a link), then each of <paramref name="components"/>
+    /// from the previous one's descriptor with <c>O_NOFOLLOW</c> — for <c>*at</c> calls (<c>O_PATH</c>); the last one opened
+    /// <paramref name="readable"/> when the caller must <c>fsync</c> or create in it.</summary>
+    [SupportedOSPlatform("linux")]
+    internal static (Native Folder, string Failed) OpenChain(string start, IReadOnlyList<string> components, bool readable)
+    {
+        var first = Linux.Open(start, FolderFlags(components.Count == 0 && readable), 0);
+        if (first < 0)
+        {
+            return (new Native(-1, Marshal.GetLastPInvokeError()), start);
+        }
+
+        var folder = first;
+        for (var i = 0; i < components.Count; i++)
+        {
+            var next = Linux.OpenAt(folder, components[i], FolderFlags(i == components.Count - 1 && readable), 0);
+            var errno = Marshal.GetLastPInvokeError();
+            _ = Linux.Close(folder);
+            if (next < 0)
+            {
+                return (new Native(-1, errno), components[i]);
+            }
+
+            folder = next;
+        }
+
+        return (new Native(folder, 0), string.Empty);
+    }
+
+    [SupportedOSPlatform("linux")]
+    private static int FolderFlags(bool readable) => (readable ? Linux.ReadOnly : Linux.PathOnly) | Linux.Directory | Linux.NoFollow | Linux.CloseOnExec;
+
+    /// <summary>A folder opened from <paramref name="folder"/>'s descriptor, never through a link.</summary>
+    [SupportedOSPlatform("linux")]
+    internal static Native OpenFolderAt(int folder, string name, bool readable) => Call(Linux.OpenAt(folder, name, FolderFlags(readable), 0));
+
+    /// <summary>A folder by its path, its last component never a link.</summary>
+    [SupportedOSPlatform("linux")]
+    internal static Native OpenFolder(string path, bool readable) => Call(Linux.Open(path, FolderFlags(readable), 0));
+
+    [SupportedOSPlatform("linux")]
+    internal static Native MakeFolderAt(int folder, string name) =>
+        Linux.MkdirAt(folder, name, Linux.PrivateFolder) == 0 ? new Native(0, 0) : new Native(-1, Marshal.GetLastPInvokeError());
+
+    [SupportedOSPlatform("linux")]
+    internal static Native OpenReadAt(int folder, string name) => Call(Linux.OpenAt(folder, name, Linux.ReadOnly | Linux.NonBlocking | Linux.NoFollow | Linux.CloseOnExec, 0));
+
+    [SupportedOSPlatform("linux")]
+    internal static Native CreateExclusiveAt(int folder, string name) =>
+        Call(Linux.OpenAt(folder, name, Linux.WriteOnly | Linux.Create | Linux.Exclusive | Linux.NoFollow | Linux.CloseOnExec, Linux.PrivateFile));
+
+    [SupportedOSPlatform("linux")]
+    internal static Native RenameNoReplace(int folder, string from, string to) => Call(Linux.RenameAt2(folder, from, folder, to, Linux.NoReplace));
+
+    [SupportedOSPlatform("linux")]
+    internal static Native UnlinkAt(int folder, string name, bool directory) => Call(Linux.UnlinkAt(folder, name, directory ? Linux.RemoveDirectory : 0));
+
+    [SupportedOSPlatform("linux")]
+    internal static Native Sync(int descriptor) => Call(Linux.Fsync(descriptor));
+
+    /// <summary>A WRITE LEASE on an open file (plan §15r E9.S2a, risk consult 9/9.2): the kernel grants it only when no OTHER open
+    /// file description of the file exists anywhere — a descriptor a child inherited by fork, a writable shared mapping whose
+    /// descriptor was closed, another account's open — and while it is held a new open of the file must first break it. Its break
+    /// is announced by SIGURG (ignored by default), never by SIGIO (which would end this process): the holder asks
+    /// <see cref="LeaseHeld"/> instead. <c>false</c> with the errno when the kernel refused it.</summary>
+    [SupportedOSPlatform("linux")]
+    internal static Native TakeWriteLease(int descriptor) =>
+        Linux.Fcntl(descriptor, Linux.SetSignal, Linux.UrgentSignal) < 0 ? new Native(-1, Marshal.GetLastPInvokeError()) : Call(Linux.Fcntl(descriptor, Linux.SetLease, Linux.WriteLock));
+
+    /// <summary>Whether the write lease taken on <paramref name="descriptor"/> is still whole — no open arrived to break it.</summary>
+    [SupportedOSPlatform("linux")]
+    internal static bool LeaseHeld(int descriptor) => Linux.Fcntl(descriptor, Linux.GetLease, 0) == Linux.WriteLock;
+
+    [SupportedOSPlatform("linux")]
+    internal static void Close(int descriptor) => _ = Linux.Close(descriptor);
+
+    /// <summary>The identity and kind of a descriptor (<paramref name="name"/> empty) or of a name in a folder, never following a
+    /// link: <c>stx_mode</c>'s type, <c>stx_nlink</c>, <c>stx_uid</c>, <c>stx_ino</c>, the device, <c>stx_size</c> and <c>stx_mtime</c>.</summary>
+    [SupportedOSPlatform("linux")]
+    internal static (bool Ok, LinuxStatus Status) Stat(int folder, string name)
+    {
+        var buffer = new byte[Linux.StatxSize];
+        var flags = name.Length == 0 ? Linux.EmptyPath : Linux.SymlinkNoFollow;
+        return Linux.Statx(folder, name, flags, Linux.StatxBasic, buffer) == 0
+            ? (true, LinuxStatus.From(buffer))
+            : (false, LinuxStatus.None);
+    }
+
+    private static Native Call(int result) => result < 0 ? new Native(-1, Marshal.GetLastPInvokeError()) : new Native(result, 0);
+
+    /// <summary>What a <c>statx</c> said.</summary>
+    internal readonly record struct LinuxStatus(int Type, uint Links, uint Owner, ulong Inode, uint DeviceMajor, uint DeviceMinor, long Size, DateTimeOffset LastWriteUtc)
+    {
+        public const int Regular = 0x8000;
+
+        public static LinuxStatus None { get; } = new(0, 0, 0, 0, 0, 0, 0, DateTimeOffset.UnixEpoch);
+
+        public bool IsRegular => Type == Regular;
+
+        public bool SameFile(LinuxStatus other) => Inode == other.Inode && DeviceMajor == other.DeviceMajor && DeviceMinor == other.DeviceMinor;
+
+        /// <summary>The fields of the 256-byte <c>struct statx</c>: <c>stx_nlink</c> (u32 at 16), <c>stx_uid</c> (u32 at 20), <c>stx_mode</c>
+        /// (u16 at 28), <c>stx_ino</c> (u64 at 32), <c>stx_size</c> (u64 at 40), <c>stx_mtime</c> (i64 + u32 at 112),
+        /// <c>stx_dev_major</c> / <c>stx_dev_minor</c> (u32 at 136 / 140).</summary>
+        public static LinuxStatus From(byte[] statx) => new(
+            BitConverter.ToUInt16(statx, 28) & 0xF000,
+            BitConverter.ToUInt32(statx, 16),
+            BitConverter.ToUInt32(statx, 20),
+            BitConverter.ToUInt64(statx, 32),
+            BitConverter.ToUInt32(statx, 136),
+            BitConverter.ToUInt32(statx, 140),
+            (long)BitConverter.ToUInt64(statx, 40),
+            DateTimeOffset.FromUnixTimeSeconds(BitConverter.ToInt64(statx, 112)).AddTicks(BitConverter.ToUInt32(statx, 120) / 100));
+    }
+
+    [SupportedOSPlatform("linux")]
+    private static partial class Linux
+    {
+        public const int ReadOnly = 0;
+        public const int WriteOnly = 1;
+        public const int Create = 0x40;
+        public const int Exclusive = 0x80;
+        public const int NonBlocking = 0x800;
+        public const int CloseOnExec = 0x80000;
+        public const int PathOnly = 0x200000;
+        public const int PrivateFile = 0x180;
+        public const int PrivateFolder = 0x1C0;
+        public const int RemoveDirectory = 0x200;
+        public const int SymlinkNoFollow = 0x100;
+        public const int EmptyPath = 0x1000;
+        public const uint NoReplace = 1;
+        public const int SetSignal = 10;
+        public const int SetLease = 1024;
+        public const int GetLease = 1025;
+        public const int WriteLock = 1;
+        public const int UrgentSignal = 23;
+        public const uint StatxBasic = 0x7FF;
+        public const int StatxSize = 256;
+
+        private const string Libc = "libc.so.6";
+
+        /// <summary><c>O_NOFOLLOW</c> and <c>O_DIRECTORY</c> differ by architecture (arm64's own uapi fcntl.h).</summary>
+        public static int NoFollow => RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? 0x8000 : 0x20000;
+
+        public static int Directory => RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? 0x4000 : 0x10000;
+
+        [LibraryImport(Libc, EntryPoint = "open", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int Open(string path, int flags, int mode);
+
+        [LibraryImport(Libc, EntryPoint = "openat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int OpenAt(int dirfd, string path, int flags, int mode);
+
+        [LibraryImport(Libc, EntryPoint = "mkdirat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int MkdirAt(int dirfd, string path, int mode);
+
+        [LibraryImport(Libc, EntryPoint = "renameat2", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int RenameAt2(int olddirfd, string oldpath, int newdirfd, string newpath, uint flags);
+
+        [LibraryImport(Libc, EntryPoint = "unlinkat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int UnlinkAt(int dirfd, string path, int flags);
+
+        [LibraryImport(Libc, EntryPoint = "statx", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int Statx(int dirfd, string path, int flags, uint mask, byte[] buffer);
+
+        [LibraryImport(Libc, EntryPoint = "fcntl", SetLastError = true)]
+        internal static partial int Fcntl(int fd, int command, int argument);
+
+        [LibraryImport(Libc, EntryPoint = "fsync", SetLastError = true)]
+        internal static partial int Fsync(int fd);
+
+        [LibraryImport(Libc, EntryPoint = "close", SetLastError = true)]
+        internal static partial int Close(int fd);
+    }
+
+    /// <summary>Opens <paramref name="path"/> for reading its bytes and — with <paramref name="delete"/> — for deleting it through the
+    /// same handle; sharing READ only while it is held (no other process may write, rename or delete it meanwhile); a reparse point
+    /// opened as itself, never followed; with <paramref name="unbuffered"/> read past the system cache (<c>FILE_FLAG_NO_BUFFERING</c>).</summary>
+    [SupportedOSPlatform("windows")]
+    internal static (SafeFileHandle Handle, int Error) OpenWindows(string path, bool delete, bool unbuffered)
+    {
+        var access = Windows.GenericRead | (delete ? Windows.Delete : 0);
+        var flags = Windows.OpenReparsePoint | Windows.SequentialScan | (unbuffered ? Windows.NoBuffering : 0);
+        var handle = Windows.CreateFile(path, access, Windows.ShareRead, IntPtr.Zero, Windows.OpenExisting, flags, IntPtr.Zero);
+        return (handle, handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0);
+    }
+
+    /// <summary>The attributes and link count of an open Windows file.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static (bool Ok, uint Attributes, uint Links) Describe(SafeFileHandle handle) =>
+        Windows.GetFileInformationByHandle(handle, out var info) ? (true, info.FileAttributes, info.NumberOfLinks) : (false, 0, 0);
+
+    /// <summary>Marks the open file for deletion when its handle closes — set only by the caller AFTER its bytes were found equal:
+    /// POSIX semantics first (the name goes at once), the classic disposition where the file system has none.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static int MarkForDeletion(SafeFileHandle handle)
+    {
+        var posix = Windows.DispositionDelete | Windows.DispositionPosix;
+        if (Windows.SetFileInformationByHandle(handle, Windows.FileDispositionInfoEx, ref posix, sizeof(uint)))
+        {
+            return 0;
+        }
+
+        var classic = 1u;
+        return Windows.SetFileInformationByHandle(handle, Windows.FileDispositionInfo, ref classic, 1) ? 0 : Marshal.GetLastPInvokeError();
+    }
+
+    /// <summary>Renames without ever replacing (no <c>MOVEFILE_REPLACE_EXISTING</c>), written through; 0 or the Win32 error.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static int MoveNoReplace(string from, string to) =>
+        Windows.MoveFileEx(from, to, Windows.MoveWriteThrough) ? 0 : Marshal.GetLastPInvokeError();
+
+    internal const int WindowsNotFound = 2;
+    internal const int WindowsPathNotFound = 3;
+    internal const int WindowsSharing = 32;
+    internal const int WindowsFileExists = 80;
+    internal const int WindowsAlreadyExists = 183;
+    internal const uint WindowsReparsePoint = 0x400;
+    internal const uint WindowsDirectory = 0x10;
+
+    [SupportedOSPlatform("windows")]
+    private static partial class Windows
+    {
+        public const uint GenericRead = 0x80000000;
+        public const uint Delete = 0x00010000;
+        public const uint ShareRead = 1;
+        public const uint OpenExisting = 3;
+        public const uint OpenReparsePoint = 0x00200000;
+        public const uint SequentialScan = 0x08000000;
+        public const uint NoBuffering = 0x20000000;
+        public const int FileDispositionInfo = 4;
+        public const int FileDispositionInfoEx = 21;
+        public const uint DispositionDelete = 1;
+        public const uint DispositionPosix = 2;
+        public const uint MoveWriteThrough = 8;
+
+        [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        public static partial SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool GetFileInformationByHandle(SafeFileHandle handle, out ByHandleFileInformation information);
+
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass, ref uint information, uint size);
+
+        [LibraryImport("kernel32.dll", EntryPoint = "MoveFileExW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool MoveFileEx(string from, string to, uint flags);
+    }
+
+    /// <summary><c>BY_HANDLE_FILE_INFORMATION</c>, field for field (each <c>FILETIME</c> as its two halves).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ByHandleFileInformation
+    {
+        public uint FileAttributes;
+        public uint CreationLow;
+        public uint CreationHigh;
+        public uint AccessLow;
+        public uint AccessHigh;
+        public uint WriteLow;
+        public uint WriteHigh;
+        public uint VolumeSerialNumber;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint NumberOfLinks;
+        public uint FileIndexHigh;
+        public uint FileIndexLow;
+    }
+}

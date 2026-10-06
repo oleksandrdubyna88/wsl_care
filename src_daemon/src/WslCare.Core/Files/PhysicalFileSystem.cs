@@ -21,7 +21,7 @@ namespace WslCare.Core.Files;
 /// <para>The atomic write also ACTS on the real paths it judged and checks them again just before the
 /// rename; see <see cref="WriteFileAtomically"/> for the window that remains.</para>
 /// </remarks>
-public sealed class PhysicalFileSystem : IFileSystem
+public sealed partial class PhysicalFileSystem : IFileSystem, IArchiveFiles
 {
     private static readonly RealPathResult NoDestination = new RealPathResult.Resolved(string.Empty);
 
@@ -29,6 +29,7 @@ public sealed class PhysicalFileSystem : IFileSystem
     private readonly DeletionPolicy _policy;
     private readonly Func<string, string?> _readLinkTarget;
     private readonly Action<AtomicWriteStep, string> _onAtomicWriteStep;
+    private readonly Action<ArchiveFileStep, string> _onArchiveStep;
 
     public PhysicalFileSystem(IHostPaths paths)
         : this(paths, ReadLinkTarget, static (_, _) => { })
@@ -40,9 +41,17 @@ public sealed class PhysicalFileSystem : IFileSystem
     /// inspect), and <paramref name="onAtomicWriteStep"/> runs between the steps of
     /// <see cref="WriteFileAtomically"/>, so a test can swap a link in at the exact moment a race would.</summary>
     internal PhysicalFileSystem(IHostPaths paths, Func<string, string?> readLinkTarget, Action<AtomicWriteStep, string> onAtomicWriteStep)
+        : this(paths, readLinkTarget, onAtomicWriteStep, static (_, _) => { })
+    {
+    }
+
+    /// <summary>The same seams and the archive's fault seam (plan §15r E9.S2a): <paramref name="onArchiveStep"/> runs between the
+    /// primitive steps of every <see cref="IArchiveFiles"/> verb, so a test can throw — or kill — at each of them.</summary>
+    internal PhysicalFileSystem(IHostPaths paths, Func<string, string?> readLinkTarget, Action<AtomicWriteStep, string> onAtomicWriteStep, Action<ArchiveFileStep, string> onArchiveStep)
     {
         _readLinkTarget = readLinkTarget;
         _onAtomicWriteStep = onAtomicWriteStep;
+        _onArchiveStep = onArchiveStep;
         _policy = new DeletionPolicy(ProtectedRoots.From(paths, RealOrSpelled), _rules);
     }
 

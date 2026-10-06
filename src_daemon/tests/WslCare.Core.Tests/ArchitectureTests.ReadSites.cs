@@ -148,7 +148,7 @@ public sealed partial class ArchitectureTests
 
     /// <summary>The file system's own implementation files — the readers themselves, not their callers.</summary>
     private static readonly string[] ReaderImplementations =
-        ["WslCare.Core/Files/PhysicalFileSystem.cs", "WslCare.Core/Files/IFileSystem.cs", "WslCare.Core/Files/RegularFiles.cs", "WslCare.Core/Files/TreeWalk.cs", "WslCare.Core/Files/BeneathFiles.cs"];
+        ["WslCare.Core/Files/PhysicalFileSystem.cs", "WslCare.Core/Files/IFileSystem.cs", "WslCare.Core/Files/RegularFiles.cs", "WslCare.Core/Files/TreeWalk.cs", "WslCare.Core/Files/BeneathFiles.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.cs", "WslCare.Core/Files/BeneathWrites.cs"];
 
     /// <summary>Every read call in <paramref name="source"/>, normalised (<c>File.ReadAllText</c> → <c>ReadAllText</c>).</summary>
     internal static IReadOnlyList<string> ReadCalls(string source) =>

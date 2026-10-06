@@ -26,11 +26,19 @@ namespace WslCare.Core.Files.Deletion;
 /// </remarks>
 public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
 {
+    /// <summary>The mark of a file the archive renamed aside in its own folder (plan §15r D2.8): <c>&lt;name&gt;.wsl-care-q-&lt;runId&gt;</c>.</summary>
+    public const string QuarantineMark = ".wsl-care-q-";
+
     public DeletionVerdict Decide(DeletionRequest request)
     {
         if (IsAgentMemory(request.RealPath) || (request.Operation == FileOperation.Move && IsAgentMemory(request.RealDestination)))
         {
             return Refuse(DeletionRule.AgentMemory, request, "it is an AI agent's memory (projects/*/memory/), which is never moved or deleted");
+        }
+
+        if (request is { Operation: FileOperation.Move, Permit: DeletionPermit.ArchiveQuarantine })
+        {
+            return JudgeQuarantine(request);
         }
 
         var source = JudgeSource(request);
@@ -83,11 +91,57 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
         : Holding(path, roots.ClaudeTempRoots) is { } temp ? Refuse(DeletionRule.ClaudeTemp, request, $"it holds Claude Code's temp folder {temp}, which would go with it")
         : null;
 
-    /// <summary>Inside an agent's folder only the archive's MOVE is allowed, and only with the permit.</summary>
-    private static DeletionVerdict JudgeAgentSource(DeletionRequest request, string agentRoot) =>
-        request.Permit == DeletionPermit.MoveOutOfAgentFolder && request.Operation == FileOperation.Move
-            ? DeletionVerdict.Allowed
-            : Refuse(DeletionRule.AgentFolder, request, $"it is under the AI agent folder {agentRoot}; nothing under an agent's folder is ever deleted (plan §5)");
+    /// <summary>Inside an agent's folder only the archive's operations are allowed, each with its own permit (plan §15r E9.S2a): the
+    /// move out (<see cref="DeletionPermit.MoveOutOfAgentFolder"/>), the verified removal of a quarantined file or an empty folder,
+    /// and a restore's create. A plain delete stays refused whatever the permit.</summary>
+    private DeletionVerdict JudgeAgentSource(DeletionRequest request, string agentRoot) => (request.Operation, request.Permit) switch
+    {
+        (FileOperation.Move, DeletionPermit.MoveOutOfAgentFolder) => DeletionVerdict.Allowed,
+        (FileOperation.Delete, DeletionPermit.ArchiveRemoval) => JudgeArchiveRemoval(request, agentRoot),
+        (FileOperation.Create, DeletionPermit.RestoreIntoAgentFolder) => JudgeInsideRoot(request, request.RealPath),
+        _ => Refuse(DeletionRule.AgentFolder, request, $"it is under the AI agent folder {agentRoot}; nothing under an agent's folder is ever deleted (plan §5)"),
+    };
+
+    /// <summary>E9.S2a: never the agent's folder itself; an empty folder strictly inside it; a file only under its quarantine name and
+    /// with its archived copy named outside every protected place (the seam then removes it only when its bytes hash equal).</summary>
+    private DeletionVerdict JudgeArchiveRemoval(DeletionRequest request, string agentRoot) =>
+        !rules.IsStrictlyUnder(request.RealPath, agentRoot) ? Refuse(DeletionRule.ArchiveShape, request, $"it is the AI agent folder {agentRoot} itself, which is never removed")
+        : request.IsFolder ? JudgeInsideRoot(request, request.RealPath)
+        : JudgeQuarantinedFile(request);
+
+    private DeletionVerdict JudgeQuarantinedFile(DeletionRequest request) =>
+        !IsQuarantineName(Name(request.RealPath)) ? Refuse(DeletionRule.ArchiveShape, request, "only a file renamed aside to its quarantine name (<name>.wsl-care-q-<runId>) is ever removed from an agent's folder")
+        : !IsOutsideCopy(request.ArchivedCopy) ? Refuse(DeletionRule.ArchiveShape, request, $"it names no archived copy outside the protected folders ({(request.ArchivedCopy.Length == 0 ? "none" : request.ArchivedCopy)})")
+        : JudgeInsideRoot(request, request.RealPath);
+
+    /// <summary>E9.S2a: the quarantine rename — in the SAME folder, to the source's name plus the mark and a run id, or back.</summary>
+    private DeletionVerdict JudgeQuarantine(DeletionRequest request) =>
+        rules.PathEquals(Parent(request.RealPath), Parent(request.RealDestination)) && IsQuarantinePair(Name(request.RealPath), Name(request.RealDestination))
+            ? JudgeNotNeverList(request)
+            : Refuse(DeletionRule.ArchiveShape, request, $"{request.RealDestination} is not its quarantine name in its own folder (or back); the quarantine renames nothing else");
+
+    /// <summary>A quarantine rename still never touches the repositories or Claude's temporary folder, and stays inside its root.</summary>
+    private DeletionVerdict JudgeNotNeverList(DeletionRequest request) =>
+        Under(request.RealPath, roots.ClaudeTempRoots) is { } temp ? Refuse(DeletionRule.ClaudeTemp, request, $"it is under Claude Code's temp folder {temp}, which is never cleaned")
+        : Under(request.RealPath, roots.GitRoots) is { } git ? Refuse(DeletionRule.GitFolder, request, $"it is under the repositories folder {git}; nothing under it is ever deleted")
+        : JudgeInsideRoot(request, request.RealPath);
+
+    /// <summary><paramref name="to"/> is <paramref name="from"/> renamed aside (<c>s.jsonl</c> → <c>s.jsonl.wsl-care-q-r1</c>), or back.</summary>
+    private static bool IsQuarantinePair(string from, string to) => IsAsideOf(to, from) || IsAsideOf(from, to);
+
+    private static bool IsAsideOf(string quarantined, string original) =>
+        quarantined.StartsWith(original + QuarantineMark, StringComparison.Ordinal) && IsQuarantineName(quarantined) && quarantined.Length > original.Length + QuarantineMark.Length;
+
+    /// <summary>A name carrying the mark with a run id after it.</summary>
+    private static bool IsQuarantineName(string name) => name.IndexOf(QuarantineMark, StringComparison.Ordinal) is var at and > 0 && name.Length > at + QuarantineMark.Length;
+
+    /// <summary>An archived copy: an absolute path under no protected place.</summary>
+    private bool IsOutsideCopy(string copy) =>
+        copy.Length > 0 && rules.IsAbsolute(copy) && (Under(copy, roots.AgentRoots) ?? Under(copy, roots.GitRoots) ?? Under(copy, roots.ClaudeTempRoots)) is null;
+
+    private string Name(string path) => rules.IsAbsolute(path) && rules.Segments(path) is { Count: > 0 } segments ? segments[^1] : path;
+
+    private string Parent(string path) => rules.IsAbsolute(path) ? rules.Parent(path) : path;
 
     private DeletionVerdict JudgeInsideRoot(DeletionRequest request, string path) =>
         TooBroad(request)
@@ -145,5 +199,10 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
     private static DeletionVerdict Refuse(DeletionRule rule, FileOperation operation, string action, string path, string why) =>
         DeletionVerdict.Refuse(rule, $"{action}: refused to {Verb(operation)} {path}: {why}");
 
-    private static string Verb(FileOperation operation) => operation == FileOperation.Move ? "move" : "delete";
+    private static string Verb(FileOperation operation) => operation switch
+    {
+        FileOperation.Move => "move",
+        FileOperation.Create => "create",
+        _ => "delete",
+    };
 }

@@ -2592,6 +2592,41 @@ flowchart TD
   id is empty or a dot name is refused (its companions would name the folder around it); the agents' own retention is a closed
   `Known(days)` / `Unknown(why)`, unknown warned (E9.S1 review round, plan §15r).
 
+### The archive's seam (E9.S2a, 2026-10-06, plan §15r R1, review M12, risk consult 9/9.2)
+
+E9.S2a lands the ONLY way the archive touches a file — `Files/IArchiveFiles.cs`, implemented by `PhysicalFileSystem`
+(`Files/PhysicalFileSystem.Archive.cs`) with its natives in `Files/BeneathWrites.cs`. Nothing moves yet: E9.S2b's protocol
+(`archive run`) is the first caller.
+
+```mermaid
+flowchart LR
+    subgraph seam["IArchiveFiles (the seam)"]
+        open["OpenSource — from the layout root's descriptor, O_NOFOLLOW each level;<br/>a regular file of THIS account with ONE link (a FIFO never waited on)"]
+        tree["OpenFolderBeneath — each level mkdirat 0700 from its parent's descriptor,<br/>never a link; a new level's entry fsynced in its parent"]
+        create["CreateExclusive — O_CREAT|O_EXCL|O_NOFOLLOW 0600 (Windows CREATE_NEW, write-through);<br/>an existing name is never replaced"]
+        back["ReadBack — hashed again (Windows past the cache, FILE_FLAG_NO_BUFFERING)"]
+        rename["QuarantineRename / RenameBack — renameat2(RENAME_NOREPLACE)<br/>(Windows MoveFileEx without replace): an agent's file at the name is KEPT"]
+        remove["RemoveVerified — write lease (no other open anywhere), hash = the archived copy's,<br/>lease still whole, same inode → unlinkat (Windows: one DELETE|READ handle, share READ,<br/>the delete disposition set only after equality)"]
+        empty["RemoveEmptyFolder — never recursive"]
+    end
+    policy["DeletionPolicy on the REAL paths — permits: ArchiveQuarantine (to/from the mark, same folder),<br/>ArchiveRemoval (a mark-named file with its copy outside every protected place; an empty folder<br/>strictly inside, never the agent's folder), RestoreIntoAgentFolder (create only); memory never"]
+    policy --> seam
+    fault["fault seam: Action&lt;ArchiveFileStep, string&gt; between every primitive step"] -.-> seam
+```
+
+- **The policy** (`Files/Deletion/DeletionPolicy.cs`) gained `FileOperation.Create`, three permits and the rule `ArchiveShape`;
+  a plain delete under an agent's folder stays refused by every permit, and `projects/*/memory` by all of them. The quarantine
+  mark (`.wsl-care-q-`) lives on the policy; `ArchiveNames.QuarantineMark` reads it.
+- **Why a write lease** (risk consult 9/9.2): a `/proc/*/fd` scan does not see a child that inherited a writer by fork after the
+  scan's snapshot, nor a writable shared mapping whose descriptor was closed; the kernel grants `F_SETLEASE F_WRLCK` only when no
+  other open file description of the inode exists — those included. A lease break is routed to SIGURG (ignored), never SIGIO; the
+  lease must still be whole after the hash. Residual: a NEW opener of the quarantine name after the final check, with the
+  remover stalled for `fs.lease-break-time`.
+- **The scan** (`ArchitectureTests.ArchiveSeam.cs`): outside the seam's four files (`PhysicalFileSystem.cs`, its archive half,
+  `BeneathWrites.cs`, `RegularFiles.cs`) no `File.Copy` / `File.Replace`, no `FileInfo` `CopyTo` / `Replace`, no
+  `FileOptions.DeleteOnClose`, no delete disposition, and no native rename / unlink / link / rmdir / move entry point — each
+  pattern with a planted companion.
+
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
 "Every number we have must be configurable" (the owner, 2026-10-05). From now on **a new behavioural number is a

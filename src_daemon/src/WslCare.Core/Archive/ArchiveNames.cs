@@ -16,7 +16,7 @@ public static partial class ArchiveNames
     private static readonly string[] Reserved = ["CON", "PRN", "AUX", "NUL", .. Enumerable.Range(1, 9).SelectMany(n => new[] { $"COM{n}", $"LPT{n}" })];
 
     /// <summary>The mark of a file an interrupted removal renamed aside (§15r D2.8, review M3): <c>&lt;name&gt;.wsl-care-q-&lt;runId&gt;</c>.</summary>
-    public const string QuarantineMark = ".wsl-care-q-";
+    public const string QuarantineMark = Files.Deletion.DeletionPolicy.QuarantineMark;
 
     /// <summary>Why <paramref name="name"/> (one segment) cannot be held by the archive; empty when it can. A name the distro's bytes
     /// did not decode holds U+FFFD or a lone surrogate — both enumerate as the replacement rune; a surrogate PAIR is one valid character.</summary>

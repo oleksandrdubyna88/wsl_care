@@ -1,6 +1,6 @@
 # PLAN — move old AI-agent sessions into a dated archive instead of losing them
 
-> Status: **in progress, 2026-10-06 — E9.S0 and E9.S1 built, their review rounds fixed** (the catalogue's archive blocks, the archive's keys, the base folder
+> Status: **in progress, 2026-10-06 — E9.S0, E9.S1 and E9.S2a (the archive's file seam) built, the review rounds fixed** (the catalogue's archive blocks, the archive's keys, the base folder
 > rules and `archive check-base`; the selection and `archive preview`, read-only; the parent plan's §15r *E9.S0 as built* and
 > *E9.S1 as built*); nothing is moved yet. Planned 2026-10-02. Scope: a new `archive` capability of the
 > `wsl-care` daemon on **both** sides (WSL and Windows), its settings, its page in the VS Code extension.
