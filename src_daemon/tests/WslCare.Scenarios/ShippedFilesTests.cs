@@ -175,6 +175,82 @@ public sealed partial class ShippedFilesTests
         unit.Should().NotContainKey("Install", "started by --detach only, never enabled");
     }
 
+    /// <summary>E7.S2c review N-4 as REVERSED by the E7.S2b/S2c review (C-H2): no unit's start limit may kill its own run before
+    /// its worst case, and no run may hang forever. A <c>oneshot</c> unit's start IS the whole run: either <c>infinity</c> (the
+    /// detached confirm, never time-killed as a whole — the progress watchdog ends a hang) or a limit at least the DERIVED worst
+    /// case of a timer run (wsl-care.service: every command template once at its ceiling with its drains, the two walks, a
+    /// margin). A <c>simple</c> unit's start ends when its process starts, a worst case of zero that systemd's default is above.
+    /// The old <c>TimeoutStartSec=10min</c> was below one A7 prune (<c>docker.pruneTimeoutSeconds</c>, 15 min).</summary>
+    [Fact]
+    public void Every_unit_s_start_limit_is_infinity_or_above_the_worst_case_of_its_run()
+    {
+        var worst = Core.Config.RunBudget.TimerRunWorstCase(Core.Config.Tuning.Default.Config);
+        foreach (var name in ShippedFiles.UnitNames.Where(n => n.EndsWith(".service", StringComparison.Ordinal)))
+        {
+            var service = Unit(name)["Service"];
+            var type = Single(Unit(name), "Service", "Type");
+            if (type == "oneshot")
+            {
+                var limit = Single(Unit(name), "Service", "TimeoutStartSec");
+                (limit == "infinity" || (limit.EndsWith("min", StringComparison.Ordinal) && TimeSpan.FromMinutes(int.Parse(limit[..^3], System.Globalization.CultureInfo.InvariantCulture)) >= worst))
+                    .Should().BeTrue($"{name}: TimeoutStartSec={limit} must be infinity or at least the derived worst case {worst.TotalMinutes:0} min");
+            }
+            else
+            {
+                type.Should().Be("simple", $"{name}: the only other type shipped");
+                service.Should().NotContainKey("TimeoutStartSec", $"{name}: a simple unit is started once its process is, a worst case of zero");
+            }
+        }
+
+        Single(Unit("wsl-care.service"), "Service", "TimeoutStartSec").Should().NotBe("infinity", "review C-H2: the timer's run has a backstop");
+        Single(Unit("wsl-care-act@.service"), "Service", "TimeoutStartSec").Should().Be("infinity", "a confirm is never time-killed as a whole (§15f #9)");
+    }
+
+    /// <summary>E7.S2c: the drop-in of the DEFAULTS says what each shipped unit file says — so a machine that changes nothing
+    /// runs exactly the unit files, and a drop-in is a change only where the machine configuration is one.</summary>
+    [Fact]
+    public void The_drop_in_of_the_defaults_says_what_each_shipped_unit_says()
+    {
+        foreach (var name in Core.Systemd.UnitDropIns.Units)
+        {
+            var unit = Unit(name);
+            var section = name.EndsWith(".timer", StringComparison.Ordinal) ? "Timer" : "Service";
+            foreach (var (key, value) in DropInSettings(Core.Systemd.UnitDropIns.Defaults(name)))
+            {
+                Comparable(key, Single(unit, section, key)).Should().Be(Comparable(key, value), $"{name}: [{section}] {key} of the defaults' drop-in");
+            }
+        }
+    }
+
+    /// <summary>The companion: a drop-in under a changed machine configuration carries the configured values — the timer's
+    /// calendar from <c>timer.periodHours</c> among them.</summary>
+    [Fact]
+    public void A_drop_in_carries_the_configured_values()
+    {
+        var loaded = ConfigLoader.Load(
+        [
+            (ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults())),
+            (new ConfigLayerFile(ConfigLayer.Machine, "/etc/wsl-care/config.json"), new FileReadResult.Content(Encoding.UTF8.GetBytes("""{ "timer": { "periodHours": 6 }, "units": { "nice": 10, "memoryMaxMb": 2048, "stopTimeoutSeconds": 60, "eventsRestartSeconds": 45 } }"""))),
+        ]);
+        loaded.Errors.Should().BeEmpty();
+
+        using (Tuning.Use(loaded.Config))
+        {
+            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.timer")).Should().Contain(("OnCalendar", "*-*-* 00/6:00:00"));
+            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Should().Equal(("Nice", "10"), ("MemoryMax", "2048M"), ("TimeoutStopSec", "60"), ("TimeoutStartSec", "240min"));
+            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-act@.service")).Should().Equal([.. DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Where(s => s.Key != "TimeoutStartSec")], "one hardening set; a confirm keeps its infinity");
+            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-events.service")).Should().Equal(("RestartSec", "45"), ("MemoryMax", "2048M"));
+        }
+    }
+
+    /// <summary>A drop-in's settings, without the empty assignment that clears a list first (<c>OnCalendar=</c>).</summary>
+    private static IReadOnlyList<(string Key, string Value)> DropInSettings(string text) =>
+        [.. text.Split('\n').Select(l => l.Trim()).Where(l => IsDirective(l) && !IsSectionHeader(l) && !l.EndsWith('=')).Select(l => (l[..l.IndexOf('=')], l[(l.IndexOf('=') + 1)..]))];
+
+    /// <summary>A value as systemd reads it: <c>1G</c> and <c>1024M</c> are the same ceiling.</summary>
+    private static string Comparable(string key, string value) =>
+        key == "MemoryMax" && value.EndsWith('G') ? (int.Parse(value[..^1], System.Globalization.CultureInfo.InvariantCulture) * 1024).ToString(System.Globalization.CultureInfo.InvariantCulture) + "M" : value;
+
     [Fact]
     public void The_detached_run_s_template_counts_exactly_the_recorded_answers_as_success()
     {

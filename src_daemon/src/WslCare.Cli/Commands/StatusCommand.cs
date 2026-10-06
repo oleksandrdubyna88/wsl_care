@@ -36,6 +36,7 @@ internal static class StatusCommand
             // Read-only: judged, never swept — status is unprivileged (plan §15b #3, §15j M3).
             Running = RunningReports.Read(host.Paths, host.Files, host.Processes, now, Core.Actions.Engine.RunningReadRetry.Default, history),
             LastCleanup = LastCleanups.From(history),
+            Limits = StatusLimits.From(loaded.Config),
         };
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
     }

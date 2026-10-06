@@ -44,6 +44,18 @@ internal abstract record Request
         public bool Detach { get; init; }
     }
 
+    /// <summary><c>agents list [--measure] [--json]</c> (plan §4.6, §15q E7.S1): the catalogue agents found here, their sizes from
+    /// the newest full run — or measured now with <c>--measure</c>.</summary>
+    internal sealed record AgentsList(bool Measure, bool Json) : Request;
+
+    /// <summary><c>agents probe &lt;path&gt; [--json]</c> (plan §15q D4): what a CLI the person picked is, as this user — the path
+    /// is checked for its shape here and never reaches a root process.</summary>
+    internal sealed record AgentsProbe(string Path, bool Json) : Request;
+
+    /// <summary><c>units dropin &lt;unit&gt;</c> (E7.S2c): the drop-in install.sh writes for one unit, from the machine
+    /// configuration — the timer's period, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec.</summary>
+    internal sealed record UnitsDropIn(string Unit) : Request;
+
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
 
@@ -98,6 +110,10 @@ internal abstract record Request
 
         /// <summary><c>--detach</c> (E6.S1, §15j B2): write the request, start the template unit, answer <c>accepted</c> at once.</summary>
         public bool Detach { get; init; }
+
+        /// <summary>Every <c>--process</c> given (E7.S2b review A-H1), each already a <c>pid:start</c> key: the processes A18's preview
+        /// showed and the person confirmed.</summary>
+        public IReadOnlyList<string> Processes { get; init; } = [];
 
         /// <summary>Whether a shown list was passed at all.</summary>
         public bool HasShownList => Volumes.Count > 0 || OnlyFile.Length > 0;
@@ -154,6 +170,7 @@ internal static class CommandLine
     private const string TimerFlag = "--timer";
     private const string VolumeFlag = "--volume";
     private const string OnlyFlag = "--only";
+    private const string ProcessFlag = "--process";
     private const string PeriodFlag = "--period";
     private const string ActionFlag = "--action";
     private const string DetailFlag = "--detail";
@@ -163,10 +180,13 @@ internal static class CommandLine
     private const string RequestFlag = "--request";
     private const string StopFlag = "--stop";
     private const string StdinMarker = "-";
+    private const string MeasureFlag = "--measure";
 
-    /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — the same cap a
-    /// preview's <c>shown</c> list keeps (<see cref="Core.Actions.ShownList.MaxNames"/>, plan §15j B1).</summary>
-    internal const int MaxShownVolumes = Core.Actions.ShownList.MaxNames;
+    /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together (plan §15j B1) — the
+    /// COMPILE-TIME ceiling: the parser runs before any configuration is read, so it holds the range maximum of
+    /// <c>act.maxShownNames</c> (a test keeps them equal), and the verb, once the configuration is loaded, refuses a list past the
+    /// value IN FORCE (coai E7 code round #4).</summary>
+    internal const int MaxShownVolumes = 10_000;
 
     internal static readonly IReadOnlyList<Command> Commands =
     [
@@ -180,11 +200,14 @@ internal static class CommandLine
         new([["collect"]], "collect [--timer or --detach] [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise); --timer is the systemd timer's mark, the only run that also acts; --detach (as root) starts it in its own unit and answers accepted at once", ["collect", "--json"], ParseCollect),
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
-        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
+        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed, --process the processes A18's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
         new([["act", "--request"]], "act --request <runId>", "as root, the template unit's start: run the request --detach wrote, recorded under its run id (refused, recorded, when another run holds the lock)", ["act", "--request", "20261002T120000Z-123"], ParseActFromRequest),
         new([["act", "--stop"]], "act --stop <runId> [--json]", "as root: stop a WEDGED run through systemd, only when its process lives in wsl-care.service or that run's own unit", ["act", "--stop", "20261002T120000Z-123", "--json"], ParseActStop),
         new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["logs", "--period", "today", "--json"], ParseLogs),
         new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
+        new([["agents", "list"]], "agents list [--measure] [--json]", "the AI agents found here (by binary, npm package or folder), their version read from disk, their folders' sizes and sessions from the newest full run — or measured now with --measure (read-only: nothing inside an agent's folder is opened, nothing is run)", ["agents", "list", "--json"], ParseAgentsList),
+        new([["agents", "probe"]], "agents probe <path> [--json]", "what the CLI at <path> is, as this user and never as root: a file it may start (looked at, never run, never read), a name from its file name, and its conventional data folders with their sizes and whether they could be a manual agent's (read-only)", ["agents", "probe", "/home/me/.local/bin/mycli", "--json"], ParseAgentsProbe),
+        new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
 
@@ -350,35 +373,47 @@ internal static class CommandLine
     /// <summary>The act's options after its ids: its flags, then its shown list — or the first refusal.</summary>
     private static Request ActOptions(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> rest) => SplitActOptions(rest) switch
     {
-        (_, _, _, { } failure) => failure,
-        var (flags, _, _, _) when ActFlags(flags) is { } failure => failure,
-        var (_, volumes, only, _) when ShownListFailure(ids, volumes, only) is { } failure => failure,
-        var (flags, volumes, only, _) => new Request.Act(ids, flags.Contains(ConfirmFlag), flags.Contains(JsonFlag)) { Manual = flags.Contains(ManualFlag), Timer = flags.Contains(TimerFlag), Detach = flags.Contains(DetachFlag), Volumes = volumes, OnlyFile = only },
+        ({ Failure: { } failure }) => failure,
+        var split when ActFlags(split.Flags) is { } failure => failure,
+        var split when (ShownListFailure(ids, split.Volumes, split.Only) ?? ShownProcessesFailure(ids, split.Processes)) is { } failure => failure,
+        var split => new Request.Act(ids, split.Flags.Contains(ConfirmFlag), split.Flags.Contains(JsonFlag)) { Manual = split.Flags.Contains(ManualFlag), Timer = split.Flags.Contains(TimerFlag), Detach = split.Flags.Contains(DetachFlag), Volumes = split.Volumes, OnlyFile = split.Only, Processes = split.Processes },
     };
 
-    /// <summary>The flags, the <c>--volume</c> values and the <c>--only</c> file, apart — or the first refusal.</summary>
-    private static (List<string> Flags, List<string> Volumes, string Only, Request.Failed? Failure) SplitActOptions(IReadOnlyList<string> rest)
+    /// <summary>An act's options apart: its flags, the <c>--volume</c> values, the <c>--only</c> file, the <c>--process</c> keys.</summary>
+    private sealed record ActSplit(List<string> Flags, List<string> Volumes, string Only, List<string> Processes, Request.Failed? Failure);
+
+    /// <summary>The flags, the <c>--volume</c> values, the <c>--only</c> file and the <c>--process</c> keys, apart — or the first refusal.</summary>
+    private static ActSplit SplitActOptions(IReadOnlyList<string> rest)
     {
-        var (flags, volumes, only) = (new List<string>(), new List<string>(), string.Empty);
-        for (var i = 0; i < rest.Count; i++)
+        var split = new ActSplit([], [], string.Empty, [], null);
+        for (var i = 0; i < rest.Count && split.Failure is null; i += TakeOption(rest, i, ref split))
         {
-            if (rest[i] is not (VolumeFlag or OnlyFlag))
-            {
-                flags.Add(rest[i]);
-                continue;
-            }
-
-            if (ShownValueProblem(rest, i, only) is { } failure)
-            {
-                return (flags, volumes, only, failure);
-            }
-
-            (only, volumes) = Taken(rest[i], rest[i + 1], only, volumes);
-            i++;
         }
 
-        return (flags, volumes, only, null);
+        return split;
     }
+
+    /// <summary>One option of an act at <paramref name="i"/> taken into <paramref name="split"/> (coai E7 code round #1: the
+    /// per-flag dispatch apart); how many arguments it used.</summary>
+    private static int TakeOption(IReadOnlyList<string> rest, int i, ref ActSplit split)
+    {
+        if (rest[i] is not (VolumeFlag or OnlyFlag or ProcessFlag))
+        {
+            split.Flags.Add(rest[i]);
+            return 1;
+        }
+
+        split = ShownValueProblem(rest, i, split.Only) is { } failure ? split with { Failure = failure } : WithValue(split, rest[i], rest[i + 1]);
+        return 2;
+    }
+
+    /// <summary>A <c>--volume</c>, <c>--only</c> or <c>--process</c> value taken.</summary>
+    private static ActSplit WithValue(ActSplit split, string flag, string value) => flag switch
+    {
+        ProcessFlag => split with { Processes = [.. split.Processes, value] },
+        OnlyFlag => split with { Only = value },
+        _ => split with { Volumes = [.. split.Volumes, value] },
+    };
 
     /// <summary>Why <c>--volume</c> / <c>--only</c> at <paramref name="i"/> cannot be taken: no value, or a second <c>--only</c>.</summary>
     private static Request.Failed? ShownValueProblem(IReadOnlyList<string> rest, int i, string only) =>
@@ -386,11 +421,12 @@ internal static class CommandLine
         : rest[i] == OnlyFlag && only.Length > 0 ? new Request.Failed($"\"{BinaryName} act\" takes {OnlyFlag} once.")
         : null;
 
-    private static string ShownValueKind(string flag) => flag == VolumeFlag ? "a 64-hex anonymous volume name" : "a file of 64-hex names, one per line";
-
-    /// <summary>The <c>--only</c> file or one more <c>--volume</c>, taken.</summary>
-    private static (string Only, List<string> Volumes) Taken(string flag, string value, string only, List<string> volumes) =>
-        flag == OnlyFlag ? (value, volumes) : (only, [.. volumes, value]);
+    private static string ShownValueKind(string flag) => flag switch
+    {
+        VolumeFlag => "a 64-hex anonymous volume name",
+        ProcessFlag => "a process A18's preview showed, as <pid>:<start ticks>",
+        _ => "a file of 64-hex names, one per line",
+    };
 
     /// <summary>The option at <paramref name="i"/> has no value after it: the end, or another option.</summary>
     private static bool NeedsValue(IReadOnlyList<string> rest, int i) => i + 1 >= rest.Count || rest[i + 1].StartsWith('-');
@@ -408,7 +444,7 @@ internal static class CommandLine
 
     private static Request.Failed? UnknownActFlag(IReadOnlyList<string> flags) =>
         flags.Any(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag or DetachFlag)) || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count
-            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name> and {OnlyFlag} <file or ->; got \"{Printable(string.Join(' ', flags))}\".")
+            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name>, {OnlyFlag} <file or -> and {ProcessFlag} <pid:start>; got \"{Printable(string.Join(' ', flags))}\".")
             : null;
 
     private static Request.Failed? ActMode(IReadOnlyList<string> flags) =>
@@ -428,6 +464,16 @@ internal static class CommandLine
         _ when ShownWithoutA4(ids, volumes, only) => new Request.Failed($"\"{BinaryName} act\": {VolumeFlag} and {OnlyFlag} name the volumes A4's preview showed; they need A4 among the actions."),
         _ when volumes.FirstOrDefault(v => !Core.Docker.DockerJson.IsFullId(v)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {VolumeFlag} \"{Printable(bad)}\" is not an anonymous volume's name (64 lowercase hex digits)."),
         _ when volumes.Count > MaxShownVolumes => new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} volumes."),
+        _ => null,
+    };
+
+    /// <summary>A shown process list belongs to A18 alone (E7.S2b review A-H1), and every <c>--process</c> is <c>pid:start</c>.</summary>
+    private static Request.Failed? ShownProcessesFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> processes) => processes switch
+    {
+        { Count: 0 } => null,
+        _ when !ids.Any(id => id.Text == "A18") => new Request.Failed($"\"{BinaryName} act\": {ProcessFlag} names the processes A18's preview showed; it needs A18 among the actions."),
+        _ when processes.FirstOrDefault(p => !Core.Actions.Suspects.SuspectSignals.IsShownKey(p)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {ProcessFlag} \"{Printable(bad)}\" is not a process as A18's preview shows it (<pid>:<start ticks>)."),
+        _ when processes.Count > MaxShownVolumes => new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} processes."),
         _ => null,
     };
 
@@ -467,6 +513,27 @@ internal static class CommandLine
             },
         };
 
+    private static Request ParseAgentsList(IReadOnlyList<string> rest) =>
+        ReadOptions("agents list", rest, [], [MeasureFlag, JsonFlag]) switch
+        {
+            (_, { } failure) => failure,
+            var (options, _) => new Request.AgentsList(options.Flags.Contains(MeasureFlag), options.Flags.Contains(JsonFlag)),
+        };
+
+    /// <summary>Exactly one absolute distro path (plan §15q R2.1's shape: no control character, no leading '-', no '.' or '..'
+    /// segment, at most 1 024 characters), then optionally <c>--json</c>.</summary>
+    private static Request ParseAgentsProbe(IReadOnlyList<string> rest) => rest switch
+    {
+        [var path] when ProbePathProblem(path).Length == 0 => new Request.AgentsProbe(path, false),
+        [var path, JsonFlag] when ProbePathProblem(path).Length == 0 => new Request.AgentsProbe(path, true),
+        [var path, var extra, ..] when ProbePathProblem(path).Length == 0 => new Request.Failed($"\"{BinaryName} agents probe\" takes one path and optionally {JsonFlag}; got an extra argument \"{Printable(extra)}\"."),
+        [var path, ..] when !path.StartsWith('-') => new Request.Failed($"\"{BinaryName} agents probe\": the path {ProbePathProblem(path)}; got \"{Printable(path)}\"."),
+        _ => new Request.Failed($"\"{BinaryName} agents probe\" needs exactly one <path> and optionally {JsonFlag}: {BinaryName} agents probe <path> [{JsonFlag}]."),
+    };
+
+    private static string ProbePathProblem(string path) =>
+        Core.Agents.ExtraAgentShape.PathProblem(path, Core.Agents.ExtraAgentShape.Wsl) is { Length: > 0 } problem ? problem : string.Empty;
+
     private static Request ParseRuns(IReadOnlyList<string> rest) =>
         ReadOptions("runs", rest, [PeriodFlag, FromFlag, ToFlag], [JsonFlag]) switch
         {
@@ -495,6 +562,12 @@ internal static class CommandLine
         };
 
     /// <summary><c>runs show &lt;runId&gt; [--json]</c>: exactly one well-formed run id, then optionally <c>--json</c>.</summary>
+    private static Request ParseUnitsDropIn(IReadOnlyList<string> rest) => rest switch
+    {
+        [var unit] when Core.Systemd.UnitDropIns.Units.Contains(unit, StringComparer.Ordinal) => new Request.UnitsDropIn(unit),
+        _ => new Request.Failed($"\"{BinaryName} units dropin\" takes exactly one unit: {string.Join(", ", Core.Systemd.UnitDropIns.Units)}."),
+    };
+
     private static Request ParseRunsShow(IReadOnlyList<string> rest) =>
         RunIdVerb("runs show", rest, takesJson: true, (runId, json) => new Request.RunsShow(runId, json));
 

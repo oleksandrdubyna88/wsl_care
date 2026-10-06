@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.ComponentModel;
 using System.Diagnostics;
 
@@ -27,7 +28,7 @@ namespace WslCare.Core.Processes;
 public sealed class ProcessCommandRunner : ICommandRunner
 {
     /// <summary>How long the stream readers may take to finish after the process is gone.</summary>
-    private static readonly TimeSpan DrainGrace = TimeSpan.FromSeconds(2);
+    private static TimeSpan DrainGrace => Tuning.Current.Milliseconds(ConfigKeys.Commands.DrainGraceMilliseconds);
 
     private readonly Func<CommandRequest, CommandVerdict> _review;
     private readonly Func<string, CancellationToken, ResolvedExecutable> _resolve;
@@ -75,6 +76,8 @@ public sealed class ProcessCommandRunner : ICommandRunner
             return notStarted;
         }
 
+        // A command started is a step of the run (E7.S2b/S2c review C-H2); its end is another (below, and in the timed-out path).
+        Actions.Engine.RunProgress.Mark();
         var stdout = new OutputCapture(request.OutputCapChars);
         var stderr = new OutputCapture(request.OutputCapChars);
         var reads = Task.WhenAll(stdout.DrainAsync(process.StandardOutput), stderr.DrainAsync(process.StandardError));
@@ -89,11 +92,13 @@ public sealed class ProcessCommandRunner : ICommandRunner
         catch (OperationCanceledException)
         {
             await KillAndReapAsync(process, reads).ConfigureAwait(false);
+            Actions.Engine.RunProgress.Mark();
             cancellationToken.ThrowIfCancellationRequested();
             return new CommandOutcome.TimedOut(stdout.Snapshot(), stderr.Snapshot(), request.Timeout) { StartedFrom = startedFrom };
         }
 
         await DrainAsync(reads).ConfigureAwait(false);
+        Actions.Engine.RunProgress.Mark();
         return new CommandOutcome.Exited(process.ExitCode, stdout.Snapshot(), stderr.Snapshot(), started.Elapsed) { StartedFrom = startedFrom };
     }
 

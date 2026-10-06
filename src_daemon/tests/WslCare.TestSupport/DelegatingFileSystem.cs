@@ -16,6 +16,12 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 
     public virtual FileReadResult ReadStateFile(string path, int maxBytes) => inner.ReadStateFile(path, maxBytes);
 
+    public virtual FileReadResult ReadUserFile(string path, int maxBytes, uint owner, string beneath) => inner.ReadUserFile(path, maxBytes, owner, beneath);
+
+    public virtual FileReadResult ReadNoFollowFile(string path, int maxBytes) => inner.ReadNoFollowFile(path, maxBytes);
+
+    public virtual DeletionVerdict ReplaceLinkWithFile(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.ReplaceLinkWithFile(path, content, scope);
+
     public virtual bool FileExists(string path) => inner.FileExists(path);
 
     public virtual bool DirectoryExists(string path) => inner.DirectoryExists(path);
@@ -35,6 +41,15 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
     public virtual TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken) =>
         inner.MeasureTree(path, limits, countOnlyUnder, neverEnter, cancellationToken);
 
+    public virtual TreeMeasure WalkTree(string path, TreeLimits limits, TreeRules rules, CancellationToken cancellationToken) =>
+        inner.WalkTree(path, limits, rules, cancellationToken);
+
+    public virtual IReadOnlyList<FileEntry> ListEntries(string path) => inner.ListEntries(path);
+
+    public virtual RealPathResult ResolvePath(string path) => inner.ResolvePath(path);
+
+    public virtual (uint Major, uint Minor)? DeviceOf(string path) => inner.DeviceOf(path);
+
     public virtual WriteAccess ProbeWriteAccess(string directory) => inner.ProbeWriteAccess(directory);
 
     public virtual ExclusiveLock TryLockExclusive(string lockPath) => inner.TryLockExclusive(lockPath);
@@ -45,6 +60,8 @@ public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
     public virtual void CreateDirectory(string path) => inner.CreateDirectory(path);
 
     public virtual DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.WriteFileAtomically(path, content, scope);
+
+    public virtual DeletionVerdict WritePrivateFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.WritePrivateFileAtomically(path, content, scope);
 
     public virtual ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope) => inner.CreateFileExclusively(path, content, scope);
 

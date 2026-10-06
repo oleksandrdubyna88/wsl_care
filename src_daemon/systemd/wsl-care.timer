@@ -7,6 +7,11 @@
 # first boot of the day finds 00:00/04:00/08:00 missed and runs ONCE (not once per missed slot), then on
 # the 4-hour grid. RandomizedDelaySec spreads that catch-up off the busiest seconds of a boot; the heavy
 # actions wait for idle anyway (§5) and the service runs at Nice=19 / idle I/O.
+#
+# E7.S2c: the period, RandomizedDelaySec and AccuracySec below are the DEFAULTS of timer.periodHours (the one key every copy
+# of the period derives from), timer.randomizedDelayMinutes and timer.accuracyMinutes. install.sh writes
+# wsl-care.timer.d/50-wsl-care-config.conf from the machine configuration (wsl-care units dropin wsl-care.timer), and
+# doctor names a drop-in that no longer matches the key.
 [Unit]
 Description=wsl-care: the full run every 4 hours
 Documentation=https://github.com/oleksandrdubyna88/wsl_care

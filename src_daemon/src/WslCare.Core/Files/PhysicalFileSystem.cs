@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text;
 
 using WslCare.Core.Files.Deletion;
@@ -45,14 +46,16 @@ public sealed class PhysicalFileSystem : IFileSystem
         _policy = new DeletionPolicy(ProtectedRoots.From(paths, RealOrSpelled), _rules);
     }
 
-    public FileReadResult ReadFile(string path)
+    public FileReadResult ReadFile(string path) => ReadFile(path, RootFileCaps.History);
+
+    /// <summary>Reads at most one byte past <paramref name="maxBytes"/> — never the whole of a file that grew (review N-5).</summary>
+    public FileReadResult ReadFile(string path, int maxBytes)
     {
         try
         {
             using var stream = OpenForReading(path);
-            using var bytes = new MemoryStream();
-            stream.CopyTo(bytes);
-            return new FileReadResult.Content(bytes.ToArray());
+            var bytes = Bounded(stream, maxBytes);
+            return bytes.Length > maxBytes ? new FileReadResult.Unreadable(FileReadResult.TooLarge(maxBytes)) : new FileReadResult.Content(bytes);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -71,6 +74,15 @@ public sealed class PhysicalFileSystem : IFileSystem
     public uint TrustedStateOwner { get; init; }
 
     public FileReadResult ReadStateFile(string path, int maxBytes) => RegularFiles.ReadOwned(path, maxBytes, TrustedStateOwner);
+
+    /// <summary>Under a sandbox (a test, <c>WSL_CARE_ROOT</c>) every file is this process's own, whoever it is read for: the
+    /// owner a caller names is then this process's uid. False — the owner checked as named — on a machine.</summary>
+    public bool OwnersAreThisProcess { get; init; }
+
+    public FileReadResult ReadUserFile(string path, int maxBytes, uint owner, string beneath) =>
+        BeneathFiles.Read(beneath, path, maxBytes, OwnersAreThisProcess ? RegularFiles.EffectiveUid() : owner);
+
+    public FileReadResult ReadNoFollowFile(string path, int maxBytes) => BeneathFiles.Read(BeneathFiles.DriveBase(path), path, maxBytes, owner: null);
 
     public bool FileExists(string path) => File.Exists(path);
 
@@ -145,6 +157,34 @@ public sealed class PhysicalFileSystem : IFileSystem
     public TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken) =>
         TreeWalk.Measure(path, limits, countOnlyUnder, neverEnter, cancellationToken);
 
+    public TreeMeasure WalkTree(string path, TreeLimits limits, TreeRules rules, CancellationToken cancellationToken) =>
+        TreeWalk.Measure(path, limits, rules, TreeWalk.DeviceOf, cancellationToken);
+
+    public RealPathResult ResolvePath(string path) => Real(path);
+
+    public (uint Major, uint Minor)? DeviceOf(string path) => TreeWalk.DeviceOf(path);
+
+    public IReadOnlyList<FileEntry> ListEntries(string path)
+    {
+        try
+        {
+            return Directory.Exists(path) ? [.. Listing(path).OrderBy(e => e.Name, StringComparer.Ordinal)] : [];
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>One non-recursive listing: the enumeration's own stat data, no entry opened, a link reported as one.</summary>
+    private static System.IO.Enumeration.FileSystemEnumerable<FileEntry> Listing(string path) =>
+        new(path, (ref System.IO.Enumeration.FileSystemEntry e) => new FileEntry(
+                e.FileName.ToString(),
+                e.Attributes.HasFlag(FileAttributes.ReparsePoint) ? EntryKind.Link : e.IsDirectory ? EntryKind.Directory : EntryKind.File,
+                e.IsDirectory ? 0 : e.Length,
+                e.LastWriteTimeUtc),
+            new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = true, AttributesToSkip = 0, ReturnSpecialDirectories = false });
+
     public WriteAccess ProbeWriteAccess(string directory)
     {
         try
@@ -181,9 +221,20 @@ public sealed class PhysicalFileSystem : IFileSystem
     public DeletionVerdict RewriteLines(string path, Func<IReadOnlyList<string>, IReadOnlyList<string>> keep, DeletionScope scope, TimeSpan lockTimeout)
     {
         using var held = AcquireLock(path + ".lock", lockTimeout);
-        IReadOnlyList<string> current = File.Exists(path)
-            ? [.. File.ReadAllText(path, Encoding.UTF8).Split('\n').Where(l => l.Length > 0)]
-            : [];
+        // Review C-M7: read under the same cap as every other read of a growing file; one past it is not rewritten (and not lost).
+        IReadOnlyList<string> current;
+        switch (ReadFile(path, RootFileCaps.History))
+        {
+            case FileReadResult.Content content:
+                current = [.. Encoding.UTF8.GetString(content.Bytes).Split('\n').Where(l => l.Length > 0)];
+                break;
+            case FileReadResult.Unreadable unreadable:
+                return DeletionVerdict.Refuse(DeletionRule.Unresolvable, $"{path} is not rewritten: {unreadable.Reason}");
+            default:
+                current = [];
+                break;
+        }
+
         var kept = keep(current);
         if (kept.SequenceEqual(current, StringComparer.Ordinal))
         {
@@ -252,7 +303,12 @@ public sealed class PhysicalFileSystem : IFileSystem
     /// the threat model (the policy guards against this product's own mistakes and against links planted
     /// where a cleanup walks, not against the account it runs as).</para>
     /// </remarks>
-    public DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+    public DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => WriteAtomically(path, content, scope, readable: true);
+
+    /// <summary>The atomic write, the file kept 0600 (it is created so and never widened).</summary>
+    public DeletionVerdict WritePrivateFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => WriteAtomically(path, content, scope, readable: false);
+
+    private DeletionVerdict WriteAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope, bool readable)
     {
         var target = Judge(FileOperation.Delete, path, string.Empty, scope);
         if (!target.Verdict.IsAllowed)
@@ -269,7 +325,11 @@ public sealed class PhysicalFileSystem : IFileSystem
 
         WriteNew(temp.RealPath, content);
         _onAtomicWriteStep(AtomicWriteStep.TempWritten, temp.RealPath);
-        RegularFiles.MakeReadable(temp.RealPath);
+        if (readable)
+        {
+            RegularFiles.MakeReadable(temp.RealPath);
+        }
+
         var recheck = Revalidate(path, target, scope);
         if (!recheck.IsAllowed)
         {
@@ -278,6 +338,35 @@ public sealed class PhysicalFileSystem : IFileSystem
 
         MoveReplacing(temp.RealPath, target.RealPath);
         return target.Verdict;
+    }
+
+    /// <summary>
+    /// E7.S0 review C3: a regular file in place of the symbolic link at <paramref name="path"/> — the LINK is replaced, never the
+    /// file it points at. Judged where the link itself lives (its folder's real path and its own name, inside
+    /// <paramref name="scope"/>); the new file is written beside it 0600, made 0644 and renamed over the link. A path that is no
+    /// longer a link takes the ordinary atomic write.
+    /// </summary>
+    public DeletionVerdict ReplaceLinkWithFile(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+    {
+        var parent = Real(Path.GetDirectoryName(path) ?? path);
+        var root = Real(scope.Root);
+        if (FirstFailure(parent, root) is { } failure)
+        {
+            return DeletionPolicy.Unresolvable(FileOperation.Delete, scope.Action, path, failure.Component, failure.Reason);
+        }
+
+        var linkItself = Path.Combine(PathOf(parent), Path.GetFileName(path));
+        var verdict = _policy.Decide(new DeletionRequest(FileOperation.Delete, linkItself, string.Empty, PathOf(root), scope.Action, scope.Permit));
+        if (!verdict.IsAllowed || ReadLinkTarget(linkItself) is null)
+        {
+            return verdict.IsAllowed ? WriteFileAtomically(path, content, scope) : verdict;
+        }
+
+        var temp = $"{linkItself}.{Guid.NewGuid():N}.tmp";
+        WriteNew(temp, content);
+        RegularFiles.MakeReadable(temp);
+        MoveReplacing(temp, linkItself);
+        return verdict;
     }
 
     public ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope)
@@ -370,7 +459,7 @@ public sealed class PhysicalFileSystem : IFileSystem
             }
             catch (Exception e) when (IsHeldOpenOnWindows(e) && started.Elapsed < ReplaceRetryFor)
             {
-                Thread.Sleep(10);
+                Thread.Sleep(Tuning.Current.Milliseconds(ConfigKeys.FileLocks.RenameRetrySleepMilliseconds));
             }
         }
     }
@@ -381,7 +470,7 @@ public sealed class PhysicalFileSystem : IFileSystem
         OperatingSystem.IsWindows() && e is UnauthorizedAccessException or IOException && e is not (FileNotFoundException or DirectoryNotFoundException);
 
     /// <summary>How long the atomic write's rename waits out a reader on Windows.</summary>
-    internal static readonly TimeSpan ReplaceRetryFor = TimeSpan.FromSeconds(2);
+    internal static TimeSpan ReplaceRetryFor => Tuning.Current.Milliseconds(ConfigKeys.FileLocks.RenameRetryMilliseconds);
 
     public void AppendLine(string path, string line, TimeSpan lockTimeout)
     {
@@ -575,6 +664,20 @@ public sealed class PhysicalFileSystem : IFileSystem
     /// </summary>
     internal static FileStream OpenForReading(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
+    /// <summary>The stream's bytes up to <paramref name="maxBytes"/> + 1 — enough to tell "fits" from "too large" and no more.</summary>
+    private static byte[] Bounded(Stream stream, int maxBytes)
+    {
+        using var bytes = new MemoryStream();
+        var buffer = new byte[Math.Min(maxBytes + 1, 81920)];
+        int read;
+        while (bytes.Length <= maxBytes && (read = stream.Read(buffer, 0, (int)Math.Min(buffer.Length, maxBytes + 1 - bytes.Length))) > 0)
+        {
+            bytes.Write(buffer, 0, read);
+        }
+
+        return bytes.ToArray();
+    }
+
     /// <summary>The exclusive open described on <see cref="IFileSystem.AppendLine"/>, retried until <paramref name="timeout"/>.</summary>
     /// <summary>A lock file opened or created — created 0644 at most on Linux (E6.S1 review S1: never group or world writable
     /// under a loose umask).</summary>
@@ -600,7 +703,7 @@ public sealed class PhysicalFileSystem : IFileSystem
             }
             catch (IOException) when (started.Elapsed < timeout)
             {
-                Thread.Sleep(Random.Shared.Next(5, 25));
+                Thread.Sleep(Random.Shared.Next(Tuning.Current.Int(ConfigKeys.FileLocks.LockJitterMinMilliseconds), Tuning.Current.Int(ConfigKeys.FileLocks.LockJitterMaxMilliseconds)));
             }
             catch (IOException e)
             {

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "description": "The fields of status --json's limits object (additive, E7.S2c): daemon values the extension MIRRORS instead of copying, each the value in force, a whole number. An absent limits object or field means a daemon older than E7.S2c: the reader takes its fallback (the default here). Generated from StatusLimits.Fields and the embedded default.json by ContractFilesTests.",
+  "object": "limits",
+  "fields": [
+    {
+      "name": "historyRetentionDays",
+      "key": "runs.historyRetentionDays",
+      "unit": "days",
+      "min": 7,
+      "max": 366,
+      "default": 90
+    },
+    {
+      "name": "requestFutureSkewSeconds",
+      "key": "requests.futureSkewSeconds",
+      "unit": "seconds",
+      "min": 60,
+      "max": 3600,
+      "default": 300
+    },
+    {
+      "name": "requestGraceSeconds",
+      "key": "requests.graceSeconds",
+      "unit": "seconds",
+      "min": 60,
+      "max": 600,
+      "default": 60
+    },
+    {
+      "name": "maxShownNames",
+      "key": "act.maxShownNames",
+      "unit": "names",
+      "min": 1,
+      "max": 10000,
+      "default": 10000
+    },
+    {
+      "name": "unitStopSeconds",
+      "key": "systemd.unitStopTimeoutSeconds",
+      "unit": "seconds",
+      "min": 120,
+      "max": 600,
+      "default": 120
+    },
+    {
+      "name": "drainGraceMilliseconds",
+      "key": "commands.drainGraceMilliseconds",
+      "unit": "milliseconds",
+      "min": 500,
+      "max": 10000,
+      "default": 2000
+    }
+  ]
+}

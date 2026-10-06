@@ -1,6 +1,7 @@
 using System.Text.Json;
 
 using WslCare.Core.Collect;
+using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
@@ -24,8 +25,8 @@ public sealed record EngineContext(
     int ProcessId,
     ActionRegistry Registry)
 {
-    /// <summary>How often <c>running.json</c> is rewritten (plan §6: 5 s; a test shortens it).</summary>
-    public TimeSpan HeartbeatPeriod { get; init; } = RunningState.HeartbeatPeriod;
+    /// <summary>How often <c>running.json</c> is rewritten (plan §6, <c>running.heartbeatSeconds</c>; a test shortens it).</summary>
+    public TimeSpan HeartbeatPeriod { get => field == TimeSpan.Zero ? RunningState.HeartbeatPeriod : field; init; }
 
     /// <summary>How A11 signals a process (by pid and start, never by name). Refuses unless the CLI wires the real one —
     /// which it does only outside a sandbox, on Linux.</summary>
@@ -143,12 +144,30 @@ public sealed class ActionEngine(EngineContext c)
             }, notes);
         }
 
-        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
+        RecordAgentCpu(notes);
+
+        // A button-only action is never even selected by the timer (plan §15q E7.S2b); the auto gate refuses it as well.
+        var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id).Where(id => !id.ButtonOnly)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         return new TimerPass(true, string.Empty, pass.Dry.DryRun, pass.Dry.Reason, TargetUserReport.From(pass.Target), pass.Outcomes, notes, pass.Outcome)
         {
             RunningWritten = pass.RunningWritten,
         };
+    }
+
+    /// <summary>Plan §15q E7.S2b: every timer run records the AI-agent processes' CPU ticks by identity, so A18 can tell — by
+    /// measurement — a process that used no CPU for hours. A failure is a note of the pass, never its end.</summary>
+    private void RecordAgentCpu(List<string> notes)
+    {
+        if (c.Paths is not LinuxHostPaths linux || c.Probe.Sample(CancellationToken.None).Vm.Bind(vm => vm.Processes) is not Reading<ProcessSnapshot>.Available { Value: var snapshot })
+        {
+            return;
+        }
+
+        if (Suspects.AgentCpuHistory.Record(linux, c.Files, snapshot.All, Suspects.SampleTime.Of(c.Clock)) is { Length: > 0 } failure)
+        {
+            notes.Add($"the AI-agent CPU history was not recorded: {failure}");
+        }
     }
 
     /// <summary>The full run is recorded: the timer pass's <c>running.json</c> goes. Empty when it went; otherwise why not (the
@@ -279,7 +298,7 @@ public sealed class ActionEngine(EngineContext c)
         }
 
         var commands = Commands(action, run.Target);
-        var preview = await action.PreviewAsync(run.Context, commands, cancellationToken).ConfigureAwait(false);
+        var preview = Guarded(action, run.Context, await action.PreviewAsync(run.Context, commands, cancellationToken).ConfigureAwait(false));
         if (Judge(action, preview, run) is { } held)
         {
             return held;
@@ -306,8 +325,16 @@ public sealed class ActionEngine(EngineContext c)
 
     private Stop? ObserveOnlyStop() => c.Loaded.IsObserveOnly ? new Stop(ActionStatus.Skipped, ObserveOnlyReason) : null;
 
-    private Stop? AutoStop(ICleanupAction action, RunState run) =>
-        run.Trigger != RunTrigger.Timer || c.Loaded.Config.Bool(action.Id.AutoSwitch) ? null : new Stop(ActionStatus.Skipped, $"{action.Id.AutoSwitch.Name} is off: the timer does not run {action.Id}");
+    private Stop? AutoStop(ICleanupAction action, RunState run) => run.Trigger != RunTrigger.Timer ? null : TimerStop(action);
+
+    /// <summary>The timer's answer for one action: a button only never runs; an <c>auto</c> switch that is off skips it.</summary>
+    private Stop? TimerStop(ICleanupAction action) =>
+        action.Id.Timer switch
+        {
+            TimerSwitch.ButtonOnly button => new Stop(ActionStatus.Skipped, button.Why),
+            TimerSwitch.Auto auto when !c.Loaded.Config.Bool(auto.Key) => new Stop(ActionStatus.Skipped, $"{auto.Key.Name} is off: the timer does not run {action.Id}"),
+            _ => null,
+        };
 
     /// <summary>The gates asked of the LIVE preview, in order; <c>null</c> when the action may run now.</summary>
     private ActionOutcome? Judge(ICleanupAction action, ActionPreview preview, RunState run) =>
@@ -323,6 +350,12 @@ public sealed class ActionEngine(EngineContext c)
                 () => DryRunStop(run),
             ],
             preview);
+
+    /// <summary>Plan §15q R2 (review B2): a preview whose action's cleanup folder overlaps an AI agent's folder carries THAT refusal
+    /// — before the action's own refusal AND its skip (E7.S1/S2 review R8: the safety reason is the one a person must read, and
+    /// a skip would read as "nothing to do" where the truth is "refused").</summary>
+    private static ActionPreview Guarded(ICleanupAction action, ActionContext context, ActionPreview preview) =>
+        AgentFolderOverlap.Refusal(action, context) is { Length: > 0 } overlap ? preview with { Refusal = overlap, Skip = string.Empty } : preview;
 
     private static Stop? UnreadStop(ActionPreview preview) => preview.Available ? null : new Stop(ActionStatus.Refused, $"its preview could not be read: {preview.Reason}");
 
@@ -373,7 +406,7 @@ public sealed class ActionEngine(EngineContext c)
             return Outcome(action, ActionStatus.Skipped, NotThisSide(action), null, null);
         }
 
-        var preview = await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false);
+        var preview = Guarded(action, context, await action.PreviewAsync(context, Commands(action, target), cancellationToken).ConfigureAwait(false));
         var refusal = action.Scope == CommandScope.User ? target.Refusal : string.Empty;
         return Outcome(action, ActionStatus.Previewed, new[] { refusal, preview.Skip, preview.Refusal }.FirstOrDefault(r => r.Length > 0, string.Empty), preview, null) with
         {
@@ -419,6 +452,10 @@ public sealed class ActionEngine(EngineContext c)
         {
             var report = RunReconcile.Apply(c.Paths, c.Files, now);
             notes.AddRange(report.Interrupted.Select(id => $"reconcile: run {id} had a detail and no history line (recorded as interrupted)"));
+            if (report.Problem.Length > 0)
+            {
+                notes.Add(report.Problem);
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
         {
@@ -481,7 +518,11 @@ public sealed class ActionEngine(EngineContext c)
     private static ActionRecord ActionLine(ActionOutcome o) => ActionRecords.Of(o);
 
     private ActRunDetail Detail(RunId runId, RunTrigger trigger, DateTimeOffset started, DryRunDecision dry, TargetUserResult target, IReadOnlyList<ActionOutcome> outcomes, IReadOnlyList<string> notes, RunOutcome outcome) =>
-        new(Core.SchemaVersion.Current, runId, trigger, started, c.Clock.GetUtcNow(), dry.DryRun, "act", outcome, c.Paths.Side == HostSide.Wsl ? "wsl" : "windows", dry.Reason, TargetUserReport.From(target), outcomes, notes);
+        new(Core.SchemaVersion.Current, runId, trigger, started, c.Clock.GetUtcNow(), dry.DryRun, "act", outcome, c.Paths.Side == HostSide.Wsl ? "wsl" : "windows", dry.Reason, TargetUserReport.From(target), outcomes, notes)
+        {
+            Config = ConfigValueReport.NotDefault(c.Loaded),
+            ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
+        };
 
     private static ActionOutcome Outcome(ICleanupAction action, string status, string reason, ActionPreview? preview, ActionRun? run) =>
         new(action.Id.Text, action.Summary, status, reason, preview, run);
@@ -504,6 +545,7 @@ public sealed class ActionEngine(EngineContext c)
             Processes = SampleProcesses,
             Signals = c.Signals,
             ShownVolumes = request.ShownVolumes,
+            ShownProcesses = request.ShownProcesses,
             Wait = c.Wait,
             RanEarlier = id => soFar.Any(o => o.Id == id.Text && o.Status == ActionStatus.Ran),
         };

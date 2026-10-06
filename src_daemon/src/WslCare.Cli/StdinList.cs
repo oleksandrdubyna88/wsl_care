@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 using WslCare.Core.Files;
@@ -5,7 +6,8 @@ using WslCare.Core.Files;
 namespace WslCare.Cli;
 
 /// <summary>
-/// A4's shown list on STDIN (<c>act … --only -</c>, E6.S1, plan §15j M2): read under the same byte cap as an <c>--only</c>
+/// A list on STDIN — A4's shown list (<c>act … --only -</c>, E6.S1, plan §15j M2) and the manual AI agents
+/// (<c>config set aiAgents.extra -</c>, E7.S2, plan §15q D4) — read under the same byte cap as an <c>--only</c>
 /// file — one byte past 1 MiB is a refusal, whatever arrives after — AND a time ceiling, because a pipe whose writer never
 /// closes would otherwise hold the run forever (a timeout is ours to decide: it is a refusal with its reason, never a
 /// cancellation). All of it before the lock and before any state is touched; the lines are validated by the caller and never
@@ -15,7 +17,10 @@ namespace WslCare.Cli;
 internal static class StdinList
 {
     /// <summary>The ceiling a person waits for the list's end (plan §15j M2: 10 s).</summary>
-    public static readonly TimeSpan Ceiling = TimeSpan.FromSeconds(10);
+    public static TimeSpan Ceiling => Tuning.Current.Seconds(ConfigKeys.Act.StdinTimeoutSeconds);
+
+    /// <summary>The most bytes a list on stdin may hold (plan §15j M2: 1 MiB) — one byte more is a refusal.</summary>
+    public static int MaxBytes => Tuning.Current.Int(ConfigKeys.Act.MaxListBytes);
 
     public static FileReadResult Read(Stream stdin, int maxBytes, TimeSpan ceiling)
     {

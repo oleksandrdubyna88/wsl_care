@@ -21,6 +21,8 @@ internal sealed class ScriptedAction(string id, List<string> journal) : ICleanup
 
     public IReadOnlyList<CommandTemplate> Commands { get; init; } = [];
 
+    public IReadOnlyList<HomeFolder> HomeRoots { get; init; } = [];
+
     public bool Fires { get; init; } = true;
 
     public long PreviewBytes { get; init; } = 100;

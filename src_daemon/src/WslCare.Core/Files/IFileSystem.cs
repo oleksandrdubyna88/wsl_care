@@ -33,6 +33,9 @@ public abstract record FileReadResult
     public sealed record Missing : FileReadResult;
 
     public sealed record Unreadable(string Reason) : FileReadResult;
+
+    /// <summary>The reason a file past its cap gives.</summary>
+    public static string TooLarge(int maxBytes) => $"larger than {maxBytes} bytes";
 }
 
 /// <summary>What reading a link produced: its target, a path that is not a link (or not there), or a
@@ -112,6 +115,19 @@ public abstract record WriteAccess
     public sealed record NotWritable(string Reason) : WriteAccess;
 }
 
+/// <summary>What one directory entry is, as a listing reports it — never by opening it.</summary>
+public enum EntryKind
+{
+    File,
+    Directory,
+
+    /// <summary>A symbolic link or another reparse point — named, never followed.</summary>
+    Link,
+}
+
+/// <summary>One entry of a directory listing (plan §15q D2: a session is found by its name and its stat, never by its content).</summary>
+public sealed record FileEntry(string Name, EntryKind Kind, long Length, DateTimeOffset LastWriteUtc);
+
 /// <summary>The ceiling on one walk of a tree (reliability rule: every wait has a ceiling): how many entries it
 /// may visit and how long it may take. A walk that reaches either stops and says so.</summary>
 public sealed record TreeLimits(int MaxEntries, TimeSpan MaxDuration);
@@ -128,7 +144,12 @@ public abstract record TreeMeasure
     /// <param name="Complete">The walk reached its end — <c>false</c> when a limit stopped it, and then
     /// <paramref name="Note"/> says which; the figures are a lower bound.</param>
     /// <param name="Note">Why it is incomplete; empty when complete.</param>
-    public sealed record Measured(long Bytes, long Files, bool Complete, string Note) : TreeMeasure;
+    public sealed record Measured(long Bytes, long Files, bool Complete, string Note) : TreeMeasure
+    {
+        /// <summary>What the walk declined to enter, each named once (plan §15q R2.3): <c>memory (never entered)</c>, a prefix,
+        /// <c>&lt;folder&gt; (different filesystem)</c>. Empty for a walk under no such rule.</summary>
+        public IReadOnlyList<string> Excluded { get; init; } = [];
+    }
 
     public sealed record Missing : TreeMeasure;
 
@@ -166,7 +187,17 @@ public abstract record ExclusiveLock
 /// </remarks>
 public interface IFileSystem
 {
+    /// <summary>A whole file — bounded by <see cref="RootFileCaps.History"/>, the largest file this process reads back.</summary>
     FileReadResult ReadFile(string path);
+
+    /// <summary>A file read only up to <paramref name="maxBytes"/> (E7.S2c, review N-5): a larger one is
+    /// <see cref="FileReadResult.Unreadable"/>. <see cref="PhysicalFileSystem"/> never reads past the cap; this default, for a
+    /// test's own file system, checks after the read.</summary>
+    FileReadResult ReadFile(string path, int maxBytes) => ReadFile(path) switch
+    {
+        FileReadResult.Content content when content.Bytes.Length > maxBytes => new FileReadResult.Unreadable(FileReadResult.TooLarge(maxBytes)),
+        var read => read,
+    };
 
     /// <summary>A file a caller NAMED, read only when it is a REGULAR file and only up to <paramref name="maxBytes"/> bytes
     /// actually read — a directory, FIFO, socket or device is <see cref="FileReadResult.Unreadable"/> at once, never waited
@@ -178,6 +209,17 @@ public interface IFileSystem
     /// descriptor's owner is the state's owner (root) and neither group nor others may write it
     /// (<see cref="RegularFiles.ReadOwned"/>).</summary>
     FileReadResult ReadStateFile(string path, int maxBytes);
+
+    /// <summary>A file ANOTHER account controls, read by this process (plan §15q R1.1): the user configuration layer and the
+    /// target user's own files read as root. Regular, nonblocking, capped, reached from <paramref name="beneath"/> (the home)
+    /// through NO link (E7.S0 review S6, <see cref="BeneathFiles"/>), and on Linux only when the open descriptor's owner is
+    /// <paramref name="owner"/> and neither group nor others may write it.</summary>
+    FileReadResult ReadUserFile(string path, int maxBytes, uint owner, string beneath);
+
+    /// <summary>A file whose owner is no evidence (plan §15q R1.1, review M2: the Windows profile through drvfs): regular,
+    /// nonblocking, capped, reached from the folder that holds the drive letter's folder through NO link (E7.S0 review S1,
+    /// <see cref="BeneathFiles.DriveBase"/>), with no uid or mode check.</summary>
+    FileReadResult ReadNoFollowFile(string path, int maxBytes);
 
     bool FileExists(string path);
 
@@ -204,6 +246,10 @@ public interface IFileSystem
     /// order for the reason <see cref="ListDirectories"/> gives; empty when it does not exist.</summary>
     IReadOnlyList<string> ListFiles(string path);
 
+    /// <summary>A regular file in place of the symbolic link at <paramref name="path"/> — the link replaced, never what it points
+    /// at (E7.S0 review C3: <c>config set</c> repairs a linked user layer root refuses). Judged where the link itself lives.</summary>
+    DeletionVerdict ReplaceLinkWithFile(string path, ReadOnlySpan<byte> content, DeletionScope scope);
+
     /// <summary>
     /// The summed size of the files under <paramref name="path"/>, within <paramref name="limits"/>. Links are
     /// NEVER followed (a symlink or junction is neither counted nor entered), unreadable directories are skipped,
@@ -212,6 +258,22 @@ public interface IFileSystem
     /// <paramref name="neverEnter"/> are not walked at all (<c>node_modules</c>, <c>.git</c>).
     /// </summary>
     TreeMeasure MeasureTree(string path, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken);
+
+    /// <summary>The same bounded walk under <paramref name="rules"/> (plan §15q R2.3): names and prefixes never entered, and —
+    /// with <see cref="TreeRules.StayOnDevice"/> — no folder on another filesystem than the root's, each exclusion named.</summary>
+    TreeMeasure WalkTree(string path, TreeLimits limits, TreeRules rules, CancellationToken cancellationToken);
+
+    /// <summary>The entries directly in <paramref name="path"/> — name, kind (a link is a link, never followed), length and last
+    /// write — from the directory listing alone: no entry is opened. Empty when the folder does not exist or cannot be listed.</summary>
+    IReadOnlyList<FileEntry> ListEntries(string path);
+
+    /// <summary>Where <paramref name="path"/> really is — every link followed, <c>..</c> applied to the real parent (the walk the
+    /// deletion policy decides on, <see cref="RealPath"/>); nothing is opened.</summary>
+    RealPathResult ResolvePath(string path);
+
+    /// <summary>The device (major, minor) of the filesystem holding <paramref name="path"/> itself — a link is not followed;
+    /// <c>null</c> when it cannot be asked; (0, 0) where the operating system has no such notion (plan §15q R2.1, review C1).</summary>
+    (uint Major, uint Minor)? DeviceOf(string path);
 
     /// <summary>
     /// Whether this process may create a file in <paramref name="directory"/> (creating the directory first when
@@ -247,6 +309,10 @@ public interface IFileSystem
     /// before the rename, so a link swapped in after the decision is refused, not followed.
     /// </summary>
     DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope);
+
+    /// <summary>The same atomic write, the file left PRIVATE to its owner (0600 on Linux) — root's state that names another
+    /// account's processes (E7.S2b review A-L1). A test double without its own falls back to the ordinary write.</summary>
+    DeletionVerdict WritePrivateFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => WriteFileAtomically(path, content, scope);
 
     /// <summary>
     /// Creates <paramref name="path"/> ONLY when it does not exist, with the whole content made visible in one step (plan

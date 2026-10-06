@@ -36,7 +36,18 @@
 #                         folder walk's 2M-entry bound. Plan §8's 256M was a guess for the binary alone and would
 #                         OOM-kill a child mid-cleanup; 1G is a ceiling against a runaway, not a budget (the VM's
 #                         ceiling is 36 GB). Unmeasured until the live install: POST_DEPLOY.md #11 reads the peak.
-#   Nice / IOSchedulingClass / TimeoutStartSec — plan §8, resource limits for a background job
+#   Nice / IOSchedulingClass — plan §8, resource limits for a background job
+#   TimeoutStartSec=240min (E7.S2b/S2c review C-H2, which REVERSED E7.S2c's infinity, N-4): the timer.runLimitMinutes default,
+#                         the backstop that ends a timer run as a whole — kept above the derived worst case of a timer run
+#                         (every command template once at its ceiling with its drains, the two walks, 10 min: 220 min with
+#                         the defaults; a coupled rule refuses less). The old 10min could kill a long A7 prune mid-run; with
+#                         no limit at all a hung read kept the run "live" forever, because the heartbeat beats on a timer —
+#                         so a run that makes no step for running.noProgressMinutes (20) now reads WEDGED and act --stop
+#                         ends it long before this limit
+#   Nice, MemoryMax, TimeoutStopSec, TimeoutStartSec here are the DEFAULTS of units.nice, units.memoryMaxMb,
+#                         units.stopTimeoutSeconds, timer.runLimitMinutes:
+#                         install.sh writes wsl-care.service.d/50-wsl-care-config.conf from the machine configuration
+#                         (wsl-care units dropin), and doctor names a drop-in that no longer matches
 #   SuccessExitStatus=75  "another run holds the lock" (a button's collect or act) is the designed answer
 #                         of a second run (§5 global guards), not a failed unit — the health collector
 #                         counts failed units
@@ -55,7 +66,7 @@ ExecStart=/opt/wsl-care/bin/wsl-care collect --timer
 Nice=19
 IOSchedulingClass=idle
 MemoryMax=1G
-TimeoutStartSec=10min
+TimeoutStartSec=240min
 SuccessExitStatus=75
 NoNewPrivileges=yes
 KillMode=control-group

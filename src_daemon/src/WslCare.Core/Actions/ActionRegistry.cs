@@ -34,6 +34,7 @@ public sealed class ActionRegistry
         new PackageCaches.PackageCacheClean(),
         new JournalVacuum(),
         new Suspects.SuspectTermination(),
+        new Suspects.AgentOrphans(),
         new UserCaches.BrowserAndHttpCaches(),
         new UserCaches.EditorServerCleanup(),
         new UserCaches.ToolCacheTrims(),

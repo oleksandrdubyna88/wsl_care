@@ -176,6 +176,24 @@ public sealed class RunningReportsTests : IDisposable
         report.Reason.Should().Contain("is acting (A4)");
     }
 
+    /// <summary>E7.S2b/S2c review C-H2: a heartbeat beats on a timer whether or not the run moves — a hung 9p read keeps it fresh
+    /// forever. A run that made no step for running.noProgressMinutes reads WEDGED with a fresh heartbeat, so act --stop can end it.</summary>
+    [Fact]
+    public void A_beating_run_that_made_no_step_for_the_watchdog_window_is_wedged()
+    {
+        Stage(Running(Now.AddSeconds(-2)) with { ProgressAt = Now.AddMinutes(-25) });
+        var stuck = Read(new FakeProcessTable().Alive(Pid, ProcessStart));
+        Stage(Running(Now.AddSeconds(-2)) with { ProgressAt = Now.AddMinutes(-19) });
+        var moving = Read(new FakeProcessTable().Alive(Pid, ProcessStart));
+        Stage(Running(Now.AddSeconds(-2)) with { ProgressAt = null });
+        var older = Read(new FakeProcessTable().Alive(Pid, ProcessStart));
+
+        stuck.State.Should().Be(RunningStateName.Wedged);
+        stuck.Reason.Should().Contain("made no step for 25 min").And.Contain("act --stop");
+        moving.State.Should().Be(RunningStateName.Live, "19 min without a step is inside the default 20");
+        older.State.Should().Be(RunningStateName.Live, "a file from a writer before the watchdog is judged by its heartbeat alone");
+    }
+
     [Fact]
     public void A_live_process_whose_heartbeat_is_stale_is_wedged_and_nothing_is_killed()
     {

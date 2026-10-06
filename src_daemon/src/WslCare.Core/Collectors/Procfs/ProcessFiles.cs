@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 using System.Text;
 
@@ -92,7 +93,7 @@ public static class ProcCgroup
 public static class CommandLineText
 {
     /// <summary>The plan's limit on a shown command line (§4.2).</summary>
-    public const int ShownLength = 200;
+    public static int ShownLength => Tuning.Current.Int(ConfigKeys.Processes.ShownCommandChars);
 
     private const string Redacted = "<redacted>";
 

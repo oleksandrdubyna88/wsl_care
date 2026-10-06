@@ -9,6 +9,9 @@
     <!-- The product forbids reflection-based JSON so AOT failures surface at compile time. The test
          project inherits the rule rather than testing a laxer configuration than ships. -->
     <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+    <!-- The LibraryImport stubs of the inotify watch (Agents/AgentNoOpenTests.cs, plan §15q H3) are generated unsafe code;
+         nothing in the tests is written with the keyword by hand. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

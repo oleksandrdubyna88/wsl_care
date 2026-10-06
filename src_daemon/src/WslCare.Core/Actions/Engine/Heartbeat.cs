@@ -21,6 +21,8 @@ internal sealed class Heartbeat : IAsyncDisposable
     private readonly object _gate = new();
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _loop;
+    private readonly RunProgress _progress;
+    private long _stepsSeen;
     private RunningFile _file;
 
     public Heartbeat(IHostPaths paths, IFileSystem files, TimeProvider clock, IProcessTable processes, RunningFile file, TimeSpan period)
@@ -30,6 +32,8 @@ internal sealed class Heartbeat : IAsyncDisposable
         _clock = clock;
         _processes = processes;
         _file = file;
+        // The run's step counter, in the run's own flow (review C-H2): a beat with new steps stamps progress, one without does not.
+        _progress = RunProgress.Begin();
         _loop = Task.Run(() => LoopAsync(period));
     }
 
@@ -41,7 +45,8 @@ internal sealed class Heartbeat : IAsyncDisposable
     {
         lock (_gate)
         {
-            _file = RunningState.WithHeartbeat(_file with { Current = actionId }, _clock.GetUtcNow(), _processes);
+            var now = _clock.GetUtcNow();
+            _file = RunningState.WithProgress(RunningState.WithHeartbeat(_file with { Current = actionId }, now, _processes), now, _processes);
             Write();
         }
     }
@@ -78,7 +83,15 @@ internal sealed class Heartbeat : IAsyncDisposable
     {
         lock (_gate)
         {
-            _file = RunningState.WithHeartbeat(_file, _clock.GetUtcNow(), _processes);
+            var now = _clock.GetUtcNow();
+            var steps = _progress.Steps;
+            _file = RunningState.WithHeartbeat(_file, now, _processes);
+            if (steps != _stepsSeen)
+            {
+                _stepsSeen = steps;
+                _file = RunningState.WithProgress(_file, now, _processes);
+            }
+
             Write();
         }
     }

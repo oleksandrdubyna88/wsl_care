@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 using System.Text.Json;
 
@@ -18,12 +19,12 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
     public const string Folder = "container-starts";
 
     /// <summary>Plan §4.3, §6: kept 14 days.</summary>
-    public const int RetentionDays = 14;
+    public static int RetentionDays => Tuning.Current.Int(ConfigKeys.Events.StartsRetentionDays);
 
     private const string Action = "container-starts-retention";
     private const string SummaryAction = "container-starts-summary";
     private const string Extension = ".jsonl";
-    private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(5);
+    private static TimeSpan LockTimeout => Tuning.Current.Seconds(ConfigKeys.Records.LockTimeoutSeconds);
 
     public string Directory => paths.Rules.Join(paths.StateDirectory, Folder);
 
@@ -40,14 +41,15 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
     /// follower calls this after every marker; the verdict says whether the policy allowed the write.</summary>
     public DeletionVerdict WriteSummary(DateTimeOffset now)
     {
-        var lines = ReadAll();
+        // Review C-M5: the 24-hour count reads the day files that can hold the last 24 hours, never every kept day.
+        var lines = ReadSince(now - Coverage.CountWindow);
         var summary = new StartsSummary(Core.SchemaVersion.Current, now, Coverage.LastCovered(lines), Coverage.Last24h(lines, now));
         return files.WriteFileAtomically(SummaryFile, JsonSerializer.SerializeToUtf8Bytes(summary, WslCareJsonContext.Default.StartsSummary), new DeletionScope(paths.StateDirectory, SummaryAction));
     }
 
     /// <summary>The 24-hour count <c>status</c> answers: ONE small file read, whatever the number of starts recorded (gate
     /// finding #8); <see cref="Coverage.NoSummary"/> when there is none or it cannot be read.</summary>
-    public StartsWindow ReadSummary(DateTimeOffset now) => files.ReadFile(SummaryFile) switch
+    public StartsWindow ReadSummary(DateTimeOffset now) => files.ReadFile(SummaryFile, RootFileCaps.State) switch
     {
         FileReadResult.Content content when ParseSummary(content.Bytes) is { } summary => Coverage.AsOf(summary, now),
         _ => Coverage.NoSummary(now),
@@ -65,6 +67,16 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
             .Where(f => DayOf(f) is not null)
             .Order(StringComparer.Ordinal)
             .SelectMany(Lines)];
+
+    /// <summary>Every line of the day files from <paramref name="from"/>'s UTC day on, in file order.</summary>
+    public IReadOnlyList<CoverageLine> ReadSince(DateTimeOffset from)
+    {
+        var first = DateOnly.FromDateTime(from.UtcDateTime);
+        return [.. files.ListFiles(Directory)
+            .Where(f => DayOf(f) is { } day && day >= first)
+            .Order(StringComparer.Ordinal)
+            .SelectMany(Lines)];
+    }
 
     /// <summary>Day files older than <see cref="RetentionDays"/> removed through <see cref="IFileSystem"/> (scope: the
     /// folder itself); a refusal or a failure is reported, never thrown.</summary>
@@ -103,7 +115,7 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
             : null;
     }
 
-    private IEnumerable<CoverageLine> Lines(string file) => files.ReadFile(file) switch
+    private IEnumerable<CoverageLine> Lines(string file) => files.ReadFile(file, RootFileCaps.History) switch
     {
         FileReadResult.Content content => LineFiles.CompleteLines(System.Text.Encoding.UTF8.GetString(content.Bytes)).SelectMany(Parse),
         _ => [],

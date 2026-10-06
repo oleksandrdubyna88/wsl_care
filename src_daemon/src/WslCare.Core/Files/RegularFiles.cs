@@ -65,7 +65,16 @@ public static partial class RegularFiles
     /// refused) — and, on Linux, owned by <paramref name="owner"/> (uid 0 on an installed machine) with no group or other
     /// write bit, all asked of the OPEN descriptor in one <c>statx</c>, so nothing can be swapped between the check and the read.
     /// </summary>
-    public static FileReadResult ReadOwned(string path, int maxBytes, uint owner)
+    public static FileReadResult ReadOwned(string path, int maxBytes, uint owner) => ReadNotFollowing(path, maxBytes, owner);
+
+    /// <summary>
+    /// A file another party controls whose OWNER is no evidence (plan §15q R1.1, review M2: a Windows-profile file read through
+    /// drvfs, where every file shows the mount's uid and mode 0777): everything <see cref="Read"/> guarantees — regular,
+    /// nonblocking, capped — and never through a symbolic link, but no uid or mode check; Windows' ACLs are the boundary there.
+    /// </summary>
+    public static FileReadResult ReadNoFollow(string path, int maxBytes) => ReadNotFollowing(path, maxBytes, owner: null);
+
+    private static FileReadResult ReadNotFollowing(string path, int maxBytes, uint? owner)
     {
         try
         {
@@ -81,8 +90,16 @@ public static partial class RegularFiles
         }
     }
 
+    /// <summary>Who must own a file in the home a run works in (plan §15q R1.1): the target user, when this process is root
+    /// working for them; this process itself otherwise — its home IS its own.</summary>
+    public static uint HomeFileOwner(int targetUid) => EffectiveUid() == 0 ? (uint)targetUid : EffectiveUid();
+
     /// <summary>This process's effective uid on Linux (what a sandboxed test trusts as the state's owner); 0 elsewhere.</summary>
     public static uint EffectiveUid() => OperatingSystem.IsLinux() ? Native.GetEffectiveUid() : 0;
+
+    /// <summary>Whether THIS process may start <paramref name="path"/> — <c>access(X_OK)</c> on Linux (the kernel's answer for this
+    /// user, not "some execute bit"; E7.S1/S2 review R11); any existing file elsewhere. Nothing is opened or started.</summary>
+    public static bool MayExecute(string path) => OperatingSystem.IsLinux() ? Native.Access(path, Native.ExecuteOk) == 0 : File.Exists(path);
 
     /// <summary>Linux only: <c>link(2)</c> of <paramref name="from"/> to <paramref name="to"/> — 0, or the errno (17 = the name
     /// exists). Used by <see cref="PhysicalFileSystem.CreateFileExclusively"/> only.</summary>
@@ -112,7 +129,7 @@ public static partial class RegularFiles
             : ReadOther(path, maxBytes);
 
     [SupportedOSPlatform("linux")]
-    private static FileReadResult ReadLinuxOwned(string path, int maxBytes, uint owner)
+    private static FileReadResult ReadLinuxOwned(string path, int maxBytes, uint? owner)
     {
         var fd = Native.Open(path, Native.OpenReadOnlyNonBlocking | Native.NoFollow, 0);
         if (fd < 0)
@@ -120,6 +137,14 @@ public static partial class RegularFiles
             return OwnedErrno(Marshal.GetLastPInvokeError(), path);
         }
 
+        return ReadOpened(fd, maxBytes, owner);
+    }
+
+    /// <summary>A descriptor already opened without following a link, judged (type, and owner / mode when given) and read up
+    /// to the cap; the descriptor is closed here. <see cref="BeneathFiles"/> opens it through its folder chain.</summary>
+    [SupportedOSPlatform("linux")]
+    internal static FileReadResult ReadOpened(int fd, int maxBytes, uint? owner)
+    {
         using var handle = new SafeFileHandle(fd, ownsHandle: true);
         if (Judged(fd, owner) is { Length: > 0 } problem)
         {
@@ -130,9 +155,10 @@ public static partial class RegularFiles
         return Capped(stream, maxBytes);
     }
 
-    /// <summary>The descriptor's type, owner and mode judged in one <c>statx</c>; empty when the file may be read.</summary>
+    /// <summary>The descriptor's type, owner and mode judged in one <c>statx</c>; empty when the file may be read. No
+    /// <paramref name="owner"/> judges the type alone.</summary>
     [SupportedOSPlatform("linux")]
-    private static string Judged(int fd, uint owner)
+    private static string Judged(int fd, uint? owner)
     {
         var buffer = new byte[Native.StatxSize];
         if (Native.Statx(fd, string.Empty, Native.AtEmptyPath, Native.StatxType | Native.StatxMode | Native.StatxUid, buffer) != 0)
@@ -142,7 +168,9 @@ public static partial class RegularFiles
 
         var mode = BitConverter.ToUInt16(buffer, Native.StatxModeOffset);
         var type = mode & Native.TypeMask;
-        return type != Native.TypeRegular ? $"{NotRegular} ({Describe(type)})" : OwnershipProblem(BitConverter.ToUInt32(buffer, Native.StatxUidOffset), mode, owner);
+        return type != Native.TypeRegular ? $"{NotRegular} ({Describe(type)})"
+            : owner is { } expected ? OwnershipProblem(BitConverter.ToUInt32(buffer, Native.StatxUidOffset), mode, expected)
+            : string.Empty;
     }
 
     private static FileReadResult OwnedErrno(int errno, string path) => errno switch
@@ -320,6 +348,12 @@ public static partial class RegularFiles
 
         /// <summary><c>O_NOFOLLOW</c> differs by architecture: 0x20000 on x86-64, 0x8000 on arm64 (its own uapi fcntl.h).</summary>
         public static int NoFollow => RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? 0x8000 : 0x20000;
+
+        /// <summary><c>X_OK</c>.</summary>
+        public const int ExecuteOk = 1;
+
+        [LibraryImport(Libc, EntryPoint = "access", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        internal static partial int Access(string path, int mode);
 
         [LibraryImport(Libc, EntryPoint = "geteuid")]
         internal static partial uint GetEffectiveUid();

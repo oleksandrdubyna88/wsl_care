@@ -46,7 +46,7 @@ public static class IdleGate
     public static IdleSample Sample(LinuxHostPaths paths, IFileSystem files, Reading<ProcessSnapshot> processes, int minutes)
     {
         var (field, window) = minutes <= 1 ? (0, "1 min") : minutes <= 5 ? (1, "5 min") : (2, "15 min");
-        var load = ProcText.Read(files, $"{paths.ProcRoot}/loadavg").Bind(text => LoadAverage(text, field));
+        var load = ProcText.Read(files, $"{paths.ProcRoot}/loadavg").Bind(text => HighestLoad(text, field));
         var cpus = ProcText.Read(files, $"{paths.ProcRoot}/stat").Bind(CpuCount);
         var busy = Reading.Combine(load, cpus, (l, n) => Math.Min(100.0, Math.Round(100.0 * l / n, 1)));
         return new IdleSample(busy, window, processes.Map(p => BuildsAmong(p.All)));
@@ -97,6 +97,11 @@ public static class IdleGate
     /// <summary><c>node …/npm-cli.js ci|install</c>.</summary>
     private static bool IsNodeRunningNpmBuild(IReadOnlyList<string> words) =>
         words.Count > 2 && Processes.Policy.NeverList.Exe([words[1]]) == "npm-cli.js" && NpmBuildVerbs.Contains(words[2]);
+
+    /// <summary>E7.S0 review C5: busy is the HIGHEST of the averages up to the window — a machine busy a minute ago is busy over
+    /// the last 15 minutes too — so a longer <c>idle.minutes</c> is never looser (the safe direction the contract declares).</summary>
+    private static Reading<double> HighestLoad(string text, int field) =>
+        Enumerable.Range(0, field + 1).Select(f => LoadAverage(text, f)).Aggregate((a, b) => Reading.Combine(a, b, Math.Max));
 
     private static Reading<double> LoadAverage(string text, int field)
     {

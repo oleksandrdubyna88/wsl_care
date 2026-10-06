@@ -1209,6 +1209,471 @@ G3 (the handler lookup in `FullCheckLineTests`) and O1 (`Cli.Tests/DetachedRunHa
 `FullCheckLineTests`) are refactors of tests with no behaviour of their own: both classes green before and after (54 and
 22). O5 is documentation (plan §15o decision 6, `research/architecture.md`).
 
+### The configuration trust (E7.S0, 2026-10-05, plan §15q R1)
+
+What a root run may take from another account's configuration layer, and what no setting may do at all
+(`research/architecture.md` § *The configuration trust (E7.S0)*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| no list key widens A11: `processes.families` ⊆ the catalogue without `other` / `ai-agents`, on the command line and in a file (review B1, a live bug) | `Core.Tests/Config/ConfigKeyClosureTests`; `ConfigTrustFlows` |
+| every list key closed; a path key machine-only; a pattern key read by no daemon code; every number slot a key fills accepts exactly that key's range (derived from the product catalogue's templates, an unmapped slot fails naming it) | `Config/ConfigKeyShapeTests` |
+| the never-list, the command policy and catalogue, the deletion policy and the protected roots reference no configuration type — with the companion that the pattern still finds one in `JournalVacuum.cs` | `ArchitectureTests.No_policy_or_protected_roots_type_reads_the_configuration` (+ companion) |
+| the user layer is refused at once when it is a FIFO, never followed when it is a link, refused naming `chmod go-w` when group-writable; an ordinary layer still read | `Config/ConfigLayerTrustTests` (Linux legs for the first three) |
+| root takes the target user's layer only when that user owns it | `UserLayerTrustTests.Root_reading_the_target_users_layer_requires_that_user_to_own_it` (Linux) |
+| without interop a root run takes a user value only in its safe direction — judged against the machine layer, not only the default — and says so as a notice, never observe-only; a tightening or a display value is taken | `UserLayerTrustTests` (three facts) |
+| with interop root takes the user's layer, but root's own log level and retention only tighten (0 = kept for ever); a user's own run takes its whole layer | `UserLayerTrustTests` (three facts) |
+| a machine-only key is taken from the machine layer and ignored, with a notice, from the user layer; `config set` refuses it | `UserLayerTrustTests`, `ConfigTrustFlows` |
+| the trust follows whose home the paths follow (`UserLayerTrusts.For`); the user layer's digest is the SHA-256 of what was read | `UserLayerTrustTests` |
+| a Windows-profile file through drvfs is read with no owner / mode check, but never through a link, never waited on (FIFO), never past its cap | `Files/NoFollowReaderTests` (Linux) |
+| `config set` over a FIFO moves it aside, never waits on it | `Config/UserConfigWriterBoundTests` (Linux) |
+| every read in the product classified by whose file it names, a file someone else controls read by its hardened reader — a new, a stale or a wrongly read site fails, naming it; the scan finds a planted read across lines and the known hardened ones | `ArchitectureTests.Every_read_is_classified_by_whose_file_it_names_and_uses_that_class_s_reader` (+ companion) |
+| an `act` run's detail names every setting not from the defaults with its layer, and the notices; a run under the defaults records exactly what it did before | `Actions/ConfigProvenanceTests` |
+| `contracts/config-keys.json` is what `ConfigKeys` + `default.json` enumerate; it carries every key, the closed families and the trust of the keys R1 is about | `ContractFilesTests` (+ `The_config_keys_contract_holds_every_key_with_its_trust`) |
+| a root-run scenario finds interop as a WSL distro has it: `ScenarioHome` writes the `WSLInterop` entry (enabled) when a scenario claims root, and a scenario deletes it for the other world | `ConfigTrustFlows` |
+
+**Red first** (before the fix):
+
+- `ConfigKeyClosureTests.A_families_list_cannot_widen_A11_beyond_the_named_families` (Windows): 4 of 4 — *Expected type
+  to be …ValueCheck+Invalid, but found …ValueCheck+Ok* for `other`, `ai-agents`, `testhost,other`, `anything-at-all`.
+- `ConfigLayerTrustTests` (WSL, a normal user, a `/tmp` copy): 3 of 4 — the FIFO: *Expected finished to be True because
+  the user layer is read without waiting on a FIFO, but found False* (the load blocked 5 s); the link and the
+  group-writable layer: *Expected type to be …ConfigLoadResult+ObserveOnly, but found …ConfigLoadResult+Valid*; the
+  ordinary layer green.
+- The other guarantees are new behaviour written with the code; each was proved by the teeth below instead.
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the guarding class run, the file restored by writing it back and
+compared by SHA-256 — every restore byte-identical; `scratchpad` runner, Windows Debug unless marked WSL):
+
+| Mutation | Red |
+|---|---|
+| `CheckMembers` accepting any member | 4 (`ConfigKeyClosureTests`): *Expected type to be …Invalid, but found …Ok* |
+| the user layer read with the plain `ReadFile` (WSL) | 3 (`ConfigLayerTrustTests`): the FIFO waited on, the link and the 0664 layer *Valid* |
+| `TightenOnly` ignoring `LoosenRefused` | 2 (`UserLayerTrustTests`): *Expected …DryRun to be True, but found False*; *…to be 30 because 14 is tighter than the default but looser than the machine's 30, but found 14* |
+| `RootsOwnKeyRule` never applying | 1: *Expected …MinimumLevel to be the same string, but they differ at index 0* |
+| the machine-only branch of the loader dropped | 1: *Expected fromUser.Config.Text(…BaseFolder) to be empty, but found "/srv/archive"* |
+| `config set`'s machine-only refusal dropped (built binary) | 1 (`ConfigTrustFlows`): *Expected refused.Exit to be 2, but found 0* |
+| `TargetUserCommands` back on the plain `ReadFile` | 1 (`ArchitectureTests`): *… found at least one item {"WslCare.Core/Actions/TargetUserCommands.cs: 1 x ReadFile"}* |
+| the act detail's `Config` set to null | 1 (`ConfigProvenanceTests`): *Expected detail.Config to contain a single item, but found &lt;null&gt;* |
+| `status`'s `ConfigNotices` set to null (WSL) | 1 (`ConfigTrustFlows`): *Expected statusJson["configNotices"] not to be &lt;null&gt; because status says which user values the run did not take* |
+| `CliHost`'s interop check wired to "available" (WSL) | 1 (`ConfigTrustFlows`): *Expected Value(report, "dryRun").GetBoolean() to be True, but found False* |
+| `ReadNoFollow` following links (WSL) | 1 (`NoFollowReaderTests`): *Expected type to be …Unreadable, but found …Content* |
+| `UserConfigWriter` back on the plain `ReadFile` (WSL) | 1 (`UserConfigWriterBoundTests`): *Expected finished to be True because config set never waits on a FIFO, but found False* |
+| the user-layer digest left empty | 1 (`UserLayerTrustTests`): *Expected …UserLayerDigest to be "44136fa3…" … but "" has a length of 0* |
+
+**Goldens** regenerated in WSL (`WSL_CARE_WRITE_GOLDENS=1`, a `/tmp` copy, copied back and compared byte for byte): the
+seven `status*.json` gained `config.contract` in `capabilities`, `status.json` also `userLayerDigest` (its scenario has a
+user layer) — additive members, nothing else moved; the extension's `npm test` (351, 1 skipped) replays them green.
+`contracts/config-keys.json` is new. The umask a WSL Ubuntu login shell gives a normal user was measured 0022 (2026-10-05,
+`bash -lc umask`), so a hand-made layer is 0644 there; `config set` writes 0644 whatever the umask.
+
+### The E7.S0 review round (2026-10-05, plan §15q *E7.S0 review round*)
+
+Two own reviews (security; correctness), every finding accepted. The tests — `Core.Tests/Config/ConfigReviewRoundTests`,
+`Core.Tests/Files/DriveReaderTests`, `Core.Tests/Actions/ActionsReviewRoundTests`, `ArchitectureTests.The_read_scan_finds_a_read_through_a_wrapper`,
+`Scenarios/ConfigReviewRoundFlows` — and their red before the fix (Windows, and WSL for the Linux-only ones: a normal user,
+a `/tmp` copy, removed):
+
+| # | Test | Red before the fix |
+|---|---|---|
+| S1 | `DriveReaderTests.A_link_in_a_parent_folder_of_a_drive_file_is_never_followed` (WSL) | *Expected type to be …Unreadable, but found …Content* — `.docker` a link to another folder, read through |
+| S1 | `DriveReaderTests.A_windows_profile_with_a_parent_segment_is_not_a_path_on_the_drive` (3 cases) | *Expected HealthCollector.InDistro(profile, "/mnt/").IsAvailable to be False, but found True* |
+| S2 | `ArchitectureTests.The_read_scan_finds_a_read_through_a_wrapper` | the scan found none of `ProcText.Read` / `Bytes`, `RegularFiles.Read` / `ReadHead`, `ReadText` |
+| S4 | `ConfigReviewRoundFlows.Doctor_text_never_carries_a_terminal_control_sequence_from_the_user_layer` | *Did not expect doctor.Stdout … to contain "\u001b"* — the unknown key `ESC]52;c;…` printed raw |
+| S5 | `ConfigReviewRoundTests.A_pattern_key_refuses_a_value_with_a_trailing_newline` (2 cases) | *Expected type to be …Invalid, but found …Ok* for "Ubuntu\n", "x\n" |
+| S6 | `ConfigReviewRoundTests.A_link_on_the_way_to_the_user_layer_is_refused_and_nothing_beyond_it_is_described` (WSL) | *Expected type to be …ObserveOnly, but found …Valid* — a linked `~/.config/wsl-care` followed |
+| S7 | `ActionsReviewRoundTests.An_idle_orphan_of_another_non_root_account_is_never_a_suspect` | *Expected preview.Targets … {"10 p10"}, but {"10 p10", "20 p20"} contains 1 item(s) too many* |
+| C1 | `ConfigReviewRoundFlows.A_refused_configuration_never_prunes_the_logs_with_the_default_retention` (Windows) | *Expected Directory.Exists(old) to be True …, but found False* |
+| C2 | `ConfigReviewRoundFlows.Without_interop_an_unprivileged_answer_says_which_user_values_the_root_timer_ignores` (WSL) | *Expected config["configNotices"] not to be &lt;null&gt; …* |
+| C3 | `ConfigReviewRoundTests.A_linked_user_layer_is_refused_with_how_to_fix_it` (WSL) | *Expected result.Errors "cannot be read: a symbolic link, never followed" to contain "replace the link with a regular file"* |
+| C3 | `ConfigReviewRoundFlows.Config_set_over_a_linked_user_layer_writes_a_regular_file_and_prints_the_value_it_wrote` (WSL) | *Expected set.Exit to be 0* — the layer refused, the set printed the default; the first fix attempt (moving the link aside) failed 70: the deletion policy judged the link's TARGET, outside the scope — hence `ReplaceLinkWithFile`, judged where the link lives |
+| C4 | `ConfigReviewRoundTests.An_invalid_machine_only_value_in_the_user_layer_is_a_notice_not_an_error` | *Expected result.IsObserveOnly to be False, but found True* |
+| C5 | `ActionsReviewRoundTests.A_machine_busy_a_minute_ago_is_not_idle_over_a_longer_window` | *Expected IdleGate.Judge(…).Idle to be False … but found True* |
+
+The C1 test first passed VACUOUSLY on Linux — the old folder was planted in the user log root while the sandbox's `/var/log`
+(writable by the test) was the one logged to; it now plants the folder in BOTH roots and asserts the run logged. Three older
+tests changed with a decided behaviour: `SuspectTerminationTests` / `PidfdSignalsTests` name the target user (S7), and
+`ActionEngineTests`' deferral reads 97.5 % (load1 3.9 on 4 CPUs — the highest average, C5); `ConfigLayerTrustTests`' link
+refusal reads "a link … never followed".
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the class run, the file restored byte-identical by SHA-256):
+
+| Mutation | Red |
+|---|---|
+| the drive reader back to a last-component `O_NOFOLLOW` (WSL) | 1: *Expected type to be …Unreadable, but found …Content* |
+| `IsPlainDrivePath` without the `..` check | 3: *…IsAvailable to be False, but found True* |
+| the scan without the `ProcText` alternative | 2: the companion, and the table *… ContainerCgroups.cs: ProcText.Read (in the table, not in the source)* |
+| `doctor`'s line without `Printable` | 1 (`ConfigReviewRoundFlows`) |
+| the whole-value match back to `IsMatch` | 2: *Expected type to be …Invalid, but found …Ok* |
+| `ReadUserFile` back to the last-component reader (WSL) | 1: *Expected type to be …ObserveOnly, but found …Valid* |
+| A11's target-user check dropped | 1: *… contains 1 item(s) too many* |
+| the observe-only prune guard off | 1: *Expected olds to contain only items matching Exists(old) …* |
+| `CliHost` not asking how root reads the layer (WSL) | 1: *Expected config["configNotices"] not to be &lt;null&gt;* |
+| the link fix text not chosen (WSL) | 1: *… "…; fix or remove the file; config set rewrites it" to contain "replace the link with a regular file"* |
+| `config set` not replacing the link (WSL) | 1: *Expected set.Exit to be 0* |
+| the machine-only notice after validation | 1: *Expected result.IsObserveOnly to be False, but found True* |
+| the idle gate back to one average | 1: *Expected IdleGate.Judge(…).Idle to be False … but found True* |
+
+**Goldens** regenerated in WSL: `status.json` and `doctor.json` gained `configNotices` ("the root timer ignores this value:
+…" for the golden layer's five 0-day ages — the golden sandbox has no interop entry); additive, nothing else moved.
+
+### The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)
+
+What `agents list` and the daily walk may do inside an agent's folder — size and count, nothing else
+(`research/architecture.md` § *The AI agents*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| the catalogue is complete (ids unique, every folder spelt from a known root), a session layout starts in one of its agent's own folders and only a confirmed agent counts sessions | `Core.Tests/Agents/AgentCatalogueTests` |
+| every catalogue folder is a protected agent root on its side, and the protected roots are exactly the catalogue's (held equal) | `AgentCatalogueTests.Every_catalogue_folder_is_a_protected_agent_root_on_its_side` |
+| the never-list's agent names are DERIVED from the catalogue: every catalogue folder in an argument is refused, the names it had before are a subset, a bare `claude` is not one | `AgentCatalogueTests.The_never_list_protects_every_catalogue_folder_in_an_argument` |
+| `memory` is never entered for ANY agent — a manual entry without it in its own list too — and the size says it excludes it | `AgentWalkTests.Memory_is_never_entered_for_any_agent_and_the_size_says_it_excludes_it` |
+| an entry's prefix is never entered (Gemini CLI's `antigravity*`), so one agent is not counted inside another | `AgentWalkTests.An_entrys_prefix_is_never_entered_…` |
+| a link inside an agent folder is neither counted nor entered | `AgentWalkTests.A_link_inside_an_agent_folder_is_neither_counted_nor_entered` |
+| a folder on another filesystem is not entered and is named "(different filesystem)" (review C1; the device seam makes it a unit test on every OS) | `AgentWalkTests.A_folder_on_another_filesystem_is_not_entered_and_is_named` |
+| ONE total budget: the time left is read once per folder; a folder the budget did not reach says "not measured this run", never 0, and its sessions are not counted (review M7) | `AgentWalkTests.The_walk_stops_at_its_total_budget_and_names_what_it_did_not_reach` |
+| sessions of a confirmed layout counted from listings, with oldest / newest dates and the five largest by name; a `memory` folder where the layout's `*` would match it is not entered | `AgentWalkTests.Sessions_of_a_confirmed_layout_…` |
+| an unconfirmed layout is "—" with "monitor only"; a missing folder "does not exist", not 0 | `AgentWalkTests.An_unconfirmed_layout_…` |
+| what is persisted carries no session name (the size of the largest is kept) | `AgentWalkTests.A_persisted_sample_carries_no_session_name`; `AgentsFlows` (after a `collect`) |
+| discovery: by binary on PATH, by npm package (its version from `package.json`), by folder alone; a native install's version from its link target; otherwise "not asked … nothing is executed" | `Agents/AgentDiscoveryTests` (Linux for the PATH rule) |
+| as root only folders count, no version asked | `AgentDiscoveryTests.As_root_only_folders_count_and_no_version_is_asked` |
+| discovery and the walk have no way to start a process (no `ICommandRunner` in any signature) | `AgentDiscoveryTests.Discovery_and_the_walk_have_no_way_to_start_a_process` |
+| **H3 at the syscall level**: an inotify `IN_OPEN \| IN_ACCESS` watch on every folder of a Claude Code tree (memory included) sees no FILE opened during the walk and the session listing; the companion sees a file that is opened | `Agents/AgentNoOpenTests` (Linux) |
+| the built CLI: found by binary and folder, 100 bytes without `memory/`, one session named, version "not asked", the fake `claude` on PATH never started; text; usage; `none` before a full run, the run's totals after | `Scenarios/AgentsFlows` |
+| the new read sites are classified: `AgentDiscovery` (`ReadRegularFile` of the invoking user's own `package.json` — class `OwnUnprivileged` —, `ListEntries`), `AgentWalk` (`WalkTree`), `SessionGlob` (`ListEntries`) | `ArchitectureTests.Every_read_is_classified_…` |
+
+**Red first.** The behaviours were written with their tests; red was observed where it could be, and the rest proved by
+the teeth below:
+
+- `AgentWalkTests.The_walk_stops_at_its_total_budget_…` was red on the first run for a REAL defect: *Expected … Reason to
+  be "not measured this run: …", but "stopped after -60 s …"* — the walk read the clock twice (once for "out of time?",
+  once for "how much is left"), so a folder could start with a negative ceiling. Fixed: the time left is read ONCE.
+- `VerbRegisterTests` (2) red while the verb had no flow-catalogue row: *missing: agents list [--measure] [--json]*.
+- Two test-side corrections, not product defects: the session names are relative to the layout's folder
+  (`projects/b/two.jsonl`), and on Windows the PATH rule is the Windows one, so the PATH-detection facts run on the Linux
+  legs; Claude Code has three Windows folders, so the Windows flow asserts the one that exists.
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the guarding class run, the file restored byte-identical by
+SHA-256; Windows Debug unless marked WSL):
+
+| Mutation | Red |
+|---|---|
+| `memory` dropped from every entry's never-enter set | 1: *Expected sample.Find("manual")!.TotalBytes to be 7L because memory/ is never entered for ANY agent …, but found 50007L* |
+| the prefix rule matching nothing | 1: *Expected size.TotalBytes to be 40L, but found 9040L* |
+| `StayOnDevice = false` | 1: *Expected measured.Bytes to be 10L, but found 30010L* |
+| the budget's time left ignored (the per-folder ceiling only) | 1: *Expected late.Folders.Single().Reason to be "not measured this run: …", but "" …* |
+| the session listing entering `memory` | 1: *Expected size.Sessions to be …SessionFigures …* |
+| the persisted sample keeping the names | 1: *Expected persisted.Agents to contain only items matching (a.Largest == null) …* |
+| the same, through the built CLI after a `collect` (WSL) | 1 (`AgentsFlows`): *Expected Claude(after).Sessions.LargestSessions to be &lt;null&gt; …* |
+| root searching the PATH (WSL) | 1: *Expected Of(found, "claude-code").Tracked to be False because root never searches the user's PATH, but found True* |
+| the never-list missing one derived name | 1: *Expected unprotected to be empty, but found … {"/home/me/.aider"}* |
+| the Linux protected roots missing one catalogue folder | 1: *Expected linux.AgentRoots to be a collection with 14 item(s) …* |
+| the session listing opening each session file for one byte (WSL) | 1 (`AgentNoOpenTests`): *Expected watch.FileEvents() to be empty …, but found … {"…/home/me/.claude/projects/a/one.jsonl"}* |
+| `--measure` not parsed | 2 (`AgentsFlows`): *Expected report.Sizes.Source to be "now" …, but "none"*; the text without "measured now" |
+
+**Goldens** regenerated in WSL: `agents-list.json` is new (the golden sandbox plants a Claude Code folder before its
+`collect`: two sessions at fixed instants and a `memory` file, so the answer is the full run's — 400 bytes, 2 sessions,
+`excluded: ["memory (never entered)"]`, no session name); the seven `status*.json` gained `agents.list` in
+`capabilities`; nothing else moved. A new rule normalises `answeredAt`.
+
+**Measured** (2026-10-05, WSL, a normal user, the Release build, `agents list --measure` over the real home — totals only
+recorded): six agents tracked, ~2.5 GiB, 185 sessions (Claude Code, Codex) and 500 Antigravity conversations counted; three runs 2.26 s,
+1.29 s, 1.32 s — far inside the 60 s `--measure` budget and the 3-minute walk budget of a full run.
+
+### Manual agents and agents probe (E7.S2, 2026-10-05, plan §15q D4, R2)
+
+`aiAgents.extra`, the rules a manual agent's folder must pass at `config set` and at every root read, the two-phase host,
+the declared cleanup folders and the overlap refusal, and `agents probe` (`research/architecture.md` § *Manual agents and
+`agents probe`*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| the SHAPE of `aiAgents.extra` (the fifth key shape): a valid list taken with every member and written back unchanged; each rule refused naming the entry and the rule — a relative folder, a `.`/`..` segment, a leading `-`, a control character, 0 or 9 folders, a relative `cli`, an unknown side, a bad name (a trailing newline too: `\z`, not `$`), a `..` / absolute / bracketed glob, an unknown member, wrong member types, a Windows entry without a drive path; at most 16 entries, no name twice; not JSON, not a list | `Core.Tests/Agents/ExtraAgentShapeTests` (21) |
+| the FILESYSTEM rules (R2.1): accepted inside the home; refused outside it, the home itself, under `~/git`, a catalogue folder or inside one ("already tracked"), A8's `~/.npm`, inside A12's Playwright folder, A17's pnpm store, A14's editor server, wsl-care's own `~/.config/wsl-care` and a folder containing it (M9), a folder that does not exist, a folder on another device (review C1), a link inside the home pointing out of it (the REAL path decides; Linux); a Windows entry left to the Windows binary | `Agents/ExtraAgentRulesTests` (17) |
+| every user-scoped action declares the home folders it cleans (A3 the named exception), every `CacheFolders.UnderHome(context, "…")` literal in an action's source is declared (+ the companion that the scan finds A12's), no catalogue folder overlaps a declared cleanup folder (review M8) | `Actions/ActionHomeRootsTests` |
+| an action whose cleanup folder overlaps an agent's folder refuses and never runs; the run's deletion policy refuses a delete under a manual agent's folder, and the same delete without the extra is allowed (review B2) | `ActionHomeRootsTests` |
+| an accepted manual agent is walked without `memory`, its sessions counted by its own glob (with `**`); a refused one stays in the answer, not walked, every figure "not walked: <rule>"; the `cli` is never a file-system argument (a recording double); a Windows entry is neither listed nor walked by the distro's binary | `Agents/ExtraAgentsTests` |
+| an agent's total is unavailable with the folder's reason when a folder was not measured (not reached, refused), a missing folder counts as nothing, a cut walk as its lower bound; growth only between two whole walks | `Agents/AgentsReportTests` |
+| `agents probe`: usable, named by its file, the conventional folders that exist measured and judged, the suggested entry; a catalogue binary "already tracked"; a path that is no file not usable and nothing looked at; no execute bit (Linux); the name derivation; **the probe opens no file of the CLI or its folders** (inotify, Linux) | `Agents/AgentProbeTests` |
+| `config set aiAgents.extra -` reads stdin, judges, writes; a refused folder names its rule and writes nothing; stdin only (a JSON argument refused), not JSON refused; `agents probe` as root: exit 81 naming uid 0 and the fix; a path of the wrong shape refused; the JSON contract; **the second phase of the host protects the manual agents' folders**, and no extras = the same host (review M1) | `Cli.Tests/AgentsCommandTests` (11) |
+| the built CLI: the probe as root (81) on every OS; a probe of a CLI (the fake tool) never starts it; `agents list --measure` with an accepted and a refused manual agent; a root `collect` walks an accepted one and `agents list` reads its total | `Scenarios/AgentsExtraFlows` (the last three on the Linux legs) |
+| the contracts: `config-keys.json` gains `aiAgents.extra` (shape `agentList` and its limits), `exit-codes.json` gains `notAsRoot` 81 | `ContractFilesTests` |
+
+**Red first.** The behaviours were written with their tests and proved by the teeth below; red observed for a real
+symptom where it could be:
+
+- `AgentsExtraFlows.Agents_list_shows_the_manual_agents_…` (WSL) was red for a REAL defect, in E7.S1's report: *Expected
+  refused.TotalBytes.Available to be False, but found True* — an agent whose folders were not walked reported an
+  "available" total of 0 (the same held for a folder the budget did not reach). Fixed: `AgentsReports.Total`; growth only
+  between whole walks; `AgentsReportTests` pins it.
+- `ExtraAgentRulesTests.A_link_inside_the_home_pointing_out_of_it_…` was SKIPPED on Linux at first — the test created the
+  link before its parent folder existed, so `DirectoryLinks.TryCreate` failed and the test skipped instead of running.
+  Found by listing the skipped tests of the WSL run; fixed in the test, now it runs (green) on Linux.
+- `VerbRegisterTests` (2) red while `agents probe <path> [--json]` had no flow-catalogue row; `ContractFilesTests` red while
+  the contracts lacked `aiAgents.extra` and exit 81.
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the guarding class run, the file restored byte-identical by
+SHA-256; Windows Debug unless marked WSL):
+
+| Mutation | Red |
+|---|---|
+| the name pattern anchored with `$` instead of `\z` | 1: *Expected type to be …Invalid, but found …Ok* (the "x\n" name) |
+| the `.`/`..` segment check dropped | 1: *… Invalid, but found … Ok* |
+| the inside-the-home rule dropped | 2: *Refusal "/home/me overlaps ~/git …" to contain "is not inside the home"*; *Refusal "" to contain "/data/mycli"* |
+| the device rule dropped | 1: *Refusal "" to contain "another filesystem"* |
+| the declared cleanup folders left out of the rules (M8) | 4: `~/.npm`, the Playwright folder, `~/.vscode-server`, the pnpm store accepted |
+| the product's folders left out (M9) | 2: `~/.config/wsl-care` and `~/.config` accepted |
+| A12 not declaring the NuGet http-cache | 1: *undeclared … {"A12: ~/.local/share/NuGet/http-cache"}* |
+| the engine's overlap guard off (B2) | 1: *Expected outcome.Status to be "refused" …, but "ran"* |
+| the manual agents' folders left out of `AgentRoots` (B2) | 2: the overlap test ran the action; the delete under the extra *…+AllowedVerdict* |
+| the second phase of the host never applied (M1) | 1: *Expected second.Paths.AgentRoots … to contain …/.mycli* |
+| the probe's root refusal off | 1: *Expected probe.Exit to be 81, but found 0* |
+| `config set` taking a JSON argument | 1: the refusal named "not JSON" instead of "is read from stdin" |
+| a refused manual agent walked | 1: *Expected size.TotalBytes to be 0L, but found 5000L* |
+| discovery stat-ing the manual agent's `cli` | 1: *Expected recording.Asked … not to contain … .local/bin/mycli* |
+| the total available whatever a folder says | 2: *…TotalBytes.Available to be False because 100 bytes of one folder are not the agent's size, but found True*; growth from a partial walk |
+| the probe reading the CLI (WSL) | 1 (`AgentProbeTests`): *Expected watch.FileEvents() to be empty …, but found … {"…/home/me/.local/bin/mycli"}* |
+
+Two first attempts did not bite and were redone: the two-phase mutation did not compile (a nullable warning is an
+error here), and the first "probe reads the CLI" mutation changed the probe's answer instead of only reading — so four
+tests failed for the WRONG reason (a usable CLI reported unusable); the second version reads and answers as before, and
+only the inotify proof went red.
+
+**Goldens** regenerated in WSL: the seven `status*.json` gained `agents.probe` and `config.agentsExtra` in `capabilities`;
+nothing else moved (the golden sandbox has no manual agent, so `agents-list.json` is unchanged).
+
+### The E7.S1/S2 review round (2026-10-05, plan §15q *E7.S1/S2 review round*)
+
+Two own reviews (correctness: 3 High, 5 Medium, 5 Minor; safety/security: 5 Important, 4 Low), every finding accepted. The
+tests — `Core.Tests/Agents/AgentsReviewRoundTests` (23), `UserCacheTests.S4_*` (2), `AgentNoOpenTests` (the folder-event
+assertion), `Cli.Tests/AgentsCommandTests` (R12, S1 ×3), `ActCommandTests` (81), `Scenarios/AgentsExtraFlows` (R8) — and their
+red before the fix (Windows, and WSL for the Linux-only ones: a normal user, a `/tmp` copy, removed):
+
+| # | Red before the fix |
+|---|---|
+| R1 | WSL: `~/.local/bin/claude` not found under the measured exec PATH shape; a `/mnt/c/…/npm/codex` shim *Expected … DetectedBy {"binary"} to not contain "binary"* |
+| R2 | *Expected report.TotalBytes to be ByteFigure(true, 100, "stopped after …")* — the cut walk read as whole, growth taken |
+| R3 | WSL: *Expected codex.Version to be "0.44.0" …, but "0.30.0"* (the oldest nvm); *… "2.1.3" …, but "1.0.0"* (a stale package beat a two-hop native link) |
+| R4 | `**/**` accepted; a folder listed twice; *Expected sessions.Counted to be False …, but found True* for a listing stopped before the sessions' level; WSL: a linked `~/.claude` listed through the link |
+| R5 | *Expected … Count(NotReached) to be greater than 0 …, but found 0* — four candidates, four budgets |
+| R6 | a folder not measured reported `files: 0` |
+| R7 | *Expected size.Sessions.LargestBytes to be 5400L …, but found 2000L* — the companions not counted |
+| R9 | *… excluded {"projects/secret-client-project (different filesystem)"}* persisted |
+| R10 | *Expected type not to be …Written …, but it is* — a 786 KB layer written past its reader's 256 KiB cap |
+| R11 | WSL: a file with an execute bit for OTHERS only was "usable" for its owner |
+| R12 | *the path ; got "/home/me/.local/bin/a"* |
+| 81 | *Expected exit to be 81, but found 2* (`config set` as root for the target user) |
+| S1 | *Expected second.Paths.AgentRoots … not to contain …* for `/var/lib/wsl-care`, `/` and the home itself |
+| S2 | `~/.mycli/memory`, `~/.mycli/Memory`, `~/memory/mycli` accepted (3); *Expected type to be …Unreadable, but found …Measured* for a walk rooted at `memory` |
+| S3 | *Reason "" to contain "another filesystem"* — a catalogue folder on another device than the home walked |
+| S4 | *Expected preview.Refusal "" to contain "/home/me/.claude/npm-cache"*; *… Wrapped {"pip3 cache purge"} to not contain "pip3 cache purge"* |
+| S8 | *Expected …TotalBytes to be 10L, but found 9010L* — a `Memory` folder entered |
+
+Two reds were the TEST's, found and fixed before relying on them: the R1 PATH shape first mixed this machine's real `/usr/bin`
+with the sandbox (the WSL run found the owner's real `/usr/bin/codex`) — every entry is now inside the sandbox; and the
+strengthened S9 assertion first saw the memory folder "opened" by the watch's OWN set-up (it lists every folder to add its
+watches) — the set-up's events are drained before the walk.
+
+R8's scenario was red for a REAL defect of E7.S2: *Expected a12.Reason "nothing to remove; the Playwright part refuses: …" to
+contain "overlaps the AI agent folder"* — the action's SKIP was read before the overlap refusal, so A12 over an agent folder
+read as "nothing to do", not "refused". The overlap refusal now replaces the action's own refusal and its skip.
+
+**Teeth** (each load-bearing line broken alone, rebuilt, the guarding class run, the file restored byte-identical by
+SHA-256; Windows Debug unless marked WSL) — 27 mutations, every one red:
+
+| Mutation | Red |
+|---|---|
+| the automount filter dropped (WSL) | 1 (R1 shim) |
+| the fixed bin list dropped (WSL) | 3 (R1 local bin, both R3) |
+| the cut total without its reason | 1 |
+| growth without the whole-walk rule | 1 |
+| the second `**` accepted | 1 |
+| the listing cache dropped | 1 (listed twice) |
+| the intermediate stop ignored | 1 |
+| the home-device rule dropped | 1 |
+| a budget per probe candidate | 1 |
+| an unmeasured folder's file count kept | 1 |
+| companions not counted | 1 |
+| persisted walks keeping folder names | 1 |
+| the layer-size check dropped | 1 |
+| the probe's "one path" rule dropped | 1 |
+| `config set` as root back to 2 | 1 |
+| protection unbounded | 3 |
+| a memory segment in a manual folder accepted | 3 |
+| a walk rooted at `memory` allowed | 1 |
+| the tool not asked (A8 / A17) | 2 |
+| `memory` compared by case | 1 |
+| the link-on-the-way rule dropped (WSL) | 1 |
+| only one link followed (WSL) | 1 |
+| the version from the npm roots first (WSL) | 2 |
+| any execute bit (WSL) | 1 |
+| `memory` not never-enter (WSL, the folder-event proof) | 1 |
+| `Program.Main` without phase two (WSL, the built CLI) | 1: the A12 reason without the overlap |
+| the overlap refusal leaving the action's skip in place (WSL, the built CLI) | 1: *… "nothing to remove; …" to contain "overlaps the AI agent folder"* |
+
+One first attempt (the listing cache mutated so it did not compile — a nullable warning is an error here) was redone.
+
+**Goldens:** `agents-list.json` — the "not asked" sentence names the new source rule; nothing else moved.
+
+### A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)
+
+| Guarantee | Tests |
+|---|---|
+| eligible only after N hours with NO CPU measured by identity across the timer's records; the first sight and 3 h are not enough, 4.5 h is, the item names the agent, the measured hours and the folder | `Core.Tests/Actions/AgentOrphansTests.Ai_agent_orphan_is_eligible_only_after_N_hours_without_cpu_by_identity` |
+| missing history is never idle — 30 days of uptime with no record ends nothing | `…Missing_history_never_makes_a_process_eligible` |
+| a CPU tick, a reused pid (another start) or another boot restarts the clock; idle again only N hours later | `…A_reused_pid_or_a_cpu_tick_or_another_boot_restarts_the_idle_clock` (3) |
+| a live session of its agent keeps it; an unconfirmed layout keeps it; a terminal or a live parent keeps it; another account's process is never judged | `…A_live_session_keeps_the_agent_process`, `…An_unconfirmed_layout_…`, `…A_process_with_a_terminal_or_a_live_parent_is_kept` (2), `…Another_accounts_agent_process_is_never_a_candidate` |
+| the run re-reads each target: one that used CPU since the preview is kept, the other is signalled by pid and start | `…The_run_rechecks_identity_and_cpu_before_each_signal` |
+| the timer never ends an agent process: the timer pass does not select A18, asking the timer engine for it directly is skipped, the trigger never fires | `…The_timer_never_ends_an_agent_process`; over the built CLI: `Scenarios/AgentOrphansFlows` (every `auto` on, dry run off, 1 h window: the pass holds no A18, the history was recorded, a preview after it ends nothing and writes no state; Linux legs) |
+| the history is root state, pruned to live identities, capped at 512, and a full file fits its read cap | `…The_cpu_history_is_root_state_bounded_and_pruned_to_live_processes` |
+| `processes.aiAgentsIdleHours` 1–168, default 4, safe higher; `ai-agents` still not choosable for A11 | `…Processes_aiAgentsIdleHours_is_1_to_168_default_4_safe_higher`; `ConfigKeyClosureTests` |
+| A18 is the one button-only id; asking its auto switch is a defect | `EnginePartsTests.The_action_ids_are_exactly_the_auto_switches_and_the_button_only_ones_…` |
+| A11's signal path, now shared (`SuspectSignals`), behaves as before | `SuspectTerminationTests`, `ActionsReviewRoundTests` (unchanged, green) |
+
+**Red first:** the cap test was red for a REAL defect — *a full 512-entry history serialises to 90 618 bytes, over the planned
+64 KiB cap*, which would have read a full history as "no history"; the cap is 128 KiB. The scenario was red once for its own
+set-up (the sandbox had no `/proc/sys/kernel/random` folder). The rest was written with its code and proved by the teeth.
+
+**Teeth** (Windows Debug, `AgentOrphansTests`, each file restored byte-identical):
+
+| Mutation | Red |
+|---|---|
+| the timer pass selecting button-only ids | 1: the pass held A18 |
+| the timer gate letting a button-only id run | 1: the scripted A18 ran |
+| the history keyed by pid alone | 1 (the start case) |
+| the history surviving another boot | 1: *a changed boot … found 1* |
+| a new identity starting "idle for a year" (missing history = idle) | 5: the first sight, 30 days, every restart case |
+| the live-session check never matching | 1: *Expected preview.Count to be 0, but found 1* |
+| the confirmed-layout rule dropped | 1 |
+| the target-user filter dropped | 1: *… found 1* |
+| the live-parent rule dropped | 1: *… found 1* |
+| the run's CPU re-check dropped (shared path) | 1: the process that used CPU was signalled |
+| dead identities kept | 1 |
+| the trigger firing | 1 |
+
+Two first attempts (the identity and missing-history rules mutated in `IdleFor`) did not bite: the in-memory merge of
+`Next` already enforces both, so the teeth moved to `Next`, where the rule lives.
+
+**Goldens:** the seven `status*.json` gained `A18` in `actions`; `contracts/actions.json` and `config-keys.json` regenerated.
+
+### Every number is configuration (E7.S2c, 2026-10-05, owner rule)
+
+| Guarantee | Tests |
+|---|---|
+| no behavioural number is a literal in `src_daemon/src`: five shapes (a numeric `const` / `static readonly`, an inline `TimeSpan.From*(<digit>)`, `Take(n ≥ 2)`, a byte product, a literal handed to `Sleep` / `Next` / a capped read) outside the 114 reasoned group-C entries | `Core.Tests/ArchitectureTests.Numbers.No_behavioural_number_is_a_literal`; the companion plants one of each shape (`…The_number_scan_finds_a_planted_literal_of_every_shape`); a listed entry that is gone is stale (`…Every_listed_format_still_exists_in_the_source`) |
+| every A row an ordinary key, every B row a machine-layer-only key; a value above the hard maximum refused naming the key and the bound; a user-layer B value a notice, the default kept | `Core.Tests/Config/NumbersAreConfigurationTests.A_behaviour_number_is_an_ordinary_key` (35), `…A_root_safety_limit_is_a_machine_only_key` (91), `…A_limit_above_its_hard_maximum_is_refused_…` |
+| coupled limits that contradict each other refuse the layer naming the rule — wedged < 3 × heartbeat, a read cap below the queue, a list cap that cannot hold the shown names, a log range shorter than the retention, a stop ceiling not 30 s above the unit's stop, jitter max ≤ min, a timer period that does not divide 24 | `…Coupled_limits_that_contradict_each_other_refuse_the_layer_naming_the_rule` (7) |
+| every timeout key's range stays under `commands.maxTimeoutHours`' minimum | `…Every_timeout_key_stays_under_the_commands_maximum` |
+| a machine value reaches the code it bounds: a read command's ceiling, a keyed template's (read when a request is built), a fixed read template that follows its command, the Docker batch, the unit stop template, the heartbeat and wedged times, the walk's limits, `CommandRequest.MaxTimeout`; outside the scope the defaults are back | `…A_machine_value_reaches_the_command_the_wait_and_the_walk_it_bounds` (the templates read under the defaults FIRST) |
+| the defaults are today's values (behaviour unchanged) | `…A_default_is_todays_value_so_behaviour_is_unchanged` |
+| N-6: a sentence says the number in force — A11 / A18's grace, A14's "newest N", the retention's days, the drift's minutes, the root-disk and fragmentation limits | `…A_sentence_says_the_number_in_force_not_a_copy_of_the_default`; `ClockFixTests.A_correction_less_than_an_hour_ago_…` reads "less than 60 minutes ago" |
+| N-5: a capped read refuses one byte past its cap and reads a file at it; an uncapped read is bounded by `records.maxHistoryBytes`; the dry-run stamp past `records.maxStateFileBytes` is unreadable and the week restarts | `Files/PhysicalFileSystemTests.A_capped_read_refuses_one_byte_past_the_cap_…`, `…An_uncapped_read_is_bounded_by_records_maxHistoryBytes`, `…A_dry_run_stamp_past_the_state_cap_…`; the read-site table (`ArchitectureTests.ReadSites`) holds doctor's drop-in read as a system read |
+| N-4: every `oneshot` unit's `TimeoutStartSec` is `infinity`, a `simple` unit sets none | `Scenarios/ShippedFilesTests.Every_unit_s_start_limit_is_infinity_or_above_the_worst_case_of_its_run` |
+| the drop-in of the defaults says what each shipped unit file says; under a changed machine layer it carries the configured period, Nice, MemoryMax, TimeoutStopSec, RestartSec, and the two root services' drop-ins are equal | `ShippedFilesTests.The_drop_in_of_the_defaults_says_what_each_shipped_unit_says`, `…A_drop_in_carries_the_configured_values` |
+| `units dropin <unit>` renders the machine layer's values; another unit is refused naming the four | `Cli.Tests/UnitsCommandTests` (2) |
+| `install.sh` writes each unit's drop-in from the INSTALLED binary (0644, before any unit is enabled), a drop-in the binary cannot render fails the install at `install-units`, the dry run names each, the uninstall removes each and its emptied folder | `InstallFlows.A_fresh_install_…` (four `units dropin` calls before `collect`), `…A_drop_in_the_binary_cannot_render_fails_the_install_before_any_unit_is_enabled`, `…Dry_run_…`, `InstallUninstallFlows.Uninstall_removes_the_units_binary_and_link_…` |
+| `doctor`'s `unitConfig`: a timer drop-in that no longer matches the machine layer is a `problem` naming `OnCalendar=*-*-* 00/6:00:00` and "run install.sh again"; matching drop-ins, and none under the defaults, are `ok` | `Doctor/DoctorTests.A_timer_drop_in_that_no_longer_matches_…`, `…Drop_ins_that_match_and_none_at_all_under_the_defaults_are_both_fine` |
+| `status --json` publishes `limits` — the values in force, the machine layer's when set | `Cli.Tests/UnitsCommandTests.Status_json_publishes_the_limits_in_force` |
+| `contracts/status-limits.json` carries the two names PR #12's `daemonLimits.ts` reads, and the daemon's JSON writer spells every field as the contract does, in its order | `Scenarios/ContractFilesTests.The_status_limits_contract_carries_the_names_the_extension_reads_and_the_writer_spells_them`; the equality test regenerates the file |
+
+**Red first:** the structural test was red with **230 hits** before the migration (the scan's list, classified hit by hit
+into a key or a reasoned format). The migration itself was red for a REAL defect: **607 Core tests failed** with *ValueFactory
+attempted to access the Value property of this instance* — the configuration's own key patterns read `Tuning` while `Tuning`'s
+defaults were being loaded; the fix is the bootstrap rule (the patterns are bounded by the key's maximum). The rest was written
+with its code and proved by the teeth below. Test-side defects met on the way: the doctor test's machine layer was refused on
+Linux (a sandbox file is not root's — the test now trusts the sandbox owner, as `SandboxHost` does); `ClockFixTests` expected
+the old sentence "less than an hour ago".
+
+**Teeth** (each file restored byte-identical; Windows Debug unless named):
+
+| Mutation | Red |
+|---|---|
+| `CommandLimits.Keyed` reads the defaults instead of the configuration | 1: *Expected 1m and 1s … but found 15m* |
+| a fixed read template freezes its command's limits | 0 at first — the template was first touched INSIDE the scope; the test now reads the templates under the defaults first: 1, *Expected 6s … found 20s* |
+| the heartbeat back to `static readonly TimeSpan … = TimeSpan.FromSeconds(5)` | 1: the scan names `RunningState.cs: HeartbeatPeriod` |
+| the physical capped read never refuses | 2 (the cap, the history bound) |
+| the dry-run window reads its stamp uncapped | 1: the week did not restart |
+| A11's summary back to "10 s" | 1: *… to contain "SIGKILL after 20 s"* |
+| `wsl-care.service` back to `TimeoutStartSec=10min` | 1 (`ShippedFilesTests`) |
+| the period-divides-24 rule dropped | 1: the period 5 loaded |
+| a `limits` field renamed (`retentionDays`) | 2: the extension's names, the checked-in contract |
+| `unitConfig` never a problem | 1 |
+| `Program.Run` scoped to the defaults instead of the loaded configuration | 1: the drop-in kept `00/4` |
+| `status` without `limits` | 1 |
+| `install.sh` without `write_dropins` (WSL) | 3: the fresh install, the dry run, the failing render |
+| the uninstall leaving the drop-ins (WSL) | 0 at first — no test looked; the uninstall test now asserts each `<unit>.d` is gone: 1 |
+
+**Goldens:** the seven `status*.json` gained `limits`, `doctor.json` gained `unitConfig`; `contracts/config-keys.json` (126 new
+keys) and the new `contracts/status-limits.json` regenerated.
+
+### The E7.S2b/S2c review round (2026-10-06, plan §15q *E7.S2b/S2c review round*)
+
+| Finding | Tests |
+|---|---|
+| A-H1: a manual A18 run without the processes its modal showed is refused; with them it ends only those still eligible; the preview answers `pid:start`; `--process` belongs to A18 and holds only `pid:start`; a detached run carries `shownProcesses` and a request with a bad one is refused | `Core.Tests/Actions/AgentOrphansTests.A_button_run_without_the_processes_its_modal_showed_is_refused`, `…A_button_run_ends_only_the_still_eligible_processes_its_modal_showed`, `…The_preview_answers_its_processes_as_pid_and_start_keys`; `Cli.Tests/ActCommandTests.A_shown_process_list_belongs_to_a18_…` (5), `…A_shown_process_list_parses_beside_a4_s_volumes`; `DetachedRunsTests.A_detached_a18_run_carries_its_shown_processes_into_the_request`; `RunRequestsTests` (the `shown process` case) |
+| A-M1, A-M2: a wrapper with a child, a process systemd --user started — kept | `AgentOrphansTests.A_wrapper_with_a_child_process_is_kept`, `…A_process_the_users_systemd_manager_started_is_not_an_orphan` |
+| A-M3: only a program that resolves into the agent's own install (native versions folder; node + the npm package's link chain) | `…Only_a_program_that_resolves_into_the_agents_own_install_is_that_agent` (4) |
+| A-M4: a wall-clock jump does not pass the window (the shorter clock counts); a gap breaks the chain, and stays in it | `…A_wall_clock_jump_after_a_host_sleep_does_not_pass_the_idle_window`, `…A_gap_in_the_cpu_history_breaks_the_chain` (the clock: `ManualTimeProvider { SteppedTimestamps = true }`, `JumpWallClock`) |
+| A-M5: no session found = cannot tell; a moved agent home keeps the process; the agent's own folder named explicitly does not | `…No_session_found_is_cannot_tell_and_a_moved_agent_home_keeps_the_process` |
+| A-L1: the history is 0600, past the cap the oldest go, a full one fits its cap | `…The_cpu_history_is_private_to_root` (Linux), `…The_cpu_history_is_root_state_bounded_and_pruned_to_live_processes` |
+| A-L2: an account changed since the preview is not signalled | `…A_process_whose_account_changed_since_the_preview_is_not_signalled` |
+| A-L3: a hanging device stat while choosing the folders is inside the lookup's one ceiling | `Agents/AgentsReviewRoundTests.A_hanging_device_question_while_choosing_the_folders_is_inside_the_lookup_s_one_ceiling` |
+| the gap: a tool's cache in a `~/git` or Claude's temp folder is refused | `UserCacheTests.A_tools_cache_answer_inside_a_git_or_claude_temp_folder_is_refused` (2) |
+| C-H1, C-M7: a history past its cap is a problem — no reconcile line, every request kept, the rewrite refused and the file kept | `Records/HistoryCapTests` (3, a real 64 MiB + 1 history) |
+| C-H2: a beating run with no step for the window is wedged (and `act --stop` is named); a step moves the progress time, a beat alone does not; the timer's unit has a finite limit above the derived worst case, the act unit `infinity` | `Status/RunningReportsTests.A_beating_run_that_made_no_step_for_the_watchdog_window_is_wedged`, `Actions/RunProgressTests` (2); `Scenarios/ShippedFilesTests.Every_unit_s_start_limit_is_infinity_or_above_the_worst_case_of_its_run`, `…A_drop_in_carries_the_configured_values`; the rules: `NumbersAreConfigurationTests.Coupled_limits_…` (`timer.runLimitMinutes`, `running.noProgressMinutes`), `…The_defaults_hold_every_coupled_rule` |
+| C-M1: a user value that breaks a rule is a notice, the value below in force; `config set` refuses it | `NumbersAreConfigurationTests.A_user_value_that_breaks_a_rule_is_a_notice_and_the_value_below_stays_in_force`; `Cli.Tests/UnitsCommandTests.Config_set_refuses_a_value_that_would_break_a_rule_with_the_machine_layer` |
+| C-M2: a machine value that breaks a rule is an error and not in force; `units dropin` refuses (78) | `…A_machine_value_that_breaks_a_rule_is_an_error_and_not_in_force`; `UnitsCommandTests.A_drop_in_is_refused_while_the_configuration_is_in_error` |
+| C-M3: the composed event-stream ceiling stays under the maximum at every value the ranges allow | `…Every_composed_command_ceiling_stays_under_the_commands_maximum` |
+| C-M4: `config set` keeps the cap its reader keeps | `UnitsCommandTests.Config_set_keeps_the_user_layer_under_the_cap_in_force` |
+| C-M5: the summary reads only the last 24 h of day files; the retention is machine-only, ≤ 90 | `Events/StartsSummaryReadTests` (2) |
+| C-M6: the three new coupled rules | `Coupled_limits_…` (`timer.lateSlackMinutes`, `agentCpu.maxBytes`, `requests.maxBytes`) |
+| C-M8: a binary without the drop-in verb installs with no drop-ins, said, the stale one removed | `InstallFlows.A_binary_without_the_drop_in_verb_installs_without_drop_ins_and_says_so` (Linux) |
+| C-M9: five more literal shapes, each planted | `ArchitectureTests.Numbers.The_number_scan_finds_a_planted_literal_of_every_shape` |
+
+**Red first:** these were written beside their fixes; each was proved by reverting its load-bearing line (the teeth below). Met
+red on the way: a full A18 history with both clocks is **157 072 bytes**, over the 128 KiB cap (the cap is 256 KiB now, held by a
+rule); two Linux-only test defects (the no-session test met a missing sessions folder, which reads "cannot tell"; the cap test's
+folders were made outside the distro view).
+
+**Teeth** (each file restored byte-identical; Windows Debug unless named):
+
+| Mutation | Red |
+|---|---|
+| the manual-run refusal dropped / the narrowing to the shown keys dropped | 1 / 1 |
+| the child rule, the pid-1 rule, the install rule dropped | 1, 1, 3 |
+| the wall clock alone; the dense-chain check dropped | 1; 1 |
+| the no-session branch; the environment check | 1; 1 |
+| the account compared as "not root" only | 1 |
+| the history keeping the oldest (highest-start dropped) | 1 |
+| the lookup's ceiling one minute | 1: *found 4 s* |
+| the cache answer checked against agent folders only | 2 |
+| `--process` without A18 accepted; a bad request key accepted; the request written without `shownProcesses` | 1; 1; 1 |
+| the history file written 0644 (WSL) | 1 |
+| the reconcile / the sweep ignoring the history problem; the rewrite taking an unreadable file as empty | 1; 1; 1 |
+| the rules not held per layer / a user break as an error / the take-back dropped | 14 / 1 / 2 |
+| the late-slack rule, the run-limit rule | 1, 1 |
+| a beat stamping progress without a step; the reader ignoring progress | 1; 1 |
+| the service drop-in without `TimeoutStartSec` | 1 |
+| the writer's cap the range maximum; `config set` not evaluating the rules; `units dropin` rendering an invalid configuration | 1; 1; 1 |
+| the summary reading every day file; the starts retention user-layer | 1; 1 |
+| `install.sh` failing on 2 / 78 (WSL) | 1 |
+| the comparison shape dropped from the scan | 2 (the planted one, and an allowlisted entry now stale) |
+
+### The coai E7 code round (2026-10-06, plan §15q *coai E7 code round*)
+
+| Finding | Tests |
+|---|---|
+| #1–#3 (refactors: the act option dispatch, the closed sizes / session views) | unchanged: `ActCommandTests` (parsing), `AgentsCommandTests` and `AgentsFlows` (the text form) — green |
+| #4: the parser holds the range maximum; the verb holds the value in force | `Cli.Tests/UnitsCommandTests.The_shown_list_cap_in_force_is_held_by_the_verb_and_the_parser_holds_the_range_maximum` |
+| #5: the dropped manual-agent folders are notices of the load | `AgentsCommandTests.S1_…` (the notice), `…Without_manual_agents_the_second_phase_is_the_same_host` |
+| #6: an empty drop-in answer is never installed | `InstallFlows.An_empty_drop_in_answer_is_never_installed` (Linux) |
+| #7: `agents list --measure` says on stderr what it walks; stdout is the JSON | `UnitsCommandTests.Agents_list_measure_says_what_it_walks_on_stderr_and_leaves_the_json_alone` |
+| #8: the interop explanation once, each key the short fact | `Config/UserLayerTrustTests.With_interop_disabled_a_user_value_can_only_tighten_root`; `Scenarios/ConfigTrustFlows`, `ConfigReviewRoundFlows` |
+
+**Teeth:** the verb's cap check dropped — 1 red; the notices not added — 3; the per-folder line dropped — 1; the pre-walk line
+without its budget — 1; the explanation per key again — 1; the empty-answer check dropped (WSL) — 1. Each file restored
+byte-identical.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -1465,6 +1930,10 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care config set <key> <value>` over a broken user layer: `config get` still answers, observe-only on stderr and in the JSON (`configError` naming the file); `set` repairs it, moves the bad file to `config.json.broken-*`, and the next `get` is valid | covered | `ConfigFlows.A_broken_user_layer_is_reported_observe_only_and_config_set_repairs_it` |
 | `wsl-care config reset <key>`: the key leaves the user file and `get` names `(default)` again | covered | `ConfigFlows.Config_reset_removes_the_key_from_the_user_layer_and_get_names_default_again` |
 | control characters typed into a key (`config get` / `set` / `reset`) or read from the user layer never reach stderr raw: one `wsl-care:` message per refusal, no unexplained line, no control character but the console sink's colour | covered | `ControlCharacterFlows.Control_characters_typed_into_a_key_or_read_from_the_user_layer_never_reach_stderr_raw`; also `ControlCharacterTests`, `OutputRoadTests`; AOT binary (`win-x64`): smoke by hand 2026-10-02 |
+| `wsl-care config set processes.families testhost,other` refused (plan §15q R1.3, review B1): exit 2, one message naming the key, the stranger and the allowed families; nothing written | covered | `ConfigTrustFlows.Config_set_refuses_a_family_list_that_would_widen_A11_and_writes_nothing`; also `ConfigKeyClosureTests` |
+| `wsl-care config set archive.baseFolder <path>` refused: a machine-only key, the machine layer named, nothing written | covered | `ConfigTrustFlows.Config_set_refuses_a_machine_only_key_naming_the_machine_layer` |
+| root (claimed) reading the target user's layer WITH interop: their values taken, no notice | covered | `ConfigTrustFlows.With_interop_a_root_run_takes_the_target_users_layer_as_their_intent` (Linux legs) |
+| root (claimed) reading the target user's layer WITHOUT interop: only tightening values taken, `config get --json` and `status --json` carry `configNotices` naming interop and the machine layer; `status` carries `userLayerDigest` | covered | `ConfigTrustFlows.Without_interop_a_root_run_takes_only_the_tightening_values_and_every_answer_says_why` (Linux legs) |
 | no `config` verb starts any tool: every config verb's example, a refused set, a broken layer and its repair leave the fakes' argv log empty | covered | `ConfigFlows.No_config_verb_starts_any_tool`; the log is proved alive by `FakeToolFlows` |
 | every registered verb's `Example` runs against the built CLI: exit 0 or 2, never 70 | covered | `VerbRegisterTests.Every_registered_verb_runs_its_example_against_the_built_cli_without_crashing` (one case per verb, derived) |
 | `wsl-care status [--json]` over the captured procfs tree (Linux): exit 0 in under 2 s wall clock (measured around the process, after one unmeasured warm-up start), `schemaVersion`, the fixture's `MemTotal`, 10 containers, 51 processes, a cwd read through a real symlink, `df` available — and the fakes' argv log EMPTY with `docker` and `powershell` on the `PATH` (plan §15b #5) | covered (Linux legs; skipped on Windows with the reason) | `StatusFlows.Status_json_over_the_captured_procfs_answers_within_the_budget_and_starts_no_slow_process`; in-process on every OS: `StatusCommandTests`; AOT binary: CI status smoke (Linux over the same tree) |
@@ -1498,19 +1967,19 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care events follow [--once]` over an idle engine that did not restart (the last marker's bridge, an EMPTY buffer): exit 0, `0 start(s), 0 gap marker(s)`, no gap marker, the new `covered` marker carries the engine, `docker network inspect bridge` among the read verbs, `starts-summary.json` written | covered | `EventsFlows.Once_over_an_idle_engine_that_did_not_restart_writes_no_gap_and_records_the_engine_on_its_marker`; rules: `CoverageTests` |
 | `wsl-care events follow [--once]` with the daemon down: exit 0, the reason printed, no gap marker (a gap is known only once Docker answers), only the version probe run | covered | `EventsFlows.Once_with_the_daemon_down_exits_zero_names_why_and_writes_no_gap` |
 | `wsl-care events follow [--once]` followed live (Linux): the socket down then up waited for IN-PROCESS (one 5 s wait), ONE gap marker, a live start in the day file while the stream is open, SIGTERM → exit 0 with the stop marker carrying how far coverage reached | covered (Linux legs; skipped on Windows with the reason) | `EventsFlows.Followed_live_it_waits_for_the_socket_in_process_records_a_start_and_stops_clean_on_SIGTERM`; on every OS in-process: `EventsFollowerTests` (the 5 → 10 → 20 s backoff on a moved clock), `FullRunCommandTests.Events_follow_stopped_by_a_signal_exits_zero_with_its_stop_marker` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` unprivileged: exit 77, ONE `needs root` message, empty stdout, no running.json / history line / dry-run stamp / run detail / lock file, no tool started | covered (skipped for a root or elevated account, with the reason) | `ActFlows.An_unprivileged_act_is_refused_whole_and_leaves_no_state_no_lock_and_no_command_behind`; in-process: `ActCommandTests.An_unprivileged_act_is_refused_whole_before_the_lock_or_any_state_is_touched` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `--preview` with root claimed in the sandbox: previewed from the fake journalctl's `--disk-usage`, nothing written; on the Windows binary exit 2 naming the distro side | covered | `ActFlows.With_root_claimed_a_preview_reads_the_journal_s_size_and_writes_nothing`; in-process: `ActCommandTests`; AOT binary (`win-x64`): smoke by hand 2026-10-02 |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `--confirm` with root claimed: A10 runs through the fake (`--disk-usage`, then `--vacuum-time=30d`), detail then history line, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.With_root_claimed_a_confirmed_act_runs_a10_through_the_fake_and_records_detail_then_history`; on every OS in-process: `ActCommandTests.A_confirmed_act_runs_records_and_answers_with_the_measured_result`, `JournalVacuumTests`, `ActionEngineTests` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` while the run lock is held: `act` 75, `collect` 75, nothing recorded — ONE lock for both | covered (`collect` on both families, `act` on the Linux legs) | `ActFlows.One_lock_for_collect_and_act_the_second_one_refuses_with_75_and_waits_for_nothing`; in-process: `ActionEngineTests.A_full_run_started_while_an_act_holds_the_lock_is_busy_one_lock_for_both`, `ActCommandTests` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` meeting a wedged run (76), an action that fails (3), an invalid layer (78), an unbuilt or other-side action (2), the timer's gates and dry run | covered (in-process) | `ActCommandTests`, `ActionEngineTests`; not staged against the built binary: a live wedged process and the systemd timer cannot be made on cue there |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `--preview` of EVERY action this build holds (derived from the registry) over the CAPTURED Docker, root claimed, a target user with no tool installed: exit 0, every id answered, A4 previews the three captured volumes, A8 is a skip naming npm, every docker call a read verb, no state written; the Windows binary exits 2 | covered (Linux legs; Windows: the exit-2 half) | `ActFlows.A_preview_of_every_action_this_build_holds_answers_each_from_live_state_and_starts_only_read_commands`; AOT binary: CI act smoke (every RID) |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `A4 --confirm --manual --volume <one>` over the captured Docker: exit 0, the fake saw exactly `docker volume rm <that one>`, freed = its captured `df -v` size, the key never serialised, the history line's trigger `manual` | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.A_button_run_of_a4_removes_only_the_volume_the_panel_showed_records_the_manual_trigger_and_freed_from_the_confirmed_one`; in-process: `DockerCleanupTests`, `ActCommandTests` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `A4 --preview` over 387 SYNTHETIC anonymous volumes (`SyntheticDocker`), root claimed: exit 0, count 387, 20 `items`, `shown` = all 387 names (each 64-hex), no state written | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.A4s_preview_over_387_volumes_carries_all_387_names_it_selected_and_writes_nothing`; in-process: `DockerCleanupTests.A4s_preview_outcome_carries_every_selected_name_as_shown_and_no_other_actions_outcome_carries_one`, `…A4s_shown_list_is_every_target_key_in_order_capped_at_the_most_a_shown_list_carries` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `--confirm` cut off by SIGHUP while its vacuum runs (a fake `journalctl` that waits 60 s): exit 130, ONE history line `interrupted` whose reason names SIGHUP, its detail written, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.A_confirm_cut_off_by_SIGHUP_records_itself_interrupted_with_a_detail_naming_the_signal` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` with `--manual` AND `--timer`: exit 2, ONE message saying "not both", no tool started, no state | covered | `ReadContractFlows.Manual_and_timer_together_are_refused_before_anything_is_touched`; in-process: `ActCommandTests.Manual_and_timer_together_are_refused_naming_both`; `productVersion` on every act answer: `ActCommandTests.Every_act_answer_names_the_product_version_exactly_as_version_prints_it` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `A10 --confirm --manual --detach --json` with root claimed and a fake `systemctl`: exit 0, `accepted` with the run id and `wsl-care-act@<runId>.service`, the fake saw exactly `systemctl start --no-block <that unit>`, ONE request file named for the run — then `act --request <runId>` (as systemd would start it) records ONE `completed` line under THAT run id, trigger `manual`, the request gone, no running.json | covered (Linux legs; skipped on Windows with the reason) | `DetachFlows.An_accepted_detach_starts_its_unit_and_the_unit_s_request_run_records_under_the_answered_run_id`; in-process: `DetachedRunsTests.A_confirmed_detach_writes_the_request_starts_its_unit_and_answers_accepted_at_once` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `--detach` refusals: no systemd (`/run/systemd/system` absent) exit 69 and nothing written, never a synchronous run; a run queued within its grace (75), wedged (76), an unreadable `running.json` (79), another run holding the lock (75 / 76); an orphaned request past its grace or an unusable one swept first and the detach accepted; a timed-out start asking the unit (accepted / 71 / `unknown`); the request folder at its budget of 32 (73); a unit that will not start: the request removed, exit 71; unprivileged (77); `--detach` with `--preview` or `--timer` (2) | covered | `DetachFlows.Without_systemd_a_detach_is_refused_with_69_and_nothing_is_written_or_started` (every OS); in-process: `DetachedRunsTests` (`Without_systemd_…`, `A_detach_while_a_run_is_queued_…`, `A_detach_meeting_a_wedged_run_…`, `A_detach_meeting_an_unreadable_running_json_…`, `A_detach_records_an_unusable_request_refused_…`, `A_detach_sweeps_an_orphaned_request_…`, `A_detach_while_another_run_holds_the_lock_…`, `A_timed_out_start_asks_the_unit_…`, `A_full_request_folder_…`, `A_unit_that_will_not_start_…`, `An_unprivileged_detach_…`, the parse theory) |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]` `A4 --confirm --detach --only -`: 10 000 names on stdin reach the request's `shown`; 10 001 names, 1 MiB + 1 bytes, a bad line (refused by its NUMBER, never echoed) and a stdin with no end within the ceiling (10 s; 0.3 s in the test) all exit 2 with nothing written | covered (in-process) | `DetachedRunsTests.Ten_thousand_names_on_stdin_…`, `Stdin_past_the_count_or_the_byte_cap_…`, `A_bad_line_on_stdin_…`, `Stdin_with_no_end_within_the_ceiling_…`; the relay through `wsl.exe` measured, not tested: facts note row 20 |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` unprivileged: exit 77, ONE `needs root` message, empty stdout, no running.json / history line / dry-run stamp / run detail / lock file, no tool started | covered (skipped for a root or elevated account, with the reason) | `ActFlows.An_unprivileged_act_is_refused_whole_and_leaves_no_state_no_lock_and_no_command_behind`; in-process: `ActCommandTests.An_unprivileged_act_is_refused_whole_before_the_lock_or_any_state_is_touched` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--preview` with root claimed in the sandbox: previewed from the fake journalctl's `--disk-usage`, nothing written; on the Windows binary exit 2 naming the distro side | covered | `ActFlows.With_root_claimed_a_preview_reads_the_journal_s_size_and_writes_nothing`; in-process: `ActCommandTests`; AOT binary (`win-x64`): smoke by hand 2026-10-02 |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--confirm` with root claimed: A10 runs through the fake (`--disk-usage`, then `--vacuum-time=30d`), detail then history line, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.With_root_claimed_a_confirmed_act_runs_a10_through_the_fake_and_records_detail_then_history`; on every OS in-process: `ActCommandTests.A_confirmed_act_runs_records_and_answers_with_the_measured_result`, `JournalVacuumTests`, `ActionEngineTests` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` while the run lock is held: `act` 75, `collect` 75, nothing recorded — ONE lock for both | covered (`collect` on both families, `act` on the Linux legs) | `ActFlows.One_lock_for_collect_and_act_the_second_one_refuses_with_75_and_waits_for_nothing`; in-process: `ActionEngineTests.A_full_run_started_while_an_act_holds_the_lock_is_busy_one_lock_for_both`, `ActCommandTests` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` meeting a wedged run (76), an action that fails (3), an invalid layer (78), an unbuilt or other-side action (2), the timer's gates and dry run | covered (in-process) | `ActCommandTests`, `ActionEngineTests`; not staged against the built binary: a live wedged process and the systemd timer cannot be made on cue there |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--preview` of EVERY action this build holds (derived from the registry) over the CAPTURED Docker, root claimed, a target user with no tool installed: exit 0, every id answered, A4 previews the three captured volumes, A8 is a skip naming npm, every docker call a read verb, no state written; the Windows binary exits 2 | covered (Linux legs; Windows: the exit-2 half) | `ActFlows.A_preview_of_every_action_this_build_holds_answers_each_from_live_state_and_starts_only_read_commands`; AOT binary: CI act smoke (every RID) |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `A4 --confirm --manual --volume <one>` over the captured Docker: exit 0, the fake saw exactly `docker volume rm <that one>`, freed = its captured `df -v` size, the key never serialised, the history line's trigger `manual` | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.A_button_run_of_a4_removes_only_the_volume_the_panel_showed_records_the_manual_trigger_and_freed_from_the_confirmed_one`; in-process: `DockerCleanupTests`, `ActCommandTests` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `A4 --preview` over 387 SYNTHETIC anonymous volumes (`SyntheticDocker`), root claimed: exit 0, count 387, 20 `items`, `shown` = all 387 names (each 64-hex), no state written | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.A4s_preview_over_387_volumes_carries_all_387_names_it_selected_and_writes_nothing`; in-process: `DockerCleanupTests.A4s_preview_outcome_carries_every_selected_name_as_shown_and_no_other_actions_outcome_carries_one`, `…A4s_shown_list_is_every_target_key_in_order_capped_at_the_most_a_shown_list_carries` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--confirm` cut off by SIGHUP while its vacuum runs (a fake `journalctl` that waits 60 s): exit 130, ONE history line `interrupted` whose reason names SIGHUP, its detail written, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.A_confirm_cut_off_by_SIGHUP_records_itself_interrupted_with_a_detail_naming_the_signal` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` with `--manual` AND `--timer`: exit 2, ONE message saying "not both", no tool started, no state | covered | `ReadContractFlows.Manual_and_timer_together_are_refused_before_anything_is_touched`; in-process: `ActCommandTests.Manual_and_timer_together_are_refused_naming_both`; `productVersion` on every act answer: `ActCommandTests.Every_act_answer_names_the_product_version_exactly_as_version_prints_it` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `A10 --confirm --manual --detach --json` with root claimed and a fake `systemctl`: exit 0, `accepted` with the run id and `wsl-care-act@<runId>.service`, the fake saw exactly `systemctl start --no-block <that unit>`, ONE request file named for the run — then `act --request <runId>` (as systemd would start it) records ONE `completed` line under THAT run id, trigger `manual`, the request gone, no running.json | covered (Linux legs; skipped on Windows with the reason) | `DetachFlows.An_accepted_detach_starts_its_unit_and_the_unit_s_request_run_records_under_the_answered_run_id`; in-process: `DetachedRunsTests.A_confirmed_detach_writes_the_request_starts_its_unit_and_answers_accepted_at_once` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--detach` refusals: no systemd (`/run/systemd/system` absent) exit 69 and nothing written, never a synchronous run; a run queued within its grace (75), wedged (76), an unreadable `running.json` (79), another run holding the lock (75 / 76); an orphaned request past its grace or an unusable one swept first and the detach accepted; a timed-out start asking the unit (accepted / 71 / `unknown`); the request folder at its budget of 32 (73); a unit that will not start: the request removed, exit 71; unprivileged (77); `--detach` with `--preview` or `--timer` (2) | covered | `DetachFlows.Without_systemd_a_detach_is_refused_with_69_and_nothing_is_written_or_started` (every OS); in-process: `DetachedRunsTests` (`Without_systemd_…`, `A_detach_while_a_run_is_queued_…`, `A_detach_meeting_a_wedged_run_…`, `A_detach_meeting_an_unreadable_running_json_…`, `A_detach_records_an_unusable_request_refused_…`, `A_detach_sweeps_an_orphaned_request_…`, `A_detach_while_another_run_holds_the_lock_…`, `A_timed_out_start_asks_the_unit_…`, `A_full_request_folder_…`, `A_unit_that_will_not_start_…`, `An_unprivileged_detach_…`, the parse theory) |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `A4 --confirm --detach --only -`: 10 000 names on stdin reach the request's `shown`; 10 001 names, 1 MiB + 1 bytes, a bad line (refused by its NUMBER, never echoed) and a stdin with no end within the ceiling (10 s; 0.3 s in the test) all exit 2 with nothing written | covered (in-process) | `DetachedRunsTests.Ten_thousand_names_on_stdin_…`, `Stdin_past_the_count_or_the_byte_cap_…`, `A_bad_line_on_stdin_…`, `Stdin_with_no_end_within_the_ceiling_…`; the relay through `wsl.exe` measured, not tested: facts note row 20 |
 | `wsl-care act --request <runId>` meeting the run lock (the timer holds it): exit 75, ONE `refused` history line under the run id naming `busy:`, the request removed — never a silent busy; under an invalid layer: a `refused` line, exit 78 | covered (Linux legs for the built binary) | `DetachFlows.A_request_whose_unit_meets_the_timer_s_lock_records_refused_and_removes_itself`; in-process: `DetachedRunsTests.A_request_that_meets_the_lock_is_recorded_refused_…`, `A_request_under_an_invalid_configuration_…` |
 | `wsl-care act --request <runId>` with no request: exit 80, a named no-op, no history line; with a request whose content root never writes, or one planted group-writable (Linux): exit 2 through the hardened reader, nothing run; a request of kind `collect`: a full run recorded under its id; while its run acts, running.json stands and the request is already gone; it sweeps another stale request whose unit is gone before it runs | covered (in-process) | `DetachedRunsTests.A_missing_request_is_a_named_no_op_…`, `A_request_whose_run_already_recorded_itself_…`, `A_request_whose_content_is_not_what_root_writes_…`, `A_planted_group_writable_request_…`, `A_collect_request_records_…`, `While_a_request_s_run_acts_…`, `A_request_sweeps_another_stale_request_…`; Core: `DetachedRunTests` |
 | `wsl-care act --request <runId>` whose child never exits (a fake `journalctl --disk-usage` that sleeps 10 min): the step ends at its OWN 15 s ceiling (tree kill), the run still records ONE line under its id, the request goes, the lock is released (plan §15k #0) | covered (Linux legs) | `DetachFlows.A_child_that_never_exits_is_ended_by_its_own_ceiling_and_the_detached_run_still_records_and_releases_the_lock` |
@@ -1525,7 +1994,9 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care runs show <runId> [--json]` of a confirmed act (root claimed, the fake journalctl): exit 0, `done`, the detail `present`, A10's command `journalctl --vacuum-time=30d` with exit 0, the act's note that it swept a dead run; of that dead run (a `running.json` staged with a pid no process has): `interrupted` naming the gone pid; of a run id nothing names: `unknown`; every answer exit 0, `schemaVersion` 1 | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.Runs_show_answers_a_confirmed_act_done_the_run_it_swept_interrupted_and_a_stranger_unknown`; in-process on every OS: `RunShowTests` (done with removed / not-removed / commands and exits, a full run's timer pass, a lost detail, interrupted, refused, running, a dead holder = interrupted and NOT swept, queued from a request, history first, unknown), `ReadContractCommandTests.Runs_show_*` (parse, a malformed run id refused, text) |
 | `wsl-care runs show <runId> [--json]` of a QUEUED run (a request file E6.S1 will write) and of a RUNNING one (a live holder of `running.json`) | covered (in-process) | `RunShowTests.A_run_named_only_by_a_request_is_queued_with_its_request_counted_not_repeated`, `RunShowTests.A_run_holding_running_json_with_a_live_process_is_running_with_its_running_block`; against the built binary: `DetachFlows` (E6.S1), whose `--detach` writes the requests |
 | `wsl-care runs log <runId>` | not covered | CUT by plan §15j M3: `runs show` answers the commands a run ran and their exits |
-| `wsl-care agents list` / `agents probe <path>` | not covered | not built yet (E7) |
+| `wsl-care agents list [--measure] [--json]` with `--measure` over a planted Claude Code folder and a fake `claude` on PATH: exit 0, `schemaVersion` 1, `sizes.source` `now`, the agent detected by binary and folder, 100 bytes (its `memory/` never entered, named in `excluded`), one session counted and named, the version "not asked", and the fake never started; the text form; an unknown option refused (2); before a full run `none` with how to measure, after a `collect` the run's totals with no session name, no recorded file naming a session | covered (the full-run flow on the Linux legs; skipped on Windows with the reason) | `AgentsFlows` (4); in-process: `Agents/AgentCatalogueTests`, `AgentDiscoveryTests`, `AgentWalkTests`, `AgentNoOpenTests` (Linux); golden `agents-list.json` |
+| `wsl-care agents probe <path> [--json]` as root: exit 81 (`NotAsRoot`), nothing on stdout, the refusal naming uid 0 and the default-user fix; of a CLI (the fake tool at `~/.local/bin/mycli` with an execute bit): exit 0, usable, the suggested entry with `~/.mycli`, and the CLI never started; a path of the wrong shape refused (2) | covered (the CLI probe on the Linux legs; the root refusal on every OS) | `AgentsExtraFlows` (2 facts); in-process: `AgentsCommandTests` (root, shape, JSON), `Agents/AgentProbeTests` (incl. the inotify no-open proof, Linux) |
+| `wsl-care units dropin <unit>` (E7.S2c): the drop-in `install.sh` writes for one of the four units, from the machine layer — the timer's `OnCalendar` from `timer.periodHours`, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec; another unit refused (2) naming the four | covered (in-process, every OS; the installer's use on the Linux legs) | `Cli.Tests/UnitsCommandTests` (2); `ShippedFilesTests.The_drop_in_of_the_defaults_…`, `…A_drop_in_carries_the_configured_values`; `InstallFlows` (the render before any unit is enabled, its failure) |
 | `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |
 | `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, the three units byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
 | `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |

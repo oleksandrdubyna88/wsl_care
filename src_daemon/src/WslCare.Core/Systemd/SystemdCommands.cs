@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 using WslCare.Core.Processes;
@@ -32,31 +33,32 @@ public static class SystemdCommands
     /// <summary>The unit properties <see cref="SystemdUnit"/> reads.</summary>
     public const string UnitProperties = "Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState";
 
-    private const int Cap = 1024 * 1024;
-    private const int SearchCap = 4 * 1024 * 1024;
+    private static int Cap => Tuning.Current.Int(ConfigKeys.Systemd.OutputCapBytes);
 
-    public static readonly TimeSpan Ceiling = TimeSpan.FromSeconds(15);
+    private static int SearchCap => Tuning.Current.Int(ConfigKeys.Systemd.SearchOutputCapBytes);
+
+    public static TimeSpan Ceiling => Tuning.Current.Seconds(ConfigKeys.Systemd.TimeoutSeconds);
 
     /// <summary>A journal search reads every entry since the instant (the clock-jump search reads ~1 700 matching
-    /// lines a day, measured 2026-10-02: 871 in 2.6 h of uptime); it gets 30 s.</summary>
-    public static readonly TimeSpan SearchCeiling = TimeSpan.FromSeconds(30);
+    /// lines a day, measured 2026-10-02: 871 in 2.6 h of uptime); it gets <c>systemd.searchTimeoutSeconds</c>.</summary>
+    public static TimeSpan SearchCeiling => Tuning.Current.Seconds(ConfigKeys.Systemd.SearchTimeoutSeconds);
 
     /// <summary><c>journalctl --disk-usage</c>: how much the journal holds (plan §4.5, A10's trigger).</summary>
-    public static ToolCommand JournalDiskUsage { get; } = new(Journalctl, "journalctl-disk-usage", ["--disk-usage"], Ceiling, Cap);
+    public static ToolCommand JournalDiskUsage => new(Journalctl, "journalctl-disk-usage", ["--disk-usage"], Ceiling, Cap);
 
     /// <summary><c>journalctl --list-boots</c> as JSON (systemd ≥ 252): the first entry of the oldest boot is the
     /// oldest entry the journal holds — how long its history is (plan §4.5, F4: clock jumps erase it).</summary>
-    public static ToolCommand ListBoots { get; } = new(Journalctl, "journalctl-list-boots", ["--list-boots", "--output=json", "--no-pager"], Ceiling, Cap);
+    public static ToolCommand ListBoots => new(Journalctl, "journalctl-list-boots", ["--list-boots", "--output=json", "--no-pager"], Ceiling, Cap);
 
     /// <summary><c>systemctl list-units --failed</c> as JSON: the failed units (plan §4.5).</summary>
-    public static ToolCommand FailedUnits { get; } = new(Systemctl, "systemctl-failed", ["list-units", "--failed", "--output=json", "--no-pager"], Ceiling, Cap);
+    public static ToolCommand FailedUnits => new(Systemctl, "systemctl-failed", ["list-units", "--failed", "--output=json", "--no-pager"], Ceiling, Cap);
 
     /// <summary><c>systemctl --version</c>: the first line names systemd's version (<c>doctor</c>).</summary>
-    public static ToolCommand Version { get; } = new(Systemctl, "systemctl-version", ["--version"], Ceiling, Cap);
+    public static ToolCommand Version => new(Systemctl, "systemctl-version", ["--version"], Ceiling, Cap);
 
     /// <summary><c>timedatectl show</c> for the two properties the clock check reads: whether NTP is on and whether
     /// the clock is synchronised (plan §15 #10: a synchronised clock is not corrected).</summary>
-    public static ToolCommand TimeSync { get; } = new(Timedatectl, "timedatectl-show", ["show", "--property=NTP", "--property=NTPSynchronized"], Ceiling, Cap);
+    public static ToolCommand TimeSync => new(Timedatectl, "timedatectl-show", ["show", "--property=NTP", "--property=NTPSynchronized"], Ceiling, Cap);
 
     /// <summary>
     /// The leading words of every command built here. Each one only READS; a test holds every command to this

@@ -27,8 +27,14 @@ internal static class WslCareLogging
     private const string FileTemplate =
         "[{UtcTimestamp:yyyy-MM-dd HH:mm:ss.fff}Z {Level:u3}] {SourceContext}: {Message:lj} {Properties:j}{NewLine}{Exception}";
 
-    public static Logger Start(CliHost host, EffectiveConfig config, string appName, TextWriter console)
+    public static Logger Start(CliHost host, EffectiveConfig config, string appName, TextWriter console) =>
+        Start(host, new ConfigLoadResult.Valid(config), appName, console);
+
+    /// <summary>E7.S0 review C1: a run whose configuration was refused (observe-only) does not know the retention an admin
+    /// chose — the default would delete what a longer retention keeps, irreversibly — so it prunes nothing and says so.</summary>
+    public static Logger Start(CliHost host, ConfigLoadResult loaded, string appName, TextWriter console)
     {
+        var config = loaded.Config;
         var startedUtc = host.Clock.GetUtcNow().UtcDateTime;
         var configuration = new LoggerConfiguration()
             .MinimumLevel.Is(Level(config.Text(ConfigKeys.Logging.MinimumLevel)))
@@ -41,7 +47,11 @@ internal static class WslCareLogging
         var logRoot = LogRoot(host);
         var fileSinkOpened = TryAddFileSink(configuration, logRoot, appName, startedUtc, console);
         var logger = configuration.CreateLogger();
-        if (fileSinkOpened)
+        if (fileSinkOpened && loaded.IsObserveOnly)
+        {
+            logger.Warning("log retention skipped: the configuration was refused, so the retention the machine layer may set is unknown");
+        }
+        else if (fileSinkOpened)
         {
             Prune(logger, host, logRoot, config, DateOnly.FromDateTime(startedUtc));
         }

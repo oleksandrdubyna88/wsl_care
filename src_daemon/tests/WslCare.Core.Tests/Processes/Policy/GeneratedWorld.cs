@@ -47,6 +47,8 @@ internal sealed class GeneratedWorld(HostileInputs inputs)
             .Script(argv => argv is ["docker", "image", "prune", ..], RecordingCommandRunner.Exited(0, "Deleted Images:\ndeleted: sha256:" + Hex() + "\n\nTotal reclaimed space: 1.5GB\n"))
             .Script(argv => argv is ["docker", "builder", "prune", "--help"], RecordingCommandRunner.Exited(0, inputs.Pick<string>(["      --max-used-space bytes", "      --keep-storage bytes", "  -f, --force"])))
             .Script(argv => argv is ["docker", "builder", "prune", ..], RecordingCommandRunner.Exited(0, "ID\tRECLAIMABLE\tSIZE\nabc\ttrue\t1GB\nTotal:\t1GB\n"))
+            // E7.S1/S2 review S4: a tool asked where its cache is — the default, its own relocated one, or an AI agent's folder.
+            .Script(argv => Core.Processes.Policy.TargetUserArgv.Parse(argv) is { Arguments: ["config", "get", "cache"] or ["store", "path"] or ["cache", "dir"] }, RecordingCommandRunner.Exited(0, inputs.Pick<string>(["/home/me/.npm", "/home/me/.cache/pip", "/home/me/.claude/cache", "/srv/caches/x"]) + "\n"))
             .Script(HealthCommands.SnapList.Argv, 0, Snaps())
             .Script(HealthCommands.WindowsClock.Argv, 0, Clock())
             .Script(Systemd.SystemdCommands.TimeSync.Argv, 0, $"NTP=yes\nNTPSynchronized={inputs.Pick<string>(["yes", "no", "no"])}\n")

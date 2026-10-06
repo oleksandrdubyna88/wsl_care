@@ -34,8 +34,8 @@ public sealed class BuildServerShutdown : ICleanupAction
         CommandScope.User,
         "dotnet",
         [new ArgPart.Literal("build-server"), new ArgPart.Literal("shutdown")],
-        TimeSpan.FromMinutes(2),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.BuildServers.ShutdownTimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     private const string Kind = "process";
 

@@ -82,7 +82,7 @@ public static class CollectRun
     public const string RunningAction = RunKinds.FullCheckName;
 
     /// <summary>The "since the last run" window when there is no last run: the timer's period (plan §8).</summary>
-    public static readonly TimeSpan DefaultWindow = TimeSpan.FromHours(4);
+    public static TimeSpan DefaultWindow => Tuning.Current.Hours(ConfigKeys.Timer.PeriodHours);
 
     public static async Task<CollectResult> RunAsync(CollectContext c, CancellationToken cancellationToken)
     {
@@ -313,6 +313,10 @@ public static class CollectRun
     {
         var problems = new List<string>();
         var reconcile = Guard(() => RunReconcile.Apply(c.Paths, c.Files, now), new ReconcileReport([], []), problems, "reconcile");
+        if (reconcile.Problem.Length > 0)
+        {
+            problems.Add(reconcile.Problem);
+        }
         var retention = Guard(() => RunRetention.Sweep(c.Paths, c.Files, now), new RetentionReport(0, [], []), problems, "run retention");
         var starts = Guard(() => new ContainerStartsStore(c.Paths, c.Files).Prune(now), [], problems, "container-start retention");
         return new HousekeepingReport(reconcile, retention with { Problems = [.. retention.Problems, .. problems] }, starts);
@@ -344,13 +348,14 @@ public static class CollectRun
         var folders = c.Paths is LinuxHostPaths linux && FolderSizes.Due(last.Folders, started)
             ? await new FolderSizes(c.Files, c.Commands, c.Clock).MeasureAsync(linux, cancellationToken).ConfigureAwait(false)
             : null;
+        var agents = folders is null || c.Paths is not LinuxHostPaths agentPaths ? null : WalkAgents(c, agentPaths, cancellationToken);
         var foldersNow = folders is null ? last.Folders : Reading.Of(new AgedPart<FolderSizesSample>(folders, runId, folders.SampledAt, TimeSpan.Zero));
         var foldersBefore = folders is null ? last.PreviousFolders : last.Folders.Map(a => a.Value);
         var profile = health.WindowsClock.Measured ? health.WindowsClock.Profile : last.WindowsClock.Map(a => a.Value.Profile).ValueOr(string.Empty);
         var docker = await PreviewRun.CollectAsync(c.Paths, c.Files, c.Commands, c.Clock, c.Loaded, new PreviewExtras(foldersNow, WindowsProfiles.DockerDesktopConfig(c.Paths, c.Files, profile)) { MayRecord = mayRecord }, cancellationToken).ConfigureAwait(false);
         var stats = await DockerStats.SampleAsync(new DockerCli(c.Commands), c.Clock, cancellationToken).ConfigureAwait(false);
         var starts = Coverage.Last24h(new ContainerStartsStore(c.Paths, c.Files).ReadAll(), c.Clock.GetUtcNow());
-        var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders };
+        var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders, Agents = agents };
         var verdicts = ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow), c.Loaded.Config);
         var ended = c.Clock.GetUtcNow();
         var thisRun = LastFullRun.FromRecords([new RunRecord(Core.SchemaVersion.Current, runId, c.Trigger, started, ended, RunOutcome.Completed, [], RunKind.Collect) { Slow = slow }, .. newestFirst], ended);
@@ -373,7 +378,22 @@ public static class CollectRun
             starts,
             slow,
             housekeeping,
-            []);
+            [])
+        {
+            Config = ConfigValueReport.NotDefault(c.Loaded),
+            ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
+        };
+    }
+
+    /// <summary>The AI agents' folders (plan §4.6, §15q D1), on the daily walk's day: every catalogue agent whose folder exists
+    /// in the home the paths follow (the TARGET user's as root) — folders only, nothing looked up on a PATH, nothing executed —
+    /// under one total budget, persisted without a session's name.</summary>
+    private static Agents.AgentsSample WalkAgents(CollectContext c, LinuxHostPaths paths, CancellationToken cancellationToken)
+    {
+        var tracked = Agents.AgentDiscovery.Discover(paths, c.Files, pathVariable: null, asRoot: true)
+            .Concat(Agents.ExtraAgents.Discover(paths, c.Files, c.Loaded.Config, Actions.ActionRegistry.Product))
+            .Where(p => p.Tracked).Select(p => p.Target).ToList();
+        return new Agents.AgentWalk(c.Files, c.Clock, paths.Home).Measure(tracked, Agents.AgentWalk.CollectBudget, withNames: false, cancellationToken);
     }
 
     private static ThresholdInputs Inputs(ProbeSample sample, HealthSample health, TimeSpan sinceLastRun, LastSlowParts last, PreviewResult docker, Reading<AgedPart<FolderSizesSample>> folders) =>

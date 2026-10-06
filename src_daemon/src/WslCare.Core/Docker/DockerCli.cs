@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 using WslCare.Core.Processes;
@@ -50,7 +51,7 @@ public abstract record DockerAnswer
 /// </summary>
 public sealed class DockerCli(ICommandRunner runner)
 {
-    private const int ReasonQuoteChars = 300;
+    private static int ReasonQuoteChars => Tuning.Current.Int(ConfigKeys.Records.MaxReasonChars);
 
     public async Task<DockerAnswer> RunAsync(ToolCommand command, CancellationToken cancellationToken) =>
         Classify(command, await runner.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false));

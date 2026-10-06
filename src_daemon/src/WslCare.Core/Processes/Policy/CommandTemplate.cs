@@ -1,3 +1,5 @@
+using WslCare.Core.Config;
+
 namespace WslCare.Core.Processes.Policy;
 
 /// <summary>Who a command runs as: the daemon itself (root under the timer), or the target user through <c>runuser</c>
@@ -48,13 +50,39 @@ public abstract record TemplateBinding
 /// <param name="Scope">Run as the daemon, or as the target user.</param>
 /// <param name="Executable">A bare name; never a path, never a shell.</param>
 /// <param name="Parts">The arguments after the executable.</param>
-/// <param name="Ceiling">How long it may run before its tree is killed.</param>
-/// <param name="OutputCapChars">How much of each stream is kept.</param>
-public sealed record CommandTemplate(string Name, CommandScope Scope, string Executable, IReadOnlyList<ArgPart> Parts, TimeSpan Ceiling, int OutputCapChars)
+/// <param name="Limits">How long it may run before its tree is killed, and how much of each stream is kept — read from the
+/// configuration at the moment a request is built (E7.S2c), never frozen when the template is declared.</param>
+public sealed record CommandTemplate(string Name, CommandScope Scope, string Executable, IReadOnlyList<ArgPart> Parts, CommandLimits Limits)
 {
-    /// <summary>A template of exactly <paramref name="command"/>'s argv — every argument a literal.</summary>
+    /// <summary>A template whose limits are fixed values — a read template made from a <see cref="ToolCommand"/> (whose own values
+    /// are read when it is built), or a test's own.</summary>
+    public CommandTemplate(string name, CommandScope scope, string executable, IReadOnlyList<ArgPart> parts, TimeSpan ceiling, int outputCapChars)
+        : this(name, scope, executable, parts, new CommandLimits.Fixed(ceiling, outputCapChars))
+    {
+    }
+
+    /// <summary>A template whose limits are configuration keys: a timeout in seconds and an output cap in bytes.</summary>
+    public CommandTemplate(string name, CommandScope scope, string executable, IReadOnlyList<ArgPart> parts, ConfigKey.IntKey timeoutSeconds, ConfigKey.IntKey outputCapBytes)
+        : this(name, scope, executable, parts, new CommandLimits.Keyed(timeoutSeconds, outputCapBytes))
+    {
+    }
+
+    /// <summary>How long it may run before its tree is killed.</summary>
+    public TimeSpan Ceiling => Limits.Ceiling;
+
+    /// <summary>How much of each stream is kept.</summary>
+    public int OutputCapChars => Limits.OutputCapChars;
+
+    /// <summary>A template of exactly <paramref name="command"/>'s argv — every argument a literal — with its limits fixed.</summary>
     public static CommandTemplate Fixed(ToolCommand command) =>
         new(command.Name, CommandScope.Machine, command.Executable, [.. command.Arguments.Select(a => new ArgPart.Literal(a))], command.Ceiling, command.OutputCapChars);
+
+    /// <summary>A template of exactly the command's argv, whose limits are read again from the command each time (E7.S2c).</summary>
+    public static CommandTemplate Fixed(Func<ToolCommand> command)
+    {
+        var now = command();
+        return new(now.Name, CommandScope.Machine, now.Executable, [.. now.Arguments.Select(a => new ArgPart.Literal(a))], new CommandLimits.Of(command));
+    }
 
     /// <summary>The shape as a person reads it: <c>journalctl --vacuum-time=&lt;1..3650&gt;d</c>.</summary>
     public string Shape => string.Join(' ', [Executable, .. Parts.Select(Describe)]);

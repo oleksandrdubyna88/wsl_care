@@ -332,6 +332,7 @@
     "A16",
     "A3",
     "A11",
+    "A18",
     "A1",
     "A2"
   ],
@@ -342,7 +343,11 @@
     "logs.instantRange",
     "act.detach",
     "act.onlyStdin",
-    "act.stop"
+    "act.stop",
+    "config.contract",
+    "agents.list",
+    "agents.probe",
+    "config.agentsExtra"
   ],
   "running": {
     "state": "wedged",
@@ -362,5 +367,13 @@
   "lastCleanup": {
     "available": false,
     "reason": "no cleanup is recorded in the history yet (no action has removed or freed anything)"
+  },
+  "limits": {
+    "historyRetentionDays": 90,
+    "requestFutureSkewSeconds": 300,
+    "requestGraceSeconds": 60,
+    "maxShownNames": 10000,
+    "unitStopSeconds": 120,
+    "drainGraceMilliseconds": 2000
   }
 }

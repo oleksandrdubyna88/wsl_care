@@ -35,6 +35,10 @@ public sealed record ActionContext(
     RunTrigger Trigger,
     TargetUserResult TargetUser)
 {
+    /// <summary>Who must own a file this action reads in the home it works in (plan §15q R1.1): the target user when root works
+    /// for them, this process otherwise (<see cref="RegularFiles.HomeFileOwner"/>).</summary>
+    public uint HomeFileOwner => TargetUser is TargetUserResult.Found found ? RegularFiles.HomeFileOwner(found.User.Uid) : RegularFiles.EffectiveUid();
+
     /// <summary>The distro's process table, read fresh at each call (A11's suspects, A12 / A14's "in use"). Unavailable by
     /// default, which makes those actions refuse.</summary>
     public Func<CancellationToken, Reading<ProcessSnapshot>> Processes { get; init; } =
@@ -46,6 +50,10 @@ public sealed record ActionContext(
     /// <summary>The volumes a button SHOWED and the person confirmed (plan §15 #4: A4 removes only those, re-checked);
     /// <see cref="ShownList.None"/> for the timer and the terminal, which act on their own fresh preview.</summary>
     public ShownList ShownVolumes { get; init; } = ShownList.None;
+
+    /// <summary>The processes a button SHOWED and the person confirmed, as <c>pid:start</c> (E7.S2b review A-H1: A18 ends only those,
+    /// judged again); <see cref="ShownList.None"/> for a terminal, which acts on its own fresh preview.</summary>
+    public ShownList ShownProcesses { get; init; } = ShownList.None;
 
     /// <summary>A wait the action may take (A11's CPU window). Real time by default; a test passes its own.</summary>
     public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
@@ -61,7 +69,7 @@ public sealed record ShownList(bool Given, IReadOnlySet<string> Names)
     /// <summary>The most names one shown list carries — in a preview's <c>shown</c> (§15j B1) and back through <c>--volume</c> /
     /// <c>--only</c>: far above the 387 volumes of 2026-10-02, low enough that a mistaken file cannot make a run of millions
     /// (≈ 650 KB of names).</summary>
-    public const int MaxNames = 10_000;
+    public static int MaxNames => Tuning.Current.Int(ConfigKeys.Act.MaxShownNames);
 
     public static readonly ShownList None = new(false, new HashSet<string>(StringComparer.Ordinal));
 
@@ -107,7 +115,7 @@ public sealed record ActionPreview(
     IReadOnlyList<ActionItem> Items)
 {
     /// <summary>Plan §7.3: the modal names up to 20 items.</summary>
-    public const int MaxItems = 20;
+    public static int MaxItems => Tuning.Current.Int(ConfigKeys.Preview.MaxItems);
 
     /// <summary>EVERY object the preview selected — <see cref="Items"/> is the first <see cref="MaxItems"/> of them. What the
     /// run acts on, re-checked by it; held in memory within ONE engine call and never serialised (E3.S2).</summary>
@@ -129,6 +137,23 @@ public sealed record ActionPreview(
     /// <see cref="MaxItems"/> shown as <see cref="Items"/>.</summary>
     public static ActionPreview Of(string what, int count, long? bytes, string basis, IReadOnlyDictionary<string, long> facts, string refusal, IReadOnlyList<ActionItem> targets) =>
         new(what, true, null, count, bytes, basis, facts, refusal, [.. targets.Take(MaxItems)]) { Targets = targets };
+}
+
+/// <summary>A folder under the TARGET user's home that an action cleans (plan §15q R2.1, review M8), spelt as segments under
+/// the home — what a manual AI agent's data folder may neither be, sit inside, nor contain.</summary>
+public sealed record HomeFolder(IReadOnlyList<string> Segments)
+{
+    public static HomeFolder Of(params string[] segments) => new(segments);
+
+    /// <summary>As a person reads it: <c>~/.cache/ms-playwright</c>.</summary>
+    public string Display => "~/" + string.Join('/', Segments);
+
+    /// <summary>The folder under <paramref name="home"/>.</summary>
+    public string Under(string home, PathRules rules) => rules.Join(home, [.. Segments]);
+
+    public bool Equals(HomeFolder? other) => other is not null && Segments.SequenceEqual(other.Segments, StringComparer.Ordinal);
+
+    public override int GetHashCode() => Segments.Count;
 }
 
 /// <summary>The timer's trigger: fired, or why not (plan §5's <i>Auto trigger</i> column).</summary>
@@ -195,6 +220,11 @@ public interface ICleanupAction
 
     /// <summary>Every argv template it may run — read and write alike.</summary>
     IReadOnlyList<CommandTemplate> Commands { get; }
+
+    /// <summary>The folders under the target user's home it cleans — by deleting through the policy OR by a command (npm, pnpm,
+    /// pip, uv, dotnet) the deletion policy cannot see into (plan §15q R2.1, review M8). None for an action that touches no
+    /// home folder; <c>ActionHomeRootsTests</c> holds every user-scoped action to its declaration.</summary>
+    IReadOnlyList<HomeFolder> HomeRoots => [];
 
     Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken);
 

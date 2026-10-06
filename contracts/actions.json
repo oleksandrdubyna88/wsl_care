@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Every action id the daemon knows (its auto.* switch names; A5Testcontainers and A6Unused are ids) and the order a run takes them in. Generated from ActionId.All / ActionId.ExecutionOrder by ContractFilesTests.",
+  "description": "Every action id the daemon knows (its auto.* switch names; A5Testcontainers and A6Unused are ids; A18 is a button only, with no auto switch) and the order a run takes them in. Generated from ActionId.All / ActionId.ExecutionOrder by ContractFilesTests.",
   "ids": [
     "A1",
     "A2",
@@ -20,7 +20,8 @@
     "A14",
     "A15",
     "A16",
-    "A17"
+    "A17",
+    "A18"
   ],
   "executionOrder": [
     "A5Testcontainers",
@@ -40,6 +41,7 @@
     "A16",
     "A3",
     "A11",
+    "A18",
     "A1",
     "A2"
   ]

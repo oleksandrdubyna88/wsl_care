@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Collectors;
 using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Files;
@@ -25,8 +26,8 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     /// <summary>The kernel's words for a failed allocation (plan §4.1) — also A2's event (E3.S3).</summary>
     public const string AllocationFailure = "page allocation failure";
     private const string OomKiller = "invoked oom-killer";
-    private const int KernelLinesKept = 5;
-    private const int KernelLineChars = 200;
+    private static int KernelLinesKept => Tuning.Current.Int(ConfigKeys.Health.KernelLinesKept);
+    private static int KernelLineChars => Tuning.Current.Int(ConfigKeys.Health.KernelLineChars);
 
     public async Task<HealthSample> CollectAsync(DateTimeOffset since, CancellationToken cancellationToken)
     {
@@ -63,13 +64,24 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     public static Reading<string> InDistro(string windowsPath, string automountRoot)
     {
         var path = windowsPath.Trim();
-        return path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':'
+        return IsPlainDrivePath(path)
             ? Reading.Of($"{automountRoot}{char.ToLowerInvariant(path[0])}{path[2..].Replace('\\', '/')}".TrimEnd('/'))
-            : Reading.Missing<string>($"\"{path}\" is not a path on a Windows drive");
+            : Reading.Missing<string>($"\"{path}\" is not a plain path on a Windows drive (a drive letter, no .. segment, no control character)");
     }
 
+    /// <summary>A drive letter and a colon, no <c>..</c> segment that could climb out of the drive's folder (E7.S0 review S1:
+    /// <c>C:\..\..\root</c> became <c>/mnt/c/../../root</c> = <c>/root</c>), no control character.</summary>
+    private static bool IsPlainDrivePath(string path) =>
+        path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':'
+        && !path.Split('\\', '/').Contains("..", StringComparer.Ordinal) && !path.Any(char.IsControl);
+
+    /// <summary><c>.wslconfig</c> is a short INI file.</summary>
+    public static int MaxWslConfigBytes => Tuning.Current.Int(ConfigKeys.Health.MaxWslConfigBytes);
+
     /// <summary>What a file at <paramref name="file"/> says; an absent file is WSL's defaults, not an error.</summary>
-    public WslConfigAudit AuditWslConfig(string file) => files.ReadFile(file) switch
+    /// <remarks>The Windows profile, read through drvfs (plan §15q R1.1, review M2): never through a link, never waited on,
+    /// capped — and no owner or mode check, because drvfs shows every file as the mount's uid, 0777.</remarks>
+    public WslConfigAudit AuditWslConfig(string file) => files.ReadNoFollowFile(file, MaxWslConfigBytes) switch
     {
         FileReadResult.Content content => Audit(file, HealthParsers.WslConfig(System.Text.Encoding.UTF8.GetString(content.Bytes))),
         FileReadResult.Unreadable u => new WslConfigAudit(file, true, new WslConfigSettings(string.Empty, string.Empty, string.Empty, string.Empty), [$"{file} could not be read: {u.Reason}"]),

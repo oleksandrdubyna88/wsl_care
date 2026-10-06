@@ -33,6 +33,8 @@ public sealed class EffectiveConfig
     public string Text(ConfigKey.TextKey key) => ((ConfigValue.Text)_entries[key.Name].Value).Value;
 
     public IReadOnlyList<string> TextList(ConfigKey.TextListKey key) => ((ConfigValue.TextList)_entries[key.Name].Value).Values;
+
+    public IReadOnlyList<Agents.ExtraAgent> Agents(ConfigKey.AgentListKey key) => ((ConfigValue.AgentList)_entries[key.Name].Value).Agents;
 }
 
 /// <summary>
@@ -52,6 +54,12 @@ public abstract record ConfigLoadResult
     public abstract EffectiveConfig Config { get; }
 
     public abstract IReadOnlyList<ConfigError> Errors { get; }
+
+    /// <summary>Valid user values this run did not take, each said (plan §15q R1.2, R1.3, R1.6).</summary>
+    public IReadOnlyList<ConfigNotice> Notices { get; init; } = [];
+
+    /// <summary>The SHA-256 of the user layer as read; empty when there was none (plan §15q R1.7).</summary>
+    public string UserLayerDigest { get; init; } = string.Empty;
 
     public bool IsObserveOnly => this is ObserveOnly;
 

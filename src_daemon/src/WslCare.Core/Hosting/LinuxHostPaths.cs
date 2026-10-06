@@ -19,6 +19,10 @@ public sealed record LinuxEnvironment(string Home, string Etc, string Var, strin
     /// account's home is protected, whoever the target turns out to be). Empty by default.</summary>
     public IReadOnlyList<string> ProtectedHomes { get; init; } = [];
 
+    /// <summary>The data folders of the manual AI agents (<c>aiAgents.extra</c>, plan §15q R2.2) as this process sees them —
+    /// protected besides the catalogue's, whether or not they pass the walk's rules (review B2). Empty by default.</summary>
+    public IReadOnlyList<string> ExtraAgentRoots { get; init; } = [];
+
     /// <summary>The real machine: <c>$HOME</c>, <c>/etc</c>, <c>/var</c>, <c>/tmp</c>.</summary>
     public static LinuxEnvironment FromThisMachine()
     {
@@ -72,6 +76,9 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     /// <summary>The same layout with <paramref name="homes"/> protected as well (<see cref="LinuxEnvironment.ProtectedHomes"/>).</summary>
     public LinuxHostPaths WithProtectedHomes(IReadOnlyList<string> homes) => new(environment with { ProtectedHomes = homes });
 
+    /// <summary>The same layout with the manual agents' folders protected as well (the two-phase host, plan §15q R2.2, M1).</summary>
+    public LinuxHostPaths WithExtraAgentRoots(IReadOnlyList<string> folders) => new(environment with { ExtraAgentRoots = folders });
+
     /// <summary>The same layout for another account's home, as this process sees it (plan §15c #2, E3.S2: root working for the
     /// target user): <see cref="Home"/>, the user configuration layer (<c>~/.config</c>, never root's <c>XDG_CONFIG_HOME</c>)
     /// and the user's own state folder follow it; the machine paths do not move, and the previous home stays protected.</summary>
@@ -93,6 +100,19 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
 
     public string DistroPath(string absoluteLinuxPath) => _rules.Join(environment.Root, absoluteLinuxPath.TrimStart('/'));
 
+    /// <summary>The distro's spelling of a path this process sees under <see cref="LinuxEnvironment.Root"/> — the inverse of
+    /// <see cref="DistroPath"/> (the same path on the machine; without the sandbox root in a test).</summary>
+    public string ToDistro(string onDisk)
+    {
+        var root = Path.TrimEndingDirectorySeparator(environment.Root);
+        return root is "" or "/" || !onDisk.StartsWith(root, StringComparison.Ordinal)
+            ? onDisk
+            : "/" + onDisk[root.Length..].TrimStart('/', '\\').Replace('\\', '/');
+    }
+
+    /// <summary>Every home this layout protects: the home and the other login accounts' (plan §15c #2).</summary>
+    public IReadOnlyList<string> Homes => HomesOf(environment);
+
     /// <summary>The procfs mount the memory and process collectors read (<c>/proc</c>).</summary>
     public string ProcRoot => _rules.Join(environment.Root, "proc");
 
@@ -109,6 +129,9 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     /// appear (<c>/mnt/</c> by default) — how a Windows path the clock probe printed becomes a path here.</summary>
     public string WslConfFile => _rules.Join(environment.Etc, "wsl.conf");
 
+    /// <summary>Where install.sh puts the units and their drop-ins (<c>/etc/systemd/system</c>, E7.S2c).</summary>
+    public string SystemdUnitDirectory => _rules.Join(environment.Etc, "systemd", "system");
+
     /// <summary>The apt package cache A9 measures (<c>/var/cache/apt</c>).</summary>
     public string AptCacheDirectory => _rules.Join(environment.Var, "cache", "apt");
 
@@ -121,10 +144,9 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     /// <summary>atop's daily raw files (<c>/var/log/atop</c>), read the same way.</summary>
     public string AtopDirectory => _rules.Join(environment.Var, "log", "atop");
 
-    /// <summary>Plan §4.6, the Linux column: Claude Code, Codex, Gemini CLI, Antigravity's cache,
-    /// GitHub Copilot CLI, Rovo Dev, Ollama's models — under the home AND every protected home (E3.S1). The agent
-    /// catalogue (E7) extends this list.</summary>
-    public IReadOnlyList<string> AgentRoots { get; } = [.. HomesOf(environment).SelectMany(AgentRootsUnder)];
+    /// <summary>Plan §4.6, the Linux column: every data folder of the agent catalogue (<see cref="Agents.AgentCatalogue"/>,
+    /// E7.S1 — before it, a hand-typed list of seven) — under the home AND every protected home (E3.S1).</summary>
+    public IReadOnlyList<string> AgentRoots { get; } = [.. HomesOf(environment).SelectMany(AgentRootsUnder), .. environment.ExtraAgentRoots];
 
     public IReadOnlyList<string> GitRoots { get; } = [.. HomesOf(environment).Select(home => PathRules.Linux.Join(home, "git"))];
 
@@ -134,14 +156,5 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     private static IReadOnlyList<string> HomesOf(LinuxEnvironment environment) =>
         [.. new[] { environment.Home }.Concat(environment.ProtectedHomes).Where(h => h.Length > 0).Distinct(StringComparer.Ordinal)];
 
-    private static IReadOnlyList<string> AgentRootsUnder(string home) =>
-    [
-        PathRules.Linux.Join(home, ".claude"),
-        PathRules.Linux.Join(home, ".codex"),
-        PathRules.Linux.Join(home, ".gemini"),
-        PathRules.Linux.Join(home, ".cache", "antigravity"),
-        PathRules.Linux.Join(home, ".copilot"),
-        PathRules.Linux.Join(home, ".rovodev"),
-        PathRules.Linux.Join(home, ".ollama"),
-    ];
+    private static IReadOnlyList<string> AgentRootsUnder(string home) => Agents.AgentCatalogue.LinuxFolders(home);
 }

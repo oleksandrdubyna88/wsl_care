@@ -6,7 +6,7 @@ extension that shows the state and runs cleanups on demand.
 
 | Folder | Holds |
 |---|---|
-| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
+| `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17, and the button-only A18 of E7.S2b) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
 | `src_vs_code/` | the VS Code extension WSL Care — in development, read-only: its client of the daemon, the status bar and the read-only panel, and their tests — [Extension (preview)](#extension-preview) below |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
@@ -55,9 +55,10 @@ folder (no `..`, no link) stops it with nothing installed.
 | Path / thing | What |
 |---|---|
 | `/opt/wsl-care/bin/wsl-care` (0755), linked from `/usr/local/bin/wsl-care` | the binary; root and the units always use the absolute path |
-| `/etc/systemd/system/wsl-care.service` | the timer's full run, `wsl-care collect --timer` (oneshot, `Nice=19`, idle I/O, `MemoryMax=1G` for the run and every tool it starts, `NoNewPrivileges=yes`, 10 min) |
+| `/etc/systemd/system/wsl-care.service` | the timer's full run, `wsl-care collect --timer` (oneshot, `Nice=19`, idle I/O, `MemoryMax=1G` for the run and every tool it starts, `NoNewPrivileges=yes`; a run ends at `timer.runLimitMinutes` (4 h, above its derived worst case), and one that makes no step for 20 min reads wedged, so *Stop* can end it) |
 | `/etc/systemd/system/wsl-care.timer` | every 4 hours on the clock (00:00, 04:00, …), catching up ONCE after a night the VM was off; enabled and started |
 | `/etc/systemd/system/wsl-care-events.service` | the container-start follower, `wsl-care events follow`, `Restart=always` after 30 s; enabled and started |
+| `/etc/systemd/system/<unit>.d/50-wsl-care-config.conf` | each unit's configured values — the timer's period, the services' `Nice`, `MemoryMax`, `TimeoutStopSec`, the follower's `RestartSec` — rendered from the machine layer by the installed binary (`wsl-care units dropin <unit>`); written on every install, so running the installer again after editing the machine layer applies it; `wsl-care doctor` says when one no longer matches |
 | `/etc/wsl-care/config.json` | the machine configuration layer — written **only when none exists**, and empty (comments only: every value stays the binary's default); an existing one is never overwritten |
 | `/var/lib/wsl-care`, `/var/log/wsl-care` | the state and the run logs, root's, 0755 |
 | `sysstat`, `atop` | installed with `apt-get` when missing; sysstat's collection switched on through its own debconf setting; both services enabled |
@@ -121,6 +122,41 @@ still read, drops the rest by name, and moves a file it cannot parse to `config.
 overwritten). Every `wsl-care:` message is one line: control characters in what it quotes — a key
 you typed, a key read from the file, a path — are shown as `?`.
 
+**What a setting can and cannot do** (plan §15q R1). No setting is free text: `processes.families` takes only the named
+families (`dotnet-build-servers`, `testhost`, `docker-desktop-proxy`, `vscode-server`, `node` — never `other`, the
+catch-all, and never `ai-agents`), `distro` a distribution name, `archive.baseFolder` an absolute path — and that one only
+in the MACHINE file (`config set` refuses it; a user-file value is ignored). No setting changes what may run or be
+deleted — only when a declared cleanup runs and with which bounded number. `contracts/config-keys.json` lists every key
+with its range, its default and what it means to a root run.
+
+**Every number is a setting** (the owner's rule, plan §15q *E7.S2c*). Behaviour — thresholds, ages, triggers, the walk's
+interval, how many processes the top list keeps — is an ordinary key. A limit on what ROOT reads, does or waits for — a
+command's timeout, an output or file cap, a queue, a walk's budget, the timer's period (`timer.periodHours`, a divisor of 24),
+the units' `Nice` / `MemoryMax` / `TimeoutStopSec`, the timer run's limit (`timer.runLimitMinutes`), the watchdog that calls a run
+that makes no step for 20 min wedged (`running.noProgressMinutes`) — is a **machine-file-only** key with a hard range: lower it freely, raise
+it only up to its maximum (a few, like `requests.graceSeconds`, may only be raised). Limits that depend on each other are
+checked together (a wedged time of at least three heartbeats, a stop ceiling 30 s above the unit's own stop, …): a
+contradiction from the machine file is a `configError` naming the rule (the values below stay in force), one from your file a
+notice — the value not taken — and `config set` refuses it. `contracts/config-keys.json` lists each key's range
+and default; the defaults are the values this build always had. A unit value changed in the machine file takes effect
+when the installer writes the drop-ins again (`doctor`'s `unitConfig` says so). `status --json` carries `limits` — the
+values a client mirrors instead of copying (`contracts/status-limits.json`).
+
+**The user file and root.** The root timer reads your user file every 4 h, so it reads it the way root reads a file
+another account controls: a regular file you own, nobody else may write it, reached from your home through NO link
+(a linked `~/.config/wsl-care` counts too), never waited on, at most 256 KiB. Anything else — a link, a FIFO, a
+group-writable file — is a `configError` saying how to fix it, and the run is observe-only; `config set` repairs a linked
+layer by replacing the LINK with a regular file holding the values it read (the file it pointed at is untouched). A run
+whose configuration was refused prunes no log folder (it does not know your retention). Two more rules, each said as `configNotices {file, line, key, message}`
+in `status`, `doctor`, `config get` and the run's detail, never an error: root's own log level and log retention only
+tighten from your file (a level no higher, a retention no shorter than the layers below; 0 keeps for ever); and when
+WSL interop is DISABLED in the distro — then your account cannot become root on its own — every root-effective value of
+your file only tightens (`dryRun` on, an `auto` off, a longer age, a larger trigger) — and your own unprivileged
+`status` / `config get` / `doctor` then say which of your values the root timer ignores — the reason once, as the notice
+without a key, then one short line per value. Every run's detail lists the
+settings it used that did not come from the defaults, with their layer (`config`), and `status` carries the user file's
+SHA-256 (`userLayerDigest`).
+
 Run logs go to `/var/log/wsl-care/{yyyy-MM-dd}/wsl-care-{HH-mm-ss}-{pid}.log` (Linux) or
 `%LOCALAPPDATA%\wsl-care\logs\…` (Windows), one file per run, UTC — a run that may not write
 `/var/log/wsl-care` (yours, without root) logs to `$XDG_STATE_HOME/wsl-care/logs` instead; `logging.minimumLevel` and
@@ -168,7 +204,7 @@ reaches them at the next full run. The text form prints one line: `verdicts: 1 c
 
 **What runs, what this build can do, the last cleanup.** `status --json` also answers `actions` (the action ids this
 binary holds for its own side, in the order a run takes them), `capabilities` (what this build can do beyond the first
-release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange` — what a client acts on, never the
+release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange`, … `config.contract`, `agents.list`, `agents.probe`, `config.agentsExtra` — what a client acts on, never the
 version number), `running` — `none`, `queued` (a run accepted and not started yet), `live` (acting: the run, its actions,
 the one it is on, its pid and how old its heartbeat is), `wedged` (alive, heartbeat older than 30 s — nothing is killed),
 `dead` (its process is gone and no run has swept it yet — status only REPORTS it; the next root run records it
@@ -250,8 +286,9 @@ wsl-care doctor --json   # healthy: true|false, one check per part, the versions
 wsl-care doctor
 ```
 
-Read-only: the configuration (observe-only is a problem), the state directory, the last run (older than 5 h or
-failed), lost run details, `wsl-care.timer` / `wsl-care-events.service` / `sysstat.service` / `atop.service`, whether
+Read-only: the configuration (observe-only is a problem), the state directory, the last run (older than the timer's
+period plus `timer.lateSlackMinutes` — 5 h by default — or failed), lost run details, whether every unit drop-in still says
+what the machine layer says (`unitConfig`), `wsl-care.timer` / `wsl-care-events.service` / `sysstat.service` / `atop.service`, whether
 sysstat and atop wrote in the last 30 minutes, whether the events follower is current, and the versions of `wsl-care`,
 Docker, systemd and the kernel. Root reachability is the extension's check (`notChecked` here). It exits 0 whatever it
 finds; `healthy` is the verdict.
@@ -303,7 +340,8 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 | `A8` | `npm cache clean --force` as the target user | `~/.npm` walked before and after | npm not installed = a skip |
 | `A9` | `apt-get clean`; `snap remove <name> --revision=<n>` of revisions STILL disabled | `/var/cache/apt` before/after + the snap files gone | a missing tool skips its part |
 | `A10` | `journalctl --vacuum-time=<journal.keepDays>d` | the journal files gone after | archived files only |
-| `A11` | `SIGTERM`, `SIGKILL` after 10 s — by pid AND start time (a `pidfd`), never by name | memory, not disk (not counted) | off by default; only suspects: orphaned, in `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not root's, no CPU in a 5 s window and none since |
+| `A11` | `SIGTERM`, `SIGKILL` after 10 s — by pid AND start time (a `pidfd`), never by name | memory, not disk (not counted) | off by default; only suspects: orphaned, in `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not root's — and only the TARGET user's processes (no single target user: no suspects) — no CPU in a 5 s window and none since |
+| `A18` | the same signals, of the target user's ORPHANED AI-agent processes (claude, codex, gemini, …) — a **button only**: the timer never selects it, whatever any setting says (it has no `auto` switch); a button run ends only the processes its preview SHOWED (`--process <pid:start>`, each still eligible) | memory, not disk (not counted) | only when ALL hold: the `ai-agents` family, the target user's, re-parented to init (never a `systemd --user` service), no terminal, no child process, attributable to one catalogue agent whose session layout is confirmed and whose program resolves into that agent's own install, **no CPU for `processes.aiAgentsIdleHours` (default 4 h) measured** — the timer's full runs record each such process's CPU by pid + boot + start time, on the wall AND the monotonic clock, in `/var/lib/wsl-care/agent-cpu.json` (0600), so the first runs end nothing and a gap or a clock jump restarts the wait — an environment that moves no agent home, and sessions of that agent found, none written in the same window; each re-read just before its signal |
 | `A12` | deletes the Playwright browsers no project's `browsers.json` references; `dotnet nuget locals http-cache --clear` as the user | each folder before, counted when gone | a button only; refuses the Playwright part when what is referenced cannot be told |
 | `A14` | deletes VS Code / Cursor / Windsurf server builds no process uses, keeping the newest 2, and `.obsolete` extensions | each folder before, counted when gone | every delete judged by the deletion policy |
 | `A17` | `pnpm store prune`, `uv cache prune`, `pip cache purge` as the target user | each cache before/after | `cargo sweep` is not run (it would delete under `~/git`); Gradle prunes its own caches |
@@ -317,7 +355,14 @@ As root, every per-user path — the daily folder walk, the caches above, the us
 **target user's** home (`/etc/wsl.conf` `[user] default=`, else the single login account), never root's; when the target
 is ambiguous the user layer is skipped: machine-scoped actions still run, every user-scoped action refuses
 naming the accounts (set `[user] default=` in `/etc/wsl.conf`, or `install.sh --set-default-user <name>`). `config set` / `config reset` refuse to run as root for the target user (a
-root-owned file would lock them out of their own settings): run them as yourself.
+root-owned file would lock them out of their own settings) with exit **81**: run them as yourself.
+
+**A tool's own configuration can move its cache.** `npm` (`~/.npmrc` `cache=`), `pip` (`pip.conf` `cache-dir`), `uv`
+(`uv.toml`) and `pnpm` (`store-dir`) read their configuration files from the user's home, and A8 / A17 run them as that
+user. So before its own cleanup each tool is ASKED where its cache is (`npm config get cache`, `pip cache dir`, `uv cache
+dir`, `pnpm store path`); a cache inside an AI agent's folder — or an answer that cannot be read — means that tool is not
+run, said in the run. Not seen: a cache moved only by a variable in the user's shell — the tools run with a clean
+environment, so such a variable does not apply to them either.
 
 What a run does, in order: takes THE run lock (`/run/wsl-care.lock`, shared with `collect` — the second one refuses
 with exit 75 and waits for nothing); sweeps a `running.json` a dead run left (recorded as `interrupted`) or refuses when
@@ -392,7 +437,7 @@ page: what was freed in total and per action (with object counts), how many runs
 dry runs apart with what they would have freed, the runs by trigger (timer, button, terminal), the run that freed the
 most and the least, each recorded figure's maximum and minimum with its time (`MemAvailable`, page cache, swap, `/`,
 Docker reclaimable, container starts) and, per cleanup, every object it removed — and those it did not, with why — from
-the run's detail file. Memory actions (A1, A2, A3, A11) free no disk and count no bytes. Periods: `today` (the
+the run's detail file. Memory actions (A1, A2, A3, A11, A18) free no disk and count no bytes. Periods: `today` (the
 default), `yesterday`, `yyyy-MM-dd`, `yyyy-MM-dd..yyyy-MM-dd` (UTC days, at most 366) — or `--from <instant> --to
 <instant>`, two RFC 3339 instants with their offset spelt out (`Z` or `+03:00`; a bare date or a time without an offset is
 refused, never read in this machine's zone), half-open (from inclusive, to exclusive), at most 366 days: how a client asks
@@ -407,6 +452,63 @@ and did not remove, every command it ran and its exit), `refused`, `interrupted`
 anything recorded it), `running` (its `running` block), `queued`, or `unknown` (nothing names it — never existed here, or
 older than the 90-day retention). Read-only like `logs`. Exit codes: 0 answered (an empty period, an unknown run too) ·
 2 a period or a run id that is none of these · 4 the history exists but cannot be read.
+
+## AI agents — which are here, and how much they hold
+
+```bash
+wsl-care agents list --json             # the catalogue agents found here, sizes from the newest full run (with its age)
+wsl-care agents list --measure --json   # the same, the folders walked NOW (at most 60 s), with the five largest sessions
+```
+
+`--measure` says on stderr what it is about to walk ("measuring N agent folder(s), up to 60 s…") and each folder as it starts;
+stdout carries only the answer.
+
+An agent is found by a binary on `PATH`, an npm global package, or a data folder (`~/.claude`, `~/.codex`, `~/.gemini`,
+… — the catalogue, `src_daemon/src/WslCare.Core/Agents/agents.json`, twelve agents). **Nothing is ever started**: a
+version is read from disk — a native install's link target (`…/versions/2.1.3`) or the npm package's `package.json` — or
+it says "not asked". Every data folder is measured by listing and `stat` alone, never opening a file (a test proves it at
+the system-call level with inotify): no link is followed, a folder named `memory` is never entered (of any agent), nor a
+folder on another filesystem (a bind mount onto `/mnt/c`, named "different filesystem"). Sessions are counted only where
+the layout is confirmed (Claude Code, Codex, Gemini CLI, Antigravity), with the oldest and newest date; elsewhere "—"
+with why, never 0.
+
+The root timer's daily full run walks the agents' folders too (one 3-minute budget for all of them; what it does not
+reach says "not measured this run"), and records totals, counts and dates — never a session's name. Without `--measure`
+the answer reads that run; before the first full run it says so and how to measure. An agent with a folder that was not
+measured has no total (the reason is given), never a part shown as the whole. `growthBytes` compares two whole walks, and
+`aiAgents.warnGb` / `aiAgents.sessionWarnMb` add a warning. As root only folders count (root neither searches the user's
+`PATH` nor reads their packages). Read-only: nothing is written. Every catalogue folder is a protected root (no cleanup
+deletes under it) and a never-list name (no command naming it runs). Exit codes: 0 answered · 2 usage.
+
+### Your own AI agents — `aiAgents.extra` and `agents probe`
+
+```bash
+wsl-care agents probe /home/me/.local/bin/mycli --json        # as YOU, never as root: what the CLI is, its folders, sizes
+wsl-care config set aiAgents.extra - < agents.json            # the list, from stdin only (JSON, at most 1 MiB, 10 s)
+```
+
+`agents probe` looks at the file (a regular file this user may start — `access(X_OK)`; it is never started and no byte of it is read),
+takes a name from the FILE NAME, and lists the folders such a CLI conventionally keeps (`~/.<name>`, `~/.config/<name>`,
+`~/.local/share/<name>`, `~/.cache/<name>`) with their sizes and whether each could be a manual agent's folder. As root it
+refuses with exit **81**, naming uid 0 and the fix (set the distribution's default user).
+
+`aiAgents.extra` holds at most 16 entries `{ "cli", "side": "wsl" | "windows", "name", "dataFolders": [1–8 absolute paths],
+"sessionGlob" }` (a glob relative to the first folder: letters, digits, `.`, `_`, `-`, `*`, and whole `**` segments). Each
+data folder must really lie inside your home, on the home's own filesystem, and must not be, sit inside or contain `~/git`,
+a catalogue agent's folder ("already tracked"), any folder a cleanup cleans (`~/.npm`, `~/.cache/ms-playwright`, the NuGet
+http-cache, the editor servers, the pnpm / uv / pip caches) or wsl-care's own folders. `config set` judges every entry and
+writes nothing when one is refused; the root timer judges them AGAIN on every run. A refused entry is not walked (the
+answer says why) — but its folders stay protected all the same: no cleanup deletes under a manual agent's folder, and a
+cleanup whose folder overlaps one refuses. Protection is bounded: a folder outside every home, a filesystem root, or one that
+is or holds wsl-care's own folders is not protected at all (it would stop root writing its own state) and is reported as a
+configuration notice. The `cli` path is never looked at by the daemon. Windows entries are kept for the Windows binary (E7.S5b).
+
+`agents list` finds a binary in your own bin folders (`~/.local/bin`, `~/.cargo/bin`, `~/.npm-global/bin`, nvm's default)
+and the system's, whatever the `PATH` a `wsl.exe --exec` call gets; a `PATH` folder under `/mnt/` (Windows' own, on drvfs)
+is never searched. A version is read along the binary's own links — a native install's `…/versions/<v>`, or the npm package
+the binary runs. A walk or a listing never starts in a folder reached through a link below the home, nor on another
+filesystem than the home's; a session's size holds its companion files (Claude Code's session folder and file history,
+Antigravity's `brain/` and annotations).
 
 ## Extension (preview)
 

@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Processes;
 using WslCare.Core.Processes.Policy;
 using WslCare.Core.Records;
@@ -16,23 +17,23 @@ public static class UnitCommands
     /// <summary>The timer's unit — the only unit besides an act instance a stop may name.</summary>
     public const string TimerService = "wsl-care.service";
 
-    private const int Cap = 64 * 1024;
+    private static int Cap => Tuning.Current.Int(ConfigKeys.Systemd.UnitOutputCapBytes);
 
     /// <summary>A start returns at once (<c>--no-block</c>: the job is queued); a stop waits for the unit, which systemd bounds
-    /// with <c>TimeoutStopSec=90</c> — the ceiling stays above it.</summary>
-    public static readonly TimeSpan StartCeiling = TimeSpan.FromSeconds(30);
+    /// with <c>TimeoutStopSec</c> (<c>units.stopTimeoutSeconds</c>) — the ceiling stays above it (a load rule).</summary>
+    public static TimeSpan StartCeiling => Tuning.Current.Seconds(ConfigKeys.Systemd.UnitStartTimeoutSeconds);
 
-    public static readonly TimeSpan StopCeiling = TimeSpan.FromSeconds(120);
+    public static TimeSpan StopCeiling => Tuning.Current.Seconds(ConfigKeys.Systemd.UnitStopTimeoutSeconds);
 
     private static readonly SlotKind.ActUnit Act = new();
 
     private static readonly SlotKind StoppableUnit = new SlotKind.AnyOf([new SlotKind.OneOf([TimerService]), Act]);
 
-    public static CommandTemplate StartTemplate { get; } = Template("systemctl-start-act", [L("start"), L("--no-block"), S("unit", Act)], StartCeiling);
+    public static CommandTemplate StartTemplate { get; } = Template("systemctl-start-act", [L("start"), L("--no-block"), S("unit", Act)], ConfigKeys.Systemd.UnitStartTimeoutSeconds);
 
-    public static CommandTemplate StopTemplate { get; } = Template("systemctl-stop", [L("stop"), S("unit", StoppableUnit)], StopCeiling);
+    public static CommandTemplate StopTemplate { get; } = Template("systemctl-stop", [L("stop"), S("unit", StoppableUnit)], ConfigKeys.Systemd.UnitStopTimeoutSeconds);
 
-    public static CommandTemplate ShowTemplate { get; } = Template("systemctl-show-act", [L("show"), L("--property=ActiveState"), L("--property=Job"), S("unit", Act)], SystemdCommands.Ceiling);
+    public static CommandTemplate ShowTemplate { get; } = Template("systemctl-show-act", [L("show"), L("--property=ActiveState"), L("--property=Job"), S("unit", Act)], ConfigKeys.Systemd.TimeoutSeconds);
 
     /// <summary>Every template here — part of the product's catalogue (<see cref="CommandCatalogue.Product"/>).</summary>
     public static IReadOnlyList<CommandTemplate> All { get; } = [StartTemplate, StopTemplate, ShowTemplate];
@@ -63,8 +64,8 @@ public static class UnitCommands
     private static string Value(IReadOnlyList<string> lines, string key) =>
         lines.FirstOrDefault(l => l.StartsWith(key + "=", StringComparison.Ordinal)) is { } line ? line[(key.Length + 1)..] : string.Empty;
 
-    private static CommandTemplate Template(string name, IReadOnlyList<ArgPart> parts, TimeSpan ceiling) =>
-        new(name, CommandScope.Machine, SystemdCommands.Systemctl, parts, ceiling, Cap);
+    private static CommandTemplate Template(string name, IReadOnlyList<ArgPart> parts, ConfigKey.IntKey timeoutSeconds) =>
+        new(name, CommandScope.Machine, SystemdCommands.Systemctl, parts, timeoutSeconds, ConfigKeys.Systemd.UnitOutputCapBytes);
 
     private static ArgPart.Literal L(string text) => new(text);
 

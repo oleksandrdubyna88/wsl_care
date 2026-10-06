@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Collectors;
 using WslCare.Core.Files;
 using WslCare.Core.Health;
@@ -29,10 +30,10 @@ public sealed record FolderTarget(string Id, string Path, IReadOnlySet<string> C
 public sealed class FolderSizes(IFileSystem files, ICommandRunner commands, TimeProvider clock)
 {
     /// <summary>A run measures the folders when the newest recorded sample is older than this.</summary>
-    public static readonly TimeSpan Interval = TimeSpan.FromHours(20);
+    public static TimeSpan Interval => Tuning.Current.Hours(ConfigKeys.Walk.IntervalHours);
 
     /// <summary>One folder's ceiling: two million entries or two minutes, whichever comes first.</summary>
-    public static readonly TreeLimits Limits = new(2_000_000, TimeSpan.FromMinutes(2));
+    public static TreeLimits Limits => new(Tuning.Current.Int(ConfigKeys.Walk.MaxEntries), Tuning.Current.Seconds(ConfigKeys.Walk.MaxSeconds));
 
     public const string NpmCache = "npm-cache";
     public const string AptCache = "apt-cache";

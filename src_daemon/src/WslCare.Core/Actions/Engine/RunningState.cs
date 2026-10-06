@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 using System.Text.Json;
 
@@ -49,6 +50,13 @@ public sealed record RunningFile(
     /// <summary>The system-wide monotonic clock (milliseconds since boot) at the last heartbeat — the age a reader in the
     /// SAME boot computes, whatever the wall clock did meanwhile (E6.S0 review D1).</summary>
     public long? HeartbeatMonotonicMs { get; init; }
+
+    /// <summary>When the run last made a step of progress (E7.S2b/S2c review C-H2, <see cref="RunProgress"/>); absent from older
+    /// writers — a reader then judges by the heartbeat alone.</summary>
+    public DateTimeOffset? ProgressAt { get; init; }
+
+    /// <summary>The monotonic clock at <see cref="ProgressAt"/>, as <see cref="HeartbeatMonotonicMs"/> is to the heartbeat.</summary>
+    public long? ProgressMonotonicMs { get; init; }
 }
 
 /// <summary>What <c>running.json</c> says about the machine now — a closed set (plan §15 #6, §15a #0).</summary>
@@ -68,9 +76,14 @@ public abstract record RunningStatus
         public TimeSpan HeartbeatAge { get; init; }
     }
 
-    /// <summary>A live process with the recorded start, heartbeat stale: <i>wedged</i> — no new run starts, nothing is
-    /// killed automatically (a button offers to stop it, E6).</summary>
-    public sealed record Wedged(RunningFile File, TimeSpan HeartbeatAge) : RunningStatus;
+    /// <summary>A live process with the recorded start, heartbeat stale — or fresh but with no step of progress for
+    /// <c>running.noProgressMinutes</c> (E7.S2b/S2c review C-H2): <i>wedged</i> — no new run starts, nothing is killed
+    /// automatically (a button offers to stop it, E6).</summary>
+    public sealed record Wedged(RunningFile File, TimeSpan HeartbeatAge) : RunningStatus
+    {
+        /// <summary>How long the run made no step, when that is why it is wedged; <c>null</c> when its heartbeat is stale.</summary>
+        public TimeSpan? NoProgressFor { get; init; }
+    }
 
     /// <summary>The pid is gone, or is a different process now: the run died — swept with an <c>interrupted</c> record.</summary>
     public sealed record Dead(RunningFile File, string Why) : RunningStatus;
@@ -91,7 +104,7 @@ public abstract record RunningStatus
 public sealed record RunningReadRetry(int Retries, TimeSpan Delay, Action<TimeSpan> Pause)
 {
     /// <summary>Three more reads, 100 ms apart: at most 300 ms before a verdict.</summary>
-    public static readonly RunningReadRetry Default = new(3, TimeSpan.FromMilliseconds(100), Thread.Sleep);
+    public static RunningReadRetry Default => new(Tuning.Current.Int(ConfigKeys.Running.ReadRetries), Tuning.Current.Milliseconds(ConfigKeys.Running.ReadRetryMilliseconds), Thread.Sleep);
 }
 
 /// <summary>Reads, writes and judges <c>running.json</c>.</summary>
@@ -100,10 +113,13 @@ public static class RunningState
     public const string FileName = "running.json";
 
     /// <summary>Plan §6: the heartbeat is rewritten every 5 s.</summary>
-    public static readonly TimeSpan HeartbeatPeriod = TimeSpan.FromSeconds(5);
+    public static TimeSpan HeartbeatPeriod => Tuning.Current.Seconds(ConfigKeys.Running.HeartbeatSeconds);
 
     /// <summary>Plan §6: a reader treats a heartbeat older than 30 s as not beating.</summary>
-    public static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(30);
+    public static TimeSpan StaleAfter => Tuning.Current.Seconds(ConfigKeys.Running.WedgedAfterSeconds);
+
+    /// <summary>A run with no step of progress for this long is wedged, whatever its heartbeat (review C-H2).</summary>
+    public static TimeSpan NoProgressAfter => Tuning.Current.Minutes(ConfigKeys.Running.NoProgressMinutes);
 
     /// <summary>How far two readings of one process's start may differ and still be the same process — the operating
     /// system derives it from the boot time and a 10 ms tick, and two readers can disagree by less than this.</summary>
@@ -150,7 +166,7 @@ public static class RunningState
         public sealed record Bad(string Why) : Loaded;
     }
 
-    private static Loaded Load(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths)) switch
+    private static Loaded Load(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths), RootFileCaps.State) switch
     {
         FileReadResult.Missing => new Loaded.Absent(),
         FileReadResult.Unreadable u => new Loaded.Bad($"cannot be read ({u.Reason})"),
@@ -179,8 +195,14 @@ public static class RunningState
             StartTicks = ticks,
             BootId = boot.Known ? boot.BootId : null,
             HeartbeatMonotonicMs = boot.Known ? boot.MonotonicMilliseconds : null,
+            ProgressAt = file.HeartbeatAt,
+            ProgressMonotonicMs = boot.Known ? boot.MonotonicMilliseconds : null,
         };
     }
+
+    /// <summary>The same file, its progress stamped now (both clocks, as the heartbeat).</summary>
+    public static RunningFile WithProgress(RunningFile file, DateTimeOffset now, IProcessTable processes) =>
+        file with { ProgressAt = now, ProgressMonotonicMs = file.BootId is null ? null : processes.Boot().MonotonicMilliseconds };
 
     /// <summary>The same file with a fresh heartbeat: the wall clock AND, when the file names its boot, the monotonic clock.</summary>
     public static RunningFile WithHeartbeat(RunningFile file, DateTimeOffset now, IProcessTable processes) =>
@@ -212,7 +234,7 @@ public static class RunningState
         {
             ProcessLookup.Gone => new RunningStatus.Dead(file, $"pid {file.Pid} is gone"),
             ProcessLookup.Alive alive when Mismatch(file, alive, boot) is { Length: > 0 } why => new RunningStatus.Dead(file, why),
-            ProcessLookup.Alive => Beat(file, HeartbeatAge(file, boot, now)),
+            ProcessLookup.Alive => Beat(file, HeartbeatAge(file, boot, now), ProgressAge(file, boot, now)),
             ProcessLookup.Unknown u => new RunningStatus.Unknown(file, $"pid {file.Pid} of run {file.RunId} cannot be inspected ({u.Reason})"),
             _ => throw new System.Diagnostics.UnreachableException("ProcessLookup is a closed set"),
         };
@@ -247,6 +269,14 @@ public static class RunningState
             ? TimeSpan.FromMilliseconds(Math.Max(0, boot.MonotonicMilliseconds - stamp))
             : now - file.HeartbeatAt;
 
-    private static RunningStatus Beat(RunningFile file, TimeSpan age) =>
-        age > StaleAfter ? new RunningStatus.Wedged(file, age) : new RunningStatus.Live(file) { HeartbeatAge = age };
+    /// <summary>How long since the run's last step, on the clock the heartbeat is judged by; zero for a file that does not say.</summary>
+    private static TimeSpan ProgressAge(RunningFile file, BootClock boot, DateTimeOffset now) =>
+        boot.Known && file.BootId == boot.BootId && file.ProgressMonotonicMs is { } stamp
+            ? TimeSpan.FromMilliseconds(Math.Max(0, boot.MonotonicMilliseconds - stamp))
+            : file.ProgressAt is { } at ? now - at : TimeSpan.Zero;
+
+    private static RunningStatus Beat(RunningFile file, TimeSpan age, TimeSpan progressAge) =>
+        age > StaleAfter ? new RunningStatus.Wedged(file, age)
+        : progressAge > NoProgressAfter ? new RunningStatus.Wedged(file, age) { NoProgressFor = progressAge }
+        : new RunningStatus.Live(file) { HeartbeatAge = age };
 }

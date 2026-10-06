@@ -31,7 +31,7 @@
 > bundle tests, `ci-extension.yml` — deviations in the E5.S1 row, 2026-10-03) and E5.S2 built (the status bar, the read-only
 > panel from one field map held equal to `research/architecture.md`, the webview rules, the focused-window polling, the
 > strict page harness, `@vscode/test-electron` on 1.85.0 + stable, the M1 churn measured for the owner — deviations in the
-> E5.S2 row, 2026-10-04) and E5.S3 built as files and tests (*Install daemon* typing the pinned command, the universal `.vsix` with its allowlist and leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` + the release-please package, with the coai gate's E5 plan round folded in as §15h — deviations in the E5.S3 row, 2026-10-04); and the E6 plan review folded in (§15j, 2026-10-04: an own Plan agent standing in for coai, every finding accepted; E6 re-split into E6.S0–E6.S4 with an E6 daemon live gate and an E6 live gate) and E6.S0 built (the daemon read contract — `status`'s `actions` / `capabilities` / `running` / `lastCleanup`, A4's `shown`, `runs show`, the instant range, `RunLine.metrics`, `contracts/*.json`, SIGHUP, exclusive marks — deviations in the E6.S0 row, 2026-10-04); and its review round fixed (§15j, 2026-10-04) and the coai gate's E6 plan round folded in (§15k, 2026-10-04: 20 findings accepted, E6 built as one unit) and E6.S1 built, its review round fixed (§15l) and the coai E6 code round fixed (§15m, verdict proceed) (the detached runs — `act` / `collect --detach`, the request files written exclusively, `act --request`, the request sweep, `act --stop` with its stop marker, `--only -`, the template unit `wsl-care-act@.service`, the installer's rename and bounded wait — deviations in the E6.S1 row, 2026-10-04; the distro-survival measurement moved to the E6 daemon live gate's first step); the E4 live gate — the owner's settings (`docs/repo-settings.md`), the cut of `daemon-v0.1.0`,
+> E5.S2 row, 2026-10-04) and E5.S3 built as files and tests (*Install daemon* typing the pinned command, the universal `.vsix` with its allowlist and leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` + the release-please package, with the coai gate's E5 plan round folded in as §15h — deviations in the E5.S3 row, 2026-10-04); and the E6 plan review folded in (§15j, 2026-10-04: an own Plan agent standing in for coai, every finding accepted; E6 re-split into E6.S0–E6.S4 with an E6 daemon live gate and an E6 live gate) and E6.S0 built (the daemon read contract — `status`'s `actions` / `capabilities` / `running` / `lastCleanup`, A4's `shown`, `runs show`, the instant range, `RunLine.metrics`, `contracts/*.json`, SIGHUP, exclusive marks — deviations in the E6.S0 row, 2026-10-04); and its review round fixed (§15j, 2026-10-04) and the coai gate's E6 plan round folded in (§15k, 2026-10-04: 20 findings accepted, E6 built as one unit) and E6.S1 built, its review round fixed (§15l) and the coai E6 code round fixed (§15m, verdict proceed) (the detached runs — `act` / `collect --detach`, the request files written exclusively, `act --request`, the request sweep, `act --stop` with its stop marker, `--only -`, the template unit `wsl-care-act@.service`, the installer's rename and bounded wait — deviations in the E6.S1 row, 2026-10-04; the distro-survival measurement moved to the E6 daemon live gate's first step); and E7.S0 built (the configuration trust and contract — §15q *E7.S0 as built*, 2026-10-05); the E4 live gate — the owner's settings (`docs/repo-settings.md`), the cut of `daemon-v0.1.0`,
 > the live install and its stamp — the owner's M1 decision, the E5 live gate, and the rest of §16 (E6 onwards) are still open.** Scope: a C# Native AOT daemon/CLI run by a
 > systemd timer inside the `Ubuntu` distro (`src_daemon/`), a VS Code extension that shows its state, its
 > logs and its help and runs cleanups on demand (`src_vs_code/`), CI/CD modelled on CredsForDevs, and the
@@ -1166,6 +1166,1006 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 | O4 (own) | the follower check ran in the weak direction and nothing froze the reason text on disk | **Fixed** — `ContractFilesTests.The_reasons_already_on_disk_are_frozen` pins the three reasons (and the contract's list) to literals ("these strings are on disk; a change is a contract break"); the companion asserts the reasons AS WRITTEN start with the follower's prefixes |
 | O5 (own) | the downgrade residual understated | **Documented** — decision 6 and `research/architecture.md` state both halves (an unreadable `running.json` blocks every act / timer pass until removed by hand; an unparseable line is "no line" to every history-first check) |
 
+### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
+
+> Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
+> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); **the E7.S2b/S2c review round and the coai E7 code round (passed) fixed 2026-10-06** (*E7.S2b/S2c review round*: A18 bound to its modal, the two-clock dense idle, the progress watchdog and the timer run limit — N-4 reversed —, the rules held per layer); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
+> and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
+> mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
+> code (E7.S0–E7.S2). **Deviation:** the split planned first (`feat/wc-e7-daemon`) is not used, because the coai session is
+> keyed on this branch; the extension parts (E7.S3–E7.S5) get `feat/wc-e7-extension`. **The review round is folded in**
+> (*§15q review round* at the end of this section: the coai plan round and an own plan review, every finding accepted);
+> where a row of that table and the text disagree, the row wins. This section OVERRIDES §4.6, §6 (the `agents` and `config` rows: `--measure`, `config set aiAgents.extra -`), §7.2 (AI
+> agents row), §7.5, §12 (AI agents, Config)
+> and the three E7 story rows of §16 where they say otherwise; §16's E7 rows now point here.
+
+**Goal (the owner's asks, 2026-10-02).** (1) The AI-agent folders are monitored, with CLI auto-detection and an *Add CLI
+path…* button for an agent discovery missed. (2) The cleanups get "older than N" settings. (3) The settings live in the
+extension and are mirrored to the daemon's config, which stays the truth because the daemon runs without VS Code (§6).
+
+**The owner's hard constraints — never violated, each held by a test named below.**
+
+| # | Constraint | Held by |
+|---|---|---|
+| H1 | Nothing inside an AI agent's folder is ever deleted (or moved — moving is E9's alone, with hash verification) | E7.S1, E7.S2: catalogue AND manual folders join `ProtectedRoots.AgentRoots`; a manual folder may not overlap any cleanup root |
+| H2 | `projects/*/memory/` of any agent is never touched | E7.S1: EVERY agent walk — catalogue and manual entries alike — never ENTERS a folder named `memory` (and each entry's own `neverEnter`); not even a stat inside it |
+| H3 | Sizes may be measured; nothing is read, moved or deleted | E7.S1: the walk lists names and stats entries (`TreeWalk`, `TreeWalk.cs:36`: links never followed); a SYSCALL-level scenario (an inotify `IN_OPEN` watch over the fixture tree, or `strace -f -e trace=open,openat`) proves no file under an agent root is ever opened — a recording double cannot see `TreeWalk`'s own syscalls |
+| H4 | `%TEMP%\claude\` is never cleaned (Windows side — E11 / E12, W-A2's guard) | E7 walks and cleans nothing there; a manual data folder under `ClaudeTempRoots` (`/tmp/claude`, `%TEMP%\claude`) is refused (E7.S2) |
+
+**What exists today — verified on `origin/main` `a629b37`.**
+
+- **No agent discovery at all.** No `Agents/` folder, no `agents.json`, no `agents` verb. The protected agent roots are a
+  hard-coded list in two places: `LinuxHostPaths.AgentRootsUnder` (`src_daemon/src/WslCare.Core/Hosting/LinuxHostPaths.cs:137`,
+  used at `:127`) and `WindowsHostPaths.AgentRoots` (`WindowsHostPaths.cs:77`), plus a third list of folder NAMES in the
+  never-list (`Processes/Policy/NeverList.cs:31`). `research/architecture.md:241` already says "the catalogue of E7 must
+  feed the same list".
+- **The daily walk skips agent folders on purpose** (`Folders/FolderSizes.cs:24-25`); its targets are `FolderSizes.cs:48-62`,
+  its ceiling 2 M entries / 2 min per folder (`:35`), once per 20 h (`:32`). It is recorded as the history line's
+  `slow.folders` with the previous sample kept for growth (`Records/SlowParts.cs:45`, `:67`, `:81`), invoked at
+  `Collect/CollectRun.cs:344`. On the owner's machine the first full `collect` took 3.5 min (§17 #2).
+- **`config get` / `config set` / `config reset` exist** (E1.S2: `Cli/Commands/ConfigCommand.cs`), with validation against
+  ONE register (`Core/Config/ConfigKeys.cs:137-157`) of four value shapes (`Config/ConfigKey.cs:21-30`), an atomic
+  repairing writer (`Config/UserConfigWriter.cs`), and root refusing to write the target user's layer
+  (`ConfigCommand.cs:69-72`). `aiAgents.warnGb` / `sessionWarnMb` exist (`ConfigKeys.cs:103-107`); `aiAgents.extra` was
+  deferred to E7 for its object shape (§16 E1.S2 row). The daemon keys `distro` and `refreshSeconds` (`ConfigKeys.cs:24-25`)
+  are read by no daemon code.
+- **Root reads the user layer like any file.** `ConfigLoader.Load` reads both the machine and the user layer with the plain
+  `IFileSystem.ReadFile` (`Config/ConfigLoader.cs:38`, `:43-44`; `Files/PhysicalFileSystem.cs:48`): no size cap, links
+  followed, owner not checked, a FIFO opened blocking. As root (the timer, every `act`) the user layer is the TARGET user's
+  `~/.config/wsl-care/config.json` (`LinuxHostPaths.cs:89`, `WithHome` `:78`; `Cli/CliHost.cs:43`). The hardened reader
+  exists — `RegularFiles.ReadOwned` (`Files/RegularFiles.cs:68`: `O_NOFOLLOW` + `O_NONBLOCK`, one `statx` of the open
+  descriptor, owner, no g/o write, a cap) — and is used for the request files only (`PhysicalFileSystem.cs:73`). **The same
+  class — root reading a file the user controls with the plain reader — sits at six more sites:** in the target home
+  `Actions/TargetUserCommands.cs:78` (`~/.nvm/alias/default`), `Actions/UserCaches/BrowserAndHttpCaches.cs:170` and `:189`,
+  `Actions/UserCaches/EditorServerCleanup.cs:109`; in the Windows profile through `/mnt/c`, `Health/HealthCollector.cs:72`
+  (`.wslconfig`) and `Docker/DockerHygiene.cs:76` (Docker Desktop's `daemon.json`). Found by listing all 26 `ReadFile(`
+  callers outside the file system itself (a grep for the call) and classifying each by whose file its path names.
+- **The extension** (main = E5) knows four verbs (`src_vs_code/src/client/verbs.ts:11`) and two settings (`wslCare.distro`,
+  `wslCare.refreshSeconds`, both `"scope": "application"`); its bundle scan forbids the argv word `config` everywhere
+  (`src/test/bundleScan.test.ts:39`). E6.S2 (PR #12, unmerged) partitions the bundle by module and keeps `config`
+  forbidden in EVERY region, the root one included (§15j M1, §15k #10). E7 amends that rule (E7.S3).
+
+#### Decisions taken in this plan
+
+**D1 — Who measures what.** The ROOT daily walk (inside `collect`, once per 20 h, the same ceiling) measures the agents'
+data folders under the TARGET user's home and records them as a new slow part `slow.agents` beside `slow.folders` (the
+previous sample kept for "growth since yesterday", as `PreviousFolders` is) — **totals, counts and dates only**: the five
+largest session NAMES are never persisted in `history.jsonl`; `agents list --measure` answers them live. The whole agent walk
+has ONE total ceiling of 3 min inside a root `collect` — catalogue entries first, then extras; what is left reads "not
+measured this run" — and `agents list --measure` has its own ceiling below the host call's timeout (review M7). `agents list --json` is UNPRIVILEGED: live
+discovery (cheap — PATH lookup, folder existence, npm global folders) joined with the newest recorded `slow.agents` and its
+age; `agents list --measure --json` walks now, as the invoking user, and records nothing (an unprivileged run writes no
+state, §15b #3). The Windows side: `wsl-care.exe agents list` (E7.S5) keeps its newest walk in ONE file.
+
+**D2 — What a "session" is.** One definition, the catalogue's, and for the four agents whose layout was confirmed on
+2026-10-02 it is the archive plan's §3 table ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) — which
+supersedes §4.6's rougher column (§4.6 says Gemini `tmp/*/`; the confirmed layout is `tmp/<project>/chats/session-*.jsonl`).
+Every other agent is **monitor only: sessions not counted (layout unconfirmed)** — shown as "—", never 0. A session is
+found by listing names and stat-ing entries; no file is opened.
+
+**D3 — No agent binary is ever executed** (changed by review M10; §4.6's "`--version` within 2 s" is superseded). The
+version comes from what is on disk without running anything: the binary's link target when a native install encodes it
+(e.g. `~/.local/share/claude/versions/<v>`), or the `version` of the npm package's `package.json` under a global
+`node_modules` (outside every agent folder). Otherwise it reads "not asked". No version template exists in the policy.
+
+**D4 — *Add CLI path…*: a picker AND a typed path, both resolved on the host, the path never reaching root.**
+A host QuickPick offers **Browse…** (`showOpenDialog`, one file) and **Type a path…** (`showInputBox` with a validator).
+*Why both:* the Windows dialog shows what exists (no typos) and reaches the distro through `\\wsl.localhost\<distro>\…` —
+but opening that share STARTS the distro (acceptable for an explicit click, unlike polling, §15f #8) and a slow 9p browse
+is exactly the case the typed path covers. **The dialog answers a URI, and the mapping is by SCHEME (review M12):**
+`file:` → the UNC / drive rules below; `vscode-remote://wsl+<d>/…` (what a Remote-WSL window returns) → that Linux path
+when `<d>` is the validated distribution; distribution names compared case-insensitively; any other scheme refused. A pure,
+tested function maps the result: `\\wsl.localhost\<d>\…` or
+`\\wsl$\<d>\…` → a Linux path, only when `<d>` is the validated configured distribution (else refused naming both);
+`X:\…` → the Windows side (E7.S5; until then refused "arrives with the bundled Windows binary"); anything else (another
+UNC, `\\?\`, relative, a control character, a NUL, a leading `-`, > 1 024 characters) refused before any spawn. The
+probe is `wsl.exe -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care agents probe <path> --json` — **no `-u`**; the
+daemon refuses `agents probe` as root, naming uid 0 and the fix (review C3: "agents probe runs as the user who owns the CLI,
+not as uid 0 — set the distro's default user: `wsl.exe --manage <distro> --set-default-user <user>`, or `[user] default=`
+in `/etc/wsl.conf`"); it lstat/stat-s the file
+(regular, an execute bit for this user via `access(X_OK)` — never `exec`, never a byte read), derives a name from the
+FILE NAME, and lists the conventional data folders under the user's home (§4.6) with sizes. The user confirms in a HOST
+modal (never the webview: the webview sends `{type: 'addCliPath'}` and `{type: 'removeAgent', index}` only — an index into
+data the host read). Saved to `wslCare.aiAgents.extra` and mirrored (D5). Root later reads only the entry's
+`dataFolders` and `sessionGlob` as data for the walk; the `cli` field is never a file-system argument in a root process
+(a recording double asserts it).
+
+**D5 — The settings mirror.** Every daemon key the extension edits is one VS Code setting `wslCare.<key>` with
+`"scope": "application"` (§15g M3) and `"ignoreSync": true` — the values are this machine's, and a value synced from
+another machine must not steer this machine's root timer (the flag's existence on `engines ^1.85.0` is verified before
+relying on it; whether Settings Sync honours it is a live-gate observation). Type, `minimum` / `maximum`, `enum` and
+`default` are generated from ONE contract, `contracts/config-keys.json`, which the daemon emits from `ConfigKeys` +
+`default.json` (held equal by `ContractFilesTests`, as `actions.json` / `exit-codes.json` are) and a TS test holds
+`package.json` equal to it. **Not mirrored:** `wslCare.distro`, `wslCare.refreshSeconds` (the client's own; the daemon keys
+of the same names stay, unused, because removing a key turns every user layer that holds it into an unknown-key
+observe-only error), and the display settings of E8. The "older than N" settings are the ones the actions read today,
+with the daemon's ranges (unit and the meaning of 0 in each description):
+
+| Setting `wslCare.…` | Action | Range | Default |
+|---|---|---|---|
+| `volumes.anonymousOlderThanDays` | A4 | 0–3650 d (0 = every unattached anonymous volume) | 1 |
+| `containers.stoppedOlderThanDays` / `containers.testcontainersOlderThanHours` | A5 | 0–3650 d / 0–8760 h | 7 / 2 |
+| `images.unusedOlderThanDays` | A6 unused | 0–3650 d | 7 |
+| `buildCache.olderThanDays` | A7 | 0–3650 d | 7 |
+| `journal.keepDays` | A10 | 1–3650 d | 30 |
+| `buildServers.idleHours` / `processes.idleOlderThanHours` | A3 / A11 | 0–8760 h | 4 / 8 |
+| `archive.olderThanDays` | A13 (E9) | 1–3650 d | 14 |
+
+plus every `auto.*`, `dryRun`, the size triggers (`volumes.anonymousMaxCount` / `MaxGb`, `images.unusedMaxGb`,
+`buildCache.maxGb`, `npm.maxCacheGb`), `thresholds.*`, `processes.families`, `idle.*`, `clock.maxDriftSeconds`,
+`aiAgents.*`. The defaults quoted are `default.json`'s (`config get` on the build is the authority, not this table). No NEW
+age knob is added (A12, A14's "keep newest 2", A17's `cargo sweep --time 30` stay as built; Q7) — so the owner's ask (2)
+is met for the EXISTING age keys only, and the DoD says so.
+
+**The one-time conflict notice (§7.5), made precise.** At activation and on a distribution change the host runs
+`config get --json` (unprivileged — the user's own layer) and compares ONLY explicitly set values: a VS Code setting's
+`inspect().globalValue` against the user layer's entry. A value set by the machine layer or the default is never a
+conflict (the native Settings UI cannot show that — the panel does, and a VS Code change to such a key is ignored with a
+notice). Differences → ONE notice per (distribution, a digest of the
+differing keys and both values), persisted in `globalState`: **Keep VS Code's** (`config set` each), **Keep the daemon's**
+(`update(…, Global)` each), **Decide later** (asked again only when the digest changes). Neither side is overwritten
+silently. A VS Code change → `config set` (a reset to default → `config reset`); the daemon's refusal (exit 2 with its
+message) reverts the VS Code value and shows the message; the host's own reverts are marked so the change event they
+cause is not mirrored again. A change that LOOSENS a root-effective key (R1) is confirmed in a host modal first; declined →
+reverted.
+
+**Amended by the review round (C2, C4, M4, M5, M6; the working assumptions of Q5, Q6):**
+
+- **Ours or not ours (C2).** Root-effective keys and `aiAgents.extra` are mirrored ONLY for a change made through the
+  extension's own UI or commands in this window — the host holds a "this change is ours" token for it. A change that
+  arrives by `onDidChangeConfiguration` WITHOUT the token (Settings Sync, another tool, a hand edit of `settings.json`) goes
+  through the conflict notice — a click — and is never applied automatically. So the design does not depend on whether
+  Sync honours `ignoreSync`.
+- **One window mirrors (M4).** An application setting's change event fires in EVERY window; only the window holding a short
+  `globalState` lease (renewed while focused) mirrors and shows modals; revert markers are keyed by (key, value). A
+  two-window host test.
+- **ONE write function (M5).** Every write to the user layer — the mirror, the reconcile's *Keep VS Code's*, *Add CLI path*,
+  *Remove* — goes through one host function that applies the loosening rule, so a reload cannot bypass the modal.
+- **Partial failure (C4).** *Keep VS Code's* with N keys applies them in order and CONTINUES past a refusal, then reports
+  "k of N applied; refused: <key — reason>, …"; a refused key keeps the daemon's value on both sides, never a silent
+  partial state.
+- **The VM is not started (M6).** The activation reconcile first asks `wsl.exe --list --running --quiet` (§15f #8); a
+  stopped distribution is reconciled when it is next seen running.
+- **Which changes need the modal (Q5, working assumption).** `dryRun` true → false; an `auto` switched on for an
+  off-by-default action (A5, A6Unused, A8, A11, A12, A17); any `processes.families` change. Ages and thresholds get a
+  notice with **Undo** instead.
+- **Scope.** A change mirrors to the CURRENT distribution only; the other distributions keep theirs. The contract marks the
+  unused `distro` / `refreshSeconds` keys `daemonUnused` (Q6) and the extension never edits them.
+
+#### The two risky items — where being wrong is expensive
+
+**R1 — `config set` is a write path into what the ROOT timer does (a confused-deputy and trust question).** The user layer
+is written by the unprivileged user and read by root every 4 h (`CliHost.cs:43`): `dryRun: false` + `auto.A5: true` +
+`containers.stoppedOlderThanDays: 0` makes the timer remove every stopped container; `journal.keepDays: 1` makes root
+vacuum the journal, which the user alone could not. What makes this acceptable is a FACT to be observed, not assumed:
+on WSL with interop enabled, any process of this user — Windows or Linux — can already run `wsl.exe -u root` without a
+password (§15 #1, §15f #2: "a confused-deputy boundary, not a malware boundary"), and every action is already a button.
+So the user layer is the user's intent; the defence is that nothing ELSE can write it, that root reads it safely, that it
+can only steer what the closed registry already does, and that its effect is visible. Decided:
+
+1. **Root reads both layers through the hardened reader** — the machine layer owned by uid 0, the user layer by the TARGET
+   user's uid, regular, no link, nonblocking, no g/o write, ≤ 256 KiB (`RegularFiles.ReadOwned`, widened by an owner
+   argument rather than copied). A refusal is a `ConfigError` naming the reason → observe-only (§15a #1), never a hang and
+   never a followed link. **The class is swept in the same story:** the six other root reads of a user-controlled file
+   listed above go through a reader policy PER CLASS (review M2): a target-home file — owner the target uid, no g/o write;
+   a Windows-profile file through drvfs (`.wslconfig`, `daemon.json`) — `O_NOFOLLOW` + `O_NONBLOCK` + regular + the cap,
+   and NO uid / mode check, because drvfs shows 0777 by default and Windows' ACLs are the boundary there (the real mount
+   mode recorded in `research/`). `RegularFiles.ReadOwned` already takes an owner; the widening is `IFileSystem`, whose
+   `ReadStateFile` hard-wires `TrustedStateOwner` (`PhysicalFileSystem.cs:73`). `UserConfigWriter.ReadCurrent`
+   (`UserConfigWriter.cs:73`) reads through a bounded reader too, so a FIFO cannot hang `config set`. A structural test
+   classifies every `ReadFile(` call site — and every `File.ReadAll*` (`Actions/Engine/ProcessTable.cs:96`,
+   `WindowsSystemDrive.cs:170`), `ReadRegularFile`, and root's `MeasureTree` / directory listings of target-home paths —
+   (procfs, `/etc`, root's state, target home, Windows profile) and fails on an unclassified new one, with a planted
+   companion. A group-writable user layer (a umask of 002) would turn the timer observe-only: the umask WSL Ubuntu gives
+   is measured first; then either a private group with no other members is accepted, or `doctor` prints the `chmod`.
+2. **Interop off ⇒ the user layer only TIGHTENS root** (amended by review M3). When the distro's interop handler is absent
+   or disabled (`WindowsSystemDrive.InteropRefusal`, `Processes/WindowsSystemDrive.cs:105`, reused), user→root IS a real
+   boundary. `HomeOwner.Unknown` is NOT reused (it would refuse every user-scoped action, `Actions/TargetUser.cs:192`):
+   `ConfigLoader.Load` gets a separate reason, keeps the target user, and applies the user layer's values to
+   root-effective keys only in the contract's SAFE direction (`dryRun` true, an `auto` off, a longer age, a larger size
+   trigger); a value in the other direction is ignored with "interop is disabled, so the user layer cannot loosen root;
+   set machine-wide values in /etc/wsl-care/config.json". `status` / `doctor` / `config get` say so.
+3. **No key can widen what is deletable — false on `main` today, fixed in E7.S0 (review B1).** `processes.families` is a
+   free `TextListKey` (`Config/ConfigValidation.cs:29`, `:39`) and accepts `["other"]`, the catch-all
+   (`Collectors/ProcessFamilies.cs:29`, `:43`), so root's A11 would end idle orphaned processes of OTHER uids
+   (`Actions/Suspects/SuspectTermination.cs:115-125` refuses only root's own). `archive.baseFolder` is a free-text path
+   key (`ConfigKeys.cs:114`) that E9's root A13 will write into. Decided: every `TextKey` / `TextListKey` is CLOSED by an
+   `Allowed` set or is a declared PATH key with its own validator, checked at `config set` AND at load —
+   `processes.families` ⊆ `ProcessFamilies.Catalogue` minus `other` and minus `ai-agents` (working assumption: the AI
+   agents' processes are the owner's work; whether `ai-agents` may be chosen is an owner question); `archive.baseFolder`
+   a declared path key, MACHINE-layer only until E9 adds R2-style validation. Numeric keys fill template slots by design
+   (`Actions/JournalVacuum.cs:49`, `:67`): every number slot's bounds lie inside its key's range. The never-list, the
+   `CommandPolicy`, the `DeletionPolicy` and `ProtectedRoots` reference no `EffectiveConfig` / `ConfigKeys`, except one
+   typed, validated extras input (R2). Each held by a test, the families one RED first (a live bug).
+4. **Visible effect.** Every run detail records the effective entries whose layer is not `default`
+   (`config: [{key, value, layer}]`, additive) — so `runs show` / the Logs page can say "the timer ran A5 with
+   `containers.stoppedOlderThanDays` = 0 (user layer)". The extension's loosening modal (D5) names the effect in words.
+5. **Writers.** Only the user, unprivileged: root refuses to write the layer (exists); the extension spawns `config set`
+   WITHOUT `-u` from one module (E7.S3's scan); keys from a closed list (the extension's mirrored keys ∩ the daemon's
+   contract); values validated on both sides; the webview never supplies a key or a value; settings `application` +
+   `ignoreSync` (D5).
+6. **Root's own audit log is not the user's to steer.** `logging.minimumLevel` / `logging.retentionDays` from the user layer
+   set root's log level and retention (`Cli/Logging/WslCareLogging.cs:34`, `:46`): both become root-effective with a safe
+   direction (a level no higher than `Information`, a retention no shorter than the machine's) — a user value in the other
+   direction is ignored for a root run with a notice.
+7. **An outside change is noticed.** `status --json` carries a digest of the user layer (additive), so the extension sees a
+   change made outside it mid-session and offers the conflict notice.
+
+*What would be expensive if wrong:* the interop premise. If the live gate shows `wsl.exe -u root` is NOT reachable from an
+unprivileged process of this user, item 2's rule must apply whenever that is so, and the premise sentence above is
+corrected — the gate records the observation in `research/` (a root call, so the owner runs it).
+
+**R2 — the agent-folder rules (never delete, never read, never enter memory) with user-named paths in a root walk.**
+`aiAgents.extra` puts folders a user (or a stray process of theirs) named into the ROOT daily walk and into the protected
+roots. Decided, enforced at `config set` AND again at every root read — never trusted because it validated once. **A value that
+fails leaves the WALK of that run only, with a notice; its spelled path, and its real path when resolvable, STAY in the
+protected roots** (review B2: over-protection is safe; dropping it would unprotect the folder the moment, say, a later
+daemon adds an overlapping cleanup root). An overlap makes the cleanup action refuse under that root, with a record.
+
+1. A data folder is absolute; its REAL path lies strictly under the target user's real home, on the home's own filesystem
+   (same `st_dev` — so never `/mnt/c` over 9p, never a bind mount; the 2026-10-01 failure, §2), is not the home itself, not
+   under `~/git` (`GitRoots`), not under `ClaudeTempRoots` (H4), not equal to, inside or containing a catalogue root
+   ("already tracked as <agent>"), and **not equal to, inside or containing any root a §5 action cleans** (`~/.npm`,
+   `~/.cache/ms-playwright`, the NuGet `http-cache`, `~/.vscode-server`, the A17 tool caches — read from the action
+   registry, not listed by hand), so "nothing in an agent folder is deleted" holds for command-based cleanups too, not only
+   for `IFileSystem` deletes. The cleanup roots are DECLARED by each user-home action through a new `ICleanupAction` member
+   — none exists today (`Actions/ICleanupAction.cs:181-205`; `Actions/UserCaches/CacheFolders.cs` has part of it) — with a
+   test that every user-home action declares its roots (review M8). *Residual, stated:* a tool that relocates its cache
+   (`npm config cache`, `PIP_CACHE_DIR`, `UV_CACHE_DIR`, `PNPM_STORE_DIR`, `XDG_CACHE_HOME`) is covered only at its
+   DEFAULT root. Never the product's own config, state or install folders (`~/.config/wsl-care`, the state and install
+   directories — an extra there would lock `config set`, `UserConfigWriter.cs:65`, `:116-120`; review M9). ≤ 16 entries,
+   ≤ 8 folders each, ≤ 1 024 characters per path; a session glob is relative, `[A-Za-z0-9._*-]` segments and `**`, no
+   `..`, ≤ 128 characters (E9 will consume it — named in the boundary below). **Windows extras** (E7.S5b): under
+   `%USERPROFILE%`, no reparse point on any component, a local fixed volume, not under or containing `%TEMP%\claude`.
+   **The same-device rule holds per DIRECTORY, not only for the data folder** (review C1): a nested bind mount
+   (`~/myagent/model-cache` → `/mnt/c`) would drag the walk onto 9p, so the walk checks `st_dev` at every directory, stops
+   at a change and reports "excluding <subdir> (different filesystem)".
+2. Catalogue folders and accepted manual folders join `ProtectedRoots.AgentRoots` (`Files/Deletion/ProtectedRoots.cs:27`)
+   BEFORE the first action of a run; the catalogue feeds `LinuxHostPaths` / `WindowsHostPaths` (replacing the two
+   hard-coded lists) and the never-list's names (derived; a test holds them equal). **The host becomes two-phase (review
+   M1):** the `DeletionPolicy` is built in the `PhysicalFileSystem` constructor (`Files/PhysicalFileSystem.cs:45`), which
+   `CliHost.ForThisMachine` creates (`Cli/CliHost.cs:70`) BEFORE `Program.Main` loads the config (`Cli/Program.cs:42-43`);
+   so: load the config, rebuild the paths with the accepted extras, rebuild the file system and what holds it
+   (`Signals`), then run — tested by asserting that the run's actions' policy holds the extras. *Residual, stated:*
+   `CommandPolicy.Product` is static, so the extras never reach the never-list's protected-path ARGV rule; they are
+   protected by the `DeletionPolicy` and by R2.1's no-overlap rule, not by argv inspection.
+3. The walk never enters a `neverEnter` folder (H2), never follows a link, never opens a file (H3), never crosses a device
+   (C1); per folder the existing ceiling, and the total ceiling of D1. Over-exclusion is the safe side: `memory` is skipped
+   anywhere in EVERY agent's tree, manual entries included ("of any agent"), and the answer says
+   `excluded: ["memory (never entered)"]` — the size is "excluding memory", never presented as the whole. `TreeWalk`'s
+   `neverEnter` matches exact names only (`Files/TreeWalk.cs:62`); it is widened for a prefix exclusion (Gemini CLI's
+   tree excludes `antigravity*`, which is its own agent) and the per-directory device check, and grouped so one pass
+   measures one agent's folders.
+4. Names that reach the screen — project folders, session names, agent names derived from a file name — are
+   attacker-settable (any process can create `~/.claude/projects/<anything>`): control and bidi characters stripped and
+   lengths capped before a modal or the DOM (E6's `text/safeText.ts`, reused), `textContent` only (§15g M7). They never go
+   into goldens or fixtures (§15i A: `FixtureIdentity`, `FixturePrivacyTests`).
+
+#### E7.S0 as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The configuration trust (E7.S0)*, the design `research/architecture.md` § *The configuration trust (E7.S0)*.
+**Deviations from the text above:**
+
+- **A third text shape.** Besides a closed set and a path, `distro` is a `TextRule.Matching` key (the extension's distribution
+  pattern) — free-shaped text is allowed ONLY for a `daemonUnused` key, and a test holds it so (`ConfigKeyShapeTests`).
+- **The group-writable layer:** refused with the fix in the message ("run chmod go-w <file>; config set writes it 0644"),
+  which `doctor`'s config check and `status`'s `configError` carry — chosen over accepting a private group (no `/etc/group`
+  parsing). Measured: a WSL Ubuntu login shell's umask for a normal user is 0022, so a hand-made layer is 0644.
+- **The machine layer** is read as root's own state file (`ReadStateFile`, uid 0, no group / other write): a machine layer
+  an administrator made group-writable now makes the run observe-only, naming the fix — the same class, swept.
+- **`UserConfigWriter`** reads the layer it rewrites with the bounded `ReadRegularFile` (regular, nonblocking, capped) and
+  still follows a link there — it is the user's own process; the atomic write replaces a linked layer as it did before.
+- **The slot-bounds rule** is EQUALITY: every number slot a key fills accepts exactly that key's range times its unit
+  (journal keep days, A6's hours, A7's cap), and every other number slot is declared "not configuration" by name.
+- **Surfaces:** `configNotices` in `status`, `doctor`, `config get` and both run details; `userLayerDigest` in `status` only;
+  the run details' `config` lists every non-default setting with its layer (not only the keys an action read). All additive,
+  absent when empty. Capability `config.contract`.
+- **The read-site classification** also covers listings and walks of target-home folders; its residual — a listing of a
+  folder that is itself a link lists through it (names only) — is stated in the table.
+- **Not changed:** the never-list's protected-path argv rule stays static (R2.2's residual is E7.S2's).
+
+#### E7.S0 review round (2026-10-05) — two own reviews (security; correctness)
+
+Every finding ACCEPTED and fixed in its own commit (`fix(daemon): E7.S0 review round …`), each behaviour seen red for the
+real symptom, green, and its load-bearing line broken and seen red again — the record is `research/module_tests.md`,
+*The E7.S0 review round*.
+
+| # | Finding | Disposition |
+|---|---|---|
+| S1 (Medium) | the drvfs reader's `O_NOFOLLOW` guarded the LAST component only — `…/Users/me/.docker` → `/root/.docker` took root's read to a root file with no owner check; a profile `C:\..\..\root` became `/root` | **Fixed** — `BeneathFiles`: every folder below the one holding the drive letter's folder is opened from the previous descriptor with `O_PATH \| O_DIRECTORY \| O_NOFOLLOW`, the file with `O_NOFOLLOW \| O_NONBLOCK` from the last; a profile path with a `..` segment or a control character is not a drive path (`HealthCollector.InDistro`). **Deviation:** the folder chain was chosen over the review's device comparison — it refuses a link on the same filesystem too |
+| S2 (Medium) | the read-site table missed reads through a wrapper | **Fixed** — the scan also matches `ProcText.Read` / `Bytes`, `RegularFiles.Read` / `ReadHead` / `ReadOwned` / `ReadNoFollow`, `BeneathFiles.Read` and a bare `ReadText`; 24 more sites classified (all the kernel's or root's); a planted companion for each wrapper. The typed-system-path alternative was not taken (22 call sites for no further guarantee) |
+| S3 (Low) | = C5 | see C5 |
+| S4 (Low) | `doctor`'s text printed a user layer's unknown key raw — an OSC 52 sequence reached the admin's terminal | **Fixed** — every `doctor` text line goes through `CommandLine.Printable` |
+| S5 (Low) | .NET's `$` matches before a final newline: `distro` took "Ubuntu\n" | **Fixed** — a `TextRule.Matching` value is accepted only when the match covers the WHOLE value (the expression stays JavaScript-compatible for the contract) |
+| S6 (Low) | a linked `~/.config/wsl-care` let the user learn a root-only file's owner and mode from the run's reason | **Fixed** — the user layer and every target-home file are read through the same folder chain from the home (`ReadUserFile(…, beneath)`): a link anywhere below the home is refused naming the component, nothing beyond it described |
+| S7 (design → decided) | A11 ended idle orphans of ANY non-root account | **Fixed** — A11's candidates are the TARGET user's processes only; with no single target user its preview is unavailable, naming why |
+| C1 (Important) | a refused (observe-only) configuration pruned the run logs with the DEFAULT 14 days, deleting an admin's longer retention | **Fixed** — an observe-only run prunes nothing and logs one warning saying so |
+| C2 (Important) | without interop an UNPRIVILEGED answer showed a user value the root timer would ignore, with no notice | **Fixed** — `UserLayerTrust.RootTimerReads`: an unprivileged run inside the distro also reads the layer as the root timer would and adds those notices ("the root timer ignores this value: …") without changing its own configuration; the head goldens of `status` / `doctor` carry them (the golden sandbox has no interop entry) |
+| C3 (Minor) | only a group-writable layer got a fix hint; `config set` over a linked layer wrote through the link and then printed the default | **Fixed** — every refusal carries its fix (link, foreign owner, oversize, not regular, group-writable); `config set` replaces a LINK by a regular file holding the values read through it (`IFileSystem.ReplaceLinkWithFile`, judged where the link itself lives — the file it pointed at is untouched) and prints the value it wrote |
+| C4 (Minor) | an invalid machine-only value in the user layer made the whole run observe-only | **Fixed** — a machine-only key in the user layer is a notice BEFORE validation |
+| C5 (Minor, both) | `idle.minutes` declared "higher is safer" but the gate judged ONE load average, so a longer window could be looser | **Fixed** — busy is the HIGHEST average up to the window; the contract's direction is now true (no contract change) |
+
+#### E7.S1 as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The AI agents: catalogue, discovery, the walk (E7.S1)*, the design `research/architecture.md` § *The AI agents*.
+**Deviations from the text above:**
+
+- **As root, NO PATH lookup at all** — the story row's "the target user's fixed bin list as root" is replaced by D3 as the
+  review round amended it: root counts folders only; no binary, no npm package, no version is looked at as root.
+- **The walk runs on the Linux side only.** `collect` walks the agents found by FOLDER when its folder walk is due and
+  records `slow.agents`; the Windows binary answers `agents list --measure` (now, its own folders) and reads no history —
+  the hourly Windows walk and `agents-last.json` stay E7.S5's.
+- **Session names are relative to the layout's folder** (`projects/<project>/<id>.jsonl`) and appear only in a live
+  answer (`--measure`), at most five; the persisted sample keeps the largest session's SIZE only.
+- **The never-list's agent names** are each catalogue folder's first segment that is not a generic container (`.cache`,
+  `.config`, `.local`, `share`), lowercased — except Roaming's bare `Claude`, which the never-list already recognises by
+  its parent (a bare `claude` would refuse every binary of that name).
+- **The budget's time left is read once per folder** — the first version read the clock twice and could start a folder
+  with a negative ceiling (seen red, fixed).
+- **`agents list` text form** prints the tracked agents and "N more catalogue agent(s) not found here"; JSON carries all
+  twelve, `tracked: false` included, so a client can show what is looked for.
+- **Measured** on this machine (WSL, Release, `--measure`, a normal user): six agents, ~2.5 GiB, 685 sessions and
+  conversations, 1.3–2.3 s — the 3-minute budget is far from binding today.
+- **Capability `agents.list`** ships with E7.S1 (the story row put it in E7.S2 with the others); `agents.probe` and
+  `config.agentsExtra` stay E7.S2's.
+
+#### E7.S2 as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *Manual agents and agents probe (E7.S2)*, the design `research/architecture.md` § *Manual agents and `agents probe`*.
+**Deviations from the text above:**
+
+- **`aiAgents.extra` has no safe direction** (`KeyTrust` `none`, not root-effective in the contract): root takes it as DATA,
+  judges every entry again on every read, and the key can only ADD protection; a refused entry leaves the walk only.
+- **`config set aiAgents.extra` takes `-` only** (stdin, the `StdinList` cap and ceiling, widened with a shared
+  `StdinList.MaxBytes`); a JSON value on the command line is refused naming the stdin form.
+- **The probe's own exit code** — `81 NotAsRoot` (added to `ExitCode` and `contracts/exit-codes.json`) rather than the
+  usage code: the extension can tell "you asked as root" from "a malformed path". On the Windows binary the probe answers
+  "arrives with E7.S5b" (usage).
+- **The probe's candidate folders** are `~/.<name>`, `~/.config/<name>`, `~/.local/share/<name>`, `~/.cache/<name>` that
+  exist; the suggested entry holds the ones the rules accept; a catalogue binary name answers "already tracked".
+- **Windows entries** pass the shape check; the Linux binary neither lists nor walks them (they are not its side); the
+  Windows binary protects their folders as spelt (`WindowsHostPaths.WithExtraAgentRoots`) — their rules and walk are E7.S5b's.
+- **The `cli` field is never looked at, by any run** — not only root's: `agents list` run by the user does not stat it either.
+- **The overlap refusal is the ENGINE's** (`AgentFolderOverlap`, asked for every preview of an action with `HomeRoots`), not
+  each action's; `HomeRoots` is a default interface member (empty), declared by A8, A12, A14, A17, with A3 the one named
+  user-scoped exception.
+- **`ProtectedRoots` keeps the real path AND the spelling of every agent root** (catalogue ones too), not only of extras.
+- **`SessionGlob` gained `**`** (a whole segment: the folder it is in and every folder below, breadth first, `memory` and
+  links never entered, the entry cap applies).
+- **An agent's total became unavailable when any folder of it was not measured** (and growth needs two whole walks) — an
+  E7.S1 behaviour found wrong by this story's refused-entry scenario (an "available" 0 for a refused agent), fixed here.
+- **Capabilities** `agents.probe` and `config.agentsExtra` (`agents.list` shipped with E7.S1).
+
+#### E7.S1/S2 review round (2026-10-05) — two own reviews (correctness; safety/security)
+
+Every finding ACCEPTED and fixed in its own commit (`fix(daemon): E7.S1/S2 review round …`), each behaviour seen red for its
+real symptom, green, and its load-bearing line broken and seen red again — the record is `research/module_tests.md`,
+*The E7.S1/S2 review round*.
+
+| # | Finding | Disposition |
+|---|---|---|
+| R1 (High) | discovery searched only `PATH` — under `wsl.exe --exec` it has no `~/.local/bin` / nvm bin and 30+ Windows folders on drvfs (measured, `research/2026-10-03_wsl_exe_facts.md` row 21): a 0777 `%APPDATA%\npm` shim was a "binary", every name was stat-ed over 9p unbounded | **Fixed** — a FIXED list first (nvm's default, `~/.local/bin`, `~/.cargo/bin`, `~/.npm-global/bin`, `/usr/local/bin`, `/usr/bin` — `TargetUserCommands`' list, now shared, `~/.npm-global/bin` added for root too), then only the PATH entries neither under the automount root nor on another filesystem than `/`; the whole lookup bounded (`Processes/Bounded.Run`, shared with the system-drive lookup) |
+| R2 (High) | a walk cut by a limit was shown as the whole total and growth was taken against it | **Fixed** — a cut total keeps its reason (`available` with the reason); growth only when BOTH walks are `Whole`; the test that pinned the old behaviour corrected |
+| R3 (High) | the version came from the first npm root holding the package (often the OLDEST nvm), and a link was followed one hop | **Fixed** — the found binary's FULL link chain (≤ 40 hops): a version in a link target, or the package the chain leads into (`…/node_modules/<pkg>/`); the existence-only npm fallback only when no binary was found; the source is named |
+| R4 (Medium) + S3b/S3c | the session listing had no device check, no deadline inside a level, no cancellation, followed a linked start folder, listed folders twice, `**/**` double-counted, and an intermediate stop became `counted: true, count: 0` | **Fixed** — `SessionGlob` rewritten: each folder listed once (a per-call cache), the deadline and the token before every listing, the listing's device kept (a folder on another one left out and said), an intermediate stop = not counted with its reason; the start folder must pass `AgentWalk.PlaceProblem`; `GlobProblem` refuses a second `**` |
+| R5 (Medium) + S7 | `agents probe` gave each candidate its own 60 s | **Fixed** — one walk over all candidates, one budget |
+| R6 (Medium) | `files: 0` for a folder not measured | **Fixed** — `null` when the bytes are unavailable |
+| R7 (Medium) | a session's size was its transcript only (D2's one session is more) | **Fixed** — the catalogue's layouts gain `companions` (Claude Code `{dir}/{id}` + `file-history/{id}`; Antigravity `brain/{id}` + `annotations/{id}.pbtxt`), sized by stat / the same walk rules under the budget; `sessionWarnMb` now sees them |
+| R8 (Medium) + S5 | removing `Program.Main`'s phase two or the production `Rewire` turned no test red | **Fixed** — `AgentsExtraFlows.A_manual_agent_folder_inside_a_cleanup_folder_makes_the_root_cleanup_refuse_through_the_built_cli` (built binary, root claimed) — red at first for a REAL E7.S2 defect: the action's SKIP was read before the overlap refusal, so A12 over an agent folder read "nothing to remove"; the overlap refusal now replaces the action's own refusal AND its skip |
+| R9 (Minor) + S6 | `slow.agents` could carry a project folder's name in `excluded` | **Fixed** — a persisted walk keeps "N folder(s) on another filesystem"; names in live answers only |
+| R10 (Minor) | `config set` could write a layer larger than its own reader takes (JSON escapes non-ASCII as six bytes) | **Fixed** — `UserConfigWriteResult.TooLarge`, refused naming the size and the cap, nothing written |
+| R11 (Minor) | the probe's "may start" was any execute bit | **Fixed** — `access(X_OK)` for the invoking user (`RegularFiles.MayExecute`) |
+| R12 (Minor) | `agents probe a b` said "the path ;" | **Fixed** — "takes one path …; got an extra argument …" |
+| R13 (Minor, doctrine) | outcome tuples, a two-nullable `Side`, cyclomatic complexity > 4 | **Fixed** — `ExtraList` / `ExtraEntryRead` / `VersionFound` / `StartCheck` records, `DiscoverySide` a closed hierarchy (`Distro` / `WindowsHost`), the shape rules a rule list, `SessionGlob.Matches` split |
+| — (extension need) | E7.S3 reverts a setting on exit 2 and must tell "the default user is root" from a refused value | **Done here** — `config set` / `config reset` as root for the target user exit **81** (`NotAsRoot`), like `agents probe`. For E7.S3 / E7.S4: `DAEMON_EXIT` gains 81 with its failure text; the host's call ceilings for `agents list --measure` and `agents probe` derive from `AgentWalk.MeasureNowBudget` (60 s) plus the lookup ceiling (10 s) |
+| S1 (Important) | an extra's folder could be `/`, `/var/lib/wsl-care` or a drive root and join the protected roots unbounded — root's OWN state writes refused (a user→root denial with interop off) | **Fixed** — `ExtraRoots`: a folder (spelt AND real) is protected only inside a protected home, never a filesystem root, never equal to or holding wsl-care's own folders; the rest dropped with a configuration notice. B2 holds: every cleanup folder is inside the home |
+| S2 (Important) | a manual data folder at or under a `memory` folder was walked | **Fixed** — refused by the rules (spelt or real, any case); `TreeWalk.Measure` refuses a ROOT whose own name is never-enter |
+| S3a (Important) | catalogue folders were compared with the walk root's device, not the home's; a catalogue folder that IS a mount, or is reached through a linked middle component, was walked over 9p; S3d the TOCTOU between the checked real path and the walked spelled path | **Fixed** — `AgentWalk.PlaceProblem` before every walk and listing (catalogue and manual alike): the real path must be the spelled place under the home's real path, and its device the home's |
+| S4 (Important) | npm / pip / uv / pnpm can move their cache into an agent folder through their own configuration FILES (HOME is set) — the static `HomeRoots` could not see it; `ToolCacheTrims`' comment claimed the opposite | **Fixed** — each tool is ASKED first through a declared read template (`npm config get cache`, `pnpm store path`, `uv cache dir`, `pip[3] cache dir`), as the target user, bounded; the answer is checked against every agent folder; an unreadable answer is a refusal; A8 refuses in its preview, A17 skips that tool with a note; the comment corrected. Residual (README, architecture): a tool configured by an environment variable in the user's shell is not seen — the commands run with a clean environment, so such a variable does not apply to them either |
+| S8 (Low) | `memory` was matched by exact case | **Fixed** — never-enter names and prefixes compared case-insensitively |
+| S9 (Low) | the inotify proof dropped folder events (H3 proved, H2 not) | **Fixed** — `FolderEvents()`: the memory folder is never even opened. The strengthened test first went red for a TEST defect (the watch's own set-up listing every folder); the set-up's events are now drained before the walk |
+
+#### E7.S2b — orphaned AI-agent processes (owner decision 2026-10-05)
+
+**The ask.** AI-agent CLI processes (`claude`, and the other members of the `ai-agents` process family) left behind on WSL
+— their terminal gone, re-parented to init, doing nothing — hold memory for days. The owner wants them cleanable. A11
+excludes the family today and Q13 assumed it stays excluded; this amendment answers Q13: **not through the general
+`processes.families` list (its exclusion of `ai-agents` stays, E7.S0's B1 test holds it), but through a dedicated path of
+its own.** Built AFTER E7.S2, as its own story.
+
+**Decided:**
+
+1. **A new action id, `A18` — "orphaned AI-agent processes", a BUTTON only.** Not a section of A11: A11 has a timer
+   switch (`auto.A11`), and a part of it that must never run on the timer would be an exception inside one action. A18 has
+   no `auto` key; its `Trigger` never fires (as A12's, `BrowserAndHttpCaches.cs:77`), and the timer pass and
+   `collect --timer` never select it, whatever any setting says — a test holds both. Its own preview row; `contracts/actions.json`
+   and the extension's registry gain `A18` (generated / held equal as today); the reserved name `collect` stays reserved.
+   Execution order: beside A11 (after the Docker actions, before A1 / A2), user-scoped (`CommandScope.User` — the target user).
+2. **Eligibility — ALL of:** the process is in the `ai-agents` family (`Collectors/ProcessFamilies.cs`, the catalogue's
+   binaries); it belongs to the TARGET user (E7.S0 review S7 — never another account's, never root's); its parent is gone
+   (re-parented to init / the session's subreaper, as A11 judges "orphaned"); no controlling TTY; **no CPU for N hours,
+   measured** (item 3); and **no live session of that agent**: the agent's session layout (E7.S1, D2) is CONFIRMED and no
+   session file of that agent under the target home was modified within the last N hours (listing + stat only, as E7.S1's
+   `SessionGlob`; a listing cut by its ceiling or its time = "cannot tell" = not eligible). An agent whose layout is
+   unconfirmed (monitor only), or a process the catalogue cannot attribute to ONE agent, is **never eligible**.
+3. **"No CPU for N hours" is measured, not approximated.** A11 judges "older than N h and < 1 CPU-second over the last
+   interval"; A18 does not. Every run (timer or button, preview included) records, for each `ai-agents` candidate of the
+   target user, its cumulative CPU ticks (`/proc/<pid>/stat` utime + stime) keyed by its IDENTITY — `(pid, boot_id, start
+   ticks = /proc/<pid>/stat field 22)`. A process is idle for N h only when the state holds a sample of the SAME identity
+   taken ≥ N h ago whose CPU ticks equal now's. Missing history, a different boot, a different start time (a reused pid) →
+   not eligible; so the first runs after install never end anything.
+   **State file** `/var/lib/wsl-care/agent-cpu.json` — root-owned 0600, written atomically (temp + rename, the state-file
+   reader on the way back: `ReadStateFile`, uid 0, no link, no wait, a cap); per identity the OLDEST sample whose ticks
+   still equal the newest (so "unchanged since" is one comparison) and the newest; entries for live processes only, pruned
+   on every run; capped (≤ 512 identities, ≤ 64 KiB) — over the cap the oldest identities drop and are simply "no history".
+   An unprivileged run neither reads nor writes it (its preview says "measured by the root runs only").
+4. **A new setting `processes.aiAgentsIdleHours`**, default **4**, range **1–168** h, `KeyTrust.Higher` (a longer idle
+   requirement is stricter — a user layer may only raise it when root does not trust it, R1.2), in `default.json`,
+   `ConfigKeys`, `contracts/config-keys.json`; mirrored by E7.S3 like every other key. The SAME N is the CPU window and the
+   session window.
+5. **The confirmation** (the button's modal, E6's host modal) names every process: agent, pid, idle hours (the measured
+   "unchanged since"), its project folder when the session listing attributes one — every string sanitised (R2.4, E6's
+   `safeText`). The run re-checks each target's identity and ticks (as A11, `SuspectTermination.cs:176-186`): a process
+   that used CPU, gained a terminal, changed owner or is a different identity is KEPT, with why.
+6. **Signals as A11:** SIGTERM through the pidfd sender by pid AND start time, SIGKILL after 10 s if still the same
+   identity; the run detail lists every process with its outcome (ended by SIGTERM, by SIGKILL, kept, already gone).
+
+**Files:** `Actions/ActionId.cs` (A18 in `All` and the execution order), `Actions/Suspects/AgentOrphans.cs` (new, the
+action — reusing `SuspectTermination`'s sampling and signal path by extraction, not copy), `Actions/Suspects/AgentCpuHistory.cs`
+(new, the state file), `Agents/AgentCatalogue.cs` + `Agents/SessionGlob.cs` (the "live session" check),
+`Collectors/ProcessFamilies.cs` (agent attribution), `Config/ConfigKeys.cs` + `default.json`, `Actions/Engine/ActionRegistry`
+(registration; the timer's selection), `contracts/actions.json`, `contracts/config-keys.json`, the extension's action
+registry (generated), `research/module_tests.md`, `research/architecture.md`, `README.md`.
+
+**RED tests** (each red for its real symptom first, then the teeth): `Ai_agent_orphan_is_eligible_only_after_N_hours_without_cpu_by_identity`;
+`Missing_history_never_makes_a_process_eligible`; `A_reused_pid_is_never_treated_as_idle` (same pid, another start time /
+boot); `A_live_session_keeps_the_agent_process` (a session file modified within N h); `An_unconfirmed_layout_keeps_the_agent_process`;
+`Another_accounts_agent_process_is_never_a_candidate`; `A_process_with_a_terminal_or_a_live_parent_is_kept`;
+`The_timer_never_ends_an_agent_process` (`collect --timer` with every `auto` on); `The_run_rechecks_identity_and_cpu_before_each_signal`;
+`The_cpu_history_is_root_only_bounded_and_pruned_to_live_processes`; `processes_aiAgentsIdleHours_is_1_to_168_default_4_safe_higher`;
+the families exclusion of E7.S0 still green (`ai-agents` NOT choosable in `processes.families`).
+
+**DoD:** the RED tests above seen red then green, each guard broken and seen red again; A18 a button only by structure and
+by test; the history file bounded, root-only, pruned; the setting in the contract; the modal's strings sanitised; docs,
+goldens (the preview row, `capabilities` unchanged unless the extension needs one — decided at build), module_tests flows.
+**Windows** (W-A11, E12) stays separate; the same rule should apply there — a setting defaulting to 4 h, a button only
+(recorded in *Boundaries*). The coai code round after E7.S2 covers E7.S2b if it is built by then; otherwise it gets its own.
+
+#### E7.S2b as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record is `research/module_tests.md` § *A18 — orphaned AI-agent processes (E7.S2b)*.
+**Deviations from the text above:**
+
+- **A preview writes no state.** The decided text had "every run, preview included" record the CPU history; the product's
+  standing rule is that `act --preview` touches no state (`ActFlows`), so ONLY the timer's full run records it
+  (`ActionEngine.RecordAgentCpu`, before the pass; a failure is a note of the pass). A18's preview reads the history and
+  merges the processes it sees NOW in memory — so a process first seen by the preview is "no history".
+- **`ActionId` has a closed `TimerSwitch`** (`Auto(key)` | `ButtonOnly(why)`); A18 is the one button-only id, not derived
+  from an `auto.*` key. The timer pass does not even select it, and the engine's timer gate skips it if asked directly.
+- **The history cap is 128 KiB, not 64 KiB:** a test sized a full 512-entry file at ~90 KiB — the planned cap would have
+  read a full history as "no history" (seen red, fixed; the growth row corrected).
+- **A18 is user-scoped** (it needs the target user) and declares no home folder (`ActionHomeRootsTests` names it).
+- **The signal path was EXTRACTED from A11** into `SuspectSignals` (re-read, one SIGTERM each, one shared grace, SIGKILL,
+  the verdicts) — A11's own tests unchanged and green.
+- **Agent attribution** is by the process's program or the script node runs (its first two arguments' file names, `.exe`
+  stripped) against the catalogue's binaries; none or more than one = kept.
+- **An unreadable boot id** makes the preview unavailable (no idle time can be told).
+- **The extension side** (A18 in its action registry, the modal naming each process sanitised) lands with E7.S3 / E7.S4 and
+  PR #12's registry; `contracts/actions.json` carries A18 now.
+
+#### E7.S2c — every number is configurable (owner rule 2026-10-05): the inventory
+
+> **The owner's rule (2026-10-05, verbatim):** "все цифры, которые у нас есть - должны быть настраиваемые" — *every number we
+> have must be configurable.* **Standing convention from now on:** a new behavioural number is a configuration key (daemon)
+> or a VS Code setting (extension), never a literal; recorded in `research/architecture.md` § *Numbers are configuration*.
+> Built as **E7.S2c**, after E7.S2 and E7.S2b. This subsection is the INVENTORY (taken 2026-10-05 from `feat/wc-e7-agents-settings`
+> at `217ec0f` + the E7.S2 work in progress, and from the open extension branch `feat/wc-e6-cleanup-logs` at `423b526`, PR #12, whose
+> numbers this branch does not hold yet); `file:line` as read then — E7.S2c re-verifies each before it moves it.
+
+**The three groups (the coordinator's decision, told to the owner):**
+
+- **(A) behaviour** → an ordinary key, the user layer allowed, mirrored by E7.S3, `min`/`max` and a safe direction in
+  `contracts/config-keys.json`.
+- **(B) root-safety limit** (a cap, a queue budget, a ceiling that bounds what ROOT reads, does or waits for, a walk budget)
+  → a key that is **machine-layer only** (`KeyTrust.MachineOnly`, like `archive.baseFolder`) with a HARD safe range: the
+  limit may be lowered freely and raised only up to a fixed maximum (today's value unless the row says otherwise). The
+  extension shows it read-only: "set in /etc/wsl-care/config.json".
+- **(C) not configurable** — a format, a contract or a unit, not behaviour; each with its one-line reason.
+
+Extension-only numbers become VS Code settings (`application` scope) with ranges; **a timeout must stay above the daemon
+ceiling it waits on — a test computes the daemon's worst case from the C# constants (keys after S2c) and fails below it.**
+
+**Counts.** Daemon: **A 35, B 77, C 71** (183 rows). Extension on this branch: **A 2** (1 is the existing
+`refreshSeconds`), **B 11**, **C 31**; extension on PR #12 (new or changed): **A 9, B 20, C 22**. Already configurable: the
+49 daemon keys of `ConfigKeys.cs` and the 2 VS Code settings (`wslCare.refreshSeconds`, `wslCare.distro`).
+
+##### Found by the inventory — defects to fix in S2c (each RED first)
+
+| # | Finding | Fix proposed |
+|---|---|---|
+| N-1 | `doctor`'s extension ceiling (`src_vs_code/src/client/verbs.ts:41`, 100 s) is BELOW the daemon's worst case: 4 × `systemctl show` + `systemctl --version` at `SystemdCommands.Ceiling` 15 s (`Core/Systemd/SystemdCommands.cs:38`, `:55`) + `docker version` 10 s (`DockerCommands.cs:52`) = 85 s, + up to 4 s drain per killed command (`ProcessCommandRunner.DrainGrace` 2 s, waited twice, `ProcessCommandRunner.cs:229-242`) = 109 s | the setting's minimum = the computed worst case; the test above |
+| N-2 | `preview --all`'s 330 s (`verbs.ts:42`) equals its worst case exactly (310 s + 20 s drain, ≤ 100 containers); on PR #12 the SAME 330 s is the ceiling of `act <ids> --preview` for "Clean selected", where EACH Docker row takes its own Docker snapshot (`DockerLook.TakeAsync`, `DockerLook.cs:17-23`) — k × 310 s, 1 860 s for six rows | daemon: one Docker snapshot per preview call, shared by the Docker actions; extension: the ceiling computed from the selected ids until then |
+| N-3 | PR #12's detach ceiling (`root/rootCall.ts:59`, 90 s) holds for at most ONE stale request: the sweep runs one 15 s `systemctl show` per stale request (`RequestSweep.cs:42-59`, `:119-131`); two give 101 s. A timeout there is "outcome unknown" and followed — lower cost, still wrong | bound the sweep's shows per call, or compute the ceiling; the test above |
+| N-4 | the TIMER unit kills a whole full run at `TimeoutStartSec=10min` (`src_daemon/systemd/wsl-care.service:58`) while one prune command may run 15 min (`DockerCleanupCommands.PruneCeiling`, `:29`), a full collect already takes ~3.5 min (§17 #2) and E7.S1 adds an agent walk of up to 3 min; `CommandRequest.cs:19`'s comment "systemd stops the unit at 10 minutes" says the ceilings were meant to fit — they do not | the unit limit derived from the run's budget (B key `timer.runLimitMinutes`, installer writes it), or the prune ceiling below it; owner decision |
+| N-5 | `PhysicalFileSystem.ReadFile` has no byte cap (`Files/PhysicalFileSystem.cs:48`) and root reads `running.json`, `history.jsonl`, run details, `volume-seen.json`, `/etc/passwd`, `wsl.conf`, the clock and dry-run state files and the container-starts files through it | a B cap per class (`records.maxStateFileBytes`), the read-site table extended to say which reader is capped |
+| N-6 | the same number written twice and drifting apart: 1 MiB in 12 places, 4 MiB ×2, 64 KiB ×2, 4096 ×2 (one a bare literal), 300 chars ×3, 200 chars ×2, 5 s lock timeout ×2, the GiB constant 10 times, the 4 h timer period ×4, and ~20 sentences that spell a constant's value as text ("newest 2", "200 MiB", "10 s", "5 minutes", "90-day" …) | one source per number; every sentence formats the effective value |
+
+##### Group A — behaviour → ordinary keys (user layer allowed)
+
+| Today (file:line, value) | Meaning | Key | Range | Default | Safe |
+|---|---|---|---|---|---|
+| `Folders/FolderSizes.cs:32` 20 h | folders walked again after | `walk.intervalHours` | 4–168 | 20 | higher |
+| `Files/TreeWalk.cs:41` 20 | exclusions named per walk | `walk.maxExclusionsNamed` | 0–100 | 20 | none |
+| `Agents/AgentWalk.cs:25` 60 s | `agents list --measure` budget (must stay below the client's call ceiling — test) | `agents.measureBudgetSeconds` | 5–60 | 60 | lower |
+| `Actions/Engine/StopMarkers.cs:21` 1 day | stop marker kept | `runs.stopMarkerRetentionHours` | 1–168 | 24 | higher |
+| `Actions/ICleanupAction.cs:114` 20 | items a preview names (the modal) | `preview.maxItems` | 1–100 | 20 | none |
+| `Actions/Clock/ClockFix.cs:52` 1 h | at most one clock fix per | `clock.minimumGapMinutes` | 60–1440 | 60 | higher |
+| `Thresholds/ThresholdRules.cs:71` 5 min | two drift observations apart (gates A16) | `clock.driftObservationsApartMinutes` | 1–1440 | 5 | higher |
+| `Actions/Disk/FilesystemTrim.cs:38` 7 d | A15 runs weekly | `trim.periodDays` | 1–90 | 7 | higher |
+| `Actions/PackageCaches/PackageCacheClean.cs:32` 200 MiB | A9 trigger | `aptCache.triggerMb` | 0–100 000 | 200 | higher |
+| `Actions/UserCaches/ToolCacheTrims.cs:34` 5 GiB | A17 trigger | `toolCaches.triggerGb` | 0–100 000 | 5 | higher |
+| `Actions/UserCaches/EditorServerCleanup.cs:29` 2 | A14 keeps the newest N builds | `editorServers.keepNewest` | 1–20 | 2 | higher |
+| `Actions/Suspects/SuspectTermination.cs:36` 5 s | A11's no-CPU window | `processes.cpuWindowSeconds` | 5–60 | 5 | higher |
+| `Actions/Suspects/SuspectTermination.cs:39` 10 s | A11 SIGTERM → SIGKILL grace (plan §5 fixes 10 s: raise-only) | `processes.termGraceSeconds` | 10–120 | 10 | higher |
+| `Records/RunRetention.cs:23` 90 d | history and run-detail retention (tighten-only for root, as `logging.retentionDays`) | `runs.historyRetentionDays` | 7–3650 | 90 | higher |
+| `Events/ContainerStartsStore.cs:21` 14 d | container-start lines kept | `events.startsRetentionDays` | 1–3650 | 14 | higher |
+| `Events/Coverage.cs:41`, `:44` 5 s / 5 min | Docker socket retry, first / longest | `events.retryFirstSeconds`, `events.retryMaxSeconds` | 1–60, 5–3600 | 5, 300 | higher |
+| `Events/Coverage.cs:48` +5 min | follower stale after segment + | `events.stalenessSlackMinutes` | 1–60 | 5 | none |
+| `Events/Coverage.cs:50` 5 | top images in the starts summary | `events.topImages` | 0–50 | 5 | none |
+| `Events/EventsFollower.cs:40` 10 min | one `docker events` segment | `events.segmentMinutes` | 1–60 | 10 | none |
+| `Thresholds/ThresholdRules.cs:38`–`:77` (14 rows) | page cache warn 15 GiB / act 12 GiB / act-below-available 30 %, inactive anon 15 GiB, order-7 blocks 32, PSI 10, `/` used 80 %, journal 1 GiB (also A10's trigger, `JournalVacuum.cs:97`), journal history 7 d, clock jumps 100 / 4 h, collector fresh 30 min, recommended `.wslconfig` memory 36 GB, WSL memory critical 90 % | `thresholds.pageCacheWarnGib`, `.pageCacheActGib`, `.pageCacheActAvailablePercent`, `.inactiveAnonWarnGib`, `.order7WarnBlocks`, `.memoryPressureWarn`, `.rootUsedWarnPercent`, `journal.maxGb`, `thresholds.journalHistoryWarnDays`, `.clockJumpsWarnPer4h`, `.collectorFreshMinutes`, `wslConfig.recommendedMemoryGb`, `thresholds.wslMemoryCriticalPercent` | each as its unit allows (0–100 for a percent, 0–100 000 GiB) | today's | the act thresholds as their trigger (higher / lower), the warn ones none |
+| `Collectors/ProcessCollector.cs:75` 30 | top processes in a full run | `processes.topCount` | 0–200 | 30 | none |
+| E7.S2b (planned) | A18's idle hours | `processes.aiAgentsIdleHours` | 1–168 | 4 | higher |
+| *extension* `poll/poller.ts:24` 120 s | status poll | `wslCare.refreshSeconds` (exists) | 30–86 400 | 120 | — |
+| *PR #12* `cleanup/runFollower.ts:35` + `root/cleanupController.ts:71` 4 s (one setting, two copies today) | follower poll while a cleanup runs (plan M6: 3–5 s) | `wslCare.cleanup.followPollSeconds` | 3–5 | 4 | — |
+| *PR #12* `cleanup/cleanFlow.ts:53` 5 min | a preview older than this is taken again before the modal | `wslCare.cleanup.previewExpiryMinutes` | 1–15 | 5 | — |
+| *PR #12* `cleanup/cleanupHost.ts:42` 5 | results kept for *Last cleanup* | `wslCare.cleanup.resultsShown` | 1–20 | 5 | — |
+
+##### Group B — root-safety limits → machine-layer-only keys (lower freely, raise up to the fixed maximum)
+
+| Today (file:line, value) | Meaning | Key | Range (max = hard) |
+|---|---|---|---|
+| `Folders/FolderSizes.cs:35` 2 000 000 / 2 min (also `CacheFolders.cs:65`, `AgentWalk.cs:66`) | entries / time per folder walk | `walk.maxEntries`, `walk.maxSeconds` | 1 000–2 000 000, 5–120 |
+| `Agents/AgentWalk.cs:22` 3 min | the agent walk inside a root collect | `agents.walkBudgetSeconds` | 10–180 |
+| `Agents/SessionGlob.cs:17` 500 000 | entries one session listing sees | `agents.sessionMaxEntries` | 1 000–500 000 |
+| `Agents/AgentDiscovery.cs:40` 1 MiB | `package.json` cap | `agents.maxPackageJsonBytes` | 64 KiB–1 MiB |
+| `Actions/Engine/RunRequests.cs:82`, `:86`, `:90` 1 MiB / 64 / 32 | request file cap / files read / queue budget (derived: cap ≥ `act.maxShownNames` × 67 B; queue ≤ read) | `requests.maxBytes` (derived), `requests.maxRead`, `requests.maxQueued` | —, 32–64, 1–32 |
+| `Actions/Engine/RequestSweep.cs:37` 60 s | a request's grace before swept (the extension's 90 s waits on it — test) | `requests.graceSeconds` | 30–600 (raise-only above 60) |
+| `Actions/ICleanupAction.cs:68` 10 000 | names in one shown list (the extension's `MAX_SHOWN_VOLUMES` mirrors it — test reads the C# value) | `act.maxShownNames` | 1–10 000 |
+| `Cli/Commands/ActCommand.cs:42`, `Cli/StdinList.cs` 1 MiB / 10 s | `--only` file / stdin cap and ceiling (also `config set aiAgents.extra -`) | `act.maxOnlyFileBytes` (derived), `act.stdinTimeoutSeconds` | —, 1–10 |
+| `Actions/Engine/StopMarkers.cs:39` 4 096 B | stop marker read cap (a bare literal today) | `stops.maxMarkerBytes` | 256–4 096 |
+| `Actions/Engine/DryRunWindow.cs:37` 7 d | first-week timer runs stay dry — **inverted**: lowering is the unsafe side | `dryRun.firstWindowDays` (raise-only) | 7–3 650 |
+| every command template's ceiling (24 rows): Docker probe 10 s / listing 30 s / disk usage 2 min / removal 5 min / prune 15 min (`Docker/DockerCommands.cs:52-58`, `Actions/DockerCleanups/DockerCleanupCommands.cs:26-29`); systemd read 15 s / search 30 s / unit start 30 s (`Systemd/SystemdCommands.cs:38-42`, `UnitCommands.cs:23`); journal vacuum 5 min, sync 2 min, drop caches 30 s, compact 2 min, apt clean 5 min, snap remove 5 min, build-server shutdown 2 min, fstrim 10 min, npm clean 10 min, NuGet clear 10 min, tool trims 10 min, hwclock / chronyc 30 s, Windows clock probe 20 s, snap list 30 s, system-drive lookup 5 s | per-command time limits (the extension's call ceilings are computed from them — N-1/N-2) | `commands.<template>TimeoutSeconds` (one per template id; grouped where one constant serves several) | 1 s up to today's value |
+| `Systemd/UnitCommands.cs:25` 120 s | `systemctl stop` ceiling — **inverted**: must stay above the unit's `TimeoutStopSec=90` | `systemd.unitStopTimeoutSeconds` (raise-only) | 91–300 |
+| output caps: `CommandRequest.DefaultOutputCapChars` 1 MiB, Docker small 1 MiB / large 64 MiB / action 4 MiB, systemd 1 MiB / search 4 MiB / unit 64 KiB, health 1 MiB | bytes a command's output may hold | `commands.outputCapBytes`, `docker.smallOutputCapBytes`, `.largeOutputCapBytes`, `.actionOutputCapBytes`, `systemd.outputCapBytes`, `.searchOutputCapBytes`, `.unitOutputCapBytes` | 4 KiB up to today's |
+| `Docker/DockerCommands.cs:28` 100 | ids per `inspect` / `rm` (command-line length) | `docker.batchSize` | 1–100 |
+| user-file caps: Playwright link 64 KiB, `browsers.json` 1 MiB, `.obsolete` 1 MiB, nvm alias 4 096 B, `.wslconfig` 1 MiB, `daemon.json` 1 MiB | bytes root reads of a file someone else controls | `userFiles.maxSmallFileBytes`, `userFiles.maxJsonBytes`, `health.maxWslConfigBytes`, `docker.maxDaemonJsonBytes` | 256 B up to today's |
+| quotes kept: `RunRecord.cs:155`, `DockerCli.cs:53`, `ToolAnswers.cs:15` 300 chars; `HealthCollector.cs:28-29` 5 lines × 200 chars; `ProcessFiles.cs:95` 200 chars | how much tool text a record keeps | `records.maxReasonChars`, `health.kernelLinesKept`, `health.kernelLineChars`, `processes.shownCommandChars` | 0 up to today's |
+| `Records/RunRecordWriter.cs:19`, `Events/ContainerStartsStore.cs:26` 5 s | lock waits | `records.lockTimeoutSeconds` | 1–30 |
+| `History/RunLogs.cs:50` 50, `History/LogPeriod.cs:12` 366 d | run details one `logs` opens; longest range (must stay ≥ the history retention) | `logs.maxDetailsRead`, `logs.maxRangeDays` | 1–50, 90–366 |
+| `Processes/ProcessSignals.cs:112` 5 s | wait after SIGKILL | `processes.killWaitSeconds` | 1–30 |
+| `Events/EventsFollower.cs:43` 1 min | a segment's ceiling beyond its length | `events.segmentSlackSeconds` | 10–60 |
+| `systemd/wsl-care.service:58` 10 min (N-4) | the timer run's whole-run limit (the installer writes the unit) | `timer.runLimitMinutes` | owner decision |
+| *extension* `client/verbs.ts:39-42`, `client/WslCareClient.ts:66`; *PR #12* `root/rootCall.ts:59`, `:62`, `client/verbs.ts:99-103` | call ceilings: status / version 20 s, doctor 100 s, preview 330 s, `wsl --list` 15 s, detach 90 s, stop 150 s, run reads 20 s | `wslCare.timeouts.statusSeconds`, `.doctorSeconds`, `.previewSeconds`, `.actPreviewSeconds`, `.wslListSeconds`, `.detachSeconds`, `.stopSeconds`, `.runReadSeconds` | minimum = the daemon's computed worst case (test); max 900 / 3 600 |
+| *PR #12* `cleanup/runFollower.ts:37` 30 min | a journal entry's ceiling, then "state unknown" (the act unit has no whole-run limit) | `wslCare.cleanup.followCeilingMinutes` | 30–240 |
+| *extension* `panel/format.ts:10` 500 and the PR #12 clips (120, 80, 200, 40, 1 000) | text clips on attacker-settable strings | ONE `wslCare.panel.maxTextLength` with a hard maximum, the clips derived | 100–1 000 |
+
+##### Group C — not configurable (format, contract, unit)
+
+`ExitCode` values and `exit-codes.json` (a process contract) · `SchemaVersion.Current` (wire contract) · the 64-hex volume /
+container id and the 12-char short id (Docker's shapes) · the run id `yyyyMMddTHHmmssZ-<pid>` (the id format) ·
+`/proc/<pid>/stat` field indexes 3/7/14/15/22, `mountinfo` fields, `auxv` keys, `O_*`/`AT_*`/`statx`/errno and signal
+numbers (kernel ABI) · byte and time unit conversions (1024, 2^30, 1e9, 100 ns ticks, ×24, ×10, ×1000) · Docker / journalctl
+size-unit tables · `DockerEngine.MinimumMajorForA4` 23 (a fact about Docker's behaviour) · `fstrim`'s exit 64 (the tool's
+contract) · the heartbeat 5 s and wedged-after 30 s (`RunningState.cs:103`, `:106`: a protocol between the root writer and
+every reader — two configurations would make a live run look wedged) · `StartTolerance` 2 s (the kernel tick and boot-time
+rounding) · `RealPath.MaxLinkHops` 40 (the kernel's ELOOP) · `TreeWalk.CancellationStride` (granularity) · the
+`Coverage` 24 h count window (a wire meaning, spelt "last 24 h" in the contract) and moby's events buffer 256 (measured
+Docker constant) · every key's own range (`ConfigKeys` ceilings — the range IS the contract) · the shape limits of
+`aiAgents.extra` (16 / 8 / 1 024 / 128 / 64 — the schema of a value, in `config-keys.json`) · `ConfigLoader.MaxLayerBytes`
+256 KiB (it bounds the parse of the very file a key would be read from) · `CommandRequest.MaxTimeout` 24 h (the hard maximum
+every timeout key is checked against) · the regular-expression match timeouts 250 ms (a ReDoS guard on fixed product
+patterns) · display truncations of text lines (`Take(5)`, `Take(3)`, 40 / 120 chars in refusals — presentation) · the
+extension's message-shape bounds (`MAX_RUN_INDEX`, `MAX_STOP_INDEX`, `ROW_IDS`), the CSP nonce, `SUPPORTED_SCHEMA`,
+`MIN_DAEMON_FOR_*`, UTF-16 detection.
+
+**Behavioural, but proposed to stay FIXED (the owner decides; listed so nothing is hidden):** internal plumbing a person cannot
+choose a right value for — `RunningReadRetry` 3 × 100 ms, `ProcessCommandRunner.DrainGrace` 2 s, the signal poll slice
+200 ms, the Windows rename retry 2 s / 10 ms, the lock jitter 5–25 ms, `RequestSweep.FutureSkew` 5 min, `EarlyEnd` 2 s, the
+backoff factor 2; the extension's `KILL_GRACE_MS` 2 s, `OUTPUT_LIMITS` 16 MiB / 1 MiB (a hit is a defect, not a tuning case),
+the status-bar priority 50, and PR #12's retry / concurrency / coordination numbers (`PREVIEW_ROUNDS` 3, `READ_TRIES` 3,
+`READ_BACKOFF_MS`, `SETTLE_AT_ONCE` 4, `TOMBSTONE_TTL_MS` 10 min, `FOLLOW.boundMs` 60 s, `graceMs` 90 s — which must stay above
+the daemon's request grace) and its journal budget 32 (a mirror of `requests.maxQueued`, derived from it). Copies of the
+systemd unit (`CollectRun.DefaultWindow` 4 h, `DoctorRun.LastRunMaxAge` 5 h, the "90 s" stop text) are not numbers of their
+own: they are DERIVED from one timer-period constant. `A17 cargo sweep --time 30` is not in the code (cargo sweep is never
+run, `ToolCacheTrims.cs:36`) — nothing to make configurable.
+
+##### E7.S2c — the story
+
+- **Keys:** every A row a key in `ConfigKeys` + `default.json` (today's value as the default — behaviour unchanged), every B
+  row a `MachineOnly` key with `KeyTrust` carrying a HARD maximum (and a `RaiseOnly` flag for the inverted three); the contract
+  generated (`ContractFilesTests`); coupled limits DERIVED, not keyed twice (request cap from `act.maxShownNames`; `logs.maxRangeDays`
+  ≥ `runs.historyRetentionDays`; `requests.maxQueued` ≤ `requests.maxRead`) and checked at load (a violation = a `ConfigError`
+  naming both keys).
+- **Call sites:** every literal replaced by a read of the effective configuration; the command templates take their ceilings
+  from the config the policy is built with (the policy remains static in its SHAPE — the slot-bounds rule of §15q R1.3 applies
+  to every number slot a key fills).
+- **The structural test** `No_behavioural_number_is_a_literal`: scans `src_daemon/src` (and `src_vs_code/src`) for
+  `TimeSpan.From*` and numeric literals in the patterns the inventory used, outside the defaults and an explicit
+  allowlist that IS group C (each entry with its reason), with a planted companion that must be found.
+- **Every sentence** that spells a number formats the effective value (N-6).
+- **Extension:** the settings above (`application` scope, ranges in `package.json`, the code clamps — VS Code does not
+  enforce `minimum`/`maximum` on read); the ceiling test (N-1–N-3) computes the daemon's worst case from the C# constants.
+- **RED first:** N-1 / N-2 / N-3 (a ceiling below the computed worst case), a planted literal found by the structural test,
+  a B key's raise above its hard maximum refused, a user-layer value of a B key ignored with a notice.
+- **DoD:** the inventory table re-verified at build time (a row whose `file:line` moved is updated, not dropped); every A and
+  B row a key or a setting; every C row in the allowlist with its reason; docs and the contract; RED-GREEN-RED per behaviour.
+
+#### E7.S2c as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record is `research/module_tests.md` § *Every number is configuration (E7.S2c)*.
+**126 number keys** (`Config/ConfigKeys.Numbers.cs`, generated with their defaults into `default.json`): the 35 A rows,
+the B rows as 91 machine-layer-only keys (the inventory's 77, split where one row held two numbers, plus `agentCpu.*` from
+E7.S2b and `requests.maxBytes`). **Deviations from the text above:**
+
+- **How a number reaches its call site: `Tuning`, an ambient configuration** (`Config/Tuning.cs`). The numbers bound static
+  command templates, the policy's catalogue and the collectors' constants — places no configuration object reaches. One
+  process, one configuration: `Program.Main` sets it once after the load (`Tuning.ForThisProcess`), `Program.Run` scopes the
+  verb to the loaded configuration (an `AsyncLocal`, so a test's host is honoured and parallel tests never meet), and every
+  read before the load sees the embedded defaults (today's values). A named constant became a property that reads its key
+  (`RunningState.HeartbeatPeriod => Tuning.Current.Seconds(ConfigKeys.Running.HeartbeatSeconds)`), so its callers did not change.
+- **Command templates keep their identity, their limits are read late.** `ActionCommands` matches a template by
+  `ReferenceEquals`, so templates stay static singletons; their limits are a closed `CommandLimits` — `Keyed(timeout, cap)`
+  read when a request is built, `Of(Func<ToolCommand>)` for a fixed read template that follows its command, `Fixed` for a
+  test's own. A test reads the templates under the defaults FIRST, so a template that froze its limits at declaration fails.
+- **The configuration's own patterns are bounded by the key's MAXIMUM** (`KeyRules`, 1 000 ms): they run while the
+  configuration is being loaded, before any configured value exists — the bootstrap rule the machine layer's own read
+  already follows (`config.maxLayerBytes`' maximum). Every other match (the extra agents' names and globs, a catalogue
+  version pattern) uses `patterns.matchTimeoutMilliseconds`; the extra-agent `GeneratedRegex` pair became runtime matches for that.
+- **Coupled rules, checked at load** (`Config/NumberRules.cs`, a violation refuses the layer naming the rule): wedged ≥ 3 ×
+  heartbeat; `requests.maxRead` ≥ `maxQueued`; `act.maxListBytes` ≥ 67 × `act.maxShownNames`; `logs.maxRangeDays` ≥
+  `runs.historyRetentionDays`; `systemd.unitStopTimeoutSeconds` ≥ `units.stopTimeoutSeconds` + 30; jitter max > min;
+  `events.retryMaxSeconds` ≥ `retryFirstSeconds`; and, added here, **`timer.periodHours` divides 24** — the timer's
+  calendar (`00/<h>`) restarts at midnight, so 5 or 7 would leave one short interval a day.
+- **`CommandRequest.MaxTimeout` is `commands.maxTimeoutHours`**, and the test holds every timeout key's range maximum under
+  the key's MINIMUM (1 h): no machine value can push a command's timeout past what a request accepts.
+- **The request skew is seconds** — `requests.futureSkewSeconds` (60–3600, default 300), not the inventory's minutes, so it
+  is published as the extension reads it (coordinator 2026-10-05).
+- **The timer period is ONE key, and the units follow it through drop-ins.** `Systemd/UnitDropIns.cs` renders one drop-in per
+  unit (`<unit>.d/50-wsl-care-config.conf`): the timer's `OnCalendar` (cleared, then `*-*-* 00/<timer.periodHours>:00:00`),
+  `RandomizedDelaySec`, `AccuracySec`; the services' `Nice`, `MemoryMax`, `TimeoutStopSec`; the follower's `RestartSec`.
+  `install.sh` writes them from the INSTALLED binary (`wsl-care units dropin <unit>`, a new read-only verb — the script never
+  parses the configuration), on every install and upgrade, and removes them on uninstall. The shipped unit files keep
+  today's values, which is what the drop-in of the defaults says (a test). `doctor` gained `unitConfig`: an installed drop-in
+  that no longer says what the machine layer says is a `problem` naming what is wanted and "run install.sh again"; none at
+  all is fine while the configuration keeps the defaults. Every derived copy of the period reads the key
+  (`CollectRun.DefaultWindow`, `DoctorRun.LastRunMaxAge` = period + `timer.lateSlackMinutes`, the doctor sentence).
+- **N-4 (REVERSED by the E7.S2b/S2c review, C-H2 — see that round): `wsl-care.service` `TimeoutStartSec=infinity`**, like `wsl-care-act@.service`; the test: every `oneshot` unit's start
+  limit is `infinity` (its start IS the whole run, bounded by each command's own ceiling), a `simple` unit sets none.
+- **N-5: root never reads a whole file it did not bound.** `IFileSystem.ReadFile(path, maxBytes)` (the physical one reads at
+  most one byte past the cap; a test double checks after); `Files/RootFileCaps.cs`: a state file (`running.json`, the
+  dry-run stamp, the clock state, `volume-seen.json`, the events summary, a drop-in) at `records.maxStateFileBytes` (1 MiB),
+  a growing file (the history, a run's detail, the event lines) at `records.maxHistoryBytes` (256 MiB) — which also bounds
+  every other one-argument read. Past the cap = unreadable, the caller's existing conservative edge (the dry-run week
+  restarts, the history read names the problem).
+- **N-6: one definition per number.** The sentences that spelt a default now format the value in force: the threshold
+  limits (`warn > 80 %`, `warn < 32 free order-7 blocks`, the journal's days, the clock jumps, the drift's "5 minutes", the
+  collectors' "30 minutes"), the dry-run week, A11's / A18's "SIGKILL after 10 s", A14's "newest 2", A9's "200 MiB", the
+  stop marker's "90 s", the retention's "90-day", the doctor's "every 4 h", the clock fix's "at most one per hour" (now "per
+  60 minutes"). A test changes the keys and reads the sentences.
+- **N-1, N-2, N-3 are the extension's, and live on PR #12.** That branch already holds every extension number as a setting
+  (`settings/numbers.ts`) with each ceiling's minimum above the daemon's derived worst case (`client/worstCases.ts`,
+  `ceilings.test.ts`) — `timeouts.doctorSeconds` defaults to 120 s over a 109 s worst case (N-1). This branch does not edit
+  the extension's `verbs.ts` a second time (it would conflict with PR #12's rewrite of the same lines); its part is the
+  daemon side of the mirror — `status --json` `limits`, below.
+- **`status --json` publishes `limits`** (coordinator 2026-10-05, additive, schema version 1): `historyRetentionDays`,
+  `requestFutureSkewSeconds` — the two PR #12's `shared/daemonLimits.ts` reads — and every other daemon value a host decision
+  rests on whose machine range reaches ABOVE its default (a copy of the default would then be too small): `requestGraceSeconds`
+  (the host waits past it), `maxShownNames` (the shown-list cap the host validates against), `unitStopSeconds` (`act --stop`'s
+  worst case), `drainGraceMilliseconds` (what a killed command adds, twice, to every worst case). A ceiling whose range maximum
+  IS its default (every Docker and `systemctl show` ceiling) can only be lowered, so the extension's copy stays a safe upper
+  bound and is not published. `Status/StatusLimits.cs` names the fields once; `contracts/status-limits.json` is generated from
+  it (name, key, unit, range, default) and a test holds the writer's JSON names equal to the contract's — the file the
+  extension's reader test reads. A daemon older than E7.S2c sends no `limits`: the reader takes the contract's defaults.
+- **The structural test** (`ArchitectureTests.Numbers.cs`) scans `src_daemon/src` for five shapes — a numeric `const` /
+  `static readonly`, an inline `TimeSpan.From*(<digit>)`, a `Take(n ≥ 2)`, a byte product (`n * 1024 …`, `1L << n`), and a
+  literal handed to a wait, a jitter or a capped read (`Sleep(10)`, `Next(5, 25)`, `ReadStateFile(path, 4096)`) — and fails on
+  every hit outside the group-C allowlist of 114 entries, each with its reason (units, kernel ABI, display truncations, argv
+  heuristics, the extra-agent schema, Docker's and moby's own constants, the report's 24 h definition). Its companion plants
+  one literal of each shape; a third test fails on a listed entry that no longer exists. The extension's numbers are PR #12's
+  (`numbers.test.ts` holds `package.json` equal to its table).
+- **Not built here, recorded:** the extension's reader test against `contracts/status-limits.json`, and the extension's use
+  of `drainGraceMilliseconds` / `unitStopSeconds` in its worst cases — PR #12's side of the boundary row below.
+
+#### E7.S2b/S2c review round (2026-10-06) — two own reviews (security, A18; correctness, S2c)
+
+Every finding accepted (the coordinator, 2026-10-06), fixed in ONE commit `fix(daemon): E7.S2b/S2c review round …`; RED-GREEN-RED
+per finding — the record is `research/module_tests.md` § *The E7.S2b/S2c review round*.
+
+| # | Finding | Fixed by |
+|---|---|---|
+| A-H1 | A18's button run was not bound to what its modal showed: a process that became eligible after the modal was ended too, and a multi-id request could carry A18 with no A18 modal | A18 is `IBoundToShownList` like A4: the preview answers `pid:start` keys (`shown`), `act … --process <pid:start>` passes them back (A18 only, each shape-checked, at most `act.maxShownNames`), the request file carries `shownProcesses` (validated), a MANUAL run without them is refused, a run with them ends only the processes BOTH still eligible now and among the keys — the live re-judge kept |
+| A-M1 | CPU measured per process, not per tree: an idle wrapper whose child agent works became eligible (and SIGTERM reached the child) | a candidate with any child process is kept: "it has a child process" |
+| A-M2 | "orphaned" counted processes the user's `systemd --user` started | for A18, orphaned = parent pid 1 only |
+| A-M3 | agents recognised by basename alone | the program (`/proc/<pid>/exe`), or the script node runs, must lead along its links into the agent's own install — a native `…/versions/…` target or the agent's npm package (`AgentDiscovery.IsInstallOf`); else "not that agent" |
+| A-M4 | both idle windows used the wall clock (a forward jump after a host sleep passed both at once) | every sample carries the monotonic clock too; the idle time is the SHORTER of the two clocks, and counts only over a dense chain — no gap between sightings, nor between the newest and now, longer than two timer periods |
+| A-M5 | zero session matches read as "no live session"; a process with its own agent home was judged by the default one | none found = kept ("cannot tell"); `/proc/<pid>/environ` read as root, and a moved `HOME`, XDG folder or agent home variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_…`: any variable named after a catalogue binary holding a path outside the agent's own folders) keeps the process |
+| A-L1 | `agent-cpu.json` 0644, and past the cap the HIGHEST pids were dropped | written 0600 (`IFileSystem.WritePrivateFileAtomically`); past the cap the OLDEST processes are dropped (= no history = kept); the cap 256 KiB, a full 512-entry history with both clocks is 157 KiB (a coupled rule holds `agentCpu.maxBytes` ≥ 320 × `agentCpu.maxEntries`) |
+| A-L2 | the kill-time re-check compared "not root" only | the item key carries the account (`pid:start:cpu:uid`); another account now = not signalled (A11 too, it shares the path) |
+| A-L3 | discovery bounded per agent; the PATH entries' device stats outside any bound | ONE `Bounded.Run` around the folder choice and every lookup |
+| gap | a tool's cache answer was checked against the agent folders only | also every `~/git` and Claude's temp folder |
+| C-H1 | a history past `records.maxHistoryBytes` read as "no runs": the reconcile wrote a false `interrupted` line per detail, more every run; the request sweep likewise | an unreadable history (`HistoryRead.Problem`) skips the reconcile and the whole request sweep, said in the run's notes; the key's minimum is 64 MiB, and a coupled rule holds it ≥ 128 KiB × `runs.historyRetentionDays` |
+| C-H2 | **reverses N-4.** `TimeoutStartSec=infinity` removed the last backstop: the heartbeat beats on a timer, so a hung read kept a run "live" forever, and `act --stop` refuses a live run | (a) wsl-care.service `TimeoutStartSec` = `timer.runLimitMinutes` (new machine key, default 240; the drop-in renders it; a coupled rule holds it ≥ the derived worst case of a timer run — every command template once at its ceiling with its drains, the two walks, 10 min: 220 min with the defaults); (b) a progress watchdog — `running.json` carries the time of the last step (a command started or ended, a stretch of a walk, an action begun), and a run with none for `running.noProgressMinutes` (new machine key, default 20; a coupled rule holds it ≥ the longest single command ceiling with its drains and 60 s: 17 min) reads WEDGED with a fresh heartbeat, so `act --stop` ends it. The act unit keeps `infinity` and gains (b) |
+| C-M1 | a user value in range could put ROOT observe-only through a coupled rule, the error blamed on the wrong layer | the rules are held per LAYER: the keys a layer set for a broken rule go back to the layer below — from the machine layer an error, from the user layer a NOTICE (root stays able); `runs.historyRetentionDays` clamped to `logs.maxRangeDays`' maximum (366); `config set` evaluates the rules on the configuration it would produce and refuses a breaking value |
+| C-M2 | a broken rule left the bad value in force (`units dropin` rendered `00/5:00:00`) | the take-back above; `units dropin` refuses (78) while a layer is in error |
+| C-M3 | the event stream's ceiling (segment + slack) could pass `commands.maxTimeoutHours`, so the follower restarted every 30 s | `events.segmentMinutes` at most 50; a coupled rule (segment + slack + 60 s ≤ the maximum); the timeout test covers COMPOSED ceilings |
+| C-M4 | the writer kept the key's range maximum as the user-layer cap, the reader the value in force | ONE cap, `ConfigLoader.UserLayerCap`; the refusal's fix text prints the cap in force |
+| C-M5 | `events.startsRetentionDays` user-layer up to 3650, while root re-reads every kept day file every ~10 min; no `MemoryMax` on the follower | machine-only, at most 90; the summary reads only the day files of the last 24 h; the follower gets `MemoryMax` (`units.memoryMaxMb`, rendered too) |
+| C-M6 | missing coupled rules | `requests.maxBytes` ≥ 67 × `act.maxShownNames` + 4096; `timer.lateSlackMinutes` > `randomizedDelayMinutes` + `accuracyMinutes`; `agentCpu.maxBytes` ≥ 320 × `agentCpu.maxEntries` |
+| C-M7 | `RewriteLines` read `history.jsonl` whole | read under `RootFileCaps.History`; past it the rewrite is refused and the file kept |
+| C-M8 | `install.sh --version <older>` failed at the drop-ins after replacing the binary and units | a `units dropin` that answers 2 (an older release: an unknown verb) or 78 (a configuration in error) gets no drop-in, said, the stale one removed; anything else still fails the step |
+| C-M9 | the number scan missed comparisons, clips, `new TimeSpan(…)`, one-digit waits and properties that answer a literal | five more shapes, each planted in the companion; the 21 numbers they found are formats (group C, each with its reason) |
+
+**Deviations from the review's text:**
+
+- `timer.runLimitMinutes` defaults to **240, not 60**: the derived worst case of a timer run with the defaults is 220 min, so 60 would
+  contradict the coupled rule the same finding asked for. The watchdog (20 min without a step) is what ends a hang early.
+- The watchdog's key is `running.noProgressMinutes` (the `running.*` group), not `run.noProgressMinutes`.
+- The derived worst case counts each command TEMPLATE once — a removal of many batches or one trim per tool takes more; the
+  limit is a backstop against a hang, not a plan of a busy run, and says so in its rule.
+- A-M5's "agent home variable" is a NAME rule (prefixed by a catalogue binary, holding a path), not a list per agent: the
+  catalogue names no variables, and the rule keeps a process — the safe direction — for any it does not know.
+- A-L1 keeps "drop the oldest" (the planned rule) rather than recording the old order as a deviation: a dropped identity is "no
+  history", which only keeps a process.
+
+#### coai E7 code round (2026-10-06) — the daemon half
+
+The coai code round on the E7 daemon half PASSED (verdict proceed; all four qwen reviewers answered; security: nothing blocking or
+major). Eight findings, all accepted, fixed in `fix(daemon): coai E7 code round …`:
+
+| # | Finding | Fixed by | Behaviour |
+|---|---|---|---|
+| 1 | Major: `CommandLine.SplitActOptions` cyclomatic complexity 5 | the per-option dispatch extracted (`TakeOption`, `WithValue`) | none — a refactor; the act parsing tests unchanged and green |
+| 2 | Major: `AgentsCommand` read `AgentSizesSource.Reason` with `??` | `AgentSizesSource.View()` → a closed `SizesView` (`MeasuredNow` / `FullRun(RunId, Age)` / `Unavailable(Reason)`); the nullable members stay only at the JSON edge | none — a refactor; the text-form tests green |
+| 3 | Minor: `Sessions.Count!.Value` | `AgentSessionsReport.View()` → `SessionCount` (`Counted(Count)` / `NotCounted(Reason)`) | none — a refactor |
+| 4 | Minor: `MaxShownVolumes` a property the parser cannot honour | a `const` again: the parser's compile-time ceiling, `act.maxShownNames`' range maximum (a test holds them equal); the VERB refuses a list past the value in force | yes: a machine layer that lowers `act.maxShownNames` now refuses a longer list (RED with it dropped) |
+| 5 | Minor: `CliHost.AgentExtrasDropped` | `CliHost.WithAgentExtras(ConfigLoadResult)` returns the host AND the load with the dropped folders as structured notices (key `aiAgents.extra`, the user layer) — no host state | the same notices; held by the phase-two tests (3 red with them dropped) |
+| 6 | Minor: an empty `units dropin` answer installed silently | `install.sh` treats an empty answer as no drop-in, warns, removes a stale one | yes (RED with the check dropped, WSL) |
+| 7 | Major (UX): `agents list --measure` silent for up to its budget | one stderr line before the walk ("measuring N agent folder(s), up to <budget> s…") and one per folder as it starts (`AgentWalk.OnFolder`); stdout untouched | yes (RED for each line dropped) |
+| 8 | Minor (UX): the ~250-character interop explanation repeated per key | ONE notice without a key carries it; each key's notice says the short fact; goldens regenerated (`status.json`, `doctor.json`) | yes (RED with the per-key text back) |
+
+#### Stories
+
+| # | Story | Files (verified above) | Acceptance | Model, reviews |
+|---|---|---|---|---|
+| **E7.S0** | **The config trust and contract (daemon) — R1.** FIRST the live bug of R1.3 (B1): closed text / list keys, `processes.families` without `other` / `ai-agents`, `archive.baseFolder` machine-only, the slot-bounds and no-config-in-policy tests; then the hardened read of both layers (owner per layer, 256 KiB) and the bounded `ReadCurrent`; the sweep of the six sibling root reads under the per-class reader policy (M2) + the call-site classification test; interop-off ⇒ the safe-direction rule (M3); the logging keys' safe direction; the user-layer digest in `status`; run detail `config` provenance (additive); `contracts/config-keys.json` (name, shape, min, max, allowed, default, `rootEffect` and its safe direction — what the extension's loosening modal keys on) + `ContractFilesTests`; the test that no key reaches a policy, template or path slot; capability `config.contract` | `ConfigLoader.cs`, `RegularFiles.cs`, `PhysicalFileSystem.cs`, `IFileSystem.cs`, `CliHost.cs`, `TargetUser.cs`, `WindowsSystemDrive.cs` (reuse only), `TargetUserCommands.cs`, `BrowserAndHttpCaches.cs`, `EditorServerCleanup.cs`, `HealthCollector.cs`, `DockerHygiene.cs`, `Collect/RunDetail.cs`, `ConfigKeys.cs` (metadata), `ConfigValidation.cs`, `ProcessFamilies.cs`, `SuspectTermination.cs` (tests only), `Cli/Logging/WslCareLogging.cs`, `UserConfigWriter.cs`, `Status/StatusReport.cs`, `Status/Capabilities.cs:36`, `contracts/config-keys.json` (new) | `config set processes.families other` refused (RED today) and a user layer holding it is a `ConfigError`; a FIFO, a link, a foreign-owned or group-writable user layer → observe-only naming why, within 1 s, root never blocks; the drvfs reads still read a 0777 `.wslconfig`; interop disabled → a loosening user value ignored with the sentence, a tightening one applied, user-scoped actions still run; a timer run under a user value names it in `runs show`; contract drift red with one renamed key | **Fable** if its monthly limit has reset, else **Opus** (recorded, §15j M10); two own reviews: security / confused deputy, crash / durable state |
+| **E7.S1** | **The agent catalogue, discovery, the daily walk (daemon) — R2.** `Agents/agents.json` (embedded data: binaries, npm packages, data folders per OS, session layout per D2, `neverEnter`); discovery (PATH as the invoking user — the target user's fixed bin list as root, `TargetUserCommands`; npm global folders by existence, no `npm` process; folders); `slow.agents` (totals, counts, dates) on the 20 h walk under the 3 min total ceiling; `agents list [--measure] --json` (both RIDs); D3's version from disk, nothing executed; `memory` never entered for any agent, the prefix exclusion, the per-directory device check; catalogue → protected roots + never-list names | `Agents/` (new), `FolderSizes.cs` (the walk joins `collect`, not `FolderSizes`' own list), `SlowParts.cs`, `CollectRun.cs:344`, `LinuxHostPaths.cs:127/137`, `WindowsHostPaths.cs:77`, `NeverList.cs:31`, `Files/TreeWalk.cs`, `Files/IFileSystem.cs`, `PhysicalFileSystem.cs` and the file-system fakes, `Json/WslCareJsonContext.cs`, `CommandLine.cs` (verb), contracts goldens | `agents list` on the fixture home finds each entry by binary, by npm package, by folder alone; the §4.6 per-agent fields; sessions per layout, "—" when unconfirmed; growth vs the previous sample; no process started by discovery (a recording runner); the syscall-level no-open scenario (H3); a nested mount → "excluding <subdir> (different filesystem)"; the walk stops at the total ceiling with the rest "not measured this run" | **Opus**; two own reviews: agent-folder safety (H1–H3), privacy |
+| **E7.S2** | **`aiAgents.extra` and `agents probe` (daemon) — R2.** A fifth value shape (`AgentListKey`: `{cli, side, name, dataFolders[], sessionGlob}`) with R2.1's validation; `config set aiAgents.extra -` reading compact JSON from stdin (the bounded stdin reader of `--only -`, `Cli/StdinList.cs:20`, widened, 1 MiB / 10 s); `agents probe <path> --json` unprivileged only (C3's refusal text); the declared cleanup roots (M8); the two-phase host (M1); extras in the walk and — failing or not — in the protected roots (B2); capabilities `agents.list`, `agents.probe`, `config.agentsExtra` | `ConfigKey.cs`, `ConfigValidation.cs`, `ConfigDocument.cs`, `UserConfigWriter.cs`, `StdinList.cs`, `Agents/`, `ProtectedRoots.cs`, `CliHost.cs`, `Program.cs`, `Capabilities.cs`, `ICleanupAction.cs`, `CacheFolders.cs`, `NpmCacheClean.cs`, `ToolCacheTrims.cs`, `BrowserAndHttpCaches.cs` | each R2.1 refusal names the rule (the product's own folders included); a manual folder makes A12 / A17 refuse under it; a valid extra, then a new overlapping cleanup root → the action refuses (B2); the run's policy holds the extras (M1); every user-home action declares its roots; the probe refuses as root naming uid 0 and the fix; the probe opens nothing; `cli` never a path argument in a root run | **Opus**; two own reviews: path validation / confused deputy, data safety |
+| **E7.S2b** | **Orphaned AI-agent processes (daemon) — owner decision 2026-10-05.** A18, a button only: the target user's `ai-agents` processes that are orphaned, have no TTY, used NO CPU for `processes.aiAgentsIdleHours` (default 4) MEASURED by identity `(pid, boot_id, start ticks)` against the root-only `agent-cpu.json`, and whose agent (confirmed layout only) has no session file modified within that window; SIGTERM then SIGKILL after 10 s; every process in the record | see *E7.S2b* above | the RED tests listed there | **Opus**; the coai code round after E7.S2 (or its own) |
+| **E7.S2c** | **Every number configurable (daemon + extension) — owner rule 2026-10-05.** The inventory's A rows as ordinary keys, its B rows as machine-layer-only keys with hard maxima (three raise-only), coupled limits derived; every call site reads the effective configuration; the extension's ceilings as settings whose minimum is the daemon's computed worst case; the structural no-literal test with group C as its allowlist; defects N-1–N-6 fixed RED first | see *E7.S2c* above | see *E7.S2c — the story* | **Opus**; two own reviews (root safety of the B keys; the extension ceilings) |
+| — | *(gate)* the daemon parts merge; `extension-v0.1.0` tagged (E5 live gate) and E6.S2 merged (PR #12) before E7.S3 | | | |
+| **E7.S3** | **Settings ↔ config (extension) — R1's other half.** `package.json` settings generated from / held equal to `contracts/config-keys.json` (`application`, `ignoreSync`); ONE module `src/config/configCall.ts` (only `config get --json`, `config set <key> <value>`, `config reset <key>`, `config set aiAgents.extra -`, no `-u`); the bundle scan amended: `config` allowed ONLY in that region, forbidden in the root region and everywhere else; `-u`, `root`, `--timer` forbidden in the config region; the reconcile + one-time notice; mirror-on-change, revert-on-refusal, the loosening modal; a daemon without `config.contract` → the settings shown read-only "update the daemon" | `src/config/` (new), `client/verbs.ts`, `client/WslCareClient.ts`, `extension.ts`, `package.json`, `test/bundleScan.test.ts`, `test/structure.test.ts`, the fake `wsl.exe` | each mirrored setting's exact argv; the scan red with `config` planted outside its region, `-u` planted inside it; a refused value reverted with its message; one notice per digest across a reload; no `-u` anywhere on the path | **Opus**; two own reviews: confused deputy (argv, scopes, sync), durable state of the notice / revert loop |
+| **E7.S4** | **The AI-agents section and *Add CLI path…* (extension, WSL side).** The panel section of §7.2 from `agents list --json` (on panel open / refresh, never polled — §15g M1); D4's flow; the manual badge and Remove; warnings (`aiAgents.warnGb`, `sessionWarnMb`); "—" for unconfirmed sessions; R2.4 sanitising | `src/agents/` (new), `panel/fieldMap.ts`, `panel/viewModel.ts`, `panel/messages.ts`, `panel/panelHtml.ts`, `media/panel.js`, `research/architecture.md` field map (:1830) | the path-mapping table (UNC, `\\wsl$`, another distro, `X:\`, a control character, a leading `-`); the probe's exact argv with no `-u`; the webview's two messages only; a crafted project name renders inert | **Opus**; two own reviews: confused deputy (path → argv), webview / rendering |
+| **E7.S5** | *(split by review M11 into S5a / S5b / S5c — the three rows below this one; this row's text is S5a's origin and is kept as the record)* **The bundled `wsl-care.exe` (extension + release).** `release-extension.yml` fetches the `win-x64` asset of `daemon-v<MIN>`, verifies `.sha256` and the attestation with the exact identity (§15e A1), bundles `bin/wsl-care.exe`; a `--target win32-x64` `.vsix` (§15f #13) beside the universal one or instead — decided there with the Marketplace's per-target rules read first; the allowlist and leak scan cover the exe; a closed Windows verb set (`status --json`, `agents list [--measure] --json`, `agents probe <path> --json`, `config get/set` for the Windows layer, `--version`) spawned by ABSOLUTE path from `extensionUri`; Windows numbers in Memory / Disk (`vmmemWSL`, host RAM, `C:` free — the `WindowsProbe` of E2.S1); the Windows agents rows and *Add CLI path* for `X:\…`; the walk at most hourly, newest result in `%LOCALAPPDATA%\wsl-care\agents-last.json` | `release-extension.yml`, `check-vsix.mjs`, `.vscodeignore`, the `vsce ls` list, `src/windows/` (new), `Collectors/WindowsProbe.cs` (reuse), `WindowsHostPaths.cs` | the `.vsix` holds exactly the allowlist + the exe whose hash equals the attested asset; the Windows rows filled, never 0 when unavailable; `vmmemWSL` max / min on the Logs page stays "arrives in E11" (no Windows history before E11 — §15j M7) | **Opus**; one own review: release / supply chain |
+| **E7.S5a** | **The bundle:** fetch, `.sha256` and attestation of the `win-x64` asset, `bin/wsl-care.exe`, the per-target `.vsix`, the allowlist and leak scan, spawning by absolute path; only `--version` and `agents list` used | as S5 | the exe's hash equals the attested asset; the `.vsix` holds exactly the allowlist | **Opus**; one own review: supply chain |
+| **E7.S5b** | **The Windows agents:** the Windows rows and *Add CLI path* for `X:\…` (R2.1's Windows extras rules); the Windows config layer defined — `%APPDATA%\wsl-care\config.json` (`WindowsHostPaths.cs:65`), keys `aiAgents.*` only, written only by the extension, inherited by E11; `agents-last.json` (one file) until E11 retires it | `src/windows/`, `WindowsHostPaths.cs`, `Agents/` | a Windows extra under `%TEMP%\claude`, through a reparse point or on a removable / network volume refused; the walk at most hourly, in the background, under the total ceiling, the cached result shown at once (Q9) | **Opus**; two own reviews: path validation, data safety |
+| **E7.S5c** | **The Windows numbers in Memory / Disk** (`vmmemWSL`, host RAM, `C:` free — `WindowsProbe` of E2.S1, rendered) — explicit, last; moves to E11 if E7 runs long, recorded then | panel field map, `research/architecture.md:1798-1808` | the rows filled, "unavailable — <reason>" never 0 | **Opus** |
+
+**Every story** follows the red-green-red order of `research/module_tests.md`: the RED test written first and seen failing
+for the real symptom, the fix, green, then the load-bearing line reverted and seen red again; whole suites on Windows and
+WSL (normal user, a `/tmp` copy removed after); `dotnet format --verify-no-changes`; `npm test`; the family checks; the
+docs (`research/architecture.md` — the configuration seam row and *The target user's home*, a new *AI agents* seam, the
+field map rows at `:1798-1830`; `research/module_tests.md` flows; README's *Configuration* and *AI agents*; this section's
+deviations).
+
+**RED tests, one per story (named for the guarantee).**
+- S0 `A_families_list_cannot_widen_A11_beyond_the_named_families` (today `config set processes.families other` is
+  accepted and A11's candidates take every family — B1, a live bug);
+  `A_user_layer_root_cannot_trust_is_refused_at_once_and_never_followed` (a FIFO — today the read blocks; a link to a
+  root-only JSON — today followed and its keys echoed into `configError`);
+  `With_interop_disabled_a_user_value_can_only_tighten_root`.
+- S1 `Agents_list_finds_each_catalogue_agent_by_binary_npm_or_folder` (today: unknown verb, exit 2);
+  `The_agent_walk_never_enters_memory_and_never_opens_a_file` (a 10 MB `projects/p/memory/x` excluded; a recording double).
+- S2 `A_manual_data_folder_cannot_overlap_a_cleanup_root_or_leave_the_home`; `Agents_probe_refuses_root_and_never_executes`;
+  `A_failing_extra_stays_protected` (B2); `The_runs_deletion_policy_holds_the_accepted_extras` (M1).
+- S3 `A_mirrored_setting_reaches_the_daemon_only_through_config_set_without_root` (scan + argv);
+  `A_value_the_daemon_refuses_is_reverted_with_its_message`.
+- S4 `A_picked_path_of_another_distribution_is_refused_before_any_spawn`.
+- S5 `The_bundled_exe_is_the_attested_asset_byte_for_byte`.
+- Teeth for each: remove the exclusion / the owner check / the region rule / the `-u` guard and watch the test go red again.
+
+#### The release interplay
+
+- **The daemon parts (E7.S0–E7.S2) merge to `main` at any time**, CI green — riding `daemon-v0.1.0` if they merge before the
+  owner cuts it (no daemon tag exists yet; `.release-please-manifest.json` is 0.0.0), else the next daemon minor. The
+  extension acts on their CAPABILITIES (`config.contract`, `agents.list`, `agents.probe`, `config.agentsExtra`), never on a
+  version (§15j M5); an older daemon gives "update the daemon to see AI agents / to edit settings".
+- **The extension parts (E7.S3–E7.S5) merge only after `extension-v0.1.0` is tagged.** §15j B3, as written, protects the
+  first public extension from a ROOT path, and E7's extension code has none — so B3's letter does not cover it. **§15f #5
+  does:** the first public version "must NOT contain … `config set`" (it writes what root reads — R1), its verbs are only
+  `status` / `preview` / `doctor` / `--version`, and it carries no `wsl-care.exe`. All three are E7's. The mechanical check
+  (§15k #7, keyed on tags) is widened in E7.S3: an extension release at or below `extension-v0.1.0` refuses when the bundle
+  carries the config region's marker, an `agents` verb, or `bin/wsl-care.exe` — defence in depth behind the merge order,
+  not the protection itself.
+- **They also follow E6's extension half** in practice: E7.S3 amends E6.S2's partitioned scan (PR #12), so it starts from
+  `main` after PR #12 merges. The release is then `extension-v0.3.0` (§16); if the owner lets E7 go first, it is the next
+  minor after 0.1.0 and the §16 number moves — the order is the owner's (open question 10).
+
+#### Boundaries with the neighbouring plans
+
+| Item | Built by | The other side's part |
+|---|---|---|
+| the agent catalogue, session layouts (D2), `aiAgents.extra` with `sessionGlob`, the protected roots | E7 (this section) | E9 ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md) §3) adds each entry's `archive` block and the move; it reads E7's `sessionGlob` (validated by E7, R2.1) and must not redefine "one session" |
+| the Windows agents walk and its one-file cache | E7.S5 | the Windows collectors, task and history are E11 ([PLAN_windows_care.md](PLAN_windows_care.md)); `%TEMP%\claude\` and every TEMP cleanup are E12 (W-A2's guard) |
+| orphaned AI-agent processes | E7.S2b (A18, the distro's) | Windows' W-A11 (E12, [PLAN_windows_care.md](PLAN_windows_care.md)) is separate; the same rule should apply there — a setting defaulting to 4 h, a button only, idle measured by identity |
+| the daemon values the extension MIRRORS (`status --json` → `limits`) | E7.S2c (the writer, `Status/StatusLimits.cs`, and `contracts/status-limits.json` generated from it) | PR #12 / E6 (`shared/daemonLimits.ts`, the reader: `historyRetentionDays`, `requestFutureSkewSeconds`; whole numbers in range, else the contract's default); its reader test reads the contract file; the four further fields (`requestGraceSeconds`, `maxShownNames`, `unitStopSeconds`, `drainGraceMilliseconds`) are for its worst cases and selection checks to adopt |
+| the extension's numbers (settings, ceilings above the daemon's worst case, N-1–N-3) | PR #12 (`settings/numbers.ts`, `client/worstCases.ts`, `ceilings.test.ts`) | E7.S2c makes the daemon's ceilings keys; those whose range only LOWERS keep the extension's copy a safe upper bound, the rest are in `limits` |
+| the bundle scan's regions | E6.S2 (root region), E7.S3 (config region) | E7.S3 widens E6.S2's rule "config forbidden everywhere" to "everywhere but the config region"; the root region stays as E6 left it |
+
+Order: E7's daemon parts first (additive), then the extension parts after both release gates above. Disjoint otherwise.
+
+#### Growth and budget
+
+| Surface | Projected size | Who retires it | Interrupted |
+|---|---|---|---|
+| the user layer | ≤ 256 KiB by the reader cap; `aiAgents.extra` ≤ 16 × 8 × 1 KiB ≈ 130 KiB worst, ~1 KiB typical | rewritten in place (atomic) | atomic temp + rename (exists) |
+| `config.json.broken-*` (an unparseable layer moved aside, `UserConfigWriter.cs:110-136`) | one file per corruption event, ≤ 256 KiB each; rare | **kept forever, a decision** — the user's text is never discarded; listed by `doctor` when any exist | — |
+| `slow.agents` on the history line (totals, counts, dates — no session names) | once per 20 h: ~6 tracked agents × ~300 B ≈ 2 KB/day → ~0.2 MB over the 90-day history retention; worst case (every catalogue entry + 16 extras) ≈ 11 KB/day → ~1 MB | the history's 90-day retention | the line is written whole or not at all (write order §15b #1) |
+| run detail `config` provenance | ≤ ~50 entries × ~80 B ≈ 4 KB per run | the run details' 90-day retention | as the detail |
+| `%LOCALAPPDATA%\wsl-care\agents-last.json` | ONE file, two samples (newest + the one ≥ 20 h older, for growth), ≤ 64 KiB | replaced on every walk; E11 retires the file (its history takes over) | atomic temp + rename |
+| `/var/lib/wsl-care/agent-cpu.json` (E7.S2b: per process identity, the oldest unchanged and the newest CPU sample) | live `ai-agents` processes of non-root accounts, ≤ 512 identities; a full file is ~90 KiB (measured by a test: ~180 B an entry), read under a 128 KiB cap; ~10 entries ≈ 2 KiB typical | pruned on every run to live identities; the cap drops the oldest | atomic temp + rename; a torn or unreadable file = "no history" (nothing eligible), rewritten whole |
+| extension `globalState` | one digest per distribution | replaced when the digest changes | — |
+| unprivileged run logs of `agents list` / `config get` / `agents probe` | one file per call (§15g M1); on panel open / refresh / a click only — never polled | the existing log retention | — |
+
+The walk's TIME also grows: the WSL agent folders measured on 2026-10-02 hold ~2.7 GB in a few thousand sessions; E7.S1
+measures the added time on the fixture and the live gate on this machine, against a full `collect` that already takes
+3.5 min (§17 #2).
+
+#### Build order
+
+1. E7.S0 (everything later writes through it) → 2. E7.S1 → 3. E7.S2 → 3b. E7.S2b → 3c. E7.S2c → the daemon release carrying them →
+4. *(wait for `extension-v0.1.0` and PR #12)* → 5. E7.S3 → 6. E7.S4 → 7. E7.S5 → 8. the E7 live gate.
+
+#### The E7 live gate (owner; each step observed, stamped with date, build and outcome)
+
+1. **The R1 premise:** from an unprivileged shell in the distro, `/mnt/c/Windows/System32/wsl.exe -d <distro> -u root
+   --exec id -u` — record whether it answers `0`; with interop disabled, record that a loosening user value is ignored.
+   Also recorded: the mount mode drvfs gives `.wslconfig` (M2) and the umask a login shell in WSL Ubuntu has (R1.1).
+2. `agents list --json` on both sides against §4.6's numbers; the walk's added time inside the real `collect`.
+3. *Add CLI path…* end to end for one Linux and one Windows CLI; the probe ran unprivileged (its run log is in
+   `$XDG_STATE_HOME`, not `/var/log`).
+4. A setting changed in VS Code appears in `~/.config/wsl-care/config.json`, owned by the user; a timer run under it names
+   the layer in `runs show`; the conflict notice appears once.
+5. Settings Sync: a mirrored setting with `ignoreSync` does not arrive on a second machine — or it does, and C2's rule is
+   seen holding (the synced value reaches the conflict notice, never the daemon); §15g M3's "which settings file a UI-kind extension reads in a Remote-WSL window" if
+   still open.
+6. The extension release after `extension-v0.1.0` (and E6's), its guard green, `POST_DEPLOY.md` run.
+
+#### Test plan (beyond the RED tests)
+
+- **Daemon:** discovery over a fake home per catalogue entry and per detection route; session counting per confirmed
+  layout over captured, anonymised tree SHAPES (names from `FixtureIdentity`, sizes synthetic); `neverEnter` and
+  link-never-followed property tests over random trees; every R2.1 rule at its edge; protected roots ⊇ catalogue ∪ accepted
+  extras, never-list names = catalogue names; `ContractFilesTests` for `config-keys.json`; the `ReadFile(` call-site
+  classification with its planted companion; goldens `agents-list-*.json`, `agents-probe-*.json`, `config-get-*.json`
+  regenerated and read; scenario flows for every new verb in `research/module_tests.md` (a missing row is red, E1).
+- **Extension:** `package.json` ↔ contract equality; the reconcile as a pure function (explicit-only, machine-layer not a
+  conflict, digest stable across key order); the revert loop terminates; the loosening modal shown exactly for the
+  contract's root-effect direction; the path mapper table; the strict fake refuses `config` with `-u`, `agents probe`
+  with `-u`, any `config set` key outside the list; page scripts RUN over the goldens; the bundle scan with every planted
+  companion; `@vscode/test-electron` on 1.85.0 and stable.
+- **Release (S5):** the `.vsix` allowlist with the exe, its hash against the attested asset, the leak scan over the exe's
+  strings, the per-target packaging read from the built artefact (not from the workflow's opinion).
+
+#### Definition of Done
+
+- [ ] H1–H4 each held by a named test, seen red with the guard removed.
+- [ ] Root reads both config layers and the six sibling user-controlled files through the hardened reader; every `ReadFile(`
+      call site classified by a test with a planted companion.
+- [ ] Interop disabled ⇒ the user layer only tightens root, user-scoped actions still run; said by `status` / `doctor` /
+      `config get`.
+- [ ] Every text / list key closed or a declared path key (B1, the families bug seen RED first); every number slot inside
+      its key's range; no policy or protected-roots type references the configuration except the typed extras input;
+      `aiAgents.extra` only adds protection, and a failing extra stays protected (B2).
+- [ ] The run's deletion policy holds the accepted extras (two-phase host, M1); every user-home action declares its
+      cleanup roots (M8); no extra on the product's own folders (M9).
+- [ ] `agents list` / `agents probe` on both sides; sessions per the one definition, "—" when unconfirmed; no agent binary
+      executed at all (D3 as changed by M10); the walk stops at a device change (C1) and at its total ceiling (M7).
+- [ ] Every mirrored setting generated from `contracts/config-keys.json`, `application` + `ignoreSync`; `config` spelt only
+      in the config region; the one-time notice and the revert path tested.
+- [ ] *Add CLI path…* by picker (by URI scheme, M12) and by typed path; the path never in a root argv, never opened by root.
+- [ ] Mirrored only for "our" changes (C2), by one window (M4), through one write function (M5), without starting the VM
+      (M6); a partial *Keep VS Code's* reported "k of N" (C4).
+- [ ] The owner's ask (2), "older than N", met for the EXISTING age keys only (no new knob, Q7) — plus the one knob the
+      owner decided on 2026-10-05, `processes.aiAgentsIdleHours` (E7.S2b).
+- [x] E7.S2c (daemon, 2026-10-05; the extension's settings and N-1–N-3 on PR #12): every behavioural number a key or a setting (the owner rule 2026-10-05), the structural no-literal test green with
+      group C as its reasoned allowlist; no extension ceiling below the daemon's computed worst case (N-1–N-3).
+- [ ] E7.S2b: an orphaned `ai-agents` process ends only by the button, only after N h without CPU measured by identity,
+      never with a live session of its agent; the timer never ends one (test).
+- [ ] `wsl-care.exe` bundled byte-for-byte from the attested asset (S5a); the Windows agents rows (S5b) and the Windows
+      Memory / Disk rows (S5c, or recorded as moved to E11) filled.
+- [ ] The extension parts merged only after `extension-v0.1.0` (and PR #12); the widened release check proves it.
+- [ ] Docs, goldens, `research/module_tests.md` flows and this section's deviations updated; the E7 live gate stamped.
+
+#### Open questions for the owner
+
+The review round's proposed defaults are this plan's WORKING ASSUMPTIONS (the code is built to them); each is still the
+owner's to overturn: Q1 never enter `memory`; Q2 session listing yes, counts persisted only; Q3 never run an agent binary
+(M10); Q4 skip loosening + apply safe-direction values (M3); Q5 the modal only for `dryRun` true → false, an `auto` on for
+A5 / A6Unused / A8 / A11 / A12 / A17 and any families change, a notice with Undo for ages and thresholds; Q6 keep the
+unused keys, `daemonUnused` in the contract; Q7 no new knobs; Q8 names shown live in the panel only, never persisted in
+history; Q9 the Windows walk at panel open, ≤ hourly, in the background, under a total ceiling, the cached result shown at
+once; Q10 E6 first → `extension-v0.3.0`; Q11 DECIDED (C5): the sweep is in E7.S0; Q12 stays with the open churn decision.
+Added by the review: **Q13** may `ai-agents` be a choosable A11 family (assumed: no)? **ANSWERED by the owner 2026-10-05:** not via the
+general families list; via E7.S2b's dedicated button-only action A18 (see *E7.S2b*).
+
+1. **Memory folders:** never entered at all (proposed — their size is not counted, the total says "excluding memory"), or
+   may their SIZE be measured by stat (still never opened)?
+2. **Session listing:** counting sessions lists names and stats entries inside the agents' folders (no file opened) — is
+   that within "sizes may be measured"?
+3. **Agent versions:** never run any agent binary (working assumption, M10) — is a version from disk enough?
+4. **Interop off:** skip the user layer for root (proposed), or always read it?
+5. **The loosening modal** for root-effective keys (an `auto` switched on, an age lowered, `dryRun` off): wanted, or too
+   much friction?
+6. **Unused daemon keys** `distro` / `refreshSeconds`: keep them unused (proposed), or retire them with a migration note?
+7. **New "older than N" knobs** for A14 (keep newest 2 builds), A17 (`cargo sweep --time 30`) or A12 — wanted in E7, or
+   left as built?
+8. **Showing session and project names** (the 5 largest sessions) in the panel — acceptable? They never enter goldens,
+   fixtures or the `.vsix`.
+9. **The Windows walk** at panel open, at most hourly, newest result kept in one file — acceptable, or only on Refresh?
+10. **Order:** E7's extension parts after E6's (PR #12) → `extension-v0.3.0` (proposed), or E7 settings first?
+11. **The root-read sweep** (six sibling sites of the hardened-reader class) inside E7.S0 (proposed, per the
+    security rule's "sweep the class in the same task"), or as a separate fix first?
+12. **The run-log churn** of the new unprivileged verbs joins the open §15g M1 / §15j M6 decision.
+
+#### §15q review round (2026-10-05) — the coai plan round and an own plan review
+
+**The coai plan round:** verdict **proceed**, 5 findings, all ACCEPTED. **The own independent plan review:** verdict "not
+ready as written, but close" — 2 Blocking, 12 Major and the minors below, all ACCEPTED. Each row OVERRIDES the text it
+names; the text above was updated to match.
+
+| # | Finding | Disposition | Lands in |
+|---|---|---|---|
+| C1 (Major, coai) | the `st_dev` check on the data folder only — a nested bind mount drags the walk onto 9p | **Accepted.** Per-directory device check; stop at a change; "excluding <subdir> (different filesystem)" | R2.1, R2.3, E7.S1 |
+| C2 (Major, coai) | if Sync ignores `ignoreSync`, a synced root-effective value is mirrored silently | **Accepted.** Only "our" changes (a host-held token) are mirrored; any other change goes through the conflict notice | D5, E7.S3 |
+| C3 (Minor, coai) | the probe's root refusal must name uid 0 and the fix | **Accepted.** The text names `--set-default-user` and `/etc/wsl.conf` | D4, E7.S2 |
+| C4 (Minor, coai) | *Keep VS Code's* with N keys — partial failure undefined | **Accepted.** Continue past a refusal, report "k of N applied; refused: …" | D5, E7.S3 |
+| C5 (Minor, coai) | DoD vs open question 11 | **Accepted, decided:** the six-site sweep is in E7.S0 | R1.1, Q11 |
+| B1 (Blocking, own — a live bug on `main`) | R1.3 is false: `processes.families` accepts `other` → root's A11 ends other uids' idle orphans; `archive.baseFolder` free text; number slots | **Accepted.** Closed text / list keys (families ⊆ catalogue − `other` − `ai-agents`), `archive.baseFolder` machine-only path key, slot bounds, no config in the policies — RED first | R1.3, E7.S0 (first) |
+| B2 (Blocking, own) | a failing extra dropped at root read UNPROTECTS the folder | **Accepted.** It leaves the walk only; its paths stay protected; an overlap makes the action refuse | R2 (intro), E7.S2 |
+| M1 | the deletion policy is built before the config is loaded | **Accepted.** Two-phase host; a test on the run's policy; the never-list residual stated | R2.2, E7.S2 |
+| M2 | `ReadOwned`'s g/o-write refusal fails on drvfs (0777) | **Accepted.** Per-class reader policy; the real mount mode recorded | R1.1, E7.S0, live gate 1 |
+| M3 | interop off must not reuse `HomeOwner.Unknown` | **Accepted.** A separate reason; the target user kept; safe-direction values applied | R1.2, E7.S0 |
+| M4 | the change event fires in every window | **Accepted.** One lease-holding window mirrors; markers by (key, value); a two-window test | D5, E7.S3 |
+| M5 | the loosening modal bypassable through the reconcile | **Accepted.** ONE write function for every user-layer write | D5, E7.S3 |
+| M6 | the activation reconcile starts the VM | **Accepted.** `--list --running --quiet` first | D5, E7.S3 |
+| M7 | no total budget for the agent walk | **Accepted.** 3 min total, catalogue first; `--measure` below the host timeout; the added time measured | D1, R2.3, E7.S1 |
+| M8 | "cleanup roots from the action registry" does not exist | **Accepted.** A new `ICleanupAction` member, a test, the relocation residual stated; files added to S2 | R2.1, E7.S2 |
+| M9 | an extra on the product's own folders would lock `config set` | **Accepted.** Refused | R2.1, E7.S2 |
+| M10 | executing agent binaries for `--version` | **Accepted — D3 changed:** nothing is executed; version from the link target or the npm `package.json`, else "not asked" | D3, E7.S1, Q3 |
+| M11 | E7.S5 too large; Windows numbers; the Windows layer undefined | **Accepted.** S5a / S5b / S5c; the Windows layer and extras rules defined; E11 retires `agents-last.json` | stories, R2.1, growth |
+| M12 | a Remote-WSL dialog returns `vscode-remote://wsl+<d>/…` | **Accepted.** Map by URI scheme; case-insensitive distro names; in the mapping table test | D4, E7.S4 |
+| m-a | the widening is `IFileSystem.ReadStateFile`'s hard-wired owner, not `ReadOwned` | **Accepted** | R1.1 |
+| m-b | the classifier must also cover `File.ReadAll*`, `ReadRegularFile`, root's `MeasureTree` / listings of target-home paths | **Accepted** | R1.1, E7.S0 |
+| m-c | `UserConfigWriter.ReadCurrent` reads plainly — a FIFO hangs `config set` | **Accepted.** Bounded reader | R1.1, E7.S0 |
+| m-d | a group-writable layer (umask 002) turns the timer observe-only | **Accepted.** The umask measured first; a private group accepted or `doctor` prints the `chmod` | R1.1, E7.S0 |
+| m-e | `logging.*` from the user layer steers root's audit log | **Accepted.** Root-effective with a safe direction | R1.6, E7.S0 |
+| m-f | `TreeWalk`'s `neverEnter` is exact names only; S1's files incomplete | **Accepted.** Prefix exclusion, per-directory device check, one grouped pass; `TreeWalk.cs`, `IFileSystem.cs`, the fakes added | R2.3, E7.S1 |
+| m-g | `memory` must be never-enter for EVERY agent walk, extras included | **Accepted** | H2, R2.3 |
+| m-h | H3 needs a syscall-level proof | **Accepted.** inotify `IN_OPEN` or `strace` over the fixture tree | H3, E7.S1 |
+| m-i | session names in `history.jsonl` | **Accepted.** Totals / counts / dates only; names live only | D1, growth |
+| m-j | the native Settings UI cannot show the layer or read-only | **Accepted.** Said in the panel; such a change ignored with a notice | D5 |
+| m-k | a change mirrors to the current distribution only | **Accepted**, stated | D5 |
+| m-l | ref drift: `Capabilities.cs:36` → `:37` | **Checked, not taken:** `grep -n` on `origin/main` puts `All` at line 36. The other drift accepted: `research/architecture.md`'s field map and §15f #5 / #13 now point at E7.S5a–c | stories |
+| m-m | the widened release check is defence in depth | **Accepted**, said | release interplay |
+| m-n | the owner's ask (2) is met only for existing keys | **Accepted**, in the DoD | D5, DoD |
+| m-o | a user-layer digest in `status` so an outside change is noticed | **Accepted** — added to E7.S0 | R1.7, E7.S0 |
+| Q1–Q12 | the proposed defaults | **Accepted as working assumptions**, still listed for the owner | open questions |
+
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
 Every epic is its own branch from the previous epic's final commit, one review-gate code round over its
@@ -1183,7 +2183,7 @@ week's REVIEW instead, which needs Phase 0.1's `.wslconfig` cap in place for its
 | E4 | Units, `install.sh`, release pipeline, `daemon-v0.1.0` | `feat/wc-e4-daemon-release` | files + tests + CI green, merged (§15f #4). The release and the install are the **E4 live gate** below — `daemon-v0.1.0` with 3 RID assets + `.sha256` + attestations, installed here, timer + events unit active, `doctor` green, stamped |
 | E5 | Extension prototype (read-only) + **Marketplace** `extension-v0.1.0` | `feat/wc-e5-extension` | files + tests + CI green (`ci-extension.yml` included), merged (§15g M4): `status --json` carries `verdicts` + `productVersion` (E5.S0, rides `daemon-v0.1.0`); a universal `.vsix` WITHOUT `wsl-care.exe` (bundling is E7.S3) and with no root call path, held by the allowlist and content checks; status bar + read-only panel per the §7.2 / B2 field map; *Install daemon* that types the pinned command; `release-extension.yml` + `tags-extension.json` as files and tests — scope and exclusions per §15f #1, #3, #5, #6, #8, #10, #12, #13 and §15g. The Marketplace listing is the **E5 live gate** below, after the E4 live gate's stamp |
 | E6 | Daemon contract, detach, cleanup buttons, root boundary, Last cleanup, Logs page (re-split by §15j) | daemon parts `feat/wc-e6-daemon`; extension parts `feat/wc-e6-cleanup-logs` | **daemon (E6.S0, E6.S1):** merged with CI green at any time — riding `daemon-v0.1.0` if merged before the owner cuts it, else the next daemon minor (§15j B3); then the **E6 daemon live gate**. **extension (E6.S2–E6.S4):** merged only after `extension-v0.1.0` is tagged (§15j B3): preview → host confirm → detached run → result for every A#, durable across a reload; root only through the ONE argv module (§15f #2, §15j M1); Logs page = §7.4 as §15f #7 and §15j M3 / M7 amend it; then the **E6 live gate** — per §15f #1–#3, #7, #9–#11 and §15j. E6.S0 / E6.S1 may start before the E4 live gate's stamp (§15j m10); releases and live measurements wait for it |
-| E7 | AI-agent discovery, settings ↔ config, Add CLI path | `feat/wc-e7-agents-settings` | `agents list` matches §4.6 on both sides; *Add CLI path…* end to end; settings mirrored with the one-time conflict notice; `extension-v0.3.0` |
+| E7 | AI-agent discovery, settings ↔ config, Add CLI path (re-split by §15q into E7.S0–E7.S5) | `feat/wc-e7-agents-settings` | `agents list` matches §4.6 on both sides; *Add CLI path…* end to end; settings mirrored with the one-time conflict notice; the daemon parts merged at any time, the extension parts only after `extension-v0.1.0` and E6's extension half (§15q *The release interplay*); then the **E7 live gate** (§15q); `extension-v0.3.0` |
 | E8 | Help in 5 languages, zoom, tone — via the kit | `feat/wc-e8-help-kit` | the kit imported, no copied coai modules; articles in en/ru/uk/de/es with fallback + stale notes; zoom/tone on every page; `extension-v0.4.0` |
 | E9 | AI-session archive — daemon, both sides | `feat/wc-e9-archive-daemon` | `archive preview\|run\|restore\|list` on both sides; never-move property tests; index-before-delete + reconcile; live round trip byte-identical; A13 in the timer |
 | E10 | Archive in the extension | `feat/wc-e10-archive-ui` | settings with folder picker; Archive page with restore; Logs show A13; `extension-v0.5.0` |
@@ -1275,9 +2275,12 @@ tagged (B3). Then, after the E6 daemon live gate's stamp:
 | E6.S2 | **the extension's root boundary (§15j M1, M2, M5, m1, m4, m5, m9, m11):** `src/root/rootCall.ts` with the closed `ROOT_OPS` (preview, confirm + detach, stop, collect + detach, the root check); runner stdin; ids = the compiled registry ∩ `status.actions` ∩ `capabilities`; A4's names from the held preview, each validated 64-hex; the M1 scans; the fake's root shapes; `minDaemonForActions`; the B3 release check. **Acceptance:** the exact argv per op asserted; `--timer` / `--user` / `config` never; every scan red with a planted instance; the fake refuses a synchronous confirm, stdin outside `--only -`, an id outside the intersection; a daemon below the actions minimum or without the capabilities shows "Update daemon" and starts no root call; the tripwire still blocks the real `wsl.exe`. **Merges only after `extension-v0.1.0` is tagged (B3).** **Amended by §15k:** the B3 check keyed on TAGS with 0.1.0 / 0.2.0 fixtures (#7); the bundle scan on flags and argv shapes, bare words guarded by the import graph and the root region's exact literals (#10); a detach timeout = outcome unknown, followed through `status.running` (#3); `shownTruncated` honoured and a golden past 10 000 (#11); every host call's timeout stated, the 10 s stdin ceiling shown as a refusal with a retry (#19). | **Opus** (Fable intended — §15j M10), then two independent own reviews |
 | E6.S3 | **buttons, durable cleanup state, Last cleanup, Run full check now (§15j M4, M6, M7, M8, M9, m3, m8, m9):** the webview's `{clean, rowIds}` / `cleanSelected` / `runFullCheck` / `stop` (an index into host data); host modals (sanitised, the second confirmation naming the setting, a 5-minute expiry, "re-checked at run time"); following `running` and `runs show`; the in-flight poll (M6); *Last cleanup* from `lastCleanup` with "Docker after" from re-read preview totals and their time; distinct exit-code texts. **Acceptance:** the reload scenario (start A4, reload, the panel shows "Cleaning… A4" from `running`, then the result from `runs show`; a dead run shows `interrupted`, never sticks; a refused request shows its reason); a 387-volume A4 pipes all 387 names; *Clean selected* = ONE `act` call; page scripts RUN over the goldens. **Merges only after `extension-v0.1.0` is tagged (B3).** **Amended by §15k:** run ids persisted in `globalState` until a terminal answer, `unknown` terminal, a 30-minute poll ceiling (#4); a detach timeout shown as the run it started (#3); the preview's age re-checked after the last modal, with a frozen clock (#12); the close-VS-Code case if #5 + #13's measurement narrows the promise. | Opus |
 | E6.S4 | **the Logs page (§15j M3, M7, M8):** a `WebviewPanel` with §7.2's CSP rules; periods This run / Today / Yesterday / a date / a range (webview state or memento); host-built argv for `logs` / `runs` / `runs show`; local days through the instant range; totals / runs / max-min / the run list from the answers only; lazy object lists through `runs show`; "arrives in E#" for `vmmemWSL`; the retention clamp. **Acceptance:** each period → its exact argv; the selection survives a reload; page tests assert every block equals the JSON (no arithmetic in the page); `detailsNotRead` shown; a malicious period / runId from the webview starts no process. **Merges only after `extension-v0.1.0` is tagged (B3).** | Opus |
-| E7.S1 | agent catalogue and discovery, `agents list/probe` | Opus |
-| E7.S2 | settings ↔ config | Opus |
-| E7.S3 | AI-agents section, Add CLI path, Windows numbers in Memory/Disk; bundling `wsl-care.exe` and a `--target win32-x64` `.vsix` (moved here from E5 by §15f #5, #13) | Opus |
+| E7.S0 | the config trust and contract (daemon) — §15q R1 | **Fable** if its limit has reset, else Opus + two own reviews (§15q) |
+| E7.S1 | agent catalogue, discovery, the daily walk, `agents list` (daemon) — §15q R2 | Opus + two own reviews |
+| E7.S2 | `aiAgents.extra`, `agents probe` (daemon) — §15q R2 | Opus + two own reviews |
+| E7.S3 | settings ↔ config (extension) | Opus + two own reviews |
+| E7.S4 | AI-agents section, Add CLI path (extension, WSL side) | Opus + two own reviews |
+| E7.S5 | bundling `wsl-care.exe`, a `--target win32-x64` `.vsix` (moved here from E5 by §15f #5, #13), Windows numbers in Memory/Disk, the Windows agents | Opus + one own review |
 | E8.S1–S3 | help via the kit, zoom + tone everywhere, ru/uk/de/es + stale stamps | Opus |
 | E9.S1 | archive engine (one session one month, never-move list, in-use skip, copy→fsync→hash→index→delete) | **Fable** — irreplaceable data |
 | E9.S2 | restore, reconcile, list | **Fable** — reverse move and crash recovery |

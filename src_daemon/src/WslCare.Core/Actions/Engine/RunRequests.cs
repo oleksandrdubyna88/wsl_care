@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.Json;
 
 using WslCare.Core.Files;
@@ -21,6 +22,10 @@ public sealed record RunRequestFile(int SchemaVersion, RunId RunId, string Kind,
     /// <summary>The names A4's preview showed and the person confirmed (E6.S1: <c>--only -</c>, persisted here); empty for
     /// every other request.</summary>
     public IReadOnlyList<string> Shown { get; init; } = [];
+
+    /// <summary>The processes A18's preview showed and the person confirmed, as <c>pid:start</c> (E7.S2b review A-H1); empty for
+    /// every other request.</summary>
+    public IReadOnlyList<string> ShownProcesses { get; init; } = [];
 
     /// <summary>The boot the request was written in (<c>/proc/sys/kernel/random/boot_id</c>, E6.S1 review D3); empty when the
     /// writer could not tell. A request of another boot is stale at once.</summary>
@@ -79,15 +84,15 @@ public static class RunRequests
 
     /// <summary>The largest request read: a full shown list (10 000 names of 64 hex digits, quoted, comma-separated ≈ 670 KB)
     /// with room to spare; one byte more is a refusal, whatever the file's length claims.</summary>
-    public const int MaxRequestBytes = 1024 * 1024;
+    public static int MaxRequestBytes => Tuning.Current.Int(ConfigKeys.Requests.MaxBytes);
 
     /// <summary>How many request files one reader opens at most: a queue that deep is already a defect to report, and every
     /// unprivileged <c>status</c> reads them.</summary>
-    public const int MaxRequestsRead = 64;
+    public static int MaxRequestsRead => Tuning.Current.Int(ConfigKeys.Requests.MaxRead);
 
     /// <summary>The growth budget (plan §15k #8 + #17): at most 32 requests wait at once — ≤ 32 MiB in the folder — and a 33rd
     /// is refused at <c>--detach</c> with its own exit code. Every terminal path removes its request, the sweep included.</summary>
-    public const int MaxQueued = 32;
+    public static int MaxQueued => Tuning.Current.Int(ConfigKeys.Requests.MaxQueued);
 
     private const string Extension = ".json";
 
@@ -217,7 +222,7 @@ public static class RunRequests
         {
             return JsonSerializer.Deserialize(bytes, WslCareJsonContext.Default.RunRequestFile) switch
             {
-                { RunId: not null, Kind: not null, Actions: not null } file when file.RunId == filedAs => Validated(path, file with { Shown = file.Shown ?? [], BootId = file.BootId ?? string.Empty }),
+                { RunId: not null, Kind: not null, Actions: not null } file when file.RunId == filedAs => Validated(path, file with { Shown = file.Shown ?? [], ShownProcesses = file.ShownProcesses ?? [], BootId = file.BootId ?? string.Empty }),
                 { RunId: not null } other => new RunRequestRead.Bad(path, $"names run {other.RunId} but is filed as {filedAs}"),
                 _ => new RunRequestRead.Bad(path, "does not parse: it is not a run request"),
             };
@@ -240,6 +245,7 @@ public static class RunRequests
         : !KnownTrigger(file) ? $"names the trigger {file.Trigger}, which root never writes for a {file.Kind} request"
         : !KnownActions(file) ? $"names an action this daemon does not know for a {file.Kind} request"
         : !ValidShown(file.Shown) ? $"carries a shown list that is not at most {ShownList.MaxNames} anonymous volume names (64 lowercase hex digits)"
+        : !ValidShownProcesses(file.ShownProcesses) ? $"carries a shown process list that is not at most {ShownList.MaxNames} pid:start keys"
         : string.Empty;
 
     /// <summary>What root writes (E6.S1 review S2): a detached act is the panel's (<c>manual</c>) or a terminal's (<c>cli</c>), a
@@ -252,4 +258,6 @@ public static class RunRequests
         file.Kind == "collect" ? file.Actions.SequenceEqual(["collect"]) : file.Actions.Count > 0 && file.Actions.All(a => ActionId.Find(a) is not null);
 
     private static bool ValidShown(IReadOnlyList<string> shown) => shown.Count <= ShownList.MaxNames && shown.All(Docker.DockerJson.IsFullId);
+
+    private static bool ValidShownProcesses(IReadOnlyList<string> shown) => shown.Count <= ShownList.MaxNames && shown.All(Suspects.SuspectSignals.IsShownKey);
 }

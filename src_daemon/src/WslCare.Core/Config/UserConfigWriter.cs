@@ -19,10 +19,22 @@ public abstract record UserConfigWriteResult
     /// <param name="KeyWasPresent">Whether the key was in the file before (a reset of an absent key is a no-op that says so).</param>
     /// <param name="DroppedKeys">Keys the old file held that did not validate and were not carried over.</param>
     /// <param name="MovedAsideTo">Where an unparseable old file was moved; empty when it was readable.</param>
-    public sealed record Written(string File, bool KeyWasPresent, IReadOnlyList<string> DroppedKeys, string MovedAsideTo) : UserConfigWriteResult;
+    public sealed record Written(string File, bool KeyWasPresent, IReadOnlyList<string> DroppedKeys, string MovedAsideTo) : UserConfigWriteResult
+    {
+        /// <summary>The layer was a link (E7.S0 review C3): the LINK was replaced by a regular file holding the values read
+        /// through it — the file it pointed at untouched.</summary>
+        public bool ReplacedLink { get; init; }
+    }
 
     /// <summary>The deletion policy refused the write — a bug in the layout, since the user's config directory is never a protected place.</summary>
     public sealed record Refused(DeletionVerdict.Refused Verdict) : UserConfigWriteResult;
+
+    /// <summary>The rendered layer would be larger than its own reader takes (E7.S1/S2 review R10): nothing was written.</summary>
+    public sealed record TooLarge(int Bytes, int Max) : UserConfigWriteResult;
+
+    /// <summary>The value would break a coupled rule with the layers below (E7.S2b/S2c review C-M1): the loader would not take it,
+    /// so it is not written.</summary>
+    public sealed record BreaksRule(string Message) : UserConfigWriteResult;
 }
 
 /// <summary>
@@ -58,19 +70,53 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     {
         var file = paths.UserConfigFile;
         var directory = Path.GetDirectoryName(file) ?? throw new InvalidOperationException($"the user config file {file} has no directory");
-        var current = ReadCurrent(file, directory);
+        // Review C-M4: the cap the READER keeps — config.maxLayerBytes in force — not the key's range maximum.
+        var cap = ConfigLoader.UserLayerCap(paths, files);
+        var current = ReadCurrent(file, directory, cap);
         var next = change(current.Entries);
 
+        // E7.S0 review C3: root never follows a link, so a linked layer is one root refuses; the repair replaces the LINK (the
+        // file it points at is never written) with a regular file holding the values read through it.
+        var rendered = Render(next);
+        if (rendered.Length > cap)
+        {
+            return new UserConfigWriteResult.TooLarge(rendered.Length, cap);
+        }
+
+        if (RuleBroken(key, rendered) is { Length: > 0 } broken)
+        {
+            return new UserConfigWriteResult.BreaksRule(broken);
+        }
+
+        var linked = files.ReadLink(file) is LinkReadResult.Target;
         files.CreateDirectory(directory);
-        var verdict = files.WriteFileAtomically(file, Render(next), new DeletionScope(directory, ActionName));
+        var verdict = linked
+            ? files.ReplaceLinkWithFile(file, rendered, new DeletionScope(directory, ActionName))
+            : files.WriteFileAtomically(file, rendered, new DeletionScope(directory, ActionName));
         return verdict is DeletionVerdict.Refused refused
             ? new UserConfigWriteResult.Refused(refused)
-            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, current.MovedAsideTo);
+            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, current.MovedAsideTo) { ReplacedLink = linked };
     }
 
     private sealed record Current(IReadOnlyDictionary<string, ConfigValue> Entries, IReadOnlyList<string> Dropped, string MovedAsideTo);
 
-    private Current ReadCurrent(string file, string directory) => files.ReadFile(file) switch
+    /// <remarks>Bounded (plan §15q R1.1, review minor): a FIFO in the layer's place is refused at once and moved aside, never
+    /// waited on; a larger file than a layer may hold is moved aside too.</remarks>
+    /// <summary>Review C-M1: what the loader would say of <paramref name="key"/> in this new layer over the layers below — a coupled
+    /// rule it breaks is the notice that it is not taken; empty when it would be taken.</summary>
+    private string RuleBroken(ConfigKey key, byte[] rendered)
+    {
+        var loaded = ConfigLoader.Load(
+        [
+            (ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults())),
+            ConfigLoader.MachineLayer(paths, files),
+            (new ConfigLayerFile(ConfigLayer.User, paths.UserConfigFile), new FileReadResult.Content(rendered)),
+        ]);
+        return loaded.Notices.Where(n => n.File.Layer == ConfigLayer.User && n.Key == key.Name && NumberRules.Rules.Any(r => r.Keys.Contains(key)))
+            .Select(n => n.Message).FirstOrDefault(m => m.Contains("not taken from this layer", StringComparison.Ordinal)) ?? string.Empty;
+    }
+
+    private Current ReadCurrent(string file, string directory, int cap) => files.ReadRegularFile(file, cap) switch
     {
         FileReadResult.Missing => new Current(new Dictionary<string, ConfigValue>(), [], string.Empty),
         FileReadResult.Unreadable => new Current(new Dictionary<string, ConfigValue>(), [], MoveAside(file, directory)),

@@ -39,9 +39,14 @@ internal static class Program
         }
 
         using var shutdown = new ShutdownSignals();
-        var host = CliHost.ForThisMachine() with { InterruptCause = () => shutdown.Cause };
-        var loaded = host.LoadConfig();
-        using var logger = WslCareLogging.Start(host, loaded.Config, AppName, Console.Error);
+        var first = CliHost.ForThisMachine() with { InterruptCause = () => shutdown.Cause };
+        var loaded = first.LoadConfig();
+        // E7.S2c: every configured number reaches its call site through the process's tuning — set once, before anything runs.
+        Tuning.ForThisProcess(loaded.Config);
+        // Phase two (plan §15q R2.2, review M1): the manual AI agents' folders join the protected roots BEFORE anything runs.
+        var (host, protectedLoad) = first.WithAgentExtras(loaded);
+        loaded = protectedLoad;
+        using var logger = WslCareLogging.Start(host, loaded, AppName, Console.Error);
         try
         {
             return Run(args, Console.Out, Console.Error, host, loaded, logger, shutdown.Token);
@@ -78,6 +83,9 @@ internal static class Program
 
         LogRequest(logger, request, loaded, args);
         cancellationToken.ThrowIfCancellationRequested();
+        // E7.S2c: the verb reads its numbers from THIS configuration — what Main made the process's tuning, and what a test's
+        // host hands in (an AsyncLocal scope: parallel runs never see each other's).
+        using var tuned = Tuning.Use(loaded.Config);
         return request switch
         {
             Request.ConfigGet get => ConfigCommand.Get(get, loaded, stdout, stderr),
@@ -87,12 +95,15 @@ internal static class Program
             Request.Preview preview => PreviewCommand.Run(preview, host, loaded, stdout, cancellationToken),
             Request.Collect collect => CollectCommand.Run(collect, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Doctor doctor => DoctorCommand.Run(doctor, host, loaded, stdout, cancellationToken),
+            Request.AgentsList agents => AgentsCommand.Run(agents, host, loaded, stdout, stderr, cancellationToken),
+            Request.AgentsProbe probe => AgentsCommand.Probe(probe, host, stdout, stderr, cancellationToken),
             Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),
             Request.Act act => ActCommand.Run(act, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Logs logs => LogsCommand.Logs(logs, host, stdout, stderr),
             Request.Runs runs => LogsCommand.Runs(runs, host, stdout, stderr),
             Request.RunsShow show => LogsCommand.Show(show, host, stdout, stderr),
             Request.ActFromRequest fromRequest => DetachedRuns.FromRequest(fromRequest, host, loaded, stdout, stderr, logger.ForContext(typeof(DetachedRuns)), cancellationToken),
+            Request.UnitsDropIn dropIn => UnitsDropIn(dropIn, loaded, stdout, stderr),
             Request.ActStop stop => RunStops.Stop(stop, host, stdout, stderr, logger.ForContext(typeof(RunStops)), cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
@@ -101,6 +112,19 @@ internal static class Program
     /// <summary>What <c>--version</c> prints and <c>status --json</c> names as <c>productVersion</c> — one expression, so
     /// the two cannot disagree (plan §15g B1).</summary>
     internal static string VersionText => ProductVersion.Of(typeof(Program).Assembly).Text;
+
+    /// <summary><c>units dropin &lt;unit&gt;</c>: the drop-in of the configuration in force — refused (78, observe-only) while a layer is
+    /// in error (E7.S2b/S2c review C-M2): install.sh never installs a drop-in from a configuration the daemon itself refuses.</summary>
+    private static int UnitsDropIn(Request.UnitsDropIn request, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr)
+    {
+        if (loaded.IsObserveOnly)
+        {
+            Output.Note(stderr, $"units dropin {request.Unit}: the configuration is in error ({string.Join("; ", loaded.Errors.Select(e => e.Display))}); no drop-in is written from it");
+            return (int)ExitCode.ObserveOnly;
+        }
+
+        return Output.Answer(stdout, Core.Systemd.UnitDropIns.Render(request.Unit).TrimEnd('\n'));
+    }
 
     /// <summary>The three requests that need nothing of the machine; <c>null</c> for a verb that does.</summary>
     private static int? AnswerWithoutTheMachine(Request request, TextWriter stdout, TextWriter stderr) => request switch
@@ -117,6 +141,11 @@ internal static class Program
         foreach (var error in loaded.Errors)
         {
             log.Error("configuration error, running observe-only: {ConfigError}", error.Display);
+        }
+
+        foreach (var notice in loaded.Notices)
+        {
+            log.Warning("configuration value not taken: {ConfigNotice}", notice.Display);
         }
 
         // At Information on purpose: a run log that holds no line is a file nobody can read anything from.

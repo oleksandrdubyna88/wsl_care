@@ -38,8 +38,8 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         CommandScope.User,
         "dotnet",
         [new ArgPart.Literal("nuget"), new ArgPart.Literal("locals"), new ArgPart.Literal("http-cache"), new ArgPart.Literal("--clear")],
-        TimeSpan.FromMinutes(10),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.Nuget.ClearTimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     private const string LinksFolder = ".links";
     private const string InstallLock = "__dirlock";
@@ -51,6 +51,9 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
     public string Summary => "Playwright browsers no project references, and NuGet's http-cache (a button only)";
 
     public CommandScope Scope => CommandScope.User;
+
+    /// <summary>The Playwright browsers it deletes, and the NuGet http-cache <c>dotnet nuget locals</c> clears.</summary>
+    public IReadOnlyList<HomeFolder> HomeRoots { get; } = [HomeFolder.Of(".cache", "ms-playwright"), HomeFolder.Of(".local", "share", "NuGet", "http-cache")];
 
     public IdleRule Idle => IdleRule.Never;
 
@@ -164,10 +167,16 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         return ([.. names.Distinct(StringComparer.Ordinal)], string.Empty);
     }
 
+    /// <summary>A Playwright link file holds one path (plan §15q R1.1: the user's files, read owner-checked and capped).</summary>
+    private static int MaxLinkBytes => Tuning.Current.Int(ConfigKeys.UserFiles.MaxLinkBytes);
+
+    /// <summary>Playwright's <c>browsers.json</c> is a few kilobytes.</summary>
+    private static int MaxBrowsersJsonBytes => Tuning.Current.Int(ConfigKeys.UserFiles.MaxJsonBytes);
+
     /// <summary>One link: the package folder it names; a package that is gone references nothing (stale).</summary>
     private static (IReadOnlyList<string> Names, string Problem) LinkRevisions(ActionContext context, string link)
     {
-        if (context.Files.ReadFile(link) is not FileReadResult.Content content)
+        if (context.Files.ReadUserFile(link, MaxLinkBytes, context.HomeFileOwner, context.Paths.Home) is not FileReadResult.Content content)
         {
             return ([], $"the link {link} could not be read");
         }
@@ -186,7 +195,7 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
             return ([], string.Empty);
         }
 
-        return context.Files.ReadFile(linux.Rules.Join(folder, "browsers.json")) is FileReadResult.Content json && BrowserFolders(json.Bytes) is { } folders
+        return context.Files.ReadUserFile(linux.Rules.Join(folder, "browsers.json"), MaxBrowsersJsonBytes, context.HomeFileOwner, context.Paths.Home) is FileReadResult.Content json && BrowserFolders(json.Bytes) is { } folders
             ? (folders, string.Empty)
             : ([], $"{package}/browsers.json is missing or not Playwright's browsers list, so what that project uses cannot be told");
     }

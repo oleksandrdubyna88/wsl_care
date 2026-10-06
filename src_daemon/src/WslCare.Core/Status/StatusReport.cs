@@ -32,6 +32,16 @@ public sealed record StatusReport(
     HostReport Host,
     SlowReport Slow)
 {
+    /// <summary>User values this run did not take (plan §15q R1.2, R1.3, R1.6) — absent when there are none, so every older
+    /// answer is unchanged.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Config.ConfigNoticeReport>? ConfigNotices { get; init; }
+
+    /// <summary>The SHA-256 of the user configuration layer this answer read (plan §15q R1.7): a change made outside the
+    /// extension shows as a new digest. Absent when there is no readable user layer.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? UserLayerDigest { get; init; }
+
     /// <summary>Container starts in the last 24 h (plan §4.3) from the follower's files — complete, or partial with the
     /// gaps named (plan §15b #0); absent when the answer was built without them.</summary>
     public Events.StartsWindow? ContainerStarts { get; init; }
@@ -64,6 +74,10 @@ public sealed record StatusReport(
 
     /// <summary>The newest run with a cleanup (§15j M7). Additive (E6.S0).</summary>
     public LastCleanupReport? LastCleanup { get; init; }
+
+    /// <summary>The daemon values the extension mirrors instead of copying (<see cref="StatusLimits"/>,
+    /// <c>contracts/status-limits.json</c>). Additive (E7.S2c); absent from the sample a run detail embeds.</summary>
+    public StatusLimits? Limits { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>

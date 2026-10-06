@@ -218,7 +218,7 @@ public sealed class ActionEngineTests : IDisposable
         var idle = await Engine(heavy).ExecuteAsync(Run(RunTrigger.Cli, "A7"), CancellationToken.None);
 
         Statuses(busyCpu).Should().Equal("A7:deferred");
-        Done(busyCpu).Detail.Actions[0].Reason.Should().Contain("CPU 87.5 % over the last 5 min is not below idle.cpuPercent 20 %");
+        Done(busyCpu).Detail.Actions[0].Reason.Should().Contain("CPU 97.5 % over the last 5 min is not below idle.cpuPercent 20 %", "busy is the highest average up to the window (E7.S0 review C5): load1 3.9 on 4 CPUs");
         Statuses(building).Should().Equal("A7:deferred");
         Done(building).Detail.Actions[0].Reason.Should().Contain("a build is running (dotnet test src/x.csproj)");
         Statuses(idle).Should().Equal("A7:ran");

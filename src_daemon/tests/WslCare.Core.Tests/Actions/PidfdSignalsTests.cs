@@ -93,7 +93,7 @@ public sealed class PidfdSignalsTests : IDisposable
 
         var calls = new NeverEnding(_clock);
         var config = ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config;
-        var context = new ActionContext(_sandbox.Paths, _sandbox.Files, _clock, config, RunTrigger.Manual, new TargetUserResult.None("machine-scoped"))
+        var context = new ActionContext(_sandbox.Paths, _sandbox.Files, _clock, config, RunTrigger.Manual, new TargetUserResult.Found(new TargetUser("me", 1000, "/home/me"), "test"))
         {
             Processes = _ => Reading.Of(UserWorld.Snapshot([.. pids.Select(p => UserWorld.Process(p, $"dotnet VBCSCompiler.dll -pipename:{p}", family: "dotnet-build-servers", orphaned: true))])),
             Signals = Signals(calls),

@@ -38,8 +38,8 @@ namespace WslCare.Cli.Commands;
 /// </remarks>
 internal static class ActCommand
 {
-    /// <summary>The largest <c>--only</c> file read: 10 000 names of 65 bytes, with room to spare.</summary>
-    private const int MaxOnlyFileBytes = 1024 * 1024;
+    /// <summary>The largest <c>--only</c> file read: the same cap as the stdin list (<c>act.maxListBytes</c>).</summary>
+    private static int MaxOnlyFileBytes => StdinList.MaxBytes;
 
     public static int Run(Request.Act request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, ILogger logger, CancellationToken cancellationToken)
     {
@@ -52,6 +52,11 @@ internal static class ActCommand
         }
 
         var shown = ShownVolumes(request, host);
+        if (shown.Failure.Length == 0 && PastTheCap(shown.List, request.Processes) is { Length: > 0 } past)
+        {
+            shown = (shown.List, past);
+        }
+
         if (shown.Failure.Length > 0)
         {
             log.Warning("act refused: {Reason}", shown.Failure);
@@ -61,7 +66,7 @@ internal static class ActCommand
 
         if (request.Detach)
         {
-            return DetachedRuns.Detach(request, Trigger(request), shown.List, host, stdout, stderr, log);
+            return DetachedRuns.Detach(request, Trigger(request), shown.List, ShownProcesses(request), host, stdout, stderr, log);
         }
 
         var engine = new ActionEngine(new EngineContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, host.Processes, Environment.ProcessId, host.Actions)
@@ -69,7 +74,7 @@ internal static class ActCommand
             Signals = host.Signals,
             InterruptCause = host.InterruptCause,
         });
-        var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List };
+        var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List, ShownProcesses = ShownProcesses(request) };
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = Dispatch(engine, act, cancellationToken).GetAwaiter().GetResult();
         Log(log, result);
@@ -116,6 +121,16 @@ internal static class ActCommand
         request.Timer ? RunTrigger.Timer
         : request.Manual ? RunTrigger.Manual
         : RunTrigger.Cli;
+
+    /// <summary>The parser holds the compile-time ceiling (<see cref="CommandLine.MaxShownVolumes"/>); the verb holds the value in
+    /// force (<c>act.maxShownNames</c>, coai E7 code round #4) — empty when both lists are inside it.</summary>
+    private static string PastTheCap(ShownList volumes, IReadOnlyList<string> processes) =>
+        volumes.Names.Count > ShownList.MaxNames || processes.Count > ShownList.MaxNames
+            ? $"act: a shown list holds at most {ShownList.MaxNames} names (act.maxShownNames); nothing was done"
+            : string.Empty;
+
+    /// <summary>The processes A18's preview showed (<c>--process</c>, E7.S2b review A-H1); none given = none.</summary>
+    private static ShownList ShownProcesses(Request.Act request) => request.Processes.Count > 0 ? ShownList.Of(request.Processes) : ShownList.None;
 
     /// <summary>The volumes A4's preview showed, from <c>--volume</c> and the <c>--only</c> file together — or why the file
     /// cannot be used (it is read as root: its content is validated line by line and never echoed).</summary>

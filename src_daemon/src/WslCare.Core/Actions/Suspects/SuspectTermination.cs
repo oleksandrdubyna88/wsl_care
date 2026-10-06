@@ -3,6 +3,7 @@ using System.Globalization;
 using WslCare.Core.Collectors;
 using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Config;
+using WslCare.Core.Files;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
 using WslCare.Core.Processes.Policy;
@@ -33,10 +34,10 @@ public sealed record SuspectSample(int Pid, long StartTicks, long CpuTicks, int 
 public sealed class SuspectTermination : ICleanupAction
 {
     /// <summary>The window a suspect must use no CPU in.</summary>
-    public static readonly TimeSpan CpuWindow = TimeSpan.FromSeconds(5);
+    public static TimeSpan CpuWindow => Tuning.Current.Seconds(ConfigKeys.Processes.CpuWindowSeconds);
 
     /// <summary>Plan §5 A11: <c>SIGKILL</c> after 10 s.</summary>
-    public static readonly TimeSpan Grace = TimeSpan.FromSeconds(10);
+    public static TimeSpan Grace => Tuning.Current.Seconds(ConfigKeys.Processes.TermGraceSeconds);
 
     private const string Kind = "process";
 
@@ -45,7 +46,7 @@ public sealed class SuspectTermination : ICleanupAction
 
     public ActionId Id { get; } = ActionId.Find("A11")!;
 
-    public string Summary => "SIGTERM, then SIGKILL after 10 s, of suspect processes (orphaned, idle, old, in an allowed family) - by pid and start, never by name";
+    public string Summary => $"SIGTERM, then SIGKILL after {Tuning.Current.Text(ConfigKeys.Processes.TermGraceSeconds)} s, of suspect processes (orphaned, idle, old, in an allowed family) - by pid and start, never by name";
 
     public CommandScope Scope => CommandScope.Machine;
 
@@ -60,12 +61,18 @@ public sealed class SuspectTermination : ICleanupAction
         var families = context.Config.TextList(ConfigKeys.Processes.Families);
         var hours = context.Config.Int(ConfigKeys.Processes.IdleOlderThanHours);
         var what = string.Create(CultureInfo.InvariantCulture, $"suspect processes: orphaned, in the families {string.Join(", ", families)}, older than {hours} h, no terminal, not root's, no CPU in {CpuWindow.TotalSeconds:0} s - SIGTERM, then SIGKILL after {Grace.TotalSeconds:0} s");
+        if (context.TargetUser is not TargetUserResult.Found { User.Name: var owner })
+        {
+            // E7.S0 review S7 (decided): A11 is root and ends the TARGET user's processes only, never another account's.
+            return ActionPreview.Unavailable(what, $"A11 ends only the target user's processes, and there is no single target user ({context.TargetUser.Refusal})");
+        }
+
         if (context.Paths is not LinuxHostPaths linux || context.Processes(cancellationToken) is not Reading<ProcessSnapshot>.Available { Value: var snapshot })
         {
             return ActionPreview.Unavailable(what, "the process table could not be read");
         }
 
-        var candidates = Candidates(snapshot.All, families, TimeSpan.FromHours(hours), Environment.ProcessId);
+        var candidates = Candidates(snapshot.All, families, TimeSpan.FromHours(hours), Environment.ProcessId, owner);
         var first = candidates.Select(c => (Entry: c, Sample: Sample(context, linux, c.Pid))).Where(c => c.Sample is not null).ToList();
         if (first.Count > 0)
         {
@@ -101,8 +108,8 @@ public sealed class SuspectTermination : ICleanupAction
             return ActionRun.Nothing(commands.Ran, "no suspect process");
         }
 
-        var judged = await EndAllAsync(context, linux, preview.Targets, cancellationToken).ConfigureAwait(false);
-        var verdicts = judged.Select(j => Verdict(j.Item, j.Outcome)).ToList();
+        var judged = await SuspectSignals.EndAllAsync(context, linux, preview.Targets, Grace, cancellationToken).ConfigureAwait(false);
+        var verdicts = judged.Select(j => SuspectSignals.Verdict(j.Item, j.Outcome)).ToList();
         var ended = verdicts.Where(v => v.Ended).Select(v => v.Item).ToList();
         return new ActionRun(ended.Count, null, "A11 frees memory, not disk: each ended process's item carries what it held", null, null, ended, commands.Ran, string.Join("; ", verdicts.Where(v => v.Failure.Length > 0).Select(v => v.Failure).Take(5)))
         {
@@ -111,8 +118,8 @@ public sealed class SuspectTermination : ICleanupAction
     }
 
     /// <summary>The candidates of plan §4.2, before the CPU window: orphaned, in an allowed family, old enough, no terminal,
-    /// not a zombie, not root's, not this process.</summary>
-    public static IReadOnlyList<ProcessEntry> Candidates(IEnumerable<ProcessEntry> processes, IReadOnlyList<string> families, TimeSpan olderThan, int ownPid) =>
+    /// not a zombie, not root's, not this process — and the TARGET user's own (E7.S0 review S7: never another account's).</summary>
+    public static IReadOnlyList<ProcessEntry> Candidates(IEnumerable<ProcessEntry> processes, IReadOnlyList<string> families, TimeSpan olderThan, int ownPid, string targetUser) =>
         [.. processes.Where(p => Checks.All(
             p,
             x => x.Orphaned,
@@ -121,6 +128,7 @@ public sealed class SuspectTermination : ICleanupAction
             x => x.Pid != ownPid,
             x => x.Pid > 1,
             x => x.User != "root",
+            x => string.Equals(x.User, targetUser, StringComparison.Ordinal),
             x => families.Contains(x.Family, StringComparer.Ordinal),
             x => IsOlderThan(x, olderThan)))];
 
@@ -129,11 +137,14 @@ public sealed class SuspectTermination : ICleanupAction
 
     /// <summary>The pid's start, CPU ticks, terminal and owner as <c>/proc</c> answers now; <c>null</c> when it cannot be read
     /// (gone — or never a target: an unread process is not signalled).</summary>
-    public static SuspectSample? Sample(ActionContext context, LinuxHostPaths linux, int pid)
+    public static SuspectSample? Sample(ActionContext context, LinuxHostPaths linux, int pid) => Sample(context.Files, linux, pid);
+
+    /// <summary>The same, through <paramref name="files"/> (the full run's CPU history, E7.S2b).</summary>
+    public static SuspectSample? Sample(IFileSystem files, LinuxHostPaths linux, int pid)
     {
         var dir = $"{linux.ProcRoot}/{pid.ToString(CultureInfo.InvariantCulture)}";
-        var stat = ProcText.Read(context.Files, $"{dir}/stat").Bind(t => ProcStat.Parse(t, $"{dir}/stat"));
-        var status = ProcText.Read(context.Files, $"{dir}/status").Bind(t => ProcStatus.Parse(t, $"{dir}/status"));
+        var stat = ProcText.Read(files, $"{dir}/stat").Bind(t => ProcStat.Parse(t, $"{dir}/stat"));
+        var status = ProcText.Read(files, $"{dir}/status").Bind(t => ProcStatus.Parse(t, $"{dir}/status"));
         return Reading.Combine(stat, status, (s, st) => new SuspectSample(pid, s.StartTicks, s.CpuTicks, s.TtyNumber, st.Uid)) is Reading<SuspectSample>.Available { Value: var sample } ? sample : null;
     }
 
@@ -141,52 +152,6 @@ public sealed class SuspectTermination : ICleanupAction
         new(Kind, string.Create(CultureInfo.InvariantCulture, $"{entry.Pid} {entry.Name}"), entry.HeldBytes,
             string.Create(CultureInfo.InvariantCulture, $"{entry.Family}, {entry.User}, {entry.Age.Map(a => a.TotalHours).ValueOr(0):0.0} h old: {entry.CommandLine}"))
         {
-            Key = string.Create(CultureInfo.InvariantCulture, $"{sample.Pid}:{sample.StartTicks}:{sample.CpuTicks}"),
+            Key = SuspectSignals.Key(sample),
         };
-
-    /// <summary>Every target read again — the same process, still no CPU, still no terminal — and the ones that pass signalled
-    /// TOGETHER by identity: one <c>SIGTERM</c> each, ONE shared grace, then <c>SIGKILL</c> to the survivors (gate finding #9:
-    /// three that ignore <c>SIGTERM</c> take one grace, not three).</summary>
-    private static async Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> EndAllAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, CancellationToken cancellationToken)
-    {
-        var checkedTargets = targets.Select(t => (Item: t, Identity: Identity(t), Refusal: Recheck(Sample(context, linux, Identity(t).Pid), t))).ToList();
-        var passing = checkedTargets.Where(c => c.Refusal is null).ToList();
-        var outcomes = passing.Count == 0 ? [] : await context.Signals.TerminateAllAsync([.. passing.Select(c => c.Identity)], Grace, cancellationToken).ConfigureAwait(false);
-        return [.. checkedTargets.Where(c => c.Refusal is not null).Select(c => (c.Item, c.Refusal!)), .. passing.Zip(outcomes, (c, o) => (c.Item, o))];
-    }
-
-    /// <summary>The pid and start a preview item's key names.</summary>
-    private static ProcessIdentity Identity(ActionItem target)
-    {
-        var parts = target.Key.Split(':');
-        return new ProcessIdentity(int.Parse(parts[0], CultureInfo.InvariantCulture), long.Parse(parts[1], CultureInfo.InvariantCulture));
-    }
-
-    /// <summary>Why a target is not signalled after all — gone, another process now, or it used CPU / gained a terminal /
-    /// became root's since the preview; <c>null</c> when it is still the idle suspect the preview saw.</summary>
-    private static SignalOutcome? Recheck(SuspectSample? now, ActionItem target)
-    {
-        var (identity, cpu) = (Identity(target), long.Parse(target.Key.Split(':')[2], CultureInfo.InvariantCulture));
-        return now switch
-        {
-            null => new SignalOutcome.AlreadyGone(),
-            { StartTicks: var start } when start != identity.StartTicks => new SignalOutcome.NotTheSame($"pid {identity.Pid} started at tick {start}, not {identity.StartTicks}: another process now"),
-            { } changed when Changed(changed, cpu) => new SignalOutcome.NotTheSame($"pid {identity.Pid} used CPU, gained a terminal or changed owner since the preview: kept"),
-            _ => null,
-        };
-    }
-
-    private static bool Changed(SuspectSample now, long cpu) => now.CpuTicks != cpu || now.Tty != 0 || now.Uid == 0;
-
-    /// <summary>What one outcome means for the record: ended (and how), kept (and why), and the failure it counts as, if any.</summary>
-    private static (bool Ended, ActionItem Item, string Failure) Verdict(ActionItem item, SignalOutcome outcome) => outcome switch
-    {
-        SignalOutcome.Ended e => (true, item with { Note = (e.NeededKill ? "ended on SIGKILL: " : "ended on SIGTERM: ") + item.Note }, string.Empty),
-        SignalOutcome.AlreadyGone => (false, item with { Note = "already gone" }, string.Empty),
-        SignalOutcome.NotTheSame n => (false, item with { Note = n.Reason }, string.Empty),
-        SignalOutcome.StillRunning s => (false, item with { Note = s.Reason }, s.Reason),
-        SignalOutcome.Refused r => (false, item with { Note = "not signalled: " + r.Reason }, "not signalled: " + r.Reason),
-        SignalOutcome.Failed f => (false, item with { Note = f.Reason }, f.Reason),
-        _ => throw new System.Diagnostics.UnreachableException("SignalOutcome is a closed set"),
-    };
 }

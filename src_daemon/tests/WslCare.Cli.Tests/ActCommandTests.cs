@@ -220,7 +220,7 @@ public sealed class ActCommandTests : IDisposable
     [Fact]
     public void The_help_names_the_act_verb_and_the_actions_this_build_holds()
     {
-        CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--json]")
+        CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]")
             .And.Contain("act --request <runId>").And.Contain("act --stop <runId> [--json]").And.Contain("collect [--timer or --detach] [--json]")
             .And.Contain("\"act\" holds these actions: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
     }
@@ -246,6 +246,29 @@ public sealed class ActCommandTests : IDisposable
     public void A_shown_list_belongs_to_a4_and_holds_only_anonymous_volume_names(params string[] rest)
     {
         CommandLine.Parse(["act", rest[0], "--confirm", .. rest.Skip(1)]).Should().BeOfType<Request.Failed>();
+    }
+
+    /// <summary>E7.S2b review A-H1: A18's button run carries the processes its modal showed — <c>--process pid:start</c>, A18 only.</summary>
+    [Theory]
+    [InlineData("A10", "--process", "10:4000")]
+    [InlineData("A18", "--process", "ten:4000")]
+    [InlineData("A18", "--process", "1:4000")]
+    [InlineData("A18", "--process", "10")]
+    [InlineData("A18", "--process")]
+    public void A_shown_process_list_belongs_to_a18_and_holds_only_pid_and_start_keys(params string[] rest)
+    {
+        CommandLine.Parse(["act", rest[0], "--confirm", .. rest.Skip(1)]).Should().BeOfType<Request.Failed>();
+    }
+
+    [Fact]
+    public void A_shown_process_list_parses_beside_a4_s_volumes()
+    {
+        var volume = new string('a', 64);
+
+        var act = CommandLine.Parse(["act", "A4,A18", "--confirm", "--manual", "--volume", volume, "--process", "10:4000", "--process", "20:5000"]).Should().BeOfType<Request.Act>().Subject;
+
+        act.Volumes.Should().Equal(volume);
+        act.Processes.Should().Equal("10:4000", "20:5000");
     }
 
     [Fact]
@@ -316,8 +339,11 @@ public sealed class ActCommandTests : IDisposable
         var host = Host(Root) with { HomeOwner = new HomeOwner.Target(new TargetUser("me", 1000, "/home/me"), "test") };
 
         var (exit, _, stderr) = CliRun.Over(host, "config", "set", "dryRun", "false");
+        var reset = CliRun.Over(host, "config", "reset", "dryRun");
 
-        exit.Should().Be((int)ExitCode.Usage);
+        // E7.S1/S2 review round: its own exit code, so a client can tell "the distribution's default user is root" from a bad value.
+        exit.Should().Be((int)ExitCode.NotAsRoot);
+        reset.Exit.Should().Be((int)ExitCode.NotAsRoot);
         stderr.Should().Contain("run them as me, not as root");
         File.Exists(_sandbox.Paths.UserConfigFile).Should().BeFalse();
     }

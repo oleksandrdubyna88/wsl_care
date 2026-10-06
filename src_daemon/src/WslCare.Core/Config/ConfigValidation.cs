@@ -26,7 +26,8 @@ public static class ConfigValidation
         ConfigKey.BoolKey => CheckBool(key, value),
         ConfigKey.IntKey range => CheckInt(range, value),
         ConfigKey.TextKey text => CheckText(text, value),
-        ConfigKey.TextListKey => CheckList(key, value),
+        ConfigKey.TextListKey list => CheckList(list, value),
+        ConfigKey.AgentListKey agents => CheckAgents(agents, value),
         _ => new ValueCheck.Invalid($"{key.Name}: unsupported key shape"),
     };
 
@@ -36,9 +37,32 @@ public static class ConfigValidation
         ConfigKey.BoolKey => ParseBool(key, text),
         ConfigKey.IntKey range => ParseInt(range, text),
         ConfigKey.TextKey allowed => CheckAllowed(allowed, text),
-        ConfigKey.TextListKey => new ValueCheck.Ok(new ConfigValue.TextList(SplitList(text))),
+        ConfigKey.TextListKey list => CheckMembers(list, SplitList(text)),
+        ConfigKey.AgentListKey agents => ParseAgents(agents, text),
         _ => new ValueCheck.Invalid($"{key.Name}: unsupported key shape"),
     };
+
+    /// <summary>Plan §15q R2.1: the shape of every entry, the first problem named.</summary>
+    private static ValueCheck CheckAgents(ConfigKey.AgentListKey key, JsonElement value) =>
+        Agents.ExtraAgentShape.Read(value) switch
+        {
+            { Problem.Length: > 0 } invalid => new ValueCheck.Invalid($"{key.Name}: {invalid.Problem}"),
+            var list => new ValueCheck.Ok(new ConfigValue.AgentList(list.Agents)),
+        };
+
+    /// <summary>The JSON text <c>config set aiAgents.extra -</c> read from stdin.</summary>
+    private static ValueCheck ParseAgents(ConfigKey.AgentListKey key, string text)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text);
+            return CheckAgents(key, document.RootElement);
+        }
+        catch (JsonException)
+        {
+            return new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; what was given is not JSON");
+        }
+    }
 
     private static ValueCheck CheckBool(ConfigKey key, JsonElement value) => value.ValueKind switch
     {
@@ -60,15 +84,21 @@ public static class ConfigValidation
     private static ValueCheck CheckText(ConfigKey.TextKey key, JsonElement value) =>
         value.ValueKind == JsonValueKind.String ? CheckAllowed(key, value.GetString() ?? string.Empty) : Expected(key, value);
 
-    private static ValueCheck CheckList(ConfigKey key, JsonElement value)
+    private static ValueCheck CheckList(ConfigKey.TextListKey key, JsonElement value)
     {
         if (value.ValueKind != JsonValueKind.Array || value.EnumerateArray().Any(e => e.ValueKind != JsonValueKind.String))
         {
             return Expected(key, value);
         }
 
-        return new ValueCheck.Ok(new ConfigValue.TextList([.. value.EnumerateArray().Select(e => e.GetString() ?? string.Empty)]));
+        return CheckMembers(key, [.. value.EnumerateArray().Select(e => e.GetString() ?? string.Empty)]);
     }
+
+    /// <summary>Every member one of the key's allowed values (§15q R1.3, review B1) — the refusal names the first that is not.</summary>
+    private static ValueCheck CheckMembers(ConfigKey.TextListKey key, IReadOnlyList<string> members) =>
+        members.FirstOrDefault(m => !key.Allowed.Contains(m, StringComparer.Ordinal)) is { } stranger
+            ? new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got \"{stranger}\"")
+            : new ValueCheck.Ok(new ConfigValue.TextList(members));
 
     private static ValueCheck ParseBool(ConfigKey key, string text) => text.ToLowerInvariant() switch
     {
@@ -88,7 +118,7 @@ public static class ConfigValidation
             : new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got {number.ToString(CultureInfo.InvariantCulture)}");
 
     private static ValueCheck CheckAllowed(ConfigKey.TextKey key, string text) =>
-        key.Allowed.Count == 0 || key.Allowed.Contains(text, StringComparer.Ordinal)
+        key.Rule.Problem(text).Length == 0
             ? new ValueCheck.Ok(new ConfigValue.Text(text))
             : new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got \"{text}\"");
 

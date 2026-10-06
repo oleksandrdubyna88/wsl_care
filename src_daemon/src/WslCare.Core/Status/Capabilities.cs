@@ -32,6 +32,20 @@ public static class Capabilities
     /// <summary><c>act --stop &lt;runId&gt;</c>: a wedged run hosted by one of the units stopped through systemd (§15j M4; E6.S1).</summary>
     public const string ActStop = "act.stop";
 
+    /// <summary><c>config get</c> / <c>config set</c> obey <c>contracts/config-keys.json</c> (plan §15q D5, E7.S0): every text and
+    /// list key closed, the user layer read owner-checked, a value a root run does not take answered as a notice.</summary>
+    public const string ConfigContract = "config.contract";
+
+    /// <summary><c>agents list [--measure] --json</c> answers the catalogue agents found here and their folders (plan §15q E7.S1).</summary>
+    public const string AgentsList = "agents.list";
+
+    /// <summary><c>agents probe &lt;path&gt; --json</c> answers what a picked CLI is, as the user (plan §15q D4, E7.S2).</summary>
+    public const string AgentsProbe = "agents.probe";
+
+    /// <summary><c>config set aiAgents.extra -</c> takes the manual AI agents from stdin, each judged against the disk; their folders
+    /// are protected and walked (plan §15q R2, E7.S2).</summary>
+    public const string ConfigAgentsExtra = "config.agentsExtra";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra];
 }

@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
@@ -36,7 +37,7 @@ public static class TargetUserCommands
     {
         var rules = paths.Rules;
         IReadOnlyList<string> nvm = NvmDefaultBin(user, paths, files) is { } bin ? [bin] : [];
-        IReadOnlyList<string> distro = [.. nvm, rules.Join(user.Home, ".local", "bin"), rules.Join(user.Home, ".cargo", "bin"), "/usr/local/bin", "/usr/bin"];
+        IReadOnlyList<string> distro = [.. nvm, .. HomeBins.Select(segments => rules.Join(user.Home, segments)), .. SystemBins];
         return [.. distro.Select(d => new UserBinFolder(d, paths.DistroPath(d)))];
     }
 
@@ -70,12 +71,23 @@ public static class TargetUserCommands
             ["PATH"] = string.Join(':', folders.Select(f => f.DistroPath)),
         };
 
+    /// <summary>The user's own bin folders, after nvm's default (E7.S1/S2 review R1: the same list root uses for the target user and
+    /// <c>agents list</c> uses for the invoking user — a process <c>wsl.exe --exec</c> starts has none of them on its PATH).</summary>
+    private static readonly string[][] HomeBins = [[".local", "bin"], [".cargo", "bin"], [".npm-global", "bin"]];
+
+    /// <summary>The system's bin folders, last.</summary>
+    private static readonly string[] SystemBins = ["/usr/local/bin", "/usr/bin"];
+
+    /// <summary>nvm's default alias is one short line.</summary>
+    private static int MaxAliasBytes => Tuning.Current.Int(ConfigKeys.UserFiles.MaxSmallFileBytes);
+
     /// <summary><c>~/.nvm/versions/node/&lt;the default version&gt;/bin</c> (distro path), or <c>null</c>.</summary>
     private static string? NvmDefaultBin(TargetUser user, LinuxHostPaths paths, IFileSystem files)
     {
         var rules = paths.Rules;
         var versionsDir = rules.Join(user.Home, ".nvm", "versions", "node");
-        var alias = files.ReadFile(paths.DistroPath(rules.Join(user.Home, ".nvm", "alias", "default")));
+        // The target user's own file, read by root: owner-checked, never through a link, never waited on (plan §15q R1.1).
+        var alias = files.ReadUserFile(paths.DistroPath(rules.Join(user.Home, ".nvm", "alias", "default")), MaxAliasBytes, RegularFiles.HomeFileOwner(user.Uid), paths.DistroPath(user.Home));
         if (alias is not FileReadResult.Content content)
         {
             return null;

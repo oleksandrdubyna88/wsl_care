@@ -26,7 +26,7 @@ namespace WslCare.Core.Actions.UserCaches;
 public sealed class EditorServerCleanup : ICleanupAction
 {
     /// <summary>Plan §5 A14: keep the newest 2.</summary>
-    public const int Keep = 2;
+    public static int Keep => Tuning.Current.Int(ConfigKeys.EditorServers.KeepNewest);
 
     public static readonly IReadOnlyList<string> EditorFolders = [".vscode-server", ".vscode-server-insiders", ".cursor-server", ".windsurf-server"];
 
@@ -35,9 +35,12 @@ public sealed class EditorServerCleanup : ICleanupAction
 
     public ActionId Id { get; } = ActionId.Find("A14")!;
 
-    public string Summary => "old VS Code / Cursor / Windsurf server builds no process uses (the newest 2 kept), and obsolete extensions";
+    public string Summary => $"old VS Code / Cursor / Windsurf server builds no process uses (the newest {Keep} kept), and obsolete extensions";
 
     public CommandScope Scope => CommandScope.User;
+
+    /// <summary>Every editor server folder whose old builds it deletes.</summary>
+    public IReadOnlyList<HomeFolder> HomeRoots { get; } = [.. EditorFolders.Select(f => HomeFolder.Of(f))];
 
     public IdleRule Idle => IdleRule.Never;
 
@@ -102,11 +105,14 @@ public sealed class EditorServerCleanup : ICleanupAction
             .Select(b => new ActionItem(BuildKind, $"{Leaf(root)}/{Leaf(b.Path)}", CacheFolders.Measure(context.Files, b.Path, cancellationToken).CompleteBytes, $"last written {b.Written.UtcDateTime:yyyy-MM-dd}; no process uses it") { Key = $"{root}|{b.Path}" });
     }
 
+    /// <summary><c>.obsolete</c> is a small JSON object (plan §15q R1.1: the user's file, read owner-checked and capped).</summary>
+    private static int MaxObsoleteBytes => Tuning.Current.Int(ConfigKeys.UserFiles.MaxJsonBytes);
+
     /// <summary>The extension folders <c>extensions/.obsolete</c> lists that exist, are plain names and no process names.</summary>
     private static IEnumerable<ActionItem> Obsolete(ActionContext context, string root, ProcessSnapshot processes, CancellationToken cancellationToken)
     {
         var extensions = context.Paths.Rules.Join(root, "extensions");
-        if (context.Files.ReadFile(context.Paths.Rules.Join(extensions, ".obsolete")) is not FileReadResult.Content content)
+        if (context.Files.ReadUserFile(context.Paths.Rules.Join(extensions, ".obsolete"), MaxObsoleteBytes, context.HomeFileOwner, context.Paths.Home) is not FileReadResult.Content content)
         {
             return [];
         }

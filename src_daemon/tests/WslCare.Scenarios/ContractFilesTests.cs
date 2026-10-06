@@ -7,6 +7,9 @@ using FluentAssertions;
 
 using WslCare.Cli;
 using WslCare.Core.Actions;
+using WslCare.Core.Agents;
+using WslCare.Core.Config;
+using WslCare.Core.Files;
 
 namespace WslCare.Scenarios;
 
@@ -26,7 +29,7 @@ public sealed class ContractFilesTests
     internal static string ActionsText() => Indented(new JsonObject
     {
         ["schemaVersion"] = 1,
-        ["description"] = "Every action id the daemon knows (its auto.* switch names; A5Testcontainers and A6Unused are ids) and the order a run takes them in. Generated from ActionId.All / ActionId.ExecutionOrder by ContractFilesTests.",
+        ["description"] = "Every action id the daemon knows (its auto.* switch names; A5Testcontainers and A6Unused are ids; A18 is a button only, with no auto switch) and the order a run takes them in. Generated from ActionId.All / ActionId.ExecutionOrder by ContractFilesTests.",
         ["ids"] = new JsonArray([.. ActionId.All.Select(id => (JsonNode)id.Text)]),
         ["executionOrder"] = new JsonArray([.. ActionId.ExecutionOrder.Select(id => (JsonNode)id.Text)]),
     });
@@ -49,8 +52,109 @@ public sealed class ContractFilesTests
         ["notAFullCheckWithoutKind"] = new JsonArray([.. Core.Records.HistoryReasons.NotAFullCheckWithoutKind.Select(p => (JsonNode)new JsonObject { ["writer"] = p.Writer, ["prefix"] = p.Prefix })]),
     });
 
+    /// <summary>The text <c>contracts/config-keys.json</c> must hold (plan §15q D5, R1): every configuration key with its shape,
+    /// range or allowed values, its default from the embedded <c>default.json</c>, and what it means to a root run — the safe
+    /// direction the loader applies and the extension's loosening modal keys on — from <see cref="ConfigKeys.All"/>.</summary>
+    internal static string ConfigKeysText()
+    {
+        var defaults = ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config;
+        return Indented(new JsonObject
+        {
+            ["schemaVersion"] = 1,
+            ["description"] = "Every configuration key the daemon knows: its shape, its bounds or allowed values, its default, and what it means to a root run (safeDirection: the direction of change a root run trusts from another account's layer; rootEffective; tightenOnlyForRoot; machineOnly; daemonUnused; zeroIsUnbounded). Generated from ConfigKeys and the embedded default.json by ContractFilesTests.",
+            ["keys"] = new JsonArray([.. ConfigKeys.All.Select(k => KeyNode(k, defaults.Entry(k).Value))]),
+        });
+    }
+
+    /// <summary>The text <c>contracts/status-limits.json</c> must hold (E7.S2c): the fields of <c>status --json</c>'s <c>limits</c>
+    /// object — the daemon values the extension mirrors instead of copying — from <see cref="Core.Status.StatusLimits.Fields"/>,
+    /// each with the key it publishes, its unit, its range and its default. The extension's reader is tested against this file.</summary>
+    internal static string StatusLimitsText()
+    {
+        var defaults = ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config;
+        return Indented(new JsonObject
+        {
+            ["schemaVersion"] = 1,
+            ["description"] = "The fields of status --json's limits object (additive, E7.S2c): daemon values the extension MIRRORS instead of copying, each the value in force, a whole number. An absent limits object or field means a daemon older than E7.S2c: the reader takes its fallback (the default here). Generated from StatusLimits.Fields and the embedded default.json by ContractFilesTests.",
+            ["object"] = "limits",
+            ["fields"] = new JsonArray([.. Core.Status.StatusLimits.Fields.Select(f => (JsonNode)new JsonObject
+            {
+                ["name"] = f.Name,
+                ["key"] = f.Key.Name,
+                ["unit"] = f.Unit,
+                ["min"] = f.Key.Min,
+                ["max"] = f.Key.Max,
+                ["default"] = defaults.Int(f.Key),
+            })]),
+        });
+    }
+
+    private static JsonNode KeyNode(ConfigKey key, ConfigValue fallback)
+    {
+        var node = new JsonObject { ["name"] = key.Name };
+        foreach (var (name, value) in Shape(key))
+        {
+            node[name] = value;
+        }
+
+        node["default"] = JsonNode.Parse(fallback.ToJsonElement().GetRawText());
+        node["safeDirection"] = Camel(key.Trust.Safe.ToString());
+        node["rootEffective"] = key.Trust.RootEffective;
+        node["tightenOnlyForRoot"] = key.Trust.TightenOnlyForRoot;
+        node["machineOnly"] = key.Trust.MachineOnly;
+        node["daemonUnused"] = key.Trust.DaemonUnused;
+        node["zeroIsUnbounded"] = key.Trust.ZeroIsUnbounded;
+        return node;
+    }
+
+    private static IReadOnlyList<(string Name, JsonNode? Value)> Shape(ConfigKey key) => key switch
+    {
+        ConfigKey.BoolKey => [("shape", "bool")],
+        ConfigKey.IntKey number => [("shape", "int"), ("min", number.Min), ("max", number.Max)],
+        ConfigKey.TextKey { Rule: TextRule.OneOf one } => [("shape", "text"), ("oneOf", new JsonArray([.. one.Values.Select(v => (JsonNode)v)]))],
+        ConfigKey.TextKey { Rule: TextRule.Matching matching } => [("shape", "text"), ("pattern", matching.Expression)],
+        ConfigKey.TextKey { Rule: TextRule.AbsolutePathOrEmpty } => [("shape", "path"), ("maxLength", TextRule.AbsolutePathOrEmpty.MaxLength)],
+        ConfigKey.TextListKey list => [("shape", "textList"), ("allowed", new JsonArray([.. list.Allowed.Select(v => (JsonNode)v)]))],
+        ConfigKey.AgentListKey => [("shape", "agentList"), ("maxEntries", ExtraAgentShape.MaxEntries), ("maxFolders", ExtraAgentShape.MaxFolders), ("maxPathLength", ExtraAgentShape.MaxPathLength), ("maxGlobLength", ExtraAgentShape.MaxGlobLength), ("maxNameLength", ExtraAgentShape.MaxNameLength), ("sides", new JsonArray(ExtraAgentShape.Wsl, ExtraAgentShape.Windows))],
+        _ => throw new InvalidOperationException($"{key.Name}: a key shape the contract does not describe"),
+    };
+
     public static IReadOnlyList<(string File, string Text)> Expected =>
-        [("actions.json", ActionsText()), ("exit-codes.json", ExitCodesText()), ("history-reasons.json", HistoryReasonsText())];
+        [("actions.json", ActionsText()), ("exit-codes.json", ExitCodesText()), ("history-reasons.json", HistoryReasonsText()), ("config-keys.json", ConfigKeysText()), ("status-limits.json", StatusLimitsText())];
+
+    /// <summary>The companion of the config-keys contract: it carries every key, the closed families list and the trust of the
+    /// keys R1 is about — a contract derived from nothing would pass the equality test as well.</summary>
+    [Fact]
+    public void The_config_keys_contract_holds_every_key_with_its_trust()
+    {
+        var keys = JsonNode.Parse(ConfigKeysText())!["keys"]!.AsArray().ToDictionary(k => (string)k!["name"]!, k => k!);
+
+        keys.Should().HaveCount(ConfigKeys.All.Count);
+        keys["dryRun"]["safeDirection"]!.GetValue<string>().Should().Be("on");
+        keys["auto.A5"]["safeDirection"]!.GetValue<string>().Should().Be("off");
+        keys["containers.stoppedOlderThanDays"]["min"]!.GetValue<int>().Should().Be(0);
+        keys["processes.families"]["allowed"]!.AsArray().Select(n => (string)n!).Should().NotContain(["other", "ai-agents"]).And.Contain("testhost");
+        keys["archive.baseFolder"]["machineOnly"]!.GetValue<bool>().Should().BeTrue();
+        keys["logging.retentionDays"]["zeroIsUnbounded"]!.GetValue<bool>().Should().BeTrue();
+        keys["distro"]["daemonUnused"]!.GetValue<bool>().Should().BeTrue();
+        keys["aiAgents.warnGb"]["rootEffective"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    /// <summary>E7.S2c: the two field names the extension's <c>shared/daemonLimits.ts</c> reads (PR #12) are in the contract, and
+    /// the daemon's JSON writer spells every contract field exactly as the contract does — a reader and a writer held equal.</summary>
+    [Fact]
+    public void The_status_limits_contract_carries_the_names_the_extension_reads_and_the_writer_spells_them()
+    {
+        var fields = JsonNode.Parse(StatusLimitsText())!["fields"]!.AsArray().Select(f => (string)f!["name"]!).ToList();
+        var written = JsonNode.Parse(JsonSerializer.Serialize(
+            Core.Status.StatusLimits.From(ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config),
+            Core.Json.WslCareJsonContext.Default.StatusLimits))!.AsObject();
+
+        fields.Should().Contain(["historyRetentionDays", "requestFutureSkewSeconds"], "the names PR #12's daemonLimits.ts reads");
+        written.Select(p => p.Key).Should().Equal(fields, "the writer spells each field as the contract does, in its order");
+        written["historyRetentionDays"]!.GetValue<int>().Should().Be(90);
+        written["requestFutureSkewSeconds"]!.GetValue<int>().Should().Be(300);
+    }
 
     /// <summary>Plan §15o, coai plan round #2: <c>collect</c> is the full check's reserved meta name — a request's and
     /// <c>running.json</c>'s marker — so no action id may carry it, in the registry or in the contract the extension reads.</summary>

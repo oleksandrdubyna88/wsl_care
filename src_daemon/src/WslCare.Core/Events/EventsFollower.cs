@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Collectors;
 using WslCare.Core.Docker;
 using WslCare.Core.Files.Deletion;
@@ -37,13 +38,13 @@ public sealed class EventsFollower(
     Action<string> note)
 {
     /// <summary>One stream segment: Docker closes the stream at its <c>--until</c>; the next one resumes from there.</summary>
-    public static readonly TimeSpan SegmentLength = TimeSpan.FromMinutes(10);
+    public static TimeSpan SegmentLength => Tuning.Current.Minutes(ConfigKeys.Events.SegmentMinutes);
 
     /// <summary>The ceiling of a segment beyond its length.</summary>
-    public static readonly TimeSpan SegmentSlack = TimeSpan.FromMinutes(1);
+    public static TimeSpan SegmentSlack => Tuning.Current.Seconds(ConfigKeys.Events.SegmentSlackSeconds);
 
     /// <summary>A segment that ends earlier than its <c>--until</c> by more than this did not end normally.</summary>
-    private static readonly TimeSpan EarlyEnd = TimeSpan.FromSeconds(2);
+    private static TimeSpan EarlyEnd => Tuning.Current.Seconds(ConfigKeys.Events.EarlyEndSeconds);
 
     private readonly DockerCli _docker = new(commands);
     private int _starts;

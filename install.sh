@@ -11,6 +11,9 @@
 #   /etc/systemd/system/wsl-care.service        the timer's full run (`collect --timer`)
 #   /etc/systemd/system/wsl-care.timer          every 4 hours, enabled and started
 #   /etc/systemd/system/wsl-care-events.service the container-start follower, enabled and started
+#   /etc/systemd/system/<unit>.d/50-wsl-care-config.conf  each unit's values from the machine configuration
+#                                               (the timer's period, Nice, MemoryMax, TimeoutStopSec, RestartSec),
+#                                               rendered by the installed binary: `wsl-care units dropin <unit>`
 #   /etc/wsl-care/config.json                   the machine configuration layer — ONLY when none exists
 #   /var/lib/wsl-care, /var/log/wsl-care        its state and run logs (root-owned, 0755)
 #   sysstat and atop                            installed with apt when missing, collection switched on
@@ -74,6 +77,7 @@ readonly BIN_PATH="$BIN_DIR/wsl-care"
 readonly LINK_PATH="/usr/local/bin/wsl-care"
 readonly UNIT_DIR="/etc/systemd/system"
 readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service wsl-care-act@.service"
+readonly DROPIN_NAME="50-wsl-care-config.conf"
 readonly CONFIG_DIR="/etc/wsl-care"
 readonly CONFIG_FILE="$CONFIG_DIR/config.json"
 readonly STATE_DIR="/var/lib/wsl-care"
@@ -408,6 +412,8 @@ uninstall() {
   fi
   for unit in $UNITS; do
     if [ -f "$ROOT$UNIT_DIR/$unit" ]; then run rm -f -- "$ROOT$UNIT_DIR/$unit"; fi
+    if [ -f "$ROOT$UNIT_DIR/$unit.d/$DROPIN_NAME" ]; then run rm -f -- "$ROOT$UNIT_DIR/$unit.d/$DROPIN_NAME"; fi
+    if [ -d "$ROOT$UNIT_DIR/$unit.d" ] && [ -z "$(ls -A "$ROOT$UNIT_DIR/$unit.d")" ]; then run rmdir -- "$ROOT$UNIT_DIR/$unit.d"; fi
   done
   run systemctl daemon-reload || fail units "systemctl daemon-reload failed"
 
@@ -749,6 +755,42 @@ install_files() {
   run install -d -m 0755 "$ROOT$STATE_DIR" "$ROOT$LOG_DIR" || fail install-binary "could not create $STATE_DIR and $LOG_DIR"
 }
 
+# E7.S2c: each unit's values that are configuration (the timer's period and run limit, the services' Nice, MemoryMax and
+# TimeoutStopSec, the follower's RestartSec) go into a drop-in the INSTALLED binary renders from the machine layer — one
+# definition, the key; this script never parses the configuration. Written on every install and upgrade, so running
+# install.sh again after changing /etc/wsl-care/config.json applies it; `wsl-care doctor` names a drop-in that no longer
+# matches. E7.S2b/S2c review C-M8: a binary that does not know the verb (an older release, `--version`; it answers 2) or that
+# refuses an invalid machine configuration (78) gets no drop-in, said, and the stale one goes: the units keep their own values.
+write_dropins() {
+  for unit in $UNITS; do
+    dir="$UNIT_DIR/$unit.d"
+    if [ "$DRY_RUN" = 1 ]; then
+      say "would write $dir/$DROPIN_NAME from: $BIN_PATH units dropin $unit"
+      continue
+    fi
+    code=0
+    timeout 60 "$ROOT$BIN_PATH" units dropin "$unit" > "$WORK/$DROPIN_NAME" || code=$?
+    # coai E7 code round #6: an empty answer is no drop-in — never installed silently.
+    if [ "$code" = 0 ] && [ ! -s "$WORK/$DROPIN_NAME" ]; then code=empty; fi
+    case "$code" in
+      0)
+        install -d -m 0755 "$ROOT$dir" || fail install-units "could not create $dir"
+        install -m 0644 "$WORK/$DROPIN_NAME" "$ROOT$dir/$DROPIN_NAME" || fail install-units "could not install $dir/$DROPIN_NAME"
+        ;;
+      empty)
+        warn "no drop-in for $unit: $BIN_PATH units dropin $unit answered nothing; the unit keeps its own values"
+        if [ -f "$ROOT$dir/$DROPIN_NAME" ]; then rm -f -- "$ROOT$dir/$DROPIN_NAME" || fail install-units "could not remove the stale $dir/$DROPIN_NAME"; fi
+        ;;
+      2 | 78)
+        warn "no drop-in for $unit: $BIN_PATH units dropin $unit answered $code ($( [ "$code" = 2 ] && echo "a release before unit drop-ins" || echo "the machine configuration is in error")); the unit keeps its own values"
+        if [ -f "$ROOT$dir/$DROPIN_NAME" ]; then rm -f -- "$ROOT$dir/$DROPIN_NAME" || fail install-units "could not remove the stale $dir/$DROPIN_NAME"; fi
+        ;;
+      *) fail install-units "$BIN_PATH units dropin $unit failed (exit $code)" ;;
+    esac
+  done
+  say "unit drop-ins: $DROPIN_NAME for $UNITS, from the machine configuration"
+}
+
 apply_wsl_conf() {
   case "$WSL_CONF_ACTION" in
     keep)
@@ -882,6 +924,7 @@ install_all() {
   download_and_verify
   unpack
   install_files
+  write_dropins
   apply_wsl_conf
   install_packages
   enable_units

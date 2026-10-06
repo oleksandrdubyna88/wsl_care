@@ -81,10 +81,13 @@ public sealed class EnginePartsTests
     }
 
     [Fact]
-    public void The_action_ids_are_exactly_the_auto_switches_and_the_execution_order_holds_each_once()
+    public void The_action_ids_are_exactly_the_auto_switches_and_the_button_only_ones_and_the_execution_order_holds_each_once()
     {
-        ActionId.All.Select(id => id.AutoSwitch.Name).Should().Equal(ConfigKeys.All.Select(k => k.Name).Where(n => n.StartsWith("auto.", StringComparison.Ordinal)));
-        ActionId.ExecutionOrder.Should().BeEquivalentTo(ActionId.All).And.OnlyHaveUniqueItems();
+        ActionId.All.Where(id => !id.ButtonOnly).Select(id => id.AutoSwitch.Name).Should().Equal(ConfigKeys.All.Select(k => k.Name).Where(n => n.StartsWith("auto.", StringComparison.Ordinal)));
+        ActionId.All.Where(id => id.ButtonOnly).Select(id => id.Text).Should().Equal(["A18"], "A18 is the one button-only action (plan §15q E7.S2b) — no auto key exists for it");
+        ConfigKeys.Find("auto.A18").Should().BeNull();
+        ((Action)(() => _ = ActionId.Find("A18")!.AutoSwitch)).Should().Throw<InvalidOperationException>().WithMessage("*button only*");
+        ActionId.ExecutionOrder.Select(id => id.Text).Should().BeEquivalentTo(ActionId.All.Select(id => id.Text)).And.OnlyHaveUniqueItems();
         ActionId.ExecutionOrder.Select(id => id.Text).Should().ContainInOrder("A5", "A4", "A6", "A7", "A8", "A9").And.ContainInOrder("A1", "A2");
     }
 
@@ -93,7 +96,8 @@ public sealed class EnginePartsTests
     [InlineData("A5,A4", true)]
     [InlineData("A5Testcontainers", true)]
     [InlineData("a10", false)]
-    [InlineData("A18", false)]
+    [InlineData("A18", true)]
+    [InlineData("A19", false)]
     [InlineData("A4,A4", false)]
     [InlineData("A4,", false)]
     [InlineData("", false)]

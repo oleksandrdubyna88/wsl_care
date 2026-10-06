@@ -10,6 +10,9 @@ public sealed record ActRequest(IReadOnlyList<ActionId> Ids, RunTrigger Trigger,
     /// those that are still candidates; none given for the timer and a terminal (E3.S2).</summary>
     public ShownList ShownVolumes { get; init; } = ShownList.None;
 
+    /// <summary>The processes the panel SHOWED for A18 (<c>--process pid:start</c>, E7.S2b review A-H1).</summary>
+    public ShownList ShownProcesses { get; init; } = ShownList.None;
+
     /// <summary>The run id <c>--detach</c> allocated and wrote into the request (E6.S1): the run records itself under it, so the
     /// panel can follow it from the moment it was accepted. <c>null</c>: a new id from this run's start and pid.</summary>
     public RunId? RunId { get; init; }
@@ -100,7 +103,18 @@ public sealed record ActRunDetail(
     string DryRunReason,
     TargetUserReport TargetUser,
     IReadOnlyList<ActionOutcome> Actions,
-    IReadOnlyList<string> Notes);
+    IReadOnlyList<string> Notes)
+{
+    /// <summary>Plan §15q R1.4: every setting this run used whose value did NOT come from the embedded defaults, with the layer
+    /// that set it — so a run the timer did under a user's value says so ("A5 ran with containers.stoppedOlderThanDays = 0, user
+    /// layer"). Absent when every value is a default.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Config.ConfigValueReport>? Config { get; init; }
+
+    /// <summary>User values this run did not take (plan §15q); absent when none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Config.ConfigNoticeReport>? ConfigNotices { get; init; }
+}
 
 /// <summary>How an <c>act</c> ended — a closed set.</summary>
 public abstract record ActResult

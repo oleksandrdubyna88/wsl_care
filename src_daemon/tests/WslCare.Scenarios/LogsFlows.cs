@@ -24,7 +24,7 @@ namespace WslCare.Scenarios;
 /// </summary>
 public sealed class LogsFlows
 {
-    private static ScenarioHome TimerHome(string purpose)
+    internal static ScenarioHome TimerHome(string purpose)
     {
         // A journal above A10's 1 GiB trigger, scripted BEFORE the captured 407 MB answer (the first match wins).
         var home = CollectFlows.Captured(purpose, first: h =>

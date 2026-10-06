@@ -321,6 +321,17 @@ public sealed class DetachedRunsTests : IDisposable
         Runner.Requests.Should().BeEmpty();
     }
 
+    /// <summary>E7.S2b review A-H1: a detached A18 button run carries the processes its modal showed into the request, and
+    /// the template unit's run reads them back.</summary>
+    [Fact]
+    public void A_detached_a18_run_carries_its_shown_processes_into_the_request()
+    {
+        var (exit, _, stderr) = CliRun.Over(Host(), "act", "A18", "--confirm", "--manual", "--detach", "--process", "10:4000");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        Requests().Should().ContainSingle().Which.Should().BeOfType<RunRequestRead.Parsed>().Which.File.ShownProcesses.Should().Equal("10:4000");
+    }
+
     // ---------- --only - (stdin) ----------
 
     [Fact]
@@ -333,7 +344,7 @@ public sealed class DetachedRunsTests : IDisposable
     }
 
     [Theory]
-    [InlineData(ShownList.MaxNames + 1, "more than")]
+    [InlineData(CommandLine.MaxShownVolumes + 1, "more than")]
     [InlineData(-1, "larger than 1048576 bytes")]
     public void Stdin_past_the_count_or_the_byte_cap_is_refused_and_nothing_is_written(int names, string reason)
     {

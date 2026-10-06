@@ -1749,6 +1749,45 @@
       "launchLatencySeconds": 0.7508915
     }
   },
+  "configNotices": [
+    {
+      "file": "/golden-root/home/user/.config/wsl-care/config.json",
+      "line": 0,
+      "key": "",
+      "message": "the root timer ignores this value: WSL interop is not registered (/golden-root/proc/sys/fs/binfmt_misc/WSLInterop does not exist; /golden-root/proc/sys/fs/binfmt_misc/WSLInterop-late does not exist), so no Windows program can run from this distro — so the user layer cannot loosen what root does (it may only tighten it); set machine-wide values in /etc/wsl-care/config.json"
+    },
+    {
+      "file": "/golden-root/home/user/.config/wsl-care/config.json",
+      "line": 1,
+      "key": "volumes.anonymousOlderThanDays",
+      "message": "the root timer ignores this value: volumes.anonymousOlderThanDays = 0 is ignored: it is looser than the layers below, and this layer is taken only in the safe direction (why: the notice without a key)"
+    },
+    {
+      "file": "/golden-root/home/user/.config/wsl-care/config.json",
+      "line": 1,
+      "key": "containers.stoppedOlderThanDays",
+      "message": "the root timer ignores this value: containers.stoppedOlderThanDays = 0 is ignored: it is looser than the layers below, and this layer is taken only in the safe direction (why: the notice without a key)"
+    },
+    {
+      "file": "/golden-root/home/user/.config/wsl-care/config.json",
+      "line": 1,
+      "key": "containers.testcontainersOlderThanHours",
+      "message": "the root timer ignores this value: containers.testcontainersOlderThanHours = 0 is ignored: it is looser than the layers below, and this layer is taken only in the safe direction (why: the notice without a key)"
+    },
+    {
+      "file": "/golden-root/home/user/.config/wsl-care/config.json",
+      "line": 1,
+      "key": "images.unusedOlderThanDays",
+      "message": "the root timer ignores this value: images.unusedOlderThanDays = 0 is ignored: it is looser than the layers below, and this layer is taken only in the safe direction (why: the notice without a key)"
+    },
+    {
+      "file": "/golden-root/home/user/.config/wsl-care/config.json",
+      "line": 1,
+      "key": "buildCache.olderThanDays",
+      "message": "the root timer ignores this value: buildCache.olderThanDays = 0 is ignored: it is looser than the layers below, and this layer is taken only in the safe direction (why: the notice without a key)"
+    }
+  ],
+  "userLayerDigest": "331e2d3344a226e0148a339e325c39e3f877d7657fa4b379ec59292813fc6a7e",
   "containerStarts": {
     "from": "2000-01-01T00:00:00+00:00",
     "to": "2000-01-01T00:00:00+00:00",
@@ -2182,6 +2221,7 @@
     "A16",
     "A3",
     "A11",
+    "A18",
     "A1",
     "A2"
   ],
@@ -2192,7 +2232,11 @@
     "logs.instantRange",
     "act.detach",
     "act.onlyStdin",
-    "act.stop"
+    "act.stop",
+    "config.contract",
+    "agents.list",
+    "agents.probe",
+    "config.agentsExtra"
   ],
   "running": {
     "state": "none"
@@ -2200,5 +2244,13 @@
   "lastCleanup": {
     "available": false,
     "reason": "no cleanup is recorded in the history yet (no action has removed or freed anything)"
+  },
+  "limits": {
+    "historyRetentionDays": 90,
+    "requestFutureSkewSeconds": 300,
+    "requestGraceSeconds": 60,
+    "maxShownNames": 10000,
+    "unitStopSeconds": 120,
+    "drainGraceMilliseconds": 2000
   }
 }

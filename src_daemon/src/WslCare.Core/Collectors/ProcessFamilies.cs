@@ -28,15 +28,24 @@ public static partial class ProcessFamilies
 {
     public const string Other = "other";
 
+    /// <summary>The family name of the AI agents' CLIs — never choosable for A11 (§15q Q13: their processes are the owner's work).</summary>
+    public const string AiAgents = "ai-agents";
+
     public static readonly IReadOnlyList<ProcessFamily> Catalogue =
     [
         new("dotnet-build-servers", BuildServers(), HeadOnly: false),
         new("testhost", TestHost(), HeadOnly: false),
-        new("ai-agents", AiAgents(), HeadOnly: true),
+        new(AiAgents, AiAgentCli(), HeadOnly: true),
         new("docker-desktop-proxy", DockerDesktopProxy(), HeadOnly: true),
         new("vscode-server", VsCodeServer(), HeadOnly: false),
         new("node", Node(), HeadOnly: true),
     ];
+
+    /// <summary>The families <c>processes.families</c> may name (§15q R1.3, review B1): the catalogue's, without the catch-all
+    /// <see cref="Other"/> (every process nothing else matched — root's A11 would end other accounts' idle orphans) and without
+    /// <see cref="AiAgents"/>. Declared after <see cref="Catalogue"/>: static initialisers run in textual order.</summary>
+    public static readonly IReadOnlyList<string> ChoosableForA11 =
+        [.. Catalogue.Select(f => f.Name).Where(name => name is not (Other or AiAgents))];
 
     /// <summary>The family of one process; <see cref="Other"/> when none matches.</summary>
     public static string Of(IReadOnlyList<string> argv, string name) =>
@@ -51,7 +60,7 @@ public static partial class ProcessFamilies
 
     /// <summary>The AI-agent CLIs of plan §4.6 by binary name — the program itself, or the script node runs.</summary>
     [GeneratedRegex(@"(?:^|[/ ])(?:claude|codex|gemini|agy|antigravity|copilot|acli|rovodev|atlassian_cli_rovodev|ollama)(?:\.exe)?(?:\s|$)", RegexOptions.CultureInvariant)]
-    private static partial Regex AiAgents();
+    private static partial Regex AiAgentCli();
 
     [GeneratedRegex(@"docker-desktop-user-distro|docker-desktop-proxy", RegexOptions.CultureInvariant)]
     private static partial Regex DockerDesktopProxy();
