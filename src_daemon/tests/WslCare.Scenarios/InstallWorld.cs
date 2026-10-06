@@ -311,7 +311,7 @@ internal sealed class InstallWorld : IDisposable
     public static FakeAnswer Download(string url, string file) =>
         new("curl", ["--url", url], 0, file, string.Empty) { Prefix = true, OutputFlag = "--output" };
 
-    /// <summary>The archive a release would carry (plan §15e #1): the binary, the three units and the machine layer from
+    /// <summary>The archive a release would carry (plan §15e #1): the binary, every unit of src_daemon/systemd and the machine layer from
     /// this repository, under one top folder.</summary>
     public void WriteRealRelease(TarWriter tar, string name)
     {

@@ -1679,7 +1679,7 @@ folders were made outside the distro view).
 without its budget — 1; the explanation per key again — 1; the empty-answer check dropped (WSL) — 1. Each file restored
 byte-identical.
 
-### The act template's CollectMode, and the two gaps that let it ship (daemon 0.1.1, 2026-10-06)
+### The act template's CollectMode, and the three gaps that let it ship (daemon 0.1.1, 2026-10-06)
 
 The live 0.1.0 install failed POST_DEPLOY item 7: `wsl-care-act@.service` carried `CollectMode=inactive-or-failed` under
 `[Service]`, systemd.unit(5) reads it in `[Unit]` only, and systemd 255 said so in the journal —
@@ -1706,9 +1706,19 @@ while `systemctl show` gave `CollectMode=inactive`: a failed detached run stays 
   (`systemctl is-active` of two units exits 0 when EITHER is active — observed, `active` / `inactive` / exit 0), item 5
   (`doctor --json` exits 0 healthy or not), item 11 (an empty journal passed; the `memory peak` it printed does not exist
   on systemd 255, whose line is `Consumed …s CPU time.`). Items 2, 6, 8, 9 and 12 end in an assertion already. Each
-  rewritten item is RUN by `PostDeployCommandFlows` (Linux legs) as the checker runs it — first span, `\|` unescaped,
-  `/bin/sh -c` — against a stand-in `wsl.exe` relaying to stand-in `systemctl` / `journalctl` / `wsl-care`: healthy
-  passes, every broken state named fails.
+  rewritten item is RUN by `PostDeployCommandFlows` (Linux legs) as the checker runs it — the command the checker's own
+  `inspect` extracts (first span, `\|` unescaped; coai code round: never a second copy of those rules), under `/bin/sh -c`
+  — against a stand-in `wsl.exe` relaying to stand-in `systemctl` / `journalctl` / `wsl-care`: healthy passes, every
+  broken state named fails.
+- **Item 11 could not have passed on the real relay at all** (own review of this change, both reviewers): after `--`,
+  wsl.exe hands its arguments to the distro's shell as ONE command line (observed from inside WSL on 2026-10-06:
+  `wsl.exe -d Ubuntu -- sh -c 'x=1; echo "[$x]"'` prints `[]`, `--exec` prints `[1]`; the facts note's row 7 already
+  measured it), so `-- sh -c '…$(journalctl …)…$j…'` had root's shell expand the journal into the script. Item 11 now runs
+  `journalctl` alone through wsl.exe and reads the journal on this side, as data; the stand-in `wsl.exe` re-parses a `--`
+  line exactly that way (`The_stand_in_wsl_exe_re_parses_a_dash_dash_command_line_as_the_real_one_does` pins both forms
+  to the observation), and `Item_11_reads_a_journal_line_with_quotes_and_a_command_substitution_as_text` proves a `"` or
+  `$(…)` in the journal is never executed. Its AppArmor alternative was dropped: a kernel `DENIED` line has no unit field
+  and never reaches `journalctl -u wsl-care.service`.
 
 **Red, observed before the fix:** `ShippedFilesTests` (Windows, Debug) — 3 failed: `Expected unit["Service"] … not to
 contain key "CollectMode" … but found it anyhow`; `Expected Unit("wsl-care-act@.service")["Unit"] to contain 3 item(s) …
@@ -1726,6 +1736,12 @@ against the owner's live 0.1.0 install FAILS as it should: `wsl-care-act@: wants
 loaded: … CollectMode=inactive`; item 1 passes there (`wsl-care.timer and wsl-care-events.service active`).
 **Teeth:** the script made to skip `*@.*` files (the old list's blind spot) — `SystemdUnitVerifyFlows` 2 red (the template
 flow saw only the netplan line; the drop-in flow saw `no unit files`); the script restored byte-identical — green.
+`RestartSec` taken out of the key table — both key scans red, naming `wsl-care-events.service` and its drop-in; restored.
+**The review round's red:** with the stand-in `wsl.exe` made faithful, the first rewrite of item 11 (still `-- sh -c`)
+failed its healthy flow — `grep: Consumed": No such file or directory`, the outer shell's re-quoting — and the
+journal-as-data flow likewise; the item rewritten, green. Final: `ShippedFilesTests`, `PostDeployCommandFlows` and
+`SystemdUnitVerifyFlows` — WSL 39 passed, 1 skipped (the netplan positive); Windows 19 passed, 21 skipped (the Linux
+flows).
 
 ## The extension (`src_vs_code/`)
 
@@ -2063,7 +2079,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care agents probe <path> [--json]` as root: exit 81 (`NotAsRoot`), nothing on stdout, the refusal naming uid 0 and the default-user fix; of a CLI (the fake tool at `~/.local/bin/mycli` with an execute bit): exit 0, usable, the suggested entry with `~/.mycli`, and the CLI never started; a path of the wrong shape refused (2) | covered (the CLI probe on the Linux legs; the root refusal on every OS) | `AgentsExtraFlows` (2 facts); in-process: `AgentsCommandTests` (root, shape, JSON), `Agents/AgentProbeTests` (incl. the inotify no-open proof, Linux) |
 | `wsl-care units dropin <unit>` (E7.S2c): the drop-in `install.sh` writes for one of the four units, from the machine layer — the timer's `OnCalendar` from `timer.periodHours`, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec; another unit refused (2) naming the four | covered (in-process, every OS; the installer's use on the Linux legs) | `Cli.Tests/UnitsCommandTests` (2); `ShippedFilesTests.The_drop_in_of_the_defaults_…`, `…A_drop_in_carries_the_configured_values`; `InstallFlows` (the render before any unit is enabled, its failure) |
 | `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |
-| `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, the three units byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
+| `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, every unit byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
 | `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |
 | `install.sh`: the newest daemon release from a COMPACT releases list (one line, `"tag_name":"…"` with and without a space): by version number (0.10.0 over 0.9.1), a pre-release (`-rc.1`) and the extension never chosen | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_chosen_by_version_number_from_a_compact_releases_list` |
 | `install.sh --version <x.y.z>`: no releases-list call; a malformed version (`../`, `v`-prefix, `;`, a newline) exit 2 before anything runs | covered (Linux legs) | `InstallFlows.An_explicit_version_skips_the_releases_list_and_a_malformed_one_is_refused_before_anything_runs` |
@@ -2081,7 +2097,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `install.sh` preflight refusals: not root (the `sudo sh -s --` line, sudo never called), no systemd, an unknown architecture, a foreign `/usr/local/bin/wsl-care`, a hostile archive member (`..`, outside the folder, a link — each riding a complete release); arm64 installs the `linux-arm64` asset; an upgrade restarts the follower | covered (Linux legs) | `InstallFlows.A_non_root_run_is_refused…`, `…Without_systemd_running…`, `…On_arm64…`, `…A_wsl_care_on_the_link_path…`, `…An_archive_member_that_leaves_its_folder_or_is_a_link…`, `InstallUpgradeFlows.An_upgrade_restarts_the_running_follower…` |
 | the shipped units and machine layer: `ExecStart` argv parsed by the CLI (`collect --timer`, `events follow`), `SuccessExitStatus` = `ExitCode.Busy`, the timer's calendar, no breaking sandbox directive, `install.sh`'s unit list = the folder, every key of every unit and drop-in in the section systemd reads it from (the act template's `CollectMode` in `[Unit]`), the machine layer valid and empty | covered (every OS) | `ShippedFilesTests`; systemd's own parser: CI `verify-systemd-units.sh` (Linux legs) |
 | the CI unit gate (`verify-systemd-units.sh`): every file of the folder read by `systemd-analyze verify`, a template through an instance, each unit with its rendered drop-in; any output fails (an unknown key, a key in the wrong section, a drop-in's key), a failed drop-in render and an empty folder fail; the workflow runs it over the folder with the built binary and names no unit | covered (Linux legs with `systemd-analyze`; the structural check on every OS) | `SystemdUnitVerifyFlows` |
-| POST_DEPLOY items 1, 5, 7, 11 as `post-deploy-check --target` runs them: each passes on the healthy installation and FAILS on the broken state it names (a unit not active, `"healthy": false`, `CollectMode=inactive`, a `collect` without `--timer`, an empty journal, an OOM kill, an AppArmor refusal) | covered (Linux legs; stand-in `wsl.exe` / `systemctl` / `journalctl` / `wsl-care`) | `PostDeployCommandFlows` |
+| POST_DEPLOY items 1, 5, 7, 11 as `post-deploy-check --target` runs them: each passes on the healthy installation and FAILS on the broken state it names (a unit not active, `"healthy": false`, `CollectMode=inactive`, a `collect` without `--timer`, an empty journal, an OOM kill, a logged snap refusal; a journal line with a quote or `$(…)` read as data) | covered (Linux legs; stand-in `wsl.exe` that re-parses a `--` line as the real one does, `systemctl` / `journalctl` / `wsl-care`; the extraction is the checker's own `inspect`) | `PostDeployCommandFlows` |
 | `install.sh`'s pinned identity is this repository's attesting `release.yml` AT the release tag, and no command line of it uses `--signer-workflow` | covered (every OS) | `InstallAttestationFlows.The_identity_the_installer_pins_is_this_repositorys_attesting_release_workflow_at_the_release_tag`; `ReleaseWorkflowTests.The_release_scripts_agree_with_the_installer_on_what_a_version_is` (the identity's tag = the trigger) |
 | the release archive (`package-daemon.sh`, as `release.yml` runs it): per Linux RID exactly the members `install.sh`'s unpack loop requires plus their folders, regular files and folders only, owner 0:0, 0755 binary / 0644 units and machine layer byte for byte, the `.sha256` line `<hash>  <name>`; the Windows zip holds `wsl-care.exe` alone; a bad version / unknown RID / missing binary refused, nothing written | covered (Linux legs; the zip where 7-Zip is on `PATH`) | `PackageFlows.A_linux_archive_holds_exactly_what_install_sh_unpacks_as_regular_files_under_one_folder` (linux-x64, linux-arm64), `…The_windows_archive_holds_the_exe_alone_under_its_folder`, `…A_bad_version_an_unknown_rid_or_a_missing_binary_is_refused_and_nothing_is_written` |
 | `install.sh` installs the archive the release script packed (the packer and the installer agree, end to end) | covered (Linux legs) | `PackageFlows.The_installer_installs_the_archive_the_release_script_packed` |
@@ -2143,9 +2159,10 @@ The extension's own limits are listed in its section (§ *The extension* — *Wh
   `MemoryMax=1G` — `POST_DEPLOY.md` #11 reads the journal for both on the live install.
 - **The POST_DEPLOY flows prove the COMMANDS, not the installation.** `PostDeployCommandFlows` runs each item against
   stand-ins answering as systemd 255 and `doctor` were observed to answer on 2026-10-06; whether the owner's installation
-  is healthy is what running the file with `--target` says. The extraction mirrors the conventions checker's
-  `parseTable` / first-span rule rather than importing it (no Node in the C# harness); a change to that rule there would
-  not be seen here.
+  is healthy is what running the file with `--target` says. The command each flow runs is extracted by the conventions
+  checker itself (`node` importing `post-deploy-check.mjs`'s exported `inspect`, from the submodule `ci · daemon` now
+  fetches), so a change to the checker's row or span rules is what these flows run; without Node or the submodule they
+  FAIL in CI and skip, saying which, on a developer machine.
 - **The doctor wait is proved at 0 seconds** (`WSL_CARE_INSTALL_DOCTOR_SECONDS=0`): one attempt. The 2-minute wait for
   the follower's first marker on a live machine is not timed.
 

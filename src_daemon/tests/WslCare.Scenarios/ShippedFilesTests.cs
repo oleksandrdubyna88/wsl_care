@@ -10,21 +10,30 @@ using WslCare.Core.Files;
 namespace WslCare.Scenarios;
 
 /// <summary>
-/// What a release ships besides the binary (plan §15e #1, E4.S1): the three systemd units and the machine
-/// configuration layer, read where they live in this repository and judged by the PRODUCT's own parser and loader — a
-/// unit that names a verb the CLI does not take, or a machine layer the loader refuses, fails here on every OS.
+/// What a release ships besides the binary (plan §15e #1, E4.S1): the systemd units of <c>src_daemon/systemd</c> (and the
+/// drop-ins <c>wsl-care units dropin</c> renders for them) and the machine configuration layer, read where they live in this
+/// repository and judged by the PRODUCT's own parser and loader — a unit that names a verb the CLI does not take, or a
+/// machine layer the loader refuses, fails here on every OS.
 /// </summary>
 public sealed partial class ShippedFilesTests
 {
     private const string InstallPath = "/opt/wsl-care/bin/wsl-care";
 
     /// <summary>The directives of one unit file: section → key → values (a key may repeat).</summary>
-    private static Dictionary<string, Dictionary<string, List<string>>> Unit(string name)
+    private static Dictionary<string, Dictionary<string, List<string>>> Unit(string name) =>
+        Sections(name, File.ReadAllLines(Path.Combine(ShippedFiles.SystemdDirectory, name)));
+
+    /// <summary>The drop-in of the embedded defaults for <paramref name="name"/>, read the same way.</summary>
+    private static Dictionary<string, Dictionary<string, List<string>>> DropIn(string name) =>
+        Sections($"{name}'s drop-in", Core.Systemd.UnitDropIns.Defaults(name).Split('\n'));
+
+    /// <summary>Unit-file lines as section → key → values; blanks and comments skipped.</summary>
+    private static Dictionary<string, Dictionary<string, List<string>>> Sections(string name, IEnumerable<string> lines)
     {
         var sections = new Dictionary<string, Dictionary<string, List<string>>>(StringComparer.Ordinal);
         var outside = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         var current = outside;
-        foreach (var line in Directives(name))
+        foreach (var line in lines.Select(raw => raw.Trim()).Where(IsDirective))
         {
             current = IsSectionHeader(line) ? Section(sections, line[1..^1]) : Add(current, name, line);
         }
@@ -32,10 +41,6 @@ public sealed partial class ShippedFilesTests
         outside.Should().BeEmpty($"{name}: every directive sits in a [section]");
         return sections;
     }
-
-    /// <summary>The unit's lines without blanks and comments, trimmed.</summary>
-    private static IEnumerable<string> Directives(string name) =>
-        File.ReadAllLines(Path.Combine(ShippedFiles.SystemdDirectory, name)).Select(raw => raw.Trim()).Where(IsDirective);
 
     private static bool IsDirective(string line) => line.Length > 0 && !line.StartsWith('#') && !line.StartsWith(';');
 
@@ -197,16 +202,28 @@ public sealed partial class ShippedFilesTests
         ["Install"] = ["WantedBy"], // systemd.unit(5) [Install]
     };
 
+    /// <summary>The sections a unit of this TYPE has (systemd.service(5), systemd.timer(5)): a <c>[Timer]</c> in a service is
+    /// ignored like a misplaced key.</summary>
+    private static string[] SectionsOfType(string name) =>
+        name.EndsWith(".timer", StringComparison.Ordinal) ? ["Unit", "Timer", "Install"] : ["Unit", "Service", "Install"];
+
+    /// <summary>Every section of <paramref name="sections"/> is one this unit type has, and every key in it one systemd reads
+    /// in that section.</summary>
+    private static void EveryKeyWhereSystemdReadsIt(string unit, string name, Dictionary<string, Dictionary<string, List<string>>> sections)
+    {
+        foreach (var (section, keys) in sections)
+        {
+            SectionsOfType(unit).Should().Contain(section, $"{name}: [{section}] is a section a unit of this type has");
+            keys.Keys.Should().BeSubsetOf(KeysBySection[section], $"{name}: every key of [{section}] is one systemd reads in [{section}] — anywhere else it is ignored with a warning and exit 0");
+        }
+    }
+
     [Fact]
     public void Every_key_of_every_shipped_unit_sits_in_the_section_systemd_reads_it_from()
     {
         foreach (var name in ShippedFiles.UnitNames)
         {
-            foreach (var (section, keys) in Unit(name))
-            {
-                KeysBySection.Should().ContainKey(section, $"{name}: [{section}] is a section systemd reads");
-                keys.Keys.Should().BeSubsetOf(KeysBySection[section], $"{name}: every key of [{section}] is one systemd reads in [{section}] — anywhere else it is ignored with a warning and exit 0");
-            }
+            EveryKeyWhereSystemdReadsIt(name, name, Unit(name));
         }
     }
 
@@ -217,16 +234,7 @@ public sealed partial class ShippedFilesTests
     {
         foreach (var name in Core.Systemd.UnitDropIns.Units)
         {
-            var section = string.Empty;
-            foreach (var line in Core.Systemd.UnitDropIns.Defaults(name).Split('\n').Select(l => l.Trim()).Where(IsDirective))
-            {
-                section = IsSectionHeader(line) ? line[1..^1] : section;
-                if (!IsSectionHeader(line))
-                {
-                    KeysBySection.Should().ContainKey(section, $"{name}'s drop-in: \"{line}\" sits in a section systemd reads");
-                    KeysBySection[section].Should().Contain(line[..line.IndexOf('=')], $"{name}'s drop-in: [{section}] {line}");
-                }
-            }
+            EveryKeyWhereSystemdReadsIt(name, $"{name}'s drop-in", DropIn(name));
         }
     }
 

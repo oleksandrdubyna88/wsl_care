@@ -11,7 +11,7 @@ extension that shows the state and runs cleanups on demand.
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
-| `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | the installer, the three systemd units and the machine configuration layer it installs |
+| `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | the installer, the systemd units and the machine configuration layer it installs |
 | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, [docs/repo-settings.md](docs/repo-settings.md) | the release pipeline — [Release](#release) below |
 
 ## Install
@@ -579,7 +579,7 @@ and `win-x64`, an archive and its `.sha256`, each archive with a build-provenanc
 
 | Archive | Holds |
 |---|---|
-| `wsl-care-<version>-linux-x64.tar.gz`, `…-linux-arm64.tar.gz` | `wsl-care-<version>-<rid>/` with `wsl-care` (0755), `systemd/` (the three units) and `config/machine.json` (the empty machine layer) — regular files and folders only, owner 0:0 |
+| `wsl-care-<version>-linux-x64.tar.gz`, `…-linux-arm64.tar.gz` | `wsl-care-<version>-<rid>/` with `wsl-care` (0755), `systemd/` (every unit of `src_daemon/systemd/`) and `config/machine.json` (the empty machine layer) — regular files and folders only, owner 0:0 |
 | `wsl-care-<version>-win-x64.zip` | `wsl-care-<version>-win-x64/wsl-care.exe` alone — the Windows probe ships no units and no distro machine layer |
 | `<archive>.sha256` | one line, `<sha-256>  <archive name>` (`sha256sum -c` reads it as it is) |
 
