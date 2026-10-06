@@ -44,8 +44,8 @@ internal static class Program
         // E7.S2c: every configured number reaches its call site through the process's tuning — set once, before anything runs.
         Tuning.ForThisProcess(loaded.Config);
         // Phase two (plan §15q R2.2, review M1): the manual AI agents' folders join the protected roots BEFORE anything runs.
-        var host = first.WithAgentExtras(loaded.Config);
-        loaded = WithDroppedExtras(loaded, host);
+        var (host, protectedLoad) = first.WithAgentExtras(loaded);
+        loaded = protectedLoad;
         using var logger = WslCareLogging.Start(host, loaded, AppName, Console.Error);
         try
         {
@@ -64,12 +64,6 @@ internal static class Program
             return Output.Internal(Console.Error, $"{e.GetType().Name}: {e.Message}");
         }
     }
-
-    /// <summary>The manual agents' folders phase two did not protect, said as configuration notices (E7.S1/S2 review S1).</summary>
-    internal static ConfigLoadResult WithDroppedExtras(ConfigLoadResult loaded, CliHost host) =>
-        host.AgentExtrasDropped.Count == 0
-            ? loaded
-            : loaded with { Notices = [.. loaded.Notices, .. host.AgentExtrasDropped.Select(m => new ConfigNotice(new ConfigLayerFile(ConfigLayer.User, host.Paths.UserConfigFile), 0, ConfigKeys.AiAgents.Extra.Name, m))] };
 
     /// <summary>The whole program, with its streams and its machine passed in so it is a unit test.</summary>
     internal static int Run(
@@ -101,7 +95,7 @@ internal static class Program
             Request.Preview preview => PreviewCommand.Run(preview, host, loaded, stdout, cancellationToken),
             Request.Collect collect => CollectCommand.Run(collect, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Doctor doctor => DoctorCommand.Run(doctor, host, loaded, stdout, cancellationToken),
-            Request.AgentsList agents => AgentsCommand.Run(agents, host, loaded, stdout, cancellationToken),
+            Request.AgentsList agents => AgentsCommand.Run(agents, host, loaded, stdout, stderr, cancellationToken),
             Request.AgentsProbe probe => AgentsCommand.Probe(probe, host, stdout, stderr, cancellationToken),
             Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),
             Request.Act act => ActCommand.Run(act, host, loaded, stdout, stderr, logger, cancellationToken),

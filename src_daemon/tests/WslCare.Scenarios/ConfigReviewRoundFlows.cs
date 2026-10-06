@@ -63,8 +63,10 @@ public sealed class ConfigReviewRoundFlows
 
         config["values"]!.AsArray().Single(v => (string)v!["key"]! == "dryRun")!["value"]!.GetValue<bool>().Should().BeFalse("the user's own run takes its own layer");
         config["configNotices"].Should().NotBeNull("the root timer will not take dryRun = false without interop, and the user must be told");
-        config["configNotices"]!.AsArray().Select(n => (string)n!["key"]!).Should().Equal("dryRun");
-        ((string)config["configNotices"]![0]!["message"]!).Should().Contain("root timer");
+        // coai E7 code round #8: the explanation once (the notice without a key), then each key's short fact.
+        config["configNotices"]!.AsArray().Select(n => (string)n!["key"]!).Should().Equal(string.Empty, "dryRun");
+        ((string)config["configNotices"]![0]!["message"]!).Should().Contain("root timer").And.Contain("WSL interop");
+        ((string)config["configNotices"]![1]!["message"]!).Should().Contain("root timer").And.NotContain("WSL interop");
     }
 
     [Fact]

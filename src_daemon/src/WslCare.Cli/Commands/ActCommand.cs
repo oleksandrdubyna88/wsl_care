@@ -52,6 +52,11 @@ internal static class ActCommand
         }
 
         var shown = ShownVolumes(request, host);
+        if (shown.Failure.Length == 0 && PastTheCap(shown.List, request.Processes) is { Length: > 0 } past)
+        {
+            shown = (shown.List, past);
+        }
+
         if (shown.Failure.Length > 0)
         {
             log.Warning("act refused: {Reason}", shown.Failure);
@@ -116,6 +121,13 @@ internal static class ActCommand
         request.Timer ? RunTrigger.Timer
         : request.Manual ? RunTrigger.Manual
         : RunTrigger.Cli;
+
+    /// <summary>The parser holds the compile-time ceiling (<see cref="CommandLine.MaxShownVolumes"/>); the verb holds the value in
+    /// force (<c>act.maxShownNames</c>, coai E7 code round #4) — empty when both lists are inside it.</summary>
+    private static string PastTheCap(ShownList volumes, IReadOnlyList<string> processes) =>
+        volumes.Names.Count > ShownList.MaxNames || processes.Count > ShownList.MaxNames
+            ? $"act: a shown list holds at most {ShownList.MaxNames} names (act.maxShownNames); nothing was done"
+            : string.Empty;
 
     /// <summary>The processes A18's preview showed (<c>--process</c>, E7.S2b review A-H1); none given = none.</summary>
     private static ShownList ShownProcesses(Request.Act request) => request.Processes.Count > 0 ? ShownList.Of(request.Processes) : ShownList.None;

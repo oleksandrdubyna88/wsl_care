@@ -199,6 +199,23 @@ public sealed class InstallFlows
         world.CallsOf("systemctl").Select(c => string.Join(' ', c.Argv)).Should().NotContain(c => c.StartsWith("enable", StringComparison.Ordinal), "the failed step stops the run");
     }
 
+    /// <summary>coai E7 code round #6: a binary that answers nothing for a unit installs no empty drop-in — it says so and the unit
+    /// keeps its own values.</summary>
+    [Fact]
+    public async Task An_empty_drop_in_answer_is_never_installed()
+    {
+        Linux();
+        using var world = new InstallWorld("dropin-empty");
+        world.Override("wsl-care", ["units", "dropin", "wsl-care.timer"], 0);
+
+        var result = await world.RunAsync();
+
+        Succeeded(result);
+        result.Stderr.Should().Contain("no drop-in for wsl-care.timer").And.Contain("answered nothing");
+        File.Exists(world.At($"/etc/systemd/system/wsl-care.timer.d/{Core.Systemd.UnitDropIns.FileName}")).Should().BeFalse();
+        File.Exists(world.At($"/etc/systemd/system/wsl-care.service.d/{Core.Systemd.UnitDropIns.FileName}")).Should().BeTrue("the other units' answers were whole");
+    }
+
     /// <summary>E7.S2b/S2c review C-M8: <c>--version</c> of a release before the drop-ins installs its binary, whose <c>units dropin</c>
     /// is an unknown verb (2) — the install goes on without drop-ins, says so, and removes a stale one a newer install left.</summary>
     [Fact]

@@ -344,7 +344,7 @@ public sealed class DetachedRunsTests : IDisposable
     }
 
     [Theory]
-    [InlineData(10_001, "more than")] // act.maxShownNames (default 10 000) + 1
+    [InlineData(CommandLine.MaxShownVolumes + 1, "more than")]
     [InlineData(-1, "larger than 1048576 bytes")]
     public void Stdin_past_the_count_or_the_byte_cap_is_refused_and_nothing_is_written(int names, string reason)
     {

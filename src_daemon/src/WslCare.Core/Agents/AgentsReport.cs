@@ -6,7 +6,43 @@ namespace WslCare.Core.Agents;
 
 /// <summary>Where the sizes of an <c>agents list</c> answer come from: measured <c>now</c> (<c>--measure</c>), the newest
 /// <c>fullRun</c> that walked them (with its age), or <c>none</c> with the reason.</summary>
-public sealed record AgentSizesSource(string Source, DateTimeOffset? SampledAt, double? AgeSeconds, string? RunId, string? Reason);
+public sealed record AgentSizesSource(string Source, DateTimeOffset? SampledAt, double? AgeSeconds, string? RunId, string? Reason)
+{
+    /// <summary>The wire shape read back as a closed set (coai E7 code round #2): the nullable members exist only at the JSON edge.</summary>
+    public SizesView View() => (Source, RunId, AgeSeconds, Reason) switch
+    {
+        ("now", _, _, _) => new SizesView.MeasuredNow(),
+        ("fullRun", { } runId, { } age, _) => new SizesView.FullRun(runId, age),
+        (_, _, _, { } reason) => new SizesView.Unavailable(reason),
+        _ => new SizesView.Unavailable("none"),
+    };
+}
+
+/// <summary>Where an answer's sizes come from, as a reader takes it — measured now, a full run with its age, or unavailable and why.</summary>
+public abstract record SizesView
+{
+    private SizesView()
+    {
+    }
+
+    public sealed record MeasuredNow : SizesView;
+
+    public sealed record FullRun(string RunId, double AgeSeconds) : SizesView;
+
+    public sealed record Unavailable(string Reason) : SizesView;
+}
+
+/// <summary>An agent's session count as a reader takes it (coai E7 code round #3): a count exists only when counted.</summary>
+public abstract record SessionCount
+{
+    private SessionCount()
+    {
+    }
+
+    public sealed record Counted(int Count) : SessionCount;
+
+    public sealed record NotCounted(string Reason) : SessionCount;
+}
 
 public sealed record AgentBinaryReport(string Name, string Path);
 
@@ -17,7 +53,16 @@ public sealed record AgentSessionReport(string Name, long Bytes);
 
 /// <summary>An agent's sessions: <c>counted</c> false is "—" with the reason, never 0 (plan §15q D2). The largest sessions by
 /// NAME only in a live answer (<c>--measure</c>).</summary>
-public sealed record AgentSessionsReport(bool Counted, int? Count, DateTimeOffset? Oldest, DateTimeOffset? Newest, ByteFigure Largest, IReadOnlyList<AgentSessionReport>? LargestSessions, bool? Complete, string? Reason);
+public sealed record AgentSessionsReport(bool Counted, int? Count, DateTimeOffset? Oldest, DateTimeOffset? Newest, ByteFigure Largest, IReadOnlyList<AgentSessionReport>? LargestSessions, bool? Complete, string? Reason)
+{
+    /// <summary>The wire shape read back as a closed set: a count only when counted, else the reason.</summary>
+    public SessionCount View() => (Counted, Count, Reason) switch
+    {
+        (true, { } count, _) => new SessionCount.Counted(count),
+        (_, _, { } reason) => new SessionCount.NotCounted(reason),
+        _ => new SessionCount.NotCounted("not counted"),
+    };
+}
 
 /// <summary>One catalogue agent as <c>agents list --json</c> answers it (plan §4.6).</summary>
 public sealed record AgentReport(

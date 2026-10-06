@@ -91,6 +91,42 @@ public sealed class UnitsCommandTests
         stderr.Should().Contain("4096-byte cap");
     }
 
+    /// <summary>coai E7 code round #4: the parser's compile-time ceiling is act.maxShownNames' range maximum, and the verb holds the
+    /// value IN FORCE — a machine layer that lowers it refuses a list past it.</summary>
+    [Fact]
+    public void The_shown_list_cap_in_force_is_held_by_the_verb_and_the_parser_holds_the_range_maximum()
+    {
+        CommandLine.MaxShownVolumes.Should().Be(Core.Config.ConfigKeys.Act.MaxShownNames.Max);
+        using var sandbox = new LinuxSandbox("act-cap-in-force");
+        sandbox.Write("/etc/passwd", "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\n");
+        sandbox.Write("/etc/wsl-care/config.json", """{ "act": { "maxShownNames": 1 } }""");
+        var host = new CliHost(sandbox.Paths, sandbox.Files, new FixedTimeProvider(), new RecordingCommandRunner()) { Privilege = new Core.Hosting.ProcessPrivilege(true, "a test says so"), Processes = new FakeProcessTable() };
+
+        var (exit, _, stderr) = CliRun.Over(host, "act", "A4", "--confirm", "--manual", "--volume", new string('a', 64), "--volume", new string('b', 64));
+
+        exit.Should().Be((int)ExitCode.Usage, stderr);
+        stderr.Should().Contain("at most 1 names (act.maxShownNames)");
+    }
+
+    /// <summary>coai E7 code round #7: agents list --measure says on STDERR what it is about to do and each folder it walks; stdout
+    /// (the JSON) is untouched.</summary>
+    [Fact]
+    public void Agents_list_measure_says_what_it_walks_on_stderr_and_leaves_the_json_alone()
+    {
+        using var sandbox = new SandboxHost("agents-measure-progress");
+        var claude = Path.Combine(sandbox.Paths.Home, ".claude");
+        Directory.CreateDirectory(Path.Combine(claude, "projects", "p"));
+        File.WriteAllText(Path.Combine(claude, "projects", "p", "s1.jsonl"), "{}");
+
+        var (exit, stdout, stderr) = CliRun.Over(sandbox, "agents", "list", "--measure", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        JsonNode.Parse(stdout)!["sizes"]!["source"]!.GetValue<string>().Should().Be("now");
+        var lines = CliRun.Lines(stderr);
+        lines.Should().Contain(l => l.Contains("agent folder(s), up to 60 s", StringComparison.Ordinal), "one line before the walk");
+        lines.Should().Contain(l => l.Contains("measuring", StringComparison.Ordinal) && l.Contains(".claude", StringComparison.Ordinal), "a line per folder it starts");
+    }
+
     /// <summary>The extension's <c>shared/daemonLimits.ts</c> (PR #12) reads <c>limits.historyRetentionDays</c> and
     /// <c>limits.requestFutureSkewSeconds</c>: the values in force, the machine layer's when it sets them.</summary>
     [Fact]

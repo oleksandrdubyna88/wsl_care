@@ -248,7 +248,7 @@ public static class ConfigLoader
     /// which is a notice instead.</summary>
     private static void Take(ConfigLayerFile file, ConfigKey key, ConfigValue value, int line, LoadState state)
     {
-        var refusal = file.Layer == ConfigLayer.User ? UserValueRefusal(key, value, state) : string.Empty;
+        var refusal = file.Layer == ConfigLayer.User ? UserValueRefusal(file, key, value, state) : string.Empty;
         if (refusal.Length > 0)
         {
             state.Notices.Add(new ConfigNotice(file, line, key.Name, refusal));
@@ -259,10 +259,27 @@ public static class ConfigLoader
     }
 
     /// <summary>Why a user-layer value is not taken; empty when it is.</summary>
-    private static string UserValueRefusal(ConfigKey key, ConfigValue value, LoadState state) =>
+    private static string UserValueRefusal(ConfigLayerFile file, ConfigKey key, ConfigValue value, LoadState state) =>
         key.Trust.MachineOnly ? MachineOnlyNotice(key)
-        : TightenOnly(key, state.Trust) is { Length: > 0 } why && !IsNoLooser(key, value, state) ? $"{key.Name} = {value.Describe()} is ignored: {why}"
+        : TightenOnly(key, state.Trust) is { Length: > 0 } why && !IsNoLooser(key, value, state) ? Ignored(file, key, value, why, state)
         : string.Empty;
+
+    /// <summary>coai E7 code round #8: the long interop explanation is said ONCE, as a notice without a key; each key's notice carries
+    /// the short fact. Any other reason is short and stays with its key.</summary>
+    private static string Ignored(ConfigLayerFile file, ConfigKey key, ConfigValue value, string why, LoadState state)
+    {
+        if (why != state.Trust.LoosenRefused)
+        {
+            return $"{key.Name} = {value.Describe()} is ignored: {why}";
+        }
+
+        if (!state.Notices.Any(n => n.Key.Length == 0))
+        {
+            state.Notices.Add(new ConfigNotice(file, 0, string.Empty, why));
+        }
+
+        return $"{key.Name} = {value.Describe()} is ignored: it is looser than the layers below, and this layer is taken only in the safe direction (why: the notice without a key)";
+    }
 
     private static string MachineOnlyNotice(ConfigKey key) =>
         $"{key.Name} is set only in the machine layer (/etc/wsl-care/config.json); the user value is ignored";

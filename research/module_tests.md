@@ -1659,6 +1659,21 @@ folders were made outside the distro view).
 | `install.sh` failing on 2 / 78 (WSL) | 1 |
 | the comparison shape dropped from the scan | 2 (the planted one, and an allowlisted entry now stale) |
 
+### The coai E7 code round (2026-10-06, plan §15q *coai E7 code round*)
+
+| Finding | Tests |
+|---|---|
+| #1–#3 (refactors: the act option dispatch, the closed sizes / session views) | unchanged: `ActCommandTests` (parsing), `AgentsCommandTests` and `AgentsFlows` (the text form) — green |
+| #4: the parser holds the range maximum; the verb holds the value in force | `Cli.Tests/UnitsCommandTests.The_shown_list_cap_in_force_is_held_by_the_verb_and_the_parser_holds_the_range_maximum` |
+| #5: the dropped manual-agent folders are notices of the load | `AgentsCommandTests.S1_…` (the notice), `…Without_manual_agents_the_second_phase_is_the_same_host` |
+| #6: an empty drop-in answer is never installed | `InstallFlows.An_empty_drop_in_answer_is_never_installed` (Linux) |
+| #7: `agents list --measure` says on stderr what it walks; stdout is the JSON | `UnitsCommandTests.Agents_list_measure_says_what_it_walks_on_stderr_and_leaves_the_json_alone` |
+| #8: the interop explanation once, each key the short fact | `Config/UserLayerTrustTests.With_interop_disabled_a_user_value_can_only_tighten_root`; `Scenarios/ConfigTrustFlows`, `ConfigReviewRoundFlows` |
+
+**Teeth:** the verb's cap check dropped — 1 red; the notices not added — 3; the per-folder line dropped — 1; the pre-walk line
+without its budget — 1; the explanation per key again — 1; the empty-answer check dropped (WSL) — 1. Each file restored
+byte-identical.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

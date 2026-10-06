@@ -152,7 +152,8 @@ in `status`, `doctor`, `config get` and the run's detail, never an error: root's
 tighten from your file (a level no higher, a retention no shorter than the layers below; 0 keeps for ever); and when
 WSL interop is DISABLED in the distro — then your account cannot become root on its own — every root-effective value of
 your file only tightens (`dryRun` on, an `auto` off, a longer age, a larger trigger) — and your own unprivileged
-`status` / `config get` / `doctor` then say which of your values the root timer ignores. Every run's detail lists the
+`status` / `config get` / `doctor` then say which of your values the root timer ignores — the reason once, as the notice
+without a key, then one short line per value. Every run's detail lists the
 settings it used that did not come from the defaults, with their layer (`config`), and `status` carries the user file's
 SHA-256 (`userLayerDigest`).
 
@@ -458,6 +459,9 @@ older than the 90-day retention). Read-only like `logs`. Exit codes: 0 answered 
 wsl-care agents list --json             # the catalogue agents found here, sizes from the newest full run (with its age)
 wsl-care agents list --measure --json   # the same, the folders walked NOW (at most 60 s), with the five largest sessions
 ```
+
+`--measure` says on stderr what it is about to walk ("measuring N agent folder(s), up to 60 s…") and each folder as it starts;
+stdout carries only the answer.
 
 An agent is found by a binary on `PATH`, an npm global package, or a data folder (`~/.claude`, `~/.codex`, `~/.gemini`,
 … — the catalogue, `src_daemon/src/WslCare.Core/Agents/agents.json`, twelve agents). **Nothing is ever started**: a

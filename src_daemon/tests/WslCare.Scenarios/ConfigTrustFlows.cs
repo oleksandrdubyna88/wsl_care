@@ -80,11 +80,12 @@ public sealed class ConfigTrustFlows
         Value(report, "dryRun").GetBoolean().Should().BeTrue();
         Value(report, "auto.A5").GetBoolean().Should().BeFalse();
         Value(report, "containers.stoppedOlderThanDays").GetInt32().Should().Be(30, "a longer age only tightens");
-        report.ConfigNotices!.Select(n => n.Key).Should().BeEquivalentTo(["dryRun", "auto.A5"]);
-        report.ConfigNotices!.Should().OnlyContain(n => n.Message.Contains("WSL interop") && n.Message.Contains("/etc/wsl-care/config.json"));
+        report.ConfigNotices!.Select(n => n.Key).Should().BeEquivalentTo(["", "dryRun", "auto.A5"]);
+        report.ConfigNotices!.Should().ContainSingle(n => n.Key.Length == 0).Which.Message.Should().Contain("WSL interop").And.Contain("/etc/wsl-care/config.json");
+        report.ConfigNotices!.Where(n => n.Key.Length > 0).Should().OnlyContain(n => n.Message.Contains("is ignored") && !n.Message.Contains("WSL interop"));
         var statusJson = JsonNode.Parse(status.Stdout)!;
         statusJson["configNotices"].Should().NotBeNull("status says which user values the run did not take");
-        statusJson["configNotices"]!.AsArray().Should().HaveCount(2);
+        statusJson["configNotices"]!.AsArray().Should().HaveCount(3, "the summary and the two values");
         statusJson["userLayerDigest"].Should().NotBeNull("status names the user layer it read");
         ((string)statusJson["userLayerDigest"]!).Should().MatchRegex("^[0-9a-f]{64}$");
     }
