@@ -1871,6 +1871,20 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
   check but lets the `-d` that starts the distribution through, because the user asked for exactly that.
 - **The race, stated:** a distribution that stops between the running check and the `-d` call is started again by
   that call; the window is the ~50 ms between two `wsl.exe` starts (each answers in 46–59 ms, measured 2026-10-03).
+- **A distribution switch never mixes two distributions** (retro review of PR #9, 2026-10-06). The client reads
+  `wslCare.distro` once per call and shares a call in flight only for the same setting AND verb, so a `preview` asked
+  after the switch never joins the one still running for the previous distribution (its ceiling is 330 s). The poller
+  stamps every round with its target (the same setting) and looks at the setting again at every boundary — a round
+  starting, an answer about to be stored, `status` answered, even an unfocused tick that asks nothing. A changed
+  target clears the store and makes every round started so far obsolete — an obsolete round stores nothing, asks no
+  `preview` / `doctor`, and leaves "checking" to the current round. A round for the SAME target makes nothing
+  obsolete, so a status poll never drops a `preview` in flight (`distroSwitch.test.ts`). The setting is read as
+  whatever settings.json holds and normalised by ONE function, `distroSettingText` (`wsl/distros.ts`), for the client
+  and the poller alike: a non-string (a hand-edited number, `null`, an object) becomes `<not a name: <type>>`, refused
+  as `distroRefused` before any spawn — never a throw out of a timer callback. **Not covered, stated:** with
+  `wslCare.distro` EMPTY the target is "WSL's default", which the client resolves per call; a default changed with
+  `wsl --set-default` in the middle of a panel round can still mix two distributions in that one round (pre-existing,
+  found by the consultant 2026-10-06; binding the resolved distribution to the round is the follow-up).
 - **The churn** this costs the daemon (every `status` run opens one run-log file): measured over a simulated day by
   the real poller — 721 runs per fully focused day at 120 s, 241 for an 8-hour focused day, 2 881 at the 30 s floor —
   [2026-10-04_extension_poll_churn.md](2026-10-04_extension_poll_churn.md). Accepting it or recording a logging-rule
@@ -3040,7 +3054,7 @@ FluentAssertions held below 8.x.
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); anonymised through the identity list and held by `FixturePrivacyTests` (2026-10-04); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
-| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate |
+| extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate. Module overview: [module_vs_code.md](module_vs_code.md) |
 
 ## Cross-repository
 

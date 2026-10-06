@@ -19,6 +19,12 @@ import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
  *
  * Each `status` run opens one run-log file in the daemon (M1); the numbers per window-day are measured by
  * `poller.test.ts` over this very class and recorded in research/2026-10-04_extension_poll_churn.md.
+ *
+ * Every round is stamped with the TARGET it was started for (`target`, the `wslCare.distro` value). A round started for
+ * another target than the previous one clears the store first and makes every older round obsolete: an obsolete round
+ * stores nothing, asks nothing more, and leaves the "checking" state to the current one — so a `preview` still running
+ * for the previous distribution can never land under the new one (retro review of PR #9, `distroSwitch.test.ts`). A round
+ * for the SAME target never makes another obsolete, so a status poll never drops a `preview` in flight.
  */
 
 export const DEFAULT_REFRESH_SECONDS = 120;
@@ -38,6 +44,8 @@ export interface PollerOptions {
   readonly focused: () => boolean;
   readonly refreshSeconds: () => unknown;
   readonly timers: Timers;
+  /** What the daemon is asked about — the `wslCare.distro` setting as the client reads it (empty = WSL's default). */
+  readonly target: () => string;
 }
 
 /** The interval in whole seconds: the setting when it is a number, between the floor and one day; the default otherwise. */
@@ -62,9 +70,24 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The target the poller last saw and the generation of its rounds: a round of an older generation is obsolete. */
+interface TargetState {
+  readonly generation: number;
+  readonly lastTarget: string | undefined;
+}
+
+/** The state after seeing `target`: the generation moves on only when the target differs from the last one seen. */
+function nextTargets(state: TargetState, target: string): TargetState {
+  const changed = state.lastTarget !== undefined && target !== state.lastTarget;
+
+  return { generation: changed ? state.generation + 1 : state.generation, lastTarget: target };
+}
+
 export class Poller {
   private disarm: (() => void) | undefined;
   private readonly pending = new Set<Promise<unknown>>();
+  /** Replaced, never edited, at every observed target (`nextTargets`). */
+  private targets: TargetState = { generation: 0, lastTarget: undefined };
 
   constructor(private readonly options: PollerOptions) {}
 
@@ -89,13 +112,15 @@ export class Poller {
     }
   }
 
-  /** What the interval does: one `status`, and only while focused (the timer can fire just after focus was lost). */
+  /** What the interval does: one `status`, and only while focused (the timer can fire just after focus was lost). An
+   * unfocused tick still notices a changed target, so the previous distribution's answers are not left on show. */
   tick(): Promise<void> {
+    this.observeTarget();
     if (!this.options.focused()) {
       return Promise.resolve();
     }
 
-    return this.track(this.ask('status').then(() => undefined));
+    return this.track(this.ask(this.begin(), 'status').then(() => undefined));
   }
 
   /** Panel open / Refresh / "Start WSL and check": `status` first, then `preview` and `doctor` unless it stopped. */
@@ -115,27 +140,70 @@ export class Poller {
   }
 
   private async panelRound(options: RunOptions): Promise<void> {
+    const round = this.begin();
     this.options.store.setChecking(true);
     try {
-      const status = await this.ask('status', options);
-      await (stopsTheOthers(status) ? this.mirror(status) : Promise.all([this.ask('preview'), this.ask('doctor')]));
+      const status = await this.ask(round, 'status', options);
+      await this.afterStatus(round, status);
     } finally {
-      this.options.store.setChecking(false);
+      this.settle(round, () => this.options.store.setChecking(false));
     }
+  }
+
+  /** `preview` and `doctor` — unless `status` met a stop, or a round for another target has started since. */
+  private async afterStatus(round: number, status: VerbOutcome): Promise<void> {
+    if (!this.isCurrent(round)) {
+      return;
+    }
+    await (stopsTheOthers(status) ? this.mirror(round, status) : Promise.all([this.ask(round, 'preview'), this.ask(round, 'doctor')]));
   }
 
   /** The stop `status` met, recorded for `preview` and `doctor` too — so their rows say why, without a call. */
-  private async mirror(status: VerbOutcome): Promise<void> {
+  private async mirror(round: number, status: VerbOutcome): Promise<void> {
     for (const verb of ['preview', 'doctor'] as const) {
-      this.options.store.set(verb, { ...status, verb });
+      this.settle(round, () => this.options.store.set(verb, { ...status, verb }));
     }
   }
 
-  private async ask(verb: PanelVerb, options: RunOptions = {}): Promise<VerbOutcome> {
+  private async ask(round: number, verb: PanelVerb, options: RunOptions = {}): Promise<VerbOutcome> {
     const outcome = await this.options.run(verb, options).catch((error: unknown): VerbOutcome => ({ kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb }));
-    this.options.store.set(verb, outcome);
+    this.settle(round, () => this.options.store.set(verb, outcome));
 
     return outcome;
+  }
+
+  /** Starts a round: its number, after `observeTarget`. */
+  private begin(): number {
+    this.observeTarget();
+
+    return this.targets.generation;
+  }
+
+  /**
+   * Notices a target change at ANY boundary — a round starting, a status answered, an answer about to be stored, an
+   * unfocused tick — not only when the next round begins (the fix PR's own code round): a change makes every round
+   * started so far obsolete and clears what they stored, which is about the previous target.
+   */
+  private observeTarget(): void {
+    const next = nextTargets(this.targets, this.options.target());
+    if (next.generation !== this.targets.generation) {
+      this.options.store.clear();
+    }
+    this.targets = next;
+  }
+
+  /** `round` is still about the target the setting names now. */
+  private isCurrent(round: number): boolean {
+    this.observeTarget();
+
+    return round === this.targets.generation;
+  }
+
+  /** Writes to the store only while `round` is still about the current target. */
+  private settle(round: number, write: () => void): void {
+    if (this.isCurrent(round)) {
+      write();
+    }
   }
 
   private arm(): void {

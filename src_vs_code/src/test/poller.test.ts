@@ -66,6 +66,7 @@ function world(answer: (verb: Verb) => VerbOutcome = okAnswer): World {
     focused: () => w.focused,
     refreshSeconds: () => w.seconds,
     timers: clock,
+    target: () => '',
   });
   return Object.assign(w, { poller, store, clock, calls });
 }
@@ -192,7 +193,7 @@ test('a status refused for its schema does not blank preview and doctor (refusal
 
 test('a run that throws is recorded as an unknown failure and polling goes on', async () => {
   const w = world();
-  const throwing = new Poller({ run: () => Promise.reject(new Error('boom')), store: w.store, focused: () => true, refreshSeconds: () => 30, timers: w.clock });
+  const throwing = new Poller({ run: () => Promise.reject(new Error('boom')), store: w.store, focused: () => true, refreshSeconds: () => 30, timers: w.clock, target: () => '' });
   throwing.start();
   await throwing.settled();
   assert.equal(w.store.snapshot().status?.kind, 'unknownFailure');

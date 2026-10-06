@@ -2363,6 +2363,24 @@ pull request's statement; §17 is the plan record).
 - **I** — after the merge: rebuild the local archive, reinstall, `systemctl start wsl-care.service`, and read the run
   record: `clock.drift` measured, A16 not refused for a missing `powershell.exe`. *Not run yet — stamped by the coordinator.*
 
+### 17b. Retro review of PR #9 (E5) — coai codex + the consultant (2026-10-06)
+
+E5 was re-reviewed after its merge (owner, 2026-10-06: every merged PR through the gate and the consultant). Plan round
+`proceed` (1 of 1 reviewers): 2 findings, both rejected — the kill of `wsl.exe` was observed to end the daemon and its
+`docker` child (§15h #3; the daemon keeps SIGHUP's default action), and the run logs are bounded by
+`logging.retentionDays`. Code round `proceed` (4 of 4): the missing module document ACCEPTED (now
+[module_vs_code.md](../research/module_vs_code.md), a map into `architecture.md`'s extension sections, which stay where
+they are while other branches edit them); the poll churn rejected for the same retention reason (M1 stays the owner's).
+The consultant found what the reviewers missed: **a `wslCare.distro` switch could show one distribution's `preview`
+under the other's heading** — fixed RED first (`distroSwitch.test.ts`; the client shares a call in flight per setting
+and verb, the poller stamps each round with its target and re-reads it at every boundary — the fix PR's own code round
+found the first fix noticed a switch only when the next round began). **Open follow-up:** with `wslCare.distro` empty,
+WSL's default changed in the middle of a panel round can still mix two distributions in that round (pre-existing; bind
+the RESOLVED distribution to the round). Two hypotheses were not changed in code: *Install daemon*'s
+terminal in a Remote – WSL window (now a named observation in `POST_DEPLOY.md` item 3) and a Marketplace version
+published by hand with other bytes (by design skipped; `POST_DEPLOY.md` item 6 compares the installed bundle with the
+attested build).
+
 ## 14. Definition of Done
 
 - [ ] Phase 0 steps done or explicitly declined, each with before/after numbers in `research/`.

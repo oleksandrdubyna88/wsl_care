@@ -17,6 +17,16 @@ export function isDistroName(name: string): boolean {
   return DISTRO_NAME.test(name);
 }
 
+/**
+ * The `wslCare.distro` setting as text, whatever settings.json holds: a string trimmed; anything else (a number,
+ * `null`, an object — VS Code does not coerce a hand-edited value) a text that can never match `DISTRO_NAME`, so it is
+ * refused as a value before any spawn instead of throwing (retro fix PR of PR #9, its final code round). Only the TYPE
+ * is named: converting the value itself can throw (`{"toString": null}` is valid JSON).
+ */
+export function distroSettingText(raw: unknown): string {
+  return typeof raw === 'string' ? raw.trim() : `<not a name: ${raw === null ? 'null' : typeof raw}>`;
+}
+
 /** `wsl.exe --list --quiet`, decoded: one name per line. */
 export function parseQuietList(text: string): string[] {
   return textLines(text).map((line) => line.trim());

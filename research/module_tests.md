@@ -1960,6 +1960,29 @@ The extension is **AI OS Care**, id `ai-os-care`, publisher `remsoftdev` — `re
 | the Marketplace text (README, CHANGELOG, the manifest's display strings) names `wsl-care` only as the daemon — `/opt/wsl-care/bin/wsl-care`, "the `wsl-care` daemon" | `productName.test.ts` | green before and after (the old text already used `wsl-care` only for the daemon); its companion shows the allowlist removes the README's daemon reference and keeps a planted *wsl-care extension* |
 | the `.vsix` vsce writes is `<name>-<version>.vsix` and `check-vsix.mjs` reads both from `package.json`; the release workflow, the asset check and `POST_DEPLOY.md` item 6 use `ai-os-care-<version>.vsix` and `<publisher>.ai-os-care` | `npm run check:vsix` in CI (exit 2 when the derived file is missing — `vsixCheck.test.ts`'s real-artefact test skips under `npm test`, which re-bundles after any package), `test -f "ai-os-care-$VERSION.vsix"` in `release-extension.yml`, `ReleaseExtensionWorkflowTests`, `ReleaseExtensionScriptFlows` | `npm run package` wrote `ai-os-care-0.0.0.vsix` (vsixmanifest `Id="ai-os-care" Publisher="remsoftdev"`); `check-vsix` clean, `--release` clean |
 
+### What the distribution-switch guarantee rests on (retro review of PR #9, 2026-10-06)
+
+Found by the consultant of the retro coai review of PR #9 and confirmed by reading the code: the client shared a call
+in flight by VERB alone and the poller stored whatever answered last, so after a `wslCare.distro` switch the panel
+could show the previous distribution's `preview` (or `doctor`) under the new one's heading. All ten tests are in
+`src/test/distroSwitch.test.ts`; the first four were run against the unfixed `main` (c61ec98) first.
+
+| Guarantee | Test | Red observed against the unfixed code |
+|---|---|---|
+| a `preview` asked after the switch reaches the new distribution, not the call still in flight for the old one | *a preview asked for another distribution is not joined …* (client, recording runner) | *the call for Debian must reach Debian, not share the Ubuntu call in flight* — `'Ubuntu' !== 'Debian'` |
+| the same, end to end: the real client, poller and store after a switch hold only the new distribution | *the panel never shows the previous distribution's preview …* | *the panel holds a preview of a distribution the setting no longer names* (the Ubuntu preview was released only after Debian's round had asked its own, which is what the user path does) |
+| a late answer of the previous distribution never overwrites the new one's | *a late answer for the previous distribution …* (poller) | *Ubuntu's late preview replaced Debian's* |
+| a switch seen by a status-only poll (panel hidden) leaves no `preview` / `doctor` of the previous distribution | *a distribution switch seen by a status-only poll …* | *still showing Ubuntu's preview under Debian* |
+| a status poll of the SAME distribution never drops a `preview` in flight (the guard against an over-eager generation) | *a status poll of the SAME distribution …* | green before and after (no defect to show); teeth: the generation bumped on EVERY round → red |
+| a round made obsolete while its `status` is pending asks no `preview` / `doctor` once that status answers (added by the fix PR's own coai plan round) | *a round made obsolete while its status is pending …* | written after the fix; teeth: the generation check in `afterStatus` removed → *the obsolete round went on to ask preview / doctor after its status answered* |
+| a switch while a round waits for its `status`, with NO new round started (the window unfocused, so the config change's tick asks nothing), ends that round without asking or storing anything (the fix PR's own coai code round, 3 findings, one gap) | *a switch while a round waits for its status, with NO new round started …* | against the first fix: *the round asked the new distribution for preview / doctor beside the old status*; teeth: `isCurrent` no longer re-reading the setting → red |
+| a switch between the `status` being stored and the round going on asks no `preview` / `doctor` (the boundary `afterStatus` guards; the consultant's addition) | *a switch between the status being stored and the round going on …* | teeth: `afterStatus` comparing the generation without re-reading the setting → *the round went on to ask the new distribution for preview / doctor* |
+| a switch in an unfocused window clears what was shown and asks nothing (the consultant's addition to the same round) | *a switch in an unfocused window clears what was shown …* | against the first fix: *the previous distribution's answers are still shown*; teeth: the `observeTarget()` before `tick()`'s focus guard removed → red |
+| a non-string `wslCare.distro` (a hand-edited `42`, `null`, an object, `{"toString": null}`) is refused as `distroRefused` before any spawn and never throws (the final code round; the branch had made the setting's read synchronous, so a `.trim()` on a number would have thrown out of a timer callback) | *a non-string wslCare.distro … is refused as a value, never thrown* | against the branch before it: *run() threw for 42*; then, with a first normaliser that printed the value, *run() threw for {"toString":null}* — `Cannot convert object to primitive value` (the consultant's case); green with `distroSettingText` naming only the type |
+
+Break-it, each restored byte for byte: the client key without the setting → the first two red; the poller's obsolete-
+round check removed → the second and third red; the store not cleared on a new target → the fourth red.
+
 ### What the extension's tests do not prove
 
 - **No real `wsl.exe` is ever started by a test** — by design (the tripwire). The fake's answers are the measured ones of
