@@ -7,7 +7,7 @@ namespace WslCare.Core.Files;
 
 /// <summary>
 /// The archive seam's native calls (plan §15r E9.S2a) — the ONLY place outside <see cref="PhysicalFileSystem"/> that may name
-/// <c>renameat2</c>, <c>unlinkat</c>, <c>mkdirat</c>, <c>MoveFileExW</c> or a delete disposition (the architecture scan holds every
+/// <c>renameat2</c>, <c>unlinkat</c>, <c>mkdirat</c>, a rename by handle (<c>FILE_RENAME_INFO</c>) or a delete disposition (the architecture scan holds every
 /// other file to that). Linux: every folder below a trusted one is opened from the previous one's descriptor with
 /// <c>O_NOFOLLOW</c>, so a link on the way is refused, never followed, and nothing can be swapped between the open and the act.
 /// Windows: a handle opened for exactly the access it needs, a reparse point never followed.
@@ -213,6 +213,41 @@ internal static partial class BeneathWrites
         return (handle, handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0);
     }
 
+    /// <summary>A Windows folder held for the archive's creates (gate round findings 3 and 4): the folder itself, never a reparse
+    /// point followed (<c>FILE_FLAG_OPEN_REPARSE_POINT</c>); <c>FILE_ADD_FILE</c>, the right <c>FlushFileBuffers</c> needs on a
+    /// folder (measured: read-only or attributes-only handles answer error 5); sharing READ and WRITE but never DELETE, so while
+    /// it is held neither the folder nor any folder above it can be renamed (measured on NTFS) — nothing can swap it for a link.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static (SafeFileHandle Handle, int Error) HoldFolderWindows(string path)
+    {
+        var handle = Windows.CreateFile(path, Windows.AddFile, Windows.ShareRead | Windows.ShareWrite, IntPtr.Zero, Windows.OpenExisting, Windows.BackupSemantics | Windows.OpenReparsePoint, IntPtr.Zero);
+        return (handle, handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0);
+    }
+
+    /// <summary>A handle only good for asking where a file or folder IS (no access right; links on the way followed).</summary>
+    [SupportedOSPlatform("windows")]
+    internal static SafeFileHandle OpenForName(string path) =>
+        Windows.CreateFile(path, 0, Windows.ShareRead | Windows.ShareWrite | Windows.ShareDelete, IntPtr.Zero, Windows.OpenExisting, Windows.BackupSemantics, IntPtr.Zero);
+
+    /// <summary>Flushes an open file or a held folder to the disk; 0 or the Win32 error.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static int FlushWindows(SafeFileHandle handle) => Windows.FlushFileBuffers(handle) ? 0 : Marshal.GetLastPInvokeError();
+
+    /// <summary>Where the open file really is — every link on the way resolved by the system, <c>\\?\</c> taken off; empty when the
+    /// system could not say.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static string FinalPath(SafeFileHandle handle)
+    {
+        var buffer = new char[Windows.LongestPath];
+        var length = handle.IsInvalid ? 0 : Windows.GetFinalPathNameByHandle(handle, buffer, (uint)buffer.Length, 0);
+        return length == 0 || length >= buffer.Length ? string.Empty : WithoutDevicePrefix(new string(buffer, 0, (int)length));
+    }
+
+    private static string WithoutDevicePrefix(string path) =>
+        path.StartsWith(@"\\?\UNC\", StringComparison.Ordinal) ? @"\\" + path[8..]
+        : path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path[4..]
+        : path;
+
     /// <summary>The attributes and link count of an open Windows file.</summary>
     [SupportedOSPlatform("windows")]
     internal static (bool Ok, uint Attributes, uint Links) Describe(SafeFileHandle handle) =>
@@ -233,16 +268,38 @@ internal static partial class BeneathWrites
         return Windows.SetFileInformationByHandle(handle, Windows.FileDispositionInfo, ref classic, 1) ? 0 : Marshal.GetLastPInvokeError();
     }
 
-    /// <summary>Renames without ever replacing (no <c>MOVEFILE_REPLACE_EXISTING</c>), written through; 0 or the Win32 error.</summary>
+    /// <summary>A file or a folder opened to rename or remove it THROUGH this handle (gate round finding 3): <c>DELETE</c> and
+    /// attributes, the reparse point itself never followed, sharing everything as a rename by path does — so an agent's open
+    /// blocks no more than before.</summary>
     [SupportedOSPlatform("windows")]
-    internal static int MoveNoReplace(string from, string to) =>
-        Windows.MoveFileEx(from, to, Windows.MoveWriteThrough) ? 0 : Marshal.GetLastPInvokeError();
+    internal static (SafeFileHandle Handle, int Error) OpenToChangeWindows(string path)
+    {
+        var handle = Windows.CreateFile(path, Windows.Delete | Windows.ReadAttributes, Windows.ShareRead | Windows.ShareWrite | Windows.ShareDelete, IntPtr.Zero, Windows.OpenExisting, Windows.BackupSemantics | Windows.OpenReparsePoint, IntPtr.Zero);
+        return (handle, handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0);
+    }
+
+    /// <summary>Renames the OPEN file to <paramref name="destination"/> (a full path), never replacing: <c>FILE_RENAME_INFO</c> with
+    /// <c>ReplaceIfExists</c> false and no root handle (its layout: the flag padded to a pointer, the root handle, the name's byte
+    /// length, the name). Measured: a bare name is taken relative to the CURRENT folder, and a root handle is refused (error 87) —
+    /// so the caller holds the folder (<see cref="HoldFolderWindows"/>), which pins the full path. 0 or the Win32 error.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static int RenameNoReplaceWindows(SafeFileHandle handle, string destination)
+    {
+        var lengthOffset = 2 * IntPtr.Size;
+        var nameOffset = lengthOffset + sizeof(uint);
+        var nameBytes = destination.Length * sizeof(char);
+        var buffer = new byte[nameOffset + nameBytes + sizeof(char)];
+        BitConverter.TryWriteBytes(buffer.AsSpan(lengthOffset), (uint)nameBytes);
+        System.Text.Encoding.Unicode.GetBytes(destination, buffer.AsSpan(nameOffset));
+        return Windows.SetFileInformationByHandle(handle, Windows.FileRenameInfo, buffer, (uint)buffer.Length) ? 0 : Marshal.GetLastPInvokeError();
+    }
 
     internal const int WindowsNotFound = 2;
     internal const int WindowsPathNotFound = 3;
     internal const int WindowsSharing = 32;
     internal const int WindowsFileExists = 80;
     internal const int WindowsAlreadyExists = 183;
+    internal const int WindowsFolderNotEmpty = 145;
     internal const uint WindowsReparsePoint = 0x400;
     internal const uint WindowsDirectory = 0x10;
 
@@ -252,15 +309,21 @@ internal static partial class BeneathWrites
         public const uint GenericRead = 0x80000000;
         public const uint Delete = 0x00010000;
         public const uint ShareRead = 1;
+        public const uint ShareWrite = 2;
+        public const uint ShareDelete = 4;
+        public const uint AddFile = 2;
+        public const uint ReadAttributes = 0x80;
+        public const int FileRenameInfo = 3;
         public const uint OpenExisting = 3;
+        public const uint BackupSemantics = 0x02000000;
         public const uint OpenReparsePoint = 0x00200000;
+        public const int LongestPath = 32768;
         public const uint SequentialScan = 0x08000000;
         public const uint NoBuffering = 0x20000000;
         public const int FileDispositionInfo = 4;
         public const int FileDispositionInfoEx = 21;
         public const uint DispositionDelete = 1;
         public const uint DispositionPosix = 2;
-        public const uint MoveWriteThrough = 8;
 
         [LibraryImport("kernel32.dll", EntryPoint = "CreateFileW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
         public static partial SafeFileHandle CreateFile(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
@@ -273,9 +336,16 @@ internal static partial class BeneathWrites
         [return: MarshalAs(UnmanagedType.Bool)]
         public static partial bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass, ref uint information, uint size);
 
-        [LibraryImport("kernel32.dll", EntryPoint = "MoveFileExW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [LibraryImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static partial bool MoveFileEx(string from, string to, uint flags);
+        public static partial bool SetFileInformationByHandle(SafeFileHandle handle, int informationClass, byte[] information, uint size);
+
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool FlushFileBuffers(SafeFileHandle handle);
+
+        [LibraryImport("kernel32.dll", EntryPoint = "GetFinalPathNameByHandleW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        public static partial uint GetFinalPathNameByHandle(SafeFileHandle handle, [Out] char[] buffer, uint size, uint flags);
     }
 
     /// <summary><c>BY_HANDLE_FILE_INFORMATION</c>, field for field (each <c>FILETIME</c> as its two halves).</summary>

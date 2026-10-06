@@ -2362,6 +2362,39 @@ with any permit — 1. The scan: a missed copy pattern — 1; missed natives —
 after the hash (no test can open the quarantine name between the lease and the check without a race of its own — the stated
 residual).
 
+### The E9.S2a gate round (2026-10-06, plan §15r *E9.S2a gate round*)
+
+The coai code round's six findings over the seam. The swap tests use a new fault-seam step, `PathChecked` — asked after the way
+was checked and before the open — at which the test renames the folder holding the file away and puts a directory link (a
+junction on Windows) to another folder at its name; that folder holds a file of the same name and, for the removal, the same
+bytes. They run on both systems: on Linux the act goes through descriptors and reaches the moved folder, never the link.
+
+| Guarantee | Tests |
+|---|---|
+| finding 3: after the swap the removal never removes the file behind the link, the source never hands out its bytes, the quarantine rename never renames it, the empty-folder removal never removes the folder behind it | `Files/ArchiveFilesTests.GateRound.cs` — `A_folder_swapped_for_a_link_after_its_check_never_*` (4) |
+| findings 3 and 4: a destination folder held by the seam cannot be renamed (Windows), and a create in it never lands behind a link put at its old name | `A_destination_folder_swapped_for_a_link_while_held_never_receives_a_file_through_the_link` |
+| finding 4: every new destination level's entry flushed in its parent on Windows too, and the destination's flush reports its result | `ArchiveFilesTests.Every_new_destination_level_is_synced_into_its_parent_and_a_flush_says_whether_it_held` (the Linux-only guard removed) |
+| finding 5: a Windows source of another SID, or of an owner that could not be read, is refused; links ≠ 1, a reparse point or folder, unreadable information refused | `A_windows_session_file_another_account_owns_is_never_copied` (pure rules) |
+| finding 0: the Linux rules unchanged by the extraction (another uid, links, not regular, unreadable status) | `A_linux_session_file_is_copied_only_when_regular_of_one_link_and_this_accounts` |
+| finding 2: a `BeneathFolder` made outside Core (a test subclass) compiles, and the seam refuses it for create, read-back, removal and flush, creating nothing | `A_folder_handle_this_seam_did_not_open_is_refused_never_trusted` |
+
+**Red first** (Windows, against the code before each fix): the removal answered `Removed` and the file behind the junction was
+gone (`Expected File.Exists(elsewhere) to be True … (the removal answered Removed { }), but found False`); the source handed out
+`"not the agent's"` where `"the agent's"` was expected; the rename answered `Renamed { }` and the file behind the link was
+renamed; the empty-folder removal answered `Removed { }` and removed the folder behind the link; the level-sync test found 0
+`FolderLevelSynced` steps on Windows where 3 were expected. Finding 2's test could not be written before the fix: the subclass
+does not compile against an internal constructor. **Measured before building** (NTFS, a throwaway folder): `FlushFileBuffers` on
+a folder handle works with `FILE_ADD_FILE` (or more) and answers error 5 with a read-only or an attributes-only handle; a folder
+held without delete sharing refuses the rename of itself AND of its parent; `FILE_RENAME_INFO` with a bare name is taken
+relative to the CURRENT folder and with a root handle answers error 87 — so the rename holds the folder and passes the full path.
+**Teeth** (Windows, each line broken, the guarding class run, the file restored byte-identical): the final path never compared —
+4 red (all four swaps); the held folder sharing delete — 1; a new level not flushed in its parent — 1; a held
+level following a junction — 1; the owner never compared — 1; an unreadable owner accepted — 1; a foreign folder flushed as
+done — 1; the Linux owner rule dropped — 1; the rename not checked where it is — 1; the rename replacing (`ReplaceIfExists`
+set) — 2; the folder removal not checked where it is — 1. The S2a teeth row *the rename with `MOVEFILE_REPLACE_EXISTING`* is
+replaced by *the rename replacing*: `MoveFileExW` is no longer used. **Not break-it checked:** that `FlushFileBuffers` really
+reached the disk (no test can see durability; only the call and its answer are checked).
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

@@ -1,4 +1,3 @@
-using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
 
@@ -12,6 +11,7 @@ namespace WslCare.Core.Files;
 /// <summary>The primitive steps of the archive's seam the fault seam is asked between (plan §15r E9.S2a).</summary>
 public enum ArchiveFileStep
 {
+    PathChecked,
     SourceOpened,
     FolderLevelReady,
     FolderLevelSynced,
@@ -57,36 +57,24 @@ public sealed partial class PhysicalFileSystem
         var problem = levels.Select(NameProblem).FirstOrDefault(p => p.Length > 0) ?? Why(JudgeArchive(FileOperation.Create, target, string.Empty, scope).Verdict);
         return problem.Length > 0 ? new FolderBeneath.Refused(problem)
             : OperatingSystem.IsLinux() ? FolderLinux(baseFolder, levels)
-            : FolderWindows(baseFolder, levels);
+            : OperatingSystem.IsWindows() ? FolderWindows(baseFolder, levels)
+            : new FolderBeneath.Refused(NotThisOs);
     }
 
-    public ExclusiveFile CreateExclusive(BeneathFolder folder, string name, DeletionScope scope)
-    {
-        var problem = NameProblem(name) is { Length: > 0 } bad ? bad : Why(JudgeArchive(FileOperation.Create, Path.Combine(folder.Path, name), string.Empty, scope).Verdict);
-        return problem.Length > 0 ? new ExclusiveFile.Refused(problem)
-            : OperatingSystem.IsLinux() ? CreateLinux(folder, name)
-            : CreateWindows(folder, name);
-    }
+    public ExclusiveFile CreateExclusive(BeneathFolder folder, string name, DeletionScope scope) =>
+        folder is OpenedFolder own ? CreateIn(own, name, scope) : new ExclusiveFile.Refused(ForeignFolder(folder));
 
     public FileHash ReadBack(BeneathFolder folder, string name) =>
-        NameProblem(name) is { Length: > 0 } bad ? new FileHash.Unreadable(bad)
-        : OperatingSystem.IsLinux() ? ReadBackLinux(folder, name)
-        : ReadBackWindows(folder, name);
+        folder is not OpenedFolder own ? new FileHash.Unreadable(ForeignFolder(folder))
+        : NameProblem(name) is { Length: > 0 } bad ? new FileHash.Unreadable(bad)
+        : OperatingSystem.IsLinux() ? ReadBackLinux(own, name)
+        : ReadBackWindows(own, name);
 
-    public VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, DeletionScope scope)
-    {
-        var problem = NameProblem(name) is { Length: > 0 } bad ? bad : Why(JudgeArchive(FileOperation.Delete, Path.Combine(folder.Path, name), string.Empty, scope).Verdict);
-        return problem.Length > 0 ? new VerifiedRemoval.Refused(problem)
-            : OperatingSystem.IsLinux() ? UnlinkOwnLinux(folder, name)
-            : UnlinkOwnWindows(folder, name);
-    }
+    public VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, DeletionScope scope) =>
+        folder is OpenedFolder own ? RemoveOwnIn(own, name, scope) : new VerifiedRemoval.Refused(ForeignFolder(folder));
 
-    public FolderFlush FlushFolder(BeneathFolder folder)
-    {
-        var synced = OperatingSystem.IsLinux() && folder.Descriptor >= 0 ? BeneathWrites.Sync(folder.Descriptor) : new BeneathWrites.Native(0, 0);
-        _onArchiveStep(ArchiveFileStep.FolderFlushed, folder.Path);
-        return synced.Failed ? new FolderFlush.Failed($"{folder.Path} could not be flushed (errno {synced.Errno}); a name created in it may not survive a crash") : new FolderFlush.Done();
-    }
+    public FolderFlush FlushFolder(BeneathFolder folder) =>
+        folder is OpenedFolder own ? Flushed(own) : new FolderFlush.Failed(ForeignFolder(folder));
 
     public NoReplaceRename QuarantineRename(string layoutRoot, string path, string quarantinedName, DeletionScope scope) =>
         Rename(layoutRoot, path, quarantinedName, scope);
@@ -115,6 +103,57 @@ public sealed partial class PhysicalFileSystem
     // ---- shared ----------------------------------------------------------------------------------------------------------------
 
     private const string NotThisOs = "the archive's seam runs on Linux and Windows only";
+
+    /// <summary>The folder this seam opened (gate round finding 2): the Linux descriptor (-1 on Windows) or the Windows folder handle
+    /// (an invalid one on Linux), released once however often it is disposed.</summary>
+    internal sealed class OpenedFolder(string path, int descriptor, SafeFileHandle handle, Action close) : BeneathFolder(path)
+    {
+        private int _closed;
+
+        internal int Descriptor { get; } = descriptor;
+
+        internal SafeFileHandle Handle { get; } = handle;
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && Interlocked.Exchange(ref _closed, 1) == 0)
+            {
+                close();
+            }
+        }
+    }
+
+    private static string ForeignFolder(BeneathFolder folder) => $"{folder.Path}: a folder this seam did not open is never trusted";
+
+    private ExclusiveFile CreateIn(OpenedFolder folder, string name, DeletionScope scope)
+    {
+        var problem = NameProblem(name) is { Length: > 0 } bad ? bad : Why(JudgeArchive(FileOperation.Create, Path.Combine(folder.Path, name), string.Empty, scope).Verdict);
+        return problem.Length > 0 ? new ExclusiveFile.Refused(problem)
+            : OperatingSystem.IsLinux() ? CreateLinux(folder, name)
+            : CreateWindows(folder, name);
+    }
+
+    private VerifiedRemoval RemoveOwnIn(OpenedFolder folder, string name, DeletionScope scope)
+    {
+        var problem = NameProblem(name) is { Length: > 0 } bad ? bad : Why(JudgeArchive(FileOperation.Delete, Path.Combine(folder.Path, name), string.Empty, scope).Verdict);
+        return problem.Length > 0 ? new VerifiedRemoval.Refused(problem)
+            : OperatingSystem.IsLinux() ? UnlinkOwnLinux(folder, name)
+            : UnlinkOwnWindows(folder, name);
+    }
+
+    /// <summary>The folder itself flushed — Linux <c>fsync</c> of its descriptor, Windows <c>FlushFileBuffers</c> of its held handle
+    /// (gate round finding 4: the first build answered Done on Windows without flushing anything).</summary>
+    private FolderFlush Flushed(OpenedFolder folder)
+    {
+        var error = FlushError(folder);
+        _onArchiveStep(ArchiveFileStep.FolderFlushed, folder.Path);
+        return error != 0 ? new FolderFlush.Failed($"{folder.Path} could not be flushed (error {error}); a name created in it may not survive a crash") : new FolderFlush.Done();
+    }
+
+    private static int FlushError(OpenedFolder folder) =>
+        OperatingSystem.IsLinux() ? BeneathWrites.Sync(folder.Descriptor) is { Failed: true } failed ? failed.Errno : 0
+        : OperatingSystem.IsWindows() ? BeneathWrites.FlushWindows(folder.Handle)
+        : -1;
 
     /// <summary>A path below a trusted folder: the folders on the way, its own name — or why it is not one.</summary>
     private sealed record BelowRoot(IReadOnlyList<string> Folders, string Name, string Problem);
@@ -189,6 +228,7 @@ public sealed partial class PhysicalFileSystem
             return folder.Errno == BeneathWrites.NoEntry ? new SourceOpen.Gone() : new SourceOpen.Refused($"{LinkOrNotAFolder} (at {failed})");
         }
 
+        _onArchiveStep(ArchiveFileStep.PathChecked, below.Name);
         var opened = BeneathWrites.OpenReadAt(folder.Value, below.Name);
         BeneathWrites.Close(folder.Value);
         return opened.Failed ? SourceFailure(opened.Errno, below.Name) : JudgedSource(opened.Value, below.Name);
@@ -208,11 +248,7 @@ public sealed partial class PhysicalFileSystem
     {
         var handle = new SafeFileHandle(fd, ownsHandle: true);
         var (ok, status) = BeneathWrites.Stat(fd, string.Empty);
-        var problem = !ok ? $"{name}: its status could not be read"
-            : !status.IsRegular ? $"{name} is not a regular file"
-            : status.Links != 1 ? $"{name} has {status.Links} links (a hard link shares its bytes with another name)"
-            : status.Owner != RegularFiles.EffectiveUid() ? $"{name} is owned by uid {status.Owner}, not this account"
-            : string.Empty;
+        var problem = ArchiveSourceRules.LinuxProblem(name, ok, status, RegularFiles.EffectiveUid());
         if (problem.Length > 0)
         {
             handle.Dispose();
@@ -247,7 +283,7 @@ public sealed partial class PhysicalFileSystem
         }
 
         var descriptor = current.Value;
-        return new FolderBeneath.Ready(new BeneathFolder(path, descriptor, () => BeneathWrites.Close(descriptor)));
+        return new FolderBeneath.Ready(new OpenedFolder(path, descriptor, new SafeFileHandle(), () => BeneathWrites.Close(descriptor)));
     }
 
     /// <summary>One level: created 0700 when missing (an existing one kept) and, when it is new, its ENTRY made durable by flushing
@@ -273,7 +309,7 @@ public sealed partial class PhysicalFileSystem
     }
 
     [SupportedOSPlatform("linux")]
-    private ExclusiveFile CreateLinux(BeneathFolder folder, string name)
+    private ExclusiveFile CreateLinux(OpenedFolder folder, string name)
     {
         var created = BeneathWrites.CreateExclusiveAt(folder.Descriptor, name);
         if (created.Failed)
@@ -286,7 +322,7 @@ public sealed partial class PhysicalFileSystem
     }
 
     [SupportedOSPlatform("linux")]
-    private FileHash ReadBackLinux(BeneathFolder folder, string name)
+    private FileHash ReadBackLinux(OpenedFolder folder, string name)
     {
         var opened = BeneathWrites.OpenReadAt(folder.Descriptor, name);
         if (opened.Failed)
@@ -300,7 +336,7 @@ public sealed partial class PhysicalFileSystem
     }
 
     [SupportedOSPlatform("linux")]
-    private VerifiedRemoval UnlinkOwnLinux(BeneathFolder folder, string name)
+    private VerifiedRemoval UnlinkOwnLinux(OpenedFolder folder, string name)
     {
         var removed = BeneathWrites.UnlinkAt(folder.Descriptor, name, directory: false);
         _onArchiveStep(ArchiveFileStep.OwnCopyRemoved, Path.Combine(folder.Path, name));
@@ -318,6 +354,7 @@ public sealed partial class PhysicalFileSystem
             return folder.Errno == BeneathWrites.NoEntry ? new NoReplaceRename.Gone() : new NoReplaceRename.Refused($"{LinkOrNotAFolder} (at {failed})");
         }
 
+        _onArchiveStep(ArchiveFileStep.PathChecked, below.Name);
         var renamed = BeneathWrites.RenameNoReplace(folder.Value, below.Name, newName);
         BeneathWrites.Close(folder.Value);
         _onArchiveStep(ArchiveFileStep.Renamed, newName);
@@ -344,6 +381,7 @@ public sealed partial class PhysicalFileSystem
 
         try
         {
+            _onArchiveStep(ArchiveFileStep.PathChecked, below.Name);
             return VerifyThenUnlink(folder.Value, below.Name, expected);
         }
         finally
@@ -401,6 +439,7 @@ public sealed partial class PhysicalFileSystem
             return folder.Errno == BeneathWrites.NoEntry ? new VerifiedRemoval.Gone() : new VerifiedRemoval.Refused($"{LinkOrNotAFolder} (at {failed})");
         }
 
+        _onArchiveStep(ArchiveFileStep.PathChecked, below.Name);
         var removed = BeneathWrites.UnlinkAt(folder.Value, below.Name, directory: true);
         BeneathWrites.Close(folder.Value);
         _onArchiveStep(ArchiveFileStep.FolderRemoved, below.Name);
@@ -414,270 +453,4 @@ public sealed partial class PhysicalFileSystem
         { Errno: BeneathWrites.NotEmpty or BeneathWrites.Exists } => new VerifiedRemoval.Kept($"{name} is not empty"),
         _ => new VerifiedRemoval.Kept($"{name} could not be removed as an empty folder (errno {removed.Errno})"),
     };
-
-    // ---- Windows ---------------------------------------------------------------------------------------------------------------
-
-    /// <summary>The first component below <paramref name="start"/> that is a reparse point (a symbolic link, a junction); empty when none.</summary>
-    private static string ReparseOnTheWay(string start, IEnumerable<string> components)
-    {
-        var walked = start;
-        foreach (var component in components)
-        {
-            walked = Path.Combine(walked, component);
-            if (Path.Exists(walked) && File.GetAttributes(walked).HasFlag(FileAttributes.ReparsePoint))
-            {
-                return component;
-            }
-        }
-
-        return string.Empty;
-    }
-
-    [SupportedOSPlatform("windows")]
-    private SourceOpen OpenSourceWindows(string root, BelowRoot below)
-    {
-        var path = Path.Combine([root, .. below.Folders, below.Name]);
-        if (ReparseOnTheWay(root, [.. below.Folders, below.Name]) is { Length: > 0 } link)
-        {
-            return new SourceOpen.Refused($"{LinkOrNotAFolder} (at {link})");
-        }
-
-        try
-        {
-            var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, FileOptions.SequentialScan);
-            return JudgedSourceWindows(stream, below.Name);
-        }
-        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
-        {
-            return new SourceOpen.Gone();
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return new SourceOpen.Refused($"{below.Name} could not be opened ({e.Message})");
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private SourceOpen JudgedSourceWindows(FileStream stream, string name)
-    {
-        var (ok, attributes, links) = BeneathWrites.Describe(stream.SafeFileHandle);
-        var problem = !ok ? $"{name}: its information could not be read"
-            : (attributes & (BeneathWrites.WindowsReparsePoint | BeneathWrites.WindowsDirectory)) != 0 ? $"{name} is not a regular file"
-            : links != 1 ? $"{name} has {links} links (a hard link shares its bytes with another name)"
-            : string.Empty;
-        if (problem.Length > 0)
-        {
-            stream.Dispose();
-            return new SourceOpen.Refused(problem);
-        }
-
-        _onArchiveStep(ArchiveFileStep.SourceOpened, name);
-        return new SourceOpen.Opened(stream, stream.Length, File.GetLastWriteTimeUtc(stream.SafeFileHandle));
-    }
-
-    private FolderBeneath FolderWindows(string baseFolder, IReadOnlyList<string> levels)
-    {
-        if (ReparseOnTheWay(Path.GetDirectoryName(baseFolder) ?? baseFolder, [Path.GetFileName(baseFolder)]) is { Length: > 0 } baseLink)
-        {
-            return new FolderBeneath.Refused($"{LinkOrNotAFolder} (at {baseLink})");
-        }
-
-        var path = baseFolder;
-        foreach (var level in levels)
-        {
-            path = Path.Combine(path, level);
-            if (LevelWindows(path) is { Length: > 0 } problem)
-            {
-                return new FolderBeneath.Refused($"{problem} (at {level})");
-            }
-
-            _onArchiveStep(ArchiveFileStep.FolderLevelReady, path);
-        }
-
-        return new FolderBeneath.Ready(new BeneathFolder(path, -1, static () => { }));
-    }
-
-    /// <summary>One level on Windows: an existing one must be a folder and no reparse point; a missing one is created and checked.
-    /// Residual: a reparse point made between the check and the next level's create is not seen (the Windows side writes into its
-    /// own user's base; Linux's descriptor chain has no such window).</summary>
-    private static string LevelWindows(string path)
-    {
-        if (!Path.Exists(path))
-        {
-            Directory.CreateDirectory(path);
-        }
-
-        var attributes = File.GetAttributes(path);
-        return attributes.HasFlag(FileAttributes.ReparsePoint) || !attributes.HasFlag(FileAttributes.Directory) ? LinkOrNotAFolder : string.Empty;
-    }
-
-    private ExclusiveFile CreateWindows(BeneathFolder folder, string name)
-    {
-        var path = Path.Combine(folder.Path, name);
-        try
-        {
-            var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.WriteThrough);
-            _onArchiveStep(ArchiveFileStep.ExclusiveCreated, path);
-            return new ExclusiveFile.Created(stream);
-        }
-        catch (IOException) when (Path.Exists(path))
-        {
-            return new ExclusiveFile.Exists();
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return new ExclusiveFile.Refused($"{name} could not be created ({e.Message})");
-        }
-    }
-
-    /// <summary>Windows: read back past the system cache (<c>FILE_FLAG_NO_BUFFERING</c>) into a sector-aligned buffer.</summary>
-    private FileHash ReadBackWindows(BeneathFolder folder, string name)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return new FileHash.Unreadable(NotThisOs);
-        }
-
-        var path = Path.Combine(folder.Path, name);
-        var (handle, error) = BeneathWrites.OpenWindows(path, delete: false, unbuffered: true);
-        using (handle)
-        {
-            return error switch
-            {
-                0 => HashedUnbuffered(handle, path),
-                BeneathWrites.WindowsNotFound or BeneathWrites.WindowsPathNotFound => new FileHash.Gone(),
-                _ => new FileHash.Unreadable($"{name} could not be opened again (error {error})"),
-            };
-        }
-    }
-
-    private FileHash HashedUnbuffered(SafeFileHandle handle, string path)
-    {
-        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var size = HashBuffer;
-        var pinned = GC.AllocateArray<byte>(size + 4096, pinned: true);
-        var skew = (int)(Marshal.UnsafeAddrOfPinnedArrayElement(pinned, 0).ToInt64() % 4096);
-        var aligned = pinned.AsMemory(skew == 0 ? 0 : 4096 - skew, size);
-        long offset = 0;
-        int read;
-        while ((read = RandomAccess.Read(handle, aligned.Span, offset)) > 0)
-        {
-            sha.AppendData(aligned.Span[..read]);
-            offset += read;
-            _onArchiveStep(ArchiveFileStep.ReadBackChunk, path);
-        }
-
-        return new FileHash.Hashed(Convert.ToHexStringLower(sha.GetHashAndReset()), offset);
-    }
-
-    private VerifiedRemoval UnlinkOwnWindows(BeneathFolder folder, string name)
-    {
-        var path = Path.Combine(folder.Path, name);
-        if (!File.Exists(path))
-        {
-            return new VerifiedRemoval.Gone();
-        }
-
-        File.Delete(path);
-        _onArchiveStep(ArchiveFileStep.OwnCopyRemoved, path);
-        return new VerifiedRemoval.Removed();
-    }
-
-    private NoReplaceRename RenameWindows(string root, BelowRoot below, string newName)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return new NoReplaceRename.Refused(NotThisOs);
-        }
-
-        if (ReparseOnTheWay(root, [.. below.Folders, below.Name]) is { Length: > 0 } link)
-        {
-            return new NoReplaceRename.Refused($"{LinkOrNotAFolder} (at {link})");
-        }
-
-        var folder = Path.Combine([root, .. below.Folders]);
-        var error = BeneathWrites.MoveNoReplace(Path.Combine(folder, below.Name), Path.Combine(folder, newName));
-        _onArchiveStep(ArchiveFileStep.Renamed, newName);
-        return error switch
-        {
-            0 => new NoReplaceRename.Renamed(),
-            BeneathWrites.WindowsFileExists or BeneathWrites.WindowsAlreadyExists => new NoReplaceRename.NameTaken(),
-            BeneathWrites.WindowsNotFound or BeneathWrites.WindowsPathNotFound => new NoReplaceRename.Gone(),
-            _ => new NoReplaceRename.Refused($"the rename failed (error {error}); nothing was renamed"),
-        };
-    }
-
-    /// <summary>Windows (review B2): ONE handle, <c>DELETE | READ</c>, sharing READ only — nobody writes, renames or deletes it while
-    /// it is held; the bytes hashed through it; the delete disposition set ONLY after they are equal. A stop anywhere before —
-    /// an exception, a kill — closes the handle with no disposition, and the file stays. Never <c>DeleteOnClose</c>.</summary>
-    private VerifiedRemoval RemoveVerifiedWindows(string root, BelowRoot below, string expected) =>
-        !OperatingSystem.IsWindows() ? new VerifiedRemoval.Refused(NotThisOs)
-        : ReparseOnTheWay(root, below.Folders) is { Length: > 0 } link ? new VerifiedRemoval.Refused($"{LinkOrNotAFolder} (at {link})")
-        : OpenedForRemoval(Path.Combine([root, .. below.Folders, below.Name]), below.Name, expected);
-
-    [SupportedOSPlatform("windows")]
-    private VerifiedRemoval OpenedForRemoval(string path, string name, string expected)
-    {
-        var (handle, error) = BeneathWrites.OpenWindows(path, delete: true, unbuffered: false);
-        using (handle)
-        {
-            return error switch
-            {
-                0 => VerifyThenDispose(handle, name, expected),
-                BeneathWrites.WindowsNotFound or BeneathWrites.WindowsPathNotFound => new VerifiedRemoval.Gone(),
-                BeneathWrites.WindowsSharing => new VerifiedRemoval.Kept($"{name} is open in another process; it stays"),
-                _ => new VerifiedRemoval.Kept($"{name} could not be opened (error {error}); it stays"),
-            };
-        }
-    }
-
-    [SupportedOSPlatform("windows")]
-    private VerifiedRemoval VerifyThenDispose(SafeFileHandle handle, string name, string expected)
-    {
-        _onArchiveStep(ArchiveFileStep.RemovalOpened, name);
-        if (!IsPlainWindowsFile(handle))
-        {
-            return new VerifiedRemoval.Kept($"{name} is not a plain file of one link");
-        }
-
-        using var stream = new FileStream(handle, FileAccess.Read, bufferSize: 0);
-        var (sha, _) = Hash(stream, ArchiveFileStep.RemovalHashChunk, name);
-        _onArchiveStep(ArchiveFileStep.RemovalHashed, name);
-        return string.Equals(sha, expected, StringComparison.OrdinalIgnoreCase) ? Disposed(BeneathWrites.MarkForDeletion(handle), name) : new VerifiedRemoval.Kept($"{name}'s bytes differ from its archived copy; it stays");
-    }
-
-    /// <summary>A regular file — no folder, no reparse point — of ONE link.</summary>
-    [SupportedOSPlatform("windows")]
-    private static bool IsPlainWindowsFile(SafeFileHandle handle) =>
-        BeneathWrites.Describe(handle) is (true, var attributes, 1) && (attributes & (BeneathWrites.WindowsReparsePoint | BeneathWrites.WindowsDirectory)) == 0;
-
-    private VerifiedRemoval Disposed(int error, string name)
-    {
-        _onArchiveStep(ArchiveFileStep.Removed, name);
-        return error == 0 ? new VerifiedRemoval.Removed() : new VerifiedRemoval.Kept($"{name} could not be marked for deletion (error {error}); it stays");
-    }
-
-    private VerifiedRemoval RemoveFolderWindows(string root, BelowRoot below)
-    {
-        var path = Path.Combine([root, .. below.Folders, below.Name]);
-        if (ReparseOnTheWay(root, [.. below.Folders, below.Name]) is { Length: > 0 } link)
-        {
-            return new VerifiedRemoval.Refused($"{LinkOrNotAFolder} (at {link})");
-        }
-
-        try
-        {
-            Directory.Delete(path, recursive: false);
-            _onArchiveStep(ArchiveFileStep.FolderRemoved, path);
-            return new VerifiedRemoval.Removed();
-        }
-        catch (DirectoryNotFoundException)
-        {
-            return new VerifiedRemoval.Gone();
-        }
-        catch (IOException)
-        {
-            return new VerifiedRemoval.Kept($"{below.Name} is not empty");
-        }
-    }
 }

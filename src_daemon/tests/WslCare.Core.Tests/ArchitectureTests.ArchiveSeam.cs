@@ -9,12 +9,12 @@ namespace WslCare.Core.Tests;
 /// </summary>
 public sealed partial class ArchitectureTests
 {
-    /// <summary>The file-system seam's files: the one that deletes and moves, its archive half, and the two holding the natives.</summary>
+    /// <summary>The file-system seam's files: the one that deletes and moves, its archive halves (Linux and shared, Windows), and the two holding the natives.</summary>
     private static IReadOnlyList<string> FileSystemSeamFiles()
     {
         var seam = Metadata("WslCare.FileSystemSeam");
         var folder = Path.GetDirectoryName(seam)!;
-        return [seam, Path.Combine(folder, "PhysicalFileSystem.Archive.cs"), Path.Combine(folder, "BeneathWrites.cs"), Path.Combine(folder, "RegularFiles.cs")];
+        return [seam, Path.Combine(folder, "PhysicalFileSystem.Archive.cs"), Path.Combine(folder, "PhysicalFileSystem.Archive.Windows.cs"), Path.Combine(folder, "BeneathWrites.cs"), Path.Combine(folder, "RegularFiles.cs")];
     }
 
     [Fact]

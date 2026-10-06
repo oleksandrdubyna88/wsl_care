@@ -2459,6 +2459,9 @@ stopped because of it.
 
 ## The AI-session archive (E9.S0, 2026-10-06, plan §15r)
 
+The module deep-dive — purpose, diagrams, entities, entry points, dependencies — is [module_archive.md](module_archive.md); the
+sections below keep each story's history.
+
 E9.S0 lands what everything later in E9 reads: what the catalogue says the archive may move, the archive's keys and the rules
 between them, and where the archive may live. Nothing is moved yet (the move is E9.S2a/S2b; A13 in the engine E9.S4).
 
@@ -2602,10 +2605,10 @@ E9.S2a lands the ONLY way the archive touches a file — `Files/IArchiveFiles.cs
 flowchart LR
     subgraph seam["IArchiveFiles (the seam)"]
         open["OpenSource — from the layout root's descriptor, O_NOFOLLOW each level;<br/>a regular file of THIS account with ONE link (a FIFO never waited on)"]
-        tree["OpenFolderBeneath — each level mkdirat 0700 from its parent's descriptor,<br/>never a link; a new level's entry fsynced in its parent"]
+        tree["OpenFolderBeneath — each level mkdirat 0700 from its parent's descriptor,<br/>never a link; a new level's entry fsynced in its parent<br/>(Windows: each level HELD, never sharing delete; FlushFileBuffers on the held parent)"]
         create["CreateExclusive — O_CREAT|O_EXCL|O_NOFOLLOW 0600 (Windows CREATE_NEW, write-through);<br/>an existing name is never replaced"]
         back["ReadBack — hashed again (Windows past the cache, FILE_FLAG_NO_BUFFERING)"]
-        rename["QuarantineRename / RenameBack — renameat2(RENAME_NOREPLACE)<br/>(Windows MoveFileEx without replace): an agent's file at the name is KEPT"]
+        rename["QuarantineRename / RenameBack — renameat2(RENAME_NOREPLACE)<br/>(Windows: FileRenameInfo without replace, through a checked handle): an agent's file at the name is KEPT"]
         remove["RemoveVerified — write lease (no other open anywhere), hash = the archived copy's,<br/>lease still whole, same inode → unlinkat (Windows: one DELETE|READ handle, share READ,<br/>the delete disposition set only after equality)"]
         empty["RemoveEmptyFolder — never recursive"]
     end
@@ -2626,6 +2629,15 @@ flowchart LR
   `BeneathWrites.cs`, `RegularFiles.cs`) no `File.Copy` / `File.Replace`, no `FileInfo` `CopyTo` / `Replace`, no
   `FileOptions.DeleteOnClose`, no delete disposition, and no native rename / unlink / link / rmdir / move entry point — each
   pattern with a planted companion.
+- **The gate round (coai code round, plan §15r *E9.S2a gate round*)** closed the Windows path windows: every Windows verb that
+  opens by path (the source, the removal, the rename, the empty-folder removal) asks the open handle where it really is
+  (`GetFinalPathNameByHandleW`) and acts only when that is where its path says — a folder swapped for a junction after the
+  reparse check makes it refuse, never act elsewhere; the rename and the folder removal go through that handle
+  (`FileRenameInfo` without replace, the delete disposition) instead of `MoveFileExW` / `Directory.Delete`. The destination's
+  levels are HELD by handles that never share delete (neither the folder nor its parents can then be renamed — measured), a new
+  level is flushed in its held parent and `FlushFolder` flushes the held handle. A Windows source must be owned by this
+  account's SID. `BeneathFolder` became abstract (any `IArchiveFiles` can make one; `PhysicalFileSystem` refuses one it did not
+  open), and the source rules moved to the pure `Files/ArchiveSourceRules.cs`. Deep-dive: [module_archive.md](module_archive.md).
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -3091,6 +3103,7 @@ flowchart LR
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
+| AI-session archive | `src_daemon/src/WslCare.Core/Archive/`, `Files/IArchiveFiles.cs` (+ `PhysicalFileSystem.Archive.cs`, `BeneathWrites.cs`, `ArchiveSourceRules.cs`), `WslCare.Cli/Commands/ArchiveCommand.cs` | moves aged AI-agent sessions to a base folder the user chose, as the user, verified before anything is removed — [module_archive.md](module_archive.md) | E9.S0 (blocks, keys, `archive check-base`), E9.S1 (`archive preview`), E9.S2a (the file seam) built; the move (`archive run`) is E9.S2b |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); anonymised through the identity list and held by `FixturePrivacyTests` (2026-10-04); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate; the root boundary (E6.S2), the cleanup buttons and *Last cleanup* (E6.S3) and the Logs page (E6.S4) on `feat/wc-e6-cleanup-logs` ([architecture-extension-e6.md](architecture-extension-e6.md)), merging only after `extension-v0.1.0` is tagged. *Start Windows Time*, one elevated PowerShell (2026-10-08); the Windows Time guard, one SYSTEM scheduled task (2026-10-08, [PLAN_windows_time_task.md](PLAN_windows_time_task.md)). Module overview: [module_vs_code.md](module_vs_code.md) |
 | daemon module overview | [module_daemon.md](module_daemon.md) | the map from the daemon's purpose, entities, entry points and dependencies into this file's epic sections | added by the retro review of PR #7 (2026-10-06) |

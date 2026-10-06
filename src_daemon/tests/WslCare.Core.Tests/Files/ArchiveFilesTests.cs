@@ -15,7 +15,7 @@ namespace WslCare.Core.Tests.Files;
 /// through no link, regular, of one link; a destination tree that follows no link; creates that never replace; renames that
 /// never replace an agent's file; a removal that hashes before it removes, and leaves the file when it stops mid-hash.
 /// </summary>
-public sealed class ArchiveFilesTests : IDisposable
+public sealed partial class ArchiveFilesTests : IDisposable
 {
     private const string Layout = "/home/me/.claude";
     private const string Base = "/mnt/v/ai-archive";
@@ -317,18 +317,16 @@ public sealed class ArchiveFilesTests : IDisposable
     }
 
     /// <summary>Risk consult 9/9.2: a new folder's ENTRY is durable only when the folder holding it is flushed — every newly created
-    /// level's parent is synced, and the destination folder's own flush reports its result.</summary>
+    /// level's parent is synced, and the destination folder's own flush reports its result (Windows: <c>FlushFileBuffers</c> on the
+    /// held folder handle, gate round finding 4).</summary>
     [Fact]
     public void Every_new_destination_level_is_synced_into_its_parent_and_a_flush_says_whether_it_held()
     {
         using var folder = Folder("gemini-cli", "2026", "10");
 
         Files.FlushFolder(folder).Should().BeOfType<FolderFlush.Done>();
-        if (OperatingSystem.IsLinux())
-        {
-            _steps.Where(s => s.Step == ArchiveFileStep.FolderLevelSynced).Should().HaveCount(3, "each of the three new levels' entry was flushed in its parent");
-            _steps.Should().Contain(s => s.Step == ArchiveFileStep.FolderFlushed);
-        }
+        _steps.Where(s => s.Step == ArchiveFileStep.FolderLevelSynced).Should().HaveCount(3, "each of the three new levels' entry was flushed in its parent (Windows too: gate round finding 4)");
+        _steps.Should().Contain(s => s.Step == ArchiveFileStep.FolderFlushed);
     }
 
     /// <summary>The fault seam is asked between the primitive steps, so a later story can stop the protocol at each of them.</summary>

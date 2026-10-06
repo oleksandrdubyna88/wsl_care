@@ -111,27 +111,26 @@ public abstract record VerifiedRemoval
 }
 
 /// <summary>
-/// A destination folder held open for the archive's creates: on Linux its descriptor (every create and read-back goes through
-/// it, so the folder cannot be swapped for a link after it was opened); on Windows its checked path.
+/// A destination folder held open for the archive's creates, made only by the <see cref="IArchiveFiles"/> that opened it — each
+/// implementation subclasses it with what it holds (<see cref="PhysicalFileSystem"/>: on Linux the folder's descriptor, every create
+/// and read-back going through it; on Windows a handle that refuses the folder's — and its parents' — rename while held). An
+/// implementation refuses a folder it did not open (gate round finding 2: the seam is implementable outside this assembly).
 /// </summary>
-public sealed class BeneathFolder : IDisposable
+public abstract class BeneathFolder : IDisposable
 {
-    private readonly Action _close;
-
-    internal BeneathFolder(string path, int descriptor, Action close)
-    {
-        Path = path;
-        Descriptor = descriptor;
-        _close = close;
-    }
+    protected BeneathFolder(string path) => Path = path;
 
     /// <summary>The folder as this process spells it.</summary>
     public string Path { get; }
 
-    /// <summary>The Linux descriptor (opened read-only, a directory, no link followed); -1 on Windows.</summary>
-    internal int Descriptor { get; }
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
 
-    public void Dispose() => _close();
+    /// <summary>Releases what the implementation holds; called once per <see cref="Dispose()"/>.</summary>
+    protected abstract void Dispose(bool disposing);
 }
 
 /// <summary>

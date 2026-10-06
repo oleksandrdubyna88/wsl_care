@@ -2679,10 +2679,10 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-06 — E9.S0, E9.S1 and E9.S2a built, the S0 and S1 review rounds fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-06 — E9.S0, E9.S1 and E9.S2a built, the S0 and S1 review rounds and the S2a gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
-> as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built* and *Risk consult
-> 9/9.4*); E9.S2b–E9.S5 and the E9 live gate open. Originally: plan only,
+> as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built*, *Risk consult
+> 9/9.4* and *E9.S2a gate round*); E9.S2b–E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3168,9 +3168,9 @@ Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and
   `FolderLevelReady`, `FolderLevelSynced`, `ExclusiveCreated`, `ReadBackChunk`, `OwnCopyRemoved`, `FolderFlushed`, `Renamed`,
   `RemovalOpened`, `RemovalHashChunk`, `RemovalHashed`, `Removed`, `FolderRemoved`); it throws in-process here — the BUILT child
   killed at the 14 points is E9.S2b's.
-- **Windows residuals:** a reparse point made between a level's check and the next level's create is not seen (the Windows
-  side writes into its own user's base; the descriptor chain has no such window on Linux); `FlushFolder` is a no-op on Windows
-  (NTFS journals its metadata; a directory handle for `FlushFileBuffers` is not opened).
+- **Windows residuals (as first built — closed by *E9.S2a gate round* rows 3 and 4):** a reparse point made between a level's
+  check and the next level's create was not seen; `FlushFolder` was a no-op on Windows. The gate round holds every level by a
+  handle that refuses its rename, flushes through it, and checks every opened file's real location.
 - **Read-back on Windows** reads past the cache (`FILE_FLAG_NO_BUFFERING`) into a sector-aligned pinned buffer; on Linux it reads
   through the page cache (no `O_DIRECT`) — the stated residual phase 2's re-hash a day later answers.
 
@@ -3535,6 +3535,26 @@ OVERRIDES the text it names.
 | cm8 | `RetentionFound.Days` null mixed "none" and "unknown" | **Fixed, partly as asked:** a closed `Known(days)` / `Unknown(why)`; unknown is warned. **No `None` case:** no catalogue entry documents an agent that keeps sessions forever — every `none` source says "documentation NOT read", which is unknown, not none; a `None` would be dead code | `Archive/AgentRetentionReader.cs`, `Archive/ArchivePreview.cs` (`retention.known`) |
 | cm9 | complexity > 4: `RenderPreview`, `WindowsSpelling`, `ArchiveTargets.Judged` | **Fixed:** extracted (`BaseOf`, `AppendAgent`; `DrvfsRoot`, `JoinWindows`; `FromJudgement`) | as named |
 | nit | `ParseArchivePreview`'s doc comment was check-base's | **Fixed** | `Cli/CommandLine.cs` |
+
+#### E9.S2a gate round (2026-10-06) — the coai code round over E9.S2a
+
+The coai `review_code` round over `0c89c3f..9f59df4` (epic 9/13, reviewer codex): verdict *proceed*, six findings, every one
+ACCEPTED and fixed in one `fix(daemon): E9.S2a gate round …` commit, each with its red run or its break-it check
+(`research/module_tests.md` § *The E9.S2a gate round*). Each row OVERRIDES the text it names — the *Windows residuals* bullet of
+*E9.S2a as built* is replaced by rows 3 and 4.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| 0 (Major, convention) | `JudgedSource` over complexity 4 | **Fixed:** the source rules are a pure `ArchiveSourceRules` (`LinuxProblem`, `WindowsProblem`), each part ≤ 4, tested without a disk | `Files/ArchiveSourceRules.cs` |
+| 1 (Blocking, knowledge base) | no `research/module_[name].md` for the archive | **Fixed:** `research/module_archive.md` (purpose, two Mermaid diagrams, entities, entry points, dependencies) for E9.S0–S2a, linked from `architecture.md` and `research/README.md` | `research/module_archive.md` |
+| 2 (Major, architecture) | `BeneathFolder` had an internal constructor — `IArchiveFiles` could not be implemented outside Core | **Fixed:** `BeneathFolder` is abstract with a protected constructor; `PhysicalFileSystem` subclasses it (`OpenedFolder`: the Linux descriptor or the Windows held handle) and REFUSES a folder it did not open | `Files/IArchiveFiles.cs`, `Files/PhysicalFileSystem.Archive.cs` |
+| 3 (Blocking, security) | Windows checked the way for reparse points, then opened BY PATH — a folder swapped for a junction in between led the removal to an equal-bytes file outside the tree | **Fixed, and widened to every Windows verb:** the source, the removal, the rename and the empty-folder removal ask the OPEN handle where it really is (`GetFinalPathNameByHandleW`) against the root's final path + the relative parts, and act only when equal; the rename (`FileRenameInfo`, no replace) and the folder removal (the delete disposition, refused on a non-empty folder) now go through that checked handle instead of `MoveFileExW` / `Directory.Delete` by path. The destination's folders are HELD (finding 4), so they cannot be swapped at all. Red observed before the fix: the removal answered `Removed` and deleted the file behind the junction; the source answered with the other file's bytes | `Files/PhysicalFileSystem.Archive.cs`, `Files/BeneathWrites.cs` |
+| 4 (Major, reliability) | Windows `FlushFolder` answered Done without flushing; new levels were never flushed | **Fixed:** every destination level is opened as a HELD handle (`FILE_ADD_FILE`, sharing read + write, never delete, the reparse point itself), a new level's entry is flushed with `FlushFileBuffers` on its held parent, and `FlushFolder` flushes the held destination handle. Measured on NTFS first: a folder handle flushes only with `FILE_ADD_FILE` (or more) — read-only or attributes-only handles answer error 5 — and while a folder is held without delete sharing neither it nor its parent can be renamed | `Files/PhysicalFileSystem.Archive.cs`, `Files/BeneathWrites.cs` |
+| 5 (Major, security) | a Windows source's owner was never checked (Linux checks the uid) | **Fixed:** the owner SID read through the open handle's security descriptor must equal this account's SID; an unreadable owner refuses. Files an elevated process created may be owned by `Administrators` — they stay (the safe direction) | `Files/ArchiveSourceRules.cs`, `Files/PhysicalFileSystem.Archive.cs` |
+
+**Residuals after the round.** Windows: between the final-path check and the act nothing can move the file (the removal's handle
+shares read only; the rename's and folder's handles are the act) — but the open itself is by path, so a swap makes the act
+REFUSE (`Kept` / `Refused`), it never redirects it. Linux is unchanged (the descriptor chain had no such window).
 
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
