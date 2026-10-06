@@ -1213,7 +1213,7 @@ red (Windows, Debug; the mutation checked applied, the file restored by writing 
 
 G3 (the handler lookup in `FullCheckLineTests`) and O1 (`Cli.Tests/DetachedRunHarness`, shared by `DetachedRunsTests` and
 `FullCheckLineTests`) are refactors of tests with no behaviour of their own: both classes green before and after (54 and
-22). O5 is documentation (plan §15o decision 6, `research/architecture.md`).
+22). O5 is documentation (plan §15o decision 6, `research/architecture-daemon-e6.md`).
 
 ### The configuration trust (E7.S0, 2026-10-05, plan §15q R1)
 
