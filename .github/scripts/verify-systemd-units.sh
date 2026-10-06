@@ -61,7 +61,8 @@ done
 [ "${#targets[@]}" -gt 0 ] || { echo "::error::no unit files in $units_dir"; exit 1; }
 
 code=0
-out="$(systemd-analyze verify "${targets[@]}" 2>&1)" || code=$?
+# SYSTEMD_LOG_LEVEL unset: a level of err in the environment would hide the very warning this gate exists for.
+out="$(env -u SYSTEMD_LOG_LEVEL systemd-analyze verify "${targets[@]}" 2>&1)" || code=$?
 # The output names the temporary copies; name the shipped file instead (a drop-in is the one rendered for that unit).
 out="${out//$units\//$units_dir/}"
 if [ "$code" -ne 0 ]; then

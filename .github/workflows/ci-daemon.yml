@@ -76,6 +76,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Only that ONE submodule, shallow (the conventions repository is public, no token): PostDeployCommandFlows runs the
+      # POST_DEPLOY items through the conventions checker's own extraction (post-deploy-check.mjs `inspect`), never a
+      # second copy of its rules — and fails, not skips, in CI when the checker or Node is missing.
+      - name: Fetch the shared rules
+        run: git submodule update --init --depth 1 .agents/conventions
+
       # The SDK global.json names (10.0.100, rollForward latestFeature), not a floating 10.0.x.
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
