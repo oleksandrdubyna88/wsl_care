@@ -155,6 +155,16 @@ Admin actions are marked with a shield and run through the elevated task.
   `%ProgramData%\wsl-care\requests\` (ACL: the user may create, SYSTEM and administrators read), with
   `action` from a fixed allowlist; `schtasks /run` triggers the elevated task, which validates the id
   and the action, ignores everything else, writes `results\<id>.json`, and times out after 10 minutes.
+  **Amended by the retro review of PR #3 (coai, 2026-10-06):** any process of this user can write a request, so
+  a request is untrusted input, and a confirm must not be cheaper than a preview. A confirm request
+  (`preview: false`) must quote a one-time token that a PREVIEW run of the elevated task itself wrote into its
+  `results\<id>.json`, together with the targets it showed. The task refuses a confirm with a missing, reused or
+  expired token (one use, 10 minutes), and re-checks the previewed targets at confirm time. Any difference is a
+  refusal naming it. For W-A12, which stops WSL, the re-check includes that nothing named in the preview is
+  running. Stated plainly: the token proves that a preview happened, not that a person clicked. A process of
+  this user can also run the preview, so the protection is against a confirm with no preview behind it and
+  against changed targets. E12's plan round decides whether that is enough for each elevated action, or
+  whether an action stays a button that runs elevated only from an interactive UAC prompt.
 - **Pool tags without admin** (finding 3, rejected): measured to work unelevated; a failing call falls
   back to totals with the reason.
 
