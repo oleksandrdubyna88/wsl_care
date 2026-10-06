@@ -92,8 +92,18 @@ curl -fsSL …/install.sh | sudo sh -s -- --uninstall --purge   # … and the st
 
 `--uninstall` keeps `/var/lib/wsl-care` (history, run details, container starts), `/var/log/wsl-care` (run logs) and
 `/etc/wsl-care` (the machine layer). `--purge` removes exactly those three and `/run/wsl-care.lock`, and names each
-before removing it. Never removed: sysstat and atop (other tools may use them), `/etc/wsl.conf`, every user's
-`~/.config/wsl-care`.
+before removing it — only while it holds the run lock (`flock`, from util-linux): a wsl-care run started by hand that
+still holds it (`sudo wsl-care collect` in a terminal) refuses the purge, nothing of the state is removed, and the same
+command purges once that run has ended. Never removed: sysstat and atop (other tools may use them), `/etc/wsl.conf`,
+every user's `~/.config/wsl-care`.
+
+**The installer's ceilings** — environment variables, whole seconds (a malformed value is refused before anything runs):
+`WSL_CARE_INSTALL_SYSTEMCTL_SECONDS` (900) for each `systemctl` call that waits for a systemd job,
+`WSL_CARE_INSTALL_DOCTOR_SECONDS` (120) for the final health check to turn healthy, `WSL_CARE_INSTALL_RUN_WAIT_SECONDS`
+(600) for an upgrade to wait for a run in flight, `WSL_CARE_INSTALL_PROGRESS_SECONDS` (30) for how often it says so, and
+`WSL_CARE_INSTALL_STATUS_SECONDS` (30) for one status question during that wait. Each wait ends on the wall clock; a
+command that ignores SIGTERM at its ceiling is killed 10 s later (30 s for the first full run, which may take several
+minutes and is announced before it starts).
 
 ## Configuration
 
@@ -653,10 +663,11 @@ Marketplace job skips a version it already serves; making public is a no-op the 
 it is fixed forward with the next patch — an `extension-v*` tag is never moved or deleted.
 
 **Rollback — one command, nothing built:** install a previous release's `.vsix` from GitHub, its attestation verified
-first — that `release-extension.yml` built exactly these bytes:
+first — that `release-extension.yml`, run for THAT tag on a GitHub-hosted runner, built exactly these bytes (the exact
+identity: `--signer-workflow` would be a prefix match, which a run from any branch passes):
 
 ```bash
-gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && gh attestation verify ai-os-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml && code --install-extension ai-os-care-<previous>.vsix
+gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && gh attestation verify ai-os-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --cert-identity "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml@refs/tags/extension-v<previous>" --deny-self-hosted-runners && code --install-extension ai-os-care-<previous>.vsix
 ```
 
 — or ship the next patch. Every extension release keeps its `.vsix` and `.sha256` as release assets, which do not

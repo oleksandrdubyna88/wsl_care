@@ -90,17 +90,46 @@ readonly SYSSTAT_DEFAULT="/etc/default/sysstat"
 # a test sets it: the installer's tests run it over a temporary tree with fake systemctl / apt-get / gh / curl
 # on PATH, and the prefix is what keeps /etc, /opt and /usr/local untouched there.
 ROOT="${WSL_CARE_INSTALL_ROOT:-}"
-# How long the final `doctor --json` may take to turn healthy (the follower's first marker, a first sample).
+# How long the final `doctor --json` may take to turn healthy (the follower's first marker, a first sample) — on the WALL clock
+# (retro review of PR #8: counting only the sleeps let 120 s stretch to about 50 minutes of 120 s doctor calls).
 DOCTOR_SECONDS="${WSL_CARE_INSTALL_DOCTOR_SECONDS:-120}"
 # How long an upgrade waits for a live or queued run to end before it refuses (plan §15k #16: 10 minutes).
 RUN_WAIT_SECONDS="${WSL_CARE_INSTALL_RUN_WAIT_SECONDS:-600}"
 # How often the wait says it is still waiting (coai E6 code round #4), and the escape for an installed binary that cannot answer.
 PROGRESS_SECONDS="${WSL_CARE_INSTALL_PROGRESS_SECONDS:-30}"
 SKIP_RUN_WAIT="${WSL_CARE_INSTALL_SKIP_RUN_WAIT:-0}"
+# How long ONE systemctl call that waits for a systemd job may take (retro review of PR #8, G2): measured on WSL Ubuntu,
+# sysstat.service is Type=oneshot with TimeoutStartUSec=infinity and JobTimeoutUSec=infinity, so `enable --now` had no ceiling at
+# all. 15 minutes: above a stop's worst case under the configuration's own limits — TimeoutStopSec at most 300 s
+# (units.stopTimeoutSeconds), then as long again for the SIGKILL phase.
+SYSTEMCTL_SECONDS="${WSL_CARE_INSTALL_SYSTEMCTL_SECONDS:-900}"
+# How long ONE `status --json` of the installed binary may take during the upgrade wait (retro review of PR #11, G1: it was a
+# bare 30 in the call). Each call also ends at the wait's deadline (see wait_for_runs).
+STATUS_SECONDS="${WSL_CARE_INSTALL_STATUS_SECONDS:-30}"
+# The largest value any of the ceilings above may be given: a day.
+readonly MAX_CEILING_SECONDS=86400
+
+# Every ceiling below ends its command with SIGTERM and, when that is ignored, SIGKILL after a grace (`timeout -k`): a child
+# that traps SIGTERM never outlives its ceiling by more than the grace (retro review of PR #8). The first run gets longer to
+# record that it was stopped.
+readonly KILL_GRACE_SECONDS=10
+readonly COLLECT_KILL_GRACE_SECONDS=30
+# The installed binary's one full run, the first time (it measures and records; it never cleans).
+readonly FIRST_RUN_SECONDS=900
+# One `doctor` call at least gets this long, even when the wait's deadline is nearer — the last look at the deadline, and the
+# readable report printed beside a refusal.
+readonly DOCTOR_CALL_FLOOR_SECONDS=10
+# The same for one `status --json` near the upgrade wait's deadline (retro review of PR #11, G3).
+readonly STATUS_CALL_FLOOR_SECONDS=5
+# One `units dropin`, one gh call, `apt-get update`.
+readonly DROPIN_CALL_SECONDS=60
+readonly GH_CALL_SECONDS=180
+readonly APT_UPDATE_SECONDS=600
 
 export DEBIAN_FRONTEND=noninteractive
 
 WORK=""
+WAIT_DEADLINE=0
 DRY_RUN=0
 CHANGED=0
 
@@ -117,7 +146,9 @@ fail() {
   failed_step=$1
   shift
   printf 'wsl-care-install: FAILED at step "%s": %s\n' "$failed_step" "$*" >&2
-  if [ "$CHANGED" = 1 ]; then
+  if [ "$CHANGED" = 1 ] && [ "$UNINSTALL" = 1 ]; then
+    printf 'wsl-care-install: part of wsl-care is already removed; run the same uninstall again: %s\n' "$(rerun_command)" >&2
+  elif [ "$CHANGED" = 1 ]; then
     printf 'wsl-care-install: part of the installation is in place; re-run the installer, or remove it with: sh -s -- --uninstall\n' >&2
   fi
   exit 1
@@ -131,6 +162,26 @@ run() {
   fi
   CHANGED=1
   "$@"
+}
+
+# $1 the step a failure names, the rest systemctl's arguments: a call that WAITS for a systemd job (start, stop, restart,
+# daemon-reload), under SYSTEMCTL_SECONDS and the kill grace (retro review of PR #8, G2). A ceiling reached ends only the WAIT:
+# the job is PID 1's and may still be running, which the failure says. Under --dry-run it prints the systemctl command alone.
+systemctl_job() {
+  job_step=$1
+  shift
+  if [ "$DRY_RUN" = 1 ]; then
+    say "would run: systemctl $*"
+    return 0
+  fi
+  CHANGED=1
+  job_code=0
+  timeout -k "$KILL_GRACE_SECONDS" "$SYSTEMCTL_SECONDS" systemctl "$@" || job_code=$?
+  case "$job_code" in
+    0) return 0 ;;
+    124 | 137) fail "$job_step" "systemctl $* did not finish within ${SYSTEMCTL_SECONDS}s (WSL_CARE_INSTALL_SYSTEMCTL_SECONDS); the systemd job may still be running — see: systemctl list-jobs" ;;
+    *) fail "$job_step" "systemctl $* failed (exit $job_code)" ;;
+  esac
 }
 
 cleanup() {
@@ -160,8 +211,17 @@ Install wsl-care into this WSL distro (run as root).
   --uninstall                 stop and remove the units, the binary and its link; KEEP the history
                               (/var/lib/wsl-care), the run logs (/var/log/wsl-care) and the machine
                               configuration (/etc/wsl-care)
-  --purge                     with --uninstall: remove those three as well
+  --purge                     with --uninstall: remove those three as well — only while no wsl-care run holds
+                              the run lock (/run/wsl-care.lock); a run started by hand refuses the purge, and
+                              nothing of the state is removed (needs flock, from util-linux)
   -h, --help                  this text
+
+Ceilings, from the environment (whole seconds; a malformed value is refused before anything runs):
+  WSL_CARE_INSTALL_SYSTEMCTL_SECONDS  each systemctl call that waits for a systemd job (default 900)
+  WSL_CARE_INSTALL_DOCTOR_SECONDS     how long the final health check may take to turn healthy (default 120)
+  WSL_CARE_INSTALL_RUN_WAIT_SECONDS   how long an upgrade waits for a run in flight to end (default 600)
+  WSL_CARE_INSTALL_PROGRESS_SECONDS   how often that wait says it is still waiting (default 30)
+  WSL_CARE_INSTALL_STATUS_SECONDS     one status question to the installed binary during that wait (default 30)
 EOF
 }
 
@@ -229,9 +289,24 @@ case "$ROOT" in
   /*) say "every file goes under $ROOT (WSL_CARE_INSTALL_ROOT) — a test prefix, not this machine" ;;
   *) usage_fail "WSL_CARE_INSTALL_ROOT must be an absolute path" ;;
 esac
-case "$DOCTOR_SECONDS" in
-  '' | *[!0-9]*) usage_fail "WSL_CARE_INSTALL_DOCTOR_SECONDS must be a number of seconds" ;;
-esac
+# $1 a variable's name, $2 its value, $3 the least value it may take: a whole number of seconds from $3 to MAX_CEILING_SECONDS,
+# written without a leading zero (shell arithmetic would read 010 as octal) — or a usage refusal naming the variable, before
+# anything runs (retro review of PR #8, O5: a RUN_WAIT that is not a number made the wait's `-ge` an error inside `if`, false
+# for ever, so an upgrade waited without end).
+seconds_or_refuse() {
+  case "$2" in
+    '' | *[!0-9]* | 0?*) usage_fail "$1 must be a whole number of seconds (got \"$(printable "$2")\")" ;;
+  esac
+  if [ "${#2}" -gt "${#MAX_CEILING_SECONDS}" ] || [ "$2" -lt "$3" ] || [ "$2" -gt "$MAX_CEILING_SECONDS" ]; then
+    usage_fail "$1 must be from $3 to $MAX_CEILING_SECONDS seconds (got $2)"
+  fi
+}
+seconds_or_refuse WSL_CARE_INSTALL_DOCTOR_SECONDS "$DOCTOR_SECONDS" 0
+seconds_or_refuse WSL_CARE_INSTALL_RUN_WAIT_SECONDS "$RUN_WAIT_SECONDS" 0
+seconds_or_refuse WSL_CARE_INSTALL_PROGRESS_SECONDS "$PROGRESS_SECONDS" 1
+# 0 is refused for these two: `timeout 0` means NO ceiling.
+seconds_or_refuse WSL_CARE_INSTALL_SYSTEMCTL_SECONDS "$SYSTEMCTL_SECONDS" 1
+seconds_or_refuse WSL_CARE_INSTALL_STATUS_SECONDS "$STATUS_SECONDS" 1
 
 # --- reading this machine --------------------------------------------------------------------------
 
@@ -307,7 +382,7 @@ gh_isolated() {
     GH_NO_UPDATE_NOTIFIER=1
     GH_PROMPT_DISABLED=1
     export HOME GH_CONFIG_DIR XDG_CONFIG_HOME XDG_CACHE_HOME XDG_DATA_HOME XDG_STATE_HOME GH_NO_UPDATE_NOTIFIER GH_PROMPT_DISABLED
-    exec timeout 180 gh "$@"
+    exec timeout -k "$KILL_GRACE_SECONDS" "$GH_CALL_SECONDS" gh "$@"
   )
 }
 
@@ -393,6 +468,9 @@ to /etc/wsl.conf yourself, restart the distro from Windows (wsl --terminate <dis
 # --- uninstall -----------------------------------------------------------------------------------------
 uninstall() {
   preflight_common
+  if [ "$PURGE" = 1 ]; then
+    have flock || fail preflight "flock (from util-linux) is not installed: --purge removes the state only while it holds the run lock $LOCK_FILE; nothing was changed"
+  fi
   say "uninstalling wsl-care"
   enabled=""
   for unit in wsl-care.timer wsl-care-events.service; do
@@ -400,22 +478,22 @@ uninstall() {
   done
   if [ -n "$enabled" ]; then
     # shellcheck disable=SC2086 # a list of fixed unit names, split on purpose
-    run systemctl disable --now $enabled || fail units "systemctl disable --now$enabled failed"
+    systemctl_job units disable --now $enabled
   fi
   if [ -f "$ROOT$UNIT_DIR/wsl-care.service" ]; then
-    run systemctl stop wsl-care.service || fail units "systemctl stop wsl-care.service failed"
+    systemctl_job units stop wsl-care.service
   fi
   if [ -f "$ROOT$UNIT_DIR/wsl-care-act@.service" ]; then
     # Every detached run still loaded (E6.S1): its unit file is about to go. systemctl matches the pattern against loaded
     # units only, so none loaded is no error. Quoted: the pattern is systemctl's, never the shell's.
-    run systemctl stop 'wsl-care-act@*.service' || fail units "systemctl stop wsl-care-act@*.service failed"
+    systemctl_job units stop 'wsl-care-act@*.service'
   fi
   for unit in $UNITS; do
     if [ -f "$ROOT$UNIT_DIR/$unit" ]; then run rm -f -- "$ROOT$UNIT_DIR/$unit"; fi
     if [ -f "$ROOT$UNIT_DIR/$unit.d/$DROPIN_NAME" ]; then run rm -f -- "$ROOT$UNIT_DIR/$unit.d/$DROPIN_NAME"; fi
     if [ -d "$ROOT$UNIT_DIR/$unit.d" ] && [ -z "$(ls -A "$ROOT$UNIT_DIR/$unit.d")" ]; then run rmdir -- "$ROOT$UNIT_DIR/$unit.d"; fi
   done
-  run systemctl daemon-reload || fail units "systemctl daemon-reload failed"
+  systemctl_job units daemon-reload
 
   if [ -h "$ROOT$LINK_PATH" ] && [ "$(readlink "$ROOT$LINK_PATH")" = "$BIN_PATH" ]; then
     run rm -f -- "$ROOT$LINK_PATH"
@@ -430,15 +508,7 @@ uninstall() {
   done
 
   if [ "$PURGE" = 1 ]; then
-    say "--purge: removing exactly these:"
-    say "  $STATE_DIR   (history.jsonl, run details, container starts, volume-seen.json, running.json)"
-    say "  $LOG_DIR   (the run logs)"
-    say "  $CONFIG_DIR   (the machine configuration layer)"
-    say "  $LOCK_FILE   (the run lock)"
-    for dir in "$STATE_DIR" "$LOG_DIR" "$CONFIG_DIR"; do
-      if [ -e "$ROOT$dir" ]; then run rm -rf -- "$ROOT$dir"; fi
-    done
-    if [ -e "$ROOT$LOCK_FILE" ]; then run rm -f -- "$ROOT$LOCK_FILE"; fi
+    purge_state
   else
     say "kept: $STATE_DIR (history, run details, container starts), $LOG_DIR (run logs),"
     say "      $CONFIG_DIR (machine configuration) — --uninstall --purge removes them"
@@ -457,6 +527,44 @@ uninstall() {
   fi
   [ ! -e "$ROOT$BIN_PATH" ] || fail "verify: binary removed" "$BIN_PATH is still there"
   say "uninstalled"
+}
+
+# --purge (retro review of PR #8, G1): the state goes only while THIS script holds the run lock. The daemon's RunLock is flock(2)
+# on $LOCK_FILE (.NET's FileShare.None), so a run started by hand — `sudo wsl-care collect` in a terminal — that still holds it is
+# never left writing into folders being removed: the purge refuses, and nothing of the state goes. By now the units are stopped
+# and the binary is gone, so no new run can start; the lock file itself is removed LAST, inside the locked section — with no
+# binary left, nothing can open and lock a new file at that path in between.
+purge_state() {
+  say "--purge: removing exactly these:"
+  say "  $STATE_DIR   (history.jsonl, run details, container starts, volume-seen.json, running.json)"
+  say "  $LOG_DIR   (the run logs)"
+  say "  $CONFIG_DIR   (the machine configuration layer)"
+  say "  $LOCK_FILE   (the run lock)"
+  if [ "$DRY_RUN" = 1 ]; then
+    say "would take the run lock first: flock -n $LOCK_FILE (a wsl-care run holding it refuses the purge)"
+    purge_paths
+    return 0
+  fi
+  # `true`, a regular builtin: a redirection it cannot make fails the command, never the shell — so the refusal is ours.
+  true >> "$ROOT$LOCK_FILE" || fail purge "could not open the run lock $LOCK_FILE; nothing of the state was removed"
+  exec 9>> "$ROOT$LOCK_FILE"
+  lock_code=0
+  flock -n -E 75 9 || lock_code=$?
+  case "$lock_code" in
+    0) ;;
+    75) fail purge "a wsl-care run holds the run lock $LOCK_FILE (one started by hand, such as sudo wsl-care collect, is still going), so nothing of the state was removed; run --uninstall --purge again when it ends" ;;
+    *) fail purge "flock -n $LOCK_FILE failed (exit $lock_code); nothing of the state was removed" ;;
+  esac
+  purge_paths
+  exec 9>&-
+}
+
+# The three folders, then the run lock itself — LAST (see purge_state).
+purge_paths() {
+  for dir in "$STATE_DIR" "$LOG_DIR" "$CONFIG_DIR"; do
+    if [ -e "$ROOT$dir" ]; then run rm -rf -- "$ROOT$dir"; fi
+  done
+  if [ -e "$ROOT$LOCK_FILE" ]; then run rm -f -- "$ROOT$LOCK_FILE"; fi
 }
 
 # --- install ---------------------------------------------------------------------------------------
@@ -661,7 +769,7 @@ unpack() {
 running_state() {
   STATE=""
   RUN_ID=""
-  answer=$(timeout 30 "$ROOT$BIN_PATH" status --json 2>/dev/null) || return 1
+  answer=$(timeout -k "$KILL_GRACE_SECONDS" "$(status_call_seconds)" "$ROOT$BIN_PATH" status --json 2>/dev/null) || return 1
   [ -n "$answer" ] || return 1
   flat=$(printf '%s' "$answer" | tr -d '\r\n')
   printf '%s' "$flat" | grep -q '"running"[[:space:]]*:[[:space:]]*{' || return 0
@@ -675,9 +783,11 @@ running_state() {
 # Whether a run is in flight — failing CLOSED (E6.S1 review S4, coai E6 code round #1): in flight UNLESS the running block's
 # state is "none" or "dead", or there is no running block at all (an older binary); a state this installer does not know is in
 # flight too, so a new state can never silently switch the wait off. No answer counts as in flight (NO_ANSWER=1). FLIGHT says why.
+# Only a binary that does not EXIST is no run (a fresh install): one that exists and cannot be started answers nothing, so it takes
+# the no-answer path (retro review of PR #11 — `[ -x ]` here skipped the wait as if nothing were in flight).
 run_in_flight() {
   NO_ANSWER=0
-  [ -x "$ROOT$BIN_PATH" ] || return 1
+  [ -e "$ROOT$BIN_PATH" ] || return 1
   if ! running_state; then
     NO_ANSWER=1
     FLIGHT="the installed binary gave no status answer"
@@ -690,9 +800,20 @@ run_in_flight() {
   return 0
 }
 
+# The ceiling of the next `status --json`: STATUS_SECONDS, cut to what is left of the upgrade wait (WAIT_DEADLINE) but never
+# below STATUS_CALL_FLOOR_SECONDS (unless the setting itself is lower) — so a call started just before the deadline cannot
+# overrun it by a whole status call.
+status_call_seconds() {
+  left=$((WAIT_DEADLINE - $(date +%s)))
+  [ "$left" -ge "$STATUS_CALL_FLOOR_SECONDS" ] || left=$STATUS_CALL_FLOOR_SECONDS
+  [ "$left" -le "$STATUS_SECONDS" ] || left=$STATUS_SECONDS
+  printf '%s' "$left"
+}
+
 # An upgrade never replaces the daemon under a run in flight (plan §15k #16): it waits, bounded on the WALL clock (coai E6 code
 # round #8 — counting the sleeps let a hung status stretch the ceiling to over an hour), says so every PROGRESS_SECONDS (#4),
-# and then REFUSES naming why — with the manual escape when the installed binary itself cannot answer (#5).
+# and then REFUSES naming why — with the manual escape when the installed binary itself cannot answer (#5). Neither a status call
+# nor a sleep reaches past the deadline (retro review of PR #11, G3): the refusal comes within RUN_WAIT_SECONDS plus one floor call.
 wait_for_runs() {
   [ "$DRY_RUN" = 1 ] && return 0
   if [ "$SKIP_RUN_WAIT" = 1 ]; then
@@ -700,11 +821,12 @@ wait_for_runs() {
     return 0
   fi
   started=$(date +%s)
+  WAIT_DEADLINE=$((started + RUN_WAIT_SECONDS))
   noted=""
   while run_in_flight; do
     now=$(date +%s)
     elapsed=$((now - started))
-    if [ "$elapsed" -ge "$RUN_WAIT_SECONDS" ]; then
+    if [ "$now" -ge "$WAIT_DEADLINE" ]; then
       if [ "$NO_ANSWER" = 1 ]; then
         fail upgrade-wait "$FLIGHT for ${elapsed}s, so whether a run is in flight cannot be told; nothing was replaced. If no wsl-care run is in flight, remove $STATE_DIR/running.json and $STATE_DIR/requests/*.json by hand, or run this again with WSL_CARE_INSTALL_SKIP_RUN_WAIT=1 to skip this wait"
       fi
@@ -717,7 +839,9 @@ wait_for_runs() {
       say "still waiting: ${STATE:-no answer}${RUN_ID:+ $RUN_ID}, ${elapsed}s of ${RUN_WAIT_SECONDS}s"
       noted=$now
     fi
-    sleep 5
+    pause=$((WAIT_DEADLINE - now))
+    [ "$pause" -le 5 ] || pause=5
+    sleep "$pause"
   done
 }
 
@@ -769,7 +893,7 @@ write_dropins() {
       continue
     fi
     code=0
-    timeout 60 "$ROOT$BIN_PATH" units dropin "$unit" > "$WORK/$DROPIN_NAME" || code=$?
+    timeout -k "$KILL_GRACE_SECONDS" "$DROPIN_CALL_SECONDS" "$ROOT$BIN_PATH" units dropin "$unit" > "$WORK/$DROPIN_NAME" || code=$?
     # coai E7 code round #6: an empty answer is no drop-in — never installed silently.
     if [ "$code" = 0 ] && [ ! -s "$WORK/$DROPIN_NAME" ]; then code=empty; fi
     case "$code" in
@@ -839,7 +963,7 @@ install_packages() {
   case "$need" in
     "") say "sysstat and atop: already installed" ;;
     *)
-      run timeout 600 apt-get update -q || fail packages "apt-get update failed"
+      run timeout -k "$KILL_GRACE_SECONDS" "$APT_UPDATE_SECONDS" apt-get update -q || fail packages "apt-get update failed"
       # No kill ceiling on the install itself: a dpkg killed mid-configure leaves a broken package
       # database, which is worse than a slow install. Its waits are bounded by apt's own lock timeout,
       # and its progress is on the terminal.
@@ -859,27 +983,27 @@ install_packages() {
 }
 
 enable_units() {
-  run systemctl daemon-reload || fail enable-units "systemctl daemon-reload failed"
+  systemctl_job enable-units daemon-reload
   if [ "$UPGRADE" = 1 ]; then
     # The follower keeps running the replaced binary until it restarts.
-    run systemctl try-restart wsl-care-events.service || fail enable-units "systemctl try-restart wsl-care-events.service failed"
+    systemctl_job enable-units try-restart wsl-care-events.service
   fi
-  run systemctl enable --now wsl-care.timer wsl-care-events.service \
-    || fail enable-units "systemctl enable --now wsl-care.timer wsl-care-events.service failed"
-  run systemctl enable --now sysstat.service atop.service \
-    || fail enable-units "systemctl enable --now sysstat.service atop.service failed"
+  systemctl_job enable-units enable --now wsl-care.timer wsl-care-events.service
+  systemctl_job enable-units enable --now sysstat.service atop.service
 }
 
 # Starting is not working: the installed binary records one full run, by its absolute path, as root. A
 # collect started outside the timer measures and records; it never cleans. 75 = another run holds the lock
-# (the timer fired first), which records just the same.
+# (the timer fired first), which records just the same. Said BEFORE it starts (retro review of PR #8, G3): a full run takes
+# minutes, and a terminal silent for that long reads as a hang.
 first_run() {
   if [ "$DRY_RUN" = 1 ]; then
     say "would run: $BIN_PATH collect (one full run: measure and record, no cleanup)"
     return 0
   fi
+  say "recording the first full run ($BIN_PATH collect: it measures and records, it never cleans); this may take several minutes — at most ${FIRST_RUN_SECONDS}s"
   code=0
-  timeout 900 "$ROOT$BIN_PATH" collect > /dev/null || code=$?
+  timeout -k "$COLLECT_KILL_GRACE_SECONDS" "$FIRST_RUN_SECONDS" "$ROOT$BIN_PATH" collect > /dev/null || code=$?
   case "$code" in
     0 | 75) say "first full run recorded" ;;
     *) fail first-run "$BIN_PATH collect exited $code" ;;
@@ -900,20 +1024,34 @@ verify() {
   for unit in wsl-care.timer wsl-care-events.service; do
     systemctl is-active --quiet "$unit" || fail "verify: $unit active" "systemctl is-active $unit: not active"
   done
-  waited=0
-  while :; do
-    report=$(timeout 120 "$ROOT$BIN_PATH" doctor --json 2>/dev/null) || report=""
-    if healthy "$report"; then
-      break
-    fi
-    if [ "$waited" -ge "$DOCTOR_SECONDS" ]; then
-      timeout 120 "$ROOT$BIN_PATH" doctor >&2 || true
-      fail "verify: doctor healthy" "$BIN_PATH doctor --json is not healthy after ${waited}s — the checks above say why"
-    fi
-    sleep 5
-    waited=$((waited + 5))
-  done
+  doctor_wait
   say "verified: sar, atop, wsl-care.timer, wsl-care-events.service, doctor healthy"
+}
+
+# `doctor --json` until it is healthy, for at most DOCTOR_SECONDS on the WALL clock (retro review of PR #8 — the old loop
+# counted only its 5 s sleeps while each doctor call could take 120 s, so the 2-minute wait could stretch to ~50 minutes; the
+# upgrade wait was fixed the same way in the coai E6 code round #8). Each call gets what is left of the deadline, at least
+# DOCTOR_CALL_FLOOR_SECONDS (the last look comes AT the deadline), and every sleep ends at the deadline at the latest — so the
+# refusal comes within DOCTOR_SECONDS + one floor call + its kill grace.
+doctor_wait() {
+  started=$(date +%s)
+  deadline=$((started + DOCTOR_SECONDS))
+  while :; do
+    call=$((deadline - $(date +%s)))
+    [ "$call" -ge "$DOCTOR_CALL_FLOOR_SECONDS" ] || call=$DOCTOR_CALL_FLOOR_SECONDS
+    report=$(timeout -k "$KILL_GRACE_SECONDS" "$call" "$ROOT$BIN_PATH" doctor --json 2>/dev/null) || report=""
+    if healthy "$report"; then
+      return 0
+    fi
+    now=$(date +%s)
+    if [ "$now" -ge "$deadline" ]; then
+      timeout -k "$KILL_GRACE_SECONDS" "$DOCTOR_CALL_FLOOR_SECONDS" "$ROOT$BIN_PATH" doctor >&2 || true
+      fail "verify: doctor healthy" "$BIN_PATH doctor --json is not healthy after $((now - started))s (at most ${DOCTOR_SECONDS}s) — the checks above say why"
+    fi
+    pause=$((deadline - now))
+    [ "$pause" -le 5 ] || pause=5
+    sleep "$pause"
+  done
 }
 
 install_all() {

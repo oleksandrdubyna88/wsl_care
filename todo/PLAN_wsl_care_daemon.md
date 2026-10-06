@@ -760,6 +760,30 @@ for the real symptom (`research/module_tests.md`, *The E4 review*). Each row OVE
 | B8 | docs, tests | **Accepted.** `module_tests.md` (ubuntu-24.04; the smoke's home), README row (A1–A3, A15, A16 ship in 0.1.0); the stale skip deleted (part A); `WorkflowYaml.Quoted` / `PlainScalar` / `SingleQuotedEnd` / `ParseLiteral` and `ShippedFilesTests.Unit` at complexity ≤ 4; `ReleaseScripts.OnPath` replaced by `ExecutableResolver`, `EnsureParent` by the TempRoot. |
 | B9 | E4.S1 | **Accepted.** `install.sh` picked the newest tag with a line-based `sed`; a compact (one-line) answer found none. It now takes every `"tag_name": "daemon-v<x.y.z>"` from the joined answer and the numerically highest version (`sort -t. -k1,1n -k2,2n -k3,3n`), pre-releases excluded. |
 
+**Retro coai round over PR #8 (2026-10-06, session `5c23779d`)** — a review of the merged E4 diff after the fact, plus the
+consultant (`ad2e68fb`) and an own review. Shipped in one fix pull request (`fix/wc-retro-pr8-installer-ceilings`); every
+behaviour landed with a test seen red first (`research/module_tests.md`, *The PR #8 retro round*). Three items of the PR #11
+retro round (session `f4bdf605`, consultation `9064487b`) touch the same wait code and ship in the same pull request.
+
+| # | Source | Decision |
+|---|---|---|
+| plan round | gate | **3 findings rejected:** a truncated download (`install.sh` is truncation-safe by structure — the work starts only in the `if` on its last lines; before it, a cut stream parses and checks arguments and defines functions, then ends having changed nothing); the E6 stop path (shipped since: `act --stop`, `TimeoutStopSec`); apt unbounded (bounded and attended: `apt-get update` under a ceiling, `install` by `DPkg::Lock::Timeout=300`, on the person's terminal). |
+| G0 | gate, code round | **Rejected:** plan §9's ru-RU text — an owner policy question, not a code defect. |
+| G1 | gate, code round | **Accepted.** `--uninstall --purge` removed the state while a run started by hand could still hold the run lock. The purge now runs under `flock -n` on `/run/wsl-care.lock` (the daemon's `RunLock` is `flock(2)` there) and removes the lock file LAST inside the locked section; a held lock refuses at step `purge`, nothing of the state removed; no `flock` refuses at `preflight` before anything changes. |
+| G2 | gate, code round (narrowed) | **Accepted.** Every job-waiting `systemctl` call (`daemon-reload`, `try-restart`, `enable --now`, `disable --now`, `stop`) runs under `WSL_CARE_INSTALL_SYSTEMCTL_SECONDS` (900) with a kill grace — on WSL Ubuntu `sysstat.service` is `Type=oneshot` with `TimeoutStartUSec=infinity` and `JobTimeoutUSec=infinity`; at the ceiling the step fails saying the job may still be running. The dry run still prints the systemctl command. |
+| G3 | gate + consultant | **Accepted.** The first full run is announced, with its 900 s ceiling, before `collect` starts. |
+| C1 | consultant (missed by the gate) | **Accepted.** The health wait counted only its 5 s sleeps while each `doctor --json` could take 120 s (2 minutes → ~50 minutes). Now a wall-clock deadline; each call gets what is left (at least 10 s), no sleep past it. |
+| C2 | consultant (missed by the gate) | **Accepted.** No `timeout` had `-k`: a child ignoring SIGTERM outlived every ceiling. Every `timeout` now has `-k` (10 s; 30 s for the first `collect`). |
+| O1 | own review (origin E7.S2c) | **Accepted.** `timer.periodHours = 24` passed validation and rendered `OnCalendar=*-*-* 00/24:00:00`, which systemd 255 refuses — the timer never fired. 24 renders `*-*-* 00:00:00`; a Core test runs `systemd-analyze calendar` over every accepted period (it EXITS 0 on a refused calendar — the output is read). `systemd-analyze verify` of the timer drop-in at every accepted period in `verify-systemd-units.sh` (merged with `fix/wc-act-unit-collectmode` while this round ran) is a follow-up. |
+| O3 | own review | **Accepted.** `POST_DEPLOY.md` item 10 piped `curl … \| sh`, which exits 0 when curl fails (measured with a 404); it downloads to a file first. |
+| O4 | own review | **Accepted.** The extension rollback check (docs/repo-settings.md, README) used `--signer-workflow` (a prefix match); it pins `--cert-identity …/release-extension.yml@refs/tags/extension-v<previous>` + `--repo` + `--deny-self-hosted-runners`, and a test holds every documented attestation command to that. |
+| O5 | own review | **Accepted.** Only `WSL_CARE_INSTALL_DOCTOR_SECONDS` was validated; a non-numeric RUN_WAIT made the upgrade wait endless. Every ceiling variable is a whole number of seconds in its range or a usage refusal (exit 2) before anything runs. |
+| R11-G1 | from the PR #11 retro round | **Accepted.** The status call's bare `timeout 30` is `WSL_CARE_INSTALL_STATUS_SECONDS` (30), validated, with the kill grace. |
+| R11-G3 | from the PR #11 retro round | **Accepted.** The upgrade wait could overrun RUN_WAIT by a status call plus a sleep; each status call is cut to what is left (at least 5 s) and no sleep reaches past the deadline. |
+| R11-C | from the PR #11 retro round | **Accepted.** `run_in_flight` failed OPEN on an installed binary that exists but is not executable (`[ -x ]`); it now takes the no-answer path — in flight, then the refusal with the manual escape. |
+| S1 | own review | **Open for the owner:** move the daemon release's attestation into its own job, as the extension release did. |
+| O2 | own review | **Open for the owner, needs a measurement:** `Nice=19` / `IOSchedulingClass=idle` give no background priority against the user's processes on WSL — the block scheduler is `none` and no cpu controller is delegated to `system.slice`. |
+
 ### 15f. Cadence critique, epics 4–6 (own-agent stand-in for coai, 2026-10-03)
 
 The coai gate's vendors were out of quota, so the cadence round for {E4–E6} was done by the agent itself, after the E4
