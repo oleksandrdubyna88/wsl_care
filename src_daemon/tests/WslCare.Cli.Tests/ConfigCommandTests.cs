@@ -179,4 +179,31 @@ public sealed class ConfigCommandTests
         distro.GetProperty("layer").GetString().Should().Be("machine");
         values.Single(v => v.GetProperty("key").GetString() == "processes.families").GetProperty("value").ValueKind.Should().Be(JsonValueKind.Array);
     }
+
+    // Retro gate over PR #4 (code round, F4): the writer knows a reset of an absent key changed nothing — and said nothing.
+    [Fact]
+    public void Reset_of_a_key_the_user_layer_does_not_hold_says_there_was_nothing_to_remove()
+    {
+        using var sandbox = new SandboxHost("cfg-reset-absent");
+        sandbox.WriteUserConfig("""{ "refreshSeconds": 120 }""");
+
+        var reset = CliRun.Over(sandbox, "config", "reset", "dryRun");
+        var set = CliRun.Over(sandbox, "config", "set", "journal.keepDays", "10");
+
+        reset.Exit.Should().Be(0);
+        reset.Stderr.Should().Contain("dryRun was not set in the user layer; nothing was removed");
+        set.Stderr.Should().NotContain("nothing was removed", "a set of an absent key is the ordinary case, not a no-op");
+    }
+
+    [Fact]
+    public void A_lossy_repair_says_that_it_switched_the_timer_to_dry_run()
+    {
+        using var sandbox = new SandboxHost("cfg-repair-pins-dry");
+        sandbox.WriteUserConfig("""{ "auto": { "A4": false }, oops }""");
+
+        var set = CliRun.Over(sandbox, "config", "set", "refreshSeconds", "120");
+
+        set.Exit.Should().Be(0);
+        set.Stderr.Should().Contain("dryRun was set to true in the user layer");
+    }
 }

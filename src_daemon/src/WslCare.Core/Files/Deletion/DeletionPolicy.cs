@@ -21,7 +21,8 @@ namespace WslCare.Core.Files.Deletion;
 /// </list>
 /// <para>"Strictly inside" means a proper descendant: an action may not delete its own root. A
 /// protected root is protected together with itself: deleting <c>~/.claude</c> whole is as refused
-/// as deleting a file inside it.</para>
+/// as deleting a file inside it — and so are its ancestors: a folder that HOLDS a protected root is refused under that root's
+/// rule, because a recursive delete or move would take the root with it (retro gate over PR #4).</para>
 /// </remarks>
 public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
 {
@@ -57,18 +58,30 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
     private DeletionVerdict JudgeSource(DeletionRequest request)
     {
         var path = request.RealPath;
+        return NeverUnder(request, path)
+            ?? HoldsProtectedRoot(request, path)
+            ?? (Under(path, roots.AgentRoots) is { } agent ? JudgeAgentSource(request, agent) : JudgeInsideRoot(request, path));
+    }
+
+    private DeletionVerdict? NeverUnder(DeletionRequest request, string path)
+    {
         if (Under(path, roots.ClaudeTempRoots) is { } temp)
         {
             return Refuse(DeletionRule.ClaudeTemp, request, $"it is under Claude Code's temp folder {temp}, which is never cleaned");
         }
 
-        if (Under(path, roots.GitRoots) is { } git)
-        {
-            return Refuse(DeletionRule.GitFolder, request, $"it is under the repositories folder {git}; nothing under it is ever deleted");
-        }
-
-        return Under(path, roots.AgentRoots) is { } agent ? JudgeAgentSource(request, agent) : JudgeInsideRoot(request, path);
+        return Under(path, roots.GitRoots) is { } git
+            ? Refuse(DeletionRule.GitFolder, request, $"it is under the repositories folder {git}; nothing under it is ever deleted")
+            : null;
     }
+
+    /// <summary>Retro gate over PR #4: a delete or a move is RECURSIVE, so a folder that holds a protected root takes that root
+    /// with it — the never-list protects a root's ancestors as well as the root, under the same rule the root itself carries.</summary>
+    private DeletionVerdict? HoldsProtectedRoot(DeletionRequest request, string path) =>
+        Holding(path, roots.AgentRoots) is { } agent ? Refuse(DeletionRule.AgentFolder, request, $"it holds the AI agent folder {agent}, which would go with it")
+        : Holding(path, roots.GitRoots) is { } git ? Refuse(DeletionRule.GitFolder, request, $"it holds the repositories folder {git}, which would go with it")
+        : Holding(path, roots.ClaudeTempRoots) is { } temp ? Refuse(DeletionRule.ClaudeTemp, request, $"it holds Claude Code's temp folder {temp}, which would go with it")
+        : null;
 
     /// <summary>Inside an agent's folder only the archive's MOVE is allowed, and only with the permit.</summary>
     private static DeletionVerdict JudgeAgentSource(DeletionRequest request, string agentRoot) =>
@@ -106,6 +119,10 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
     /// <summary>The first of <paramref name="candidates"/> that <paramref name="path"/> is, or is under.</summary>
     private string? Under(string path, IReadOnlyList<string> candidates) =>
         candidates.FirstOrDefault(root => rules.IsSameOrUnder(path, root));
+
+    /// <summary>The first of <paramref name="candidates"/> that lies strictly under <paramref name="path"/>.</summary>
+    private string? Holding(string path, IReadOnlyList<string> candidates) =>
+        candidates.FirstOrDefault(root => rules.IsStrictlyUnder(root, path));
 
     /// <summary><c>…/projects/&lt;anything&gt;/memory</c> or below, anywhere in the path.</summary>
     private bool IsAgentMemory(string path)

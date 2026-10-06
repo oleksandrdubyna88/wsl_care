@@ -2381,6 +2381,33 @@ terminal in a Remote – WSL window (now a named observation in `POST_DEPLOY.md`
 published by hand with other bytes (by design skipped; `POST_DEPLOY.md` item 6 compares the installed bundle with the
 attested build).
 
+### 17c. Retro gate over the merged epics (coai codex + its consultant, 2026-10-06)
+
+The owner (2026-10-06): every PR merged on own-agent review only, or with most gate reviewers timed out, goes through the gate
+and the consultant again. One provider (codex) answered every round.
+
+**PR #4 (E1)** — plan round session `b5f6018b` (1/1 reviewer, `proceed`, 3 findings: 1 accepted, 2 rejected — history
+retention is E2.S3's `RunRetention`; the policy is tested at the seam already); code round (4/4 reviewers, `proceed`, 5
+findings: 3 accepted, 2 rejected — `DeletionScope` is the typed value; the synchronous prune is one day folder per day of
+small files, no measurement says otherwise); consultation `c4ca369d` (codex) added three defects the reviewers missed, each
+confirmed by a RED test. Fixed in `fix/wc-retro-pr4-e1-safety`:
+
+| # | Defect in what shipped (still on main) | Fix |
+|---|---|---|
+| P2 | A `config set` / `reset` that repairs a broken user layer dropped what it could not read, so a lost `auto.A# = false` was the action back ON by default — exactly what §15a #1 forbids | a lossy repair writes `dryRun = true` and says so (not when the command writes `dryRun` itself) — an owner question below |
+| C | The broken layer was moved aside BEFORE the too-large / coupled-rule refusals were asked: a refused `set` took the file away | the move happens only once the write goes ahead |
+| C | A folder that HOLDS a protected root was deletable — the never-list judged only the path itself | ancestors refused under the root's own rule |
+| C | `{"auto":{"A4":{}}}` flattened to nothing: the layer read as valid and A4 kept the value below it | an object at a setting's key is that setting's (invalid) value |
+| C | A log root that could not be listed threw out of `LogRetention.Prune`, outside `Main`'s catch | one counted failure in the report |
+| F0 | `ConfigDocument.LeafLines` (and `Flatten`) above cyclomatic complexity 4 | split into a small reader walk |
+| F4 | `config reset` of an absent key said nothing, though the writer knew | a note on stderr |
+
+F2 (log retention under observe-only) was real at the merge and is already fixed on main (E7.S0 review C1).
+
+**Owner question (PR #4):** the lossy-repair fix chose to keep §15a #1's promise that `config set` repairs a broken layer and
+to pin `dryRun = true`; the consultant preferred refusing a lossy repair outright (the person edits the file, or a future
+explicit `config repair`). Pinning keeps the panel able to repair; refusing never changes a setting the person did not name.
+
 ## 14. Definition of Done
 
 - [ ] Phase 0 steps done or explicitly declined, each with before/after numbers in `research/`.

@@ -24,6 +24,11 @@ public abstract record UserConfigWriteResult
         /// <summary>The layer was a link (E7.S0 review C3): the LINK was replaced by a regular file holding the values read
         /// through it — the file it pointed at untouched.</summary>
         public bool ReplacedLink { get; init; }
+
+        /// <summary>The repair LOST something the person wrote — an unparseable file, or an entry other than the one being
+        /// written that no longer validated — so <c>dryRun = true</c> was written into the new layer (retro gate over PR #4): a
+        /// lost <c>auto.A4 = false</c> is <c>auto.A4 = true</c> by default, and the timer must not act on that unseen.</summary>
+        public bool PinnedDryRun { get; init; }
     }
 
     /// <summary>The deletion policy refused the write — a bug in the layout, since the user's config directory is never a protected place.</summary>
@@ -48,6 +53,11 @@ public abstract record UserConfigWriteResult
 /// taken) rather than overwritten — the user's text is never silently discarded. The move and the
 /// write both go through <see cref="IFileSystem"/>, so the deletion policy sees them like everything
 /// else.</para>
+/// <para><b>A lossy repair turns the timer dry</b> (retro gate over PR #4; plan §15a #1 says a broken layer is never silently
+/// replaced by defaults, because a default can re-enable an action the person switched off). When the repair discards
+/// anything but the key being written, the new layer also carries <c>dryRun = true</c> — unless the command itself writes
+/// <c>dryRun</c>, which is the person deciding it. The move aside happens only once every refusal (too large, a broken
+/// coupled rule) has been asked, so a refused command leaves the broken file exactly where it was.</para>
 /// <para>The file is written nested (<c>{"volumes":{"anonymousMaxGb":25}}</c>), indented, keys in
 /// schema order — the shape a person expects to open in an editor.</para>
 /// </remarks>
@@ -68,26 +78,41 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
 
     private UserConfigWriteResult Write(ConfigKey key, Func<IReadOnlyDictionary<string, ConfigValue>, IReadOnlyDictionary<string, ConfigValue>> change)
     {
-        var file = paths.UserConfigFile;
-        var directory = Path.GetDirectoryName(file) ?? throw new InvalidOperationException($"the user config file {file} has no directory");
         // Review C-M4: the cap the READER keeps — config.maxLayerBytes in force — not the key's range maximum.
         var cap = ConfigLoader.UserLayerCap(paths, files);
-        var current = ReadCurrent(file, directory, cap);
+        var current = ReadCurrent(paths.UserConfigFile, cap);
+        var pin = LosesSomething(current, key);
         var next = change(current.Entries);
+        var rendered = Render(pin ? WithDryRun(next) : next);
+        return Refusal(key, rendered, cap) ?? Commit(key, current, rendered, pin);
+    }
 
-        // E7.S0 review C3: root never follows a link, so a linked layer is one root refuses; the repair replaces the LINK (the
-        // file it points at is never written) with a regular file holding the values read through it.
-        var rendered = Render(next);
+    /// <summary>What the repair would lose besides the key being written; nothing to pin when the command writes dryRun itself.</summary>
+    private static bool LosesSomething(Current current, ConfigKey key) =>
+        key != ConfigKeys.DryRun && (current.Broken || current.Dropped.Any(d => d != key.Name));
+
+    private static Dictionary<string, ConfigValue> WithDryRun(IReadOnlyDictionary<string, ConfigValue> entries) =>
+        new(entries, StringComparer.Ordinal) { [ConfigKeys.DryRun.Name] = new ConfigValue.Bool(true) };
+
+    /// <summary>The refusals that write nothing — asked BEFORE a broken layer is moved aside, so a refused command moves nothing.</summary>
+    private UserConfigWriteResult? Refusal(ConfigKey key, byte[] rendered, int cap)
+    {
         if (rendered.Length > cap)
         {
             return new UserConfigWriteResult.TooLarge(rendered.Length, cap);
         }
 
-        if (RuleBroken(key, rendered) is { Length: > 0 } broken)
-        {
-            return new UserConfigWriteResult.BreaksRule(broken);
-        }
+        return RuleBroken(key, rendered) is { Length: > 0 } broken ? new UserConfigWriteResult.BreaksRule(broken) : null;
+    }
 
+    private UserConfigWriteResult Commit(ConfigKey key, Current current, byte[] rendered, bool pinnedDryRun)
+    {
+        var file = paths.UserConfigFile;
+        var directory = Path.GetDirectoryName(file) ?? throw new InvalidOperationException($"the user config file {file} has no directory");
+        var movedAside = current.Broken ? MoveAside(file, directory) : string.Empty;
+
+        // E7.S0 review C3: root never follows a link, so a linked layer is one root refuses; the repair replaces the LINK (the
+        // file it points at is never written) with a regular file holding the values read through it.
         var linked = files.ReadLink(file) is LinkReadResult.Target;
         files.CreateDirectory(directory);
         var verdict = linked
@@ -95,13 +120,13 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
             : files.WriteFileAtomically(file, rendered, new DeletionScope(directory, ActionName));
         return verdict is DeletionVerdict.Refused refused
             ? new UserConfigWriteResult.Refused(refused)
-            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, current.MovedAsideTo) { ReplacedLink = linked };
+            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, movedAside) { ReplacedLink = linked, PinnedDryRun = pinnedDryRun };
     }
 
-    private sealed record Current(IReadOnlyDictionary<string, ConfigValue> Entries, IReadOnlyList<string> Dropped, string MovedAsideTo);
+    /// <summary>The layer as read: the entries that still validate, the ones dropped, and whether it could not be read at all
+    /// (then it is moved aside — but only when the write goes ahead).</summary>
+    private sealed record Current(IReadOnlyDictionary<string, ConfigValue> Entries, IReadOnlyList<string> Dropped, bool Broken);
 
-    /// <remarks>Bounded (plan §15q R1.1, review minor): a FIFO in the layer's place is refused at once and moved aside, never
-    /// waited on; a larger file than a layer may hold is moved aside too.</remarks>
     /// <summary>Review C-M1: what the loader would say of <paramref name="key"/> in this new layer over the layers below — a coupled
     /// rule it breaks is the notice that it is not taken; empty when it would be taken.</summary>
     private string RuleBroken(ConfigKey key, byte[] rendered)
@@ -116,17 +141,19 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
             .Select(n => n.Message).FirstOrDefault(m => m.Contains("not taken from this layer", StringComparison.Ordinal)) ?? string.Empty;
     }
 
-    private Current ReadCurrent(string file, string directory, int cap) => files.ReadRegularFile(file, cap) switch
+    /// <remarks>Bounded (plan §15q R1.1, review minor): a FIFO in the layer's place is refused at once and moved aside, never
+    /// waited on; a larger file than a layer may hold is moved aside too.</remarks>
+    private Current ReadCurrent(string file, int cap) => files.ReadRegularFile(file, cap) switch
     {
-        FileReadResult.Missing => new Current(new Dictionary<string, ConfigValue>(), [], string.Empty),
-        FileReadResult.Unreadable => new Current(new Dictionary<string, ConfigValue>(), [], MoveAside(file, directory)),
-        FileReadResult.Content content => ReadParsed(ConfigDocument.Parse(content.Bytes), file, directory),
+        FileReadResult.Missing => new Current(new Dictionary<string, ConfigValue>(), [], Broken: false),
+        FileReadResult.Unreadable => new Current(new Dictionary<string, ConfigValue>(), [], Broken: true),
+        FileReadResult.Content content => ReadParsed(ConfigDocument.Parse(content.Bytes)),
         _ => throw new System.Diagnostics.UnreachableException("FileReadResult is a closed set"),
     };
 
-    private Current ReadParsed(ConfigDocumentResult document, string file, string directory) => document switch
+    private static Current ReadParsed(ConfigDocumentResult document) => document switch
     {
-        ConfigDocumentResult.Malformed => new Current(new Dictionary<string, ConfigValue>(), [], MoveAside(file, directory)),
+        ConfigDocumentResult.Malformed => new Current(new Dictionary<string, ConfigValue>(), [], Broken: true),
         ConfigDocumentResult.Parsed parsed => KeepValid(parsed.Entries),
         _ => throw new System.Diagnostics.UnreachableException("ConfigDocumentResult is a closed set"),
     };
@@ -149,7 +176,7 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
             }
         }
 
-        return new Current(kept, dropped, string.Empty);
+        return new Current(kept, dropped, Broken: false);
     }
 
     /// <summary>An unparseable file is moved beside itself with a UTC stamp — never overwritten.</summary>

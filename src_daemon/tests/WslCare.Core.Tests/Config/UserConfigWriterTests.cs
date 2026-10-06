@@ -55,9 +55,10 @@ public sealed class UserConfigWriterTests
         var written = result.Should().BeOfType<UserConfigWriteResult.Written>().Subject;
         written.DroppedKeys.Should().BeEquivalentTo("volumes.anonymousMaxGB", "npm.maxCacheGb");
         written.MovedAsideTo.Should().BeEmpty();
+        written.PinnedDryRun.Should().BeTrue("two entries were lost, so the repair turns the timer dry (retro gate over PR #4)");
         var loaded = ConfigLoader.Load(host.Paths, host.Files);
         loaded.Should().BeOfType<ConfigLoadResult.Valid>("set must leave a valid user layer behind");
-        loaded.Config.Bool(ConfigKeys.DryRun).Should().BeFalse("the valid key was kept");
+        loaded.Config.Bool(ConfigKeys.DryRun).Should().BeTrue("a lossy repair pins dryRun, overriding even the kept dryRun = false");
         loaded.Config.Int(ConfigKeys.Journal.KeepDays).Should().Be(10);
     }
 
@@ -136,5 +137,67 @@ public sealed class UserConfigWriterTests
 
         Directory.GetFiles(Path.GetDirectoryName(host.Paths.UserConfigFile)!).Should().ContainSingle()
             .Which.Should().Be(host.Paths.UserConfigFile);
+    }
+
+    // Retro gate over PR #4 (plan round, accepted): a repair that LOSES something the person wrote must not hand the timer the
+    // defaults it hid — auto.A4 = off lost with an unparseable file is A4 = on (its default) at the next timer run.
+    [Fact]
+    public void A_repair_that_discards_an_unparseable_layer_turns_the_timer_dry_rather_than_back_on_by_default()
+    {
+        using var host = new SandboxHost("writer-repair-pins-dry");
+        host.WriteMachineConfig("""{ "dryRun": false }""");
+        host.WriteUserConfig("""{ "auto": { "A4": false }, oops }""");
+        ConfigLoader.Load(host.Paths, host.Files).IsObserveOnly.Should().BeTrue("the fixture must be broken, or this test proves nothing");
+
+        Writer(host).Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120)).Should().BeOfType<UserConfigWriteResult.Written>();
+
+        var config = ConfigLoader.Load(host.Paths, host.Files).Config;
+        config.Entry(ConfigKeys.DryRun).Should().Be(
+            new ConfigEntry(ConfigKeys.DryRun, new ConfigValue.Bool(true), ConfigLayer.User),
+            "the A4 = off the person wrote is lost with the file, and its default (on) must not reach the timer unseen");
+        config.Int(ConfigKeys.RefreshSeconds).Should().Be(120);
+    }
+
+    [Fact]
+    public void A_repair_that_drops_another_invalid_entry_turns_the_timer_dry_too()
+    {
+        using var host = new SandboxHost("writer-repair-drop-pins-dry");
+        host.WriteMachineConfig("""{ "dryRun": false }""");
+        host.WriteUserConfig("""{ "auto": { "A4": "off" } }""");
+
+        Writer(host).Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        ConfigLoader.Load(host.Paths, host.Files).Config.Bool(ConfigKeys.DryRun).Should().BeTrue("auto.A4 = \"off\" was dropped, so A4 is back at its default");
+    }
+
+    [Fact]
+    public void Correcting_the_one_invalid_key_loses_nothing_else_and_pins_nothing()
+    {
+        using var host = new SandboxHost("writer-repair-lossless");
+        host.WriteMachineConfig("""{ "dryRun": false }""");
+        host.WriteUserConfig("""{ "refreshSeconds": "soon" }""");
+
+        Writer(host).Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        var config = ConfigLoader.Load(host.Paths, host.Files).Config;
+        config.Entry(ConfigKeys.DryRun).Layer.Should().Be(ConfigLayer.Machine, "the only entry dropped was the one being written");
+        config.Int(ConfigKeys.RefreshSeconds).Should().Be(120);
+    }
+
+    // Retro gate over PR #4 (consultant): the broken layer was moved aside BEFORE the write was checked, so a set the loader
+    // would refuse wrote nothing — and still took the person's file away.
+    [Fact]
+    public void A_set_the_loader_would_refuse_leaves_a_broken_layer_where_it_is()
+    {
+        using var host = new SandboxHost("writer-refused-no-move");
+        host.WriteMachineConfig("""{ "logs": { "maxRangeDays": 100 } }""");
+        host.WriteUserConfig("{ this is not json");
+
+        var result = Writer(host).Set(ConfigKeys.Runs.HistoryRetentionDays, new ConfigValue.Int(300));
+
+        result.Should().BeOfType<UserConfigWriteResult.BreaksRule>();
+        File.Exists(host.Paths.UserConfigFile).Should().BeTrue("a refused write moves nothing");
+        File.ReadAllText(host.Paths.UserConfigFile).Should().Be("{ this is not json");
+        Directory.GetFiles(Path.GetDirectoryName(host.Paths.UserConfigFile)!, "config.json.broken-*").Should().BeEmpty();
     }
 }

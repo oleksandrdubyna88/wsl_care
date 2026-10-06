@@ -103,7 +103,7 @@ internal static class ConfigCommand
             return Output.Refuse(stderr, $"unknown key \"{request.Key}\"; {UnknownKeyHint}.");
         }
 
-        return Report(new UserConfigWriter(host.Paths, host.Files, host.Clock).Reset(key), key, host, stdout, stderr);
+        return Report(new UserConfigWriter(host.Paths, host.Files, host.Clock).Reset(key), key, host, stdout, stderr, reset: true);
     }
 
     /// <summary>Root working for the target user (plan §15c #2, E3.S2) must not write that user's layer: a root-owned file in their
@@ -172,7 +172,7 @@ internal static class ConfigCommand
     };
 
     /// <summary>After a write: the notes about the repair, then the key's effective value, re-read from disk.</summary>
-    private static int Report(UserConfigWriteResult result, ConfigKey key, CliHost host, TextWriter stdout, TextWriter stderr)
+    private static int Report(UserConfigWriteResult result, ConfigKey key, CliHost host, TextWriter stdout, TextWriter stderr, bool reset = false)
     {
         if (result is UserConfigWriteResult.TooLarge large)
         {
@@ -194,8 +194,24 @@ internal static class ConfigCommand
 
         var written = (UserConfigWriteResult.Written)result;
         NoteRepairs(written, stderr);
+        NoteOutcome(written, key, reset, stderr);
         var effective = ConfigLoader.Load(host.Paths, host.Files).Config.Entry(key);
         return Output.Answer(stdout, Line(effective, effective.Key.Name.Length));
+    }
+
+    /// <summary>Retro gate over PR #4: the timer switched dry by a lossy repair, and a reset that had nothing to remove — both
+    /// facts the writer knew and the person was never told.</summary>
+    private static void NoteOutcome(UserConfigWriteResult.Written written, ConfigKey key, bool reset, TextWriter stderr)
+    {
+        if (written.PinnedDryRun)
+        {
+            Output.Note(stderr, "dryRun was set to true in the user layer: the repair discarded settings it could not read, so the timer only previews until you check your settings and run: wsl-care config set dryRun false");
+        }
+
+        if (reset && !written.KeyWasPresent)
+        {
+            Output.Note(stderr, $"{key.Name} was not set in the user layer; nothing was removed.");
+        }
     }
 
     private static void NoteRepairs(UserConfigWriteResult.Written written, TextWriter stderr)
