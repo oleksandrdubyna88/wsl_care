@@ -73,6 +73,10 @@ public sealed class WindowsBaseFolderTests : IDisposable
     [InlineData(@"\\0--1.ipv6-literal.net\share\archive")]
     [InlineData(@"\\nas\C$\archive")]
     [InlineData(@"\\nas\ADMIN$\archive")]
+    [InlineData(@"\\nas\C$/Users\me\archive")]
+    [InlineData(@"\\localhost.\share\archive")]
+    [InlineData(@"\\0-0-0-0-0-0-0-1.ipv6-literal.net\share\archive")]
+    [InlineData(@"\\127.0.0.2\share\archive")]
     public void A_share_that_is_this_machine_or_an_administrative_share_is_refused(string given)
     {
         var report = Judge(given);
@@ -84,6 +88,14 @@ public sealed class WindowsBaseFolderTests : IDisposable
     public void A_share_named_after_this_machine_is_refused()
     {
         Judge($@"\\{Environment.MachineName}\share\archive").Rule.Should().Be(BaseFolderRule.Shape);
+    }
+
+    /// <summary>E9.S1 review round m2: this machine's DNS host name (not always the 15-character NetBIOS name), bare or qualified.</summary>
+    [Fact]
+    public void A_share_named_after_this_machines_dns_host_name_is_refused()
+    {
+        Judge($@"\\{System.Net.Dns.GetHostName()}\share\archive").Rule.Should().Be(BaseFolderRule.Shape);
+        Judge($@"\\{System.Net.Dns.GetHostName()}.example.lan\share\archive").Rule.Should().Be(BaseFolderRule.Shape);
     }
 
     /// <summary>S3: an 8.3 short name of an agent's folder is the same folder — compared by the file system's identity of the folder

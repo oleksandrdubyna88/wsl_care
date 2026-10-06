@@ -51,7 +51,7 @@ public sealed class BaseFolderRulesTests : IDisposable
         report.Folder.Should().Be("/mnt/v/ai-archive");
         report.Mount.Should().Be(new BaseMountReport("/mnt/v", "9p", "V:"));
         report.Notes.Should().ContainSingle(n => n.Contains("drvfs", StringComparison.Ordinal));
-        report.Warnings.Should().BeEmpty("drvfs modes are the mount's report, not an answer about readers");
+        report.Warnings.Should().OnlyContain(w => w.Contains("Windows profile is unknown", StringComparison.Ordinal), "drvfs modes are the mount's report, not an answer about readers; only the unknown profile is said");
     }
 
     [Fact]

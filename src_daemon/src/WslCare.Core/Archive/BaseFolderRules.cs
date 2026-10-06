@@ -22,7 +22,12 @@ public sealed record BaseMountReport(string MountPoint, string Type, string Sour
 /// <summary>What the judge needs beyond the host: the folders this side's cleanups clean, and the Windows profile a full run found
 /// (<c>C:\Users\me</c>; empty when no run has found it) — inside the distribution a base on a Windows drive is judged against that
 /// profile's places too (E9.S0 review round S1).</summary>
-public sealed record BaseFolderContext(IReadOnlyList<ForbiddenFolder> CleanupRoots, string WindowsProfile);
+public sealed record BaseFolderContext(IReadOnlyList<ForbiddenFolder> CleanupRoots, string WindowsProfile)
+{
+    /// <summary>The data folders of the manual agents the WINDOWS side walks (<c>aiAgents.extra</c>, side <c>windows</c>), as Windows
+    /// spells them — protected from the distro too (E9.S1 review round M3).</summary>
+    public IReadOnlyList<string> WindowsAgentFolders { get; init; } = [];
+}
 
 /// <summary>
 /// What <c>archive check-base</c> answers (plan §15r D7, E9.S0): the base as THIS side sees it, accepted or refused by one named
@@ -114,7 +119,7 @@ public static partial class BaseFolderRules
     private static BaseFolderReport Judged(string side, string given, Check check) => RuleVerdict.First(Steps, check) switch
     {
         RuleVerdict.Refuses refused => Refused(side, given, check.At.Folder, check.At.Mount.Report, refused.Rule, refused.Why),
-        _ => new BaseFolderReport(SchemaVersion.Current, side, given, true, check.At.Folder, string.Empty, string.Empty, check.At.Mount.Report, Warnings(check.At, check.Paths), Notes(check.At)),
+        _ => new BaseFolderReport(SchemaVersion.Current, side, given, true, check.At.Folder, string.Empty, string.Empty, check.At.Mount.Report, Warnings(check.At, check.Paths, check.Context), Notes(check.At)),
     };
 
     /// <summary>What one rule looks at.</summary>
@@ -123,15 +128,23 @@ public static partial class BaseFolderRules
     /// <summary>The rules, in the order of the summary — each asked only when every one before it held.</summary>
     private static readonly Func<Check, RuleVerdict>[] Steps =
     [
+        c => ShortNameProblem(c.At),
         c => ExistenceProblem(c.At, c.Files),
         c => LinkProblem(c.At, c.Files),
         c => RootProblem(c.At),
         c => HomeProblem(c.At, c.Paths, c.Files),
         c => OverlapProblem(c.At, c.Paths, c.Files, c.Context.CleanupRoots),
-        c => WindowsPlacesProblem(c.At, c.Context.WindowsProfile),
+        c => WindowsPlacesProblem(c.At, c.Context),
         c => FilesystemProblem(c.At),
         c => WriteProblem(c.At, c.Files),
     ];
+
+    /// <summary>E9.S1 review round M2: drvfs resolves an 8.3 short name (<c>CLAUDE~1</c>) to the long one, while the distro's real path
+    /// keeps the short spelling — the Windows places would be compared by a spelling they do not have. Refused on drvfs.</summary>
+    private static RuleVerdict ShortNameProblem(Placement.Placed at) =>
+        RuleVerdict.When(at.Mount.Drvfs && at.Folder.Split('/').Any(IsShortName), BaseFolderRule.Shape, () => $"{at.Folder} holds an 8.3 short name (a segment with ~ and a digit); on a Windows drive name the folder by its long name");
+
+    private static bool IsShortName(string segment) => segment.IndexOf('~') is var tilde and >= 0 && tilde + 1 < segment.Length && char.IsAsciiDigit(segment[tilde + 1]);
 
     private static RuleVerdict ExistenceProblem(Placement.Placed at, IFileSystem files) =>
         files.DirectoryExists(at.OnDisk) ? RuleVerdict.Holds
@@ -139,9 +152,9 @@ public static partial class BaseFolderRules
         : new RuleVerdict.Refuses(BaseFolderRule.Missing, $"{at.Folder} does not exist; the archive's folder is never created — create it, then choose it");
 
     /// <summary>Its real path must be its spelling: a link anywhere on the way would let what the folder IS change after it was judged.</summary>
-    private static RuleVerdict LinkProblem(Placement.Placed at, IFileSystem files) => files.ResolvePath(at.OnDisk) switch
+    private static RuleVerdict LinkProblem(Placement.Placed at, IFileSystem files) => files.ResolvePath(at.SpelledOnDisk) switch
     {
-        RealPathResult.Resolved real when Rules.PathEquals(real.Path, Path.GetFullPath(at.OnDisk)) => RuleVerdict.Holds,
+        RealPathResult.Resolved real when Rules.PathEquals(real.Path, Path.GetFullPath(at.SpelledOnDisk)) => RuleVerdict.Holds,
         RealPathResult.Resolved real => new RuleVerdict.Refuses(BaseFolderRule.LinkOnTheWay, $"{at.Folder} is reached through a link (it leads to {real.Path}); choose the folder it leads to"),
         RealPathResult.Unresolvable u => new RuleVerdict.Refuses(BaseFolderRule.LinkOnTheWay, $"{at.Folder} cannot be inspected for a link at {u.Component} ({u.Reason})"),
         _ => throw new System.Diagnostics.UnreachableException("RealPathResult is a closed set"),
@@ -158,7 +171,7 @@ public static partial class BaseFolderRules
     /// <summary>A path without a trailing separator — except a root, which IS its separator.</summary>
     private static string Trimmed(string path) => path.Length > 1 ? path.TrimEnd('/', '\\') : path;
 
-    private static bool IsShareRoot(string folder) => folder.StartsWith(@"\\", StringComparison.Ordinal) && folder[2..].Split('\\').Length <= 2;
+    private static bool IsShareRoot(string folder) => folder.StartsWith(@"\\", StringComparison.Ordinal) && folder[2..].Split('\\', '/').Length <= 2;
 
     /// <summary>Equal, inside or containing a protected place: by the real paths, and on Windows by the file system's identity of the
     /// folder and its parents as well — an 8.3 name, a <c>subst</c> drive or a second spelling of one volume is the same folder
@@ -186,9 +199,9 @@ public static partial class BaseFolderRules
     /// <summary>E9.S0 review round S1: in the distro a base on a Windows drive is ALSO a Windows folder — judged against the Windows
     /// profile's places (agent folders, the temporary folder, Claude's, the repositories, wsl-care's own), case-blind as NTFS
     /// compares, and against any profile's AppData and agent folders whoever's they are.</summary>
-    private static RuleVerdict WindowsPlacesProblem(Placement.Placed at, string profile) =>
+    private static RuleVerdict WindowsPlacesProblem(Placement.Placed at, BaseFolderContext context) =>
         at.WindowsSpelling.Length == 0 ? RuleVerdict.Holds
-        : WindowsProfilePlaces.Clash(at.WindowsSpelling, profile) is { Length: > 0 } whose
+        : WindowsProfilePlaces.Clash(at.WindowsSpelling, context.WindowsProfile, context.WindowsAgentFolders) is { Length: > 0 } whose
             ? new RuleVerdict.Refuses(BaseFolderRule.Overlap, $"{at.Folder} ({at.WindowsSpelling} on Windows) is, holds or lies inside {whose} — the archive must never mix with what it moves")
             : RuleVerdict.Holds;
 
@@ -204,11 +217,21 @@ public static partial class BaseFolderRules
         _ => throw new System.Diagnostics.UnreachableException("WriteAccess is a closed set"),
     };
 
-    private static IReadOnlyList<string> Warnings(Placement.Placed at, IHostPaths paths) =>
+    private static IReadOnlyList<string> Warnings(Placement.Placed at, IHostPaths paths, BaseFolderContext context) =>
     [
+        .. UnknownProfileWarning(at, context),
         .. at.Mount.IsDistroDisk ? [$"{at.Folder} lies on the distribution's own disk: the archive lives and dies with the distribution — a folder on a Windows drive or a share outlives it"] : Array.Empty<string>(),
         .. ReaderWarnings(at, paths),
     ];
+
+    /// <summary>E9.S1 review round m1: without the Windows profile (no full run has found it — normal at install) only the places
+    /// every profile has were judged on a Windows drive; said, never silent. A warning, not a refusal: the patterns cover every
+    /// profile's AppData, agent folders and repositories and wsl-care's own folder, and a person setting up before the first run
+    /// must not be stopped by a fact a run will supply.</summary>
+    private static IEnumerable<string> UnknownProfileWarning(Placement.Placed at, BaseFolderContext context) =>
+        at.WindowsSpelling.Length > 0 && context.WindowsProfile.Length == 0
+            ? [$"the Windows profile is unknown (no full run has found it yet): {at.WindowsSpelling} was judged against the places every profile has, not against your profile's own — run a full check (wsl-care collect, or wait for the timer), then check the base again"]
+            : [];
 
     /// <summary>Review M6: archived sessions hold what the agents saw — secrets included. Mode bits and owners on Linux (not on drvfs,
     /// whose modes and owners are the mount's report, not an answer); the folder's access control on Windows.</summary>

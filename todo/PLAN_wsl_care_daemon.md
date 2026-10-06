@@ -2679,9 +2679,9 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-06 — E9.S0 and E9.S1 built, the E9.S0 review round fixed** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-06 — E9.S0 and E9.S1 built, both review rounds fixed** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
-> as built*, *E9.S1 as built* and *E9.S0 review round*); E9.S2a–E9.S5 and the E9 live gate open. Originally: plan only,
+> as built*, *E9.S1 as built*, *E9.S0 review round* and *E9.S1 review round*); E9.S2a–E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3112,9 +3112,9 @@ Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and
 - **The open-file check is not run on Windows yet** (`InUse.NotOnWindowsYet`, the Restart Manager query is E9.S5); the preview
   says so in `inUse.note`, and the run (E9.S2b on Windows only after S5) must check before it moves anything. On Linux the scan
   sees only this account's processes — which are the agents' — and a cut scan says so.
-- **The preview's listing budget is `agents.measureBudgetSeconds`** (the measure-now budget the agent walk already has), not a
-  new key; a new coupled rule keeps it under the extension's wait: `archive.previewTimeoutSeconds` ≥
-  `agents.measureBudgetSeconds` + 60 s (120 ≥ 60 + 60).
+- **The preview's listing budget was `agents.measureBudgetSeconds`** with a coupled rule `archive.previewTimeoutSeconds` ≥
+  `agents.measureBudgetSeconds` + 60 s — **superseded by the E9.S1 review round (cm1):** the rule is gone, the budget is three
+  quarters of `archive.previewTimeoutSeconds`, shared by the scan, the layouts and every companion walk.
 - **Quarantined files are counted only** (`quarantined` per agent; review M3): resolving them is E9.S2b's reconcile.
 - **A link inside a companion folder is skipped silently** by the walk's rules (never followed), so a session whose `subagents/`
   holds a link moves without it — a residual for E9.S2a's copy, which refuses links on its own (R1).
@@ -3228,7 +3228,8 @@ budgeted run and the button-only restore not — D8); `archive.maxStateFileBytes
 (⌈`archive.removeAfterHours` / `timer.periodHours`⌉ + 1) — the sessions of every run still waiting for its removal, each entry
 fixed-size, its files' hashes and archived paths in the index only (review round C3); `archive.minRunMinutes` ≤
 `archive.runBudgetMinutes` (C4); (`runBudgetMinutes` + `finishGraceMinutes`) × 60 + 60 s ≤ `commands.maxTimeoutHours` × 3600;
-`archive.previewTimeoutSeconds` ≥ `agents.measureBudgetSeconds` + 60 s (E9.S1).
+and no rule on `archive.previewTimeoutSeconds` (E9.S1's was dropped by its review round, cm1: the preview's listing budget is
+derived from it).
 Group C (constants, with their reason in the allowlist): SHA-256 and HMAC-SHA-256 (the index's format), the index's schema version
 and event names, the `~2` collision suffix, the quarantine name shape, the side-name shape, the 16-hex `entryId`. Any further
 number the build finds becomes a key under the standing convention; `ArchitectureTests.Numbers` catches a literal.
@@ -3445,6 +3446,35 @@ teeth (`research/module_tests.md` § *The E9.S0 review round*). Each row OVERRID
 | (b) | manual agents can never be archived | **Built:** `archive.agents` also takes `manual:<name>` (the manual agent's name shape), off by default; a named manual agent with a `sessionGlob` is judged by its folder rules (`ExtraAgentRules`) at every selection and archived by its own glob under its first data folder, one file per session, `memory` never, its own deletion unknown; one without a glob, refused by its rules, of the other side or missing from `aiAgents.extra` is answered with the reason and never listed. `archive preview --agent manual:<name>` | `Archive/ArchiveTargets.cs` (new), `Config/ConfigKey.cs`, `Config/ConfigValidation.cs`, `Cli/CommandLine.cs` |
 | (c) | a session larger than one run's budget would be skipped silently forever | **Recorded for E9.S2b:** the run reports it (its size, the budget it needs) instead of skipping it again unseen | E9.S2b |
 | (d) | an invalid user-layer `archive.baseFolder` put root observe-only | **Fixed:** a notice — the value is not taken, the rest of the layer stands; E9.S2b treats a base its rules refuse at run time the same way (the run answers it, the configuration stands) | `Config/ConfigLoader.cs` |
+
+#### E9.S1 review round (2026-10-06) — a security and a correctness review of E9.S1 and the E9.S0 round
+
+Two own reviews of `d4dc524` (E9.S1) and `ca87883` (the E9.S0 review round): a security review and a correctness review, both read
+against the current files; every finding ACCEPTED (the coordinator), fixed in one `fix(daemon): E9.S1 review round — security +
+correctness` commit, each with its red run and its teeth (`research/module_tests.md` § *The E9.S1 review round*). Each row
+OVERRIDES the text it names.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| B1 (Blocking, security) | a spelling with an empty or `.` segment (`//mnt/c/…/.claude`, `/mnt/./c/…`, `/mnt//c`, `//dev/shm/x`, `//<bind mount>`) passed the shape and was placed by its raw spelling, while the link rule normalised it — the mount and Windows-place checks judged another folder than the kernel would | **Fixed, both halves.** One segment rule (`Hosting/PathSpelling`) shared by every path key and a manual agent's folder: no empty, `.` or `..` segment after the root, one trailing separator allowed. And the placement is made on the REAL path (links resolved), reported as `folder`; the link rule still resolves the spelling and refuses a link on the way. Said honestly: with the segment rule and the link rule, an accepted base's real path IS its spelling — the second half is defence in depth no test can tell apart | `Hosting/PathSpelling.cs` (new), `Config/KeyRules.cs`, `Agents/ExtraAgent.cs`, `Archive/BaseFolderPlacement.cs` |
+| M1 (security) | a session file named `.jsonl` / `..jsonl` / `...jsonl` has the id `""` / `.` / `..`: `{dir}/{id}` and `file-history/{id}` expand to the project folder, all of file-history, or `~/.claude` itself — one unit holding credentials (Antigravity's `brain/{id}` likewise) | **Fixed.** A unit whose id is empty or a dot name, or one of whose expanded companions leaves its template's own folder or holds such a segment, is refused by name with only its main file named | `Archive/Selection.cs` |
+| M2 (security) | on drvfs an 8.3 short name (`CLAUDE~1`) resolves to the long name, while the distro's real path keeps the short spelling — the Windows places were compared by a spelling they do not have | **Fixed, the simple refusal:** on drvfs a segment holding `~` followed by a digit refuses (`shape`). Judging by the Windows side's identity would need the Windows binary; recorded as the alternative | `Archive/BaseFolderRules.cs` |
+| M3 (security) | the distro never judged a base against the WINDOWS side's manual agents (`aiAgents.extra`, side `windows`) | **Fixed.** Their data folders join the Windows places (`BaseFolderContext.WindowsAgentFolders`, from the configuration), case-blind | `Archive/WindowsProfilePlaces.cs`, `Cli/Commands/ArchiveCommand.cs` |
+| m1 (security) | with the profile unknown (normal at install) `<drive>:\ProgramData\wsl-care` and `Users\*\git` went unprotected, silently | **Fixed:** both are protected by pattern whatever the profile (and `ProgramData` itself, which holds the first); an accepted drvfs base with the profile unknown is **warned**, not refused — the patterns cover every profile's AppData, agent folders, repositories and wsl-care's own folder, and a person setting up before the first run must not be stopped by a fact a run supplies | `Archive/WindowsProfilePlaces.cs`, `Archive/BaseFolderRules.cs` |
+| m2 (security) | share parsing split only on `\` (`\\host\C$/Users\me` not an admin share); `localhost.`, `0-0-0-0-0-0-0-1.ipv6-literal.net`, the DNS host name, this machine's addresses not seen; a drvfs mount of a loopback UNC never asked | **Fixed:** a `/` is read as `\` before every share parse; the trailing dot trimmed; any literal address and every `ipv6-literal.net` form parsed and compared with loopback and THIS machine's interface addresses (read from the interfaces, never looked up); the NetBIOS and the DNS host name, bare or qualified; in the distro a drvfs mount whose `path=` is such a share is refused. **Residual:** a DNS alias of this machine (a CNAME, a hosts entry) is not resolved | `Archive/WindowsShares.cs` (moved out, widened), `Archive/BaseFolderPlacement.cs` |
+| P1 (Major, security, pre-existing) | the recursive `*` matcher was exponential: a user-layer `sessionGlob` of many stars against a long name stalled ROOT's walk (user → root denial of service) | **Fixed:** two cursors and the last star's mark — at most pattern × name steps, never exponential; the red: forty stars against 200 characters did not answer within 2 s. Star counts are not capped (the matcher no longer needs it) | `Agents/SessionGlob.cs` |
+| cM1 (correctness) | a cut `/proc` scan only added a note — the selection never read it, so unseen units were listed due | **Fixed:** a closed `InUseState` (`Complete` / `Cut` / `NotChecked`); anything but complete keeps EVERY due unit (`in-use`, with the reason) — on Windows too, until E9.S5's Restart Manager query | `Archive/InUse.cs`, `Archive/Selection.cs`, `Archive/ArchivePreview.cs` (`inUse.state`) |
+| cM2 (correctness) | the retention was read from `CLAUDE_CONFIG_DIR`, the sessions listed under the catalogue's `~/.claude` | **Fixed by refusing:** while `CLAUDE_CONFIG_DIR` names another folder, Claude Code is answered with that reason and nothing of it is listed. Deriving the layout from the variable was rejected: the protected roots, the walk rules and the deletion policy all name `~/.claude` | `Archive/ArchiveTargets.cs` |
+| cm1 (correctness) | the coupled rule `previewTimeoutSeconds` ≥ `measureBudgetSeconds` + 60 s made 10–64 of its own range (and anything ≤ 119 under the defaults) observe-only — and the preview was not bounded anyway (companion walks got a fresh budget, the scan its own ceiling) | **Fixed:** the rule is GONE; the listing budget is DERIVED — three quarters of `archive.previewTimeoutSeconds` (a group-C share, like the 60 s a ceiling keeps) — and the open-file scan, the layouts and every companion walk share it (the scan capped by the time left, each companion walked with the time left) | `Archive/ArchivePreview.cs`, `Archive/Selection.cs`, `Archive/InUse.cs`, `Cli/Commands/ArchiveCommand.cs`, `Config/NumberRules.cs` |
+| cm2 | a companion FILE whose size could not be read was "absent" — the unit moved without it | **Fixed:** not whole | `Archive/Selection.cs` |
+| cm3 | a session whose main file is quarantined no longer matches its glob, so its companions' quarantined files were never counted | **Fixed:** found through the id of the quarantined name; every file counted once however it is reached | `Archive/QuarantineCount.cs` (new, moved out of `Selection`) |
+| cm4 | `archive preview --agent X` for an agent `archive.agents` does not hold answered `agents: []` with no reason | **Fixed — previewed:** the agent is answered with what it WOULD move, `enabled: false` and a warning that the archive does not move it until `archive.agents` holds it (more useful than a refusal when deciding to enable it); a missing manual agent answered with its reason; CLI tests for `manual:<name>` enabled / not enabled / missing | `Archive/ArchiveTargets.cs`, `Archive/ArchivePreview.cs` |
+| cm5 | the memory-never test could not fail (memory outside the glob) | **Fixed:** a property test with a manual agent whose glob `**` REACHES memory, over random trees | `tests/…/SelectionS1ReviewTests.cs` |
+| cm6 | the mount point of a second whole mount of the root disk gave the real path `""` | **Fixed:** `/` (too broad) | `Archive/BaseFolderPlacement.cs` |
+| cm7 | a btrfs subvolume (root `/@srv`) was refused as "a bind mount mounted whole nowhere" — a false reason; so was any bind mount whose filesystem nothing else shows | **Fixed:** a mount is judged under the mount of its device whose root is an ancestor of its own (the most whole one); a mount no other visible mount covers is judged as it is — nothing visible aliases it, and a protected place on its filesystem would show as another mount of it. The E9.S0 round's "orphan bind refused" test now asserts that | `Archive/BaseFolderPlacement.cs` |
+| cm8 | `RetentionFound.Days` null mixed "none" and "unknown" | **Fixed, partly as asked:** a closed `Known(days)` / `Unknown(why)`; unknown is warned. **No `None` case:** no catalogue entry documents an agent that keeps sessions forever — every `none` source says "documentation NOT read", which is unknown, not none; a `None` would be dead code | `Archive/AgentRetentionReader.cs`, `Archive/ArchivePreview.cs` (`retention.known`) |
+| cm9 | complexity > 4: `RenderPreview`, `WindowsSpelling`, `ArchiveTargets.Judged` | **Fixed:** extracted (`BaseOf`, `AppendAgent`; `DrvfsRoot`, `JoinWindows`; `FromJudgement`) | as named |
+| nit | `ParseArchivePreview`'s doc comment was check-base's | **Fixed** | `Cli/CommandLine.cs` |
 
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 

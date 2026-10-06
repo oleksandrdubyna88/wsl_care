@@ -171,6 +171,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 40"] = "a command-policy slot bound — the closed policy is never configuration (plan §15q R1.3)",
         ["WslCare.Core/Processes/Policy/SlotKind.cs: == 20"] = "an RFC 3339 UTC instant to the second is 20 characters — a format",
         ["WslCare.Core/Archive/BaseFolderPlacement.cs: Take(2)"] = "a share path's first two segments, its server and its share — the UNC format",
+        ["WslCare.Core/Archive/ArchivePreview.cs: ListingShare"] = "the share of a ceiling its work may spend before it must answer — a property of a ceiling, like CeilingMarginSeconds",
         ["WslCare.Core/Archive/WindowsIdentity.cs: ReadAttributes"] = "a Win32 ABI constant (FILE_READ_ATTRIBUTES) — Windows decides it",
         ["WslCare.Core/Archive/WindowsIdentity.cs: ShareAll"] = "a Win32 ABI constant (FILE_SHARE_READ | WRITE | DELETE) — Windows decides it",
         ["WslCare.Core/Archive/WindowsIdentity.cs: OpenExisting"] = "a Win32 ABI constant (OPEN_EXISTING) — Windows decides it",

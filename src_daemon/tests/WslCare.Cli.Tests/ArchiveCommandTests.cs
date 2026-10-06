@@ -166,4 +166,39 @@ public sealed class ArchiveCommandTests : IDisposable
         preview.Exit.Should().Be((int)ExitCode.NotAsRoot);
         preview.Stdout.Should().BeEmpty();
     }
+
+    private AgentPreviewReport PreviewOf(string agent)
+    {
+        var preview = CliRun.Over(Host(), "archive", "preview", "--agent", agent, "--json");
+        preview.Exit.Should().Be((int)ExitCode.Ok, preview.Stderr);
+        return JsonSerializer.Deserialize(preview.Stdout, WslCareJsonContext.Default.ArchivePreviewReport)!.Agents.Should().ContainSingle().Subject;
+    }
+
+    private void UserLayer(string json) => _sandbox.Write("/home/me/.config/wsl-care/config.json", json);
+
+    private const string MyCli = """{ "cli": "/home/me/.local/bin/mycli", "side": "wsl", "name": "mycli", "dataFolders": ["/home/me/.mycli"], "sessionGlob": "sessions/*.log" }""";
+
+    /// <summary>E9.S1 review round m4: an agent asked for by <c>--agent</c> that <c>archive.agents</c> does not hold is PREVIEWED —
+    /// what it would move — and said to be off; a manual agent the same; one <c>aiAgents.extra</c> does not hold is answered with
+    /// that reason. Never an empty answer.</summary>
+    [Fact]
+    public void Preview_of_an_agent_answers_whether_it_is_enabled_manual_agents_included()
+    {
+        var now = new FixedTimeProvider().GetUtcNow();
+        _sandbox.Sized("/home/me/.mycli/sessions/a.log", 10, now.AddDays(-40));
+        _sandbox.Sized("/home/me/.codex/sessions/2026/08/01/rollout-1.jsonl", 10, now.AddDays(-40));
+
+        UserLayer($$"""{ "aiAgents": { "extra": [{{MyCli}}] }, "archive": { "agents": ["manual:mycli"] } }""");
+        var enabled = PreviewOf("manual:mycli");
+        var codexOff = PreviewOf("codex");
+        UserLayer($$"""{ "aiAgents": { "extra": [{{MyCli}}] } }""");
+        var manualOff = PreviewOf("manual:mycli");
+        var missing = PreviewOf("manual:gone");
+
+        enabled.Should().Match<AgentPreviewReport>(a => a.Enabled && a.DueUnits == 1);
+        codexOff.Should().Match<AgentPreviewReport>(a => !a.Enabled && a.DueUnits == 1);
+        codexOff.Warnings.Should().Contain(w => w.Contains("archive.agents", StringComparison.Ordinal));
+        manualOff.Should().Match<AgentPreviewReport>(a => !a.Enabled && a.DueUnits == 1);
+        missing.Note.Should().Contain("aiAgents.extra holds no agent");
+    }
 }

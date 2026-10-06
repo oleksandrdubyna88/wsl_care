@@ -554,8 +554,8 @@ internal static class CommandLine
             var (options, _) => new Request.AgentsList(options.Flags.Contains(MeasureFlag), options.Flags.Contains(JsonFlag)),
         };
 
-    /// <summary>Exactly one absolute distro path (plan §15q R2.1's shape: no control character, no leading '-', no '.' or '..'
-    /// segment, at most 1 024 characters), then optionally <c>--json</c>.</summary>
+    /// <summary>Optionally <c>--agent &lt;id&gt;</c> — one value <c>archive.agents</c> could hold: an archivable catalogue id or
+    /// <c>manual:&lt;name&gt;</c> — and <c>--json</c>.</summary>
     private static Request ParseArchivePreview(IReadOnlyList<string> rest) =>
         ReadOptions("archive preview", rest, [AgentFlag], [JsonFlag]) switch
         {

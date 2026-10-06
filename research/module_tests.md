@@ -2218,7 +2218,7 @@ What the archive would move and why the rest stays (`research/architecture.md` �
 | the `/proc` scan over a sandbox (Linux): the open files of every process read as links (targets that do not exist), a Claude Code process's `cwd` named as its project; on Windows "not checked", naming E9.S5; **the selection opens no file of an agent** (inotify over `~/.claude`: no event but `settings.json`) | `Archive/InUseTests` (3) |
 | the verb in-process: JSON per agent (due 1, younger 1, the effective age 14, the four archivable agents in catalogue order, a `wsl-` side folder); `--agent codex` answers codex alone and an unknown id is refused (2) naming the archivable ones; root refused (81) | `Cli.Tests/ArchiveCommandTests` (3 new) |
 | the built CLI: a 20-day-old session with its companion due and a 1-day-old one younger, every file's last write unchanged (Linux legs); root refused on every OS | `Scenarios/ArchiveFlows` (2 new) |
-| the coupled rule `archive.previewTimeoutSeconds` ≥ `agents.measureBudgetSeconds` + 60 s refuses a machine layer that breaks it | `Config/ArchiveKeysTests` (a row of the rule theory) |
+| (superseded by the E9.S1 review round, m1: the rule is gone — every value of `archive.previewTimeoutSeconds` is valid and the listing takes three quarters of it) the coupled rule `archive.previewTimeoutSeconds` ≥ `agents.measureBudgetSeconds` + 60 s refused a machine layer that broke it | `Config/ArchiveKeysTests` (a row of the rule theory) |
 | the contracts: the capability `archive.preview`; the golden `archive-preview.json`; the scans: the new reads classified (the retention file a user read; `/proc` System reads; `ListEntries` allowed) | `ContractFilesTests`, `GoldenContractTests`, `ArchitectureTests` (read sites) |
 
 **Red first:** the selection, the scan and the verb were written with their tests; their teeth is the break-it run below.
@@ -2277,6 +2277,53 @@ the owner warnings dropped — 1; the share aliases allowed — 8; the identity 
 — 2; manual agents never targeted — 2; Antigravity's `%APPDATA%` folder dropped from the catalogue — 1. **No end-to-end red** for
 the identity leg of the overlap rule on this machine: every alias it catches beyond 8.3 needs a `subst` drive or a second path to a
 volume, which a test would have to create machine-wide; its two halves (the chain, the overlap) are tested.
+
+### The E9.S1 review round (2026-10-06, plan §15r *E9.S1 review round*)
+
+A security and a correctness review of E9.S1 and the E9.S0 round; every finding fixed in one commit. The tests:
+
+| Finding | Guarantee | Tests |
+|---|---|---|
+| B1 | `//mnt/c/Users/me/.claude`, `/mnt/./c/…/Temp`, `/mnt/c/Users/me/./.claude`, `/mnt//c`, `//mnt/bound/archive`, `//dev/shm/x` refused by the shape before any mount is looked at; the shape refuses an empty or `.` segment in every path family and takes one trailing separator — a manual agent's folder by the same rule | `Archive/BaseFolderS1ReviewTests` (6 + 8 rows) |
+| M1 | sessions named `.jsonl`, `..jsonl`, `...jsonl` (and Antigravity's `.db`) refused by name with their main file only; `.credentials.json` and the folder around them never listed as theirs | `Archive/SelectionS1ReviewTests.A_session_whose_id_is_empty_or_a_dot_name_…` |
+| M2 | `CLAUDE~1`, `PROGRA~1` on drvfs refused | `BaseFolderS1ReviewTests` (2 rows) |
+| M3 | a Windows-side manual agent's folder, inside, holding, spelt in another case — refused | `BaseFolderS1ReviewTests` (3 rows) |
+| m1 | `C:\ProgramData\wsl-care\…` and `C:\Users\user\git\…` refused without the profile; an accepted drvfs base warned "the Windows profile is unknown", not once the profile is known | `BaseFolderS1ReviewTests` (2 rows + a fact) |
+| m2 | `\\nas\C$/Users\…`, `\\localhost.\…`, `\\0-0-0-0-0-0-0-1.ipv6-literal.net\…`, `\\127.0.0.2\…` refused; the DNS host name, bare and qualified; a drvfs mount of `\\localhost\C$` refused in the distro | `Archive/WindowsBaseFolderTests` (4 rows + a fact), `BaseFolderS1ReviewTests` |
+| P1 | forty stars against a 200-character name answer within 2 s; the matcher answers as a shell does (8 rows) | `Agents/AgentCatalogueTests` |
+| cM1 | a cut scan and one that never ran keep every due unit, with the reason | `SelectionS1ReviewTests` (2 rows) |
+| cM2 | `CLAUDE_CONFIG_DIR` naming another folder: Claude Code answered with the reason, nothing listed; naming `~/.claude`: listed | `SelectionS1ReviewTests` |
+| cm1 | every value of `archive.previewTimeoutSeconds` (10, 60, 600) valid, the listing three quarters of it; a companion walk with only the time left is not whole | `Config/ArchiveKeysTests` (3 rows), `SelectionS1ReviewTests` |
+| cm2 | a companion file whose size cannot be read keeps its unit as not whole | `SelectionS1ReviewTests` (a file system whose one answer is "unreadable") |
+| cm3 | a whole session under its quarantine names counts 3 | `SelectionS1ReviewTests` |
+| cm4 | `--agent manual:mycli` enabled → due 1; `--agent codex` not enabled → previewed, `enabled: false`, warned; `manual:mycli` not enabled → previewed; `manual:gone` → its reason | `Cli.Tests/ArchiveCommandTests` |
+| cm5 | a manual agent whose `**` glob reaches memory never selects it, over three seeded trees | `SelectionS1ReviewTests` (3 rows) |
+| cm6 | `/data` (a second mount of the root disk) is `/`, too broad | `BaseFolderS1ReviewTests` |
+| cm7 | a btrfs subvolume judged as it is; the E9.S0 round's orphan bind now judged as it is too | `BaseFolderS1ReviewTests`, `BaseFolderReviewRoundTests` |
+| cm8 | Claude Code's retention `Known(30)`; Antigravity's `Unknown` with why and a warning | `SelectionS1ReviewTests` |
+
+**Red first** (against the unfixed code, 37 of 110 in the touched classes, and the CLI's): the six spellings answered `""` (accepted) instead of
+`shape`; the shape accepted `/mnt/a//b`, `/mnt/a/./b`, `C:\a\.\b`, `C:\a\\b`, `\\nas\share\.\x`; the dot-named sessions were DUE
+(`Expected claude.Due to be empty, but found at least one item`); `CLAUDE~1` accepted; the Windows manual agent's folder
+accepted (3); ProgramData and `git` accepted; no unknown-profile warning; `\\nas\C$/Users`, `localhost.` and the
+`0-0-0-0-0-0-0-1` literal answered `missing`; the loopback drvfs mount accepted; the matcher did not answer within 2 s; a cut
+scan and an unrun one left the unit due; `CLAUDE_CONFIG_DIR` elsewhere left it due; `previewTimeoutSeconds` 10 and 60 put the
+machine layer observe-only and 600 gave 1 min, not 7 min 30 s; the companion walk with no time left and the unreadable companion
+file left the unit due; the quarantined session counted 1, not 3; the CLI answered `agents: []`; `/data` answered an `overlap` of
+"~/git" (its real path was `""`); the btrfs subvolume refused as "mounted whole nowhere"; no unknown-retention warning. **Green
+against the unfixed code, kept:** the DNS host name (it equals the machine name here) and `127.0.0.2` (the `127.` prefix), and the
+memory property (cm5 asked for a test that CAN fail; its teeth are the walk's never-enter rule, unchanged). **A fix that turned an
+old test red:** `BaseFolderRulesTests.A_folder_on_the_network_drive_…` expected no warning at all — it now names the
+unknown-profile one only.
+**Teeth** (each line broken, the guarding tests run, the file restored byte-identical — `sha256` compared): the segment rule
+dropped from the path shape — 11 red; from the manual agent's shape — 4; the companion check — 1; short names allowed — 2; the
+Windows manual agents not protected — 3; the product-folder pattern — 1; any profile's `git` — 1; the unknown-profile warning —
+1; `/` not read as a separator — 1; the trailing dot kept — 1; addresses not parsed — 4; the distro's loopback share allowed —
+1; the root spelt empty — 1; only a whole root a base mount — 1; an incomplete scan letting units move — 2; `CLAUDE_CONFIG_DIR`
+ignored — 1; the listing budget not derived — 3; companions walked with a fresh budget — 1; an unreadable companion file absent
+— 1; a quarantined session's companions not counted — 1; every asked agent called enabled — 1; an unknown retention not warned
+— 1. **Not break-it checked:** P1's matcher (its red against the old matcher is its check); B1's placement on the real path
+(defence in depth — the link rule refuses every spelling whose real path differs, so no test can tell it apart).
 
 ## The extension (`src_vs_code/`)
 

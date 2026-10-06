@@ -7,13 +7,35 @@ using WslCare.Core.Hosting;
 
 namespace WslCare.Core.Archive;
 
-/// <summary>An agent's own retention as this side found it (plan §15r D10).</summary>
-/// <param name="Days">The days the agent keeps a session; <c>null</c> when it deletes nothing on its own (or none is known).</param>
-/// <param name="From">Where it came from: a file, or the catalogue's documented default.</param>
-/// <param name="Warnings">What a person must know: a retention of 0 (the agent keeps nothing), an unreadable value.</param>
-public sealed record RetentionFound(int? Days, string From, IReadOnlyList<string> Warnings)
+/// <summary>An agent's own retention as this side found it (plan §15r D10) — a closed answer (E9.S1 review round m8): known, a
+/// number of days, or unknown and why; never a null that could mean either.</summary>
+public abstract record RetentionFound
 {
-    public static RetentionFound None(string from) => new(null, from, []);
+    private RetentionFound()
+    {
+    }
+
+    /// <summary>Where it came from: a file, the catalogue's documented default, or what was checked.</summary>
+    public abstract string From { get; }
+
+    /// <summary>What a person must know: a retention of 0 (the agent keeps nothing), an unreadable value, an unknown retention.</summary>
+    public abstract IReadOnlyList<string> Warnings { get; }
+
+    /// <summary>The agent deletes a session <paramref name="Days"/> days after its last use.</summary>
+    public sealed record Known(int Days, string Source, IReadOnlyList<string> Notes) : RetentionFound
+    {
+        public override string From => Source;
+
+        public override IReadOnlyList<string> Warnings => Notes;
+    }
+
+    /// <summary>Whether and when the agent deletes its own sessions is not known — <paramref name="Why"/> says what was checked.</summary>
+    public sealed record Unknown(string Why, IReadOnlyList<string> Notes) : RetentionFound
+    {
+        public override string From => Why;
+
+        public override IReadOnlyList<string> Warnings => Notes;
+    }
 }
 
 /// <summary>
@@ -27,6 +49,9 @@ public static class AgentRetentionReader
 {
     public const string ClaudeKey = "cleanupPeriodDays";
 
+    /// <summary>The variable that moves Claude Code's configuration (and its sessions) out of <c>~/.claude</c>.</summary>
+    public const string ClaudeConfigDir = "CLAUDE_CONFIG_DIR";
+
     /// <summary>The managed settings of Claude Code inside the distribution (Anthropic's documented place).</summary>
     public const string LinuxManaged = "/etc/claude-code/managed-settings.json";
 
@@ -37,12 +62,13 @@ public static class AgentRetentionReader
     public static IReadOnlyList<string> ClaudeFiles(IHostPaths paths, Func<string, string?> environment) =>
     [
         paths is LinuxHostPaths linux ? linux.DistroPath(LinuxManaged) : Path.Combine(environment("ProgramFiles") ?? @"C:\Program Files", WindowsManagedUnderProgramFiles),
-        Path.Combine(ConfigFolder(paths, environment), "settings.json"),
+        Path.Combine(ClaudeConfigFolder(paths, environment), "settings.json"),
     ];
 
-    /// <summary>Claude Code's configuration folder: <c>CLAUDE_CONFIG_DIR</c> when set, else <c>.claude</c> under the home.</summary>
-    private static string ConfigFolder(IHostPaths paths, Func<string, string?> environment) =>
-        (paths, environment("CLAUDE_CONFIG_DIR") ?? string.Empty) switch
+    /// <summary>Claude Code's configuration folder as this process sees it: <c>CLAUDE_CONFIG_DIR</c> when set, else <c>.claude</c>
+    /// under the home.</summary>
+    public static string ClaudeConfigFolder(IHostPaths paths, Func<string, string?> environment) =>
+        (paths, environment(ClaudeConfigDir) ?? string.Empty) switch
         {
             (LinuxHostPaths linux, { } configured) when configured.StartsWith('/') => linux.DistroPath(configured),
             (WindowsHostPaths, { } configured) when PathRules.Windows.IsAbsolute(configured) => configured,
@@ -53,15 +79,24 @@ public static class AgentRetentionReader
     public static RetentionFound Read(AgentEntry entry, IHostPaths paths, IFileSystem files, Func<string, string?> environment) =>
         entry.Archive?.Retention is { Source: RetentionSources.ClaudeSettings } retention
             ? Claude(retention, paths, files, environment)
-            : RetentionFound.None("none known: " + (entry.Archive?.Retention.Checked ?? "no archive block"));
+            : Unknown(entry);
+
+    /// <summary>E9.S1 review round m8: an agent whose own deletion is not known is SAID to be — the archive then takes its sessions at
+    /// <c>archive.olderThanDays</c>, which no agent rule shortens.</summary>
+    private static RetentionFound Unknown(AgentEntry entry)
+    {
+        var why = "none known: " + (entry.Archive?.Retention.Checked ?? "no archive block");
+        var warning = $"{entry.Name}: whether and when it deletes its own sessions is not known ({why}) — the archive takes them at {ConfigKeys.Archive.OlderThanDays.Name}";
+        return new RetentionFound.Unknown(why, [warning]);
+    }
 
     private static RetentionFound Claude(AgentRetention retention, IHostPaths paths, IFileSystem files, Func<string, string?> environment)
     {
         var read = ClaudeFiles(paths, environment).Select(path => (Path: path, Value: ValueIn(files, path))).ToList();
         var problems = read.Where(r => r.Value is ReadValue.Unusable).Select(r => $"{r.Path}: {((ReadValue.Unusable)r.Value).Why} — not taken").ToList();
         return read.FirstOrDefault(r => r.Value is ReadValue.Days) is { Path: { } path, Value: ReadValue.Days found }
-            ? new RetentionFound(found.Value, path, [.. problems, .. ZeroWarning(found.Value)])
-            : new RetentionFound(retention.DefaultDays, $"the documented default ({retention.DefaultDays} days): {ClaudeKey} is set in none of {string.Join(", ", read.Select(r => r.Path))}", problems);
+            ? new RetentionFound.Known(found.Value, path, [.. problems, .. ZeroWarning(found.Value)])
+            : new RetentionFound.Known(retention.DefaultDays, $"the documented default ({retention.DefaultDays} days): {ClaudeKey} is set in none of {string.Join(", ", read.Select(r => r.Path))}", problems);
     }
 
     private static IEnumerable<string> ZeroWarning(int days) =>

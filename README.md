@@ -696,7 +696,9 @@ own disk — and notes (a FAT drive's 2-second times, a drvfs mount's reported m
 Windows drive is judged as the Windows folder it is too: never inside your Windows profile's agent folders, its `AppData`, its
 temporary folder or `git`, nor any profile's (`C:\Users\<anyone>\AppData`, `…\.claude`); a folder reached through a bind mount
 is judged where it really lies; on Windows a share back to this machine (`\\wsl$`, `\\localhost`, this machine's name, `C$`) is
-refused — name the folder by its drive. A folder on the way that another account owns is warned about.
+refused — name the folder by its drive. A folder on the way that another account owns is warned about. A path is taken as it
+reads: an empty or `.` segment (`//mnt/c`, `/mnt/./c`) is refused, and on a Windows drive so is an 8.3 short name
+(`CLAUDE~1`); before the first full run has found your Windows profile, a folder on a Windows drive is accepted with a warning.
 
 Which agents are archived is `archive.agents` (Claude Code, Codex, Gemini CLI, Antigravity — the layouts confirmed on
 2026-10-02); a manual agent of `aiAgents.extra` that names its `sessionGlob` may be added as `manual:<name>` (never by default). The ages are settings with a rule between them: a session is copied when its newest file is older than
@@ -720,8 +722,11 @@ sooner than that leaves room for (Claude Code's retention − `archive.marginDay
 said in a warning). A due session stays where it is, counted with its reason, when one of its files is open in a process, Claude
 Code is working in its project, its database may be open (a `-wal` beside it), it names what never moves (a session called
 `memory.jsonl` is refused whole), one of its names cannot exist on a Windows drive (`< > : " \ | ? *`, a reserved device name
-such as `con`, a trailing dot or space, invalid UTF-8, two names differing only by case), or not all of it could be seen. On
-Windows the open-file check arrives with E9.S5 (the preview says so). As root it refuses with exit **81**.
+such as `con`, a trailing dot or space, invalid UTF-8, two names differing only by case), or not all of it could be seen. Only a
+COMPLETE open-file scan lets a session move: a scan cut by its time keeps every due session, and on Windows, where the check
+arrives with E9.S5, every due session stays (the preview says so). Claude Code is not archived while `CLAUDE_CONFIG_DIR` points
+elsewhere than `~/.claude`; `--agent` previews an agent `archive.agents` does not hold, marked `enabled: false`. As root it
+refuses with exit **81**.
 
 ## Extension (preview)
 

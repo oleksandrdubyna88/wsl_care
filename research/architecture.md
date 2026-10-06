@@ -2583,9 +2583,14 @@ flowchart TD
 - **The answer** is `ArchivePreviewReport` (`contracts/golden/head/archive-preview.json`): the side, its side folder, the zone,
   the configured base (empty is fine — the preview still answers), what the open-file check saw, and per agent its retention,
   its effective age, due units / files / bytes, the oldest due write, the skip counts, the quarantined count and the warnings.
-  The capability is `archive.preview`. Its budget is `agents.measureBudgetSeconds` (the measure-now budget the agent walk
-  already has), held under the extension's wait by a new coupled rule: `archive.previewTimeoutSeconds` ≥
-  `agents.measureBudgetSeconds` + 60 s.
+  The capability is `archive.preview`. Its listing budget is DERIVED from the ceiling it runs under — three quarters of
+  `archive.previewTimeoutSeconds` — and the open-file scan, the layouts and every companion walk share it (E9.S1 review round
+  m1; the first build coupled it to `agents.measureBudgetSeconds` by a rule that made the bottom of its own range invalid).
+  Only a COMPLETE open-file scan lets a due unit move (`inUse.state`: `complete` / `cut` / `not-checked` — on Windows every
+  due unit stays until E9.S5); an agent asked for by `--agent` that `archive.agents` does not hold is previewed with
+  `enabled: false`; Claude Code is not listed while `CLAUDE_CONFIG_DIR` names another folder than `~/.claude`; a session whose
+  id is empty or a dot name is refused (its companions would name the folder around it); the agents' own retention is a closed
+  `Known(days)` / `Unknown(why)`, unknown warned (E9.S1 review round, plan §15r).
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 

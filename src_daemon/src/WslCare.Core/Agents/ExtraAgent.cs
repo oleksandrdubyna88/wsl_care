@@ -132,7 +132,7 @@ public static partial class ExtraAgentShape
         new((p, _) => p.Any(char.IsControl), _ => "holds a control character"),
         new((p, _) => p.StartsWith('-'), _ => "starts with '-'"),
         new((p, side) => !(side == Windows ? IsDrivePath(p) : p.StartsWith('/')), side => side == Windows ? "must be an absolute path X:\\…" : "must be an absolute path /…"),
-        new((p, _) => p.Split('/', '\\').Any(s => s is ".." or "."), _ => "holds a . or .. segment"),
+        new((p, _) => Hosting.PathSpelling.HasBadSegment(p), _ => Hosting.PathSpelling.Says),
     ];
 
     /// <summary>Why <paramref name="path"/> is not an absolute path of <paramref name="side"/>; empty when it is.</summary>

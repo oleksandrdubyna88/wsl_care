@@ -3,8 +3,9 @@ using WslCare.Core.Config;
 
 namespace WslCare.Core.Archive;
 
-/// <summary>An agent's own retention as the preview found it.</summary>
-public sealed record ArchiveRetentionReport(string Source, int? Days, string From, IReadOnlyList<string> Warnings);
+/// <summary>An agent's own retention as the preview found it: <paramref name="Known"/> with its <paramref name="Days"/>, or not known
+/// (E9.S1 review round m8: <paramref name="Days"/> is then 0 and means nothing).</summary>
+public sealed record ArchiveRetentionReport(string Source, bool Known, int Days, string From, IReadOnlyList<string> Warnings);
 
 /// <summary>One unit the archive would move — a live answer, names included (never persisted).</summary>
 public sealed record ArchiveUnitReport(string Kind, string Key, int Files, long Bytes, DateTimeOffset NewestWriteUtc, string Month);
@@ -12,16 +13,18 @@ public sealed record ArchiveUnitReport(string Kind, string Key, int Files, long 
 /// <summary>How many due units one rule keeps in place, and the first of them with its sentence.</summary>
 public sealed record SkipCount(string Rule, int Count, string FirstKey, string FirstWhy);
 
-/// <summary>What the open-file check saw.</summary>
-public sealed record InUseReport(bool Checked, int OpenFiles, int ClaudeProjects, string Note);
+/// <summary>What the open-file check saw: <paramref name="State"/> <c>complete</c>, <c>cut</c> or <c>not-checked</c>.</summary>
+public sealed record InUseReport(string State, int OpenFiles, int ClaudeProjects, string Note);
 
 /// <summary>One agent of <c>archive preview</c>.</summary>
+/// <param name="Enabled">Whether <c>archive.agents</c> holds it; an agent asked for alone is previewed, never moved.</param>
 /// <param name="EffectiveAgeDays">The age a unit is due at (§15r D10).</param>
 /// <param name="OldestDueWriteUtc">The newest write of the oldest due unit — how close the agent's own deletion is.</param>
 /// <param name="Units">The first <c>preview.maxItems</c> due units that may move, oldest first.</param>
 public sealed record AgentPreviewReport(
     string Id,
     string Name,
+    bool Enabled,
     string Under,
     ArchiveRetentionReport Retention,
     int EffectiveAgeDays,
@@ -56,6 +59,14 @@ public sealed record ArchivePreviewReport(
 /// <summary>Builds <see cref="ArchivePreviewReport"/> from a selection.</summary>
 public static class ArchivePreview
 {
+    /// <summary>The share of the preview's ceiling its listing may spend; the rest is the answer's (a property of a ceiling, like the
+    /// 60 s a command keeps under its own — group C).</summary>
+    public const double ListingShare = 0.75;
+
+    /// <summary>E9.S1 review round m1: the time the preview's listing — the open-file scan, the layouts, every companion walk — may take,
+    /// DERIVED from <c>archive.previewTimeoutSeconds</c> (the ceiling the preview runs under), never coupled to another key.</summary>
+    public static TimeSpan ListingBudget(EffectiveConfig config) => TimeSpan.FromSeconds(config.Int(ConfigKeys.Archive.PreviewTimeoutSeconds) * ListingShare);
+
     public static ArchivePreviewReport From(SelectionInput input, IReadOnlyList<AgentSelection> selected, string sideFolder) =>
         new(
             SchemaVersion.Current,
@@ -64,15 +75,23 @@ public static class ArchivePreview
             input.Now,
             input.Zone.Id,
             input.Config.Text(ConfigKeys.Archive.BaseFolder),
-            new InUseReport(input.InUse.Checked, input.InUse.OpenFiles.Count, input.InUse.ClaudeProjects.Count, input.InUse.Note),
+            new InUseReport(StateName(input.InUse.State), input.InUse.OpenFiles.Count, input.InUse.ClaudeProjects.Count, input.InUse.Note),
             [.. selected.Select(s => Agent(input.Config, s))]);
+
+    private static string StateName(InUseState state) => state switch
+    {
+        InUseState.Complete => "complete",
+        InUseState.Cut => "cut",
+        _ => "not-checked",
+    };
 
     private static AgentPreviewReport Agent(EffectiveConfig config, AgentSelection s) =>
         new(
             s.Entry.Id,
             s.Entry.Name,
+            s.Enabled,
             s.Under,
-            new ArchiveRetentionReport(s.Entry.Archive!.Retention.Source, s.Retention.Days, s.Retention.From, s.Retention.Warnings),
+            Retention(s),
             s.EffectiveAgeDays,
             s.Due.Count,
             s.Due.Sum(u => u.Files.Count),
@@ -85,15 +104,20 @@ public static class ArchivePreview
             Warnings(config, s),
             [.. s.Due.Take(ActionPreview.MaxItems).Select(u => new ArchiveUnitReport(u.Kind, u.Key, u.Files.Count, u.Bytes, u.NewestWriteUtc, u.Month))]);
 
+    private static ArchiveRetentionReport Retention(AgentSelection s) => s.Retention is RetentionFound.Known known
+        ? new ArchiveRetentionReport(s.Entry.Archive!.Retention.Source, true, known.Days, known.From, known.Warnings)
+        : new ArchiveRetentionReport(s.Entry.Archive!.Retention.Source, false, 0, s.Retention.From, s.Retention.Warnings);
+
     /// <summary>The retention's own warnings, and — when it shortened the age — that the agent's own deletion set it.</summary>
     private static IReadOnlyList<string> Warnings(EffectiveConfig config, AgentSelection s)
     {
         var older = config.Int(ConfigKeys.Archive.OlderThanDays);
         return
         [
+            .. s.Enabled ? Array.Empty<string>() : [$"{s.Entry.Id} is not in {ConfigKeys.Archive.Agents.Name}: previewed only — the archive does not move it until {ConfigKeys.Archive.Agents.Name} holds it"],
             .. s.Retention.Warnings,
-            .. s.EffectiveAgeDays < older
-                ? [$"{s.Entry.Name} deletes its own sessions after {s.Retention.Days} days ({s.Retention.From}): the archive takes them from day {s.EffectiveAgeDays}, not {ConfigKeys.Archive.OlderThanDays.Name} ({older})"]
+            .. s.EffectiveAgeDays < older && s.Retention is RetentionFound.Known known
+                ? [$"{s.Entry.Name} deletes its own sessions after {known.Days} days ({known.From}): the archive takes them from day {s.EffectiveAgeDays}, not {ConfigKeys.Archive.OlderThanDays.Name} ({older})"]
                 : Array.Empty<string>(),
         ];
     }

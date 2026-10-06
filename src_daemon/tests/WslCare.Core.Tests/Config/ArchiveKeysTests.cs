@@ -48,7 +48,6 @@ public sealed class ArchiveKeysTests
     [InlineData("""{ "running": { "noProgressMinutes": 5 }, "archive": { "progressSilenceSeconds": 600 } }""", "archive.progressSilenceSeconds")]
     [InlineData("""{ "commands": { "maxTimeoutHours": 1 }, "archive": { "runBudgetMinutes": 55, "finishGraceMinutes": 10 } }""", "archive.runBudgetMinutes")]
     [InlineData("""{ "archive": { "maxSessionsPerRun": 100000 } }""", "archive.maxStateFileBytes")]
-    [InlineData("""{ "archive": { "previewTimeoutSeconds": 100 } }""", "archive.previewTimeoutSeconds")]
     [InlineData("""{ "archive": { "minRunMinutes": 30, "runBudgetMinutes": 20 } }""", "archive.minRunMinutes")]
     [InlineData("""{ "timer": { "periodHours": 1 } }""", "archive.maxStateFileBytes")]
     public void An_archive_rule_a_machine_layer_breaks_refuses_the_layer_naming_it(string machine, string named)
@@ -57,6 +56,20 @@ public sealed class ArchiveKeysTests
 
         result.IsObserveOnly.Should().BeTrue("a contradiction between two limits is a configuration error");
         result.Errors.Should().Contain(e => e.Message.Contains(named, StringComparison.Ordinal));
+    }
+
+    /// <summary>E9.S1 review round m1: every value of the preview's ceiling is a valid one — its listing takes a share of it, so
+    /// no coupling makes the bottom of its own range (or anything up to 119 under the defaults) an observe-only error.</summary>
+    [Theory]
+    [InlineData(10)]
+    [InlineData(60)]
+    [InlineData(600)]
+    public void Every_value_of_the_preview_ceiling_in_its_range_is_valid_and_its_listing_takes_three_quarters(int seconds)
+    {
+        var result = Load($$"""{ "archive": { "previewTimeoutSeconds": {{seconds}} } }""");
+
+        result.IsObserveOnly.Should().BeFalse(string.Join("; ", result.Errors.Select(e => e.Display)));
+        WslCare.Core.Archive.ArchivePreview.ListingBudget(result.Config).Should().Be(TimeSpan.FromSeconds(seconds * 0.75));
     }
 
     /// <summary>E9.S0 review round C3: the in-flight file holds every session a run touched until a LATER run removes its source —

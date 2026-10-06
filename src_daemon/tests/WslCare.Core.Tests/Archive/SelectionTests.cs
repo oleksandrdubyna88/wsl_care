@@ -36,7 +36,7 @@ public sealed class SelectionTests : IDisposable
     }
 
     private SelectionInput Input(EffectiveConfig? config = null, InUseView? inUse = null, TimeZoneInfo? zone = null, IReadOnlyDictionary<string, string>? environment = null) =>
-        new(_sandbox.Paths, _sandbox.Files, config ?? Config(), Now, zone ?? TimeZoneInfo.Utc, inUse ?? InUseView.NotChecked("a test"), name => environment?.GetValueOrDefault(name));
+        new(_sandbox.Paths, _sandbox.Files, config ?? Config(), Now, zone ?? TimeZoneInfo.Utc, inUse ?? InUseView.Complete(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.OrdinalIgnoreCase)), name => environment?.GetValueOrDefault(name));
 
     private AgentSelection Claude(SelectionInput? input = null) => Selection.Select(input ?? Input()).Single(s => s.Entry.Id == "claude-code");
 
@@ -122,7 +122,7 @@ public sealed class SelectionTests : IDisposable
     {
         File("/home/me/.claude/projects/p/s1.jsonl", DaysAgo(40));
         File("/home/me/.claude/projects/p/s1/tool-results/t.txt", DaysAgo(40));
-        var open = new InUseView(new HashSet<string>(["/home/me/.claude/projects/p/s1/tool-results/t.txt"], StringComparer.Ordinal), new HashSet<string>(StringComparer.OrdinalIgnoreCase), true, string.Empty);
+        var open = InUseView.Complete(new HashSet<string>(["/home/me/.claude/projects/p/s1/tool-results/t.txt"], StringComparer.Ordinal), new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
         Claude(Input(inUse: open)).Skipped.Should().ContainSingle().Which.SkipRule.Should().Be(SkipRule.InUse);
     }
@@ -132,7 +132,7 @@ public sealed class SelectionTests : IDisposable
     {
         File("/home/me/.claude/projects/-home-me-git-x/s1.jsonl", DaysAgo(40));
         File("/home/me/.claude/projects/-home-me-git-y/s2.jsonl", DaysAgo(40));
-        var working = new InUseView(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>([ArchiveNames.ClaudeProjectOf("/home/me/git/x")], StringComparer.OrdinalIgnoreCase), true, string.Empty);
+        var working = InUseView.Complete(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>([ArchiveNames.ClaudeProjectOf("/home/me/git/x")], StringComparer.OrdinalIgnoreCase));
 
         var claude = Claude(Input(inUse: working));
 
@@ -226,7 +226,7 @@ public sealed class SelectionTests : IDisposable
 
         var claude = Claude();
 
-        claude.Retention.Days.Should().Be(10);
+        claude.Retention.Should().BeOfType<RetentionFound.Known>().Which.Days.Should().Be(10);
         claude.EffectiveAgeDays.Should().Be(2);
         claude.Due.Should().ContainSingle();
     }
@@ -238,10 +238,10 @@ public sealed class SelectionTests : IDisposable
         _sandbox.Write("/home/me/.claude/settings.json", """{ "cleanupPeriodDays": 10 }""");
         var moved = _sandbox.Write("/srv/claude-home/settings.json", """{ "cleanupPeriodDays": 9 }""");
 
-        Claude().Retention.Days.Should().Be(20, "an administrator's managed setting wins");
+        Claude().Retention.Should().BeOfType<RetentionFound.Known>().Which.Days.Should().Be(20, "an administrator's managed setting wins");
         System.IO.File.Delete(_sandbox.Paths.DistroPath(AgentRetentionReader.LinuxManaged));
-        Claude().Retention.Days.Should().Be(10);
-        Claude(Input(environment: new Dictionary<string, string> { ["CLAUDE_CONFIG_DIR"] = "/srv/claude-home" })).Retention.Days.Should().Be(9);
+        Claude().Retention.Should().BeOfType<RetentionFound.Known>().Which.Days.Should().Be(10);
+        Claude(Input(environment: new Dictionary<string, string> { ["CLAUDE_CONFIG_DIR"] = "/srv/claude-home" })).Retention.Should().BeOfType<RetentionFound.Known>().Which.Days.Should().Be(9);
         moved.Should().NotBeEmpty();
     }
 
@@ -263,7 +263,7 @@ public sealed class SelectionTests : IDisposable
 
         var claude = Claude();
 
-        claude.Retention.Days.Should().Be(30);
+        claude.Retention.Should().BeOfType<RetentionFound.Known>().Which.Days.Should().Be(30);
         claude.EffectiveAgeDays.Should().Be(14);
         claude.Retention.Warnings.Should().ContainSingle().Which.Should().Contain("not JSON");
     }
@@ -309,7 +309,7 @@ public sealed class SelectionTests : IDisposable
         var mine = on.Should().ContainSingle().Subject;
         mine.Entry.Id.Should().Be("manual:mycli");
         mine.Due.Should().ContainSingle().Which.Key.Should().Be("sessions/a.log");
-        mine.Retention.Days.Should().BeNull("a manual agent's own deletion is not known");
+        mine.Retention.Should().BeOfType<RetentionFound.Unknown>("a manual agent's own deletion is not known");
     }
 
     [Fact]

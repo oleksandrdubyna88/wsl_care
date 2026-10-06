@@ -124,15 +124,18 @@ public sealed class BaseFolderReviewRoundTests : IDisposable
         report.Refusal.Should().Contain("/home/me/.claude");
     }
 
+    /// <summary>E9.S1 review round m7 (it was refused here as "mounted whole nowhere", a false reason): a mount whose filesystem no
+    /// other visible mount shows aliases nothing visible — every protected place lies on a mount the table shows, and a protected
+    /// place on that filesystem would show as another mount of it. Judged as it is.</summary>
     [Fact]
-    public void A_bind_mount_whose_source_is_mounted_nowhere_is_refused()
+    public void A_bind_mount_whose_filesystem_no_other_mount_shows_is_judged_as_it_is()
     {
         Folder("/mnt/orphan/archive");
 
         var report = Judge("/mnt/orphan/archive");
 
-        report.Rule.Should().Be(BaseFolderRule.LinkOnTheWay, report.Refusal);
-        report.Refusal.Should().Contain("bind mount");
+        report.Accepted.Should().BeTrue(report.Refusal);
+        report.Folder.Should().Be("/mnt/orphan/archive");
     }
 
     /// <summary>S5: a folder on the way owned by another account (not root, not this one) could be renamed away under the archive.</summary>

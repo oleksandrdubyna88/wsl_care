@@ -43,7 +43,12 @@ public sealed record UnitFound(string Kind, string Key, IReadOnlyList<UnitFile> 
 /// <param name="Younger">How many units are not due yet.</param>
 /// <param name="Quarantined">Files an interrupted removal left under a quarantine name (review M3) — resolved by the run's reconcile.</param>
 /// <param name="Note">What the listing could not see; empty when whole.</param>
-public sealed record AgentSelection(AgentEntry Entry, string Under, RetentionFound Retention, int EffectiveAgeDays, IReadOnlyList<UnitFound> Due, IReadOnlyList<UnitFound> Skipped, int Younger, int Quarantined, string Note);
+public sealed record AgentSelection(AgentEntry Entry, string Under, RetentionFound Retention, int EffectiveAgeDays, IReadOnlyList<UnitFound> Due, IReadOnlyList<UnitFound> Skipped, int Younger, int Quarantined, string Note)
+{
+    /// <summary>Whether <c>archive.agents</c> holds it — an agent asked for by <c>--agent</c> alone is previewed but never moved (E9.S1
+    /// review round m4).</summary>
+    public bool Enabled { get; init; } = true;
+}
 
 /// <summary>Everything the selection reads, and when it is.</summary>
 public sealed record SelectionInput(IHostPaths Paths, IFileSystem Files, EffectiveConfig Config, DateTimeOffset Now, TimeZoneInfo Zone, InUseView InUse, Func<string, string?> Environment)
@@ -51,8 +56,11 @@ public sealed record SelectionInput(IHostPaths Paths, IFileSystem Files, Effecti
     /// <summary>Only this agent (<c>archive preview --agent</c>); empty = every agent of <c>archive.agents</c>.</summary>
     public string OnlyAgent { get; init; } = string.Empty;
 
-    /// <summary>When the listing must stop; never by default.</summary>
-    public Func<bool> OutOfTime { get; init; } = static () => false;
+    /// <summary>The time the selection has left (E9.S1 review round m1: the listing AND every companion walk); unbounded by default.</summary>
+    public Func<TimeSpan> TimeLeft { get; init; } = static () => TimeSpan.MaxValue;
+
+    /// <summary>Whether the time is up.</summary>
+    public bool OutOfTime => TimeLeft() <= TimeSpan.Zero;
 
     public CancellationToken Token { get; init; }
 }
@@ -72,14 +80,14 @@ public static class Selection
     /// <summary>The agents asked for — <c>archive.agents</c> (or the one named): the catalogue's with an archive block, and the manual
     /// agents it names (<see cref="ArchiveTargets"/>).</summary>
     public static IReadOnlyList<AgentSelection> Select(SelectionInput input) =>
-        [.. ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.OnlyAgent).Select(target => Agent(input, target))];
+        [.. ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.OnlyAgent, input.Environment).Select(target => Agent(input, target) with { Enabled = target.Enabled })];
 
     /// <summary>§15r D10: min(<c>archive.olderThanDays</c>, the measured retention − <c>archive.marginDays</c> − the removal's
     /// whole days), at least 1.</summary>
     public static int EffectiveAgeDays(EffectiveConfig config, RetentionFound retention)
     {
         var older = config.Int(ConfigKeys.Archive.OlderThanDays);
-        return retention.Days is { } days
+        return retention is RetentionFound.Known { Days: var days }
             ? Math.Max(1, Math.Min(older, days - config.Int(ConfigKeys.Archive.MarginDays) - RemovalDays(config)))
             : older;
     }
@@ -106,11 +114,11 @@ public static class Selection
     private static AgentSelection Listed(SelectionInput input, AgentEntry entry, string under, RetentionFound retention, int age)
     {
         var rules = AgentWalk.RulesFor(entry) with { ListFiles = true };
-        var listing = new SessionListing(input.Files, rules.NeverEnter, input.OutOfTime, input.Token) { Device = input.Files.DeviceOf(under) };
+        var listing = new SessionListing(input.Files, rules.NeverEnter, () => input.OutOfTime, input.Token) { Device = input.Files.DeviceOf(under) };
         var units = entry.Archive!.Units.SelectMany(unit => Units(input, entry, under, unit, listing, rules)).ToList();
         var cutoff = input.Now - TimeSpan.FromDays(age);
         var due = units.Where(u => u.Unit.NewestWriteUtc < cutoff).OrderBy(u => u.Unit.NewestWriteUtc).ThenBy(u => u.Unit.Key, StringComparer.Ordinal).ToList();
-        var quarantined = Quarantined(entry, under, listing, units.SelectMany(u => u.Unit.Files));
+        var quarantined = QuarantineCount.Of(new QuarantineCount.Look(input, entry, under, listing, rules), units.SelectMany(u => u.Unit.Files));
         return new AgentSelection(
             entry, under, retention, age,
             [.. due.Where(u => u.Unit.SkipRule.Length == 0).Select(u => u.Unit)],
@@ -135,42 +143,83 @@ public static class Selection
     private static UnitFound Unit(SelectionInput input, AgentEntry entry, string under, ArchiveUnit unit, SessionFound found, IReadOnlyList<string> companions, TreeRules rules)
     {
         var main = new UnitFile(found.Session.Name, Path.Combine(under, found.Session.Name), found.Session.Bytes, found.LastWrite);
+        if (CompanionProblem(found.Session.Name, companions) is { Length: > 0 } bad)
+        {
+            return new UnitFound(unit.Kind, found.Session.Name, [main], main.LastWriteUtc, MonthOf(main.LastWriteUtc, input.Zone), SkipRule.Name, bad);
+        }
+
         var expanded = companions.Select(c => Expand(c, found.Session.Name)).ToList();
-        var gathered = expanded.Select(c => Companion(input.Files, under, c, rules, input.Token)).ToList();
+        var gathered = expanded.Select(c => Companion(input, under, c, rules)).ToList();
         IReadOnlyList<UnitFile> files = [main, .. gathered.SelectMany(g => g.Files)];
         var newest = files.Max(f => f.LastWriteUtc);
-        var month = TimeZoneInfo.ConvertTime(newest, input.Zone).ToString("yyyy/MM", CultureInfo.InvariantCulture);
+        var month = MonthOf(newest, input.Zone);
         var (rule, why) = Judged(new UnitCheck(input, entry, under, unit, found.Session.Name, files, expanded, gathered.Select(g => g.Note).FirstOrDefault(n => n.Length > 0) ?? string.Empty));
         return new UnitFound(unit.Kind, found.Session.Name, files, newest, month, rule, why);
     }
 
+    private static string MonthOf(DateTimeOffset newest, TimeZoneInfo zone) => TimeZoneInfo.ConvertTime(newest, zone).ToString("yyyy/MM", CultureInfo.InvariantCulture);
+
     /// <summary>A companion template with <c>{dir}</c> (the session file's folder) and <c>{id}</c> (its name without the extension).</summary>
-    private static string Expand(string template, string sessionName)
+    internal static string Expand(string template, string sessionName)
     {
         var name = sessionName.Replace('\\', '/');
         var dir = name.Contains('/', StringComparison.Ordinal) ? name[..name.LastIndexOf('/')] : string.Empty;
-        return template.Replace("{dir}", dir, StringComparison.Ordinal).Replace("{id}", Path.GetFileNameWithoutExtension(name), StringComparison.Ordinal).TrimStart('/');
+        return template.Replace("{dir}", dir, StringComparison.Ordinal).Replace("{id}", IdOf(name), StringComparison.Ordinal).TrimStart('/');
+    }
+
+    private static string IdOf(string sessionName) => Path.GetFileNameWithoutExtension(sessionName.Replace('\\', '/'));
+
+    /// <summary>E9.S1 review round M1: a session whose id is empty or a dot name (<c>.jsonl</c>, <c>..jsonl</c>, <c>...jsonl</c>) would
+    /// expand <c>{dir}/{id}</c> to the folder around it — or the agent's folder itself — and take every file there as its own. Such a
+    /// unit is refused by name, and every expanded companion must stay strictly inside its template's own folder. Empty when sound.</summary>
+    internal static string CompanionProblem(string sessionName, IReadOnlyList<string> templates) =>
+        IdOf(sessionName) is "" or "." or ".." ? $"its id \"{IdOf(sessionName)}\" is empty or a dot name, so its companions would name the folder around it; it is never taken"
+        : templates.FirstOrDefault(t => !StaysInside(t, sessionName)) is { } template ? $"its companion {template} expands to {Expand(template, sessionName)}, outside its own folder; it is never taken"
+        : string.Empty;
+
+    private static bool StaysInside(string template, string sessionName)
+    {
+        var expanded = Expand(template, sessionName);
+        var cut = template.LastIndexOf('/');
+        var parent = cut < 0 ? string.Empty : Expand(template[..cut], sessionName);
+        return !expanded.Split('/').Any(s => s is "" or "." or "..") && (parent.Length == 0 || expanded.StartsWith(parent + "/", StringComparison.Ordinal));
     }
 
     /// <summary>The files of one companion — a file by stat, a folder by the walk's rules; nothing when absent.</summary>
     private sealed record Gathered(IReadOnlyList<UnitFile> Files, string Note);
 
-    private static Gathered Companion(IFileSystem files, string under, string relative, TreeRules rules, CancellationToken token)
+    private static Gathered Companion(SelectionInput input, string under, string relative, TreeRules rules)
     {
         var path = Path.Combine(under, relative);
-        return files.ReadLink(path) is LinkReadResult.Target ? new Gathered([], $"{relative} is a link, never followed")
-            : files.DirectoryExists(path) ? Folder(files, under, path, rules, token)
-            : files.FileSize(path) is FileSizeResult.Measured m ? new Gathered([new UnitFile(relative, path, m.Bytes, m.ModifiedAt)], string.Empty)
-            : new Gathered([], string.Empty);
+        return input.OutOfTime ? new Gathered([], $"{relative}: the listing ran out of time")
+            : input.Files.ReadLink(path) is LinkReadResult.Target ? new Gathered([], $"{relative} is a link, never followed")
+            : input.Files.DirectoryExists(path) ? Folder(input, under, path, rules)
+            : CompanionFile(input.Files.FileSize(path), relative, path);
     }
 
-    private static Gathered Folder(IFileSystem files, string under, string path, TreeRules rules, CancellationToken token) => files.WalkTree(path, FolderSizes.Limits, rules, token) switch
+    /// <summary>A companion FILE: measured, absent — or, E9.S1 review round m2, unreadable, which keeps its unit as not whole.</summary>
+    private static Gathered CompanionFile(FileSizeResult size, string relative, string path) => size switch
+    {
+        FileSizeResult.Measured m => new Gathered([new UnitFile(relative, path, m.Bytes, m.ModifiedAt)], string.Empty),
+        FileSizeResult.Unreadable u => new Gathered([], $"{relative}: {u.Reason}"),
+        _ => new Gathered([], string.Empty),
+    };
+
+    /// <summary>A companion folder, walked with the time the listing has LEFT (E9.S1 review round m1).</summary>
+    private static Gathered Folder(SelectionInput input, string under, string path, TreeRules rules) => input.Files.WalkTree(path, LimitsLeft(input), rules, input.Token) switch
     {
         TreeMeasure.Measured { Complete: true } m => new Gathered([.. m.Listed.Select(f => new UnitFile(Relative(under, f.Path), f.Path, f.Length, f.LastWriteUtc))], Excluded(m)),
         TreeMeasure.Measured m => new Gathered([], $"{Relative(under, path)}: {m.Note}"),
         TreeMeasure.Unreadable u => new Gathered([], $"{Relative(under, path)}: {u.Reason}"),
         _ => new Gathered([], string.Empty),
     };
+
+    private static TreeLimits LimitsLeft(SelectionInput input)
+    {
+        var walk = FolderSizes.Limits;
+        var left = input.TimeLeft();
+        return walk with { MaxDuration = left < walk.MaxDuration ? left : walk.MaxDuration };
+    }
 
     /// <summary>A companion folder holding a folder the walk declined to enter (<c>memory</c>, another filesystem) is not whole.</summary>
     private static string Excluded(TreeMeasure.Measured measured) =>
@@ -188,6 +237,7 @@ public static class Selection
         c => NameProblem(c.Files),
         c => RuleVerdict.When(c.GatherNote.Length > 0, SkipRule.NotWhole, () => $"not every file of it was seen ({c.GatherNote}); a unit moves whole or not at all"),
         c => MayBeOpen(c.Input.Files, c.Under, c.Unit, c.Key),
+        c => ScanIncomplete(c.Input.InUse),
         c => InUse(c.Input, c.Files),
         c => AgentHere(c.Input, c.Entry, c.Key),
     ];
@@ -218,6 +268,15 @@ public static class Selection
             ? new RuleVerdict.Refuses(SkipRule.MayBeOpen, $"{present} exists, so the database may be open; it is left until it is gone")
             : RuleVerdict.Holds;
 
+    /// <summary>E9.S1 review round M1: only a COMPLETE open-file scan lets a due unit move — a cut one saw nothing of what it did not
+    /// reach, and one that never ran (Windows until E9.S5) saw nothing at all.</summary>
+    private static RuleVerdict ScanIncomplete(InUseView view) => view.State switch
+    {
+        InUseState.Complete => RuleVerdict.Holds,
+        InUseState.Cut => new RuleVerdict.Refuses(SkipRule.InUse, $"the open-file scan was cut ({view.Note}); what it did not reach may be open"),
+        _ => new RuleVerdict.Refuses(SkipRule.InUse, $"which files are open was not checked ({view.Note})"),
+    };
+
     private static RuleVerdict InUse(SelectionInput input, IReadOnlyList<UnitFile> files) =>
         files.FirstOrDefault(f => input.InUse.OpenFiles.Contains(Distro(input.Paths, f.OnDisk))) is { } open
             ? new RuleVerdict.Refuses(SkipRule.InUse, $"{open.Relative} is open in a process")
@@ -234,19 +293,4 @@ public static class Selection
     }
 
     private static string Distro(IHostPaths paths, string onDisk) => paths is LinuxHostPaths linux ? linux.ToDistro(onDisk) : onDisk;
-
-    /// <summary>Review M3: files an interrupted removal left under the quarantine name, at the unit level and inside the units.</summary>
-    private static int Quarantined(AgentEntry entry, string under, SessionListing listing, IEnumerable<UnitFile> unitFiles)
-    {
-        var levels = entry.Archive!.Units.Select(u => u.Kind == ArchiveUnitKinds.Session ? entry.Sessions!.Glob : u.Glob).Distinct(StringComparer.Ordinal);
-        var atLevel = levels.Sum(glob => SessionGlob.Find(listing, under, QuarantineGlob(glob)).Sessions.Count);
-        return atLevel + unitFiles.Count(f => f.Relative.Contains(ArchiveNames.QuarantineMark, StringComparison.Ordinal));
-    }
-
-    /// <summary>The glob's last segment replaced by "any file carrying the quarantine mark".</summary>
-    private static string QuarantineGlob(string glob)
-    {
-        var cut = glob.LastIndexOf('/');
-        return (cut < 0 ? string.Empty : glob[..(cut + 1)]) + "*" + ArchiveNames.QuarantineMark + "*";
-    }
 }

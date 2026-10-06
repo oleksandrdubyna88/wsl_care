@@ -8,39 +8,62 @@ using WslCare.Core.Hosting;
 
 namespace WslCare.Core.Archive;
 
+/// <summary>How far the open-file check got — a closed set (E9.S1 review round M1): only a COMPLETE scan lets a due unit move.</summary>
+public enum InUseState
+{
+    /// <summary>Every process of this account was read.</summary>
+    Complete,
+
+    /// <summary>The scan stopped at its ceiling (or the listing's time): what it did not reach may be open.</summary>
+    Cut,
+
+    /// <summary>The check did not run on this side (Windows until E9.S5).</summary>
+    NotChecked,
+}
+
 /// <summary>What is in use right now, as this process may see it (plan §15r D2.2, E9.S1).</summary>
 /// <param name="OpenFiles">Every file a process of this account holds open, as the distribution spells it.</param>
 /// <param name="ClaudeProjects">The Claude Code project folders a live Claude Code process works in (its working directory
 /// encoded as Claude names its project folder).</param>
-/// <param name="Checked">Whether the check ran at all; <c>false</c> on a side it is not built for yet.</param>
-/// <param name="Note">What the check could not see, or why it did not run; empty when it saw everything it looks at.</param>
-public sealed record InUseView(IReadOnlySet<string> OpenFiles, IReadOnlySet<string> ClaudeProjects, bool Checked, string Note)
+/// <param name="State">How far the check got; anything but <see cref="InUseState.Complete"/> keeps every due unit in place.</param>
+/// <param name="Note">What the check could not see, or why it did not run; empty when complete.</param>
+public sealed record InUseView(IReadOnlySet<string> OpenFiles, IReadOnlySet<string> ClaudeProjects, InUseState State, string Note)
 {
+    public static InUseView Complete(IReadOnlySet<string> openFiles, IReadOnlySet<string> claudeProjects) => new(openFiles, claudeProjects, InUseState.Complete, string.Empty);
+
+    public static InUseView Cut(IReadOnlySet<string> openFiles, IReadOnlySet<string> claudeProjects, string note) => new(openFiles, claudeProjects, InUseState.Cut, note);
+
     public static InUseView NotChecked(string why) =>
-        new(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.OrdinalIgnoreCase), false, why);
+        new(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.OrdinalIgnoreCase), InUseState.NotChecked, why);
 }
 
 /// <summary>
 /// Plan §15r D2.2: which files of a session are open, and which Claude Code projects an agent is working in — read from
 /// <c>/proc</c>: each process's <c>fd/*</c> links (read as links, never followed) and, for a process the catalogue attributes to
 /// Claude Code, its <c>cwd</c>. Only this account's processes can be read (another's <c>fd</c> folder refuses) — and the agents
-/// are this account's. Bounded by <c>archive.inUseScanSeconds</c>; a scan cut by its ceiling says so, and the selection then
-/// trusts nothing it did not see. Said honestly (§15r review M9): Claude Code keeps no transcript open between appends, so the
-/// descriptor scan rarely sees it — the working-directory check, the age and phase 2's no-replace renames are the guards.
+/// are this account's. Bounded by <c>archive.inUseScanSeconds</c> and by the time the caller has left; a scan cut by either says
+/// so, and the selection then keeps every due unit (E9.S1 review round M1). Said honestly (§15r review M9): Claude Code keeps no
+/// transcript open between appends, so the descriptor scan rarely sees it — the working-directory check, the age and phase 2's
+/// no-replace renames are the guards.
 /// </summary>
 public static class InUse
 {
     private const string ClaudeCode = "claude-code";
 
     /// <summary>The Windows side asks the Restart Manager (E9.S5); until then it says so.</summary>
-    public const string NotOnWindowsYet = "which files are open is not checked on Windows yet (the Restart Manager query is E9.S5); the run will check before it moves anything";
+    public const string NotOnWindowsYet = "which files are open is not checked on Windows yet (the Restart Manager query is E9.S5); every due session stays where it is until it is";
 
     public static TimeSpan Ceiling => Tuning.Current.Seconds(ConfigKeys.Archive.InUseScanSeconds);
 
+    /// <summary>The scan within <see cref="Ceiling"/>.</summary>
     public static InUseView Scan(IHostPaths paths, IFileSystem files, CancellationToken cancellationToken) =>
-        paths is LinuxHostPaths linux ? ScanProc(linux, files, cancellationToken) : InUseView.NotChecked(NotOnWindowsYet);
+        Scan(paths, files, Ceiling, cancellationToken);
 
-    private static InUseView ScanProc(LinuxHostPaths paths, IFileSystem files, CancellationToken cancellationToken)
+    /// <summary>The scan within <paramref name="ceiling"/> (the caller's time left, never above <see cref="Ceiling"/>).</summary>
+    public static InUseView Scan(IHostPaths paths, IFileSystem files, TimeSpan ceiling, CancellationToken cancellationToken) =>
+        paths is LinuxHostPaths linux ? ScanProc(linux, files, ceiling < Ceiling ? ceiling : Ceiling, cancellationToken) : InUseView.NotChecked(NotOnWindowsYet);
+
+    private static InUseView ScanProc(LinuxHostPaths paths, IFileSystem files, TimeSpan ceiling, CancellationToken cancellationToken)
     {
         var open = new HashSet<string>(StringComparer.Ordinal);
         var projects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -49,15 +72,15 @@ public static class InUse
         foreach (var pid in pids)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (watch.Elapsed > Ceiling)
+            if (watch.Elapsed > ceiling)
             {
-                return new InUseView(open, projects, true, $"the open-file scan stopped at its {Ceiling.TotalSeconds:0} s ceiling; what it did not see counts as in use");
+                return InUseView.Cut(open, projects, $"the open-file scan was cut at {ceiling.TotalSeconds:0.#} s; what it did not reach may be open, so every due session stays where it is");
             }
 
             Read(files, pid, open, projects);
         }
 
-        return new InUseView(open, projects, true, string.Empty);
+        return InUseView.Complete(open, projects);
     }
 
     private static void Read(IFileSystem files, string pid, HashSet<string> open, HashSet<string> projects)

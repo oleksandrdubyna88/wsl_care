@@ -6,9 +6,11 @@ using WslCare.Core.Hosting;
 namespace WslCare.Core.Archive;
 
 /// <summary>
-/// Where a base lies before any folder is looked at (plan §15r D7, E9.S0 review round S3, S4): in the distro, placed by the mount
-/// table — a Windows drive path at its drvfs mount, a bind mount at the folder it really is, the distribution's own disk known by
-/// its DEVICE; on Windows, a share refused when it is this machine or an administrative share.
+/// Where a base lies before any folder is looked at (plan §15r D7, E9.S0 review round S3, S4, E9.S1 review round B1, m2, m6, m7):
+/// the spelling refused when it holds an empty or <c>.</c> segment; the REAL path judged (links resolved — the link rule still
+/// refuses one on the way); in the distro, placed by the mount table — a Windows drive path at its drvfs mount, a bind or second
+/// mount at the folder it really is, the distribution's own disk known by its DEVICE, a drvfs mount of a share back to this
+/// machine refused; on Windows, a share refused when it is this machine or an administrative share.
 /// </summary>
 public static partial class BaseFolderRules
 {
@@ -19,11 +21,12 @@ public static partial class BaseFolderRules
         {
         }
 
-        /// <param name="Folder">The base as this side spells it.</param>
+        /// <param name="Folder">The base as this side spells it — its REAL path.</param>
         /// <param name="OnDisk">The same as this process opens it (under the sandbox root when sandboxed).</param>
+        /// <param name="SpelledOnDisk">The path as it was given, as this process opens it — what the link rule resolves.</param>
         /// <param name="WindowsSpelling">On a drvfs mount, the folder as Windows spells it (<c>C:\Users\me\x</c>); empty otherwise.</param>
         /// <param name="Notes">What the placement itself found (a bind mount followed).</param>
-        public sealed record Placed(string Folder, string OnDisk, MountView Mount, string WindowsSpelling, IReadOnlyList<string> Notes) : Placement;
+        public sealed record Placed(string Folder, string OnDisk, string SpelledOnDisk, MountView Mount, string WindowsSpelling, IReadOnlyList<string> Notes) : Placement;
 
         public sealed record Refused(string Rule, string Why) : Placement;
     }
@@ -34,7 +37,7 @@ public static partial class BaseFolderRules
     private static Placement Place(IHostPaths paths, IFileSystem files, string given) =>
         ShapeProblem(given) is { Length: > 0 } shape ? new Placement.Refused(BaseFolderRule.Shape, shape)
         : paths is LinuxHostPaths linux ? PlaceInDistro(linux, files, given)
-        : PlaceOnWindows(given);
+        : PlaceOnWindows(files, given);
 
     private static string ShapeProblem(string given) =>
         given.Length == 0 ? "no folder was given"
@@ -46,51 +49,59 @@ public static partial class BaseFolderRules
             ? new Placement.Refused(BaseFolderRule.Shape, $"{given} is a Windows share; inside the distribution name the folder where the share is mounted (a drvfs mount of it)")
             : ProcText.Read(files, paths.Rules.Join(paths.ProcRoot, "self", "mountinfo")) switch
             {
-                Reading<string>.Available table => InTable(paths, given, MountTable.Parse(table.Value)),
+                Reading<string>.Available table => InTable(paths, files, given, MountTable.Parse(table.Value)),
                 var unreadable => new Placement.Refused(BaseFolderRule.MountUnreadable, $"the mount table could not be read ({unreadable.ReasonOrEmpty}), so the filesystem the base lies on is unknown"),
             };
 
-    private static Placement InTable(LinuxHostPaths paths, string given, IReadOnlyList<MountEntry> mounts) =>
+    private static Placement InTable(LinuxHostPaths paths, IFileSystem files, string given, IReadOnlyList<MountEntry> mounts) =>
         given.StartsWith('/')
-            ? Placed(paths, Trimmed(given), mounts)
+            ? AtRealPath(paths, files, Trimmed(given), mounts)
             : DriveMount(mounts, given[0]) is { } drive
-                ? Placed(paths, Trimmed(drive.MountPoint.TrimEnd('/') + "/" + given[3..].Replace('\\', '/')), mounts)
+                ? AtRealPath(paths, files, Trimmed(drive.MountPoint.TrimEnd('/') + "/" + given[3..].Replace('\\', '/')), mounts)
                 : new Placement.Refused(BaseFolderRule.DriveNotMounted, $"drive {char.ToUpperInvariant(given[0])}: is not mounted in this distribution (no drvfs mount of the whole drive in the mount table); mount it, or choose a folder the distribution sees");
 
     private static MountEntry? DriveMount(IReadOnlyList<MountEntry> mounts, char letter) => mounts.LastOrDefault(m => MountTable.IsWholeDrive(m, letter));
 
-    private static Placement Placed(LinuxHostPaths paths, string folder, IReadOnlyList<MountEntry> mounts) => MountTable.Holding(mounts, folder) switch
+    /// <summary>B1: the mount checks run on the folder's REAL path (links resolved), never on its spelling.</summary>
+    private static Placement AtRealPath(LinuxHostPaths paths, IFileSystem files, string spelled, IReadOnlyList<MountEntry> mounts)
+    {
+        var spelledOnDisk = paths.DistroPath(spelled);
+        var real = files.ResolvePath(spelledOnDisk) is RealPathResult.Resolved resolved ? Trimmed(paths.ToDistro(resolved.Path)) : spelled;
+        return NotALoopbackShare(Placed(paths, real, spelledOnDisk, mounts));
+    }
+
+    private static Placement Placed(LinuxHostPaths paths, string folder, string spelledOnDisk, IReadOnlyList<MountEntry> mounts) => MountTable.Holding(mounts, folder) switch
     {
         null => new Placement.Refused(BaseFolderRule.MountUnreadable, $"the mount table names no filesystem holding {folder}, so what it lies on is unknown"),
-        var mount when IsCanonical(mount, mounts) => new Placement.Placed(folder, paths.DistroPath(folder), View(mount, mounts), WindowsSpelling(mount, folder), []),
-        var alias => ThroughAlias(paths, folder, alias, mounts),
+        var mount when BaseOf(mount, mounts) == mount => new Placement.Placed(folder, paths.DistroPath(folder), spelledOnDisk, View(mount, mounts), WindowsSpelling(mount, folder), []),
+        var alias => ThroughAlias(paths, folder, spelledOnDisk, alias, mounts),
     };
 
-    /// <summary>The one mount a device's folders are judged under: the filesystem's whole mount (root <c>/</c>) — the distribution's
-    /// own <c>/</c> when it is that disk, else the shortest mount point; none when the device is mounted whole nowhere.</summary>
-    private static MountEntry? CanonicalOf(MountEntry mount, IReadOnlyList<MountEntry> mounts) =>
-        mounts.Where(m => m.Root == "/" && m.Major == mount.Major && m.Minor == mount.Minor)
-            .OrderBy(m => m.MountPoint == "/" ? 0 : 1).ThenBy(m => m.MountPoint.Length).ThenBy(m => m.MountPoint, StringComparer.Ordinal)
-            .FirstOrDefault();
+    /// <summary>The mount a mount's folders are judged under (E9.S1 review round m7): among the mounts of the same device, the one
+    /// whose root is the mount's own root or an ancestor of it — the most whole one, the distribution's <c>/</c> first, then the
+    /// shortest mount point. A mount that is the only one of its device's subtree (a btrfs subvolume mounted on its own, a bind of a
+    /// folder whose filesystem nothing else shows) is its own: nothing visible aliases it.</summary>
+    private static MountEntry BaseOf(MountEntry mount, IReadOnlyList<MountEntry> mounts) =>
+        mounts.Where(m => m.Major == mount.Major && m.Minor == mount.Minor && IsSameOrUnder(mount.Root, m.Root))
+            .OrderBy(m => m.Root.Length).ThenBy(m => m.MountPoint == "/" ? 0 : 1).ThenBy(m => m.MountPoint.Length).ThenBy(m => m.MountPoint, StringComparer.Ordinal)
+            .First();
 
-    private static bool IsCanonical(MountEntry mount, IReadOnlyList<MountEntry> mounts) =>
-        mount.Root == "/" && CanonicalOf(mount, mounts) is { } canonical && canonical.MountPoint == mount.MountPoint;
+    private static bool IsSameOrUnder(string root, string ancestor) =>
+        ancestor == "/" || root == ancestor || root.StartsWith(ancestor.TrimEnd('/') + "/", StringComparison.Ordinal);
 
     /// <summary>E9.S0 review round S4: a bind mount — or a second mount of a filesystem — shows its folders under a new name:
-    /// <c>/mnt/x</c> may BE <c>~/.claude</c>. The base is judged at the folder it really is, under the device's canonical mount. A
-    /// device mounted whole nowhere is refused — where the folder really lies is then unknown.</summary>
-    private static Placement ThroughAlias(LinuxHostPaths paths, string folder, MountEntry alias, IReadOnlyList<MountEntry> mounts)
+    /// <c>/mnt/x</c> may BE <c>~/.claude</c>. The base is judged at the folder it really is, under its device's base mount.</summary>
+    private static Placement ThroughAlias(LinuxHostPaths paths, string folder, string spelledOnDisk, MountEntry alias, IReadOnlyList<MountEntry> mounts)
     {
-        if (CanonicalOf(alias, mounts) is not { } canonical)
-        {
-            return new Placement.Refused(BaseFolderRule.LinkOnTheWay, $"{folder} lies on a bind mount of {alias.Root} (device {alias.Major}:{alias.Minor}) whose filesystem is mounted whole nowhere here, so where it really lies is unknown");
-        }
-
-        var real = Trimmed(canonical.MountPoint.TrimEnd('/') + alias.Root.TrimEnd('/') + folder[alias.MountPoint.TrimEnd('/').Length..]);
-        return MountTable.Holding(mounts, real) is { } holding && IsCanonical(holding, mounts)
-            ? new Placement.Placed(real, paths.DistroPath(real), View(holding, mounts), WindowsSpelling(holding, real), [$"{folder} is {alias.Root} of the filesystem mounted at {canonical.MountPoint} (a bind or second mount at {alias.MountPoint}): judged where it really lies, {real}"])
+        var whole = BaseOf(alias, mounts);
+        var real = RootedOrSlash(Trimmed(whole.MountPoint.TrimEnd('/') + alias.Root[whole.Root.TrimEnd('/').Length..].TrimEnd('/') + folder[alias.MountPoint.TrimEnd('/').Length..]));
+        return MountTable.Holding(mounts, real) is { } holding && BaseOf(holding, mounts) == holding
+            ? new Placement.Placed(real, paths.DistroPath(real), spelledOnDisk, View(holding, mounts), WindowsSpelling(holding, real), [$"{folder} is {alias.Root} of the filesystem mounted at {whole.MountPoint} (a bind or second mount at {alias.MountPoint}): judged where it really lies, {real}"])
             : new Placement.Refused(BaseFolderRule.LinkOnTheWay, $"{folder} is {real} through a bind mount, and {real} is itself reached through another: refused rather than followed further");
     }
+
+    /// <summary>E9.S1 review round m6: the mount point of a second mount of the root disk IS <c>/</c>, never an empty path.</summary>
+    private static string RootedOrSlash(string path) => path.Length == 0 ? "/" : path;
 
     /// <summary>The distribution's own disk is its DEVICE (or its source), not the mount point <c>/</c>: a second mount of it is the
     /// same disk (E9.S0 review round S4).</summary>
@@ -100,26 +111,41 @@ public static partial class BaseFolderRules
     private static bool SameDisk(MountEntry mount, MountEntry root) =>
         (mount.Major == root.Major && mount.Minor == root.Minor) || (root.Source.StartsWith("/dev/", StringComparison.Ordinal) && mount.Source == root.Source);
 
-    /// <summary>A drvfs folder as Windows spells it: the mounted drive or share (<c>path=</c>, else the source) and the rest of the
-    /// path; empty for any other filesystem.</summary>
-    private static string WindowsSpelling(MountEntry mount, string folder)
-    {
-        var root = mount.Option("path") is { Length: > 0 } path ? path : mount.Source;
-        var rest = folder[mount.MountPoint.TrimEnd('/').Length..].Trim('/').Replace('/', '\\');
-        return !mount.IsDrvfs || root.Length < 2 ? string.Empty : rest.Length == 0 ? root : root.TrimEnd('\\') + "\\" + rest;
-    }
+    /// <summary>A drvfs folder as Windows spells it: the mounted drive or share and the rest of the path; empty for any other
+    /// filesystem.</summary>
+    private static string WindowsSpelling(MountEntry mount, string folder) =>
+        DrvfsRoot(mount) is { Length: >= 2 } root ? JoinWindows(root, folder[mount.MountPoint.TrimEnd('/').Length..].Trim('/').Replace('/', '\\')) : string.Empty;
 
-    private static Placement PlaceOnWindows(string given) =>
+    /// <summary>What a drvfs mount mounts — its <c>path=</c> option, else its source; empty when it is no drvfs mount.</summary>
+    private static string DrvfsRoot(MountEntry mount) =>
+        !mount.IsDrvfs ? string.Empty : mount.Option("path") is { Length: > 0 } path ? path : mount.Source;
+
+    private static string JoinWindows(string root, string rest) => rest.Length == 0 ? root : root.TrimEnd('\\') + "\\" + rest;
+
+    /// <summary>E9.S1 review round m2: a drvfs mount of a share back to this machine (<c>path=\\localhost\C$</c>) reaches the drive
+    /// under another name — refused as the Windows side refuses that share.</summary>
+    private static Placement NotALoopbackShare(Placement placement) =>
+        placement is Placement.Placed { WindowsSpelling: var windows } && WindowsShares.Alias(windows) is { Length: > 0 } alias
+            ? new Placement.Refused(BaseFolderRule.Shape, $"it lies on a drvfs mount of {windows}: {alias}")
+            : placement;
+
+    private static Placement PlaceOnWindows(IFileSystem files, string given) =>
         given.StartsWith('/') ? new Placement.Refused(BaseFolderRule.Shape, $"{given} is a Linux path; the Windows side names a drive folder (V:\\…) or a share (\\\\server\\share\\…)")
         : WindowsShares.Alias(given) is { Length: > 0 } alias ? new Placement.Refused(BaseFolderRule.Shape, alias)
-        : new Placement.Placed(given.TrimEnd('\\'), given.TrimEnd('\\'), WindowsMount(given), string.Empty, []);
+        : PlacedOnWindows(files.ResolvePath(given) is RealPathResult.Resolved real ? real.Path.TrimEnd('\\') : given.TrimEnd('\\'), given.TrimEnd('\\'));
+
+    private static Placement.Placed PlacedOnWindows(string real, string spelled) =>
+        new(RootedDrive(real), RootedDrive(real), RootedDrive(spelled), WindowsMount(real), string.Empty, []);
+
+    /// <summary>A drive's root keeps its separator (<c>V:\</c>, never <c>V:</c>, which names the drive's current folder).</summary>
+    private static string RootedDrive(string path) => path.Length == 2 && path[1] == ':' ? path + "\\" : path;
 
     /// <summary>The drive's kind and format, or the share — the Windows side's "mount".</summary>
     private static MountView WindowsMount(string folder)
     {
         if (folder.StartsWith(@"\\", StringComparison.Ordinal))
         {
-            var share = string.Join('\\', folder[2..].Split('\\').Take(2));
+            var share = string.Join('\\', folder[2..].Replace('/', '\\').Split('\\').Take(2));
             return new MountView(new BaseMountReport($@"\\{share}", "network", share), false, false);
         }
 
@@ -135,41 +161,4 @@ public static partial class BaseFolderRules
             return new MountView(BaseMountReport.Unknown, false, false);
         }
     }
-}
-
-/// <summary>
-/// E9.S0 review round S3: the shares that reach this machine's own folders under another spelling — the distribution's files
-/// (<c>\\wsl$</c>, <c>\\wsl.localhost</c>), a loopback name or this machine's name, an administrative share (<c>C$</c>,
-/// <c>ADMIN$</c>, <c>IPC$</c>). The overlap rule compares spellings and identities of THIS machine's folders; a share back to them
-/// would slip past both, so it is refused by its name.
-/// </summary>
-public static class WindowsShares
-{
-    private static readonly string[] DistroServers = ["wsl$", "wsl.localhost"];
-
-    private static readonly string[] Loopback = ["localhost", "127.0.0.1", "::1", "[::1]", "0--1.ipv6-literal.net", "."];
-
-    /// <summary>Why <paramref name="given"/> is a share this rule refuses; empty when it is none.</summary>
-    public static string Alias(string given) =>
-        given.StartsWith(@"\\", StringComparison.Ordinal) && given[2..].Split('\\') is [var server, var share, ..] ? Why(given, server, share) : string.Empty;
-
-    private static string Why(string given, string server, string share) =>
-        DistroServers.Contains(server, StringComparer.OrdinalIgnoreCase) ? $"{given} is the distribution's own files; name the folder inside the distribution, where its own process judges it"
-        : IsThisMachine(server) ? $"{given} names this machine ({server}); name the folder by its drive, so it is judged as the folder it is"
-        : IsAdministrative(share) ? $"{given} is an administrative share ({share}), a second spelling of a whole drive; name the folder by a share of its own or by its drive"
-        : string.Empty;
-
-    private static bool IsThisMachine(string server) =>
-        Loopback.Contains(server, StringComparer.OrdinalIgnoreCase) || server.StartsWith("127.", StringComparison.Ordinal) || IsMachineName(server);
-
-    /// <summary>This machine's name, bare or with a domain after it.</summary>
-    private static bool IsMachineName(string server) =>
-        string.Equals(server, Environment.MachineName, StringComparison.OrdinalIgnoreCase) || server.StartsWith(Environment.MachineName + ".", StringComparison.OrdinalIgnoreCase);
-
-    private static readonly string[] AdministrativeShares = ["ADMIN$", "IPC$"];
-
-    private static bool IsAdministrative(string share) => IsDriveShare(share) || AdministrativeShares.Contains(share, StringComparer.OrdinalIgnoreCase);
-
-    /// <summary><c>C$</c>: a whole drive, shared by Windows itself.</summary>
-    private static bool IsDriveShare(string share) => share.Length == 2 && char.IsAsciiLetter(share[0]) && share[1] == '$';
 }

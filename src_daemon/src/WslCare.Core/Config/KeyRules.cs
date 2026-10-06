@@ -59,11 +59,11 @@ public abstract record TextRule
     {
         public const int MaxLength = 1024;
 
-        public override string Describe => $"empty, or an absolute path (/…, X:\\… or \\\\server\\share\\…) of at most {MaxLength} characters without a .. segment";
+        public override string Describe => $"empty, or an absolute path (/…, X:\\… or \\\\server\\share\\…) of at most {MaxLength} characters without an empty, . or .. segment";
 
         public override string Problem(string value) => value.Length == 0 || IsAbsolutePath(value) ? string.Empty : $"not {Describe}";
 
-        private static bool IsAbsolutePath(string value) => IsBounded(value) && HasAbsoluteRoot(value) && !HasParentSegment(value);
+        private static bool IsAbsolutePath(string value) => IsBounded(value) && HasAbsoluteRoot(value) && !Hosting.PathSpelling.HasBadSegment(value);
 
         private static bool IsBounded(string value) => value.Length <= MaxLength && !value.Any(char.IsControl);
 
@@ -77,8 +77,6 @@ public abstract record TextRule
 
         /// <summary>A server and a share, the server no device marker (<c>\\?\</c>, <c>\\.\</c>).</summary>
         private static bool IsShareName(string server, string share) => server.Length > 0 && share.Length > 0 && server is not ("?" or ".");
-
-        private static bool HasParentSegment(string value) => value.Split('/', '\\').Contains("..", StringComparer.Ordinal);
     }
 
     /// <summary>Empty, or an HTTPS address under the ONE rule the command slot holds too

@@ -44,7 +44,7 @@ public sealed class InUseTests : IDisposable
 
         var seen = InUse.Scan(_sandbox.Paths, _sandbox.Files, CancellationToken.None);
 
-        seen.Checked.Should().BeTrue();
+        seen.State.Should().Be(InUseState.Complete);
         seen.OpenFiles.Should().Contain(["/home/me/.claude/projects/p/s1.jsonl", "/home/me/notes.txt"]);
         seen.ClaudeProjects.Should().Equal("-home-me-git-x");
         seen.Note.Should().BeEmpty();
@@ -55,7 +55,7 @@ public sealed class InUseTests : IDisposable
     {
         var paths = new WslCare.Core.Hosting.WindowsHostPaths(new WslCare.Core.Hosting.WindowsEnvironment(@"C:\Users\me", @"C:\Users\me\AppData\Roaming", @"C:\Users\me\AppData\Local", @"C:\ProgramData", @"C:\Users\me\AppData\Local\Temp"));
 
-        InUse.Scan(paths, _sandbox.Files, CancellationToken.None).Should().Match<InUseView>(v => !v.Checked && v.Note.Contains("E9.S5"));
+        InUse.Scan(paths, _sandbox.Files, CancellationToken.None).Should().Match<InUseView>(v => v.State == InUseState.NotChecked && v.Note.Contains("E9.S5"));
     }
 
     /// <summary>Plan §15q H3 carried to the archive: the selection lists names and stats entries — not one session file is opened,
@@ -72,7 +72,7 @@ public sealed class InUseTests : IDisposable
         using var watch = InotifyWatch.Over(root);
         var config = ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config;
 
-        var claude = Selection.Select(new SelectionInput(_sandbox.Paths, _sandbox.Files, config, DateTimeOffset.UtcNow, TimeZoneInfo.Utc, InUseView.NotChecked("a test"), _ => null))
+        var claude = Selection.Select(new SelectionInput(_sandbox.Paths, _sandbox.Files, config, DateTimeOffset.UtcNow, TimeZoneInfo.Utc, InUseView.Complete(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.OrdinalIgnoreCase)), _ => null))
             .Single(s => s.Entry.Id == "claude-code");
 
         claude.Due.Should().ContainSingle().Which.Files.Should().HaveCount(3, "the selection did list the session and its companions");
