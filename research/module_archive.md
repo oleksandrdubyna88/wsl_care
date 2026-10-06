@@ -95,6 +95,9 @@ Both built verbs run as the user; root is refused with exit 81.
   rename and the empty-folder removal act THROUGH a checked handle (the rename with its folder held, by `FILE_RENAME_INFO`
   without replace; the folder by its delete disposition, which a non-empty folder refuses). A source must be owned by this
   account's SID, as on Linux by its uid.
+- **Open, unmeasured (owner questions, plan §15r *E9.S2a gate round*):** whether the folder flush works on a Windows
+  NETWORK share — until measured, a level whose entry cannot be flushed refuses, so nothing moves there; and a source owned by
+  `Administrators` (an elevated process's file) is refused and stays, until the owner decides.
 - **Both:** creates never replace (`O_EXCL` / `CREATE_NEW`), renames never replace (`RENAME_NOREPLACE` / no replace flag), a
   removal acts only when the bytes hash equal to the archived copy, and every write is judged first by the deletion policy on
   the REAL paths.

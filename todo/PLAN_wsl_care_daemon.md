@@ -3556,6 +3556,14 @@ ACCEPTED and fixed in one `fix(daemon): E9.S2a gate round …` commit, each with
 shares read only; the rename's and folder's handles are the act) — but the open itself is by path, so a swap makes the act
 REFUSE (`Kept` / `Refused`), it never redirects it. Linux is unchanged (the descriptor chain had no such window).
 
+**Owner questions from the round (asked 2026-10-06, open — the coordinator's interim rulings stand until the owner answers).**
+
+- **A base on a Windows network share: the folder flush is UNMEASURED.** Whether `FlushFileBuffers` on an SMB folder handle
+  succeeds was not measured — nothing is written to the owner's share until the owner answers. Until then the behaviour is the
+  one built: a level whose new entry cannot be flushed REFUSES (`FolderBeneath.Refused`), so nothing is moved there.
+- **A Windows session file owned by `Administrators`** (an elevated process may create one) is refused as a source and stays
+  where it is — the safe direction — until the owner decides whether such a file may be archived when this account is a member.
+
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
 Every epic is its own branch from the previous epic's final commit, one review-gate code round over its
