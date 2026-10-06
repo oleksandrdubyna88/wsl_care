@@ -749,4 +749,22 @@ public sealed class ReleaseExtensionScriptFlows
         published.Exit.Should().Be(0, published.Stdout + published.Stderr);
         published.StdoutLines.Should().Contain("root_allowed=true");
     }
+
+    /// <summary>coai E6.S2 code round #0: the actions minimum is never BELOW the render minimum — Install daemon types the
+    /// actions minimum, so a lower one would install a daemon this extension refuses to render.</summary>
+    [Fact]
+    public async Task The_guard_refuses_an_actions_minimum_below_the_render_minimum()
+    {
+        Linux();
+        using var root = new TempRoot("ext-guard-actions-below");
+        var checkout = Make(root, min: "0.2.0", actions: "0.1.0", stamp: "Last verified: 2026-11-01 · installation · daemon 0.2.0");
+        // Both daemon releases answered as published, so the previous guard ADMITS this — the only defect is the order.
+        File.WriteAllText(Path.Combine(root.Path, "bin", "gh"), "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\ncase \"$*\" in *daemon-v0.1.0*) printf 'false\\tdaemon-v0.1.0\\n' ;; *daemon-v0.2.0*) printf 'false\\tdaemon-v0.2.0\\n' ;; *) exit 1 ;; esac\n");
+
+        var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
+
+        result.Exit.Should().Be(1, result.Stdout);
+        result.Stdout.Should().Contain("minDaemonForActions 0.1.0 is below minDaemonForRender 0.2.0");
+        File.Exists(checkout.GhLog).Should().BeFalse("refused on the artefact, before GitHub is asked");
+    }
 }
