@@ -80,14 +80,14 @@ test('the distribution stopped: "WSL stopped" — the client made no call that w
 });
 
 test('the client\'s outcomes become their short states: not installed, unsupported distro, needs a newer extension, Windows only', () => {
-  assert.equal(barView(failed('status', { kind: 'notInstalled', distro: 'Ubuntu' })).text, 'WSL Care: daemon not installed');
-  assert.equal(barView(failed('status', { kind: 'unsupportedDistro', distro: 'Ubuntu', detail: 'GLIBC_2.38' })).text, 'WSL Care: unsupported distro');
-  assert.equal(barView(failed('status', { kind: 'needsNewerExtension', schemaVersion: 2 })).text, 'WSL Care: needs a newer extension');
-  assert.equal(barView(failed('status', { kind: 'notWindows', platform: 'linux' })).text, 'WSL Care: Windows + WSL only');
+  assert.equal(barView(failed('status', { kind: 'notInstalled', distro: 'Ubuntu' })).text, 'AI OS Care: daemon not installed');
+  assert.equal(barView(failed('status', { kind: 'unsupportedDistro', distro: 'Ubuntu', detail: 'GLIBC_2.38' })).text, 'AI OS Care: unsupported distro');
+  assert.equal(barView(failed('status', { kind: 'needsNewerExtension', schemaVersion: 2 })).text, 'AI OS Care: needs a newer extension');
+  assert.equal(barView(failed('status', { kind: 'notWindows', platform: 'linux' })).text, 'AI OS Care: Windows + WSL only');
 });
 
 test('before the first answer the bar says it is checking', () => {
-  assert.equal(barView(undefined).text, 'WSL Care: checking…');
+  assert.equal(barView(undefined).text, 'AI OS Care: checking…');
 });
 
 const SAMPLES: readonly Failure[] = [

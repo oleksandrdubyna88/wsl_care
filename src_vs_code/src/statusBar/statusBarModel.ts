@@ -21,7 +21,7 @@ export interface BarView {
 
 export const RELEVANT_VERDICT_PREFIXES: readonly string[] = ['memory.', 'kernel.'];
 
-const CLICK = 'Click to open the WSL Care panel.';
+const CLICK = 'Click to open the AI OS Care panel.';
 
 const RANK: Readonly<Record<Verdict['level'], number>> = { ok: 0, unknown: 0, warn: 1, critical: 2 };
 const LEVEL_OF_RANK: readonly BarLevel[] = ['none', 'warn', 'critical'];
@@ -81,17 +81,17 @@ function answeredView(answer: StatusAnswer, distro: string): BarView {
 
   return {
     text: `WSL RAM ${used.text}% · swap ${swap.text}G · ${containers.text}`,
-    tooltip: [`WSL Care — ${distro}`, ...reasons, ...verdictLines(answer), CLICK].join('\n'),
+    tooltip: [`AI OS Care — ${distro}`, ...reasons, ...verdictLines(answer), CLICK].join('\n'),
     level: answer.verdicts === undefined ? 'none' : worstLevel(answer.verdicts),
   };
 }
 
-const CHECKING: BarView = { text: 'WSL Care: checking…', tooltip: `Asking the daemon for its status. ${CLICK}`, level: 'none' };
+const CHECKING: BarView = { text: 'AI OS Care: checking…', tooltip: `Asking the daemon for its status. ${CLICK}`, level: 'none' };
 
 function failureView(status: Exclude<VerbOutcome, { kind: 'answered' }>): BarView {
   const words = failureText(status);
 
-  return { text: status.kind === 'stopped' ? words.label : `WSL Care: ${words.label}`, tooltip: `${words.sentence}\n${CLICK}`, level: 'none' };
+  return { text: status.kind === 'stopped' ? words.label : `AI OS Care: ${words.label}`, tooltip: `${words.sentence}\n${CLICK}`, level: 'none' };
 }
 
 export function barView(status: VerbOutcome | undefined): BarView {

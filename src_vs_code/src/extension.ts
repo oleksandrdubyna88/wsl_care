@@ -12,7 +12,7 @@ import { StatusBar } from './statusBar/statusBar';
 import { clientRunner, type WslCareTestApi } from './testApi';
 
 /**
- * WSL Care — the read-only extension over the `wsl-care` daemon (plan §7, E5). It runs on the Windows side
+ * AI OS Care — the read-only extension over the `wsl-care` daemon (plan §7, E5). It runs on the Windows side
  * (`extensionKind: ["ui"]`) and reaches the daemon only through `WslCareClient`, which starts the absolute
  * `%SystemRoot%\System32\wsl.exe` with one of four read-only verbs; no root call path exists in it (§15f #5).
  *

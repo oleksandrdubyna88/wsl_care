@@ -1,4 +1,4 @@
-// The WSL Care panel's page script (plan §7.2, §15g M7). Loaded from media/ by the static shell of
+// The AI OS Care panel's page script (plan §7.2, §15g M7). Loaded from media/ by the static shell of
 // src/panel/panelHtml.ts under a nonce-only CSP. It receives ONE kind of message — { type: 'view', view } built by the
 // host's view model (src/panel/viewModel.ts) — and builds the DOM from it with createElement and textContent ONLY:
 // no innerHTML, no markup strings, nothing parsed. Every value is text; a process name of '</script><img …>' is shown

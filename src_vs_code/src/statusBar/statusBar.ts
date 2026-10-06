@@ -22,7 +22,7 @@ export class StatusBar implements vscode.Disposable {
 
   constructor(store: OutcomeStore, openCommand: string) {
     this.item = vscode.window.createStatusBarItem('wslCare.status', vscode.StatusBarAlignment.Left, 50);
-    this.item.name = 'WSL Care';
+    this.item.name = 'AI OS Care';
     this.item.command = openCommand;
     this.apply(barView(store.snapshot().status));
     this.unsubscribe = store.onChange((snapshot) => this.apply(barView(snapshot.status)));

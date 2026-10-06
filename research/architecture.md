@@ -91,7 +91,7 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   bodies `rulesets/tags-daemon.json` and `rulesets/branch-main.json` — with `release-please-config.json`,
   `.release-please-manifest.json` and `.coderabbit.yaml` at the root and the owner's commands in `docs/repo-settings.md`
   (section *The release pipeline*).
-- **`src_vs_code/`** (E5.S1) — the VS Code extension: `package.json` (WSL Care, 0.0.0, `extensionKind ["ui"]`,
+- **`src_vs_code/`** (E5.S1) — the VS Code extension: `package.json` (AI OS Care — id `ai-os-care`, publisher `remsoftdev`, renamed from *WSL Care* on 2026-10-06; 0.0.0, `extensionKind ["ui"]`,
   `engines.vscode ^1.85.0`, two application-scoped settings), `src/process/runner.ts` (the one process launcher),
   `src/process/runnerSelection.ts`, `src/client/` (`WslCareClient`, the closed `VERBS`, the handshake, the failure
   reading, the exit-code names), `src/wsl/` (the launcher path, UTF-16LE, distribution names), `src/test/` (unit,
@@ -1739,7 +1739,7 @@ watches `/src_vs_code` weekly, holding `@types/vscode` at 1.85.0 (major and mino
 ## The extension: status bar, read-only panel and polling (E5.S2)
 
 E5.S2 hangs the first visible surface on E5.S1's client: a **status-bar item**, a **read-only panel** (a `WebviewView`
-in its own activity-bar container "WSL Care"), and the **poller** that decides when the daemon is asked. All three read
+in its own activity-bar container "AI OS Care"), and the **poller** that decides when the daemon is asked. All three read
 ONE store of the newest outcome per verb, so the bar and the panel can never disagree about what the daemon last said.
 Still read-only and root-free: the same four verbs, the bundle scan unchanged (it caught the shell's first draft —
 `<main id="root">` spells the forbidden word — and the element became `id="panel"`).
@@ -1762,7 +1762,7 @@ allocation-failure / OOM alerts — as `statusBarItem.warningBackground` (warn) 
 (critical), theme colours; `ok` and `unknown` colour nothing, and the clock / systemd / collector warnings of the head
 golden leave it uncoloured on purpose. A daemon without `verdicts` → uncoloured, the tooltip says "update the daemon to
 see warnings". A figure answered `available: false` is `?`, never 0, with its reason in the tooltip. Failures are their
-short state: "WSL stopped" (no call was made into the distribution), "WSL Care: daemon not installed", "… unsupported
+short state: "WSL stopped" (no call was made into the distribution), "AI OS Care: daemon not installed", "… unsupported
 distro", "… needs a newer extension", "… Windows + WSL only" (the non-win32 notice — nothing is asked off Windows). A
 click opens the panel (`wslCare.openPanel`).
 
@@ -1940,8 +1940,8 @@ both legs (xvfb on `ubuntu-24.04`, the downloads cached).
 Three things, none of which runs anything privileged: *Install daemon* TYPES a pinned command for the person; the
 universal `.vsix` is checked as an ARTEFACT before it can ship; and `release-extension.yml` publishes it — the GitHub
 draft first, the Marketplace second, public last — behind a guard that refuses until the minimum daemon is out and was
-seen working. Nothing is released yet (the publisher, the Environment and the tag ruleset are the E5 live gate's,
-`docs/repo-settings.md` steps 9–11).
+seen working. Nothing is released yet (the publisher `remsoftdev` was created on 2026-10-06; the Environment and the tag ruleset are
+the E5 live gate's, `docs/repo-settings.md` steps 9–11).
 
 ### *Install daemon* (plan §15g m2, §15f #5)
 
@@ -2014,8 +2014,10 @@ sequenceDiagram
 - **Marketplace metadata** — `icon` (`media/icon.png`, 256 px, drawn by `src/test/support/iconPng.ts`: no third-party art,
   only IHDR/IDAT/IEND, held to its recipe by its pixels), `pricing: Free`, `repository` / `bugs` / `homepage` (https),
   `categories`, `keywords`, `galleryBanner`, `preview: true`; a README with no images (screenshots are a live-gate item:
-  no synthetic-fixture pipeline exists here); `CHANGELOG.md` written by release-please. The publisher stays the
-  placeholder `publisher-tbd` until the owner creates the real id.
+  no synthetic-fixture pipeline exists here); `CHANGELOG.md` written by release-please. The publisher is the
+  owner's `remsoftdev` (2026-10-06), so the Marketplace id is `remsoftdev.ai-os-care`; the guard and `--release`
+  still refuse the placeholder `publisher-tbd`. `vsce package` writes `<name>-<version>.vsix` — `ai-os-care-<version>.vsix`
+  — and `check-vsix.mjs` reads both from `package.json` for its default.
 - **On every pull request** `ci · extension` packages and runs the checks on both legs (job names unchanged); the
   release's build job runs the same with `--release`.
 

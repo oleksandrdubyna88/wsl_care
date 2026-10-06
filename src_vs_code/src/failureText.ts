@@ -20,11 +20,11 @@ function lines(messages: readonly string[]): string {
 }
 
 const WORDS: Words = {
-  notWindows: (f) => ({ label: 'Windows + WSL only', sentence: `WSL Care runs on Windows with WSL; this window runs on ${f.platform}, so nothing is asked.` }),
+  notWindows: (f) => ({ label: 'Windows + WSL only', sentence: `AI OS Care runs on Windows with WSL; this window runs on ${f.platform}, so nothing is asked.` }),
   wslMissing: (f) => ({ label: 'WSL not found', sentence: `wsl.exe was not found: ${f.detail}.` }),
   distroRefused: (f) => ({ label: 'distribution refused', sentence: `The distribution "${f.distro}" was refused: ${f.reason}. Check the wslCare.distro setting.` }),
   noDefaultDistro: (f) => ({ label: 'no default distribution', sentence: `${f.detail}. Set wslCare.distro to the distribution to show.` }),
-  stopped: (f) => ({ label: 'WSL stopped', sentence: `The distribution "${f.distro}" is not running. WSL Care makes no call that would start it — use "Start WSL and check" in the panel.` }),
+  stopped: (f) => ({ label: 'WSL stopped', sentence: `The distribution "${f.distro}" is not running. AI OS Care makes no call that would start it — use "Start WSL and check" in the panel.` }),
   wslFailed: (f) => ({ label: 'WSL failed', sentence: `wsl.exe failed: ${f.message}` }),
   notInstalled: (f) => ({ label: 'daemon not installed', sentence: `The wsl-care daemon is not installed in "${f.distro}" (/opt/wsl-care/bin/wsl-care is missing).` }),
   unsupportedDistro: (f) => ({ label: 'unsupported distro', sentence: `"${f.distro}" is too old for the daemon (it needs Ubuntu 24.04 or newer, glibc 2.39): ${f.detail}` }),

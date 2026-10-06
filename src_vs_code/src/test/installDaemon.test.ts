@@ -81,7 +81,7 @@ test('confirmed: the distribution is resolved first, then the modal, then ONE te
   const { deps: d, seen } = deps(() => Promise.resolve(UBUNTU), true);
   assert.deepEqual(await installDaemon(d), { kind: 'typed', distro: 'Ubuntu' });
   assert.deepEqual(seen.events, ['target', 'confirm', 'openTerminal', 'show', 'sendText']);
-  assert.deepEqual(seen.terminals, [{ name: 'WSL Care — install (Ubuntu)', shellPath: WSL, shellArgs: ['-d', 'Ubuntu', '--cd', '~'] }]);
+  assert.deepEqual(seen.terminals, [{ name: 'AI OS Care — install (Ubuntu)', shellPath: WSL, shellArgs: ['-d', 'Ubuntu', '--cd', '~'] }]);
   assert.deepEqual(seen.typed, [{ text: INSTALL_COMMAND, addNewLine: false }], 'sendText(command, false): typed, never run');
 });
 

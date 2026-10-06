@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The extension release's asset set (E5.S3, plan §15g M5): a folder holds EXACTLY `wsl-care-<version>.vsix` and
-# `wsl-care-<version>.vsix.sha256`, and the .sha256 is one line `<sha-256>  wsl-care-<version>.vsix` that matches the file.
+# The extension release's asset set (E5.S3, plan §15g M5): a folder holds EXACTLY `ai-os-care-<version>.vsix` and
+# `ai-os-care-<version>.vsix.sha256`, and the .sha256 is one line `<sha-256>  ai-os-care-<version>.vsix` that matches the file.
 # release-extension.yml runs it on what the build produced, on what it uploaded to the draft (downloaded back), before
 # the Marketplace publishes that file, and before the draft goes public — so what goes public is what was checked.
 #
@@ -21,13 +21,13 @@ refuse() {
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || refuse "'$version' is not an x.y.z version"
 [ -d "$dir" ] || refuse "$dir is not a folder"
 
-vsix="wsl-care-$version.vsix"
+vsix="ai-os-care-$version.vsix"
 expected="$(printf '%s\n%s\n' "$vsix" "$vsix.sha256")"
 present="$(cd "$dir" && find . -mindepth 1 -maxdepth 1 -printf '%f\n' | LC_ALL=C sort)"
 [ "$present" = "$expected" ] || refuse "$dir holds [$(printf '%s' "$present" | tr '\n' ' ')], expected exactly [$vsix $vsix.sha256]"
 
 line="$(cat "$dir/$vsix.sha256")"
-[[ "$line" =~ ^[0-9a-f]{64}\ \ wsl-care-[0-9.]+\.vsix$ ]] || refuse "$vsix.sha256 is not one '<sha-256>  $vsix' line"
+[[ "$line" =~ ^[0-9a-f]{64}\ \ ai-os-care-[0-9.]+\.vsix$ ]] || refuse "$vsix.sha256 is not one '<sha-256>  $vsix' line"
 [ "${line#*  }" = "$vsix" ] || refuse "$vsix.sha256 names '${line#*  }', not $vsix"
 (cd "$dir" && sha256sum --check --status "$vsix.sha256") || refuse "$vsix does not match its .sha256"
 

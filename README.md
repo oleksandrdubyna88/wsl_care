@@ -7,7 +7,7 @@ extension that shows the state and runs cleanups on demand.
 | Folder | Holds |
 |---|---|
 | `src_daemon/` | the C# Native AOT daemon/CLI `wsl-care` — today the foundation seams, the `config` verbs, `status` (memory, processes, containers, disk), `preview` (what each Docker cleanup would free), the full run `collect`, `doctor`, the container-start follower `events follow`, and the action engine behind `act` with every cleanup — the journal vacuum, the irreversible ones (A4–A9, A11, A12, A14, A17, and the button-only A18 of E7.S2b) and A1–A3, A15, A16 — all built and shipping in `daemon-v0.1.0` |
-| `src_vs_code/` | the VS Code extension WSL Care — in development, read-only: its client of the daemon, the status bar and the read-only panel, and their tests — [Extension (preview)](#extension-preview) below |
+| `src_vs_code/` | the VS Code extension **AI OS Care** (Marketplace id `remsoftdev.ai-os-care`) — in development, read-only: its client of the daemon, the status bar and the read-only panel, and their tests — [Extension (preview)](#extension-preview) below |
 | [todo/](todo/README.md) | open plans |
 | [research/](research/) | measurements of the system as it is — start with [the 2026-10-02 baseline](research/2026-10-02_wsl_resource_baseline.md) and [the architecture](research/architecture.md) |
 | `research/diagnostics/` | the read-only scripts that produced the baseline |
@@ -512,12 +512,14 @@ Antigravity's `brain/` and annotations).
 
 ## Extension (preview)
 
-`src_vs_code/` is the VS Code extension **WSL Care** — in development (E5), not published yet. What exists today
+`src_vs_code/` is the VS Code extension **AI OS Care** — Marketplace id `remsoftdev.ai-os-care` (publisher `remsoftdev`,
+the extension id `ai-os-care`; both permanent) — in development (E5), not published yet. The daemon it shows keeps its
+name, `wsl-care`; the settings and commands keep their `wslCare.*` keys. What exists today
 (E5.S1–E5.S3): its client, a **status-bar item**, a **read-only panel**, ***Install daemon***, and its packaging and
-release pipeline as files and tests (the publisher id in `package.json` is a placeholder until the owner creates it —
-the E5 live gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-settings.md) steps 9–11).
+release pipeline as files and tests (the publisher `remsoftdev` was created by the owner on 2026-10-06 — the E5 live
+gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-settings.md) steps 9–11).
 
-- ***Install daemon*** (the panel's button when the daemon is not installed, and *WSL Care: Install daemon…*): the
+- ***Install daemon*** (the panel's button when the daemon is not installed, and *AI OS Care: Install daemon…*): the
   distribution is validated first (the setting's pattern, then `wsl.exe --list`); a modal shows the exact command and
   what the distribution needs (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0 or newer, `sudo`); on confirmation a
   terminal opens in that distribution, in your home folder, with the command TYPED, never run — `curl -fsSL
@@ -531,7 +533,7 @@ the E5 live gate; the Marketplace listing is the owner's, [docs/repo-settings.md
   or kernel verdict the daemon reports; "WSL stopped" when the distribution is not running; "daemon not installed",
   "unsupported distro" or "needs a newer extension" when that is the answer. A daemon too old to report verdicts leaves
   it uncoloured and says so in the tooltip. A click opens the panel.
-- **The panel** (the *WSL Care* icon in the activity bar) shows Memory, Top holders, Swap, Disk, Folders, Containers,
+- **The panel** (the *AI OS Care* icon in the activity bar) shows Memory, Top holders, Swap, Disk, Folders, Containers,
   Container starts, Cleanup (read-only: what each cleanup would free — no buttons yet), Health, AI agents and Last
   cleanup. A row the daemon cannot fill yet says when it arrives ("arrives in E6 — …"); a figure the daemon could not
   read says why ("unavailable — <reason>"); nothing is ever shown as a made-up 0. Its buttons: **Refresh**, **Settings**
@@ -562,7 +564,7 @@ npm run typecheck && npm run lint
 npm test        # compile, bundle (dist/extension.js), then every test — no test can start the real wsl.exe
 npm run test:host   # the extension in a real VS Code 1.85.0 and stable (downloads into .vscode-test/; xvfb-run on Linux)
 npm run fieldmap:doc   # rewrite the panel's field-map table in research/architecture.md from src/panel/fieldMap.ts
-npm run package        # vsce package: wsl-care-<version>.vsix (runs the stamped bundle first)
+npm run package        # vsce package: ai-os-care-<version>.vsix (runs the stamped bundle first)
 npm run check:vsix     # the leak checks on that .vsix (after npm test, which compiles the checker)
 npm run icon:make      # redraw media/icon.png from its recipe (src/test/support/iconPng.ts) — no third-party art
 ```
@@ -617,7 +619,7 @@ publish) first runs on a release day.
 - optionally `SONAR_TOKEN` (Actions AND Dependabot stores) with the SonarCloud project `remsoftdev_wsl_care` — until
   then `sonarcloud.yml` skips with a warning;
 - the CodeRabbit App enabled for this repository (`.coderabbit.yaml` is read from then on);
-- for the extension (the E5 live gate): the Marketplace publisher, the `marketplace` Environment (a required reviewer,
+- for the extension (the E5 live gate): the Marketplace publisher (done 2026-10-06: `remsoftdev`), the `marketplace` Environment (a required reviewer,
   `extension-v*` tags only) with `VSCE_PAT` — or OIDC through `--azure-credential`, recommended because global Azure
   DevOps PATs stop working on 2026-12-01 — and the tag ruleset `.github/rulesets/tags-extension.json` (steps 9–11).
 
@@ -650,7 +652,7 @@ it is fixed forward with the next patch — an `extension-v*` tag is never moved
 first — that `release-extension.yml` built exactly these bytes:
 
 ```bash
-gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && gh attestation verify wsl-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml && code --install-extension wsl-care-<previous>.vsix
+gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' && gh attestation verify ai-os-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml && code --install-extension ai-os-care-<previous>.vsix
 ```
 
 — or ship the next patch. Every extension release keeps its `.vsix` and `.sha256` as release assets, which do not

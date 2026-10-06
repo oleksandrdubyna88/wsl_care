@@ -47,7 +47,7 @@ export function panelShell(parts: ShellParts): string {
     `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}';">`,
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<link rel="stylesheet" nonce="${nonce}" href="${styleUri}">`,
-    '<title>WSL Care</title>',
+    '<title>AI OS Care</title>',
     '</head>',
     '<body>',
     '<main id="panel"></main>',
