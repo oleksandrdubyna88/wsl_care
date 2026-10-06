@@ -31,13 +31,14 @@ public sealed class RetroPr17Tests
     [Fact]
     public void Parsing_ten_thousand_process_keys_allocates_linearly_not_quadratically()
     {
-        string[] args = ["act", "A18", "--confirm", .. Enumerable.Range(1, 10_000).SelectMany(i => new[] { "--process", $"{i + 100}:{123456789 + i}" })];
+        var keys = Enumerable.Range(1, 10_000).Select(i => $"{i + 100}:{123456789 + i}").ToList();
+        string[] args = ["act", "A18", "--confirm", .. keys.SelectMany(k => new[] { "--process", k })];
 
         var before = GC.GetAllocatedBytesForCurrentThread();
         var request = CommandLine.Parse(args);
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        request.Should().BeOfType<Request.Act>((request as Request.Failed)?.Message).Which.Processes.Should().HaveCount(10_000);
+        request.Should().BeOfType<Request.Act>((request as Request.Failed)?.Message).Which.Processes.Should().Equal(keys, "every key, in the order given");
         allocated.Should().BeLessThan(64L * 1024 * 1024, "ten thousand keys are a few hundred kilobytes; a copy per key is hundreds of megabytes");
     }
 }
