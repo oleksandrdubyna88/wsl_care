@@ -23,6 +23,8 @@ export const DAEMON_EXIT = {
   observeOnly: 78,
   stateUnreadable: 79,
   requestGone: 80,
+  /** E7 (#17): a verb that must not run as uid 0 was run as root — the distribution's default user is root. */
+  notAsRoot: 81,
   interrupted: 130,
 } as const;
 

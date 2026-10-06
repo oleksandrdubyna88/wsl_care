@@ -8,6 +8,7 @@ import { classifyExit, launchFailure, wslRefusal } from './failures';
 import { checkedBody, parseAnswer, parseDaemonVersion, versionRefusal } from './handshake';
 import type { Answer, DaemonVersion, Failure, JsonObject, ReadOutcome, VerbOutcome } from './outcome';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import type { DaemonLimits } from '../shared/daemonLimits';
 import { ceilingMs } from './ceilings';
 import { PREVIEW_CONTAINER_ASSUMPTION, runReadTail, VERBS, type RunRead, type Verb } from './verbs';
 
@@ -48,6 +49,8 @@ export interface ClientOptions {
   readonly distroSetting: () => unknown;
   /** The number settings (`settings/numbers.ts`), read at every call — the call ceilings come from them; the defaults when absent. */
   readonly numbers?: () => Numbers;
+  /** The daemon's published limits (`status.limits`, from the store); the fallback when absent. */
+  readonly limits?: () => DaemonLimits;
 }
 
 /** How one call may treat a stopped distribution. */
@@ -319,7 +322,7 @@ export class WslCareClient {
 
   /** The call's ceiling, from the number settings as they are NOW (`client/ceilings.ts`). */
   private ceiling(call: Verb | 'runRead'): number {
-    return ceilingMs(this.options.numbers?.() ?? DEFAULT_NUMBERS, { call });
+    return ceilingMs(this.options.numbers?.() ?? DEFAULT_NUMBERS, { call }, this.options.limits?.());
   }
 
   /** The answer, judged against the daemon version: a released daemon below the minimum blanks the view. */

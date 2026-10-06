@@ -139,3 +139,12 @@ test('E6.S3 review C2: "Docker after" with a type Docker could not size says "at
   types[0] = { ...types[0], reclaimable: { available: false, reason: 'not read' } };
   assert.match(deriveCleanup(snapshot(headBody('status'), preview), IDLE).controls.dockerAfter, /: at least \d+\.\d GB reclaimable, 1 type not read \(docker system df, read at /);
 });
+
+test('E7 (#17): A18 in status.actions changes no cleanup row — it is not a preview --all row, and the buttons stay as they were', () => {
+  const status = headBody('status');
+  assert.ok((status.actions as string[]).includes('A18'));
+  const without = { ...status, actions: (status.actions as string[]).filter((id) => id !== 'A18') };
+  const withA18 = deriveCleanup(snapshot(status), IDLE).controls;
+  assert.deepEqual(withA18, deriveCleanup(snapshot(without), IDLE).controls);
+  assert.ok(!withA18.rows.some((r) => (r.rowId as string) === 'A18'));
+});

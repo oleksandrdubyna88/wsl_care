@@ -96,9 +96,10 @@ ceiling can never be set at or below the daemon's own worst case for that call: 
 | `wslCare.cleanup.journalEntries` | 32 | 4–256 | How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped. |
 | `wslCare.logs.maxRunIndex` | 9999 | 100–100000 | The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read). |
 
-Two numbers are NOT settings, because they mirror the daemon and a second copy could drift: the days of history it keeps
-and the clock skew it allows. They are read from the daemon's own `status` answer (`limits`) and are 90 days and 5
-minutes until a daemon says otherwise.
+Some numbers are NOT settings, because they mirror the daemon and a second copy could drift: the days of history it
+keeps, the clock skew and grace it allows a request, how long it waits after a killed command and for `systemctl stop`.
+They are read from the daemon's own `status` answer (`limits`), each with its default until a daemon says otherwise —
+and every call's ceiling is raised, when needed, to stay above the daemon's worst case under them.
 
 ## Workspace trust
 

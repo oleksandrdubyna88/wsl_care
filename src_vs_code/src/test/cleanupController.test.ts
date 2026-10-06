@@ -111,6 +111,16 @@ test('ids are the compiled registry ∩ status.actions: an id the daemon does no
   assert.deepEqual(w.runner.argvs(), []);
 });
 
+test('E7 (#17): A18 in status.actions is tolerated but never acted on by the E6 controller — its confirm needs --process, the button of E7.S4: refused before any root call, and A4 beside it still previews', async () => {
+  assert.ok((headBody('status').actions as string[]).includes('A18'), 'the head golden reports A18 (daemon #17)');
+  const w = world();
+  const outcome = await w.controller.preview(['A18']);
+  assert.ok(outcome.kind === 'idsRefused', JSON.stringify(outcome));
+  assert.deepEqual(outcome.refused, ['A18']);
+  assert.ok(!(outcome.allowed as readonly string[]).includes('A18'), 'not in what the gate allows');
+  assert.deepEqual(w.runner.argvs(), []);
+});
+
 test('an id outside the compiled registry, or none at all, is refused before any root call', async () => {
   for (const ids of [['A99'], ['--timer'], ['A4,A5'], []]) {
     const w = world();
@@ -589,4 +599,12 @@ test('Run full check now: exactly collect --detach --json — never --timer — 
   const w = world({ script: { [FULL_CHECK]: exited(0, handOff('accepted', 'collect')) } });
   assert.equal((await w.controller.runFullCheck()).kind, 'accepted');
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, FULL_CHECK]);
+});
+
+test('#17: a root call is sized under the limits of the fresh status — a daemon whose drain is 10 s gets a detach ceiling above its 1 215 s', async () => {
+  const status = { ...headBody('status'), limits: { ...(headBody('status').limits as Record<string, unknown>), drainGraceMilliseconds: 10_000 } };
+  const w = world({ status, script: { [FULL_CHECK]: exited(0, handOff('accepted', 'collect')) } });
+  await w.controller.runFullCheck();
+  const detach = w.runner.requests.find((r) => r.args.includes('collect'));
+  assert.equal(detach?.timeoutMs, (1215 + 10) * 1000);
 });

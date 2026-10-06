@@ -50,6 +50,11 @@ function fromSignature(code: number, lines: readonly string[], distro: string, d
   return code === DAEMON_EXIT.runFailed && lines.some((line) => missing.test(line)) ? { kind: 'notInstalled', distro } : undefined;
 }
 
+/** The codes whose reading names the distribution (its fix is a setting of that distribution). */
+function byDistroCode(code: number, distro: string, messages: readonly string[]): Failure | undefined {
+  return code === DAEMON_EXIT.notAsRoot ? { kind: 'notAsRoot', distro, messages } : undefined;
+}
+
 function byCode(code: number, messages: readonly string[]): Failure {
   switch (code) {
     case DAEMON_EXIT.usage:
@@ -70,7 +75,7 @@ export function classifyExit(code: number, stdout: Buffer, stderr: Buffer, distr
   }
   const text = stripAnsi(decodeWslText(stderr));
 
-  return fromSignature(code, textLines(text), distro, daemonPath) ?? byCode(code, daemonMessages(text));
+  return fromSignature(code, textLines(text), distro, daemonPath) ?? byDistroCode(code, distro, daemonMessages(text)) ?? byCode(code, daemonMessages(text));
 }
 
 type NotExited = Exclude<ProcessResult, { kind: 'exited' }>;

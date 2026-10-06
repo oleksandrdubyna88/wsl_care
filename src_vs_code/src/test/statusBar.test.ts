@@ -97,6 +97,7 @@ const SAMPLES: readonly Failure[] = [
   { kind: 'internalDefect', messages: [] }, { kind: 'interrupted' }, { kind: 'timedOut', timeoutMs: 1 },
   { kind: 'unknownFailure', code: 9, messages: [] }, { kind: 'unparseable', detail: 'd' }, { kind: 'needsNewerExtension', schemaVersion: 2 },
   { kind: 'daemonTooOld', version: '0.0.9', minimum: '0.1.0' }, { kind: 'previewTooManyContainers', containers: 140, timeoutMs: 330_000 }, { kind: 'readRefused', detail: 'that run id is not one the daemon writes' },
+  { kind: 'notAsRoot', distro: 'x', messages: [] },
 ];
 
 test('every failure kind has a short label and a sentence, and the kind list is complete', () => {

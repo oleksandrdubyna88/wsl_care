@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { DEFAULT_NUMBERS } from '../settings/numbers';
+import { failureText } from '../failureText';
+import { FALLBACK_LIMITS } from '../shared/daemonLimits';
 
 import type { VerbOutcome } from '../client/outcome';
 import { DISTRO_NAME } from '../wsl/distros';
@@ -391,4 +393,23 @@ test('§15p: the wsl.exe questions\' ceiling reads its setting (wslCare.timeouts
   const c = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '', numbers: () => ({ ...DEFAULT_NUMBERS, wslListSeconds: 40 }) });
   await c.run('status');
   assert.ok(rec.requests.length > 0 && rec.requests.every((r) => r.timeoutMs === 40_000), JSON.stringify(rec.requests.map((r) => r.timeoutMs)));
+});
+
+test('E7 (#17): exit 81 reads as notAsRoot — the default user is root — with the fix: set a default user for that distribution', async () => {
+  const stderr = 'wsl-care: agents probe runs as the user who owns the CLI, not as uid 0: set the distribution\'s default user\n';
+  const { c } = client({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', ['status', '--json'])]: exited(81, '', stderr) });
+  const outcome = await c.run('status');
+  assert.ok(outcome.kind === 'notAsRoot', JSON.stringify(outcome));
+  assert.equal(outcome.distro, 'Ubuntu');
+  const words = failureText(outcome);
+  assert.match(words.sentence, /wsl\.exe --manage Ubuntu --set-default-user <user>/);
+  assert.match(words.sentence, /\[user\] default=<user>/);
+  assert.equal(words.label, 'runs as uid 0');
+});
+
+test('#17: a call\'s ceiling rises with the daemon\'s published drain grace — preview with a 10 s drain waits 420 s, not the 350 s default', async () => {
+  const rec = recordingRunner({ ...wslAnswers(['Ubuntu'], ['Ubuntu'], 'Ubuntu'), [daemonArgv('Ubuntu', ['preview', '--all', '--json'])]: exited(0, JSON.stringify(golden('head', 'preview'))) });
+  const c = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => '', limits: () => ({ ...FALLBACK_LIMITS, drainGraceMs: 10_000 }) });
+  await c.run('preview');
+  assert.equal(rec.requests.find((r) => r.args.includes('preview'))?.timeoutMs, 420_000);
 });

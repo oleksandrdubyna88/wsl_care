@@ -2769,9 +2769,13 @@ ceiling's minimum its worst case + 10 s; `client/ceilings.ts` turns the settings
 call by the client, the root calls, the controller's unknown-detach follow, the durable poll, the flow's preview expiry,
 the journal's budget and the Logs page's index bound, the follower's read tries, backoff and batch, the preview rounds, the
 tombstone life and the `wsl.exe --list` ceiling. A detach past its ceiling stays "outcome unknown", followed. Values that
-MIRROR the daemon are never a second setting: `shared/daemonLimits.ts` reads the history retention and the clock-skew
-allowance from `status.limits` (the shape expected from E7.S2c, plan §15p), falling back to 90 days and 5 minutes field
-by field — the durable poll's runs window and matching, the journal's future allowance and the Logs page's picker use them.
+MIRROR the daemon are never a second setting: `shared/daemonLimits.ts` reads `status.limits` (daemon #17; a compiled copy
+of `contracts/status-limits.json`, held equal to it by a test), field by field, each falling back to its contract default —
+the history retention and clock-skew allowance (the durable poll's runs window and matching, the journal's future
+allowance, the Logs page's picker), the request grace (the poll waits past it), the drain grace and `systemctl stop`'s
+ceiling (every worst case, so every call's ceiling is raised to stay above it under the limits the daemon answered).
+Exit 81 (`notAsRoot`, #17) is its own failure with the default-user fix; A18 is in the registry as button-only — the E6 gate
+never allows it (its button is E7.S4's).
 
 **The client's third run read** (`client/verbs.ts`): `logs --from <instant> --to <instant> --json`, unprivileged, 20 s —
 never `--detail`, `--action` or `--period`. Each read's CLI verb comes from ONE explicit table, `RUN_READ_VERBS` (review K2).

@@ -3,6 +3,7 @@ import { ceilingMs, rootOpCall } from '../client/ceilings';
 import { VERBS } from '../client/verbs';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
+import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
 import type { ActionIds, RunId, VolumeName } from './rootIds';
 
 /**
@@ -59,8 +60,8 @@ export interface RootTarget {
 }
 
 /** An op's ceiling under `numbers` — see the header. */
-export function rootTimeoutMs(op: RootOp, numbers: Numbers = DEFAULT_NUMBERS): number {
-  return ceilingMs(numbers, rootOpCall(op));
+export function rootTimeoutMs(op: RootOp, numbers: Numbers = DEFAULT_NUMBERS, limits: DaemonLimits = FALLBACK_LIMITS): number {
+  return ceilingMs(numbers, rootOpCall(op), limits);
 }
 
 /** The detach's DEFAULT ceiling (`wslCare.timeouts.detachSeconds`). */
@@ -117,15 +118,15 @@ function stdinOf(op: RootOp): { readonly stdin?: Buffer } {
 }
 
 /** The one request `op` makes in `target`, or `undefined` when the op cannot be built. Pure. */
-export function rootRequest(target: RootTarget, op: RootOp, numbers: Numbers = DEFAULT_NUMBERS): ProcessRequest | undefined {
+export function rootRequest(target: RootTarget, op: RootOp, numbers: Numbers = DEFAULT_NUMBERS, limits: DaemonLimits = FALLBACK_LIMITS): ProcessRequest | undefined {
   const tail = tailOf(op);
 
-  return tail === undefined ? undefined : { file: target.wsl, args: daemonArgv(target.distro, tail, AS_ROOT), timeoutMs: rootTimeoutMs(op, numbers), withoutEnv: NOT_FOR_ROOT, ...stdinOf(op) };
+  return tail === undefined ? undefined : { file: target.wsl, args: daemonArgv(target.distro, tail, AS_ROOT), timeoutMs: rootTimeoutMs(op, numbers, limits), withoutEnv: NOT_FOR_ROOT, ...stdinOf(op) };
 }
 
 /** Start `op` through `runner` — or nothing, when it cannot be built. */
-export async function callRoot(runner: Runner, target: RootTarget, op: RootOp, numbers: Numbers = DEFAULT_NUMBERS): Promise<ProcessResult | undefined> {
-  const request = rootRequest(target, op, numbers);
+export async function callRoot(runner: Runner, target: RootTarget, op: RootOp, numbers: Numbers = DEFAULT_NUMBERS, limits: DaemonLimits = FALLBACK_LIMITS): Promise<ProcessResult | undefined> {
+  const request = rootRequest(target, op, numbers, limits);
 
   return request === undefined ? undefined : runner(request);
 }

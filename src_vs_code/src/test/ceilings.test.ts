@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { ceilingMs, type HostCall } from '../client/ceilings';
-import { DOCKER_SNAPSHOT_S, MARGIN_S, previewWorstCaseS, WORST_CASE_S } from '../client/worstCases';
+import { DOCKER_SNAPSHOT_S, MARGIN_S, previewWorstCaseS, WORST_CASE_S, worstCasesOf } from '../client/worstCases';
+import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
 import { ROW_IDS } from '../cleanup/rowIds';
 import { DEFAULT_NUMBERS, NUMBER_NAMES, NUMBER_SETTINGS, type Numbers } from '../settings/numbers';
 
@@ -77,3 +78,32 @@ test('a ceiling follows its setting — a raised detach or per-row preview setti
   assert.equal(ceilingMs(raised, { call: 'rootPreview', ids: ['A4', 'A5', 'A9'] }), (2 * 400 + 34 + raised.statusSeconds) * 1000, 'two snapshots, the snap listing, and the base of a call that runs no command');
   assert.equal(ceilingMs(raised, { call: 'rootPreview', ids: ['A8'] }), raised.statusSeconds * 1000, 'A8 reads a folder: the base alone');
 });
+
+// ---- #17: the daemon publishes its drain grace and its unit stop timeout (status.limits) ----
+
+/** Every limit at its contract maximum — the dearest daemon a setting must still sit above. */
+const MAX_LIMITS: DaemonLimits = { ...FALLBACK_LIMITS, drainGraceMs: 10_000, unitStopSeconds: 600 };
+
+test('#17: the worst cases follow the published drain grace and unit stop timeout — today\'s values reproduce the inventory\'s numbers', () => {
+  assert.deepEqual(worstCasesOf(FALLBACK_LIMITS), { ...WORST_CASE_S, snapshot: DOCKER_SNAPSHOT_S, snapList: 34 }, 'the fallback is today');
+  const dear = worstCasesOf(MAX_LIMITS);
+  assert.equal(dear.stop, 600 + 20, 'systemctl stop at 600 s, then two 10 s drains');
+  assert.equal(dear.doctor, 5 * (15 + 20) + (10 + 20));
+  assert.equal(dear.snapshot, 310 + 5 * 20);
+});
+
+for (const [name, numbers] of [['the defaults', DEFAULT_NUMBERS], ['every setting at its minimum', MINIMUMS]] as const) {
+  test(`#17: with every published limit at its MAXIMUM, each ceiling is still strictly above the daemon's worst case — ${name}`, () => {
+    const dear = worstCasesOf(MAX_LIMITS);
+    const fixed: readonly [HostCall, number][] = [
+      [{ call: 'status' }, dear.status], [{ call: 'version' }, dear.version], [{ call: 'rootCheck' }, dear.version], [{ call: 'doctor' }, dear.doctor],
+      [{ call: 'preview' }, dear.preview], [{ call: 'runRead' }, dear.runRead], [{ call: 'detach' }, dear.detach], [{ call: 'stop' }, dear.stop],
+    ];
+    for (const [call, worstS] of fixed) {
+      assert.ok(ceilingMs(numbers, call, MAX_LIMITS) > worstS * 1000, `${call.call}: ${ceilingMs(numbers, call, MAX_LIMITS)} ms against ${worstS} s`);
+    }
+    for (const ids of selections()) {
+      assert.ok(ceilingMs(numbers, { call: 'rootPreview', ids }, MAX_LIMITS) > previewWorstCaseS(ids, MAX_LIMITS) * 1000, ids.join(','));
+    }
+  });
+}
