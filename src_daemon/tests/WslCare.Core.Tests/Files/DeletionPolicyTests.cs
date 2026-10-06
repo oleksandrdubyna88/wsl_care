@@ -138,4 +138,37 @@ public sealed class DeletionPolicyTests
         var refused = verdict.Should().BeOfType<DeletionVerdict.Refused>().Subject;
         refused.Reason.Should().Contain("A14").And.Contain("/home/me/git/repo");
     }
+
+    // Retro gate over PR #4 (consultant): the never-list judged only the path being deleted — a recursive delete of a folder
+    // that HOLDS a protected root (an agent's folder, a repositories folder, Claude's temp) took that root with it.
+    [Theory]
+    [InlineData(FileOperation.Delete, DeletionRule.AgentFolder)]
+    [InlineData(FileOperation.Move, DeletionRule.AgentFolder)]
+    public void A_folder_that_holds_a_protected_root_is_never_deleted_or_moved_whole(FileOperation operation, DeletionRule expected)
+    {
+        var policy = new DeletionPolicy(new ProtectedRoots("/home/me", ["/cache/old/agent"], ["/srv/git"], ["/scratch/claude"]), PathRules.Linux);
+        var request = new DeletionRequest(operation, "/cache/old", operation == FileOperation.Move ? "/cache/aside" : string.Empty, "/cache", "test", DeletionPermit.None);
+
+        policy.Decide(request).Should().BeOfType<DeletionVerdict.Refused>().Which.Rule.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("/top/srv", "/top", DeletionRule.GitFolder)]
+    [InlineData("/top/scratch", "/top", DeletionRule.ClaudeTemp)]
+    [InlineData("/data/stuff", "/data", DeletionRule.GitFolder)]
+    public void Every_kind_of_protected_root_protects_its_ancestors(string path, string root, DeletionRule expected)
+    {
+        var policy = new DeletionPolicy(new ProtectedRoots("/home/me", [], ["/top/srv/git", "/data/stuff/deep/git"], ["/top/scratch/claude"]), PathRules.Linux);
+
+        policy.Decide(Delete(path, root)).Should().BeOfType<DeletionVerdict.Refused>().Which.Rule.Should().Be(expected);
+    }
+
+    [Fact]
+    public void A_sibling_of_a_protected_root_is_still_deletable()
+    {
+        var policy = new DeletionPolicy(new ProtectedRoots("/home/me", ["/cache/old/agent"], [], []), PathRules.Linux);
+
+        policy.Decide(Delete("/cache/old/agent-not", "/cache")).IsAllowed.Should().BeTrue("a name that merely starts like a protected root is not under it");
+        policy.Decide(Delete("/cache/other", "/cache")).IsAllowed.Should().BeTrue();
+    }
 }

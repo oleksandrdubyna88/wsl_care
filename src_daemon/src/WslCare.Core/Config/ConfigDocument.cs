@@ -70,62 +70,112 @@ public static class ConfigDocument
 
     private static void Flatten(JsonElement element, string prefix, IReadOnlyDictionary<string, int> lines, List<RawEntry> entries)
     {
-        foreach (var property in element.EnumerateObject())
+        foreach (var property in element.EnumerateObject().Where(p => prefix.Length > 0 || p.Name != SchemaMember))
         {
-            if (prefix.Length == 0 && property.Name == SchemaMember)
-            {
-                continue;
-            }
-
-            var key = prefix.Length == 0 ? property.Name : $"{prefix}.{property.Name}";
-            if (property.Value.ValueKind == JsonValueKind.Object)
-            {
-                Flatten(property.Value, key, lines, entries);
-            }
-            else
-            {
-                entries.Add(new RawEntry(key, property.Value.Clone(), lines.GetValueOrDefault(key)));
-            }
+            AddMember(property, prefix.Length == 0 ? property.Name : $"{prefix}.{property.Name}", lines, entries);
         }
     }
 
-    /// <summary>The 1-based line of every leaf's property name, by dotted key.</summary>
+    /// <summary>An object spells a namespace of dotted keys — unless a SETTING of that name exists: then it is that setting's
+    /// value, a wrong one, and becomes an entry so validation refuses it. Retro gate over PR #4: <c>{"auto":{"A4":{}}}</c>
+    /// flattened to nothing, the layer read as valid, and A4 silently kept the value below it.</summary>
+    private static void AddMember(JsonProperty property, string key, IReadOnlyDictionary<string, int> lines, List<RawEntry> entries)
+    {
+        if (property.Value.ValueKind == JsonValueKind.Object && ConfigKeys.Find(key) is null)
+        {
+            Flatten(property.Value, key, lines, entries);
+            return;
+        }
+
+        entries.Add(new RawEntry(key, property.Value.Clone(), lines.GetValueOrDefault(key)));
+    }
+
+    /// <summary>The 1-based line of every member's property name, by dotted key.</summary>
     private static Dictionary<string, int> LeafLines(ReadOnlySpan<byte> body)
     {
-        var lineStarts = LineStarts(body);
+        var walk = new LineWalk(LineStarts(body));
         var reader = new Utf8JsonReader(body, ReaderOptions);
-        var path = new List<string>();
-        var lines = new Dictionary<string, int>(StringComparer.Ordinal);
-        var pendingName = string.Empty;
-        var pendingLine = 0;
         while (reader.Read())
         {
-            switch (reader.TokenType)
+            walk.Step(ref reader);
+        }
+
+        return walk.Lines;
+    }
+
+    /// <summary>The reader walk behind <see cref="LeafLines"/>: the open objects' names, and the name waiting for its value.
+    /// Split into one small method per token kind (C# doctrine 6, retro gate over PR #4).</summary>
+    private sealed class LineWalk(List<long> lineStarts)
+    {
+        private readonly List<string> _path = [];
+        private string _pendingName = string.Empty;
+        private int _pendingLine;
+
+        public Dictionary<string, int> Lines { get; } = new(StringComparer.Ordinal);
+
+        public void Step(ref Utf8JsonReader reader)
+        {
+            if (reader.TokenType == JsonTokenType.PropertyName)
             {
-                case JsonTokenType.PropertyName:
-                    pendingName = reader.GetString() ?? string.Empty;
-                    pendingLine = LineAt(lineStarts, reader.TokenStartIndex);
-                    break;
-                case JsonTokenType.StartObject when pendingName.Length > 0:
-                    path.Add(pendingName);
-                    pendingName = string.Empty;
-                    break;
-                case JsonTokenType.EndObject when path.Count > 0:
-                    path.RemoveAt(path.Count - 1);
-                    break;
-                case JsonTokenType.StartArray:
-                    RecordLeaf(lines, path, pendingName, pendingLine);
-                    pendingName = string.Empty;
-                    reader.Skip();
-                    break;
-                case JsonTokenType.String or JsonTokenType.Number or JsonTokenType.True or JsonTokenType.False or JsonTokenType.Null:
-                    RecordLeaf(lines, path, pendingName, pendingLine);
-                    pendingName = string.Empty;
-                    break;
+                _pendingName = reader.GetString() ?? string.Empty;
+                _pendingLine = LineAt(lineStarts, reader.TokenStartIndex);
+            }
+            else if (reader.TokenType == JsonTokenType.StartArray)
+            {
+                Leaf();
+                reader.Skip();
+            }
+            else
+            {
+                Structure(reader.TokenType);
             }
         }
 
-        return lines;
+        private void Structure(JsonTokenType token)
+        {
+            if (token == JsonTokenType.StartObject)
+            {
+                Open();
+            }
+            else if (token == JsonTokenType.EndObject)
+            {
+                Close();
+            }
+            else if (IsScalar(token))
+            {
+                Leaf();
+            }
+        }
+
+        /// <summary>A named object: its own line is kept too (it may be a setting's wrong value), then it is entered.</summary>
+        private void Open()
+        {
+            if (_pendingName.Length == 0)
+            {
+                return;
+            }
+
+            var name = _pendingName;
+            Leaf();
+            _path.Add(name);
+        }
+
+        private void Close()
+        {
+            if (_path.Count > 0)
+            {
+                _path.RemoveAt(_path.Count - 1);
+            }
+        }
+
+        private void Leaf()
+        {
+            RecordLeaf(Lines, _path, _pendingName, _pendingLine);
+            _pendingName = string.Empty;
+        }
+
+        private static bool IsScalar(JsonTokenType token) =>
+            token is JsonTokenType.String or JsonTokenType.Number or JsonTokenType.True or JsonTokenType.False or JsonTokenType.Null;
     }
 
     private static void RecordLeaf(Dictionary<string, int> lines, List<string> path, string name, int line)

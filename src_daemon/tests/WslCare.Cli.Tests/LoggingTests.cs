@@ -182,4 +182,25 @@ public sealed class LoggingTests
         WslCareLogging.Level("Verbose").Should().Be(LogEventLevel.Verbose);
         WslCareLogging.Level("Information").Should().Be(LogEventLevel.Information);
     }
+
+    // Retro gate over PR #4 (consultant): the class promises "housekeeping never stops a start", but a log root that could not
+    // be LISTED threw out of the prune — and the logger starts outside Main's catch, so every verb died with a crash dump.
+    [Fact]
+    public void Retention_over_a_log_root_that_cannot_be_listed_reports_it_and_never_throws()
+    {
+        using var sandbox = new SandboxHost("retention-unlistable");
+        var logRoot = sandbox.Paths.LogDirectory;
+        Directory.CreateDirectory(logRoot);
+
+        var prune = () => LogRetention.Prune(new UnlistableFileSystem(sandbox.Files), logRoot, new DateOnly(2026, 10, 2), 14);
+
+        var report = prune.Should().NotThrow().Subject;
+        report.Failed.Should().ContainSingle().Which.Should().Contain(logRoot).And.Contain("denied");
+        report.Deleted.Should().BeEmpty();
+    }
+
+    private sealed class UnlistableFileSystem(WslCare.Core.Files.IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public override IReadOnlyList<string> ListDirectories(string path) => throw new UnauthorizedAccessException($"access to {path} is denied");
+    }
 }
