@@ -2269,7 +2269,7 @@ to systemd (plan §15j B2, M2, M4, M9; the coai E6 plan round §15k). Nothing he
   §15k #8), and in `[Unit]` — the only section systemd.unit(5) reads it from — `CollectMode=inactive-or-failed` (a
   finished instance is unloaded, failed or not, so none lingers in `systemctl --failed` — systemd's own mechanism
   standing for §15k #8's `reset-failed`; daemon 0.1.0 had it under `[Service]`, where systemd 255 ignores it with a
-  warning, and the live install showed `CollectMode=inactive` — fixed in 0.1.1), and the hardening of
+  warning, and the live install showed `CollectMode=inactive` — fixed at daemon-v0.1.1, first published in 0.1.2), and the hardening of
   `wsl-care.service` (`Nice`, `IOSchedulingClass`, `MemoryMax`, `NoNewPrivileges`, `KillMode`, `TimeoutStopSec`) —
   held EQUAL by `ShippedFilesTests` (§15k #9).
 - **`act --request <runId>`** (`DetachedRuns.FromRequest`, what the unit runs): no request → exit 80, a named no-op, no

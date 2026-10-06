@@ -1743,6 +1743,17 @@ journal-as-data flow likewise; the item rewritten, green. Final: `ShippedFilesTe
 `SystemdUnitVerifyFlows` — WSL 39 passed, 1 skipped (the netplan positive); Windows 19 passed, 21 skipped (the Linux
 flows).
 
+**daemon-v0.1.1 did not publish.** The checker fetch was added to `ci-daemon.yml` only; `release.yml` runs the same
+Scenarios executable before it packs, without the submodule, and `PostDeployCommandFlows` — failing in CI rather than
+skipping, by design — failed both Linux legs at Test (`Expected missing to be empty because CI runs the items through the
+checker's own extraction, but found "the conventions checker is not checked out at …"`). The publish job never ran; the
+`daemon-v0.1.1` draft stayed empty and was never made public; the tag was not moved. `testing.md`'s *a check that only
+runs during a release has never run*, met in this repository: now
+`ReleaseWorkflowTests.Every_job_that_runs_the_scenario_suite_fetches_the_conventions_checker_before_it` scans EVERY job of
+every workflow that runs the Scenarios executable — red first on `release.yml/build` (`found -1`), then, with that fixed,
+on a third job nobody had named, `sonarcloud.yml/sonar` (skipped today for want of `SONAR_TOKEN`, so it would have failed
+the day the token arrives); both fetch it now, green. The fix ships as daemon 0.1.2.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
