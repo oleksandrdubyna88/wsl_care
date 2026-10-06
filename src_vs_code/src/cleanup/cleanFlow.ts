@@ -88,9 +88,9 @@ interface Pass {
 const BUSY: FlowOutcome = { kind: 'busy' };
 const DECLINED: FlowOutcome = { kind: 'declined' };
 function journalFull(entries: number): string {
-  return `WSL Care already follows ${entries} cleanups whose result has not appeared yet; wait for one to end, then try again. Nothing was started.`;
+  return `AI OS Care already follows ${entries} cleanups whose result has not appeared yet; wait for one to end, then try again. Nothing was started.`;
 }
-const NO_STATUS = "WSL Care has not read the daemon's status yet; press Refresh, then try again.";
+const NO_STATUS = "AI OS Care has not read the daemon's status yet; press Refresh, then try again.";
 
 /** The hand-off kinds that may leave a run behind; every other answer is a refusal that wrote nothing. */
 const HANDED: ReadonlySet<string> = new Set(['accepted', 'acceptedObserved', 'outcomeUnknown', 'stopping']);

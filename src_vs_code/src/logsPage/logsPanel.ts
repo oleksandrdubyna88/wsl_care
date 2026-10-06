@@ -33,7 +33,7 @@ export class LogsPanel implements vscode.Disposable {
   /** Opens (or reveals) the page — on `period` when given, else on the persisted one. */
   async show(period?: Period): Promise<void> {
     const media = vscode.Uri.joinPath(this.extensionUri, 'media');
-    const { panel, created } = this.slot.open(() => vscode.window.createWebviewPanel(LogsPanel.viewType, 'WSL Care — Logs', vscode.ViewColumn.Active, panelOptions(media)));
+    const { panel, created } = this.slot.open(() => vscode.window.createWebviewPanel(LogsPanel.viewType, 'AI OS Care — Logs', vscode.ViewColumn.Active, panelOptions(media)));
     if (!created) {
       await this.controller.open(period);
       return;

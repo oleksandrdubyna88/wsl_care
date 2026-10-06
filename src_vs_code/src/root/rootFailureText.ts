@@ -30,7 +30,7 @@ function runningText(failure: { readonly running: { readonly reason: string } | 
 }
 
 const WORDS: Words = {
-  rootBusy: (f) => ({ label: 'a cleanup call is in flight', sentence: `Another WSL Care cleanup call to "${safe(f.distro)}" is still in flight; wait for its answer.` }),
+  rootBusy: (f) => ({ label: 'a cleanup call is in flight', sentence: `Another AI OS Care cleanup call to "${safe(f.distro)}" is still in flight; wait for its answer.` }),
   actionsUnavailable: (f) => ({ label: 'Update daemon', sentence: `The daemon is ${safe(f.version)}; cleanups need ${f.minimum} or newer (it does not offer ${f.missing.map(safe).join(', ')}) — Update daemon.` }),
   idsRefused: (f) => ({ label: 'not offered', sentence: `Not offered by this daemon and extension: ${f.refused.length === 0 ? 'no action was named' : f.refused.map(safe).join(', ')}. Offered: ${f.allowed.join(', ') || 'none'}. Nothing was started.` }),
   runIdRefused: () => ({ label: 'run id refused', sentence: 'That run id is not one the daemon writes (yyyyMMddTHHmmssZ-<pid>); nothing was started.' }),

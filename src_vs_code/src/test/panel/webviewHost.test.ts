@@ -124,9 +124,9 @@ test('E6.S4: the Logs page is the same static shell under the same CSP — its o
   const logs = panelShell({ ...SHELL, scriptUri: 'https://file+.vscode-resource/media/logs.js', styleUri: 'https://file+.vscode-resource/media/logs.css', page: 'logs' });
   assert.deepEqual(cspOf(logs), cspOf(panelShell(SHELL)));
   assert.match(logs, /<main id="logs"><\/main>/);
-  assert.match(logs, /<title>WSL Care — Logs<\/title>/);
+  assert.match(logs, /<title>AI OS Care — Logs<\/title>/);
   assert.doesNotMatch(logs, /<main id="panel"/);
-  assert.match(panelShell(SHELL), /<title>WSL Care<\/title>/, 'the panel keeps its own');
+  assert.match(panelShell(SHELL), /<title>AI OS Care<\/title>/, 'the panel keeps its own');
 });
 
 test('E6.S4: the panel may ask for the Logs of its last cleanup — bare, the run id is the host\'s', () => {

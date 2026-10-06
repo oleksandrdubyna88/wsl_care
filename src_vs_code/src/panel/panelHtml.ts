@@ -24,8 +24,8 @@ export type Page = 'panel' | 'logs';
 
 /** Each page's root element id (what its script fills) and its title. */
 const PAGES: { readonly [P in Page]: { readonly root: string; readonly title: string } } = {
-  panel: { root: 'panel', title: 'WSL Care' },
-  logs: { root: 'logs', title: 'WSL Care — Logs' },
+  panel: { root: 'panel', title: 'AI OS Care' },
+  logs: { root: 'logs', title: 'AI OS Care — Logs' },
 };
 
 const NONCE = /^[0-9a-f]{32}$/;

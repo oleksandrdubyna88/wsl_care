@@ -1030,7 +1030,7 @@ round*).
 | **coai #11** | end an entry at the ceiling without a record read | **Rejected** — the ceiling alone is no evidence (B1): ONE bounded record read comes first, then the ceiling applies |
 | coai #17 | the action cap reused the entry cap | **Fixed** — `MAX_ACTIONS_PER_ENTRY` = the registry's size |
 | coai #18 | `resultText.ts` imported the follower's constant | **Fixed** — the ceiling is handed in |
-| coai #19 | `void host.clean/…` swallowed a fault | **Fixed** — told (sanitised) and logged to the *WSL Care* log output channel at the detached edge |
+| coai #19 | `void host.clean/…` swallowed a fault | **Fixed** — told (sanitised) and logged to the *AI OS Care* log output channel at the detached edge |
 | coai #20 | the 32-entry cap evicted the oldest unshown entry | **Fixed — refusal chosen**: a new entry is refused and the person told to wait; nothing is evicted |
 | coai #22 | entries settled one after another | **Fixed** — at most 4 at once |
 | coai #23 | a panel round per ended entry | **Fixed** — one per tick |

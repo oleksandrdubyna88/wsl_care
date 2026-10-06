@@ -126,7 +126,7 @@ function build(context: vscode.ExtensionContext): Parts {
 
   const cleanRecorder = newCleanRecorder();
   // The extension's log (review C11): a fault at a button's detached edge is written here as well as told.
-  const log = vscode.window.createOutputChannel('WSL Care', { log: true });
+  const log = vscode.window.createOutputChannel('AI OS Care', { log: true });
   context.subscriptions.push(log);
   const host = new CleanupHost({
     durable: context.globalState, controller: cleanup, read: (request) => client.read(request), outcomes: store,

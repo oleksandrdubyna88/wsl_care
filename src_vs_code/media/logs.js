@@ -1,4 +1,4 @@
-// The WSL Care Logs page's script (plan §7.4, §15j M7 / M8). Loaded from media/ by the static shell of
+// The AI OS Care Logs page's script (plan §7.4, §15j M7 / M8). Loaded from media/ by the static shell of
 // src/panel/panelHtml.ts under a nonce-only CSP. It receives ONE kind of message — { type: 'view', view } built by the
 // host's view model (src/logsPage/logsViewModel.ts) — and builds the DOM from it with createElement and textContent ONLY:
 // no innerHTML, no markup strings, nothing parsed, and NO ARITHMETIC — every figure arrives spelt; the page lays it out.
