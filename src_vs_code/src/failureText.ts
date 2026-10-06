@@ -30,6 +30,7 @@ const WORDS: Words = {
   unsupportedDistro: (f) => ({ label: 'unsupported distro', sentence: `"${f.distro}" is too old for the daemon (it needs Ubuntu 24.04 or newer, glibc 2.39): ${f.detail}` }),
   refused: (f) => ({ label: 'refused by the daemon', sentence: `The daemon refused the request.${lines(f.messages)}` }),
   internalDefect: (f) => ({ label: 'daemon defect', sentence: `The daemon hit an internal error.${lines(f.messages)}` }),
+  notAsRoot: (f) => ({ label: 'runs as uid 0', sentence: `The daemon will not run this as uid 0, and the default user of "${f.distro}" is uid 0. Set a default user: wsl.exe --manage ${f.distro} --set-default-user <user> (or [user] default=<user> in /etc/wsl.conf), then restart the distribution.${lines(f.messages)}` }),
   interrupted: () => ({ label: 'interrupted', sentence: 'The daemon was stopped by a signal before it answered.' }),
   timedOut: (f) => ({ label: 'timed out', sentence: `The daemon did not answer within ${Math.round(f.timeoutMs / 1000)} s; wsl.exe was stopped.` }),
   previewTooManyContainers: (f) => ({ label: `too many containers for a quick preview (${f.containers})`, sentence: `The cleanup preview did not finish within ${Math.round(f.timeoutMs / 1000)} s: ${f.containers} containers are running, more than the ${PREVIEW_CONTAINER_ASSUMPTION} its ceiling allows for — too many containers for a quick preview; wsl.exe was stopped.` }),

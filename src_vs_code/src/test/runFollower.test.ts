@@ -640,7 +640,7 @@ test('§15o (daemon #16): the fallback reason prefixes for a line WITHOUT a kind
 
 test('§15p: the follower takes the daemon\'s skew from its limits — a line 2 minutes before the confirm matches only when the daemon allows 5, not 1', async () => {
   const line = { runId: RUN, trigger: 'manual', startedAt: '2026-10-05T09:58:00+00:00', outcome: 'completed', actions: [{ id: 'A4', status: 'ran', count: 1, freedBytes: 5 }] };
-  for (const [limits, adopted] of [[{ historyRetentionDays: 90, futureSkewMs: 300_000 }, true], [{ historyRetentionDays: 90, futureSkewMs: 60_000 }, false]] as const) {
+  for (const [limits, adopted] of [[{ ...FALLBACK_LIMITS, futureSkewMs: 300_000 }, true], [{ ...FALLBACK_LIMITS, futureSkewMs: 60_000 }, false]] as const) {
     const w = new World();
     w.limits = limits;
     await ours(w, UNRESOLVED);
@@ -697,4 +697,18 @@ test('§15p: the read backoff reads its setting — a 20 s step means the second
   w.clock.now = T0 + 6 * FOLLOW_POLL.intervalMs;
   await poll(w);
   assert.equal(w.reads.length, 2, 'past 20 s: the second try');
+});
+
+test('#17: the request grace follows the daemon\'s published one — with 300 s answered, an unresolved confirm is not resolved at 91 s, only past 310 s', async () => {
+  const w = new World();
+  w.limits = { ...FALLBACK_LIMITS, requestGraceMs: 300_000 };
+  await ours(w, UNRESOLVED);
+  w.answer = () => listing([]);
+  w.clock.now = T0 + FOLLOW_POLL.graceMs + 1;
+  w.follower.kick();
+  await poll(w);
+  assert.deepEqual(w.reads, [], 'the daemon may not have swept its request yet');
+  w.clock.now = T0 + 311_000;
+  await poll(w);
+  assert.equal(w.reads.length, 1);
 });

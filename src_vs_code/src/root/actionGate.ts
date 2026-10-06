@@ -1,7 +1,8 @@
 import { MIN_DAEMON_FOR_ACTIONS } from '../client/handshake';
 import type { DaemonVersion, JsonObject } from '../client/outcome';
-import { ACTION_IDS, type ActionId, type ActionIds } from './rootIds';
+import { ACTION_IDS, BUTTON_ONLY_IDS, type ActionId, type ActionIds } from './rootIds';
 import type { RootFailure } from './rootOutcome';
+import { daemonLimitsOf, type DaemonLimits } from '../shared/daemonLimits';
 
 /**
  * May this daemon be asked to act, and on which ids (E6.S2, plan §15f #2 / #3, §15j M5)?
@@ -20,6 +21,8 @@ import type { RootFailure } from './rootOutcome';
 export interface GateOpen {
   readonly kind: 'open';
   readonly allowed: readonly ActionId[];
+  /** The daemon's published limits in that same status (daemon #17) — what the root call is sized under. */
+  readonly limits: DaemonLimits;
 }
 
 function strings(value: unknown): readonly string[] {
@@ -40,7 +43,7 @@ export function actionGate(status: JsonObject, version: DaemonVersion, required:
   }
   const reported = strings(status.actions);
 
-  return { kind: 'open', allowed: ACTION_IDS.filter((id) => reported.includes(id)) };
+  return { kind: 'open', allowed: ACTION_IDS.filter((id) => reported.includes(id) && !BUTTON_ONLY_IDS.includes(id)), limits: daemonLimitsOf(status) };
 }
 
 /** The requested ids as the gate allows them — each once, in the registry's order — or the refusal naming the others. */

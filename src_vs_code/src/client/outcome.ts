@@ -69,6 +69,8 @@ export type Failure =
   | { readonly kind: 'refused'; readonly messages: readonly string[] }
   /** Exit 70: a defect in the daemon. */
   | { readonly kind: 'internalDefect'; readonly messages: readonly string[] }
+  /** Exit 81 (E7, #17): the daemon refused to run as uid 0 — the distribution's default user is root; the fix names it. */
+  | { readonly kind: 'notAsRoot'; readonly distro: string; readonly messages: readonly string[] }
   /** Exit 130: stopped by a signal before it finished. */
   | { readonly kind: 'interrupted' }
   /** The verb's ceiling passed; `wsl.exe` was killed (which ends the Linux process — measured). */

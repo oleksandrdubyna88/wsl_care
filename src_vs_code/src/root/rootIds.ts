@@ -14,10 +14,17 @@ import { RUN_ID_SHAPE } from '../shared/shapes';
  * list knows it, and the test says so on the day the contract changes.
  */
 export const ACTION_IDS = [
-  'A1', 'A2', 'A3', 'A4', 'A5', 'A5Testcontainers', 'A6', 'A6Unused', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17',
+  'A1', 'A2', 'A3', 'A4', 'A5', 'A5Testcontainers', 'A6', 'A6Unused', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18',
 ] as const;
 
 export type ActionId = (typeof ACTION_IDS)[number];
+
+/**
+ * Ids the registry knows but the E6 cleanup ops never act on (daemon #17): A18 ends orphaned agent processes and its
+ * confirm takes `--process <pid:start>` — an argument no E6 op carries; its button is E7.S4's. The gate leaves them out of
+ * what it allows, so a status reporting them changes nothing here.
+ */
+export const BUTTON_ONLY_IDS: readonly ActionId[] = ['A18'];
 
 /** One or more registry ids — never an empty `act`. */
 export type ActionIds = readonly [ActionId, ...ActionId[]];

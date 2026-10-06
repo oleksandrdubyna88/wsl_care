@@ -199,13 +199,16 @@ export class CleanupController {
   /** Steps 3–5: the gate over a fresh status, the op (or its refusal), the root check, the call. */
   private async acting(target: RootTarget, required: readonly string[], prepare: (gate: GateOpen) => Prepared): Promise<Call | RootFailure> {
     const gate = await this.gated(target, required);
-    const op = gate.kind === 'open' ? prepare(gate) : gate;
+    if (gate.kind !== 'open') {
+      return gate;
+    }
+    const op = prepare(gate);
     if (!('op' in op)) {
       return op;
     }
     const root = await this.checkedRoot(target);
 
-    return root.kind === 'rootOk' ? { op, result: await callRoot(this.options.runner, target, op, this.numbers()) } : root;
+    return root.kind === 'rootOk' ? { op, result: await callRoot(this.options.runner, target, op, this.numbers(), gate.limits) } : root;
   }
 
   private async gated(target: RootTarget, required: readonly string[]): Promise<GateOpen | RootFailure> {

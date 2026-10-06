@@ -8,6 +8,7 @@ import type { CleanupJournal, JournalEntry } from './journal';
 import { isTerminal, parseRuns, parseRunShow, type RunShow } from './runAnswers';
 import { adoptable, inFlightNaming, isQueuedOrLive, matches, mustWait, windowOf } from './runMatching';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
+import { MARGIN_S } from '../client/worstCases';
 
 /**
  * The panel's DURABLE poll (E6.S3, plan §15j M6, §15k #3 / #4, `common.durable-status` rules 3 and 4; the E6.S3 review round)
@@ -277,7 +278,12 @@ export class RunFollower {
   private pastGrace(entry: JournalEntry): boolean {
     const age = this.ageOf(entry);
 
-    return !Number.isFinite(age) || age >= this.poll().graceMs;
+    return !Number.isFinite(age) || age >= this.graceMs();
+  }
+
+  /** The request grace: the setting, raised past the daemon's PUBLISHED grace (`status.limits.requestGraceSeconds`, #17) — before it the daemon may not have swept the request. */
+  private graceMs(): number {
+    return Math.max(this.poll().graceMs, this.limits().requestGraceMs + MARGIN_S * 1000);
   }
 
   /** The daemon's limits as its newest status says them. */

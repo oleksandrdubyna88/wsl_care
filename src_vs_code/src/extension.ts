@@ -17,6 +17,7 @@ import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSele
 import { CleanupController } from './root/cleanupController';
 import { readNumbers, type Numbers } from './settings/numbers';
 import { OutcomeStore } from './state/outcomeStore';
+import { daemonLimitsOf, type DaemonLimits } from './shared/daemonLimits';
 import { StatusBar } from './statusBar/statusBar';
 import { clientRunner, type WslCareTestApi } from './testApi';
 import { distroSettingText } from './wsl/distros';
@@ -64,6 +65,13 @@ function numbers(): Numbers {
   return readNumbers((key) => settings().get<unknown>(key));
 }
 
+/** The daemon's published limits from the store's newest `status` (daemon #17) — the fallback until one answers them. */
+function limitsOf(store: OutcomeStore): DaemonLimits {
+  const status = store.snapshot().status;
+
+  return daemonLimitsOf(status !== undefined && status.kind === 'answered' && status.answer.verb === 'status' ? status.answer.body : undefined);
+}
+
 function settings(): vscode.WorkspaceConfiguration {
   // Application-scoped (package.json): a workspace's .vscode/settings.json cannot steer either setting.
   return vscode.workspace.getConfiguration('wslCare');
@@ -102,6 +110,7 @@ function build(context: vscode.ExtensionContext): Parts {
     env: process.env,
     distroSetting,
     numbers,
+    limits: () => limitsOf(store),
   });
   const cleanup = new CleanupController({ client, runner, now: () => performance.now(), sleep: (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }), numbers });
   const store = new OutcomeStore();
