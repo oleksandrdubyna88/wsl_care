@@ -306,6 +306,10 @@ public sealed class ReleaseExtensionScriptFlows
             ("VSCE_PAT expires: none — manual upload (the owner uploads the attested .vsix by hand; docs/repo-settings.md, step 9)", true),
             ("VSCE_PAT expires: none — OIDC", true),
             ($"VSCE_PAT expires: {noon.AddDays(60):yyyy-MM-dd} (global PAT)", true),
+            // The boundary: the day is read as its UTC midnight and must lie MORE than 30 days after now — 31 days ahead
+            // passes at any hour, exactly 30 days ahead fails at any hour (even at 00:00:00, where it is equal, not more).
+            ($"VSCE_PAT expires: {noon.AddDays(31):yyyy-MM-dd} (global PAT)", true),
+            ($"VSCE_PAT expires: {noon.AddDays(30):yyyy-MM-dd} (global PAT)", false),
             ($"VSCE_PAT expires: {noon.AddDays(10):yyyy-MM-dd} (global PAT)", false),
             ("VSCE_PAT expires: none yet — recorded at the E5 live gate", false),
             ("VSCE_PAT expires: none", false),
@@ -332,5 +336,85 @@ public sealed class ReleaseExtensionScriptFlows
         start.Should().BeGreaterThan(0, "the row carries a code span");
         end.Should().BeGreaterThan(start, "the code span is closed");
         return row[(start + 1)..end].Replace("\\|", "|", StringComparison.Ordinal);
+    }
+
+    /// <summary>The manual Marketplace route (owner decision 2026-10-06; docs/repo-settings.md, step 9) RUN, not only
+    /// structured: the three scripts of release-extension.yml's publish-marketplace job that the route rests on — the
+    /// "served?" query, the publish, the wait — taken from the workflow and run under bash as the runner runs them
+    /// (<c>bash -e -o pipefail</c>), with a fake vsce at the path the job calls (it checks its arguments, logs each call and
+    /// answers what the Marketplace would) and a fake <c>sleep</c> that fails, so a wait that does not end at once is red
+    /// rather than a 15-minute stall.
+    /// <list type="bullet">
+    /// <item>The owner uploaded the version by hand → "served" is true, so the publish step's <c>if:</c> (held by
+    /// ReleaseExtensionWorkflowTests) skips it, and the wait ends on its first query with no sleep.</item>
+    /// <item>Not uploaded yet → false; and the publish step itself, with the Environment holding no token (an unset secret
+    /// is an empty string), refuses naming <c>VSCE_PAT is not set</c> before asking vsce anything — the harmless failure of
+    /// an approval given before the upload.</item>
+    /// <item>vsce 4.0.0's <c>undefined</c> for an extension it does not know, and a list holding only another version → false.</item>
+    /// </list>
+    /// What it does not prove: GitHub's Environment approval, the real Marketplace, and github-public's gh calls.</summary>
+    [Fact]
+    public async Task The_manual_upload_route_finds_the_version_served_skips_the_publish_and_ends_the_wait_at_once()
+    {
+        Linux();
+        var steps = WorkflowShape.Steps(WorkflowShape.Jobs(WorkflowYaml.Load(ReleaseFiles.Workflow("release-extension.yml")))["publish-marketplace"].Map);
+        var servedScript = WorkflowShape.Run(steps.Single(s => s.Find("id")?.Text == "served"));
+        var publishScript = WorkflowShape.Run(steps.Single(s => WorkflowShape.Run(s).Contains("vsce/vsce publish", StringComparison.Ordinal)));
+        var waitScript = WorkflowShape.Run(steps.Single(s => WorkflowShape.Run(s).Contains("vsce show", StringComparison.Ordinal) && WorkflowShape.Run(s).Contains("seq", StringComparison.Ordinal)));
+        const string id = "remsoftdev.ai-os-care";
+
+        async Task<(ChildResult Result, string Output, string[] Calls, string[] Sleeps)> RunStep(string script, string answer, string? pat = null)
+        {
+            using var root = new TempRoot("manual-upload");
+            root.File("work/src_vs_code/node_modules/@vscode/vsce/vsce",
+                "const fs = require('fs');\n" +
+                "const args = process.argv.slice(2);\n" +
+                "fs.appendFileSync(process.env.FAKE_VSCE_LOG, args.join(' ') + '\\n');\n" +
+                "if (args.length !== 3 || args[0] !== 'show' || args[1] !== process.env.EXTENSION_ID || args[2] !== '--json') { console.error('fake vsce: unexpected ' + args.join(' ')); process.exit(97); }\n" +
+                "process.stdout.write(process.env.FAKE_VSCE_ANSWER + '\\n');\n");
+            var sleep = root.File("bin/sleep", "#!/bin/sh\necho \"$@\" >> \"$FAKE_SLEEP_LOG\"\nexit 99\n");
+            File.SetUnixFileMode(sleep, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            var output = root.File("github-output", string.Empty);
+            var calls = root.File("vsce.log", string.Empty);
+            var sleeps = root.File("sleep.log", string.Empty);
+            var env = new Dictionary<string, string?>
+            {
+                ["PATH"] = $"{Path.GetDirectoryName(sleep)}:{Environment.GetEnvironmentVariable("PATH")}",
+                ["VERSION"] = "0.1.0",
+                ["EXTENSION_ID"] = id,
+                ["GITHUB_OUTPUT"] = output,
+                ["FAKE_VSCE_ANSWER"] = answer,
+                ["FAKE_VSCE_LOG"] = calls,
+                ["FAKE_SLEEP_LOG"] = sleeps,
+                ["VSCE_PAT"] = pat,
+            };
+            var result = await ChildProcess.RunAsync("bash", ["-e", "-o", "pipefail", "-c", script], env, root.Under("work"));
+            return (result, File.ReadAllText(output), File.ReadAllLines(calls), File.ReadAllLines(sleeps));
+        }
+
+        const string uploaded = "{\"versions\":[{\"version\":\"0.0.9\"},{\"version\":\"0.1.0\"}]}";
+
+        var served = await RunStep(servedScript, uploaded);
+        served.Result.Exit.Should().Be(0, served.Result.Stderr);
+        served.Output.Should().Contain("served=true", "the hand-uploaded version is found — after a version that is not it");
+        served.Calls.Should().Equal($"show {id} --json");
+
+        foreach (var (answer, what) in new[] { ("{\"versions\":[{\"version\":\"0.0.9\"}]}", "another version only"), ("undefined", "vsce 4.0.0's answer for an unknown extension"), ("{\"versions\":[]}", "nothing served") })
+        {
+            var notServed = await RunStep(servedScript, answer);
+            notServed.Result.Exit.Should().Be(0, $"{what}: {notServed.Result.Stderr}");
+            notServed.Output.Should().Contain("served=false", what);
+        }
+
+        var wait = await RunStep(waitScript, uploaded);
+        wait.Result.Exit.Should().Be(0, $"the served version ends the wait: {wait.Result.Stdout}{wait.Result.Stderr}");
+        wait.Result.Stdout.Should().Contain("(attempt 1)");
+        wait.Calls.Should().HaveCount(1, "one query");
+        wait.Sleeps.Should().BeEmpty("no sleep when the version is already served");
+
+        var early = await RunStep(publishScript, uploaded, pat: string.Empty);
+        early.Result.Exit.Should().Be(1, "an approval before the upload reaches the publish with no token");
+        early.Result.Stdout.Should().Contain("VSCE_PAT is not set", "the refusal names its cause");
+        early.Calls.Should().BeEmpty("the refusal comes before vsce is asked anything");
     }
 }
