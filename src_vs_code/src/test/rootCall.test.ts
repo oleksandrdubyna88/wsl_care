@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import { VERB_TIMEOUT_MS } from '../client/verbs';
 import { callRoot, DETACH_TIMEOUT_MS, ROOT_OPS, rootRequest, rootTimeoutMs, STOP_TIMEOUT_MS, type RootOp } from '../root/rootCall';
 import { DEFAULT_NUMBERS } from '../settings/numbers';
-import { runIdOf, volumeNameOf, type RunId, type VolumeName } from '../root/rootIds';
+import { MAX_SHOWN_VOLUMES, runIdOf, shownCap, volumeNameOf, type RunId, type VolumeName } from '../root/rootIds';
+import { FALLBACK_LIMITS } from '../shared/daemonLimits';
 import { exited, recordingRunner } from './support/recordingRunner';
 
 /**
@@ -113,4 +114,13 @@ test('S2: every root request takes WSLENV out of the environment — the Windows
   for (const { op } of OPS) {
     assert.deepEqual(rootRequest(TARGET, op)?.withoutEnv, ['WSLENV'], op.op);
   }
+});
+
+test('#17: a confirm is built only when its shown list fits the cap in force — the stdin never carries more names than the daemon takes', () => {
+  const op = { op: 'confirm', ids: ['A4'], shown: names(3) } as const;
+  assert.equal(rootRequest(TARGET, op, DEFAULT_NUMBERS, { ...FALLBACK_LIMITS, maxShownNames: 2 }), undefined);
+  const built = rootRequest(TARGET, op, DEFAULT_NUMBERS, { ...FALLBACK_LIMITS, maxShownNames: 3 });
+  assert.equal(built?.stdin?.toString('utf8').split('\n').filter((l) => l.length > 0).length, 3);
+  assert.equal(shownCap(20_000), MAX_SHOWN_VOLUMES, 'never above the compiled bound');
+  assert.equal(shownCap(300), 300);
 });

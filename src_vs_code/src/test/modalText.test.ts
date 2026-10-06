@@ -130,3 +130,14 @@ test('E6.S3 review A3: missingFromPreview names the confirmed ids the daemon\'s 
   assert.deepEqual(missingFromPreview(held(['A4', 'A8'])), ['A8']);
   assert.deepEqual(missingFromPreview(held(['A4'])), []);
 });
+
+test('#17: the truncated line names the cap in force, not the compiled bound', () => {
+  const body = previewBody((actions) => {
+    const a4 = actions.find((a) => a.id === 'A4') as { shown: string[]; shownTruncated?: boolean };
+    a4.shown = a4.shown.slice(0, 300);
+    a4.shownTruncated = true;
+  });
+  const preview = parsePreview(JSON.stringify(body), { distro: 'Ubuntu', ids: ['A4'], takenAtMs: 0, maxShownNames: 300 });
+  assert.ok(!('kind' in preview), JSON.stringify(preview).slice(0, 300));
+  assert.match(firstModal(preview, false).detail, /Only the 300 volumes shown are removed; 387 were selected\./);
+});

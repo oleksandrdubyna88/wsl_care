@@ -215,7 +215,7 @@ test('a confirm pipes EXACTLY the held preview\'s names on stdin — all 387 —
 test('a confirm of a preview this controller did not issue — a copy with the same shape — starts nothing', async () => {
   const w = world({ script: { [PREVIEW_A4]: exited(0, goldenText('act-a4-preview.json')) } });
   const real = await heldA4(w);
-  const forged: HeldPreview = { ...real, a4: { names: [], count: 0, truncated: false } };
+  const forged: HeldPreview = { ...real, a4: { names: [], count: 0, truncated: false, cap: 10_000 } };
   assert.deepEqual(await w.controller.confirm(forged), { kind: 'previewNotHeld' });
   assert.deepEqual(w.runner.argvs(), [ROOT_CHECK, PREVIEW_A4]);
 });
@@ -607,4 +607,39 @@ test('#17: a root call is sized under the limits of the fresh status — a daemo
   await w.controller.runFullCheck();
   const detach = w.runner.requests.find((r) => r.args.includes('collect'));
   assert.equal(detach?.timeoutMs, (1215 + 10) * 1000);
+});
+
+// ---- #17: A4's shown-list cap is the daemon's published maxShownNames (never above the compiled MAX_SHOWN_VOLUMES) ----
+
+/** The head A4 preview, cut the way a daemon whose maxShownNames is `cap` writes it: count 387, the first `cap` names, truncated. */
+function cappedPreview(cap: number): string {
+  const body = JSON.parse(goldenText('act-a4-preview.json')) as { actions: Record<string, unknown>[] };
+  const a4 = body.actions.find((a) => a.id === 'A4') as { shown: string[]; shownTruncated?: boolean };
+  a4.shown = a4.shown.slice(0, cap);
+  a4.shownTruncated = true;
+  return JSON.stringify(body);
+}
+
+function statusCapped(cap: number): Record<string, unknown> {
+  const status = headBody('status');
+  return { ...status, limits: { ...(status.limits as Record<string, unknown>), maxShownNames: cap } };
+}
+
+test('#17: a preview is held to the cap IN FORCE — 300 names of 387 with maxShownNames 300 is consistent; the same list under 10 000 is not', async () => {
+  const capped = world({ status: statusCapped(300), script: { [PREVIEW_A4]: exited(0, cappedPreview(300)) } });
+  const held = await capped.controller.preview(['A4']);
+  assert.ok(held.kind === 'previewed', JSON.stringify(held).slice(0, 300));
+  assert.deepEqual([held.preview.a4?.names.length, held.preview.a4?.count, held.preview.a4?.truncated, held.preview.a4?.cap], [300, 387, true, 300]);
+  const uncapped = world({ script: { [PREVIEW_A4]: exited(0, cappedPreview(300)) } });
+  assert.equal((await uncapped.controller.preview(['A4'])).kind, 'shownListInvalid', 'under the default cap 300 of 387 names is a cut list');
+});
+
+test('#17: the confirm checks the cap in force AT THE CONFIRM — a 387-name list held under 10 000 is refused when the daemon now takes 300', async () => {
+  let cap = 10_000;
+  const w = world({ status: () => answered('status', statusCapped(cap)), script: { [PREVIEW_A4]: exited(0, goldenText('act-a4-preview.json')), [CONFIRM_A4]: exited(0, handOff('accepted')) } });
+  const preview = await heldA4(w);
+  cap = 300;
+  const outcome = await w.controller.confirm(preview);
+  assert.equal(outcome.kind, 'shownListInvalid', JSON.stringify(outcome).slice(0, 300));
+  assert.deepEqual(w.runner.argvs().filter((a) => a === CONFIRM_A4), [], 'nothing confirmed');
 });

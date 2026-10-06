@@ -74,6 +74,8 @@ export interface ShownSelection {
   readonly names: readonly VolumeName[];
   readonly count: number;
   readonly truncated: boolean;
+  /** The cap in force when it was previewed (`shownCap`) — what the modal names when the list was cut. */
+  readonly cap: number;
 }
 
 /**

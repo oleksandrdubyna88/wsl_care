@@ -1,4 +1,4 @@
-import { MAX_SHOWN_VOLUMES, type ActionId } from '../root/rootIds';
+import type { ActionId } from '../root/rootIds';
 import type { HeldPreview, PreviewedAction } from '../root/rootOutcome';
 import { gb } from '../text/format';
 import { safeText } from '../text/safeText';
@@ -50,16 +50,16 @@ function figures(action: PreviewedAction): string {
 /** How this action's targets are chosen: A4 bound to the list shown, the re-selecting ones re-checked, the rest as previewed. */
 function binding(action: PreviewedAction, preview: HeldPreview): string[] {
   if (action.id === 'A4' && preview.a4 !== undefined) {
-    return a4Binding(preview.a4.names.length, preview.a4.count, preview.a4.truncated);
+    return a4Binding(preview.a4.names.length, preview.a4.count, preview.a4.truncated, preview.a4.cap);
   }
 
   return RECHECKED.has(action.id) ? ['Its targets are re-checked at run time: what is still eligible then is removed, which can differ from these numbers.'] : [];
 }
 
-function a4Binding(shown: number, count: number, truncated: boolean): string[] {
+function a4Binding(shown: number, count: number, truncated: boolean, cap: number): string[] {
   const bound = `Removes exactly the ${shown} volumes this preview listed — bound to that list; a volume attached since is skipped.`;
 
-  return truncated ? [bound, `Only the ${MAX_SHOWN_VOLUMES} volumes shown are removed; ${count} were selected.`] : [bound];
+  return truncated ? [bound, `Only the ${cap} volumes shown are removed; ${count} were selected.`] : [bound];
 }
 
 function names(action: PreviewedAction): string[] {

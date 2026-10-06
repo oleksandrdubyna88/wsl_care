@@ -3,7 +3,8 @@ import { test } from 'node:test';
 
 import { ceilingMs, type HostCall } from '../client/ceilings';
 import { DOCKER_SNAPSHOT_S, MARGIN_S, previewWorstCaseS, WORST_CASE_S, worstCasesOf } from '../client/worstCases';
-import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
+import { FALLBACK_LIMITS, LIMIT_FIELDS, type DaemonLimits } from '../shared/daemonLimits';
+import { MAX_SHOWN_VOLUMES, shownCap } from '../root/rootIds';
 import { ROW_IDS } from '../cleanup/rowIds';
 import { DEFAULT_NUMBERS, NUMBER_NAMES, NUMBER_SETTINGS, type Numbers } from '../settings/numbers';
 
@@ -82,7 +83,13 @@ test('a ceiling follows its setting — a raised detach or per-row preview setti
 // ---- #17: the daemon publishes its drain grace and its unit stop timeout (status.limits) ----
 
 /** Every limit at its contract maximum — the dearest daemon a setting must still sit above. */
-const MAX_LIMITS: DaemonLimits = { ...FALLBACK_LIMITS, drainGraceMs: 10_000, unitStopSeconds: 600 };
+/** Every published limit at its CONTRACT maximum (contracts/status-limits.json, mirrored by LIMIT_FIELDS). */
+const MAX_LIMITS: DaemonLimits = LIMIT_FIELDS.reduce<DaemonLimits>((limits, field) => ({ ...limits, [field.into]: field.max * field.scale }), FALLBACK_LIMITS);
+
+test('#17: the contract maximum is what the ceilings are held to — and A4\'s shown cap there is the compiled bound, never above it', () => {
+  assert.deepEqual([MAX_LIMITS.drainGraceMs, MAX_LIMITS.unitStopSeconds, MAX_LIMITS.maxShownNames], [10_000, 600, 10_000]);
+  assert.equal(shownCap(MAX_LIMITS.maxShownNames), MAX_SHOWN_VOLUMES);
+});
 
 test('#17: the worst cases follow the published drain grace and unit stop timeout — today\'s values reproduce the inventory\'s numbers', () => {
   assert.deepEqual(worstCasesOf(FALLBACK_LIMITS), { ...WORST_CASE_S, snapshot: DOCKER_SNAPSHOT_S, snapList: 34 }, 'the fallback is today');
