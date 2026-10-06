@@ -192,6 +192,23 @@ changes here:
   `codex resume`) and Antigravity (`conversation_summaries.db`) behave while a session is in the archive,
   and that restore makes it visible again.
 
+## 8c. The E9 split and design — amendments (2026-10-06)
+
+The parent plan's §15r ([PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) §15r, plan only) splits this plan's daemon half
+into E9.S0–E9.S5 and OVERRIDES the sections below where they differ; the extension half (§6) stays E10, the Windows schedule
+is the Windows plan's E11 (W-A15).
+
+| Here | §15r decides |
+|---|---|
+| §4 (who moves) | the TARGET USER's process moves; root's timer only starts it (`runuser`) and records its counts — root never opens a session file or writes the base (D1) |
+| §4.2 (in use) | Linux: the user's open descriptors, plus a live Claude Code process in the project's folder; Windows: the Restart Manager is asked — never an exclusive open (D2) |
+| §4.3–§4.6, §8a, §8b | copy → flush → read-back hash → no-replace final → index → per-session quarantine, re-check, removal; a local in-flight file drives the reconcile (D2, D3) |
+| §4.5 (one index per month) | one index per month PER SIDE (`…/<MM>/<side>/index.jsonl`) — one writer per file on a shared drive (D4) |
+| §4 (the write-path probe, the `tar` hand-off) | no probe and no hand-off in E9: the rate is measured on every run, the WSL side writes through drvfs within a time budget, oldest first (D9) |
+| §4 restore, §8 test plan ("with its mtime") | restore is create-only, never overwrites, keeps the archived copy, and gives the restored files the restore time (D6) |
+| §5 (`basePath`, `linuxBasePath`) | `archive.baseFolder` per side, as that side sees it, an ordinary key behind the base rules (D7) |
+| §2 (the "raise it" button) | the product never writes into an agent's settings; a coupled rule keeps `archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays` (14 + 7 ≤ 30), and the measured `cleanupPeriodDays` warns (D10) |
+
 ## 9. Definition of Done
 
 - [ ] Claude Code, Codex, Gemini CLI and Antigravity CLI sessions older than N days move to
