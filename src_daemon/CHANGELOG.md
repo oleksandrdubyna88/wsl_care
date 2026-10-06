@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.1.0...daemon-v0.1.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **daemon:** act unit's CollectMode belongs in [Unit] ([136b60d](https://github.com/oleksandrdubyna88/wsl_care/commit/136b60d30b87f5df75188e4c4c174c5525bb02da))
+
 ## 0.1.0 (2026-10-06)
 
 
