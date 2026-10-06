@@ -34,7 +34,7 @@
 | P1 | item 4 — the live contract suite | **24 / 24 passed**, 25.8 s, 21 containers running | agent, login account, fresh clone of `4782ccf`, Release build, `WSL_CARE_REQUIRE_LIVE=1` |
 | P2 | item 7 — the act unit's limits | **FAILED**: `CollectMode=inactive` loaded; the journal said `wsl-care-act@.service:46: Unknown key name 'CollectMode' in section 'Service', ignoring.` | agent, `systemctl show` on two never-run instances; fixed in 0.1.2 (key moved to `[Unit]`) |
 | P3 | `systemd-analyze verify` on that unit | prints the warning **and exits 0** | agent, systemd 255, login account |
-| P4 | why CI missed P2 | the verify step listed three units by hand (E4.S1); the template `wsl-care-act@.service` (E6.S1) was never in it; a template is only parsed through an instance name | agent; CI now verifies every file in `src_daemon/systemd`, templates as `…@20000101T000000Z-1.service`, with the release binary's own drop-ins |
+| P4 | why CI missed P2 | the verify step listed three units by hand (E4.S1); the template `wsl-care-act@.service` (E6.S1) was never in it; a template is only parsed through an instance name | agent; CI now runs `.github/scripts/verify-systemd-units.sh` over every file in `src_daemon/systemd`, templates as `…@20000101T000000Z-1.service`, with the release binary's own drop-ins, and the script **fails on ANY output** of `systemd-analyze verify` (with `SYSTEMD_LOG_LEVEL` unset) — not on its exit code, which P3 shows is 0 here. Independently, `ShippedFilesTests` holds a key → section table per unit type on every OS. Before the fix the script printed the P2 warning and exited 1 |
 | P5 | `systemctl is-active a b` | prints `active` / `inactive` and **exits 0** when any one unit is active | agent; item 1 now requires two `active` lines |
 | P6 | `wsl-care doctor --json` | exits 0 healthy or not | item 5 now greps `"healthy": true` with `install.sh`'s own pattern |
 | P7 | systemd 255 journal of `wsl-care.service` | carries `Consumed …s CPU time` per run, **no `memory peak`** (`MemoryPeak=[not set]`) | agent, 28 runs read; item 11 now requires a `Consumed` line |
@@ -56,11 +56,19 @@
 | C1 | `PhysicalFileSystemTests.An_atomic_replace_waits_out_a_reader…` | `UnauthorizedAccessException` from `MoveReplacing` | the test released its reader from a pool task that got no thread within the product's 2 s retry |
 | C2 | `RunProgressTests.A_beat_without_a_step…` | heartbeat time equal to the start time | a 40 ms timer made no beat within the test's 300 ms real sleep |
 
-Reproduction harness (temporary, not kept): 400 pool work items blocking for 4 s, then the old test bodies — C1 failed
-3 of 3, C2 2 of 3, each with the CI message; after the fix (the reader released at the first refusal on the writing
+Reproduction harness (temporary, NOT kept — recorded here so it can be rebuilt): on this Windows machine, .NET 10, a
+throwaway xUnit v3 test that first queues 400 thread-pool work items each blocking for 4 s, then runs the OLD test
+bodies verbatim. C1 failed 3 of 3, C2 2 of 3, each with the CI message (CI: the `windows-latest` runner of `ci · daemon`); after the fix (the reader released at the first refusal on the writing
 thread; the heartbeat driven by a test clock that fires only on `Advance`) 5 of 5 green under the same harness.
 
 ## 5. NTFS behaviour the archive seam is built on (E9.S2a, measured before building)
+
+Measured by the E9 agent (an unprivileged process of the owner's account) on this machine's LOCAL NTFS volume
+(Windows 11 Pro 10.0.26300, .NET 10 P/Invoke into `kernel32`), branch `feat/wc-e9-archive-daemon` before commit
+`a31f966`. The exact calls, access masks and share modes the seam uses are those in
+`src_daemon/src/WslCare.Core/Files/BeneathWrites.cs` and `PhysicalFileSystem.Archive.Windows.cs` at that commit; the red
+runs and break-it results are in [module_tests.md](module_tests.md) §E9.S2a. The probes themselves were not kept as a
+harness — a re-run means re-doing each call below on a scratch folder.
 
 | # | Observed |
 |---|---|
@@ -105,7 +113,10 @@ consultants.json`:
 | M7 | what an idle instance touches | rewrites `runs/<id>.json` (≈ 140 B) about every 10 s; the whole state folder is 68 MB — not a large scan |
 | M8 | the Windows side (0.41.1) | two instances, 0 % CPU over 10 s |
 
-The feedback loop: each failed start costs a core for ≈ 30 s; the extra load makes the next start slower still.
+**Hypothesis, not measured:** a feedback loop — each failed start costs a core for ≈ 30 s, and the extra load makes
+the next start slower still. What IS measured is the co-occurrence (M2–M5 in the same ten minutes as L1–L2); no
+time-correlated series shows load rising before, and lengthening, a later start. The ConnectOtherAIs fix is measured
+on its own (start time and idle CPU of an isolated instance), not by re-running this evening.
 Remediation applied on the owner's word: `"env": {"MCP_TIMEOUT": "90000"}` in the distro's `~/.claude/settings.json`
 (takes effect for new sessions / a window reload). The defect itself is being fixed in ConnectOtherAIs (answer
 `initialize` first, run and share the consultants health probe in the background, no idle polling); this repository
