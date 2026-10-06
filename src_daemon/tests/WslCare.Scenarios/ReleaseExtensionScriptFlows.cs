@@ -288,4 +288,49 @@ public sealed class ReleaseExtensionScriptFlows
             result.Stdout.Should().Contain(says, what);
         }
     }
+
+    /// <summary>POST_DEPLOY item 12 — the Marketplace publish credential — RUN as post-deploy-check runs it (its own command,
+    /// read from the row, under <c>/bin/sh</c>) against each answer the <c>VSCE_PAT expires:</c> line may give. The owner's
+    /// decision of 2026-10-06 is a MANUAL upload with no stored token (docs/repo-settings.md, step 9): that answer passes, as
+    /// OIDC does and a PAT more than 30 days from expiry does; a PAT inside 30 days, the placeholder and a missing line fail.
+    /// The dates are derived from now at noon UTC, because the command itself asks <c>date</c>.</summary>
+    [Fact]
+    public async Task Post_deploy_item_12_passes_a_manual_upload_OIDC_or_a_PAT_valid_beyond_30_days_and_fails_anything_else()
+    {
+        Linux();
+        var row = File.ReadAllLines(Path.Combine(ReleaseFiles.Root, "POST_DEPLOY.md")).Single(l => l.StartsWith("| 12 |", StringComparison.Ordinal));
+        var command = PostDeployCommand(row);
+        var noon = DateTime.UtcNow.Date.AddHours(12);
+        var cases = new (string Line, bool Passes)[]
+        {
+            ("VSCE_PAT expires: none — manual upload (the owner uploads the attested .vsix by hand; docs/repo-settings.md, step 9)", true),
+            ("VSCE_PAT expires: none — OIDC", true),
+            ($"VSCE_PAT expires: {noon.AddDays(60):yyyy-MM-dd} (global PAT)", true),
+            ($"VSCE_PAT expires: {noon.AddDays(10):yyyy-MM-dd} (global PAT)", false),
+            ("VSCE_PAT expires: none yet — recorded at the E5 live gate", false),
+            ("VSCE_PAT expires: none", false),
+            ("no credential line at all", false),
+        };
+
+        foreach (var (line, passes) in cases)
+        {
+            using var root = new TempRoot("post-deploy-12");
+            root.File("POST_DEPLOY.md", $"# Post-deploy checks\n\nTarget: x\n{line}\nLast verified: never\n");
+
+            var result = await ChildProcess.RunAsync("/bin/sh", ["-c", command], new Dictionary<string, string?>(), root.Path);
+
+            (result.Exit == 0).Should().Be(passes, $"item 12 over '{line}' (exit {result.Exit}): {result.Stderr}");
+        }
+    }
+
+    /// <summary>The first code span of a POST_DEPLOY row's Check cell — the command post-deploy-check runs — with the
+    /// table's escaped pipes restored.</summary>
+    private static string PostDeployCommand(string row)
+    {
+        var start = row.IndexOf('`', StringComparison.Ordinal);
+        var end = row.IndexOf('`', start + 1);
+        start.Should().BeGreaterThan(0, "the row carries a code span");
+        end.Should().BeGreaterThan(start, "the code span is closed");
+        return row[(start + 1)..end].Replace("\\|", "|", StringComparison.Ordinal);
+    }
 }
