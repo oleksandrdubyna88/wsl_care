@@ -58,14 +58,15 @@ public static class ConfigLoader
     public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files) => Load(paths, files, UserLayerTrust.OwnLayer());
 
     /// <summary>The three layers — or, when <paramref name="trust"/> names why the user layer is skipped (root with an ambiguous
-    /// target user), the embedded defaults and the machine layer only. That is not an error: machine-scoped actions still run,
-    /// and every user-scoped one is refused by the engine's target-user gate (plan §15c #2, gate finding #2).</summary>
+    /// target user), the embedded defaults and the machine layer only. That is not an error: a button's machine-scoped actions still
+    /// run, every user-scoped one is refused by the engine's target-user gate (plan §15c #2, gate finding #2), and the TIMER runs no
+    /// action at all (retro gate over PR #7 — a switch turned off in the unread layer must not be overridden by a default).</summary>
     public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files, UserLayerTrust trust)
     {
         var machine = MachineLayer(paths, files);
         if (trust.Skipped.Length > 0)
         {
-            return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust);
+            return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust) with { UserLayerSkipped = trust.Skipped };
         }
 
         var userCap = Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust).Config.Int(ConfigKeys.ConfigLayerLimits.MaxLayerBytes);

@@ -629,4 +629,25 @@ public sealed class ActionEngineTests : IDisposable
         Done(result).Detail.Actions.Single().Reason.Should().Be("npm is not installed for me");
         _journal.Should().Equal("preview A8");
     }
+
+    // Retro gate over PR #7 (plan round, accepted): with no single target user the user layer is not read, so a switch the
+    // person turned OFF there is invisible to root — and the timer ran machine-scoped cleanups on the defaults anyway.
+    [Fact]
+    public async Task While_the_user_layer_is_not_read_the_timer_runs_no_action_and_a_button_still_does()
+    {
+        _sandbox.Write("/etc/passwd", "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\nuser:x:1001:1001::/home/user:/bin/bash\n");
+        _sandbox.Write("/etc/wsl-care/config.json", """{ "dryRun": false }""");
+        Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
+        File.WriteAllText(DryRunWindow.File(_sandbox.Paths), $$"""{ "schemaVersion": 1, "at": "{{FixedTimeProvider.DefaultNow.AddDays(-30):O}}" }""");
+        var skipped = new UserLayerTrust(0, ForRoot: true, string.Empty, "the user layer is not read: no single target user (two login accounts)");
+        EngineContext Skipping(params ICleanupAction[] actions) => Context(actions) with { Loaded = ConfigLoader.Load(_sandbox.Paths, _sandbox.Files, skipped) };
+
+        var timer = await new ActionEngine(Skipping(Action("A10"))).ExecuteAsync(Run(RunTrigger.Timer, "A10"), CancellationToken.None);
+        _clock.Advance(TimeSpan.FromSeconds(1));
+        var button = await new ActionEngine(Skipping(Action("A10"))).ExecuteAsync(Run(RunTrigger.Cli, "A10"), CancellationToken.None);
+
+        Statuses(timer).Should().Equal(["A10:skipped"], "auto.A10 may be off in a user layer root cannot read");
+        Done(timer).Detail.Actions.Single().Reason.Should().Contain("user layer is not read");
+        Statuses(button).Should().Equal("A10:ran");
+    }
 }

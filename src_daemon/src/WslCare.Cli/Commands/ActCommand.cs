@@ -75,6 +75,7 @@ internal static class ActCommand
             InterruptCause = host.InterruptCause,
         });
         var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List, ShownProcesses = ShownProcesses(request) };
+        LogStart(log, request);
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = Dispatch(engine, act, cancellationToken).GetAwaiter().GetResult();
         Log(log, result);
@@ -116,6 +117,16 @@ internal static class ActCommand
 
     private static (ExitCode Code, string Message)? ObserveOnly(Request.Act request, ConfigLoadResult loaded) =>
         request.Confirm && loaded.IsObserveOnly ? (ExitCode.ObserveOnly, ActionEngine.ObserveOnlyReason) : null;
+
+    /// <summary>Retro gate over PR #7: a confirmed run says what it runs before the first tool is asked — a heavy action (A11's CPU
+    /// window and signal deadlines, a Docker prune) can take minutes, each under its own ceiling. A preview says nothing extra.</summary>
+    private static void LogStart(ILogger log, Request.Act request)
+    {
+        if (request.Confirm)
+        {
+            log.Information("act: running {Actions}; a heavy action can take minutes, each step bounded by its own ceiling", string.Join(",", request.Ids.Select(i => i.ToString())));
+        }
+    }
 
     private static RunTrigger Trigger(Request.Act request) =>
         request.Timer ? RunTrigger.Timer

@@ -357,7 +357,8 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 
 As root, every per-user path — the daily folder walk, the caches above, the user configuration layer — is the
 **target user's** home (`/etc/wsl.conf` `[user] default=`, else the single login account), never root's; when the target
-is ambiguous the user layer is skipped: machine-scoped actions still run, every user-scoped action refuses
+is ambiguous the user layer is skipped: the timer runs no action at all (a switch you turned off in your layer cannot be
+seen, and a default must not turn it back on), a button's machine-scoped actions still run, every user-scoped action refuses
 naming the accounts (set `[user] default=` in `/etc/wsl.conf`, or `install.sh --set-default-user <name>`). `config set` / `config reset` refuse to run as root for the target user (a
 root-owned file would lock them out of their own settings) with exit **81**: run them as yourself.
 
