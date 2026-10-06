@@ -93,7 +93,7 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   `.release-please-manifest.json` and `.coderabbit.yaml` at the root and the owner's commands in `docs/repo-settings.md`
   (section *The release pipeline*).
 - **`src_vs_code/`** (E5.S1) — the VS Code extension: `package.json` (AI OS Care — id `ai-os-care`, publisher `remsoftdev`, renamed from *WSL Care* on 2026-10-06; 0.0.0, `extensionKind ["ui"]`,
-  `engines.vscode ^1.85.0`, two application-scoped settings), `src/process/runner.ts` (the one process launcher),
+  `engines.vscode ^1.85.0`, every setting application-scoped — `wslCare.distro`, `wslCare.refreshSeconds` and the number table of `src/settings/numbers.ts`), `src/process/runner.ts` (the one process launcher),
   `src/process/runnerSelection.ts`, `src/client/` (`WslCareClient`, the closed `VERBS`, the handshake, the failure
   reading, the exit-code names), `src/wsl/` (the launcher path, UTF-16LE, distribution names), `src/test/` (unit,
   structural, bundle and client-scenario tests, the strict fake, the tripwire), esbuild into `dist/extension.js`

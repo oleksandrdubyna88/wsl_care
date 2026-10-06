@@ -181,7 +181,7 @@ interface Contributions {
 
 const contributed = (manifest as unknown as { contributes: Contributions }).contributes;
 
-test('E5 contributes the read-only surface only: the panel view and four argument-free commands, no URI handler', () => {
+test('the contributed surface: the panel view and five argument-free commands (E5 + Logs of E6.S4), no URI handler', () => {
   assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl', 'wslCare.installDaemon', 'wslCare.openLogs']);
   assert.deepEqual(contributed.menus['view/title']?.map((m) => m.command), ['wslCare.refresh', 'wslCare.openLogs'], 'E6.S4: Logs in the panel title (§7.2)');
   assert.deepEqual(contributed.views.wslCare, [{ type: 'webview', id: 'wslCare.panel', name: 'AI OS Care' }]);

@@ -31,7 +31,7 @@ import { distroSettingText } from './wsl/distros';
  * panel's closed messages reach the host transaction (`cleanup/cleanFlow.ts`), whose runs are written to `globalState`
  * and followed by the durable poll (`cleanup/runFollower.ts`) to their end — across a reload.
  *
- * E5.S2 hangs on it: the status bar (`statusBar/`), the read-only panel (`panel/`), both reading ONE store of the newest
+ * E5.S2 hangs on it: the status bar (`statusBar/`), the panel (`panel/`), both reading ONE store of the newest
  * outcomes (`state/outcomeStore.ts`), and the poller (`poll/poller.ts`) that decides when the daemon is asked — the
  * focused window only, `status` only, never a `-d` call to a stopped distribution. Activation asks `status` once when
  * the window is focused (it is no longer "starts no process": the bar needs a first answer).

@@ -552,7 +552,8 @@ Antigravity's `brain/` and annotations).
 `src_vs_code/` is the VS Code extension **AI OS Care** — Marketplace id `remsoftdev.ai-os-care` (publisher `remsoftdev`,
 the extension id `ai-os-care`; both permanent) — in development (E5), not published yet. The daemon it shows keeps its
 name, `wsl-care`; the settings and commands keep their `wslCare.*` keys. What exists today
-(E5.S1–E5.S3): its client, a **status-bar item**, a **read-only panel**, ***Install daemon***, and its packaging and
+(E5.S1–E6.S4): its client, a **status-bar item**, a **panel** whose cleanups run only after you confirm them, the
+**Logs page**, ***Install daemon***, and its packaging and
 release pipeline as files and tests (the publisher `remsoftdev` was created by the owner on 2026-10-06 — the E5 live
 gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-settings.md) steps 9–11).
 
@@ -585,8 +586,9 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   is never asked anything (each `status` the daemon answers writes one run-log file — the cost is measured in
   [research/2026-10-04_extension_poll_churn.md](research/2026-10-04_extension_poll_churn.md)).
 
-- **Reading.** It asks the daemon four questions as your own user: `status --json`, `preview --all --json`,
-  `doctor --json`, `--version`. It never changes the daemon's configuration.
+- **Reading.** It asks the daemon, as your own user: `status --json`, `preview --all --json`, `doctor --json`,
+  `--version`, and for the run history `runs show <runId> --json`, `runs --from … --to … --json` and
+  `logs --from … --to … --json`. It never changes the daemon's configuration.
 - **The cleanup buttons (E6.S3).** Each cleanup row has **Clean** and **Select**; **Clean selected (n)** runs every ticked
   row as ONE run; **Run full check now** starts a full measurement (it does not clean); a wedged run of the daemon's own
   units gets **Stop** (any other wedged run is named with its pid). A press asks the daemon for a fresh preview, shows it in
