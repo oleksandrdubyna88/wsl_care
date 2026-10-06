@@ -15,7 +15,8 @@ pipeline since E4.S2, the extension's since E5.S3). The first daemon release and
 gate** (plan §16): settings with refused probes → item 4 → the release-please cut and the observed `release.yml` run →
 the live install → items 1–5, 7–11, then THIS line stamped `Last verified: <YYYY-MM-DD> · <target> · daemon <x.y.z>`.
 `release-extension.yml`'s guard READS that stamp: it refuses to release the extension until the line names a date and
-a daemon at or above the extension's minimum (`MIN_DAEMON_FOR_RENDER`). The E5 live gate then adds items 3, 6 and 12
+a daemon at or above the release the extension's *Install daemon* types (`INSTALL_DAEMON`, itself at or above the
+render minimum `MIN_DAEMON_FOR_RENDER`). The E5 live gate then adds items 3, 6 and 12
 and the extension's version to the stamp (`… · daemon <x.y.z> · extension <x.y.z>`).
 
 | # | What a person loses if this is broken | Check | Auto |

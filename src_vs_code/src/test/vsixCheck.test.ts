@@ -195,6 +195,16 @@ test('each place that disagrees is named — the stale bundle, the checked-in ar
   assert.match(minDaemonFindings({ ...AGREED, emitted: undefined })[0] ?? '', /dist\/min-daemon\.json says nothing readable/);
   assert.match(minDaemonFindings({ ...AGREED, checkedIn: { minDaemonForRender: '0.2.0' } })[0] ?? '', /src_vs_code\/min-daemon\.json \(what the release guard reads at the tag\) says 0\.2\.0/);
   assert.match(minDaemonFindings({ ...AGREED, checkedIn: { other: '0.1.0' } })[0] ?? '', /says nothing readable/);
-  assert.match(minDaemonFindings({ ...AGREED, released: '0.2.0' })[0] ?? '', /the release guard verified the minimum daemon 0\.2\.0, but this \.vsix renders and installs 0\.1\.0/);
+  assert.match(minDaemonFindings({ ...AGREED, released: '0.2.0' })[0] ?? '', /the release guard verified the minimum daemon 0\.2\.0, but this \.vsix renders 0\.1\.0/);
   assert.equal(minDaemonFindings({ constant: '0.1.0', emitted: {}, checkedIn: [], released: '9.9.9' }).length, 3);
+});
+
+const INSTALL_AGREED = { constant: '0.1.2', emitted: { minDaemonForRender: '0.1.0', installDaemon: '0.1.2' }, checkedIn: { minDaemonForRender: '0.1.0', installDaemon: '0.1.2' }, released: '0.1.2' };
+
+test('the daemon to install (installDaemon, 2026-10-06) is compared in the same four places, apart from the render minimum', () => {
+  assert.deepEqual(minDaemonFindings(INSTALL_AGREED, 'installDaemon'), []);
+  assert.deepEqual(minDaemonFindings({ ...INSTALL_AGREED, constant: '0.1.0', released: '0.1.0' }, 'minDaemonForRender'), [], 'the render minimum keeps its own value beside it');
+  assert.match(minDaemonFindings({ ...INSTALL_AGREED, emitted: { minDaemonForRender: '0.1.0' } }, 'installDaemon')[0] ?? '', /dist\/min-daemon\.json says nothing readable for installDaemon/);
+  assert.match(minDaemonFindings({ ...INSTALL_AGREED, checkedIn: { minDaemonForRender: '0.1.0', installDaemon: '0.1.0' } }, 'installDaemon')[0] ?? '', /says 0\.1\.0 for installDaemon, handshake\.ts says 0\.1\.2/);
+  assert.match(minDaemonFindings({ ...INSTALL_AGREED, released: '0.1.0' }, 'installDaemon')[0] ?? '', /the release guard verified the daemon to install 0\.1\.0, but this \.vsix installs 0\.1\.2/);
 });

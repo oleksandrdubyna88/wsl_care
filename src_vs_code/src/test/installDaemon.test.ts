@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { MIN_DAEMON_FOR_RENDER } from '../client/handshake';
+import { INSTALL_DAEMON, MIN_DAEMON_FOR_RENDER } from '../client/handshake';
 import type { Failure } from '../client/outcome';
 import { WslCareClient, type TerminalTarget } from '../client/WslCareClient';
 import { INSTALL_COMMAND, INSTALL_PREREQUISITES, INSTALL_VERSION } from '../install/installCommand';
@@ -62,12 +62,22 @@ function deps(target: () => Promise<TerminalTarget | Failure>, answer: boolean):
 
 const UBUNTU: TerminalTarget = { kind: 'terminal', shellPath: WSL, shellArgs: ['-d', 'Ubuntu', '--cd', '~'], distro: 'Ubuntu' };
 
-test('the command is pinned to the compiled minimum daemon: the installer from its TAG and --version of the same', () => {
-  assert.equal(INSTALL_VERSION, MIN_DAEMON_FOR_RENDER);
+test('the command installs daemon 0.1.2 — the installer from its TAG and --version of the same — not the render minimum', () => {
+  // daemon 0.1.0's act unit carries the CollectMode defect (fixed in 0.1.1, first published as 0.1.2): a new user
+  // installing from the panel must get 0.1.2. The minimum the extension RENDERS stays lower (a 0.1.0 daemon renders).
+  assert.equal(INSTALL_DAEMON, '0.1.2');
+  assert.equal(INSTALL_VERSION, INSTALL_DAEMON);
   assert.equal(
     INSTALL_COMMAND,
-    `curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v${MIN_DAEMON_FOR_RENDER}/install.sh | sudo sh -s -- --version ${MIN_DAEMON_FOR_RENDER}`,
+    'curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.2/install.sh | sudo sh -s -- --version 0.1.2',
   );
+});
+
+test('the version installed is never below the minimum the extension renders', () => {
+  const parts = (v: string): number[] => v.split('.').map(Number);
+  const [install, render] = [parts(INSTALL_DAEMON), parts(MIN_DAEMON_FOR_RENDER)];
+  const cmp = install.map((n, i) => n - (render[i] ?? 0)).find((d) => d !== 0) ?? 0;
+  assert.ok(cmp >= 0, `INSTALL_DAEMON ${INSTALL_DAEMON} is below MIN_DAEMON_FOR_RENDER ${MIN_DAEMON_FOR_RENDER}: the panel would install a daemon it then refuses`);
 });
 
 test('the command never skips the attestation, never fetches from main, and carries no shell trick beyond the one pipe', () => {

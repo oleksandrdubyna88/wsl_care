@@ -10,9 +10,10 @@
  *   4. the minimum daemon agrees everywhere it is held (E5 code round #2/#5): MIN_DAEMON_FOR_RENDER of the compiled
  *      out/client/handshake.js, the dist/min-daemon.json the bundle step emitted, the checked-in min-daemon.json the
  *      release guard reads at the tag, and — with --min-daemon <x.y.z>, the guard's own output — the minimum the guard
- *      found published and verified.
+ *      found published and verified; the same for INSTALL_DAEMON (`installDaemon`, the release *Install daemon* types,
+ *      2026-10-06) and --install-daemon <x.y.z>, the guard's install_daemon output;
  *
- *     node scripts/check-vsix.mjs [<file.vsix>] [--release] [--min-daemon <x.y.z>]
+ *     node scripts/check-vsix.mjs [<file.vsix>] [--release] [--min-daemon <x.y.z>] [--install-daemon <x.y.z>]
  *                                  (default: <name>-<version>.vsix, both from package.json; reads out/ and dist/ — compile and bundle first)
  *
  * Exit 0 clean, 1 findings (each printed), 2 usage / missing inputs. The findings name the entry and the kind of leak;
@@ -38,17 +39,26 @@ if (!existsSync(join(SUPPORT, 'vsixCheck.js'))) {
   fail('out/test/support/vsixCheck.js is missing — run `npm run compile` (or npm test) first', 2);
 }
 const { listLines, machineUserNames, minDaemonFindings, vsixFindings } = require(join(SUPPORT, 'vsixCheck.js'));
-const { MIN_DAEMON_FOR_RENDER } = require(join(ROOT, 'out', 'client', 'handshake.js'));
+const { INSTALL_DAEMON, MIN_DAEMON_FOR_RENDER } = require(join(ROOT, 'out', 'client', 'handshake.js'));
 const { readZip } = require(join(SUPPORT, 'zipFile.js'));
 
 const args = process.argv.slice(2);
 const release = args.includes('--release');
-const minAt = args.indexOf('--min-daemon');
-const released = minAt < 0 ? undefined : args[minAt + 1];
-if (minAt >= 0 && (released === undefined || !/^\d+\.\d+\.\d+$/.test(released))) {
-  fail("--min-daemon takes the release guard's x.y.z", 2);
+const VALUED = ['--min-daemon', '--install-daemon'];
+
+/** The value after a valued option, checked as the release guard's x.y.z — or undefined when the option is absent. */
+function versionOption(option) {
+  const at = args.indexOf(option);
+  const value = at < 0 ? undefined : args[at + 1];
+  if (at >= 0 && (value === undefined || !/^\d+\.\d+\.\d+$/.test(value))) {
+    fail(`${option} takes the release guard's x.y.z`, 2);
+  }
+  return value;
 }
-const positional = args.filter((a, i) => a !== '--release' && a !== '--min-daemon' && (minAt < 0 || i !== minAt + 1));
+
+const released = versionOption('--min-daemon');
+const releasedInstall = versionOption('--install-daemon');
+const positional = args.filter((a, i) => a !== '--release' && !VALUED.includes(a) && !VALUED.includes(args[i - 1]));
 const { name, version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 // The file `vsce package` writes is <name>-<version>.vsix — read from the manifest, never retyped beside it.
 const vsix = positional[0] ?? join(ROOT, `${name}-${version}.vsix`);
@@ -81,12 +91,12 @@ function jsonOrUndefined(file) {
 }
 
 const names = machineUserNames([userInfo().username, process.env.USERNAME, process.env.USER, basename(homedir())]);
-const minDaemon = minDaemonFindings({
-  constant: MIN_DAEMON_FOR_RENDER,
-  emitted: jsonOrUndefined(join(ROOT, 'dist', 'min-daemon.json')),
-  checkedIn: jsonOrUndefined(join(ROOT, 'min-daemon.json')),
-  released,
-});
+const emitted = jsonOrUndefined(join(ROOT, 'dist', 'min-daemon.json'));
+const checkedIn = jsonOrUndefined(join(ROOT, 'min-daemon.json'));
+const minDaemon = [
+  ...minDaemonFindings({ constant: MIN_DAEMON_FOR_RENDER, emitted, checkedIn, released }, 'minDaemonForRender'),
+  ...minDaemonFindings({ constant: INSTALL_DAEMON, emitted, checkedIn, released: releasedInstall }, 'installDaemon'),
+];
 const findings = [
   ...lsFindings,
   ...minDaemon,
@@ -100,4 +110,4 @@ if (findings.length > 0) {
   }
   process.exit(1);
 }
-console.log(`check-vsix: ${basename(vsix)} — ${expected.length} allowlisted files, no leak, build stamp ${version}${release ? ', publisher set' : ''}, minimum daemon ${MIN_DAEMON_FOR_RENDER}${released === undefined ? '' : ' (the guard verified it)'}; ${names.length} machine user name(s) and ${denylist.length} denylist word(s) checked`);
+console.log(`check-vsix: ${basename(vsix)} — ${expected.length} allowlisted files, no leak, build stamp ${version}${release ? ', publisher set' : ''}, minimum daemon ${MIN_DAEMON_FOR_RENDER}, installs ${INSTALL_DAEMON}${released === undefined && releasedInstall === undefined ? '' : ' (the guard verified them)'}; ${names.length} machine user name(s) and ${denylist.length} denylist word(s) checked`);

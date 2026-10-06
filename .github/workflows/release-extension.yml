@@ -79,6 +79,9 @@ jobs:
       publisher: ${{ steps.guard.outputs.publisher }}
       # The minimum daemon the guard found published and verified — the build checks its .vsix renders exactly that one.
       min_daemon: ${{ steps.guard.outputs.min_daemon }}
+      # The daemon release Install daemon types (2026-10-06: a value of its own, at or above min_daemon), found published
+      # and verified — the build checks its .vsix installs exactly that one.
+      install_daemon: ${{ steps.guard.outputs.install_daemon }}
     steps:
       # The whole history: "is this commit on main" is answered by git, and a shallow clone has no main to answer it.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -110,6 +113,7 @@ jobs:
     env:
       VERSION: ${{ needs.guard.outputs.version }}
       MIN_DAEMON: ${{ needs.guard.outputs.min_daemon }}
+      INSTALL_DAEMON: ${{ needs.guard.outputs.install_daemon }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -149,10 +153,10 @@ jobs:
           (cd ../release-extension && sha256sum "ai-os-care-$VERSION.vsix" > "ai-os-care-$VERSION.vsix.sha256")
 
       # The ARTEFACT, not the source: exactly the allowlist, no machine path / user name / e-mail / source map, the build
-      # stamp equal to the version, (--release) a real publisher, and (--min-daemon) the minimum this .vsix renders and
-      # installs equal to the one the guard found published and verified.
+      # stamp equal to the version, (--release) a real publisher, (--min-daemon) the minimum this .vsix renders and
+      # (--install-daemon) the release it installs, each equal to the one the guard found published and verified.
       - name: Leak checks on the .vsix
-        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON"
+        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON" --install-daemon "$INSTALL_DAEMON"
 
       - name: The asset set
         run: bash ../.github/scripts/verify-extension-assets.sh "$VERSION" ../release-extension

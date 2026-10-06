@@ -30,7 +30,7 @@ command palette) shows the exact command and what the distribution needs, then o
 with the command **typed but not run** — you read it and press Enter:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.0/install.sh | sudo sh -s -- --version 0.1.0
+curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.2/install.sh | sudo sh -s -- --version 0.1.2
 ```
 
 The distribution needs systemd, Ubuntu 24.04 or newer (glibc 2.39), `gh` 2.56.0 or newer from GitHub's apt repository
