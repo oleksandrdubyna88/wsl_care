@@ -110,7 +110,7 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     {
         var file = paths.UserConfigFile;
         var directory = Path.GetDirectoryName(file) ?? throw new InvalidOperationException($"the user config file {file} has no directory");
-        var aside = current.Broken ? SetAside(file, directory, current.Text) : Aside.None;
+        var aside = current.Broken ? SetAside(file, directory, current) : Aside.None;
         var (verdict, linked) = WriteOrUndo(file, directory, rendered, aside);
         return verdict is DeletionVerdict.Refused refused
             ? new UserConfigWriteResult.Refused(refused)
@@ -125,8 +125,8 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
         public static readonly Aside None = new(string.Empty, false);
     }
 
-    private Aside SetAside(string file, string directory, byte[] text) =>
-        text.Length > 0 ? new Aside(CopyAside(file, directory, text), Copied: true) : new Aside(MoveAside(file, directory), Copied: false);
+    private Aside SetAside(string file, string directory, Current current) =>
+        current.WasRead ? new Aside(CopyAside(file, directory, current.Text), Copied: true) : new Aside(MoveAside(file, directory), Copied: false);
 
     /// <summary>The write — and, when it does not happen, the aside undone (fix-PR plan round, retro gate over PR #4): a move aside
     /// followed by a failed write left no user layer at all, and the next run loaded the defaults.</summary>
@@ -195,6 +195,9 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     {
         /// <summary>A broken layer's bytes, when they could be read; empty otherwise.</summary>
         public byte[] Text { get; init; } = [];
+
+        /// <summary>The bytes WERE read — an empty file too (fix-PR consultation): such a layer is copied aside, never moved.</summary>
+        public bool WasRead { get; init; }
     }
 
     /// <summary>Review C-M1: what the loader would say of <paramref name="key"/> in this new layer over the layers below — a coupled
@@ -223,7 +226,7 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
 
     private static Current ReadParsed(byte[] bytes) => ConfigDocument.Parse(bytes) switch
     {
-        ConfigDocumentResult.Malformed => new Current(new Dictionary<string, ConfigValue>(), [], Broken: true) { Text = bytes },
+        ConfigDocumentResult.Malformed => new Current(new Dictionary<string, ConfigValue>(), [], Broken: true) { Text = bytes, WasRead = true },
         ConfigDocumentResult.Parsed parsed => KeepValid(parsed.Entries),
         _ => throw new System.Diagnostics.UnreachableException("ConfigDocumentResult is a closed set"),
     };
@@ -250,15 +253,26 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     }
 
     /// <summary>An unparseable file is moved beside itself with a UTC stamp — never overwritten.</summary>
+    /// <summary>The kept copy is CREATED EXCLUSIVELY, name by name (fix-PR consultation f4a0e9b4): a replacing write after a
+    /// free-name probe overwrote what a concurrent repair had just kept under the same second's name.</summary>
     private string CopyAside(string file, string directory, byte[] text)
     {
-        var aside = FreeAsideName(file, Stamp());
-        if (files.WriteFileAtomically(aside, text, new DeletionScope(directory, ActionName)) is DeletionVerdict.Refused refused)
+        var scope = new DeletionScope(directory, ActionName);
+        foreach (var candidate in AsideNames(file, Stamp()))
         {
-            throw new InvalidOperationException($"could not keep the broken user config aside: {refused.Reason}");
+            var created = files.CreateFileExclusively(candidate, text, scope);
+            if (created is ExclusiveCreate.Refused refused)
+            {
+                throw new InvalidOperationException($"could not keep the broken user config aside: {refused.Reason}");
+            }
+
+            if (created is ExclusiveCreate.Created)
+            {
+                return candidate;
+            }
         }
 
-        return aside;
+        throw new InvalidOperationException($"could not keep the broken user config aside: every name tried beside {file} is taken");
     }
 
     private string Stamp() => clock.GetUtcNow().UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
@@ -284,11 +298,11 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     /// taken between this probe and the move), so the probe only has to find a name, not reserve one.
     /// Past <see cref="MaxAsideProbes"/> taken names a GUID suffix ends the search.
     /// </summary>
-    private string FreeAsideName(string file, string stamp) =>
-        Enumerable.Range(1, MaxAsideProbes)
-            .Select(n => n == 1 ? $"{file}.broken-{stamp}" : $"{file}.broken-{stamp}-{n}")
-            .FirstOrDefault(candidate => !files.FileExists(candidate) && !files.DirectoryExists(candidate))
-        ?? $"{file}.broken-{stamp}-{Guid.NewGuid():N}";
+    private static IEnumerable<string> AsideNames(string file, string stamp) =>
+        Enumerable.Range(1, MaxAsideProbes).Select(n => n == 1 ? $"{file}.broken-{stamp}" : $"{file}.broken-{stamp}-{n}")
+            .Append($"{file}.broken-{stamp}-{Guid.NewGuid():N}");
+
+    private string FreeAsideName(string file, string stamp) => AsideNames(file, stamp).First(candidate => !Exists(candidate));
 
     private static byte[] Render(IReadOnlyDictionary<string, ConfigValue> entries)
     {

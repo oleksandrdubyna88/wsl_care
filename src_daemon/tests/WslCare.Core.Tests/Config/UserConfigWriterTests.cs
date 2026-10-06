@@ -277,6 +277,61 @@ public sealed class UserConfigWriterTests
         set.Should().Throw<InvalidOperationException>().WithMessage("*could not put the broken user layer back*");
     }
 
+    // Fix-PR consultation f4a0e9b4: an EMPTY layer is read too (zero bytes), and took the move path with its absent-layer window.
+    [Fact]
+    public void An_empty_broken_layer_is_also_still_in_place_while_its_replacement_is_written()
+    {
+        using var host = new SandboxHost("writer-crash-window-empty");
+        host.WriteUserConfig(string.Empty);
+        var probe = new LayerAtWriteTime(host.Files, host.Paths.UserConfigFile);
+
+        new UserConfigWriter(host.Paths, probe, new FixedTimeProvider()).Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        probe.Seen.Should().Be(string.Empty, "an empty layer was read, so it is copied aside like any other");
+    }
+
+    // Fix-PR consultation f4a0e9b4: the copy aside probed a free name, then WROTE it with a replacing rename — a second repair
+    // that took the same name in between had its kept file overwritten. The kept file is created exclusively.
+    [Fact]
+    public void A_kept_broken_file_that_appears_under_the_chosen_name_is_never_overwritten()
+    {
+        using var host = new SandboxHost("writer-aside-race");
+        host.WriteUserConfig("{ this is not json");
+        var racer = new PlantsTheAsideName(host.Files);
+
+        var written = new UserConfigWriter(host.Paths, racer, new FixedTimeProvider()).Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        racer.Planted.Should().NotBeEmpty("the race must have been staged, or this test proves nothing");
+        File.ReadAllText(racer.Planted).Should().Be("another repair's file", "nothing a concurrent repair kept is ever overwritten");
+        written.Should().BeOfType<UserConfigWriteResult.Written>().Which.MovedAsideTo.Should().NotBe(racer.Planted);
+    }
+
+    private sealed class PlantsTheAsideName(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public string Planted { get; private set; } = string.Empty;
+
+        public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+        {
+            Plant(path);
+            return base.WriteFileAtomically(path, content, scope);
+        }
+
+        public override ExclusiveCreate CreateFileExclusively(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+        {
+            Plant(path);
+            return base.CreateFileExclusively(path, content, scope);
+        }
+
+        private void Plant(string path)
+        {
+            if (Planted.Length == 0 && path.Contains(".broken-", StringComparison.Ordinal))
+            {
+                File.WriteAllText(path, "another repair's file");
+                Planted = path;
+            }
+        }
+    }
+
     private sealed class LayerAtWriteTime(IFileSystem inner, string layer) : DelegatingFileSystem(inner)
     {
         public string Seen { get; private set; } = "(missing)";
