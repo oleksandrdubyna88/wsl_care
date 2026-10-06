@@ -190,4 +190,26 @@ public sealed class ActFlows
         home.Calls.Where(c => c.Argv.Take(2).SequenceEqual(["volume", "rm"])).Should().ContainSingle().Which.Argv.Should().Equal("volume", "rm", shown);
         RunHistory.Read(home.Paths, new PhysicalFileSystem(home.Paths)).Records.Single().Trigger.Should().Be(RunTrigger.Manual);
     }
+
+    // Retro gate over PR #7 (the fix's plan round): over the BUILT CLI, a timer run with two login accounts and no default user
+    // in /etc/wsl.conf reads no user layer — and must run nothing, past its dry-run week, with the remedy named.
+    [Fact]
+    public async Task With_no_single_target_user_the_timers_act_runs_nothing_and_names_the_remedy()
+    {
+        using var home = new ScenarioHome("act-timer-no-target") { ClaimsRoot = true };
+        Assert.SkipUnless(home.Paths.Side == HostSide.Wsl, "the distro's actions and its target user exist on the Linux binary only");
+        home.Answer(new FakeAnswer(SystemdCommands.Journalctl, SystemdCommands.JournalDiskUsage.Arguments, 0, home.WriteFile("journal-1.5G.out", "Archived and active journals take up 1.5G in the file system.\n"), string.Empty));
+        home.Script(SystemdCommands.Journalctl, ["--vacuum-time=30d"], 0, stderr: "Vacuuming done, freed 0B of archived journals from /var/log/journal.");
+        Write(home.Paths.DistroPath("/etc/passwd"), "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\nuser:x:1001:1001::/home/user:/bin/bash\n");
+        Write(home.Paths.MachineConfigFile, """{ "dryRun": false }""");
+        Write(DryRunWindow.File(home.Paths), $$"""{ "schemaVersion": 1, "at": "{{DateTimeOffset.UtcNow.AddDays(-30):O}}" }""");
+
+        var result = await home.RunAsync("act", "A10", "--confirm", "--timer", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        var a10 = Report(result).Actions.Single(a => a.Id == "A10");
+        a10.Status.Should().Be(ActionStatus.Skipped, "the person may have switched A10 off in the layer root could not read");
+        a10.Reason.Should().Contain("user layer is not read").And.Contain("[user] default=");
+        home.Calls.Should().NotContain(c => c.Display.Contains("--vacuum-time", StringComparison.Ordinal));
+    }
 }

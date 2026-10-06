@@ -642,12 +642,15 @@ public sealed class ActionEngineTests : IDisposable
         var skipped = new UserLayerTrust(0, ForRoot: true, string.Empty, "the user layer is not read: no single target user (two login accounts)");
         EngineContext Skipping(params ICleanupAction[] actions) => Context(actions) with { Loaded = ConfigLoader.Load(_sandbox.Paths, _sandbox.Files, skipped) };
 
-        var timer = await new ActionEngine(Skipping(Action("A10"))).ExecuteAsync(Run(RunTrigger.Timer, "A10"), CancellationToken.None);
+        var timer = await new ActionEngine(Skipping(Action("A4"), Action("A10"), Action("A8"), Action("A11"))).ExecuteAsync(Run(RunTrigger.Timer, "A4", "A10", "A8", "A11"), CancellationToken.None);
+        var timerJournal = _journal.ToList();
         _clock.Advance(TimeSpan.FromSeconds(1));
         var button = await new ActionEngine(Skipping(Action("A10"))).ExecuteAsync(Run(RunTrigger.Cli, "A10"), CancellationToken.None);
 
-        Statuses(timer).Should().Equal(["A10:skipped"], "auto.A10 may be off in a user layer root cannot read");
-        Done(timer).Detail.Actions.Single().Reason.Should().Contain("user layer is not read");
+        Statuses(timer).Should().OnlyContain(s => s.EndsWith(":skipped", StringComparison.Ordinal), "any auto switch may be off in a user layer root cannot read")
+            .And.HaveCount(4, "machine-scoped (A4, A10) and user-scoped (A8, A11) alike");
+        Done(timer).Detail.Actions.Should().OnlyContain(a => a.Reason.Contains("user layer is not read"));
+        timerJournal.Should().BeEmpty("the timer neither previewed nor ran any action");
         Statuses(button).Should().Equal("A10:ran");
     }
 }
