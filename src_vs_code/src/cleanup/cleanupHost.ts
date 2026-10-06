@@ -155,7 +155,7 @@ export class CleanupHost {
 
   private faulted(what: string, error: unknown): void {
     this.options.log(`cleanup: ${what} failed: ${reasonOf(error)}${error instanceof Error && error.stack !== undefined ? `\n${error.stack}` : ''}`);
-    void this.ui.notify('error', `WSL Care could not complete ${what}: ${reasonOf(error)}`);
+    void this.ui.notify('error', `AI OS Care could not complete ${what}: ${reasonOf(error)}`);
   }
 
   private state(): { entries: ReturnType<CleanupJournal['entries']>; results: readonly Notice[]; flowBusy: boolean } {

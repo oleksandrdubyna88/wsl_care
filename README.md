@@ -598,7 +598,7 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   *interrupted*, a refused one its reason, one with no answer in 30 minutes "state unknown" with its run id. *Last cleanup*
   shows the daemon's newest cleanup (`status.lastCleanup`), the results this window showed and "Docker after" with the time
   it was read. Every button's state comes from what the daemon reports, never from the button alone.
-- **The Logs page (E6.S4).** *Logs* in the panel's title bar (*WSL Care: Logs*) and *Logs* beside *Last cleanup* open
+- **The Logs page (E6.S4).** *Logs* in the panel's title bar (*AI OS Care: Logs*) and *Logs* beside *Last cleanup* open
   it in the editor area. Periods: **This run** (the last cleanup, `runs show`), **Today**, **Yesterday**, a **day** or a
   **range** from the date picker — LOCAL days, asked as the instants of their local midnights (`logs` and `runs --from
   <instant> --to <instant> --json`), so a summer-time day of 23 or 25 hours is that day; the picker offers only the 90

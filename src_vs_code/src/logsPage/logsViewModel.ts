@@ -88,7 +88,7 @@ function runListOf(state: LogsState): RunList {
 
 export function buildLogsView(state: LogsState): LogsView {
   return {
-    heading: 'WSL Care — Logs',
+    heading: 'AI OS Care — Logs',
     notice: safeText(state.notice),
     noticeLevel: state.noticeLevel,
     periodLabel: periodLabel(state),

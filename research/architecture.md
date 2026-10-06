@@ -2674,7 +2674,7 @@ poller, install or store module imports `root/`):
 - **`cleanupHost.ts`** / **`cleanUi.ts`** / **`cleanRecorder.ts`** — the wiring, the native modal and notifications, and the
   Test-mode recorder the test API and the node scenarios share. Every surface goes through ONE road: `noticeText`
   (`src/text/safeText.ts`) breaks markdown link syntax, so a daemon string can never become a clickable `command:` link; a
-  fault at a button's detached edge is told and logged to the *WSL Care* log output channel.
+  fault at a button's detached edge is told and logged to the *AI OS Care* log output channel.
 - **`src/shared/shapes.ts`** (the run-id and instant shapes the client, the root ids and the fake share) and
   **`src/text/format.ts`** (`gb`, `minuteOf`) — one place each.
 
