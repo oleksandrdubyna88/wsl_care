@@ -186,11 +186,13 @@ public sealed partial class ReleaseExtensionWorkflowTests
         steps.Count(s => Run(s).Contains("npm run package", StringComparison.Ordinal) || Run(s).Contains("vsce package", StringComparison.Ordinal)).Should().Be(1, "vsce package ONCE");
         Run(steps[order[2]]).Should().Contain("--release", "a release refuses the placeholder publisher")
             .And.Contain("--min-daemon \"$MIN_DAEMON\"", "the built minimum is the one the guard found published and verified")
-            .And.Contain("--install-daemon \"$INSTALL_DAEMON\"", "the release the .vsix installs is the one the guard found published and verified");
+            .And.Contain("--min-daemon-actions \"$MIN_DAEMON_ACTIONS\"", "the actions minimum too (E6.S2, plan §15j M5)")
+            .And.Contain("--root-allowed \"$ROOT_ALLOWED\"", "the guard's tag answer reaches the artefact check (plan §15j B3, §15k #7)");
         steps[order[4]]["with"].Map["path"].Text.Should().Be("release-extension/", "the .vsix and its .sha256 travel together");
         build["env"].Map["VERSION"].Text.Should().Be("${{ needs.guard.outputs.version }}", "the build packs the version the guard approved");
         build["env"].Map["MIN_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.min_daemon }}");
-        build["env"].Map["INSTALL_DAEMON"].Text.Should().Be("${{ needs.guard.outputs.install_daemon }}");
+        build["env"].Map["MIN_DAEMON_ACTIONS"].Text.Should().Be("${{ needs.guard.outputs.min_daemon_actions }}");
+        build["env"].Map["ROOT_ALLOWED"].Text.Should().Be("${{ needs.guard.outputs.root_allowed }}");
         File.ReadAllText(ReleaseFiles.Workflow("ci-extension.yml")).Should().Contain("npm run package").And.Contain("npm run check:vsix", "every pull request packages and checks the same way (plan §15g M8)");
     }
 
@@ -228,27 +230,30 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var step = Steps(guard)[StepIndex(guard, GuardScript)];
         Run(step).Should().Contain("\"$GITHUB_REF_NAME\" origin/main");
         step["env"].Map["GH_TOKEN"].Text.Should().Be("${{ github.token }}", "the job's read-only token asks for the daemon release");
-        guard["outputs"].Map.Keys.Should().Equal(["version", "publisher", "min_daemon", "install_daemon"], "every line the guard emits is a declared output (E5 code round #7)");
+        guard["outputs"].Map.Keys.Should().Equal(["version", "publisher", "min_daemon", "min_daemon_actions", "root_allowed"], "every line the guard emits is a declared output (E5 code round #7; E6.S2)");
         guard["outputs"].Map["min_daemon"].Text.Should().Be("${{ steps.guard.outputs.min_daemon }}");
-        guard["outputs"].Map["install_daemon"].Text.Should().Be("${{ steps.guard.outputs.install_daemon }}");
+        guard["outputs"].Map["min_daemon_actions"].Text.Should().Be("${{ steps.guard.outputs.min_daemon_actions }}");
+        guard["outputs"].Map["root_allowed"].Text.Should().Be("${{ steps.guard.outputs.root_allowed }}");
 
         var script = File.ReadAllText(Path.Combine(ReleaseFiles.Root, GuardScript));
         script.Should().Contain("min-daemon.json").And.Contain("releases/tags/$daemon_tag").And.Contain("POST_DEPLOY.md").And.Contain("publisher-tbd")
+            .And.Contain("refs/tags/extension-v$FIRST_PUBLIC", "B3 is keyed on the TAGS (plan §15k #7), never on the release-please manifest")
             .And.Contain($"{TagPrefix()}*)", "the guard reads the tag shape this workflow triggers on");
         script.Should().NotContain("handshake.ts", "the guard reads the JSON artefact, never TypeScript with a line pattern (E5 code round #2/#5)");
     }
 
-    /// <summary>The guard reads the minimum daemon from the checked-in artefact <c>src_vs_code/min-daemon.json</c> — what the
-    /// bundle step emits from <c>MIN_DAEMON_FOR_RENDER</c>, held equal to it by the extension's tests and by check-vsix.
-    /// Its shape is held here, on every OS, rather than discovered on a release day.</summary>
+    /// <summary>The guard reads the minima from the checked-in artefact <c>src_vs_code/min-daemon.json</c> — what the bundle
+    /// step emits from <c>MIN_DAEMON_FOR_RENDER</c> and (since E6.S2, plan §15j M5) <c>MIN_DAEMON_FOR_ACTIONS</c>, held equal to
+    /// them by the extension's tests and by check-vsix. Its shape is held here, on every OS, rather than discovered on a
+    /// release day.</summary>
     [Fact]
-    public void The_minimum_daemon_artefact_the_guard_reads_is_one_json_member_with_an_x_y_z()
+    public void The_minimum_daemon_artefact_the_guard_reads_is_two_json_members_each_an_x_y_z()
     {
         using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(ReleaseFiles.Root, MinDaemonFile)));
 
-        json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal(["minDaemonForRender", "installDaemon"]);
+        json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal(["minDaemonForRender", "minDaemonForActions"]);
         json.RootElement.GetProperty("minDaemonForRender").GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$");
-        json.RootElement.GetProperty("installDaemon").GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$");
+        json.RootElement.GetProperty("minDaemonForActions").GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$");
     }
 
     /// <summary>E5 code round #6: POST_DEPLOY item 6 compares by CONTAINMENT and RANK — the newest published extension tag's
