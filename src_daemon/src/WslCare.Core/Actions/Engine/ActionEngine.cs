@@ -25,8 +25,8 @@ public sealed record EngineContext(
     int ProcessId,
     ActionRegistry Registry)
 {
-    /// <summary>How often <c>running.json</c> is rewritten (plan §6: 5 s; a test shortens it).</summary>
-    public TimeSpan HeartbeatPeriod { get; init; } = RunningState.HeartbeatPeriod;
+    /// <summary>How often <c>running.json</c> is rewritten (plan §6, <c>running.heartbeatSeconds</c>; a test shortens it).</summary>
+    public TimeSpan HeartbeatPeriod { get => field == TimeSpan.Zero ? RunningState.HeartbeatPeriod : field; init; }
 
     /// <summary>How A11 signals a process (by pid and start, never by name). Refuses unless the CLI wires the real one —
     /// which it does only outside a sandbox, on Linux.</summary>

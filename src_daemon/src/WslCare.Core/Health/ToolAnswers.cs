@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 using WslCare.Core.Collectors;
@@ -12,7 +13,7 @@ namespace WslCare.Core.Health;
 /// </summary>
 public static class ToolAnswers
 {
-    private const int QuoteChars = 300;
+    private static int QuoteChars => Tuning.Current.Int(ConfigKeys.Records.MaxReasonChars);
 
     public static async Task<Reading<string>> RunAsync(ICommandRunner runner, ToolCommand command, CancellationToken cancellationToken) =>
         Read(command, await runner.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false));

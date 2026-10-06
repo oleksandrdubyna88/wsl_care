@@ -29,22 +29,22 @@ namespace WslCare.Core.Actions.PackageCaches;
 public sealed class PackageCacheClean : ICleanupAction
 {
     /// <summary>Plan §5 A9's trigger: the apt cache above 200 MB (binary, as every size the actions compare).</summary>
-    public const long AptTriggerBytes = 200L * 1024 * 1024;
+    public static long AptTriggerBytes => Tuning.Current.Mebibytes(ConfigKeys.AptCache.TriggerMb);
 
     public const string AptBytesFact = "aptBytes";
     public const string DisabledRevisionsFact = "disabledRevisions";
 
-    public static readonly CommandTemplate AptClean = new("apt-get-clean", CommandScope.Machine, "apt-get", [new ArgPart.Literal("clean")], TimeSpan.FromMinutes(5), CommandRequest.DefaultOutputCapChars);
+    public static readonly CommandTemplate AptClean = new("apt-get-clean", CommandScope.Machine, "apt-get", [new ArgPart.Literal("clean")], ConfigKeys.AptCache.CleanTimeoutSeconds, ConfigKeys.Commands.OutputCapBytes);
 
-    public static readonly CommandTemplate SnapList = CommandTemplate.Fixed(HealthCommands.SnapList);
+    public static readonly CommandTemplate SnapList = CommandTemplate.Fixed(() => HealthCommands.SnapList);
 
     public static readonly CommandTemplate SnapRemove = new(
         "snap-remove-revision",
         CommandScope.Machine,
         HealthCommands.Snap,
         [new ArgPart.Literal("remove"), new ArgPart.Slot("snap", new SlotKind.SnapName()), new ArgPart.Slot("revision", new SlotKind.Prefixed("--revision=", new SlotKind.Number(1, 999_999_999)))],
-        TimeSpan.FromMinutes(5),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.Snap.RemoveTimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     public ActionId Id { get; } = ActionId.Find("A9")!;
 
@@ -73,7 +73,7 @@ public sealed class PackageCacheClean : ICleanupAction
     {
         var apt = preview.Facts.GetValueOrDefault(AptBytesFact);
         var revisions = preview.Facts.GetValueOrDefault(DisabledRevisionsFact);
-        return new TriggerDecision(apt > AptTriggerBytes || revisions > 0, string.Create(CultureInfo.InvariantCulture, $"apt cache {apt / 1e6:0.0} MB, {revisions} disabled snap revision(s); the trigger is above 200 MiB or any revision"));
+        return new TriggerDecision(apt > AptTriggerBytes || revisions > 0, string.Create(CultureInfo.InvariantCulture, $"apt cache {apt / 1e6:0.0} MB, {revisions} disabled snap revision(s); the trigger is above {Tuning.Current.Text(ConfigKeys.AptCache.TriggerMb)} MiB or any revision"));
     }
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)

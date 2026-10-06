@@ -137,7 +137,7 @@ public sealed class ClockFixTests : IDisposable
 
         var preview = await _action.PreviewAsync(context, commands, CancellationToken.None);
 
-        preview.Refusal.Should().Contain("less than an hour ago");
+        preview.Refusal.Should().Contain("less than 60 minutes ago", "clock.minimumGapMinutes, said as the number in force");
     }
 
     [Fact]

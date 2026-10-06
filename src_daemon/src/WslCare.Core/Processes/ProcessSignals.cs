@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 using System.Runtime.InteropServices;
 
@@ -109,13 +110,13 @@ internal interface IPidfdCalls
 public sealed class PidfdProcessSignals : IProcessSignals
 {
     /// <summary>How long the processes get to end after <c>SIGKILL</c> before they are reported still running.</summary>
-    public static readonly TimeSpan KillWait = TimeSpan.FromSeconds(5);
+    public static TimeSpan KillWait => Tuning.Current.Seconds(ConfigKeys.Processes.KillWaitSeconds);
 
     private const int SigTerm = 15;
     private const int SigKill = 9;
     private const int Esrch = 3;
     private const int Eintr = 4;
-    private const int SliceMilliseconds = 200;
+    private static int SliceMilliseconds => Tuning.Current.Int(ConfigKeys.Processes.SignalSliceMilliseconds);
 
     private readonly IFileSystem _files;
     private readonly string _procRoot;

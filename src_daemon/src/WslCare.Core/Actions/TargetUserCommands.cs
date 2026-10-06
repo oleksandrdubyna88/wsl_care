@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
@@ -78,7 +79,7 @@ public static class TargetUserCommands
     private static readonly string[] SystemBins = ["/usr/local/bin", "/usr/bin"];
 
     /// <summary>nvm's default alias is one short line.</summary>
-    private const int MaxAliasBytes = 4096;
+    private static int MaxAliasBytes => Tuning.Current.Int(ConfigKeys.UserFiles.MaxSmallFileBytes);
 
     /// <summary><c>~/.nvm/versions/node/&lt;the default version&gt;/bin</c> (distro path), or <c>null</c>.</summary>
     private static string? NvmDefaultBin(TargetUser user, LinuxHostPaths paths, IFileSystem files)

@@ -29,8 +29,8 @@ public sealed class NpmCacheClean : ICleanupAction
         CommandScope.User,
         "npm",
         [new ArgPart.Literal("cache"), new ArgPart.Literal("clean"), new ArgPart.Literal("--force")],
-        TimeSpan.FromMinutes(10),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.Npm.CleanTimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     /// <summary>Where npm keeps its cache as the user's own configuration says (review S4) — asked, never assumed.</summary>
     public static readonly CommandTemplate WhereCache = new(
@@ -38,8 +38,8 @@ public sealed class NpmCacheClean : ICleanupAction
         CommandScope.User,
         "npm",
         [new ArgPart.Literal("config"), new ArgPart.Literal("get"), new ArgPart.Literal("cache")],
-        TimeSpan.FromSeconds(30),
-        64 * 1024);
+        ConfigKeys.ToolCaches.WhereTimeoutSeconds,
+        ConfigKeys.ToolCaches.WhereOutputCapBytes);
 
     private const long Gib = 1L << 30;
 

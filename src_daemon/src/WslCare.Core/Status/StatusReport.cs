@@ -74,6 +74,10 @@ public sealed record StatusReport(
 
     /// <summary>The newest run with a cleanup (§15j M7). Additive (E6.S0).</summary>
     public LastCleanupReport? LastCleanup { get; init; }
+
+    /// <summary>The daemon values the extension mirrors instead of copying (<see cref="StatusLimits"/>,
+    /// <c>contracts/status-limits.json</c>). Additive (E7.S2c); absent from the sample a run detail embeds.</summary>
+    public StatusLimits? Limits { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>

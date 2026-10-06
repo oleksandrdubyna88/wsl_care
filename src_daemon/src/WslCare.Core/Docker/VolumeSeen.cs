@@ -82,7 +82,7 @@ public sealed class VolumeSeenStore(IHostPaths paths, IFileSystem files)
 
     public string File => paths.Rules.Join(paths.StateDirectory, FileName);
 
-    public VolumeSeenLoad Read() => files.ReadFile(File) switch
+    public VolumeSeenLoad Read() => files.ReadFile(File, RootFileCaps.State) switch
     {
         FileReadResult.Content content => Parse(content.Bytes),
         FileReadResult.Missing => new VolumeSeenLoad(VolumeSeenRecord.Empty, string.Empty),

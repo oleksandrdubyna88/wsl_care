@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 using System.Text.Json;
 
@@ -91,7 +92,7 @@ public abstract record RunningStatus
 public sealed record RunningReadRetry(int Retries, TimeSpan Delay, Action<TimeSpan> Pause)
 {
     /// <summary>Three more reads, 100 ms apart: at most 300 ms before a verdict.</summary>
-    public static readonly RunningReadRetry Default = new(3, TimeSpan.FromMilliseconds(100), Thread.Sleep);
+    public static RunningReadRetry Default => new(Tuning.Current.Int(ConfigKeys.Running.ReadRetries), Tuning.Current.Milliseconds(ConfigKeys.Running.ReadRetryMilliseconds), Thread.Sleep);
 }
 
 /// <summary>Reads, writes and judges <c>running.json</c>.</summary>
@@ -100,10 +101,10 @@ public static class RunningState
     public const string FileName = "running.json";
 
     /// <summary>Plan §6: the heartbeat is rewritten every 5 s.</summary>
-    public static readonly TimeSpan HeartbeatPeriod = TimeSpan.FromSeconds(5);
+    public static TimeSpan HeartbeatPeriod => Tuning.Current.Seconds(ConfigKeys.Running.HeartbeatSeconds);
 
     /// <summary>Plan §6: a reader treats a heartbeat older than 30 s as not beating.</summary>
-    public static readonly TimeSpan StaleAfter = TimeSpan.FromSeconds(30);
+    public static TimeSpan StaleAfter => Tuning.Current.Seconds(ConfigKeys.Running.WedgedAfterSeconds);
 
     /// <summary>How far two readings of one process's start may differ and still be the same process — the operating
     /// system derives it from the boot time and a 10 ms tick, and two readers can disagree by less than this.</summary>
@@ -150,7 +151,7 @@ public static class RunningState
         public sealed record Bad(string Why) : Loaded;
     }
 
-    private static Loaded Load(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths)) switch
+    private static Loaded Load(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths), RootFileCaps.State) switch
     {
         FileReadResult.Missing => new Loaded.Absent(),
         FileReadResult.Unreadable u => new Loaded.Bad($"cannot be read ({u.Reason})"),

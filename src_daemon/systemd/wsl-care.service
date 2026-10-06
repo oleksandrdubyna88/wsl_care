@@ -36,7 +36,14 @@
 #                         folder walk's 2M-entry bound. Plan §8's 256M was a guess for the binary alone and would
 #                         OOM-kill a child mid-cleanup; 1G is a ceiling against a runaway, not a budget (the VM's
 #                         ceiling is 36 GB). Unmeasured until the live install: POST_DEPLOY.md #11 reads the peak.
-#   Nice / IOSchedulingClass / TimeoutStartSec — plan §8, resource limits for a background job
+#   Nice / IOSchedulingClass — plan §8, resource limits for a background job
+#   TimeoutStartSec=infinity (E7.S2c, review N-4; like wsl-care-act@.service): the run is never time-killed as a whole —
+#                         every command it starts has its OWN ceiling with a tree kill (§15k #0), and a timer run that acts
+#                         can legitimately outlast a fixed start limit (the old 10min could kill a long A7 prune mid-run);
+#                         the heartbeat says live / wedged meanwhile, and act --stop ends a wedged one
+#   Nice, MemoryMax, TimeoutStopSec here are the DEFAULTS of units.nice, units.memoryMaxMb, units.stopTimeoutSeconds:
+#                         install.sh writes wsl-care.service.d/50-wsl-care-config.conf from the machine configuration
+#                         (wsl-care units dropin), and doctor names a drop-in that no longer matches
 #   SuccessExitStatus=75  "another run holds the lock" (a button's collect or act) is the designed answer
 #                         of a second run (§5 global guards), not a failed unit — the health collector
 #                         counts failed units
@@ -55,7 +62,7 @@ ExecStart=/opt/wsl-care/bin/wsl-care collect --timer
 Nice=19
 IOSchedulingClass=idle
 MemoryMax=1G
-TimeoutStartSec=10min
+TimeoutStartSec=infinity
 SuccessExitStatus=75
 NoNewPrivileges=yes
 KillMode=control-group

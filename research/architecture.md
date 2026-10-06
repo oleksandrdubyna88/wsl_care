@@ -2616,7 +2616,7 @@ flowchart LR
   whose session layout is confirmed, idle as above, and no session file of that agent written in the same window (listing
   + stat; a cut listing keeps it). Every kept process is counted with its reason in the preview's basis.
 - **Ending:** `SuspectSignals` — extracted from A11, used by both: each target re-read (same start, no CPU since the preview,
-  no terminal, not root's), one SIGTERM each, one shared 10 s grace, SIGKILL to the survivors, each outcome in the record.
+  no terminal, not root's), one SIGTERM each, one shared grace (`processes.termGraceSeconds`, 10 s), SIGKILL to the survivors, each outcome in the record.
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -2625,9 +2625,46 @@ configuration key (daemon) or a VS Code setting (extension), never a literal** �
 and, for the daemon, a `KeyTrust`: (A) behaviour → an ordinary key; (B) a limit on what ROOT reads, does or waits for →
 a machine-layer-only key that may be lowered freely and raised only up to a hard maximum; (C) a format, a contract or a
 unit (exit codes, `schemaVersion`, id shapes, `/proc` field indexes, unit conversions) stays a constant, listed with its
-reason. An extension timeout never sits below the daemon ceiling it waits on. The inventory and the build of the existing
-numbers are plan §15q *E7.S2c* (`todo/PLAN_wsl_care_daemon.md`); until it lands, existing literals are tracked there, and a
-NEW one is not added.
+reason. An extension timeout never sits below the daemon ceiling it waits on. The inventory is plan §15q *E7.S2c*
+(`todo/PLAN_wsl_care_daemon.md`); **built 2026-10-05** (*E7.S2c as built*): the daemon holds no behavioural literal — the
+structural test `ArchitectureTests.Numbers` fails on a new one outside its reasoned group-C list.
+
+**How a number reaches its call site (E7.S2c).**
+
+```mermaid
+flowchart LR
+    defaults["default.json<br/>(today's values)"] --> loader["ConfigLoader<br/>(machine layer read with<br/>config.maxLayerBytes' maximum)"]
+    machine["/etc/wsl-care/config.json<br/>(B keys: machine only)"] --> loader
+    user["~/.config/wsl-care/config.json<br/>(A keys)"] --> loader
+    loader --> rules["NumberRules<br/>(coupled limits; a violation<br/>refuses the layer)"]
+    rules --> effective["EffectiveConfig"]
+    effective --> tuning["Tuning<br/>process: Program.Main<br/>verb scope: Program.Run"]
+    tuning --> consts["named numbers<br/>(properties reading keys)"]
+    tuning --> limits["CommandLimits<br/>(read when a request is built)"]
+    tuning --> sentences["sentences<br/>(the value in force, N-6)"]
+    tuning --> caps["RootFileCaps<br/>(state / history read caps, N-5)"]
+    tuning --> dropin["units dropin &lt;unit&gt;"]
+    dropin --> install["install.sh writes<br/>&lt;unit&gt;.d/50-wsl-care-config.conf"]
+    install --> doctor["doctor unitConfig<br/>(a stale drop-in is a problem)"]
+    effective --> status["status --json limits<br/>(contracts/status-limits.json)"]
+    status --> ext["extension<br/>shared/daemonLimits.ts (PR #12)"]
+```
+
+- **`Tuning`** (`Config/Tuning.cs`) is the process's configuration, read through typed accessors (`Seconds(key)`,
+  `Mebibytes(key)`, `Text(key)` …). `Program.Main` sets it once after the load; `Program.Run` scopes each verb to the loaded
+  configuration (an `AsyncLocal`); anything earlier reads the embedded defaults. The configuration's own key patterns are
+  bounded by `patterns.matchTimeoutMilliseconds`' MAXIMUM — they run while the configuration loads (the bootstrap rule).
+- **Templates stay static, their limits do not.** `CommandTemplate.Limits` is `Keyed(timeoutKey, capKey)`, `Of(command)` or
+  `Fixed(values)`: a key is read when a request is built, never when the template is declared.
+- **The units follow the configuration through drop-ins** (`Systemd/UnitDropIns.cs`): the timer's period
+  (`timer.periodHours`, the ONE source of every copy of the period — `CollectRun.DefaultWindow`, `DoctorRun.LastRunMaxAge`),
+  its randomized delay and accuracy, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec. The shipped
+  unit files carry the defaults; both root services start with `TimeoutStartSec=infinity` (N-4).
+- **`status --json` → `limits`** publishes the daemon values the extension mirrors instead of copying
+  (`historyRetentionDays`, `requestFutureSkewSeconds`, `requestGraceSeconds`, `maxShownNames`, `unitStopSeconds`,
+  `drainGraceMilliseconds`) — those a host decision rests on whose machine range reaches above the default.
+- **Root's file reads are capped** (`IFileSystem.ReadFile(path, maxBytes)`, `Files/RootFileCaps.cs`): a state file at
+  `records.maxStateFileBytes`, a growing file at `records.maxHistoryBytes`, which also bounds every uncapped read.
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 

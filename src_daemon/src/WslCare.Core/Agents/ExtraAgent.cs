@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -109,7 +110,7 @@ public static partial class ExtraAgentShape
         entry.TryGetProperty(member, out var v) && v.ValueKind == JsonValueKind.Array && v.EnumerateArray().All(f => f.ValueKind == JsonValueKind.String);
 
     private static string NameProblem(string name) =>
-        NamePattern().IsMatch(name) ? string.Empty : $"name must be 1 to {MaxNameLength} letters, digits, spaces, '.', '_', '+' or '-', starting with a letter or a digit";
+        Matches(name, NameExpression) ? string.Empty : $"name must be 1 to {MaxNameLength} letters, digits, spaces, '.', '_', '+' or '-', starting with a letter or a digit";
 
     private static string FoldersProblem(ExtraAgent agent) =>
         agent.DataFolders.Count is < 1 or > MaxFolders ? $"dataFolders must hold 1 to {MaxFolders} folders"
@@ -142,7 +143,7 @@ public static partial class ExtraAgentShape
         : "sessionGlob must be relative segments of letters, digits, '.', '_', '-' and '*', or a whole '**' segment — no '..', no leading '/'";
 
     private static bool IsGlobSegment(string segment) =>
-        segment == "**" || (segment.Length > 0 && segment is not ("." or "..") && GlobSegmentPattern().IsMatch(segment));
+        segment == "**" || (segment.Length > 0 && segment is not ("." or "..") && Matches(segment, GlobSegmentExpression));
 
     private static bool IsDrivePath(string value) => value.Length >= 3 && char.IsAsciiLetter(value[0]) && value[1] == ':' && value[2] == '\\';
 
@@ -156,11 +157,14 @@ public static partial class ExtraAgentShape
 
     private static string Printable(string text) => new([.. text.Take(40).Select(c => char.IsControl(c) ? '?' : c)]);
 
-    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9 ._+-]{0,63}\z", RegexOptions.CultureInvariant, 250)]
-    private static partial Regex NamePattern();
+    /// <summary>A name: <see cref="MaxNameLength"/> characters at most (the schema's limit, spelt in the expression).</summary>
+    private const string NameExpression = @"^[A-Za-z0-9][A-Za-z0-9 ._+-]{0,63}\z";
 
-    [GeneratedRegex(@"^[A-Za-z0-9._*-]+\z", RegexOptions.CultureInvariant, 250)]
-    private static partial Regex GlobSegmentPattern();
+    private const string GlobSegmentExpression = @"^[A-Za-z0-9._*-]+\z";
+
+    /// <summary>A match bounded by <c>patterns.matchTimeoutMilliseconds</c> — the text is the user's own.</summary>
+    private static bool Matches(string text, string expression) =>
+        Regex.IsMatch(text, expression, RegexOptions.CultureInvariant, Tuning.Current.Milliseconds(ConfigKeys.Patterns.MatchTimeoutMilliseconds));
 
     /// <summary>The list as the user layer holds it.</summary>
     public static void Write(IReadOnlyList<ExtraAgent> agents, Utf8JsonWriter writer)

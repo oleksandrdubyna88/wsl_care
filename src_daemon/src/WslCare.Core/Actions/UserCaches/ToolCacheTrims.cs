@@ -34,13 +34,11 @@ public sealed record CacheTool(string Tool, CommandTemplate Command, IReadOnlyLi
 /// </remarks>
 public sealed class ToolCacheTrims : ICleanupAction
 {
-    public const int TriggerGib = 5;
+    public static int TriggerGib => Tuning.Current.Int(ConfigKeys.ToolCaches.TriggerGb);
 
     public const string NotRun = "not run: cargo sweep (it deletes projects' target/ folders, and projects live under ~/git, under which nothing is ever deleted); Gradle (it prunes its own caches; there is no command)";
 
     private const long Gib = 1L << 30;
-
-    private static readonly TimeSpan Ceiling = TimeSpan.FromMinutes(10);
 
     public static IReadOnlyList<CacheTool> Tools { get; } =
     [
@@ -141,8 +139,8 @@ public sealed class ToolCacheTrims : ICleanupAction
 
     /// <summary>A tool's "where is your cache" — read-only, short, its answer one line.</summary>
     private static CommandTemplate Where(string name, string executable, params string[] words) =>
-        new(name, CommandScope.User, executable, [.. words.Select(w => new ArgPart.Literal(w))], TimeSpan.FromSeconds(30), 64 * 1024);
+        new(name, CommandScope.User, executable, [.. words.Select(w => new ArgPart.Literal(w))], ConfigKeys.ToolCaches.WhereTimeoutSeconds, ConfigKeys.ToolCaches.WhereOutputCapBytes);
 
     private static CommandTemplate User(string name, string executable, params string[] words) =>
-        new(name, CommandScope.User, executable, [.. words.Select(w => new ArgPart.Literal(w))], Ceiling, CommandRequest.DefaultOutputCapChars);
+        new(name, CommandScope.User, executable, [.. words.Select(w => new ArgPart.Literal(w))], ConfigKeys.ToolCaches.TrimTimeoutSeconds, ConfigKeys.Commands.OutputCapBytes);
 }

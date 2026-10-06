@@ -39,7 +39,7 @@ public sealed class JournalVacuum : ICleanupAction
     private const long Gib = 1L << 30;
 
     /// <summary>journald's size — the read the health collector makes too.</summary>
-    public static readonly CommandTemplate DiskUsage = CommandTemplate.Fixed(SystemdCommands.JournalDiskUsage);
+    public static readonly CommandTemplate DiskUsage = CommandTemplate.Fixed(() => SystemdCommands.JournalDiskUsage);
 
     /// <summary>The vacuum: one slot, the age in whole days, bounded as the setting is.</summary>
     public static readonly CommandTemplate Vacuum = new(
@@ -47,8 +47,8 @@ public sealed class JournalVacuum : ICleanupAction
         CommandScope.Machine,
         SystemdCommands.Journalctl,
         [new ArgPart.Slot("keep", new SlotKind.Prefixed("--vacuum-time=", new SlotKind.Number(1, 3650, "d")))],
-        TimeSpan.FromMinutes(5),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.Journal.VacuumTimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     public ActionId Id { get; } = ActionId.Find("A10")!;
 

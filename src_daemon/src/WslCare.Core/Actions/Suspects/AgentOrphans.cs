@@ -39,7 +39,7 @@ public sealed class AgentOrphans : ICleanupAction
 
     public ActionId Id { get; } = ActionId.Find("A18")!;
 
-    public string Summary => "SIGTERM, then SIGKILL after 10 s, of the target user's orphaned AI-agent processes idle (no CPU, measured) with no live session — a button only";
+    public string Summary => $"SIGTERM, then SIGKILL after {Tuning.Current.Text(ConfigKeys.Processes.TermGraceSeconds)} s, of the target user's orphaned AI-agent processes idle (no CPU, measured) with no live session — a button only";
 
     public CommandScope Scope => CommandScope.User;
 

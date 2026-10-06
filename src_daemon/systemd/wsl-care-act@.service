@@ -26,6 +26,8 @@
 #   TimeoutStopSec=90 (both units, §15k #18): `act --stop` → SIGTERM → the run records itself interrupted; one that does
 #                             not exit in 90 s is SIGKILLed, and the next root run's sweep records why from the stop marker
 #   KillMode=control-group    a stop ends every child the run started (the default, spelt out for the equality test)
+#   Nice, MemoryMax, TimeoutStopSec are the DEFAULTS of units.* (E7.S2c): install.sh writes the same drop-in as
+#                             wsl-care.service's into wsl-care-act@.service.d/ (wsl-care units dropin)
 [Unit]
 Description=wsl-care: a detached run the panel asked for (%i)
 Documentation=https://github.com/oleksandrdubyna88/wsl_care

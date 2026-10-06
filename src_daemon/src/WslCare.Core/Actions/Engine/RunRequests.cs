@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.Json;
 
 using WslCare.Core.Files;
@@ -79,15 +80,15 @@ public static class RunRequests
 
     /// <summary>The largest request read: a full shown list (10 000 names of 64 hex digits, quoted, comma-separated ≈ 670 KB)
     /// with room to spare; one byte more is a refusal, whatever the file's length claims.</summary>
-    public const int MaxRequestBytes = 1024 * 1024;
+    public static int MaxRequestBytes => Tuning.Current.Int(ConfigKeys.Requests.MaxBytes);
 
     /// <summary>How many request files one reader opens at most: a queue that deep is already a defect to report, and every
     /// unprivileged <c>status</c> reads them.</summary>
-    public const int MaxRequestsRead = 64;
+    public static int MaxRequestsRead => Tuning.Current.Int(ConfigKeys.Requests.MaxRead);
 
     /// <summary>The growth budget (plan §15k #8 + #17): at most 32 requests wait at once — ≤ 32 MiB in the folder — and a 33rd
     /// is refused at <c>--detach</c> with its own exit code. Every terminal path removes its request, the sweep included.</summary>
-    public const int MaxQueued = 32;
+    public static int MaxQueued => Tuning.Current.Int(ConfigKeys.Requests.MaxQueued);
 
     private const string Extension = ".json";
 

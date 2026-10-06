@@ -82,7 +82,7 @@ public static class CollectRun
     public const string RunningAction = RunKinds.FullCheckName;
 
     /// <summary>The "since the last run" window when there is no last run: the timer's period (plan §8).</summary>
-    public static readonly TimeSpan DefaultWindow = TimeSpan.FromHours(4);
+    public static TimeSpan DefaultWindow => Tuning.Current.Hours(ConfigKeys.Timer.PeriodHours);
 
     public static async Task<CollectResult> RunAsync(CollectContext c, CancellationToken cancellationToken)
     {

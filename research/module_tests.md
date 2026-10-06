@@ -1556,6 +1556,56 @@ Two first attempts (the identity and missing-history rules mutated in `IdleFor`)
 
 **Goldens:** the seven `status*.json` gained `A18` in `actions`; `contracts/actions.json` and `config-keys.json` regenerated.
 
+### Every number is configuration (E7.S2c, 2026-10-05, owner rule)
+
+| Guarantee | Tests |
+|---|---|
+| no behavioural number is a literal in `src_daemon/src`: five shapes (a numeric `const` / `static readonly`, an inline `TimeSpan.From*(<digit>)`, `Take(n ≥ 2)`, a byte product, a literal handed to `Sleep` / `Next` / a capped read) outside the 114 reasoned group-C entries | `Core.Tests/ArchitectureTests.Numbers.No_behavioural_number_is_a_literal`; the companion plants one of each shape (`…The_number_scan_finds_a_planted_literal_of_every_shape`); a listed entry that is gone is stale (`…Every_listed_format_still_exists_in_the_source`) |
+| every A row an ordinary key, every B row a machine-layer-only key; a value above the hard maximum refused naming the key and the bound; a user-layer B value a notice, the default kept | `Core.Tests/Config/NumbersAreConfigurationTests.A_behaviour_number_is_an_ordinary_key` (35), `…A_root_safety_limit_is_a_machine_only_key` (91), `…A_limit_above_its_hard_maximum_is_refused_…` |
+| coupled limits that contradict each other refuse the layer naming the rule — wedged < 3 × heartbeat, a read cap below the queue, a list cap that cannot hold the shown names, a log range shorter than the retention, a stop ceiling not 30 s above the unit's stop, jitter max ≤ min, a timer period that does not divide 24 | `…Coupled_limits_that_contradict_each_other_refuse_the_layer_naming_the_rule` (7) |
+| every timeout key's range stays under `commands.maxTimeoutHours`' minimum | `…Every_timeout_key_stays_under_the_commands_maximum` |
+| a machine value reaches the code it bounds: a read command's ceiling, a keyed template's (read when a request is built), a fixed read template that follows its command, the Docker batch, the unit stop template, the heartbeat and wedged times, the walk's limits, `CommandRequest.MaxTimeout`; outside the scope the defaults are back | `…A_machine_value_reaches_the_command_the_wait_and_the_walk_it_bounds` (the templates read under the defaults FIRST) |
+| the defaults are today's values (behaviour unchanged) | `…A_default_is_todays_value_so_behaviour_is_unchanged` |
+| N-6: a sentence says the number in force — A11 / A18's grace, A14's "newest N", the retention's days, the drift's minutes, the root-disk and fragmentation limits | `…A_sentence_says_the_number_in_force_not_a_copy_of_the_default`; `ClockFixTests.A_correction_less_than_an_hour_ago_…` reads "less than 60 minutes ago" |
+| N-5: a capped read refuses one byte past its cap and reads a file at it; an uncapped read is bounded by `records.maxHistoryBytes`; the dry-run stamp past `records.maxStateFileBytes` is unreadable and the week restarts | `Files/PhysicalFileSystemTests.A_capped_read_refuses_one_byte_past_the_cap_…`, `…An_uncapped_read_is_bounded_by_records_maxHistoryBytes`, `…A_dry_run_stamp_past_the_state_cap_…`; the read-site table (`ArchitectureTests.ReadSites`) holds doctor's drop-in read as a system read |
+| N-4: every `oneshot` unit's `TimeoutStartSec` is `infinity`, a `simple` unit sets none | `Scenarios/ShippedFilesTests.Every_unit_s_start_limit_is_infinity_or_above_the_worst_case_of_its_run` |
+| the drop-in of the defaults says what each shipped unit file says; under a changed machine layer it carries the configured period, Nice, MemoryMax, TimeoutStopSec, RestartSec, and the two root services' drop-ins are equal | `ShippedFilesTests.The_drop_in_of_the_defaults_says_what_each_shipped_unit_says`, `…A_drop_in_carries_the_configured_values` |
+| `units dropin <unit>` renders the machine layer's values; another unit is refused naming the four | `Cli.Tests/UnitsCommandTests` (2) |
+| `install.sh` writes each unit's drop-in from the INSTALLED binary (0644, before any unit is enabled), a drop-in the binary cannot render fails the install at `install-units`, the dry run names each, the uninstall removes each and its emptied folder | `InstallFlows.A_fresh_install_…` (four `units dropin` calls before `collect`), `…A_drop_in_the_binary_cannot_render_fails_the_install_before_any_unit_is_enabled`, `…Dry_run_…`, `InstallUninstallFlows.Uninstall_removes_the_units_binary_and_link_…` |
+| `doctor`'s `unitConfig`: a timer drop-in that no longer matches the machine layer is a `problem` naming `OnCalendar=*-*-* 00/6:00:00` and "run install.sh again"; matching drop-ins, and none under the defaults, are `ok` | `Doctor/DoctorTests.A_timer_drop_in_that_no_longer_matches_…`, `…Drop_ins_that_match_and_none_at_all_under_the_defaults_are_both_fine` |
+| `status --json` publishes `limits` — the values in force, the machine layer's when set | `Cli.Tests/UnitsCommandTests.Status_json_publishes_the_limits_in_force` |
+| `contracts/status-limits.json` carries the two names PR #12's `daemonLimits.ts` reads, and the daemon's JSON writer spells every field as the contract does, in its order | `Scenarios/ContractFilesTests.The_status_limits_contract_carries_the_names_the_extension_reads_and_the_writer_spells_them`; the equality test regenerates the file |
+
+**Red first:** the structural test was red with **230 hits** before the migration (the scan's list, classified hit by hit
+into a key or a reasoned format). The migration itself was red for a REAL defect: **607 Core tests failed** with *ValueFactory
+attempted to access the Value property of this instance* — the configuration's own key patterns read `Tuning` while `Tuning`'s
+defaults were being loaded; the fix is the bootstrap rule (the patterns are bounded by the key's maximum). The rest was written
+with its code and proved by the teeth below. Test-side defects met on the way: the doctor test's machine layer was refused on
+Linux (a sandbox file is not root's — the test now trusts the sandbox owner, as `SandboxHost` does); `ClockFixTests` expected
+the old sentence "less than an hour ago".
+
+**Teeth** (each file restored byte-identical; Windows Debug unless named):
+
+| Mutation | Red |
+|---|---|
+| `CommandLimits.Keyed` reads the defaults instead of the configuration | 1: *Expected 1m and 1s … but found 15m* |
+| a fixed read template freezes its command's limits | 0 at first — the template was first touched INSIDE the scope; the test now reads the templates under the defaults first: 1, *Expected 6s … found 20s* |
+| the heartbeat back to `static readonly TimeSpan … = TimeSpan.FromSeconds(5)` | 1: the scan names `RunningState.cs: HeartbeatPeriod` |
+| the physical capped read never refuses | 2 (the cap, the history bound) |
+| the dry-run window reads its stamp uncapped | 1: the week did not restart |
+| A11's summary back to "10 s" | 1: *… to contain "SIGKILL after 20 s"* |
+| `wsl-care.service` back to `TimeoutStartSec=10min` | 1 (`ShippedFilesTests`) |
+| the period-divides-24 rule dropped | 1: the period 5 loaded |
+| a `limits` field renamed (`retentionDays`) | 2: the extension's names, the checked-in contract |
+| `unitConfig` never a problem | 1 |
+| `Program.Run` scoped to the defaults instead of the loaded configuration | 1: the drop-in kept `00/4` |
+| `status` without `limits` | 1 |
+| `install.sh` without `write_dropins` (WSL) | 3: the fresh install, the dry run, the failing render |
+| the uninstall leaving the drop-ins (WSL) | 0 at first — no test looked; the uninstall test now asserts each `<unit>.d` is gone: 1 |
+
+**Goldens:** the seven `status*.json` gained `limits`, `doctor.json` gained `unitConfig`; `contracts/config-keys.json` (126 new
+keys) and the new `contracts/status-limits.json` regenerated.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -1878,6 +1928,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care runs log <runId>` | not covered | CUT by plan §15j M3: `runs show` answers the commands a run ran and their exits |
 | `wsl-care agents list [--measure] [--json]` with `--measure` over a planted Claude Code folder and a fake `claude` on PATH: exit 0, `schemaVersion` 1, `sizes.source` `now`, the agent detected by binary and folder, 100 bytes (its `memory/` never entered, named in `excluded`), one session counted and named, the version "not asked", and the fake never started; the text form; an unknown option refused (2); before a full run `none` with how to measure, after a `collect` the run's totals with no session name, no recorded file naming a session | covered (the full-run flow on the Linux legs; skipped on Windows with the reason) | `AgentsFlows` (4); in-process: `Agents/AgentCatalogueTests`, `AgentDiscoveryTests`, `AgentWalkTests`, `AgentNoOpenTests` (Linux); golden `agents-list.json` |
 | `wsl-care agents probe <path> [--json]` as root: exit 81 (`NotAsRoot`), nothing on stdout, the refusal naming uid 0 and the default-user fix; of a CLI (the fake tool at `~/.local/bin/mycli` with an execute bit): exit 0, usable, the suggested entry with `~/.mycli`, and the CLI never started; a path of the wrong shape refused (2) | covered (the CLI probe on the Linux legs; the root refusal on every OS) | `AgentsExtraFlows` (2 facts); in-process: `AgentsCommandTests` (root, shape, JSON), `Agents/AgentProbeTests` (incl. the inotify no-open proof, Linux) |
+| `wsl-care units dropin <unit>` (E7.S2c): the drop-in `install.sh` writes for one of the four units, from the machine layer — the timer's `OnCalendar` from `timer.periodHours`, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec; another unit refused (2) naming the four | covered (in-process, every OS; the installer's use on the Linux legs) | `Cli.Tests/UnitsCommandTests` (2); `ShippedFilesTests.The_drop_in_of_the_defaults_…`, `…A_drop_in_carries_the_configured_values`; `InstallFlows` (the render before any unit is enabled, its failure) |
 | `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |
 | `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, the three units byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
 | `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |

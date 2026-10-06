@@ -55,9 +55,10 @@ folder (no `..`, no link) stops it with nothing installed.
 | Path / thing | What |
 |---|---|
 | `/opt/wsl-care/bin/wsl-care` (0755), linked from `/usr/local/bin/wsl-care` | the binary; root and the units always use the absolute path |
-| `/etc/systemd/system/wsl-care.service` | the timer's full run, `wsl-care collect --timer` (oneshot, `Nice=19`, idle I/O, `MemoryMax=1G` for the run and every tool it starts, `NoNewPrivileges=yes`, 10 min) |
+| `/etc/systemd/system/wsl-care.service` | the timer's full run, `wsl-care collect --timer` (oneshot, `Nice=19`, idle I/O, `MemoryMax=1G` for the run and every tool it starts, `NoNewPrivileges=yes`; never time-killed as a whole — each command it starts has its own ceiling) |
 | `/etc/systemd/system/wsl-care.timer` | every 4 hours on the clock (00:00, 04:00, …), catching up ONCE after a night the VM was off; enabled and started |
 | `/etc/systemd/system/wsl-care-events.service` | the container-start follower, `wsl-care events follow`, `Restart=always` after 30 s; enabled and started |
+| `/etc/systemd/system/<unit>.d/50-wsl-care-config.conf` | each unit's configured values — the timer's period, the services' `Nice`, `MemoryMax`, `TimeoutStopSec`, the follower's `RestartSec` — rendered from the machine layer by the installed binary (`wsl-care units dropin <unit>`); written on every install, so running the installer again after editing the machine layer applies it; `wsl-care doctor` says when one no longer matches |
 | `/etc/wsl-care/config.json` | the machine configuration layer — written **only when none exists**, and empty (comments only: every value stays the binary's default); an existing one is never overwritten |
 | `/var/lib/wsl-care`, `/var/log/wsl-care` | the state and the run logs, root's, 0755 |
 | `sysstat`, `atop` | installed with `apt-get` when missing; sysstat's collection switched on through its own debconf setting; both services enabled |
@@ -127,6 +128,17 @@ catch-all, and never `ai-agents`), `distro` a distribution name, `archive.baseFo
 in the MACHINE file (`config set` refuses it; a user-file value is ignored). No setting changes what may run or be
 deleted — only when a declared cleanup runs and with which bounded number. `contracts/config-keys.json` lists every key
 with its range, its default and what it means to a root run.
+
+**Every number is a setting** (the owner's rule, plan §15q *E7.S2c*). Behaviour — thresholds, ages, triggers, the walk's
+interval, how many processes the top list keeps — is an ordinary key. A limit on what ROOT reads, does or waits for — a
+command's timeout, an output or file cap, a queue, a walk's budget, the timer's period (`timer.periodHours`, a divisor of 24),
+the units' `Nice` / `MemoryMax` / `TimeoutStopSec` — is a **machine-file-only** key with a hard range: lower it freely, raise
+it only up to its maximum (a few, like `requests.graceSeconds`, may only be raised). Limits that depend on each other are
+checked together (a wedged time of at least three heartbeats, a stop ceiling 30 s above the unit's own stop, …): a
+contradiction makes the machine file a `configError` naming the rule. `contracts/config-keys.json` lists each key's range
+and default; the defaults are the values this build always had. A unit value changed in the machine file takes effect
+when the installer writes the drop-ins again (`doctor`'s `unitConfig` says so). `status --json` carries `limits` — the
+values a client mirrors instead of copying (`contracts/status-limits.json`).
 
 **The user file and root.** The root timer reads your user file every 4 h, so it reads it the way root reads a file
 another account controls: a regular file you own, nobody else may write it, reached from your home through NO link
@@ -271,8 +283,9 @@ wsl-care doctor --json   # healthy: true|false, one check per part, the versions
 wsl-care doctor
 ```
 
-Read-only: the configuration (observe-only is a problem), the state directory, the last run (older than 5 h or
-failed), lost run details, `wsl-care.timer` / `wsl-care-events.service` / `sysstat.service` / `atop.service`, whether
+Read-only: the configuration (observe-only is a problem), the state directory, the last run (older than the timer's
+period plus `timer.lateSlackMinutes` — 5 h by default — or failed), lost run details, whether every unit drop-in still says
+what the machine layer says (`unitConfig`), `wsl-care.timer` / `wsl-care-events.service` / `sysstat.service` / `atop.service`, whether
 sysstat and atop wrote in the last 30 minutes, whether the events follower is current, and the versions of `wsl-care`,
 Docker, systemd and the kernel. Root reachability is the extension's check (`notChecked` here). It exits 0 whatever it
 finds; `healthy` is the verdict.

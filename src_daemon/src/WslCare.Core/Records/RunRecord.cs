@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -152,7 +153,7 @@ public sealed record ActionRecord(string Id, int Count, long FreedBytes)
     public string? Failure { get; init; }
 
     /// <summary>How much of a failure the history line keeps: one line of the log page, not a transcript.</summary>
-    public const int FailureLimit = 300;
+    public static int FailureLimit => Tuning.Current.Int(ConfigKeys.Records.MaxReasonChars);
 }
 
 /// <summary>One line of <c>history.jsonl</c> (plan §6). Both instants are UTC.</summary>

@@ -48,16 +48,16 @@ public sealed class ClockFix : ICleanupAction
 
     public const string ChronyFact = "chrony";
 
-    /// <summary>Plan §15 #10: at most one correction per hour.</summary>
-    public static readonly TimeSpan MinimumGap = TimeSpan.FromHours(1);
+    /// <summary>Plan §15 #10: at most one correction per <c>clock.minimumGapMinutes</c> (an hour by default).</summary>
+    public static TimeSpan MinimumGap => Tuning.Current.Minutes(ConfigKeys.Clock.MinimumGapMinutes);
 
-    public static readonly CommandTemplate WindowsClock = CommandTemplate.Fixed(HealthCommands.WindowsClock);
+    public static readonly CommandTemplate WindowsClock = CommandTemplate.Fixed(() => HealthCommands.WindowsClock);
 
-    public static readonly CommandTemplate TimeSync = CommandTemplate.Fixed(SystemdCommands.TimeSync);
+    public static readonly CommandTemplate TimeSync = CommandTemplate.Fixed(() => SystemdCommands.TimeSync);
 
-    public static readonly CommandTemplate Hwclock = new("hwclock-hctosys", CommandScope.Machine, "hwclock", [new ArgPart.Literal("-s")], TimeSpan.FromSeconds(30), CommandRequest.DefaultOutputCapChars);
+    public static readonly CommandTemplate Hwclock = new("hwclock-hctosys", CommandScope.Machine, "hwclock", [new ArgPart.Literal("-s")], ConfigKeys.Clock.StepTimeoutSeconds, ConfigKeys.Commands.OutputCapBytes);
 
-    public static readonly CommandTemplate ChronyMakestep = new("chronyc-makestep", CommandScope.Machine, "chronyc", [new ArgPart.Literal("makestep")], TimeSpan.FromSeconds(30), CommandRequest.DefaultOutputCapChars);
+    public static readonly CommandTemplate ChronyMakestep = new("chronyc-makestep", CommandScope.Machine, "chronyc", [new ArgPart.Literal("makestep")], ConfigKeys.Clock.StepTimeoutSeconds, ConfigKeys.Commands.OutputCapBytes);
 
     public ActionId Id { get; } = ActionId.Find("A16")!;
 
@@ -98,12 +98,12 @@ public sealed class ClockFix : ICleanupAction
         var max = config.Int(ConfigKeys.Clock.MaxDriftSeconds);
         if (preview.Facts.GetValueOrDefault(DriftFact) != 1)
         {
-            return new TriggerDecision(false, string.Create(CultureInfo.InvariantCulture, $"no drift on two observations at least 5 minutes apart (more than {max} s each); one observation is not enough (plan 15 #10)"));
+            return new TriggerDecision(false, string.Create(CultureInfo.InvariantCulture, $"no drift on two observations at least {ThresholdRules.ApartText} apart (more than {max} s each); one observation is not enough (plan 15 #10)"));
         }
 
         return preview.Facts.GetValueOrDefault(AlreadyCorrectedFact) == 1
             ? new TriggerDecision(false, "this drift was already corrected once and no full run has seen the clock agree since; it is not corrected again (once per drift)")
-            : new TriggerDecision(true, string.Create(CultureInfo.InvariantCulture, $"drift of {preview.Facts.GetValueOrDefault(OffsetMillisFact) / 1000.0:+0.00;-0.00} s on two observations at least 5 minutes apart"));
+            : new TriggerDecision(true, string.Create(CultureInfo.InvariantCulture, $"drift of {preview.Facts.GetValueOrDefault(OffsetMillisFact) / 1000.0:+0.00;-0.00} s on two observations at least {ThresholdRules.ApartText} apart"));
     }
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
@@ -153,7 +153,7 @@ public sealed class ClockFix : ICleanupAction
     /// <summary>The last correction, or <c>null</c> when none is recorded (or the record cannot be read: then the per-hour
     /// and once-per-drift guards fall back to the history-free answer — the record is root's and rewritten at each fix).</summary>
     public static ClockFixRecord? Read(IHostPaths paths, IFileSystem files) =>
-        files.ReadFile(File(paths)) is FileReadResult.Content content ? Parse(content.Bytes) : null;
+        files.ReadFile(File(paths), RootFileCaps.State) is FileReadResult.Content content ? Parse(content.Bytes) : null;
 
     private static ClockFixRecord? Parse(byte[] json)
     {
@@ -176,7 +176,7 @@ public sealed class ClockFix : ICleanupAction
 
     private static string Refusal(ActionContext context, ClockFixRecord? last) =>
         last is { } fix && context.Clock.GetUtcNow() - fix.CorrectedAt < MinimumGap
-            ? $"the clock was corrected at {fix.CorrectedAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z by {fix.Tool}, less than an hour ago: at most one correction per hour (plan 15 #10)"
+            ? string.Create(CultureInfo.InvariantCulture, $"the clock was corrected at {fix.CorrectedAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z by {fix.Tool}, less than {MinimumGap.TotalMinutes:0} minutes ago: at most one correction per {MinimumGap.TotalMinutes:0} minutes (plan 15 #10)")
             : string.Empty;
 
     /// <summary>Synchronised by timesyncd/chrony, or within the limit now: nothing to fix.</summary>

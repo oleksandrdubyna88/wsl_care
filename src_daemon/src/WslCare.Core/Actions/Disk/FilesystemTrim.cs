@@ -35,15 +35,15 @@ public sealed partial class FilesystemTrim : ICleanupAction
     public const string DaysSinceTrimFact = "daysSinceLastTrim";
 
     /// <summary>Plan §5 A15: weekly.</summary>
-    public static readonly TimeSpan Period = TimeSpan.FromDays(7);
+    public static TimeSpan Period => Tuning.Current.Days(ConfigKeys.Trim.PeriodDays);
 
     public static readonly CommandTemplate Trim = new(
         "fstrim-all-verbose",
         CommandScope.Machine,
         "fstrim",
         [new ArgPart.Literal("-av")],
-        TimeSpan.FromMinutes(10),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.Trim.TimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     /// <summary>util-linux fstrim: some filesystems were trimmed, some failed.</summary>
     private const int SomeTrimmed = 64;

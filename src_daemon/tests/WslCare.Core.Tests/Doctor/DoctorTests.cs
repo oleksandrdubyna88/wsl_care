@@ -102,6 +102,55 @@ public sealed class DoctorTests : IDisposable
         report.Checks.Single(c => c.Id == "config").State.Should().Be(DoctorRun.Problem);
     }
 
+    /// <summary>E7.S2c: the timer's period is ONE key; a machine layer that changes it after the install leaves the installed
+    /// drop-in saying the old period — doctor names that, and what the configuration wants.</summary>
+    [Fact]
+    public async Task A_timer_drop_in_that_no_longer_matches_the_machine_configuration_is_a_named_problem()
+    {
+        Installed(lastRun: Now.AddHours(-1), covered: Now.AddMinutes(-3));
+        WriteDropIns();
+        _root.File("etc/wsl-care/config.json", """{ "timer": { "periodHours": 6 } }""");
+
+        var report = await TunedRunAsync(Runner());
+
+        var check = report.Checks.Single(c => c.Id == "unitConfig");
+        check.State.Should().Be(DoctorRun.Problem);
+        check.Detail.Should().Contain("wsl-care.timer").And.Contain("OnCalendar=*-*-* 00/6:00:00").And.Contain("run install.sh again");
+        report.Healthy.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Drop_ins_that_match_and_none_at_all_under_the_defaults_are_both_fine()
+    {
+        Installed(lastRun: Now.AddHours(-1), covered: Now.AddMinutes(-3));
+
+        (await TunedRunAsync(Runner())).Checks.Single(c => c.Id == "unitConfig").State.Should().Be(DoctorRun.Ok, "no drop-in, and the defaults change nothing");
+        WriteDropIns();
+        (await TunedRunAsync(Runner())).Checks.Single(c => c.Id == "unitConfig").State.Should().Be(DoctorRun.Ok);
+    }
+
+    /// <summary>What install.sh writes under the defaults.</summary>
+    private void WriteDropIns()
+    {
+        foreach (var unit in UnitDropIns.Units)
+        {
+            _root.File($"etc/systemd/system/{unit}.d/{UnitDropIns.FileName}", UnitDropIns.Defaults(unit));
+        }
+    }
+
+    /// <summary>The run as <c>Program.Main</c> makes it: the loaded configuration is the process's tuning.</summary>
+    private async Task<DoctorReport> TunedRunAsync(RecordingCommandRunner runner)
+    {
+        // The machine layer is root's file on Linux: this sandbox's own files stand in for it, as SandboxHost's do.
+        var trusted = new PhysicalFileSystem(Paths) { TrustedStateOwner = RegularFiles.EffectiveUid(), OwnersAreThisProcess = true };
+        var loaded = ConfigLoader.Load(Paths, trusted);
+        loaded.Errors.Should().BeEmpty();
+        using (Tuning.Use(loaded.Config))
+        {
+            return await new DoctorRun(Paths, new PhysicalFileSystem(Paths), runner, new FixedTimeProvider(Now)).RunAsync(loaded, "0.0.0", CancellationToken.None);
+        }
+    }
+
     [Fact]
     public async Task Doctor_asks_the_tools_read_only_questions()
     {

@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 using WslCare.Core.Files;
@@ -18,7 +19,7 @@ public static class StopMarkers
 {
     public const string Folder = "stops";
 
-    public static readonly TimeSpan KeptFor = TimeSpan.FromDays(1);
+    public static TimeSpan KeptFor => Tuning.Current.Hours(ConfigKeys.Runs.StopMarkerRetentionHours);
 
     private const string Action = "stop-marker";
 
@@ -36,8 +37,8 @@ public static class StopMarkers
 
     /// <summary>The reason a swept run whose stop was asked records; empty when no stop was asked for it.</summary>
     public static string StoppedReason(IHostPaths paths, IFileSystem files, RunId runId) =>
-        files.ReadStateFile(File(paths, runId), 4096) is FileReadResult.Content content
-            ? $"stopped: act --stop asked systemd to stop it ({System.Text.Encoding.UTF8.GetString(content.Bytes).Trim()}) and it did not exit within 90 s of SIGTERM, so systemd killed it before it could record itself"
+        files.ReadStateFile(File(paths, runId), Tuning.Current.Int(ConfigKeys.Stops.MaxMarkerBytes)) is FileReadResult.Content content
+            ? $"stopped: act --stop asked systemd to stop it ({System.Text.Encoding.UTF8.GetString(content.Bytes).Trim()}) and it did not exit within {Tuning.Current.Text(ConfigKeys.Units.StopTimeoutSeconds)} s of SIGTERM, so systemd killed it before it could record itself"
             : string.Empty;
 
     /// <summary>Removes the marker of <paramref name="runId"/> when there is one.</summary>

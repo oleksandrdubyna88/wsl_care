@@ -13,7 +13,7 @@ namespace WslCare.Core.Config;
 /// how one of them comes to be wrong. A5 and A6 each have two switches because plan §5 gives them two
 /// different defaults: Testcontainers vs other containers, dangling vs unused images.</para>
 /// </remarks>
-public static class ConfigKeys
+public static partial class ConfigKeys
 {
     private const int CountCeiling = 1_000_000;
     private const int GbCeiling = 100_000;
@@ -79,22 +79,22 @@ public static class ConfigKeys
         public static readonly ConfigKey.IntKey OlderThanDays = new("buildCache.olderThanDays", 0, DaysCeiling) { Trust = KeyTrust.Higher };
     }
 
-    public static class Npm
+    public static partial class Npm
     {
         public static readonly ConfigKey.IntKey MaxCacheGb = new("npm.maxCacheGb", 0, GbCeiling) { Trust = KeyTrust.Higher };
     }
 
-    public static class Journal
+    public static partial class Journal
     {
         public static readonly ConfigKey.IntKey KeepDays = new("journal.keepDays", 1, DaysCeiling) { Trust = KeyTrust.Higher };
     }
 
-    public static class BuildServers
+    public static partial class BuildServers
     {
         public static readonly ConfigKey.IntKey IdleHours = new("buildServers.idleHours", 0, HoursCeiling) { Trust = KeyTrust.Higher };
     }
 
-    public static class Processes
+    public static partial class Processes
     {
         public static readonly ConfigKey.IntKey IdleOlderThanHours = new("processes.idleOlderThanHours", 0, HoursCeiling) { Trust = KeyTrust.Higher };
         /// <summary>A11's families (§15q R1.3, review B1): only the catalogue's named families — never <c>other</c>, the catch-all, which
@@ -107,7 +107,7 @@ public static class ConfigKeys
         public static readonly ConfigKey.IntKey AiAgentsIdleHours = new("processes.aiAgentsIdleHours", 1, 168) { Trust = KeyTrust.Higher };
     }
 
-    public static class Thresholds
+    public static partial class Thresholds
     {
         public static readonly ConfigKey.IntKey MemAvailableWarnPercent = new("thresholds.memAvailableWarnPercent", 0, 100);
         public static readonly ConfigKey.IntKey MemAvailableActPercent = new("thresholds.memAvailableActPercent", 0, 100) { Trust = KeyTrust.Lower };
@@ -140,7 +140,7 @@ public static class ConfigKeys
         public static readonly ConfigKey.IntKey Minutes = new("idle.minutes", 0, 1440) { Trust = KeyTrust.Higher };
     }
 
-    public static class Clock
+    public static partial class Clock
     {
         public static readonly ConfigKey.IntKey MaxDriftSeconds = new("clock.maxDriftSeconds", 1, 3600) { Trust = KeyTrust.Higher };
     }
@@ -179,6 +179,7 @@ public static class ConfigKeys
         Idle.CpuPercent, Idle.Minutes,
         Clock.MaxDriftSeconds,
         Logging.MinimumLevel, Logging.RetentionDays,
+        .. NumberKeys(),
     ];
 
     private static readonly Dictionary<string, ConfigKey> ByName = All.ToDictionary(k => k.Name, StringComparer.Ordinal);

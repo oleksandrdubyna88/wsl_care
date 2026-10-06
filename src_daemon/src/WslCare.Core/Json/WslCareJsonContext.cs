@@ -28,6 +28,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(RunRecord))]
 [JsonSerializable(typeof(ConfigReport))]
 [JsonSerializable(typeof(StatusReport))]
+[JsonSerializable(typeof(StatusLimits))]
 [JsonSerializable(typeof(PreviewReport))]
 [JsonSerializable(typeof(VolumeSeenRecord))]
 [JsonSerializable(typeof(Collect.RunDetail))]

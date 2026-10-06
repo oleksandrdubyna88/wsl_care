@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.RegularExpressions;
 
 namespace WslCare.Core.Config;
@@ -30,7 +31,10 @@ public abstract record TextRule
     /// <summary>Text matching <paramref name="Expression"/> as a whole (described as <paramref name="Description"/>).</summary>
     public sealed record Matching(string Expression, string Description) : TextRule
     {
-        private static readonly TimeSpan MatchCeiling = TimeSpan.FromMilliseconds(250);
+        /// <summary>The configuration is checked while it is LOADED, before any configured value exists — so a key's own pattern
+        /// is bounded by the <c>patterns.matchTimeoutMilliseconds</c> range maximum (the bootstrap ceiling, as the machine layer
+        /// itself is read with <c>config.maxLayerBytes</c>' maximum); every other match uses the configured value.</summary>
+        private static TimeSpan MatchCeiling => TimeSpan.FromMilliseconds(ConfigKeys.Patterns.MatchTimeoutMilliseconds.Max);
 
         public override string Describe => Description;
 

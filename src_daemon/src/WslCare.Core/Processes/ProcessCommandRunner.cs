@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.ComponentModel;
 using System.Diagnostics;
 
@@ -27,7 +28,7 @@ namespace WslCare.Core.Processes;
 public sealed class ProcessCommandRunner : ICommandRunner
 {
     /// <summary>How long the stream readers may take to finish after the process is gone.</summary>
-    private static readonly TimeSpan DrainGrace = TimeSpan.FromSeconds(2);
+    private static TimeSpan DrainGrace => Tuning.Current.Milliseconds(ConfigKeys.Commands.DrainGraceMilliseconds);
 
     private readonly Func<CommandRequest, CommandVerdict> _review;
     private readonly Func<string, CancellationToken, ResolvedExecutable> _resolve;

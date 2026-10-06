@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Processes;
 
 namespace WslCare.Core.Health;
@@ -24,17 +25,17 @@ public static class HealthCommands
         "[Console]::Out.Write([DateTime]::UtcNow.ToString('o') + \"`n\" + (Get-Process -Id $PID).StartTime.ToUniversalTime().ToString('o') + \"`n\" + $env:USERPROFILE + \"`n\")";
 
     /// <summary>Measured 2026-10-02 from WSL Ubuntu: 0.85–1.1 s per start, of which 0.56–0.83 s before the script ran.</summary>
-    public static readonly TimeSpan ClockCeiling = TimeSpan.FromSeconds(20);
+    public static TimeSpan ClockCeiling => Tuning.Current.Seconds(ConfigKeys.Health.WindowsClockTimeoutSeconds);
 
-    public static readonly TimeSpan SnapCeiling = TimeSpan.FromSeconds(30);
+    public static TimeSpan SnapCeiling => Tuning.Current.Seconds(ConfigKeys.Health.SnapTimeoutSeconds);
 
-    private const int Cap = 1024 * 1024;
+    private static int Cap => Tuning.Current.Int(ConfigKeys.Health.OutputCapBytes);
 
-    public static ToolCommand WindowsClock { get; } =
+    public static ToolCommand WindowsClock =>
         new(PowerShell, "powershell-clock", ["-NoProfile", "-NonInteractive", "-Command", ClockScript], ClockCeiling, Cap)
         {
             Summary = "powershell.exe (the Windows clock probe)",
         };
 
-    public static ToolCommand SnapList { get; } = new(Snap, "snap-list-all", ["list", "--all"], SnapCeiling, Cap);
+    public static ToolCommand SnapList => new(Snap, "snap-list-all", ["list", "--all"], SnapCeiling, Cap);
 }

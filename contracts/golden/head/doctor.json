@@ -47,6 +47,11 @@
       "detail": "systemctl show atop.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState exited 98: fake systemctl: no scripted answer for: systemctl show atop.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState"
     },
     {
+      "id": "unitConfig",
+      "state": "ok",
+      "detail": "every unit drop-in matches the machine configuration (the timer every 4 h)"
+    },
+    {
       "id": "collector.sysstat",
       "state": "problem",
       "detail": "/golden-root/var/log/sysstat holds no sysstat file: sysstat is not collecting (the installer sets it up, E4)"

@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.Json;
 
 using WslCare.Core.Collectors;
@@ -39,7 +40,7 @@ public static class DockerHygiene
     private const string StateSuffix = "_state";
 
     /// <summary>Docker Desktop's <c>daemon.json</c> is a small JSON object.</summary>
-    private const int MaxDaemonJsonBytes = 1024 * 1024;
+    private static int MaxDaemonJsonBytes => Tuning.Current.Int(ConfigKeys.Docker.MaxDaemonJsonBytes);
 
     public static DockerHygieneAudit Audit(DockerSnapshot snapshot, IHostPaths paths, IFileSystem files) =>
         Audit(snapshot, paths, files, paths.DockerDesktopConfigFile);

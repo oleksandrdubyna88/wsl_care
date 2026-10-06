@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text;
 
 using WslCare.Core.Files.Deletion;
@@ -45,14 +46,16 @@ public sealed class PhysicalFileSystem : IFileSystem
         _policy = new DeletionPolicy(ProtectedRoots.From(paths, RealOrSpelled), _rules);
     }
 
-    public FileReadResult ReadFile(string path)
+    public FileReadResult ReadFile(string path) => ReadFile(path, RootFileCaps.History);
+
+    /// <summary>Reads at most one byte past <paramref name="maxBytes"/> — never the whole of a file that grew (review N-5).</summary>
+    public FileReadResult ReadFile(string path, int maxBytes)
     {
         try
         {
             using var stream = OpenForReading(path);
-            using var bytes = new MemoryStream();
-            stream.CopyTo(bytes);
-            return new FileReadResult.Content(bytes.ToArray());
+            var bytes = Bounded(stream, maxBytes);
+            return bytes.Length > maxBytes ? new FileReadResult.Unreadable(FileReadResult.TooLarge(maxBytes)) : new FileReadResult.Content(bytes);
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {
@@ -436,7 +439,7 @@ public sealed class PhysicalFileSystem : IFileSystem
             }
             catch (Exception e) when (IsHeldOpenOnWindows(e) && started.Elapsed < ReplaceRetryFor)
             {
-                Thread.Sleep(10);
+                Thread.Sleep(Tuning.Current.Milliseconds(ConfigKeys.FileLocks.RenameRetrySleepMilliseconds));
             }
         }
     }
@@ -447,7 +450,7 @@ public sealed class PhysicalFileSystem : IFileSystem
         OperatingSystem.IsWindows() && e is UnauthorizedAccessException or IOException && e is not (FileNotFoundException or DirectoryNotFoundException);
 
     /// <summary>How long the atomic write's rename waits out a reader on Windows.</summary>
-    internal static readonly TimeSpan ReplaceRetryFor = TimeSpan.FromSeconds(2);
+    internal static TimeSpan ReplaceRetryFor => Tuning.Current.Milliseconds(ConfigKeys.FileLocks.RenameRetryMilliseconds);
 
     public void AppendLine(string path, string line, TimeSpan lockTimeout)
     {
@@ -641,6 +644,20 @@ public sealed class PhysicalFileSystem : IFileSystem
     /// </summary>
     internal static FileStream OpenForReading(string path) => new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
+    /// <summary>The stream's bytes up to <paramref name="maxBytes"/> + 1 — enough to tell "fits" from "too large" and no more.</summary>
+    private static byte[] Bounded(Stream stream, int maxBytes)
+    {
+        using var bytes = new MemoryStream();
+        var buffer = new byte[Math.Min(maxBytes + 1, 81920)];
+        int read;
+        while (bytes.Length <= maxBytes && (read = stream.Read(buffer, 0, (int)Math.Min(buffer.Length, maxBytes + 1 - bytes.Length))) > 0)
+        {
+            bytes.Write(buffer, 0, read);
+        }
+
+        return bytes.ToArray();
+    }
+
     /// <summary>The exclusive open described on <see cref="IFileSystem.AppendLine"/>, retried until <paramref name="timeout"/>.</summary>
     /// <summary>A lock file opened or created — created 0644 at most on Linux (E6.S1 review S1: never group or world writable
     /// under a loose umask).</summary>
@@ -666,7 +683,7 @@ public sealed class PhysicalFileSystem : IFileSystem
             }
             catch (IOException) when (started.Elapsed < timeout)
             {
-                Thread.Sleep(Random.Shared.Next(5, 25));
+                Thread.Sleep(Random.Shared.Next(Tuning.Current.Int(ConfigKeys.FileLocks.LockJitterMinMilliseconds), Tuning.Current.Int(ConfigKeys.FileLocks.LockJitterMaxMilliseconds)));
             }
             catch (IOException e)
             {

@@ -59,7 +59,7 @@ public static class RunDetailStore
     /// <summary>The head of a stored detail; <c>null</c> when it cannot be read or is not a detail (a legitimate "not readable").</summary>
     public static RunDetailHead? ReadHead(IHostPaths paths, IFileSystem files, string relativePath)
     {
-        if (files.ReadFile(Absolute(paths, relativePath)) is not FileReadResult.Content content)
+        if (files.ReadFile(Absolute(paths, relativePath), RootFileCaps.History) is not FileReadResult.Content content)
         {
             return null;
         }

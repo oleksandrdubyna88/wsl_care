@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 using WslCare.Core.Files;
@@ -34,10 +35,10 @@ public static class RequestSweep
 {
     /// <summary>How long a request may wait for its unit to take it (review D1: a short monotonic grace, not 15 wall-clock minutes
     /// — the window is detach's own, between writing the request and <c>systemctl start --no-block</c> returning).</summary>
-    public static readonly TimeSpan Grace = TimeSpan.FromSeconds(60);
+    public static TimeSpan Grace => Tuning.Current.Seconds(ConfigKeys.Requests.GraceSeconds);
 
     /// <summary>How far ahead of the wall clock an unstamped request's creation may be before it counts as stale (review S2).</summary>
-    public static readonly TimeSpan FutureSkew = TimeSpan.FromMinutes(5);
+    public static TimeSpan FutureSkew => Tuning.Current.Seconds(ConfigKeys.Requests.FutureSkewSeconds);
 
     public static async Task<IReadOnlyList<string>> ApplyAsync(IHostPaths paths, IFileSystem files, ICommandRunner commands, IProcessTable processes, DateTimeOffset now, RunId? own)
     {

@@ -41,6 +41,8 @@ internal static class Program
         using var shutdown = new ShutdownSignals();
         var first = CliHost.ForThisMachine() with { InterruptCause = () => shutdown.Cause };
         var loaded = first.LoadConfig();
+        // E7.S2c: every configured number reaches its call site through the process's tuning — set once, before anything runs.
+        Tuning.ForThisProcess(loaded.Config);
         // Phase two (plan §15q R2.2, review M1): the manual AI agents' folders join the protected roots BEFORE anything runs.
         var host = first.WithAgentExtras(loaded.Config);
         loaded = WithDroppedExtras(loaded, host);
@@ -87,6 +89,9 @@ internal static class Program
 
         LogRequest(logger, request, loaded, args);
         cancellationToken.ThrowIfCancellationRequested();
+        // E7.S2c: the verb reads its numbers from THIS configuration — what Main made the process's tuning, and what a test's
+        // host hands in (an AsyncLocal scope: parallel runs never see each other's).
+        using var tuned = Tuning.Use(loaded.Config);
         return request switch
         {
             Request.ConfigGet get => ConfigCommand.Get(get, loaded, stdout, stderr),
@@ -104,6 +109,7 @@ internal static class Program
             Request.Runs runs => LogsCommand.Runs(runs, host, stdout, stderr),
             Request.RunsShow show => LogsCommand.Show(show, host, stdout, stderr),
             Request.ActFromRequest fromRequest => DetachedRuns.FromRequest(fromRequest, host, loaded, stdout, stderr, logger.ForContext(typeof(DetachedRuns)), cancellationToken),
+            Request.UnitsDropIn dropIn => Output.Answer(stdout, Core.Systemd.UnitDropIns.Render(dropIn.Unit).TrimEnd('\n')),
             Request.ActStop stop => RunStops.Stop(stop, host, stdout, stderr, logger.ForContext(typeof(RunStops)), cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };

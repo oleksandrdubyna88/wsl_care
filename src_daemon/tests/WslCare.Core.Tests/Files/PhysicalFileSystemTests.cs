@@ -2,8 +2,11 @@ using System.Text;
 
 using FluentAssertions;
 
+using WslCare.Core.Actions.Engine;
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
+using WslCare.Core.Records;
 using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Files;
@@ -143,6 +146,61 @@ public sealed class PhysicalFileSystemTests
         host.Files.ReadFile(dirInsteadOfFile).Should().BeOfType<FileReadResult.Unreadable>();
         host.Files.ReadFile(host.Root.File("cfg/real.json", "{}")).Should().BeOfType<FileReadResult.Content>()
             .Which.Bytes.Should().Equal(Encoding.UTF8.GetBytes("{}"));
+    }
+
+    /// <summary>E7.S2c, review N-5: root never reads the whole of a state file that grew — one byte past the cap is refused.</summary>
+    [Fact]
+    public void A_capped_read_refuses_one_byte_past_the_cap_and_reads_a_file_at_it()
+    {
+        using var host = new SandboxHost("fs-cap");
+        var at = host.Root.File("state/at.json", new string('a', 4096));
+        var past = host.Root.File("state/past.json", new string('a', 4097));
+
+        host.Files.ReadFile(at, 4096).Should().BeOfType<FileReadResult.Content>().Which.Bytes.Should().HaveCount(4096);
+        host.Files.ReadFile(past, 4096).Should().BeOfType<FileReadResult.Unreadable>().Which.Reason.Should().Be("larger than 4096 bytes");
+    }
+
+    [Fact]
+    public void An_uncapped_read_is_bounded_by_records_maxHistoryBytes()
+    {
+        using var host = new SandboxHost("fs-cap-history");
+        var big = host.Root.File("state/history.jsonl", new string('a', (1024 * 1024) + 1));
+
+        using (Tuning.Use(Machine("""{ "records": { "maxHistoryBytes": 1048576 } }""")))
+        {
+            host.Files.ReadFile(big).Should().BeOfType<FileReadResult.Unreadable>().Which.Reason.Should().Contain("1048576");
+        }
+
+        host.Files.ReadFile(big).Should().BeOfType<FileReadResult.Content>("the default cap is 256 MiB");
+    }
+
+    /// <summary>A caller: the dry-run stamp past <c>records.maxStateFileBytes</c> is not read whole — it is unreadable, so the week
+    /// restarts (the conservative edge the window already had for a stamp it cannot read).</summary>
+    [Fact]
+    public void A_dry_run_stamp_past_the_state_cap_is_unreadable_and_the_week_restarts()
+    {
+        using var host = new SandboxHost("fs-cap-state");
+        var now = new DateTimeOffset(2026, 10, 5, 12, 0, 0, TimeSpan.Zero);
+        var stamp = $$"""{ "at": "2026-09-01T00:00:00Z", "pad": "{{new string('a', 70_000)}}" }""";
+        Directory.CreateDirectory(host.Paths.StateDirectory);
+        File.WriteAllText(DryRunWindow.File(host.Paths), stamp);
+        var config = Machine("""{ "records": { "maxStateFileBytes": 65536 }, "dryRun": false }""");
+
+        using (Tuning.Use(config))
+        {
+            DryRunWindow.Decide(RunTrigger.Timer, config, host.Paths, host.Files, now).Reason.Should().Contain("could not be read, so the week restarts");
+        }
+    }
+
+    private static EffectiveConfig Machine(string json)
+    {
+        var loaded = ConfigLoader.Load(
+        [
+            (ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults())),
+            (new ConfigLayerFile(ConfigLayer.Machine, "/etc/wsl-care/config.json"), new FileReadResult.Content(Encoding.UTF8.GetBytes(json))),
+        ]);
+        loaded.Errors.Should().BeEmpty();
+        return loaded.Config;
     }
 
     [Fact]

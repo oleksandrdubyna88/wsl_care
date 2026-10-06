@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
@@ -72,7 +73,7 @@ public sealed record ProcessSnapshot(
 public sealed class ProcessCollector(IFileSystem files, LinuxHostPaths paths, TimeProvider clock)
 {
     /// <summary>Plan §4.2: the top 30.</summary>
-    public const int TopCount = 30;
+    public static int TopCount => Tuning.Current.Int(ConfigKeys.Processes.TopCount);
 
     private const string MntPrefix = "/mnt/";
 

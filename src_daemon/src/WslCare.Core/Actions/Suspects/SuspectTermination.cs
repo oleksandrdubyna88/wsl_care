@@ -34,10 +34,10 @@ public sealed record SuspectSample(int Pid, long StartTicks, long CpuTicks, int 
 public sealed class SuspectTermination : ICleanupAction
 {
     /// <summary>The window a suspect must use no CPU in.</summary>
-    public static readonly TimeSpan CpuWindow = TimeSpan.FromSeconds(5);
+    public static TimeSpan CpuWindow => Tuning.Current.Seconds(ConfigKeys.Processes.CpuWindowSeconds);
 
     /// <summary>Plan §5 A11: <c>SIGKILL</c> after 10 s.</summary>
-    public static readonly TimeSpan Grace = TimeSpan.FromSeconds(10);
+    public static TimeSpan Grace => Tuning.Current.Seconds(ConfigKeys.Processes.TermGraceSeconds);
 
     private const string Kind = "process";
 
@@ -46,7 +46,7 @@ public sealed class SuspectTermination : ICleanupAction
 
     public ActionId Id { get; } = ActionId.Find("A11")!;
 
-    public string Summary => "SIGTERM, then SIGKILL after 10 s, of suspect processes (orphaned, idle, old, in an allowed family) - by pid and start, never by name";
+    public string Summary => $"SIGTERM, then SIGKILL after {Tuning.Current.Text(ConfigKeys.Processes.TermGraceSeconds)} s, of suspect processes (orphaned, idle, old, in an allowed family) - by pid and start, never by name";
 
     public CommandScope Scope => CommandScope.Machine;
 

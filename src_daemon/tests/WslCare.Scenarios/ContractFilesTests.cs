@@ -66,6 +66,29 @@ public sealed class ContractFilesTests
         });
     }
 
+    /// <summary>The text <c>contracts/status-limits.json</c> must hold (E7.S2c): the fields of <c>status --json</c>'s <c>limits</c>
+    /// object — the daemon values the extension mirrors instead of copying — from <see cref="Core.Status.StatusLimits.Fields"/>,
+    /// each with the key it publishes, its unit, its range and its default. The extension's reader is tested against this file.</summary>
+    internal static string StatusLimitsText()
+    {
+        var defaults = ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config;
+        return Indented(new JsonObject
+        {
+            ["schemaVersion"] = 1,
+            ["description"] = "The fields of status --json's limits object (additive, E7.S2c): daemon values the extension MIRRORS instead of copying, each the value in force, a whole number. An absent limits object or field means a daemon older than E7.S2c: the reader takes its fallback (the default here). Generated from StatusLimits.Fields and the embedded default.json by ContractFilesTests.",
+            ["object"] = "limits",
+            ["fields"] = new JsonArray([.. Core.Status.StatusLimits.Fields.Select(f => (JsonNode)new JsonObject
+            {
+                ["name"] = f.Name,
+                ["key"] = f.Key.Name,
+                ["unit"] = f.Unit,
+                ["min"] = f.Key.Min,
+                ["max"] = f.Key.Max,
+                ["default"] = defaults.Int(f.Key),
+            })]),
+        });
+    }
+
     private static JsonNode KeyNode(ConfigKey key, ConfigValue fallback)
     {
         var node = new JsonObject { ["name"] = key.Name };
@@ -97,7 +120,7 @@ public sealed class ContractFilesTests
     };
 
     public static IReadOnlyList<(string File, string Text)> Expected =>
-        [("actions.json", ActionsText()), ("exit-codes.json", ExitCodesText()), ("history-reasons.json", HistoryReasonsText()), ("config-keys.json", ConfigKeysText())];
+        [("actions.json", ActionsText()), ("exit-codes.json", ExitCodesText()), ("history-reasons.json", HistoryReasonsText()), ("config-keys.json", ConfigKeysText()), ("status-limits.json", StatusLimitsText())];
 
     /// <summary>The companion of the config-keys contract: it carries every key, the closed families list and the trust of the
     /// keys R1 is about — a contract derived from nothing would pass the equality test as well.</summary>
@@ -115,6 +138,22 @@ public sealed class ContractFilesTests
         keys["logging.retentionDays"]["zeroIsUnbounded"]!.GetValue<bool>().Should().BeTrue();
         keys["distro"]["daemonUnused"]!.GetValue<bool>().Should().BeTrue();
         keys["aiAgents.warnGb"]["rootEffective"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    /// <summary>E7.S2c: the two field names the extension's <c>shared/daemonLimits.ts</c> reads (PR #12) are in the contract, and
+    /// the daemon's JSON writer spells every contract field exactly as the contract does — a reader and a writer held equal.</summary>
+    [Fact]
+    public void The_status_limits_contract_carries_the_names_the_extension_reads_and_the_writer_spells_them()
+    {
+        var fields = JsonNode.Parse(StatusLimitsText())!["fields"]!.AsArray().Select(f => (string)f!["name"]!).ToList();
+        var written = JsonNode.Parse(JsonSerializer.Serialize(
+            Core.Status.StatusLimits.From(ConfigLoader.Load([(ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults()))]).Config),
+            Core.Json.WslCareJsonContext.Default.StatusLimits))!.AsObject();
+
+        fields.Should().Contain(["historyRetentionDays", "requestFutureSkewSeconds"], "the names PR #12's daemonLimits.ts reads");
+        written.Select(p => p.Key).Should().Equal(fields, "the writer spells each field as the contract does, in its order");
+        written["historyRetentionDays"]!.GetValue<int>().Should().Be(90);
+        written["requestFutureSkewSeconds"]!.GetValue<int>().Should().Be(300);
     }
 
     /// <summary>Plan §15o, coai plan round #2: <c>collect</c> is the full check's reserved meta name — a request's and

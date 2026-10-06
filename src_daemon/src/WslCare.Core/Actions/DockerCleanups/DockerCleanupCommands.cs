@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Collectors;
 using WslCare.Core.Docker;
 using WslCare.Core.Processes;
@@ -14,72 +15,70 @@ namespace WslCare.Core.Actions.DockerCleanups;
 /// </summary>
 public static class DockerCleanupCommands
 {
-    /// <summary>How many names one removal takes: 100 full ids are 6.5 k characters, far below a command line's limit —
-    /// the same batch the inspect uses.</summary>
-    public const int Batch = DockerCommands.InspectBatch;
+    /// <summary>How many names one removal takes — the same batch the inspect uses (<c>docker.batchSize</c>); the templates take
+    /// up to the key's maximum, 100 full ids, 6.5 k characters, far below a command line's limit.</summary>
+    public static int Batch => DockerCommands.InspectBatch;
 
     /// <summary>The label that protects a volume or a container from every action (plan §5) — and, given to
     /// <c>image prune</c> as a filter, an image as well (E3.S2).</summary>
     public const string KeepFilter = "label!=" + DockerLabels.Keep + "=true";
 
     /// <summary>A removal of up to <see cref="Batch"/> objects: Docker answers per object.</summary>
-    public static readonly TimeSpan RemovalCeiling = TimeSpan.FromMinutes(5);
+    public static TimeSpan RemovalCeiling => Tuning.Current.Seconds(ConfigKeys.Docker.RemoveTimeoutSeconds);
 
     /// <summary>A prune walks every image or cache entry: minutes on a large store.</summary>
-    public static readonly TimeSpan PruneCeiling = TimeSpan.FromMinutes(15);
-
-    private const int OutputCap = 4 * 1024 * 1024;
+    public static TimeSpan PruneCeiling => Tuning.Current.Seconds(ConfigKeys.Docker.PruneTimeoutSeconds);
 
     private static readonly SlotKind.Hex FullId = new(64);
 
     /// <summary>A4: <c>docker volume rm &lt;64-hex&gt;…</c> — only an ANONYMOUS volume's name has that shape; a named volume
     /// cannot be put in the slot at all.</summary>
-    public static readonly CommandTemplate VolumeRemove = Machine("docker-volume-rm", [L("volume"), L("rm"), new ArgPart.Repeat("volume", FullId, 1, Batch)], RemovalCeiling);
+    public static readonly CommandTemplate VolumeRemove = Machine("docker-volume-rm", [L("volume"), L("rm"), new ArgPart.Repeat("volume", FullId, 1, ConfigKeys.Docker.BatchSize.Max)], ConfigKeys.Docker.RemoveTimeoutSeconds);
 
     /// <summary>A5: <c>docker rm -v &lt;64-hex id&gt;…</c> — the container and the ANONYMOUS volumes it holds; never <c>-f</c>.</summary>
-    public static readonly CommandTemplate ContainerRemove = Machine("docker-rm-v", [L("rm"), L("-v"), new ArgPart.Repeat("container", FullId, 1, Batch)], RemovalCeiling);
+    public static readonly CommandTemplate ContainerRemove = Machine("docker-rm-v", [L("rm"), L("-v"), new ArgPart.Repeat("container", FullId, 1, ConfigKeys.Docker.BatchSize.Max)], ConfigKeys.Docker.RemoveTimeoutSeconds);
 
     /// <summary>A6: dangling images, never one a container uses (Docker's own rule) nor one carrying the keep label.</summary>
-    public static readonly CommandTemplate ImagePruneDangling = Machine("docker-image-prune-dangling", [L("image"), L("prune"), L("-f"), L("--filter"), L(KeepFilter)], PruneCeiling);
+    public static readonly CommandTemplate ImagePruneDangling = Machine("docker-image-prune-dangling", [L("image"), L("prune"), L("-f"), L("--filter"), L(KeepFilter)], ConfigKeys.Docker.PruneTimeoutSeconds);
 
     /// <summary>A6Unused: every image no container uses, created at least the limit ago (<c>until=&lt;hours&gt;h</c>).</summary>
     public static readonly CommandTemplate ImagePruneUnused = Machine(
         "docker-image-prune-unused",
         [L("image"), L("prune"), L("-a"), L("-f"), L("--filter"), new ArgPart.Slot("until", new SlotKind.Prefixed("until=", new SlotKind.Number(0, 87_600, "h"))), L("--filter"), L(KeepFilter)],
-        PruneCeiling);
+        ConfigKeys.Docker.PruneTimeoutSeconds);
 
     /// <summary>A7's detection (read-only): which size cap THIS Docker's builder prune takes — "detect, don't guess".</summary>
-    public static readonly ToolCommand BuilderPruneHelpCommand = new(DockerCommands.Executable, "docker-builder-prune-help", ["builder", "prune", "--help"], DockerCommands.ProbeCeiling, 1024 * 1024);
+    public static ToolCommand BuilderPruneHelpCommand => new(DockerCommands.Executable, "docker-builder-prune-help", ["builder", "prune", "--help"], DockerCommands.ProbeCeiling, Tuning.Current.Int(ConfigKeys.Docker.SmallOutputCapBytes));
 
     /// <summary><see cref="BuilderPruneHelpCommand"/> as a template (every argument a literal).</summary>
-    public static readonly CommandTemplate BuilderPruneHelp = CommandTemplate.Fixed(BuilderPruneHelpCommand);
+    public static readonly CommandTemplate BuilderPruneHelp = CommandTemplate.Fixed(() => BuilderPruneHelpCommand);
 
     /// <summary>A7, the timer: prune until the cache holds at most the cap (buildx: <c>--max-used-space</c>).</summary>
-    public static readonly CommandTemplate BuilderPruneMaxUsed = Machine("docker-builder-prune-max-used-space", [L("builder"), L("prune"), L("-f"), L("--max-used-space"), CapSlot()], PruneCeiling);
+    public static readonly CommandTemplate BuilderPruneMaxUsed = Machine("docker-builder-prune-max-used-space", [L("builder"), L("prune"), L("-f"), L("--max-used-space"), CapSlot()], ConfigKeys.Docker.PruneTimeoutSeconds);
 
     /// <summary>A7, the timer, on a builder that predates <c>--max-used-space</c>: <c>--keep-storage</c>.</summary>
-    public static readonly CommandTemplate BuilderPruneKeepStorage = Machine("docker-builder-prune-keep-storage", [L("builder"), L("prune"), L("-f"), L("--keep-storage"), CapSlot()], PruneCeiling);
+    public static readonly CommandTemplate BuilderPruneKeepStorage = Machine("docker-builder-prune-keep-storage", [L("builder"), L("prune"), L("-f"), L("--keep-storage"), CapSlot()], ConfigKeys.Docker.PruneTimeoutSeconds);
 
     /// <summary>A7, a button: all of the build cache (plan §5: <c>docker builder prune -af</c>).</summary>
-    public static readonly CommandTemplate BuilderPruneAll = Machine("docker-builder-prune-all", [L("builder"), L("prune"), L("-a"), L("-f")], PruneCeiling);
+    public static readonly CommandTemplate BuilderPruneAll = Machine("docker-builder-prune-all", [L("builder"), L("prune"), L("-a"), L("-f")], ConfigKeys.Docker.PruneTimeoutSeconds);
 
     /// <summary><c>docker system df</c>: Docker's totals, read again after a removal as the cross-check (plan §15c #1).</summary>
-    public static readonly CommandTemplate SystemDfRead = CommandTemplate.Fixed(DockerCommands.SystemDf);
+    public static readonly CommandTemplate SystemDfRead = CommandTemplate.Fixed(() => DockerCommands.SystemDf);
 
     /// <summary>The unattached volumes, read again after A4 so its first sightings are recorded (plan §15b #3).</summary>
-    public static readonly CommandTemplate DanglingRead = CommandTemplate.Fixed(DockerCommands.DanglingVolumes);
+    public static readonly CommandTemplate DanglingRead = CommandTemplate.Fixed(() => DockerCommands.DanglingVolumes);
 
     /// <summary><c>docker system df -v</c>: every object with its size and labels — read again after A4 for the labels that
     /// decide which unattached volumes are anonymous (their first sightings).</summary>
-    public static readonly CommandTemplate InventoryRead = CommandTemplate.Fixed(DockerCommands.SystemDfVerbose);
+    public static readonly CommandTemplate InventoryRead = CommandTemplate.Fixed(() => DockerCommands.SystemDfVerbose);
 
     /// <summary>Every volume's name, read after A5 to confirm which anonymous volumes went with the containers.</summary>
-    public static readonly CommandTemplate VolumeListRead = CommandTemplate.Fixed(DockerCommands.VolumeList);
+    public static readonly CommandTemplate VolumeListRead = CommandTemplate.Fixed(() => DockerCommands.VolumeList);
 
     /// <summary>The collector's reads every Docker action takes its live look with, as the action declares them.</summary>
     public static IReadOnlyList<CommandTemplate> Reads { get; } =
     [
-        CommandTemplate.Fixed(DockerCommands.Version), SystemDfRead, InventoryRead,
+        CommandTemplate.Fixed(() => DockerCommands.Version), SystemDfRead, InventoryRead,
         DanglingRead, VolumeListRead, ReadCommandTemplates.ContainerInspect,
     ];
 
@@ -88,8 +87,8 @@ public static class DockerCleanupCommands
 
     private static ArgPart.Slot CapSlot() => new("cap", new SlotKind.Number(0, 100_000, "GB"));
 
-    private static CommandTemplate Machine(string name, IReadOnlyList<ArgPart> parts, TimeSpan ceiling) =>
-        new(name, CommandScope.Machine, DockerCommands.Executable, parts, ceiling, OutputCap);
+    private static CommandTemplate Machine(string name, IReadOnlyList<ArgPart> parts, ConfigKey.IntKey timeoutSeconds) =>
+        new(name, CommandScope.Machine, DockerCommands.Executable, parts, timeoutSeconds, ConfigKeys.Docker.ActionOutputCapBytes);
 
     private static ArgPart.Literal L(string text) => new(text);
 }

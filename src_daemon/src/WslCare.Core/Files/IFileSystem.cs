@@ -33,6 +33,9 @@ public abstract record FileReadResult
     public sealed record Missing : FileReadResult;
 
     public sealed record Unreadable(string Reason) : FileReadResult;
+
+    /// <summary>The reason a file past its cap gives.</summary>
+    public static string TooLarge(int maxBytes) => $"larger than {maxBytes} bytes";
 }
 
 /// <summary>What reading a link produced: its target, a path that is not a link (or not there), or a
@@ -184,7 +187,17 @@ public abstract record ExclusiveLock
 /// </remarks>
 public interface IFileSystem
 {
+    /// <summary>A whole file — bounded by <see cref="RootFileCaps.History"/>, the largest file this process reads back.</summary>
     FileReadResult ReadFile(string path);
+
+    /// <summary>A file read only up to <paramref name="maxBytes"/> (E7.S2c, review N-5): a larger one is
+    /// <see cref="FileReadResult.Unreadable"/>. <see cref="PhysicalFileSystem"/> never reads past the cap; this default, for a
+    /// test's own file system, checks after the read.</summary>
+    FileReadResult ReadFile(string path, int maxBytes) => ReadFile(path) switch
+    {
+        FileReadResult.Content content when content.Bytes.Length > maxBytes => new FileReadResult.Unreadable(FileReadResult.TooLarge(maxBytes)),
+        var read => read,
+    };
 
     /// <summary>A file a caller NAMED, read only when it is a REGULAR file and only up to <paramref name="maxBytes"/> bytes
     /// actually read — a directory, FIFO, socket or device is <see cref="FileReadResult.Unreadable"/> at once, never waited

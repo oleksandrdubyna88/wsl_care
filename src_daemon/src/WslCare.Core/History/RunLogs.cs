@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.Json;
 
 using WslCare.Core.Actions;
@@ -47,7 +48,7 @@ public static class RunLogs
 
     /// <summary>How many run details one <c>logs</c> answer opens at most — the newest runs with a cleanup; the older ones are
     /// listed from their history lines with their objects not read (gate finding #10).</summary>
-    public const int MaxDetailsRead = 50;
+    public static int MaxDetailsRead => Tuning.Current.Int(ConfigKeys.Logs.MaxDetailsRead);
 
     /// <summary>The period's totals, run counts, extremes and every cleanup; <paramref name="action"/> narrows the totals, the
     /// cleanups and the run counts to one action (the metrics are the machine's, whatever acted). Everything but the objects
@@ -209,7 +210,7 @@ public static class RunLogs
             return ("none", []);
         }
 
-        return files.ReadFile(RunDetailStore.Absolute(paths, run.DetailPath)) switch
+        return files.ReadFile(RunDetailStore.Absolute(paths, run.DetailPath), RootFileCaps.History) switch
         {
             FileReadResult.Content content => ("present", Parse(content.Bytes)),
             FileReadResult.Missing => ("lost", []),
