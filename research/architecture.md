@@ -242,10 +242,10 @@ fails the build on a stream write anywhere else in the CLI. The file sink writes
   Antigravity, Copilot, Rovo Dev, Ollama); the catalogue of E7 must feed the same list.
 - Only `history.jsonl` is written here; the per-run detail file `runs/{day}/{runId}.json` is E2.S3.
 - `config reset` of a key absent from the user layer is a no-op that says so (exit 0 — the note itself only since the
-  retro gate over PR #4: the writer knew, the command never said); an unparseable
+  retro gate over PR #4: the writer knew, the command never said; never said over an unparseable layer, whose contents are unknown); an unparseable
   user file is moved to `config.json.broken-{utc}` (or `…-2`, `…-3` when that name is taken) rather
-  than overwritten — and only once the write is known to go ahead (a refused `set` moves nothing; a write that fails after the move puts the broken file back). A repair that LOSES
-  anything but the key being written also writes `dryRun = true` (unless the command writes `dryRun` itself), because a
+  than overwritten — and only once the write is known to go ahead (a refused `set` moves nothing). A layer whose bytes were read is COPIED aside, so it stays in place until its replacement is renamed over it — a process killed in between leaves the person's file, not none; only an unreadable one (a FIFO, a folder, a file over the cap) is moved, and moved back when the write fails. A refused put-back is an error naming where the file is, never swallowed. A repair that LOSES
+  anything but the key being written also writes `dryRun = true` (unless the command WRITES `dryRun` itself — a `reset dryRun` writes nothing and is pinned too), because a
   lost `auto.A# = false` is that action back ON by default at the next timer run (plan §15a #1; retro gate over PR #4).
 - An object where a setting's VALUE belongs (`{"auto":{"A4":{}}}`) is an entry of that setting, refused by validation —
   it used to flatten to nothing, and the layer read as valid (retro gate over PR #4).

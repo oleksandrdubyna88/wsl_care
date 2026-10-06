@@ -237,6 +237,72 @@ public sealed class UserConfigWriterTests
             .Should().Be(new DryRunDecision(true, "the setting dryRun is on"), "the week is long over; only the pinned setting keeps the timer previewing");
     }
 
+    // Fix-PR code round (session 3991eba5): the dryRun exemption was meant for a person WRITING dryRun; a reset of it writes
+    // nothing, so a lossy repair by `config reset dryRun` must pin too.
+    [Fact]
+    public void A_lossy_repair_by_a_reset_of_dryRun_still_pins_it()
+    {
+        using var host = new SandboxHost("writer-reset-dry-pins");
+        host.WriteMachineConfig("""{ "dryRun": false }""");
+        host.WriteUserConfig("""{ "auto": { "A4": false }, oops }""");
+
+        Writer(host).Reset(ConfigKeys.DryRun).Should().BeOfType<UserConfigWriteResult.Written>().Which.PinnedDryRun.Should().BeTrue();
+
+        ConfigLoader.Load(host.Paths, host.Files).Config.Bool(ConfigKeys.DryRun).Should().BeTrue();
+    }
+
+    // Fix-PR code round: a process killed between the move aside and the write left NO user layer. A layer whose bytes were
+    // read is COPIED aside, so it is still in place while its replacement is written.
+    [Fact]
+    public void While_the_repaired_layer_is_written_the_broken_one_is_still_in_place()
+    {
+        using var host = new SandboxHost("writer-crash-window");
+        host.WriteUserConfig("""{ "auto": { "A4": false }, oops }""");
+        var probe = new LayerAtWriteTime(host.Files, host.Paths.UserConfigFile);
+
+        new UserConfigWriter(host.Paths, probe, new FixedTimeProvider()).Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        probe.Seen.Should().Be("""{ "auto": { "A4": false }, oops }""", "a crash at that moment must leave the person's layer, not none");
+    }
+
+    [Fact]
+    public void A_put_back_that_is_refused_is_said_never_swallowed()
+    {
+        using var host = new SandboxHost("writer-putback-refused");
+        Directory.CreateDirectory(host.Paths.UserConfigFile); // unreadable as a file: it can only be MOVED aside
+        var writer = new UserConfigWriter(host.Paths, new FailingWritesRefusedPutBack(host.Files), new FixedTimeProvider());
+
+        var set = () => writer.Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        set.Should().Throw<InvalidOperationException>().WithMessage("*could not put the broken user layer back*");
+    }
+
+    private sealed class LayerAtWriteTime(IFileSystem inner, string layer) : DelegatingFileSystem(inner)
+    {
+        public string Seen { get; private set; } = "(missing)";
+
+        public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+        {
+            if (path == layer)
+            {
+                Seen = File.Exists(layer) ? File.ReadAllText(layer) : "(missing)";
+            }
+
+            return base.WriteFileAtomically(path, content, scope);
+        }
+    }
+
+    private sealed class FailingWritesRefusedPutBack(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        private int _directoryMoves;
+
+        public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>
+            throw new IOException("No space left on device");
+
+        public override DeletionVerdict MoveDirectory(string from, string to, DeletionScope scope) =>
+            ++_directoryMoves == 1 ? base.MoveDirectory(from, to, scope) : DeletionVerdict.Refuse(DeletionRule.PathChanged, "test: the put-back is refused");
+    }
+
     private sealed class FailingWrites(IFileSystem inner) : DelegatingFileSystem(inner)
     {
         public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>

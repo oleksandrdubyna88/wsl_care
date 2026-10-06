@@ -208,7 +208,8 @@ internal static class ConfigCommand
             Output.Note(stderr, "dryRun was set to true in the user layer: the repair discarded settings it could not read, so the timer only previews until you check your settings and run: wsl-care config set dryRun false");
         }
 
-        if (reset && !written.KeyWasPresent)
+        // Absence is KNOWN only for a layer that was read; what an unparseable one held is not (fix-PR code round).
+        if (reset && !written.KeyWasPresent && written.MovedAsideTo.Length == 0)
         {
             Output.Note(stderr, $"{key.Name} was not set in the user layer; nothing was removed.");
         }

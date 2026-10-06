@@ -71,25 +71,26 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     private static readonly JsonWriterOptions Indented = new() { Indented = true };
 
     public UserConfigWriteResult Set(ConfigKey key, ConfigValue value) =>
-        Write(key, entries => new Dictionary<string, ConfigValue>(entries, StringComparer.Ordinal) { [key.Name] = value });
+        Write(key, writesDryRun: key == ConfigKeys.DryRun, entries => new Dictionary<string, ConfigValue>(entries, StringComparer.Ordinal) { [key.Name] = value });
 
     public UserConfigWriteResult Reset(ConfigKey key) =>
-        Write(key, entries => entries.Where(e => e.Key != key.Name).ToDictionary(StringComparer.Ordinal));
+        Write(key, writesDryRun: false, entries => entries.Where(e => e.Key != key.Name).ToDictionary(StringComparer.Ordinal));
 
-    private UserConfigWriteResult Write(ConfigKey key, Func<IReadOnlyDictionary<string, ConfigValue>, IReadOnlyDictionary<string, ConfigValue>> change)
+    private UserConfigWriteResult Write(ConfigKey key, bool writesDryRun, Func<IReadOnlyDictionary<string, ConfigValue>, IReadOnlyDictionary<string, ConfigValue>> change)
     {
         // Review C-M4: the cap the READER keeps — config.maxLayerBytes in force — not the key's range maximum.
         var cap = ConfigLoader.UserLayerCap(paths, files);
         var current = ReadCurrent(paths.UserConfigFile, cap);
-        var pin = LosesSomething(current, key);
+        var pin = !writesDryRun && LosesSomething(current, key);
         var next = change(current.Entries);
         var rendered = Render(pin ? WithDryRun(next) : next);
         return Refusal(key, rendered, cap) ?? Commit(key, current, rendered, pin);
     }
 
-    /// <summary>What the repair would lose besides the key being written; nothing to pin when the command writes dryRun itself.</summary>
+    /// <summary>What the repair would lose besides the key being written. Nothing is pinned when the command WRITES dryRun — the
+    /// person deciding it; a reset of dryRun writes nothing and is pinned like any other (fix-PR code round).</summary>
     private static bool LosesSomething(Current current, ConfigKey key) =>
-        key != ConfigKeys.DryRun && (current.Broken || current.Dropped.Any(d => d != key.Name));
+        current.Broken || current.Dropped.Any(d => d != key.Name);
 
     private static Dictionary<string, ConfigValue> WithDryRun(IReadOnlyDictionary<string, ConfigValue> entries) =>
         new(entries, StringComparer.Ordinal) { [ConfigKeys.DryRun.Name] = new ConfigValue.Bool(true) };
@@ -109,30 +110,41 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     {
         var file = paths.UserConfigFile;
         var directory = Path.GetDirectoryName(file) ?? throw new InvalidOperationException($"the user config file {file} has no directory");
-        var movedAside = current.Broken ? MoveAside(file, directory) : string.Empty;
-        var (verdict, linked) = WriteOrPutBack(file, directory, rendered, movedAside);
+        var aside = current.Broken ? SetAside(file, directory, current.Text) : Aside.None;
+        var (verdict, linked) = WriteOrUndo(file, directory, rendered, aside);
         return verdict is DeletionVerdict.Refused refused
             ? new UserConfigWriteResult.Refused(refused)
-            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, movedAside) { ReplacedLink = linked, PinnedDryRun = pinnedDryRun };
+            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, aside.Path) { ReplacedLink = linked, PinnedDryRun = pinnedDryRun };
     }
 
-    /// <summary>The write — and, when it does not happen, the broken layer moved BACK (fix-PR plan round, retro gate over PR
-    /// #4): a move aside followed by a failed write left no user layer at all, and the next run loaded the defaults.</summary>
-    private LayerWrite WriteOrPutBack(string file, string directory, byte[] rendered, string movedAside)
+    /// <summary>Where the broken layer went: COPIED when its bytes were read (the layer stays in place until its replacement is
+    /// renamed over it, so a process killed in between leaves the person's file, not none — fix-PR code round), MOVED when it
+    /// could not be read (a FIFO, a folder, a file over the cap).</summary>
+    private sealed record Aside(string Path, bool Copied)
+    {
+        public static readonly Aside None = new(string.Empty, false);
+    }
+
+    private Aside SetAside(string file, string directory, byte[] text) =>
+        text.Length > 0 ? new Aside(CopyAside(file, directory, text), Copied: true) : new Aside(MoveAside(file, directory), Copied: false);
+
+    /// <summary>The write — and, when it does not happen, the aside undone (fix-PR plan round, retro gate over PR #4): a move aside
+    /// followed by a failed write left no user layer at all, and the next run loaded the defaults.</summary>
+    private LayerWrite WriteOrUndo(string file, string directory, byte[] rendered, Aside aside)
     {
         try
         {
             var written = WriteLayer(file, directory, rendered);
             if (written.Verdict is DeletionVerdict.Refused)
             {
-                PutBack(movedAside, file, directory);
+                Undo(aside, file, directory);
             }
 
             return written;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            PutBack(movedAside, file, directory);
+            Undo(aside, file, directory);
             throw;
         }
     }
@@ -152,22 +164,38 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     /// <summary>How the layer's write ended, and whether it replaced a link.</summary>
     private sealed record LayerWrite(DeletionVerdict Verdict, bool Linked);
 
-    private void PutBack(string movedAside, string file, string directory)
+    /// <summary>A copy aside is removed (the layer never left); a move aside is moved back. A refusal of either is SAID, never
+    /// swallowed (fix-PR code round): the person must learn where their file is.</summary>
+    private void Undo(Aside aside, string file, string directory)
     {
-        if (movedAside.Length == 0 || Exists(file))
+        if (NothingToUndo(aside, file))
         {
             return;
         }
 
         var scope = new DeletionScope(directory, ActionName);
-        _ = files.DirectoryExists(movedAside) ? files.MoveDirectory(movedAside, file, scope) : files.MoveFile(movedAside, file, scope);
+        var verdict = aside.Copied ? files.DeleteFile(aside.Path, scope) : MoveBack(aside.Path, file, scope);
+        if (verdict is DeletionVerdict.Refused refused)
+        {
+            throw new InvalidOperationException($"could not put the broken user layer back from {aside.Path}: {refused.Reason}");
+        }
     }
+
+    /// <summary>No aside — or a moved one whose place is taken again (the write did land), which nothing may overwrite.</summary>
+    private bool NothingToUndo(Aside aside, string file) => aside.Path.Length == 0 || (!aside.Copied && Exists(file));
+
+    private DeletionVerdict MoveBack(string aside, string file, DeletionScope scope) =>
+        files.DirectoryExists(aside) ? files.MoveDirectory(aside, file, scope) : files.MoveFile(aside, file, scope);
 
     private bool Exists(string path) => files.FileExists(path) || files.DirectoryExists(path);
 
     /// <summary>The layer as read: the entries that still validate, the ones dropped, and whether it could not be read at all
     /// (then it is moved aside — but only when the write goes ahead).</summary>
-    private sealed record Current(IReadOnlyDictionary<string, ConfigValue> Entries, IReadOnlyList<string> Dropped, bool Broken);
+    private sealed record Current(IReadOnlyDictionary<string, ConfigValue> Entries, IReadOnlyList<string> Dropped, bool Broken)
+    {
+        /// <summary>A broken layer's bytes, when they could be read; empty otherwise.</summary>
+        public byte[] Text { get; init; } = [];
+    }
 
     /// <summary>Review C-M1: what the loader would say of <paramref name="key"/> in this new layer over the layers below — a coupled
     /// rule it breaks is the notice that it is not taken; empty when it would be taken.</summary>
@@ -189,13 +217,13 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     {
         FileReadResult.Missing => new Current(new Dictionary<string, ConfigValue>(), [], Broken: false),
         FileReadResult.Unreadable => new Current(new Dictionary<string, ConfigValue>(), [], Broken: true),
-        FileReadResult.Content content => ReadParsed(ConfigDocument.Parse(content.Bytes)),
+        FileReadResult.Content content => ReadParsed(content.Bytes),
         _ => throw new System.Diagnostics.UnreachableException("FileReadResult is a closed set"),
     };
 
-    private static Current ReadParsed(ConfigDocumentResult document) => document switch
+    private static Current ReadParsed(byte[] bytes) => ConfigDocument.Parse(bytes) switch
     {
-        ConfigDocumentResult.Malformed => new Current(new Dictionary<string, ConfigValue>(), [], Broken: true),
+        ConfigDocumentResult.Malformed => new Current(new Dictionary<string, ConfigValue>(), [], Broken: true) { Text = bytes },
         ConfigDocumentResult.Parsed parsed => KeepValid(parsed.Entries),
         _ => throw new System.Diagnostics.UnreachableException("ConfigDocumentResult is a closed set"),
     };
@@ -222,10 +250,22 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
     }
 
     /// <summary>An unparseable file is moved beside itself with a UTC stamp — never overwritten.</summary>
+    private string CopyAside(string file, string directory, byte[] text)
+    {
+        var aside = FreeAsideName(file, Stamp());
+        if (files.WriteFileAtomically(aside, text, new DeletionScope(directory, ActionName)) is DeletionVerdict.Refused refused)
+        {
+            throw new InvalidOperationException($"could not keep the broken user config aside: {refused.Reason}");
+        }
+
+        return aside;
+    }
+
+    private string Stamp() => clock.GetUtcNow().UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+
     private string MoveAside(string file, string directory)
     {
-        var stamp = clock.GetUtcNow().UtcDateTime.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
-        var aside = FreeAsideName(file, stamp);
+        var aside = FreeAsideName(file, Stamp());
         var scope = new DeletionScope(directory, ActionName);
         var verdict = files.DirectoryExists(file) ? files.MoveDirectory(file, aside, scope) : files.MoveFile(file, aside, scope);
         if (verdict is DeletionVerdict.Refused refused)

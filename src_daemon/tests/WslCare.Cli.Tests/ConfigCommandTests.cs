@@ -206,4 +206,16 @@ public sealed class ConfigCommandTests
         set.Exit.Should().Be(0);
         set.Stderr.Should().Contain("dryRun was set to true in the user layer");
     }
+
+    [Fact]
+    public void Reset_over_an_unparseable_layer_never_claims_the_key_was_absent()
+    {
+        using var sandbox = new SandboxHost("cfg-reset-broken");
+        sandbox.WriteUserConfig("""{ "dryRun": false, oops }""");
+
+        var reset = CliRun.Over(sandbox, "config", "reset", "dryRun");
+
+        reset.Exit.Should().Be(0);
+        reset.Stderr.Should().NotContain("was not set in the user layer", "what the unreadable file held is unknown");
+    }
 }

@@ -2394,13 +2394,13 @@ confirmed by a RED test. Fixed in `fix/wc-retro-pr4-e1-safety`:
 
 | # | Defect in what shipped (still on main) | Fix |
 |---|---|---|
-| P2 | A `config set` / `reset` that repairs a broken user layer dropped what it could not read, so a lost `auto.A# = false` was the action back ON by default — exactly what §15a #1 forbids | a lossy repair writes `dryRun = true` and says so (not when the command writes `dryRun` itself) — an owner question below |
-| C | The broken layer was moved aside BEFORE the too-large / coupled-rule refusals were asked: a refused `set` took the file away | the move happens only once the write goes ahead; a write that still fails (refused, or an I/O error such as a full disk) moves the broken layer BACK (the fix PR's own plan round) |
+| P2 | A `config set` / `reset` that repairs a broken user layer dropped what it could not read, so a lost `auto.A# = false` was the action back ON by default — exactly what §15a #1 forbids | a lossy repair writes `dryRun = true` and says so (not when the command WRITES `dryRun`; a `reset dryRun` is pinned too) — an owner question below |
+| C | The broken layer was moved aside BEFORE the too-large / coupled-rule refusals were asked: a refused `set` took the file away | the move happens only once the write goes ahead; a layer whose bytes were read is COPIED aside, so it is in place until its replacement is renamed over it (a crash between leaves it); an unreadable one is moved and, when the write is refused or fails, moved BACK — a refused put-back is an error, never swallowed (the fix PR's own plan and code rounds, session `3991eba5`) |
 | C | A folder that HOLDS a protected root was deletable — the never-list judged only the path itself | ancestors refused under the root's own rule |
 | C | `{"auto":{"A4":{}}}` flattened to nothing: the layer read as valid and A4 kept the value below it | an object at a setting's key is that setting's (invalid) value |
 | C | A log root that could not be listed threw out of `LogRetention.Prune`, outside `Main`'s catch | one counted failure in the report |
 | F0 | `ConfigDocument.LeafLines` (and `Flatten`) above cyclomatic complexity 4 | split into a small reader walk |
-| F4 | `config reset` of an absent key said nothing, though the writer knew | a note on stderr |
+| F4 | `config reset` of an absent key said nothing, though the writer knew | a note on stderr — only when the layer was readable, so its absence is known |
 
 F2 (log retention under observe-only) was real at the merge and is already fixed on main (E7.S0 review C1).
 
