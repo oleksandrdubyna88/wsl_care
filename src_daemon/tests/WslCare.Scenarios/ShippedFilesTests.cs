@@ -171,8 +171,72 @@ public sealed partial class ShippedFilesTests
         var unit = Unit("wsl-care-act@.service");
         Single(unit, "Service", "Type").Should().Be("oneshot");
         Single(unit, "Service", "TimeoutStartSec").Should().Be("infinity", "a confirm is never time-killed as a whole (§15f #9, §15k #0)");
-        Single(unit, "Service", "CollectMode").Should().Be("inactive-or-failed", "a finished instance never lingers in systemctl --failed (§15k #8)");
+        unit["Service"].Should().NotContainKey("CollectMode", "systemd 255 ignores it there — \"Unknown key name 'CollectMode' in section 'Service', ignoring.\" (daemon 0.1.0, POST_DEPLOY item 7)");
+        unit["Unit"].Should().ContainKey("CollectMode", "systemd.unit(5) reads CollectMode= in [Unit] only");
+        Single(unit, "Unit", "CollectMode").Should().Be("inactive-or-failed", "a finished instance never lingers in systemctl --failed (§15k #8)");
         unit.Should().NotContainKey("Install", "started by --detach only, never enabled");
+    }
+
+    /// <summary>The section systemd 255 reads each key from — the man page that defines it, per key (systemd.unit(5),
+    /// .service(5), .exec(5), .kill(5), .resource-control(5), .timer(5)). systemd IGNORES a key in the wrong section with a
+    /// warning and exit 0, so daemon 0.1.0 shipped <c>CollectMode=</c> under <c>[Service]</c> and a failed detached run was
+    /// never collected (POST_DEPLOY item 7). CI's <c>systemd-analyze verify</c> (<c>.github/scripts/verify-systemd-units.sh</c>)
+    /// is the real parser, on the Linux legs; this table makes the same mistake red on every OS. A key not listed here is
+    /// refused until it is added with its man page — a new directive is a decision about which section reads it.</summary>
+    private static readonly Dictionary<string, string[]> KeysBySection = new(StringComparer.Ordinal)
+    {
+        ["Unit"] = ["Description", "Documentation", "CollectMode"], // systemd.unit(5) [Unit]
+        ["Service"] =
+        [
+            "Type", "ExecStart", "Restart", "RestartSec", "TimeoutStartSec", "TimeoutStopSec", "SuccessExitStatus", // systemd.service(5)
+            "Nice", "IOSchedulingClass", "NoNewPrivileges", // systemd.exec(5)
+            "KillMode", // systemd.kill(5)
+            "MemoryMax", // systemd.resource-control(5)
+        ],
+        ["Timer"] = ["OnCalendar", "Persistent", "RandomizedDelaySec", "AccuracySec", "Unit"], // systemd.timer(5)
+        ["Install"] = ["WantedBy"], // systemd.unit(5) [Install]
+    };
+
+    [Fact]
+    public void Every_key_of_every_shipped_unit_sits_in_the_section_systemd_reads_it_from()
+    {
+        foreach (var name in ShippedFiles.UnitNames)
+        {
+            foreach (var (section, keys) in Unit(name))
+            {
+                KeysBySection.Should().ContainKey(section, $"{name}: [{section}] is a section systemd reads");
+                keys.Keys.Should().BeSubsetOf(KeysBySection[section], $"{name}: every key of [{section}] is one systemd reads in [{section}] — anywhere else it is ignored with a warning and exit 0");
+            }
+        }
+    }
+
+    /// <summary>The same for each drop-in install.sh writes from <c>wsl-care units dropin</c> (E7.S2c): a drop-in is parsed
+    /// exactly like its unit.</summary>
+    [Fact]
+    public void Every_key_of_every_drop_in_sits_in_the_section_systemd_reads_it_from()
+    {
+        foreach (var name in Core.Systemd.UnitDropIns.Units)
+        {
+            var section = string.Empty;
+            foreach (var line in Core.Systemd.UnitDropIns.Defaults(name).Split('\n').Select(l => l.Trim()).Where(IsDirective))
+            {
+                section = IsSectionHeader(line) ? line[1..^1] : section;
+                if (!IsSectionHeader(line))
+                {
+                    KeysBySection.Should().ContainKey(section, $"{name}'s drop-in: \"{line}\" sits in a section systemd reads");
+                    KeysBySection[section].Should().Contain(line[..line.IndexOf('=')], $"{name}'s drop-in: [{section}] {line}");
+                }
+            }
+        }
+    }
+
+    /// <summary>The companion of the two scans above (testing.md: a scan that matches nothing passes forever): they read the
+    /// template's [Unit] section and find the one key there that is not a description.</summary>
+    [Fact]
+    public void The_section_scan_reads_the_template_s_unit_section()
+    {
+        Unit("wsl-care-act@.service").Should().ContainKey("Unit").WhoseValue.Keys.Should().Contain("Description");
+        Unit("wsl-care-act@.service")["Unit"].Should().HaveCount(3, "Description, Documentation and CollectMode — read, not skipped");
     }
 
     /// <summary>E7.S2c review N-4 as REVERSED by the E7.S2b/S2c review (C-H2): no unit's start limit may kill its own run before
