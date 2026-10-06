@@ -1195,7 +1195,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
 > Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
-> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); **the E7.S2b/S2c review round and the coai E7 code round (passed) fixed 2026-10-06** (*E7.S2b/S2c review round*: A18 bound to its modal, the two-clock dense idle, the progress watchdog and the timer run limit — N-4 reversed —, the rules held per layer); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); **the E7.S2b/S2c review round and the coai E7 code round (passed) fixed 2026-10-06** (*E7.S2b/S2c review round*: A18 bound to its modal, the two-clock dense idle, the progress watchdog and the timer run limit — N-4 reversed —, the rules held per layer); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open; **E7.S2d (the MCP server instances, owner request 2026-10-06) built 2026-10-06** (*E7.S2d as built*). Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1966,7 +1966,7 @@ major). Eight findings, all accepted, fixed in `fix(daemon): coai E7 code round 
 
 #### E7.S2d — MCP server instances of the AI agents (owner request 2026-10-06)
 
-> Status: **plan only, nothing implemented yet, 2026-10-06.** Scope: a read-only daemon collector and a `status --json`
+> Status: **built 2026-10-06** (deviations in *E7.S2d as built* below; the coai code round and the PR still open). Originally: plan only, 2026-10-06. Scope: a read-only daemon collector and a `status --json`
 > metric (also in every full run's detail), three threshold verdicts, twelve configuration keys. Branch `feat/wc-e7-mcp-instances`.
 > The extension shows it later (not in this story). Nothing is ever stopped or killed by it.
 
@@ -2165,6 +2165,9 @@ across the window; the block answers unavailable on Windows until then.
 - **Q-M3 — the orphan rule.** An MCP server whose agent died is counted (`orphaned: true`) — keep, or leave it out as the
   literal "parent chain reaches an agent" reads?
 - **Q-M4 — the defaults** above (2 %, 10 min, 12 instances, 1 core, 10 starts / 10 min).
+- **Q-M5 — the status budget** (added at build): with an MCP server running, `status` takes 2 s + the CPU window (1 s by default,
+  machine-only, 200–5 000 ms). Keep, lower the default window (500 ms halves the resolution to 2 % per tick — at the idle
+  line), or measure the CPU only in the full run (a 4-hour-old figure, which misses a 10-minute storm)?
 
 ##### Plan round (coai session `7f843e99`, 2026-10-06)
 
@@ -2208,6 +2211,34 @@ live process's start, with the remaining residual stated (Decided 8) and a test 
   above its default), `limits` publishes `mcpCpuWindowMilliseconds` and `mcpLogListMilliseconds`, so the extension's status
   ceiling can count them (`contracts/status-limits.json` regenerated). Reading another product's log NAMES and stats is within
   the E7 walk rules; the kind's sentence says "no log write in N min", never "no activity" as a fact.
+- **Closed `solved`** (2026-10-06): C-1 and C-2 verified and fixed RED-GREEN-RED before the collector was built on them.
+
+##### E7.S2d as built (2026-10-06)
+
+Built on `feat/wc-e7-mcp-instances`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *MCP server instances of the AI agents (E7.S2d)*, the design `research/architecture.md` § *MCP server instances of the AI
+agents*. **Deviations from the text above:**
+
+- **Where it lives:** `Core/Mcp/` (`McpServerCatalogue`, `McpInstances`, `McpRunLogs`, `McpServerCollector` with `McpJudge` and
+  the one road in `McpSampling`, `McpSample`), the verdicts in `Thresholds/McpVerdicts.cs` — not a `FromMcp` inside
+  `ThresholdRules.cs`, which is already near 400 lines; the wire shape in `Status/McpServersReport.cs`.
+- **The kind's sentence** reads "busy with no log write in the activity window" (consultation turn 1: an absent log write does
+  not prove absent work); the JSON keeps `busyWithoutActivity` as the owner's brief named it.
+- **The status budget (a decision, Q-M5 below):** the scenario's 2 s budget became 2 s PLUS the CPU window when an instance
+  runs — the captured 2026-10-02 tree already holds two `claude` → `coai-mcp` sessions, so `status` over it now waits 1 s by
+  design. The probe's own `sampleMilliseconds` is still held under 2 s. The other WSL timing failures of the first run (a
+  status with no instance at 4.1 s, a Docker ceiling at 26 s against 25 s, four install flows) were load (~55 on 24 cores):
+  re-run alone at load ~21, every one green.
+- **Found in the fixture:** the captured tree of 2026-10-02 holds the measured shape (`claude` 7203 → `coai-mcp` 7329, `claude`
+  8290 → `coai-mcp` 8380) — the CLI tests and the goldens run over real shapes, not only synthetic ones. It also holds
+  `creds-mcp` (native, and the Windows `.exe` through `/init`) and `playwright-mcp` run by `npx` — catalogue candidates for
+  Q-M2, not added (no log layout is known for them).
+- **The orphan rule** (Decided 1) uses the product's own `ProcessEntry.Orphaned` (parent pid 1 or a `systemd --user`), not
+  "pid 1" alone; a WSL session relay (`/init` with another pid) is a live non-agent parent, so such a server counts as
+  `notUnderAgent` — residual, stated.
+- **Residual of the continuation rule:** with `startsWindowMinutes` at its maximum (one day) just after midnight, a dead run's
+  `00-00-00` file of YESTERDAY whose earlier file is two days old (not listed) reads as a start — the only way it can invent one.
+- **Windows:** the block answers unavailable with "the Windows binary has no process collector yet (E11)"; a CLI test holds it.
 
 #### Stories
 
@@ -2356,6 +2387,8 @@ measures the added time on the fixture and the live gate on this machine, agains
       owner decided on 2026-10-05, `processes.aiAgentsIdleHours` (E7.S2b).
 - [x] E7.S2c (daemon, 2026-10-05; the extension's settings and N-1–N-3 on PR #12): every behavioural number a key or a setting (the owner rule 2026-10-05), the structural no-literal test green with
       group C as its reasoned allowlist; no extension ceiling below the daemon's computed worst case (N-1–N-3).
+- [x] E7.S2d (2026-10-06): the MCP server instances of the AI agents in `status --json` and the run detail, three verdicts, twelve
+      keys, read-only; Windows recorded as the E11 next step.
 - [ ] E7.S2b: an orphaned `ai-agents` process ends only by the button, only after N h without CPU measured by identity,
       never with a live session of its agent; the timer never ends one (test).
 - [ ] `wsl-care.exe` bundled byte-for-byte from the attested asset (S5a); the Windows agents rows (S5b) and the Windows

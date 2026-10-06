@@ -1643,6 +1643,39 @@ Two first attempts (the identity and missing-history rules mutated in `IdleFor`)
 
 **Goldens:** the seven `status*.json` gained `A18` in `actions`; `contracts/actions.json` and `config-keys.json` regenerated.
 
+### MCP server instances of the AI agents (E7.S2d, 2026-10-06, owner request)
+
+| Guarantee | Tests |
+|---|---|
+| a watched server under a `claude` session is an instance owned by that session (pid, `Claude Code`, the redacted command line); held = `RssAnon + RssShmem` | `Core.Tests/Mcp/McpServerCollectorTests.An_mcp_server_under_a_claude_session_is_an_instance_with_its_owner_agent` |
+| one whose agent died is an `orphaned` instance; one under a live non-agent host is not an instance, only counted | `…An_mcp_server_whose_agent_died_is_an_orphaned_instance`, `…An_mcp_server_under_another_host_is_not_an_instance_only_counted` |
+| only the PROGRAM names a server: `printf coai-mcp` is not one; an unwatched server is not counted | `…A_server_name_as_an_argument_of_another_program_is_not_an_instance`, `…An_unwatched_server_is_not_counted` |
+| CPU is measured across the window from two `stat` reads (50 ticks over 1 s = 50 %); a pid gone or reused during it is unavailable, never 0, and so are the cores; no wait when nothing runs | `…Cpu_percent_is_measured_across_the_window_from_two_stat_reads`, `…A_pid_reused_or_gone_during_the_window_has_cpu_unavailable_never_zero` (2), `…No_wait_when_no_instance_runs` |
+| busy without activity needs a KNOWN log older than the window; a log of an earlier process with the same pid is not its activity | `…Busy_without_activity_needs_a_known_log_older_than_the_window`, `…A_log_of_an_earlier_process_with_the_same_pid_is_not_its_activity` |
+| the restart storm: 34 starts in 10 minutes across midnight, 3 older not counted, a `00-00-00` continuation not counted, `mcp.starts` warns; a midnight file of a live process started after midnight IS a start, of one that outlived the day is not | `…The_restart_storm_counts_34_starts_in_10_minutes`, `…A_midnight_file_of_a_live_process_started_after_midnight_is_a_start`, `…A_midnight_file_of_a_live_process_that_outlived_the_day_is_a_continuation` |
+| a cut listing makes the starts unavailable; a linked log root is not listed; no layout = `liveYounger`, a lower bound | `…A_cut_listing_makes_starts_unavailable_not_partial`, `…A_linked_log_root_is_not_listed` (Linux), `…Starts_without_a_log_layout_are_a_lower_bound_marked_liveYounger` |
+| each kind at its edge; the three verdicts warn above their keys and are unknown with the reason when there is no sample | `…Each_kind_at_its_edge` (4), `…The_three_verdicts_warn_above_their_keys` |
+| `status` over the captured tree (two real-shaped `claude` → `coai-mcp` sessions) answers the block, the verdicts NOW, the capability and the limit; the text line; the Windows binary answers it unavailable (E11); a full run's detail carries the block and the verdicts (the Windows layout answers unavailable there) | `Cli.Tests/McpStatusTests` (3), `FullRunCommandTests.A_full_runs_detail_carries_the_mcp_servers_and_their_three_verdicts` |
+| the built binary over the captured tree and a 34-start storm in the home's run logs | `Scenarios/McpServersFlows.Status_json_counts_the_agents_mcp_servers_and_warns_on_a_restart_storm` (Linux) |
+| consultation C-1: a session listing that lost a folder (unreadable, cut) is never complete — A18 keeps the process "cannot tell", the agents' count is a lower bound; the physical bounded listing stops at its cap and deadline and answers an unreadable folder unreadable | `AgentOrphansTests.An_unreadable_sibling_folder_keeps_the_agent_process_cannot_tell`, `Files/BoundedListingTests` (5), `AgentsReviewRoundTests.An_agents_count_with_an_unreadable_folder_is_a_lower_bound_never_a_complete_count` |
+| consultation C-2: an agent is recognised by its raw argv — a program path with spaces or past the display cut | `ProcessCollectorTests.A_program_path_with_spaces_or_past_the_display_cut_is_still_recognised` |
+
+**Red first:** C-1 was red for the real symptom — A18 *Expected preview.Count to be 0 … but found 1* (an agent process judged
+idle beside a folder nobody could read) and the scan *Expected scan.Complete to be False … but found True*; C-2 was red with
+*{&lt;null&gt;, &lt;null&gt;}* (both attributions lost). The collector itself was written BEFORE its tests (said, not hidden): each
+of its guards was then broken and its test seen red — the second CPU read, the reused-pid guard, the owner walk, the
+continuation rule, the live-process midnight rule, the earlier-process log rule, the program-only match, the no-wait rule
+(8 of 8 red; files restored and rebuilt), and the status wiring (the block's line removed: both `McpStatusTests` that read it
+red). Two first failures were TEST defects (a FluentAssertions `Equal` given its reason as an element; two fake sessions
+sharing a pid), fixed in the tests.
+
+**Goldens:** the seven `status*.json` gained `mcpServers` (the captured tree's two servers), the three `mcp.*` verdicts, the
+capability and the two limits; `config-keys.json` and `status-limits.json` regenerated.
+
+**Status budget:** `StatusFlows`' first flow now allows 2 s plus the CPU window (the captured tree runs two servers); the
+probe's own `sampleMilliseconds` is still held under 2 s.
+
+
 ### Every number is configuration (E7.S2c, 2026-10-05, owner rule)
 
 | Guarantee | Tests |
@@ -2158,7 +2191,8 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | root (claimed) reading the target user's layer WITHOUT interop: only tightening values taken, `config get --json` and `status --json` carry `configNotices` naming interop and the machine layer; `status` carries `userLayerDigest` | covered | `ConfigTrustFlows.Without_interop_a_root_run_takes_only_the_tightening_values_and_every_answer_says_why` (Linux legs) |
 | no `config` verb starts any tool: every config verb's example, a refused set, a broken layer and its repair leave the fakes' argv log empty | covered | `ConfigFlows.No_config_verb_starts_any_tool`; the log is proved alive by `FakeToolFlows` |
 | every registered verb's `Example` runs against the built CLI: exit 0 or 2, never 70 | covered | `VerbRegisterTests.Every_registered_verb_runs_its_example_against_the_built_cli_without_crashing` (one case per verb, derived) |
-| `wsl-care status [--json]` over the captured procfs tree (Linux): exit 0 in under 2 s wall clock (measured around the process, after one unmeasured warm-up start), `schemaVersion`, the fixture's `MemTotal`, 10 containers, 51 processes, a cwd read through a real symlink, `df` available — and the fakes' argv log EMPTY with `docker` and `powershell` on the `PATH` (plan §15b #5) | covered (Linux legs; skipped on Windows with the reason) | `StatusFlows.Status_json_over_the_captured_procfs_answers_within_the_budget_and_starts_no_slow_process`; in-process on every OS: `StatusCommandTests`; AOT binary: CI status smoke (Linux over the same tree) |
+| `wsl-care status [--json]` over the captured procfs tree (Linux): exit 0 in under 2 s wall clock plus the MCP servers' CPU window (the tree runs two `coai-mcp`; plan §15q E7.S2d) — measured around the process, after one unmeasured warm-up start — `schemaVersion`, the fixture's `MemTotal`, 10 containers, 51 processes, a cwd read through a real symlink, `df` available — and the fakes' argv log EMPTY with `docker` and `powershell` on the `PATH` (plan §15b #5) | covered (Linux legs; skipped on Windows with the reason) | `StatusFlows.Status_json_over_the_captured_procfs_answers_within_the_budget_and_starts_no_slow_process`; in-process on every OS: `StatusCommandTests`; AOT binary: CI status smoke (Linux over the same tree) |
+| `wsl-care status [--json]` over the captured tree with a restart storm in the home's run logs (Linux): `mcpServers` counts the two `coai-mcp` under their `Claude Code` sessions, `starts` 34, `mcp.starts` warns, capability `status.mcpServers`; no tool started | covered (Linux legs; skipped on Windows) | `McpServersFlows.Status_json_counts_the_agents_mcp_servers_and_warns_on_a_restart_storm`; in-process on every OS: `McpStatusTests`, `McpServerCollectorTests` |
 | `wsl-care status [--json]` on this binary's own side: under 2 s, the Windows binary answers host RAM / drive / `vmmemWSL` and names the VM as the other binary; the Linux binary over an empty root reports memory unavailable with the path and no value key; no slow part recorded yet; no tool started | covered | `StatusFlows.Status_json_on_this_binarys_side_answers_within_the_budget_names_what_it_cannot_read_and_starts_nothing`; AOT binary (`win-x64`): CI status smoke |
 | `wsl-care status [--json]` after a full run recorded slow parts: `docker stats` come back from `history.jsonl` with the run id and their age, the Windows clock unavailable; nothing started | covered | `StatusFlows.Status_reads_the_slow_parts_back_from_the_last_full_run_with_their_age`; also `LastFullRunTests`, `StatusCommandTests` |
 | `wsl-care status [--json]` as text, and a stray argument refused with exit 2 and one `wsl-care:` message | covered | `StatusFlows.Status_without_json_prints_text_and_a_stray_argument_is_refused_with_the_usage_code`; also `CommandLineTests` |

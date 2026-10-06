@@ -187,7 +187,8 @@ wsl-care status --json    # the fast snapshot the extension reads; schemaVersion
 wsl-care status           # the same, as a few lines for a terminal
 ```
 
-`status` answers in well under 2 s and starts no process: it reads `/proc` and the cgroup tree (inside
+`status` answers in well under 2 s — plus the MCP servers' CPU window (1 s by default) when an AI agent's MCP server runs —
+and starts no process: it reads `/proc` and the cgroup tree (inside
 the distro) or asks Windows for its counters (`wsl-care.exe`), and nothing else. Inside the distro it
 reports VM memory (`MemAvailable`, page cache, anonymous and inactive anonymous memory, shared memory,
 swap), free high-order blocks in zone Normal (order 4 and 7), pressure (PSI) for memory, I/O and CPU, the
@@ -218,13 +219,32 @@ reaches them at the next full run. The text form prints one line: `verdicts: 1 c
 
 **What runs, what this build can do, the last cleanup.** `status --json` also answers `actions` (the action ids this
 binary holds for its own side, in the order a run takes them), `capabilities` (what this build can do beyond the first
-release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange`, … `config.contract`, `agents.list`, `agents.probe`, `config.agentsExtra` — what a client acts on, never the
+release's verbs: `act.shownList`, `runs.show`, `running.block`, `logs.instantRange`, … `config.contract`, `agents.list`, `agents.probe`, `config.agentsExtra`, `status.mcpServers` — what a client acts on, never the
 version number), `running` — `none`, `queued` (a run accepted and not started yet), `live` (acting: the run, its actions,
 the one it is on, its pid and how old its heartbeat is), `wedged` (alive, heartbeat older than 30 s — nothing is killed),
 `dead` (its process is gone and no run has swept it yet — status only REPORTS it; the next root run records it
 `interrupted`), `unknown` (the pid cannot be inspected) or `unreadable` — and `lastCleanup` (the newest run that removed
 or freed something: run id, start, trigger, objects removed, bytes freed; `available: false` with the reason before the
 first). `status` stays read-only and needs no root for any of it. The text form adds a `running:` and a `last cleanup:` line.
+
+**MCP servers of the AI agents.** `status --json` answers `mcpServers` (and every full run's detail carries the same
+block): every process of a watched MCP server (`mcpServers.watched`, closed over the built-in catalogue — `coai-mcp`
+today) whose parent chain reaches an AI-agent session, or that was left behind when its agent died (`orphaned`). Per
+instance: pid, owner (the agent session's pid, name and redacted command line), user, state, age, **CPU % of one core
+measured across a window** (`mcpServers.cpuWindowMilliseconds`, default 1 000 ms: two `/proc` reads; the wait happens
+only when an instance runs), memory held (`RssAnon + RssShmem`), the newest write of its own run log, and a `kind`:
+`starting` (below `mcpServers.idleCpuPercent`, 2 %, and younger than `mcpServers.idleMinAgeMinutes`, 10), `idle`,
+`busy`, `busyWithoutActivity` (busy while its log was last written more than `mcpServers.activityWindowMinutes`, 10, ago
+— the state measured on 2026-10-06: seven `coai-mcp` at 27–54 % of a core each with no log line for 10+ minutes) or
+`unknown`. Per server: the instances and the **starts in the last `mcpServers.startsWindowMinutes`** (10), counted from
+the names of its run logs (`~/.local/share/coai-mcp/logs/<UTC day>/coai-mcp-<HH-mm-ss>-<pid>.log`, names and dates only,
+no file opened) — the restart storm of 2026-10-06 was 34 starts in 10 minutes. Three verdicts judge them now:
+`mcp.instances` (warn above `mcpServers.warnInstances`, 12), `mcp.cpu` (warn above `mcpServers.warnCpuPercent`, 100 % of
+one core in total), `mcp.starts` (warn when a server started more than `mcpServers.warnStarts`, 10, times in the window).
+Read-only: nothing is stopped. The Windows binary answers the block unavailable — `coai-mcp.exe` on Windows arrives with
+the Windows collectors (E11). Capability `status.mcpServers`; `limits` publishes `mcpCpuWindowMilliseconds` and
+`mcpLogListMilliseconds`, the two waits a client's `status` ceiling must allow for. The text form adds one line:
+`mcp servers: 7 (0 idle, 7 busy without a log write), 2.6 cores, 0.40 GiB; starts coai-mcp 34 in 10 min`.
 
 **Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts`,
 `productVersion`, `actions`, `capabilities`, `running` and `lastCleanup`) never bumps it, so a reader ignores keys it does
