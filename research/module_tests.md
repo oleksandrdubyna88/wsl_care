@@ -1994,6 +1994,17 @@ could show the previous distribution's `preview` (or `doctor`) under the new one
 Break-it, each restored byte for byte: the client key without the setting → the first two red; the poller's obsolete-
 round check removed → the second and third red; the store not cleared on a new target → the fourth red.
 
+### What the manual Marketplace route and the clean changelog rest on (owner decision, 2026-10-06)
+
+The owner publishes the extension by uploading the attested `.vsix` by hand — no `VSCE_PAT`, no Entra identity
+(docs/repo-settings.md, step 9). And the first release pull request (#19) showed release-please keeping the extension
+CHANGELOG's preamble BELOW the release notes under a stray `## Changelog`.
+
+| Guarantee | Test | Observed red |
+|---|---|---|
+| `POST_DEPLOY.md` item 12 — its own command, read from the row and run under `/bin/sh` as post-deploy-check runs it — passes for `VSCE_PAT expires: none — manual upload`, for `none — OIDC` and for a PAT more than 30 days from expiry; fails for a PAT inside 30 days, the `none yet` placeholder, a bare `none` and a missing line (dates derived from now at noon UTC — the command asks `date`) | `ReleaseExtensionScriptFlows.Post_deploy_item_12_passes_a_manual_upload…` (Linux; run in WSL as the user) | before the row changed: *Expected (result.Exit == 0) to be True because item 12 over 'VSCE_PAT expires: none — manual upload (…)' (exit 1)* |
+| every release-please package's changelog is empty or already holds a version heading — release-please's updater (`src/updaters/changelog.ts`, read in its source) inserts before the first `\n###? v?[0-9[]` and otherwise keeps non-empty text BELOW the new entry with its H1 demoted; derived from the configured packages | `ReleaseConfigTests.Every_package_changelog_is_empty_or_starts_its_entries…` | with the preamble in `src_vs_code/CHANGELOG.md`: *src_vs_code/CHANGELOG.md must be empty or already hold a release heading*; `src_daemon/CHANGELOG.md` (already released) passes. The file is now empty — the `.vsix` ships a 0-byte `changelog.md` until the first release writes it |
+
 ### What the extension's tests do not prove
 
 - **No real `wsl.exe` is ever started by a test** — by design (the tripwire). The fake's answers are the measured ones of

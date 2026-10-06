@@ -119,6 +119,30 @@ public sealed class ReleaseConfigTests
         }
     }
 
+    /// <summary>release-please's changelog updater (src/updaters/changelog.ts, the code release-please-action v5.0.0
+    /// bundles), read rather than recalled: it inserts the new entry before the first match of <c>\n###? v?[0-9[]</c>; when
+    /// there is none and the file is NOT empty, it writes <c># Changelog</c>, the entry, and then the old text with every H1
+    /// demoted to H2. A preamble before the first release therefore lands BELOW the release notes under a stray
+    /// <c>## Changelog</c> — seen in the first extension release pull request (#19, 2026-10-06). So every package's changelog
+    /// is either empty (never released) or already carries a version heading. Derived from the configured packages.</summary>
+    [Fact]
+    public void Every_package_changelog_is_empty_or_starts_its_entries_so_release_please_writes_a_clean_header()
+    {
+        var versionHeader = new System.Text.RegularExpressions.Regex(@"\n###? v?[0-9\[]", System.Text.RegularExpressions.RegexOptions.Singleline);
+        var packages = Json(ReleaseFiles.ReleasePleaseConfig).GetProperty("packages").EnumerateObject().ToList();
+        packages.Should().HaveCountGreaterThan(1, "the daemon and the extension are both packages");
+
+        foreach (var package in packages)
+        {
+            var name = package.Value.TryGetProperty("changelog-path", out var configured) ? configured.GetString()! : "CHANGELOG.md";
+            var path = Path.Combine(ReleaseFiles.Root, package.Name, name);
+            var text = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+
+            (text.Length == 0 || versionHeader.IsMatch(text)).Should().BeTrue(
+                $"{package.Name}/{name} must be empty or already hold a release heading — any other text is kept by release-please BELOW the new entry, its '# ' turned into '## ':\n{text}");
+        }
+    }
+
     /// <summary>The extension package (E5.S3, plan §15g M5 (4)): the `node` strategy bumps package.json and the lock file and
     /// writes src_vs_code/CHANGELOG.md; its tag is the tag release-extension.yml starts on; the first release is 0.1.0
     /// exactly by the same bootstrap as the daemon's (manifest 0.0.0 = never released, `initial-version` 0.1.0).</summary>
