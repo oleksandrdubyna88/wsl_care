@@ -1964,7 +1964,7 @@ The extension is **AI OS Care**, id `ai-os-care`, publisher `remsoftdev` — `re
 
 Found by the consultant of the retro coai review of PR #9 and confirmed by reading the code: the client shared a call
 in flight by VERB alone and the poller stored whatever answered last, so after a `wslCare.distro` switch the panel
-could show the previous distribution's `preview` (or `doctor`) under the new one's heading. All six tests are in
+could show the previous distribution's `preview` (or `doctor`) under the new one's heading. All nine tests are in
 `src/test/distroSwitch.test.ts`; the first four were run against the unfixed `main` (c61ec98) first.
 
 | Guarantee | Test | Red observed against the unfixed code |
@@ -1975,6 +1975,9 @@ could show the previous distribution's `preview` (or `doctor`) under the new one
 | a switch seen by a status-only poll (panel hidden) leaves no `preview` / `doctor` of the previous distribution | *a distribution switch seen by a status-only poll …* | *still showing Ubuntu's preview under Debian* |
 | a status poll of the SAME distribution never drops a `preview` in flight (the guard against an over-eager generation) | *a status poll of the SAME distribution …* | green before and after (no defect to show); teeth: the generation bumped on EVERY round → red |
 | a round made obsolete while its `status` is pending asks no `preview` / `doctor` once that status answers (added by the fix PR's own coai plan round) | *a round made obsolete while its status is pending …* | written after the fix; teeth: the generation check in `afterStatus` removed → *the obsolete round went on to ask preview / doctor after its status answered* |
+| a switch while a round waits for its `status`, with NO new round started (the window unfocused, so the config change's tick asks nothing), ends that round without asking or storing anything (the fix PR's own coai code round, 3 findings, one gap) | *a switch while a round waits for its status, with NO new round started …* | against the first fix: *the round asked the new distribution for preview / doctor beside the old status*; teeth: `isCurrent` no longer re-reading the setting → red |
+| a switch between the `status` being stored and the round going on asks no `preview` / `doctor` (the boundary `afterStatus` guards; the consultant's addition) | *a switch between the status being stored and the round going on …* | teeth: `afterStatus` comparing the generation without re-reading the setting → *the round went on to ask the new distribution for preview / doctor* |
+| a switch in an unfocused window clears what was shown and asks nothing (the consultant's addition to the same round) | *a switch in an unfocused window clears what was shown …* | against the first fix: *the previous distribution's answers are still shown*; teeth: the `observeTarget()` before `tick()`'s focus guard removed → red |
 
 Break-it, each restored byte for byte: the client key without the setting → the first two red; the poller's obsolete-
 round check removed → the second and third red; the store not cleared on a new target → the fourth red.

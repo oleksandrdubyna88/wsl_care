@@ -2373,7 +2373,10 @@ E5 was re-reviewed after its merge (owner, 2026-10-06: every merged PR through t
 they are while other branches edit them); the poll churn rejected for the same retention reason (M1 stays the owner's).
 The consultant found what the reviewers missed: **a `wslCare.distro` switch could show one distribution's `preview`
 under the other's heading** — fixed RED first (`distroSwitch.test.ts`; the client shares a call in flight per setting
-and verb, the poller stamps each round with its target). Two hypotheses were not changed in code: *Install daemon*'s
+and verb, the poller stamps each round with its target and re-reads it at every boundary — the fix PR's own code round
+found the first fix noticed a switch only when the next round began). **Open follow-up:** with `wslCare.distro` empty,
+WSL's default changed in the middle of a panel round can still mix two distributions in that round (pre-existing; bind
+the RESOLVED distribution to the round). Two hypotheses were not changed in code: *Install daemon*'s
 terminal in a Remote – WSL window (now a named observation in `POST_DEPLOY.md` item 3) and a Marketplace version
 published by hand with other bytes (by design skipped; `POST_DEPLOY.md` item 6 compares the installed bundle with the
 attested build).

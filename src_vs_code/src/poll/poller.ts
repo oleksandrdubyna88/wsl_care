@@ -100,8 +100,10 @@ export class Poller {
     }
   }
 
-  /** What the interval does: one `status`, and only while focused (the timer can fire just after focus was lost). */
+  /** What the interval does: one `status`, and only while focused (the timer can fire just after focus was lost). An
+   * unfocused tick still notices a changed target, so the previous distribution's answers are not left on show. */
   tick(): Promise<void> {
+    this.observeTarget();
     if (!this.options.focused()) {
       return Promise.resolve();
     }
@@ -138,7 +140,7 @@ export class Poller {
 
   /** `preview` and `doctor` — unless `status` met a stop, or a round for another target has started since. */
   private async afterStatus(round: number, status: VerbOutcome): Promise<void> {
-    if (round !== this.generation) {
+    if (!this.isCurrent(round)) {
       return;
     }
     await (stopsTheOthers(status) ? this.mirror(round, status) : Promise.all([this.ask(round, 'preview'), this.ask(round, 'doctor')]));
@@ -158,24 +160,37 @@ export class Poller {
     return outcome;
   }
 
-  /**
-   * Starts a round: its number, after making every older round obsolete when the target changed since the previous
-   * round (and clearing what they stored, which is about the previous target).
-   */
+  /** Starts a round: its number, after `observeTarget`. */
   private begin(): number {
+    this.observeTarget();
+
+    return this.generation;
+  }
+
+  /**
+   * Notices a target change at ANY boundary — a round starting, a status answered, an answer about to be stored, an
+   * unfocused tick — not only when the next round begins (the fix PR's own code round): a change makes every round
+   * started so far obsolete and clears what they stored, which is about the previous target.
+   */
+  private observeTarget(): void {
     const target = this.options.target();
     if (this.lastTarget !== undefined && target !== this.lastTarget) {
       this.generation += 1;
       this.options.store.clear();
     }
     this.lastTarget = target;
+  }
 
-    return this.generation;
+  /** `round` is still about the target the setting names now. */
+  private isCurrent(round: number): boolean {
+    this.observeTarget();
+
+    return round === this.generation;
   }
 
   /** Writes to the store only while `round` is still about the current target. */
   private settle(round: number, write: () => void): void {
-    if (round === this.generation) {
+    if (this.isCurrent(round)) {
       write();
     }
   }

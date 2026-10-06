@@ -1874,10 +1874,14 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
 - **A distribution switch never mixes two distributions** (retro review of PR #9, 2026-10-06). The client reads
   `wslCare.distro` once per call and shares a call in flight only for the same setting AND verb, so a `preview` asked
   after the switch never joins the one still running for the previous distribution (its ceiling is 330 s). The poller
-  stamps every round with its target (the same setting); a round for a new target clears the store and makes every
-  older round obsolete — an obsolete round stores nothing, asks no `preview` / `doctor`, and leaves "checking" to the
-  current round. A round for the SAME target makes nothing obsolete, so a status poll never drops a `preview` in flight
-  (`distroSwitch.test.ts`).
+  stamps every round with its target (the same setting) and looks at the setting again at every boundary — a round
+  starting, an answer about to be stored, `status` answered, even an unfocused tick that asks nothing. A changed
+  target clears the store and makes every round started so far obsolete — an obsolete round stores nothing, asks no
+  `preview` / `doctor`, and leaves "checking" to the current round. A round for the SAME target makes nothing
+  obsolete, so a status poll never drops a `preview` in flight (`distroSwitch.test.ts`). **Not covered, stated:** with
+  `wslCare.distro` EMPTY the target is "WSL's default", which the client resolves per call; a default changed with
+  `wsl --set-default` in the middle of a panel round can still mix two distributions in that one round (pre-existing,
+  found by the consultant 2026-10-06; binding the resolved distribution to the round is the follow-up).
 - **The churn** this costs the daemon (every `status` run opens one run-log file): measured over a simulated day by
   the real poller — 721 runs per fully focused day at 120 s, 241 for an 8-hour focused day, 2 881 at the 30 s floor —
   [2026-10-04_extension_poll_churn.md](2026-10-04_extension_poll_churn.md). Accepting it or recording a logging-rule

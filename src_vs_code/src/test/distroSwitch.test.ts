@@ -201,3 +201,66 @@ test('a round made obsolete while its status is pending asks no preview or docto
   assert.deepEqual(calls, beforeRelease, 'the obsolete round went on to ask preview / doctor after its status answered');
   assert.equal(distroOf(store.snapshot().status), 'Debian');
 });
+
+/** A poller over a `run` that records `<distro> <verb>` per call; `heldUbuntuStatus` holds Ubuntu's first status. */
+function recordedWorld(heldUbuntuStatus: boolean): {
+  poller: Poller; store: OutcomeStore; calls: string[]; held: Deferred<VerbOutcome>; statusAsked: Promise<void>;
+  setDistro(d: string): void; setFocused(f: boolean): void;
+} {
+  const held = deferred<VerbOutcome>();
+  const statusAsked = deferred<void>();
+  const state = { distro: 'Ubuntu', focused: true };
+  const calls: string[] = [];
+  const store = new OutcomeStore();
+  const run = (verb: Verb): Promise<VerbOutcome> => {
+    calls.push(`${state.distro} ${verb}`);
+    if (heldUbuntuStatus && state.distro === 'Ubuntu' && verb === 'status') {
+      statusAsked.resolve();
+      return held.promise;
+    }
+
+    return Promise.resolve(answered(verb as PanelVerb, headBody(verb as PanelVerb), state.distro));
+  };
+  const poller = new Poller({ run, store, focused: () => state.focused, refreshSeconds: () => undefined, timers: NEVER, target: () => state.distro });
+
+  return { poller, store, calls, held, statusAsked: statusAsked.promise, setDistro: (d) => { state.distro = d; }, setFocused: (f) => { state.focused = f; } };
+}
+
+test('a switch while a round waits for its status, with NO new round started, ends that round without mixing', async () => {
+  const w = recordedWorld(true);
+  void w.poller.refreshPanel();
+  await w.statusAsked;
+  w.setDistro('Debian');
+  w.held.resolve(answered('status', headBody('status'), 'Ubuntu'));
+  await w.poller.settled();
+
+  assert.deepEqual(w.calls, ['Ubuntu status'], 'the round asked the new distribution for preview / doctor beside the old status');
+  const snapshot = w.store.snapshot();
+  assert.deepEqual([snapshot.status, snapshot.preview, snapshot.doctor, snapshot.checking], [undefined, undefined, undefined, false]);
+});
+
+test('a switch between the status being stored and the round going on asks no preview or doctor', async () => {
+  const w = recordedWorld(false);
+  const unsubscribe = w.store.onChange((snapshot) => {
+    if (distroOf(snapshot.status) === 'Ubuntu') {
+      unsubscribe();
+      queueMicrotask(() => { w.setDistro('Debian'); });
+    }
+  });
+  await w.poller.refreshPanel();
+
+  assert.deepEqual(w.calls, ['Ubuntu status'], 'the round went on to ask the new distribution for preview / doctor');
+});
+
+test('a switch in an unfocused window clears what was shown, and asks nothing', async () => {
+  const w = recordedWorld(false);
+  await w.poller.refreshPanel();
+  assert.equal(distroOf(w.store.snapshot().preview), 'Ubuntu');
+  w.setFocused(false);
+  w.setDistro('Debian');
+  await w.poller.tick();
+
+  assert.deepEqual(w.calls, ['Ubuntu status', 'Ubuntu preview', 'Ubuntu doctor'], 'an unfocused window must ask nothing');
+  const snapshot = w.store.snapshot();
+  assert.deepEqual([snapshot.status, snapshot.preview, snapshot.doctor], [undefined, undefined, undefined], 'the previous distribution\'s answers are still shown');
+});
