@@ -111,18 +111,21 @@ export class WslCareClient {
   constructor(private readonly options: ClientOptions) {}
 
   /**
-   * Run `verb`; a run of the same verb already in flight is shared, never doubled — except that a run the user asked
-   * to START a stopped distribution is never folded into a poll (which would answer "stopped"), so the two are keyed
-   * apart.
+   * Run `verb`; a run of the same verb for the same `wslCare.distro` value already in flight is shared, never doubled —
+   * except that a run the user asked to START a stopped distribution is never folded into a poll (which would answer
+   * "stopped"), so the two are keyed apart. The setting is read ONCE, here, and is part of the key: a call made after
+   * the setting changed never shares the call still running for the previous distribution, whose answer would be shown
+   * under the new one (retro review of PR #9, `distroSwitch.test.ts`).
    */
   run(verb: Verb, options: RunOptions = {}): Promise<VerbOutcome> {
     const startIfStopped = options.startIfStopped === true;
-    const key = `${verb}${startIfStopped ? '+start' : ''}`;
+    const setting = this.options.distroSetting().trim();
+    const key = `${setting}|${verb}${startIfStopped ? '+start' : ''}`;
     const running = this.inFlight.get(key);
     if (running !== undefined) {
       return running;
     }
-    const started = this.runOnce(verb, startIfStopped).finally(() => this.inFlight.delete(key));
+    const started = this.runOnce(verb, startIfStopped, setting).finally(() => this.inFlight.delete(key));
     this.inFlight.set(key, started);
 
     return started;
@@ -138,13 +141,13 @@ export class WslCareClient {
     if (!wsl.ok) {
       return wsl.failure;
     }
-    const distro = await this.listedDistro(wsl.value);
+    const distro = await this.listedDistro(wsl.value, this.options.distroSetting().trim());
 
     return distro.ok ? { kind: 'terminal', shellPath: wsl.value, shellArgs: ['-d', distro.value, '--cd', '~'], distro: distro.value } : distro.failure;
   }
 
-  private async runOnce(verb: Verb, startIfStopped: boolean): Promise<VerbOutcome> {
-    const target = await this.target(startIfStopped);
+  private async runOnce(verb: Verb, startIfStopped: boolean, setting: string): Promise<VerbOutcome> {
+    const target = await this.target(startIfStopped, setting);
     if (!target.ok) {
       return { ...target.failure, verb };
     }
@@ -182,12 +185,12 @@ export class WslCareClient {
    * user's "Start WSL and check") a listed distribution that is not running is still the target: the `-d` call that
    * follows starts it, because the user asked for exactly that. Every other check stands.
    */
-  private async target(startIfStopped: boolean): Promise<Step<{ wsl: string; distro: string }>> {
+  private async target(startIfStopped: boolean, setting: string): Promise<Step<{ wsl: string; distro: string }>> {
     const wsl = this.launcher();
     if (!wsl.ok) {
       return wsl;
     }
-    const distro = await this.listedDistro(wsl.value);
+    const distro = await this.listedDistro(wsl.value, setting);
     if (!distro.ok) {
       return distro;
     }
@@ -205,10 +208,9 @@ export class WslCareClient {
     return wsl === undefined ? fail({ kind: 'wslMissing', detail: 'SystemRoot does not name a drive folder holding System32\\wsl.exe' }) : ok(wsl);
   }
 
-  /** The configured distribution — refused by its shape BEFORE anything starts — or WSL's default, checked against
-   * `--list`. */
-  private async listedDistro(wsl: string): Promise<Step<string>> {
-    const configured = this.options.distroSetting().trim();
+  /** The configured distribution (`configured`, the trimmed setting) — refused by its shape BEFORE anything starts — or
+   * WSL's default, checked against `--list`. */
+  private async listedDistro(wsl: string, configured: string): Promise<Step<string>> {
     if (configured !== '' && !isDistroName(configured)) {
       return fail(notAName(configured));
     }

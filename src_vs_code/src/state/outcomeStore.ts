@@ -34,6 +34,11 @@ export class OutcomeStore {
     this.replace({ ...this.current, checking });
   }
 
+  /** Forget every outcome — the distribution they were about is no longer the one asked about (`Poller.begin`). */
+  clear(): void {
+    this.replace(EMPTY);
+  }
+
   /** Called with every new snapshot; the returned function unsubscribes. */
   onChange(listener: (snapshot: Snapshot) => void): () => void {
     this.listeners.add(listener);

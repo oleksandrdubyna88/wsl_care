@@ -19,6 +19,12 @@ import type { OutcomeStore, PanelVerb } from '../state/outcomeStore';
  *
  * Each `status` run opens one run-log file in the daemon (M1); the numbers per window-day are measured by
  * `poller.test.ts` over this very class and recorded in research/2026-10-04_extension_poll_churn.md.
+ *
+ * Every round is stamped with the TARGET it was started for (`target`, the `wslCare.distro` value). A round started for
+ * another target than the previous one clears the store first and makes every older round obsolete: an obsolete round
+ * stores nothing, asks nothing more, and leaves the "checking" state to the current one — so a `preview` still running
+ * for the previous distribution can never land under the new one (retro review of PR #9, `distroSwitch.test.ts`). A round
+ * for the SAME target never makes another obsolete, so a status poll never drops a `preview` in flight.
  */
 
 export const DEFAULT_REFRESH_SECONDS = 120;
@@ -38,6 +44,8 @@ export interface PollerOptions {
   readonly focused: () => boolean;
   readonly refreshSeconds: () => unknown;
   readonly timers: Timers;
+  /** What the daemon is asked about — the `wslCare.distro` setting as the client reads it (empty = WSL's default). */
+  readonly target: () => string;
 }
 
 /** The interval in whole seconds: the setting when it is a number, between the floor and one day; the default otherwise. */
@@ -65,6 +73,9 @@ function reasonOf(error: unknown): string {
 export class Poller {
   private disarm: (() => void) | undefined;
   private readonly pending = new Set<Promise<unknown>>();
+  /** Bumped when a round starts for another target than the previous round; a round of an older number is obsolete. */
+  private generation = 0;
+  private lastTarget: string | undefined;
 
   constructor(private readonly options: PollerOptions) {}
 
@@ -95,7 +106,7 @@ export class Poller {
       return Promise.resolve();
     }
 
-    return this.track(this.ask('status').then(() => undefined));
+    return this.track(this.ask(this.begin(), 'status').then(() => undefined));
   }
 
   /** Panel open / Refresh / "Start WSL and check": `status` first, then `preview` and `doctor` unless it stopped. */
@@ -115,27 +126,58 @@ export class Poller {
   }
 
   private async panelRound(options: RunOptions): Promise<void> {
+    const round = this.begin();
     this.options.store.setChecking(true);
     try {
-      const status = await this.ask('status', options);
-      await (stopsTheOthers(status) ? this.mirror(status) : Promise.all([this.ask('preview'), this.ask('doctor')]));
+      const status = await this.ask(round, 'status', options);
+      await this.afterStatus(round, status);
     } finally {
-      this.options.store.setChecking(false);
+      this.settle(round, () => this.options.store.setChecking(false));
     }
+  }
+
+  /** `preview` and `doctor` — unless `status` met a stop, or a round for another target has started since. */
+  private async afterStatus(round: number, status: VerbOutcome): Promise<void> {
+    if (round !== this.generation) {
+      return;
+    }
+    await (stopsTheOthers(status) ? this.mirror(round, status) : Promise.all([this.ask(round, 'preview'), this.ask(round, 'doctor')]));
   }
 
   /** The stop `status` met, recorded for `preview` and `doctor` too — so their rows say why, without a call. */
-  private async mirror(status: VerbOutcome): Promise<void> {
+  private async mirror(round: number, status: VerbOutcome): Promise<void> {
     for (const verb of ['preview', 'doctor'] as const) {
-      this.options.store.set(verb, { ...status, verb });
+      this.settle(round, () => this.options.store.set(verb, { ...status, verb }));
     }
   }
 
-  private async ask(verb: PanelVerb, options: RunOptions = {}): Promise<VerbOutcome> {
+  private async ask(round: number, verb: PanelVerb, options: RunOptions = {}): Promise<VerbOutcome> {
     const outcome = await this.options.run(verb, options).catch((error: unknown): VerbOutcome => ({ kind: 'unknownFailure', code: undefined, messages: [reasonOf(error)], verb }));
-    this.options.store.set(verb, outcome);
+    this.settle(round, () => this.options.store.set(verb, outcome));
 
     return outcome;
+  }
+
+  /**
+   * Starts a round: its number, after making every older round obsolete when the target changed since the previous
+   * round (and clearing what they stored, which is about the previous target).
+   */
+  private begin(): number {
+    const target = this.options.target();
+    if (this.lastTarget !== undefined && target !== this.lastTarget) {
+      this.generation += 1;
+      this.options.store.clear();
+    }
+    this.lastTarget = target;
+
+    return this.generation;
+  }
+
+  /** Writes to the store only while `round` is still about the current target. */
+  private settle(round: number, write: () => void): void {
+    if (round === this.generation) {
+      write();
+    }
   }
 
   private arm(): void {

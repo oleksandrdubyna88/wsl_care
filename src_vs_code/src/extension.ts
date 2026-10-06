@@ -39,6 +39,11 @@ function settings(): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration('wslCare');
 }
 
+/** `wslCare.distro` — read by the client for every call and by the poller to stamp each round with its target. */
+function distroSetting(): string {
+  return settings().get<string>('distro', '');
+}
+
 interface Parts {
   readonly testMode: boolean;
   readonly client: WslCareClient;
@@ -58,7 +63,7 @@ function build(context: vscode.ExtensionContext): Parts {
     runner: clientRunner(testMode, runnerFor(choice), calls),
     platform: process.platform,
     env: process.env,
-    distroSetting: () => settings().get<string>('distro', ''),
+    distroSetting,
   });
   const store = new OutcomeStore();
   const focus: { override: boolean | undefined } = { override: undefined };
@@ -68,6 +73,7 @@ function build(context: vscode.ExtensionContext): Parts {
     focused: () => focus.override ?? vscode.window.state.focused,
     refreshSeconds: () => settings().get<unknown>('refreshSeconds'),
     timers: REAL_TIMERS,
+    target: () => distroSetting().trim(),
   });
 
   return { testMode, client, install: newInstallRecorder(), choice, calls, store, poller, focus };
