@@ -157,24 +157,24 @@ tag (`poolmon`), the search index size and scope, WinSxS (`DISM /AnalyzeComponen
 
 ## Ranked fixes — what will help, most first
 
-| # | Fix | Expected effect | Kind |
-|---|---|---|---|
-| W1 | **Ollama: `OLLAMA_KEEP_ALIVE` from `-1` to e.g. `15m`**, and/or a smaller default context than 131 072; unload by button (`ollama stop <model>`) | frees ~30–40 GB of system RAM whenever the model is idle; reload from `F:` takes seconds | config + button |
-| W2 | **Cap the WSL VM** (`memory=` in `.wslconfig`, e.g. 32–36 GB) together with the WSL plan's fragmentation and cache actions | Windows keeps ≥ 20 GB even when WSL is busy | config |
-| W3 | **Disable Fast Startup** (`HiberbootEnabled=0`; hibernate itself may stay) | every shutdown gives a clean kernel and drivers — leaks stop accumulating across days | config (admin) |
-| W4 | **Non-paged pool: the owner is now known** — ~2.4 GB NetAdapterCx receive buffers of the Realtek 2.5GbE ×2, Realtek USB and MediaTek Wi-Fi 7 adapters, 0.6 GB AMD display driver; disable unused adapters, lower *Receive Buffers* on the one in use; split per adapter needs the elevated experiment | up to ~2 GB of kernel memory back; flat, not a leak, as far as measured | user decision per adapter |
-| W5 | **`%TEMP%` hygiene**: stale `swap.vhdx` (15 GB), empty random folders (23 k), files older than N days — **every 4 h; never anything under `%TEMP%\claude\` (user decision)** | −20+ GB, −150 k entries; faster enumeration and scanning | auto (safe set) |
-| W6 | **Stop the .NET workload leakage**: `DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1`, `dotnet workload clean`; remove unused SDK/workload previews | stops ~300–2 000 new temp folders a day | config + button |
-| W7 | **Fix `coai-bugs.exe` crash loop** (441 crashes) | stops repeated WER work and restarts | code fix in that repo |
-| W8 | **Auto-start diet** (Autoruns model, disable not delete): one VPN client instead of two, Razer AppEngine/Chroma only if the peripherals need them, Viber/Teams/Slack/Snagit/Edge auto-launch on demand | fewer resident processes, services and drivers | button, user picks |
-| W9 | **Orphaned MCP/agent processes** (16 `creds-mcp`, …) whose parent is gone | memory and handles back | report + button |
-| ~~W10~~ | ~~ClawsKey USB storage errors~~ — **dropped (user, 2026-10-02)**: nothing can be done from here; still counted | — | — |
-| W11 | **Dev Drive / Defender audit** (admin): `D:`/`F:` trusted, performance mode on; move `npm_config_cache`, `NUGET_PACKAGES`, pip caches to the Dev Drive | faster builds, less real-time scanning on `C:` | report + wizard |
-| W12 | **Windows Search scope**: exclude `D:\` repos, `node_modules`, `%TEMP%` | indexer stops chasing build churn | button |
-| W13 | Caches: NuGet `http-cache` (3.9 GB), `SoftwareDistribution\Download`, Delivery Optimization, VS Code caches while Code is closed, `CachedExtensionVSIXs` | a few GB | auto / button |
-| W14 | Compact `docker_data.vhdx` and the distro VHDX (WSL plan Phase 0.3) | ~70 GB back on `C:` | button |
-| W15 | Power mode *Best performance* on this desktop | lower latency under load | report |
-| W16 | Larger event logs (System/Application 20 MB → 100 MB) | history long enough to diagnose the next incident (this one only reaches back 6 days) | config (admin) |
+| # | Fix | Expected effect | Kind | In [PLAN_windows_care.md](../todo/PLAN_windows_care.md) |
+|---|---|---|---|---|
+| W1 | **Ollama: `OLLAMA_KEEP_ALIVE` from `-1` to e.g. `15m`**, and/or a smaller default context than 131 072; unload by button (`ollama stop <model>`) | frees ~30–40 GB of system RAM whenever the model is idle; reload from `F:` takes seconds | config + button | §4 W-A1 + §4 configuration advisors |
+| W2 | **Cap the WSL VM** (`memory=` in `.wslconfig`, e.g. 32–36 GB) together with the WSL plan's fragmentation and cache actions | Windows keeps ≥ 20 GB even when WSL is busy | config | §4 configuration advisors (shown, never written — user decision) |
+| W3 | **Disable Fast Startup** (`HiberbootEnabled=0`; hibernate itself may stay) | every shutdown gives a clean kernel and drivers — so a driver leak, IF one exists, could no longer accumulate across days; not measured: the pool was flat over the two samples above, and growth across days is for the daemon's per-run tag snapshot to show | config (admin) | §4 configuration advisors |
+| W4 | **Non-paged pool: the owner is now known** — ~2.4 GB NetAdapterCx receive buffers of the Realtek 2.5GbE ×2, Realtek USB and MediaTek Wi-Fi 7 adapters, 0.6 GB AMD display driver; disable unused adapters, lower *Receive Buffers* on the one in use; split per adapter needs the elevated experiment | up to ~2 GB of kernel memory back; flat, not a leak, as far as measured | user decision per adapter | §3 Memory (pool tags, every run) + §5 elevated per-adapter split |
+| W5 | **`%TEMP%` hygiene**: stale `swap.vhdx` (15 GB), empty random folders (23 k), files older than N days — **every 4 h; never anything under `%TEMP%\claude\` (user decision)** | −20+ GB, −150 k entries; faster enumeration and scanning | auto (safe set) | §4 W-A2 |
+| W6 | **Stop the .NET workload leakage**: `DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1`, `dotnet workload clean`; remove unused SDK/workload previews | stops ~300–2 000 new temp folders a day | config + button | §4 W-A14 |
+| W7 | **Fix `coai-bugs.exe` crash loop** (441 crashes) | stops repeated WER work and restarts | code fix in that repo | §3 Event signals (crash loops counted); the fix belongs to that repository |
+| W8 | **Auto-start diet** (Autoruns model, disable not delete): one VPN client instead of two, Razer AppEngine/Chroma only if the peripherals need them, Viber/Teams/Slack/Snagit/Edge auto-launch on demand | fewer resident processes, services and drivers | button, user picks | §3 Auto-start + §4 W-A10 |
+| W9 | **Orphaned MCP/agent processes** (16 `creds-mcp`, …) whose parent is gone | memory and handles back | report + button | §3 Orphans + §4 W-A11 |
+| ~~W10~~ | ~~ClawsKey USB storage errors~~ — **dropped (user, 2026-10-02)**: nothing can be done from here; still counted | — | — | §4 *Dropped* (still counted) |
+| W11 | **Dev Drive / Defender audit** (admin): `D:`/`F:` trusted, performance mode on; move `npm_config_cache`, `NUGET_PACKAGES`, pip caches to the Dev Drive | faster builds, less real-time scanning on `C:` | report + wizard | §4 configuration advisors + §5 |
+| W12 | **Windows Search scope**: exclude `D:\` repos, `node_modules`, `%TEMP%` | indexer stops chasing build churn | button | §4 configuration advisors |
+| W13 | Caches: NuGet `http-cache` (3.9 GB), `SoftwareDistribution\Download`, Delivery Optimization, VS Code caches while Code is closed, `CachedExtensionVSIXs` | a few GB | auto / button | §4 W-A4, W-A5, W-A7 |
+| W14 | Compact `docker_data.vhdx` and the distro VHDX (WSL plan Phase 0.3) | ~70 GB back on `C:` | button | §4 W-A12 |
+| W15 | Power mode *Best performance* on this desktop | lower latency under load | report | §4 configuration advisors (power mode) |
+| W16 | Larger event logs (System/Application 20 MB → 100 MB) | history long enough to diagnose the next incident (this one only reaches back 6 days) | config (admin) | §4 configuration advisors |
 
 What **not** to do here: registry cleaning, RAM "boosters", Prefetch deletion, bulk service disabling,
 Defender exclusions for whole drives, third-party driver updaters — see the competitor survey §3.

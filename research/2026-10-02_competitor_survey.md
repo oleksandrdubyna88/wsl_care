@@ -21,7 +21,7 @@
 | Dev Drive | trust state | — | ReFS + block cloning; Defender **performance mode** (async scan) instead of exclusions; cache env vars (`npm_config_cache`, `NUGET_PACKAGES`, `PIP_CACHE_DIR`, …) | trusted volume | — ([MS](https://learn.microsoft.com/en-us/windows/dev-drive)) |
 | CCleaner | health check | browser/app caches, temp, registry | "sleep" background apps, driver updater | `.reg` backup | Pro ([ccleaner](https://www.ccleaner.com/ccleaner/performance-optimizer)) |
 | BleachBit | — | temp, logs, memory dumps, MUICache, Prefetch, update uninstallers | — | **preview + whitelist** | CLI only ([makeuseof](https://www.makeuseof.com/use-bleachbit-safely-on-windows/)) |
-| Wise Care 365 / Glary / IObit ASC | "issues" counters | everything above + registry | RAM optimiser, registry defrag, startup | weak; IObit flagged PUP ([Malwarebytes](https://www.malwarebytes.com/blog/detections/pup-optional-advancedsystemcare)) | ● |
+| Wise Care 365 / Glary / IObit ASC | "issues" counters | everything above + registry | RAM optimiser, registry defrag, startup | weak; IObit flagged PUP ([Malwarebytes](https://www.malwarebytes.com/blog/detections/pup-optional-advancedsystemcare)); registry cleaning in Wise Care 365 ([TechSpot](https://www.techspot.com/downloads/5539-wise-care-365.html)) and Glary ([Technibble](https://www.technibble.com/repair-tool-of-the-week-glary-utilities/)) | ● |
 | Sysinternals Autoruns | **every** auto-start point (Run, tasks, services, drivers, Winlogon), "hide Microsoft", VirusTotal | — | disable entries | **disable before delete** | — ([MS](https://learn.microsoft.com/en-us/sysinternals/downloads/autoruns)) |
 | RAMMap | memory by use (standby, modified, pool) | manual empty standby / working sets | — | diagnostic | — ([4sysops](https://4sysops.com/archives/analyze-windows-memory-usage-with-rammap/)) |
 | Process Lasso ProBalance | CPU hogs | — | **temporarily** lowers priority of background CPU hogs, restores automatically, never the foreground window | auto-revert | ● ([bitsum](https://bitsum.com/apps/process-lasso/docs/algorithms/probalance/)) |
@@ -29,7 +29,7 @@
 | O&O ShutUp10++ | — | — | privacy settings | session history + undo, `.cfg` export | — ([binaryfork](https://binaryfork.com/o-and-o-shut-up-review-1433/)) |
 | Bulk Crap Uninstaller | orphaned uninstallers | leftovers (files, services, tasks, registry) with confidence | batch uninstall | confidence levels | — ([GitHub](https://github.com/BCUninstaller-Bulk-Cleaner/)) |
 | WizTree / WinDirStat 2 | disk usage via MFT (seconds per TB) | — | — | report | — ([XDA](https://www.xda-developers.com/stop-using-windirstat-and-switch-to-this-free-tool-instead/)) |
-| npkill, kondo, DevCleaner, `dotnet nuget locals` | build artefacts / dev caches | `node_modules`, `bin/obj`, `target`, NuGet http-cache/temp | — | preview | — ([npkill](https://npkill.js.org/), [NuGet](https://learn.microsoft.com/en-us/nuget/consume-packages/managing-the-global-packages-and-cache-folders)) |
+| npkill, kondo, `dotnet nuget locals` | build artefacts / dev caches | `node_modules`, `bin/obj`, `target`, NuGet http-cache/temp | — | preview | — ([npkill](https://npkill.js.org/), [kondo](https://github.com/tbillington/kondo), [NuGet](https://learn.microsoft.com/en-us/nuget/consume-packages/managing-the-global-packages-and-cache-folders)) |
 | VS Code caches | — | `Cache`, `CachedData`, `GPUCache`, logs, `CachedExtensionVSIXs`; `workspaceStorage` of deleted projects never self-cleans | — | — | — ([kleaner](https://kleaner.pro/en/blog/vscode-cleanup)) |
 
 ### Worth adopting (Windows), ranked for a dev workstation
@@ -69,11 +69,12 @@
   [wsl-config](https://learn.microsoft.com/en-us/windows/wsl/wsl-config)). On a machine that is never idle
   during the day it never fires — consistent with the 19 GB of cache seen at 18:36. **To verify on this
   machine** before relying on it.
-- **Evening degradation is fragmentation, not only memory volume:** VMBus needs order-7 (512 KiB)
+- **Evening degradation is fragmentation, not only memory volume** *(our assessment, from the reports below)*: VMBus needs order-7 (512 KiB)
   contiguous blocks; when they run out new sessions hang and interop fails with plenty of free memory
   ([#11612](https://github.com/microsoft/WSL/issues/11612), [#41634](https://github.com/microsoft/WSL/issues/41634)).
-  Our own `kern.log` shows **order-7 `kworker` allocation failures on 2026-09-09 and 2026-09-16** — the
-  same signature. `compact_memory` must be triggered by a fragmentation signal, not only by a timer;
+  Our own `kern.log` shows **order-7 `kworker` allocation failures on 2026-09-09 and 2026-09-16**
+  (measured: [2026-10-02_wsl_resource_baseline.md](2026-10-02_wsl_resource_baseline.md)) — the same signature *(our
+  assessment: the reports describe this failure shape; that it is the cause here is not proven)*. `compact_memory` must be triggered by a fragmentation signal, not only by a timer;
   `drop_caches` does not fix fragmentation.
 - **`sparseVhd` was disabled from WSL 2.5.6/2.5.8 after data-corruption reports** — only with
   `--allow-unsafe`, and a sparse VHDX cannot be compacted with diskpart
