@@ -26,7 +26,7 @@ public sealed class VerbRegisterTests
         // 0, the usage refusal, or act's documented refusal of an unprivileged run (plan §15c #0 — the harness is not root) —
         // or, where the harness IS root (the GitHub Windows runner is elevated), act --request's named no-op for a run no request
         // names (E6.S1, CI run 37223302838): never the internal-error code, never an interruption, never a .NET crash.
-        result.Exit.Should().BeOneOf([(int)ExitCode.Ok, (int)ExitCode.Usage, (int)ExitCode.NeedsRoot, (int)ExitCode.RequestGone], $"\"wsl-care {string.Join(' ', command.Example)}\" is the example of {usage}; stderr: {result.Stderr}");
+        result.Exit.Should().BeOneOf([(int)ExitCode.Ok, (int)ExitCode.Usage, (int)ExitCode.NeedsRoot, (int)ExitCode.RequestGone, (int)ExitCode.NotAsRoot], $"\"wsl-care {string.Join(' ', command.Example)}\" is the example of {usage}; stderr: {result.Stderr}");
         result.Stderr.Should().NotContain("internal error").And.NotContain("Unhandled exception");
     }
 
