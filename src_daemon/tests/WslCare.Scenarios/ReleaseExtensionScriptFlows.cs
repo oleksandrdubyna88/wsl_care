@@ -47,10 +47,8 @@ public sealed class ReleaseExtensionScriptFlows
 
         root.File("checkout/POST_DEPLOY.md", $"# Post-deploy checks\n\nTarget: x\n{stamp}\n\n| # | a | b | c |\n");
         var log = root.Under("gh.log");
-        // FAKE_GH_ANSWER=by-tag answers every release query for ITS tag: published, unless the tag is in FAKE_GH_DRAFTS.
-        var gh = root.File("bin/gh", "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\n[ -n \"$FAKE_GH_FAIL\" ] && { echo 'HTTP 404: Not Found' >&2; exit 1; }\n" +
-            "if [ \"$FAKE_GH_ANSWER\" = by-tag ]; then t=\"${*##*releases/tags/}\"; t=\"${t%% *}\"; case \" $FAKE_GH_DRAFTS \" in *\" $t \"*) d=true ;; *) d=false ;; esac; printf '%s\\t%s\\n' \"$d\" \"$t\"; exit 0; fi\n" +
-            "printf '%s\\n' \"$FAKE_GH_ANSWER\"\n");
+        // The extension's first release is answered apart (E6.S2 review S1: root is allowed only once it is published).
+        var gh = root.File("bin/gh", "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\n[ -n \"$FAKE_GH_FAIL\" ] && { echo 'HTTP 404: Not Found' >&2; exit 1; }\ncase \"$*\" in *releases/tags/extension-v*) printf '%s\\n' \"$FAKE_GH_EXT_ANSWER\" ;; *) printf '%s\\n' \"$FAKE_GH_ANSWER\" ;; esac\n");
         File.SetUnixFileMode(gh, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var env = new Dictionary<string, string?>
         {
@@ -59,6 +57,7 @@ public sealed class ReleaseExtensionScriptFlows
             ["GH_TOKEN"] = "read-only",
             ["FAKE_GH_LOG"] = log,
             ["FAKE_GH_ANSWER"] = ghAnswer ?? string.Empty,
+            ["FAKE_GH_EXT_ANSWER"] = "false\textension-v0.1.0",
             ["FAKE_GH_FAIL"] = ghAnswer is null ? "1" : null,
             ["FAKE_GH_DRAFTS"] = drafts,
             ["GITHUB_OUTPUT"] = null,
@@ -564,21 +563,46 @@ public sealed class ReleaseExtensionScriptFlows
 
     // ---- E6.S2: the actions minimum (plan §15j M5) and the first public extension kept root-free (§15j B3, §15k #7) ----
 
-    /// <summary>A tag in the checkout without a commit or an identity: a lightweight ref to a blob, which is all
-    /// <c>git rev-parse --verify refs/tags/…</c> needs.</summary>
-    private static async Task TagAsync(Checkout checkout, string tag)
+    /// <summary><c>extension-v0.1.0</c> as a real tag on a commit of the checkout (E6.S2 review S1: the guard reads the TAG'S
+    /// TREE). <paramref name="treeCarriesRoot"/> puts the root module into that commit; the working checkout's own root module
+    /// (Make's <c>rootModule</c>) is left as it is, untracked when the tree is root-free.</summary>
+    private static async Task TagFirstPublicAsync(Checkout checkout, bool treeCarriesRoot = false)
     {
-        var env = new Dictionary<string, string?> { ["GIT_CONFIG_GLOBAL"] = "/dev/null", ["GIT_CONFIG_NOSYSTEM"] = "1" };
-        async Task<string> Git(params string[] args)
+        var env = new Dictionary<string, string?>
+        {
+            ["GIT_AUTHOR_NAME"] = "test",
+            ["GIT_AUTHOR_EMAIL"] = "test@example.invalid",
+            ["GIT_COMMITTER_NAME"] = "test",
+            ["GIT_COMMITTER_EMAIL"] = "test@example.invalid",
+            ["GIT_CONFIG_GLOBAL"] = "/dev/null",
+            ["GIT_CONFIG_NOSYSTEM"] = "1",
+        };
+        async Task Git(params string[] args)
         {
             var git = await ChildProcess.RunAsync("git", args, env, checkout.Dir);
             git.Exit.Should().Be(0, $"git {string.Join(' ', args)}: {git.Stderr}");
-            return git.Stdout.Trim();
         }
 
-        await Git("init", "-q");
-        var blob = await Git("hash-object", "-w", "src_vs_code/package.json");
-        await Git("update-ref", $"refs/tags/{tag}", blob);
+        var rootModule = Path.Combine(checkout.Dir, "src_vs_code", "src", "root", "rootCall.ts");
+        var hadRoot = File.Exists(rootModule);
+        if (hadRoot && !treeCarriesRoot)
+        {
+            File.Move(rootModule, rootModule + ".aside");
+        }
+        else if (treeCarriesRoot && !hadRoot)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(rootModule)!);
+            await File.WriteAllTextAsync(rootModule, "export const ROOT_OPS = [] as const;\n");
+        }
+
+        await Git("init", "-q", "-b", "main");
+        await Git("add", ".");
+        await Git("commit", "-q", "-m", "the first public extension");
+        await Git("tag", "extension-v0.1.0");
+        if (hadRoot && !treeCarriesRoot)
+        {
+            File.Move(rootModule + ".aside", rootModule);
+        }
     }
 
     [Fact]
@@ -587,7 +611,7 @@ public sealed class ReleaseExtensionScriptFlows
         Linux();
         using var root = new TempRoot("ext-guard-b3-first");
         var checkout = Make(root, rootModule: true);
-        await TagAsync(checkout, "extension-v0.1.0");
+        await TagFirstPublicAsync(checkout);
 
         var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
 
@@ -615,7 +639,7 @@ public sealed class ReleaseExtensionScriptFlows
         Linux();
         using var root = new TempRoot("ext-guard-b3-tagged");
         var checkout = Make(root, version: "0.2.0", rootModule: true);
-        await TagAsync(checkout, "extension-v0.1.0");
+        await TagFirstPublicAsync(checkout);
 
         var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.2.0"], checkout.Dir, checkout.Env);
 
@@ -671,5 +695,58 @@ public sealed class ReleaseExtensionScriptFlows
 
         result.Exit.Should().Be(1, result.Stdout);
         result.Stdout.Should().Contain("carries no minDaemonForActions");
+    }
+
+    // ---- E6.S2 review S1: root only when extension-v0.1.0 is published, root-free in its own tree, and below the release ----
+
+    [Fact]
+    public async Task S1_a_tagged_0_1_0_whose_own_tree_carries_the_root_module_never_opens_the_door()
+    {
+        Linux();
+        using var root = new TempRoot("ext-guard-s1-tree");
+        var checkout = Make(root, version: "0.1.1", rootModule: true);
+        await TagFirstPublicAsync(checkout, treeCarriesRoot: true);
+
+        var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.1"], checkout.Dir, checkout.Env);
+
+        result.Exit.Should().Be(1, result.Stdout);
+        result.Stdout.Should().Contain("extension-v0.1.0 was tagged from a tree that carries the root module");
+        File.Exists(checkout.GhLog).Should().BeFalse("refused on the tree, before GitHub is asked");
+    }
+
+    [Fact]
+    public async Task S1_a_root_free_0_1_0_tag_with_only_a_DRAFT_release_does_not_allow_root()
+    {
+        Linux();
+        using var root = new TempRoot("ext-guard-s1-draft");
+        var checkout = Make(root, version: "0.2.0", rootModule: true);
+        await TagFirstPublicAsync(checkout);
+        var env = new Dictionary<string, string?>(checkout.Env) { ["FAKE_GH_EXT_ANSWER"] = "true\textension-v0.1.0" };
+
+        var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.2.0"], checkout.Dir, env);
+
+        result.Exit.Should().Be(1, result.Stdout);
+        result.Stdout.Should().Contain("extension-v0.1.0 is not a published, non-draft GitHub release yet");
+        File.ReadAllText(checkout.GhLog).Should().Contain("releases/tags/extension-v0.1.0");
+    }
+
+    [Fact]
+    public async Task S1_the_rerun_route_0_2_0_is_refused_before_0_1_0_shipped_and_admitted_once_it_is_published()
+    {
+        Linux();
+        using var root = new TempRoot("ext-guard-s1-rerun");
+        var checkout = Make(root, version: "0.2.0", rootModule: true);
+
+        var untagged = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.2.0"], checkout.Dir, checkout.Env);
+        await TagFirstPublicAsync(checkout);
+        var unpublished = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.2.0"], checkout.Dir, new Dictionary<string, string?>(checkout.Env) { ["FAKE_GH_EXT_ANSWER"] = string.Empty });
+        var published = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.2.0"], checkout.Dir, checkout.Env);
+
+        untagged.Exit.Should().Be(1, untagged.Stdout);
+        untagged.Stdout.Should().Contain("no extension-v0.1.0 tag exists yet");
+        unpublished.Exit.Should().Be(1, unpublished.Stdout);
+        unpublished.Stdout.Should().Contain("not a published, non-draft GitHub release yet").And.Contain("re-run this job once it is public");
+        published.Exit.Should().Be(0, published.Stdout + published.Stderr);
+        published.StdoutLines.Should().Contain("root_allowed=true");
     }
 }

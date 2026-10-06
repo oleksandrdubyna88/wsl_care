@@ -237,7 +237,9 @@ public sealed partial class ReleaseExtensionWorkflowTests
 
         var script = File.ReadAllText(Path.Combine(ReleaseFiles.Root, GuardScript));
         script.Should().Contain("min-daemon.json").And.Contain("releases/tags/$daemon_tag").And.Contain("POST_DEPLOY.md").And.Contain("publisher-tbd")
-            .And.Contain("refs/tags/extension-v$FIRST_PUBLIC", "B3 is keyed on the TAGS (plan §15k #7), never on the release-please manifest")
+            .And.Contain("refs/tags/$first_public^{commit}", "B3 is keyed on the TAGS (plan §15k #7), never on the release-please manifest")
+            .And.Contain("refs/tags/$first_public:$ROOT_MODULE", "the first public tag's OWN tree must be root-free (E6.S2 review S1)")
+            .And.Contain("published_release \"$first_public\"", "and it must be a published, non-draft release (E6.S2 review S1)")
             .And.Contain($"{TagPrefix()}*)", "the guard reads the tag shape this workflow triggers on");
         script.Should().NotContain("handshake.ts", "the guard reads the JSON artefact, never TypeScript with a line pattern (E5 code round #2/#5)");
     }
