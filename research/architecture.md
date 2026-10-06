@@ -2524,8 +2524,12 @@ cached per session per distribution once it answered, a refusal ("needs root") a
 - **A4's names come from the held preview and nowhere else** (§15j B1): `preview()` returns a frozen `HeldPreview` the
   controller registers (a `WeakSet`); `confirm()` takes only a registered one, re-checks the gate over a fresh status,
   refuses another distribution, and re-validates every name before it becomes a stdin line. The preview's shown list
-  must satisfy `shown.length == min(count, 10 000)` with `shownTruncated` exactly when capped (§15k #11) — or the preview
-  is refused, never a partial list.
+  must satisfy `shown.length == min(count, cap)` with `shownTruncated` exactly when capped (§15k #11) — or the preview
+  is refused, never a partial list. The cap is the one IN FORCE (`root/rootIds.ts` `shownCap`, plan §15p): the daemon's
+  published `status.limits.maxShownNames`, never above the compiled `MAX_SHOWN_VOLUMES` (10 000, also the fallback).
+  The preview is parsed under the limits of its gate's fresh status; the confirm re-checks the held list against the cap
+  of ITS fresh status ("preview again" when the daemon's value fell); `rootRequest` builds no confirm whose list is longer
+  than the cap in force, so the stdin never carries more names than the daemon takes; the modal's cut line names the cap.
 - **An unknown detach is never a failure** (§15k #3; refined by the review round below): with a run id it goes back at once
   as `outcomeUnknown{runId}` for E6.S3 to follow; with none the controller follows `status.running` of this distribution and
   adopts only the panel's run of exactly the asked actions. A stop's unknown is reported as unknown (its run IS live).
@@ -2633,7 +2637,7 @@ poller, install or store module imports `root/`):
 - **`cleanFlow.ts`** — the host transaction (the sequence above): Clean / Clean selected, Stop (a modal, then `act --stop`;
   a run the journal already follows is not followed twice) and Run full check now (no modal: a full run that is not the
   timer's measures and does not act — `CollectRun.TimerPassAsync`).
-- **`modalText.ts`** — the modals' words: A4 bound to its list (and the cap line past 10 000), A5 / A6 / A7 "re-checked at run
+- **`modalText.ts`** — the modals' words: A4 bound to its list (and the cap line past the cap in force), A5 / A6 / A7 "re-checked at run
   time", the second confirmation naming `containers.stoppedOlderThanDays`, `images.unusedOlderThanDays`, `auto.A8`,
   `processes.idleOlderThanHours`, `auto.A12`; every daemon string through `safeText` and cut (names to 80 characters).
 - **`journal.ts`** — `globalState` key `wslCare.cleanup.journal.v2` (`{ entries, removed }`): the runs this extension started
@@ -2773,7 +2777,9 @@ MIRROR the daemon are never a second setting: `shared/daemonLimits.ts` reads `st
 of `contracts/status-limits.json`, held equal to it by a test), field by field, each falling back to its contract default —
 the history retention and clock-skew allowance (the durable poll's runs window and matching, the journal's future
 allowance, the Logs page's picker), the request grace (the poll waits past it), the drain grace and `systemctl stop`'s
-ceiling (every worst case, so every call's ceiling is raised to stay above it under the limits the daemon answered).
+ceiling (every worst case, so every call's ceiling is raised to stay above it under the limits the daemon answered), and
+`maxShownNames` (A4's shown-list cap in force: the count rule, the stdin size and the confirm check). `configNotices` is
+not read by this branch — it is E7.S3's (the settings story).
 Exit 81 (`notAsRoot`, #17) is its own failure with the default-user fix; A18 is in the registry as button-only — the E6 gate
 never allows it (its button is E7.S4's).
 
