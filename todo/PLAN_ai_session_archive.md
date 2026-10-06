@@ -195,19 +195,19 @@ changes here:
 ## 8c. The E9 split and design — amendments (2026-10-06)
 
 The parent plan's §15r ([PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) §15r, plan only) splits this plan's daemon half
-into E9.S0–E9.S5 and OVERRIDES the sections below where they differ; the extension half (§6) stays E10, the Windows schedule
-is the Windows plan's E11 (W-A15).
+into E9.S0–E9.S5 (S2 as S2a / S2b; E9.S6 only on the owner's word), with its review round folded in, and OVERRIDES the
+sections below where they differ; the extension half (§6) stays E10, the Windows schedule is the Windows plan's E11 (W-A15).
 
 | Here | §15r decides |
 |---|---|
 | §4 (who moves) | the TARGET USER's process moves; root's timer only starts it (`runuser`) and records its counts — root never opens a session file or writes the base (D1) |
-| §4.2 (in use) | Linux: the user's open descriptors, plus a live Claude Code process in the project's folder; Windows: the Restart Manager is asked — never an exclusive open (D2) |
-| §4.3–§4.6, §8a, §8b | copy → flush → read-back hash → no-replace final → index → per-session quarantine, re-check, removal; a local in-flight file drives the reconcile (D2, D3) |
-| §4.5 (one index per month) | one index per month PER SIDE (`…/<MM>/<side>/index.jsonl`) — one writer per file on a shared drive (D4) |
-| §4 (the write-path probe, the `tar` hand-off) | no probe and no hand-off in E9: the rate is measured on every run, the WSL side writes through drvfs within a time budget, oldest first (D9) |
-| §4 restore, §8 test plan ("with its mtime") | restore is create-only, never overwrites, keeps the archived copy, and gives the restored files the restore time (D6) |
-| §5 (`basePath`, `linuxBasePath`) | `archive.baseFolder` per side, as that side sees it, an ordinary key behind the base rules (D7) |
-| §2 (the "raise it" button) | the product never writes into an agent's settings; a coupled rule keeps `archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays` (14 + 7 ≤ 30), and the measured `cleanupPeriodDays` warns (D10) |
+| §4.2 (in use) | Linux: the user's open descriptors, plus a live Claude Code process in the project's folder (said honestly: Claude keeps no transcript open, so age and no-replace renames are the real guards); Windows: the Restart Manager is asked — never an exclusive open (D2) |
+| §4.3–§4.6, §8a, §8b | TWO phases: a run copies (an exclusive create through no link, read-back hash, one retry, then the run stops) and indexes; the source is removed only by a LATER run after `archive.removeAfterHours` and a re-hash of the archived copy, through no-replace quarantine renames and a per-session check; a local in-flight file and self-describing quarantine names drive the reconcile (D2, D3) |
+| §4.5 (one index per month) | one index per month PER SIDE AND HOST (`…/<MM>/<side>/index.jsonl`, side `windows-<host>` / `wsl-<host>-<distro>`), a lease per side, every line MAC'd — one writer per file on a shared drive, the index untrusted (D4) |
+| §4 (the write-path probe, the `tar` hand-off) | no probe and no hand-off in E9: the rate is measured on every run, the WSL side writes through drvfs within a time budget taken from the timer run's slack, oldest first (D8, D9) |
+| §4 restore, §8 test plan ("with its mtime") | restore is create-only from the current layout root and the stored RELATIVE path, never overwrites, keeps the archived copy, and gives the restored files the restore time; a restored session is archived again later as an event only (D6) |
+| §5 (`basePath`, `linuxBasePath`) | `archive.baseFolder` per side, as that side sees it, an ordinary key behind the base rules — an existing folder never created, its mount recorded and verified every run, its readers reported (D7) |
+| §2 (the "raise it" button) | the product never writes into an agent's settings; a coupled rule keeps ⌈`archive.removeAfterHours` / 24⌉ + `archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays` (1 + 14 + 7 ≤ 30), and the measured `cleanupPeriodDays` (managed settings first) SHORTENS the effective age (D10) |
 
 ## 9. Definition of Done
 
