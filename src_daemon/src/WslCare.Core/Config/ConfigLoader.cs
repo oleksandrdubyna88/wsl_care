@@ -66,7 +66,7 @@ public static class ConfigLoader
         var machine = MachineLayer(paths, files);
         if (trust.Skipped.Length > 0)
         {
-            return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust) with { UserLayerSkipped = trust.Skipped };
+            return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust) with { UserLayerUnread = true, UserLayerSkipped = trust.Skipped };
         }
 
         var userCap = Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust).Config.Int(ConfigKeys.ConfigLayerLimits.MaxLayerBytes);

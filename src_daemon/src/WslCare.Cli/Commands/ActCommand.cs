@@ -124,7 +124,7 @@ internal static class ActCommand
     {
         if (request.Confirm)
         {
-            log.Information("act: running {Actions}; a heavy action can take minutes, each step bounded by its own ceiling", string.Join(",", request.Ids.Select(i => i.ToString())));
+            log.Information("act: starting the requested {Actions}; each is still gated, and a heavy one can take minutes, each step bounded by its own ceiling", string.Join(",", request.Ids.Select(i => i.ToString())));
         }
     }
 

@@ -330,7 +330,7 @@ public sealed class ActionEngine(EngineContext c)
     /// <summary>Retro gate over PR #7: with the user layer unread, any <c>auto</c> switch may be off where root cannot see it — the
     /// timer runs nothing rather than trust a default (plan §15a #1); the reason names how to end it.</summary>
     private Stop? UnseenSwitchStop(ICleanupAction action) =>
-        c.Loaded.UserLayerSkipped.Length == 0
+        !c.Loaded.UserLayerUnread
             ? null
             : new Stop(ActionStatus.Skipped, $"{c.Loaded.UserLayerSkipped}; the timer does not run {action.Id} while a switch the person turned off there cannot be seen");
 

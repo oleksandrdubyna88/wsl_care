@@ -66,6 +66,10 @@ public abstract record ConfigLoadResult
     /// default must never re-enable it (plan §15a #1). A button still runs — it previews and asks first.</summary>
     public string UserLayerSkipped { get; init; } = string.Empty;
 
+    /// <summary>The FACT that the user layer was not read — what the engine's timer gate decides on; <see cref="UserLayerSkipped"/>
+    /// is only its wording (fix-PR code round: a safety decision never hangs on presentation text).</summary>
+    public bool UserLayerUnread { get; init; }
+
     public bool IsObserveOnly => this is ObserveOnly;
 
     public sealed record Valid(EffectiveConfig Config) : ConfigLoadResult

@@ -357,12 +357,12 @@ public sealed class ActCommandTests : IDisposable
         using var logger = new Serilog.LoggerConfiguration().MinimumLevel.Information().WriteTo.Sink(seen).CreateLogger();
 
         CliRun.Over(Host(Root), logger, CancellationToken.None, "act", "A10", "--preview").Exit.Should().Be(0);
-        var afterPreview = seen.Lines.Count(l => l.Message.StartsWith("act: running", StringComparison.Ordinal));
+        var afterPreview = seen.Lines.Count(l => l.Message.StartsWith("act: starting", StringComparison.Ordinal));
         var before = _runner.Requests.Count;
         CliRun.Over(Host(Root), logger, CancellationToken.None, "act", "A10", "--confirm").Exit.Should().Be(0);
 
         afterPreview.Should().Be(0, "a preview changes nothing and is quick");
-        seen.Lines.Should().Contain(l => l.Message.StartsWith("act: running", StringComparison.Ordinal) && l.Message.Contains("A10", StringComparison.Ordinal) && l.CommandsSoFar == before,
+        seen.Lines.Should().Contain(l => l.Message.StartsWith("act: starting", StringComparison.Ordinal) && l.Message.Contains("A10", StringComparison.Ordinal) && l.CommandsSoFar == before,
             "the line comes before the confirmed run asks any tool anything");
     }
 
