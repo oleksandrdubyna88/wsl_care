@@ -2416,7 +2416,8 @@ random 64-hex ids). Code round (4/4 reviewers, `proceed`, 4 findings: 1 accepted
 sections of `research/architecture.md` since E1, an owner question; a `CliHost` test seam is no shipped defect; the
 inspect template emits only a mount's type and name, so no bind source is ever captured). The consultation for this round
 is OWED — the shared consult cap was reached. Fixed in `fix/wc-retro-pr5-collect-progress`: `collect` logs that it is
-measuring before the first tool is asked anything (a full run said nothing for minutes).
+measuring before the first tool is asked anything (a full run said nothing for minutes). The fix's own plan round narrowed
+the promise: the line says the run started; a slow stage may stay silent until it ends or reaches its ceiling.
 
 ### 17f. Retro gate over PR #17 (E7, the daemon half) — coai codex, 2026-10-06
 

@@ -283,6 +283,23 @@ public sealed class FullRunCommandTests
             "the note comes before Docker or any other tool is asked anything");
     }
 
+    [Fact]
+    public void The_measuring_line_reaches_stderr_and_the_run_file_through_the_real_logger()
+    {
+        using var sandbox = new SandboxHost("collect-progress-real");
+        var host = Host(sandbox, sandbox.Files, Tools(), DockerFixture.CapturedAt);
+        var console = new StringWriter();
+
+        using (var logger = WslCareLogging.Start(host, host.LoadConfig(), "wsl-care", console))
+        {
+            CliRun.Over(host, logger, CancellationToken.None, "collect", "--json").Exit.Should().Be((int)ExitCode.Ok);
+        }
+
+        console.ToString().Should().Contain("collect: measuring", "the console sink is the stderr a person watches");
+        string.Concat(Directory.GetFiles(sandbox.Paths.LogDirectory, "*.log", SearchOption.AllDirectories).Select(File.ReadAllText))
+            .Should().Contain("collect: measuring", "the run file keeps it too");
+    }
+
     private sealed class CommandsAtEachLogLine(RecordingCommandRunner runner) : Serilog.Core.ILogEventSink
     {
         public List<(string Message, int CommandsSoFar)> Lines { get; } = [];
