@@ -131,7 +131,8 @@ public sealed partial class ReleaseExtensionWorkflowTests
         new[] { served, publish, wait }.Should().NotContain(-1).And.BeInAscendingOrder("ask, publish only when not served, then wait until served");
         Run(steps[served]).Should().Contain("vsce show").And.Contain("served=", "the skip is decided by what the Marketplace serves");
         steps[publish]["if"].Text.Should().Be("steps.served.outputs.served != 'true'", "a re-run after a publish publishes nothing");
-        Run(steps[publish]).Should().Contain("--packagePath \"from-build/wsl-care-$VERSION.vsix\"", "the very file the build attested");
+        Run(steps[publish]).Should().Contain($"--packagePath \"from-build/{ReleaseFiles.ExtensionVsix("$VERSION")}\"", "the very file the build attested");
+        job["env"].Map["EXTENSION_ID"].Text.Should().Be($"${{{{ needs.guard.outputs.publisher }}}}.{ReleaseFiles.ExtensionName}", "the Marketplace id is <publisher>.<the manifest's name>");
         StepIndex(job, AssetsScript).Should().BeInRange(0, served, "the downloaded file is checked against its .sha256 before anything uses it");
         Steps(job).Single(s => Uses(s).StartsWith("actions/download-artifact@", StringComparison.Ordinal))["with"].Map["name"].Text
             .Should().Be(BuildArtifactName(), "the artifact the build uploaded after attesting it");
@@ -208,7 +209,7 @@ public sealed partial class ReleaseExtensionWorkflowTests
         steps[1]["with"].Map["name"].Text.Should().Be(BuildArtifactName());
         steps[1]["with"].Map["path"].Text.Should().Be("from-build");
         Run(steps[2]).Should().Contain(AssetsScript).And.Contain("from-build");
-        steps[3]["with"].Map["subject-path"].Text.Should().Be("from-build/wsl-care-${{ needs.guard.outputs.version }}.vsix", "the attested subject is the file the build packaged, checked against its .sha256");
+        steps[3]["with"].Map["subject-path"].Text.Should().Be($"from-build/{ReleaseFiles.ExtensionVsix("${{ needs.guard.outputs.version }}")}", "the attested subject is the file the build packaged, checked against its .sha256");
         steps.Should().OnlyContain(s => !Run(s).Contains("npm", StringComparison.Ordinal) && !Run(s).Contains("node ", StringComparison.Ordinal) && !Uses(s).StartsWith("actions/setup-node", StringComparison.Ordinal),
             "no package manager and no JavaScript runtime beside the signing scope");
     }
@@ -258,6 +259,9 @@ public sealed partial class ReleaseExtensionWorkflowTests
 
         row.Should().Contain(". .github/scripts/lib/versions.sh").And.Contain("highest_version").And.Contain("is_top_version").And.Contain("python3 -c");
         row.Should().NotContain("versions[0]", "the first listed version is not the highest one").And.NotContain("unzip", "not on stock Ubuntu");
+        row.Should().Contain("require('./src_vs_code/package.json').name", "the extension's name is read from the manifest, like its publisher")
+            .And.NotContain($"$p.{ReleaseFiles.ExtensionName}", "the id is never retyped beside the manifest")
+            .And.NotContain(ReleaseFiles.ExtensionVsix("$v"), "nor the .vsix name");
         guard.Should().Contain("lib/versions.sh").And.Contain("version_at_least", "the guard and the item share one comparison");
         guard.Should().NotContain("sort -t.", "no second spelling of the comparison");
     }
