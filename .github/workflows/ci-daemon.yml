@@ -119,23 +119,19 @@ jobs:
         run: |
           "./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios$EXE"
 
-      # The units install.sh ships (src_daemon/systemd), read by systemd's own parser. `systemd-analyze verify` EXITS 0 on
-      # an unknown key or section and only prints it (observed in ubuntu:24.04, systemd 255: "Unknown key name
-      # 'Persistant' in section 'Timer', ignoring." with exit 0), so ANY output fails the step. It also checks that each
-      # ExecStart program exists, so a stand-in is put at the install path — on this throwaway runner only.
+      # The units install.sh ships (src_daemon/systemd), read by systemd's own parser: EVERY file in the folder (never a
+      # list typed here — until daemon 0.1.1 this step named three units and the detached-run template was never read, so
+      # its misplaced CollectMode= shipped), each template through an instance name, each with the drop-in this build's
+      # `wsl-care units dropin` renders. `systemd-analyze verify` EXITS 0 on an unknown key or section and only prints it
+      # (observed in ubuntu:24.04, systemd 255: "Unknown key name 'Persistant' in section 'Timer', ignoring." with exit 0),
+      # so ANY output fails — the script says why. It also checks that each ExecStart program exists, so a stand-in is put
+      # at the install path — on this throwaway runner only.
       - name: Verify the systemd units (linux)
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
           sudo install -D -m 0755 /bin/true /opt/wsl-care/bin/wsl-care
-          out="$(systemd-analyze verify src_daemon/systemd/wsl-care.service src_daemon/systemd/wsl-care.timer src_daemon/systemd/wsl-care-events.service 2>&1)" \
-            || { printf '%s\n' "$out"; echo "::error::systemd-analyze verify failed"; exit 1; }
-          if [ -n "$out" ]; then
-            printf '%s\n' "$out"
-            echo "::error::systemd-analyze verify reported something about the units (it exits 0 on an unknown key)"
-            exit 1
-          fi
-          echo "the three units pass systemd-analyze verify with nothing to report"
+          bash .github/scripts/verify-systemd-units.sh src_daemon/systemd "./src_daemon/src/WslCare.Cli/bin/Release/net10.0/wsl-care"
 
       # TreatWarningsAsErrors reaches the AOT compiler too, so a trim or AOT warning fails here.
       - name: Publish (Native AOT)

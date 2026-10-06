@@ -2239,6 +2239,15 @@ the E4 live gate's stamp, each step observed rather than assumed:
    itself `interrupted` on SIGTERM, or the 90 s SIGKILL is swept with the stop marker's reason); the live measurements E6.S1 could not make without root (the AOT binary
    dying with `wsl.exe` without `--detach`, the stdin relay rows, `systemctl start` from `wsl.exe -u root`) recorded in
    the facts note — STAMPED with the date and the version.
+   **Observed 2026-10-06 against `daemon-v0.1.0`: item 7 FAILED** — the template carried `CollectMode=inactive-or-failed`
+   under `[Service]`; systemd 255 logged `Unknown key name 'CollectMode' in section 'Service', ignoring.` and `systemctl
+   show` gave `CollectMode=inactive`, so a failed detached run stays in `systemctl --failed` and counts in
+   `systemd.failedUnits`. The checker had printed PASS: it runs a cell's FIRST code span, then `systemctl cat` alone. Fixed
+   in `daemon-v0.1.1` — the key moved to `[Unit]` (`ShippedFilesTests` holds every key of every unit and drop-in to the
+   section systemd reads it from); CI's verify reads EVERY unit file, templates as instances, with the build's drop-ins
+   (`verify-systemd-units.sh` — the step had named the three E4.S1 units by hand and never read the template); items 1, 5,
+   7 and 11 now assert their values (`PostDeployCommandFlows`; `research/module_tests.md`, *The act template's
+   CollectMode*). This step re-runs item 7 against 0.1.1.
 5. `contracts/golden/daemon-<minDaemonForActions>/` frozen from that release and committed (a `daemon-0.1.0` set that
    already carries E6.S0 serves when B3's first case applied).
 
