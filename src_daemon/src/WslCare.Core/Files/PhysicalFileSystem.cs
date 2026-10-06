@@ -445,9 +445,11 @@ public sealed class PhysicalFileSystem : IFileSystem
     /// The atomic write's rename over the target. On Windows a rename onto a file another handle holds open is refused
     /// (access denied) even when that handle shares delete — a reader of <c>running.json</c> or the history holds it for
     /// microseconds — so the rename is retried for up to <see cref="ReplaceRetryFor"/> before the failure is thrown. On Linux
-    /// a rename never meets an open file, and a failure is real at once.
+    /// a rename never meets an open file, and a failure is real at once. Each refusal that will be retried is reported as
+    /// <see cref="AtomicWriteStep.ReplaceRefused"/> first, so a test can let its reader go at the moment the wait begins
+    /// instead of guessing when that is.
     /// </summary>
-    private static void MoveReplacing(string from, string to)
+    private void MoveReplacing(string from, string to)
     {
         var started = System.Diagnostics.Stopwatch.StartNew();
         while (true)
@@ -459,6 +461,7 @@ public sealed class PhysicalFileSystem : IFileSystem
             }
             catch (Exception e) when (IsHeldOpenOnWindows(e) && started.Elapsed < ReplaceRetryFor)
             {
+                _onAtomicWriteStep(AtomicWriteStep.ReplaceRefused, to);
                 Thread.Sleep(Tuning.Current.Milliseconds(ConfigKeys.FileLocks.RenameRetrySleepMilliseconds));
             }
         }
@@ -721,4 +724,8 @@ internal enum AtomicWriteStep
 
     /// <summary>The temporary file holds the new bytes; the final rename has not happened. The path is the temporary file.</summary>
     TempWritten,
+
+    /// <summary>Windows refused the final rename because another handle holds the target open; it is retried after a pause.
+    /// The path is the target. Never reported on Linux, where a rename does not meet an open file.</summary>
+    ReplaceRefused,
 }

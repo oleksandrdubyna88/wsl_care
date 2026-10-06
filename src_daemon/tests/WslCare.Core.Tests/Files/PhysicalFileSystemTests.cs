@@ -240,29 +240,50 @@ public sealed class PhysicalFileSystemTests
     }
 
     [Fact]
-    public async Task An_atomic_replace_waits_out_a_reader_that_holds_the_file_for_a_moment()
+    public void An_atomic_replace_waits_out_a_reader_that_holds_the_file_for_a_moment()
     {
         // The heartbeat's half of the same flake: the engine test read running.json while the heartbeat replaced it. On
         // Windows a rename onto a file another handle holds is refused even when that handle shares delete, so a reader's
         // microseconds made the heartbeat's write fail. The rename now waits a reader out (up to 2 s). Trivial on Linux.
+        // The reader is let go at the product's own first refusal, on the writing thread. The old form released it from a
+        // pool task 200 ms later, and on a loaded win-x64 runner (2026-10-06) that task got no thread inside the 2 s wait.
         using var host = new SandboxHost("fs-replace-reader");
         var state = host.Root.Dir("state");
         var file = host.Root.File("state/running.json", "{\"n\":0}");
         var reader = PhysicalFileSystem.OpenForReading(file);
-        var token = TestContext.Current.CancellationToken;
-        var release = Task.Run(
-            async () =>
+        var refusals = 0;
+        var files = new PhysicalFileSystem(host.Paths, PhysicalFileSystem.ReadLinkTarget, (step, _) =>
+        {
+            if (step == AtomicWriteStep.ReplaceRefused && refusals++ == 0)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(200), token);
-                await reader.DisposeAsync();
-            },
-            token);
+                reader.Dispose();
+            }
+        })
+        {
+            TrustedStateOwner = host.Files.TrustedStateOwner,
+            OwnersAreThisProcess = host.Files.OwnersAreThisProcess,
+        };
 
-        var verdict = host.Files.WriteFileAtomically(file, Encoding.UTF8.GetBytes("{\"n\":1}"), new DeletionScope(state, "test"));
-        await release;
+        DeletionVerdict verdict;
+        try
+        {
+            verdict = files.WriteFileAtomically(file, Encoding.UTF8.GetBytes("{\"n\":1}"), new DeletionScope(state, "test"));
+        }
+        finally
+        {
+            reader.Dispose();
+        }
 
         verdict.IsAllowed.Should().BeTrue();
         File.ReadAllText(file).Should().Be("{\"n\":1}", "the replace landed once the reader let go");
+        if (OperatingSystem.IsWindows())
+        {
+            refusals.Should().BeGreaterThanOrEqualTo(1, "the held reader refused the rename, and the write waited it out instead of failing");
+        }
+        else
+        {
+            refusals.Should().Be(0, "a rename on Linux never meets an open file");
+        }
     }
 
     [Fact]
