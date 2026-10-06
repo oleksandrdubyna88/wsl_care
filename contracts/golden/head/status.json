@@ -2201,6 +2201,42 @@
         "evaluatedAt": "2000-01-01T00:00:00+00:00",
         "ageSeconds": 0
       }
+    },
+    {
+      "id": "mcp.instances",
+      "level": "ok",
+      "value": "2 instance(s): 2 idle, 0 busy with no log write in the activity window",
+      "limit": "warn > 12 instances (mcpServers.warnInstances)",
+      "reason": "MCP server processes of the AI agents, one per agent session",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "mcp.cpu",
+      "level": "ok",
+      "value": "0.00 core(s) over 2 measured instance(s)",
+      "limit": "warn > 100 % of one core in total (mcpServers.warnCpuPercent)",
+      "reason": "CPU the agents' MCP servers burn together; 0 of them busy with no log write in the activity window",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "mcp.starts",
+      "level": "ok",
+      "value": "coai-mcp 0 in 10 min",
+      "limit": "warn when a server started more than 10 times in the starts window (mcpServers.warnStarts)",
+      "reason": "how often each watched MCP server was started lately",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
     }
   ],
   "productVersion": "unknown",
@@ -2236,7 +2272,8 @@
     "config.contract",
     "agents.list",
     "agents.probe",
-    "config.agentsExtra"
+    "config.agentsExtra",
+    "status.mcpServers"
   ],
   "running": {
     "state": "none"
@@ -2251,6 +2288,89 @@
     "requestGraceSeconds": 60,
     "maxShownNames": 10000,
     "unitStopSeconds": 120,
-    "drainGraceMilliseconds": 2000
+    "drainGraceMilliseconds": 2000,
+    "mcpCpuWindowMilliseconds": 1000,
+    "mcpLogListMilliseconds": 1000
+  },
+  "mcpServers": {
+    "available": true,
+    "windowMilliseconds": 1000,
+    "count": 2,
+    "listed": 2,
+    "idleCount": 2,
+    "busyWithoutActivityCount": 0,
+    "notUnderAgent": 0,
+    "cpuCores": {
+      "available": true,
+      "value": 0
+    },
+    "cpuMeasured": 2,
+    "heldBytes": 51154944,
+    "servers": [
+      {
+        "name": "coai-mcp",
+        "count": 2,
+        "starts": {
+          "available": true,
+          "value": 0
+        },
+        "startsWindowMinutes": 10,
+        "startsBasis": "logNames"
+      }
+    ],
+    "instances": [
+      {
+        "pid": 7329,
+        "server": "coai-mcp",
+        "user": "user",
+        "state": "S",
+        "ageSeconds": {
+          "available": true,
+          "value": 0
+        },
+        "cpuPercent": {
+          "available": true,
+          "value": 0
+        },
+        "heldBytes": 25583616,
+        "kind": "idle",
+        "owner": {
+          "orphaned": false,
+          "pid": 7203,
+          "agent": "Claude Code",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>"
+        },
+        "activity": {
+          "available": false,
+          "reason": "no log file of pid 4242 in /golden-root/home/user/.local/share/coai-mcp/logs"
+        }
+      },
+      {
+        "pid": 8380,
+        "server": "coai-mcp",
+        "user": "user",
+        "state": "S",
+        "ageSeconds": {
+          "available": true,
+          "value": 0
+        },
+        "cpuPercent": {
+          "available": true,
+          "value": 0
+        },
+        "heldBytes": 25571328,
+        "kind": "idle",
+        "owner": {
+          "orphaned": false,
+          "pid": 8290,
+          "agent": "Claude Code",
+          "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-a-1.0.0-linux-x64/resources/native-binary/claude --output-format stream-json --verbose --input-format stream-json --max-thinking-tokens <redacted>"
+        },
+        "activity": {
+          "available": false,
+          "reason": "no log file of pid 4242 in /golden-root/home/user/.local/share/coai-mcp/logs"
+        }
+      }
+    ]
   }
 }
