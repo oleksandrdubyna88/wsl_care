@@ -2259,6 +2259,18 @@ broken and seen red again (`research/module_tests.md` § *MCP server instances*)
 | own m2 (Minor) | a missing or unseen log root = a measured zero | **Covered by coai 2** for the unseen case; a root a WHOLE listing shows absent stays 0 starts — that is a measurement, not a guess |
 | own m3 (Minor) | a link swapped in between the lstat checks and the listing (inherited from A18's listing) | **Residual, recorded** — only `coai-mcp-HH-mm-ss-pid.log` names are kept, nothing is opened, the listing is capped; the full fix is a descriptor-based listing (`openat` + `O_NOFOLLOW` + `O_DIRECTORY`) for every `SessionGlob` user, a story of its own |
 
+**Final coai round** (`again`, same session, 2026-10-06): verdict **proceed**, 4 of 4 reviewers answered, 7 findings: 3 ACCEPTED,
+4 rejected with reasons.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 0 (Blocking) | no `research/module_*.md` for the MCP module | **Rejected** — checked: `research/` holds no `module_*.md` but `module_tests.md`; every daemon module is a section of `architecture.md`, and this one has its section, diagram and module-map row |
+| 1 (Major) | nullable lists on the wire report | **Rejected** — the status wire's stated convention (`StatusReport.cs` header): an unavailable block carries no value keys; `[]` would read as "available, zero instances" |
+| 2, 3 (Major, two reviewers) | `mcp.cpu` did not say it covers the listed instances only | **Fixed** — the same note as `mcp.instances`. RED: the value lacked it |
+| 4 (Major) | `Directory.Exists` is false for a folder behind an untraversable parent; the bounded listing answered "empty, complete" | **Fixed** in `PhysicalFileSystem.ListEntries(path, bounds)`: the attributes tell not-found (empty, whole) from access denied (`Unreadable`). RED in WSL: *Expected … Unreadable, but found … Listed* |
+| 5 (Minor) | a progress line for the window | **Rejected** again — round 1's reason stands; `status` writes to stderr only to refuse |
+| 6 (Minor) | `status` read beside `stat` in the CPU window | **Rejected** — a few hundred bytes per pid, bounded by `mcpServers.maxInstances`; one sampler for three callers is round 1's extraction |
+
 #### Stories
 
 | # | Story | Files (verified above) | Acceptance | Model, reviews |

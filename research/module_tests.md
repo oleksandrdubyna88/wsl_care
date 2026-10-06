@@ -1663,6 +1663,8 @@ Two first attempts (the identity and missing-history rules mutated in `IdleFor`)
 | coai code round 3: past `mcpServers.maxInstances` the verdict says its figures cover the listed instances | `…Figures_over_a_capped_list_say_they_cover_only_the_listed_instances` |
 | own review M1: a long CPU window does not move the process start; its log is still its own | `…A_long_cpu_window_does_not_move_the_process_start_its_log_is_still_its_own` |
 | own review m1: a midnight file whose pid now belongs to another program is a continuation, not a start | `…A_midnight_file_whose_pid_now_belongs_to_another_program_is_not_a_start` |
+| final code round 2/3: `mcp.cpu` says when its total covers the listed instances only | `…Figures_over_a_capped_list_say_they_cover_only_the_listed_instances` |
+| final code round 4: a folder behind an untraversable parent lists as unreadable, never empty (Linux, non-root) | `Files/BoundedListingTests.A_folder_under_an_untraversable_parent_is_unreadable_never_empty` (RED in WSL first) |
 
 **Red first:** C-1 was red for the real symptom — A18 *Expected preview.Count to be 0 … but found 1* (an agent process judged
 idle beside a folder nobody could read) and the scan *Expected scan.Complete to be False … but found True*; C-2 was red with
