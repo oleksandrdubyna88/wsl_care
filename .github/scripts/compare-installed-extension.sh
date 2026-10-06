@@ -20,7 +20,7 @@ set -euo pipefail
 [ -d "$2" ] || { echo "compare-installed-extension: $2 is not a folder" >&2; exit 2; }
 
 exec python3 -c '
-import json, os, sys, zipfile, zlib
+import json, os, sys, zipfile
 
 vsix, folder = sys.argv[1], sys.argv[2]
 PREFIX = "extension/"
@@ -28,7 +28,7 @@ VS_CODE_ADDS = {".vsixmanifest"}
 
 try:
     archive = zipfile.ZipFile(vsix)
-except (OSError, zipfile.BadZipFile) as error:
+except Exception as error:  # a missing, truncated or non-zip file - whatever zipfile raises, it is unreadable
     print(f"compare-installed-extension: {vsix} is not a readable .vsix: {error}", file=sys.stderr)
     sys.exit(2)
 
@@ -37,9 +37,9 @@ try:
     for info in archive.infolist():
         if info.filename.startswith(PREFIX) and not info.is_dir():
             attested[info.filename[len(PREFIX):]] = archive.read(info)
-except (OSError, EOFError, RuntimeError, NotImplementedError, ValueError, zipfile.BadZipFile, zlib.error) as error:
-    # An archive that opens but whose entry does not read (a bad CRC, a truncated or encrypted entry, an unknown
-    # compression) is unreadable too: exit 2, never 1 - a "difference" - with a traceback.
+except Exception as error:  # every decompressor raises its own type (zlib, bz2, lzma, a bad CRC, an encrypted member)
+    # An archive that opens but whose member does not read is unreadable too: exit 2, never 1 - a "difference" - with a
+    # traceback. Any failure here is about the archive; nothing else runs inside this block.
     print(f"compare-installed-extension: {vsix} is not a readable .vsix: {error}", file=sys.stderr)
     sys.exit(2)
 if not attested:

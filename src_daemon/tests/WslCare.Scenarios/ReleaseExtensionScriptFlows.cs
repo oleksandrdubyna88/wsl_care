@@ -526,12 +526,30 @@ public sealed class ReleaseExtensionScriptFlows
             var bytes = File.ReadAllBytes(vsix);
             var at = Encoding.ASCII.GetString(bytes).IndexOf("MARKER-MARKER-MARKER", StringComparison.Ordinal);
             at.Should().BeGreaterThan(0, "the stored entry's bytes are in the file");
-            bytes[at] = (byte)'X';
-            File.WriteAllBytes(vsix, bytes);
+            File.WriteAllBytes(vsix, [.. bytes[..at], (byte)'X', .. bytes[(at + 1)..]]);
 
             var corrupt = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [vsix, root.Dir("installed")], root.Path);
             corrupt.Exit.Should().Be(2, $"an entry that cannot be read is an unreadable .vsix:\n{corrupt.Stdout}{corrupt.Stderr}");
             corrupt.Stderr.Should().Contain("is not a readable .vsix");
+        }
+
+        // coai code round 4 (accepted): whatever a member's decompressor raises — here LZMA, whose errors are their own
+        // exception type — the archive is unreadable: exit 2. python3 writes the LZMA member (.NET writes none); its
+        // compressed bytes are then damaged right after the local header.
+        using (var root = new TempRoot("installed-lzma"))
+        {
+            var vsix = root.Under("lzma.vsix");
+            const string member = "extension/dist/extension.js";
+            var made = await ChildProcess.RunAsync("python3", ["-c", "import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_LZMA) as z:\n    z.writestr(sys.argv[2], 'exports.activate = () => {};\\n' * 200)\n", vsix, member], new Dictionary<string, string?>());
+            made.Exit.Should().Be(0, made.Stderr);
+
+            var bytes = File.ReadAllBytes(vsix);
+            var data = 30 + member.Length; // the local file header: 30 fixed bytes, then the name (no extra field here)
+            File.WriteAllBytes(vsix, [.. bytes[..(data + 12)], .. Enumerable.Repeat((byte)0xFF, 24), .. bytes[(data + 36)..]]);
+
+            var lzma = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [vsix, root.Dir("installed")], root.Path);
+            lzma.Exit.Should().Be(2, $"a damaged LZMA member is an unreadable .vsix:\n{lzma.Stdout}{lzma.Stderr}");
+            lzma.Stderr.Should().Contain("is not a readable .vsix");
         }
     }
 }
