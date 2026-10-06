@@ -110,7 +110,35 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
         var file = paths.UserConfigFile;
         var directory = Path.GetDirectoryName(file) ?? throw new InvalidOperationException($"the user config file {file} has no directory");
         var movedAside = current.Broken ? MoveAside(file, directory) : string.Empty;
+        var (verdict, linked) = WriteOrPutBack(file, directory, rendered, movedAside);
+        return verdict is DeletionVerdict.Refused refused
+            ? new UserConfigWriteResult.Refused(refused)
+            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, movedAside) { ReplacedLink = linked, PinnedDryRun = pinnedDryRun };
+    }
 
+    /// <summary>The write — and, when it does not happen, the broken layer moved BACK (fix-PR plan round, retro gate over PR
+    /// #4): a move aside followed by a failed write left no user layer at all, and the next run loaded the defaults.</summary>
+    private LayerWrite WriteOrPutBack(string file, string directory, byte[] rendered, string movedAside)
+    {
+        try
+        {
+            var written = WriteLayer(file, directory, rendered);
+            if (written.Verdict is DeletionVerdict.Refused)
+            {
+                PutBack(movedAside, file, directory);
+            }
+
+            return written;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            PutBack(movedAside, file, directory);
+            throw;
+        }
+    }
+
+    private LayerWrite WriteLayer(string file, string directory, byte[] rendered)
+    {
         // E7.S0 review C3: root never follows a link, so a linked layer is one root refuses; the repair replaces the LINK (the
         // file it points at is never written) with a regular file holding the values read through it.
         var linked = files.ReadLink(file) is LinkReadResult.Target;
@@ -118,10 +146,24 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
         var verdict = linked
             ? files.ReplaceLinkWithFile(file, rendered, new DeletionScope(directory, ActionName))
             : files.WriteFileAtomically(file, rendered, new DeletionScope(directory, ActionName));
-        return verdict is DeletionVerdict.Refused refused
-            ? new UserConfigWriteResult.Refused(refused)
-            : new UserConfigWriteResult.Written(file, current.Entries.ContainsKey(key.Name), current.Dropped, movedAside) { ReplacedLink = linked, PinnedDryRun = pinnedDryRun };
+        return new LayerWrite(verdict, linked);
     }
+
+    /// <summary>How the layer's write ended, and whether it replaced a link.</summary>
+    private sealed record LayerWrite(DeletionVerdict Verdict, bool Linked);
+
+    private void PutBack(string movedAside, string file, string directory)
+    {
+        if (movedAside.Length == 0 || Exists(file))
+        {
+            return;
+        }
+
+        var scope = new DeletionScope(directory, ActionName);
+        _ = files.DirectoryExists(movedAside) ? files.MoveDirectory(movedAside, file, scope) : files.MoveFile(movedAside, file, scope);
+    }
+
+    private bool Exists(string path) => files.FileExists(path) || files.DirectoryExists(path);
 
     /// <summary>The layer as read: the entries that still validate, the ones dropped, and whether it could not be read at all
     /// (then it is moved aside — but only when the write goes ahead).</summary>

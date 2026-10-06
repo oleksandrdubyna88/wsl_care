@@ -1,6 +1,10 @@
 using FluentAssertions;
 
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Config;
+using WslCare.Core.Files;
+using WslCare.Core.Files.Deletion;
+using WslCare.Core.Records;
 using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Config;
@@ -199,5 +203,43 @@ public sealed class UserConfigWriterTests
         File.Exists(host.Paths.UserConfigFile).Should().BeTrue("a refused write moves nothing");
         File.ReadAllText(host.Paths.UserConfigFile).Should().Be("{ this is not json");
         Directory.GetFiles(Path.GetDirectoryName(host.Paths.UserConfigFile)!, "config.json.broken-*").Should().BeEmpty();
+    }
+
+    // Fix-PR plan round (retro gate over PR #4): the move aside and the write are two steps, so a write that fails after the
+    // move left NO user layer — the next timer run loaded the defaults the repair exists to keep away.
+    [Fact]
+    public void A_write_that_fails_after_the_move_aside_puts_the_broken_layer_back()
+    {
+        using var host = new SandboxHost("writer-write-fails");
+        host.WriteUserConfig("""{ "auto": { "A4": false }, oops }""");
+        var writer = new UserConfigWriter(host.Paths, new FailingWrites(host.Files), new FixedTimeProvider());
+
+        var set = () => writer.Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        set.Should().Throw<IOException>();
+        File.ReadAllText(host.Paths.UserConfigFile).Should().Be("""{ "auto": { "A4": false }, oops }""", "the person's layer is back where it was");
+        Directory.GetFiles(Path.GetDirectoryName(host.Paths.UserConfigFile)!, "config.json.broken-*").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void After_a_lossy_repair_the_timer_decides_dry_even_past_its_first_week()
+    {
+        using var host = new SandboxHost("writer-repair-timer-dry");
+        host.WriteMachineConfig("""{ "dryRun": false }""");
+        host.WriteUserConfig("""{ "auto": { "A4": false }, oops }""");
+        Directory.CreateDirectory(host.Paths.StateDirectory);
+        File.WriteAllText(DryRunWindow.File(host.Paths), $$"""{ "schemaVersion": 1, "at": "{{FixedTimeProvider.DefaultNow.AddDays(-30):O}}" }""");
+
+        Writer(host).Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        var config = ConfigLoader.Load(host.Paths, host.Files).Config;
+        DryRunWindow.Decide(RunTrigger.Timer, config, host.Paths, host.Files, FixedTimeProvider.DefaultNow)
+            .Should().Be(new DryRunDecision(true, "the setting dryRun is on"), "the week is long over; only the pinned setting keeps the timer previewing");
+    }
+
+    private sealed class FailingWrites(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>
+            throw new IOException("No space left on device");
     }
 }

@@ -244,7 +244,7 @@ fails the build on a stream write anywhere else in the CLI. The file sink writes
 - `config reset` of a key absent from the user layer is a no-op that says so (exit 0 — the note itself only since the
   retro gate over PR #4: the writer knew, the command never said); an unparseable
   user file is moved to `config.json.broken-{utc}` (or `…-2`, `…-3` when that name is taken) rather
-  than overwritten — and only once the write is known to go ahead (a refused `set` moves nothing). A repair that LOSES
+  than overwritten — and only once the write is known to go ahead (a refused `set` moves nothing; a write that fails after the move puts the broken file back). A repair that LOSES
   anything but the key being written also writes `dryRun = true` (unless the command writes `dryRun` itself), because a
   lost `auto.A# = false` is that action back ON by default at the next timer run (plan §15a #1; retro gate over PR #4).
 - An object where a setting's VALUE belongs (`{"auto":{"A4":{}}}`) is an entry of that setting, refused by validation —
