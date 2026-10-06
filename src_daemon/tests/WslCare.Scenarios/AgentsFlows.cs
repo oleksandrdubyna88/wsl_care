@@ -61,7 +61,8 @@ public sealed class AgentsFlows
         report.Sizes.Source.Should().Be("now");
         var claude = Claude(report);
         claude.Tracked.Should().BeTrue();
-        claude.DetectedBy.Should().Equal(AgentDiscovery.Binary, AgentDiscovery.Folder);
+        // An elevated process (a CI runner) is root to discovery: it looks at folders only, never the user's binaries (plan §15q D3).
+        claude.DetectedBy.Should().Equal(Environment.IsPrivilegedProcess ? [AgentDiscovery.Folder] : [AgentDiscovery.Binary, AgentDiscovery.Folder]);
         claude.TotalBytes.Bytes.Should().Be(100, "memory/ is never entered (plan §15q H2)");
         claude.DataFolders.Where(f => f.Exists).Should().ContainSingle("only ~/.claude (%USERPROFILE%\\.claude) is planted; the others say they do not exist")
             .Which.Excluded.Should().Contain("memory (never entered)");
