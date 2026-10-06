@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.2](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.1.1...daemon-v0.1.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **daemon:** E1 retro gate — lossy config repair turns the timer dry, protected roots' ancestors never deleted ([#26](https://github.com/oleksandrdubyna88/wsl_care/issues/26)) ([a1cf8ae](https://github.com/oleksandrdubyna88/wsl_care/commit/a1cf8aefe3d92378644d5578d86841dde47491da))
+* **daemon:** the release workflow fetches the conventions checker its scenario suite reads ([54ea332](https://github.com/oleksandrdubyna88/wsl_care/commit/54ea332e16f39a50210e26a9863997d624e51c28))
+
 ## [0.1.1](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.1.0...daemon-v0.1.1) (2026-10-06)
 
 
