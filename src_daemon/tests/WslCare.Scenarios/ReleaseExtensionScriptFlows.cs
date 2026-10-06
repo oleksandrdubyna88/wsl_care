@@ -33,7 +33,7 @@ public sealed class ReleaseExtensionScriptFlows
     private static Checkout Make(TempRoot root, string version = "0.1.0", string publisher = "wsl-care-dev", string min = "0.1.0", string stamp = Verified, string? ghAnswer = Published, string? handshake = null, string? minDaemonJson = "")
     {
         var dir = root.Dir("checkout");
-        root.File("checkout/src_vs_code/package.json", $"{{\n  \"name\": \"wsl-care\",\n  \"displayName\": \"WSL Care\",\n  \"version\": \"{version}\",\n  \"publisher\": \"{publisher}\",\n  \"scripts\": {{\n    \"version\": \"not-the-top-level-one\"\n  }}\n}}\n");
+        root.File("checkout/src_vs_code/package.json", $"{{\n  \"name\": \"{ReleaseFiles.ExtensionName}\",\n  \"version\": \"{version}\",\n  \"publisher\": \"{publisher}\",\n  \"scripts\": {{\n    \"version\": \"not-the-top-level-one\"\n  }}\n}}\n");
         root.File("checkout/src_vs_code/src/client/handshake.ts", handshake ?? $"export const SUPPORTED_SCHEMA: readonly number[] = [1];\n\nexport const MIN_DAEMON_FOR_RENDER = '{min}';\n");
         if (minDaemonJson is not null)
         {
@@ -249,7 +249,7 @@ public sealed class ReleaseExtensionScriptFlows
     private static string AssetSet(TempRoot root, string version)
     {
         var dir = root.Dir("assets");
-        var name = $"wsl-care-{version}.vsix";
+        var name = ReleaseFiles.ExtensionVsix(version);
         var bytes = Encoding.UTF8.GetBytes("PK fake vsix");
         File.WriteAllBytes(Path.Combine(dir, name), bytes);
         File.WriteAllText(Path.Combine(dir, name + ".sha256"), $"{Convert.ToHexStringLower(SHA256.HashData(bytes))}  {name}\n");
@@ -262,11 +262,12 @@ public sealed class ReleaseExtensionScriptFlows
         Linux();
         var damage = new (string What, Action<string> Break, string Says)[]
         {
-            ("the .vsix missing", dir => File.Delete(Path.Combine(dir, "wsl-care-0.1.0.vsix")), "expected exactly"),
-            ("the .sha256 missing", dir => File.Delete(Path.Combine(dir, "wsl-care-0.1.0.vsix.sha256")), "expected exactly"),
+            ("the .vsix missing", dir => File.Delete(Path.Combine(dir, ReleaseFiles.ExtensionVsix("0.1.0"))), "expected exactly"),
+            ("the .sha256 missing", dir => File.Delete(Path.Combine(dir, ReleaseFiles.ExtensionVsix("0.1.0") + ".sha256")), "expected exactly"),
             ("an extra file", dir => File.WriteAllText(Path.Combine(dir, "notes.txt"), "x"), "expected exactly"),
-            ("a tampered .vsix", dir => File.AppendAllText(Path.Combine(dir, "wsl-care-0.1.0.vsix"), "x"), "does not match its .sha256"),
-            ("a .sha256 naming another file", dir => File.WriteAllText(Path.Combine(dir, "wsl-care-0.1.0.vsix.sha256"), new string('0', 64) + "  wsl-care-0.0.9.vsix\n"), "names 'wsl-care-0.0.9.vsix'"),
+            ("a tampered .vsix", dir => File.AppendAllText(Path.Combine(dir, ReleaseFiles.ExtensionVsix("0.1.0")), "x"), "does not match its .sha256"),
+            ("a .sha256 naming another file", dir => File.WriteAllText(Path.Combine(dir, ReleaseFiles.ExtensionVsix("0.1.0") + ".sha256"), new string('0', 64) + $"  {ReleaseFiles.ExtensionVsix("0.0.9")}\n"), $"names '{ReleaseFiles.ExtensionVsix("0.0.9")}'"),
+            ("a .sha256 naming another package", dir => File.WriteAllText(Path.Combine(dir, ReleaseFiles.ExtensionVsix("0.1.0") + ".sha256"), new string('0', 64) + "  another-package-0.1.0.vsix\n"), "is not one"),
         };
 
         using (var root = new TempRoot("ext-assets-ok"))

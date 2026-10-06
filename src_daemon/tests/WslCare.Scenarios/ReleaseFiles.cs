@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace WslCare.Scenarios;
@@ -26,6 +27,22 @@ internal static partial class ReleaseFiles
     public static string ReleasePleaseManifest => Path.Combine(Root, ".release-please-manifest.json");
 
     public static string VersionFile => Path.Combine(Root, "src_daemon", "version.txt");
+
+    public static string ExtensionManifest => Path.Combine(Root, "src_vs_code", "package.json");
+
+    /// <summary>The extension's id as its manifest says (<c>name</c>) — what <c>vsce package</c> names the .vsix after,
+    /// read where it is so the release files are held to the manifest rather than to a second spelling of it.</summary>
+    public static string ExtensionName
+    {
+        get
+        {
+            using var manifest = JsonDocument.Parse(File.ReadAllText(ExtensionManifest));
+            return manifest.RootElement.GetProperty("name").GetString() ?? string.Empty;
+        }
+    }
+
+    /// <summary>The file <c>vsce package</c> writes for <paramref name="version"/>: <c>&lt;name&gt;-&lt;version&gt;.vsix</c>.</summary>
+    public static string ExtensionVsix(string version) => $"{ExtensionName}-{version}.vsix";
 
     public static IReadOnlyList<string> AllWorkflows => [.. Directory.EnumerateFiles(WorkflowDirectory, "*.yml").Order(StringComparer.Ordinal)];
 
