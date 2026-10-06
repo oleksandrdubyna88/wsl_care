@@ -184,7 +184,7 @@ organisation-scoped PATs for the Marketplace are an open request (microsoft/vsma
      visible only to people with write access, so download it as the owner:
      `gh release download extension-v<x.y.z> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' --pattern '*.sha256'`,
      then `sha256sum -c ai-os-care-<x.y.z>.vsix.sha256` and `gh attestation verify ai-os-care-<x.y.z>.vsix --repo
-     oleksandrdubyna88/wsl_care --cert-identity "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml@refs/tags/extension-v<x.y.z>"`.
+     oleksandrdubyna88/wsl_care --cert-identity "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml@refs/tags/extension-v<x.y.z>" --deny-self-hosted-runners`.
   2. **Upload THAT file by hand**: <https://marketplace.visualstudio.com/manage> → publisher `remsoftdev` → *AI OS Care*
      (the first time: *New extension → Visual Studio Code*) → upload `ai-os-care-<x.y.z>.vsix`. Never a local build: only
      the attested file may be served, and `github-public` compares the draft with it.

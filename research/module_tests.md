@@ -771,6 +771,14 @@ after <n>s of a <DOCTOR_SECONDS>s wait", instead of an "at most" the report itse
 `The_health_wait_refuses_…` now asserts the new sentence, and its timing bound (from the first doctor call) already
 counted the report.
 
+**A sibling met on the rebase onto `fdc9de6`** (#28, the manual Marketplace upload): its new draft check in
+`docs/repo-settings.md` pins `--cert-identity` but not `--deny-self-hosted-runners`, and wraps across two lines. CI on the
+merge commit was red — the scan read the command only to its first line break (`Expected commands … to contain only items
+matching …`). The scan now follows a wrapped inline span (a line break ends a command only before a blank line; whitespace
+read as one space), a companion asserts it finds that wrapped command, and the command gained the flag: with the flag taken
+out again the test is red naming `gh attestation verify ai-os-care-<x.y.z>.vsix --repo oleksandrdubyna88/wsl_care
+--cert-identity "…release-extension.yml@refs/tags/extension-v<x.y.z>"`, with it green.
+
 **Not done here:** running `systemd-analyze verify` over the timer drop-in at EVERY accepted period belongs in
 `.github/scripts/verify-systemd-units.sh` (reworked by `fix/wc-act-unit-collectmode`, merged into main while this round was
 in flight); it is a follow-up. The Core test above already parses every rendered calendar on the Linux CI legs.

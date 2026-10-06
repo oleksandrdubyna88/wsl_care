@@ -295,12 +295,14 @@ public sealed partial class ReleaseExtensionWorkflowTests
     public void Every_documented_attestation_check_pins_the_exact_identity_never_a_signer_workflow_prefix()
     {
         var commands = AttestationDocuments
-            .SelectMany(doc => VerifyCommand().Matches(File.ReadAllText(Path.Combine(ReleaseFiles.Root, doc))).Select(m => (Doc: doc, Command: m.Value)))
+            .SelectMany(doc => VerifyCommand().Matches(File.ReadAllText(Path.Combine(ReleaseFiles.Root, doc))).Select(m => (Doc: doc, Command: Whitespace().Replace(m.Value, " "))))
             .Where(c => !c.Command.StartsWith("gh attestation verify --", StringComparison.Ordinal))
             .ToList();
 
         commands.Select(c => c.Doc).Distinct().Should().BeEquivalentTo(AttestationDocuments,
             "the scan still finds the known checks — POST_DEPLOY items 6 and 9, the rollback in the README and in docs/repo-settings.md");
+        commands.Should().Contain(c => c.Doc == "docs/repo-settings.md" && c.Command.Contains("extension-v<x.y.z>", StringComparison.Ordinal),
+            "the scan reads a command wrapped across two lines — the manual Marketplace upload's draft check");
         commands.Should().OnlyContain(
             c => c.Command.Contains("--cert-identity \"https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/", StringComparison.Ordinal)
                 && c.Command.Contains("@refs/tags/", StringComparison.Ordinal)
@@ -310,9 +312,15 @@ public sealed partial class ReleaseExtensionWorkflowTests
             "a signer workflow is a prefix match, so it admits the workflow run from any branch");
     }
 
-    /// <summary>One <c>gh attestation verify</c> command, up to where a shell or markdown would end it.</summary>
-    [GeneratedRegex("""gh attestation verify [^`|;&\n]*""")]
+    /// <summary>One <c>gh attestation verify</c> command, up to where a shell or markdown would end it. An inline code span wraps
+    /// onto the next line in these documents (markdown reads the line break as a space), so a line break ends a command only
+    /// before a blank line — a wrapped command read up to its first line break loses its identity flags.</summary>
+    [GeneratedRegex("""gh attestation verify (?:[^`|;&\n]|\n(?![ \t\r]*\n))*""")]
     private static partial Regex VerifyCommand();
+
+    /// <summary>A run of whitespace — a wrapped command's line break and indent read as the one space markdown renders.</summary>
+    [GeneratedRegex("""\s+""")]
+    private static partial Regex Whitespace();
 
     [GeneratedRegex("""^  [a-z][a-z0-9-]*:\s*$""")]
     private static partial Regex JobKeyLine();
