@@ -318,6 +318,7 @@ public sealed class McpServerCollectorTests : IDisposable
         sample.Count.Should().Be(2);
         sample.Instances.Should().HaveCount(1);
         verdict.Value.Should().Contain("over the 1 listed");
+        McpVerdicts.From(Reading.Of(sample), config).Single(v => v.Id == McpVerdicts.Cpu).Value.Should().Contain("over the 1 listed", "final code round 2/3: the CPU total covers the listed instances only");
     }
 
     [Fact]

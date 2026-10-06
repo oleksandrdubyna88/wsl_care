@@ -86,6 +86,32 @@ public sealed class BoundedListingTests : IDisposable
         }
     }
 
+    [Fact]
+    public void A_folder_under_an_untraversable_parent_is_unreadable_never_empty()
+    {
+        // Final code round finding 4: Directory.Exists answers false for a folder whose parent may not be traversed, and the
+        // bounded listing then answered "an empty folder, complete" — a log root behind it read as zero starts.
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "a folder with no execute permission is a Linux mode");
+        Assert.SkipWhen(RegularFiles.EffectiveUid() == 0, "root traverses a folder whatever its mode");
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        Root.File("parent/child/one.log", "x");
+        var parent = Root.Under("parent");
+        File.SetUnixFileMode(parent, UnixFileMode.UserRead);
+        try
+        {
+            _sandbox.Files.ListEntries(Root.Under("parent/child"), Bounds(10)).Should().BeOfType<EntryListing.Unreadable>();
+            _sandbox.Files.ListEntries(Root.Under("parent/absent"), Bounds(10)).Should().BeOfType<EntryListing.Unreadable>("behind an untraversable parent even absence cannot be told");
+        }
+        finally
+        {
+            File.SetUnixFileMode(parent, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
     /// <summary>A folder the physical file system could not read: empty when listed unbounded, unreadable when bounded.</summary>
     private sealed class OneUnreadable(IFileSystem inner, string unreadable) : DelegatingFileSystem(inner), IFileSystem
     {

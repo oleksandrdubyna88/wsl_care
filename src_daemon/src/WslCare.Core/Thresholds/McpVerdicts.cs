@@ -46,7 +46,7 @@ public static class McpVerdicts
             Reading<(McpSample Sample, double Cores)>.Available { Value: var v } => new(
                 Cpu,
                 v.Cores * McpSample.PercentPerCore > warnAbovePercent ? Level.Warn : Level.Ok,
-                Invariant($"{v.Cores:0.00} core(s) over {v.Sample.CpuMeasured} measured instance(s)"),
+                Invariant($"{v.Cores:0.00} core(s) over {v.Sample.CpuMeasured} measured instance(s){OverListed(v.Sample)}"),
                 limit,
                 Invariant($"CPU the agents' MCP servers burn together; {v.Sample.BusyWithoutActivityCount} of them busy with no log write in the activity window")),
             var unknown => new(Cpu, Level.Unknown, string.Empty, limit, unknown.ReasonOrEmpty),
