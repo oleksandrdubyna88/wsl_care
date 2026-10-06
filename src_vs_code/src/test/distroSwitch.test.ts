@@ -34,6 +34,15 @@ function deferred<T>(): Deferred<T> {
 
 const NEVER: Timers = { every: () => () => undefined };
 
+/** The poller asks only the three panel verbs; `version` reaching a fake here is a test defect, so it throws. */
+function asPanelVerb(verb: Verb): PanelVerb {
+  if (verb === 'version') {
+    throw new Error('the poller never asks --version');
+  }
+
+  return verb;
+}
+
 function distroOf(outcome: VerbOutcome | undefined): string {
   return outcome !== undefined && outcome.kind === 'answered' ? outcome.distro : `not answered: ${JSON.stringify(outcome)}`;
 }
@@ -117,7 +126,7 @@ function pollerWorld(): { poller: Poller; store: OutcomeStore; held: Deferred<Ve
   let distro = 'Ubuntu';
   const store = new OutcomeStore();
   const run = (verb: Verb): Promise<VerbOutcome> => {
-    const panelVerb = verb as PanelVerb;
+    const panelVerb = asPanelVerb(verb);
     if (distro === 'Ubuntu' && verb === 'preview') {
       asked.resolve();
       return held.promise;
@@ -185,7 +194,7 @@ test('a round made obsolete while its status is pending asks no preview or docto
       return heldStatus.promise;
     }
 
-    return Promise.resolve(answered(verb as PanelVerb, headBody(verb as PanelVerb), distro));
+    return Promise.resolve(answered(asPanelVerb(verb), headBody(asPanelVerb(verb)), distro));
   };
   const poller = new Poller({ run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro });
 
@@ -219,7 +228,7 @@ function recordedWorld(heldUbuntuStatus: boolean): {
       return held.promise;
     }
 
-    return Promise.resolve(answered(verb as PanelVerb, headBody(verb as PanelVerb), state.distro));
+    return Promise.resolve(answered(asPanelVerb(verb), headBody(asPanelVerb(verb)), state.distro));
   };
   const poller = new Poller({ run, store, focused: () => state.focused, refreshSeconds: () => undefined, timers: NEVER, target: () => state.distro });
 
@@ -266,9 +275,10 @@ test('a switch in an unfocused window clears what was shown, and asks nothing', 
 });
 
 test('a non-string wslCare.distro (a number, null, an object in settings.json) is refused as a value, never thrown', async () => {
-  for (const raw of [42, null, { name: 'Ubuntu' }, JSON.parse('{"toString": null}') as unknown]) {
+  const shadowsToString: unknown = JSON.parse('{"toString": null}');
+  for (const raw of [42, null, { name: 'Ubuntu' }, shadowsToString]) {
     const rec = recordingRunner({});
-    const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => raw as unknown as string });
+    const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => raw });
     let outcome: VerbOutcome | undefined;
     assert.doesNotThrow(() => { void client.run('status').then((o) => { outcome = o; }); }, `run() threw for ${JSON.stringify(raw)}`);
     await new Promise((resolve) => setImmediate(resolve));
