@@ -417,4 +417,98 @@ public sealed class ReleaseExtensionScriptFlows
         early.Result.Stdout.Should().Contain("VSCE_PAT is not set", "the refusal names its cause");
         early.Calls.Should().BeEmpty("the refusal comes before vsce is asked anything");
     }
+
+    /// <summary>The attested .vsix as a test builds it: <c>extension/…</c> members plus the root members vsce writes.</summary>
+    private static string Vsix(TempRoot root, IReadOnlyDictionary<string, string> extensionFiles)
+    {
+        var path = root.Under("attested/ai-os-care-0.1.0.vsix");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
+        foreach (var (name, content) in new Dictionary<string, string>(extensionFiles.Select(f => KeyValuePair.Create("extension/" + f.Key, f.Value)))
+        {
+            ["extension.vsixmanifest"] = "<PackageManifest/>",
+            ["[Content_Types].xml"] = "<Types/>",
+        })
+        {
+            using var writer = new StreamWriter(zip.CreateEntry(name).Open());
+            writer.Write(content);
+        }
+
+        return path;
+    }
+
+    /// <summary>The installed folder exactly as VS Code makes it from that .vsix (measured on an installed Marketplace
+    /// extension, 2026-10-06): the <c>extension/</c> files, plus <c>.vsixmanifest</c>, with <c>__metadata</c> written into
+    /// package.json.</summary>
+    private static string Installed(TempRoot root, IReadOnlyDictionary<string, string> extensionFiles)
+    {
+        var dir = root.Dir("installed/remsoftdev.ai-os-care-0.1.0");
+        foreach (var (name, content) in extensionFiles)
+        {
+            var text = name == "package.json"
+                ? content.TrimEnd().TrimEnd('}') + ",\n  \"__metadata\": { \"installedTimestamp\": 1, \"targetPlatform\": \"undefined\", \"size\": 2 }\n}\n"
+                : content;
+            root.File($"installed/remsoftdev.ai-os-care-0.1.0/{name}", text);
+        }
+
+        root.File("installed/remsoftdev.ai-os-care-0.1.0/.vsixmanifest", "<PackageManifest/>");
+        return dir;
+    }
+
+    /// <summary>coai code round 2 on the manual route (accepted): comparing <c>dist/extension.js</c> alone would pass a
+    /// Marketplace package whose package.json points <c>main</c> at an ADDED file. compare-installed-extension.sh compares
+    /// EVERY file of the attested .vsix with the installed folder and refuses anything extra, allowing only what VS Code
+    /// itself changes — the added <c>.vsixmanifest</c> and the <c>__metadata</c> it writes into package.json. One script,
+    /// called by the pre-approval step (docs/repo-settings.md step 9) and by POST_DEPLOY item 6.</summary>
+    [Fact]
+    public async Task The_installed_extension_must_equal_the_attested_vsix_file_by_file_apart_from_what_VS_Code_adds()
+    {
+        Linux();
+        var files = new Dictionary<string, string>
+        {
+            ["package.json"] = "{\n  \"name\": \"ai-os-care\",\n  \"main\": \"./dist/extension.js\"\n}\n",
+            ["dist/extension.js"] = "exports.activate = () => {};\n",
+            ["media/panel.js"] = "// panel\n",
+            ["readme.md"] = "# AI OS Care\n",
+        };
+
+        using (var root = new TempRoot("installed-same"))
+        {
+            var same = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [Vsix(root, files), Installed(root, files)], root.Path);
+            same.Exit.Should().Be(0, same.Stdout + same.Stderr);
+            same.Stdout.Should().Contain("is the attested build (4 files)");
+        }
+
+        var tampered = new (string What, Action<string> Tamper, string Says)[]
+        {
+            ("main pointed at an added file", dir =>
+                {
+                    File.WriteAllText(Path.Combine(dir, "package.json"), File.ReadAllText(Path.Combine(dir, "package.json")).Replace("./dist/extension.js", "./evil.js", StringComparison.Ordinal));
+                    File.WriteAllText(Path.Combine(dir, "evil.js"), "require('child_process');\n");
+                }, "package.json: differs"),
+            ("an added file alone", dir => File.WriteAllText(Path.Combine(dir, "evil.js"), "x\n"), "evil.js: in the installed folder, not in the attested .vsix"),
+            ("the bundle changed", dir => File.AppendAllText(Path.Combine(dir, "dist", "extension.js"), "x"), "dist/extension.js: different bytes"),
+            ("a media script changed", dir => File.AppendAllText(Path.Combine(dir, "media", "panel.js"), "x"), "media/panel.js: different bytes"),
+            ("a file missing", dir => File.Delete(Path.Combine(dir, "readme.md")), "readme.md: missing"),
+        };
+
+        foreach (var (what, tamper, says) in tampered)
+        {
+            using var root = new TempRoot("installed-tampered");
+            var vsix = Vsix(root, files);
+            var dir = Installed(root, files);
+            tamper(dir);
+
+            var result = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [vsix, dir], root.Path);
+
+            result.Exit.Should().Be(1, $"{what}:\n{result.Stdout}{result.Stderr}");
+            result.Stdout.Should().Contain(says, what);
+        }
+
+        using (var root = new TempRoot("installed-usage"))
+        {
+            var usage = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [root.File("not-a-zip.vsix", "x"), root.Dir("empty")], root.Path);
+            usage.Exit.Should().Be(2, "an unreadable .vsix is a usage error, never a pass: " + usage.Stderr);
+        }
+    }
 }

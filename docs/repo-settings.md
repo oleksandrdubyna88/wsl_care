@@ -190,14 +190,16 @@ organisation-scoped PATs for the Marketplace are an open request (microsoft/vsma
      the attested file may be served, and `github-public` compares the draft with it.
   3. **Wait until the Marketplace serves it** — it validates a new version for some minutes:
      `npx --yes @vscode/vsce@4.0.0 show remsoftdev.ai-os-care --json` lists `<x.y.z>` among its `versions`.
-  4. **Check that the Marketplace serves THE ATTESTED BYTES — required before approving.** The job's served check
+  4. **Check that the Marketplace serves THE ATTESTED BUILD — required before approving.** The job's served check
      matches the VERSION only: a wrong `.vsix` uploaded with the same version would be "served", the publish skipped,
-     and the release made public over bytes nobody attested. So install the served version and compare its bundle
-     with the one inside the attested file, the way `POST_DEPLOY.md` item 6 does after the release (inside WSL, from the
-     folder holding the downloaded `.vsix`):
+     and the release made public over bytes nobody attested. So install the served version and compare the installed
+     folder with the attested file, FILE BY FILE — every file of the `.vsix`, nothing extra (a changed `package.json`
+     pointing `main` at an added file is exactly what a bundle-only check would miss), apart from what VS Code itself
+     adds (`.vsixmanifest`, `__metadata` in package.json). The same script `POST_DEPLOY.md` item 6 runs after the release;
+     inside WSL, from the repository root, with the downloaded `.vsix` in `<dir>`:
      `code --install-extension remsoftdev.ai-os-care@<x.y.z> --force`, then
-     `[ "$(python3 -c 'import sys, zipfile; sys.stdout.buffer.write(zipfile.ZipFile(sys.argv[1]).read("extension/dist/extension.js"))' ai-os-care-<x.y.z>.vsix | sha256sum | cut -d' ' -f1)" = "$(sha256sum < "$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.vscode/extensions/remsoftdev.ai-os-care-<x.y.z>/dist/extension.js" | cut -d' ' -f1)" ] && echo same`.
-     Not `same` → do NOT approve: reject the deployment (the release stays a draft), and fix forward with the next patch
+     `bash .github/scripts/compare-installed-extension.sh <dir>/ai-os-care-<x.y.z>.vsix "$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.vscode/extensions/remsoftdev.ai-os-care-<x.y.z>"`.
+     Any difference (exit 1, each one named) → do NOT approve: reject the deployment (the release stays a draft), and fix forward with the next patch
      version — a Marketplace version cannot be uploaded twice.
   5. **Then approve `publish-marketplace`** (or, if it already ran and failed, *Re-run FAILED jobs* — never all jobs).
      Its first step asks the Marketplace whether `<x.y.z>` is served; it is, so the publish step is SKIPPED (no token is
