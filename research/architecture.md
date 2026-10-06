@@ -481,7 +481,11 @@ a failure. `WSL_CARE_LIVE_CAPTURE=<dir>` writes each answer to a file — how `t
 collectors of plan §4.5 and their parsers; `Thresholds` the threshold rules; `Folders` the daily folder walk; `Events`
 the container-start follower; `Doctor` the installation check; `Records` gained the run detail store, the history
 reader, the startup reconcile and the retention sweep. The verbs are `CollectCommand`, `DoctorCommand`,
-`EventsCommand` in `WslCare.Cli/Commands`.
+`EventsCommand` in `WslCare.Cli/Commands`. Before it measures, `collect` logs one line (console = stderr, and the run
+file) that it is measuring and that Docker's disk figures and the folder walks can take minutes — a full run said nothing
+until it ended, and working looked like stuck (retro gate over PR #5, 2026-10-06). The promise is that line only: it says
+the run STARTED; each slow stage may then stay silent until it finishes or reaches its own ceiling (no per-stage
+progress — `WslCare.Core` has no logger).
 
 ```mermaid
 flowchart TB
