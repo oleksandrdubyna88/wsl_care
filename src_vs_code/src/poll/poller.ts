@@ -125,10 +125,11 @@ export class Poller {
 
   /**
    * E6.S3: ONE `status`, whatever the focus — the cleanup follower's question (`cleanup/runFollower.ts` decides when, by
-   * plan §15j M6: only while something is in flight). Recorded in the store, so the bar and the panel see the answer.
+   * plan §15j M6: only while something is in flight). Recorded in the store, so the bar and the panel see the answer —
+   * stamped with the current target's round like a tick (#23), so an answer for a previous distribution is never stored.
    */
   askStatus(): Promise<VerbOutcome> {
-    return this.track(this.ask('status'));
+    return this.track(this.ask(this.begin(), 'status'));
   }
 
   /** Panel open / Refresh / "Start WSL and check": `status` first, then `preview` and `doctor` unless it stopped. */
