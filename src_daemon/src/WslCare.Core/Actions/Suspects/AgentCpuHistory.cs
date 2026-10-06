@@ -77,7 +77,7 @@ public static class AgentCpuHistory
     /// <summary>The next history: <paramref name="samples"/> (the live AI-agent processes now) merged into <paramref name="before"/> —
     /// an identity whose ticks did not move keeps its "unchanged since" and adds the gap since its last sighting, one that moved
     /// starts again now, a new one starts now; identities not alive now are dropped; another boot starts afresh.</summary>
-    public static AgentCpuFile Next(AgentCpuFile before, string bootId, IReadOnlyList<SuspectSample> samples, SampleTime at)
+    public static AgentCpuFile Next(AgentCpuFile before, string bootId, IReadOnlyList<PidSample> samples, SampleTime at)
     {
         var known = before.BootId == bootId
             ? before.Entries.ToDictionary(e => (e.Pid, e.StartTicks))
@@ -96,7 +96,7 @@ public static class AgentCpuHistory
     /// <summary>How long <paramref name="sample"/> has used no CPU, by the history — the shorter of the two clocks, and only over a
     /// dense chain of sightings; <see cref="TimeSpan.Zero"/> when the history does not hold this identity with these ticks in this
     /// boot, when it has no monotonic reading, or when a gap breaks the chain (no history = not idle).</summary>
-    public static TimeSpan IdleFor(AgentCpuFile history, string bootId, SuspectSample sample, SampleTime at) =>
+    public static TimeSpan IdleFor(AgentCpuFile history, string bootId, PidSample sample, SampleTime at) =>
         history.BootId.Length > 0 && history.BootId == bootId
         && history.Entries.FirstOrDefault(e => e.Pid == sample.Pid && e.StartTicks == sample.StartTicks) is { } entry
         && entry.CpuTicks == sample.CpuTicks && Dense(entry, at)
@@ -131,11 +131,11 @@ public static class AgentCpuHistory
         ProcText.Read(files, $"{paths.ProcRoot}/sys/kernel/random/boot_id").ValueOr(string.Empty).Trim();
 
     /// <summary>The AI-agent processes of non-root accounts in <paramref name="processes"/>, sampled from <c>/proc</c> now.</summary>
-    public static IReadOnlyList<SuspectSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
+    public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
         [.. processes
             .Where(p => p.Family == ProcessFamilies.AiAgents && p.User != "root" && p.Pid > 1)
             .Select(p => SuspectTermination.Sample(files, paths, p.Pid))
-            .OfType<SuspectSample>()
+            .OfType<PidSample>()
             .Where(s => s.Uid != 0)];
 
     /// <summary>One root run's record (the timer's full run): sample, merge, write. Empty when written.</summary>

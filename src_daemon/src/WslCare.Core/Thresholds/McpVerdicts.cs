@@ -31,7 +31,7 @@ public static class McpVerdicts
             Reading<McpSample>.Available { Value: var s } => new(
                 Instances,
                 s.Count > warnAbove ? Level.Warn : Level.Ok,
-                Invariant($"{s.Count} instance(s): {s.IdleCount} idle, {s.BusyWithoutActivityCount} busy with no log write in the activity window"),
+                Invariant($"{s.Count} instance(s): {s.IdleCount} idle, {s.BusyWithoutActivityCount} busy with no log write in the activity window{OverListed(s)}"),
                 limit,
                 "MCP server processes of the AI agents, one per agent session"),
             var unknown => new(Instances, Level.Unknown, string.Empty, limit, unknown.ReasonOrEmpty),
@@ -73,6 +73,11 @@ public static class McpVerdicts
             : counted.Count < servers.Count ? new(Starts, Level.Unknown, value, limit, string.Join("; ", servers.Where(s => !s.Starts.Count.IsAvailable).Select(s => $"{s.Name}: {s.Starts.Count.ReasonOrEmpty}")))
             : new(Starts, Level.Ok, value, limit, "how often each watched MCP server was started lately");
     }
+
+    /// <summary>coai code round finding 3: past <c>mcpServers.maxInstances</c> the idle, busy and CPU figures cover the listed
+    /// instances only — said, never left to read as all of them.</summary>
+    public static string OverListed(McpSample sample) =>
+        sample.Instances.Count < sample.Count ? Invariant($" (CPU, idle and busy figures over the {sample.Instances.Count} listed: mcpServers.maxInstances)") : string.Empty;
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }

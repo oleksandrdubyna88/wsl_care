@@ -43,7 +43,10 @@ public sealed record McpServersReport(
 public sealed record McpServerReport(string Name, int Count, NumberFigure Starts, int StartsWindowMinutes, string StartsBasis)
 {
     public static McpServerReport From(McpServerSummary s) =>
-        new(s.Name, s.Count, StatusReports.Number(s.Starts.Count.Map(c => (double)c)), s.Starts.WindowMinutes, s.Starts.Basis);
+        new(s.Name, s.Count, StatusReports.Number(s.Starts.Count.Map(c => (double)c)), s.Starts.WindowMinutes, BasisName(s.Starts.Basis));
+
+    /// <summary>The basis as the wire names it.</summary>
+    public static string BasisName(McpStartsBasis basis) => basis == McpStartsBasis.LiveYounger ? "liveYounger" : "logNames";
 }
 
 /// <summary>Who owns an instance: the agent session above it, or none (<paramref name="Orphaned"/>).</summary>

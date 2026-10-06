@@ -1659,6 +1659,10 @@ Two first attempts (the identity and missing-history rules mutated in `IdleFor`)
 | the built binary over the captured tree and a 34-start storm in the home's run logs | `Scenarios/McpServersFlows.Status_json_counts_the_agents_mcp_servers_and_warns_on_a_restart_storm` (Linux) |
 | consultation C-1: a session listing that lost a folder (unreadable, cut) is never complete — A18 keeps the process "cannot tell", the agents' count is a lower bound; the physical bounded listing stops at its cap and deadline and answers an unreadable folder unreadable | `AgentOrphansTests.An_unreadable_sibling_folder_keeps_the_agent_process_cannot_tell`, `Files/BoundedListingTests` (5), `AgentsReviewRoundTests.An_agents_count_with_an_unreadable_folder_is_a_lower_bound_never_a_complete_count` |
 | consultation C-2: an agent is recognised by its raw argv — a program path with spaces or past the display cut | `ProcessCollectorTests.A_program_path_with_spaces_or_past_the_display_cut_is_still_recognised` |
+| coai code round 2: an untraversable log root is no count, never 0 starts | `McpServerCollectorTests.An_untraversable_log_root_makes_the_starts_unavailable_never_zero` |
+| coai code round 3: past `mcpServers.maxInstances` the verdict says its figures cover the listed instances | `…Figures_over_a_capped_list_say_they_cover_only_the_listed_instances` |
+| own review M1: a long CPU window does not move the process start; its log is still its own | `…A_long_cpu_window_does_not_move_the_process_start_its_log_is_still_its_own` |
+| own review m1: a midnight file whose pid now belongs to another program is a continuation, not a start | `…A_midnight_file_whose_pid_now_belongs_to_another_program_is_not_a_start` |
 
 **Red first:** C-1 was red for the real symptom — A18 *Expected preview.Count to be 0 … but found 1* (an agent process judged
 idle beside a folder nobody could read) and the scan *Expected scan.Complete to be False … but found True*; C-2 was red with
@@ -1668,6 +1672,10 @@ continuation rule, the live-process midnight rule, the earlier-process log rule,
 (8 of 8 red; files restored and rebuilt), and the status wiring (the block's line removed: both `McpStatusTests` that read it
 red). Two first failures were TEST defects (a FluentAssertions `Equal` given its reason as an element; two fake sessions
 sharing a pid), fixed in the tests.
+
+**The review rounds** (coai code round 2 and 3, own review M1 and m1): each RED for its real symptom before its fix, green after,
+and red again with its line broken (4 of 4) — the messages are in the plan's *E7.S2d code round* table. coai 0, 1 and 4 are
+refactors (no behaviour; every MCP, A11 and A18 test unchanged and green).
 
 **Goldens:** the seven `status*.json` gained `mcpServers` (the captured tree's two servers), the three `mcp.*` verdicts, the
 capability and the two limits; `config-keys.json` and `status-limits.json` regenerated.

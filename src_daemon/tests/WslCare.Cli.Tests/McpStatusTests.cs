@@ -53,7 +53,7 @@ public sealed class McpStatusTests
         instance.CpuPercent.Value.Should().Be(0, "the fixture's ticks do not move across the window");
         instance.Kind.Should().Be("starting", "no CPU, and the capture was taken about 95 s after boot — younger than the 10-minute idle minimum");
         instance.Activity.Available.Should().BeFalse("the sandbox home holds no coai-mcp log");
-        mcp.Servers!.Single().Should().Match<McpServerReport>(s => s.Name == "coai-mcp" && s.StartsBasis == McpStartsBasis.LogNames && s.Starts.Value == 0);
+        mcp.Servers!.Single().Should().Match<McpServerReport>(s => s.Name == "coai-mcp" && s.StartsBasis == "logNames" && s.Starts.Value == 0);
         waited.Should().Be(TimeSpan.FromMilliseconds(1000), "status waited the default CPU window because an instance runs");
         report.Verdicts!.Where(v => v.Id.StartsWith("mcp.", StringComparison.Ordinal)).Select(v => (v.Id, v.Level, v.Basis!.Source))
             .Should().Equal((McpVerdicts.Instances, Level.Ok, VerdictSource.Sample), (McpVerdicts.Cpu, Level.Ok, VerdictSource.Sample), (McpVerdicts.Starts, Level.Ok, VerdictSource.Sample));

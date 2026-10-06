@@ -42,19 +42,19 @@ public abstract record McpOwner
 /// its kind.</summary>
 public sealed record McpInstance(ProcessEntry Process, string Server, McpOwner Owner, Reading<double> CpuPercent, Reading<DateTimeOffset> LastLogWrite, McpKind Kind);
 
-/// <summary>How a server's starts were counted.</summary>
-public static class McpStartsBasis
+/// <summary>How a server's starts were counted — a closed set (coai code round finding 0); its JSON name is given at the edge.</summary>
+public enum McpStartsBasis
 {
     /// <summary>From the names of its log files (one per run): every start in the window.</summary>
-    public const string LogNames = "logNames";
+    LogNames,
 
     /// <summary>No log layout: the live instances younger than the window — a LOWER bound (a process killed within the window is
     /// not seen). Distinct pids across runs are not tracked: status writes no state and the timer runs every few hours.</summary>
-    public const string LiveYounger = "liveYounger";
+    LiveYounger,
 }
 
 /// <summary>A server's starts in the window, and how they were counted.</summary>
-public sealed record McpStarts(Reading<int> Count, string Basis, int WindowMinutes);
+public sealed record McpStarts(Reading<int> Count, McpStartsBasis Basis, int WindowMinutes);
 
 /// <summary>One watched server: its instances and its starts.</summary>
 public sealed record McpServerSummary(string Name, int Count, McpStarts Starts);

@@ -7,6 +7,7 @@ using WslCare.Core.Actions;
 using WslCare.Core.Actions.Engine;
 using WslCare.Core.Actions.Suspects;
 using WslCare.Core.Collectors;
+using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Config;
 using WslCare.Core.Json;
 using WslCare.Core.Processes;
@@ -295,10 +296,10 @@ public sealed class AgentOrphansTests : IDisposable
     public void The_cpu_history_is_root_state_bounded_and_pruned_to_live_processes()
     {
         var now = At(TimeSpan.Zero);
-        var before = AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new SuspectSample(10, 1, 5, 0, 1000), new SuspectSample(11, 1, 5, 0, 1000)], now);
-        var many = Enumerable.Range(2, AgentCpuHistory.MaxEntries + 50).Select(pid => new SuspectSample(pid, pid, 1, 0, 1000)).ToList();
+        var before = AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new PidSample(10, 1, 5, 0, 1000), new PidSample(11, 1, 5, 0, 1000)], now);
+        var many = Enumerable.Range(2, AgentCpuHistory.MaxEntries + 50).Select(pid => new PidSample(pid, pid, 1, 0, 1000)).ToList();
 
-        AgentCpuHistory.Next(before, Boot, [new SuspectSample(10, 1, 5, 0, 1000)], At(TimeSpan.FromHours(1))).Entries.Select(e => e.Pid).Should().Equal(10);
+        AgentCpuHistory.Next(before, Boot, [new PidSample(10, 1, 5, 0, 1000)], At(TimeSpan.FromHours(1))).Entries.Select(e => e.Pid).Should().Equal(10);
         var kept = AgentCpuHistory.Next(before, Boot, many, now).Entries;
         kept.Should().HaveCount(AgentCpuHistory.MaxEntries);
         kept.Min(e => e.StartTicks).Should().Be(many.Max(m => m.StartTicks) - AgentCpuHistory.MaxEntries + 1, "review A-L1: past the cap the OLDEST processes are dropped (no history = kept)");
@@ -476,7 +477,7 @@ public sealed class AgentOrphansTests : IDisposable
     public void The_cpu_history_is_private_to_root()
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "file modes are Linux's: run in WSL or on the Linux legs");
-        AgentCpuHistory.Write(_sandbox.Paths, _sandbox.Files, AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new SuspectSample(10, 1, 5, 0, 1000)], At(TimeSpan.Zero))).Should().BeEmpty();
+        AgentCpuHistory.Write(_sandbox.Paths, _sandbox.Files, AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new PidSample(10, 1, 5, 0, 1000)], At(TimeSpan.Zero))).Should().BeEmpty();
 
         if (OperatingSystem.IsLinux())
         {

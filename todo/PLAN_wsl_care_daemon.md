@@ -2240,6 +2240,25 @@ agents*. **Deviations from the text above:**
   `00-00-00` file of YESTERDAY whose earlier file is two days old (not listed) reads as a start — the only way it can invent one.
 - **Windows:** the block answers unavailable with "the Windows binary has no process collector yet (E11)"; a CLI test holds it.
 
+##### E7.S2d code round (coai session `7f843e99`, 2026-10-06) and an own review
+
+**coai:** verdict **proceed**, 4 of 4 reviewers answered (codex), 6 findings: 5 ACCEPTED, 1 rejected. **Own review** (one
+Opus reviewer, read-only, run at the same time): no Blocking, 1 Major, 3 Minor. Each fix RED first, then green, then its line
+broken and seen red again (`research/module_tests.md` § *MCP server instances*).
+
+| # | Finding | Disposition |
+|---|---|---|
+| coai 0 (Major) | the starts basis an untyped string in the model | **Fixed** — `McpStartsBasis` an enum; the wire name given at the edge (`McpServerReport.BasisName`); JSON unchanged |
+| coai 1 (Major) | the collector depends on the Actions layer (`SuspectTermination.Sample`, `RunningState.StartTolerance`) | **Fixed by extraction** — `Collectors/Procfs/PidSamples` (the record `PidSample`, `Read`, `StartTolerance`); A11, A18's history, the shared signal path and the MCP collector all use it; A11/A18 tests unchanged and green |
+| coai 2 (Major) | `Directory.Exists` answers false for a folder it may not traverse — an unreadable log root read as "no logs, 0 starts" | **Fixed** — `McpRunLogs.Present` walks down from the home with the bounded listing: unreadable or cut = unavailable, only a whole listing without the folder = absent. RED: *Expected starts.Count.IsAvailable to be False … but found True* |
+| coai 3 (Major) | past `mcpServers.maxInstances` the idle / busy counts covered the listed ones only, unsaid | **Fixed** — the verdict says "CPU, idle and busy figures over the N listed: mcpServers.maxInstances", the text line "of the N listed". RED: the value lacked it |
+| coai 4 (Minor) | each instance scanned every log entry | **Fixed** — `McpLogs.ByPid`, grouped once |
+| coai 5 (Minor) | status blocks silently for the window | **Rejected** — 1 s by default, at most 5 s, only when a server runs; a stderr line would land in the extension's log on every poll; the wait is in the contract (`limits`), the README and Q-M5 |
+| own M1 (Major) | the start was computed as now − age with a now taken AFTER the window: a 3 s window moved it past the log's name and the instance lost its own log | **Fixed** — `McpJudge` takes `agesAt`, read before the window. RED: *Expected instance.LastLogWrite.IsAvailable to be True … but found False* |
+| own m1 (Minor) | the live-start rule applied to ANY process at the pid, so a reused pid could invent a start | **Fixed** — only a live process that is this server; else the dead-pid rule. RED with the fixture's file inside the window (its first version passed for the wrong reason: the file was outside the window) |
+| own m2 (Minor) | a missing or unseen log root = a measured zero | **Covered by coai 2** for the unseen case; a root a WHOLE listing shows absent stays 0 starts — that is a measurement, not a guess |
+| own m3 (Minor) | a link swapped in between the lstat checks and the listing (inherited from A18's listing) | **Residual, recorded** — only `coai-mcp-HH-mm-ss-pid.log` names are kept, nothing is opened, the listing is capped; the full fix is a descriptor-based listing (`openat` + `O_NOFOLLOW` + `O_DIRECTORY`) for every `SessionGlob` user, a story of its own |
+
 #### Stories
 
 | # | Story | Files (verified above) | Acceptance | Model, reviews |

@@ -15,7 +15,11 @@ public sealed record McpLogFile(int Pid, DateTimeOffset NamedAt, DateTimeOffset 
 }
 
 /// <summary>A server's run logs of today and yesterday (UTC).</summary>
-public sealed record McpLogs(string Root, IReadOnlyList<McpLogFile> Files);
+public sealed record McpLogs(string Root, IReadOnlyList<McpLogFile> Files)
+{
+    /// <summary>The files grouped by pid once (coai code round finding 4): an instance's activity is a lookup, not a scan.</summary>
+    public ILookup<int, McpLogFile> ByPid { get; } = Files.ToLookup(f => f.Pid);
+}
 
 /// <summary>
 /// Reads a server's run logs per the family logging contract (<see cref="McpLogLayout.FamilyRunLogs"/>): the day folders of
@@ -41,15 +45,49 @@ public static class McpRunLogs
         }
 
         var root = AgentCatalogue.LinuxFolder("~/" + layout.UnderHome, home);
-        return !files.DirectoryExists(root) ? Reading.Of(new McpLogs(root, []))
-            : AgentWalk.PlaceProblem(files, home, root) is { Length: > 0 } problem ? Reading.Missing<McpLogs>($"{root} is {problem}")
-            : List(files, root, layout, now, settings, clock, cancellationToken);
+        var started = clock.GetTimestamp();
+        var bounds = new ListingBounds(settings.MaxLogEntries, () => clock.GetElapsedTime(started) >= settings.LogListBudget, cancellationToken);
+        return Present(files, home, layout.UnderHome, bounds) switch
+        {
+            Reading<bool>.Available { Value: false } => Reading.Of(new McpLogs(root, [])),
+            Reading<bool>.Available when AgentWalk.PlaceProblem(files, home, root) is { Length: > 0 } problem => Reading.Missing<McpLogs>($"{root} is {problem}"),
+            Reading<bool>.Available => List(files, root, layout, now, settings, bounds),
+            var unknown => Reading.Missing<McpLogs>($"whether {root} exists cannot be told: {unknown.ReasonOrEmpty}"),
+        };
     }
 
-    private static Reading<McpLogs> List(IFileSystem files, string root, McpLogLayout.FamilyRunLogs layout, DateTimeOffset now, McpSettings settings, TimeProvider clock, CancellationToken cancellationToken)
+    /// <summary>Whether the log root exists, walked down from the home with the BOUNDED listing (coai code round finding 2):
+    /// <c>Directory.Exists</c> answers false for a folder it may not traverse, which read as "no logs, no starts". A folder that
+    /// cannot be listed — or is cut short — is no answer; only a whole listing without the next folder is "absent".</summary>
+    private static Reading<bool> Present(IFileSystem files, string home, string underHome, ListingBounds bounds)
     {
-        var started = clock.GetTimestamp();
-        var listing = new SessionListing(files, new HashSet<string>(StringComparer.Ordinal), () => clock.GetElapsedTime(started) >= settings.LogListBudget, cancellationToken)
+        var at = home;
+        foreach (var part in underHome.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var step = Step(files.ListEntries(at, bounds), part, at);
+            if (step is not Reading<bool>.Available { Value: true })
+            {
+                return step;
+            }
+
+            at = AgentCatalogue.LinuxFolder("~/" + part, at);
+        }
+
+        return Reading.Of(true);
+    }
+
+    /// <summary>One level: true = the next folder is there, false = a whole listing without it, missing = no answer.</summary>
+    private static Reading<bool> Step(EntryListing listing, string part, string folder) => listing switch
+    {
+        EntryListing.Listed { Complete: true } whole => Reading.Of(whole.Entries.Any(e => e.Name == part)),
+        EntryListing.Listed cut => Reading.Missing<bool>($"{folder} was not listed to its end: {cut.Note}"),
+        EntryListing.Unreadable unreadable => Reading.Missing<bool>(unreadable.Reason),
+        _ => throw new System.Diagnostics.UnreachableException("EntryListing is a closed set"),
+    };
+
+    private static Reading<McpLogs> List(IFileSystem files, string root, McpLogLayout.FamilyRunLogs layout, DateTimeOffset now, McpSettings settings, ListingBounds bounds)
+    {
+        var listing = new SessionListing(files, new HashSet<string>(StringComparer.Ordinal), bounds.OutOfTime, bounds.Token)
         {
             Device = files.DeviceOf(root),
             MaxEntries = settings.MaxLogEntries,

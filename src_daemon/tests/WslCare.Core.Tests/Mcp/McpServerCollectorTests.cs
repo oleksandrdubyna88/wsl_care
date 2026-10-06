@@ -52,9 +52,9 @@ public sealed class McpServerCollectorTests : IDisposable
     /// <summary>The embedded defaults — what the product runs under with no layer.</summary>
     private static EffectiveConfig Defaults() => Configured();
 
-    private McpSample Sample(Func<TimeSpan, CancellationToken, Task>? wait = null, EffectiveConfig? config = null)
+    private McpSample Sample(Func<TimeSpan, CancellationToken, Task>? wait = null, EffectiveConfig? config = null, IFileSystem? files = null, TimeProvider? clock = null)
     {
-        var collector = new McpServerCollector(_tree.Files, _tree.Paths, new FixedTimeProvider(Now), wait ?? ((_, _) => Task.CompletedTask));
+        var collector = new McpServerCollector(files ?? _tree.Files, _tree.Paths, clock ?? new FixedTimeProvider(Now), wait ?? ((_, _) => Task.CompletedTask));
         var result = collector.SampleAsync(Reading.Of(Snapshot()), config ?? Defaults(), CancellationToken.None).GetAwaiter().GetResult();
         return result.Should().BeOfType<Reading<McpSample>.Available>().Subject.Value;
     }
@@ -266,6 +266,95 @@ public sealed class McpServerCollectorTests : IDisposable
         starts.Count.ReasonOrEmpty.Should().Contain("incomplete");
     }
 
+    /// <summary>A folder the process may not traverse: <c>Directory.Exists</c> answers false for it and for everything below it (as
+    /// the real one does on EACCES), its bounded listing is unreadable.</summary>
+    private sealed class Untraversable(IFileSystem inner, string folder) : DelegatingFileSystem(inner), IFileSystem
+    {
+        public override bool DirectoryExists(string path) => !AtOrBelow(path) && base.DirectoryExists(path);
+
+        public override IReadOnlyList<FileEntry> ListEntries(string path) => AtOrBelow(path) ? [] : base.ListEntries(path);
+
+        EntryListing IFileSystem.ListEntries(string path, ListingBounds bounds) =>
+            AtOrBelow(path) ? new EntryListing.Unreadable($"{path}: permission denied") : Inner.ListEntries(path, bounds);
+
+        private bool AtOrBelow(string path)
+        {
+            var full = Path.GetFullPath(path);
+            var root = Path.GetFullPath(folder);
+            return full.Equals(root, StringComparison.OrdinalIgnoreCase) || full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || full.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void An_untraversable_log_root_makes_the_starts_unavailable_never_zero()
+    {
+        // coai code round finding 2: Directory.Exists answers false for a folder it cannot traverse, and the log root then read
+        // as "no logs" — 0 starts, mcp.starts ok — during a storm nobody could see.
+        for (var i = 0; i < 12; i++)
+        {
+            Log(1000 + i, Now - TimeSpan.FromSeconds(10 + i), Now);
+        }
+
+        var files = new Untraversable(_tree.Files, _tree.Paths.DistroPath("/home/me/.local/share/coai-mcp"));
+
+        var starts = Sample(files: files).Servers.Single().Starts;
+
+        starts.Count.IsAvailable.Should().BeFalse("a log root that could not be reached is no count — not zero starts");
+        starts.Count.ReasonOrEmpty.Should().Contain("permission denied");
+    }
+
+    [Fact]
+    public void Figures_over_a_capped_list_say_they_cover_only_the_listed_instances()
+    {
+        // coai code round finding 3: with more instances than mcpServers.maxInstances, the idle and busy counts covered the
+        // listed ones only while the count covered all — the verdict must say so.
+        Session(200, 300, TimeSpan.FromHours(1));
+        Session(210, 310, TimeSpan.FromHours(1));
+        var config = Configured(("mcpServers", "{\"maxInstances\": 1}"));
+
+        var sample = Sample(config: config);
+        var verdict = McpVerdicts.From(Reading.Of(sample), config).Single(v => v.Id == McpVerdicts.Instances);
+
+        sample.Count.Should().Be(2);
+        sample.Instances.Should().HaveCount(1);
+        verdict.Value.Should().Contain("over the 1 listed");
+    }
+
+    [Fact]
+    public void A_long_cpu_window_does_not_move_the_process_start_its_log_is_still_its_own()
+    {
+        // Own review M1: the start was computed as now − age with a now taken AFTER the window, so a 3 s window moved the start
+        // past the log's name and the instance lost its own log — busy, never busy without activity.
+        Session(200, 300, TimeSpan.FromHours(1));
+        Log(300, Now - TimeSpan.FromHours(1), Now - TimeSpan.FromMinutes(15));
+        var clock = new ManualTimeProvider(Now);
+        var burn = Burn(300);
+
+        var instance = Sample(
+            wait: (window, token) =>
+            {
+                clock.Advance(window);
+                return burn(window, token);
+            },
+            config: Configured(("mcpServers", "{\"cpuWindowMilliseconds\": 3000}")),
+            clock: clock).Instances.Single();
+
+        instance.LastLogWrite.IsAvailable.Should().BeTrue("the file named at the process's start is its own, whatever the window");
+        instance.Kind.Should().Be(McpKind.BusyWithoutActivity);
+    }
+
+    [Fact]
+    public void A_midnight_file_whose_pid_now_belongs_to_another_program_is_not_a_start()
+    {
+        // Own review m1: a dead server's run crossed midnight (a file yesterday and a 00-00-00 file today); its pid now belongs
+        // to an unrelated process started after midnight. That is a continuation, not a start.
+        _tree.Process(300, 1, "/a", 10, words: ["/usr/bin/sleep", "60"], startTicks: StartTicksFor(TimeSpan.FromMinutes(1)));
+        Log(300, Now.Date.AddMinutes(-3), Now.Date.AddSeconds(-1));
+        Log(300, new DateTimeOffset(Now.Date, TimeSpan.Zero), Now - TimeSpan.FromMinutes(2));
+
+        Sample().Servers.Single().Starts.Count.Should().Be(Reading.Of(1), "the run that began before midnight started once; its midnight segment is not a second start");
+    }
+
     [Fact]
     public void A_linked_log_root_is_not_listed()
     {
@@ -289,7 +378,7 @@ public sealed class McpServerCollectorTests : IDisposable
         var snapshot = Snapshot();
         var found = McpInstances.Find(snapshot.All, settings.Watched);
 
-        var summary = new McpJudge(settings, Now, snapshot.All).Summary(noLogs, found.Instances, Reading.Missing<McpLogs>(McpRunLogs.NoLayout("coai-mcp")));
+        var summary = new McpJudge(settings, Now, Now, snapshot.All).Summary(noLogs, found.Instances, Reading.Missing<McpLogs>(McpRunLogs.NoLayout("coai-mcp")));
 
         summary.Starts.Count.Should().Be(Reading.Of(1), "one live instance is younger than the 10-minute window");
         summary.Starts.Basis.Should().Be(McpStartsBasis.LiveYounger);
@@ -306,8 +395,8 @@ public sealed class McpServerCollectorTests : IDisposable
         var process = WslCare.Core.Tests.Actions.UserWorld.Process(300, Coai) with { Age = Reading.Of(TimeSpan.FromMinutes(ageMinutes)) };
         var lastWrite = expected == McpKind.BusyWithoutActivity ? Now - TimeSpan.FromMinutes(11) : Now;
 
-        new McpJudge(settings, Now, [process]).Kind(process, Reading.Of(cpuPercent), Reading.Of(lastWrite)).Should().Be(expected);
-        new McpJudge(settings, Now, [process]).Kind(process, Reading.Missing<double>("gone"), Reading.Of(lastWrite)).Should().Be(McpKind.Unknown);
+        new McpJudge(settings, Now, Now, [process]).Kind(process, Reading.Of(cpuPercent), Reading.Of(lastWrite)).Should().Be(expected);
+        new McpJudge(settings, Now, Now, [process]).Kind(process, Reading.Missing<double>("gone"), Reading.Of(lastWrite)).Should().Be(McpKind.Unknown);
     }
 
     [Fact]

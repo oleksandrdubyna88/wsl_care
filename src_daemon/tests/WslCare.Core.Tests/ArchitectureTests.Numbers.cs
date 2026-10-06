@@ -34,7 +34,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Actions/Engine/IdleGate.cs: Take(3)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
         ["WslCare.Core/Actions/Engine/IdleGate.cs: Take(4)"] = "an argv heuristic: how many leading words name the program, a property of the command line",
         ["WslCare.Core/Actions/Engine/RequestSweep.cs: TimeSpan.FromMinutes(1)"] = "a text format: an age under a minute is shown in seconds",
-        ["WslCare.Core/Actions/Engine/RunningState.cs: StartTolerance"] = "the kernel's start-time resolution (a 10 ms tick from the boot time) — a measurement tolerance",
+        ["WslCare.Core/Collectors/Procfs/PidSamples.cs: StartTolerance"] = "the kernel's start-time resolution (a 10 ms tick from the boot time) — a measurement tolerance",
         ["WslCare.Core/Actions/JournalVacuum.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Actions/Memory/CacheDrop.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Actions/PackageCaches/PackageCacheClean.cs: Take(60)"] = "a display truncation: how many entries one sentence quotes, not how much is done",

@@ -2403,6 +2403,8 @@ flowchart LR
   catalogue server's; its owner is the first ancestor of the `ai-agents` family that `AgentProcesses.AgentOf` attributes to
   one catalogue agent (the attribution A18 uses, extracted from it), else `orphaned` when the process was re-parented (the
   product's own orphan rule); a server under a live non-agent process is only counted (`notUnderAgent`).
+- **The per-pid sampler** is `Collectors/Procfs/PidSamples` (extracted from A11 by the coai code round): A11, A18's history and
+  the MCP collector read a pid's start, CPU ticks, terminal and owner through it; its `StartTolerance` is the run state's too.
 - **CPU** is measured, never the lifetime average: 100 × (Δticks ÷ ticks per second) ÷ the longer of the window and the
   elapsed time; a pid gone or reused across the window is `unknown`, never 0. No wait when no instance runs.
 - **Activity and starts** come from the server's log layout (`McpLogLayout.FamilyRunLogs`, the family logging contract):
