@@ -1,4 +1,4 @@
-# WSL Care
+# AI OS Care
 
 **Preview.** A read-only view of what the `wsl-care` daemon measures inside WSL: memory, swap, disk, containers, the
 biggest holders and what each cleanup would free — in the status bar and in a side panel. **Windows with WSL only**; the
@@ -8,7 +8,7 @@ daemon is installed separately, inside the distribution (the panel's **Install d
 
 - **The status bar** — `WSL RAM <used>% · swap <x>G · <n> containers`, coloured by the worst memory or kernel warning
   the daemon reports; "WSL stopped" when the distribution is not running. A click opens the panel.
-- **The panel** (the *WSL Care* icon in the activity bar) — Memory, Top holders, Swap, Disk, Folders, Containers,
+- **The panel** (the *AI OS Care* icon in the activity bar) — Memory, Top holders, Swap, Disk, Folders, Containers,
   Container starts, Cleanup (what each cleanup would free, read-only), Health. A figure the daemon could not read says
   why ("unavailable — reason"); a row this version cannot fill yet says so; nothing is shown as a made-up 0.
 
@@ -25,7 +25,7 @@ daemon is installed separately, inside the distribution (the panel's **Install d
 ## Install the daemon
 
 The extension shows what the daemon reports; the daemon itself is installed in the distribution by its release's
-`install.sh`. When the panel says *daemon not installed*, **Install daemon** (also *WSL Care: Install daemon…* in the
+`install.sh`. When the panel says *daemon not installed*, **Install daemon** (also *AI OS Care: Install daemon…* in the
 command palette) shows the exact command and what the distribution needs, then opens a terminal in that distribution
 with the command **typed but not run** — you read it and press Enter:
 

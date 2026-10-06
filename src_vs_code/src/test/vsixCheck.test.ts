@@ -172,8 +172,8 @@ test('the ZIP reader refuses what it cannot read safely: a climbing name, an abs
 });
 
 test('the packaged .vsix, when one is present here, is read by the reader and passes the checks (the real artefact)', (t) => {
-  const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8')) as { version: string };
-  const vsix = path.join(EXTENSION_ROOT, `wsl-care-${manifest.version}.vsix`);
+  const manifest = JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8')) as { name: string; version: string };
+  const vsix = path.join(EXTENSION_ROOT, `${manifest.name}-${manifest.version}.vsix`);
   if (!fs.existsSync(vsix) || fs.statSync(vsix).mtimeMs < fs.statSync(BUNDLE).mtimeMs) {
     t.skip('no .vsix newer than the bundle — `npm run package` then `npm run check:vsix` checks the real artefact (CI does both)');
     return;

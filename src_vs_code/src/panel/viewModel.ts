@@ -99,5 +99,5 @@ function actions(snapshot: Snapshot): PanelView['actions'] {
 }
 
 export function buildPanelView(snapshot: Snapshot): PanelView {
-  return { heading: `WSL Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot) };
+  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot) };
 }

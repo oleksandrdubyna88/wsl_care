@@ -143,16 +143,16 @@ jobs:
         run: |
           set -euo pipefail
           npm run package
-          test -f "wsl-care-$VERSION.vsix"
+          test -f "ai-os-care-$VERSION.vsix"
           mkdir -p ../release-extension
-          mv "wsl-care-$VERSION.vsix" ../release-extension/
-          (cd ../release-extension && sha256sum "wsl-care-$VERSION.vsix" > "wsl-care-$VERSION.vsix.sha256")
+          mv "ai-os-care-$VERSION.vsix" ../release-extension/
+          (cd ../release-extension && sha256sum "ai-os-care-$VERSION.vsix" > "ai-os-care-$VERSION.vsix.sha256")
 
       # The ARTEFACT, not the source: exactly the allowlist, no machine path / user name / e-mail / source map, the build
       # stamp equal to the version, (--release) a real publisher, and (--min-daemon) the minimum this .vsix renders and
       # installs equal to the one the guard found published and verified.
       - name: Leak checks on the .vsix
-        run: node scripts/check-vsix.mjs "../release-extension/wsl-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON"
+        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON"
 
       - name: The asset set
         run: bash ../.github/scripts/verify-extension-assets.sh "$VERSION" ../release-extension
@@ -193,7 +193,7 @@ jobs:
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: from-build/wsl-care-${{ needs.guard.outputs.version }}.vsix
+          subject-path: from-build/ai-os-care-${{ needs.guard.outputs.version }}.vsix
 
   github-draft:
     name: release · extension · github draft
@@ -250,7 +250,7 @@ jobs:
           set -euo pipefail
           gh release download "$GITHUB_REF_NAME" --dir from-release
           bash .github/scripts/verify-extension-assets.sh "$VERSION" from-release
-          cmp "from-build/wsl-care-$VERSION.vsix" "from-release/wsl-care-$VERSION.vsix" || {
+          cmp "from-build/ai-os-care-$VERSION.vsix" "from-release/ai-os-care-$VERSION.vsix" || {
             echo "::error::the release holds another .vsix than this run built — a 'Re-run all jobs' rebuilds it, and bytes on a release are never replaced. Re-run FAILED jobs only (docs/repo-settings.md, Cutting extension-v…)"
             exit 1
           }
@@ -270,7 +270,7 @@ jobs:
         shell: bash
     env:
       VERSION: ${{ needs.guard.outputs.version }}
-      EXTENSION_ID: ${{ needs.guard.outputs.publisher }}.wsl-care
+      EXTENSION_ID: ${{ needs.guard.outputs.publisher }}.ai-os-care
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -318,7 +318,7 @@ jobs:
             echo "::error::VSCE_PAT is not set in the marketplace Environment — docs/repo-settings.md, step 9"
             exit 1
           fi
-          node src_vs_code/node_modules/@vscode/vsce/vsce publish --packagePath "from-build/wsl-care-$VERSION.vsix"
+          node src_vs_code/node_modules/@vscode/vsce/vsce publish --packagePath "from-build/ai-os-care-$VERSION.vsix"
 
       # Bounded: the Marketplace validates a new version for some minutes before it serves it. A timeout here leaves the
       # release a draft; re-running this job skips the publish (above) and waits again.
@@ -366,7 +366,7 @@ jobs:
           set -euo pipefail
           gh release download "$GITHUB_REF_NAME" --dir from-release
           bash .github/scripts/verify-extension-assets.sh "$VERSION" from-release
-          cmp "from-build/wsl-care-$VERSION.vsix" "from-release/wsl-care-$VERSION.vsix" || {
+          cmp "from-build/ai-os-care-$VERSION.vsix" "from-release/ai-os-care-$VERSION.vsix" || {
             echo "::error::the draft holds another .vsix than the attested build of this run — nothing is made public. Re-run FAILED jobs only (docs/repo-settings.md, Cutting extension-v…)"
             exit 1
           }

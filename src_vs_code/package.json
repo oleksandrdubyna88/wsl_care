@@ -1,9 +1,9 @@
 {
-  "name": "wsl-care",
-  "displayName": "WSL Care",
+  "name": "ai-os-care",
+  "displayName": "AI OS Care",
   "description": "Shows what the wsl-care daemon measures inside WSL — memory, swap, disk, containers and the cleanup candidates — read-only. Windows with WSL only; the daemon is installed separately.",
   "version": "0.0.0",
-  "publisher": "publisher-tbd",
+  "publisher": "remsoftdev",
   "preview": true,
   "license": "MIT",
   "icon": "media/icon.png",
@@ -55,7 +55,7 @@
       "activitybar": [
         {
           "id": "wslCare",
-          "title": "WSL Care",
+          "title": "AI OS Care",
           "icon": "media/wsl-care.svg"
         }
       ]
@@ -65,7 +65,7 @@
         {
           "type": "webview",
           "id": "wslCare.panel",
-          "name": "WSL Care"
+          "name": "AI OS Care"
         }
       ]
     },
@@ -73,23 +73,23 @@
       {
         "command": "wslCare.openPanel",
         "title": "Open the panel",
-        "category": "WSL Care"
+        "category": "AI OS Care"
       },
       {
         "command": "wslCare.refresh",
         "title": "Refresh",
-        "category": "WSL Care",
+        "category": "AI OS Care",
         "icon": "$(refresh)"
       },
       {
         "command": "wslCare.startWsl",
         "title": "Start WSL and check",
-        "category": "WSL Care"
+        "category": "AI OS Care"
       },
       {
         "command": "wslCare.installDaemon",
         "title": "Install daemon…",
-        "category": "WSL Care"
+        "category": "AI OS Care"
       }
     ],
     "menus": {
@@ -102,7 +102,7 @@
       ]
     },
     "configuration": {
-      "title": "WSL Care",
+      "title": "AI OS Care",
       "properties": {
         "wslCare.distro": {
           "type": "string",

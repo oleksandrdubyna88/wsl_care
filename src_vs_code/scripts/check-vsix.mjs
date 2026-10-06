@@ -13,7 +13,7 @@
  *      found published and verified.
  *
  *     node scripts/check-vsix.mjs [<file.vsix>] [--release] [--min-daemon <x.y.z>]
- *                                  (default: wsl-care-<version>.vsix; reads out/ and dist/ — compile and bundle first)
+ *                                  (default: <name>-<version>.vsix, both from package.json; reads out/ and dist/ — compile and bundle first)
  *
  * Exit 0 clean, 1 findings (each printed), 2 usage / missing inputs. The findings name the entry and the kind of leak;
  * a denied word itself is never printed.
@@ -49,8 +49,9 @@ if (minAt >= 0 && (released === undefined || !/^\d+\.\d+\.\d+$/.test(released)))
   fail("--min-daemon takes the release guard's x.y.z", 2);
 }
 const positional = args.filter((a, i) => a !== '--release' && a !== '--min-daemon' && (minAt < 0 || i !== minAt + 1));
-const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
-const vsix = positional[0] ?? join(ROOT, `wsl-care-${version}.vsix`);
+const { name, version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+// The file `vsce package` writes is <name>-<version>.vsix — read from the manifest, never retyped beside it.
+const vsix = positional[0] ?? join(ROOT, `${name}-${version}.vsix`);
 if (positional.length > 1 || !existsSync(vsix)) {
   fail(`usage: check-vsix.mjs [<file.vsix>] [--release] — ${vsix} does not exist (npm run package writes it)`, 2);
 }

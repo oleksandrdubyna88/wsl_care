@@ -48,17 +48,18 @@ const settings = manifest.contributes.configuration.properties;
 /** A Marketplace publisher id: lower-case letters, digits and dashes (the placeholder has the same shape). */
 const PUBLISHER_ID = /^[a-z0-9][a-z0-9-]*$/;
 
-test('identity: WSL Care, an x.y.z version (0.0.0 until release-please bumps it), a preview, MIT', () => {
-  assert.equal(manifest.name, 'wsl-care');
-  assert.equal(manifest.displayName, 'WSL Care');
+test('identity: AI OS Care, the permanent id ai-os-care (owner decision 2026-10-06), an x.y.z version (0.0.0 until release-please bumps it), a preview, MIT', () => {
+  assert.equal(manifest.name, 'ai-os-care');
+  assert.equal(manifest.displayName, 'AI OS Care');
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
   assert.equal(manifest.preview, true);
   assert.equal(manifest.license, 'MIT');
 });
 
-test('the publisher is a Marketplace id — the placeholder until the owner creates the real one (E5 live gate, step 1); a RELEASE refuses the placeholder (vsixCheck.test.ts, release-extension-guard.sh)', () => {
+test('the publisher is the owner\'s Marketplace publisher remsoftdev (E5 live gate, step 1, 2026-10-06) — never the placeholder a RELEASE refuses (vsixCheck.test.ts, release-extension-guard.sh)', () => {
   assert.match(manifest.publisher, PUBLISHER_ID);
-  assert.ok(manifest.publisher === PUBLISHER_PLACEHOLDER || !manifest.publisher.includes('tbd'), manifest.publisher);
+  assert.equal(manifest.publisher, 'remsoftdev');
+  assert.notEqual(manifest.publisher, PUBLISHER_PLACEHOLDER);
 });
 
 interface Listing {
@@ -180,7 +181,7 @@ const contributed = (manifest as unknown as { contributes: Contributions }).cont
 
 test('E5 contributes the read-only surface only: the panel view and four argument-free commands, no URI handler', () => {
   assert.deepEqual(contributed.commands.map((c) => c.command), ['wslCare.openPanel', 'wslCare.refresh', 'wslCare.startWsl', 'wslCare.installDaemon']);
-  assert.deepEqual(contributed.views.wslCare, [{ type: 'webview', id: 'wslCare.panel', name: 'WSL Care' }]);
+  assert.deepEqual(contributed.views.wslCare, [{ type: 'webview', id: 'wslCare.panel', name: 'AI OS Care' }]);
   assert.equal(contributed.viewsContainers.activitybar[0]?.id, 'wslCare');
   assert.ok(fs.existsSync(path.join(EXTENSION_ROOT, contributed.viewsContainers.activitybar[0]?.icon ?? '')), 'the activity-bar icon ships');
   assert.ok(manifest.activationEvents.every((e) => !e.startsWith('onUri')), 'no URI handler (plan §15f #2)');

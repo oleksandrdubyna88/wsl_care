@@ -93,7 +93,7 @@ jobs:
         run: npm test
 
       # vsce package runs vscode:prepublish (the bundle, stamped with package.json's version) and writes
-      # wsl-care-<version>.vsix — the universal package, the one file the leak checks then open.
+      # ai-os-care-<version>.vsix (<name>-<version> of package.json) — the universal package, the one file the leak checks then open.
       - name: Package the .vsix (vsce package)
         run: npm run package
 
@@ -103,7 +103,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: extension-vsix-${{ matrix.os }}
-          path: src_vs_code/wsl-care-*.vsix
+          path: src_vs_code/ai-os-care-*.vsix
           if-no-files-found: error
           retention-days: 14
 

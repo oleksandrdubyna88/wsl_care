@@ -73,13 +73,13 @@ export function installPrompt(distro: string): InstallPrompt {
 export async function installDaemon(deps: InstallDeps): Promise<InstallResult> {
   const target = await deps.target();
   if (target.kind !== 'terminal') {
-    deps.report(`WSL Care cannot open an install terminal: ${failureText(target).sentence}`);
+    deps.report(`AI OS Care cannot open an install terminal: ${failureText(target).sentence}`);
     return { kind: 'refused', failure: target };
   }
   if (!(await deps.confirm(installPrompt(target.distro)))) {
     return { kind: 'declined', distro: target.distro };
   }
-  const terminal = deps.openTerminal({ name: `WSL Care — install (${target.distro})`, shellPath: target.shellPath, shellArgs: [...target.shellArgs] });
+  const terminal = deps.openTerminal({ name: `AI OS Care — install (${target.distro})`, shellPath: target.shellPath, shellArgs: [...target.shellArgs] });
   terminal.show();
   terminal.sendText(INSTALL_COMMAND, false);
 

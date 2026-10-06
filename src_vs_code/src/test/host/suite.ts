@@ -210,7 +210,7 @@ const ELSEWHERE: readonly Scenario[] = [
     run: async (api) => {
       api.setFocused(true);
       await api.settled();
-      assert.equal(api.statusBar().text, 'WSL Care: Windows + WSL only');
+      assert.equal(api.statusBar().text, 'AI OS Care: Windows + WSL only');
       await vscode.commands.executeCommand('wslCare.openPanel');
       await until('the webview reported its rows', () => api.lastRendered() === FIELD_MAP.length);
       await api.settled();

@@ -158,10 +158,15 @@ Not a required check until it has reported on a pull request (a required check t
 
 **The publisher (browser, permanent).** Sign in at <https://marketplace.visualstudio.com/manage> with the Microsoft
 account that will own the extension and create a publisher. Its **id** is permanent and becomes part of the extension's
-identity (`<publisher>.wsl-care`); check first that the display name **WSL Care** is free (search the Marketplace) and
-that no extension `<id>.wsl-care` exists. Then put the id into `src_vs_code/package.json` (`"publisher"`) through a pull
-request — nothing else changes: the host scenarios and `POST_DEPLOY.md` item 6 read it from the manifest, and both
+identity (`<publisher>.ai-os-care`); check first that the display name **AI OS Care** is free (search the Marketplace)
+and that no extension `<id>.ai-os-care` exists. Then put the id into `src_vs_code/package.json` (`"publisher"`) through
+a pull request — nothing else changes: the host scenarios and `POST_DEPLOY.md` item 6 read it from the manifest, and both
 `release-extension-guard.sh` and `check-vsix.mjs --release` refuse the placeholder `publisher-tbd`.
+
+**Done 2026-10-06:** the owner created the publisher **`remsoftdev`** (display name *RemSoftDev*); `package.json` carries
+it, so the extension is **`remsoftdev.ai-os-care`**, displayed as **AI OS Care** (the owner's decision of the same day:
+the extension id `ai-os-care`, permanent; the daemon keeps the name `wsl-care`, the setting and command keys stay
+`wslCare.*`). The guard and `check-vsix.mjs --release` still refuse `publisher-tbd` — the repository no longer carries it.
 
 **The credential — what was checked, 2026-10-04 (plan §15g m9).** `vsce publish` takes either a Personal Access Token
 (`VSCE_PAT`) or, since vsce 3.x, `--azure-credential` (Microsoft Entra ID through `DefaultAzureCredential`). A Marketplace
@@ -280,7 +285,7 @@ assumed:
    and waits until the Marketplace serves it) → **github-public** (the draft compared with the attested build once more,
    then public).
 7. `POST_DEPLOY.md` items 3, 6 and 12 against the Marketplace build installed in VS Code
-   (`code --install-extension <publisher>.wsl-care`), then the stamp extended to `… · daemon 0.1.0 · extension 0.1.0`.
+   (`code --install-extension remsoftdev.ai-os-care`), then the stamp extended to `… · daemon 0.1.0 · extension 0.1.0`.
 
 **Every job is re-runnable with "Re-run FAILED jobs"** — it replays the same tag event and reuses the successful build's
 artifact. **Never "Re-run all jobs"**: it rebuilds, and a rebuilt `.vsix` is not byte-identical while the Marketplace may
@@ -293,6 +298,6 @@ next patch through release-please. **Never move or delete an `extension-v*` tag*
 
 **Rollback** never builds: install a previous version's `.vsix` from its GitHub release, its attestation verified first —
 `gh release download extension-v<previous> -R oleksandrdubyna88/wsl_care --pattern '*.vsix'`, then
-`gh attestation verify wsl-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml` (it must say the bytes were built by `release-extension.yml`), then
-`code --install-extension wsl-care-<previous>.vsix` — or ship the next patch. Every release keeps its `.vsix` (a release
+`gh attestation verify ai-os-care-<previous>.vsix --repo oleksandrdubyna88/wsl_care --signer-workflow oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml` (it must say the bytes were built by `release-extension.yml`), then
+`code --install-extension ai-os-care-<previous>.vsix` — or ship the next patch. Every release keeps its `.vsix` (a release
 asset does not expire, unlike a workflow artifact).
