@@ -32,7 +32,8 @@ internal static class DoctorCommand
             text.AppendLine(CommandLine.Printable($"  {check.State,-10} {check.Id}: {check.Detail}"));
         }
 
-        text.Append("versions: ").Append(string.Join(", ", report.Versions.Select(v => v.Available ? $"{v.Component} {v.Version}" : $"{v.Component} unknown")));
+        // Retro gate over PR #17: a version is what a tool ANSWERED (docker's daemon, systemd) — Printable like the checks above.
+        text.Append(CommandLine.Printable("versions: " + string.Join(", ", report.Versions.Select(v => v.Available ? $"{v.Component} {v.Version}" : $"{v.Component} unknown"))));
         return text.ToString();
     }
 }

@@ -220,7 +220,8 @@ What reaches the terminal is printable. `Cli.Output` is the one road from a verb
 on stdout; refusals, notes, internal errors and the interruption line on stderr — and every stderr
 message passes `CommandLine.Printable`, which replaces control characters, so a key typed with a
 newline or an escape sequence, a key read from the user's file, or a path in a refusal reason cannot
-split or repaint the line. The console sink, the one road for log lines, does the same to the message
+split or repaint the line; a verb that renders what a tool ANSWERED on stdout passes it through the same function
+(`doctor`'s checks and, since the retro gate over PR #17, its versions line). The console sink, the one road for log lines, does the same to the message
 it renders (and to each line of an exception) and keeps only its own colour escapes. `OutputRoadTests`
 fails the build on a stream write anywhere else in the CLI. The file sink writes values as they are.
 
