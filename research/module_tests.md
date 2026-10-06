@@ -693,9 +693,14 @@ its argv is parsed by the CLI's own `CommandLine.Parse` — the timer's service 
 is `OnCalendar` every 4 h with `Persistent=true`; no unit sets a sandbox directive that breaks a named action (its
 companion: the same scan finds `NoNewPrivileges`); `install.sh`'s `UNITS` line equals the folder's files; the machine
 layer loads VALID through the real `ConfigLoader` and sets nothing, and the example in its own comment loads valid as
-the machine layer (the one positive beside the negatives). `systemd-analyze verify` (CI, Linux legs) reads the units with
-systemd's parser and fails on any output — it exits 0 on an unknown key, observed in `ubuntu:24.04` (systemd 255) with
-a planted `Persistant=`.
+the machine layer (the one positive beside the negatives). Since daemon 0.1.1 every key of every unit, and of every drop-in
+`wsl-care units dropin` renders, must sit in the section systemd 255 reads it from (a key → man page table:
+systemd.unit(5), .service(5), .exec(5), .kill(5), .resource-control(5), .timer(5); a key not in it is refused until it is
+added with its page). `.github/scripts/verify-systemd-units.sh` (CI, Linux legs) reads EVERY file of the units folder
+with systemd's parser — a template through an instance name (`wsl-care-act@20000101T000000Z-1.service`), each unit with
+the drop-in the job's own Release build renders — and fails on any output: `systemd-analyze verify` exits 0 on an
+unknown key, observed in `ubuntu:24.04` (systemd 255) with a planted `Persistant=`, and again on 2026-10-06 with the
+0.1.0 template's `CollectMode=` under `[Service]` (below, *The act template's CollectMode*).
 
 ## The release pipeline's tests (E4.S2)
 
@@ -937,7 +942,7 @@ every accepted one is exactly `wsl-care-act@<yyyyMMddTHHmmssZ>-<pid>.service`, `
 --stop`). The BUILT CLI: `DetachFlows` (accepted → `act --request` records under the answered id; the timer's lock →
 `refused` recorded; a stale request swept by `collect`; no systemd → 69; a never-exiting child ended by its own ceiling;
 the request folder 0755 and the request 0644 under `umask 077`), `ShippedFilesTests` (the act template's `ExecStart`
-parsed by the CLI with `%i` = a run id, `TimeoutStartSec=infinity`, `CollectMode`, `SuccessExitStatus` = exactly the
+parsed by the CLI with `%i` = a run id, `TimeoutStartSec=infinity`, `CollectMode` in `[Unit]` (since 0.1.1), `SuccessExitStatus` = exactly the
 recorded answers, the hardening of the two root units EQUAL with a companion that reads every key), `Install*Flows` (the act
 unit installed and uninstalled with its instances stopped, the bounded wait refusing under `live` / `queued`, the rename,
 a request surviving an upgrade) and the golden `act-detach-accepted.json`.
@@ -1674,6 +1679,54 @@ folders were made outside the distro view).
 without its budget — 1; the explanation per key again — 1; the empty-answer check dropped (WSL) — 1. Each file restored
 byte-identical.
 
+### The act template's CollectMode, and the two gaps that let it ship (daemon 0.1.1, 2026-10-06)
+
+The live 0.1.0 install failed POST_DEPLOY item 7: `wsl-care-act@.service` carried `CollectMode=inactive-or-failed` under
+`[Service]`, systemd.unit(5) reads it in `[Unit]` only, and systemd 255 said so in the journal —
+`/etc/systemd/system/wsl-care-act@.service:46: Unknown key name 'CollectMode' in section 'Service', ignoring.` —
+while `systemctl show` gave `CollectMode=inactive`: a failed detached run stays in `systemctl --failed` and counts in
+`systemd.failedUnits`. Three things had let it through, each now a test:
+
+- **`ShippedFilesTests` enforced the defect** — it read the key in `[Service]`. Now
+  `The_detached_run_s_template_runs_its_instance_s_request_as_the_cli_parses_it` wants it in `[Unit]` and NOT in
+  `[Service]`; `Every_key_of_every_shipped_unit_sits_in_the_section_systemd_reads_it_from` and
+  `Every_key_of_every_drop_in_sits_in_the_section_systemd_reads_it_from` hold every key to its man page's section (every
+  OS), with `The_section_scan_reads_the_template_s_unit_section` as the companion.
+- **CI never read the template.** The `systemd-analyze verify` step named `wsl-care.service`, `.timer` and
+  `wsl-care-events.service` by hand (E4.S1); the template arrived in E6.S1 and joined `install.sh`'s `UNITS` and
+  `ShippedFiles.UnitNames`, never the step. `verify-systemd-units.sh` now reads the folder, a template through an
+  instance, with the built binary's drop-ins — `SystemdUnitVerifyFlows` (Linux legs, real `systemd-analyze`): the 0.1.0
+  template planted into the shipped text fails naming `wsl-care-act@.service:` and the key; a drop-in with an unknown key
+  fails naming `<unit>.d/50-wsl-care-config.conf`; a binary that cannot render a drop-in and an empty folder fail; valid
+  units with drop-ins pass and are named (skipped, with systemd's words, on a host whose own units a normal user cannot
+  read — WSL Ubuntu's root-only `netplan-ovs-cleanup.service` — where the CI step is the positive); the CI step runs the
+  script over `src_daemon/systemd` with the Release binary, after the build, and names no unit.
+- **POST_DEPLOY item 7 asserted nothing** — the checker runs a cell's FIRST code span, which was `systemctl cat` alone, so
+  the live run printed PASS. The audit of every automated item found three more that exit 0 regardless: item 1
+  (`systemctl is-active` of two units exits 0 when EITHER is active — observed, `active` / `inactive` / exit 0), item 5
+  (`doctor --json` exits 0 healthy or not), item 11 (an empty journal passed; the `memory peak` it printed does not exist
+  on systemd 255, whose line is `Consumed …s CPU time.`). Items 2, 6, 8, 9 and 12 end in an assertion already. Each
+  rewritten item is RUN by `PostDeployCommandFlows` (Linux legs) as the checker runs it — first span, `\|` unescaped,
+  `/bin/sh -c` — against a stand-in `wsl.exe` relaying to stand-in `systemctl` / `journalctl` / `wsl-care`: healthy
+  passes, every broken state named fails.
+
+**Red, observed before the fix:** `ShippedFilesTests` (Windows, Debug) — 3 failed: `Expected unit["Service"] … not to
+contain key "CollectMode" … but found it anyhow`; `Expected Unit("wsl-care-act@.service")["Unit"] to contain 3 item(s) …
+but found 2`; `Expected keys.Keys to be a subset of {…} because wsl-care-act@.service: every key of [Service] is one
+systemd reads in [Service] … but items {"CollectMode"} are not part of the superset`. In WSL as the normal user the old CI
+command over the three named units printed nothing about the template, and `verify-systemd-units.sh src_daemon/systemd`
+printed `src_daemon/systemd/wsl-care-act@.service:46: Unknown key name 'CollectMode' in section 'Service', ignoring.` and
+exited 1. `PostDeployCommandFlows` against the 0.1.0 `POST_DEPLOY.md` (WSL, Release) — 7 failed: item 1 with the timer or
+the follower inactive (`Did not expect result.Exit to be 0`), item 5 on `"healthy": false`, item 7 on `CollectMode=inactive`
+and on a `collect` without `--timer`, item 11 on an empty journal and on printing nothing for the run.
+**Green:** the unit fixed — `ShippedFilesTests` 18/18; the items rewritten — `PostDeployCommandFlows` and
+`SystemdUnitVerifyFlows` 19 passed, 1 skipped (the positive, for the netplan reason above); the script over the fixed
+folder with the WSL-built Release binary's drop-ins reported nothing but that host's netplan line. The rewritten item 7 run
+against the owner's live 0.1.0 install FAILS as it should: `wsl-care-act@: wants CollectMode=inactive-or-failed, systemd
+loaded: … CollectMode=inactive`; item 1 passes there (`wsl-care.timer and wsl-care-events.service active`).
+**Teeth:** the script made to skip `*@.*` files (the old list's blind spot) — `SystemdUnitVerifyFlows` 2 red (the template
+flow saw only the netplan line; the drop-in flow saw `no unit files`); the script restored byte-identical — green.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -2026,7 +2079,9 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `install.sh --dry-run` (install and uninstall): the prefix tree identical, no unit / package / binary call, every step printed, no root needed | covered (Linux legs) | `InstallFlows.Dry_run_changes_nothing_needs_no_root_and_prints_every_step` |
 | `install.sh --set-default-user <name>`: without the flag nothing written (advice printed); with it and no default, `[user] default=` appended and read back by the daemon's `TargetUserDiscovery.DefaultUser`; an existing default never rewritten; an unknown user or a `[user]` section without `default=` refused before anything; the installer's reader and the daemon's agree on ten wsl.conf shapes | covered (Linux legs) | `InstallDefaultUserFlows.Without_the_flag_wsl_conf_is_never_written…`, `…With_the_flag_and_no_default_user…`, `…With_the_flag_an_existing_default_user_is_never_rewritten`, `…The_flag_for_an_unknown_user…`, `…The_installer_and_the_daemon_read_the_same_default_user_from_every_wsl_conf_shape` |
 | `install.sh` preflight refusals: not root (the `sudo sh -s --` line, sudo never called), no systemd, an unknown architecture, a foreign `/usr/local/bin/wsl-care`, a hostile archive member (`..`, outside the folder, a link — each riding a complete release); arm64 installs the `linux-arm64` asset; an upgrade restarts the follower | covered (Linux legs) | `InstallFlows.A_non_root_run_is_refused…`, `…Without_systemd_running…`, `…On_arm64…`, `…A_wsl_care_on_the_link_path…`, `…An_archive_member_that_leaves_its_folder_or_is_a_link…`, `InstallUpgradeFlows.An_upgrade_restarts_the_running_follower…` |
-| the shipped units and machine layer: `ExecStart` argv parsed by the CLI (`collect --timer`, `events follow`), `SuccessExitStatus` = `ExitCode.Busy`, the timer's calendar, no breaking sandbox directive, `install.sh`'s unit list = the folder, the machine layer valid and empty | covered (every OS) | `ShippedFilesTests`; systemd's own parser: CI `systemd-analyze verify` (Linux legs) |
+| the shipped units and machine layer: `ExecStart` argv parsed by the CLI (`collect --timer`, `events follow`), `SuccessExitStatus` = `ExitCode.Busy`, the timer's calendar, no breaking sandbox directive, `install.sh`'s unit list = the folder, every key of every unit and drop-in in the section systemd reads it from (the act template's `CollectMode` in `[Unit]`), the machine layer valid and empty | covered (every OS) | `ShippedFilesTests`; systemd's own parser: CI `verify-systemd-units.sh` (Linux legs) |
+| the CI unit gate (`verify-systemd-units.sh`): every file of the folder read by `systemd-analyze verify`, a template through an instance, each unit with its rendered drop-in; any output fails (an unknown key, a key in the wrong section, a drop-in's key), a failed drop-in render and an empty folder fail; the workflow runs it over the folder with the built binary and names no unit | covered (Linux legs with `systemd-analyze`; the structural check on every OS) | `SystemdUnitVerifyFlows` |
+| POST_DEPLOY items 1, 5, 7, 11 as `post-deploy-check --target` runs them: each passes on the healthy installation and FAILS on the broken state it names (a unit not active, `"healthy": false`, `CollectMode=inactive`, a `collect` without `--timer`, an empty journal, an OOM kill, an AppArmor refusal) | covered (Linux legs; stand-in `wsl.exe` / `systemctl` / `journalctl` / `wsl-care`) | `PostDeployCommandFlows` |
 | `install.sh`'s pinned identity is this repository's attesting `release.yml` AT the release tag, and no command line of it uses `--signer-workflow` | covered (every OS) | `InstallAttestationFlows.The_identity_the_installer_pins_is_this_repositorys_attesting_release_workflow_at_the_release_tag`; `ReleaseWorkflowTests.The_release_scripts_agree_with_the_installer_on_what_a_version_is` (the identity's tag = the trigger) |
 | the release archive (`package-daemon.sh`, as `release.yml` runs it): per Linux RID exactly the members `install.sh`'s unpack loop requires plus their folders, regular files and folders only, owner 0:0, 0755 binary / 0644 units and machine layer byte for byte, the `.sha256` line `<hash>  <name>`; the Windows zip holds `wsl-care.exe` alone; a bad version / unknown RID / missing binary refused, nothing written | covered (Linux legs; the zip where 7-Zip is on `PATH`) | `PackageFlows.A_linux_archive_holds_exactly_what_install_sh_unpacks_as_regular_files_under_one_folder` (linux-x64, linux-arm64), `…The_windows_archive_holds_the_exe_alone_under_its_folder`, `…A_bad_version_an_unknown_rid_or_a_missing_binary_is_refused_and_nothing_is_written` |
 | `install.sh` installs the archive the release script packed (the packer and the installer agree, end to end) | covered (Linux legs) | `PackageFlows.The_installer_installs_the_archive_the_release_script_packed` |
@@ -2086,6 +2141,11 @@ The extension's own limits are listed in its section (§ *The extension* — *Wh
   `systemd-analyze verify` proves the files parse, not that a live run of every action succeeds under them. Two risks
   are named rather than tested (E4 review): a snap-packaged Docker under `NoNewPrivileges`, and a child killed at
   `MemoryMax=1G` — `POST_DEPLOY.md` #11 reads the journal for both on the live install.
+- **The POST_DEPLOY flows prove the COMMANDS, not the installation.** `PostDeployCommandFlows` runs each item against
+  stand-ins answering as systemd 255 and `doctor` were observed to answer on 2026-10-06; whether the owner's installation
+  is healthy is what running the file with `--target` says. The extraction mirrors the conventions checker's
+  `parseTable` / first-span rule rather than importing it (no Node in the C# harness); a change to that rule there would
+  not be seen here.
 - **The doctor wait is proved at 0 seconds** (`WSL_CARE_INSTALL_DOCTOR_SECONDS=0`): one attempt. The 2-minute wait for
   the follower's first marker on a live machine is not timed.
 
@@ -2224,7 +2284,8 @@ The extension's own limits are listed in its section (§ *The extension* — *Wh
 On every push to `main` and every pull request: `ci · daemon` (unconditional, no path filter) runs the
 three test executables and the shared smoke of the published AOT binary (`.github/scripts/smoke-daemon.sh`) on
 `ubuntu-24.04`, `ubuntu-24.04-arm` and `windows-latest` (the installer, packaging and release-script flows on the two
-Linux legs, and `systemd-analyze verify` of the units there); `ci · workflows` runs actionlint and shellcheck of
+Linux legs, and `verify-systemd-units.sh` there — `systemd-analyze verify` of every unit file, templates as instances,
+with the job's own drop-ins); `ci · workflows` runs actionlint and shellcheck of
 `install.sh` and `.github/scripts/`; `release.yml` runs the same three executables and the same smoke on every leg of a
 `daemon-v*` tag before anything is packed; `ci · family checks` runs the shared plan, pin, adapter
 and build-flags checks. `ci · extension` (unconditional, `windows-latest` and `ubuntu-24.04`, E5.S1) runs a clean `tsc`,

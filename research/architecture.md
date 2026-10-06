@@ -1285,7 +1285,7 @@ was first seen failing for the real symptom ([module_tests.md](module_tests.md) 
 
 `install.sh` (repository root, POSIX `sh`, `set -eu`, no `eval`, shellcheck-clean) is the install trust boundary:
 `curl … | sudo sh` runs it as root on the owner's distro. It installs what a release archive carries —
-`wsl-care-$VERSION-$RID.tar.gz` holding `wsl-care-$VERSION-$RID/` with `wsl-care`, `systemd/` (the three units of
+`wsl-care-$VERSION-$RID.tar.gz` holding `wsl-care-$VERSION-$RID/` with `wsl-care`, `systemd/` (every unit of
 `src_daemon/systemd/`) and `config/machine.json` (`src_daemon/config/machine.json`) — the layout E4.S2's release job
 packs (plan §15e #1).
 
@@ -1362,7 +1362,7 @@ it (`preflight`, `resolve-release`, `download`, `checksum`, `attestation`, `unpa
 are bounded by `DPkg::Lock::Timeout=300`; every other wait has one (`curl --max-time`, `timeout` around `gh`, `apt-get
 update`, `collect` and `doctor`).
 
-**Uninstall** stops and disables the timer and the follower, stops a running full run, removes the three units, the
+**Uninstall** stops and disables the timer and the follower, stops a running full run, removes the units (every loaded `wsl-care-act@*` instance stopped first), the
 binary, the link (only when it is the installer's) and the emptied `/opt/wsl-care`, and verifies the timer inactive and
 the files gone. It keeps `/var/lib/wsl-care`, `/var/log/wsl-care` and `/etc/wsl-care`; `--purge` names and removes
 exactly those and `/run/wsl-care.lock`. It never removes sysstat, atop, `/etc/wsl.conf` or a user's own layer.
@@ -1387,7 +1387,8 @@ unavailable, A4–A7 refused) while working from a terminal; Docker Desktop's CL
 README says what to do, `POST_DEPLOY.md` #11 checks the journal for it (and for an OOM kill at `MemoryMax`). None of it
 has been OBSERVED on a live systemd yet (E4's live install): it is a request to systemd until then, and the unit files
 say so. `ShippedFilesTests` keeps the breaking directives out; CI's
-`systemd-analyze verify` step reads the units with systemd's own parser.
+`verify-systemd-units.sh` step reads every unit file (templates as instances, with their drop-ins) with systemd's own
+parser.
 
 **The machine layer is deliberately empty** (`src_daemon/config/machine.json`: comments and `{}`), not a copy of the
 embedded defaults: a copy would freeze every default at the installed version, show every key as `(machine)` in `config
@@ -2246,8 +2247,10 @@ to systemd (plan §15j B2, M2, M4, M9; the coai E6 plan round §15k). Nothing he
   by the CLI's parse. `TimeoutStartSec=infinity` (a confirm is never time-killed as a whole — every command it starts has
   its own ceiling with a tree kill, §15k #0), `TimeoutStopSec=90` (both units, §15k #18), `SuccessExitStatus=3 75 76 78
   79 80` (the RECORDED answers — an action failed, a refusal recorded `refused`, a missing request — are not unit failures,
-  §15k #8), `CollectMode=inactive-or-failed` (a finished instance is unloaded, failed or not, so none lingers in
-  `systemctl --failed` — systemd's own mechanism standing for §15k #8's `reset-failed`), and the hardening of
+  §15k #8), and in `[Unit]` — the only section systemd.unit(5) reads it from — `CollectMode=inactive-or-failed` (a
+  finished instance is unloaded, failed or not, so none lingers in `systemctl --failed` — systemd's own mechanism
+  standing for §15k #8's `reset-failed`; daemon 0.1.0 had it under `[Service]`, where systemd 255 ignores it with a
+  warning, and the live install showed `CollectMode=inactive` — fixed in 0.1.1), and the hardening of
   `wsl-care.service` (`Nice`, `IOSchedulingClass`, `MemoryMax`, `NoNewPrivileges`, `KillMode`, `TimeoutStopSec`) —
   held EQUAL by `ShippedFilesTests` (§15k #9).
 - **`act --request <runId>`** (`DetachedRuns.FromRequest`, what the unit runs): no request → exit 80, a named no-op, no
@@ -2998,7 +3001,8 @@ the release builds on it and the Linux binaries link its glibc 2.39, plan §15 #
 `windows-latest` (`win-x64`) — every shipped binary-and-platform pair, per the family platform rule,
 mapped in the workflow header, and the same runner per RID as `release.yml` — each: restore → `dotnet format --verify-no-changes` → Release build →
 the three test executables (Core, CLI, Scenarios — since E4.S1 the Scenarios run `install.sh` end to end on the two
-Linux legs) → on Linux, `systemd-analyze verify` of the three units, failing on ANY output because it exits 0 on an
+Linux legs) → on Linux, `.github/scripts/verify-systemd-units.sh` — `systemd-analyze verify` of EVERY unit file, a template
+through an instance name, each with the drop-in the Release build renders — failing on ANY output because it exits 0 on an
 unknown key → Native AOT `dotnet publish -r <rid>` → `.github/scripts/smoke-daemon.sh` (since E4.S2 ONE script, which
 `release.yml` runs too, plan §15e #5): the
 published binary must list `--help`/`--version` and print the version in `src_daemon/version.txt` →
