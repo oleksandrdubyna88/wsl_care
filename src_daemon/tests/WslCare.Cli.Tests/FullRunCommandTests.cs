@@ -264,4 +264,29 @@ public sealed class FullRunCommandTests
     {
         public override void AppendLine(string path, string line, TimeSpan lockTimeout) => throw new IOException("read-only file system (test)");
     }
+
+    // Retro gate over PR #5 (code round, F3): a full run can spend minutes in Docker's disk figures and the folder walks, and
+    // said nothing until it ended — a person at a terminal could not tell working from stuck.
+    [Fact]
+    public void Collect_says_it_is_measuring_before_the_first_slow_command_starts()
+    {
+        using var sandbox = new SandboxHost("collect-progress");
+        var runner = Tools();
+        var host = Host(sandbox, sandbox.Files, runner, DockerFixture.CapturedAt);
+        var seen = new CommandsAtEachLogLine(runner);
+        using var logger = new Serilog.LoggerConfiguration().MinimumLevel.Information().WriteTo.Sink(seen).CreateLogger();
+
+        var (exit, _, stderr) = CliRun.Over(host, logger, CancellationToken.None, "collect", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        seen.Lines.Should().Contain(l => l.Message.Contains("measuring", StringComparison.Ordinal) && l.CommandsSoFar == 0,
+            "the note comes before Docker or any other tool is asked anything");
+    }
+
+    private sealed class CommandsAtEachLogLine(RecordingCommandRunner runner) : Serilog.Core.ILogEventSink
+    {
+        public List<(string Message, int CommandsSoFar)> Lines { get; } = [];
+
+        public void Emit(Serilog.Events.LogEvent logEvent) => Lines.Add((logEvent.RenderMessage(System.Globalization.CultureInfo.InvariantCulture), runner.Requests.Count));
+    }
 }

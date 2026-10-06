@@ -41,6 +41,9 @@ internal static class CollectCommand
             Signals = host.Signals,
             InterruptCause = host.InterruptCause,
         };
+        // Retro gate over PR #5: Docker's disk figures and the daily folder walks can take minutes, each under its own ceiling;
+        // the console log (stderr) says so before anything is asked, so working is never mistaken for stuck.
+        log.Information("collect: measuring; Docker's disk figures and the daily folder walks can take a few minutes, each bounded by its own ceiling");
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = CollectRun.RunAsync(context, cancellationToken).GetAwaiter().GetResult();
         Log(log, result);

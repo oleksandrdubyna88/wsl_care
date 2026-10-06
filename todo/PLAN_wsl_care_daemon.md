@@ -2408,6 +2408,16 @@ F2 (log retention under observe-only) was real at the merge and is already fixed
 to pin `dryRun = true`; the consultant preferred refusing a lossy repair outright (the person edits the file, or a future
 explicit `config repair`). Pinning keeps the panel able to repair; refusing never changes a setting the person did not name.
 
+### 17d. Retro gate over PR #5 (E2) — coai codex, 2026-10-06
+
+Plan round session `b69d827b` (1/1 reviewer, `proceed`, 2 findings, both rejected: the engine-restart mark was measured and
+its residuals are documented in `DockerEngineStart.cs`; `volume-seen.json` holds only anonymous volumes, whose names are
+random 64-hex ids). Code round (4/4 reviewers, `proceed`, 4 findings: 1 accepted, 3 rejected — the module docs live as
+sections of `research/architecture.md` since E1, an owner question; a `CliHost` test seam is no shipped defect; the
+inspect template emits only a mount's type and name, so no bind source is ever captured). The consultation for this round
+is OWED — the shared consult cap was reached. Fixed in `fix/wc-retro-pr5-collect-progress`: `collect` logs that it is
+measuring before the first tool is asked anything (a full run said nothing for minutes).
+
 ### 17f. Retro gate over PR #17 (E7, the daemon half) — coai codex, 2026-10-06
 
 Plan round session `2c1df544` (1/1 reviewer, `proceed`, 2 findings, both rejected: `wsl.exe -u root` asks no password by
