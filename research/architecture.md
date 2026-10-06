@@ -3044,6 +3044,51 @@ pinned by digest, `-x` to follow a sourced file — over `install.sh` (E4.S1) an
 a conventional-commit pull request title. `dependabot.yml` watches NuGet and GitHub Actions weekly,
 FluentAssertions held below 8.x.
 
+## Containers — the system on one page
+
+The parts that run, and what they talk to (added 2026-10-06 by the retro review of PR #2: the family's
+knowledge-base rule asks for one system-level container diagram; every other diagram in this file is the inside of
+one feature). The detail of each box is in its own section above and in [module_vs_code.md](module_vs_code.md).
+
+```mermaid
+flowchart LR
+    subgraph Windows["Windows host"]
+        ext["VS Code extension AI OS Care<br/>(src_vs_code, UI host)"]
+        wslexe["System32\\wsl.exe"]
+    end
+    subgraph Distro["WSL distribution (Ubuntu)"]
+        timer["wsl-care.timer"]
+        svc["wsl-care.service<br/>collect: measure, timer pass"]
+        events["wsl-care-events.service<br/>events follow"]
+        act["wsl-care-act@.service<br/>detached act"]
+        cli["/opt/wsl-care/bin/wsl-care<br/>Native AOT CLI"]
+        conf["/etc/wsl-care/config.json<br/>+ user layer"]
+        state["/var/lib/wsl-care<br/>history, run records, state"]
+        logs["/var/log/wsl-care<br/>one log file per run"]
+        os["procfs, cgroups, systemd, journal"]
+        docker["Docker Engine"]
+    end
+    subgraph GitHub["GitHub"]
+        rel["release.yml / release-extension.yml<br/>attested releases"]
+        market["VS Code Marketplace"]
+    end
+
+    ext -->|"read-only verbs, no shell"| wslexe
+    wslexe -->|"-d distro --exec"| cli
+    timer --> svc
+    svc --> cli
+    events --> cli
+    act --> cli
+    cli --> conf
+    cli --> state
+    cli --> logs
+    cli --> os
+    cli --> docker
+    rel -->|"install.sh verifies sha256 + attestation"| cli
+    rel --> market
+    market --> ext
+```
+
 ## Planned module map
 
 | Part | Where | Role | State |
