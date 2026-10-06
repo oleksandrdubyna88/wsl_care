@@ -32,16 +32,20 @@ except Exception as error:  # a missing, truncated or non-zip file - whatever zi
     print(f"compare-installed-extension: {vsix} is not a readable .vsix: {error}", file=sys.stderr)
     sys.exit(2)
 
+def member(info):
+    """One member read; an archive that opens but whose member does not read is unreadable too: exit 2, never 1 - a
+    difference - with a traceback. Only the read is guarded: every decompressor raises its own type (zlib, bz2, lzma,
+    a bad CRC, an encrypted member), while a defect of this script itself still surfaces as one."""
+    try:
+        return archive.read(info)
+    except Exception as error:
+        print(f"compare-installed-extension: {vsix} is not a readable .vsix: {info.filename}: {error}", file=sys.stderr)
+        sys.exit(2)
+
 attested = {}
-try:
-    for info in archive.infolist():
-        if info.filename.startswith(PREFIX) and not info.is_dir():
-            attested[info.filename[len(PREFIX):]] = archive.read(info)
-except Exception as error:  # every decompressor raises its own type (zlib, bz2, lzma, a bad CRC, an encrypted member)
-    # An archive that opens but whose member does not read is unreadable too: exit 2, never 1 - a "difference" - with a
-    # traceback. Any failure here is about the archive; nothing else runs inside this block.
-    print(f"compare-installed-extension: {vsix} is not a readable .vsix: {error}", file=sys.stderr)
-    sys.exit(2)
+for info in archive.infolist():
+    if info.filename.startswith(PREFIX) and not info.is_dir():
+        attested[info.filename[len(PREFIX):]] = member(info)
 if not attested:
     print(f"compare-installed-extension: {vsix} holds no extension/ files", file=sys.stderr)
     sys.exit(2)
