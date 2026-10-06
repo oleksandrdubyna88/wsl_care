@@ -288,4 +288,268 @@ public sealed class ReleaseExtensionScriptFlows
             result.Stdout.Should().Contain(says, what);
         }
     }
+
+    /// <summary>POST_DEPLOY item 12 — the Marketplace publish credential — RUN as post-deploy-check runs it (its own command,
+    /// read from the row, under <c>/bin/sh</c>) against each answer the <c>VSCE_PAT expires:</c> line may give. The owner's
+    /// decision of 2026-10-06 is a MANUAL upload with no stored token (docs/repo-settings.md, step 9): that answer passes, as
+    /// OIDC does and a PAT more than 30 days from expiry does; a PAT inside 30 days, the placeholder and a missing line fail.
+    /// The dates are derived from now at noon UTC, because the command itself asks <c>date</c>.</summary>
+    [Fact]
+    public async Task Post_deploy_item_12_passes_a_manual_upload_OIDC_or_a_PAT_valid_beyond_30_days_and_fails_anything_else()
+    {
+        Linux();
+        var row = File.ReadAllLines(Path.Combine(ReleaseFiles.Root, "POST_DEPLOY.md")).Single(l => l.StartsWith("| 12 |", StringComparison.Ordinal));
+        var command = PostDeployCommand(row);
+        var noon = DateTime.UtcNow.Date.AddHours(12);
+        var cases = new (string Line, bool Passes)[]
+        {
+            ("VSCE_PAT expires: none — manual upload (the owner uploads the attested .vsix by hand; docs/repo-settings.md, step 9)", true),
+            ("VSCE_PAT expires: none — OIDC", true),
+            ($"VSCE_PAT expires: {noon.AddDays(60):yyyy-MM-dd} (global PAT)", true),
+            // The boundary: the day is read as its UTC midnight and must lie MORE than 30 days after now — 31 days ahead
+            // passes at any hour, exactly 30 days ahead fails at any hour (even at 00:00:00, where it is equal, not more).
+            ($"VSCE_PAT expires: {noon.AddDays(31):yyyy-MM-dd} (global PAT)", true),
+            ($"VSCE_PAT expires: {noon.AddDays(30):yyyy-MM-dd} (global PAT)", false),
+            ($"VSCE_PAT expires: {noon.AddDays(10):yyyy-MM-dd} (global PAT)", false),
+            ("VSCE_PAT expires: none yet — recorded at the E5 live gate", false),
+            ("VSCE_PAT expires: none", false),
+            ("no credential line at all", false),
+        };
+
+        foreach (var (line, passes) in cases)
+        {
+            using var root = new TempRoot("post-deploy-12");
+            root.File("POST_DEPLOY.md", $"# Post-deploy checks\n\nTarget: x\n{line}\nLast verified: never\n");
+
+            var result = await ChildProcess.RunAsync("/bin/sh", ["-c", command], new Dictionary<string, string?>(), root.Path);
+
+            (result.Exit == 0).Should().Be(passes, $"item 12 over '{line}' (exit {result.Exit}): {result.Stderr}");
+        }
+    }
+
+    /// <summary>The first code span of a POST_DEPLOY row's Check cell — the command post-deploy-check runs — with the
+    /// table's escaped pipes restored.</summary>
+    private static string PostDeployCommand(string row)
+    {
+        var start = row.IndexOf('`', StringComparison.Ordinal);
+        var end = row.IndexOf('`', start + 1);
+        start.Should().BeGreaterThan(0, "the row carries a code span");
+        end.Should().BeGreaterThan(start, "the code span is closed");
+        return row[(start + 1)..end].Replace("\\|", "|", StringComparison.Ordinal);
+    }
+
+    /// <summary>The manual Marketplace route (owner decision 2026-10-06; docs/repo-settings.md, step 9) RUN, not only
+    /// structured: the three scripts of release-extension.yml's publish-marketplace job that the route rests on — the
+    /// "served?" query, the publish, the wait — taken from the workflow and run under bash as the runner runs them
+    /// (<c>bash -e -o pipefail</c>), with a fake vsce at the path the job calls (it checks its arguments, logs each call and
+    /// answers what the Marketplace would) and a fake <c>sleep</c> that fails, so a wait that does not end at once is red
+    /// rather than a 15-minute stall.
+    /// <list type="bullet">
+    /// <item>The owner uploaded the version by hand → "served" is true, so the publish step's <c>if:</c> (held by
+    /// ReleaseExtensionWorkflowTests) skips it, and the wait ends on its first query with no sleep.</item>
+    /// <item>Not uploaded yet → false; and the publish step itself, with the Environment holding no token (an unset secret
+    /// is an empty string), refuses naming <c>VSCE_PAT is not set</c> before asking vsce anything — the harmless failure of
+    /// an approval given before the upload.</item>
+    /// <item>vsce 4.0.0's <c>undefined</c> for an extension it does not know, and a list holding only another version → false.</item>
+    /// </list>
+    /// What it does not prove: GitHub's Environment approval, the real Marketplace, and github-public's gh calls.</summary>
+    [Fact]
+    public async Task The_manual_upload_route_finds_the_version_served_skips_the_publish_and_ends_the_wait_at_once()
+    {
+        Linux();
+        var steps = WorkflowShape.Steps(WorkflowShape.Jobs(WorkflowYaml.Load(ReleaseFiles.Workflow("release-extension.yml")))["publish-marketplace"].Map);
+        var servedScript = WorkflowShape.Run(steps.Single(s => s.Find("id")?.Text == "served"));
+        var publishScript = WorkflowShape.Run(steps.Single(s => WorkflowShape.Run(s).Contains("vsce/vsce publish", StringComparison.Ordinal)));
+        var waitScript = WorkflowShape.Run(steps.Single(s => WorkflowShape.Run(s).Contains("vsce show", StringComparison.Ordinal) && WorkflowShape.Run(s).Contains("seq", StringComparison.Ordinal)));
+        const string id = "remsoftdev.ai-os-care";
+
+        async Task<(ChildResult Result, string Output, string[] Calls, string[] Sleeps)> RunStep(string script, string answer, string? pat = null)
+        {
+            using var root = new TempRoot("manual-upload");
+            root.File("work/src_vs_code/node_modules/@vscode/vsce/vsce",
+                "const fs = require('fs');\n" +
+                "const args = process.argv.slice(2);\n" +
+                "fs.appendFileSync(process.env.FAKE_VSCE_LOG, args.join(' ') + '\\n');\n" +
+                "if (args.length !== 3 || args[0] !== 'show' || args[1] !== process.env.EXTENSION_ID || args[2] !== '--json') { console.error('fake vsce: unexpected ' + args.join(' ')); process.exit(97); }\n" +
+                "process.stdout.write(process.env.FAKE_VSCE_ANSWER + '\\n');\n");
+            var sleep = root.File("bin/sleep", "#!/bin/sh\necho \"$@\" >> \"$FAKE_SLEEP_LOG\"\nexit 99\n");
+            File.SetUnixFileMode(sleep, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            var output = root.File("github-output", string.Empty);
+            var calls = root.File("vsce.log", string.Empty);
+            var sleeps = root.File("sleep.log", string.Empty);
+            var env = new Dictionary<string, string?>
+            {
+                ["PATH"] = $"{Path.GetDirectoryName(sleep)}:{Environment.GetEnvironmentVariable("PATH")}",
+                ["VERSION"] = "0.1.0",
+                ["EXTENSION_ID"] = id,
+                ["GITHUB_OUTPUT"] = output,
+                ["FAKE_VSCE_ANSWER"] = answer,
+                ["FAKE_VSCE_LOG"] = calls,
+                ["FAKE_SLEEP_LOG"] = sleeps,
+                ["VSCE_PAT"] = pat,
+            };
+            var result = await ChildProcess.RunAsync("bash", ["-e", "-o", "pipefail", "-c", script], env, root.Under("work"));
+            return (result, File.ReadAllText(output), File.ReadAllLines(calls), File.ReadAllLines(sleeps));
+        }
+
+        const string uploaded = "{\"versions\":[{\"version\":\"0.0.9\"},{\"version\":\"0.1.0\"}]}";
+
+        var served = await RunStep(servedScript, uploaded);
+        served.Result.Exit.Should().Be(0, served.Result.Stderr);
+        served.Output.Should().Contain("served=true", "the hand-uploaded version is found — after a version that is not it");
+        served.Calls.Should().Equal($"show {id} --json");
+
+        foreach (var (answer, what) in new[] { ("{\"versions\":[{\"version\":\"0.0.9\"}]}", "another version only"), ("undefined", "vsce 4.0.0's answer for an unknown extension"), ("{\"versions\":[]}", "nothing served") })
+        {
+            var notServed = await RunStep(servedScript, answer);
+            notServed.Result.Exit.Should().Be(0, $"{what}: {notServed.Result.Stderr}");
+            notServed.Output.Should().Contain("served=false", what);
+        }
+
+        var wait = await RunStep(waitScript, uploaded);
+        wait.Result.Exit.Should().Be(0, $"the served version ends the wait: {wait.Result.Stdout}{wait.Result.Stderr}");
+        wait.Result.Stdout.Should().Contain("(attempt 1)");
+        wait.Calls.Should().HaveCount(1, "one query");
+        wait.Sleeps.Should().BeEmpty("no sleep when the version is already served");
+
+        var early = await RunStep(publishScript, uploaded, pat: string.Empty);
+        early.Result.Exit.Should().Be(1, "an approval before the upload reaches the publish with no token");
+        early.Result.Stdout.Should().Contain("VSCE_PAT is not set", "the refusal names its cause");
+        early.Calls.Should().BeEmpty("the refusal comes before vsce is asked anything");
+    }
+
+    /// <summary>The attested .vsix as a test builds it: <c>extension/…</c> members plus the root members vsce writes.</summary>
+    private static string Vsix(TempRoot root, IReadOnlyDictionary<string, string> extensionFiles)
+    {
+        var path = root.Under("attested/ai-os-care-0.1.0.vsix");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var zip = System.IO.Compression.ZipFile.Open(path, System.IO.Compression.ZipArchiveMode.Create);
+        foreach (var (name, content) in new Dictionary<string, string>(extensionFiles.Select(f => KeyValuePair.Create("extension/" + f.Key, f.Value)))
+        {
+            ["extension.vsixmanifest"] = "<PackageManifest/>",
+            ["[Content_Types].xml"] = "<Types/>",
+        })
+        {
+            using var writer = new StreamWriter(zip.CreateEntry(name).Open());
+            writer.Write(content);
+        }
+
+        return path;
+    }
+
+    /// <summary>The installed folder exactly as VS Code makes it from that .vsix (measured on an installed Marketplace
+    /// extension, 2026-10-06): the <c>extension/</c> files, plus <c>.vsixmanifest</c>, with <c>__metadata</c> written into
+    /// package.json.</summary>
+    private static string Installed(TempRoot root, IReadOnlyDictionary<string, string> extensionFiles)
+    {
+        var dir = root.Dir("installed/remsoftdev.ai-os-care-0.1.0");
+        foreach (var (name, content) in extensionFiles)
+        {
+            var text = name == "package.json"
+                ? content.TrimEnd().TrimEnd('}') + ",\n  \"__metadata\": { \"installedTimestamp\": 1, \"targetPlatform\": \"undefined\", \"size\": 2 }\n}\n"
+                : content;
+            root.File($"installed/remsoftdev.ai-os-care-0.1.0/{name}", text);
+        }
+
+        root.File("installed/remsoftdev.ai-os-care-0.1.0/.vsixmanifest", "<PackageManifest/>");
+        return dir;
+    }
+
+    /// <summary>coai code round 2 on the manual route (accepted): comparing <c>dist/extension.js</c> alone would pass a
+    /// Marketplace package whose package.json points <c>main</c> at an ADDED file. compare-installed-extension.sh compares
+    /// EVERY file of the attested .vsix with the installed folder and refuses anything extra, allowing only what VS Code
+    /// itself changes — the added <c>.vsixmanifest</c> and the <c>__metadata</c> it writes into package.json. One script,
+    /// called by the pre-approval step (docs/repo-settings.md step 9) and by POST_DEPLOY item 6.</summary>
+    [Fact]
+    public async Task The_installed_extension_must_equal_the_attested_vsix_file_by_file_apart_from_what_VS_Code_adds()
+    {
+        Linux();
+        var files = new Dictionary<string, string>
+        {
+            ["package.json"] = "{\n  \"name\": \"ai-os-care\",\n  \"main\": \"./dist/extension.js\"\n}\n",
+            ["dist/extension.js"] = "exports.activate = () => {};\n",
+            ["media/panel.js"] = "// panel\n",
+            ["readme.md"] = "# AI OS Care\n",
+        };
+
+        using (var root = new TempRoot("installed-same"))
+        {
+            var same = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [Vsix(root, files), Installed(root, files)], root.Path);
+            same.Exit.Should().Be(0, same.Stdout + same.Stderr);
+            same.Stdout.Should().Contain("is the attested build (4 files)");
+        }
+
+        var tampered = new (string What, Action<string> Tamper, string Says)[]
+        {
+            ("main pointed at an added file", dir =>
+                {
+                    File.WriteAllText(Path.Combine(dir, "package.json"), File.ReadAllText(Path.Combine(dir, "package.json")).Replace("./dist/extension.js", "./evil.js", StringComparison.Ordinal));
+                    File.WriteAllText(Path.Combine(dir, "evil.js"), "require('child_process');\n");
+                }, "package.json: differs"),
+            ("an added file alone", dir => File.WriteAllText(Path.Combine(dir, "evil.js"), "x\n"), "evil.js: in the installed folder, not in the attested .vsix"),
+            ("the bundle changed", dir => File.AppendAllText(Path.Combine(dir, "dist", "extension.js"), "x"), "dist/extension.js: different bytes"),
+            ("a media script changed", dir => File.AppendAllText(Path.Combine(dir, "media", "panel.js"), "x"), "media/panel.js: different bytes"),
+            ("a file missing", dir => File.Delete(Path.Combine(dir, "readme.md")), "readme.md: missing"),
+        };
+
+        foreach (var (what, tamper, says) in tampered)
+        {
+            using var root = new TempRoot("installed-tampered");
+            var vsix = Vsix(root, files);
+            var dir = Installed(root, files);
+            tamper(dir);
+
+            var result = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [vsix, dir], root.Path);
+
+            result.Exit.Should().Be(1, $"{what}:\n{result.Stdout}{result.Stderr}");
+            result.Stdout.Should().Contain(says, what);
+        }
+
+        using (var root = new TempRoot("installed-usage"))
+        {
+            var usage = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [root.File("not-a-zip.vsix", "x"), root.Dir("empty")], root.Path);
+            usage.Exit.Should().Be(2, "an unreadable .vsix is a usage error, never a pass: " + usage.Stderr);
+        }
+
+        // coai code round 3 (accepted): an archive that OPENS but whose entry fails to read (here a CRC mismatch: a stored
+        // entry's bytes changed after the archive was written) is unreadable too — exit 2, never 1 (a "difference") with a
+        // traceback.
+        using (var root = new TempRoot("installed-corrupt"))
+        {
+            var vsix = root.Under("corrupt.vsix");
+            using (var zip = System.IO.Compression.ZipFile.Open(vsix, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                using var writer = new StreamWriter(zip.CreateEntry("extension/dist/extension.js", System.IO.Compression.CompressionLevel.NoCompression).Open());
+                writer.Write("MARKER-MARKER-MARKER");
+            }
+
+            var bytes = File.ReadAllBytes(vsix);
+            var at = Encoding.ASCII.GetString(bytes).IndexOf("MARKER-MARKER-MARKER", StringComparison.Ordinal);
+            at.Should().BeGreaterThan(0, "the stored entry's bytes are in the file");
+            File.WriteAllBytes(vsix, [.. bytes[..at], (byte)'X', .. bytes[(at + 1)..]]);
+
+            var corrupt = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [vsix, root.Dir("installed")], root.Path);
+            corrupt.Exit.Should().Be(2, $"an entry that cannot be read is an unreadable .vsix:\n{corrupt.Stdout}{corrupt.Stderr}");
+            corrupt.Stderr.Should().Contain("is not a readable .vsix");
+        }
+
+        // coai code round 4 (accepted): whatever a member's decompressor raises — here LZMA, whose errors are their own
+        // exception type — the archive is unreadable: exit 2. python3 writes the LZMA member (.NET writes none); its
+        // compressed bytes are then damaged right after the local header.
+        using (var root = new TempRoot("installed-lzma"))
+        {
+            var vsix = root.Under("lzma.vsix");
+            const string member = "extension/dist/extension.js";
+            var made = await ChildProcess.RunAsync("python3", ["-c", "import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_LZMA) as z:\n    z.writestr(sys.argv[2], 'exports.activate = () => {};\\n' * 200)\n", vsix, member], new Dictionary<string, string?>());
+            made.Exit.Should().Be(0, made.Stderr);
+
+            var bytes = File.ReadAllBytes(vsix);
+            var data = 30 + member.Length; // the local file header: 30 fixed bytes, then the name (no extra field here)
+            File.WriteAllBytes(vsix, [.. bytes[..(data + 12)], .. Enumerable.Repeat((byte)0xFF, 24), .. bytes[(data + 36)..]]);
+
+            var lzma = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [vsix, root.Dir("installed")], root.Path);
+            lzma.Exit.Should().Be(2, $"a damaged LZMA member is an unreadable .vsix:\n{lzma.Stdout}{lzma.Stderr}");
+            lzma.Stderr.Should().Contain("is not a readable .vsix");
+        }
+    }
 }

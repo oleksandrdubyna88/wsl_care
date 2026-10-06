@@ -257,7 +257,11 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var row = File.ReadAllLines(Path.Combine(ReleaseFiles.Root, "POST_DEPLOY.md")).Single(l => l.StartsWith("| 6 |", StringComparison.Ordinal));
         var guard = File.ReadAllText(Path.Combine(ReleaseFiles.Root, GuardScript));
 
-        row.Should().Contain(". .github/scripts/lib/versions.sh").And.Contain("highest_version").And.Contain("is_top_version").And.Contain("python3 -c");
+        row.Should().Contain(". .github/scripts/lib/versions.sh").And.Contain("highest_version").And.Contain("is_top_version");
+        row.Should().Contain("bash .github/scripts/compare-installed-extension.sh", "the installed extension is compared file by file by the ONE script the manual upload's pre-approval step also runs (coai code round 2)")
+            .And.NotContain("dist/extension.js", "a bundle-only comparison misses a package.json pointing main at an added file");
+        File.ReadAllText(ReleaseFiles.Script("compare-installed-extension.sh")).Should().Contain("zipfile", "the .vsix is read with python3, on stock Ubuntu")
+            .And.NotContain("unzip", "not on stock Ubuntu");
         row.Should().NotContain("versions[0]", "the first listed version is not the highest one").And.NotContain("unzip", "not on stock Ubuntu");
         row.Should().Contain("require('./src_vs_code/package.json').name", "the extension's name is read from the manifest, like its publisher")
             .And.NotContain($"$p.{ReleaseFiles.ExtensionName}", "the id is never retyped beside the manifest")

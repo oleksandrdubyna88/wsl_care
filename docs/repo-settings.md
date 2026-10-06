@@ -175,7 +175,46 @@ Manage**. Azure DevOps retires global PATs: the creation block once planned for 
 global PAT stops working on 2026-12-01** (Azure DevOps blog, *Retirement of Global Personal Access Tokens*), and
 organisation-scoped PATs for the Marketplace are an open request (microsoft/vsmarketplace#2121). So:
 
-- **Recommended: OIDC, no stored secret.** Register an Entra application (or a user-assigned managed identity), add a
+- **Decided 2026-10-06 (owner): the manual upload — no stored credential at all.** No `VSCE_PAT` secret and no Entra
+  identity; the owner uploads the attested `.vsix` to the Marketplace by hand, and the workflow is unchanged. Record
+  `VSCE_PAT expires: none — manual upload` in `POST_DEPLOY.md` (item 12 then passes: there is no credential to expire).
+  Per release, after `release-extension.yml` started on the tag:
+  1. **The draft carries the attested `.vsix`.** `github-draft` uploads the build's `.vsix` + `.sha256` onto the DRAFT
+     release BEFORE `publish-marketplace` starts, so it is there while that job waits for your approval. A draft is
+     visible only to people with write access, so download it as the owner:
+     `gh release download extension-v<x.y.z> -R oleksandrdubyna88/wsl_care --pattern '*.vsix' --pattern '*.sha256'`,
+     then `sha256sum -c ai-os-care-<x.y.z>.vsix.sha256` and `gh attestation verify ai-os-care-<x.y.z>.vsix --repo
+     oleksandrdubyna88/wsl_care --cert-identity "https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release-extension.yml@refs/tags/extension-v<x.y.z>"`.
+  2. **Upload THAT file by hand**: <https://marketplace.visualstudio.com/manage> → publisher `remsoftdev` → *AI OS Care*
+     (the first time: *New extension → Visual Studio Code*) → upload `ai-os-care-<x.y.z>.vsix`. Never a local build: only
+     the attested file may be served, and `github-public` compares the draft with it.
+  3. **Wait until the Marketplace serves it** — it validates a new version for some minutes:
+     `npx --yes @vscode/vsce@4.0.0 show remsoftdev.ai-os-care --json` lists `<x.y.z>` among its `versions`.
+  4. **Check that the Marketplace serves THE ATTESTED BUILD — required before approving.** The job's served check
+     matches the VERSION only: a wrong `.vsix` uploaded with the same version would be "served", the publish skipped,
+     and the release made public over bytes nobody attested. So install the served version and compare the installed
+     folder with the attested file, FILE BY FILE — every file of the `.vsix`, nothing extra (a changed `package.json`
+     pointing `main` at an added file is exactly what a bundle-only check would miss), apart from what VS Code itself
+     adds (`.vsixmanifest`, `__metadata` in package.json). The same script `POST_DEPLOY.md` item 6 runs after the release;
+     inside WSL, from the repository root, with the downloaded `.vsix` in `<dir>`:
+     `code --install-extension remsoftdev.ai-os-care@<x.y.z> --force`, then
+     `bash .github/scripts/compare-installed-extension.sh <dir>/ai-os-care-<x.y.z>.vsix "$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.vscode/extensions/remsoftdev.ai-os-care-<x.y.z>"`.
+     Any difference (exit 1, each one named) → do NOT approve: reject the deployment (the release stays a draft), and fix forward with the next patch
+     version — a Marketplace version cannot be uploaded twice.
+  5. **Then approve `publish-marketplace`** (or, if it already ran and failed, *Re-run FAILED jobs* — never all jobs).
+     Its first step asks the Marketplace whether `<x.y.z>` is served; it is, so the publish step is SKIPPED (no token is
+     read), the wait passes at once, and **`github-public`** compares the draft with the attested build and makes the
+     release public. (It compares the DRAFT, not the Marketplace — step 4 is the only byte check of what the Marketplace
+     serves before the release is public; `POST_DEPLOY.md` item 6 repeats it afterwards.)
+
+  Order matters. Approved BEFORE the upload, the job finds the version not served and fails at *VSCE_PAT is not set*;
+  that is harmless — upload, wait, then *Re-run FAILED jobs*. **Rejecting** the deployment fails the run and leaves the
+  release a draft; left **unapproved**, GitHub ends the waiting deployment after 30 days, also as a failure. Either way
+  the release stays an invisible draft until `github-public` runs, and `POST_DEPLOY.md` item 6 (which lists only
+  published releases) fails until then. The tag exists regardless, so a later extension release's guard is not
+  blocked by it.
+- **Later, to automate the publish:**
+  - **OIDC, no stored secret.** Register an Entra application (or a user-assigned managed identity), add a
   federated credential for subject `repo:oleksandrdubyna88/wsl_care:environment:marketplace` (issuer
   `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`), and add that identity as a member
   of the publisher (*Manage → Members*, role Contributor). Then, in ONE pull request: in `release-extension.yml`'s
@@ -183,7 +222,7 @@ organisation-scoped PATs for the Marketplace are an open request (microsoft/vsma
   `allow-no-subscriptions: true`) before the publish, and `--azure-credential` on `vsce publish`; widen
   `ReleaseWorkflowTests` / `ReleaseExtensionWorkflowTests`' signing-scope assertions to that job; set the two ids as
   Environment variables (not secrets). Record `VSCE_PAT expires: none — OIDC` in `POST_DEPLOY.md`.
-- **Or, until 2026-12-01: a PAT.** Create it at `https://dev.azure.com/<org>/_usersSettings/tokens` (Organization: All
+  - **Or, until 2026-12-01: a PAT.** Create it at `https://dev.azure.com/<org>/_usersSettings/tokens` (Organization: All
   accessible organizations; Scopes: Custom defined → Marketplace → **Manage**; expiry at most 2026-12-01), store it ONLY
   in the Environment (below), and record `VSCE_PAT expires: <YYYY-MM-DD>` in `POST_DEPLOY.md` (item 12 fails 30 days
   before it).
@@ -195,12 +234,12 @@ OWNER_ID="$(gh api user --jq .id)"
 printf '{"reviewers":[{"type":"User","id":%s}],"deployment_branch_policy":{"protected_branches":false,"custom_branch_policies":true}}' "$OWNER_ID" > /tmp/marketplace-env.json
 gh api --method PUT "repos/$REPO/environments/marketplace" --input /tmp/marketplace-env.json
 gh api --method POST "repos/$REPO/environments/marketplace/deployment-branch-policies" -f name='extension-v*' -f type=tag
-gh secret set VSCE_PAT -R "$REPO" --env marketplace        # prompts for the value; skip with OIDC
+gh secret set VSCE_PAT -R "$REPO" --env marketplace        # prompts for the value; skip with OIDC or the manual upload
 ```
 
 **Check:** `gh api "repos/$REPO/environments/marketplace" --jq '.protection_rules[].type'` lists `required_reviewers` and
 `branch_policy`; `gh api "repos/$REPO/environments/marketplace/deployment-branch-policies" --jq '.branch_policies[] |
-[.name,.type]'` is `["extension-v*","tag"]`; `gh secret list -R "$REPO" --env marketplace` names `VSCE_PAT`. Whether the
+[.name,.type]'` is `["extension-v*","tag"]`; `gh secret list -R "$REPO" --env marketplace` names `VSCE_PAT` (and nothing, with the manual upload). Whether the
 protection ACTS is observed on the first release: `publish-marketplace` stops at *Waiting for review* until you approve.
 
 ## 10. The extension tag ruleset — only the App creates an `extension-v*` tag, nobody moves or deletes one (E5 live gate, step 3)
@@ -282,7 +321,8 @@ assumed:
    `.vsix` checked against its `.sha256` and attested, no npm) → **github-draft** (the `.vsix` + `.sha256` on the draft,
    read back and compared — the rollback source exists before anything is public) → **publish-marketplace** (approve it:
    the Environment waits for you; it skips if the Marketplace already serves 0.1.0, otherwise publishes the attested file
-   and waits until the Marketplace serves it) → **github-public** (the draft compared with the attested build once more,
+   and waits until the Marketplace serves it — with the manual upload of step 9, upload the draft's `.vsix` by hand,
+   wait until it is served and check its bundle against the attested one BEFORE approving, so the job skips) → **github-public** (the draft compared with the attested build once more,
    then public).
 7. `POST_DEPLOY.md` items 3, 6 and 12 against the Marketplace build installed in VS Code
    (`code --install-extension remsoftdev.ai-os-care`), then the stamp extended to `… · daemon 0.1.0 · extension 0.1.0`.
