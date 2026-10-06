@@ -2173,6 +2173,42 @@ the CPU formula gave a fraction, not a percent — the ×100 and the millisecond
 **1** (Minor) a reused pid could make a real start at midnight read as a continuation — the continuation rule now checks the
 live process's start, with the remaining residual stated (Decided 8) and a test added.
 
+##### Cadence consultation, epics 7–9 (coai `26b4a958`, codex, 2026-10-06) — verified, and these OVERRIDE the text above
+
+- **C-1, verified true:** `SessionGlob`'s entry cap and deadline are checked only BETWEEN listings, and
+  `PhysicalFileSystem.ListEntries` (`Files/PhysicalFileSystem.cs:167`) reads and sorts a whole folder first and answers `[]`
+  for a folder it cannot read — so an unreadable day folder would read as "complete, zero starts". **Fixed by widening, not
+  copying:** `IFileSystem` gains a bounded listing, `ListEntries(path, maxEntries)` → `EntryListing` (`Listed(entries,
+  Complete)` | `Unreadable(reason)`; a missing folder is `Listed([], true)`), the physical one enumerating lazily and stopping
+  one entry past the cap, the default member (every fake) answering from today's listing. `SessionGlob` lists through it, so
+  a cut or unreadable folder makes its scan NOT complete — which also corrects A18 and the agents' session counts. Follow-up
+  turn 2 (verified): the bounded listing takes the caller's deadline and cancellation too, checked at every entry, and the
+  REMAINING allowance of the whole walk, not a fresh one per folder; it does not set `IgnoreInaccessible` (the physical
+  listing's `true`, `PhysicalFileSystem.cs:186`, skips unreadable entries silently), so an error is `Unreadable`. A cooperative
+  check cannot interrupt one blocked file-system call — it is a bound on work between calls, not a wall-time guarantee, and is
+  described so. **A18, corrected:** "none found is kept" did not cover readable OLD sessions beside an unreadable folder —
+  today that scan is complete and the process can become eligible (`AgentOrphans.cs:235`); with the fix any failed or cut
+  folder makes the whole scan incomplete and A18 keeps the process ("cannot tell"). **The agents' counts:** `AgentWalk`
+  chooses "not counted" by `Reached`, not `Complete` (`Agents/AgentWalk.cs:162`); a scan that reached its level but lost a
+  folder shows its count as a LOWER bound (`complete: false` with the note), never a complete zero. RED tests:
+  `An_unreadable_sibling_folder_keeps_the_agent_process_cannot_tell` (A18: one project folder with an old session, one
+  unreadable), `An_unreadable_folder_makes_the_scan_incomplete_never_zero`, `The_listing_stops_at_its_cap_and_its_deadline`,
+  `An_agents_count_with_an_unreadable_folder_is_a_lower_bound`.
+- **C-2, verified true:** `ProcessEntry.CommandLine` is display text — redacted and cut to `processes.shownCommandChars`
+  (`Collectors/ProcessCollector.cs:128`), so splitting it on spaces loses a program whose path holds a space or passes the
+  cut. **Fixed:** the snapshot keeps the program names from the RAW argv (`ProcessEntry.Programs`, the file names of the first
+  two words, `.exe` stripped — `Agents/AgentProcesses.ProgramNames`, one function), and `AgentOf` reads them. **The MCP match
+  is narrower than `AgentOf`'s:** the PROGRAM (argv[0]) only, so `printf coai-mcp` is not a server; a catalogue entry may
+  name scripts for a server an interpreter runs (none today). RED tests: `A_program_path_with_spaces_or_past_the_display_cut_is_still_recognised`,
+  `A_server_name_as_an_argument_of_another_program_is_not_an_instance`.
+- **C-3 (E9, `PLAN_ai_session_archive.md` §8a vs §8b — per-entry resume vs keep-every-file-of-a-changed-session):** not this
+  story's; passed to the coordinator for E9, unverified here.
+- **On the two doubts:** keep ONE live window in `status` (a 4-hour-old full-run figure misses a 10-minute storm) — and, my
+  inference from `Status/StatusLimits.cs`' own rule (publish every value a host decision rests on whose machine range reaches
+  above its default), `limits` publishes `mcpCpuWindowMilliseconds` and `mcpLogListMilliseconds`, so the extension's status
+  ceiling can count them (`contracts/status-limits.json` regenerated). Reading another product's log NAMES and stats is within
+  the E7 walk rules; the kind's sentence says "no log write in N min", never "no activity" as a fact.
+
 #### Stories
 
 | # | Story | Files (verified above) | Acceptance | Model, reviews |
