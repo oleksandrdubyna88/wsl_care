@@ -182,12 +182,30 @@ public sealed class PhysicalFileSystem : IFileSystem
     {
         try
         {
-            return Directory.Exists(path) ? Bounded(path, bounds) : new EntryListing.Listed([], true, string.Empty);
+            return Directory.Exists(path) ? Bounded(path, bounds) : Absent(path);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return new EntryListing.Unreadable($"{path} could not be listed: {e.Message}");
         }
+    }
+
+    /// <summary>Final code round finding 4: <c>Directory.Exists</c> answers false both for a folder that is not there and for one
+    /// behind a parent this process may not traverse. The attributes tell them apart: not there throws "not found" (an empty,
+    /// whole listing); behind an untraversable parent throws "access denied", which the caller answers <c>Unreadable</c>. A FILE
+    /// at the path has nothing to list.</summary>
+    private static EntryListing.Listed Absent(string path)
+    {
+        try
+        {
+            _ = File.GetAttributes(path);
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            // Not there: nothing to list, and that is the whole answer.
+        }
+
+        return new EntryListing.Listed([], true, string.Empty);
     }
 
     private static EntryListing.Listed Bounded(string path, ListingBounds bounds)
