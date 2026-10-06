@@ -762,6 +762,15 @@ restored and compared with `cmp`; every one red:
 | `UnitDropIns.Calendar`'s 24 case removed (Windows; WSL rebuild of Core.Tests) | Windows: the render row for 24; WSL: also `Expected output "Failed to parse calendar specification '*-*-* 00/24:00:00': Invalid argument" to contain "Normalized form:"` |
 | `docs/repo-settings.md`'s rollback back to `--signer-workflow` | the documents test, naming `docs/repo-settings.md` |
 
+**The gate round on PR #34** (session `7c89fe30`, 2026-10-06): 4 of 5 findings rejected; one accepted — the health wait
+runs its readable `doctor` report AFTER the deadline, so the refusal could come up to one more floor call plus its grace
+later than the bound the comment and the refusal stated ("DOCTOR_SECONDS + one floor call", "at most 12s"). The smallest
+honest fix was taken: the report is kept (it is what tells the person why), and the comment now states the true bound —
+DOCTOR_SECONDS + 2 × (floor + grace), 160 s with the defaults — and the refusal says what was measured, "still not healthy
+after <n>s of a <DOCTOR_SECONDS>s wait", instead of an "at most" the report itself overran. No behaviour changed, so no red:
+`The_health_wait_refuses_…` now asserts the new sentence, and its timing bound (from the first doctor call) already
+counted the report.
+
 **Not done here:** running `systemd-analyze verify` over the timer drop-in at EVERY accepted period belongs in
 `.github/scripts/verify-systemd-units.sh` (reworked by `fix/wc-act-unit-collectmode`, merged into main while this round was
 in flight); it is a follow-up. The Core test above already parses every rendered calendar on the Linux CI legs.

@@ -1031,8 +1031,10 @@ verify() {
 # `doctor --json` until it is healthy, for at most DOCTOR_SECONDS on the WALL clock (retro review of PR #8 — the old loop
 # counted only its 5 s sleeps while each doctor call could take 120 s, so the 2-minute wait could stretch to ~50 minutes; the
 # upgrade wait was fixed the same way in the coai E6 code round #8). Each call gets what is left of the deadline, at least
-# DOCTOR_CALL_FLOOR_SECONDS (the last look comes AT the deadline), and every sleep ends at the deadline at the latest — so the
-# refusal comes within DOCTOR_SECONDS + one floor call + its kill grace.
+# DOCTOR_CALL_FLOOR_SECONDS (the last look comes AT the deadline), and every sleep ends at the deadline at the latest. Past the
+# deadline come at most two calls of DOCTOR_CALL_FLOOR_SECONDS, each with its kill grace — the last look, then the readable
+# report printed beside the refusal — so the refusal comes within DOCTOR_SECONDS + 2 x (DOCTOR_CALL_FLOOR_SECONDS +
+# KILL_GRACE_SECONDS): 160 s with the defaults (PR #34 gate round: this said one call, and the readable report is a second).
 doctor_wait() {
   started=$(date +%s)
   deadline=$((started + DOCTOR_SECONDS))
@@ -1046,7 +1048,7 @@ doctor_wait() {
     now=$(date +%s)
     if [ "$now" -ge "$deadline" ]; then
       timeout -k "$KILL_GRACE_SECONDS" "$DOCTOR_CALL_FLOOR_SECONDS" "$ROOT$BIN_PATH" doctor >&2 || true
-      fail "verify: doctor healthy" "$BIN_PATH doctor --json is not healthy after $((now - started))s (at most ${DOCTOR_SECONDS}s) — the checks above say why"
+      fail "verify: doctor healthy" "$BIN_PATH doctor --json is still not healthy after $((now - started))s of a ${DOCTOR_SECONDS}s wait (WSL_CARE_INSTALL_DOCTOR_SECONDS) — the checks above say why"
     fi
     pause=$((deadline - now))
     [ "$pause" -le 5 ] || pause=5

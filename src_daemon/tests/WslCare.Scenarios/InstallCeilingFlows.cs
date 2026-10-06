@@ -81,7 +81,7 @@ public sealed class InstallCeilingFlows
         var result = await world.RunAsync();
 
         FailedAt(result, "verify: doctor healthy");
-        result.Stderr.Should().Contain("(at most 12s)");
+        result.Stderr.Should().Contain("still not healthy after").And.Contain("s of a 12s wait (WSL_CARE_INSTALL_DOCTOR_SECONDS)");
         world.CallsOf("wsl-care").Count(c => c.Argv is ["doctor", "--json"]).Should().Be(2, "one call, a sleep to the deadline, the last look at it");
         Since(stamp).Should().BeLessThan(TimeSpan.FromSeconds(28), "the refusal comes at the deadline plus one call — ~17 s after the wait began, not ~39");
     }
