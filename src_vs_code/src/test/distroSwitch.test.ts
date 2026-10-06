@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { VerbOutcome } from '../client/outcome';
-import { VERBS, type Verb } from '../client/verbs';
+import { runReadTail, VERBS, type RunRead, type Verb } from '../client/verbs';
 import { WslCareClient, type RunOptions } from '../client/WslCareClient';
 import { Poller, type Timers } from '../poll/poller';
 import type { ProcessResult } from '../process/runner';
@@ -285,4 +285,37 @@ test('a non-string wslCare.distro (a number, null, an object in settings.json) i
     assert.equal(outcome?.kind, 'distroRefused', `${JSON.stringify(raw)}: ${JSON.stringify(outcome)}`);
     assert.equal(rec.requests.length, 0, 'nothing may be started for a setting that is not a name');
   }
+});
+
+/**
+ * The run reads of E6.S3 / E6.S4 (`runs show`, `runs`, `logs`) share a call in flight too — by their tail AND the setting,
+ * as #23 made it for the verbs (found while rebasing PR #12 onto #23). A `logs` read of the Logs page asked after a switch
+ * must reach the new distribution, never join the read still running for the previous one.
+ */
+test('a run read asked for another distribution is not joined to the one still in flight for the previous one', async () => {
+  const read: RunRead = { read: 'logs', from: '2026-10-05T22:00:00Z', to: '2026-10-06T22:00:00Z' };
+  const held = deferred<ProcessResult>();
+  const asked = deferred<void>();
+  // Which distribution answered is the subject; any JSON object the read accepts will do as the body.
+  const answer = JSON.stringify(golden('head', 'status'));
+  const script: Record<string, Scripted> = {
+    [LIST_QUIET]: exitedUtf16(0, 'Ubuntu\r\nDebian\r\n'),
+    [LIST_RUNNING]: exitedUtf16(0, 'Ubuntu\r\nDebian\r\n'),
+    [daemonArgv('Ubuntu', runReadTail(read))]: () => { asked.resolve(); return held.promise; },
+    [daemonArgv('Debian', runReadTail(read))]: exited(0, answer),
+  };
+  let distro = 'Ubuntu';
+  const rec = recordingRunner(script);
+  const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => distro });
+
+  const first = client.read(read);
+  await asked.promise;
+  distro = 'Debian';
+  const second = client.read(read);
+  held.resolve(exited(0, answer));
+
+  const [ubuntu, debian] = [await first, await second];
+  assert.equal(ubuntu.kind === 'read' ? ubuntu.distro : JSON.stringify(ubuntu), 'Ubuntu');
+  assert.equal(debian.kind === 'read' ? debian.distro : JSON.stringify(debian), 'Debian', 'the read for Debian must reach Debian, not share the Ubuntu read in flight');
+  assert.ok(rec.argvs().includes(daemonArgv('Debian', runReadTail(read))), `Debian's logs read was never asked: ${rec.argvs().join(' | ')}`);
 });
