@@ -238,17 +238,9 @@ public sealed class AgentOrphans : ICleanupAction, IBoundToShownList
             : string.Empty;
     }
 
-    /// <summary>The ONE catalogue agent whose binary the process runs (its program, or the script node runs); <c>null</c> for none
-    /// or more than one.</summary>
-    public static AgentEntry? AgentOf(ProcessEntry process)
-    {
-        var names = process.CommandLine.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2)
-            .Select(word => Path.GetFileName(word.Replace('\\', '/')))
-            .Select(name => name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name)
-            .ToList();
-        var agents = AgentCatalogue.Agents.Where(a => a.Binaries.Any(b => names.Contains(b, StringComparer.Ordinal))).ToList();
-        return agents.Count == 1 ? agents[0] : null;
-    }
+    /// <summary>The ONE catalogue agent whose binary the process runs (<see cref="AgentProcesses.AgentOf"/>, the one attribution
+    /// A18 and the MCP servers' owner walk share); <c>null</c> for none or more than one.</summary>
+    public static AgentEntry? AgentOf(ProcessEntry process) => AgentProcesses.AgentOf(process);
 
     private static string Kept(IReadOnlyList<OrphanJudgement> judged) =>
         string.Join("; ", judged.Where(j => !j.Eligible).GroupBy(j => j.Kept).Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Count()} because {g.Key}")));

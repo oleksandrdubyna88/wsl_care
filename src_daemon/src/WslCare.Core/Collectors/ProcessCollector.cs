@@ -36,6 +36,16 @@ public sealed record ProcessEntry(
 {
     /// <summary>What the process holds of <c>AnonPages</c> + <c>Shmem</c>: the ranking key.</summary>
     public long HeldBytes => RssAnonBytes + RssShmemBytes;
+
+    private readonly IReadOnlyList<string>? _programs;
+
+    /// <summary>The program and the word after it as file names (<see cref="CommandLineText.ProgramNames"/>) — set by the collector
+    /// from the RAW argv (plan §15q E7.S2d C-2); an entry built without it (a test's) derives them from <see cref="CommandLine"/>.</summary>
+    public IReadOnlyList<string> Programs
+    {
+        get => _programs ?? CommandLineText.ProgramNames(CommandLine.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        init => _programs = value;
+    }
 }
 
 /// <summary>A family's total (plan §4.2): how many processes, how much they hold.</summary>
@@ -129,7 +139,10 @@ public sealed class ProcessCollector(IFileSystem files, LinuxHostPaths paths, Ti
             ProcessFamilies.Of(raw.Argv, raw.Status.Name),
             IsOrphaned(raw.Status.ParentPid, argvByPid),
             raw.Stat.Map(s => s.TtyNumber != 0).ValueOr(false),
-            IsUnderMnt(raw));
+            IsUnderMnt(raw))
+        {
+            Programs = CommandLineText.ProgramNames(raw.Argv.Count > 0 ? raw.Argv : [raw.Status.Name]),
+        };
 
     private static Reading<TimeSpan> Age(Reading<ProcStat> stat, Clocks clocks) =>
         Reading.Combine(stat, Reading.Combine(clocks.Kernel, clocks.Boot, (k, b) => (k, b)), (s, kb) =>
