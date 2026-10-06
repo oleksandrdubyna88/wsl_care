@@ -171,3 +171,33 @@ test('a status poll of the SAME distribution never drops the preview still in fl
   assert.equal(distroOf(snapshot.preview), 'Ubuntu');
   assert.equal(snapshot.checking, false);
 });
+
+test('a round made obsolete while its status is pending asks no preview or doctor afterwards', async () => {
+  const heldStatus = deferred<VerbOutcome>();
+  const statusAsked = deferred<void>();
+  let distro = 'Ubuntu';
+  const calls: string[] = [];
+  const store = new OutcomeStore();
+  const run = (verb: Verb): Promise<VerbOutcome> => {
+    calls.push(`${distro} ${verb}`);
+    if (distro === 'Ubuntu' && verb === 'status') {
+      statusAsked.resolve();
+      return heldStatus.promise;
+    }
+
+    return Promise.resolve(answered(verb as PanelVerb, headBody(verb as PanelVerb), distro));
+  };
+  const poller = new Poller({ run, store, focused: () => true, refreshSeconds: () => undefined, timers: NEVER, target: () => distro });
+
+  void poller.refreshPanel();
+  await statusAsked.promise;
+  distro = 'Debian';
+  await poller.refreshPanel();
+  const beforeRelease = [...calls];
+  heldStatus.resolve(answered('status', headBody('status'), 'Ubuntu'));
+  await poller.settled();
+
+  assert.deepEqual(beforeRelease, ['Ubuntu status', 'Debian status', 'Debian preview', 'Debian doctor']);
+  assert.deepEqual(calls, beforeRelease, 'the obsolete round went on to ask preview / doctor after its status answered');
+  assert.equal(distroOf(store.snapshot().status), 'Debian');
+});
