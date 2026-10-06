@@ -35,46 +35,46 @@ public sealed record ThresholdInputs(
 public static class ThresholdRules
 {
     /// <summary>Plan §4.1: page cache &gt; 15 GB warns.</summary>
-    public const double PageCacheWarnGib = 15;
+    public static double PageCacheWarnGib => Tuning.Current.Int(ConfigKeys.Thresholds.PageCacheWarnGib);
 
     /// <summary>Plan §4.1, A1's second trigger: page cache &gt; 12 GB AND available &lt; 30 %.</summary>
-    public const double PageCacheActGib = 12;
+    public static double PageCacheActGib => Tuning.Current.Int(ConfigKeys.Thresholds.PageCacheActGib);
 
     /// <summary>Plan §4.1, A1's second trigger: the available share it is paired with.</summary>
-    public const double PageCacheActAvailablePercent = 30;
+    public static double PageCacheActAvailablePercent => Tuning.Current.Int(ConfigKeys.Thresholds.PageCacheActAvailablePercent);
 
     /// <summary>Plan §4.1: inactive anonymous memory &gt; 15 GB warns.</summary>
-    public const double InactiveAnonWarnGib = 15;
+    public static double InactiveAnonWarnGib => Tuning.Current.Int(ConfigKeys.Thresholds.InactiveAnonWarnGib);
 
     /// <summary>Plan §4.1: fewer than 32 free order-7 blocks in zone Normal warns; none is critical (A2 at once).</summary>
-    public const long Order7WarnBlocks = 32;
+    public static long Order7WarnBlocks => Tuning.Current.Int(ConfigKeys.Thresholds.Order7WarnBlocks);
 
     /// <summary>Plan §4.1: PSI memory <c>some</c> avg60 (and avg300) above 10 warns.</summary>
-    public const double PressureWarn = 10;
+    public static double PressureWarn => Tuning.Current.Int(ConfigKeys.Thresholds.MemoryPressureWarn);
 
     /// <summary>Plan §4.4: <c>/</c> above 80 % warns.</summary>
-    public const double RootUsedWarnPercent = 80;
+    public static double RootUsedWarnPercent => Tuning.Current.Int(ConfigKeys.Thresholds.RootUsedWarnPercent);
 
     /// <summary>Plan §5 A10: a journal above 1 GB is vacuumed.</summary>
-    public const double JournalWarnGib = 1;
+    public static double JournalWarnGib => Tuning.Current.Int(ConfigKeys.Journal.MaxGb);
 
     /// <summary>Plan §4.5: a journal history shorter than 7 days warns.</summary>
-    public const int JournalHistoryWarnDays = 7;
+    public static int JournalHistoryWarnDays => Tuning.Current.Int(ConfigKeys.Thresholds.JournalHistoryWarnDays);
 
     /// <summary>Plan §4.5: more than 100 clock jumps per 4 h warns.</summary>
-    public const double ClockJumpsWarnPer4h = 100;
+    public static double ClockJumpsWarnPer4h => Tuning.Current.Int(ConfigKeys.Thresholds.ClockJumpsWarnPer4h);
 
     /// <summary>Plan §4.5: sysstat and atop are collecting when their last sample is younger than 30 minutes.</summary>
-    public static readonly TimeSpan CollectorFreshFor = TimeSpan.FromMinutes(30);
+    public static TimeSpan CollectorFreshFor => Tuning.Current.Minutes(ConfigKeys.Thresholds.CollectorFreshMinutes);
 
     /// <summary>Plan §15 #10: the two observations of a drift are at least 5 minutes apart.</summary>
-    public static readonly TimeSpan DriftObservationsApart = TimeSpan.FromMinutes(5);
+    public static TimeSpan DriftObservationsApart => Tuning.Current.Minutes(ConfigKeys.Clock.DriftObservationsApartMinutes);
 
     /// <summary>The owner's decision (2026-10-02): <c>.wslconfig</c> <c>memory=36GB</c> is RECOMMENDED — shown,
     /// never written — and the row is red when the VM uses more than 90 % of its ceiling.</summary>
-    public const int RecommendedMemoryGb = 36;
+    public static int RecommendedMemoryGb => Tuning.Current.Int(ConfigKeys.WslConfig.RecommendedMemoryGb);
 
-    public const double WslMemoryCriticalPercent = 90;
+    public static double WslMemoryCriticalPercent => Tuning.Current.Int(ConfigKeys.Thresholds.WslMemoryCriticalPercent);
 
     private const double Gib = 1024d * 1024 * 1024;
     private const double Gb = 1e9;
@@ -160,7 +160,7 @@ public static class ThresholdRules
 
     private static Verdict Fragmentation(Reading<MemorySnapshot> memory)
     {
-        const string limit = "warn < 32 free order-7 blocks, critical = 0 (zone Normal)";
+        var limit = Invariant($"warn < {Order7WarnBlocks} free order-7 blocks, critical = 0 (zone Normal)");
         return memory.Bind(m => m.Fragmentation) switch
         {
             Reading<Collectors.Procfs.Fragmentation>.Available { Value: var f } => new(
@@ -175,7 +175,7 @@ public static class ThresholdRules
 
     private static Verdict Pressure(Reading<MemorySnapshot> memory)
     {
-        const string limit = "warn: memory some avg60 or avg300 > 10";
+        var limit = Invariant($"warn: memory some avg60 or avg300 > {PressureWarn:0.##}");
         return memory.Bind(m => m.Pressure.Memory) switch
         {
             Reading<Collectors.Procfs.Pressure>.Available { Value.Some: var s } => new(
@@ -215,13 +215,15 @@ public static class ThresholdRules
     private static Verdict RootDisk(Reading<VolumeUsage> root) => root switch
     {
         Reading<VolumeUsage>.Available { Value: var v } => new(
-            "disk.root", v.UsedPercent > RootUsedWarnPercent ? Level.Warn : Level.Ok, Percent(v.UsedPercent), "warn > 80 %", "df / of the distro"),
-        var unknown => Unknown("disk.root", "warn > 80 %", unknown.ReasonOrEmpty),
+            "disk.root", v.UsedPercent > RootUsedWarnPercent ? Level.Warn : Level.Ok, Percent(v.UsedPercent), RootDiskLimit, "df / of the distro"),
+        var unknown => Unknown("disk.root", RootDiskLimit, unknown.ReasonOrEmpty),
     };
+
+    private static string RootDiskLimit => Invariant($"warn > {RootUsedWarnPercent:0} %");
 
     private static Verdict JournalHistory(HealthSample health)
     {
-        const string limit = "warn when the oldest entry is less than 7 days old";
+        var limit = Invariant($"warn when the oldest entry is less than {JournalHistoryWarnDays} days old");
         return health.JournalOldestEntry switch
         {
             Reading<DateTimeOffset>.Available { Value: var oldest } => (health.Since - oldest) switch
@@ -239,7 +241,7 @@ public static class ThresholdRules
 
     private static Verdict ClockJumps(Reading<int> jumps, TimeSpan since)
     {
-        const string limit = "warn > 100 per 4 h";
+        var limit = Invariant($"warn > {ClockJumpsWarnPer4h:0} per 4 h");
         var hours = Math.Max(since.TotalHours, 1.0 / 60);
         return jumps switch
         {
@@ -269,7 +271,7 @@ public static class ThresholdRules
     private static Verdict ClockDrift(WindowsClockSample current, Reading<WindowsClockSample> previous, Reading<TimeSync> sync, EffectiveConfig config)
     {
         var max = config.Int(ConfigKeys.Clock.MaxDriftSeconds);
-        var limit = $"warn: |offset| > {max} s on two observations at least 5 minutes apart (clock.maxDriftSeconds)";
+        var limit = Invariant($"warn: |offset| > {max} s on two observations at least {ApartText} apart (clock.maxDriftSeconds)");
         if (!current.Measured)
         {
             return Unknown("clock.drift", limit, current.Unavailable);
@@ -284,9 +286,12 @@ public static class ThresholdRules
         var second = IsDrift(current, previous, max);
         var synced = sync is Reading<TimeSync>.Available { Value.Synchronized: true } ? "; timesyncd reports the clock synchronised, so A16 would not step it" : string.Empty;
         return second
-            ? new("clock.drift", Level.Warn, value, limit, $"drift on two observations at least 5 minutes apart{synced}")
-            : new("clock.drift", Level.Ok, value, limit, "one observation above the threshold; a second, at least 5 minutes later, is needed before a drift is reported");
+            ? new("clock.drift", Level.Warn, value, limit, $"drift on two observations at least {ApartText} apart{synced}")
+            : new("clock.drift", Level.Ok, value, limit, $"one observation above the threshold; a second, at least {ApartText} later, is needed before a drift is reported");
     }
+
+    /// <summary>How far apart two drift observations must be, in words (<c>clock.driftObservationsApartMinutes</c>).</summary>
+    public static string ApartText => Invariant($"{DriftObservationsApart.TotalMinutes:0} minutes");
 
     private static Verdict WslPro(Reading<Systemd.SystemdUnit> unit)
     {
@@ -309,10 +314,12 @@ public static class ThresholdRules
             id,
             now - f.LastWrite > CollectorFreshFor ? Level.Warn : Level.Ok,
             Invariant($"last sample {(now - f.LastWrite).TotalMinutes:0} min ago ({f.File})"),
-            "warn when the last sample is 30 minutes old or older",
+            FreshLimit,
             "a history collector that stopped is a gap nobody can fill later"),
-        _ => new(id, Level.Warn, string.Empty, "warn when the last sample is 30 minutes old or older", freshness.ReasonOrEmpty),
+        _ => new(id, Level.Warn, string.Empty, FreshLimit, freshness.ReasonOrEmpty),
     };
+
+    private static string FreshLimit => Invariant($"warn when the last sample is {CollectorFreshFor.TotalMinutes:0} minutes old or older");
 
     private static Verdict Discard(HealthSample health)
     {

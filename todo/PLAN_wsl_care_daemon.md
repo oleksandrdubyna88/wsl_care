@@ -1169,7 +1169,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
 > Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
-> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); E7.S2c–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1805,6 +1805,82 @@ run, `ToolCacheTrims.cs:36`) — nothing to make configurable.
 - **DoD:** the inventory table re-verified at build time (a row whose `file:line` moved is updated, not dropped); every A and
   B row a key or a setting; every C row in the allowlist with its reason; docs and the contract; RED-GREEN-RED per behaviour.
 
+#### E7.S2c as built (2026-10-05)
+
+Built on `feat/wc-e7-agents-settings`; the record is `research/module_tests.md` § *Every number is configuration (E7.S2c)*.
+**126 number keys** (`Config/ConfigKeys.Numbers.cs`, generated with their defaults into `default.json`): the 35 A rows,
+the B rows as 91 machine-layer-only keys (the inventory's 77, split where one row held two numbers, plus `agentCpu.*` from
+E7.S2b and `requests.maxBytes`). **Deviations from the text above:**
+
+- **How a number reaches its call site: `Tuning`, an ambient configuration** (`Config/Tuning.cs`). The numbers bound static
+  command templates, the policy's catalogue and the collectors' constants — places no configuration object reaches. One
+  process, one configuration: `Program.Main` sets it once after the load (`Tuning.ForThisProcess`), `Program.Run` scopes the
+  verb to the loaded configuration (an `AsyncLocal`, so a test's host is honoured and parallel tests never meet), and every
+  read before the load sees the embedded defaults (today's values). A named constant became a property that reads its key
+  (`RunningState.HeartbeatPeriod => Tuning.Current.Seconds(ConfigKeys.Running.HeartbeatSeconds)`), so its callers did not change.
+- **Command templates keep their identity, their limits are read late.** `ActionCommands` matches a template by
+  `ReferenceEquals`, so templates stay static singletons; their limits are a closed `CommandLimits` — `Keyed(timeout, cap)`
+  read when a request is built, `Of(Func<ToolCommand>)` for a fixed read template that follows its command, `Fixed` for a
+  test's own. A test reads the templates under the defaults FIRST, so a template that froze its limits at declaration fails.
+- **The configuration's own patterns are bounded by the key's MAXIMUM** (`KeyRules`, 1 000 ms): they run while the
+  configuration is being loaded, before any configured value exists — the bootstrap rule the machine layer's own read
+  already follows (`config.maxLayerBytes`' maximum). Every other match (the extra agents' names and globs, a catalogue
+  version pattern) uses `patterns.matchTimeoutMilliseconds`; the extra-agent `GeneratedRegex` pair became runtime matches for that.
+- **Coupled rules, checked at load** (`Config/NumberRules.cs`, a violation refuses the layer naming the rule): wedged ≥ 3 ×
+  heartbeat; `requests.maxRead` ≥ `maxQueued`; `act.maxListBytes` ≥ 67 × `act.maxShownNames`; `logs.maxRangeDays` ≥
+  `runs.historyRetentionDays`; `systemd.unitStopTimeoutSeconds` ≥ `units.stopTimeoutSeconds` + 30; jitter max > min;
+  `events.retryMaxSeconds` ≥ `retryFirstSeconds`; and, added here, **`timer.periodHours` divides 24** — the timer's
+  calendar (`00/<h>`) restarts at midnight, so 5 or 7 would leave one short interval a day.
+- **`CommandRequest.MaxTimeout` is `commands.maxTimeoutHours`**, and the test holds every timeout key's range maximum under
+  the key's MINIMUM (1 h): no machine value can push a command's timeout past what a request accepts.
+- **The request skew is seconds** — `requests.futureSkewSeconds` (60–3600, default 300), not the inventory's minutes, so it
+  is published as the extension reads it (coordinator 2026-10-05).
+- **The timer period is ONE key, and the units follow it through drop-ins.** `Systemd/UnitDropIns.cs` renders one drop-in per
+  unit (`<unit>.d/50-wsl-care-config.conf`): the timer's `OnCalendar` (cleared, then `*-*-* 00/<timer.periodHours>:00:00`),
+  `RandomizedDelaySec`, `AccuracySec`; the services' `Nice`, `MemoryMax`, `TimeoutStopSec`; the follower's `RestartSec`.
+  `install.sh` writes them from the INSTALLED binary (`wsl-care units dropin <unit>`, a new read-only verb — the script never
+  parses the configuration), on every install and upgrade, and removes them on uninstall. The shipped unit files keep
+  today's values, which is what the drop-in of the defaults says (a test). `doctor` gained `unitConfig`: an installed drop-in
+  that no longer says what the machine layer says is a `problem` naming what is wanted and "run install.sh again"; none at
+  all is fine while the configuration keeps the defaults. Every derived copy of the period reads the key
+  (`CollectRun.DefaultWindow`, `DoctorRun.LastRunMaxAge` = period + `timer.lateSlackMinutes`, the doctor sentence).
+- **N-4: `wsl-care.service` `TimeoutStartSec=infinity`**, like `wsl-care-act@.service`; the test: every `oneshot` unit's start
+  limit is `infinity` (its start IS the whole run, bounded by each command's own ceiling), a `simple` unit sets none.
+- **N-5: root never reads a whole file it did not bound.** `IFileSystem.ReadFile(path, maxBytes)` (the physical one reads at
+  most one byte past the cap; a test double checks after); `Files/RootFileCaps.cs`: a state file (`running.json`, the
+  dry-run stamp, the clock state, `volume-seen.json`, the events summary, a drop-in) at `records.maxStateFileBytes` (1 MiB),
+  a growing file (the history, a run's detail, the event lines) at `records.maxHistoryBytes` (256 MiB) — which also bounds
+  every other one-argument read. Past the cap = unreadable, the caller's existing conservative edge (the dry-run week
+  restarts, the history read names the problem).
+- **N-6: one definition per number.** The sentences that spelt a default now format the value in force: the threshold
+  limits (`warn > 80 %`, `warn < 32 free order-7 blocks`, the journal's days, the clock jumps, the drift's "5 minutes", the
+  collectors' "30 minutes"), the dry-run week, A11's / A18's "SIGKILL after 10 s", A14's "newest 2", A9's "200 MiB", the
+  stop marker's "90 s", the retention's "90-day", the doctor's "every 4 h", the clock fix's "at most one per hour" (now "per
+  60 minutes"). A test changes the keys and reads the sentences.
+- **N-1, N-2, N-3 are the extension's, and live on PR #12.** That branch already holds every extension number as a setting
+  (`settings/numbers.ts`) with each ceiling's minimum above the daemon's derived worst case (`client/worstCases.ts`,
+  `ceilings.test.ts`) — `timeouts.doctorSeconds` defaults to 120 s over a 109 s worst case (N-1). This branch does not edit
+  the extension's `verbs.ts` a second time (it would conflict with PR #12's rewrite of the same lines); its part is the
+  daemon side of the mirror — `status --json` `limits`, below.
+- **`status --json` publishes `limits`** (coordinator 2026-10-05, additive, schema version 1): `historyRetentionDays`,
+  `requestFutureSkewSeconds` — the two PR #12's `shared/daemonLimits.ts` reads — and every other daemon value a host decision
+  rests on whose machine range reaches ABOVE its default (a copy of the default would then be too small): `requestGraceSeconds`
+  (the host waits past it), `maxShownNames` (the shown-list cap the host validates against), `unitStopSeconds` (`act --stop`'s
+  worst case), `drainGraceMilliseconds` (what a killed command adds, twice, to every worst case). A ceiling whose range maximum
+  IS its default (every Docker and `systemctl show` ceiling) can only be lowered, so the extension's copy stays a safe upper
+  bound and is not published. `Status/StatusLimits.cs` names the fields once; `contracts/status-limits.json` is generated from
+  it (name, key, unit, range, default) and a test holds the writer's JSON names equal to the contract's — the file the
+  extension's reader test reads. A daemon older than E7.S2c sends no `limits`: the reader takes the contract's defaults.
+- **The structural test** (`ArchitectureTests.Numbers.cs`) scans `src_daemon/src` for five shapes — a numeric `const` /
+  `static readonly`, an inline `TimeSpan.From*(<digit>)`, a `Take(n ≥ 2)`, a byte product (`n * 1024 …`, `1L << n`), and a
+  literal handed to a wait, a jitter or a capped read (`Sleep(10)`, `Next(5, 25)`, `ReadStateFile(path, 4096)`) — and fails on
+  every hit outside the group-C allowlist of 114 entries, each with its reason (units, kernel ABI, display truncations, argv
+  heuristics, the extra-agent schema, Docker's and moby's own constants, the report's 24 h definition). Its companion plants
+  one literal of each shape; a third test fails on a listed entry that no longer exists. The extension's numbers are PR #12's
+  (`numbers.test.ts` holds `package.json` equal to its table).
+- **Not built here, recorded:** the extension's reader test against `contracts/status-limits.json`, and the extension's use
+  of `drainGraceMilliseconds` / `unitStopSeconds` in its worst cases — PR #12's side of the boundary row below.
+
 #### Stories
 
 | # | Story | Files (verified above) | Acceptance | Model, reviews |
@@ -1869,6 +1945,8 @@ deviations).
 | the agent catalogue, session layouts (D2), `aiAgents.extra` with `sessionGlob`, the protected roots | E7 (this section) | E9 ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md) §3) adds each entry's `archive` block and the move; it reads E7's `sessionGlob` (validated by E7, R2.1) and must not redefine "one session" |
 | the Windows agents walk and its one-file cache | E7.S5 | the Windows collectors, task and history are E11 ([PLAN_windows_care.md](PLAN_windows_care.md)); `%TEMP%\claude\` and every TEMP cleanup are E12 (W-A2's guard) |
 | orphaned AI-agent processes | E7.S2b (A18, the distro's) | Windows' W-A11 (E12, [PLAN_windows_care.md](PLAN_windows_care.md)) is separate; the same rule should apply there — a setting defaulting to 4 h, a button only, idle measured by identity |
+| the daemon values the extension MIRRORS (`status --json` → `limits`) | E7.S2c (the writer, `Status/StatusLimits.cs`, and `contracts/status-limits.json` generated from it) | PR #12 / E6 (`shared/daemonLimits.ts`, the reader: `historyRetentionDays`, `requestFutureSkewSeconds`; whole numbers in range, else the contract's default); its reader test reads the contract file; the four further fields (`requestGraceSeconds`, `maxShownNames`, `unitStopSeconds`, `drainGraceMilliseconds`) are for its worst cases and selection checks to adopt |
+| the extension's numbers (settings, ceilings above the daemon's worst case, N-1–N-3) | PR #12 (`settings/numbers.ts`, `client/worstCases.ts`, `ceilings.test.ts`) | E7.S2c makes the daemon's ceilings keys; those whose range only LOWERS keep the extension's copy a safe upper bound, the rest are in `limits` |
 | the bundle scan's regions | E6.S2 (root region), E7.S3 (config region) | E7.S3 widens E6.S2's rule "config forbidden everywhere" to "everywhere but the config region"; the root region stays as E6 left it |
 
 Order: E7's daemon parts first (additive), then the extension parts after both release gates above. Disjoint otherwise.
@@ -1947,7 +2025,7 @@ measures the added time on the fixture and the live gate on this machine, agains
       (M6); a partial *Keep VS Code's* reported "k of N" (C4).
 - [ ] The owner's ask (2), "older than N", met for the EXISTING age keys only (no new knob, Q7) — plus the one knob the
       owner decided on 2026-10-05, `processes.aiAgentsIdleHours` (E7.S2b).
-- [ ] E7.S2c: every behavioural number a key or a setting (the owner rule 2026-10-05), the structural no-literal test green with
+- [x] E7.S2c (daemon, 2026-10-05; the extension's settings and N-1–N-3 on PR #12): every behavioural number a key or a setting (the owner rule 2026-10-05), the structural no-literal test green with
       group C as its reasoned allowlist; no extension ceiling below the daemon's computed worst case (N-1–N-3).
 - [ ] E7.S2b: an orphaned `ai-agents` process ends only by the button, only after N h without CPU measured by identity,
       never with a live session of its agent; the timer never ends one (test).

@@ -365,5 +365,13 @@
   "lastCleanup": {
     "available": false,
     "reason": "no cleanup is recorded in the history yet (no action has removed or freed anything)"
+  },
+  "limits": {
+    "historyRetentionDays": 90,
+    "requestFutureSkewSeconds": 300,
+    "requestGraceSeconds": 60,
+    "maxShownNames": 10000,
+    "unitStopSeconds": 120,
+    "drainGraceMilliseconds": 2000
   }
 }

@@ -57,8 +57,9 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// <summary>This process's stdin — what <c>act … --only -</c> reads A4's shown list from (E6.S1). A test hands its own stream.</summary>
     public Func<Stream> StandardInput { get; init; } = Console.OpenStandardInput;
 
-    /// <summary>How long <c>--only -</c> waits for the end of stdin (plan §15j M2: 10 s); a test shortens it.</summary>
-    public TimeSpan StdinCeiling { get; init; } = StdinList.Ceiling;
+    /// <summary>How long <c>--only -</c> waits for the end of stdin (<c>act.stdinTimeoutSeconds</c>, read when asked — the host is
+    /// built before the configuration is loaded); a test shortens it.</summary>
+    public TimeSpan StdinCeiling { get => field == TimeSpan.Zero ? StdinList.Ceiling : field; init; }
 
     /// <summary>The file system and the signal sender for another layout of the same machine — what the second phase of the
     /// host (<see cref="WithAgentExtras"/>) rebuilds once the configuration names the manual agents' folders (plan §15q R2.2,

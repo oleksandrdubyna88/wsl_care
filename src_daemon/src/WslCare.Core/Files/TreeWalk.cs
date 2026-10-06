@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Diagnostics;
 using System.IO.Enumeration;
 
@@ -38,7 +39,7 @@ internal static class TreeWalk
     private const int CancellationStride = 1024;
 
     /// <summary>At most this many exclusions are named; past it the measure says how many more there were.</summary>
-    internal const int MaxExclusionsNamed = 20;
+    internal static int MaxExclusionsNamed => Tuning.Current.Int(ConfigKeys.Walk.MaxExclusionsNamed);
 
     public static TreeMeasure Measure(string root, TreeLimits limits, IReadOnlySet<string> countOnlyUnder, IReadOnlySet<string> neverEnter, CancellationToken cancellationToken) =>
         Measure(root, limits, new TreeRules(countOnlyUnder, neverEnter), DeviceOf, cancellationToken);

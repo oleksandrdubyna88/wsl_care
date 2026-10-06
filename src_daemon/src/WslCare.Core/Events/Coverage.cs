@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Collectors;
 using WslCare.Core.Docker;
 
@@ -38,16 +39,16 @@ public static class Coverage
     public static readonly TimeSpan CountWindow = TimeSpan.FromHours(24);
 
     /// <summary>Plan §15b #8: the wait for the Docker socket starts at 5 s …</summary>
-    public static readonly TimeSpan FirstBackoff = TimeSpan.FromSeconds(5);
+    public static TimeSpan FirstBackoff => Tuning.Current.Seconds(ConfigKeys.Events.RetryFirstSeconds);
 
     /// <summary>… and doubles up to 5 minutes.</summary>
-    public static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(5);
+    public static TimeSpan MaxBackoff => Tuning.Current.Seconds(ConfigKeys.Events.RetryMaxSeconds);
 
     /// <summary>How old the newest coverage may be before a count treats the follower as not running: one stream
     /// segment and five minutes.</summary>
-    public static readonly TimeSpan Staleness = EventsFollower.SegmentLength + TimeSpan.FromMinutes(5);
+    public static TimeSpan Staleness => EventsFollower.SegmentLength + Tuning.Current.Minutes(ConfigKeys.Events.StalenessSlackMinutes);
 
-    public const int TopImageCount = 5;
+    public static int TopImageCount => Tuning.Current.Int(ConfigKeys.Events.TopImages);
 
     /// <summary>The instant up to which every start is recorded, read from the lines; <c>null</c> when nothing ever was.</summary>
     public static DateTimeOffset? LastCovered(IEnumerable<CoverageLine> lines) =>
@@ -61,7 +62,7 @@ public static class Coverage
 
     /// <summary>The next wait for the Docker socket: 5 s first, then doubled, never above 5 minutes (plan §15b #8).</summary>
     public static TimeSpan NextBackoff(TimeSpan? previous) =>
-        previous is not { } last ? FirstBackoff : last * 2 > MaxBackoff ? MaxBackoff : last * 2;
+        previous is not { } last ? FirstBackoff : last * Tuning.Current.Int(ConfigKeys.Events.RetryFactor) > MaxBackoff ? MaxBackoff : last * Tuning.Current.Int(ConfigKeys.Events.RetryFactor);
 
     /// <summary>What a backfill at <paramref name="now"/> can prove when nothing is known about the engine — the conservative
     /// rule: only the oldest buffered event proves how far back the buffer reaches.</summary>

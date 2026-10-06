@@ -34,7 +34,7 @@ public static class DryRunWindow
 {
     public const string FileName = "first-timer-run.json";
 
-    public static readonly TimeSpan Length = TimeSpan.FromDays(7);
+    public static TimeSpan Length => Tuning.Current.Days(ConfigKeys.Timer.FirstDryWindowDays);
 
     public static string File(IHostPaths paths) => paths.Rules.Join(paths.StateDirectory, FileName);
 
@@ -58,14 +58,14 @@ public static class DryRunWindow
     private static DryRunDecision Week(DateTimeOffset? start, DateTimeOffset now, string note) => start switch
     {
         null => new DryRunDecision(true, $"the start of the dry-run week is not recorded{note}"),
-        { } at when now < at + Length => new DryRunDecision(true, $"the timer's first 7 days run dry: until {(at + Length).UtcDateTime:yyyy-MM-dd HH:mm}Z{note}"),
-        { } at => new DryRunDecision(false, $"dryRun is off and the 7 days since the first timer run ({at.UtcDateTime:yyyy-MM-dd}) have passed"),
+        { } at when now < at + Length => new DryRunDecision(true, $"the timer's first {Length.TotalDays:0} days run dry: until {(at + Length).UtcDateTime:yyyy-MM-dd HH:mm}Z{note}"),
+        { } at => new DryRunDecision(false, $"dryRun is off and the {Length.TotalDays:0} days since the first timer run ({at.UtcDateTime:yyyy-MM-dd}) have passed"),
     };
 
     /// <summary>The recorded start, writing it when it is missing or unreadable; <c>null</c> when it could not be written.</summary>
     private static (DateTimeOffset? Start, string Note) Start(IHostPaths paths, IFileSystem files, DateTimeOffset now)
     {
-        var read = files.ReadFile(File(paths));
+        var read = files.ReadFile(File(paths), RootFileCaps.State);
         if (Recorded(read) is { } stamp)
         {
             return (stamp.At, string.Empty);

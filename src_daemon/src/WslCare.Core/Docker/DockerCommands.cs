@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 using WslCare.Core.Processes;
@@ -23,9 +24,9 @@ public static class DockerCommands
 {
     public const string Executable = "docker";
 
-    /// <summary>How many container ids one <c>container inspect</c> takes: 100 full ids are 6.5 k
-    /// characters, far below the 32 k a Windows command line holds.</summary>
-    public const int InspectBatch = 100;
+    /// <summary>How many container ids one <c>container inspect</c> takes (<c>docker.batchSize</c>): 100 full ids — the key's
+    /// maximum — are 6.5 k characters, far below the 32 k a Windows command line holds.</summary>
+    public static int InspectBatch => Tuning.Current.Int(ConfigKeys.Docker.BatchSize);
 
     /// <summary>
     /// The fields of <c>docker container inspect</c> the daemon reads, and ONLY those: the template is
@@ -45,47 +46,48 @@ public static class DockerCommands
         "\"keep\":{{json (index .Config.Labels \"wsl-care.keep\")}}," +
         "\"mounts\":[{{range $i, $m := .Mounts}}{{if $i}},{{end}}{\"type\":{{json (index $m \"Type\")}},\"name\":{{json (index $m \"Name\")}}}{{end}}]}";
 
-    private const int SmallCap = 1024 * 1024;
-    private const int LargeCap = 64 * 1024 * 1024;
+    private static int SmallCap => Tuning.Current.Int(ConfigKeys.Docker.SmallOutputCapBytes);
+
+    private static int LargeCap => Tuning.Current.Int(ConfigKeys.Docker.LargeOutputCapBytes);
 
     /// <summary>The engine's version: is a daemon there at all, and which (plan §5 A4 refuses below 23).</summary>
-    public static readonly TimeSpan ProbeCeiling = TimeSpan.FromSeconds(10);
+    public static TimeSpan ProbeCeiling => Tuning.Current.Seconds(ConfigKeys.Docker.ProbeTimeoutSeconds);
 
     /// <summary>A listing: volumes, containers, stats, events.</summary>
-    public static readonly TimeSpan ListingCeiling = TimeSpan.FromSeconds(30);
+    public static TimeSpan ListingCeiling => Tuning.Current.Seconds(ConfigKeys.Docker.ListTimeoutSeconds);
 
     /// <summary><c>docker system df</c> walks every layer and volume (plan §4.3: seconds to minutes).</summary>
-    public static readonly TimeSpan DiskUsageCeiling = TimeSpan.FromMinutes(2);
+    public static TimeSpan DiskUsageCeiling => Tuning.Current.Seconds(ConfigKeys.Docker.DiskUsageTimeoutSeconds);
 
-    public static ToolCommand Version { get; } = new(Executable, "version", ["version", "--format", "{{json .}}"], ProbeCeiling, SmallCap);
+    public static ToolCommand Version => new(Executable, "version", ["version", "--format", "{{json .}}"], ProbeCeiling, SmallCap);
 
     /// <summary>The totals per type — count, active, size, reclaimable — Docker's own figures (the
     /// "Docker after" line of the 2026-10-02 record).</summary>
-    public static ToolCommand SystemDf { get; } = new(Executable, "system-df", ["system", "df", "--format", "{{json .}}"], DiskUsageCeiling, SmallCap);
+    public static ToolCommand SystemDf => new(Executable, "system-df", ["system", "df", "--format", "{{json .}}"], DiskUsageCeiling, SmallCap);
 
     /// <summary>Every image, container, volume and build-cache entry with its size.</summary>
-    public static ToolCommand SystemDfVerbose { get; } = new(Executable, "system-df-v", ["system", "df", "-v", "--format", "{{json .}}"], DiskUsageCeiling, LargeCap);
+    public static ToolCommand SystemDfVerbose => new(Executable, "system-df-v", ["system", "df", "-v", "--format", "{{json .}}"], DiskUsageCeiling, LargeCap);
 
     /// <summary>The volumes no container refers to — A4's re-checked list (plan §15 #4).</summary>
-    public static ToolCommand DanglingVolumes { get; } = new(Executable, "volume-ls-dangling", ["volume", "ls", "--filter", "dangling=true", "--format", "{{.Name}}"], ListingCeiling, LargeCap);
+    public static ToolCommand DanglingVolumes => new(Executable, "volume-ls-dangling", ["volume", "ls", "--filter", "dangling=true", "--format", "{{.Name}}"], ListingCeiling, LargeCap);
 
     /// <summary>The name of EVERY volume, attached or not — what A5 reads after <c>docker rm -v</c> to confirm which anonymous
     /// volumes went with the containers (E3.S2: a volume it cannot confirm gone counts nothing).</summary>
-    public static ToolCommand VolumeList { get; } = new(Executable, "volume-ls", ["volume", "ls", "--format", "{{.Name}}"], ListingCeiling, LargeCap);
+    public static ToolCommand VolumeList => new(Executable, "volume-ls", ["volume", "ls", "--format", "{{.Name}}"], ListingCeiling, LargeCap);
 
     /// <summary>Every container, one JSON line each. Not used by <c>preview</c> (the verbose disk usage
     /// lists containers with their sizes); the live contract holds its rows to the same parser and the
     /// same ids, and the events follower (E2.S3) can name containers with it.</summary>
-    public static ToolCommand ContainerList { get; } = new(Executable, "ps-a", ["ps", "-a", "--no-trunc", "--format", "{{json .}}"], ListingCeiling, LargeCap);
+    public static ToolCommand ContainerList => new(Executable, "ps-a", ["ps", "-a", "--no-trunc", "--format", "{{json .}}"], ListingCeiling, LargeCap);
 
     /// <summary><c>docker stats --no-stream</c>: the per-container memory a FULL run samples (plan §4.2,
     /// §15b #5) — never <c>status</c>.</summary>
-    public static ToolCommand Stats { get; } = new(Executable, "stats", ["stats", "--no-stream", "--format", "{{json .}}"], ListingCeiling, LargeCap);
+    public static ToolCommand Stats => new(Executable, "stats", ["stats", "--no-stream", "--format", "{{json .}}"], ListingCeiling, LargeCap);
 
     /// <summary>The engine instance and its start (<see cref="EngineMark"/>): the default <c>bridge</c> network's id and creation
     /// instant, which the engine re-creates at every start. The follower records it at each coverage marker so a backfill can
     /// tell an idle engine (nothing happened) from a restarted one (its buffer was lost).</summary>
-    public static ToolCommand EngineStart { get; } = new(Executable, "network-inspect-bridge", ["network", "inspect", "bridge", "--format", "{\"id\":{{json .Id}},\"created\":{{json .Created}}}"], ProbeCeiling, SmallCap);
+    public static ToolCommand EngineStart => new(Executable, "network-inspect-bridge", ["network", "inspect", "bridge", "--format", "{\"id\":{{json .Id}},\"created\":{{json .Created}}}"], ProbeCeiling, SmallCap);
 
     /// <summary>
     /// The leading words of every command built here. Each one only READS; a test holds every command
@@ -100,7 +102,7 @@ public static class DockerCommands
     /// <summary>The fields of <see cref="InspectTemplate"/> for 1 to <see cref="InspectBatch"/> containers.</summary>
     public static ToolCommand ContainerInspect(IReadOnlyList<string> ids)
     {
-        if (ids.Count is 0 or > InspectBatch)
+        if (ids.Count == 0 || ids.Count > InspectBatch)
         {
             throw new ArgumentOutOfRangeException(nameof(ids), ids.Count, $"container inspect takes 1 to {InspectBatch} ids per call");
         }

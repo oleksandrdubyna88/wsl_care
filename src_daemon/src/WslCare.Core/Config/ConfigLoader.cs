@@ -48,7 +48,9 @@ public static class ConfigLoader
     public const string DefaultsResource = "WslCare.Core.Config.default.json";
 
     /// <summary>The most a configuration layer may hold (plan §15q growth table).</summary>
-    public const int MaxLayerBytes = 256 * 1024;
+    /// <summary>The machine layer's bootstrap cap — the range maximum of <c>config.maxLayerBytes</c> (E7.S2c: the machine layer is read
+    /// before any key is known); the user layer is read with the key's effective value.</summary>
+    public static int MaxLayerBytes => ConfigKeys.ConfigLayerLimits.MaxLayerBytes.Max;
 
     /// <summary>The embedded layer's "file name" in error messages and the provenance column.</summary>
     public static readonly ConfigLayerFile DefaultsFile = new(ConfigLayer.Default, "<embedded default.json>");
@@ -66,7 +68,8 @@ public static class ConfigLoader
             return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust);
         }
 
-        var user = Explained(files.ReadUserFile(paths.UserConfigFile, MaxLayerBytes, trust.Owner, paths.Home), paths.UserConfigFile);
+        var userCap = Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust).Config.Int(ConfigKeys.ConfigLayerLimits.MaxLayerBytes);
+        var user = Explained(files.ReadUserFile(paths.UserConfigFile, userCap, trust.Owner, paths.Home), paths.UserConfigFile);
         return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine, (new ConfigLayerFile(ConfigLayer.User, paths.UserConfigFile), user)], trust)
             with
         { UserLayerDigest = Digest(user) };
@@ -85,6 +88,7 @@ public static class ConfigLoader
         }
 
         var config = new EffectiveConfig(state.Merged);
+        state.Errors.AddRange(NumberRules.Broken(config, [.. layers.Select(l => l.File)]));
         ConfigLoadResult result = state.Errors.Count == 0 ? new ConfigLoadResult.Valid(config) : new ConfigLoadResult.ObserveOnly(config, state.Errors);
         return result with { Notices = [.. state.Notices, .. RootTimerNotices(layers, trust, state.Notices)] };
     }

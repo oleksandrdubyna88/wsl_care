@@ -65,7 +65,7 @@ public sealed record ShownList(bool Given, IReadOnlySet<string> Names)
     /// <summary>The most names one shown list carries — in a preview's <c>shown</c> (§15j B1) and back through <c>--volume</c> /
     /// <c>--only</c>: far above the 387 volumes of 2026-10-02, low enough that a mistaken file cannot make a run of millions
     /// (≈ 650 KB of names).</summary>
-    public const int MaxNames = 10_000;
+    public static int MaxNames => Tuning.Current.Int(ConfigKeys.Act.MaxShownNames);
 
     public static readonly ShownList None = new(false, new HashSet<string>(StringComparer.Ordinal));
 
@@ -111,7 +111,7 @@ public sealed record ActionPreview(
     IReadOnlyList<ActionItem> Items)
 {
     /// <summary>Plan §7.3: the modal names up to 20 items.</summary>
-    public const int MaxItems = 20;
+    public static int MaxItems => Tuning.Current.Int(ConfigKeys.Preview.MaxItems);
 
     /// <summary>EVERY object the preview selected — <see cref="Items"/> is the first <see cref="MaxItems"/> of them. What the
     /// run acts on, re-checked by it; held in memory within ONE engine call and never serialised (E3.S2).</summary>

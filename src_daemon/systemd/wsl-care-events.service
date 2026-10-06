@@ -4,7 +4,8 @@
 # Restart=always / RestartSec=30 is the outer net only: the follower waits for the Docker socket
 # IN-PROCESS with backoff (5 s doubling to 5 min) and writes ONE gap marker per outage (§15b #8), and it
 # exits only on a signal or an unexpected error — so this does not cycle while Docker is merely down. At
-# 30 s between starts the default start limit (5 starts in 10 s) can never trip.
+# 30 s between starts the default start limit (5 starts in 10 s) can never trip. RestartSec=30 is the DEFAULT of
+# units.eventsRestartSeconds (E7.S2c): install.sh writes wsl-care-events.service.d/50-wsl-care-config.conf from it.
 #
 # Root, like the timer: the starts it records go to /var/lib/wsl-care, which only root writes (§15b #3).
 # Hardening: NoNewPrivileges=yes only, for the reasons in wsl-care.service; the follower itself writes only

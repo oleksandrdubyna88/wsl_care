@@ -34,7 +34,7 @@ public sealed class CacheDrop : ICleanupAction
 
     private const double Gib = 1024d * 1024 * 1024;
 
-    public static readonly CommandTemplate Sync = new("sync", CommandScope.Machine, "sync", [], TimeSpan.FromMinutes(2), CommandRequest.DefaultOutputCapChars);
+    public static readonly CommandTemplate Sync = new("sync", CommandScope.Machine, "sync", [], ConfigKeys.Memory.SyncTimeoutSeconds, ConfigKeys.Commands.OutputCapBytes);
 
     /// <summary>The value is a LITERAL: no slot can ask for another (plan §15c #3; the property test plants the wrong one).</summary>
     public static readonly CommandTemplate DropCaches = new(
@@ -42,8 +42,8 @@ public sealed class CacheDrop : ICleanupAction
         CommandScope.Machine,
         "sysctl",
         [new ArgPart.Literal("-w"), new ArgPart.Literal("vm.drop_caches=1")],
-        TimeSpan.FromSeconds(30),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.Memory.DropCachesTimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     public ActionId Id { get; } = ActionId.Find("A1")!;
 

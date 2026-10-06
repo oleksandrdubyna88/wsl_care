@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 
 namespace WslCare.Core.Agents;
@@ -30,7 +31,7 @@ public sealed record SessionListing(IFileSystem Files, IReadOnlySet<string> Neve
 public static class SessionGlob
 {
     /// <summary>The most entries one layout's listing may see.</summary>
-    public const int MaxEntries = 500_000;
+    public static int MaxEntries => Tuning.Current.Int(ConfigKeys.Agents.SessionMaxEntries);
 
     /// <summary>A whole segment that matches the folder it is in and every folder below it (a manual agent's glob, plan §15q R2.1).</summary>
     public const string AnyDepth = "**";

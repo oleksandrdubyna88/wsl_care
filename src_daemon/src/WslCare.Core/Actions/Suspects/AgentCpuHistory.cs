@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.Json;
 
 using WslCare.Core.Collectors;
@@ -31,10 +32,10 @@ public static class AgentCpuHistory
 {
     public const string FileName = "agent-cpu.json";
 
-    public const int MaxEntries = 512;
+    public static int MaxEntries => Tuning.Current.Int(ConfigKeys.AgentCpu.MaxEntries);
 
     /// <summary>A full history (512 identities, ~180 B each) is ~90 KiB; the cap leaves room above it.</summary>
-    public const int MaxBytes = 128 * 1024;
+    public static int MaxBytes => Tuning.Current.Int(ConfigKeys.AgentCpu.MaxBytes);
 
     public static string File(IHostPaths paths) => paths.Rules.Join(paths.StateDirectory, FileName);
 

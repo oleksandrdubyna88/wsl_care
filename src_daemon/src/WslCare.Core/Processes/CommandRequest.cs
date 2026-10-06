@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 namespace WslCare.Core.Processes;
 
 /// <summary>
@@ -16,10 +17,11 @@ namespace WslCare.Core.Processes;
 /// </remarks>
 public sealed record CommandRequest
 {
-    /// <summary>Longer than any action the daemon runs (systemd stops the unit at 10 minutes, plan §8).</summary>
-    public static readonly TimeSpan MaxTimeout = TimeSpan.FromHours(24);
+    /// <summary>The longest wait any command may have (<c>commands.maxTimeoutHours</c>); every timeout key's range stays under it.</summary>
+    public static TimeSpan MaxTimeout => Tuning.Current.Hours(ConfigKeys.Commands.MaxTimeoutHours);
 
-    public const int DefaultOutputCapChars = 1024 * 1024;
+    /// <summary>How much of each stream a command keeps unless it says otherwise (<c>commands.outputCapBytes</c>).</summary>
+    public static int DefaultOutputCapChars => Tuning.Current.Int(ConfigKeys.Commands.OutputCapBytes);
 
     public CommandRequest(IReadOnlyList<string> argv, TimeSpan timeout, string workingDirectory = "")
     {

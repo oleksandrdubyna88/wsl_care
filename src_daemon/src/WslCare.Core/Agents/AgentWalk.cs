@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Folders;
 using WslCare.Core.Hosting;
@@ -32,10 +33,10 @@ public sealed record SessionsMeasured(SessionFigures Figures, IReadOnlyList<Sess
 public sealed class AgentWalk(IFileSystem files, TimeProvider clock, string home)
 {
     /// <summary>The whole agent walk inside a root <c>collect</c> (review M7).</summary>
-    public static readonly TimeSpan CollectBudget = TimeSpan.FromMinutes(3);
+    public static TimeSpan CollectBudget => Tuning.Current.Seconds(ConfigKeys.Agents.WalkBudgetSeconds);
 
     /// <summary><c>agents list --measure</c> and <c>agents probe</c>: below every host call's timeout (E7.S4 states the client's).</summary>
-    public static readonly TimeSpan MeasureNowBudget = TimeSpan.FromSeconds(60);
+    public static TimeSpan MeasureNowBudget => Tuning.Current.Seconds(ConfigKeys.Agents.MeasureBudgetSeconds);
 
     public const string NotReached = "not measured this run: the agent walk's time budget was spent before this folder";
 

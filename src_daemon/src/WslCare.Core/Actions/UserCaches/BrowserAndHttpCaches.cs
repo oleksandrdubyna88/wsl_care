@@ -38,8 +38,8 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
         CommandScope.User,
         "dotnet",
         [new ArgPart.Literal("nuget"), new ArgPart.Literal("locals"), new ArgPart.Literal("http-cache"), new ArgPart.Literal("--clear")],
-        TimeSpan.FromMinutes(10),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.Nuget.ClearTimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     private const string LinksFolder = ".links";
     private const string InstallLock = "__dirlock";
@@ -168,10 +168,10 @@ public sealed class BrowserAndHttpCaches : ICleanupAction
     }
 
     /// <summary>A Playwright link file holds one path (plan §15q R1.1: the user's files, read owner-checked and capped).</summary>
-    private const int MaxLinkBytes = 64 * 1024;
+    private static int MaxLinkBytes => Tuning.Current.Int(ConfigKeys.UserFiles.MaxLinkBytes);
 
     /// <summary>Playwright's <c>browsers.json</c> is a few kilobytes.</summary>
-    private const int MaxBrowsersJsonBytes = 1024 * 1024;
+    private static int MaxBrowsersJsonBytes => Tuning.Current.Int(ConfigKeys.UserFiles.MaxJsonBytes);
 
     /// <summary>One link: the package folder it names; a package that is gone references nothing (stale).</summary>
     private static (IReadOnlyList<string> Names, string Problem) LinkRevisions(ActionContext context, string link)

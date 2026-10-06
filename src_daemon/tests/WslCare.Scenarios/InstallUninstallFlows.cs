@@ -34,6 +34,11 @@ public sealed class InstallUninstallFlows
             File.Exists(world.At($"/etc/systemd/system/{unit}")).Should().BeFalse($"{unit} is removed");
         }
 
+        foreach (var unit in Core.Systemd.UnitDropIns.Units)
+        {
+            Directory.Exists(world.At($"/etc/systemd/system/{unit}.d")).Should().BeFalse($"E7.S2c: {unit}'s drop-in and its emptied folder are removed");
+        }
+
         File.Exists(world.At(InstallWorld.BinaryPath)).Should().BeFalse();
         Directory.Exists(world.At("/opt/wsl-care")).Should().BeFalse("its emptied folders go with it");
         Directory.EnumerateFileSystemEntries(world.At("/usr/local/bin")).Should().BeEmpty("the link is removed (a dangling link counts as an entry here)");

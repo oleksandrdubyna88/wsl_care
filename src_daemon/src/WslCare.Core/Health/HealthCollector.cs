@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Collectors;
 using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Files;
@@ -25,8 +26,8 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     /// <summary>The kernel's words for a failed allocation (plan §4.1) — also A2's event (E3.S3).</summary>
     public const string AllocationFailure = "page allocation failure";
     private const string OomKiller = "invoked oom-killer";
-    private const int KernelLinesKept = 5;
-    private const int KernelLineChars = 200;
+    private static int KernelLinesKept => Tuning.Current.Int(ConfigKeys.Health.KernelLinesKept);
+    private static int KernelLineChars => Tuning.Current.Int(ConfigKeys.Health.KernelLineChars);
 
     public async Task<HealthSample> CollectAsync(DateTimeOffset since, CancellationToken cancellationToken)
     {
@@ -75,7 +76,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         && !path.Split('\\', '/').Contains("..", StringComparer.Ordinal) && !path.Any(char.IsControl);
 
     /// <summary><c>.wslconfig</c> is a short INI file.</summary>
-    public const int MaxWslConfigBytes = 1024 * 1024;
+    public static int MaxWslConfigBytes => Tuning.Current.Int(ConfigKeys.Health.MaxWslConfigBytes);
 
     /// <summary>What a file at <paramref name="file"/> says; an absent file is WSL's defaults, not an error.</summary>
     /// <remarks>The Windows profile, read through drvfs (plan §15q R1.1, review M2): never through a link, never waited on,

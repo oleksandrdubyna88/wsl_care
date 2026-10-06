@@ -43,6 +43,13 @@ public sealed class InstallFlows
             File.GetUnixFileMode(installed).Should().Be(InstallWorld.Regular, "install -m 0644");
         }
 
+        foreach (var unit in Core.Systemd.UnitDropIns.Units)
+        {
+            var dropIn = world.At($"/etc/systemd/system/{unit}.d/{Core.Systemd.UnitDropIns.FileName}");
+            File.ReadAllText(dropIn).Should().Be(Core.Systemd.UnitDropIns.Defaults(unit), $"E7.S2c: {unit}'s drop-in is what the installed binary rendered");
+            File.GetUnixFileMode(dropIn).Should().Be(InstallWorld.Regular, "install -m 0644");
+        }
+
         File.ReadAllBytes(world.At("/etc/wsl-care/config.json")).Should().Equal(Repo(ShippedFiles.MachineConfig), "no machine layer existed, so the shipped one was written");
         Directory.Exists(world.At("/var/lib/wsl-care")).Should().BeTrue();
         Directory.Exists(world.At("/var/log/wsl-care")).Should().BeTrue();
@@ -53,9 +60,11 @@ public sealed class InstallFlows
             "enable --now sysstat.service atop.service",
             "is-active --quiet wsl-care.timer",
             "is-active --quiet wsl-care-events.service");
-        world.CallsOf("wsl-care").Select(c => string.Join(' ', c.Argv)).Should().Equal(["collect", "doctor --json"], "one full run, then the health verdict");
+        world.CallsOf("wsl-care").Select(c => string.Join(' ', c.Argv)).Should().Equal(
+            [.. Core.Systemd.UnitDropIns.Units.Select(u => $"units dropin {u}"), "collect", "doctor --json"],
+            "each unit's drop-in rendered by the installed binary (E7.S2c), one full run, then the health verdict");
         world.StubInvocations.Should().OnlyContain(p => p == binary, "the installer runs the binary by its absolute path, never through PATH (plan §15e #3)")
-            .And.HaveCount(2);
+            .And.HaveCount(Core.Systemd.UnitDropIns.Units.Count + 2);
         world.CallsOf("sudo").Should().BeEmpty("the installer never calls sudo");
         world.CallsOf("runuser").Should().BeEmpty("without SUDO_USER, gh runs as the script itself");
         Directory.EnumerateFileSystemEntries(world.Temp).Should().BeEmpty("the temporary folder is removed on success too");
@@ -174,6 +183,22 @@ public sealed class InstallFlows
         result.Stdout.Should().Contain("kept /etc/wsl-care/config.json");
     }
 
+    /// <summary>E7.S2c: a drop-in the installed binary could not render fails the install at that step — the units are never
+    /// enabled over a configuration the binary refused to say.</summary>
+    [Fact]
+    public async Task A_drop_in_the_binary_cannot_render_fails_the_install_before_any_unit_is_enabled()
+    {
+        Linux();
+        using var world = new InstallWorld("dropin-fails");
+        world.Override("wsl-care", ["units", "dropin", "wsl-care.timer"], 70);
+
+        var result = await world.RunAsync();
+
+        FailedAt(result, "install-units");
+        result.Stderr.Should().Contain("units dropin wsl-care.timer failed");
+        world.CallsOf("systemctl").Select(c => string.Join(' ', c.Argv)).Should().NotContain(c => c.StartsWith("enable", StringComparison.Ordinal), "the failed step stops the run");
+    }
+
     [Fact]
     public async Task A_unit_that_is_not_active_after_enabling_fails_the_install_naming_that_step()
     {
@@ -255,6 +280,7 @@ public sealed class InstallFlows
             .And.Contain("would run: install -m 0644 ")
             .And.Contain("would add [user] default=alice to /etc/wsl.conf")
             .And.Contain($"would run: systemctl {string.Join(' ', EnableOurUnits)}")
+            .And.Contain($"would write /etc/systemd/system/wsl-care.timer.d/{Core.Systemd.UnitDropIns.FileName} from: {InstallWorld.BinaryPath} units dropin wsl-care.timer")
             .And.Contain($"would run: {InstallWorld.BinaryPath} collect")
             .And.Contain("would verify:")
             .And.Contain("dry run: nothing was changed");

@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Actions.Engine;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
@@ -70,8 +71,8 @@ public sealed record RunShowReport(int SchemaVersion, string RunId, string State
 /// </summary>
 public static class RunShow
 {
-    public const string NothingNamesIt =
-        "no history line, running state or request names this run - it never existed here, or it is older than the 90-day retention";
+    public static string NothingNamesIt =>
+        $"no history line, running state or request names this run - it never existed here, or it is older than the {Tuning.Current.Text(ConfigKeys.Runs.HistoryRetentionDays)}-day retention";
 
     private static readonly HistoryRead NoHistory = new([], 0, string.Empty);
 
@@ -147,7 +148,7 @@ public static class RunShow
             return ("none", null);
         }
 
-        return files.ReadFile(RunDetailStore.Absolute(paths, line.DetailPath)) switch
+        return files.ReadFile(RunDetailStore.Absolute(paths, line.DetailPath), RootFileCaps.History) switch
         {
             FileReadResult.Content content => Parsed(content.Bytes),
             FileReadResult.Missing => ("lost", null),

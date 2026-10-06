@@ -39,7 +39,7 @@ public static class FullRunVerdicts
             : Reading.Missing<RecordedVerdicts>(LastFullRun.NoFullRunYet);
 
     private static Reading<RecordedVerdicts> FromDetail(IHostPaths paths, IFileSystem files, string relative) =>
-        files.ReadFile(RunDetailStore.Absolute(paths, relative)) switch
+        files.ReadFile(RunDetailStore.Absolute(paths, relative), RootFileCaps.History) switch
         {
             FileReadResult.Content content => Parse(content.Bytes, relative),
             FileReadResult.Unreadable u => Reading.Missing<RecordedVerdicts>($"the detail of the newest full run ({relative}) could not be read: {u.Reason}"),

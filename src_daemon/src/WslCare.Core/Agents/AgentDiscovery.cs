@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -53,13 +54,13 @@ public sealed record VersionFound(string Version, string Source)
 public static class AgentDiscovery
 {
     /// <summary>The most of a <c>package.json</c> read for its version.</summary>
-    public const int MaxPackageJsonBytes = 1024 * 1024;
+    public static int MaxPackageJsonBytes => Tuning.Current.Int(ConfigKeys.Agents.MaxPackageJsonBytes);
 
     /// <summary>The most links followed from a binary to what it really is (the kernel's own ELOOP limit).</summary>
     public const int MaxLinkHops = 40;
 
     /// <summary>The whole binary lookup of one discovery (review R1: a PATH entry on a stopped 9p share must not hold the answer).</summary>
-    public static readonly TimeSpan LookupCeiling = TimeSpan.FromSeconds(10);
+    public static TimeSpan LookupCeiling => Tuning.Current.Seconds(ConfigKeys.Agents.LookupCeilingSeconds);
 
     public const string NotAskedAsRoot = "not asked as root: root neither looks up the user's binaries nor reads their packages";
 
@@ -127,7 +128,7 @@ public static class AgentDiscovery
     }
 
     private static string FromLinkTarget(AgentEntry entry, string hop) =>
-        entry.VersionInLinkTarget.Length > 0 && Regex.Match(hop.Replace('\\', '/'), entry.VersionInLinkTarget, RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(250)) is { Success: true } m
+        entry.VersionInLinkTarget.Length > 0 && Regex.Match(hop.Replace('\\', '/'), entry.VersionInLinkTarget, RegexOptions.CultureInvariant, Tuning.Current.Milliseconds(ConfigKeys.Patterns.MatchTimeoutMilliseconds)) is { Success: true } m
             ? m.Groups["v"].Value
             : string.Empty;
 

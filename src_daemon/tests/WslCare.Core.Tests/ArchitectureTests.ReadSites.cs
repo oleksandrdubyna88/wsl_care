@@ -120,7 +120,7 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Collectors/LinuxProbe.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/MemoryCollector.cs"] = new() { ["ProcText.Read"] = (3, ReadClass.System) },
         ["WslCare.Core/Config/UserLayerTrusts.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
-        ["WslCare.Core/Doctor/DoctorRun.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
+        ["WslCare.Core/Doctor/DoctorRun.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System), ["ReadFile"] = (1, ReadClass.System) },
         ["WslCare.Core/Health/WindowsProfiles.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Processes/ProcessSignals.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Processes/SystemDriveFiles.cs"] = new() { ["RegularFiles.ReadHead"] = (1, ReadClass.System) },

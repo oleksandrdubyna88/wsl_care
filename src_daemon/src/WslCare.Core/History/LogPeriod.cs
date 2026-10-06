@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 namespace WslCare.Core.History;
@@ -9,7 +10,7 @@ namespace WslCare.Core.History;
 public sealed partial record LogPeriod(DateOnly From, DateOnly To, string Label)
 {
     /// <summary>The longest range one answer covers: the records are kept 90 days, a year leaves room and bounds the read.</summary>
-    public const int MaxDays = 366;
+    public static int MaxDays => Tuning.Current.Int(ConfigKeys.Logs.MaxRangeDays);
 
     public const string Today = "today";
 

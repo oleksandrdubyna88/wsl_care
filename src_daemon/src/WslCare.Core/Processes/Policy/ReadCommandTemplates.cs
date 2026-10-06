@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Docker;
 using WslCare.Core.Health;
 using WslCare.Core.Systemd;
@@ -20,8 +21,8 @@ public static class ReadCommandTemplates
     public static CommandTemplate ContainerInspect { get; } = Machine(
         "container-inspect",
         DockerCommands.Executable,
-        [L("container"), L("inspect"), L("--format"), L(DockerCommands.InspectTemplate), new ArgPart.Repeat("id", new SlotKind.Hex(64), 1, DockerCommands.InspectBatch)],
-        DockerCommands.ListingCeiling);
+        [L("container"), L("inspect"), L("--format"), L(DockerCommands.InspectTemplate), new ArgPart.Repeat("id", new SlotKind.Hex(64), 1, ConfigKeys.Docker.BatchSize.Max)],
+        ConfigKeys.Docker.ListTimeoutSeconds);
 
     /// <summary><c>systemctl show &lt;unit&gt;</c> (<see cref="SystemdCommands.ShowUnit"/>) — also declared by A15 (E3.S3), which
     /// reads <c>fstrim.timer</c> through it. Declared BEFORE <see cref="All"/>: static members initialise in textual order.</summary>
@@ -29,7 +30,7 @@ public static class ReadCommandTemplates
         "systemctl-show",
         SystemdCommands.Systemctl,
         [L("show"), S("unit", Unit), L("--timestamp=unix"), L($"--property={SystemdCommands.UnitProperties}")],
-        SystemdCommands.Ceiling);
+        ConfigKeys.Systemd.TimeoutSeconds);
 
     /// <summary><c>journalctl --since … --grep=…</c> (<see cref="SystemdCommands.Search"/>) — also declared by A2 (E3.S3), which
     /// counts the kernel's page allocation failures since the last run through it.</summary>
@@ -41,34 +42,34 @@ public static class ReadCommandTemplates
             S("scope", new SlotKind.AnyOf([new SlotKind.OneOf(["--dmesg"]), new SlotKind.Prefixed("--unit=", new SlotKind.UnitName(TypeRequired: false))])),
             S("pattern", new SlotKind.Prefixed("--grep=", new SlotKind.Text(256))),
         ],
-        SystemdCommands.SearchCeiling);
+        ConfigKeys.Systemd.SearchTimeoutSeconds);
 
     public static IReadOnlyList<CommandTemplate> All { get; } =
     [
-        .. new[]
+        .. new Func<ToolCommand>[]
         {
-            DockerCommands.Version, DockerCommands.SystemDf, DockerCommands.SystemDfVerbose, DockerCommands.DanglingVolumes, DockerCommands.VolumeList,
-            DockerCommands.ContainerList, DockerCommands.Stats, DockerCommands.EngineStart,
-            SystemdCommands.JournalDiskUsage, SystemdCommands.ListBoots, SystemdCommands.FailedUnits, SystemdCommands.Version, SystemdCommands.TimeSync,
-            HealthCommands.WindowsClock, HealthCommands.SnapList,
+            () => DockerCommands.Version, () => DockerCommands.SystemDf, () => DockerCommands.SystemDfVerbose, () => DockerCommands.DanglingVolumes,
+            () => DockerCommands.VolumeList, () => DockerCommands.ContainerList, () => DockerCommands.Stats, () => DockerCommands.EngineStart,
+            () => SystemdCommands.JournalDiskUsage, () => SystemdCommands.ListBoots, () => SystemdCommands.FailedUnits, () => SystemdCommands.Version,
+            () => SystemdCommands.TimeSync, () => HealthCommands.WindowsClock, () => HealthCommands.SnapList,
         }.Select(CommandTemplate.Fixed),
         ContainerInspect,
         Machine(
             "events",
             DockerCommands.Executable,
             [L("events"), L("--since"), S("since", Instant), L("--until"), S("until", Instant), L("--filter"), L("type=container"), L("--filter"), L("event=start"), L("--format"), L("{{json .}}")],
-            DockerCommands.ListingCeiling),
+            ConfigKeys.Docker.ListTimeoutSeconds),
         Machine(
             "events-backfill",
             DockerCommands.Executable,
             [L("events"), L("--since"), S("since", Instant), L("--until"), S("until", Instant), L("--format"), L("{{json .}}")],
-            DockerCommands.ListingCeiling),
+            ConfigKeys.Docker.ListTimeoutSeconds),
         SystemctlShow,
         JournalSearch,
     ];
 
-    private static CommandTemplate Machine(string name, string executable, IReadOnlyList<ArgPart> parts, TimeSpan ceiling) =>
-        new(name, CommandScope.Machine, executable, parts, ceiling, CommandRequest.DefaultOutputCapChars);
+    private static CommandTemplate Machine(string name, string executable, IReadOnlyList<ArgPart> parts, ConfigKey.IntKey timeoutSeconds) =>
+        new(name, CommandScope.Machine, executable, parts, timeoutSeconds, ConfigKeys.Commands.OutputCapBytes);
 
     private static ArgPart.Literal L(string text) => new(text);
 

@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 
 using WslCare.Core.Files;
@@ -16,10 +17,10 @@ namespace WslCare.Cli;
 internal static class StdinList
 {
     /// <summary>The ceiling a person waits for the list's end (plan §15j M2: 10 s).</summary>
-    public static readonly TimeSpan Ceiling = TimeSpan.FromSeconds(10);
+    public static TimeSpan Ceiling => Tuning.Current.Seconds(ConfigKeys.Act.StdinTimeoutSeconds);
 
     /// <summary>The most bytes a list on stdin may hold (plan §15j M2: 1 MiB) — one byte more is a refusal.</summary>
-    public const int MaxBytes = 1024 * 1024;
+    public static int MaxBytes => Tuning.Current.Int(ConfigKeys.Act.MaxListBytes);
 
     public static FileReadResult Read(Stream stdin, int maxBytes, TimeSpan ceiling)
     {

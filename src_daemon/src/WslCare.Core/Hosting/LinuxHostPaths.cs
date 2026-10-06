@@ -129,6 +129,9 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
     /// appear (<c>/mnt/</c> by default) — how a Windows path the clock probe printed becomes a path here.</summary>
     public string WslConfFile => _rules.Join(environment.Etc, "wsl.conf");
 
+    /// <summary>Where install.sh puts the units and their drop-ins (<c>/etc/systemd/system</c>, E7.S2c).</summary>
+    public string SystemdUnitDirectory => _rules.Join(environment.Etc, "systemd", "system");
+
     /// <summary>The apt package cache A9 measures (<c>/var/cache/apt</c>).</summary>
     public string AptCacheDirectory => _rules.Join(environment.Var, "cache", "apt");
 

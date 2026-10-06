@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -63,7 +64,7 @@ public static partial class WindowsSystemDrive
         ["/proc/sys/fs/binfmt_misc/WSLInterop", "/proc/sys/fs/binfmt_misc/WSLInterop-late"];
 
     /// <summary>How long the whole system-drive lookup may take before it is refused (it reads a 9p share the host serves).</summary>
-    public static readonly TimeSpan Ceiling = TimeSpan.FromSeconds(5);
+    public static TimeSpan Ceiling => Tuning.Current.Seconds(ConfigKeys.Commands.SystemDriveLookupSeconds);
 
     /// <summary>
     /// The CLOSED list of Windows programs looked up on the system drive when PATH does not name them, each with its folder

@@ -55,7 +55,7 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
     public const string NotChecked = "notChecked";
 
     /// <summary>The timer runs every 4 h (plan §8); a last run older than this means it does not.</summary>
-    public static readonly TimeSpan LastRunMaxAge = TimeSpan.FromHours(5);
+    public static TimeSpan LastRunMaxAge => Tuning.Current.Hours(ConfigKeys.Timer.PeriodHours) + Tuning.Current.Minutes(ConfigKeys.Timer.LateSlackMinutes);
 
     public static readonly IReadOnlyList<string> Units = ["wsl-care.timer", "wsl-care-events.service", "sysstat.service", "atop.service"];
 
@@ -65,6 +65,7 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
         var linux = paths as LinuxHostPaths;
         var checks = new List<DoctorCheck> { Config(loaded), StateDirectory(), LastRun(now), DetailsLost() };
         checks.AddRange(linux is null ? [.. Units.Select(u => new DoctorCheck($"unit.{u}", NotChecked, "a unit of the WSL distro: wsl-care inside it checks it"))] : await UnitsAsync(cancellationToken).ConfigureAwait(false));
+        checks.Add(linux is null ? new("unitConfig", NotChecked, "a unit of the WSL distro: wsl-care inside it checks it") : UnitConfig(linux));
         checks.AddRange(linux is null ? [new("collector.sysstat", NotChecked, "Linux side"), new("collector.atop", NotChecked, "Linux side")] : Collectors(linux, now));
         checks.Add(Follower(now));
         checks.Add(new("root", NotChecked, "root reachability (wsl.exe -u root -- true) is checked by the extension's root boundary (E6)"));
@@ -123,7 +124,7 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
         var age = now - last.StartedAt;
         var text = string.Create(CultureInfo.InvariantCulture, $"{last.RunId.Text}: {Camel(last.Outcome.ToString())}, {age.TotalHours:0.0} h ago");
         return age > LastRunMaxAge || last.Outcome == RunOutcome.Failed
-            ? new("lastRun", Problem, $"{text}{(last.Reason is { Length: > 0 } r ? $" ({r})" : string.Empty)}; the timer runs every 4 h")
+            ? new("lastRun", Problem, $"{text}{(last.Reason is { Length: > 0 } r ? $" ({r})" : string.Empty)}; the timer runs every {Tuning.Current.Text(ConfigKeys.Timer.PeriodHours)} h")
             : new("lastRun", Ok, text);
     }
 
@@ -133,6 +134,23 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
         return lost.Count == 0
             ? new("runDetails", Ok, "every history line that names a detail has it")
             : new("runDetails", Problem, $"detail lost for {lost.Count} run(s): {string.Join(", ", lost.TakeLast(5))}");
+    }
+
+    /// <summary>E7.S2c: does every installed unit drop-in say what the machine configuration says (<see cref="UnitDropIns"/>) —
+    /// the timer's period among them. A key changed after the install takes effect only when install.sh writes the drop-ins again.</summary>
+    private DoctorCheck UnitConfig(LinuxHostPaths linux)
+    {
+        var found = UnitDropIns.Units.Select(unit => (Unit: unit, Read: files.ReadFile(UnitDropIns.Path(linux, unit), RootFileCaps.State))).ToList();
+        var unreadable = found.Where(f => f.Read is FileReadResult.Unreadable).Select(f => $"{f.Unit}: {((FileReadResult.Unreadable)f.Read).Reason}").ToList();
+        if (unreadable.Count > 0)
+        {
+            return new("unitConfig", Unknown, string.Join("; ", unreadable));
+        }
+
+        var problems = found.Select(f => UnitDropIns.Check(f.Unit, f.Read is FileReadResult.Content c ? System.Text.Encoding.UTF8.GetString(c.Bytes) : string.Empty)).Where(p => p.Length > 0).ToList();
+        return problems.Count > 0
+            ? new("unitConfig", Problem, string.Join("; ", problems))
+            : new("unitConfig", Ok, string.Create(CultureInfo.InvariantCulture, $"every unit drop-in matches the machine configuration (the timer every {Tuning.Current.Int(ConfigKeys.Timer.PeriodHours)} h)"));
     }
 
     private async Task<IReadOnlyList<DoctorCheck>> UnitsAsync(CancellationToken cancellationToken)

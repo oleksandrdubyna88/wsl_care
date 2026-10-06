@@ -41,23 +41,47 @@
     "olderThanDays": 7
   },
   "npm": {
-    "maxCacheGb": 5
+    "maxCacheGb": 5,
+    "cleanTimeoutSeconds": 600
   },
   "journal": {
-    "keepDays": 30
+    "keepDays": 30,
+    "maxGb": 1,
+    "vacuumTimeoutSeconds": 300
   },
   "buildServers": {
-    "idleHours": 4
+    "idleHours": 4,
+    "shutdownTimeoutSeconds": 120
   },
   "processes": {
     "idleOlderThanHours": 8,
-    "families": ["dotnet-build-servers", "testhost"],
-    "aiAgentsIdleHours": 4
+    "families": [
+      "dotnet-build-servers",
+      "testhost"
+    ],
+    "aiAgentsIdleHours": 4,
+    "cpuWindowSeconds": 5,
+    "termGraceSeconds": 10,
+    "topCount": 30,
+    "killWaitSeconds": 5,
+    "shownCommandChars": 200,
+    "signalSliceMilliseconds": 200
   },
   "thresholds": {
     "memAvailableWarnPercent": 25,
     "memAvailableActPercent": 15,
-    "swapWarnGb": 4
+    "swapWarnGb": 4,
+    "pageCacheWarnGib": 15,
+    "pageCacheActGib": 12,
+    "pageCacheActAvailablePercent": 30,
+    "inactiveAnonWarnGib": 15,
+    "order7WarnBlocks": 32,
+    "memoryPressureWarn": 10,
+    "rootUsedWarnPercent": 80,
+    "journalHistoryWarnDays": 7,
+    "clockJumpsWarnPer4h": 100,
+    "collectorFreshMinutes": 30,
+    "wslMemoryCriticalPercent": 90
   },
   "aiAgents": {
     "warnGb": 5,
@@ -73,10 +97,175 @@
     "minutes": 5
   },
   "clock": {
-    "maxDriftSeconds": 5
+    "maxDriftSeconds": 5,
+    "minimumGapMinutes": 60,
+    "driftObservationsApartMinutes": 5,
+    "stepTimeoutSeconds": 30
   },
   "logging": {
     "minimumLevel": "Information",
     "retentionDays": 14
+  },
+  "walk": {
+    "intervalHours": 20,
+    "maxExclusionsNamed": 20,
+    "maxEntries": 2000000,
+    "maxSeconds": 120
+  },
+  "agents": {
+    "measureBudgetSeconds": 60,
+    "walkBudgetSeconds": 180,
+    "sessionMaxEntries": 500000,
+    "maxPackageJsonBytes": 1048576,
+    "lookupCeilingSeconds": 10
+  },
+  "runs": {
+    "stopMarkerRetentionHours": 24,
+    "historyRetentionDays": 90
+  },
+  "preview": {
+    "maxItems": 20
+  },
+  "trim": {
+    "periodDays": 7,
+    "timeoutSeconds": 600
+  },
+  "aptCache": {
+    "triggerMb": 200,
+    "cleanTimeoutSeconds": 300
+  },
+  "toolCaches": {
+    "triggerGb": 5,
+    "trimTimeoutSeconds": 600,
+    "whereTimeoutSeconds": 30,
+    "whereOutputCapBytes": 65536
+  },
+  "editorServers": {
+    "keepNewest": 2
+  },
+  "events": {
+    "startsRetentionDays": 14,
+    "retryFirstSeconds": 5,
+    "retryMaxSeconds": 300,
+    "retryFactor": 2,
+    "stalenessSlackMinutes": 5,
+    "topImages": 5,
+    "segmentMinutes": 10,
+    "segmentSlackSeconds": 60,
+    "earlyEndSeconds": 2
+  },
+  "wslConfig": {
+    "recommendedMemoryGb": 36
+  },
+  "requests": {
+    "maxRead": 64,
+    "maxQueued": 32,
+    "maxBytes": 1048576,
+    "graceSeconds": 60,
+    "futureSkewSeconds": 300
+  },
+  "act": {
+    "maxShownNames": 10000,
+    "maxListBytes": 1048576,
+    "stdinTimeoutSeconds": 10
+  },
+  "stops": {
+    "maxMarkerBytes": 4096
+  },
+  "timer": {
+    "firstDryWindowDays": 7,
+    "periodHours": 4,
+    "lateSlackMinutes": 60,
+    "randomizedDelayMinutes": 5,
+    "accuracyMinutes": 1
+  },
+  "units": {
+    "nice": 19,
+    "memoryMaxMb": 1024,
+    "stopTimeoutSeconds": 90,
+    "eventsRestartSeconds": 30
+  },
+  "docker": {
+    "probeTimeoutSeconds": 10,
+    "listTimeoutSeconds": 30,
+    "diskUsageTimeoutSeconds": 120,
+    "removeTimeoutSeconds": 300,
+    "pruneTimeoutSeconds": 900,
+    "batchSize": 100,
+    "smallOutputCapBytes": 1048576,
+    "largeOutputCapBytes": 67108864,
+    "actionOutputCapBytes": 4194304,
+    "maxDaemonJsonBytes": 1048576
+  },
+  "systemd": {
+    "timeoutSeconds": 15,
+    "searchTimeoutSeconds": 30,
+    "outputCapBytes": 1048576,
+    "searchOutputCapBytes": 4194304,
+    "unitOutputCapBytes": 65536,
+    "unitStartTimeoutSeconds": 30,
+    "unitStopTimeoutSeconds": 120
+  },
+  "memory": {
+    "syncTimeoutSeconds": 120,
+    "dropCachesTimeoutSeconds": 30,
+    "compactTimeoutSeconds": 120
+  },
+  "snap": {
+    "removeTimeoutSeconds": 300
+  },
+  "nuget": {
+    "clearTimeoutSeconds": 600
+  },
+  "health": {
+    "windowsClockTimeoutSeconds": 20,
+    "snapTimeoutSeconds": 30,
+    "outputCapBytes": 1048576,
+    "kernelLinesKept": 5,
+    "kernelLineChars": 200,
+    "maxWslConfigBytes": 1048576
+  },
+  "commands": {
+    "outputCapBytes": 1048576,
+    "systemDriveLookupSeconds": 5,
+    "maxTimeoutHours": 24,
+    "drainGraceMilliseconds": 2000
+  },
+  "userFiles": {
+    "maxSmallFileBytes": 4096,
+    "maxJsonBytes": 1048576,
+    "maxLinkBytes": 65536
+  },
+  "records": {
+    "maxReasonChars": 300,
+    "lockTimeoutSeconds": 5,
+    "maxStateFileBytes": 1048576,
+    "maxHistoryBytes": 268435456
+  },
+  "logs": {
+    "maxDetailsRead": 50,
+    "maxRangeDays": 366
+  },
+  "running": {
+    "heartbeatSeconds": 5,
+    "wedgedAfterSeconds": 30,
+    "readRetries": 3,
+    "readRetryMilliseconds": 100
+  },
+  "config": {
+    "maxLayerBytes": 262144
+  },
+  "patterns": {
+    "matchTimeoutMilliseconds": 250
+  },
+  "files": {
+    "renameRetryMilliseconds": 2000,
+    "renameRetrySleepMilliseconds": 10,
+    "lockJitterMinMilliseconds": 5,
+    "lockJitterMaxMilliseconds": 25
+  },
+  "agentCpu": {
+    "maxEntries": 512,
+    "maxBytes": 131072
   }
 }

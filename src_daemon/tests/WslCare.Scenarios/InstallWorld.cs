@@ -429,6 +429,8 @@ internal sealed class InstallWorld : IDisposable
             Answer("wsl-care", ["doctor", "--json"], DoctorJson(healthy: true)),
             Answer("wsl-care", ["doctor"], "wsl-care doctor (wsl): healthy\n"),
         };
+        // E7.S2c: the installed binary renders each unit's drop-in; the stub answers what the real one says under the defaults.
+        answers.AddRange(Core.Systemd.UnitDropIns.Units.Select(u => Answer("wsl-care", ["units", "dropin", u], Core.Systemd.UnitDropIns.Defaults(u))));
         _answers.AddRange(answers);
         FakeScript.Write(ScriptFile, _answers);
         Publish(NewestDaemon, "linux-x64");

@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
 using WslCare.Core.Hosting;
@@ -20,7 +21,7 @@ public sealed record RetentionReport(int HistoryLinesRemoved, IReadOnlyList<stri
 /// </summary>
 public static class RunRetention
 {
-    public const int RetentionDays = 90;
+    public static int RetentionDays => Tuning.Current.Int(ConfigKeys.Runs.HistoryRetentionDays);
     private const string Action = "run-retention";
 
     /// <summary>The first UTC day still inside the window at <paramref name="now"/>.</summary>

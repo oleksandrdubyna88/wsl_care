@@ -31,7 +31,7 @@ public static class RunHistory
 {
     public static string File(IHostPaths paths) => RunRecordWriter.HistoryFileIn(paths);
 
-    public static HistoryRead Read(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths)) switch
+    public static HistoryRead Read(IHostPaths paths, IFileSystem files) => files.ReadFile(File(paths), RootFileCaps.History) switch
     {
         FileReadResult.Content content => Parse(System.Text.Encoding.UTF8.GetString(content.Bytes)),
         FileReadResult.Missing => new HistoryRead([], 0, string.Empty),

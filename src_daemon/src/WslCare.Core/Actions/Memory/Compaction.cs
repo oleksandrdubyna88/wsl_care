@@ -39,8 +39,8 @@ public sealed class Compaction : ICleanupAction
         CommandScope.Machine,
         "sysctl",
         [new ArgPart.Literal("-w"), new ArgPart.Literal("vm.compact_memory=1")],
-        TimeSpan.FromMinutes(2),
-        CommandRequest.DefaultOutputCapChars);
+        ConfigKeys.Memory.CompactTimeoutSeconds,
+        ConfigKeys.Commands.OutputCapBytes);
 
     private static readonly ActionId A1 = ActionId.Find("A1")!;
 

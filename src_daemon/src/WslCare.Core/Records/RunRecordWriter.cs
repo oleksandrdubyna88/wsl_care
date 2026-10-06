@@ -1,3 +1,4 @@
+using WslCare.Core.Config;
 using System.Text.Json;
 
 using WslCare.Core.Files;
@@ -16,7 +17,7 @@ public sealed class RunRecordWriter(IHostPaths paths, IFileSystem files)
     public const string FileName = "history.jsonl";
 
     /// <summary>How long an append (or a retention rewrite) waits for the other writer's lock.</summary>
-    public static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(5);
+    public static TimeSpan LockTimeout => Tuning.Current.Seconds(ConfigKeys.Records.LockTimeoutSeconds);
 
     public string HistoryFile => HistoryFileIn(paths);
 
