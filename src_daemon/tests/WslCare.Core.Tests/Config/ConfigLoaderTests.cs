@@ -126,4 +126,16 @@ public sealed class ConfigLoaderTests
         result.Config.Int(ConfigKeys.Journal.KeepDays).Should().Be(10);
         result.Config.Entry(ConfigKeys.Journal.KeepDays).Layer.Should().Be(ConfigLayer.User);
     }
+
+    // Retro gate over PR #4 (consultant): an object where a setting's value belongs flattened to nothing, so the layer read as
+    // VALID and the setting silently kept the value below it — a schema-invalid layer must be observe-only (plan §15a #1).
+    [Theory]
+    [InlineData("""{ "auto": { "A4": {} } }""", "auto.A4")]
+    [InlineData("""{ "dryRun": {} }""", "dryRun")]
+    public void An_object_where_a_settings_value_belongs_makes_the_layer_invalid(string json, string key)
+    {
+        var result = ConfigLoader.Load([Defaults(), (Machine, new FileReadResult.Missing()), Layer(User, json)]);
+
+        result.IsObserveOnly.Should().BeTrue("an empty object is not a value of {0}", key);
+    }
 }

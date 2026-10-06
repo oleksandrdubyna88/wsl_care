@@ -119,7 +119,11 @@ replaced by defaults: the run becomes **observe-only** (collect and report, no c
 carries `configError {file, line, message}`, and `config set` still works — it keeps the keys it could
 still read, drops the rest by name, and moves a file it cannot parse to `config.json.broken-<utc>`
 (`-2`, `-3`, … appended when that name is already taken; an earlier broken file is never
-overwritten). Every `wsl-care:` message is one line: control characters in what it quotes — a key
+overwritten). A repair that loses anything besides the key you are writing also writes `dryRun = true` into the user
+file and says so — a lost `auto.A4 = false` would otherwise be `auto.A4 = true` (its default) at the next timer run —
+so the timer only previews until you have checked your settings and run `wsl-care config set dryRun false`. A command
+that is refused (too large, a broken coupled rule) moves nothing: the broken file stays where it was, and a broken file
+the daemon could read is copied aside, so it stays in place until the repaired one replaces it. Every `wsl-care:` message is one line: control characters in what it quotes — a key
 you typed, a key read from the file, a path — are shown as `?`.
 
 **What a setting can and cannot do** (plan §15q R1). No setting is free text: `processes.families` takes only the named

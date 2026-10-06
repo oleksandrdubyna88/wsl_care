@@ -21,8 +21,8 @@ archive run, and writing the archive from WSL through drvfs to a network drive i
 | Cutoff | `date -d '7 days ago'` at 17:28:52 CEST = **2026-09-25 15:28:52 UTC** (epoch `1790350132`), the same number on both sides |
 | Unit | one **session**: archived only when its NEWEST file is older than the cutoff, so a session is never split |
 | Age | file modification time (`find -printf %T@`) |
-| Harness | the two scripts above, sha256 `b0b1b120…075012d` and `69c3d0bb…a260882d` as committed (the archive script gained two modes during the run, see *What changed in the script*) |
-| Verification | SHA-256 of every source file, `sha256sum -c` against the archive before any delete, and again against the source per file at delete time |
+| Harness | the two scripts above, as committed: `archive-ai-sessions.sh` sha256 `b0b1b1206ea40584d4388462daa3a3c093a026e55cf6abf07d331563d075012d`, `wsl-stream-copy.sh` sha256 `69c3d0bbaf06ab01f4b00f581ed427beb5c46a84e8afc95ec651bdc1a260882d` (re-hashed from the repository 2026-10-06, equal to what was recorded). The archive script gained two modes during the run (see *What changed in the script*); the committed file is the FINAL version. The intermediate versions that ran the earlier steps were not kept, and which step ran on which version was not recorded, so the early steps cannot be reproduced byte for byte — only their effect, which the manifests and the counts below record |
+| Verification | SHA-256 of every source file, `sha256sum -c` against the archive before any delete, and again against the source per file at delete time. The claim covers the files in the manifests: 8 618 on Windows and 4 694 in WSL. It does not cover the three WSL files described under *The archive as it was written* |
 
 **No prediction was written down before the run** (the shared measurement rule, §4, asks for one).
 The one recorded expectation it can be held against is the plan's own §4 sentence — *"volumes are small
@@ -76,7 +76,9 @@ The selection is a snapshot, and three things removed files between the snapshot
   of minutes — and 23 `brain/` + 4 `conversations/` files more between the second copy and the delete.
 - Net effect: 1 Claude session vanished from WSL after it was copied (17:30 → 17:34), 2 more between the
   WSL copy and its hashing, 29 Claude files of one session and 27 Antigravity files on Windows between copy
-  and delete. **Every one of them was already in the archive**; nothing was lost.
+  and delete. **Every one of them was already in the archive**, so no file disappeared without a copy. The
+  copies of the three WSL files that vanished before hashing are unverified, though (see *The archive as it
+  was written*).
 
 Two script defects this exposed, both fixed during the run: the first copy aborted at the first missing
 file (so its hash step never ran), and the first delete mode refused to delete anything if any source
@@ -137,7 +139,11 @@ archive files carry the original mtimes as well (checked on one file per side). 
 The WSL counts, reconciled: the final copy listed and wrote **4 696** files; 2 of them vanished at the
 source before hashing, so the manifest holds **4 694** — the number archived, verified and deleted. Three
 WSL Claude files are in the archive but not in the manifest: those 2, and 1 written by the first,
-interrupted copy at 17:30 that Claude's sweep removed at 17:34, before the final copy listed its files. The archive is kept by the user; it grows only when someone runs this
+interrupted copy at 17:30 that Claude's sweep removed at 17:34, before the final copy listed its files.
+**Their archived bytes are UNVERIFIED**: Claude deleted their sources itself, so no source hash exists and
+none can be taken now. This run deleted none of them. Restore them only knowing that the copy was never
+checked. (They are not named here: their paths carry project folder names, and this repository is public.)
+The archive is kept by the user; it grows only when someone runs this
 again.
 
 ## What changed in the script during the run

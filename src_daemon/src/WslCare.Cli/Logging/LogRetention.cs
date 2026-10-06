@@ -39,7 +39,18 @@ internal static class LogRetention
     public static PruneReport Prune(IFileSystem files, string logRoot, DateOnly todayUtc, int retainDays)
     {
         var scope = new DeletionScope(logRoot, ActionName);
-        var folders = files.ListDirectories(logRoot);
+        IReadOnlyList<string> folders;
+        try
+        {
+            folders = files.ListDirectories(logRoot);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Retro gate over PR #4: the logger starts outside Main's catch, so a root that cannot be LISTED must be a counted
+            // failure like any other — never an exception that ends every verb before it runs.
+            return new PruneReport([], [], [$"{logRoot}: could not be listed ({e.Message})"]);
+        }
+
         var names = folders.Select(f => Path.GetFileName(f) ?? string.Empty).ToList();
         var deleted = new List<string>();
         var refused = new List<string>();
