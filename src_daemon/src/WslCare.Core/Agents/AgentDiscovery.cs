@@ -77,6 +77,10 @@ public static class AgentDiscovery
         return [.. AgentCatalogue.Agents.Select(entry => Discover(entry, side, files, found.GetValueOrDefault(entry.Id, []), asRoot))];
     }
 
+    /// <summary>The folder <paramref name="entry"/>'s session layout starts in on this side; empty when it counts none here
+    /// (the archive's selection, plan §15r E9.S1 — the same answer discovery gives).</summary>
+    public static string SessionsUnderOf(IHostPaths paths, AgentEntry entry) => DiscoverySide.Of(paths).SessionsUnder(entry);
+
     private static readonly IReadOnlyDictionary<string, IReadOnlyList<FoundBinary>> NoneFound = new Dictionary<string, IReadOnlyList<FoundBinary>>(StringComparer.Ordinal);
 
     /// <summary>Every agent's binaries, under ONE ceiling (E7.S2b/S2c review A-L3): choosing the folders — whose PATH entries are

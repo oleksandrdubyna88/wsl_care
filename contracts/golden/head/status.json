@@ -2367,7 +2367,8 @@
     "agents.probe",
     "config.agentsExtra",
     "status.mcpServers",
-    "archive.checkBase"
+    "archive.checkBase",
+    "archive.preview"
   ],
   "running": {
     "state": "none"

@@ -90,7 +90,9 @@ internal static partial class GoldenContracts
         new("**.evaluatedAt", "when a verdict was evaluated (this sample, or the end of the full run)", _ => FixedInstant),
         new("**.runId", "a run's id is its start instant and the CLI's pid", _ => FixedRunId),
         new("checkedAt", "the instant doctor answered", _ => FixedInstant),
-        new("answeredAt", "the instant agents list answered (E7.S1)", _ => FixedInstant),
+        new("answeredAt", "the instant agents list and archive preview answered (E7.S1, E9.S1)", _ => FixedInstant),
+        new("sideFolder", "the archive's side folder names this machine and its distribution (plan §15r D4)", _ => "wsl-host-distro"),
+        new("zone", "the archive preview's months are in this machine's time zone", _ => "UTC"),
         new("productVersion", "the commit after +, and the release number, which every release-please bump moves (a golden pinned to it would turn the release pull request red)", _ => FixedVersion),
         new("vm.disk.path", "df / is the sandbox's filesystem", _ => FixedRoot),
         new("vm.disk.totalBytes", "df / is the runner's own disk", _ => 100_000_000_000L),
@@ -261,6 +263,18 @@ internal static partial class GoldenContracts
             File.WriteAllText(mountInfo, "523 504 8:96 / / rw,relatime - ext4 /dev/sdg rw\n479 523 0:154 / /mnt/v rw,relatime - 9p V: rw,aname=drvfs;path=V:;uid=1000;gid=1000;metadata;symlinkroot=/mnt/\n");
             Directory.CreateDirectory(paths.DistroPath("/mnt/v/ai-archive"));
             files.Add(Answered("archive-check-base.json", archive, await archive.RunAsync("archive", "check-base", @"V:\ai-archive", "--json"), matched));
+
+            // E9.S1: what the archive would move — one Claude Code session with a companion, due, at a mid-month noon so no time
+            // zone moves its month.
+            foreach (var file in new[] { "/home/me/.claude/projects/p/s1.jsonl", "/home/me/.claude/projects/p/s1/subagents/a.jsonl" })
+            {
+                var path = paths.DistroPath(file);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, new string('x', 100));
+                File.SetLastWriteTimeUtc(path, new DateTime(2000, 1, 15, 12, 0, 0, DateTimeKind.Utc));
+            }
+
+            files.Add(Answered("archive-preview.json", archive, await archive.RunAsync("archive", "preview", "--json"), matched));
         }
 
         using var day = new ScenarioHome("golden-local-day");

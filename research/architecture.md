@@ -2515,6 +2515,50 @@ flowchart TD
 - **The answer** is `BaseFolderReport` (`contracts/golden/head/archive-check-base.json`), the capability `archive.checkBase`.
   Its mount is reported, not yet recorded: `base.json` and its check at every run are E9.S2b's.
 
+### Selection and `archive preview` (E9.S1, 2026-10-06, plan §15r D2.1–D2.2, D10)
+
+`archive preview [--agent <id>] [--json]` answers what the archive WOULD move on this side now, per agent, as the user (root is
+refused with 81, like `check-base`) — from listings and stats alone. Not one session file is opened (the inotify proof of E7.S1,
+carried over), nothing is written; the agent's own retention setting is the one file read.
+
+```mermaid
+flowchart TD
+    verb["archive preview [--agent a] [--json]<br/>(as the user; root refused, exit 81)"] --> inuse["InUse.Scan: /proc/&lt;pid&gt;/fd/* read as links (never followed),<br/>a Claude Code process's cwd → its project folder name<br/>(bounded by archive.inUseScanSeconds; on Windows not checked until E9.S5)"]
+    verb --> agents["the agents of archive.agents (or the one named)<br/>that carry an archive block"]
+    agents --> retention["AgentRetentionReader: Claude Code's cleanupPeriodDays —<br/>managed settings → CLAUDE_CONFIG_DIR/settings.json → ~/.claude/settings.json<br/>→ the documented default (30); 0 or an unusable value warned"]
+    retention --> age["effective age = max(1, min(olderThanDays,<br/>retention − marginDays − ⌈removeAfterHours/24⌉))"]
+    agents --> list["the layout listed (SessionGlob over the agent walk's rules:<br/>no link followed, memory never entered, the device kept)"]
+    list --> unit["one unit = the session file + its companions ({dir}, {id} expanded):<br/>a file by stat, a folder by TreeWalk with ListFiles (each file's length and last write)"]
+    unit --> newest["the NEWEST last write over all its files → its age and its month (yyyy/MM in the side's zone)"]
+    age --> due{"older than the effective age?"}
+    newest --> due
+    due -- no --> younger["counted younger"]
+    due -- yes --> keepers{"keepers, in order: never-moved (memory.jsonl refused whole) · name<br/>(NTFS-illegal, reserved, trailing dot/space, invalid UTF-8, case-only twins) ·<br/>not-whole · may-be-open (a -wal present) · in-use (an open descriptor) ·<br/>agent-working-here (Claude Code's cwd is its project)"}
+    inuse --> keepers
+    keepers -- kept --> skipped["skipped, by rule (count + the first with its sentence)"]
+    keepers -- none --> taken["due, oldest first (the first preview.maxItems listed)"]
+    list --> quarantine["files carrying .wsl-care-q- counted (resolved by S2b's reconcile)"]
+```
+
+- **`Archive/Selection.cs`** is the selection the run (E9.S2b) will move by: `Select(SelectionInput)` → per agent an
+  `AgentSelection` (`Due`, `Skipped` with their `SkipRule`, `Younger`, `Quarantined`, the listing's `Note`). The keepers are an
+  ordered array of checks (complexity ≤ 4); a unit is moved whole or not at all, so a companion folder the walk could not see
+  whole (cut, unreadable, holding `memory` or another filesystem) keeps it as `not-whole`.
+- **`Files/TreeWalk.cs` widened, not copied:** `TreeRules.ListFiles` makes the same walk return each counted file
+  (`TreeFile(Path, Length, LastWriteUtc)` in `TreeMeasure.Measured.Listed`); every other caller's answer is unchanged.
+- **`Archive/InUse.cs`** reads `/proc` as the user (only this account's `fd` folders open — and the agents are this account's);
+  the Claude Code attribution reuses `AgentOrphans.AgentOfCommandLine` (extracted from `AgentOf`). On Windows it answers
+  "not checked" with `NotOnWindowsYet` — the Restart Manager query is E9.S5.
+- **`Archive/ArchiveNames.cs`**: the name rules (`Problem`, `CaseCollision`), Claude's project-folder encoding
+  (`ClaudeProjectOf`), the quarantine mark, and the side folder (`SideName`: `windows-<host>`, `wsl-<host>-<distro>`, §15r D4).
+- **`Archive/AgentRetentionReader.cs`** reads one key through the bounded user-file reader (`userFiles.maxJsonBytes`).
+- **The answer** is `ArchivePreviewReport` (`contracts/golden/head/archive-preview.json`): the side, its side folder, the zone,
+  the configured base (empty is fine — the preview still answers), what the open-file check saw, and per agent its retention,
+  its effective age, due units / files / bytes, the oldest due write, the skip counts, the quarantined count and the warnings.
+  The capability is `archive.preview`. Its budget is `agents.measureBudgetSeconds` (the measure-now budget the agent walk
+  already has), held under the extension's wait by a new coupled rule: `archive.previewTimeoutSeconds` ≥
+  `agents.measureBudgetSeconds` + 60 s.
+
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
 "Every number we have must be configurable" (the owner, 2026-10-05). From now on **a new behavioural number is a

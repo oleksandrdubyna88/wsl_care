@@ -700,6 +700,25 @@ Which agents are archived is `archive.agents` (Claude Code, Codex, Gemini CLI, A
 `archive.marginDays` (7) ahead of the agent's own deletion, `archive.agentRetentionDays` (30, Claude Code's default
 `cleanupPeriodDays` — raise it with that setting). A value that breaks the rule is not taken.
 
+### What it would move — `archive preview` (E9.S1)
+
+```bash
+wsl-care archive preview                      # as YOU: per agent, what is due now, what is kept and why
+wsl-care archive preview --agent claude-code --json
+```
+
+Read-only: it lists the agents' folders and looks at file times — it opens no session file and writes nothing (the one file it
+reads is Claude Code's own `cleanupPeriodDays`: the managed settings first, then `settings.json` under `CLAUDE_CONFIG_DIR` or
+`~/.claude`). One session is moved as ONE unit with its companions (Claude Code's `<session>/` folder and `file-history`,
+Antigravity's SQLite sidecars …), aged and filed by the NEWEST write of any of its files, under the month of that write in
+this side's time zone. A session becomes due at `archive.olderThanDays` — or earlier when the agent deletes its own sessions
+sooner than that leaves room for (Claude Code's retention − `archive.marginDays` − the removal delay; never below 1 day, and
+said in a warning). A due session stays where it is, counted with its reason, when one of its files is open in a process, Claude
+Code is working in its project, its database may be open (a `-wal` beside it), it names what never moves (a session called
+`memory.jsonl` is refused whole), one of its names cannot exist on a Windows drive (`< > : " \ | ? *`, a reserved device name
+such as `con`, a trailing dot or space, invalid UTF-8, two names differing only by case), or not all of it could be seen. On
+Windows the open-file check arrives with E9.S5 (the preview says so). As root it refuses with exit **81**.
+
 ## Extension (preview)
 
 `src_vs_code/` is the VS Code extension **AI OS Care** — Marketplace id `remsoftdev.ai-os-care` (publisher `remsoftdev`,

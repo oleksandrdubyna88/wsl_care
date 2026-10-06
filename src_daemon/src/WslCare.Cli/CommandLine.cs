@@ -57,6 +57,10 @@ internal abstract record Request
     /// by THIS user's process — the one that will write there (D1); never as root.</summary>
     internal sealed record ArchiveCheckBase(string Path, bool Json) : Request;
 
+    /// <summary><c>archive preview [--agent &lt;id&gt;] [--json]</c> (plan §15r E9.S1): what the archive would move on this side now,
+    /// as this user — read-only; <paramref name="Agent"/> empty = every agent of <c>archive.agents</c>.</summary>
+    internal sealed record ArchivePreview(string Agent, bool Json) : Request;
+
     /// <summary><c>units dropin &lt;unit&gt;</c> (E7.S2c): the drop-in install.sh writes for one unit, from the machine
     /// configuration — the timer's period, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec.</summary>
     internal sealed record UnitsDropIn(string Unit) : Request;
@@ -198,6 +202,7 @@ internal static class CommandLine
     private const string StopFlag = "--stop";
     private const string StdinMarker = "-";
     private const string MeasureFlag = "--measure";
+    private const string AgentFlag = "--agent";
 
     /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together (plan §15j B1) — the
     /// COMPILE-TIME ceiling: the parser runs before any configuration is read, so it holds the range maximum of
@@ -227,6 +232,7 @@ internal static class CommandLine
         new([["agents", "list"]], "agents list [--measure] [--json]", "the AI agents found here (by binary, npm package or folder), their version read from disk, their folders' sizes and sessions from the newest full run — or measured now with --measure (read-only: nothing inside an agent's folder is opened, nothing is run)", ["agents", "list", "--json"], ParseAgentsList),
         new([["agents", "probe"]], "agents probe <path> [--json]", "what the CLI at <path> is, as this user and never as root: a file it may start (looked at, never run, never read), a name from its file name, and its conventional data folders with their sizes and whether they could be a manual agent's (read-only)", ["agents", "probe", "/home/me/.local/bin/mycli", "--json"], ParseAgentsProbe),
         new([["archive", "check-base"]], "archive check-base <path> [--json]", "whether the AI-session archive may live at <path>, as this user (never as root): an existing folder (never created), no link on the way, no root, nothing it moves or a cleanup removes, a filesystem that survives a shutdown, writable — a Windows drive path answered with the folder it is mounted at; who else may read it (read-only)", ["archive", "check-base", "/mnt/v/ai-archive", "--json"], ParseArchiveCheckBase),
+        new([["archive", "preview"]], "archive preview [--agent <id>] [--json]", "what the AI-session archive would move on this side now, as this user (never as root): per agent the due sessions oldest first, their newest write and month, what is kept in place and why (open, an agent working there, a name NTFS refuses, what never moves), the age they are due at and the agent's own retention (read-only: no session file is opened, nothing is written)", ["archive", "preview", "--json"], ParseArchivePreview),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
@@ -550,6 +556,15 @@ internal static class CommandLine
 
     /// <summary>Exactly one absolute distro path (plan §15q R2.1's shape: no control character, no leading '-', no '.' or '..'
     /// segment, at most 1 024 characters), then optionally <c>--json</c>.</summary>
+    private static Request ParseArchivePreview(IReadOnlyList<string> rest) =>
+        ReadOptions("archive preview", rest, [AgentFlag], [JsonFlag]) switch
+        {
+            (_, { } failure) => failure,
+            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && !Core.Agents.AgentCatalogue.ArchivableIds.Contains(agent, StringComparer.Ordinal) =>
+                new Request.Failed($"\"{BinaryName} archive preview --agent\" takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)}; got \"{Printable(agent)}\"."),
+            var (options, _) => new Request.ArchivePreview(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Flags.Contains(JsonFlag)),
+        };
+
     private static Request ParseArchiveCheckBase(IReadOnlyList<string> rest) => rest switch
     {
         [var path] when IsPathArgument(path) => new Request.ArchiveCheckBase(path, false),

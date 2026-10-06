@@ -110,4 +110,46 @@ public sealed class ArchiveCommandTests : IDisposable
 
         set.Exit.Should().Be((int)ExitCode.Ok, set.Stderr);
     }
+
+    /// <summary>E9.S1: the preview answers per agent what is due, oldest first, as this user — the fixed clock of the host is the
+    /// "now" the ages are taken against.</summary>
+    [Fact]
+    public void Preview_answers_the_due_sessions_per_agent_as_json()
+    {
+        var now = new FixedTimeProvider().GetUtcNow();
+        _sandbox.Sized("/home/me/.claude/projects/p/old.jsonl", 100, now.AddDays(-20));
+        _sandbox.Sized("/home/me/.claude/projects/p/new.jsonl", 100, now.AddDays(-2));
+
+        var preview = CliRun.Over(Host(), "archive", "preview", "--json");
+
+        preview.Exit.Should().Be((int)ExitCode.Ok, preview.Stderr);
+        var report = JsonSerializer.Deserialize(preview.Stdout, WslCareJsonContext.Default.ArchivePreviewReport)!;
+        var claude = report.Agents.Single(a => a.Id == "claude-code");
+        claude.DueUnits.Should().Be(1);
+        claude.Units.Should().ContainSingle().Which.Key.Should().Be("projects/p/old.jsonl");
+        claude.Younger.Should().Be(1);
+        claude.EffectiveAgeDays.Should().Be(14);
+        report.Agents.Select(a => a.Id).Should().Equal("claude-code", "codex", "gemini-cli", "antigravity");
+        report.SideFolder.Should().StartWith("wsl-");
+    }
+
+    [Fact]
+    public void Preview_of_one_agent_answers_that_agent_and_an_unknown_one_is_refused()
+    {
+        var one = CliRun.Over(Host(), "archive", "preview", "--agent", "codex", "--json");
+        var unknown = CliRun.Over(Host(), "archive", "preview", "--agent", "copilot-cli");
+
+        JsonSerializer.Deserialize(one.Stdout, WslCareJsonContext.Default.ArchivePreviewReport)!.Agents.Should().ContainSingle().Which.Id.Should().Be("codex");
+        unknown.Exit.Should().Be((int)ExitCode.Usage);
+        unknown.Stderr.Should().Contain("claude-code");
+    }
+
+    [Fact]
+    public void Preview_as_root_is_refused_with_its_own_exit_code()
+    {
+        var preview = CliRun.Over(Host(root: true), "archive", "preview", "--json");
+
+        preview.Exit.Should().Be((int)ExitCode.NotAsRoot);
+        preview.Stdout.Should().BeEmpty();
+    }
 }

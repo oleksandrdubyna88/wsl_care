@@ -55,6 +55,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Agents.AgentsReport))]
 [JsonSerializable(typeof(Agents.AgentProbeReport))]
 [JsonSerializable(typeof(Archive.BaseFolderReport))]
+[JsonSerializable(typeof(Archive.ArchivePreviewReport))]
 [JsonSerializable(typeof(Actions.Suspects.AgentCpuFile))]
 [JsonSerializable(typeof(Mcp.McpCpuFile))]
 [JsonSerializable(typeof(Watch.WatchTriesFile))]

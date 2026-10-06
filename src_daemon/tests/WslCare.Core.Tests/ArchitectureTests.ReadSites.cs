@@ -53,7 +53,7 @@ public sealed partial class ArchitectureTests
     /// <summary>The calls each class may use — the hardened readers for every class someone else controls.</summary>
     private static readonly Dictionary<ReadClass, string[]> AllowedCalls = new()
     {
-        [ReadClass.System] = ["ReadFile", "ReadAllText", "ListDirectories", "ListFiles", "ProcText.Read", "ProcText.Bytes", "ReadText", "RegularFiles.ReadHead"],
+        [ReadClass.System] = ["ReadFile", "ReadAllText", "ListDirectories", "ListFiles", "ListEntries", "ProcText.Read", "ProcText.Bytes", "ReadText", "RegularFiles.ReadHead"],
         [ReadClass.RootState] = ["ReadFile", "ListDirectories", "ListFiles", "new FileStream"],
         [ReadClass.TrustedState] = ["ReadStateFile"],
         [ReadClass.ConfigLayer] = ["ReadStateFile", "ReadUserFile"],
@@ -110,6 +110,9 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Health/HealthCollector.cs"] = new() { ["ListFiles"] = (1, ReadClass.System), ["ReadNoFollowFile"] = (1, ReadClass.WindowsProfile), ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/History/RunLogs.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/History/RunShow.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
+        ["WslCare.Core/Archive/AgentRetentionReader.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged) },
+        ["WslCare.Core/Archive/InUse.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ListEntries"] = (1, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
+        ["WslCare.Core/Archive/Selection.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/BaseFolderRules.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Processes/WindowsSystemDrive.cs"] = new() { ["ReadAllText"] = (1, ReadClass.System), ["ReadText"] = (3, ReadClass.System) },
         ["WslCare.Core/Records/RunDetailStore.cs"] = new() { ["ListDirectories"] = (1, ReadClass.RootState), ["ListFiles"] = (1, ReadClass.RootState), ["ReadFile"] = (1, ReadClass.RootState) },

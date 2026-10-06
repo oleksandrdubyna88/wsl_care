@@ -48,6 +48,7 @@ public sealed class ArchiveKeysTests
     [InlineData("""{ "running": { "noProgressMinutes": 5 }, "archive": { "progressSilenceSeconds": 600 } }""", "archive.progressSilenceSeconds")]
     [InlineData("""{ "commands": { "maxTimeoutHours": 1 }, "archive": { "runBudgetMinutes": 55, "finishGraceMinutes": 10 } }""", "archive.runBudgetMinutes")]
     [InlineData("""{ "archive": { "maxSessionsPerRun": 100000 } }""", "archive.maxStateFileBytes")]
+    [InlineData("""{ "archive": { "previewTimeoutSeconds": 100 } }""", "archive.previewTimeoutSeconds")]
     public void An_archive_rule_a_machine_layer_breaks_refuses_the_layer_naming_it(string machine, string named)
     {
         var result = Load(machine);

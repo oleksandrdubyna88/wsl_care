@@ -2679,8 +2679,9 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-06 — E9.S0 built** (the catalogue's archive blocks, the keys and their rules, the base folder
-> rules and `archive check-base`; deviations in *E9.S0 as built*); E9.S1–E9.S5 and the E9 live gate open. Originally: plan only,
+> Status: **in progress, 2026-10-06 — E9.S0 and E9.S1 built** (the catalogue's archive blocks, the keys and their rules, the base
+> folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0 as built* and *E9.S1 as built*);
+> E9.S2a–E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3095,6 +3096,36 @@ archive*. **Deviations from the text above:**
 - **Additions:** the capability `archive.checkBase`; the golden `contracts/golden/head/archive-check-base.json`; the tests that
   used `archive.baseFolder` as THE machine-only example now use `walk.maxEntries` (the behaviour they hold is unchanged).
 
+#### E9.S1 as built (2026-10-06)
+
+Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *Selection and archive preview (E9.S1)*, the design `research/architecture.md` § *Selection and `archive preview`*.
+**Deviations from the text above:**
+
+- **The effective age subtracts the removal's whole days too:** max(1, min(`olderThanDays`, retention − `marginDays` −
+  ⌈`removeAfterHours` / 24⌉)), as D10 writes it (the go message gave it without the removal days). With the defaults and
+  Claude's 30 days that is min(14, 22) = 14 — the same answer; it differs only once a retention is lowered.
+- **`Archive/Retention.cs` became `Archive/AgentRetentionReader.cs`**, and it is the ONE file the selection reads (through the
+  bounded user-file reader, `userFiles.maxJsonBytes`). Project-level Claude settings are not read — a residual. A value that is
+  not a whole number of days, or a file that is not JSON, is warned and the next file (finally the documented default) applies.
+- **The open-file check is not run on Windows yet** (`InUse.NotOnWindowsYet`, the Restart Manager query is E9.S5); the preview
+  says so in `inUse.note`, and the run (E9.S2b on Windows only after S5) must check before it moves anything. On Linux the scan
+  sees only this account's processes — which are the agents' — and a cut scan says so.
+- **The preview's listing budget is `agents.measureBudgetSeconds`** (the measure-now budget the agent walk already has), not a
+  new key; a new coupled rule keeps it under the extension's wait: `archive.previewTimeoutSeconds` ≥
+  `agents.measureBudgetSeconds` + 60 s (120 ≥ 60 + 60).
+- **Quarantined files are counted only** (`quarantined` per agent; review M3): resolving them is E9.S2b's reconcile.
+- **A link inside a companion folder is skipped silently** by the walk's rules (never followed), so a session whose `subagents/`
+  holds a link moves without it — a residual for E9.S2a's copy, which refuses links on its own (R1).
+- **The name rules are wider than the text:** besides the NTFS characters, case-only twins and invalid UTF-8 (U+FFFD or a lone
+  surrogate in the decoded name), a control character, a trailing dot or space and the reserved device names (`CON`, `PRN`,
+  `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, with or without an extension) refuse a unit with the reason.
+- **Extracted, not copied:** `AgentOrphans.AgentOfCommandLine` (from `AgentOf`) attributes a `/proc` cmdline to Claude Code;
+  `AgentDiscovery.SessionsUnderOf` exposes the layout's folder on this side; `TreeRules.ListFiles` widens the walk.
+- **Additions:** the side folder (`ArchiveNames.SideName`, §15r D4) is in the answer already; the capability `archive.preview`;
+  the golden `contracts/golden/head/archive-preview.json`; the `phase-2 candidates` of the story text are not listed yet —
+  nothing has been copied, so there is no phase 2 to propose (E9.S2b adds them to the answer).
+
 #### Stories
 
 | # | Story | Files (verified above; new ones marked) | Acceptance | Model, reviews |
@@ -3501,7 +3532,7 @@ tagged (B3). Then, after the E6 daemon live gate's stamp:
 | E7.S5 | bundling `wsl-care.exe`, a `--target win32-x64` `.vsix` (moved here from E5 by §15f #5, #13), Windows numbers in Memory/Disk, the Windows agents | Opus + one own review |
 | E8.S1–S3 | help via the kit, zoom + tone everywhere, ru/uk/de/es + stale stamps | Opus |
 | E9.S0 | the catalogue's `archive` blocks, the `archive.*` keys and coupled rules, the base rules, `archive check-base` — §15r (re-split 2026-10-06: the three rows planned on 2026-10-02 became S0–S5, S2 split by the §15r review round). **Built 2026-10-06** — deviations in §15r *E9.S0 as built* | Opus + two own reviews |
-| E9.S1 | selection, the effective age, in-use checks, `archive preview` (read-only) — §15r | Opus + two own reviews |
+| E9.S1 | selection, the effective age, in-use checks, `archive preview` (read-only) — §15r. **Built 2026-10-06** — deviations in §15r *E9.S1 as built* | Opus + two own reviews |
 | E9.S2a | the seam: no-link streaming copy and exclusive create, no-replace renames, the verified removal (Linux and Windows semantics), the policy, the widened scan, the fault seam — §15r R1 | Opus (Fable asked for by the gate; its monthly limit is spent — recorded) + two own reviews — irreplaceable data |
 | E9.S2b | the two-phase protocol, the index (merged, MAC'd), the in-flight file, the lease, the reconcile, `archive run` / `status` / `reconcile --scan` — §15r R1 | Opus (Fable spent, recorded) + two own reviews |
 | E9.S3 | restore (create-only), `archive list` — §15r R1 | Opus (Fable spent, recorded) + two own reviews — the reverse move |

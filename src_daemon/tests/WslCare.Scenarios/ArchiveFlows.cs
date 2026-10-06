@@ -83,6 +83,46 @@ public sealed class ArchiveFlows
         File.ReadAllText(home.Paths.UserConfigFile).Should().Contain("/mnt/v/ai-archive").And.NotContain(".claude/archive");
     }
 
+    /// <summary>E9.S1: the preview over the built CLI lists a due session with its companion, keeps a younger one out, and leaves
+    /// every file as it was.</summary>
+    [Fact]
+    public async Task Preview_lists_a_due_session_with_its_companions_and_writes_nothing()
+    {
+        using var home = new ScenarioHome("archive-preview");
+        Assert.SkipWhen(home.Paths.Side == HostSide.Windows, LinuxOnly);
+        var paths = (LinuxHostPaths)home.Paths;
+        var old = DateTime.UtcNow.AddDays(-20);
+        foreach (var (file, written) in new[] { ("/home/me/.claude/projects/p/old.jsonl", old), ("/home/me/.claude/projects/p/old/subagents/a.jsonl", old), ("/home/me/.claude/projects/p/new.jsonl", DateTime.UtcNow.AddDays(-1)) })
+        {
+            var path = paths.DistroPath(file);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, "{}\n");
+            File.SetLastWriteTimeUtc(path, written);
+        }
+
+        var stamps = Directory.EnumerateFiles(paths.DistroPath("/home/me/.claude"), "*", SearchOption.AllDirectories).ToDictionary(f => f, File.GetLastWriteTimeUtc);
+
+        var result = await home.RunAsync("archive", "preview", "--agent", "claude-code", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        var claude = JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.ArchivePreviewReport)!.Agents.Single();
+        claude.Units.Should().ContainSingle().Which.Should().Match<ArchiveUnitReport>(u => u.Key == "projects/p/old.jsonl" && u.Files == 2);
+        claude.Younger.Should().Be(1);
+        Directory.EnumerateFiles(paths.DistroPath("/home/me/.claude"), "*", SearchOption.AllDirectories).ToDictionary(f => f, File.GetLastWriteTimeUtc)
+            .Should().BeEquivalentTo(stamps, "the preview moves, writes and touches nothing");
+    }
+
+    [Fact]
+    public async Task Preview_as_root_is_refused_with_its_own_exit_code()
+    {
+        using var home = new ScenarioHome("archive-preview-root") { ClaimsRoot = true };
+
+        var result = await home.RunAsync("archive", "preview", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.NotAsRoot);
+        result.Stdout.Should().BeEmpty();
+    }
+
     [Fact]
     public async Task On_windows_check_base_accepts_a_drive_folder_and_refuses_a_linux_path()
     {

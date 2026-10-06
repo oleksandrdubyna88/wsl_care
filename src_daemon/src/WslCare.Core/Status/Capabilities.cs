@@ -53,6 +53,10 @@ public static class Capabilities
     /// <c>config set archive.baseFolder</c> takes the user layer behind the same rules (plan §15r D1, D7, E9.S0).</summary>
     public const string ArchiveCheckBase = "archive.checkBase";
 
+    /// <summary><c>archive preview [--agent &lt;id&gt;] --json</c> answers what the archive would move on this side now, as the user
+    /// (plan §15r E9.S1).</summary>
+    public const string ArchivePreview = "archive.preview";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase, ArchivePreview];
 }
