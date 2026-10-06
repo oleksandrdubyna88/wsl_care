@@ -1,5 +1,5 @@
 import type { ProcessResult, Runner } from '../process/runner';
-import { DISTRO_NAME, isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
+import { DISTRO_NAME, distroSettingText, isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
 import { wslExecutable } from '../wsl/wslExecutable';
 import { decodeWslText } from '../wsl/wslText';
 import { DAEMON_EXIT } from './exitCodes';
@@ -40,7 +40,7 @@ export interface ClientOptions {
   readonly platform: string;
   readonly env: Readonly<Record<string, string | undefined>>;
   /** The `wslCare.distro` setting, read at every call; empty means WSL's default distribution. */
-  readonly distroSetting: () => string;
+  readonly distroSetting: () => unknown;
 }
 
 /** How one call may treat a stopped distribution. */
@@ -119,7 +119,7 @@ export class WslCareClient {
    */
   run(verb: Verb, options: RunOptions = {}): Promise<VerbOutcome> {
     const startIfStopped = options.startIfStopped === true;
-    const setting = this.options.distroSetting().trim();
+    const setting = distroSettingText(this.options.distroSetting());
     const key = `${setting}|${verb}${startIfStopped ? '+start' : ''}`;
     const running = this.inFlight.get(key);
     if (running !== undefined) {
@@ -141,7 +141,7 @@ export class WslCareClient {
     if (!wsl.ok) {
       return wsl.failure;
     }
-    const distro = await this.listedDistro(wsl.value, this.options.distroSetting().trim());
+    const distro = await this.listedDistro(wsl.value, distroSettingText(this.options.distroSetting()));
 
     return distro.ok ? { kind: 'terminal', shellPath: wsl.value, shellArgs: ['-d', distro.value, '--cd', '~'], distro: distro.value } : distro.failure;
   }

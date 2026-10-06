@@ -10,6 +10,7 @@ import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSele
 import { OutcomeStore } from './state/outcomeStore';
 import { StatusBar } from './statusBar/statusBar';
 import { clientRunner, type WslCareTestApi } from './testApi';
+import { distroSettingText } from './wsl/distros';
 
 /**
  * AI OS Care — the read-only extension over the `wsl-care` daemon (plan §7, E5). It runs on the Windows side
@@ -39,9 +40,10 @@ function settings(): vscode.WorkspaceConfiguration {
   return vscode.workspace.getConfiguration('wslCare');
 }
 
-/** `wslCare.distro` — read by the client for every call and by the poller to stamp each round with its target. */
-function distroSetting(): string {
-  return settings().get<string>('distro', '');
+/** `wslCare.distro` as settings.json holds it (a hand-edited value may be any JSON type) — read by the client for every
+ * call and, as `distroSettingText`, by the poller to stamp each round with its target. */
+function distroSetting(): unknown {
+  return settings().get<unknown>('distro', '');
 }
 
 interface Parts {
@@ -73,7 +75,7 @@ function build(context: vscode.ExtensionContext): Parts {
     focused: () => focus.override ?? vscode.window.state.focused,
     refreshSeconds: () => settings().get<unknown>('refreshSeconds'),
     timers: REAL_TIMERS,
-    target: () => distroSetting().trim(),
+    target: () => distroSettingText(distroSetting()),
   });
 
   return { testMode, client, install: newInstallRecorder(), choice, calls, store, poller, focus };

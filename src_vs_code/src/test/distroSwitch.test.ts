@@ -264,3 +264,15 @@ test('a switch in an unfocused window clears what was shown, and asks nothing', 
   const snapshot = w.store.snapshot();
   assert.deepEqual([snapshot.status, snapshot.preview, snapshot.doctor], [undefined, undefined, undefined], 'the previous distribution\'s answers are still shown');
 });
+
+test('a non-string wslCare.distro (a number, null, an object in settings.json) is refused as a value, never thrown', async () => {
+  for (const raw of [42, null, { name: 'Ubuntu' }, JSON.parse('{"toString": null}') as unknown]) {
+    const rec = recordingRunner({});
+    const client = new WslCareClient({ runner: rec.runner, platform: 'win32', env: TEST_ENV, distroSetting: () => raw as unknown as string });
+    let outcome: VerbOutcome | undefined;
+    assert.doesNotThrow(() => { void client.run('status').then((o) => { outcome = o; }); }, `run() threw for ${JSON.stringify(raw)}`);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(outcome?.kind, 'distroRefused', `${JSON.stringify(raw)}: ${JSON.stringify(outcome)}`);
+    assert.equal(rec.requests.length, 0, 'nothing may be started for a setting that is not a name');
+  }
+});

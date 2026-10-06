@@ -1964,7 +1964,7 @@ The extension is **AI OS Care**, id `ai-os-care`, publisher `remsoftdev` — `re
 
 Found by the consultant of the retro coai review of PR #9 and confirmed by reading the code: the client shared a call
 in flight by VERB alone and the poller stored whatever answered last, so after a `wslCare.distro` switch the panel
-could show the previous distribution's `preview` (or `doctor`) under the new one's heading. All nine tests are in
+could show the previous distribution's `preview` (or `doctor`) under the new one's heading. All ten tests are in
 `src/test/distroSwitch.test.ts`; the first four were run against the unfixed `main` (c61ec98) first.
 
 | Guarantee | Test | Red observed against the unfixed code |
@@ -1978,6 +1978,7 @@ could show the previous distribution's `preview` (or `doctor`) under the new one
 | a switch while a round waits for its `status`, with NO new round started (the window unfocused, so the config change's tick asks nothing), ends that round without asking or storing anything (the fix PR's own coai code round, 3 findings, one gap) | *a switch while a round waits for its status, with NO new round started …* | against the first fix: *the round asked the new distribution for preview / doctor beside the old status*; teeth: `isCurrent` no longer re-reading the setting → red |
 | a switch between the `status` being stored and the round going on asks no `preview` / `doctor` (the boundary `afterStatus` guards; the consultant's addition) | *a switch between the status being stored and the round going on …* | teeth: `afterStatus` comparing the generation without re-reading the setting → *the round went on to ask the new distribution for preview / doctor* |
 | a switch in an unfocused window clears what was shown and asks nothing (the consultant's addition to the same round) | *a switch in an unfocused window clears what was shown …* | against the first fix: *the previous distribution's answers are still shown*; teeth: the `observeTarget()` before `tick()`'s focus guard removed → red |
+| a non-string `wslCare.distro` (a hand-edited `42`, `null`, an object, `{"toString": null}`) is refused as `distroRefused` before any spawn and never throws (the final code round; the branch had made the setting's read synchronous, so a `.trim()` on a number would have thrown out of a timer callback) | *a non-string wslCare.distro … is refused as a value, never thrown* | against the branch before it: *run() threw for 42*; then, with a first normaliser that printed the value, *run() threw for {"toString":null}* — `Cannot convert object to primitive value` (the consultant's case); green with `distroSettingText` naming only the type |
 
 Break-it, each restored byte for byte: the client key without the setting → the first two red; the poller's obsolete-
 round check removed → the second and third red; the store not cleared on a new target → the fourth red.

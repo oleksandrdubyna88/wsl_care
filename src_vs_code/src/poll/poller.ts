@@ -70,12 +70,24 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** The target the poller last saw and the generation of its rounds: a round of an older generation is obsolete. */
+interface TargetState {
+  readonly generation: number;
+  readonly lastTarget: string | undefined;
+}
+
+/** The state after seeing `target`: the generation moves on only when the target differs from the last one seen. */
+function nextTargets(state: TargetState, target: string): TargetState {
+  const changed = state.lastTarget !== undefined && target !== state.lastTarget;
+
+  return { generation: changed ? state.generation + 1 : state.generation, lastTarget: target };
+}
+
 export class Poller {
   private disarm: (() => void) | undefined;
   private readonly pending = new Set<Promise<unknown>>();
-  /** Bumped when a round starts for another target than the previous round; a round of an older number is obsolete. */
-  private generation = 0;
-  private lastTarget: string | undefined;
+  /** Replaced, never edited, at every observed target (`nextTargets`). */
+  private targets: TargetState = { generation: 0, lastTarget: undefined };
 
   constructor(private readonly options: PollerOptions) {}
 
@@ -164,7 +176,7 @@ export class Poller {
   private begin(): number {
     this.observeTarget();
 
-    return this.generation;
+    return this.targets.generation;
   }
 
   /**
@@ -173,19 +185,18 @@ export class Poller {
    * started so far obsolete and clears what they stored, which is about the previous target.
    */
   private observeTarget(): void {
-    const target = this.options.target();
-    if (this.lastTarget !== undefined && target !== this.lastTarget) {
-      this.generation += 1;
+    const next = nextTargets(this.targets, this.options.target());
+    if (next.generation !== this.targets.generation) {
       this.options.store.clear();
     }
-    this.lastTarget = target;
+    this.targets = next;
   }
 
   /** `round` is still about the target the setting names now. */
   private isCurrent(round: number): boolean {
     this.observeTarget();
 
-    return round === this.generation;
+    return round === this.targets.generation;
   }
 
   /** Writes to the store only while `round` is still about the current target. */

@@ -1878,7 +1878,10 @@ panel open / Refresh; a `preview` / `doctor` row only on panel open / Refresh.
   starting, an answer about to be stored, `status` answered, even an unfocused tick that asks nothing. A changed
   target clears the store and makes every round started so far obsolete — an obsolete round stores nothing, asks no
   `preview` / `doctor`, and leaves "checking" to the current round. A round for the SAME target makes nothing
-  obsolete, so a status poll never drops a `preview` in flight (`distroSwitch.test.ts`). **Not covered, stated:** with
+  obsolete, so a status poll never drops a `preview` in flight (`distroSwitch.test.ts`). The setting is read as
+  whatever settings.json holds and normalised by ONE function, `distroSettingText` (`wsl/distros.ts`), for the client
+  and the poller alike: a non-string (a hand-edited number, `null`, an object) becomes `<not a name: <type>>`, refused
+  as `distroRefused` before any spawn — never a throw out of a timer callback. **Not covered, stated:** with
   `wslCare.distro` EMPTY the target is "WSL's default", which the client resolves per call; a default changed with
   `wsl --set-default` in the middle of a panel round can still mix two distributions in that one round (pre-existing,
   found by the consultant 2026-10-06; binding the resolved distribution to the round is the follow-up).
