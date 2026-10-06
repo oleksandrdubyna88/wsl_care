@@ -9,7 +9,7 @@ import { buildPanelView } from './viewModel';
 import type { RowId } from '../cleanup/rowIds';
 
 /**
- * The read-only panel, a `WebviewView` in the AI OS Care side bar (plan §7.2). Thin wiring: the page is the static shell
+ * The panel, a `WebviewView` in the AI OS Care side bar (plan §7.2). Thin wiring: the page is the static shell
  * of `panelHtml.ts` with a fresh nonce per render; its data is the view model of the store's snapshot, sent by
  * `postMessage` whenever the store changes; what the page sends back is validated against the closed set of
  * `messages.ts` and mapped to the host's own actions — nothing from the page reaches the client as data.

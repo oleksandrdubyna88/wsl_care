@@ -1,5 +1,5 @@
 /**
- * THE field map of the read-only panel (plan §7.2, §15g B2): every row the panel shows, the section it sits in, the
+ * THE field map of the panel (plan §7.2, §15g B2): every row the panel shows, the section it sits in, the
  * daemon verb and JSON path it is read from, when that verb is asked again, and — for a row the four E5 verbs cannot
  * fill — the epic it arrives in.
  *
