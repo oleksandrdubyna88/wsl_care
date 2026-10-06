@@ -41,6 +41,36 @@ public sealed class AgentsReviewRoundTests : IDisposable
 
     private static void SkipUnlessLinux(string why) => Assert.SkipUnless(OperatingSystem.IsLinux(), why);
 
+    // ---------- E7.S2b/S2c review round, A-L3: ONE ceiling over the whole lookup ----------
+
+    /// <summary>A file system whose device question hangs: a PATH entry on a 9p share the host stopped serving.</summary>
+    private sealed class SlowDevices(IFileSystem inner, TimeSpan delay) : DelegatingFileSystem(inner)
+    {
+        public override (uint Major, uint Minor)? DeviceOf(string path)
+        {
+            Thread.Sleep(delay);
+            return base.DeviceOf(path);
+        }
+    }
+
+    [Fact]
+    public void A_hanging_device_question_while_choosing_the_folders_is_inside_the_lookup_s_one_ceiling()
+    {
+        var machine = ConfigLoader.Load(
+        [
+            (ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults())),
+            (new ConfigLayerFile(ConfigLayer.Machine, "/etc/wsl-care/config.json"), new FileReadResult.Content("""{ "agents": { "lookupCeilingSeconds": 1 } }"""u8.ToArray())),
+        ]).Config;
+        var started = System.Diagnostics.Stopwatch.StartNew();
+
+        using (Tuning.Use(machine))
+        {
+            AgentDiscovery.Discover(_sandbox.Paths, new SlowDevices(_sandbox.Files, TimeSpan.FromSeconds(4)), PathShape(), asRoot: false).Should().NotBeEmpty();
+        }
+
+        started.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3), "review A-L3: the folder choice (a device stat per PATH entry) runs under the same 1 s ceiling as the lookups");
+    }
+
     // ---------- R1: discovery under wsl.exe --exec ----------
 
     [Fact]

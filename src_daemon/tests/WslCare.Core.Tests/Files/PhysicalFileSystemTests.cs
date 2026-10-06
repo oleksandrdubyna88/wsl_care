@@ -164,11 +164,12 @@ public sealed class PhysicalFileSystemTests
     public void An_uncapped_read_is_bounded_by_records_maxHistoryBytes()
     {
         using var host = new SandboxHost("fs-cap-history");
-        var big = host.Root.File("state/history.jsonl", new string('a', (1024 * 1024) + 1));
+        var cap = ConfigKeys.Records.MaxHistoryBytes.Min;
+        var big = host.Root.File("state/history.jsonl", new string('a', cap + 1));
 
-        using (Tuning.Use(Machine("""{ "records": { "maxHistoryBytes": 1048576 } }""")))
+        using (Tuning.Use(Machine($$"""{ "records": { "maxHistoryBytes": {{cap}} } }""")))
         {
-            host.Files.ReadFile(big).Should().BeOfType<FileReadResult.Unreadable>().Which.Reason.Should().Contain("1048576");
+            host.Files.ReadFile(big).Should().BeOfType<FileReadResult.Unreadable>().Which.Reason.Should().Contain(cap.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
         host.Files.ReadFile(big).Should().BeOfType<FileReadResult.Content>("the default cap is 256 MiB");

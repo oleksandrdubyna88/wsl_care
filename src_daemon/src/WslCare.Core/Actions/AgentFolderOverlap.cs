@@ -28,15 +28,21 @@ public static class AgentFolderOverlap
     }
 
     /// <summary>Why a folder an action works in — <paramref name="display"/>, seen here as <paramref name="folder"/> — may not be
-    /// cleaned: it is, sits inside or holds an AI agent's folder; empty when it does not (review S4: the folder a TOOL says it uses).</summary>
+    /// cleaned: it is, sits inside or holds an AI agent's folder, a <c>~/git</c> or Claude's temp folder; empty when it does not
+    /// (review S4: the folder a TOOL says it uses; E7.S2b/S2c review: the other protected roots too).</summary>
     public static string Refusal(ActionContext context, string folder, string display)
     {
         var real = RealOrFull(context.Files, folder);
-        return context.Paths.AgentRoots.Select(r => (Spelt: r, Real: RealOrFull(context.Files, r)))
+        return Protected(context.Paths).Select(r => (r.Spelt, r.What, Real: RealOrFull(context.Files, r.Spelt)))
             .Where(a => ExtraAgentRules.Overlaps(real, a.Real))
-            .Select(a => $"the cache folder {display} overlaps the AI agent folder {a.Spelt}, under which nothing is ever deleted (plan §15q R2) — refused")
+            .Select(a => $"the cache folder {display} overlaps the {a.What} {a.Spelt}, under which nothing is ever deleted (plan §5, §15q R2) — refused")
             .FirstOrDefault() ?? string.Empty;
     }
+
+    /// <summary>The protected roots a tool's own cache answer may never overlap: every AI agent folder, every <c>~/git</c>,
+    /// Claude's temp folder.</summary>
+    private static IEnumerable<(string Spelt, string What)> Protected(Hosting.IHostPaths paths) =>
+        [.. paths.AgentRoots.Select(r => (r, "AI agent folder")), .. paths.GitRoots.Select(r => (r, "git folder")), .. paths.ClaudeTempRoots.Select(r => (r, "Claude temp folder"))];
 
     private static IEnumerable<string> Clashes(HomeFolder root, string real, IReadOnlyList<(string Spelt, string Real)> agents) =>
         agents.Where(a => ExtraAgentRules.Overlaps(real, a.Real))

@@ -128,6 +128,8 @@ internal static class TreeWalk
 
             if (visited % CancellationStride == 0)
             {
+                // A stretch of a walk is a step of the run (E7.S2b/S2c review C-H2).
+                Actions.Engine.RunProgress.Mark();
                 cancellationToken.ThrowIfCancellationRequested();
             }
 

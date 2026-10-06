@@ -13,9 +13,26 @@ namespace WslCare.Core.Actions.Suspects;
 /// </summary>
 public static class SuspectSignals
 {
-    /// <summary>The key a preview item carries: <c>pid:start:cpu</c> — who it is and the CPU ticks the preview saw.</summary>
+    /// <summary>The key a preview item carries: <c>pid:start:cpu:uid</c> — who it is, the CPU ticks the preview saw and the account
+    /// it ran as (E7.S2b review A-L2: the kill-time re-check compares the account, not only "not root").</summary>
     public static string Key(SuspectSample sample) =>
-        string.Create(CultureInfo.InvariantCulture, $"{sample.Pid}:{sample.StartTicks}:{sample.CpuTicks}");
+        string.Create(CultureInfo.InvariantCulture, $"{sample.Pid}:{sample.StartTicks}:{sample.CpuTicks}:{sample.Uid}");
+
+    /// <summary>The <c>pid:start</c> a key names — what a modal shows and a button run passes back (review A-H1).</summary>
+    public static string Shown(string key)
+    {
+        var parts = key.Split(':');
+        return parts.Length >= 2 ? $"{parts[0]}:{parts[1]}" : key;
+    }
+
+    /// <summary>Whether <paramref name="text"/> is a shown process key: <c>&lt;pid&gt;:&lt;start ticks&gt;</c>, both whole numbers.</summary>
+    public static bool IsShownKey(string text)
+    {
+        var parts = text.Split(':');
+        return parts.Length == 2
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var pid) && pid > 1
+            && long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out _);
+    }
 
     /// <summary>Every target read again — the same process, still no CPU, still no terminal — and the ones that pass signalled
     /// TOGETHER by identity: one <c>SIGTERM</c> each, ONE shared grace, then <c>SIGKILL</c> to the survivors (gate finding #9:
@@ -39,17 +56,18 @@ public static class SuspectSignals
     /// became root's since the preview; <c>null</c> when it is still the idle suspect the preview saw.</summary>
     private static SignalOutcome? Recheck(SuspectSample? now, ActionItem target)
     {
-        var (identity, cpu) = (Identity(target), long.Parse(target.Key.Split(':')[2], CultureInfo.InvariantCulture));
+        var parts = target.Key.Split(':');
+        var (identity, cpu, uid) = (Identity(target), long.Parse(parts[2], CultureInfo.InvariantCulture), parts.Length > 3 ? int.Parse(parts[3], CultureInfo.InvariantCulture) : -1);
         return now switch
         {
             null => new SignalOutcome.AlreadyGone(),
             { StartTicks: var start } when start != identity.StartTicks => new SignalOutcome.NotTheSame($"pid {identity.Pid} started at tick {start}, not {identity.StartTicks}: another process now"),
-            { } changed when Changed(changed, cpu) => new SignalOutcome.NotTheSame($"pid {identity.Pid} used CPU, gained a terminal or changed owner since the preview: kept"),
+            { } changed when Changed(changed, cpu, uid) => new SignalOutcome.NotTheSame($"pid {identity.Pid} used CPU, gained a terminal or changed owner since the preview: kept"),
             _ => null,
         };
     }
 
-    private static bool Changed(SuspectSample now, long cpu) => now.CpuTicks != cpu || now.Tty != 0 || now.Uid == 0;
+    private static bool Changed(SuspectSample now, long cpu, int uid) => now.CpuTicks != cpu || now.Tty != 0 || now.Uid == 0 || now.Uid != uid;
 
     /// <summary>What one outcome means for the record: ended (and how), kept (and why), and the failure it counts as, if any.</summary>
     public static (bool Ended, ActionItem Item, string Failure) Verdict(ActionItem item, SignalOutcome outcome) => outcome switch

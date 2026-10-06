@@ -1169,7 +1169,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
 > Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
-> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); **the E7.S2b/S2c review round fixed 2026-10-06** (*E7.S2b/S2c review round*: A18 bound to its modal, the two-clock dense idle, the progress watchdog and the timer run limit — N-4 reversed —, the rules held per layer); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1844,7 +1844,7 @@ E7.S2b and `requests.maxBytes`). **Deviations from the text above:**
   that no longer says what the machine layer says is a `problem` naming what is wanted and "run install.sh again"; none at
   all is fine while the configuration keeps the defaults. Every derived copy of the period reads the key
   (`CollectRun.DefaultWindow`, `DoctorRun.LastRunMaxAge` = period + `timer.lateSlackMinutes`, the doctor sentence).
-- **N-4: `wsl-care.service` `TimeoutStartSec=infinity`**, like `wsl-care-act@.service`; the test: every `oneshot` unit's start
+- **N-4 (REVERSED by the E7.S2b/S2c review, C-H2 — see that round): `wsl-care.service` `TimeoutStartSec=infinity`**, like `wsl-care-act@.service`; the test: every `oneshot` unit's start
   limit is `infinity` (its start IS the whole run, bounded by each command's own ceiling), a `simple` unit sets none.
 - **N-5: root never reads a whole file it did not bound.** `IFileSystem.ReadFile(path, maxBytes)` (the physical one reads at
   most one byte past the cap; a test double checks after); `Files/RootFileCaps.cs`: a state file (`running.json`, the
@@ -1880,6 +1880,47 @@ E7.S2b and `requests.maxBytes`). **Deviations from the text above:**
   (`numbers.test.ts` holds `package.json` equal to its table).
 - **Not built here, recorded:** the extension's reader test against `contracts/status-limits.json`, and the extension's use
   of `drainGraceMilliseconds` / `unitStopSeconds` in its worst cases — PR #12's side of the boundary row below.
+
+#### E7.S2b/S2c review round (2026-10-06) — two own reviews (security, A18; correctness, S2c)
+
+Every finding accepted (the coordinator, 2026-10-06), fixed in ONE commit `fix(daemon): E7.S2b/S2c review round …`; RED-GREEN-RED
+per finding — the record is `research/module_tests.md` § *The E7.S2b/S2c review round*.
+
+| # | Finding | Fixed by |
+|---|---|---|
+| A-H1 | A18's button run was not bound to what its modal showed: a process that became eligible after the modal was ended too, and a multi-id request could carry A18 with no A18 modal | A18 is `IBoundToShownList` like A4: the preview answers `pid:start` keys (`shown`), `act … --process <pid:start>` passes them back (A18 only, each shape-checked, at most `act.maxShownNames`), the request file carries `shownProcesses` (validated), a MANUAL run without them is refused, a run with them ends only the processes BOTH still eligible now and among the keys — the live re-judge kept |
+| A-M1 | CPU measured per process, not per tree: an idle wrapper whose child agent works became eligible (and SIGTERM reached the child) | a candidate with any child process is kept: "it has a child process" |
+| A-M2 | "orphaned" counted processes the user's `systemd --user` started | for A18, orphaned = parent pid 1 only |
+| A-M3 | agents recognised by basename alone | the program (`/proc/<pid>/exe`), or the script node runs, must lead along its links into the agent's own install — a native `…/versions/…` target or the agent's npm package (`AgentDiscovery.IsInstallOf`); else "not that agent" |
+| A-M4 | both idle windows used the wall clock (a forward jump after a host sleep passed both at once) | every sample carries the monotonic clock too; the idle time is the SHORTER of the two clocks, and counts only over a dense chain — no gap between sightings, nor between the newest and now, longer than two timer periods |
+| A-M5 | zero session matches read as "no live session"; a process with its own agent home was judged by the default one | none found = kept ("cannot tell"); `/proc/<pid>/environ` read as root, and a moved `HOME`, XDG folder or agent home variable (`CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_…`: any variable named after a catalogue binary holding a path outside the agent's own folders) keeps the process |
+| A-L1 | `agent-cpu.json` 0644, and past the cap the HIGHEST pids were dropped | written 0600 (`IFileSystem.WritePrivateFileAtomically`); past the cap the OLDEST processes are dropped (= no history = kept); the cap 256 KiB, a full 512-entry history with both clocks is 157 KiB (a coupled rule holds `agentCpu.maxBytes` ≥ 320 × `agentCpu.maxEntries`) |
+| A-L2 | the kill-time re-check compared "not root" only | the item key carries the account (`pid:start:cpu:uid`); another account now = not signalled (A11 too, it shares the path) |
+| A-L3 | discovery bounded per agent; the PATH entries' device stats outside any bound | ONE `Bounded.Run` around the folder choice and every lookup |
+| gap | a tool's cache answer was checked against the agent folders only | also every `~/git` and Claude's temp folder |
+| C-H1 | a history past `records.maxHistoryBytes` read as "no runs": the reconcile wrote a false `interrupted` line per detail, more every run; the request sweep likewise | an unreadable history (`HistoryRead.Problem`) skips the reconcile and the whole request sweep, said in the run's notes; the key's minimum is 64 MiB, and a coupled rule holds it ≥ 128 KiB × `runs.historyRetentionDays` |
+| C-H2 | **reverses N-4.** `TimeoutStartSec=infinity` removed the last backstop: the heartbeat beats on a timer, so a hung read kept a run "live" forever, and `act --stop` refuses a live run | (a) wsl-care.service `TimeoutStartSec` = `timer.runLimitMinutes` (new machine key, default 240; the drop-in renders it; a coupled rule holds it ≥ the derived worst case of a timer run — every command template once at its ceiling with its drains, the two walks, 10 min: 220 min with the defaults); (b) a progress watchdog — `running.json` carries the time of the last step (a command started or ended, a stretch of a walk, an action begun), and a run with none for `running.noProgressMinutes` (new machine key, default 20; a coupled rule holds it ≥ the longest single command ceiling with its drains and 60 s: 17 min) reads WEDGED with a fresh heartbeat, so `act --stop` ends it. The act unit keeps `infinity` and gains (b) |
+| C-M1 | a user value in range could put ROOT observe-only through a coupled rule, the error blamed on the wrong layer | the rules are held per LAYER: the keys a layer set for a broken rule go back to the layer below — from the machine layer an error, from the user layer a NOTICE (root stays able); `runs.historyRetentionDays` clamped to `logs.maxRangeDays`' maximum (366); `config set` evaluates the rules on the configuration it would produce and refuses a breaking value |
+| C-M2 | a broken rule left the bad value in force (`units dropin` rendered `00/5:00:00`) | the take-back above; `units dropin` refuses (78) while a layer is in error |
+| C-M3 | the event stream's ceiling (segment + slack) could pass `commands.maxTimeoutHours`, so the follower restarted every 30 s | `events.segmentMinutes` at most 50; a coupled rule (segment + slack + 60 s ≤ the maximum); the timeout test covers COMPOSED ceilings |
+| C-M4 | the writer kept the key's range maximum as the user-layer cap, the reader the value in force | ONE cap, `ConfigLoader.UserLayerCap`; the refusal's fix text prints the cap in force |
+| C-M5 | `events.startsRetentionDays` user-layer up to 3650, while root re-reads every kept day file every ~10 min; no `MemoryMax` on the follower | machine-only, at most 90; the summary reads only the day files of the last 24 h; the follower gets `MemoryMax` (`units.memoryMaxMb`, rendered too) |
+| C-M6 | missing coupled rules | `requests.maxBytes` ≥ 67 × `act.maxShownNames` + 4096; `timer.lateSlackMinutes` > `randomizedDelayMinutes` + `accuracyMinutes`; `agentCpu.maxBytes` ≥ 320 × `agentCpu.maxEntries` |
+| C-M7 | `RewriteLines` read `history.jsonl` whole | read under `RootFileCaps.History`; past it the rewrite is refused and the file kept |
+| C-M8 | `install.sh --version <older>` failed at the drop-ins after replacing the binary and units | a `units dropin` that answers 2 (an older release: an unknown verb) or 78 (a configuration in error) gets no drop-in, said, the stale one removed; anything else still fails the step |
+| C-M9 | the number scan missed comparisons, clips, `new TimeSpan(…)`, one-digit waits and properties that answer a literal | five more shapes, each planted in the companion; the 21 numbers they found are formats (group C, each with its reason) |
+
+**Deviations from the review's text:**
+
+- `timer.runLimitMinutes` defaults to **240, not 60**: the derived worst case of a timer run with the defaults is 220 min, so 60 would
+  contradict the coupled rule the same finding asked for. The watchdog (20 min without a step) is what ends a hang early.
+- The watchdog's key is `running.noProgressMinutes` (the `running.*` group), not `run.noProgressMinutes`.
+- The derived worst case counts each command TEMPLATE once — a removal of many batches or one trim per tool takes more; the
+  limit is a backstop against a hang, not a plan of a busy run, and says so in its rule.
+- A-M5's "agent home variable" is a NAME rule (prefixed by a catalogue binary, holding a path), not a list per agent: the
+  catalogue names no variables, and the rule keeps a process — the safe direction — for any it does not know.
+- A-L1 keeps "drop the oldest" (the planned rule) rather than recording the old order as a deviation: a dropped identity is "no
+  history", which only keeps a process.
 
 #### Stories
 

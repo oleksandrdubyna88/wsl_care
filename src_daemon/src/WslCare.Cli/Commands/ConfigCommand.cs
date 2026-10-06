@@ -179,6 +179,11 @@ internal static class ConfigCommand
             return Output.Refuse(stderr, $"{key.Name}: the user layer would be {large.Bytes} bytes, over the {large.Max}-byte cap its reader keeps (non-ASCII text is written escaped, six bytes a character). Nothing was written.");
         }
 
+        if (result is UserConfigWriteResult.BreaksRule broken)
+        {
+            return Output.Refuse(stderr, $"{key.Name}: {broken.Message}. Nothing was written.");
+        }
+
         if (result is UserConfigWriteResult.Refused refused)
         {
             // The user's config directory is never a protected place: reaching here is a defect in the

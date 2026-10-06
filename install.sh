@@ -755,10 +755,12 @@ install_files() {
   run install -d -m 0755 "$ROOT$STATE_DIR" "$ROOT$LOG_DIR" || fail install-binary "could not create $STATE_DIR and $LOG_DIR"
 }
 
-# E7.S2c: each unit's values that are configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec,
-# the follower's RestartSec) go into a drop-in the INSTALLED binary renders from the machine layer — one definition, the
-# key; this script never parses the configuration. Written on every install and upgrade, so running install.sh again after
-# changing /etc/wsl-care/config.json applies it; `wsl-care doctor` names a drop-in that no longer matches.
+# E7.S2c: each unit's values that are configuration (the timer's period and run limit, the services' Nice, MemoryMax and
+# TimeoutStopSec, the follower's RestartSec) go into a drop-in the INSTALLED binary renders from the machine layer — one
+# definition, the key; this script never parses the configuration. Written on every install and upgrade, so running
+# install.sh again after changing /etc/wsl-care/config.json applies it; `wsl-care doctor` names a drop-in that no longer
+# matches. E7.S2b/S2c review C-M8: a binary that does not know the verb (an older release, `--version`; it answers 2) or that
+# refuses an invalid machine configuration (78) gets no drop-in, said, and the stale one goes: the units keep their own values.
 write_dropins() {
   for unit in $UNITS; do
     dir="$UNIT_DIR/$unit.d"
@@ -766,9 +768,19 @@ write_dropins() {
       say "would write $dir/$DROPIN_NAME from: $BIN_PATH units dropin $unit"
       continue
     fi
-    install -d -m 0755 "$ROOT$dir" || fail install-units "could not create $dir"
-    timeout 60 "$ROOT$BIN_PATH" units dropin "$unit" > "$WORK/$DROPIN_NAME" || fail install-units "$BIN_PATH units dropin $unit failed"
-    install -m 0644 "$WORK/$DROPIN_NAME" "$ROOT$dir/$DROPIN_NAME" || fail install-units "could not install $dir/$DROPIN_NAME"
+    code=0
+    timeout 60 "$ROOT$BIN_PATH" units dropin "$unit" > "$WORK/$DROPIN_NAME" || code=$?
+    case "$code" in
+      0)
+        install -d -m 0755 "$ROOT$dir" || fail install-units "could not create $dir"
+        install -m 0644 "$WORK/$DROPIN_NAME" "$ROOT$dir/$DROPIN_NAME" || fail install-units "could not install $dir/$DROPIN_NAME"
+        ;;
+      2 | 78)
+        warn "no drop-in for $unit: $BIN_PATH units dropin $unit answered $code ($( [ "$code" = 2 ] && echo "a release before unit drop-ins" || echo "the machine configuration is in error")); the unit keeps its own values"
+        if [ -f "$ROOT$dir/$DROPIN_NAME" ]; then rm -f -- "$ROOT$dir/$DROPIN_NAME" || fail install-units "could not remove the stale $dir/$DROPIN_NAME"; fi
+        ;;
+      *) fail install-units "$BIN_PATH units dropin $unit failed (exit $code)" ;;
+    esac
   done
   say "unit drop-ins: $DROPIN_NAME for $UNITS, from the machine configuration"
 }

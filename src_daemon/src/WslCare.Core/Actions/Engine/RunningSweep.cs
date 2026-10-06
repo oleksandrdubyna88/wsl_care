@@ -47,8 +47,9 @@ public abstract record RunningSweep
             _ => throw new System.Diagnostics.UnreachableException("RunningStatus is a closed set"),
         };
 
-    public static string WedgedReason(RunningStatus.Wedged w) =>
-        $"run {w.File.RunId} is wedged: pid {w.File.Pid} is alive but its heartbeat is {w.HeartbeatAge.TotalSeconds:0} s old ({w.File.Current}); nothing was killed - stop it by hand, then run again";
+    public static string WedgedReason(RunningStatus.Wedged w) => w.NoProgressFor is { } still
+        ? $"run {w.File.RunId} is wedged: pid {w.File.Pid} is alive and beating but made no step for {still.TotalMinutes:0} min ({w.File.Current}); nothing was killed - stop it (act --stop), then run again"
+        : $"run {w.File.RunId} is wedged: pid {w.File.Pid} is alive but its heartbeat is {w.HeartbeatAge.TotalSeconds:0} s old ({w.File.Current}); nothing was killed - stop it by hand, then run again";
 
     /// <summary>A sweep that cannot write its record or remove the file blocks: the state is not one to act on.</summary>
     private static RunningSweep TrySweep(IHostPaths paths, IFileSystem files, RunningStatus.Dead dead)

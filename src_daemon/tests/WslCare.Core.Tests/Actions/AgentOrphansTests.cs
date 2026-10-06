@@ -25,10 +25,30 @@ public sealed class AgentOrphansTests : IDisposable
 {
     private const string Boot = "6d1c1c5e-0000-4000-8000-000000000001";
 
-    private readonly LinuxSandbox _sandbox = new("a18");
-    private readonly ManualTimeProvider _clock = new(FixedTimeProvider.DefaultNow);
+    /// <summary>Where a native Claude Code install keeps its program (the catalogue's versions pattern).</summary>
+    private const string NativeClaude = "/home/me/.local/share/claude/versions/2.1.0";
 
-    public AgentOrphansTests() => BootId(Boot);
+    private readonly LinuxSandbox _sandbox = new("a18");
+    private readonly ManualTimeProvider _clock = new(FixedTimeProvider.DefaultNow) { SteppedTimestamps = true };
+    private readonly Dictionary<string, string> _links = new(StringComparer.Ordinal);
+    private readonly LinkedFiles _files;
+
+    public AgentOrphansTests()
+    {
+        _files = new LinkedFiles(_sandbox.Files, _links);
+        BootId(Boot);
+    }
+
+    /// <summary>The real sandbox, with the <c>/proc/&lt;pid&gt;/exe</c> links a test names (a link needs a privilege on Windows).</summary>
+    private sealed class LinkedFiles(Core.Files.IFileSystem inner, Dictionary<string, string> links) : DelegatingFileSystem(inner)
+    {
+        public override Core.Files.LinkReadResult ReadLink(string path) =>
+            links.TryGetValue(path.Replace('\\', '/'), out var target) ? new Core.Files.LinkReadResult.Target(target) : base.ReadLink(path);
+    }
+
+    private void Exe(int pid, string target) => _links[$"{_sandbox.Paths.ProcRoot}/{pid}/exe".Replace('\\', '/')] = target;
+
+    private void Environ(int pid, string variables) => _sandbox.Write($"/proc/{pid}/environ", variables.Replace(";", "\0", StringComparison.Ordinal) + "\0");
 
     public void Dispose() => _sandbox.Dispose();
 
@@ -47,6 +67,8 @@ public sealed class AgentOrphansTests : IDisposable
 
     private void Stat(int pid, long cpuTicks, long start = 4000, int tty = 0, int uid = 1000)
     {
+        Exe(pid, NativeClaude);
+        Environ(pid, "HOME=/home/me;PATH=/usr/bin");
         _sandbox.Write($"/proc/{pid}/stat", string.Create(CultureInfo.InvariantCulture, $"{pid} (claude) S 1 {pid} {pid} {tty} -1 0 0 0 0 0 {cpuTicks} 0 0 0 20 0 1 0 {start} 0 0\n"));
         _sandbox.Write($"/proc/{pid}/status", string.Create(CultureInfo.InvariantCulture, $"Name:\tclaude\nState:\tS (sleeping)\nPPid:\t1\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nRssAnon:\t2000 kB\nRssShmem:\t0 kB\n"));
     }
@@ -54,26 +76,31 @@ public sealed class AgentOrphansTests : IDisposable
     private static ProcessEntry Agent(int pid, string cli = "claude", bool orphaned = true, bool tty = false, string user = "me") =>
         UserWorld.Process(pid, $"/home/me/.local/bin/{cli} --resume", cwd: "/home/me/git/p", family: ProcessFamilies.AiAgents, orphaned: orphaned, tty: tty, ageHours: 48, user: user);
 
-    private ActionContext Context(IReadOnlyList<ProcessEntry> processes, IProcessSignals? signals = null)
+    /// <summary>A terminal's context (<see cref="RunTrigger.Cli"/>: it acts on its own fresh preview), or a button's with the
+    /// processes its modal showed.</summary>
+    private ActionContext Context(IReadOnlyList<ProcessEntry> processes, IProcessSignals? signals = null, RunTrigger trigger = RunTrigger.Cli, ShownList? shown = null)
     {
         var config = ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config;
-        return new ActionContext(_sandbox.Paths, _sandbox.Files, _clock, config, RunTrigger.Manual, new TargetUserResult.Found(new TargetUser("me", 1000, "/home/me"), "test"))
+        return new ActionContext(_sandbox.Paths, _files, _clock, config, trigger, new TargetUserResult.Found(new TargetUser("me", 1000, "/home/me"), "test"))
         {
             Processes = _ => Reading.Of(UserWorld.Snapshot(processes)),
             Signals = signals ?? new RecordingSignals(),
+            ShownProcesses = shown ?? ShownList.None,
         };
     }
 
-    private async Task<ActionPreview> Preview(IReadOnlyList<ProcessEntry> processes)
+    private async Task<ActionPreview> Preview(IReadOnlyList<ProcessEntry> processes, RunTrigger trigger = RunTrigger.Cli, ShownList? shown = null)
     {
         var action = new AgentOrphans();
-        var context = Context(processes);
+        var context = Context(processes, trigger: trigger, shown: shown);
         return await action.PreviewAsync(context, new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []), CancellationToken.None);
     }
 
     /// <summary>What the timer's full run does every time: record the AI-agent processes' CPU by identity.</summary>
     private void Record(IReadOnlyList<ProcessEntry> processes) =>
-        AgentCpuHistory.Record(_sandbox.Paths, _sandbox.Files, processes, _clock.GetUtcNow()).Should().BeEmpty();
+        AgentCpuHistory.Record(_sandbox.Paths, _sandbox.Files, processes, SampleTime.Of(_clock)).Should().BeEmpty();
+
+    private SampleTime At(TimeSpan later) => new(_clock.GetUtcNow() + later, (long)(TimeSpan.FromDays(1) + later).TotalMilliseconds);
 
     /// <summary>A Claude Code session written <paramref name="ago"/> before now.</summary>
     private void Session(TimeSpan ago) =>
@@ -238,16 +265,18 @@ public sealed class AgentOrphansTests : IDisposable
     [Fact]
     public void The_cpu_history_is_root_state_bounded_and_pruned_to_live_processes()
     {
-        var now = _clock.GetUtcNow();
+        var now = At(TimeSpan.Zero);
         var before = AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new SuspectSample(10, 1, 5, 0, 1000), new SuspectSample(11, 1, 5, 0, 1000)], now);
-        var many = Enumerable.Range(2, AgentCpuHistory.MaxEntries + 50).Select(pid => new SuspectSample(pid, 1, 1, 0, 1000)).ToList();
+        var many = Enumerable.Range(2, AgentCpuHistory.MaxEntries + 50).Select(pid => new SuspectSample(pid, pid, 1, 0, 1000)).ToList();
 
-        AgentCpuHistory.Next(before, Boot, [new SuspectSample(10, 1, 5, 0, 1000)], now.AddHours(1)).Entries.Select(e => e.Pid).Should().Equal(10);
-        AgentCpuHistory.Next(before, Boot, many, now).Entries.Should().HaveCount(AgentCpuHistory.MaxEntries);
+        AgentCpuHistory.Next(before, Boot, [new SuspectSample(10, 1, 5, 0, 1000)], At(TimeSpan.FromHours(1))).Entries.Select(e => e.Pid).Should().Equal(10);
+        var kept = AgentCpuHistory.Next(before, Boot, many, now).Entries;
+        kept.Should().HaveCount(AgentCpuHistory.MaxEntries);
+        kept.Min(e => e.StartTicks).Should().Be(many.Max(m => m.StartTicks) - AgentCpuHistory.MaxEntries + 1, "review A-L1: past the cap the OLDEST processes are dropped (no history = kept)");
         AgentCpuHistory.Write(_sandbox.Paths, _sandbox.Files, before).Should().BeEmpty();
         AgentCpuHistory.Read(_sandbox.Paths, _sandbox.Files).Should().BeEquivalentTo(before);
         AgentCpuHistory.File(_sandbox.Paths).Should().StartWith(_sandbox.Paths.StateDirectory);
-        JsonSerializer.SerializeToUtf8Bytes(AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [.. many.Take(AgentCpuHistory.MaxEntries)], now), WslCareJsonContext.Default.AgentCpuFile).Length
+        JsonSerializer.SerializeToUtf8Bytes(AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [.. many.Take(AgentCpuHistory.MaxEntries)], new SampleTime(DateTimeOffset.MaxValue.AddYears(-1), 999_999_999_999)), WslCareJsonContext.Default.AgentCpuFile).Length
             .Should().BeLessThan(AgentCpuHistory.MaxBytes, "a full history stays inside the read cap");
     }
 
@@ -260,5 +289,186 @@ public sealed class AgentOrphansTests : IDisposable
         key.Trust.Safe.Should().Be(SafeDirection.Higher);
         ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config.Int(key).Should().Be(4);
         ConfigKeys.Processes.Families.Allowed.Should().NotContain(ProcessFamilies.AiAgents, "Q13: not through the general families list");
+    }
+
+    // ---------- E7.S2b review round (security review, plan §15q *E7.S2b/S2c review round*) ----------
+
+    /// <summary>An idle orphan of the default kind, 6 h on the record: Claude Code, native install, its session days old.</summary>
+    private async Task<ActionPreview> SixHoursIdle(IReadOnlyList<ProcessEntry> processes, RunTrigger trigger = RunTrigger.Cli, ShownList? shown = null)
+    {
+        Session(TimeSpan.FromDays(3));
+        Record(processes);
+        _clock.Advance(TimeSpan.FromHours(3));
+        Record(processes);
+        _clock.Advance(TimeSpan.FromHours(3));
+        return await Preview(processes, trigger, shown);
+    }
+
+    [Fact]
+    public async Task A_button_run_without_the_processes_its_modal_showed_is_refused()
+    {
+        Stat(10, cpuTicks: 500);
+
+        var preview = await SixHoursIdle([Agent(10)], RunTrigger.Manual);
+
+        preview.Refusal.Should().Be(AgentOrphans.ButtonNeedsShownProcesses, "review A-H1: a button run is bound to what its modal showed");
+    }
+
+    [Fact]
+    public async Task A_button_run_ends_only_the_still_eligible_processes_its_modal_showed()
+    {
+        Stat(10, cpuTicks: 500);
+        Stat(20, cpuTicks: 700, start: 5000);
+        var shown = ShownList.Of(["10:4000", "30:6000"]);
+
+        var preview = await SixHoursIdle([Agent(10), Agent(20)], RunTrigger.Manual, shown);
+        var signals = new RecordingSignals();
+        var action = new AgentOrphans();
+        var context = Context([Agent(10), Agent(20)], signals, RunTrigger.Manual, shown);
+        await action.RunAsync(context, preview, new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []), CancellationToken.None);
+
+        preview.Refusal.Should().BeEmpty();
+        preview.Targets.Should().ContainSingle().Which.Key.Should().StartWith("10:4000:");
+        signals.Asked.Should().Equal([new ProcessIdentity(10, 4000)], "pid 20 became eligible but the modal never showed it; 30 is not eligible now");
+    }
+
+    [Fact]
+    public async Task The_preview_answers_its_processes_as_pid_and_start_keys()
+    {
+        Stat(10, cpuTicks: 500);
+
+        var preview = await SixHoursIdle([Agent(10)]);
+
+        new AgentOrphans().Shown(preview).Should().Equal("10:4000");
+        (new AgentOrphans() is IBoundToShownList).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_wrapper_with_a_child_process_is_kept()
+    {
+        Stat(10, cpuTicks: 500);
+        var child = UserWorld.Process(11, "/home/me/.local/share/claude/versions/2.1.0 --worker", family: ProcessFamilies.AiAgents) with { ParentPid = 10 };
+
+        var preview = await SixHoursIdle([Agent(10), child]);
+
+        preview.Count.Should().Be(0, "review A-M1: an idle wrapper's child may be the one working");
+        preview.Basis.Should().Contain(AgentOrphans.HasChild);
+    }
+
+    [Fact]
+    public async Task A_process_the_users_systemd_manager_started_is_not_an_orphan()
+    {
+        Stat(10, cpuTicks: 500);
+        var started = Agent(10) with { ParentPid = 300 };
+
+        var preview = await SixHoursIdle([started]);
+
+        preview.Count.Should().Be(0, "review A-M2: re-parented to systemd --user is a started service, not an orphan");
+        preview.Basis.Should().Contain(AgentOrphans.NotOrphaned);
+    }
+
+    [Theory]
+    [InlineData("/usr/bin/python3", "", false)]
+    [InlineData("/home/me/bin/claude", "", false)]
+    [InlineData("/usr/bin/node", "/home/me/.npm-global/bin/claude", true)]
+    [InlineData("/usr/bin/node", "/home/me/tools/claude", false)]
+    public async Task Only_a_program_that_resolves_into_the_agents_own_install_is_that_agent(string exe, string script, bool eligible)
+    {
+        Stat(10, cpuTicks: 500);
+        Exe(10, exe);
+        _links[_sandbox.Paths.DistroPath("/home/me/.npm-global/bin/claude").Replace('\\', '/')] = "/home/me/.npm-global/lib/node_modules/@anthropic-ai/claude-code/cli.js";
+        var process = script.Length > 0 ? Agent(10) with { CommandLine = $"/usr/bin/node {script} --resume" } : Agent(10);
+
+        var preview = await SixHoursIdle([process]);
+
+        preview.Count.Should().Be(eligible ? 1 : 0, $"review A-M3: {exe} {script}");
+        if (!eligible)
+        {
+            preview.Basis.Should().Contain(AgentOrphans.NotInstalled);
+        }
+    }
+
+    [Fact]
+    public async Task A_wall_clock_jump_after_a_host_sleep_does_not_pass_the_idle_window()
+    {
+        Stat(10, cpuTicks: 500);
+        Session(TimeSpan.FromDays(3));
+        Record([Agent(10)]);
+        _clock.Advance(TimeSpan.FromHours(1));
+        _clock.JumpWallClock(TimeSpan.FromHours(5));
+        Record([Agent(10)]);
+
+        var preview = await Preview([Agent(10)]);
+
+        preview.Count.Should().Be(0, "review A-M4: 6 h on the wall clock but 1 h on the monotonic one — the shorter counts");
+    }
+
+    [Fact]
+    public async Task A_gap_in_the_cpu_history_breaks_the_chain()
+    {
+        Stat(10, cpuTicks: 500);
+        Session(TimeSpan.FromDays(3));
+        Record([Agent(10)]);
+        _clock.Advance(TimeSpan.FromHours(9));
+
+        (await Preview([Agent(10)])).Count.Should().Be(0, "review A-M4: 9 h since the only sighting is more than two timer periods: no dense chain");
+
+        Record([Agent(10)]);
+        _clock.Advance(TimeSpan.FromHours(4));
+        Record([Agent(10)]);
+        (await Preview([Agent(10)])).Count.Should().Be(0, "the gap stays in the chain while the ticks do not move");
+    }
+
+    [Fact]
+    public async Task No_session_found_is_cannot_tell_and_a_moved_agent_home_keeps_the_process()
+    {
+        Stat(10, cpuTicks: 500);
+        Directory.CreateDirectory(_sandbox.Paths.DistroPath("/home/me/.claude/projects"));
+        Record([Agent(10)]);
+        _clock.Advance(TimeSpan.FromHours(3));
+        Record([Agent(10)]);
+        _clock.Advance(TimeSpan.FromHours(3));
+
+        var none = await Preview([Agent(10)]);
+        Session(TimeSpan.FromDays(3));
+        Environ(10, "HOME=/home/me;CLAUDE_CONFIG_DIR=/srv/claude-work");
+        var moved = await Preview([Agent(10)]);
+        Environ(10, "HOME=/home/me;CLAUDE_CONFIG_DIR=/home/me/.claude");
+        var defaultHome = await Preview([Agent(10)]);
+
+        none.Count.Should().Be(0, "review A-M5: zero sessions found is not 'no live session'");
+        none.Basis.Should().Contain(AgentOrphans.NoSession);
+        moved.Count.Should().Be(0);
+        moved.Basis.Should().Contain("CLAUDE_CONFIG_DIR");
+        defaultHome.Count.Should().Be(1, "the agent's own folder named explicitly is the folder A18 checks");
+    }
+
+    [Fact]
+    public void The_cpu_history_is_private_to_root()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "file modes are Linux's: run in WSL or on the Linux legs");
+        AgentCpuHistory.Write(_sandbox.Paths, _sandbox.Files, AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new SuspectSample(10, 1, 5, 0, 1000)], At(TimeSpan.Zero))).Should().BeEmpty();
+
+        if (OperatingSystem.IsLinux())
+        {
+            File.GetUnixFileMode(AgentCpuHistory.File(_sandbox.Paths)).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite, "review A-L1: 0600");
+        }
+    }
+
+    [Fact]
+    public async Task A_process_whose_account_changed_since_the_preview_is_not_signalled()
+    {
+        Stat(10, cpuTicks: 500);
+        var preview = await SixHoursIdle([Agent(10)]);
+        var signals = new RecordingSignals();
+        var action = new AgentOrphans();
+        var context = Context([Agent(10)], signals);
+        Stat(10, cpuTicks: 500, uid: 1001);
+
+        var run = await action.RunAsync(context, preview, new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []), CancellationToken.None);
+
+        preview.Count.Should().Be(1);
+        signals.Asked.Should().BeEmpty("review A-L2: the key carries the account, and 1001 is not the 1000 the preview saw");
+        run.NotRemoved.Should().ContainSingle().Which.Note.Should().Contain("changed owner");
     }
 }

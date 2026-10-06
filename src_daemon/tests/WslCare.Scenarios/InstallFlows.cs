@@ -199,6 +199,26 @@ public sealed class InstallFlows
         world.CallsOf("systemctl").Select(c => string.Join(' ', c.Argv)).Should().NotContain(c => c.StartsWith("enable", StringComparison.Ordinal), "the failed step stops the run");
     }
 
+    /// <summary>E7.S2b/S2c review C-M8: <c>--version</c> of a release before the drop-ins installs its binary, whose <c>units dropin</c>
+    /// is an unknown verb (2) — the install goes on without drop-ins, says so, and removes a stale one a newer install left.</summary>
+    [Fact]
+    public async Task A_binary_without_the_drop_in_verb_installs_without_drop_ins_and_says_so()
+    {
+        Linux();
+        using var world = new InstallWorld("dropin-older");
+        world.Write($"/etc/systemd/system/wsl-care.timer.d/{Core.Systemd.UnitDropIns.FileName}", "[Timer]\nOnCalendar=\nOnCalendar=*-*-* 00/6:00:00\n");
+        foreach (var unit in Core.Systemd.UnitDropIns.Units)
+        {
+            world.Override("wsl-care", ["units", "dropin", unit], 2);
+        }
+
+        var result = await world.RunAsync();
+
+        Succeeded(result);
+        result.Stderr.Should().Contain("no drop-in for wsl-care.timer").And.Contain("a release before unit drop-ins");
+        File.Exists(world.At($"/etc/systemd/system/wsl-care.timer.d/{Core.Systemd.UnitDropIns.FileName}")).Should().BeFalse("a stale drop-in of a newer install is removed");
+    }
+
     [Fact]
     public async Task A_unit_that_is_not_active_after_enabling_fails_the_install_naming_that_step()
     {

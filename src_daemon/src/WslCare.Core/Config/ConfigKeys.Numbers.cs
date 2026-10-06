@@ -48,7 +48,7 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey StopMarkerRetentionHours = new("runs.stopMarkerRetentionHours", 1, 168) { Trust = KeyTrust.Higher };
 
         /// <summary>History lines and run details are kept this long. Default 90.</summary>
-        public static readonly ConfigKey.IntKey HistoryRetentionDays = new("runs.historyRetentionDays", 7, 3650) { Trust = new(SafeDirection.Higher, TightenOnlyForRoot: true) };
+        public static readonly ConfigKey.IntKey HistoryRetentionDays = new("runs.historyRetentionDays", 7, 366) { Trust = new(SafeDirection.Higher, TightenOnlyForRoot: true) };
     }
 
     public static partial class Preview
@@ -132,7 +132,7 @@ public static partial class ConfigKeys
     public static partial class Events
     {
         /// <summary>Container-start lines are kept this long. Default 14.</summary>
-        public static readonly ConfigKey.IntKey StartsRetentionDays = new("events.startsRetentionDays", 1, 3650) { Trust = KeyTrust.Higher };
+        public static readonly ConfigKey.IntKey StartsRetentionDays = new("events.startsRetentionDays", 1, 90) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
 
         /// <summary>The first wait for the Docker socket. Default 5.</summary>
         public static readonly ConfigKey.IntKey RetryFirstSeconds = new("events.retryFirstSeconds", 1, 60) { Trust = KeyTrust.Higher };
@@ -150,7 +150,7 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey TopImages = new("events.topImages", 0, 50) { Trust = KeyTrust.Display };
 
         /// <summary>One docker events segment. Default 10.</summary>
-        public static readonly ConfigKey.IntKey SegmentMinutes = new("events.segmentMinutes", 1, 60) { Trust = KeyTrust.Display };
+        public static readonly ConfigKey.IntKey SegmentMinutes = new("events.segmentMinutes", 1, 50) { Trust = KeyTrust.Display };
 
         /// <summary>A segment's ceiling beyond its length. Default 60.</summary>
         public static readonly ConfigKey.IntKey SegmentSlackSeconds = new("events.segmentSlackSeconds", 10, 60) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
@@ -262,6 +262,10 @@ public static partial class ConfigKeys
 
         /// <summary>The timer drop-in AccuracySec. Default 1.</summary>
         public static readonly ConfigKey.IntKey AccuracyMinutes = new("timer.accuracyMinutes", 1, 60) { Trust = new(SafeDirection.None, MachineOnly: true) };
+
+        /// <summary>wsl-care.service's TimeoutStartSec: the backstop that ends a timer run as a whole (E7.S2b/S2c review C-H2; at least
+        /// the derived worst case of a timer run). Default 240.</summary>
+        public static readonly ConfigKey.IntKey RunLimitMinutes = new("timer.runLimitMinutes", 60, 1440) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
     }
 
     public static partial class Units
@@ -432,7 +436,7 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey MaxStateFileBytes = new("records.maxStateFileBytes", 65536, 16777216) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
         /// <summary>Bytes of history.jsonl or a container-starts file read. Default 268435456.</summary>
-        public static readonly ConfigKey.IntKey MaxHistoryBytes = new("records.maxHistoryBytes", 1048576, 1073741824) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+        public static readonly ConfigKey.IntKey MaxHistoryBytes = new("records.maxHistoryBytes", 67108864, 1073741824) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
     public static partial class Logs
@@ -457,6 +461,11 @@ public static partial class ConfigKeys
 
         /// <summary>The pause between those reads. Default 100.</summary>
         public static readonly ConfigKey.IntKey ReadRetryMilliseconds = new("running.readRetryMilliseconds", 10, 1000) { Trust = new(SafeDirection.None, MachineOnly: true) };
+
+        /// <summary>A run whose heartbeat is fresh but that made no step of progress (a command started or ended, a folder walked,
+        /// an action begun) for this long reads WEDGED, so act --stop can end it (E7.S2b/S2c review C-H2; at least the longest single
+        /// command ceiling plus its drain and a margin). Default 20.</summary>
+        public static readonly ConfigKey.IntKey NoProgressMinutes = new("running.noProgressMinutes", 5, 1440) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
     }
 
     public static partial class ConfigLayerLimits
@@ -491,8 +500,8 @@ public static partial class ConfigKeys
         /// <summary>A18's CPU history: the most process identities kept. Default 512.</summary>
         public static readonly ConfigKey.IntKey MaxEntries = new("agentCpu.maxEntries", 16, 512) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
-        /// <summary>A18's CPU history: the most bytes read. Default 131072.</summary>
-        public static readonly ConfigKey.IntKey MaxBytes = new("agentCpu.maxBytes", 16384, 131072) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+        /// <summary>A18's CPU history: the most bytes read (a full 512-entry history with both clocks is ~157 KiB, review A-M4). Default 262144.</summary>
+        public static readonly ConfigKey.IntKey MaxBytes = new("agentCpu.maxBytes", 16384, 262144) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
@@ -553,6 +562,7 @@ public static partial class ConfigKeys
         Timer.LateSlackMinutes,
         Timer.RandomizedDelayMinutes,
         Timer.AccuracyMinutes,
+        Timer.RunLimitMinutes,
         Units.Nice,
         Units.MemoryMaxMb,
         Units.StopTimeoutSeconds,
@@ -616,6 +626,7 @@ public static partial class ConfigKeys
         Running.WedgedAfterSeconds,
         Running.ReadRetries,
         Running.ReadRetryMilliseconds,
+        Running.NoProgressMinutes,
         ConfigLayerLimits.MaxLayerBytes,
         Patterns.MatchTimeoutMilliseconds,
         FileLocks.RenameRetryMilliseconds,

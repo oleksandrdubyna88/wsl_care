@@ -310,6 +310,10 @@ public interface IFileSystem
     /// </summary>
     DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope);
 
+    /// <summary>The same atomic write, the file left PRIVATE to its owner (0600 on Linux) — root's state that names another
+    /// account's processes (E7.S2b review A-L1). A test double without its own falls back to the ordinary write.</summary>
+    DeletionVerdict WritePrivateFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => WriteFileAtomically(path, content, scope);
+
     /// <summary>
     /// Creates <paramref name="path"/> ONLY when it does not exist, with the whole content made visible in one step (plan
     /// §15k #1, #14: a request file): the bytes go to a sibling temporary file (0644) first and are then LINKED to the final

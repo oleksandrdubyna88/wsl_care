@@ -177,7 +177,8 @@
     "periodHours": 4,
     "lateSlackMinutes": 60,
     "randomizedDelayMinutes": 5,
-    "accuracyMinutes": 1
+    "accuracyMinutes": 1,
+    "runLimitMinutes": 240
   },
   "units": {
     "nice": 19,
@@ -250,7 +251,8 @@
     "heartbeatSeconds": 5,
     "wedgedAfterSeconds": 30,
     "readRetries": 3,
-    "readRetryMilliseconds": 100
+    "readRetryMilliseconds": 100,
+    "noProgressMinutes": 20
   },
   "config": {
     "maxLayerBytes": 262144
@@ -266,6 +268,6 @@
   },
   "agentCpu": {
     "maxEntries": 512,
-    "maxBytes": 131072
+    "maxBytes": 262144
   }
 }

@@ -76,6 +76,8 @@ public sealed class ProcessCommandRunner : ICommandRunner
             return notStarted;
         }
 
+        // A command started is a step of the run (E7.S2b/S2c review C-H2); its end is another (below, and in the timed-out path).
+        Actions.Engine.RunProgress.Mark();
         var stdout = new OutputCapture(request.OutputCapChars);
         var stderr = new OutputCapture(request.OutputCapChars);
         var reads = Task.WhenAll(stdout.DrainAsync(process.StandardOutput), stderr.DrainAsync(process.StandardError));
@@ -90,11 +92,13 @@ public sealed class ProcessCommandRunner : ICommandRunner
         catch (OperationCanceledException)
         {
             await KillAndReapAsync(process, reads).ConfigureAwait(false);
+            Actions.Engine.RunProgress.Mark();
             cancellationToken.ThrowIfCancellationRequested();
             return new CommandOutcome.TimedOut(stdout.Snapshot(), stderr.Snapshot(), request.Timeout) { StartedFrom = startedFrom };
         }
 
         await DrainAsync(reads).ConfigureAwait(false);
+        Actions.Engine.RunProgress.Mark();
         return new CommandOutcome.Exited(process.ExitCode, stdout.Snapshot(), stderr.Snapshot(), started.Elapsed) { StartedFrom = startedFrom };
     }
 

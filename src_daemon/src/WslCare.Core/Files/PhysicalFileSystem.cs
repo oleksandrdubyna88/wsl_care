@@ -221,9 +221,20 @@ public sealed class PhysicalFileSystem : IFileSystem
     public DeletionVerdict RewriteLines(string path, Func<IReadOnlyList<string>, IReadOnlyList<string>> keep, DeletionScope scope, TimeSpan lockTimeout)
     {
         using var held = AcquireLock(path + ".lock", lockTimeout);
-        IReadOnlyList<string> current = File.Exists(path)
-            ? [.. File.ReadAllText(path, Encoding.UTF8).Split('\n').Where(l => l.Length > 0)]
-            : [];
+        // Review C-M7: read under the same cap as every other read of a growing file; one past it is not rewritten (and not lost).
+        IReadOnlyList<string> current;
+        switch (ReadFile(path, RootFileCaps.History))
+        {
+            case FileReadResult.Content content:
+                current = [.. Encoding.UTF8.GetString(content.Bytes).Split('\n').Where(l => l.Length > 0)];
+                break;
+            case FileReadResult.Unreadable unreadable:
+                return DeletionVerdict.Refuse(DeletionRule.Unresolvable, $"{path} is not rewritten: {unreadable.Reason}");
+            default:
+                current = [];
+                break;
+        }
+
         var kept = keep(current);
         if (kept.SequenceEqual(current, StringComparer.Ordinal))
         {
@@ -292,7 +303,12 @@ public sealed class PhysicalFileSystem : IFileSystem
     /// the threat model (the policy guards against this product's own mistakes and against links planted
     /// where a cleanup walks, not against the account it runs as).</para>
     /// </remarks>
-    public DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope)
+    public DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => WriteAtomically(path, content, scope, readable: true);
+
+    /// <summary>The atomic write, the file kept 0600 (it is created so and never widened).</summary>
+    public DeletionVerdict WritePrivateFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) => WriteAtomically(path, content, scope, readable: false);
+
+    private DeletionVerdict WriteAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope, bool readable)
     {
         var target = Judge(FileOperation.Delete, path, string.Empty, scope);
         if (!target.Verdict.IsAllowed)
@@ -309,7 +325,11 @@ public sealed class PhysicalFileSystem : IFileSystem
 
         WriteNew(temp.RealPath, content);
         _onAtomicWriteStep(AtomicWriteStep.TempWritten, temp.RealPath);
-        RegularFiles.MakeReadable(temp.RealPath);
+        if (readable)
+        {
+            RegularFiles.MakeReadable(temp.RealPath);
+        }
+
         var recheck = Revalidate(path, target, scope);
         if (!recheck.IsAllowed)
         {

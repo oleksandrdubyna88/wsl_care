@@ -6,6 +6,8 @@
 # exits only on a signal or an unexpected error — so this does not cycle while Docker is merely down. At
 # 30 s between starts the default start limit (5 starts in 10 s) can never trip. RestartSec=30 is the DEFAULT of
 # units.eventsRestartSeconds (E7.S2c): install.sh writes wsl-care-events.service.d/50-wsl-care-config.conf from it.
+# MemoryMax=1G (E7.S2b/S2c review C-M5, units.memoryMaxMb like the other units): the follower re-reads its day files
+# every few minutes, and a ceiling against a runaway is what every other unit of this product has.
 #
 # Root, like the timer: the starts it records go to /var/lib/wsl-care, which only root writes (§15b #3).
 # Hardening: NoNewPrivileges=yes only, for the reasons in wsl-care.service; the follower itself writes only
@@ -20,6 +22,7 @@ Type=simple
 ExecStart=/opt/wsl-care/bin/wsl-care events follow
 Restart=always
 RestartSec=30
+MemoryMax=1G
 NoNewPrivileges=yes
 
 [Install]

@@ -144,7 +144,7 @@ public sealed class ActionEngine(EngineContext c)
             }, notes);
         }
 
-        RecordAgentCpu(notes, started);
+        RecordAgentCpu(notes);
 
         // A button-only action is never even selected by the timer (plan §15q E7.S2b); the auto gate refuses it as well.
         var request = new ActRequest([.. c.Registry.Actions.Select(a => a.Id).Where(id => !id.ButtonOnly)], RunTrigger.Timer, Execute: true) { Kind = RunKind.Collect };
@@ -157,14 +157,14 @@ public sealed class ActionEngine(EngineContext c)
 
     /// <summary>Plan §15q E7.S2b: every timer run records the AI-agent processes' CPU ticks by identity, so A18 can tell — by
     /// measurement — a process that used no CPU for hours. A failure is a note of the pass, never its end.</summary>
-    private void RecordAgentCpu(List<string> notes, DateTimeOffset now)
+    private void RecordAgentCpu(List<string> notes)
     {
         if (c.Paths is not LinuxHostPaths linux || c.Probe.Sample(CancellationToken.None).Vm.Bind(vm => vm.Processes) is not Reading<ProcessSnapshot>.Available { Value: var snapshot })
         {
             return;
         }
 
-        if (Suspects.AgentCpuHistory.Record(linux, c.Files, snapshot.All, now) is { Length: > 0 } failure)
+        if (Suspects.AgentCpuHistory.Record(linux, c.Files, snapshot.All, Suspects.SampleTime.Of(c.Clock)) is { Length: > 0 } failure)
         {
             notes.Add($"the AI-agent CPU history was not recorded: {failure}");
         }
@@ -452,6 +452,10 @@ public sealed class ActionEngine(EngineContext c)
         {
             var report = RunReconcile.Apply(c.Paths, c.Files, now);
             notes.AddRange(report.Interrupted.Select(id => $"reconcile: run {id} had a detail and no history line (recorded as interrupted)"));
+            if (report.Problem.Length > 0)
+            {
+                notes.Add(report.Problem);
+            }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
         {
@@ -541,6 +545,7 @@ public sealed class ActionEngine(EngineContext c)
             Processes = SampleProcesses,
             Signals = c.Signals,
             ShownVolumes = request.ShownVolumes,
+            ShownProcesses = request.ShownProcesses,
             Wait = c.Wait,
             RanEarlier = id => soFar.Any(o => o.Id == id.Text && o.Status == ActionStatus.Ran),
         };

@@ -110,6 +110,24 @@ public sealed class UserCacheTests : IDisposable
         run.Notes.Should().Contain(n => n.Contains("/home/me/.codex/pip", StringComparison.Ordinal) && n.Contains("AI agent folder", StringComparison.Ordinal));
     }
 
+    /// <summary>E7.S2b/S2c review round (the gap): a tool's cache answer is checked against EVERY protected root — a ~/git and
+    /// Claude's temp folder as much as an agent folder.</summary>
+    [Theory]
+    [InlineData("/home/me/git/proj/.npm", "git folder")]
+    [InlineData("/tmp/claude/npm", "Claude temp folder")]
+    public async Task A_tools_cache_answer_inside_a_git_or_claude_temp_folder_is_refused(string cache, string what)
+    {
+        _world.File($"{cache}/_cacache/x", 10);
+        _world.Tool("npm", "/usr/bin");
+        Asks("npm", ["config", "get", "cache"], cache);
+        var action = new NpmCacheClean();
+        var context = _world.Context();
+
+        var preview = await action.PreviewAsync(context, _world.Commands(action, context), CancellationToken.None);
+
+        preview.Refusal.Should().Contain(cache).And.Contain(what);
+    }
+
     // ---------- A17 ----------
 
     [Fact]
