@@ -32,6 +32,8 @@ public sealed class AgentsCommandTests : IDisposable
     private CliHost Host(string stdin = "") =>
         new CliHost(_sandbox.Paths, _sandbox.Files, new FixedTimeProvider(), new RecordingCommandRunner())
         {
+            // Explicit: a CI runner may be elevated, and the probe and config set refuse a root process (exit 81).
+            Privilege = new ProcessPrivilege(false, "a test says this process is not root"),
             StandardInput = () => new MemoryStream(Encoding.UTF8.GetBytes(stdin)),
             Rewire = static (paths, host) => (new PhysicalFileSystem(paths) { TrustedStateOwner = RegularFiles.EffectiveUid(), OwnersAreThisProcess = true }, host.Signals),
         };
