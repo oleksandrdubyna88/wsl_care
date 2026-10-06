@@ -33,8 +33,8 @@ internal static class DetachedRuns
 
     // ---------- --detach ----------
 
-    public static int Detach(Request.Act request, RunTrigger trigger, ShownList shown, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
-        Accept(new Asked("act", [.. request.Ids.Select(i => i.Text)], trigger, [.. shown.Names.Order(StringComparer.Ordinal)], request.Json), host, stdout, stderr, log);
+    public static int Detach(Request.Act request, RunTrigger trigger, ShownList shown, ShownList processes, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
+        Accept(new Asked("act", [.. request.Ids.Select(i => i.Text)], trigger, [.. shown.Names.Order(StringComparer.Ordinal)], request.Json) { ShownProcesses = [.. processes.Names.Order(StringComparer.Ordinal)] }, host, stdout, stderr, log);
 
     public static int CollectDetach(Request.Collect request, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
         ActCommand.NotRoot(host) is { } refused
@@ -42,7 +42,11 @@ internal static class DetachedRuns
             : Accept(new Asked("collect", ["collect"], RunTrigger.Manual, [], request.Json), host, stdout, stderr, log);
 
     /// <summary>What a detach asks for.</summary>
-    private sealed record Asked(string Kind, IReadOnlyList<string> Actions, RunTrigger Trigger, IReadOnlyList<string> Shown, bool Json);
+    private sealed record Asked(string Kind, IReadOnlyList<string> Actions, RunTrigger Trigger, IReadOnlyList<string> Shown, bool Json)
+    {
+        /// <summary>The processes A18's preview showed (E7.S2b review A-H1); none for every other request.</summary>
+        public IReadOnlyList<string> ShownProcesses { get; init; } = [];
+    }
 
     /// <summary>systemd asked; then UNDER THE RUN LOCK the request folder swept (review D1: an orphaned request blocks nothing for
     /// longer than its grace), the budget and the running state asked, and the request written EXCLUSIVELY; the lock released
@@ -91,6 +95,7 @@ internal static class DetachedRuns
         var request = new RunRequestFile(Core.SchemaVersion.Current, runId, asked.Kind, asked.Actions, asked.Trigger, now)
         {
             Shown = asked.Shown,
+            ShownProcesses = asked.ShownProcesses,
             BootId = boot.Known ? boot.BootId : string.Empty,
             CreatedMonotonicMs = boot.Known ? boot.MonotonicMilliseconds : 0,
         };
@@ -218,6 +223,7 @@ internal static class DetachedRuns
         {
             RunId = file.RunId,
             ShownVolumes = file.Shown.Count > 0 ? ShownList.Of(file.Shown) : ShownList.None,
+            ShownProcesses = file.ShownProcesses.Count > 0 ? ShownList.Of(file.ShownProcesses) : ShownList.None,
             OnRunningWritten = () => RunRequests.Remove(host.Paths, host.Files, file.RunId),
             UnderLock = (own, _) => RequestSweep.ApplyAsync(host.Paths, host.Files, host.Commands, host.Processes, host.Clock.GetUtcNow(), own),
         };

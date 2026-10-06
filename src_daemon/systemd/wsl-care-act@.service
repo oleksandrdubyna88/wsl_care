@@ -15,8 +15,8 @@
 #
 # What differs from wsl-care.service, and why:
 #   TimeoutStartSec=infinity  a confirm is never time-killed as a whole (§15f #9): every command a run starts has its OWN
-#                             ceiling with a tree kill (§15k #0), so no hang keeps it alive forever; the heartbeat says
-#                             live / wedged meanwhile
+#                             ceiling with a tree kill (§15k #0); a run that makes no step for running.noProgressMinutes
+#                             reads WEDGED although its heartbeat beats (E7.S2b/S2c review C-H2), and act --stop ends it
 #   SuccessExitStatus=…       the RECORDED answers are not failures (§15k #8): 3 an action failed (recorded, the rest ran),
 #                             75 / 76 / 78 / 79 the run was refused and that is on its history line, 80 its request was gone (a
 #                             no-op)

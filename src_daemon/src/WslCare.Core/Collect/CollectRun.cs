@@ -313,6 +313,10 @@ public static class CollectRun
     {
         var problems = new List<string>();
         var reconcile = Guard(() => RunReconcile.Apply(c.Paths, c.Files, now), new ReconcileReport([], []), problems, "reconcile");
+        if (reconcile.Problem.Length > 0)
+        {
+            problems.Add(reconcile.Problem);
+        }
         var retention = Guard(() => RunRetention.Sweep(c.Paths, c.Files, now), new RetentionReport(0, [], []), problems, "run retention");
         var starts = Guard(() => new ContainerStartsStore(c.Paths, c.Files).Prune(now), [], problems, "container-start retention");
         return new HousekeepingReport(reconcile, retention with { Problems = [.. retention.Problems, .. problems] }, starts);

@@ -37,6 +37,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Actions/JournalVacuum.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Actions/Memory/CacheDrop.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Actions/PackageCaches/PackageCacheClean.cs: Take(60)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
+        ["WslCare.Core/Actions/Suspects/AgentOrphans.cs: InitPid"] = "the kernel's init process is pid 1 — an orphan's parent (E7.S2b review A-M2)",
         ["WslCare.Core/Actions/Suspects/AgentOrphans.cs: Take(2)"] = "an argv heuristic: how many leading words name the program, a property of the command line",
         ["WslCare.Core/Actions/Suspects/AgentOrphans.cs: Take(5)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
         ["WslCare.Core/Actions/Suspects/SuspectTermination.cs: Take(5)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
@@ -131,6 +132,27 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Systemd/SystemdParsers.cs: 1L << 40"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Systemd/SystemdParsers.cs: 1L << 50"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Thresholds/ThresholdRules.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
+        ["WslCare.Core/Actions/Engine/RequestSweep.cs: [..16]"] = "a run id's timestamp part (yyyyMMddTHHmmssZ, 16 characters) — the id's format",
+        ["WslCare.Core/Actions/UserCaches/EditorServerCleanup.cs: <= 255"] = "the kernel's longest file name (NAME_MAX)",
+        ["WslCare.Core/Actions/UserCaches/EditorServerCleanup.cs: <= 64"] = "a commit id's length (7 to 64 hex digits) — git's format",
+        ["WslCare.Core/Config/NumberRules.cs: BytesPerCpuEntry"] = "a coupled-limit rule's factor or margin — part of the rule itself (E7.S2b/S2c review)",
+        ["WslCare.Core/Config/NumberRules.cs: CeilingMarginSeconds"] = "a coupled-limit rule's factor or margin — part of the rule itself (E7.S2b/S2c review)",
+        ["WslCare.Core/Config/NumberRules.cs: HistoryBytesPerDay"] = "a coupled-limit rule's factor or margin — part of the rule itself (E7.S2b/S2c review)",
+        ["WslCare.Core/Config/NumberRules.cs: RequestOverheadBytes"] = "a coupled-limit rule's factor or margin — part of the rule itself (E7.S2b/S2c review)",
+        ["WslCare.Core/Config/NumberRules.cs: RunMarginMinutes"] = "a coupled-limit rule's factor or margin — part of the rule itself (E7.S2b/S2c review)",
+        ["WslCare.Core/Docker/DockerInventory.cs: >= 19"] = "an image id's short form (sha256: and 12 hex digits) — Docker's format",
+        ["WslCare.Core/Docker/DockerJson.cs: == 64"] = "a full Docker id is 64 hex digits — Docker's format",
+        ["WslCare.Core/Events/Continuity.cs: > 12"] = "a Docker short id is 12 hex digits — Docker's format",
+        ["WslCare.Core/Events/Continuity.cs: [..12]"] = "a Docker short id is 12 hex digits — Docker's format",
+        ["WslCare.Core/Processes/Policy/CommandPolicy.cs: > 120"] = "a display truncation: how much of a value one sentence quotes, not how much is done",
+        ["WslCare.Core/Processes/Policy/CommandPolicy.cs: [..120]"] = "a display truncation: how much of a value one sentence quotes, not how much is done",
+        ["WslCare.Core/Processes/Policy/CommandTemplate.cs: > 40"] = "a display truncation: how much of a value one sentence quotes, not how much is done",
+        ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 128"] = "a command-policy slot bound — the closed policy is never configuration (plan §15q R1.3)",
+        ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 19"] = "the digits of a 64-bit number — a format",
+        ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 32"] = "a Linux account name's length (useradd's 32) — the system's format",
+        ["WslCare.Core/Processes/Policy/SlotKind.cs: <= 40"] = "a command-policy slot bound — the closed policy is never configuration (plan §15q R1.3)",
+        ["WslCare.Core/Processes/Policy/SlotKind.cs: == 20"] = "an RFC 3339 UTC instant to the second is 20 characters — a format",
+        ["WslCare.Core/Processes/WindowsSystemDrive.cs: >= 10"] = "the fields of a /proc/self/mountinfo line — the kernel's format",
         ["WslCare.Core/Thresholds/ThresholdRules.cs: Gb"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
     };
 
@@ -152,9 +174,16 @@ public sealed partial class NumbersArchitectureTests
             var top = items.Take(9);
             var cap = 3 * 1024 * 1024;
             Thread.Sleep(25);
+            await Task.Delay(5);
+            var cut = age > 30 ? text[..120] : text.Substring(0, 64);
+            var wait = new TimeSpan(0, 0, 9);
+            public int Most => 250;
+            public int Least { get; } = 12;
             """;
 
-        Numbers("Planted.cs", planted).Should().BeEquivalentTo(["Planted.cs: Wait", "Planted.cs: MaxThings", "Planted.cs: Take(9)", "Planted.cs: 3 * 1024 * 1024", "Planted.cs: Sleep(25)"]);
+        Numbers("Planted.cs", planted).Should().BeEquivalentTo([
+            "Planted.cs: Wait", "Planted.cs: MaxThings", "Planted.cs: Take(9)", "Planted.cs: 3 * 1024 * 1024", "Planted.cs: Sleep(25)", "Planted.cs: Delay(5)",
+            "Planted.cs: > 30", "Planted.cs: [..120]", "Planted.cs: Substring(0, 64)", "Planted.cs: new TimeSpan(0", "Planted.cs: => 250;", "Planted.cs: } = 12;"]);
     }
 
     [Fact]
@@ -191,6 +220,15 @@ public sealed partial class NumbersArchitectureTests
             yield return $"{file}: {m.Value}";
         }
 
+        // E7.S2b/S2c review C-M9: a number compared, clipped to, built into a TimeSpan, or answered by a property is a number too.
+        foreach (var shape in new[] { Compared(), NewTimeSpan(), Clipped(), Answered() })
+        {
+            foreach (Match m in shape.Matches(text))
+            {
+                yield return $"{file}: {m.Value.Trim()}";
+            }
+        }
+
         foreach (Match m in ByteProduct().Matches(text))
         {
             if (!IsInDeclaration(text, m.Index))
@@ -224,8 +262,23 @@ public sealed partial class NumbersArchitectureTests
 
     /// <summary>A literal handed to a wait, a jitter or a capped read: <c>Thread.Sleep(10)</c>, <c>Next(5, 25)</c>,
     /// <c>ReadStateFile(path, 4096)</c>.</summary>
-    [GeneratedRegex(@"\b(?:Sleep|Delay|Next|Read\w*File)\([^()]*?\b\d{2,}[^()]*\)", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\b(?:Next|Read\w*File)\([^()]*?\b\d{2,}[^()]*\)|\b(?:Sleep|Delay)\([^()]*?\b\d[^()]*\)", RegexOptions.CultureInvariant)]
     private static partial Regex LiteralArgument();
+
+    /// <summary>A comparison with a literal of two digits or more (<c>age &gt; 30</c>, <c>x.Length &gt;= 120</c>).</summary>
+    [GeneratedRegex(@"(?<![<>=!])(?:[<>]=?|==|!=)\s*\d{2,}(?![\d.x])", RegexOptions.CultureInvariant)]
+    private static partial Regex Compared();
+
+    [GeneratedRegex(@"new TimeSpan\(\s*\d", RegexOptions.CultureInvariant)]
+    private static partial Regex NewTimeSpan();
+
+    /// <summary>A clip to a literal: <c>[..120]</c>, <c>[^40..]</c>, <c>Substring(0, 64)</c>, <c>Skip(10)</c>.</summary>
+    [GeneratedRegex(@"\[\^?\d{2,}\.\.\]|\[\.\.\^?\d{2,}\]|\bSubstring\([^()]*\b\d{2,}\)|\bSkip\(\s*\d{2,}\s*\)", RegexOptions.CultureInvariant)]
+    private static partial Regex Clipped();
+
+    /// <summary>A property that answers a literal: <c>=&gt; 250;</c>, <c>{ get; } = 12;</c>.</summary>
+    [GeneratedRegex(@"=>\s*-?\d{2,}[LlDdMm]?\s*;|\}\s*=\s*-?\d{2,}[LlDdMm]?\s*;", RegexOptions.CultureInvariant)]
+    private static partial Regex Answered();
 
     [GeneratedRegex(@"//[^\n]*", RegexOptions.CultureInvariant)]
     private static partial Regex LineComment();

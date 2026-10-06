@@ -2616,7 +2616,13 @@ flowchart LR
   whose session layout is confirmed, idle as above, and no session file of that agent written in the same window (listing
   + stat; a cut listing keeps it). Every kept process is counted with its reason in the preview's basis.
 - **Ending:** `SuspectSignals` — extracted from A11, used by both: each target re-read (same start, no CPU since the preview,
-  no terminal, not root's), one SIGTERM each, one shared grace (`processes.termGraceSeconds`, 10 s), SIGKILL to the survivors, each outcome in the record.
+  no terminal, the same account), one SIGTERM each, one shared grace (`processes.termGraceSeconds`, 10 s), SIGKILL to the survivors, each outcome in the record.
+- **E7.S2b/S2c review round (2026-10-06):** a BUTTON run is bound to its modal like A4 — the preview answers `pid:start` keys,
+  `act … --process <pid:start>` (and a detached request's `shownProcesses`) passes them back, a manual run without them is refused,
+  a run ends only the keys still eligible. Eligibility also needs: parent pid 1 (never a `systemd --user` service), no child
+  process, the program resolving into the agent's own install (`/proc/<pid>/exe` or the script node runs, along its links), an
+  environment that moves no agent home, at least one session found. Idle is the SHORTER of the wall and the monotonic clock over
+  a dense chain of sightings (no gap over two timer periods). `agent-cpu.json` is 0600; past its cap the oldest go.
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -2643,7 +2649,8 @@ flowchart LR
     tuning --> limits["CommandLimits<br/>(read when a request is built)"]
     tuning --> sentences["sentences<br/>(the value in force, N-6)"]
     tuning --> caps["RootFileCaps<br/>(state / history read caps, N-5)"]
-    tuning --> dropin["units dropin &lt;unit&gt;"]
+    tuning --> dropin["units dropin &lt;unit&gt;<br/>(refused while a layer is in error)"]
+    tuning --> watchdog["RunProgress + running.json<br/>(no step for noProgressMinutes = wedged)"]
     dropin --> install["install.sh writes<br/>&lt;unit&gt;.d/50-wsl-care-config.conf"]
     install --> doctor["doctor unitConfig<br/>(a stale drop-in is a problem)"]
     effective --> status["status --json limits<br/>(contracts/status-limits.json)"]
@@ -2664,7 +2671,17 @@ flowchart LR
   (`historyRetentionDays`, `requestFutureSkewSeconds`, `requestGraceSeconds`, `maxShownNames`, `unitStopSeconds`,
   `drainGraceMilliseconds`) — those a host decision rests on whose machine range reaches above the default.
 - **Root's file reads are capped** (`IFileSystem.ReadFile(path, maxBytes)`, `Files/RootFileCaps.cs`): a state file at
-  `records.maxStateFileBytes`, a growing file at `records.maxHistoryBytes`, which also bounds every uncapped read.
+  `records.maxStateFileBytes`, a growing file at `records.maxHistoryBytes`, which also bounds every uncapped read. A history past
+  its cap is a PROBLEM, never "no runs": the reconcile and the request sweep then write nothing (E7.S2b/S2c review C-H1).
+- **The rules are held per layer** (E7.S2b/S2c review C-M1, C-M2): a layer whose values break a coupled rule never puts them in
+  force — the keys it set go back to the layer below; from the machine layer that is an error (observe-only), from the user layer a
+  notice. `config set` refuses such a value; `units dropin` refuses while a layer is in error.
+- **A run that hangs is wedged, and the timer's run has a limit** (review C-H2, reversing N-4): `running.json` carries the time of
+  the run's last STEP (`Actions/Engine/RunProgress.cs`: a command started or ended, a stretch of a walk, an action begun); a run
+  with none for `running.noProgressMinutes` reads WEDGED although its heartbeat beats, so `act --stop` can end it. wsl-care.service
+  ends a timer run at `timer.runLimitMinutes` (240), kept above the run's derived worst case (`Config/RunBudget.cs`: every command
+  template once at its ceiling with its drains, the two walks, a margin — 220 min with the defaults); a detached confirm stays
+  `infinity`.
 
 ## Fixture privacy (E5 code round, 2026-10-04)
 

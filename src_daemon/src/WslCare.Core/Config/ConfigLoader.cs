@@ -62,18 +62,27 @@ public static class ConfigLoader
     /// and every user-scoped one is refused by the engine's target-user gate (plan §15c #2, gate finding #2).</summary>
     public static ConfigLoadResult Load(IHostPaths paths, IFileSystem files, UserLayerTrust trust)
     {
-        var machine = (new ConfigLayerFile(ConfigLayer.Machine, paths.MachineConfigFile), Explained(files.ReadStateFile(paths.MachineConfigFile, MaxLayerBytes), paths.MachineConfigFile));
+        var machine = MachineLayer(paths, files);
         if (trust.Skipped.Length > 0)
         {
             return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust);
         }
 
         var userCap = Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine], trust).Config.Int(ConfigKeys.ConfigLayerLimits.MaxLayerBytes);
-        var user = Explained(files.ReadUserFile(paths.UserConfigFile, userCap, trust.Owner, paths.Home), paths.UserConfigFile);
+        var user = Explained(files.ReadUserFile(paths.UserConfigFile, userCap, trust.Owner, paths.Home), paths.UserConfigFile, userCap);
         return Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), machine, (new ConfigLayerFile(ConfigLayer.User, paths.UserConfigFile), user)], trust)
             with
         { UserLayerDigest = Digest(user) };
     }
+
+    /// <summary>The machine layer as read (with its bootstrap cap) and explained.</summary>
+    public static (ConfigLayerFile File, FileReadResult Read) MachineLayer(IHostPaths paths, IFileSystem files) =>
+        (new ConfigLayerFile(ConfigLayer.Machine, paths.MachineConfigFile), Explained(files.ReadStateFile(paths.MachineConfigFile, MaxLayerBytes), paths.MachineConfigFile, MaxLayerBytes));
+
+    /// <summary>The user layer's cap in force: <c>config.maxLayerBytes</c> of the defaults and the machine layer (the writer and the
+    /// reader keep ONE cap, E7.S2b/S2c review C-M4).</summary>
+    public static int UserLayerCap(IHostPaths paths, IFileSystem files) =>
+        Load([(DefaultsFile, new FileReadResult.Content(EmbeddedDefaults())), MachineLayer(paths, files)]).Config.Int(ConfigKeys.ConfigLayerLimits.MaxLayerBytes);
 
     /// <summary>The pure half, for this process's own layer: layers already read, lowest precedence first.</summary>
     public static ConfigLoadResult Load(IReadOnlyList<(ConfigLayerFile File, FileReadResult Read)> layers) => Load(layers, UserLayerTrust.OwnLayer());
@@ -82,15 +91,62 @@ public static class ConfigLoader
     public static ConfigLoadResult Load(IReadOnlyList<(ConfigLayerFile File, FileReadResult Read)> layers, UserLayerTrust trust)
     {
         var state = new LoadState(new Dictionary<string, ConfigEntry>(StringComparer.Ordinal), [], [], trust);
-        foreach (var (file, read) in layers)
+        for (var i = 0; i < layers.Count; i++)
         {
-            Apply(file, read, state);
+            var before = new Dictionary<string, ConfigEntry>(state.Merged, StringComparer.Ordinal);
+            Apply(layers[i].File, layers[i].Read, state);
+            if (i > 0)
+            {
+                HoldRules(layers[i].File, before, state);
+            }
         }
 
         var config = new EffectiveConfig(state.Merged);
-        state.Errors.AddRange(NumberRules.Broken(config, [.. layers.Select(l => l.File)]));
         ConfigLoadResult result = state.Errors.Count == 0 ? new ConfigLoadResult.Valid(config) : new ConfigLoadResult.ObserveOnly(config, state.Errors);
         return result with { Notices = [.. state.Notices, .. RootTimerNotices(layers, trust, state.Notices)] };
+    }
+
+    /// <summary>
+    /// E7.S2b/S2c review C-M1, C-M2: the coupled rules (<see cref="NumberRules"/>) held after each layer — a rule this layer breaks
+    /// takes back the keys THIS layer set for it (to the layer below), so a contradiction is never in force, and is said against this
+    /// layer: from the machine layer an error (observe-only), from the user layer a notice (the value not taken; root stays able).
+    /// </summary>
+    private static void HoldRules(ConfigLayerFile file, IReadOnlyDictionary<string, ConfigEntry> before, LoadState state)
+    {
+        var said = new HashSet<NumberRules.Rule>();
+        for (var round = 0; round <= NumberRules.Rules.Count; round++)
+        {
+            var config = new EffectiveConfig(state.Merged);
+            var broken = NumberRules.Broken(config);
+            if (broken.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var rule in broken.Where(said.Add))
+            {
+                TakeBack(file, rule, config, before, state);
+            }
+        }
+    }
+
+    private static void TakeBack(ConfigLayerFile file, NumberRules.Rule rule, EffectiveConfig config, IReadOnlyDictionary<string, ConfigEntry> before, LoadState state)
+    {
+        var set = rule.Keys.Where(k => state.Merged[k.Name].Layer == file.Layer && before.ContainsKey(k.Name)).Distinct().ToList();
+        foreach (var key in set)
+        {
+            state.Merged[key.Name] = before[key.Name];
+        }
+
+        var message = set.Count == 0 ? rule.Says(config) : $"{rule.Says(config)} — not taken from this layer: {string.Join(", ", set.Select(k => k.Name))}";
+        if (file.Layer == ConfigLayer.User)
+        {
+            state.Notices.Add(new ConfigNotice(file, 0, (set.FirstOrDefault() ?? rule.Keys[0]).Name, message));
+        }
+        else
+        {
+            state.Errors.Add(new ConfigError(file, 0, message));
+        }
     }
 
     /// <summary>What the root timer would not take from this layer and this run did (E7.S0 review C2), each said once.</summary>
@@ -113,15 +169,15 @@ public static class ConfigLoader
     private sealed record LoadState(Dictionary<string, ConfigEntry> Merged, List<ConfigError> Errors, List<ConfigNotice> Notices, UserLayerTrust Trust);
 
     /// <summary>A refusal of the hardened reader with how to fix it (E7.S0 review C3) — every refusal, not only one.</summary>
-    private static FileReadResult Explained(FileReadResult read, string path) =>
-        read is FileReadResult.Unreadable { Reason: var reason } ? new FileReadResult.Unreadable($"{reason}; {FixFor(reason, path)}") : read;
+    private static FileReadResult Explained(FileReadResult read, string path, int cap) =>
+        read is FileReadResult.Unreadable { Reason: var reason } ? new FileReadResult.Unreadable($"{reason}; {FixFor(reason, path, cap)}") : read;
 
-    private static string FixFor(string reason, string path) => reason switch
+    private static string FixFor(string reason, string path, int cap) => reason switch
     {
         _ when reason.Contains("writable by group or others", StringComparison.Ordinal) => $"run chmod go-w {path} (config set writes it 0644)",
         _ when reason.Contains("link", StringComparison.Ordinal) => "replace the link with a regular file — config set does that, keeping the values it can read; root never follows a link",
         _ when reason.Contains("owned by uid", StringComparison.Ordinal) => "run config set as the account that owns this home, or give the file to that account (chown)",
-        _ when reason.Contains("larger than", StringComparison.Ordinal) => $"a layer holds at most {MaxLayerBytes / 1024} KiB: remove what is not a setting",
+        _ when reason.Contains("larger than", StringComparison.Ordinal) => $"this layer holds at most {cap} bytes (config.maxLayerBytes in force): remove what is not a setting",
         _ when reason.Contains(RegularFiles.NotRegular, StringComparison.Ordinal) => "remove it; config set writes a regular file in its place",
         _ => "fix or remove the file; config set rewrites it",
     };

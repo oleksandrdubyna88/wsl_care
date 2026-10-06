@@ -73,14 +73,27 @@ public static class AgentDiscovery
     public static IReadOnlyList<AgentPresence> Discover(IHostPaths paths, IFileSystem files, string? pathVariable, bool asRoot)
     {
         var side = DiscoverySide.Of(paths);
-        var search = asRoot ? [] : side.BinaryFolders(files, pathVariable);
-        return [.. AgentCatalogue.Agents.Select(entry => Discover(entry, side, files, search, asRoot))];
+        var found = asRoot ? NoneFound : Lookups(side, files, pathVariable);
+        return [.. AgentCatalogue.Agents.Select(entry => Discover(entry, side, files, found.GetValueOrDefault(entry.Id, []), asRoot))];
     }
 
-    private static AgentPresence Discover(AgentEntry entry, DiscoverySide side, IFileSystem files, IReadOnlyList<string> search, bool asRoot)
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<FoundBinary>> NoneFound = new Dictionary<string, IReadOnlyList<FoundBinary>>(StringComparer.Ordinal);
+
+    /// <summary>Every agent's binaries, under ONE ceiling (E7.S2b/S2c review A-L3): choosing the folders — whose PATH entries are
+    /// stat-ed for their device — and every lookup in them; nothing at all when the whole does not answer in time.</summary>
+    private static IReadOnlyDictionary<string, IReadOnlyList<FoundBinary>> Lookups(DiscoverySide side, IFileSystem files, string? pathVariable) =>
+        Bounded.Run<IReadOnlyDictionary<string, IReadOnlyList<FoundBinary>>>(
+            () =>
+            {
+                var search = side.BinaryFolders(files, pathVariable);
+                return AgentCatalogue.Agents.ToDictionary(e => e.Id, e => (IReadOnlyList<FoundBinary>)[.. e.Binaries.SelectMany(b => Lookup(b, search, side.Windows))], StringComparer.Ordinal);
+            },
+            LookupCeiling,
+            NoneFound);
+
+    private static AgentPresence Discover(AgentEntry entry, DiscoverySide side, IFileSystem files, IReadOnlyList<FoundBinary> binaries, bool asRoot)
     {
         var folders = side.Folders(entry);
-        var binaries = asRoot ? [] : Bounded.Run(() => entry.Binaries.SelectMany(b => Lookup(b, search, side.Windows)).ToList(), LookupCeiling, []);
         var package = asRoot ? string.Empty : side.NpmRoots(files).Select(root => entry.NpmPackages.Select(p => Path.Combine(root, p)).FirstOrDefault(files.DirectoryExists)).FirstOrDefault(p => p is not null) ?? string.Empty;
         IReadOnlyList<string> detected = [.. Detected(binaries.Count > 0, package.Length > 0, folders.Any(files.DirectoryExists))];
         var version = asRoot ? VersionFound.NotAsked(NotAskedAsRoot) : VersionOf(entry, binaries, package, files);
@@ -114,6 +127,12 @@ public static class AgentDiscovery
             ? new VersionFound(packaged, $"{root}/package.json (the package {binary.Path} runs)")
             : VersionFound.NotAsked($"not asked: neither {binary.Path}'s links nor its package name a version (nothing is executed to ask)");
     }
+
+    /// <summary>Whether a program's link chain leads into <paramref name="entry"/>'s OWN install — a native install's
+    /// <c>…/versions/…</c> target, or the agent's npm package (<c>…/node_modules/&lt;package&gt;/</c>) — E7.S2b review A-M3: a basename
+    /// alone is no agent.</summary>
+    public static bool IsInstallOf(AgentEntry entry, IReadOnlyList<string> chain) =>
+        chain.Any(hop => FromLinkTarget(entry, hop).Length > 0 || PackageRoot(entry, hop).Length > 0);
 
     /// <summary>The binary and every path its links lead to, in order, at most <see cref="MaxLinkHops"/> hops.</summary>
     public static IReadOnlyList<string> Chain(string path, IFileSystem files)

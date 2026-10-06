@@ -7,7 +7,12 @@ namespace WslCare.Core.Records;
 /// <summary>What the startup reconcile found and did (plan §15b #1).</summary>
 /// <param name="Interrupted">Runs whose detail had no history line: each got one, outcome <c>interrupted</c>.</param>
 /// <param name="DetailLost">Runs whose history line names a detail that is not there — shown as <i>detail lost</i>, never rewritten.</param>
-public sealed record ReconcileReport(IReadOnlyList<string> Interrupted, IReadOnlyList<string> DetailLost);
+public sealed record ReconcileReport(IReadOnlyList<string> Interrupted, IReadOnlyList<string> DetailLost)
+{
+    /// <summary>Why the reconcile did nothing (E7.S2b/S2c review C-H1): the history could not be read, so no detail can be called
+    /// an orphan; empty when it ran.</summary>
+    public string Problem { get; init; } = string.Empty;
+}
 
 /// <summary>
 /// The startup reconcile of the run records (plan §15b #1, §15a #0). The write order of a run is detail → history
@@ -25,7 +30,15 @@ public static class RunReconcile
 
     public static ReconcileReport Apply(IHostPaths paths, IFileSystem files, DateTimeOffset now)
     {
-        var history = RunHistory.Read(paths, files).Records;
+        var read = RunHistory.Read(paths, files);
+        if (read.Problem.Length > 0)
+        {
+            // Review C-H1: an unreadable history (past its cap, or an I/O error) names no run — every detail would look orphaned and
+            // get an "interrupted" line, each run more of them. Nothing is written until the history reads again.
+            return new ReconcileReport([], []) { Problem = $"reconcile skipped: {read.Problem}; no run is recorded interrupted while the history cannot be read" };
+        }
+
+        var history = read.Records;
         var named = history.Select(r => r.DetailPath).Where(p => p.Length > 0).ToHashSet(StringComparer.Ordinal);
         var recordedIds = history.Select(r => r.RunId.Text).ToHashSet(StringComparer.Ordinal);
         var stored = RunDetailStore.List(paths, files);

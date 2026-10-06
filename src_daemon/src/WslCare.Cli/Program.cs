@@ -109,7 +109,7 @@ internal static class Program
             Request.Runs runs => LogsCommand.Runs(runs, host, stdout, stderr),
             Request.RunsShow show => LogsCommand.Show(show, host, stdout, stderr),
             Request.ActFromRequest fromRequest => DetachedRuns.FromRequest(fromRequest, host, loaded, stdout, stderr, logger.ForContext(typeof(DetachedRuns)), cancellationToken),
-            Request.UnitsDropIn dropIn => Output.Answer(stdout, Core.Systemd.UnitDropIns.Render(dropIn.Unit).TrimEnd('\n')),
+            Request.UnitsDropIn dropIn => UnitsDropIn(dropIn, loaded, stdout, stderr),
             Request.ActStop stop => RunStops.Stop(stop, host, stdout, stderr, logger.ForContext(typeof(RunStops)), cancellationToken),
             var other => throw new UnreachableException($"no route for {other.GetType().Name}"),
         };
@@ -118,6 +118,19 @@ internal static class Program
     /// <summary>What <c>--version</c> prints and <c>status --json</c> names as <c>productVersion</c> — one expression, so
     /// the two cannot disagree (plan §15g B1).</summary>
     internal static string VersionText => ProductVersion.Of(typeof(Program).Assembly).Text;
+
+    /// <summary><c>units dropin &lt;unit&gt;</c>: the drop-in of the configuration in force — refused (78, observe-only) while a layer is
+    /// in error (E7.S2b/S2c review C-M2): install.sh never installs a drop-in from a configuration the daemon itself refuses.</summary>
+    private static int UnitsDropIn(Request.UnitsDropIn request, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr)
+    {
+        if (loaded.IsObserveOnly)
+        {
+            Output.Note(stderr, $"units dropin {request.Unit}: the configuration is in error ({string.Join("; ", loaded.Errors.Select(e => e.Display))}); no drop-in is written from it");
+            return (int)ExitCode.ObserveOnly;
+        }
+
+        return Output.Answer(stdout, Core.Systemd.UnitDropIns.Render(request.Unit).TrimEnd('\n'));
+    }
 
     /// <summary>The three requests that need nothing of the machine; <c>null</c> for a verb that does.</summary>
     private static int? AnswerWithoutTheMachine(Request request, TextWriter stdout, TextWriter stderr) => request switch

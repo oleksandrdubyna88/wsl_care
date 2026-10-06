@@ -41,7 +41,8 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
     /// follower calls this after every marker; the verdict says whether the policy allowed the write.</summary>
     public DeletionVerdict WriteSummary(DateTimeOffset now)
     {
-        var lines = ReadAll();
+        // Review C-M5: the 24-hour count reads the day files that can hold the last 24 hours, never every kept day.
+        var lines = ReadSince(now - Coverage.CountWindow);
         var summary = new StartsSummary(Core.SchemaVersion.Current, now, Coverage.LastCovered(lines), Coverage.Last24h(lines, now));
         return files.WriteFileAtomically(SummaryFile, JsonSerializer.SerializeToUtf8Bytes(summary, WslCareJsonContext.Default.StartsSummary), new DeletionScope(paths.StateDirectory, SummaryAction));
     }
@@ -66,6 +67,16 @@ public sealed class ContainerStartsStore(IHostPaths paths, IFileSystem files)
             .Where(f => DayOf(f) is not null)
             .Order(StringComparer.Ordinal)
             .SelectMany(Lines)];
+
+    /// <summary>Every line of the day files from <paramref name="from"/>'s UTC day on, in file order.</summary>
+    public IReadOnlyList<CoverageLine> ReadSince(DateTimeOffset from)
+    {
+        var first = DateOnly.FromDateTime(from.UtcDateTime);
+        return [.. files.ListFiles(Directory)
+            .Where(f => DayOf(f) is { } day && day >= first)
+            .Order(StringComparer.Ordinal)
+            .SelectMany(Lines)];
+    }
 
     /// <summary>Day files older than <see cref="RetentionDays"/> removed through <see cref="IFileSystem"/> (scope: the
     /// folder itself); a refusal or a failure is reported, never thrown.</summary>

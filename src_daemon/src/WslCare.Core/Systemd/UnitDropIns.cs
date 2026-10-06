@@ -44,12 +44,20 @@ public static class UnitDropIns
             $"OnCalendar=*-*-* 00/{Text(ConfigKeys.Timer.PeriodHours)}:00:00",
             $"RandomizedDelaySec={Text(ConfigKeys.Timer.RandomizedDelayMinutes)}min",
             $"AccuracySec={Text(ConfigKeys.Timer.AccuracyMinutes)}min"),
-        Service or Act => Lines(
+        // The timer's run is ended as a whole at timer.runLimitMinutes (review C-H2, above its derived worst case); a detached
+        // confirm never is (TimeoutStartSec=infinity stays in its unit file) — the progress watchdog stands for both.
+        Service => Lines(
+            "[Service]",
+            $"Nice={Text(ConfigKeys.Units.Nice)}",
+            $"MemoryMax={Text(ConfigKeys.Units.MemoryMaxMb)}M",
+            $"TimeoutStopSec={Text(ConfigKeys.Units.StopTimeoutSeconds)}",
+            $"TimeoutStartSec={Text(ConfigKeys.Timer.RunLimitMinutes)}min"),
+        Act => Lines(
             "[Service]",
             $"Nice={Text(ConfigKeys.Units.Nice)}",
             $"MemoryMax={Text(ConfigKeys.Units.MemoryMaxMb)}M",
             $"TimeoutStopSec={Text(ConfigKeys.Units.StopTimeoutSeconds)}"),
-        Events => Lines("[Service]", $"RestartSec={Text(ConfigKeys.Units.EventsRestartSeconds)}"),
+        Events => Lines("[Service]", $"RestartSec={Text(ConfigKeys.Units.EventsRestartSeconds)}", $"MemoryMax={Text(ConfigKeys.Units.MemoryMaxMb)}M"),
         _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, $"a unit without a drop-in; one of: {string.Join(", ", Units)}"),
     };
 

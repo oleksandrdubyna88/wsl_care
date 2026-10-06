@@ -58,6 +58,7 @@ public sealed class RunRequestsTests : IDisposable
     [InlineData("""{"schemaVersion":1,"runId":"20261002T120000Z-11","kind":"rm -rf","actions":["A4"],"trigger":"manual","createdAt":"2026-10-02T12:00:00+00:00"}""", "kind")]
     [InlineData("""{"schemaVersion":1,"runId":"20261002T120000Z-11","kind":"act","actions":["A99"],"trigger":"manual","createdAt":"2026-10-02T12:00:00+00:00"}""", "action")]
     [InlineData("""{"schemaVersion":1,"runId":"20261002T120000Z-11","kind":"act","actions":["A4"],"trigger":"manual","createdAt":"2026-10-02T12:00:00+00:00","shown":["../../etc/passwd"]}""", "shown")]
+    [InlineData("""{"schemaVersion":1,"runId":"20261002T120000Z-11","kind":"act","actions":["A18"],"trigger":"manual","createdAt":"2026-10-02T12:00:00+00:00","shownProcesses":["10;kill"]}""", "shown process")]
     [InlineData("""{"schemaVersion":1,"runId":"20261002T120000Z-11","kind":"collect","actions":["A4"],"trigger":"manual","createdAt":"2026-10-02T12:00:00+00:00"}""", "collect")]
     public void A_request_whose_content_is_not_what_root_writes_is_refused_naming_what(string json, string reason)
     {

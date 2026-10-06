@@ -42,6 +42,13 @@ public static class RequestSweep
 
     public static async Task<IReadOnlyList<string>> ApplyAsync(IHostPaths paths, IFileSystem files, ICommandRunner commands, IProcessTable processes, DateTimeOffset now, RunId? own)
     {
+        if (HistoryProblem(paths, files) is { Length: > 0 } problem)
+        {
+            // Review C-H1: with an unreadable history no request can be told recorded or not — sweeping would write interrupted lines
+            // for runs that DID record themselves. Every request is kept until the history reads again.
+            return [$"the request sweep is skipped: {problem}; every request is kept"];
+        }
+
         var recorded = Recorded(paths, files);
         var boot = processes.Boot();
         var notes = new List<string>();
@@ -68,6 +75,11 @@ public static class RequestSweep
     /// carries none (plan §15o).</summary>
     public static string Unusable(IHostPaths paths, IFileSystem files, DateTimeOffset now, RunId runId, string why)
     {
+        if (HistoryProblem(paths, files) is { Length: > 0 } problem)
+        {
+            return $"kept the unusable request of run {runId} ({why}): {problem}";
+        }
+
         if (!Recorded(paths, files).Contains(runId))
         {
             new RunRecordWriter(paths, files).Append(new RunRecord(Core.SchemaVersion.Current, runId, RunTrigger.Manual, now, now, RunOutcome.Refused, [], Kind: null)
@@ -142,6 +154,11 @@ public static class RequestSweep
     /// recorded itself since the snapshot only loses its request. Otherwise ONE interrupted line, then the request goes.</summary>
     private static string Interrupted(IHostPaths paths, IFileSystem files, DateTimeOffset now, RunRequestFile request, string activeState, string stale)
     {
+        if (HistoryProblem(paths, files) is { Length: > 0 } problem)
+        {
+            return $"kept the request of run {request.RunId}: {problem}";
+        }
+
         if (Recorded(paths, files).Contains(request.RunId))
         {
             return Joined($"removed the request of run {request.RunId}: the run recorded itself while the sweep looked", RunRequests.Remove(paths, files, request.RunId));
@@ -153,6 +170,9 @@ public static class RequestSweep
     }
 
     private static HashSet<RunId> Recorded(IHostPaths paths, IFileSystem files) => [.. RunHistory.Read(paths, files).Records.Select(r => r.RunId)];
+
+    /// <summary>Why the history cannot be read now; empty when it can.</summary>
+    private static string HistoryProblem(IHostPaths paths, IFileSystem files) => RunHistory.Read(paths, files).Problem;
 
     private static string Age(TimeSpan age) =>
         age >= TimeSpan.FromMinutes(1)

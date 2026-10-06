@@ -51,6 +51,10 @@ public sealed record ActionContext(
     /// <see cref="ShownList.None"/> for the timer and the terminal, which act on their own fresh preview.</summary>
     public ShownList ShownVolumes { get; init; } = ShownList.None;
 
+    /// <summary>The processes a button SHOWED and the person confirmed, as <c>pid:start</c> (E7.S2b review A-H1: A18 ends only those,
+    /// judged again); <see cref="ShownList.None"/> for a terminal, which acts on its own fresh preview.</summary>
+    public ShownList ShownProcesses { get; init; } = ShownList.None;
+
     /// <summary>A wait the action may take (A11's CPU window). Real time by default; a test passes its own.</summary>
     public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
 
