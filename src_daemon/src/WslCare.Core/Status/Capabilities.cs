@@ -46,6 +46,9 @@ public static class Capabilities
     /// are protected and walked (plan §15q R2, E7.S2).</summary>
     public const string ConfigAgentsExtra = "config.agentsExtra";
 
+    /// <summary><c>status --json</c> carries the <c>mcpServers</c> block and the three <c>mcp.*</c> verdicts (plan §15q E7.S2d).</summary>
+    public const string StatusMcpServers = "status.mcpServers";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers];
 }

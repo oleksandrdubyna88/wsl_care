@@ -50,6 +50,22 @@
       "min": 500,
       "max": 10000,
       "default": 2000
+    },
+    {
+      "name": "mcpCpuWindowMilliseconds",
+      "key": "mcpServers.cpuWindowMilliseconds",
+      "unit": "milliseconds",
+      "min": 200,
+      "max": 5000,
+      "default": 1000
+    },
+    {
+      "name": "mcpLogListMilliseconds",
+      "key": "mcpServers.logListMilliseconds",
+      "unit": "milliseconds",
+      "min": 100,
+      "max": 5000,
+      "default": 1000
     }
   ]
 }

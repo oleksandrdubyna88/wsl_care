@@ -89,6 +89,7 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Actions/UserCaches/CacheFolders.cs"] = new() { ["MeasureTree"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Actions/UserCaches/EditorServerCleanup.cs"] = new() { ["ListDirectories"] = (2, ReadClass.TargetHomeMetadata), ["ReadUserFile"] = (1, ReadClass.TargetHome) },
         ["WslCare.Core/Collectors/ContainerCgroups.cs"] = new() { ["ListDirectories"] = (2, ReadClass.System), ["ProcText.Read"] = (2, ReadClass.System) },
+        ["WslCare.Core/Mcp/McpServerCollector.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/ProcessCollector.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ProcText.Read"] = (5, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/Procfs/ProcText.cs"] = new() { ["ReadFile"] = (1, ReadClass.System) },
         ["WslCare.Core/Config/ConfigLoader.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.ConfigLayer), ["ReadUserFile"] = (1, ReadClass.ConfigLayer) },

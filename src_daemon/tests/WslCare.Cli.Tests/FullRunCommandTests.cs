@@ -66,6 +66,41 @@ public sealed class FullRunCommandTests
     }
 
     [Fact]
+    public void A_full_runs_detail_carries_the_mcp_servers_and_their_three_verdicts()
+    {
+        // Plan §15q E7.S2d: the captured tree holds two coai-mcp servers under two claude sessions; the full run records them in
+        // its embedded sample and judges the three mcp.* thresholds into its detail.
+        using var sandbox = new SandboxHost("collect-mcp");
+        var waits = 0;
+        var host = Host(sandbox, sandbox.Files, Tools(), DockerFixture.CapturedAt) with
+        {
+            Wait = (_, _) =>
+            {
+                waits++;
+                return Task.CompletedTask;
+            },
+        };
+
+        var (exit, stdout, stderr) = CliRun.Over(host, "collect", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var detail = Collect(stdout).Detail!;
+        detail.Thresholds.Select(v => v.Id).Should().Contain([Core.Thresholds.McpVerdicts.Instances, Core.Thresholds.McpVerdicts.Cpu, Core.Thresholds.McpVerdicts.Starts]);
+        if (OperatingSystem.IsLinux())
+        {
+            detail.Sample.McpServers!.Count.Should().Be(2);
+            waits.Should().Be(1, "one CPU window per full run");
+        }
+        else
+        {
+            // The sandbox host of this OS is the WINDOWS layout here: the Windows binary has no process collector yet (E11).
+            detail.Sample.McpServers!.Reason.Should().Be(Core.Mcp.McpServerCollector.WindowsNotYet);
+            detail.Thresholds.Where(v => v.Id.StartsWith("mcp.", StringComparison.Ordinal)).Should().OnlyContain(v => v.Level == Core.Thresholds.Level.Unknown);
+            waits.Should().Be(0);
+        }
+    }
+
+    [Fact]
     public void Status_after_a_collect_carries_the_full_runs_own_verdict_records_with_its_run_and_their_age()
     {
         using var sandbox = new SandboxHost("collect-verdicts");

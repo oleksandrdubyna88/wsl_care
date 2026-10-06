@@ -269,5 +269,21 @@
   "agentCpu": {
     "maxEntries": 512,
     "maxBytes": 262144
+  },
+  "mcpServers": {
+    "watched": [
+      "coai-mcp"
+    ],
+    "cpuWindowMilliseconds": 1000,
+    "idleCpuPercent": 2,
+    "idleMinAgeMinutes": 10,
+    "activityWindowMinutes": 10,
+    "startsWindowMinutes": 10,
+    "warnInstances": 12,
+    "warnCpuPercent": 100,
+    "warnStarts": 10,
+    "maxInstances": 256,
+    "maxLogEntries": 20000,
+    "logListMilliseconds": 1000
   }
 }

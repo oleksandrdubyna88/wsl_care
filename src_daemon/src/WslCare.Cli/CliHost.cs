@@ -29,6 +29,10 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// <summary>The operating system's process table, for the <c>running.json</c> liveness check. A test scripts it.</summary>
     public IProcessTable Processes { get; init; } = new SystemProcessTable();
 
+    /// <summary>How a verb waits a measuring window (the MCP servers' CPU window, plan §15q E7.S2d). A test hands one that returns
+    /// at once and changes what the second read sees.</summary>
+    public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
+
     /// <summary>The actions this build holds.</summary>
     public ActionRegistry Actions { get; init; } = ActionRegistry.Product;
 

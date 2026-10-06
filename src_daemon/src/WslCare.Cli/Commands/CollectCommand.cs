@@ -40,6 +40,7 @@ internal static class CollectCommand
             Processes = host.Processes,
             Signals = host.Signals,
             InterruptCause = host.InterruptCause,
+            Wait = host.Wait,
         };
         // Retro gate over PR #5: Docker's disk figures and the daily folder walks can take minutes, each under its own ceiling;
         // the console log (stderr) says so before anything is asked, so working is never mistaken for stuck.

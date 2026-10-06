@@ -78,6 +78,10 @@ public sealed record StatusReport(
     /// <summary>The daemon values the extension mirrors instead of copying (<see cref="StatusLimits"/>,
     /// <c>contracts/status-limits.json</c>). Additive (E7.S2c); absent from the sample a run detail embeds.</summary>
     public StatusLimits? Limits { get; init; }
+
+    /// <summary>The MCP servers of the AI agents (plan §15q E7.S2d): how many run, which are idle, which burn CPU with no log
+    /// write, how often each server started lately. Additive; the run detail's embedded sample carries it too.</summary>
+    public McpServersReport? McpServers { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>
