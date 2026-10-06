@@ -118,6 +118,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # Only that ONE submodule, shallow (public, no token): the Scenarios suite below runs the POST_DEPLOY items through
+      # the conventions checker's own extraction and FAILS in CI without it. Missing here, it failed both Linux legs of
+      # daemon-v0.1.1 at Test (ReleaseWorkflowTests holds every job that runs the suite to this fetch).
+      - name: Fetch the shared rules
+        run: git submodule update --init --depth 1 .agents/conventions
+
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json

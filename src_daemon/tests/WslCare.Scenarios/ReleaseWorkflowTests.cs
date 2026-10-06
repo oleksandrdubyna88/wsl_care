@@ -172,6 +172,34 @@ public sealed partial class ReleaseWorkflowTests
         Load(Release)["jobs"].Map["build"].Map["runs-on"].Text.Should().Be("${{ matrix.os }}");
     }
 
+    /// <summary>daemon-v0.1.1 (2026-10-06): <c>PostDeployCommandFlows</c> extract the POST_DEPLOY commands with the conventions
+    /// checker (the <c>.agents/conventions</c> submodule) and FAIL in CI without it. ci-daemon.yml was given the fetch, the
+    /// release workflow — which runs the same Scenarios executable before it packs — was not, and both Linux release legs
+    /// failed at their Test step (the publish never ran, the tag's draft stayed empty). Every job that runs the Scenarios
+    /// executable fetches the submodule BEFORE that step.</summary>
+    [Fact]
+    public void Every_job_that_runs_the_scenario_suite_fetches_the_conventions_checker_before_it()
+    {
+        foreach (var (file, id, job) in SuiteRunners())
+        {
+            var fetch = StepIndex(job, "git submodule update --init --depth 1 .agents/conventions");
+            fetch.Should().BeGreaterThanOrEqualTo(0, $"{file}/{id} runs the Scenarios suite, whose PostDeployCommandFlows read the conventions checker");
+            fetch.Should().BeLessThan(StepIndex(job, ScenarioSuite), $"{file}/{id} fetches it before the suite runs");
+        }
+    }
+
+    /// <summary>The companion (testing.md — a scan that matches nothing passes forever): the scan still finds the jobs known
+    /// to run the suite.</summary>
+    [Fact]
+    public void The_suite_runner_scan_finds_the_jobs_known_to_run_the_scenario_suite()
+    {
+        SuiteRunners().Select(j => $"{j.File}/{j.Id}").Should().Contain([$"{CiDaemon}/build-test-publish", $"{Release}/build"]);
+    }
+
+    private const string ScenarioSuite = "WslCare.Scenarios/bin/";
+
+    private static List<(string File, string Id, YamlMap Job)> SuiteRunners() => [.. AllJobs().Where(j => StepIndex(j.Job, ScenarioSuite) >= 0)];
+
     [Fact]
     public void The_released_binary_is_smoked_by_the_one_script_every_pull_request_runs()
     {

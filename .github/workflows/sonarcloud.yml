@@ -59,6 +59,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      # The Scenarios suite below reads the conventions checker (PostDeployCommandFlows fail in CI without it); the same
+      # fetch ci-daemon.yml and release.yml make (ReleaseWorkflowTests holds every job that runs the suite to it).
+      - name: Fetch the shared rules
+        if: steps.token.outputs.present == 'true'
+        run: git submodule update --init --depth 1 .agents/conventions
+
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         if: steps.token.outputs.present == 'true'
         with:
