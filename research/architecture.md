@@ -84,7 +84,8 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   and the units*).
 - **`.github/`** — `ci-daemon.yml`, `ci-workflows.yml`, `family-checks.yml`, `pr-title.yml`, since E5.S1
   `ci-extension.yml`, `dependabot.yml` (below); since E5.S3 `release-extension.yml` with `scripts/release-extension-guard.sh`,
-  `verify-extension-assets.sh`, `lib/versions.sh` (since the E5 code round) and `rulesets/tags-extension.json` (section *The
+  `verify-extension-assets.sh`, `lib/versions.sh` (since the E5 code round), `compare-installed-extension.sh` (2026-10-06) and
+  `rulesets/tags-extension.json` (section *The
   extension: Install daemon, packaging and its release*); since E4.S2 the release pipeline: `release-please.yml`, `release.yml`, the scripts both
   CI and the release run (`scripts/smoke-daemon.sh`, `package-daemon.sh`, `release-guard.sh`, `verify-release-assets.sh`,
   `lib/daemon-assets.sh`), `sonarcloud.yml` + `sonar.properties`, `coderabbit-review.yml`, and the owner-applied ruleset
@@ -2076,9 +2077,12 @@ flowchart TD
   pattern, and its comparisons — and POST_DEPLOY item 6's ranking of the versions the Marketplace serves — go through ONE
   POSIX file, `.github/scripts/lib/versions.sh` (`version_at_least`, `highest_version`, `is_top_version`). Every line the
   guard prints is a declared output; the build checks its .vsix against `min_daemon`.
-- **The credential**: `VSCE_PAT` today (a global Azure DevOps PAT — those stop working on 2026-12-01, so its expiry is
-  `POST_DEPLOY.md` item 12); the recommended alternative is OIDC (`azure/login` + `vsce publish --azure-credential`), a
-  one-pull-request switch written in the workflow's header and `docs/repo-settings.md` step 9.
+- **The credential**: none — the owner's decision of 2026-10-06 is a MANUAL upload of the attested `.vsix` (no `VSCE_PAT`,
+  `POST_DEPLOY.md` item 12 accepts `none — manual upload`; `docs/repo-settings.md` step 9). The served check names a
+  version only, so before approving `publish-marketplace` (which then skips) the owner runs
+  `.github/scripts/compare-installed-extension.sh`: the installed extension equals the `.vsix` file by file, apart from
+  VS Code's `.vsixmanifest` and `__metadata`; item 6 runs it again after the release. A PAT (dead on 2026-12-01) or
+  OIDC (`azure/login` + `--azure-credential`) stay the documented ways to automate the publish.
 - **The tag ruleset** `.github/rulesets/tags-extension.json` — `refs/tags/extension-v*`, creation / update / deletion, the
   release App the only bypass; `tags-daemon.json` is not edited.
 - **release-please** gains the package `src_vs_code` (`extension`, `node`, `initial-version` 0.1.0, manifest 0.0.0,

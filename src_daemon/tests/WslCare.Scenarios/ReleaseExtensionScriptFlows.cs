@@ -510,5 +510,28 @@ public sealed class ReleaseExtensionScriptFlows
             var usage = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [root.File("not-a-zip.vsix", "x"), root.Dir("empty")], root.Path);
             usage.Exit.Should().Be(2, "an unreadable .vsix is a usage error, never a pass: " + usage.Stderr);
         }
+
+        // coai code round 3 (accepted): an archive that OPENS but whose entry fails to read (here a CRC mismatch: a stored
+        // entry's bytes changed after the archive was written) is unreadable too — exit 2, never 1 (a "difference") with a
+        // traceback.
+        using (var root = new TempRoot("installed-corrupt"))
+        {
+            var vsix = root.Under("corrupt.vsix");
+            using (var zip = System.IO.Compression.ZipFile.Open(vsix, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                using var writer = new StreamWriter(zip.CreateEntry("extension/dist/extension.js", System.IO.Compression.CompressionLevel.NoCompression).Open());
+                writer.Write("MARKER-MARKER-MARKER");
+            }
+
+            var bytes = File.ReadAllBytes(vsix);
+            var at = Encoding.ASCII.GetString(bytes).IndexOf("MARKER-MARKER-MARKER", StringComparison.Ordinal);
+            at.Should().BeGreaterThan(0, "the stored entry's bytes are in the file");
+            bytes[at] = (byte)'X';
+            File.WriteAllBytes(vsix, bytes);
+
+            var corrupt = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [vsix, root.Dir("installed")], root.Path);
+            corrupt.Exit.Should().Be(2, $"an entry that cannot be read is an unreadable .vsix:\n{corrupt.Stdout}{corrupt.Stderr}");
+            corrupt.Stderr.Should().Contain("is not a readable .vsix");
+        }
     }
 }

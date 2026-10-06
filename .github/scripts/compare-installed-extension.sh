@@ -20,7 +20,7 @@ set -euo pipefail
 [ -d "$2" ] || { echo "compare-installed-extension: $2 is not a folder" >&2; exit 2; }
 
 exec python3 -c '
-import json, os, sys, zipfile
+import json, os, sys, zipfile, zlib
 
 vsix, folder = sys.argv[1], sys.argv[2]
 PREFIX = "extension/"
@@ -33,9 +33,15 @@ except (OSError, zipfile.BadZipFile) as error:
     sys.exit(2)
 
 attested = {}
-for info in archive.infolist():
-    if info.filename.startswith(PREFIX) and not info.is_dir():
-        attested[info.filename[len(PREFIX):]] = archive.read(info)
+try:
+    for info in archive.infolist():
+        if info.filename.startswith(PREFIX) and not info.is_dir():
+            attested[info.filename[len(PREFIX):]] = archive.read(info)
+except (OSError, EOFError, RuntimeError, NotImplementedError, ValueError, zipfile.BadZipFile, zlib.error) as error:
+    # An archive that opens but whose entry does not read (a bad CRC, a truncated or encrypted entry, an unknown
+    # compression) is unreadable too: exit 2, never 1 - a "difference" - with a traceback.
+    print(f"compare-installed-extension: {vsix} is not a readable .vsix: {error}", file=sys.stderr)
+    sys.exit(2)
 if not attested:
     print(f"compare-installed-extension: {vsix} holds no extension/ files", file=sys.stderr)
     sys.exit(2)
