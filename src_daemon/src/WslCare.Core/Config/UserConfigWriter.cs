@@ -142,8 +142,9 @@ public sealed class UserConfigWriter(IHostPaths paths, IFileSystem files, TimePr
 
             return written;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        catch
         {
+            // Every failure, not only I/O (fix-PR final round): whatever ended the write, the person's layer goes back first.
             Undo(aside, file, directory);
             throw;
         }

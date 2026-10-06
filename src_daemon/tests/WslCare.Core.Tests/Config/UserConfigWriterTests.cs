@@ -332,6 +332,27 @@ public sealed class UserConfigWriterTests
         }
     }
 
+    // Fix-PR final round: the undo ran only for an I/O failure, so any other exception out of the write left an unreadable
+    // layer moved aside and the user layer absent.
+    [Fact]
+    public void Any_exception_out_of_the_write_puts_a_moved_layer_back()
+    {
+        using var host = new SandboxHost("writer-any-exception");
+        Directory.CreateDirectory(host.Paths.UserConfigFile); // unreadable as a file: it can only be MOVED aside
+        var writer = new UserConfigWriter(host.Paths, new WritesThrowNotSupported(host.Files), new FixedTimeProvider());
+
+        var set = () => writer.Set(ConfigKeys.RefreshSeconds, new ConfigValue.Int(120));
+
+        set.Should().Throw<NotSupportedException>("the original failure is what the person needs to see");
+        Directory.Exists(host.Paths.UserConfigFile).Should().BeTrue("the moved layer is back where it was");
+    }
+
+    private sealed class WritesThrowNotSupported(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public override DeletionVerdict WriteFileAtomically(string path, ReadOnlySpan<byte> content, DeletionScope scope) =>
+            throw new NotSupportedException("the file system does not support this write");
+    }
+
     private sealed class LayerAtWriteTime(IFileSystem inner, string layer) : DelegatingFileSystem(inner)
     {
         public string Seen { get; private set; } = "(missing)";
