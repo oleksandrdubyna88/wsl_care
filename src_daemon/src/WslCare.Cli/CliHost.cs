@@ -70,7 +70,16 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// one built BEFORE the configuration was read — so once <paramref name="config"/> names manual AI agents, the layout gains
     /// their data folders as protected roots (every shape-valid entry of this side, whether or not it passes the walk's rules —
     /// review B2) and the file system and what holds it are rebuilt over it. The same host when there are none.</summary>
-    public CliHost WithAgentExtras(EffectiveConfig config)
+    public (CliHost Host, ConfigLoadResult Loaded) WithAgentExtras(ConfigLoadResult loaded)
+    {
+        var (host, dropped) = Protecting(loaded.Config);
+        // coai E7 code round #5: a folder phase two did not protect is a structured notice of THIS load, never host state.
+        return dropped.Count == 0
+            ? (host, loaded)
+            : (host, loaded with { Notices = [.. loaded.Notices, .. dropped.Select(m => new ConfigNotice(new ConfigLayerFile(ConfigLayer.User, Paths.UserConfigFile), 0, ConfigKeys.AiAgents.Extra.Name, m))] });
+    }
+
+    private (CliHost Host, IReadOnlyList<string> Dropped) Protecting(EffectiveConfig config)
     {
         var extras = config.Agents(ConfigKeys.AiAgents.Extra);
         var chosen = Paths switch
@@ -81,7 +90,7 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         };
         if (chosen.Kept.Count == 0)
         {
-            return chosen.Dropped.Count == 0 ? this : this with { AgentExtrasDropped = chosen.Dropped };
+            return (this, chosen.Dropped);
         }
 
         var paths = Paths switch
@@ -91,11 +100,8 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
             _ => Paths,
         };
         var (files, signals) = Rewire(paths, this);
-        return this with { Paths = paths, Files = files, Signals = signals, AgentExtrasDropped = chosen.Dropped };
+        return (this with { Paths = paths, Files = files, Signals = signals }, chosen.Dropped);
     }
-
-    /// <summary>The manual agents' folders phase two did NOT protect, each with why (review S1) — said as a configuration notice.</summary>
-    public IReadOnlyList<string> AgentExtrasDropped { get; init; } = [];
 
     private static IReadOnlyList<string> Folders(IReadOnlyList<ExtraAgent> extras, string side) =>
         [.. extras.Where(e => e.Side == side).SelectMany(e => e.DataFolders).Distinct(StringComparer.Ordinal)];

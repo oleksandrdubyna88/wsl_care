@@ -770,10 +770,16 @@ write_dropins() {
     fi
     code=0
     timeout 60 "$ROOT$BIN_PATH" units dropin "$unit" > "$WORK/$DROPIN_NAME" || code=$?
+    # coai E7 code round #6: an empty answer is no drop-in — never installed silently.
+    if [ "$code" = 0 ] && [ ! -s "$WORK/$DROPIN_NAME" ]; then code=empty; fi
     case "$code" in
       0)
         install -d -m 0755 "$ROOT$dir" || fail install-units "could not create $dir"
         install -m 0644 "$WORK/$DROPIN_NAME" "$ROOT$dir/$DROPIN_NAME" || fail install-units "could not install $dir/$DROPIN_NAME"
+        ;;
+      empty)
+        warn "no drop-in for $unit: $BIN_PATH units dropin $unit answered nothing; the unit keeps its own values"
+        if [ -f "$ROOT$dir/$DROPIN_NAME" ]; then rm -f -- "$ROOT$dir/$DROPIN_NAME" || fail install-units "could not remove the stale $dir/$DROPIN_NAME"; fi
         ;;
       2 | 78)
         warn "no drop-in for $unit: $BIN_PATH units dropin $unit answered $code ($( [ "$code" = 2 ] && echo "a release before unit drop-ins" || echo "the machine configuration is in error")); the unit keeps its own values"

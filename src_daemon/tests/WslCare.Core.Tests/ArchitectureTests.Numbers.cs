@@ -23,6 +23,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Cli/Commands/PreviewCommand.cs: BytesPerGigabyte"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Cli/Commands/StatusCommand.cs: BytesPerGibibyte"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Cli/Commands/LogsCommand.cs: Take(20)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
+        ["WslCare.Cli/CommandLine.cs: MaxShownVolumes"] = "the parser's COMPILE-TIME ceiling: act.maxShownNames' range maximum (a test holds them equal); the verb holds the value in force (coai E7 code round #4)",
         ["WslCare.Cli/Commands/StatusCommand.cs: TopShown"] = "a display truncation: how many entries one sentence quotes, not how much is done",
         ["WslCare.Core/Actions/BuildServers/BuildServerShutdown.cs: Take(3)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
         ["WslCare.Core/Actions/Disk/FilesystemTrim.cs: SomeTrimmed"] = "util-linux fstrim's exit code 64 — the tool's contract",

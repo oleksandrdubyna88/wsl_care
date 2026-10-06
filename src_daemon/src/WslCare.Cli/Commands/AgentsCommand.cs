@@ -17,7 +17,7 @@ namespace WslCare.Cli.Commands;
 /// </summary>
 internal static class AgentsCommand
 {
-    public static int Run(Request.AgentsList request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, CancellationToken cancellationToken)
+    public static int Run(Request.AgentsList request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
     {
         var now = host.Clock.GetUtcNow();
         IReadOnlyList<AgentPresence> found =
@@ -27,7 +27,7 @@ internal static class AgentsCommand
         ];
         var last = LastFullRun.Read(host.Paths, host.Files, host.Clock);
         var (sizes, previous) = request.Measure
-            ? Measured(host, found, last, cancellationToken)
+            ? Measured(host, found, last, stderr, cancellationToken)
             : Recorded(last);
         var report = AgentsReports.From(host.Paths.Side == Core.Hosting.HostSide.Wsl ? "wsl" : "windows", now, found, sizes, previous, loaded.Config);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.AgentsReport) : Render(report));
@@ -71,10 +71,14 @@ internal static class AgentsCommand
 
     /// <summary>Measured now: every tracked agent, the five largest sessions by name kept (a live answer); its growth against the
     /// newest recorded walk.</summary>
-    private static (AgentSizes, AgentsSample?) Measured(CliHost host, IReadOnlyList<AgentPresence> found, LastSlowParts last, CancellationToken cancellationToken)
+    /// <remarks>coai E7 code round #7: the walk may take its whole budget, so it says on STDERR what it is about to do and each
+    /// folder it starts — stdout (the JSON) is untouched.</remarks>
+    private static (AgentSizes, AgentsSample?) Measured(CliHost host, IReadOnlyList<AgentPresence> found, LastSlowParts last, TextWriter stderr, CancellationToken cancellationToken)
     {
         var targets = found.Where(p => p.Tracked).Select(p => p.Target).ToList();
-        var sample = new AgentWalk(host.Files, host.Clock, host.Paths.Home).Measure(targets, AgentWalk.MeasureNowBudget, withNames: true, cancellationToken);
+        Output.Note(stderr, string.Create(System.Globalization.CultureInfo.InvariantCulture, $"measuring {targets.Sum(t => t.Folders.Count)} agent folder(s), up to {AgentWalk.MeasureNowBudget.TotalSeconds:0} s…"));
+        var walk = new AgentWalk(host.Files, host.Clock, host.Paths.Home) { OnFolder = folder => Output.Note(stderr, CommandLine.Printable($"measuring {folder}")) };
+        var sample = walk.Measure(targets, AgentWalk.MeasureNowBudget, withNames: true, cancellationToken);
         return (new AgentSizes.Now(sample), last.Agents.Map(a => a.Value).ValueOr(null!));
     }
 
@@ -90,7 +94,11 @@ internal static class AgentsCommand
         foreach (var agent in report.Agents.Where(a => a.Tracked))
         {
             var size = agent.TotalBytes.Available ? $"{agent.TotalBytes.Bytes / 1048576.0:0.0} MiB" : "—";
-            var sessions = agent.Sessions.Counted ? agent.Sessions.Count!.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "—";
+            var sessions = agent.Sessions.View() switch
+            {
+                SessionCount.Counted counted => counted.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                _ => "—",
+            };
             text.AppendLine(CommandLine.Printable($"  {agent.Name,-20} {size,12}  sessions {sessions,6}  by {string.Join("+", agent.DetectedBy)}{Version(agent)}"));
         }
 
@@ -100,10 +108,11 @@ internal static class AgentsCommand
 
     private static string Version(AgentReport agent) => agent.Version.Available ? $"  {agent.Version.Value}" : string.Empty;
 
-    private static string Source(AgentSizesSource sizes) => sizes.Source switch
+    private static string Source(AgentSizesSource sizes) => sizes.View() switch
     {
-        "now" => "measured now",
-        "fullRun" => $"the full run {sizes.RunId}, {sizes.AgeSeconds / 3600:0.0} h ago",
-        _ => sizes.Reason ?? "none",
+        SizesView.MeasuredNow => "measured now",
+        SizesView.FullRun run => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"the full run {run.RunId}, {run.AgeSeconds / 3600:0.0} h ago"),
+        SizesView.Unavailable none => none.Reason,
+        _ => throw new System.Diagnostics.UnreachableException("SizesView is a closed set"),
     };
 }

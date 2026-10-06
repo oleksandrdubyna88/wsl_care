@@ -133,7 +133,7 @@ public sealed class AgentsCommandTests : IDisposable
         var folder = Path.GetDirectoryName(inside)!;
         var scope = new DeletionScope(_sandbox.Paths.DistroPath("/home/me/.mycli"), "a test");
 
-        var second = first.WithAgentExtras(first.LoadConfig().Config);
+        var (second, _) = first.WithAgentExtras(first.LoadConfig());
 
         second.Paths.AgentRoots.Select(Path.GetFullPath).Should().Contain(Path.GetFullPath(_sandbox.Paths.DistroPath("/home/me/.mycli")));
         second.Files.DeleteDirectory(folder, scope).Should().BeOfType<DeletionVerdict.Refused>();
@@ -146,7 +146,11 @@ public sealed class AgentsCommandTests : IDisposable
     {
         var first = Host();
 
-        first.WithAgentExtras(first.LoadConfig().Config).Should().BeSameAs(first);
+        var loaded = first.LoadConfig();
+        var (second, after) = first.WithAgentExtras(loaded);
+
+        second.Should().BeSameAs(first);
+        after.Should().BeSameAs(loaded);
     }
 
     // ---------- the E7.S1/S2 review round ----------
@@ -171,9 +175,10 @@ public sealed class AgentsCommandTests : IDisposable
         _sandbox.Write("/home/me/.config/wsl-care/config.json", $$"""{ "aiAgents": { "extra": {{Extra(folder)}} } }""");
         var first = Host();
 
-        var second = first.WithAgentExtras(first.LoadConfig().Config);
+        var (second, loaded) = first.WithAgentExtras(first.LoadConfig());
 
-        second.AgentExtrasDropped.Should().ContainSingle().Which.Should().Contain("is not protected");
+        // coai E7 code round #5: a structured notice of the load, never host state.
+        loaded.Notices.Should().ContainSingle(n => n.Key == "aiAgents.extra" && n.File.Layer == Core.Config.ConfigLayer.User).Which.Message.Should().Contain("is not protected");
         second.Paths.AgentRoots.Should().NotContain(r => Path.GetFullPath(r).TrimEnd('/', '\\') == Path.GetFullPath(_sandbox.Paths.DistroPath(folder)).TrimEnd('/', '\\'));
         Core.Actions.Engine.RunningState.Write(second.Paths, second.Files, new Core.Actions.Engine.RunningFile(1, Core.Records.RunId.New(FixedTimeProvider.DefaultNow, 7), Core.Records.RunTrigger.Cli, ["A10"], string.Empty, 7, FixedTimeProvider.DefaultNow, FixedTimeProvider.DefaultNow, FixedTimeProvider.DefaultNow, null))
             .Should().NotBeOfType<DeletionVerdict.Refused>("root's own state is never an agent folder");

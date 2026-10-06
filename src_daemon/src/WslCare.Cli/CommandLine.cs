@@ -182,9 +182,11 @@ internal static class CommandLine
     private const string StdinMarker = "-";
     private const string MeasureFlag = "--measure";
 
-    /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together — the same cap a
-    /// preview's <c>shown</c> list keeps (<see cref="Core.Actions.ShownList.MaxNames"/>, plan §15j B1).</summary>
-    internal static int MaxShownVolumes => Core.Actions.ShownList.MaxNames;
+    /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together (plan §15j B1) — the
+    /// COMPILE-TIME ceiling: the parser runs before any configuration is read, so it holds the range maximum of
+    /// <c>act.maxShownNames</c> (a test keeps them equal), and the verb, once the configuration is loaded, refuses a list past the
+    /// value IN FORCE (coai E7 code round #4).</summary>
+    internal const int MaxShownVolumes = 10_000;
 
     internal static readonly IReadOnlyList<Command> Commands =
     [
@@ -383,32 +385,35 @@ internal static class CommandLine
     /// <summary>The flags, the <c>--volume</c> values, the <c>--only</c> file and the <c>--process</c> keys, apart — or the first refusal.</summary>
     private static ActSplit SplitActOptions(IReadOnlyList<string> rest)
     {
-        var (flags, volumes, only, processes) = (new List<string>(), new List<string>(), string.Empty, new List<string>());
-        for (var i = 0; i < rest.Count; i++)
+        var split = new ActSplit([], [], string.Empty, [], null);
+        for (var i = 0; i < rest.Count && split.Failure is null; i += TakeOption(rest, i, ref split))
         {
-            if (rest[i] is not (VolumeFlag or OnlyFlag or ProcessFlag))
-            {
-                flags.Add(rest[i]);
-                continue;
-            }
-
-            if (ShownValueProblem(rest, i, only) is { } failure)
-            {
-                return new(flags, volumes, only, processes, failure);
-            }
-
-            if (rest[i] == ProcessFlag)
-            {
-                processes.Add(rest[++i]);
-                continue;
-            }
-
-            (only, volumes) = Taken(rest[i], rest[i + 1], only, volumes);
-            i++;
         }
 
-        return new(flags, volumes, only, processes, null);
+        return split;
     }
+
+    /// <summary>One option of an act at <paramref name="i"/> taken into <paramref name="split"/> (coai E7 code round #1: the
+    /// per-flag dispatch apart); how many arguments it used.</summary>
+    private static int TakeOption(IReadOnlyList<string> rest, int i, ref ActSplit split)
+    {
+        if (rest[i] is not (VolumeFlag or OnlyFlag or ProcessFlag))
+        {
+            split.Flags.Add(rest[i]);
+            return 1;
+        }
+
+        split = ShownValueProblem(rest, i, split.Only) is { } failure ? split with { Failure = failure } : WithValue(split, rest[i], rest[i + 1]);
+        return 2;
+    }
+
+    /// <summary>A <c>--volume</c>, <c>--only</c> or <c>--process</c> value taken.</summary>
+    private static ActSplit WithValue(ActSplit split, string flag, string value) => flag switch
+    {
+        ProcessFlag => split with { Processes = [.. split.Processes, value] },
+        OnlyFlag => split with { Only = value },
+        _ => split with { Volumes = [.. split.Volumes, value] },
+    };
 
     /// <summary>Why <c>--volume</c> / <c>--only</c> at <paramref name="i"/> cannot be taken: no value, or a second <c>--only</c>.</summary>
     private static Request.Failed? ShownValueProblem(IReadOnlyList<string> rest, int i, string only) =>
@@ -422,10 +427,6 @@ internal static class CommandLine
         ProcessFlag => "a process A18's preview showed, as <pid>:<start ticks>",
         _ => "a file of 64-hex names, one per line",
     };
-
-    /// <summary>The <c>--only</c> file or one more <c>--volume</c>, taken.</summary>
-    private static (string Only, List<string> Volumes) Taken(string flag, string value, string only, List<string> volumes) =>
-        flag == OnlyFlag ? (value, volumes) : (only, [.. volumes, value]);
 
     /// <summary>The option at <paramref name="i"/> has no value after it: the end, or another option.</summary>
     private static bool NeedsValue(IReadOnlyList<string> rest, int i) => i + 1 >= rest.Count || rest[i + 1].StartsWith('-');

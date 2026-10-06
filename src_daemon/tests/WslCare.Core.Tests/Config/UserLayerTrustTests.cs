@@ -49,8 +49,10 @@ public sealed class UserLayerTrustTests
         result.Config.TextList(ConfigKeys.Processes.Families).Should().Equal("dotnet-build-servers", "testhost");
         result.Config.Int(ConfigKeys.Thresholds.MemAvailableActPercent).Should().Be(15);
         result.Notices.Select(n => n.Key).Should().BeEquivalentTo(
-            ["dryRun", "auto.A5", "containers.stoppedOlderThanDays", "processes.families", "thresholds.memAvailableActPercent"]);
-        result.Notices.Should().OnlyContain(n => n.Message.Contains("WSL interop is not registered") && n.Message.Contains("is ignored"));
+            ["", "dryRun", "auto.A5", "containers.stoppedOlderThanDays", "processes.families", "thresholds.memAvailableActPercent"]);
+        // coai E7 code round #8: the long explanation ONCE, as the notice without a key; each key its short fact.
+        result.Notices.Should().ContainSingle(n => n.Key.Length == 0).Which.Message.Should().Contain("WSL interop is not registered");
+        result.Notices.Where(n => n.Key.Length > 0).Should().OnlyContain(n => n.Message.Contains("is ignored") && !n.Message.Contains("WSL interop is not registered") && n.Message.Length < 200);
     }
 
     [Fact]
@@ -75,7 +77,7 @@ public sealed class UserLayerTrustTests
             RootWithoutInterop);
 
         result.Config.Int(ConfigKeys.Containers.StoppedOlderThanDays).Should().Be(30, "14 is tighter than the default but looser than the machine's 30");
-        result.Notices.Should().ContainSingle().Which.Key.Should().Be("containers.stoppedOlderThanDays");
+        result.Notices.Where(n => n.Key.Length > 0).Should().ContainSingle().Which.Key.Should().Be("containers.stoppedOlderThanDays");
     }
 
     [Fact]

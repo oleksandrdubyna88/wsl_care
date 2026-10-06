@@ -40,6 +40,9 @@ public sealed class AgentWalk(IFileSystem files, TimeProvider clock, string home
 
     public const string NotReached = "not measured this run: the agent walk's time budget was spent before this folder";
 
+    /// <summary>Told each folder as its walk starts (coai E7 code round #7: <c>agents list --measure</c> says so on stderr); nothing by default.</summary>
+    public Action<string> OnFolder { get; init; } = static _ => { };
+
     private const string OtherFilesystem = " (different filesystem)";
 
     /// <summary>Measures <paramref name="targets"/> within <paramref name="budget"/>; <paramref name="withNames"/> keeps the five
@@ -107,6 +110,7 @@ public sealed class AgentWalk(IFileSystem files, TimeProvider clock, string home
 
         // The time left is read ONCE: a walk is never started with a ceiling the budget no longer holds.
         var remaining = limit.Left();
+        OnFolder(path);
         return remaining <= TimeSpan.Zero
             ? new AgentFolderSize(path, true, 0, 0, false, [], NotReached)
             : Sized(path, files.WalkTree(path, Limits(remaining), rules, limit.Token));

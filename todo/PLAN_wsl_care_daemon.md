@@ -1169,7 +1169,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
 > Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
-> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); **the E7.S2b/S2c review round fixed 2026-10-06** (*E7.S2b/S2c review round*: A18 bound to its modal, the two-clock dense idle, the progress watchdog and the timer run limit — N-4 reversed —, the rules held per layer); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); **the E7.S2b/S2c review round and the coai E7 code round (passed) fixed 2026-10-06** (*E7.S2b/S2c review round*: A18 bound to its modal, the two-clock dense idle, the progress watchdog and the timer run limit — N-4 reversed —, the rules held per layer); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1921,6 +1921,22 @@ per finding — the record is `research/module_tests.md` § *The E7.S2b/S2c revi
   catalogue names no variables, and the rule keeps a process — the safe direction — for any it does not know.
 - A-L1 keeps "drop the oldest" (the planned rule) rather than recording the old order as a deviation: a dropped identity is "no
   history", which only keeps a process.
+
+#### coai E7 code round (2026-10-06) — the daemon half
+
+The coai code round on the E7 daemon half PASSED (verdict proceed; all four qwen reviewers answered; security: nothing blocking or
+major). Eight findings, all accepted, fixed in `fix(daemon): coai E7 code round …`:
+
+| # | Finding | Fixed by | Behaviour |
+|---|---|---|---|
+| 1 | Major: `CommandLine.SplitActOptions` cyclomatic complexity 5 | the per-option dispatch extracted (`TakeOption`, `WithValue`) | none — a refactor; the act parsing tests unchanged and green |
+| 2 | Major: `AgentsCommand` read `AgentSizesSource.Reason` with `??` | `AgentSizesSource.View()` → a closed `SizesView` (`MeasuredNow` / `FullRun(RunId, Age)` / `Unavailable(Reason)`); the nullable members stay only at the JSON edge | none — a refactor; the text-form tests green |
+| 3 | Minor: `Sessions.Count!.Value` | `AgentSessionsReport.View()` → `SessionCount` (`Counted(Count)` / `NotCounted(Reason)`) | none — a refactor |
+| 4 | Minor: `MaxShownVolumes` a property the parser cannot honour | a `const` again: the parser's compile-time ceiling, `act.maxShownNames`' range maximum (a test holds them equal); the VERB refuses a list past the value in force | yes: a machine layer that lowers `act.maxShownNames` now refuses a longer list (RED with it dropped) |
+| 5 | Minor: `CliHost.AgentExtrasDropped` | `CliHost.WithAgentExtras(ConfigLoadResult)` returns the host AND the load with the dropped folders as structured notices (key `aiAgents.extra`, the user layer) — no host state | the same notices; held by the phase-two tests (3 red with them dropped) |
+| 6 | Minor: an empty `units dropin` answer installed silently | `install.sh` treats an empty answer as no drop-in, warns, removes a stale one | yes (RED with the check dropped, WSL) |
+| 7 | Major (UX): `agents list --measure` silent for up to its budget | one stderr line before the walk ("measuring N agent folder(s), up to <budget> s…") and one per folder as it starts (`AgentWalk.OnFolder`); stdout untouched | yes (RED for each line dropped) |
+| 8 | Minor (UX): the ~250-character interop explanation repeated per key | ONE notice without a key carries it; each key's notice says the short fact; goldens regenerated (`status.json`, `doctor.json`) | yes (RED with the per-key text back) |
 
 #### Stories
 
