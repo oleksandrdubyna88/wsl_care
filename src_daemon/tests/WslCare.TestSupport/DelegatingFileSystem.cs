@@ -10,6 +10,11 @@ namespace WslCare.TestSupport;
 /// </summary>
 public class DelegatingFileSystem(IFileSystem inner) : IFileSystem
 {
+    /// <summary>What every call is handed to — for a double that re-implements a DEFAULT member of the seam (the bounded listing,
+    /// plan §15q E7.S2d) and must still reach the real one. The bounded listing is deliberately NOT delegated here: a double that
+    /// overrides the unbounded <see cref="ListEntries(string)"/> keeps answering through the seam's default.</summary>
+    protected IFileSystem Inner => inner;
+
     public virtual FileReadResult ReadFile(string path) => inner.ReadFile(path);
 
     public virtual FileReadResult ReadRegularFile(string path, int maxBytes) => inner.ReadRegularFile(path, maxBytes);

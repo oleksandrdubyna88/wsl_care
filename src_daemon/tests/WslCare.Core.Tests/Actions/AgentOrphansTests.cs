@@ -39,11 +39,21 @@ public sealed class AgentOrphansTests : IDisposable
         BootId(Boot);
     }
 
-    /// <summary>The real sandbox, with the <c>/proc/&lt;pid&gt;/exe</c> links a test names (a link needs a privilege on Windows).</summary>
-    private sealed class LinkedFiles(Core.Files.IFileSystem inner, Dictionary<string, string> links) : DelegatingFileSystem(inner)
+    /// <summary>The real sandbox, with the <c>/proc/&lt;pid&gt;/exe</c> links a test names (a link needs a privilege on Windows), and
+    /// the folders a test makes unreadable — listed as the physical file system lists one it cannot read: empty unbounded,
+    /// <see cref="Core.Files.EntryListing.Unreadable"/> bounded (plan §15q E7.S2d, consultation C-1).</summary>
+    private sealed class LinkedFiles(Core.Files.IFileSystem inner, Dictionary<string, string> links) : DelegatingFileSystem(inner), Core.Files.IFileSystem
     {
+        public HashSet<string> Unreadable { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public override Core.Files.LinkReadResult ReadLink(string path) =>
             links.TryGetValue(path.Replace('\\', '/'), out var target) ? new Core.Files.LinkReadResult.Target(target) : base.ReadLink(path);
+
+        public override IReadOnlyList<Core.Files.FileEntry> ListEntries(string path) =>
+            Unreadable.Contains(Path.GetFullPath(path)) ? [] : base.ListEntries(path);
+
+        Core.Files.EntryListing Core.Files.IFileSystem.ListEntries(string path, Core.Files.ListingBounds bounds) =>
+            Unreadable.Contains(Path.GetFullPath(path)) ? new Core.Files.EntryListing.Unreadable($"{path}: permission denied") : Inner.ListEntries(path, bounds);
     }
 
     private void Exe(int pid, string target) => _links[$"{_sandbox.Paths.ProcRoot}/{pid}/exe".Replace('\\', '/')] = target;
@@ -171,6 +181,25 @@ public sealed class AgentOrphansTests : IDisposable
 
         preview.Count.Should().Be(0);
         preview.Basis.Should().Contain(AgentOrphans.LiveSession);
+    }
+
+    [Fact]
+    public async Task An_unreadable_sibling_folder_keeps_the_agent_process_cannot_tell()
+    {
+        // Plan §15q E7.S2d, consultation C-1: an OLD session readable, a sibling project folder unreadable. The listing used to
+        // answer an unreadable folder as empty and the scan as complete — so the process became eligible, while a session in
+        // the folder nobody could read may have been written a minute ago.
+        Stat(10, cpuTicks: 500);
+        Session(TimeSpan.FromDays(3));
+        Record([Agent(10)]);
+        _clock.Advance(TimeSpan.FromHours(6));
+        _sandbox.Sized("/home/me/.claude/projects/q/t.jsonl", 10, _clock.GetUtcNow() - TimeSpan.FromMinutes(1));
+        _files.Unreadable.Add(Path.GetFullPath(_sandbox.Paths.DistroPath("/home/me/.claude/projects/q")));
+
+        var preview = await Preview([Agent(10)]);
+
+        preview.Count.Should().Be(0, "a folder that could not be listed may hold a live session: cannot tell");
+        preview.Basis.Should().Contain(AgentOrphans.CannotTell);
     }
 
     [Fact]

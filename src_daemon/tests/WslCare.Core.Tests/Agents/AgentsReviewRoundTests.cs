@@ -164,6 +164,33 @@ public sealed class AgentsReviewRoundTests : IDisposable
         new AgentWalk(files ?? _sandbox.Files, clock?.Invoke() ?? new FixedTimeProvider(), _sandbox.Paths.Home)
             .Measure([new AgentTarget(AgentCatalogue.Agents.Single(a => a.Id == "claude-code"), [_sandbox.Paths.DistroPath("/home/me/.claude")], _sandbox.Paths.DistroPath("/home/me/.claude"))], AgentWalk.CollectBudget, withNames: true, CancellationToken.None);
 
+    /// <summary>One folder the physical file system could not read: empty unbounded, unreadable bounded (plan §15q E7.S2d C-1).</summary>
+    private sealed class UnreadableFolder(IFileSystem inner, string folder) : DelegatingFileSystem(inner), IFileSystem
+    {
+        public override IReadOnlyList<FileEntry> ListEntries(string path) => Same(path) ? [] : base.ListEntries(path);
+
+        EntryListing IFileSystem.ListEntries(string path, ListingBounds bounds) =>
+            Same(path) ? new EntryListing.Unreadable($"{path}: permission denied") : Inner.ListEntries(path, bounds);
+
+        private bool Same(string path) => string.Equals(Path.GetFullPath(path), Path.GetFullPath(folder), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void An_agents_count_with_an_unreadable_folder_is_a_lower_bound_never_a_complete_count()
+    {
+        // Plan §15q E7.S2d, consultation C-1 turn 2: AgentWalk picks "not counted" by Reached, so a scan that reached the sessions
+        // and lost one folder on the way must still say its count is incomplete.
+        _sandbox.Sized("/home/me/.claude/projects/p/s.jsonl", 10, FixedTimeProvider.DefaultNow);
+        _sandbox.Sized("/home/me/.claude/projects/q/t.jsonl", 10, FixedTimeProvider.DefaultNow);
+        var files = new UnreadableFolder(_sandbox.Files, _sandbox.Paths.DistroPath("/home/me/.claude/projects/q"));
+
+        var sessions = WalkClaude(files).Find("claude-code")!.Sessions;
+
+        sessions.Counted.Should().BeTrue("the walk reached the sessions' level");
+        sessions.Complete.Should().BeFalse("a folder it could not read may hold sessions: 1 is a lower bound");
+        sessions.Reason.Should().Contain("permission denied");
+    }
+
     [Fact]
     public void R4_a_repeated_double_star_is_refused_by_the_glob_rule()
     {

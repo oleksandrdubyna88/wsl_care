@@ -176,14 +176,54 @@ public sealed class PhysicalFileSystem : IFileSystem
         }
     }
 
+    /// <summary>Plan §15q E7.S2d, consultation C-1: enumerated lazily — the cap, the deadline and the cancellation asked at every
+    /// entry — and an error is <see cref="EntryListing.Unreadable"/>: the enumeration does NOT ignore what it cannot read.</summary>
+    public EntryListing ListEntries(string path, ListingBounds bounds)
+    {
+        try
+        {
+            return Directory.Exists(path) ? Bounded(path, bounds) : new EntryListing.Listed([], true, string.Empty);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new EntryListing.Unreadable($"{path} could not be listed: {e.Message}");
+        }
+    }
+
+    private static EntryListing.Listed Bounded(string path, ListingBounds bounds)
+    {
+        var taken = new List<FileEntry>();
+        foreach (var entry in Listing(path, ignoreInaccessible: false))
+        {
+            if (StopReason(taken.Count, path, bounds) is { Length: > 0 } stop)
+            {
+                return new EntryListing.Listed(Sorted(taken), false, stop);
+            }
+
+            taken.Add(entry);
+        }
+
+        return new EntryListing.Listed(Sorted(taken), true, string.Empty);
+    }
+
+    private static string StopReason(int taken, string path, ListingBounds bounds)
+    {
+        bounds.Token.ThrowIfCancellationRequested();
+        return taken >= bounds.MaxEntries ? EntryListing.StoppedAt(bounds.MaxEntries, path)
+            : bounds.OutOfTime() ? EntryListing.OutOfTime(path)
+            : string.Empty;
+    }
+
+    private static List<FileEntry> Sorted(List<FileEntry> entries) => [.. entries.OrderBy(e => e.Name, StringComparer.Ordinal)];
+
     /// <summary>One non-recursive listing: the enumeration's own stat data, no entry opened, a link reported as one.</summary>
-    private static System.IO.Enumeration.FileSystemEnumerable<FileEntry> Listing(string path) =>
+    private static System.IO.Enumeration.FileSystemEnumerable<FileEntry> Listing(string path, bool ignoreInaccessible = true) =>
         new(path, (ref System.IO.Enumeration.FileSystemEntry e) => new FileEntry(
                 e.FileName.ToString(),
                 e.Attributes.HasFlag(FileAttributes.ReparsePoint) ? EntryKind.Link : e.IsDirectory ? EntryKind.Directory : EntryKind.File,
                 e.IsDirectory ? 0 : e.Length,
                 e.LastWriteTimeUtc),
-            new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = true, AttributesToSkip = 0, ReturnSpecialDirectories = false });
+            new EnumerationOptions { RecurseSubdirectories = false, IgnoreInaccessible = ignoreInaccessible, AttributesToSkip = 0, ReturnSpecialDirectories = false });
 
     public WriteAccess ProbeWriteAccess(string directory)
     {

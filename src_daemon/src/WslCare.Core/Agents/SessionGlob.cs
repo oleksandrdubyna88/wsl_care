@@ -19,6 +19,10 @@ public sealed record SessionListing(IFileSystem Files, IReadOnlySet<string> Neve
 {
     /// <summary>The device the listing stays on; <c>null</c> = not checked (a test of the pattern alone).</summary>
     public (uint Major, uint Minor)? Device { get; init; }
+
+    /// <summary>The most entries the whole listing may see — <see cref="SessionGlob.MaxEntries"/> unless the caller has its own
+    /// key (the MCP servers' log listing, plan §15q E7.S2d: <c>mcpServers.maxLogEntries</c>).</summary>
+    public int MaxEntries { get; init; } = SessionGlob.MaxEntries;
 }
 
 /// <summary>
@@ -89,14 +93,16 @@ public static class SessionGlob
         private readonly Dictionary<string, IReadOnlyList<FileEntry>> _listed = new(StringComparer.Ordinal);
         private int _seen;
         private string _skipped = string.Empty;
+        private string _lost = string.Empty;
 
-        /// <summary>A folder's entries, listed once; the cancellation and the deadline asked before every listing.</summary>
+        /// <summary>A folder's entries, listed once; the cancellation and the deadline asked before every listing AND at every
+        /// entry, with what is left of the whole listing's entry cap (plan §15q E7.S2d, consultation C-1).</summary>
         private IReadOnlyList<FileEntry> List(string path)
         {
             listing.Token.ThrowIfCancellationRequested();
             if (!_listed.TryGetValue(path, out var entries))
             {
-                entries = Stop().Length > 0 ? [] : listing.Files.ListEntries(path);
+                entries = Stop().Length > 0 ? [] : Bounded(path);
                 _listed[path] = entries;
                 _seen += entries.Count;
             }
@@ -104,8 +110,28 @@ public static class SessionGlob
             return entries;
         }
 
+        /// <summary>One bounded listing. A folder cut short or that could not be read leaves the scan INCOMPLETE, whatever the
+        /// folders after it answer: what it lost may be a session (consultation C-1 — an unreadable folder used to read as an
+        /// empty one, and the scan as whole).</summary>
+        private IReadOnlyList<FileEntry> Bounded(string path)
+        {
+            switch (listing.Files.ListEntries(path, new ListingBounds(listing.MaxEntries - _seen, listing.OutOfTime, listing.Token)))
+            {
+                case EntryListing.Listed { Complete: true } whole:
+                    return whole.Entries;
+                case EntryListing.Listed cut:
+                    _lost = $"{cut.Note}; the count is a lower bound";
+                    return cut.Entries;
+                case EntryListing.Unreadable unreadable:
+                    _lost = $"{unreadable.Reason}; the count is a lower bound";
+                    return [];
+                default:
+                    throw new System.Diagnostics.UnreachableException("EntryListing is a closed set");
+            }
+        }
+
         public string Stop() =>
-            _seen >= MaxEntries ? $"stopped after {MaxEntries} entries"
+            _seen >= listing.MaxEntries ? $"stopped after {listing.MaxEntries} entries"
             : listing.OutOfTime() ? "stopped at the walk's time budget"
             : string.Empty;
 
@@ -134,7 +160,7 @@ public static class SessionGlob
                     .Select(e => new SessionFound(new SessionName(folder.Relative + e.Name, e.Length), e.LastWriteUtc)))
                 .ToList();
             var stopped = Stop();
-            var why = stopped.Length > 0 ? stopped + "; the count is a lower bound" : _skipped;
+            var why = stopped.Length > 0 ? stopped + "; the count is a lower bound" : string.Join("; ", new[] { _lost, _skipped }.Where(n => n.Length > 0));
             return new SessionScan(found, true, why.Length == 0, why);
         }
 
