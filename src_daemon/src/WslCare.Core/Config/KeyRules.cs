@@ -63,15 +63,20 @@ public abstract record TextRule
 
         public override string Problem(string value) => value.Length == 0 || IsAbsolutePath(value) ? string.Empty : $"not {Describe}";
 
-        private static bool IsAbsolutePath(string value) =>
-            value.Length <= MaxLength && !value.Any(char.IsControl) && (value.StartsWith('/') || IsDrivePath(value) || IsSharePath(value)) && !HasParentSegment(value);
+        private static bool IsAbsolutePath(string value) => IsBounded(value) && HasAbsoluteRoot(value) && !HasParentSegment(value);
+
+        private static bool IsBounded(string value) => value.Length <= MaxLength && !value.Any(char.IsControl);
+
+        private static bool HasAbsoluteRoot(string value) => value.StartsWith('/') || IsDrivePath(value) || IsSharePath(value);
 
         private static bool IsDrivePath(string value) => value.Length >= 3 && char.IsAsciiLetter(value[0]) && value[1] == ':' && value[2] == '\\';
 
         /// <summary><c>\\server\share</c> and more: a server and a share name, neither a device marker.</summary>
         private static bool IsSharePath(string value) =>
-            value.StartsWith(@"\\", StringComparison.Ordinal) && value[2..].Split('\\') is [var server, var share, ..]
-            && server.Length > 0 && share.Length > 0 && server is not ("?" or ".");
+            value.StartsWith(@"\\", StringComparison.Ordinal) && value[2..].Split('\\') is [var server, var share, ..] && IsShareName(server, share);
+
+        /// <summary>A server and a share, the server no device marker (<c>\\?\</c>, <c>\\.\</c>).</summary>
+        private static bool IsShareName(string server, string share) => server.Length > 0 && share.Length > 0 && server is not ("?" or ".");
 
         private static bool HasParentSegment(string value) => value.Split('/', '\\').Contains("..", StringComparer.Ordinal);
     }
@@ -126,7 +131,7 @@ public enum SafeDirection
 /// <param name="TightenOnlyForRoot">Even when the user layer is trusted, a root run takes this key's user value only in the safe
 /// direction — root's own audit log is not the user's to steer (R1.6: <c>logging.*</c>).</param>
 /// <param name="MachineOnly">Only the machine layer may set it; a user-layer value is ignored with a notice and
-/// <c>config set</c> refuses it (<c>archive.baseFolder</c> until E9 validates it, review B1).</param>
+/// <c>config set</c> refuses it (the group-B limits on what root reads or waits for, <c>walk.maxEntries</c> among them; <c>archive.baseFolder</c> was one until E9.S0 made its writer the user's own process, plan §15r D1).</param>
 /// <param name="DaemonUnused">No daemon code reads it (the extension's own <c>distro</c> / <c>refreshSeconds</c>); kept so a
 /// layer that holds it stays valid (§15q Q6).</param>
 /// <param name="ZeroIsUnbounded">For a <see cref="SafeDirection.Higher"/> number, 0 means "no limit" — the safest value

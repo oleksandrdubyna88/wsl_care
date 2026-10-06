@@ -2679,9 +2679,9 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-06 — E9.S0 and E9.S1 built** (the catalogue's archive blocks, the keys and their rules, the base
-> folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0 as built* and *E9.S1 as built*);
-> E9.S2a–E9.S5 and the E9 live gate open. Originally: plan only,
+> Status: **in progress, 2026-10-06 — E9.S0 and E9.S1 built, the E9.S0 review round fixed** (the catalogue's archive blocks, the
+> keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
+> as built*, *E9.S1 as built* and *E9.S0 review round*); E9.S2a–E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3075,7 +3075,8 @@ archive*. **Deviations from the text above:**
   (no deletion of their own seen on 2026-10-02 — Antigravity's removals that day followed no rule found; documentation NOT read).
 - **Two key ranges are narrower than the table** so no machine value can break a request's own maximum: `archive.runBudgetMinutes`
   1–55 (with a fifth coupled rule: budget + grace + 60 s ≤ `commands.maxTimeoutHours`), `archive.restoreLimitMinutes` 1–60 (the
-  least `commands.maxTimeoutHours`). `archive.agentRetentionDays` starts at 3 (the least sum the first rule allows). The B keys
+  least `commands.maxTimeoutHours`) — **since the review round 1–59, default 59** (C5: with the 60 s a ceiling keeps, 60 did not
+  fit), and `archive.finishGraceMinutes` 1–30 (the table said 1–60; recorded, m1). `archive.agentRetentionDays` starts at 3 (the least sum the first rule allows). The B keys
   have no reader yet beyond their rules — E9.S1–S4 read them.
 - **`check-base` REPORTS the mount; it does not record it.** `base.json` and the "not mounted as when it was checked" refusal are
   E9.S2b's (the first run that writes records it) — a read-only verb writes no state.
@@ -3206,15 +3207,15 @@ section's *as built* deviations.
 | `archive.minFreeGb` | A | 0–100 000 | 5 | higher | the base keeps this free |
 | `archive.copyBufferKib` | A | 64–16 384 | 1 024 | none | the copy's read size |
 | `archive.runBudgetMinutes` | B | 1–240 | 30 | lower | the most the child takes in one timer run (taken from the run limit's slack, D8) |
-| `archive.finishGraceMinutes` | B | 1–60 | 5 | lower | the session in flight may finish past the budget |
+| `archive.finishGraceMinutes` | B | 1–30 (as built; review round m1) | 5 | lower | the session in flight may finish past the budget |
 | `archive.minRunMinutes` | B | 1–60 | 2 | higher | below this much slack A13 skips the run |
 | `archive.previewTimeoutSeconds` | B | 10–600 | 120 | lower | the preview child's ceiling (counted in the run's worst case) |
 | `archive.reachabilitySeconds` | B | 1–60 | 10 | lower | the base `stat` child before the long one |
 | `archive.progressSilenceSeconds` | B | 10–600 | 60 | lower | the child prints a line at least this often |
-| `archive.restoreTimeoutMinutes` | B | 1–1440 | 240 | lower | A19's child ceiling (a button, never in a timer run) |
-| `archive.maxSessionsPerRun` | B | 1–100 000 | 5 000 | lower | bounds one run, its in-flight file and its answer |
+| `archive.restoreLimitMinutes` (built under this name; planned as `restoreTimeoutMinutes`, 1–1440, 240) | B | 1–59 | 59 | lower | A19's child ceiling (a button, never in a timer run) — under the least `commands.maxTimeoutHours` with the 60 s a ceiling keeps (review round C5) |
+| `archive.maxSessionsPerRun` | B | 1–100 000 | 1 000 (review round C3; was 5 000) | lower | bounds one run, its in-flight file and its answer |
 | `archive.maxIndexBytes` | B | 1 MiB–256 MiB | 64 MiB | lower | one month index read |
-| `archive.maxStateFileBytes` | B | 64 KiB–64 MiB | 4 MiB | lower | `inflight.json`, `summary.json`, `restored.json` |
+| `archive.maxStateFileBytes` | B | 64 KiB–64 MiB | 8 MiB (review round C3; was 4 MiB) | lower | `inflight.json`, `summary.json`, `restored.json` |
 | `archive.childOutputCapBytes` | B | 64 KiB–16 MiB | 1 MiB | lower | the child's answer root reads |
 | `archive.progressLineMaxBytes` | B | 64–4 096 | 256 | lower | one progress line root reads |
 | `archive.inUseScanSeconds` | B | 1–120 | 20 | lower | the `/proc/*/fd` scan / the Restart Manager query |
@@ -3223,7 +3224,11 @@ Coupled rules (`NumberRules`, a violation refuses the layer naming the keys, hel
 ⌈`archive.removeAfterHours` / 24⌉ + `archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays`;
 `archive.urgentWithinDays` ≤ `archive.marginDays`; `running.noProgressMinutes` × 60 ≥ `archive.progressSilenceSeconds` + the
 ceiling margin (60 s); `timer.runLimitMinutes` ≥ the timer run's worst case (unchanged in shape: the preview template counted, the
-budgeted run and the button-only restore not — D8); `archive.maxStateFileBytes` ≥ 600 B × `archive.maxSessionsPerRun`.
+budgeted run and the button-only restore not — D8); `archive.maxStateFileBytes` ≥ 600 B × `archive.maxSessionsPerRun` ×
+(⌈`archive.removeAfterHours` / `timer.periodHours`⌉ + 1) — the sessions of every run still waiting for its removal, each entry
+fixed-size, its files' hashes and archived paths in the index only (review round C3); `archive.minRunMinutes` ≤
+`archive.runBudgetMinutes` (C4); (`runBudgetMinutes` + `finishGraceMinutes`) × 60 + 60 s ≤ `commands.maxTimeoutHours` × 3600;
+`archive.previewTimeoutSeconds` ≥ `agents.measureBudgetSeconds` + 60 s (E9.S1).
 Group C (constants, with their reason in the allowlist): SHA-256 and HMAC-SHA-256 (the index's format), the index's schema version
 and event names, the `~2` collision suffix, the quarantine name shape, the side-name shape, the 16-hex `entryId`. Any further
 number the build finds becomes a key under the standing convention; `ArchitectureTests.Numbers` catches a literal.
@@ -3260,7 +3265,7 @@ The archive plan and the Windows plan carry the same boundary (their §8c and W-
 | superseded and `split` snapshots | one per session resumed after it was archived; rare | kept with the archive (Q5) | — |
 | the month indexes (per side) | ≈ 300 B a session (with its MAC) + 180 B a file: the one-time backlog would be ≈ 4.7 MB; ≈ 2–3 MB a month for both sides → ≈ 30–35 MB a year | kept with the archive; one file per side per month, read under `archive.maxIndexBytes` | a torn last line skipped |
 | the side leases on the base | one small file per side | replaced at every run start | a dead holder's lease taken over |
-| `inflight.json` | ≤ `archive.maxSessionsPerRun` × ~600 B, typically a few KB | emptied as sessions close; the reconcile ends the rest | atomic replace; the reconcile |
+| `inflight.json` | ≤ `archive.maxSessionsPerRun` × (⌈`removeAfterHours` / `timer.periodHours`⌉ + 1) × 600 B (review round C3), typically a few KB | emptied as sessions close; the reconcile ends the rest | atomic replace; the reconcile |
 | `restored.json` | one entry (~150 B) per restored session not yet archived again | an entry leaves when the session is archived again | atomic replace; `--scan` rebuilds it |
 | `summary.json` | ≈ 100 B per agent per month → ≈ 10 KB a year | kept (it IS the archive's table of contents); `archive reconcile --scan` rebuilds it | atomic replace |
 | finals without an index line (a crash in phase 1) | at most the files of the sessions in flight | the reconcile removes the ones its in-flight entry created; `--scan` re-indexes the rest | — |
@@ -3294,6 +3299,8 @@ the owner's Q7 decision.
 6. A crash drill: the child killed by its own pid and start time (never by image name) mid-copy and mid-removal, then the
    reconcile.
 7. The preview on this machine against the one-time run's layout counts (re-measured, not remembered).
+8. The older `~/.gemini/antigravity` (and `%USERPROFILE%\.gemini\antigravity`): whether it holds sessions, in which layout —
+   until confirmed it is protected and walked but never selected (E9.S0 review round C6).
 
 #### Test plan (beyond the RED tests)
 
@@ -3405,6 +3412,39 @@ names; the text above was updated to match.
 | m-l | local Linux base folders 0700 | **Accepted** | D7 |
 | F (own) | fault injection at the 14 points, with three variations; the never-move property over the whole protocol | **Accepted** | Test plan, R1, E9.S2b |
 | model | the coai gate asked for Fable on the split and the risky stories | **Recorded:** Fable's monthly limit is spent (since 2026-10-02) → Opus, with the own reviews each story names | Status, Stories |
+
+#### E9.S0 review round (2026-10-06) — two own reviews of the built E9.S0
+
+Two own reviews of E9.S0 (path validation / confused deputy; the data model) — every finding ACCEPTED by the coordinator,
+fixed on `feat/wc-e9-archive-daemon` in one `fix(daemon): E9.S0 review round …` commit after E9.S1, each with its red run and its
+teeth (`research/module_tests.md` § *The E9.S0 review round*). Each row OVERRIDES the text it names.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| S1 (Important) | in the distro a drvfs base was never judged against the WINDOWS side's protected places — `/mnt/c/Users/me/.claude/x` passed | **Fixed.** A base on a drvfs mount is spelt as Windows spells it (the mount's `path=` or source + the rest) and judged against the Windows profile's places — the catalogue's Windows agent folders, `%TEMP%`, `%TEMP%\claude`, `%USERPROFILE%\git`, wsl-care's own — from the profile the last full run found (`LastFullRun` → the clock probe's profile), case-blind (`PathRules.Windows`); and, known profile or not, any `X:\Users\<anyone>\AppData\…`, `…\Users\<anyone>\.<agent>` (the catalogue's `%USERPROFILE%\` folder names), a profile and `X:\Users` itself are refused. No Windows cleanup action exists yet, so no Windows cleanup root joins (Windows care adds them) | `Archive/WindowsProfilePlaces.cs` (new), `Archive/BaseFolderRules.cs`, `Cli/Commands/ArchiveCommand.cs` |
+| S2 (Important) | `config set archive.baseFolder` as root judged the folder with root's reach and wrote root's user layer | **Fixed.** Refused with 81 (`NotAsRoot`) before the shape, the mount or any folder is looked at | `Cli/Commands/ConfigCommand.cs` |
+| S3 (Medium) | Windows aliases bypassed the overlap check: `\\wsl$`, `\\wsl.localhost`, loopback names, this machine's name, admin shares, 8.3 names | **Fixed.** Those shares are refused by name (`shape`): `\\wsl$` and `\\wsl.localhost`; `localhost`, `127.*`, `::1`, `[::1]`, `0--1.ipv6-literal.net`, `.`, this machine's name (bare or with a domain); `X$`, `ADMIN$`, `IPC$`. On Windows the overlap rule compares the file system's IDENTITY too (volume serial + file index of the base and every folder above it, against each protected place's — `subst` drives, second spellings of a volume). **Measured:** 8.3 names were already expanded — .NET's `Path.GetFullPath` calls `GetLongPathName` for a path holding `~`; the short-name test was green against the unfixed code and stays as a regression test. Residual: other names that reach this machine (its IP addresses, DNS aliases) are caught only by the identity comparison, which an SMB server may answer with its own ids | `Archive/BaseFolderPlacement.cs` (`WindowsShares`), `Archive/WindowsIdentity.cs` (new) |
+| S4 (Low) | "the distro's own disk" was the mount point `/`; a mount with root ≠ `/` (a bind mount) was judged by its spelling | **Fixed, wider than asked.** A device's folders are judged under its CANONICAL mount — its whole mount (root `/`), the distribution's `/` when it is that disk, else the shortest mount point: a bind mount of `~/.claude` at `/mnt/bound` is judged as `~/.claude/…`, and a second mount of the root disk (`/data`) as the folder it is (`/data/home/me/.claude` refused). A device mounted whole nowhere is refused (`link-on-the-way`); a bind of a bind is refused rather than followed. The distribution's own disk is the root mount's device (or its `/dev/` source) | `Archive/BaseFolderPlacement.cs` |
+| S5 (Low) | a folder on the way owned by another account was not said | **Fixed.** A warning names every folder of the chain (the base and each folder above it) owned by a uid other than 0 and this process's (`RegularFiles.StatNoFollow`); not on drvfs (the owner is the mount's report) | `Archive/BaseFolderRules.cs` |
+| S-probe | the write probe `.wsl-care-write-probe-<hex>` can survive a SIGKILL inside the base | **Noted for E9.S2b:** the reconcile and every listing of the base ignore that name, and the reconcile removes one older than a run | §15r D3, E9.S2b |
+| S-bind | what binds a run to the base | **Recorded:** the run's binding is E9.S2a's `openat` no-follow chain from the base's descriptor, with the recorded mount compared on the OPENED descriptor — never `Judge`'s verdict, which is advice at the moment it is given (`BaseFolderRules` says so) | E9.S2a, E9.S2b |
+| C1 | `ConfigKeyShapeTests` asked "not root-effective", which a new display-only path key passes | **Fixed.** `archive.baseFolder` is exempt BY NAME; every other `AbsolutePathOrEmpty` key must be machine-only; a planted display-only path key is named | `tests/…/ConfigKeyShapeTests.cs` |
+| C2 | = S1 | — | — |
+| C3 | the in-flight size rule undercounted ~10× (sessions waiting for a later run's removal; each file's path and hash) | **Decided: per-file data in the index only.** An in-flight entry is fixed-size (entry id, agent, key, month, state, file count — a key that does not fit is refused by the run); its files' hashes and archived paths live in the index line flushed before the entry leaves `copying` (D2 step 3's "each file with its planned archived path" is derived from the key and the month, not stored). The rule bounds the WAITING entries: `maxStateFileBytes` ≥ 600 B × `maxSessionsPerRun` × (⌈`removeAfterHours` / `timer.periodHours`⌉ + 1). New defaults: `archive.maxSessionsPerRun` 5 000 → **1 000**, `archive.maxStateFileBytes` 4 MiB → **8 MiB** (600 × 1 000 × 7 = 4.2 MB); the owner's Windows backlog (~4.5 k sessions / 8.6 k files) drains in five runs, oldest first | `Config/NumberRules.cs`, `Config/default.json`, E9.S2b |
+| C4 | no rule held `archive.minRunMinutes` ≤ `archive.runBudgetMinutes` | **Fixed.** The coupled rule, with a test row | `Config/NumberRules.cs` |
+| C5 | `archive.restoreLimitMinutes` 60 + the 60 s a ceiling keeps passes the least `commands.maxTimeoutHours` (1 h); the composed-ceiling test filtered on "Timeout" | **Fixed by the range:** 1–**59**, default **59**. (A coupled rule was built first and dropped: it made a lone, legitimate `commands.maxTimeoutHours: 1` an observe-only error.) A new test holds every `archive.*LimitMinutes` / `*BudgetMinutes` ceiling under the least maximum by its range or by a coupled rule naming `commands.maxTimeoutHours`. **As built, renamed:** the plan's `restoreTimeoutMinutes` (1–1440, 240) is `restoreLimitMinutes` (1–59, 59) — a restore longer than an hour is a second button press | `Config/ConfigKeys.Numbers.cs`, `Config/default.json`, `tests/…/NumbersAreConfigurationTests.cs` |
+| C6 | the older `~/.gemini/antigravity` is never selected | **Recorded as a residual and a live-gate item (8):** its layout is not confirmed — the one-time run saw sessions only under `antigravity-cli` — and a layout nobody confirmed is never archived (§15q D2). It stays protected and walked as an agent folder; the live gate looks at it, and a confirmed layout becomes a second layout root then | live gate 8 |
+| C7 | complexity > 4 in `MountTable.IsDriveName` / `NamesDrive`, `KeyRules.IsAbsolutePath` / `IsSharePath` | **Fixed.** The per-mount-type helpers restored (`NinePNamesDrive`, `VirtiofsNamesDrive`), `StartsWithDrive` / `EndsAtTheRoot`, `IsBounded` / `HasAbsoluteRoot`, `IsShareName` — behaviour unchanged, the existing tests green | `Files/MountTable.cs`, `Config/KeyRules.cs` |
+| S1-found | (found while fixing S1, on the Linux legs) the Windows profile's product folders were taken with `Path.GetDirectoryName`, which reads a Windows path inside the distro as one name and answers empty — an empty protected place | **Fixed:** `PathRules.Parent` (by the paths' own rules), used when the host's reading answers empty | `Hosting/PathRules.cs`, `Agents/ExtraAgentRules.cs` |
+| m1 | `archive.finishGraceMinutes` 1–30 against the table's 1–60 | **Recorded, kept at 1–30:** a grace past half an hour is a second run, and the fifth coupled rule holds budget + grace under the commands maximum | the table below |
+| m2 | `KeyTrust`'s doc comment still named `archive.baseFolder` as machine-only | **Fixed** | `Config/KeyRules.cs` |
+| m3 | `WindowsBaseFolderTests`' `antigravity-cli` row proved nothing (`~/.gemini` is Gemini CLI's too) | **Fixed:** the row is `%APPDATA%\Antigravity`, which only Antigravity's entry covers (teeth: that folder dropped from the catalogue, the row red) | `tests/…/WindowsBaseFolderTests.cs` |
+| m4 | the rules returned `(string Rule, string Why)?`, and `BaseFolderReport.Mount` was `null` for "not established" | **Fixed:** a closed `RuleVerdict` (`Holds` / `Refuses`) for every rule — the base rules AND the selection's keepers (E9.S1 had copied the shape) — and `BaseMountReport.Unknown` (every field empty, `Known` false) instead of null; the JSON answers an empty mount | `Archive/RuleVerdict.cs` (new), `Archive/BaseFolderRules.cs`, `Archive/Selection.cs` |
+| m5 | no golden of a REFUSED `check-base` | **Added:** `contracts/golden/head/archive-check-base-refused.json` (a folder inside `~/.claude`, `overlap`) | goldens |
+| (a) | `config set` keeps the spelling given | **Decided:** the spelling is kept; E9.S2b records the resolved mount in `base.json` and refuses a run whose mapping changed | E9.S2b |
+| (b) | manual agents can never be archived | **Built:** `archive.agents` also takes `manual:<name>` (the manual agent's name shape), off by default; a named manual agent with a `sessionGlob` is judged by its folder rules (`ExtraAgentRules`) at every selection and archived by its own glob under its first data folder, one file per session, `memory` never, its own deletion unknown; one without a glob, refused by its rules, of the other side or missing from `aiAgents.extra` is answered with the reason and never listed. `archive preview --agent manual:<name>` | `Archive/ArchiveTargets.cs` (new), `Config/ConfigKey.cs`, `Config/ConfigValidation.cs`, `Cli/CommandLine.cs` |
+| (c) | a session larger than one run's budget would be skipped silently forever | **Recorded for E9.S2b:** the run reports it (its size, the budget it needs) instead of skipping it again unseen | E9.S2b |
+| (d) | an invalid user-layer `archive.baseFolder` put root observe-only | **Fixed:** a notice — the value is not taken, the rest of the layer stands; E9.S2b treats a base its rules refuse at run time the same way (the run answers it, the configuration stands) | `Config/ConfigLoader.cs` |
 
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
@@ -3531,7 +3571,7 @@ tagged (B3). Then, after the E6 daemon live gate's stamp:
 | E7.S4 | AI-agents section, Add CLI path (extension, WSL side) | Opus + two own reviews |
 | E7.S5 | bundling `wsl-care.exe`, a `--target win32-x64` `.vsix` (moved here from E5 by §15f #5, #13), Windows numbers in Memory/Disk, the Windows agents | Opus + one own review |
 | E8.S1–S3 | help via the kit, zoom + tone everywhere, ru/uk/de/es + stale stamps | Opus |
-| E9.S0 | the catalogue's `archive` blocks, the `archive.*` keys and coupled rules, the base rules, `archive check-base` — §15r (re-split 2026-10-06: the three rows planned on 2026-10-02 became S0–S5, S2 split by the §15r review round). **Built 2026-10-06** — deviations in §15r *E9.S0 as built* | Opus + two own reviews |
+| E9.S0 | the catalogue's `archive` blocks, the `archive.*` keys and coupled rules, the base rules, `archive check-base` — §15r (re-split 2026-10-06: the three rows planned on 2026-10-02 became S0–S5, S2 split by the §15r review round). **Built 2026-10-06** — deviations in §15r *E9.S0 as built*; **the review round fixed 2026-10-06** (§15r *E9.S0 review round*) | Opus + two own reviews |
 | E9.S1 | selection, the effective age, in-use checks, `archive preview` (read-only) — §15r. **Built 2026-10-06** — deviations in §15r *E9.S1 as built* | Opus + two own reviews |
 | E9.S2a | the seam: no-link streaming copy and exclusive create, no-replace renames, the verified removal (Linux and Windows semantics), the policy, the widened scan, the fault seam — §15r R1 | Opus (Fable asked for by the gate; its monthly limit is spent — recorded) + two own reviews — irreplaceable data |
 | E9.S2b | the two-phase protocol, the index (merged, MAC'd), the in-flight file, the lease, the reconcile, `archive run` / `status` / `reconcile --scan` — §15r R1 | Opus (Fable spent, recorded) + two own reviews |

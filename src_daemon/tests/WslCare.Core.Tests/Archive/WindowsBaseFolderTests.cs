@@ -53,13 +53,89 @@ public sealed class WindowsBaseFolderTests : IDisposable
 
     [Theory]
     [InlineData(@"profile\.claude\archive")]
-    [InlineData(@"profile\.gemini\antigravity-cli\archive")]
+    [InlineData(@"profile\AppData\Roaming\Antigravity\archive")]
     [InlineData(@"temp\archive")]
     public void A_folder_inside_an_agents_folder_or_the_temporary_folder_is_refused(string relative)
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
 
         Judge(_root.Dir(relative)).Rule.Should().Be(BaseFolderRule.Overlap);
+    }
+
+    /// <summary>E9.S0 review round S3: a share that is this machine — the distribution's own files, a loopback name, this machine's
+    /// name — or an administrative share reaches the protected places under another spelling; refused before anything is looked
+    /// at (every leg: no disk is read).</summary>
+    [Theory]
+    [InlineData(@"\\wsl$\Ubuntu\home\me\archive")]
+    [InlineData(@"\\wsl.localhost\Ubuntu\home\me\archive")]
+    [InlineData(@"\\localhost\share\archive")]
+    [InlineData(@"\\127.0.0.1\share\archive")]
+    [InlineData(@"\\0--1.ipv6-literal.net\share\archive")]
+    [InlineData(@"\\nas\C$\archive")]
+    [InlineData(@"\\nas\ADMIN$\archive")]
+    public void A_share_that_is_this_machine_or_an_administrative_share_is_refused(string given)
+    {
+        var report = Judge(given);
+
+        report.Rule.Should().Be(BaseFolderRule.Shape, report.Refusal);
+    }
+
+    [Fact]
+    public void A_share_named_after_this_machine_is_refused()
+    {
+        Judge($@"\\{Environment.MachineName}\share\archive").Rule.Should().Be(BaseFolderRule.Shape);
+    }
+
+    /// <summary>S3: an 8.3 short name of an agent's folder is the same folder — compared by the file system's identity of the folder
+    /// and its parents, not by its spelling.</summary>
+    [Fact]
+    public void A_short_name_of_an_agents_folder_is_refused()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        var inside = _root.Dir(@"profile\.claude\archive-of-sessions");
+        var shortName = ShortName(inside);
+        Assert.SkipWhen(string.Equals(shortName, inside, StringComparison.OrdinalIgnoreCase), "8.3 names are not generated on this volume");
+
+        Judge(shortName).Rule.Should().Be(BaseFolderRule.Overlap, $"{shortName} is {inside}");
+    }
+
+    /// <summary>S3: the identity overlap over two chains, pure — a base inside the place, holding it, the place itself, and a sibling.</summary>
+    [Fact]
+    public void Two_chains_overlap_when_either_folder_is_in_the_others_chain()
+    {
+        FileIdentity Id(ulong index) => new(7, index);
+        IReadOnlyList<FileIdentity> place = [Id(3), Id(2), Id(1)];
+
+        WindowsIdentity.Overlap([Id(4), Id(3), Id(2), Id(1)], place).Should().BeTrue("the base lies inside the place");
+        WindowsIdentity.Overlap([Id(2), Id(1)], place).Should().BeTrue("the base holds the place");
+        WindowsIdentity.Overlap([Id(3), Id(2), Id(1)], place).Should().BeTrue("the base is the place");
+        WindowsIdentity.Overlap([Id(5), Id(2), Id(1)], place).Should().BeFalse("a sibling under the same parent");
+        WindowsIdentity.Overlap([], place).Should().BeFalse("a base that cannot be opened is judged by its spelling alone");
+    }
+
+    [Fact]
+    public void A_folder_and_its_short_name_have_one_identity()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.Skip(WindowsOnly);
+            return;
+        }
+
+        var folder = _root.Dir(@"profile\some-long-folder-name");
+        var shortName = ShortName(folder);
+        Assert.SkipWhen(string.Equals(shortName, folder, StringComparison.OrdinalIgnoreCase), "8.3 names are not generated on this volume");
+
+        WindowsIdentity.ChainOf(shortName).Should().Equal(WindowsIdentity.ChainOf(folder)).And.NotBeEmpty();
+    }
+
+    /// <summary>The short form cmd.exe reports for <paramref name="path"/> (its own path when the volume generates none).</summary>
+    private static string ShortName(string path)
+    {
+        using var cmd = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("cmd.exe", $"/d /c for %I in (\"{path}\") do @echo %~sI") { RedirectStandardOutput = true, UseShellExecute = false })!;
+        var output = cmd.StandardOutput.ReadToEnd().Trim();
+        cmd.WaitForExit();
+        return output.Length > 0 ? output : path;
     }
 
     [Fact]

@@ -692,10 +692,14 @@ mounted at (`V:\ai-archive` → `/mnt/v/ai-archive`, from the mount table); a dr
 An accepted folder may come with warnings — other accounts may read it (archived sessions hold what the agents saw:
 `chmod 700` it; on Windows, the folder's Everyone / Users / Authenticated Users permissions), or it lies on the distribution's
 own disk — and notes (a FAT drive's 2-second times, a drvfs mount's reported modes). A refused folder is an answer (exit 0,
-`accepted: false` and its `rule`); as root the verb refuses with exit **81**.
+`accepted: false` and its `rule`); as root the verb — and `config set archive.baseFolder` — refuses with exit **81**. A folder on a
+Windows drive is judged as the Windows folder it is too: never inside your Windows profile's agent folders, its `AppData`, its
+temporary folder or `git`, nor any profile's (`C:\Users\<anyone>\AppData`, `…\.claude`); a folder reached through a bind mount
+is judged where it really lies; on Windows a share back to this machine (`\\wsl$`, `\\localhost`, this machine's name, `C$`) is
+refused — name the folder by its drive. A folder on the way that another account owns is warned about.
 
 Which agents are archived is `archive.agents` (Claude Code, Codex, Gemini CLI, Antigravity — the layouts confirmed on
-2026-10-02). The ages are settings with a rule between them: a session is copied when its newest file is older than
+2026-10-02); a manual agent of `aiAgents.extra` that names its `sessionGlob` may be added as `manual:<name>` (never by default). The ages are settings with a rule between them: a session is copied when its newest file is older than
 `archive.olderThanDays` (14), removed from your side `archive.removeAfterHours` (24) later, and both stay
 `archive.marginDays` (7) ahead of the agent's own deletion, `archive.agentRetentionDays` (30, Claude Code's default
 `cleanupPeriodDays` — raise it with that setting). A value that breaks the rule is not taken.

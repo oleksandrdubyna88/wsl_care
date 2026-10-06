@@ -69,9 +69,16 @@ internal static class ArchiveCommand
         return text.Append(CommandLine.Printable(report.InUse.Note.Length == 0 ? string.Empty : $"  note: {report.InUse.Note}")).ToString().TrimEnd('\r', '\n', ' ');
     }
 
-    /// <summary>The base rules over this host — shared with <c>config set archive.baseFolder</c>.</summary>
+    /// <summary>The base rules over this host — shared with <c>config set archive.baseFolder</c>. Inside the distribution the Windows
+    /// profile the last full run found joins them (E9.S0 review round S1): a base on a Windows drive stays clear of its places.</summary>
     internal static BaseFolderReport Judge(CliHost host, string path) =>
-        BaseFolderRules.Judge(host.Paths, host.Files, ExtraAgentRules.CleanupRoots(host.Actions, host.Paths.Home, host.Paths.Rules), path);
+        BaseFolderRules.Judge(host.Paths, host.Files, new BaseFolderContext(ExtraAgentRules.CleanupRoots(host.Actions, host.Paths.Home, host.Paths.Rules), WindowsProfile(host)), path);
+
+    /// <summary>The Windows profile of the last full run that measured the Windows clock; empty when none has (or on Windows).</summary>
+    private static string WindowsProfile(CliHost host) =>
+        host.Paths is Core.Hosting.LinuxHostPaths
+            ? Core.Records.LastFullRun.Read(host.Paths, host.Files, host.Clock).WindowsClock.Map(a => a.Value.Profile).ValueOr(string.Empty)
+            : string.Empty;
 
     private static string Render(BaseFolderReport report)
     {
@@ -92,5 +99,5 @@ internal static class ArchiveCommand
         return text.ToString().TrimEnd('\r', '\n');
     }
 
-    private static string Where(BaseMountReport? mount) => mount is null ? string.Empty : $" ({mount.Type} at {mount.MountPoint})";
+    private static string Where(BaseMountReport mount) => mount.Known ? $" ({mount.Type} at {mount.MountPoint})" : string.Empty;
 }

@@ -668,16 +668,19 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey ProgressSilenceSeconds = new("archive.progressSilenceSeconds", 10, 600) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
         /// <summary>A19's restore child's ceiling — a button, never in a timer run; within the least maximum a request accepts
-        /// (<c>commands.maxTimeoutHours</c>' minimum, 1 h). Default 60.</summary>
-        public static readonly ConfigKey.IntKey RestoreLimitMinutes = new("archive.restoreLimitMinutes", 1, 60) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+        /// (<c>commands.maxTimeoutHours</c>' minimum, 1 h) WITH the 60 s a command's ceiling keeps — so at most 59 (E9.S0 review
+        /// round C5). Default 59.</summary>
+        public static readonly ConfigKey.IntKey RestoreLimitMinutes = new("archive.restoreLimitMinutes", 1, 59) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
-        /// <summary>The most sessions one run takes — bounds the in-flight file and the answer root reads. Default 5000.</summary>
+        /// <summary>The most sessions one run takes — bounds the in-flight file and the answer root reads (the owner's backlog of
+        /// ~4 500 sessions drains in five runs). Default 1000.</summary>
         public static readonly ConfigKey.IntKey MaxSessionsPerRun = new("archive.maxSessionsPerRun", 1, 100000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
         /// <summary>One month index read. Default 67108864.</summary>
         public static readonly ConfigKey.IntKey MaxIndexBytes = new("archive.maxIndexBytes", 1048576, 268435456) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
-        /// <summary>The archive's local state files (the in-flight file, the summary, the restored map). Default 4194304.</summary>
+        /// <summary>The archive's local state files (the in-flight file, the summary, the restored map) — the in-flight file holds
+        /// the sessions of every run still waiting for its removal (E9.S0 review round C3). Default 8388608.</summary>
         public static readonly ConfigKey.IntKey MaxStateFileBytes = new("archive.maxStateFileBytes", 65536, 67108864) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
         /// <summary>The archive child's answer root reads. Default 1048576.</summary>

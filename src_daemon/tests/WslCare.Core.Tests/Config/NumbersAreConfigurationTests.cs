@@ -302,4 +302,23 @@ public sealed class NumbersAreConfigurationTests
         timeouts.Should().NotBeEmpty();
         timeouts.Should().OnlyContain(k => TimeSpan.FromSeconds(k.Max) <= TimeSpan.FromHours(max.Min), "no command timeout may reach past the least maximum the machine may set");
     }
+
+    /// <summary>E9.S0 review round C5: a ceiling in MINUTES is a command's ceiling too — the archive run's budget and its restore
+    /// limit. Each either fits under the least <c>commands.maxTimeoutHours</c> by its own range (with the 60-second margin a
+    /// command keeps), or a coupled rule holds it under the configured maximum; the defaults keep every such rule.</summary>
+    [Fact]
+    public void Every_minute_ceiling_fits_under_the_commands_maximum_by_its_range_or_by_a_coupled_rule()
+    {
+        var max = ConfigKeys.Commands.MaxTimeoutHours;
+        var ceilings = ConfigKeys.All.OfType<ConfigKey.IntKey>()
+            .Where(k => k.Name.StartsWith("archive.", StringComparison.Ordinal) && (k.Name.EndsWith("LimitMinutes", StringComparison.Ordinal) || k.Name.EndsWith("BudgetMinutes", StringComparison.Ordinal)))
+            .ToList();
+
+        ceilings.Select(k => k.Name).Should().Contain(["archive.runBudgetMinutes", "archive.restoreLimitMinutes"]);
+        ceilings.Should().OnlyContain(
+            k => TimeSpan.FromMinutes(k.Max) + TimeSpan.FromSeconds(NumberRules.CeilingMarginSeconds) <= TimeSpan.FromHours(max.Min)
+                || NumberRules.Rules.Any(r => r.Keys.Contains(k) && r.Keys.Contains(max)),
+            "a ceiling past the least machine maximum needs a rule that holds it under the configured one");
+        NumberRules.Broken(Load("{}").Config).Should().BeEmpty();
+    }
 }

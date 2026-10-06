@@ -9,7 +9,8 @@
   "mount": {
     "mountPoint": "/mnt/v",
     "type": "9p",
-    "source": "V:"
+    "source": "V:",
+    "known": true
   },
   "warnings": [],
   "notes": [

@@ -2515,6 +2515,34 @@ flowchart TD
 - **The answer** is `BaseFolderReport` (`contracts/golden/head/archive-check-base.json`), the capability `archive.checkBase`.
   Its mount is reported, not yet recorded: `base.json` and its check at every run are E9.S2b's.
 
+**The E9.S0 review round (2026-10-06, plan §15r *E9.S0 review round*)** widened the base rules where a spelling could hide
+what a folder IS:
+
+- **A device's folders are judged under its canonical mount** (`Archive/BaseFolderPlacement.cs`): a bind mount (root ≠ `/`) or a
+  second mount of a filesystem is judged as the folder it really is under that device's whole mount — the distribution's `/`
+  when it is that disk — so `/mnt/bound` bound from `~/.claude` is `~/.claude`; a device mounted whole nowhere is refused. The
+  distribution's own disk is the root mount's DEVICE, not the mount point `/`.
+- **A drvfs base is a Windows folder too** (`Archive/WindowsProfilePlaces.cs`): spelt as Windows spells it (the mount's `path=`)
+  and judged, case-blind, against the Windows profile's places — from the profile the last full run's clock probe found
+  (`BaseFolderContext.WindowsProfile`) — and against any profile's `AppData` and agent folders whoever's they are.
+- **On Windows a share back to this machine is refused by name** (`WindowsShares`: `\\wsl$`, `\\wsl.localhost`, loopback, this
+  machine's name, `X$` / `ADMIN$` / `IPC$`), and the overlap rule compares the file system's IDENTITY of the base and every folder
+  above it with each protected place's (`Archive/WindowsIdentity.cs`: volume serial + file index, through an attributes-only
+  handle that follows no reparse point).
+- **Owners on the way are said** (a folder owned by an account other than root and this one), and `config set
+  archive.baseFolder` as root is refused (81) before anything is looked at.
+- **Every rule answers a closed `RuleVerdict`** (`Holds` / `Refuses(rule, why)`, `Archive/RuleVerdict.cs`) — the base rules and
+  the selection's keepers alike — and `BaseFolderReport.Mount` is never null (`BaseMountReport.Unknown`).
+- **The judge is advice at the moment it answers:** a run binds itself to the base through its own no-follow descriptor chain
+  with the recorded mount compared on the opened descriptor (E9.S2a/S2b), never through `Judge`'s verdict.
+- **The keys:** `archive.minRunMinutes` ≤ `archive.runBudgetMinutes`; `archive.restoreLimitMinutes` 1–59 (59); the in-flight
+  file bounded by the WAITING sessions — `maxStateFileBytes` ≥ 600 B × `maxSessionsPerRun` × (⌈`removeAfterHours` /
+  `timer.periodHours`⌉ + 1), each file's hash and archived path in the index only — with `maxSessionsPerRun` 1 000 and
+  `maxStateFileBytes` 8 MiB; an invalid user-layer `archive.baseFolder` is a notice, never observe-only.
+- **Manual agents may be archived** (`Archive/ArchiveTargets.cs`, off by default): `archive.agents` takes `manual:<name>`; a named
+  manual agent with a `sessionGlob` is judged by `ExtraAgentRules` at every selection and archived by its own glob under its first
+  data folder.
+
 ### Selection and `archive preview` (E9.S1, 2026-10-06, plan §15r D2.1–D2.2, D10)
 
 `archive preview [--agent <id>] [--json]` answers what the archive WOULD move on this side now, per agent, as the user (root is

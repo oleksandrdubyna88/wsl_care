@@ -94,7 +94,12 @@ public static class ExtraAgentRules
 
     /// <summary>The product's own configuration, state and log folders (review M9: an extra there would lock <c>config set</c>).</summary>
     public static IReadOnlyList<string> ProductFolders(IHostPaths paths) =>
-        [Path.GetDirectoryName(paths.UserConfigFile) ?? paths.UserConfigFile, paths.StateDirectory, paths.LogDirectory, paths.UserLogDirectory];
+        [FolderOf(paths, paths.UserConfigFile), paths.StateDirectory, paths.LogDirectory, paths.UserLogDirectory];
+
+    /// <summary>The folder holding <paramref name="file"/>: the host's own reading, or — for the other side's paths, which the host
+    /// reads as one name (a Windows path inside the distribution, E9.S0 review round S1) — by those paths' own rules.</summary>
+    private static string FolderOf(IHostPaths paths, string file) =>
+        Path.GetDirectoryName(file) is { Length: > 0 } folder ? folder : paths.Rules.Parent(file);
 
     private static string RealOrFull(IFileSystem files, string path) =>
         files.ResolvePath(path) is RealPathResult.Resolved r ? r.Path : Path.GetFullPath(path);

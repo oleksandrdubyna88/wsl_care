@@ -49,12 +49,45 @@ public sealed class ArchiveKeysTests
     [InlineData("""{ "commands": { "maxTimeoutHours": 1 }, "archive": { "runBudgetMinutes": 55, "finishGraceMinutes": 10 } }""", "archive.runBudgetMinutes")]
     [InlineData("""{ "archive": { "maxSessionsPerRun": 100000 } }""", "archive.maxStateFileBytes")]
     [InlineData("""{ "archive": { "previewTimeoutSeconds": 100 } }""", "archive.previewTimeoutSeconds")]
+    [InlineData("""{ "archive": { "minRunMinutes": 30, "runBudgetMinutes": 20 } }""", "archive.minRunMinutes")]
+    [InlineData("""{ "timer": { "periodHours": 1 } }""", "archive.maxStateFileBytes")]
     public void An_archive_rule_a_machine_layer_breaks_refuses_the_layer_naming_it(string machine, string named)
     {
         var result = Load(machine);
 
         result.IsObserveOnly.Should().BeTrue("a contradiction between two limits is a configuration error");
         result.Errors.Should().Contain(e => e.Message.Contains(named, StringComparison.Ordinal));
+    }
+
+    /// <summary>E9.S0 review round C3: the in-flight file holds every session a run touched until a LATER run removes its source —
+    /// the sessions of ⌈removeAfterHours / timer.periodHours⌉ earlier runs and this one — at a fixed size each (its files' hashes
+    /// and archived paths live in the index, never here). The owner's Windows backlog (~4 500 sessions, ~8 600 files) drains in
+    /// five runs of the default, and the default file holds the worst the default timer can leave waiting.</summary>
+    [Fact]
+    public void The_in_flight_file_holds_every_session_waiting_for_its_removal_and_the_backlog_drains_in_five_runs()
+    {
+        var config = Load("{}").Config;
+        var sessions = config.Int(Int("archive.maxSessionsPerRun"));
+        var waitingRuns = (int)Math.Ceiling(config.Int(Int("archive.removeAfterHours")) / (double)config.Int(Int("timer.periodHours"))) + 1;
+
+        sessions.Should().Be(1000);
+        waitingRuns.Should().Be(7, "24 h of removal delay over a 4-hour timer, and the run itself");
+        ((long)NumberRules.BytesPerInflightSession * sessions * waitingRuns).Should().BeLessThanOrEqualTo(config.Int(Int("archive.maxStateFileBytes")));
+        Math.Ceiling(4500 / (double)sessions).Should().Be(5, "the owner's backlog, oldest first");
+        NumberRules.Broken(config).Should().BeEmpty();
+    }
+
+    /// <summary>E9.S0 review round decision (d): the base folder is the USER's — a user-layer value of the wrong shape is a notice
+    /// (the value not taken, the rest of the layer in force), never observe-only.</summary>
+    [Fact]
+    public void A_user_layer_base_folder_of_the_wrong_shape_is_a_notice_and_the_rest_of_the_layer_stands()
+    {
+        var result = Load("{}", """{ "archive": { "baseFolder": "relative/archive", "olderThanDays": 10 } }""");
+
+        result.IsObserveOnly.Should().BeFalse(string.Join("; ", result.Errors.Select(e => e.Display)));
+        result.Notices.Should().Contain(n => n.Key == "archive.baseFolder");
+        result.Config.Text(ConfigKeys.Archive.BaseFolder).Should().BeEmpty();
+        result.Config.Int(Int("archive.olderThanDays")).Should().Be(10, "the rest of the user layer is in force");
     }
 
     [Fact]
@@ -87,6 +120,23 @@ public sealed class ArchiveKeysTests
         ConfigValidation.Parse(key, "copilot-cli").Should().BeOfType<ValueCheck.Invalid>()
             .Which.Message.Should().Contain("copilot-cli", "an agent whose layout nobody confirmed is never archived");
         key.Trust.Safe.Should().Be(SafeDirection.Subset, "fewer archived agents is the safe direction");
+    }
+
+    /// <summary>E9.S0 review round decision (b): <c>archive.agents</c> also takes <c>manual:&lt;name&gt;</c> — a manual agent of
+    /// <c>aiAgents.extra</c> — in the manual agent's own name shape; never by default.</summary>
+    [Theory]
+    [InlineData("codex,manual:mycli", true)]
+    [InlineData("manual:my-cli.2", true)]
+    [InlineData("manual:", false)]
+    [InlineData("manual:../x", false)]
+    [InlineData("manual:-x", false)]
+    [InlineData("Manual:mycli", false)]
+    public void The_archived_agents_may_name_a_manual_agent_in_its_own_name_shape(string value, bool accepted)
+    {
+        var key = (ConfigKey.TextListKey)ConfigKeys.Find("archive.agents")!;
+
+        (ConfigValidation.Parse(key, value) is ValueCheck.Ok).Should().Be(accepted);
+        Load("{}").Config.TextList(key).Should().NotContain(a => a.StartsWith("manual:", StringComparison.Ordinal));
     }
 
     /// <summary>§15r D1: root never writes the base — the user's own process moves — so the user layer may name it; the base rules

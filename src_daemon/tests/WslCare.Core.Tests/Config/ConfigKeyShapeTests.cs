@@ -32,14 +32,33 @@ public sealed class ConfigKeyShapeTests
         var texts = ConfigKeys.All.OfType<ConfigKey.TextKey>().ToList();
 
         // Plan §15r D1: the base folder is written by the TARGET USER's process, never by root, so it is an ordinary key — its
-        // rules (D7) are judged by that process. A path key root would write into is machine-only (§15q R1.3); none exists.
-        texts.Where(k => k.Rule is TextRule.AbsolutePathOrEmpty).Should().OnlyContain(k => !k.Trust.RootEffective)
-            .And.Contain(ConfigKeys.Archive.BaseFolder);
+        // rules (D7) are judged by that process. Every OTHER path key is machine-only (§15q R1.3; E9.S0 review round C1).
+        PathKeyProblems(texts).Should().BeEmpty();
+        texts.Should().Contain(ConfigKeys.Archive.BaseFolder);
         texts.Where(k => k.Rule is TextRule.HttpsUrlOrEmpty).Should().OnlyContain(k => k.Trust.MachineOnly, "root sends the request (PLAN_windows_time_guard.md D2)")
             .And.Contain(ConfigKeys.Clock.ReferenceUrl);
         texts.Where(k => k.Rule is TextRule.Matching).Should().OnlyContain(k => k.Trust.DaemonUnused)
             .And.Contain(ConfigKeys.Distro);
     }
+
+    /// <summary>E9.S0 review round C1: "steers no root write" was asked as "not root-effective", which a NEW path key marked as a
+    /// display figure passes — while root might write into it. The base folder is exempt BY NAME; any other path key must be
+    /// machine-only.</summary>
+    [Fact]
+    public void A_new_path_key_that_is_not_machine_only_is_named()
+    {
+        var planted = new ConfigKey.TextKey("cache.folder", new TextRule.AbsolutePathOrEmpty()) { Trust = KeyTrust.Display };
+        var machineOnly = planted with { Name = "cache.machineFolder", Trust = new KeyTrust(SafeDirection.None, MachineOnly: true) };
+
+        PathKeyProblems([planted, machineOnly, ConfigKeys.Archive.BaseFolder]).Should().Equal("cache.folder");
+        PathKeyProblems([ConfigKeys.Archive.BaseFolder with { Trust = new KeyTrust(SafeDirection.Lower) }]).Should().Equal("archive.baseFolder");
+    }
+
+    /// <summary>The path keys that break the rule: the base folder when it steers root, any other one when it is not machine-only.</summary>
+    private static IEnumerable<string> PathKeyProblems(IEnumerable<ConfigKey.TextKey> keys) =>
+        keys.Where(k => k.Rule is TextRule.AbsolutePathOrEmpty)
+            .Where(k => k.Name == ConfigKeys.Archive.BaseFolder.Name ? k.Trust.RootEffective : !k.Trust.MachineOnly)
+            .Select(k => k.Name);
 
     /// <summary>Every number slot of every template the product policy holds is either filled from ONE key — and then accepts
     /// exactly that key's range (times the unit the action converts to) — or is named here as not a configuration value. A new

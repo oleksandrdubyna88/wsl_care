@@ -69,15 +69,10 @@ public sealed record SelectionInput(IHostPaths Paths, IFileSystem Files, Effecti
 /// </summary>
 public static class Selection
 {
+    /// <summary>The agents asked for — <c>archive.agents</c> (or the one named): the catalogue's with an archive block, and the manual
+    /// agents it names (<see cref="ArchiveTargets"/>).</summary>
     public static IReadOnlyList<AgentSelection> Select(SelectionInput input) =>
-        [.. Agents(input).Select(entry => Agent(input, entry))];
-
-    /// <summary>The agents asked for: <c>archive.agents</c> (or the one named), each with an archive block.</summary>
-    private static IEnumerable<AgentEntry> Agents(SelectionInput input)
-    {
-        var enabled = input.Config.TextList(ConfigKeys.Archive.Agents);
-        return AgentCatalogue.Agents.Where(a => a.Archive is not null && enabled.Contains(a.Id, StringComparer.Ordinal) && (input.OnlyAgent.Length == 0 || a.Id == input.OnlyAgent));
-    }
+        [.. ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.OnlyAgent).Select(target => Agent(input, target))];
 
     /// <summary>§15r D10: min(<c>archive.olderThanDays</c>, the measured retention − <c>archive.marginDays</c> − the removal's
     /// whole days), at least 1.</summary>
@@ -92,12 +87,12 @@ public static class Selection
     private static int RemovalDays(EffectiveConfig config) =>
         (int)Math.Ceiling(TimeSpan.FromHours(config.Int(ConfigKeys.Archive.RemoveAfterHours)).TotalDays);
 
-    private static AgentSelection Agent(SelectionInput input, AgentEntry entry)
+    private static AgentSelection Agent(SelectionInput input, ArchiveTarget target)
     {
+        var (entry, under) = (target.Entry, target.Under);
         var retention = AgentRetentionReader.Read(entry, input.Paths, input.Files, input.Environment);
         var age = EffectiveAgeDays(input.Config, retention);
-        var under = AgentDiscovery.SessionsUnderOf(input.Paths, entry);
-        return Placed(input, entry, under) is { Length: > 0 } why
+        return (target.Refusal.Length > 0 ? target.Refusal : Placed(input, entry, under)) is { Length: > 0 } why
             ? new AgentSelection(entry, under, retention, age, [], [], 0, 0, why)
             : Listed(input, entry, under, retention, age);
     }
@@ -187,52 +182,55 @@ public static class Selection
     private sealed record UnitCheck(SelectionInput Input, AgentEntry Entry, string Under, ArchiveUnit Unit, string Key, IReadOnlyList<UnitFile> Files, IReadOnlyList<string> Companions, string GatherNote);
 
     /// <summary>The rules that keep a due unit where it is, in order.</summary>
-    private static readonly Func<UnitCheck, (string Rule, string Why)?>[] Keepers =
+    private static readonly Func<UnitCheck, RuleVerdict>[] Keepers =
     [
         c => NeverMoved(c.Entry, c.Files, c.Companions),
         c => NameProblem(c.Files),
-        c => c.GatherNote.Length > 0 ? (SkipRule.NotWhole, $"not every file of it was seen ({c.GatherNote}); a unit moves whole or not at all") : null,
+        c => RuleVerdict.When(c.GatherNote.Length > 0, SkipRule.NotWhole, () => $"not every file of it was seen ({c.GatherNote}); a unit moves whole or not at all"),
         c => MayBeOpen(c.Input.Files, c.Under, c.Unit, c.Key),
         c => InUse(c.Input, c.Files),
         c => AgentHere(c.Input, c.Entry, c.Key),
     ];
 
     /// <summary>The first rule that keeps a due unit where it is; ("", "") when none does.</summary>
-    private static (string Rule, string Why) Judged(UnitCheck check) =>
-        Keepers.Select(keeper => keeper(check)).FirstOrDefault(kept => kept is not null) ?? (string.Empty, string.Empty);
+    private static (string Rule, string Why) Judged(UnitCheck check) => RuleVerdict.First(Keepers, check) switch
+    {
+        RuleVerdict.Refuses kept => (kept.Rule, kept.Why),
+        _ => (string.Empty, string.Empty),
+    };
 
     /// <summary>Plan §15q H2, §15r: a unit any of whose files — or a companion it names, present or not — lies at or under a name that
     /// never moves is refused WHOLE (a session named <c>memory.jsonl</c> names the companion <c>projects/&lt;p&gt;/memory</c>).</summary>
-    private static (string, string)? NeverMoved(AgentEntry entry, IReadOnlyList<UnitFile> files, IReadOnlyList<string> companions) =>
+    private static RuleVerdict NeverMoved(AgentEntry entry, IReadOnlyList<UnitFile> files, IReadOnlyList<string> companions) =>
         files.Select(f => f.Relative).Concat(companions).FirstOrDefault(p => AgentArchiveRules.IsNeverMoved(entry.Archive!, p)) is { } named
-            ? (SkipRule.NeverMoved, $"it names {named}, which never moves — the whole unit stays")
-            : null;
+            ? new RuleVerdict.Refuses(SkipRule.NeverMoved, $"it names {named}, which never moves — the whole unit stays")
+            : RuleVerdict.Holds;
 
-    private static (string, string)? NameProblem(IReadOnlyList<UnitFile> files)
+    private static RuleVerdict NameProblem(IReadOnlyList<UnitFile> files)
     {
         var problem = files.SelectMany(f => f.Relative.Split('/')).Select(ArchiveNames.Problem).FirstOrDefault(p => p.Length > 0)
             ?? ArchiveNames.CaseCollision(files.Select(f => f.Relative));
-        return problem.Length > 0 ? (SkipRule.Name, $"{problem}; the archive could not hold it on a Windows drive or a share") : null;
+        return RuleVerdict.When(problem.Length > 0, SkipRule.Name, () => $"{problem}; the archive could not hold it on a Windows drive or a share");
     }
 
-    private static (string, string)? MayBeOpen(IFileSystem files, string under, ArchiveUnit unit, string key) =>
+    private static RuleVerdict MayBeOpen(IFileSystem files, string under, ArchiveUnit unit, string key) =>
         unit.SkipWhilePresent.Select(t => Expand(t, key)).FirstOrDefault(c => files.FileExists(Path.Combine(under, c))) is { } present
-            ? (SkipRule.MayBeOpen, $"{present} exists, so the database may be open; it is left until it is gone")
-            : null;
+            ? new RuleVerdict.Refuses(SkipRule.MayBeOpen, $"{present} exists, so the database may be open; it is left until it is gone")
+            : RuleVerdict.Holds;
 
-    private static (string, string)? InUse(SelectionInput input, IReadOnlyList<UnitFile> files)
-    {
-        var open = files.FirstOrDefault(f => input.InUse.OpenFiles.Contains(Distro(input.Paths, f.OnDisk)));
-        return open is not null ? (SkipRule.InUse, $"{open.Relative} is open in a process") : null;
-    }
+    private static RuleVerdict InUse(SelectionInput input, IReadOnlyList<UnitFile> files) =>
+        files.FirstOrDefault(f => input.InUse.OpenFiles.Contains(Distro(input.Paths, f.OnDisk))) is { } open
+            ? new RuleVerdict.Refuses(SkipRule.InUse, $"{open.Relative} is open in a process")
+            : RuleVerdict.Holds;
 
     /// <summary>A live Claude Code process whose working directory is this session's project (§15r D2.2).</summary>
-    private static (string, string)? AgentHere(SelectionInput input, AgentEntry entry, string key)
+    private static RuleVerdict AgentHere(SelectionInput input, AgentEntry entry, string key)
     {
         var segments = key.Split('/');
-        return entry.Id == "claude-code" && segments.Length > 1 && input.InUse.ClaudeProjects.Contains(segments[1])
-            ? (SkipRule.AgentWorkingHere, $"Claude Code is working in the project {segments[1]}")
-            : null;
+        return RuleVerdict.When(
+            entry.Id == "claude-code" && segments.Length > 1 && input.InUse.ClaudeProjects.Contains(segments[1]),
+            SkipRule.AgentWorkingHere,
+            () => $"Claude Code is working in the project {segments[1]}");
     }
 
     private static string Distro(IHostPaths paths, string onDisk) => paths is LinuxHostPaths linux ? linux.ToDistro(onDisk) : onDisk;

@@ -103,6 +103,20 @@ public sealed class ArchiveCommandTests : IDisposable
         File.Exists(_sandbox.Paths.UserConfigFile).Should().BeFalse();
     }
 
+    /// <summary>E9.S0 review round S2: the base is judged as the process that will write it — a root process would judge it with
+    /// root's reach and write root's user layer. Refused (81) before the folder, its mount or any parent is looked at.</summary>
+    [Fact]
+    public void Config_set_of_the_base_folder_as_root_is_refused_and_nothing_is_looked_at()
+    {
+        Folder("/mnt/v/ai-archive");
+
+        var set = CliRun.Over(Host(root: true), "config", "set", "archive.baseFolder", "/mnt/v/ai-archive");
+
+        set.Exit.Should().Be((int)ExitCode.NotAsRoot, set.Stderr);
+        set.Stderr.Should().Contain("not as uid 0").And.Contain("Nothing was written");
+        File.Exists(_sandbox.Paths.UserConfigFile).Should().BeFalse();
+    }
+
     [Fact]
     public void Config_set_of_an_empty_base_folder_clears_it_without_a_judgement()
     {

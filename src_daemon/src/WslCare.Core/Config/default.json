@@ -116,10 +116,10 @@
     "previewTimeoutSeconds": 120,
     "reachabilitySeconds": 10,
     "progressSilenceSeconds": 60,
-    "restoreLimitMinutes": 60,
-    "maxSessionsPerRun": 5000,
+    "restoreLimitMinutes": 59,
+    "maxSessionsPerRun": 1000,
     "maxIndexBytes": 67108864,
-    "maxStateFileBytes": 4194304,
+    "maxStateFileBytes": 8388608,
     "childOutputCapBytes": 1048576,
     "progressLineMaxBytes": 256,
     "inUseScanSeconds": 20

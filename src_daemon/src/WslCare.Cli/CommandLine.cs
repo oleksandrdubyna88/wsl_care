@@ -560,8 +560,8 @@ internal static class CommandLine
         ReadOptions("archive preview", rest, [AgentFlag], [JsonFlag]) switch
         {
             (_, { } failure) => failure,
-            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && !Core.Agents.AgentCatalogue.ArchivableIds.Contains(agent, StringComparer.Ordinal) =>
-                new Request.Failed($"\"{BinaryName} archive preview --agent\" takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)}; got \"{Printable(agent)}\"."),
+            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && (agent.Contains(',', StringComparison.Ordinal) || Core.Config.ConfigValidation.Parse(Core.Config.ConfigKeys.Archive.Agents, agent) is not Core.Config.ValueCheck.Ok) =>
+                new Request.Failed($"\"{BinaryName} archive preview --agent\" takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)} or {Core.Agents.ExtraAgent.IdPrefix}<name>; got \"{Printable(agent)}\"."),
             var (options, _) => new Request.ArchivePreview(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Flags.Contains(JsonFlag)),
         };
 

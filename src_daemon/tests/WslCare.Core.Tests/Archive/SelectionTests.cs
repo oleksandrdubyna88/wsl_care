@@ -290,6 +290,41 @@ public sealed class SelectionTests : IDisposable
         selected[0].Due.Should().ContainSingle();
     }
 
+    private static string Manual(string name, string folder, string glob) =>
+        $$"""{ "cli": "/home/me/.local/bin/{{name}}", "side": "wsl", "name": "{{name}}", "dataFolders": ["{{folder}}"], "sessionGlob": "{{glob}}" }""";
+
+    /// <summary>E9.S0 review round decision (b): a manual agent that names its sessions may be archived — off by default, on when
+    /// <c>archive.agents</c> lists <c>manual:&lt;name&gt;</c> — by its own glob under its first data folder, <c>memory</c> never.</summary>
+    [Fact]
+    public void A_manual_agent_with_a_session_glob_is_archived_only_when_archive_agents_names_it()
+    {
+        File("/home/me/.mycli/sessions/a.log", DaysAgo(40));
+        File("/home/me/.mycli/memory/m.log", DaysAgo(40));
+        var extra = Manual("mycli", "/home/me/.mycli", "sessions/*.log");
+
+        var off = Selection.Select(Input(Config($$"""{ "aiAgents": { "extra": [{{extra}}] } }""")));
+        var on = Selection.Select(Input(Config($$"""{ "aiAgents": { "extra": [{{extra}}] }, "archive": { "agents": ["manual:mycli"] } }""")));
+
+        off.Should().NotContain(s => s.Entry.Id == "manual:mycli", "a manual agent is never archived by default");
+        var mine = on.Should().ContainSingle().Subject;
+        mine.Entry.Id.Should().Be("manual:mycli");
+        mine.Due.Should().ContainSingle().Which.Key.Should().Be("sessions/a.log");
+        mine.Retention.Days.Should().BeNull("a manual agent's own deletion is not known");
+    }
+
+    [Fact]
+    public void A_listed_manual_agent_without_a_glob_or_refused_by_its_folder_rules_is_said_and_never_listed()
+    {
+        File("/home/me/.npm/sessions/a.log", DaysAgo(40));
+        var config = Config($$"""{ "aiAgents": { "extra": [{{Manual("noglob", "/home/me/.noglob", "")}}, {{Manual("npm-ish", "/home/me/.npm", "sessions/*.log")}}] }, "archive": { "agents": ["manual:noglob", "manual:npm-ish", "manual:gone"] } }""");
+
+        var selected = Selection.Select(Input(config));
+
+        selected.Select(s => s.Entry.Id).Should().Equal("manual:noglob", "manual:npm-ish", "manual:gone");
+        selected.Should().OnlyContain(s => s.Due.Count == 0 && s.Note.Length > 0);
+        selected[1].Note.Should().Contain("A8's cleanup folder");
+    }
+
     /// <summary>The selection is read-only: no file anywhere in the sandbox was created, changed or removed.</summary>
     [Fact]
     public void The_selection_writes_nothing()

@@ -2233,6 +2233,51 @@ first instead of oldest — 1; `archive.agents` ignored — 1; the quarantine no
 the walk — 5; the user's settings read before the managed ones — 1; a zero retention not warned — 1; the preview as root not
 refused — 1; the preview-timeout rule dropped — 1; every surrogate refused again — 2.
 
+### The E9.S0 review round (2026-10-06, plan §15r *E9.S0 review round*)
+
+Two own reviews of the built E9.S0; every finding fixed in one commit after E9.S1 (`research/architecture.md` § *The AI-session
+archive*, the review-round paragraph). The tests:
+
+| Finding | Guarantee | Tests |
+|---|---|---|
+| S1 | a base on C: inside the Windows profile's `.claude`, any-case `.Claude`, `AppData\Local\Temp`, `Temp\claude`, `AppData\Roaming\Antigravity`, `git` (also `Git` spelt in another case), or the profile itself is refused once the profile is known; without it any profile's `AppData` and agent folder, a profile and `C:\Users` are refused; `Documents\ai-archive` accepted either way | `Archive/BaseFolderReviewRoundTests` (8 + 4 + 2 rows) |
+| S2 | `config set archive.baseFolder` as root: exit 81, "not as uid 0", nothing written | `Cli.Tests/ArchiveCommandTests.Config_set_of_the_base_folder_as_root_is_refused_and_nothing_is_looked_at` |
+| S3 | `\\wsl$`, `\\wsl.localhost`, `\\localhost`, `\\127.0.0.1`, `\\0--1.ipv6-literal.net`, `\\nas\C$`, `\\nas\ADMIN$` and this machine's name refused (`shape`, every leg — no disk is read); an 8.3 short name of a folder inside `.claude` refused; a folder and its short name have one identity; the identity overlap over two chains (inside, holding, equal, a sibling, an unopened base) | `Archive/WindowsBaseFolderTests` (7 rows + 4 facts) |
+| S4 | a bind mount of `~/.claude` judged as `~/.claude/…` (overlap); a bind mount whose device is mounted whole nowhere refused (`link-on-the-way`); a second mount of the root disk judged as the folder it is (`/data/archive` → `/archive`, warned as the distribution's own disk; `/data/home/me/.claude/archive` refused); a subvolume of the root disk (own device number, same source) warned | `Archive/BaseFolderReviewRoundTests` (4 facts) |
+| S5 | a folder on the way owned by another uid named with its uid; root's and this account's not | `BaseFolderReviewRoundTests.A_folder_on_the_way_owned_by_another_account_is_said` |
+| m4 | a refusal before any mount answers `BaseMountReport.Unknown`, never null | `BaseFolderReviewRoundTests.A_refusal_answers_an_empty_mount_never_null` |
+| m5 | the refused `check-base` golden | `GoldenContractTests` (`archive-check-base-refused.json`) |
+| m3 | a base inside `%APPDATA%\Antigravity` refused — a place only Antigravity's entry covers | `WindowsBaseFolderTests` (a row) |
+| C1 | every path key but `archive.baseFolder` machine-only; a planted display-only path key named; the base folder named once it would steer root | `Config/ConfigKeyShapeTests` (2) |
+| C3 | the in-flight rule counts the waiting runs (a 1-hour timer refused by the default sizes); the defaults hold 600 B × 1 000 × 7 under 8 MiB and drain a 4 500-session backlog in five runs | `Config/ArchiveKeysTests` (a rule row + a fact) |
+| C4 | `minRunMinutes` above `runBudgetMinutes` refused naming the key | `ArchiveKeysTests` (a rule row) |
+| C5 | every minute ceiling fits under the least commands maximum by its range or a coupled rule; the defaults keep every rule | `Config/NumbersAreConfigurationTests.Every_minute_ceiling_fits_…` |
+| (b) | `archive.agents` takes `manual:<name>` in the manual agent's name shape (6 rows), never by default; a named manual agent with a glob archived by its own glob (`memory` never), absent unless named; one without a glob, one its folder rules refuse and one missing from `aiAgents.extra` answered with the reason, nothing listed | `ArchiveKeysTests` (6 rows), `Archive/SelectionTests` (2 facts) |
+| (d) | an invalid user-layer base folder is a notice, the rest of the layer in force | `ArchiveKeysTests.A_user_layer_base_folder_of_the_wrong_shape_…` |
+| C7 | the extracted helpers change no answer | the existing `MountTable` / `WindowsSystemDrive` / `KeyRules` tests, green |
+
+**Red first** (each test run against the unfixed code, failing with the real symptom): S2 — `Expected set.Exit to be 81, but
+found 0`; C1 — the planted display-only key was not named (`{"cache.machineFolder"} differs at index 0` under the old rule);
+C3 — `Expected sessions to be 1000, but found 5000`, and the 1-hour timer `IsObserveOnly … found False`; C4 — the same, for
+`minRunMinutes`; C5 — the minute-ceiling test red on `restoreLimitMinutes` (60 + 60 s past one hour); (d) — `IsObserveOnly …
+found True` (`archive.baseFolder must be empty, or an absolute path …`); S1 — all 11 Windows-place rows `found … BaseFolderReport`
+(accepted); S3 — the seven shares answered `missing` instead of `shape`; S4 — the bind mount accepted (`"" … "overlap"`), the
+orphan bind accepted, the second mount of the root disk not warned; S5 — the owner warning empty; m4 — the mount `null`; (b) —
+`manual:mycli` refused by the key, and no manual agent selected. **Green against the unfixed code, kept as regression tests:**
+the 8.3 short name (`Path.GetFullPath` already expands a path holding `~` with `GetLongPathName` — measured) and the Antigravity
+`%APPDATA%` row (its teeth below). A first C5 fix (a coupled rule) turned an existing test red —
+`Every_composed_command_ceiling_stays_under_the_commands_maximum`: a lone `commands.maxTimeoutHours: 1` became observe-only —
+and was replaced by the 59-minute range. **Found by the Linux legs:** the profile-known S1 rows threw `IndexOutOfRangeException` in the distro — `ExtraAgentRules.ProductFolders` took a Windows path's folder with `Path.GetDirectoryName`, which reads it on Linux as one name and answers empty; fixed by `PathRules.Parent` (the paths' own rules, `PathRulesTests.Parent_is_the_folder_…`). And `FixturePrivacyTests` refused a test profile named `someone` — the fixtures use `user`.
+**Teeth** (each line broken, the guarding tests run, the file restored byte-identical — `sha256` compared): `config set` as root
+not refused — 1 red; the `minRunMinutes` rule dropped — 1; the waiting runs not counted — 1; the restore limit back to 60 — 1; an
+invalid user base an error again — 1; the base folder steering root — 2; the Windows-places step dropped — 11; the profile
+mapping dropped — 1; the any-profile pattern dropped — 4; a case-sensitive compare — 1 (green until the `Git` row was added);
+bind and second mounts not followed — 1; the distribution's disk by mount point — 1 (green until the subvolume row was added);
+the owner warnings dropped — 1; the share aliases allowed — 8; the identity overlap one-sided — 1; manual ids refused by the key
+— 2; manual agents never targeted — 2; Antigravity's `%APPDATA%` folder dropped from the catalogue — 1. **No end-to-end red** for
+the identity leg of the overlap rule on this machine: every alias it catches beyond 8.3 needs a `subst` drive or a second path to a
+volume, which a test would have to create machine-wide; its two halves (the chain, the overlap) are tested.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -2914,7 +2959,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care runs log <runId>` | not covered | CUT by plan §15j M3: `runs show` answers the commands a run ran and their exits |
 | `wsl-care agents list [--measure] [--json]` with `--measure` over a planted Claude Code folder and a fake `claude` on PATH: exit 0, `schemaVersion` 1, `sizes.source` `now`, the agent detected by binary and folder, 100 bytes (its `memory/` never entered, named in `excluded`), one session counted and named, the version "not asked", and the fake never started; the text form; an unknown option refused (2); before a full run `none` with how to measure, after a `collect` the run's totals with no session name, no recorded file naming a session | covered (the full-run flow on the Linux legs; skipped on Windows with the reason) | `AgentsFlows` (4); in-process: `Agents/AgentCatalogueTests`, `AgentDiscoveryTests`, `AgentWalkTests`, `AgentNoOpenTests` (Linux); golden `agents-list.json` |
 | `wsl-care agents probe <path> [--json]` as root: exit 81 (`NotAsRoot`), nothing on stdout, the refusal naming uid 0 and the default-user fix; of a CLI (the fake tool at `~/.local/bin/mycli` with an execute bit): exit 0, usable, the suggested entry with `~/.mycli`, and the CLI never started; a path of the wrong shape refused (2) | covered (the CLI probe on the Linux legs; the root refusal on every OS) | `AgentsExtraFlows` (2 facts); in-process: `AgentsCommandTests` (root, shape, JSON), `Agents/AgentProbeTests` (incl. the inotify no-open proof, Linux) |
-| `wsl-care archive check-base <path> [--json]` of a Windows drive path on the distro: exit 0, accepted, answered with the folder it is mounted at (`V:ai-archive` → `/mnt/v/ai-archive`, a 9p mount at `/mnt/v` from the sandbox's mount table); as root: exit 81, nothing on stdout; `config set archive.baseFolder` writes an accepted folder and refuses one inside `~/.claude` naming the rule (2), writing nothing; on Windows a drive folder accepted and a Linux path refused (`shape`) | covered (the drive path and config set on the Linux legs; the Windows rules on the Windows legs; the root refusal on every OS) | `ArchiveFlows` (4 facts); in-process: `Cli.Tests/ArchiveCommandTests`, `Archive/BaseFolderRulesTests`, `Archive/WindowsBaseFolderTests` |
+| `wsl-care archive check-base <path> [--json]` of a Windows drive path on the distro: exit 0, accepted, answered with the folder it is mounted at (`V:ai-archive` → `/mnt/v/ai-archive`, a 9p mount at `/mnt/v` from the sandbox's mount table); as root: exit 81, nothing on stdout; `config set archive.baseFolder` writes an accepted folder and refuses one inside `~/.claude` naming the rule (2), writing nothing; on Windows a drive folder accepted and a Linux path refused (`shape`); `config set archive.baseFolder` as root: exit 81, nothing written (E9.S0 review round, in-process) | covered (the drive path and config set on the Linux legs; the Windows rules on the Windows legs; the root refusal on every OS) | `ArchiveFlows` (4 facts); in-process: `Cli.Tests/ArchiveCommandTests`, `Archive/BaseFolderRulesTests`, `Archive/WindowsBaseFolderTests` |
 | `wsl-care archive preview [--agent <id>] [--json]` over a home with a 20-day-old Claude Code session and its `subagents/` companion and a 1-day-old one: exit 0, the old one due with 2 files, the young one counted younger, every file's last write unchanged; as root: exit 81, nothing on stdout | covered (the preview on the Linux legs; the root refusal on every OS) | `ArchiveFlows` (2 facts); in-process: `Cli.Tests/ArchiveCommandTests` (JSON, `--agent`, root), `Archive/SelectionTests`, `Archive/InUseTests` (incl. the inotify no-open proof, Linux) |
 | `wsl-care units dropin <unit>` (E7.S2c): the drop-in `install.sh` writes for one of the four units, from the machine layer — the timer's `OnCalendar` from `timer.periodHours`, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec; another unit refused (2) naming the four | covered (in-process, every OS; the installer's use on the Linux legs) | `Cli.Tests/UnitsCommandTests` (2); `ShippedFilesTests.The_drop_in_of_the_defaults_…`, `…A_drop_in_carries_the_configured_values`; `InstallFlows` (the render before any unit is enabled, its failure) |
 | `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |

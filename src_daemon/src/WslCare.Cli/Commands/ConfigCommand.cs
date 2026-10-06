@@ -55,8 +55,22 @@ internal static class ConfigCommand
         };
 
     /// <summary><c>config set archive.baseFolder &lt;path&gt;</c> (plan §15r D1, D7): the shape, then the base rules judged by this user's
-    /// process — the one that will write the archive; a refusal names its rule and nothing is written. Empty clears it.</summary>
+    /// process — the one that will write the archive; a refusal names its rule and nothing is written. Empty clears it. E9.S0
+    /// review round S2: as root it is refused (81) before anything is looked at — root would judge the folder with root's reach
+    /// and write root's own user layer.</summary>
     private static int SetBaseFolder(ConfigKey key, string value, CliHost host, TextWriter stdout, TextWriter stderr) =>
+        host.Privilege.IsRoot ? RefuseAsRoot(stderr) : SetBaseFolderAsUser(key, value, host, stdout, stderr);
+
+    internal const string BaseFolderRootRefusal =
+        "config set archive.baseFolder runs as the user whose sessions the archive moves, not as uid 0 — that user's own process judges and writes the archive (plan §15r D1): run it as that user. Nothing was looked at. Nothing was written.";
+
+    private static int RefuseAsRoot(TextWriter stderr)
+    {
+        Output.Note(stderr, BaseFolderRootRefusal);
+        return (int)ExitCode.NotAsRoot;
+    }
+
+    private static int SetBaseFolderAsUser(ConfigKey key, string value, CliHost host, TextWriter stdout, TextWriter stderr) =>
         ConfigValidation.Parse(key, value) is ValueCheck.Ok && value.Length > 0 && ArchiveCommand.Judge(host, value) is { Accepted: false } refused
             ? Output.Refuse(stderr, $"{key.Name}: refused ({refused.Rule}): {refused.Refusal}. Nothing was written.")
             : Checked(key, ConfigValidation.Parse(key, value), host, stdout, stderr);

@@ -264,6 +264,10 @@ internal static partial class GoldenContracts
             Directory.CreateDirectory(paths.DistroPath("/mnt/v/ai-archive"));
             files.Add(Answered("archive-check-base.json", archive, await archive.RunAsync("archive", "check-base", @"V:\ai-archive", "--json"), matched));
 
+            // E9.S0 review round: a REFUSED folder is an answer too — inside an agent's folder, with its rule and the filesystem it lies on.
+            Directory.CreateDirectory(paths.DistroPath("/home/me/.claude/archive"));
+            files.Add(Answered("archive-check-base-refused.json", archive, await archive.RunAsync("archive", "check-base", "/home/me/.claude/archive", "--json"), matched));
+
             // E9.S1: what the archive would move — one Claude Code session with a companion, due, at a mid-month noon so no time
             // zone moves its month.
             foreach (var file in new[] { "/home/me/.claude/projects/p/s1.jsonl", "/home/me/.claude/projects/p/s1/subagents/a.jsonl" })

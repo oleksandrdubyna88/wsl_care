@@ -42,15 +42,27 @@ public static partial class MountTable
 
     private static bool NamesDrive(MountEntry entry, char driveLetter) => entry.Type switch
     {
-        "9p" => entry.Options.Contains("aname=drvfs", StringComparer.Ordinal) && IsDriveName(entry.Option("path"), driveLetter),
+        "9p" => NinePNamesDrive(entry, driveLetter),
         "drvfs" => IsDriveName(entry.Source, driveLetter),
-        "virtiofs" => IsDriveName(entry.Source, driveLetter) || IsDriveName(entry.Option("path"), driveLetter),
+        "virtiofs" => VirtiofsNamesDrive(entry, driveLetter),
         _ => false,
     };
 
+    /// <summary>WSL 2's 9p: by its <c>path=</c> option, never by the source label.</summary>
+    private static bool NinePNamesDrive(MountEntry entry, char driveLetter) =>
+        entry.Options.Contains("aname=drvfs", StringComparer.Ordinal) && IsDriveName(entry.Option("path"), driveLetter);
+
+    private static bool VirtiofsNamesDrive(MountEntry entry, char driveLetter) =>
+        IsDriveName(entry.Source, driveLetter) || IsDriveName(entry.Option("path"), driveLetter);
+
     /// <summary><c>V:\</c> or <c>V:</c>, either case.</summary>
-    private static bool IsDriveName(string name, char driveLetter) =>
-        name.Length is 2 or 3 && char.ToUpperInvariant(name[0]) == char.ToUpperInvariant(driveLetter) && name[1] == ':' && (name.Length == 2 || name[2] == '\\');
+    private static bool IsDriveName(string name, char driveLetter) => StartsWithDrive(name, driveLetter) && EndsAtTheRoot(name);
+
+    private static bool StartsWithDrive(string name, char driveLetter) =>
+        name.Length >= 2 && char.ToUpperInvariant(name[0]) == char.ToUpperInvariant(driveLetter) && name[1] == ':';
+
+    /// <summary>Nothing after the drive but its separator.</summary>
+    private static bool EndsAtTheRoot(string name) => name.Length == 2 || (name.Length == 3 && name[2] == '\\');
 
     /// <summary>The kernel's mount points start at <c>/</c>; a fully qualified path is this host's own rule, the same on Linux and
     /// what lets the Windows test leg point a table at its temporary folder.</summary>

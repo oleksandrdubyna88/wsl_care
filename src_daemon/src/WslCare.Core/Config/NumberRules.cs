@@ -99,7 +99,9 @@ public static class NumberRules
         .. ArchiveRules,
     ];
 
-    /// <summary>The bytes one session takes in the archive's in-flight file: its key, its state, each file's path and hash.</summary>
+    /// <summary>The bytes one session takes in the archive's in-flight file: its entry id, agent, key (a key that does not fit is
+    /// refused by the run, E9.S2b), month, state and file count. Its files' hashes and archived paths live in the index only
+    /// (E9.S0 review round C3) — so an entry's size does not grow with its files.</summary>
     public const int BytesPerInflightSession = 600;
 
     /// <summary>Plan §15r E9.S0: the archive's coupled limits — ahead of the agents' own deletion, within the watchdog and the
@@ -121,10 +123,18 @@ public static class NumberRules
         new([ConfigKeys.Archive.PreviewTimeoutSeconds, ConfigKeys.Agents.MeasureBudgetSeconds],
             c => I(c, ConfigKeys.Archive.PreviewTimeoutSeconds) >= I(c, ConfigKeys.Agents.MeasureBudgetSeconds) + CeilingMarginSeconds,
             c => $"{ConfigKeys.Archive.PreviewTimeoutSeconds.Name} ({I(c, ConfigKeys.Archive.PreviewTimeoutSeconds)}) must be at least {ConfigKeys.Agents.MeasureBudgetSeconds.Name} ({I(c, ConfigKeys.Agents.MeasureBudgetSeconds)}) + {CeilingMarginSeconds} s: the archive preview lists the sessions under the measure-now budget (plan §15r E9.S1)"),
-        new([ConfigKeys.Archive.MaxStateFileBytes, ConfigKeys.Archive.MaxSessionsPerRun],
-            c => I(c, ConfigKeys.Archive.MaxStateFileBytes) >= (long)BytesPerInflightSession * I(c, ConfigKeys.Archive.MaxSessionsPerRun),
-            c => $"{ConfigKeys.Archive.MaxStateFileBytes.Name} ({I(c, ConfigKeys.Archive.MaxStateFileBytes)}) must hold {ConfigKeys.Archive.MaxSessionsPerRun.Name} ({I(c, ConfigKeys.Archive.MaxSessionsPerRun)}) in-flight sessions of {BytesPerInflightSession} bytes: an in-flight file past its read cap would be lost state"),
+        new([ConfigKeys.Archive.MaxStateFileBytes, ConfigKeys.Archive.MaxSessionsPerRun, ConfigKeys.Archive.RemoveAfterHours, ConfigKeys.Timer.PeriodHours],
+            c => I(c, ConfigKeys.Archive.MaxStateFileBytes) >= (long)BytesPerInflightSession * I(c, ConfigKeys.Archive.MaxSessionsPerRun) * WaitingRuns(c),
+            c => $"{ConfigKeys.Archive.MaxStateFileBytes.Name} ({I(c, ConfigKeys.Archive.MaxStateFileBytes)}) must hold {ConfigKeys.Archive.MaxSessionsPerRun.Name} ({I(c, ConfigKeys.Archive.MaxSessionsPerRun)}) in-flight sessions of {BytesPerInflightSession} bytes for each of the {WaitingRuns(c)} runs whose sessions may wait for their removal ({ConfigKeys.Archive.RemoveAfterHours.Name} over {ConfigKeys.Timer.PeriodHours.Name}, and the run itself): an in-flight file past its read cap would be lost state"),
+        new([ConfigKeys.Archive.MinRunMinutes, ConfigKeys.Archive.RunBudgetMinutes],
+            c => I(c, ConfigKeys.Archive.MinRunMinutes) <= I(c, ConfigKeys.Archive.RunBudgetMinutes),
+            c => $"{ConfigKeys.Archive.MinRunMinutes.Name} ({I(c, ConfigKeys.Archive.MinRunMinutes)}) must be at most {ConfigKeys.Archive.RunBudgetMinutes.Name} ({I(c, ConfigKeys.Archive.RunBudgetMinutes)}): a run that needs more time than its budget never starts"),
     ];
+
+    /// <summary>The runs whose sessions may sit in the in-flight file at once: those of the last ⌈removeAfterHours / timer.periodHours⌉
+    /// runs (copied, waiting for a LATER run to remove their source) and the run itself.</summary>
+    private static long WaitingRuns(EffectiveConfig c) =>
+        ((I(c, ConfigKeys.Archive.RemoveAfterHours) + I(c, ConfigKeys.Timer.PeriodHours) - 1) / I(c, ConfigKeys.Timer.PeriodHours)) + 1;
 
     /// <summary><c>archive.removeAfterHours</c> in whole days, rounded up.</summary>
     private static long RemovalDays(EffectiveConfig c) => (I(c, ConfigKeys.Archive.RemoveAfterHours) + HoursPerDay - 1) / HoursPerDay;

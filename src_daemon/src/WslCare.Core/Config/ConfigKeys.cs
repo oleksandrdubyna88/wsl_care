@@ -157,8 +157,9 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.TextKey BaseFolder = new("archive.baseFolder", new TextRule.AbsolutePathOrEmpty()) { Trust = KeyTrust.Display };
 
         /// <summary>Which agents are archived (plan §15r): only agents whose catalogue entry carries an <c>archive</c> block — never one
-        /// whose layout nobody confirmed. Fewer is the safe direction.</summary>
-        public static readonly ConfigKey.TextListKey Agents = new("archive.agents", WslCare.Core.Agents.AgentCatalogue.ArchivableIds) { Trust = new(SafeDirection.Subset) };
+        /// whose layout nobody confirmed — and, off by default, manual agents named <c>manual:&lt;name&gt;</c> that carry a session
+        /// glob (E9.S0 review round decision (b)). Fewer is the safe direction.</summary>
+        public static readonly ConfigKey.TextListKey Agents = new("archive.agents", WslCare.Core.Agents.AgentCatalogue.ArchivableIds, manualAgents: true) { Trust = new(SafeDirection.Subset) };
     }
 
     public static class Idle
