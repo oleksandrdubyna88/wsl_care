@@ -2,7 +2,7 @@ import { readEnum, type EnumRead } from '../client/enumValue';
 import { checkedBody } from '../client/handshake';
 import { RUN_ID_BODY } from '../shared/shapes';
 import type { JsonObject } from '../client/outcome';
-import { actionIdOf, MAX_SHOWN_VOLUMES, runIdOf, volumeNameOf, type ActionId, type ActionIds, type RunId, type VolumeName } from './rootIds';
+import { actionIdOf, MAX_SHOWN_VOLUMES, runIdOf, shownCap, volumeNameOf, type ActionId, type ActionIds, type RunId, type VolumeName } from './rootIds';
 import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
 
 /**
@@ -124,15 +124,15 @@ function countOf(a4: JsonObject): number | undefined {
   return isCount(count) ? count : undefined;
 }
 
-/** The plan's invariant (§15k #11): `shown.length == min(count, 10 000)`, and `shownTruncated` exactly when the cap cut it. */
-function consistent(names: readonly VolumeName[], count: number, capped: boolean): boolean {
-  return names.length === Math.min(count, MAX_SHOWN_VOLUMES) && capped === count > MAX_SHOWN_VOLUMES;
+/** The plan's invariant (§15k #11): `shown.length == min(count, cap)`, and `shownTruncated` exactly when the cap in force cut it. */
+function consistent(names: readonly VolumeName[], count: number, capped: boolean, cap: number): boolean {
+  return names.length === Math.min(count, cap) && capped === count > cap;
 }
 
-function selectionOf(names: readonly VolumeName[], count: number | undefined, truncated: unknown): ShownSelection | RootFailure {
+function selectionOf(names: readonly VolumeName[], count: number | undefined, truncated: unknown, cap: number): ShownSelection | RootFailure {
   const capped = truncated === true;
 
-  return count !== undefined && consistent(names, count, capped) ? { names, count, truncated: capped } : invalid(`its shown list holds ${names.length} names, which does not match its count (${String(count)}) and its cap flag (${String(capped)})`);
+  return count !== undefined && consistent(names, count, capped, cap) ? { names, count, truncated: capped, cap } : invalid(`its shown list holds ${names.length} names, which does not match its count (${String(count)}) and its cap flag (${String(capped)})`);
 }
 
 function invalid(reason: string): RootFailure {
@@ -140,25 +140,25 @@ function invalid(reason: string): RootFailure {
 }
 
 /** The raw shown list: absent (the preview could not read the volumes), a list within the cap, or refused. */
-function shownList(a4: JsonObject | undefined): readonly unknown[] | undefined | RootFailure {
+function shownList(a4: JsonObject | undefined, cap: number): readonly unknown[] | undefined | RootFailure {
   const shown = a4 === undefined ? undefined : a4.shown;
 
-  return shown === undefined ? undefined : cappedList(shown);
+  return shown === undefined ? undefined : cappedList(shown, cap);
 }
 
-function cappedList(shown: unknown): readonly unknown[] | RootFailure {
-  return Array.isArray(shown) && shown.length <= MAX_SHOWN_VOLUMES ? shown : invalid('its shown list is not a list of at most 10000 names');
+function cappedList(shown: unknown, cap: number): readonly unknown[] | RootFailure {
+  return Array.isArray(shown) && shown.length <= cap ? shown : invalid(`its shown list is not a list of at most ${cap} names`);
 }
 
 /** A4's shown list of a preview: absent (A4 then cannot be confirmed), held, or refused. */
-function a4Selection(a4: JsonObject | undefined): ShownSelection | undefined | RootFailure {
-  const shown = shownList(a4);
+function a4Selection(a4: JsonObject | undefined, cap: number): ShownSelection | undefined | RootFailure {
+  const shown = shownList(a4, cap);
   if (shown === undefined || !Array.isArray(shown)) {
     return shown as RootFailure | undefined;
   }
   const names = validNames(shown);
 
-  return typeof names === 'number' ? invalid(`entry ${names + 1} of its shown list is not an anonymous volume's name (64 lowercase hex digits)`) : selectionOf(names, countOf(a4 as JsonObject), (a4 as JsonObject).shownTruncated);
+  return typeof names === 'number' ? invalid(`entry ${names + 1} of its shown list is not an anonymous volume's name (64 lowercase hex digits)`) : selectionOf(names, countOf(a4 as JsonObject), (a4 as JsonObject).shownTruncated, cap);
 }
 
 function actionEntry(actions: unknown, id: ActionId): JsonObject | undefined {
@@ -172,17 +172,19 @@ export interface PreviewContext {
   readonly distro: string;
   readonly ids: ActionIds;
   readonly takenAtMs: number;
+  /** The daemon's published `maxShownNames` in the status the preview was gated on (`MAX_SHOWN_VOLUMES` when absent). */
+  readonly maxShownNames?: number;
 }
 
 /** A4's selection when the preview asked for A4, else nothing. */
-function a4Of(body: JsonObject, ids: ActionIds): ShownSelection | undefined | RootFailure {
-  return ids.includes('A4') ? a4Selection(actionEntry(body.actions, 'A4')) : undefined;
+function a4Of(body: JsonObject, context: PreviewContext): ShownSelection | undefined | RootFailure {
+  return context.ids.includes('A4') ? a4Selection(actionEntry(body.actions, 'A4'), shownCap(context.maxShownNames ?? MAX_SHOWN_VOLUMES)) : undefined;
 }
 
 /** `act <ids> --preview --json` (exit 0), held — or why it cannot be. */
 export function parsePreview(stdout: string, context: PreviewContext): HeldPreview | RootFailure {
   const checked = checkedBody(stdout);
-  const a4 = 'kind' in checked ? checked : a4Of(checked.body, context.ids);
+  const a4 = 'kind' in checked ? checked : a4Of(checked.body, context);
   if (a4 !== undefined && 'kind' in a4) {
     return a4;
   }

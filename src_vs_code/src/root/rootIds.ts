@@ -43,6 +43,14 @@ export type VolumeName = string & { readonly __brand: 'VolumeName' };
 export const MAX_SHOWN_VOLUMES = 10_000;
 
 /**
+ * A4's shown-list cap IN FORCE (daemon #17): the daemon's published `act.maxShownNames` (`status.limits.maxShownNames`),
+ * never above the compiled `MAX_SHOWN_VOLUMES` — the bound the stdin relay and the shape checks were sized for.
+ */
+export function shownCap(maxShownNames: number): number {
+  return Math.min(maxShownNames, MAX_SHOWN_VOLUMES);
+}
+
+/**
  * The daemon's one spelling of a run id: the UTC stamp, a dash, the pid with NO leading zero (`RunId.TryParse`, E6.S0
  * review S4 — two spellings would name one run twice). Stricter than the daemon in one place: pid 0 is refused, because no
  * run has it.

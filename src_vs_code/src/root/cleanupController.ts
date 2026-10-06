@@ -9,7 +9,8 @@ import { parseHandOff, parsePreview, runningOf, type HandOff, type HandOffResult
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { callRoot, FULL_CHECK_ACTIONS, RUN_KINDS, type RootOp, type RootTarget } from './rootCall';
 import { exitFailure } from './rootFailures';
-import { runIdOf, volumeNameOf, type ActionIds, type RunId, type VolumeName } from './rootIds';
+import { runIdOf, shownCap, volumeNameOf, type ActionIds, type RunId, type VolumeName } from './rootIds';
+import type { DaemonLimits } from '../shared/daemonLimits';
 import type { HandOffOutcome, HeldPreview, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
 
 /**
@@ -117,6 +118,8 @@ export const CAPABILITIES = {
 interface Call {
   readonly op: RootOp;
   readonly result: ProcessResult | undefined;
+  /** The daemon's published limits in the fresh status the call was gated on (daemon #17). */
+  readonly limits: DaemonLimits;
 }
 
 type Prepared = RootOp | RootFailure;
@@ -208,7 +211,7 @@ export class CleanupController {
     }
     const root = await this.checkedRoot(target);
 
-    return root.kind === 'rootOk' ? { op, result: await callRoot(this.options.runner, target, op, this.numbers(), gate.limits) } : root;
+    return root.kind === 'rootOk' ? { op, result: await callRoot(this.options.runner, target, op, this.numbers(), gate.limits), limits: gate.limits } : root;
   }
 
   private async gated(target: RootTarget, required: readonly string[]): Promise<GateOpen | RootFailure> {
@@ -265,7 +268,7 @@ export class CleanupController {
       return typeof answer === 'string' ? NOT_BUILT : answer;
     }
 
-    return this.registered(parsePreview(answer, { distro: target.distro, ids, takenAtMs: this.options.now() } satisfies PreviewContext));
+    return this.registered(parsePreview(answer, { distro: target.distro, ids, takenAtMs: this.options.now(), maxShownNames: call.limits.maxShownNames } satisfies PreviewContext));
   }
 
   private registered(preview: HeldPreview | RootFailure): PreviewOutcome {
@@ -376,16 +379,21 @@ function confirmOp(preview: HeldPreview, gate: GateOpen): Prepared {
   if ('kind' in ids) {
     return ids;
   }
-  const shown = ids.includes('A4') ? revalidated(preview) : { names: undefined };
+  const shown = ids.includes('A4') ? revalidated(preview, shownCap(gate.limits.maxShownNames)) : { names: undefined };
 
   return 'kind' in shown ? shown : { op: 'confirm', ids, shown: shown.names };
 }
 
-function revalidated(preview: HeldPreview): { readonly names: readonly VolumeName[] } | RootFailure {
+function revalidated(preview: HeldPreview, cap: number): { readonly names: readonly VolumeName[] } | RootFailure {
   const names = preview.a4 === undefined ? undefined : preview.a4.names;
   if (names === undefined) {
     return { kind: 'shownListInvalid', reason: 'its preview carried no shown list (the daemon could not read the volumes it would remove)' };
   }
+
+  return names.length > cap ? { kind: 'shownListInvalid', reason: `its shown list holds ${names.length} names and the daemon now takes at most ${cap}: preview again` } : validNames(names);
+}
+
+function validNames(names: readonly string[]): { readonly names: readonly VolumeName[] } | RootFailure {
   const valid = names.flatMap((name) => volumeNameOf(name) ?? []);
 
   return valid.length === names.length ? { names: valid } : { kind: 'shownListInvalid', reason: 'a held name is no longer a 64-hex volume name' };

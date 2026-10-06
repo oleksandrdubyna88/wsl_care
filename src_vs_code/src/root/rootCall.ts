@@ -4,7 +4,7 @@ import { VERBS } from '../client/verbs';
 import type { ProcessRequest, ProcessResult, Runner } from '../process/runner';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
-import type { ActionIds, RunId, VolumeName } from './rootIds';
+import { shownCap, type ActionIds, type RunId, type VolumeName } from './rootIds';
 
 /**
  * THE root boundary (E6.S2, plan §15f #2, §15j M1) — the ONE module of the extension that spells a root argv word: `-u`,
@@ -95,11 +95,11 @@ const TAILS: Tails = {
   rootCheck: () => VERBS.version,
 };
 
-/** The daemon tail of `op`, or `undefined` when the op cannot be built (a shown list that does not match its ids). */
-function tailOf(op: RootOp): readonly string[] | undefined {
+/** The daemon tail of `op`, or `undefined` when the op cannot be built (a shown list that does not match its ids, or longer than the cap in force). */
+function tailOf(op: RootOp, limits: DaemonLimits): readonly string[] | undefined {
   const tail = TAILS[op.op] as (op: RootOp) => readonly string[] | undefined;
 
-  return tail(op);
+  return fitsCap(op, limits) ? tail(op) : undefined;
 }
 
 /** A shown list exists exactly when A4 is confirmed: without one A4 would re-select live, and a list belongs to A4 alone. */
@@ -117,9 +117,14 @@ function stdinOf(op: RootOp): { readonly stdin?: Buffer } {
   return op.op === 'confirm' && op.shown !== undefined ? { stdin: Buffer.from(op.shown.map((name) => `${name}\n`).join('')) } : {};
 }
 
+/** A confirm's shown list fits the cap in force (daemon #17): the stdin never carries more names than the daemon takes. */
+function fitsCap(op: RootOp, limits: DaemonLimits): boolean {
+  return op.op !== 'confirm' || op.shown === undefined || op.shown.length <= shownCap(limits.maxShownNames);
+}
+
 /** The one request `op` makes in `target`, or `undefined` when the op cannot be built. Pure. */
 export function rootRequest(target: RootTarget, op: RootOp, numbers: Numbers = DEFAULT_NUMBERS, limits: DaemonLimits = FALLBACK_LIMITS): ProcessRequest | undefined {
-  const tail = tailOf(op);
+  const tail = tailOf(op, limits);
 
   return tail === undefined ? undefined : { file: target.wsl, args: daemonArgv(target.distro, tail, AS_ROOT), timeoutMs: rootTimeoutMs(op, numbers, limits), withoutEnv: NOT_FOR_ROOT, ...stdinOf(op) };
 }
