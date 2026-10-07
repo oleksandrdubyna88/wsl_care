@@ -73,7 +73,7 @@ ceiling can never be set at or below the daemon's own worst case for that call: 
 
 | Setting | Default | Range | Meaning |
 |---|---|---|---|
-| `wslCare.timeouts.statusSeconds` | 20 | 10–600 | How long `status --json` may take before `wsl.exe` is stopped and the call reads "timed out", in seconds. |
+| `wslCare.timeouts.statusSeconds` | 20 | 12–600 | How long `status --json` may take before `wsl.exe` is stopped and the call reads "timed out", in seconds. |
 | `wslCare.timeouts.versionSeconds` | 20 | 10–600 | How long `--version` may take (also the privileged check before a cleanup), in seconds. |
 | `wslCare.timeouts.doctorSeconds` | 120 | 119–3600 | How long `doctor --json` may take, in seconds — at least its worst case: four `systemctl show`, `systemctl --version` and `docker version`, each to its ceiling. |
 | `wslCare.timeouts.previewSeconds` | 350 | 340–7200 | How long `preview --all --json` (one Docker snapshot, up to 100 containers) may take, in seconds. |

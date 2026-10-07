@@ -20,6 +20,10 @@ export interface DaemonLimits {
   readonly unitStopSeconds: number;
   /** `commands.drainGraceMilliseconds`: the drain after a killed command, waited twice. */
   readonly drainGraceMs: number;
+  /** `mcpServers.cpuWindowMilliseconds` (daemon #38): the window `status` waits to sample a running MCP server's CPU. */
+  readonly mcpCpuWindowMs: number;
+  /** `mcpServers.logListMilliseconds` (daemon #38): the budget `status` spends listing MCP servers' run logs. */
+  readonly mcpLogListMs: number;
 }
 
 /** One field of `contracts/status-limits.json`, as this build knows it. */
@@ -40,6 +44,8 @@ export const LIMIT_FIELDS: readonly LimitField[] = [
   { name: 'maxShownNames', min: 1, max: 10_000, default: 10_000, into: 'maxShownNames', scale: 1 },
   { name: 'unitStopSeconds', min: 120, max: 600, default: 120, into: 'unitStopSeconds', scale: 1 },
   { name: 'drainGraceMilliseconds', min: 500, max: 10_000, default: 2000, into: 'drainGraceMs', scale: 1 },
+  { name: 'mcpCpuWindowMilliseconds', min: 200, max: 5000, default: 1000, into: 'mcpCpuWindowMs', scale: 1 },
+  { name: 'mcpLogListMilliseconds', min: 100, max: 5000, default: 1000, into: 'mcpLogListMs', scale: 1 },
 ];
 
 type Fields = Readonly<Record<string, unknown>>;

@@ -49,8 +49,11 @@ export function worstCasesOf(limits: DaemonLimits) {
     command(DAEMON_CEILING_S.dockerProbe) + 2 * command(DAEMON_CEILING_S.dockerDiskUsage) + command(DAEMON_CEILING_S.dockerListing) + INSPECT_BATCHES * command(DAEMON_CEILING_S.dockerListing);
 
   return {
-    /** No child process (plan §15b #5) — its time is file reads and the relay. */
-    status: 0,
+    /**
+     * No child process (plan §15b #5) — file reads and the relay, plus, since daemon #38 (E7.S2d), the MCP servers: their
+     * CPU sampled across the published window and their run logs listed within the published budget.
+     */
+    status: (limits.mcpCpuWindowMs + limits.mcpLogListMs) / 1000,
     /** Answers before the machine is read. Also the root check. */
     version: 0,
     /** Four `systemctl show`, `systemctl --version`, `docker version` (`DoctorRun`). */

@@ -99,6 +99,13 @@ test('#17: the worst cases follow the published drain grace and unit stop timeou
   assert.equal(dear.snapshot, 310 + 5 * 20);
 });
 
+test('#38: status waits the MCP CPU window and the run-log listing — its worst case follows both published limits', () => {
+  // daemon #38 (E7.S2d): `status` samples each running MCP server's CPU across `mcpServers.cpuWindowMilliseconds` and lists
+  // its run logs within `mcpServers.logListMilliseconds` (research/module_mcp_servers.md: "status takes … plus the CPU window").
+  assert.equal(worstCasesOf(FALLBACK_LIMITS).status, (1000 + 1000) / 1000, 'today: a 1 s window and a 1 s listing');
+  assert.equal(worstCasesOf(MAX_LIMITS).status, (5000 + 5000) / 1000, 'both at their contract maximum, 5 s each');
+});
+
 for (const [name, numbers] of [['the defaults', DEFAULT_NUMBERS], ['every setting at its minimum', MINIMUMS]] as const) {
   test(`#17: with every published limit at its MAXIMUM, each ceiling is still strictly above the daemon's worst case — ${name}`, () => {
     const dear = worstCasesOf(MAX_LIMITS);
