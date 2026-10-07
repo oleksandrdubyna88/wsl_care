@@ -91,7 +91,8 @@ fake refuses a synchronous confirm, stdin outside `--only -`, an id outside the 
 **The minima and the release (§15j M5, B3; §15k #7).** `client/handshake.ts` gains `MIN_DAEMON_FOR_ACTIONS` (0.1.0 —
 E6.S0 + E6.S1 merge before the owner cuts `daemon-v0.1.0`, B3's first case); `scripts/bundle.mjs` emits both minima into
 `dist/min-daemon.json`, the checked-in `src_vs_code/min-daemon.json` holds both, check-vsix compares all four places for
-each (`--min-daemon`, `--min-daemon-actions`), and *Install daemon* types the ACTIONS minimum. `release-extension-guard.sh`
+each (`--min-daemon`, `--min-daemon-actions`). *Install daemon* typed the ACTIONS minimum until the rebase onto #37; it now
+types `INSTALL_DAEMON` (0.1.2, `installDaemon` in the artefact, `--install-daemon`), at or above both minima. `release-extension-guard.sh`
 requires both published and verified, and keeps the FIRST PUBLIC EXTENSION ROOT-FREE keyed on TAGS: a checkout carrying
 `src/root/rootCall.ts` is refused unless the release is above `extension-v0.1.0`, that tag's own tree carries no root module and it is a published, non-draft release (the review round's S1, below); its
 answer is the output `root_allowed`, which the build hands to check-vsix (`--root-allowed`), which refuses a BUNDLE
@@ -125,7 +126,8 @@ checked in first; the E6.S2 review round dropped it.)
   a signal as the root paths do. **The root check (L2)** is "needs root" only for an exit (not 0, not −1).
 
 **The coai E6.S2 rounds** (2026-10-05): the release guard also refuses an artefact whose `minDaemonForActions` is below its
-`minDaemonForRender` (*Install daemon* types the actions minimum), held in TS by `handshake.versionAtLeast`; the stdin
+`minDaemonForRender` (then *Install daemon* typed the actions minimum; since #37 it types `INSTALL_DAEMON`, which the guard
+holds at or above both minima), held in TS by `handshake.versionAtLeast`; the stdin
 relay cites its measurement (facts row 20); and an expired no-run-id follow is E6.S3's to resolve from the daemon's records
 (the contract is in `cleanupController.ts`'s header and the E6.S3 row).
 

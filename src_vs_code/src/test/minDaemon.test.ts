@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { MIN_DAEMON_FOR_ACTIONS, MIN_DAEMON_FOR_RENDER, versionAtLeast } from '../client/handshake';
+import { INSTALL_DAEMON, MIN_DAEMON_FOR_ACTIONS, MIN_DAEMON_FOR_RENDER, versionAtLeast } from '../client/handshake';
 import { EXTENSION_ROOT } from './support/paths';
 
 /**
@@ -17,20 +17,20 @@ function readJson(file: string): unknown {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
 }
 
-test('the checked-in min-daemon.json — what the release guard reads at the tag — is MIN_DAEMON_FOR_RENDER and MIN_DAEMON_FOR_ACTIONS, and nothing else', () => {
-  assert.deepEqual(readJson(path.join(EXTENSION_ROOT, 'min-daemon.json')), { minDaemonForRender: MIN_DAEMON_FOR_RENDER, minDaemonForActions: MIN_DAEMON_FOR_ACTIONS },
+test('the checked-in min-daemon.json — what the release guard reads at the tag — is MIN_DAEMON_FOR_RENDER, MIN_DAEMON_FOR_ACTIONS and INSTALL_DAEMON, and nothing else', () => {
+  assert.deepEqual(readJson(path.join(EXTENSION_ROOT, 'min-daemon.json')), { minDaemonForRender: MIN_DAEMON_FOR_RENDER, minDaemonForActions: MIN_DAEMON_FOR_ACTIONS, installDaemon: INSTALL_DAEMON },
     'change the constant and this file in the same commit: the guard refuses a release whose minimum daemon is not published and verified');
 });
 
 test('the bundle step emitted dist/min-daemon.json from the compiled constant (npm test bundles before it tests)', () => {
-  assert.deepEqual(readJson(path.join(EXTENSION_ROOT, 'dist', 'min-daemon.json')), { minDaemonForRender: MIN_DAEMON_FOR_RENDER, minDaemonForActions: MIN_DAEMON_FOR_ACTIONS });
+  assert.deepEqual(readJson(path.join(EXTENSION_ROOT, 'dist', 'min-daemon.json')), { minDaemonForRender: MIN_DAEMON_FOR_RENDER, minDaemonForActions: MIN_DAEMON_FOR_ACTIONS, installDaemon: INSTALL_DAEMON });
 });
 
 // ---- coai E6.S2 code round #0: the actions minimum is never below the render minimum ----
 
 test('MIN_DAEMON_FOR_ACTIONS is at or above MIN_DAEMON_FOR_RENDER, by the extension\'s own version comparison', () => {
   assert.equal(versionAtLeast(MIN_DAEMON_FOR_ACTIONS, MIN_DAEMON_FOR_RENDER), true,
-    `Install daemon types ${MIN_DAEMON_FOR_ACTIONS}; below the render minimum ${MIN_DAEMON_FOR_RENDER} it would install a daemon this extension refuses to render`);
+    `the actions minimum ${MIN_DAEMON_FOR_ACTIONS} is below the render minimum ${MIN_DAEMON_FOR_RENDER}: a daemon the extension acts with must be one it renders`);
 });
 
 test('the comparison compares numbers field by field — 0.10.0 is above 0.9.0, a pre-release text is never "at least"', () => {

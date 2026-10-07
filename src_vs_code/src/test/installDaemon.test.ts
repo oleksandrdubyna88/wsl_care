@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { MIN_DAEMON_FOR_ACTIONS } from '../client/handshake';
+import { INSTALL_DAEMON, MIN_DAEMON_FOR_ACTIONS, MIN_DAEMON_FOR_RENDER, versionAtLeast } from '../client/handshake';
 import type { Failure } from '../client/outcome';
 import { WslCareClient, type TerminalTarget } from '../client/WslCareClient';
 import { INSTALL_COMMAND, INSTALL_PREREQUISITES, INSTALL_VERSION } from '../install/installCommand';
@@ -62,19 +62,20 @@ function deps(target: () => Promise<TerminalTarget | Failure>, answer: boolean):
 
 const UBUNTU: TerminalTarget = { kind: 'terminal', shellPath: WSL, shellArgs: ['-d', 'Ubuntu', '--cd', '~'], distro: 'Ubuntu' };
 
-test('the command is pinned to the compiled minimum daemon: the installer from its TAG and --version of the same', () => {
-  assert.equal(INSTALL_VERSION, MIN_DAEMON_FOR_ACTIONS);
+test('the command installs daemon 0.1.2 — the installer from its TAG and --version of the same — not a minimum', () => {
+  // daemon 0.1.0's act unit carries the CollectMode defect (fixed in 0.1.1, first published as 0.1.2; #37): a new user
+  // installing from the panel must get 0.1.2. The minima the extension RENDERS and ACTS with stay lower.
+  assert.equal(INSTALL_DAEMON, '0.1.2');
+  assert.equal(INSTALL_VERSION, INSTALL_DAEMON);
   assert.equal(
     INSTALL_COMMAND,
-    `curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v${MIN_DAEMON_FOR_ACTIONS}/install.sh | sudo sh -s -- --version ${MIN_DAEMON_FOR_ACTIONS}`,
+    'curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.2/install.sh | sudo sh -s -- --version 0.1.2',
   );
 });
 
-test('the version installed is never below the minimum the extension renders', () => {
-  const parts = (v: string): number[] => v.split('.').map(Number);
-  const [install, render] = [parts(INSTALL_DAEMON), parts(MIN_DAEMON_FOR_RENDER)];
-  const cmp = install.map((n, i) => n - (render[i] ?? 0)).find((d) => d !== 0) ?? 0;
-  assert.ok(cmp >= 0, `INSTALL_DAEMON ${INSTALL_DAEMON} is below MIN_DAEMON_FOR_RENDER ${MIN_DAEMON_FOR_RENDER}: the panel would install a daemon it then refuses`);
+test('the version installed is never below the minimum the extension renders, nor the one it acts with', () => {
+  assert.equal(versionAtLeast(INSTALL_DAEMON, MIN_DAEMON_FOR_RENDER), true, `INSTALL_DAEMON ${INSTALL_DAEMON} is below MIN_DAEMON_FOR_RENDER ${MIN_DAEMON_FOR_RENDER}: the panel would install a daemon it then refuses`);
+  assert.equal(versionAtLeast(INSTALL_DAEMON, MIN_DAEMON_FOR_ACTIONS), true, `INSTALL_DAEMON ${INSTALL_DAEMON} is below MIN_DAEMON_FOR_ACTIONS ${MIN_DAEMON_FOR_ACTIONS}: a fresh install could not run a cleanup`);
 });
 
 test('the command never skips the attestation, never fetches from main, and carries no shell trick beyond the one pipe', () => {
@@ -158,10 +159,10 @@ test('the Marketplace README shows the very command the extension types', () => 
   assert.ok(readme.split(/\r?\n/).includes(INSTALL_COMMAND), 'README.md carries INSTALL_COMMAND on a line of its own');
 });
 
-test('E6.S2 (plan §15j M5): the command installs the ACTIONS minimum — the install module reads that constant, not the render one', () => {
+test('the install module reads INSTALL_DAEMON — never a minimum, whose value can equal it by coincidence', () => {
   const source = fs.readFileSync(path.join(EXTENSION_ROOT, 'src', 'install', 'installCommand.ts'), 'utf8');
-  assert.match(source, /export const INSTALL_VERSION = pinnedVersion\(MIN_DAEMON_FOR_ACTIONS\);/);
-  assert.equal(/MIN_DAEMON_FOR_RENDER/.test(source), false, 'while both minima are 0.1.0 the value cannot tell them apart; the source can');
+  assert.match(source, /export const INSTALL_VERSION = pinnedVersion\(INSTALL_DAEMON\);/);
+  assert.equal(/MIN_DAEMON_FOR_(RENDER|ACTIONS)/.test(source.replace(/\/\*[\s\S]*?\*\//g, '')), false, 'the code (comments aside) names no minimum');
 });
 
 test('E6.S3 review A1 (the class swept): a report built from wsl.exe text reaches the notification with its link syntax broken', async () => {

@@ -85,6 +85,9 @@ jobs:
       min_daemon: ${{ steps.guard.outputs.min_daemon }}
       # The daemon the cleanups need (E6.S2, plan §15j M5) — published and verified too; the .vsix acts with and installs it.
       min_daemon_actions: ${{ steps.guard.outputs.min_daemon_actions }}
+      # The daemon release Install daemon types (#37: a value of its own, at or above both minima), found published and
+      # verified — the build checks its .vsix installs exactly that one.
+      install_daemon: ${{ steps.guard.outputs.install_daemon }}
       # Whether the tags allow a root-capable extension (plan §15j B3, §15k #7) — check-vsix refuses the root module otherwise.
       root_allowed: ${{ steps.guard.outputs.root_allowed }}
     steps:
@@ -119,6 +122,7 @@ jobs:
       VERSION: ${{ needs.guard.outputs.version }}
       MIN_DAEMON: ${{ needs.guard.outputs.min_daemon }}
       MIN_DAEMON_ACTIONS: ${{ needs.guard.outputs.min_daemon_actions }}
+      INSTALL_DAEMON: ${{ needs.guard.outputs.install_daemon }}
       ROOT_ALLOWED: ${{ needs.guard.outputs.root_allowed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -163,7 +167,7 @@ jobs:
       # renders and acts with equal to the ones the guard found published and verified, and (--root-allowed) no root module
       # in a bundle the tags keep root-free.
       - name: Leak checks on the .vsix
-        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON" --min-daemon-actions "$MIN_DAEMON_ACTIONS" --root-allowed "$ROOT_ALLOWED"
+        run: node scripts/check-vsix.mjs "../release-extension/ai-os-care-$VERSION.vsix" --release --min-daemon "$MIN_DAEMON" --min-daemon-actions "$MIN_DAEMON_ACTIONS" --install-daemon "$INSTALL_DAEMON" --root-allowed "$ROOT_ALLOWED"
 
       - name: The asset set
         run: bash ../.github/scripts/verify-extension-assets.sh "$VERSION" ../release-extension
