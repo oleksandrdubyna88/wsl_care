@@ -83,7 +83,7 @@ jobs:
       publisher: ${{ steps.guard.outputs.publisher }}
       # The minimum daemon the guard found published and verified — the build checks its .vsix renders exactly that one.
       min_daemon: ${{ steps.guard.outputs.min_daemon }}
-      # The daemon the cleanups need (E6.S2, plan §15j M5) — published and verified too; the .vsix acts with and installs it.
+      # The daemon the cleanups need (E6.S2, plan §15j M5) — published and verified too; the .vsix acts with it (it installs install_daemon).
       min_daemon_actions: ${{ steps.guard.outputs.min_daemon_actions }}
       # The daemon release Install daemon types (#37: a value of its own, at or above both minima), found published and
       # verified — the build checks its .vsix installs exactly that one.

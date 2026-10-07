@@ -12,7 +12,7 @@
  *   - not minified — the bundle scan reads it, and a reader of the .vsix can too.
  *
  * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>", "installDaemon": "<x.y.z>" }`, the minimum
- * daemon this build renders and the one it acts with and installs (E5 code round #2/#5, E6.S2 / plan §15j M5). The values
+ * daemon this build renders, the one it acts with, and the release its *Install daemon* installs (E5 code round #2/#5, E6.S2 / plan §15j M5, #37). The values
  * are read by RUNNING src/client/handshake.ts (esbuild's transform, then a
  * bounded node:vm with an empty context — the module imports types only), never with a pattern over its text.
  * scripts/check-vsix.mjs compares it with the compiled constant and with the checked-in src_vs_code/min-daemon.json —
