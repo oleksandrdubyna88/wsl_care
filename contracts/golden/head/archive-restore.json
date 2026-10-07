@@ -17,28 +17,12 @@
     "notes": []
   },
   "inUse": {
-    "state": "complete",
+    "state": "not-checked",
     "openFiles": 0,
     "claudeProjects": 0,
     "note": ""
   },
-  "agents": [
-    {
-      "id": "claude-code",
-      "enabled": true,
-      "copied": 1,
-      "copiedFiles": 2,
-      "copiedBytes": 200,
-      "removed": 0,
-      "removedBytes": 0,
-      "goneAtSource": 0,
-      "superseded": 0,
-      "damaged": 0,
-      "waiting": 1,
-      "skipped": [],
-      "note": ""
-    }
-  ],
+  "agents": [],
   "filesPerSecond": 0,
   "megabytesPerSecond": 0,
   "notes": [],

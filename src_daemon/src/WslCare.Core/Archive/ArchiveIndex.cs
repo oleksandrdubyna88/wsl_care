@@ -142,6 +142,9 @@ public static partial class ArchiveIndex
             ? $"a file that is not a plain relative path with a hash ({bad.Original})"
             : string.Empty;
 
+    /// <summary>Whether <paramref name="id"/> has an entry id's shape: 16 lower-case hex.</summary>
+    public static bool IsEntryId(string id) => EntryIdShape().IsMatch(id);
+
     /// <summary>A path of one or more plain names joined by <c>/</c>: not rooted, no empty, <c>.</c> or <c>..</c> segment, no <c>\</c>.</summary>
     public static bool IsPlainRelative(string path) =>
         !string.IsNullOrEmpty(path) && !path.Contains('\\', StringComparison.Ordinal) && !path.StartsWith('/') && !path.Contains(':', StringComparison.Ordinal)

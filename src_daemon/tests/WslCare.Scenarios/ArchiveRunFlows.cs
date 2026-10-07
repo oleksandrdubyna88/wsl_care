@@ -84,7 +84,7 @@ public sealed class ArchiveRunFlows
     {
         using var home = new ScenarioHome("archive-run-root") { ClaimsRoot = true };
 
-        foreach (var args in new[] { new[] { "archive", "run", "--json" }, ["archive", "status", "--json"], ["archive", "reconcile", "--scan", "--json"] })
+        foreach (var args in new[] { new[] { "archive", "run", "--json" }, ["archive", "status", "--json"], ["archive", "reconcile", "--scan", "--json"], ["archive", "restore", "--entry", "0123456789abcdef", "--json"], ["archive", "list", "--json"] })
         {
             var result = await home.RunAsync(args);
             result.Exit.Should().Be((int)ExitCode.NotAsRoot, string.Join(' ', args));
@@ -212,5 +212,47 @@ public sealed class ArchiveRunFlows
         Answer(result).Scan.Recovered.Should().Be(1);
         File.ReadAllText(Path.Combine(Path.GetDirectoryName(stray)!, "..", "..", "index.jsonl")).Should().Contain("\"event\":\"recovered\"");
         File.Exists(paths.DistroPath(Main)).Should().BeTrue();
+    }
+
+    /// <summary>Plan §15r E9.S3 through the built CLI: a session archived and removed is listed, restored by its session path (exit 0,
+    /// both files back with the archived bytes), listed as restored; a second restore finds it already there; a file planted on the
+    /// share and re-indexed by a scan is listed unverified and refused without --accept-unverified (exit 1).</summary>
+    [Fact]
+    public async Task A_removed_session_is_listed_restored_and_listed_restored_through_the_built_cli()
+    {
+        using var home = await Archived("archive-restore-cycle");
+        Assert.SkipWhen(home.Paths.Side == HostSide.Windows, LinuxOnly);
+        var paths = (LinuxHostPaths)home.Paths;
+        (await home.RunAsync("archive", "run", "--agent", "claude-code", "--json")).Exit.Should().Be((int)ExitCode.Ok);
+        ADayLater(home);
+        (await home.RunAsync("archive", "run", "--agent", "claude-code", "--json")).Exit.Should().Be((int)ExitCode.Ok);
+        File.Exists(paths.DistroPath(Main)).Should().BeFalse();
+
+        var listed = JsonSerializer.Deserialize((await home.RunAsync("archive", "list", "--agent", "claude-code", "--json")).Stdout, WslCareJsonContext.Default.ArchiveListReport)!;
+        listed.Entries.Should().ContainSingle().Which.Status.Should().Be(ArchiveIndex.Events.SourceRemoved);
+
+        var restore = await home.RunAsync("archive", "restore", "--agent", "claude-code", "--session", "projects/p/s1.jsonl", "--json");
+
+        restore.Exit.Should().Be((int)ExitCode.Ok, restore.Stdout + restore.Stderr);
+        Answer(restore).Restore.Restored.Should().Be(1);
+        File.ReadAllText(paths.DistroPath(Main)).Should().Be("the transcript");
+        File.ReadAllText(paths.DistroPath(Companion)).Should().Be("a subagent");
+        JsonSerializer.Deserialize((await home.RunAsync("archive", "list", "--json")).Stdout, WslCareJsonContext.Default.ArchiveListReport)!
+            .Entries.Single().Status.Should().Be(ArchiveIndex.Events.Restored);
+        Answer(await home.RunAsync("archive", "restore", "--entry", listed.Entries[0].EntryId, "--json")).Restore.AlreadyThere.Should().Be(1);
+
+        var stray = paths.DistroPath($"/mnt/v/ai-archive/claude-code/{listed.Entries[0].Month}/{SideName.OfThisProcess(HostSide.Wsl)}/projects/p/planted.jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(stray)!);
+        await File.WriteAllTextAsync(stray, "a file someone put on the share", TestContext.Current.CancellationToken);
+        (await home.RunAsync("archive", "reconcile", "--scan", "--json")).Exit.Should().Be((int)ExitCode.Ok);
+        var planted = JsonSerializer.Deserialize((await home.RunAsync("archive", "list", "--json")).Stdout, WslCareJsonContext.Default.ArchiveListReport)!
+            .Entries.Single(e => e.Key == "projects/p/planted.jsonl");
+        planted.Verified.Should().BeFalse("a recovered line is never verified (D4)");
+
+        var refused = await home.RunAsync("archive", "restore", "--entry", planted.EntryId, "--json");
+
+        refused.Exit.Should().Be((int)ExitCode.RunFailed);
+        Answer(refused).Restore.Sessions.Single().Note.Should().Contain("--accept-unverified");
+        File.Exists(paths.DistroPath("/home/me/.claude/projects/p/planted.jsonl")).Should().BeFalse("nothing planted on the share reaches the agent's folder");
     }
 }

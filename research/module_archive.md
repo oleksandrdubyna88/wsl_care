@@ -2,7 +2,7 @@
 
 > Built so far: **E9.S0** (catalogue blocks, keys, base folder rules, `archive check-base`), **E9.S1** (the selection and
 > `archive preview`, read-only), **E9.S2a** (the file seam `IArchiveFiles`, with its gate round and own review round), **E9.S2b**
-> (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`). Not built yet: restore / list (E9.S3), A13 in the engine and the root → user boundary (E9.S4),
+> (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`, with its own review round), **E9.S3** (`archive restore`, `archive list`). Not built yet: A13 / A19 in the engine and the root → user boundary (E9.S4),
 > the Windows open-file check (E9.S5). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
 > red runs and their break-it checks: [module_tests.md](module_tests.md), the E9 sections (from *The AI-session archive:
 > catalogue blocks, keys, base folder* to *The E9.S2a gate round*). The longer history of each
@@ -115,7 +115,9 @@ C-M4 / S-M2).
 | `archive run [--agent <id>] [--budget-seconds <n>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-run.json`; `--json` streams one-line JSON objects, the answer last | built (E9.S2b) |
 | `archive status [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-status.json` | built (E9.S2b) |
 | `archive reconcile --scan [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | the run's answer with its `scan` counts | built (E9.S2b) |
-| `archive restore`, `list`; A13 / A19 | — | — | E9.S3, E9.S4 |
+| `archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveRestore.cs` | the run's answer with its `restore` block (`contracts/golden/head/archive-restore.json`); exit 1 when a session was refused | built (E9.S3) |
+| `archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveList.cs` | `contracts/golden/head/archive-list.json`; read-only (no lock, no lease, no key made) | built (E9.S3) |
+| A13 / A19 | — | — | E9.S4 |
 
 Every built verb runs as the user; root is refused with exit 81.
 
@@ -169,6 +171,35 @@ Every built verb runs as the user; root is refused with exit 81.
   faults (verification, state write, index write, a base that failed mid-copy) exit 1; `archive run --json` carries `stopKind`.
   An I/O failure of the base mid-copy removes our partial copy and stops the run (`base-failed`); one of the source skips the
   unit. A file back at an original name after the removal closes the entry `split`.
+
+## The restore and the list (E9.S3, 2026-10-07, plan §15r D6, *E9.S3 as built*)
+
+```mermaid
+flowchart TD
+    ask["archive restore --entry / --agent --month / --agent --session<br/>(as the user; the run's pipeline: base, mount, lock, reach, key, lease, reconcile)"] --> find["this side's month indexes of the agents asked<br/>(ArchiveList.Months → MonthIndex.Open)"]
+    find --> one{"per entry, decided WHOLE before any write"}
+    one -- "unverified without --accept-unverified,<br/>on its way (in-flight), a file outside the unit,<br/>what never moves, a damaged copy,<br/>a live file of that name with other bytes" --> refused["refused — nothing of it written"]
+    one -- "every file there with the archived bytes" --> there["already-there"]
+    one -- missing files --> create["each created under its ORIGINAL name<br/>(exclusive create, no link, permit RestoreIntoAgentFolder)<br/>streamed from its copy, flushed, last write = now, read back"]
+    create --> event["restored event in the month index<br/>+ restored.json"]
+    event --> later["due again (its restore-time last write ages):<br/>identical → only an archived event naming the same copies;<br/>changed → copied as any session"]
+```
+
+- **`Archive/ArchiveRestore.cs`:**
+  - The candidates come from this side's indexes only: an entry belongs to the side that archived it.
+  - The target is the CURRENT layout root joined with each file's original relative path. The key matches the unit's glob and
+    every other file lies inside a companion of it.
+  - The source is the entry's own `<agent>/<yyyy>/<MM>/<side>/` folder; the copy is hashed first.
+  - Files are only ever created, never replaced; the copies stay. A restore writes the restore time as each file's last write,
+    so Claude's own sweep does not delete the session at its next start.
+- **Re-archive** (`ArchiveCopy.Rearchived`): a unit in `restored.json` is hashed. If it is identical to its entry, one `archived`
+  event in the original month names the existing copies (no bytes, `CopyOutcome.Archived` with 0 bytes). Otherwise it is copied
+  as any session. Either way it leaves `restored.json`.
+- **`Archive/ArchiveList.cs`:** `archive list` is read-only.
+  - Only the months asked are read, through `MonthIndex.Open`, so an unreadable index is named, never shown as empty.
+  - A torn line is counted as skipped.
+  - An entry is `verified: false` unless its archived event is this side's. A `recovered` entry is never verified.
+  - `--run` lists the entries that run's lines touched.
 
 ## External dependencies
 

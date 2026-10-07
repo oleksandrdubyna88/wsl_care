@@ -2551,6 +2551,51 @@ Linux (in the existing `/tmp` copy, `nice 19`, nothing deleted): all 20 checks w
 - C-m1: the heartbeat race has no deterministic test. The flows assert the outcome (the last line).
 - M8 for the lease's write: no test can make a `FileStream` write fail on an open lease file.
 
+### The restore and the list (E9.S3, 2026-10-07, plan §15r D6, *E9.S3 as built*)
+
+| Guarantee | Tests |
+|---|---|
+| a removed session is restored byte-identical (content), with the restore time as its last write; its copies stay; the entry is `restored` and in `restored.json` | `Archive/ArchiveProtocolTests.Restore.cs` — `A_removed_session_is_restored_byte_identical_with_the_restore_time_and_its_copies_stay` |
+| D4/D6: an unverified entry is restored only with `--accept-unverified` | `An_unverified_entry_is_restored_only_when_accepted` |
+| never overwrite: a live file of that name with other bytes refuses the WHOLE session (its companion is not created) | `A_live_file_of_that_name_with_other_bytes_refuses_the_whole_session` |
+| a damaged copy is never restored, nor anything of its session | `A_damaged_copy_is_never_restored_nor_anything_of_its_session` |
+| review M4: an index line naming a file beside the unit, another session, or under `memory` is never restored | `An_index_line_pointing_outside_the_agents_layout_is_never_restored` (3 rows) |
+| an entry on its way (in-flight) is not restored; a session already there is answered so, no event | `An_entry_on_its_way_is_not_restored`, `A_session_already_there_is_answered_so_and_nothing_is_written` |
+| coai G5 / review M10: a restored session due again is archived as an EVENT only (0 bytes, no copy added), leaves `restored.json`, and the next run removes it against the same copies; a changed one is copied as any session | `A_restored_session_archived_again_writes_only_an_event_and_is_removed_against_the_same_copies`, `A_restored_session_that_changed_is_copied_again_as_any_session` |
+| the layout glob: one pattern per segment, `**` any depth | `A_layout_glob_matches_one_pattern_per_segment` (5 rows) |
+| the run's pipeline: restored by its month, its session path or its entry id under the lock and the lease (released after); the restored session is young again, so the next run leaves it alone | `Archive/ArchiveRunTests.Restore.cs` — `A_removed_session_is_restored_by_its_month_its_path_or_its_entry_id` (3 rows), `A_restored_session_is_left_alone_by_the_next_run` |
+| the list: only the months asked, the status of each entry, `--run` filters by the run's lines; a torn line skipped and counted, an edited archived line marks its entry unverified; without a base, `no-base` | `The_list_reads_only_the_months_asked_and_says_each_entrys_status`, `The_list_skips_a_torn_line_and_marks_an_unverified_entry`, `Without_a_base_the_list_answers_no_base_and_reads_nothing` |
+| the command line: 13 wrong namings are usage errors naming the rule; root refused (81); `no-base` answers exit 0 | `Cli.Tests/ArchiveRestoreCommandTests` |
+| the built CLI: listed, restored, listed `restored`, already there by id; a file planted on the share and re-indexed is listed unverified, refused without `--accept-unverified` (exit 1), never reaches the agent folder; root refused | `ArchiveRunFlows.A_removed_session_is_listed_restored_and_listed_restored_through_the_built_cli`, `…Run_status_and_scan_as_root_are_refused_with_their_own_exit_code` |
+| the answers' shapes | goldens `archive-list.json`, `archive-restore.json` |
+
+**Not RED first:** the restore and the list were written before their tests. Each guarantee is proved by its break-it check.
+
+**Teeth, Windows:** 12 checks, all red.
+- An unverified entry restored without being asked: 1 red.
+- An entry on its way restored: 1.
+- A file outside the unit restored: 1.
+- What never moves restored: 1.
+- A damaged copy restored: 1.
+- A live file with other bytes taken as restored: 1.
+- The original last write kept: 2.
+- No restored event: 5.
+- `restored.json` never written: 2.
+- A restored session copied again byte for byte: 1.
+- The list reads every month: 1.
+- The list ignores `--run`: 1.
+
+Six of these first failed to BUILD because another process held the DLLs (a user-mapped section). They were run again, and those
+are the results above.
+
+**Teeth, Linux:** NOT RUN. They were stopped before their first result: the coordinator halted all WSL builds and tests while
+the machine was overloaded. They are owed. The WSL suites themselves had run green just before, goldens included. CI's Linux legs
+run the suites.
+
+**Not break-it checked:**
+- The restore's read-back after the create: no test can make the disk return other bytes.
+- A write failing midway: that path leaves the files restored so far and is answered `refused`.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -3238,7 +3283,8 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care archive run [--agent <id>] [--budget-seconds <n>] [--json]` over a home whose base is the network drive's folder and a 20-day-old Claude Code session with a companion: the first run copies it (exit 0, one copied, a `{"progress":"file"…}` line naming nothing, the source untouched, `archive status` naming the entry `archived`); a run a day later removes it (the source gone, its copy in the base); as root: exit 81, nothing on stdout; without a base: `no-base`, exit 0; the run KILLED by its own pid at each of the 14 points, and again with the base gone for the next run (refused, nothing removed): the next runs finish it — no quarantine name left, both files in the base, nothing on its way | covered (the moves on the Linux legs; the root refusal and `no-base` on every OS) | `ArchiveRunFlows` (5 facts, the kill theory 28 rows); in-process `Core.Tests/Archive/ArchiveRunTests`, `ArchiveProtocolTests` (the 14 points × 4 agent actions) |
 | `wsl-care archive status [--json]`: the side's lock `free` / `running` / `stuck-in-kernel`, the entries on their way, the last run — local state only | covered | `ArchiveRunFlows.Without_a_base_the_run_answers_no_base_and_status_answers_free`, `…A_due_session_is_copied_by_one_run_and_removed_by_a_later_one` |
 | `wsl-care archive reconcile --scan [--json]` over a base holding a copy no index line names: exit 0, one `recovered` line in the month index, the source untouched | covered (Linux legs) | `ArchiveRunFlows.The_scan_reindexes_a_copy_no_index_line_names_and_touches_nothing_at_the_source` |
-| `wsl-care archive restore / list` | not covered | not built yet (E9.S3) |
+| `wsl-care archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]` over a session archived and removed: by its session path exit 0, both files back with the archived bytes, listed `restored`; again by its entry id: `already-there`; a file planted on the share and re-indexed by a scan: refused without `--accept-unverified` (exit 1), nothing planted reaches the agent folder; as root: exit 81; without a base: `no-base`, exit 0; a usage error for every wrong naming (13 rows) | covered (the restore on the Linux legs; usage, root and `no-base` on every OS) | `ArchiveRunFlows.A_removed_session_is_listed_restored_and_listed_restored_through_the_built_cli`, `…Run_status_and_scan_as_root_are_refused_with_their_own_exit_code`; `Cli.Tests/ArchiveRestoreCommandTests`; in-process `ArchiveProtocolTests.Restore.cs`, `ArchiveRunTests.Restore.cs` |
+| `wsl-care archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]` over the same base: one entry `sourceRemoved`, then `restored`; the planted copy listed unverified; only the month asked is read, `--run` lists what that run touched, a torn line skipped and counted; as root: exit 81 | covered | the same flows; `ArchiveRunTests.The_list_reads_only_the_months_asked_and_says_each_entrys_status`, `…The_list_skips_a_torn_line_and_marks_an_unverified_entry` |
 | `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, every unit byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
 | `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |
 | `install.sh`: the newest daemon release from a COMPACT releases list (one line, `"tag_name":"…"` with and without a space): by version number (0.10.0 over 0.9.1), a pre-release (`-rc.1`) and the extension never chosen | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_chosen_by_version_number_from_a_compact_releases_list` |

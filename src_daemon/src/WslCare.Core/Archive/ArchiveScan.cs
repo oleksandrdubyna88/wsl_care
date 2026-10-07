@@ -34,7 +34,7 @@ public static partial class ArchiveScan
     }
 
     /// <summary>Every <c>yyyy/MM</c> folder under an agent's folder of the base.</summary>
-    private static IEnumerable<string> Months(IFileSystem files, string agentFolder) =>
+    internal static IEnumerable<string> Months(IFileSystem files, string agentFolder) =>
         !files.DirectoryExists(agentFolder) ? []
         : files.ListDirectories(agentFolder).Select(Path.GetFileName).Where(y => Year().IsMatch(y ?? string.Empty))
             .SelectMany(y => files.ListDirectories(Path.Combine(agentFolder, y!)).Select(Path.GetFileName).Where(m => MonthName().IsMatch(m ?? string.Empty)).Select(m => $"{y}/{m}"));

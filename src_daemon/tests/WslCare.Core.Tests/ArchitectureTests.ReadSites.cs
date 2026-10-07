@@ -116,7 +116,7 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Archive/GitTrees.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/ArchiveReconcile.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/ArchiveScan.cs"] = new() { ["ListDirectories"] = (2, ReadClass.TargetHomeMetadata), ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
-        ["WslCare.Core/Archive/ArchiveState.cs"] = new() { ["ReadRegularFile"] = (2, ReadClass.OwnUnprivileged) },
+        ["WslCare.Core/Archive/ArchiveState.cs"] = new() { ["ReadRegularFile"] = (3, ReadClass.OwnUnprivileged) },
         ["WslCare.Core/Archive/ArchiveStatus.cs"] = new() { ["ReadFile"] = (1, ReadClass.System) },
         ["WslCare.Core/Archive/QuarantineCount.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/BaseFolderPlacement.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },

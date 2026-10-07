@@ -97,9 +97,29 @@ public sealed class ArchiveState(IHostPaths paths, IFileSystem files)
         return Write(Join("summary.json"), JsonSerializer.SerializeToUtf8Bytes(new SummaryFile(Version, [.. rows.OrderBy(r => r.Agent, StringComparer.Ordinal).ThenBy(r => r.Month, StringComparer.Ordinal)]), WslCareJsonContext.Compact.SummaryFile));
     }
 
-    /// <summary>The entry ids whose latest status is <c>restored</c> (written by E9.S3's restore; empty until then).</summary>
-    public IReadOnlySet<string> Restored() =>
-        Read(Join("restored.json"), WslCareJsonContext.Compact.RestoredFile) is { } restored ? new HashSet<string>(restored.Entries, StringComparer.Ordinal) : new HashSet<string>(StringComparer.Ordinal);
+    /// <summary>The entries restored into the agent folders and not archived again (plan §15r D5, D6, review M10) — what lets a restored
+    /// session be archived again as an EVENT only, without its bytes. An entry with a field missing is skipped.</summary>
+    public IReadOnlyList<RestoredEntry> Restored() =>
+        Read(Join(RestoredName), WslCareJsonContext.Compact.RestoredFile) is { Entries: { } entries }
+            ? [.. entries.Where(e => e is { EntryId: not null, Agent: not null, Key: not null, Month: not null })]
+            : [];
+
+    /// <summary>The entry added (replacing one of the same id); empty when written.</summary>
+    public string AddRestored(RestoredEntry entry) =>
+        WriteRestored([.. Restored().Where(e => e.EntryId != entry.EntryId), entry]);
+
+    /// <summary>The entry removed — it was archived again; empty when written.</summary>
+    public string DropRestored(string entryId) => WriteRestored([.. Restored().Where(e => e.EntryId != entryId)]);
+
+    private string WriteRestored(IReadOnlyList<RestoredEntry> entries) =>
+        Write(Join(RestoredName), JsonSerializer.SerializeToUtf8Bytes(new RestoredFile(Version, entries), WslCareJsonContext.Compact.RestoredFile));
+
+    private const string RestoredName = "restored.json";
+
+    /// <summary>The side's MAC key when one exists — never made (a reader such as <c>archive list</c> writes nothing); empty otherwise,
+    /// and every line then reads unverified.</summary>
+    public byte[] ExistingIndexKey() =>
+        files.ReadRegularFile(Join("index.key"), KeyBytes * 4) is FileReadResult.Content { Bytes.Length: KeyBytes } key ? key.Bytes : [];
 
     /// <summary>The side's MAC key; made (32 random bytes, 0600) when there is none. A key that cannot be read makes every line
     /// unverified — never invalid (D4).</summary>
@@ -147,5 +167,8 @@ public sealed record SummaryRow(string Agent, string Month, int Sessions, int Fi
 
 public sealed record SummaryFile(int V, IReadOnlyList<SummaryRow> Months);
 
-/// <summary>The entries restored into the agent folders (E9.S3 writes it; the reconcile never removes one of them).</summary>
-public sealed record RestoredFile(int V, IReadOnlyList<string> Entries);
+/// <summary>One entry restored into an agent folder: where its index line is (the agent and the month) and the unit it is.</summary>
+public sealed record RestoredEntry(string EntryId, string Agent, string Key, string Month);
+
+/// <summary><c>restored.json</c> (plan §15r D5): the entries whose latest status is <c>restored</c>.</summary>
+public sealed record RestoredFile(int V, IReadOnlyList<RestoredEntry> Entries);

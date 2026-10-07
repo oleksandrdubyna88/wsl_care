@@ -2679,10 +2679,10 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-07 — E9.S0, E9.S1, E9.S2a and E9.S2b built, the S0 and S1 review rounds, the S2a gate round and the S2a own review round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-07 — E9.S0, E9.S1, E9.S2a, E9.S2b and E9.S3 built, the S0 and S1 review rounds, the S2a gate round, the S2a and S2b own review rounds fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
 > as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built*, *Risk consult
-> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round* and *E9.S2b as built*); E9.S3–E9.S5 and the E9 live gate open. Originally: plan only,
+> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round* and *E9.S3 as built*); E9.S4–E9.S5 and the E9 live gate open (the coai code round over S2b/S3 owed). Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3652,6 +3652,47 @@ security findings `S-`.
 | C-m4 | ad-hoc outcome tuples in the natives | **Fixed:** `NativeOpen` (shared), `BeneathWrites.Chain`, `LinuxStatus.Known`, `WindowsFileInfo`, `HeldLevel` | `Files/BeneathWrites.cs`, the Windows half |
 | C-m5 | stale texts (`MoveFileEx`, "four files", the owner questions) | **Fixed** (the owner questions were already added in `31f101e`) | the docs and test comments |
 
+#### E9.S3 as built (2026-10-07)
+
+Built on `feat/wc-e9-archive-daemon`. The guarantees, red runs and teeth are in `research/module_tests.md` § *The restore and the
+list (E9.S3)*; the design is in `research/module_archive.md`.
+
+**Deviations from the text above:**
+
+- **The files:**
+  - `Archive/ArchiveRestore.cs` (not `Restore.cs`) and `Archive/ArchiveList.cs`.
+  - The restore runs inside `ArchiveRun`'s own pipeline: the base judged, its mount compared, the lock, the reach, the key, the
+    lease, the reconcile. It answers the run's report with a `restore` block. `ArchiveRunInput.Restore` carries the request.
+  - `ArchiveRun.ContextOf` builds the one context every verb shares.
+- **The selection of what is restored** (CLI): `--entry <id>[,<id>…] | --agent <id> --month <yyyy-MM> | --agent <id> --session <path>`.
+  D6's `--month <agent> <yyyy-MM>` and `--session <agent> <path>` take the agent through `--agent`, because the option reader
+  takes one value per option. A month restores the entries of that month whose source was removed (`sourceRemoved`, `split`).
+- **The target and the source:** D6 as written.
+  - The current layout root joined with the original relative path. The key must match the unit's glob, and every other file must
+    lie inside a companion of it (`ArchiveRestore.LayoutProblem`, its own glob matcher with `**`). Nothing that never moves.
+  - The archived source is the entry's own `<agent>/<yyyy>/<MM>/<side>/` folder joined with a plain relative path. The index reader
+    already refuses anything else.
+  - The copy is hashed first. An existing target with the archived bytes is "already there"; with other bytes the WHOLE session is
+    refused. All of this is decided before anything is written.
+- **An entry on its way** (in the in-flight file) is refused: the run must finish it first.
+- **A write that fails midway** leaves the files already restored (they hold the archived bytes). The session answers `refused`,
+  naming the failure. The permit allows a create only, so nothing restored is ever removed.
+- **`restored.json`** is `RestoredEntry(entryId, agent, key, month)`, not a path map: the archived paths stay in the index (the
+  entry's latest `archived` event). **Deviation:** a restored session that changed before it was due again is copied as any
+  session AND leaves `restored.json` too (D6 says only an identical one leaves); keeping the old entry would only grow the file.
+- **The re-archive** of an identical restored session writes only an `archived` event in the entry's ORIGINAL month, naming the
+  existing copies. Phase 2 then removes against those copies.
+- **`archive list`** is read-only: no lock, no lease, and no key is made (`ArchiveState.ExistingIndexKey`; without one every line
+  reads unverified). It does not compare the base's mount either, because it writes nothing.
+- **Exit codes:**
+  - `archive restore`: 0 when every session was restored or already there, 1 when one was refused, 81 as root.
+  - `archive list`: 0, or 1 for a refused or unreachable base.
+- **Not built:**
+  - A19, the engine's button-only restore, which is E9.S4's.
+  - The drvfs-like temp base round trip: the seam is the same on any folder; the 9p base is the E9 live gate's.
+- **Not RED first:** the restore was written before its tests. Every guarantee is proved by a break-it check instead (12, red on
+  Windows and Linux).
+
 #### E9.S2b own review round (2026-10-07) — a correctness and a security review of the protocol
 
 Two own reviews of `34891b5` (E9.S2b, rebased on `7e65e16`), read against the files: every finding ACCEPTED except where the row says
@@ -3811,7 +3852,7 @@ tagged (B3). Then, after the E6 daemon live gate's stamp:
 | E9.S1 | selection, the effective age, in-use checks, `archive preview` (read-only) — §15r. **Built 2026-10-06** — deviations in §15r *E9.S1 as built* | Opus + two own reviews |
 | E9.S2a | the seam: no-link streaming copy and exclusive create, no-replace renames, the verified removal (Linux and Windows semantics), the policy, the widened scan, the fault seam — §15r R1. **Built 2026-10-06** — deviations in §15r *E9.S2a as built* (the removal takes a write lease: risk consult 9/9.2) | Opus (Fable asked for by the gate; its monthly limit is spent — recorded) + two own reviews — irreplaceable data |
 | E9.S2b | the two-phase protocol, the index (merged, MAC'd), the in-flight file, the lease, the reconcile, `archive run` / `status` / `reconcile --scan` — §15r R1. **Built 2026-10-07** — deviations in §15r *E9.S2b as built* | Opus (Fable spent, recorded) + two own reviews |
-| E9.S3 | restore (create-only), `archive list` — §15r R1 | Opus (Fable spent, recorded) + two own reviews — the reverse move |
+| E9.S3 | restore (create-only), `archive list` — §15r R1. **Built 2026-10-07** — deviations in §15r *E9.S3 as built* | Opus (Fable spent, recorded) + two own reviews — the reverse move |
 | E9.S4 | A13 and A19 in the engine, the root → user child boundary, streaming, the budget — §15r R2 | Opus + two own reviews |
 | E9.S5 | the Windows side of the verbs — §15r | Opus + one own review |
 | E9.S6 | a minimal per-user Windows archive task — only on the owner's Q7 decision (§15r) | Opus |

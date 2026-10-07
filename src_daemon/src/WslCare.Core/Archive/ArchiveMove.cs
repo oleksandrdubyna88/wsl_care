@@ -21,6 +21,9 @@ public static class MoveSteps
     public const string CloseStart = "close-start";
     public const string Closed = "closed";
 
+    /// <summary>A chunk of an archived copy written back into an agent folder (E9.S3's restore; not one of the 14 kill points).</summary>
+    public const string RestoreChunk = "restore-chunk";
+
     public static IReadOnlyList<string> All { get; } = [Intent, CopyChunk, FinalFlushed, BetweenFiles, IndexFlushed, QuarantineStart, FoldersStart, CloseStart, Closed];
 }
 
@@ -78,7 +81,46 @@ public static class ArchiveCopy
     /// <summary>The widest <c>~N</c> a name takes before the unit is skipped — the suffix's two digits (a format, group C).</summary>
     private const int MaxSuffix = 99;
 
-    public static CopyOutcome Copy(MoveContext c, string agent, string under, UnitFound unit)
+    public static CopyOutcome Copy(MoveContext c, string agent, string under, UnitFound unit) =>
+        c.Book.RestoredOf(agent, unit.Key) is { } restored ? Rearchived(c, agent, under, unit, restored) : CopyBytes(c, agent, under, unit);
+
+    /// <summary>Plan §15r D6 (coai G5, review M10): a RESTORED session due again. Identical to its restored entry (every file, by its
+    /// original path and its hash) → only an <c>archived</c> event that names the existing copies — no bytes; otherwise it is copied
+    /// as any session. Either way it leaves <c>restored.json</c> (deviation: D6 says on identical only — a changed one is a new entry,
+    /// and keeping the old one would only grow the file).</summary>
+    private static CopyOutcome Rearchived(MoveContext c, string agent, string under, UnitFound unit, RestoredEntry restored)
+    {
+        var indexed = MonthIndex.Entries(c, agent, restored.Month).FirstOrDefault(e => e.EntryId == restored.EntryId && e.Verified);
+        if (indexed is not null && Identical(c, under, unit, indexed))
+        {
+            return EventOnly(c, agent, under, unit, indexed);
+        }
+
+        _ = c.Book.DropRestored(restored.EntryId);
+        return CopyBytes(c, agent, under, unit);
+    }
+
+    private static bool Identical(MoveContext c, string under, UnitFound unit, IndexEntry indexed) =>
+        unit.Files.Count == indexed.Files.Count
+        && unit.Files.All(f => SourceHash(c, under, f) is FileHash.Hashed h && indexed.Files.Any(i => i.Original == f.Relative && i.Sha256 == h.Sha256 && i.Bytes == h.Length));
+
+    private static CopyOutcome EventOnly(MoveContext c, string agent, string under, UnitFound unit, IndexEntry indexed)
+    {
+        var now = c.Clock.GetUtcNow();
+        var line = new IndexLine(ArchiveIndex.SchemaVersion, ArchiveIndex.Events.Archived, indexed.EntryId, agent, c.Side, unit.Key, indexed.Month, now, c.Zone.Id, c.RunId, indexed.Files, string.Empty);
+        if (AppendLine(c, agent, indexed.Month, line) is { Length: > 0 } unwritten)
+        {
+            return new CopyOutcome.Stop(StopKinds.IndexWrite, $"the month index could not be written ({unwritten}); the restored session waits");
+        }
+
+        _ = c.Book.DropRestored(indexed.EntryId);
+        var entry = new InflightEntry(indexed.EntryId, agent, under, unit.Key, indexed.Month, InflightStates.Archived, c.RunId, now, indexed.Files.Count, string.Empty);
+        return c.Book.Put(entry) is { Length: > 0 } unrecorded
+            ? new CopyOutcome.Stop(StopKinds.StateWrite, $"the in-flight file could not be written ({unrecorded})")
+            : new CopyOutcome.Archived(entry, 0, indexed.Files.Count);
+    }
+
+    private static CopyOutcome CopyBytes(MoveContext c, string agent, string under, UnitFound unit)
     {
         var intent = new InflightEntry(ArchiveIndex.EntryIdOf(c.Side, agent, unit.Key, []), agent, under, unit.Key, unit.Month, InflightStates.Copying, c.RunId, DateTimeOffset.MinValue, unit.Files.Count, string.Empty);
         if (c.Book.Put(intent) is { Length: > 0 } unwritten)
@@ -390,4 +432,11 @@ public sealed class InflightBook(ArchiveState state)
     }
 
     private string Save() => state.WriteInflight(new InflightFile(ArchiveState.Version, [.. _entries]));
+
+    /// <summary>The restored entry of this unit (plan §15r D6, review M10) when it was restored and not archived again.</summary>
+    public RestoredEntry? RestoredOf(string agent, string key) => state.Restored().FirstOrDefault(e => e.Agent == agent && e.Key == key);
+
+    public string AddRestored(RestoredEntry entry) => state.AddRestored(entry);
+
+    public string DropRestored(string entryId) => state.DropRestored(entryId);
 }

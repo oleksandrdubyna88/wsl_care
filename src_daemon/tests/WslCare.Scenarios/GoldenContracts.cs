@@ -115,6 +115,8 @@ internal static partial class GoldenContracts
         new("inflight[*].archivedAtUtc", "archive status: the entry was archived by the run just before (E9.S2b)", _ => FixedInstant),
         new("lastRun.startedUtc", "archive status: the last run started now (E9.S2b)", _ => FixedInstant),
         new("lastRun.endedUtc", "archive status: the last run ended now (E9.S2b)", _ => FixedInstant),
+        new("entries[*].entryId", "archive list: an entry id hashes this machine's side name (E9.S3)", _ => "0123456789abcdef"),
+        new("entries[*].archivedAtUtc", "archive list: the entry was archived by the run just before (E9.S3)", _ => FixedInstant),
         new("run.endedAt", "runs show: the confirmed act ended now (E6.S0)", _ => FixedInstant),
     ];
 
@@ -292,6 +294,10 @@ internal static partial class GoldenContracts
             var run = await archive.RunAsync("archive", "run", "--agent", "claude-code", "--json");
             files.Add(Answered("archive-run.json", archive, run with { Stdout = run.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
             files.Add(Answered("archive-status.json", archive, await archive.RunAsync("archive", "status", "--json"), matched));
+
+            // E9.S3: the list of that side's index, and a restore of its month (nothing there was removed yet: nothing to restore).
+            files.Add(Answered("archive-list.json", archive, await archive.RunAsync("archive", "list", "--json"), matched));
+            files.Add(Answered("archive-restore.json", archive, await archive.RunAsync("archive", "restore", "--agent", "claude-code", "--month", "2000-01", "--json"), matched));
         }
 
         using var day = new ScenarioHome("golden-local-day");

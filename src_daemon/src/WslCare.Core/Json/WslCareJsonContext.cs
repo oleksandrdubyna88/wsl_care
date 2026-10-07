@@ -66,6 +66,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Archive.ArchiveRunReport))]
 [JsonSerializable(typeof(Archive.ArchiveProgressLine))]
 [JsonSerializable(typeof(Archive.ArchiveStatusReport))]
+[JsonSerializable(typeof(Archive.ArchiveListReport))]
 [JsonSerializable(typeof(Archive.SummaryFile))]
 [JsonSerializable(typeof(Actions.Suspects.AgentCpuFile))]
 [JsonSerializable(typeof(Mcp.McpCpuFile))]

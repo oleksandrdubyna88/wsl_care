@@ -71,6 +71,15 @@ internal abstract record Request
     /// <summary><c>archive reconcile --scan [--json]</c> (plan §15r D3): re-index the archived files no index line names.</summary>
     internal sealed record ArchiveReconcileScan(bool Json) : Request;
 
+    /// <summary><c>archive restore --entry &lt;id&gt;[,&lt;id&gt;…] | --agent &lt;id&gt; --month &lt;yyyy-MM&gt; | --agent &lt;id&gt; --session &lt;path&gt;
+    /// [--accept-unverified] [--json]</c> (plan §15r D6, E9.S3): archived sessions created back in their agent's folder, never
+    /// replacing, as this user.</summary>
+    internal sealed record ArchiveRestore(IReadOnlyList<string> EntryIds, string Agent, string Month, string Session, bool AcceptUnverified, bool Json) : Request;
+
+    /// <summary><c>archive list [--agent &lt;id&gt;] [--month &lt;yyyy-MM&gt;] [--run &lt;runId&gt;] [--json]</c> (plan §15r E9.S3): this
+    /// side's archived entries from its month indexes — read-only.</summary>
+    internal sealed record ArchiveList(string Agent, string Month, string RunId, bool Json) : Request;
+
     /// <summary><c>units dropin &lt;unit&gt;</c> (E7.S2c): the drop-in install.sh writes for one unit, from the machine
     /// configuration — the timer's period, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec.</summary>
     internal sealed record UnitsDropIn(string Unit) : Request;
@@ -245,6 +254,8 @@ internal static class CommandLine
         new([["archive", "preview"]], "archive preview [--agent <id>] [--json]", "what the AI-session archive would move on this side now, as this user (never as root): per agent the due sessions oldest first, their newest write and month, what is kept in place and why (open, an agent working there, a name NTFS refuses, what never moves), the age they are due at and the agent's own retention (read-only: no session file is opened, nothing is written)", ["archive", "preview", "--json"], ParseArchivePreview),
         new([["archive", "run"]], "archive run [--agent <id>] [--budget-seconds <n>] [--json]", "one run of this side's AI-session archive, as this user (never as root): the reconcile of what an interrupted run left, the removal of sessions archived at least archive.removeAfterHours ago once their copies hash equal again, then the due sessions copied, verified and indexed, oldest first, within the budget; --json streams a progress line per file and a heartbeat, no line names a session", ["archive", "run", "--json"], ParseArchiveRun),
         new([["archive", "status"]], "archive status [--json]", "the archive of this side now, as this user: whether a run holds its lock (and whether that run is stuck in the kernel on a share), the sessions on their way, the last run (local state only: the base is never read)", ["archive", "status", "--json"], rest => JsonOnly("archive status", rest, json => new Request.ArchiveStatus(json))),
+        new([["archive", "restore"]], "archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]", "as this user: archived sessions created back in their agent's folder under their original names - never replacing a file, never through a link, never what never moves - each copy hashed first and read back after, given the restore time as its last write; a session whose lines are not all this side's needs --accept-unverified; the archived copies stay", ["archive", "restore", "--agent", "claude-code", "--month", "2026-09", "--json"], ParseArchiveRestore),
+        new([["archive", "list"]], "archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]", "as this user, read-only: this side's archived entries from its month indexes (only the months asked are read) - each with its status, whether every line of it is this side's, its files and bytes; a torn or hostile line is skipped and counted", ["archive", "list", "--json"], ParseArchiveList),
         new([["archive", "reconcile"]], "archive reconcile --scan [--json]", "as this user: walk this side's folders of the base and re-index, as recovered, every archived file no index line names (a copy an interrupted run left); nothing at the source is touched", ["archive", "reconcile", "--scan", "--json"], ParseArchiveReconcile),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
@@ -596,6 +607,64 @@ internal static class CommandLine
 
     private static bool ValidBudget(string text) =>
         int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds) && seconds >= 1 && seconds <= Core.Config.ConfigKeys.Archive.RunBudgetMinutes.Max * 60;
+
+    private const string EntryFlag = "--entry";
+    private const string MonthFlag = "--month";
+    private const string SessionFlag = "--session";
+    private const string RunFlag = "--run";
+    private const string AcceptUnverifiedFlag = "--accept-unverified";
+
+    /// <summary>Exactly one of: <c>--entry</c> ids (16 hex each, comma-separated), <c>--agent</c> with <c>--month</c>, <c>--agent</c> with
+    /// <c>--session</c> (a plain relative path); then optionally <c>--accept-unverified</c> and <c>--json</c>.</summary>
+    private static Request ParseArchiveRestore(IReadOnlyList<string> rest) =>
+        ReadOptions("archive restore", rest, [EntryFlag, AgentFlag, MonthFlag, SessionFlag], [AcceptUnverifiedFlag, JsonFlag]) switch
+        {
+            (_, { } failure) => failure,
+            var (options, _) when RestoreShapeProblem(options) is { Length: > 0 } problem => new Request.Failed($"\"{BinaryName} archive restore\" {problem}."),
+            var (options, _) => new Request.ArchiveRestore(
+                options.Values.TryGetValue(EntryFlag, out var ids) ? ids.Split(',') : [],
+                options.Values.GetValueOrDefault(AgentFlag, string.Empty),
+                options.Values.GetValueOrDefault(MonthFlag, string.Empty),
+                options.Values.GetValueOrDefault(SessionFlag, string.Empty),
+                options.Flags.Contains(AcceptUnverifiedFlag),
+                options.Flags.Contains(JsonFlag)),
+        };
+
+    private static string RestoreShapeProblem(Options options)
+    {
+        var v = options.Values;
+        var modes = (v.ContainsKey(EntryFlag) ? 1 : 0) + (v.ContainsKey(MonthFlag) ? 1 : 0) + (v.ContainsKey(SessionFlag) ? 1 : 0);
+        return modes != 1 ? $"takes exactly one of {EntryFlag} <id>[,<id>...], {AgentFlag} <id> {MonthFlag} <yyyy-MM>, {AgentFlag} <id> {SessionFlag} <path>"
+            : v.ContainsKey(EntryFlag) ? EntryProblem(v[EntryFlag])
+            : !v.ContainsKey(AgentFlag) ? $"needs {AgentFlag} <id> with {(v.ContainsKey(MonthFlag) ? MonthFlag : SessionFlag)}"
+            : AgentValueProblem(v[AgentFlag]) is { Length: > 0 } agent ? agent
+            : v.TryGetValue(MonthFlag, out var month) ? MonthProblem(month)
+            : Core.Archive.ArchiveIndex.IsPlainRelative(v[SessionFlag]) ? string.Empty : $"{SessionFlag} takes the session's path relative to the agent's folder (plain names joined by /); got \"{Printable(v[SessionFlag])}\"";
+    }
+
+    private static string EntryProblem(string ids) =>
+        ids.Split(',').FirstOrDefault(id => !Core.Archive.ArchiveIndex.IsEntryId(id)) is { } bad ? $"{EntryFlag} takes entry ids of 16 hex, comma-separated; got \"{Printable(bad)}\"" : string.Empty;
+
+    private static string AgentValueProblem(string agent) =>
+        agent.Contains(',', StringComparison.Ordinal) || Core.Config.ConfigValidation.Parse(Core.Config.ConfigKeys.Archive.Agents, agent) is not Core.Config.ValueCheck.Ok
+            ? $"{AgentFlag} takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)} or {Core.Agents.ExtraAgent.IdPrefix}<name>; got \"{Printable(agent)}\""
+            : string.Empty;
+
+    private static string MonthProblem(string month) =>
+        DateTime.TryParseExact(month, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)
+            ? string.Empty
+            : $"{MonthFlag} takes a month as yyyy-MM; got \"{Printable(month)}\"";
+
+    /// <summary>Optionally <c>--agent &lt;id&gt;</c>, <c>--month &lt;yyyy-MM&gt;</c>, <c>--run &lt;runId&gt;</c>, <c>--json</c>.</summary>
+    private static Request ParseArchiveList(IReadOnlyList<string> rest) =>
+        ReadOptions("archive list", rest, [AgentFlag, MonthFlag, RunFlag], [JsonFlag]) switch
+        {
+            (_, { } failure) => failure,
+            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
+            var (options, _) when options.Values.TryGetValue(MonthFlag, out var month) && MonthProblem(month) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
+            var (options, _) when options.Values.TryGetValue(RunFlag, out var run) && Core.Records.RunId.TryParse(run) is null => new Request.Failed($"\"{BinaryName} archive list\" {RunFlag} takes a run id; got \"{Printable(run)}\"."),
+            var (options, _) => new Request.ArchiveList(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.GetValueOrDefault(MonthFlag, string.Empty), options.Values.GetValueOrDefault(RunFlag, string.Empty), options.Flags.Contains(JsonFlag)),
+        };
 
     private static Request ParseArchiveReconcile(IReadOnlyList<string> rest) => rest switch
     {

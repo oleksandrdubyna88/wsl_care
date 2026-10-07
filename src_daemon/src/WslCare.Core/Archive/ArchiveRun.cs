@@ -46,6 +46,9 @@ public sealed record ArchiveRunReport(
     /// <summary>What <c>archive reconcile --scan</c> re-indexed (zero for a plain run).</summary>
     public ScanReport Scan { get; init; } = new(0, 0, 0, []);
 
+    /// <summary>What <c>archive restore</c> did (empty for a run or a scan).</summary>
+    public RestoreReport Restore { get; init; } = RestoreReport.Empty;
+
     /// <summary>Why a <c>stopped</c> run stopped (<see cref="StopKinds"/>): a limit or a fault — the exit code is decided by it.</summary>
     public string StopKind { get; init; } = StopKinds.None;
 }
@@ -82,6 +85,9 @@ public sealed record ArchiveRunInput(
 
     /// <summary><c>archive reconcile --scan</c>: under the same lock and lease, only re-index the archived files no line names.</summary>
     public bool ScanOnly { get; init; }
+
+    /// <summary><c>archive restore</c>: under the same lock and lease, after the reconcile, only restore what it names (E9.S3).</summary>
+    public RestoreRequest Restore { get; init; } = RestoreRequest.None;
 
     /// <summary>The fault seam (<see cref="MoveSteps"/>); does nothing in a real run.</summary>
     public Action<string> Step { get; init; } = static _ => { };
@@ -181,7 +187,9 @@ public static class ArchiveRun
         try
         {
             var notes = held.Note.Length > 0 ? new List<string> { held.Note } : [];
-            return input.ScanOnly ? Scanned(input, state, started, key, side, notes) : Moved(input, state, started, key, side, notes);
+            return input.Restore.Asked ? Restored(input, state, started, key, notes)
+                : input.ScanOnly ? Scanned(input, state, started, key, side, notes)
+                : Moved(input, state, started, key, side, notes);
         }
         finally
         {
@@ -193,13 +201,7 @@ public static class ArchiveRun
     {
         var meter = new RunMeter(input, started);
         var inUse = input.InUseScan(input);
-        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, meter.Moved)
-        {
-            Stats = input.Files,
-            Home = input.Paths.Home,
-            InUse = inUse,
-            Distro = DistroOf(input.Paths),
-        };
+        var context = ContextOf(input, state, key, inUse, meter.Moved);
         var reconcile = ArchiveReconcile.FromInflight(context);
         var selectionInput = new SelectionInput(input.Paths, input.Files, input.Config, input.Clock.GetUtcNow(), input.Zone, inUse, input.Environment) { OnlyAgent = input.OnlyAgent, Token = input.Token };
         var selected = Selection.Select(selectionInput).Where(s => s.Enabled).ToList();
@@ -218,17 +220,50 @@ public static class ArchiveRun
 
     private static ArchiveRunReport Scanned(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key, string side, List<string> notes)
     {
-        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, static (_, _) => { })
-        {
-            Stats = input.Files,
-            Home = input.Paths.Home,
-            InUse = InUseView.NotChecked("a scan removes nothing"),
-            Distro = DistroOf(input.Paths),
-        };
+        var context = ContextOf(input, state, key, InUseView.NotChecked("a scan removes nothing"), static (_, _) => { });
         var agents = ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.OnlyAgent, input.Environment).Where(t => t.Enabled).Select(t => t.Entry.Id);
         var scan = ArchiveScan.Scan(context, input.Files, agents, input.Token);
         return Answer(input, started, RunOutcomes.Done, string.Empty, ArchiveReconcileReport.Empty with { Notes = notes }, NotChecked, []) with { Scan = scan };
     }
+
+    /// <summary>The context every verb of a side's archive acts in: the seam, the base, the side, the run, the key, the book.</summary>
+    internal static MoveContext ContextOf(ArchiveRunInput input, ArchiveState state, byte[] key, InUseView inUse, Action<long, bool> progress) =>
+        new(input.Archive, input.JudgedBase.Folder, SideName.OfThisProcess(input.Paths.Side), input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, progress)
+        {
+            Stats = input.Files,
+            Home = input.Paths.Home,
+            InUse = inUse,
+            Distro = DistroOf(input.Paths),
+        };
+
+    /// <summary>E9.S3: the reconcile first (an interrupted run is finished before anything is restored), then the restore.</summary>
+    private static ArchiveRunReport Restored(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key, List<string> notes)
+    {
+        var context = ContextOf(input, state, key, InUseView.NotChecked("a restore removes nothing"), static (_, _) => { });
+        var reconcile = ArchiveReconcile.FromInflight(context);
+        var targets = ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.Restore.Agent, input.Environment);
+        var candidates = Candidates(context, input, targets);
+        var restore = ArchiveRestore.Restore(context, candidates, input.Restore.AcceptUnverified);
+        var unread = candidates.Count == 0 && input.Restore.EntryIds.Count > 0 ? ["no entry of this side's indexes has the ids asked for"] : Array.Empty<string>();
+        return Answer(input, started, RunOutcomes.Done, string.Empty, reconcile with { Notes = [.. reconcile.Notes, .. notes, .. unread] }, NotChecked, []) with { Restore = restore };
+    }
+
+    /// <summary>The entries asked for: by id (any agent of <c>archive.agents</c>, or the one named), every entry of one agent's month
+    /// whose source was removed, or the one session of one agent by its key.</summary>
+    private static IReadOnlyList<ArchiveRestore.Candidate> Candidates(MoveContext context, ArchiveRunInput input, IReadOnlyList<ArchiveTarget> targets)
+    {
+        var asked = input.Restore;
+        var month = ArchiveList.MonthOf(asked.Month);
+        return [.. ArchiveList.Months(context, input.Files, targets, month)
+            .Where(m => m.Read is MonthRead.Read)
+            .SelectMany(m => ArchiveIndex.Merge(((MonthRead.Read)m.Read).Index.Records).Select(e => new ArchiveRestore.Candidate(m.Target, e)))
+            .Where(c => Wanted(asked, c.Entry))];
+    }
+
+    private static bool Wanted(RestoreRequest asked, IndexEntry entry) =>
+        asked.EntryIds.Contains(entry.EntryId, StringComparer.Ordinal)
+        || (asked.Session.Length > 0 && entry.Key == asked.Session)
+        || (asked.Month.Length > 0 && asked.Session.Length == 0 && asked.EntryIds.Count == 0 && entry.Status is ArchiveIndex.Events.SourceRemoved or ArchiveIndex.Events.Split);
 
     /// <summary>A path as the open-file scan spells it: the distribution's spelling on Linux, the path itself elsewhere.</summary>
     private static Func<string, string> DistroOf(IHostPaths paths) => paths is LinuxHostPaths linux ? linux.ToDistro : static p => p;

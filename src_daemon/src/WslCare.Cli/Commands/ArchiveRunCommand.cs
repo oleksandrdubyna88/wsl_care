@@ -66,6 +66,69 @@ internal static class ArchiveRunCommand
         return Answered(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveRunReport) : Render(report), report);
     }
 
+    /// <summary><c>archive restore</c> (plan §15r D6, E9.S3): under the side's lock and lease like a run; exit 0 when every session
+    /// asked for was restored or already there, <see cref="ExitCode.RunFailed"/> when one was refused.</summary>
+    public static int Restore(Request.ArchiveRestore request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
+    {
+        if (host.Privilege.IsRoot)
+        {
+            Output.Note(stderr, string.Format(System.Globalization.CultureInfo.InvariantCulture, RootRefusal, "restore"));
+            return (int)ExitCode.NotAsRoot;
+        }
+
+        var asked = new RestoreRequest(request.EntryIds, request.Agent, request.Month, request.Session, request.AcceptUnverified);
+        var report = ArchiveRun.Run(Input(host, loaded, request.Agent, TimeSpan.MaxValue, cancellationToken) with { Restore = asked });
+        var text = request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveRunReport) : RenderRestore(report);
+        var exit = Answered(stdout, text, report);
+        return exit == (int)ExitCode.Ok && report.Restore.Refused > 0 ? (int)ExitCode.RunFailed : exit;
+    }
+
+    /// <summary><c>archive list</c> (plan §15r E9.S3): read-only — no lock, no lease, no key made.</summary>
+    public static int List(Request.ArchiveList request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
+    {
+        if (host.Privilege.IsRoot)
+        {
+            Output.Note(stderr, string.Format(System.Globalization.CultureInfo.InvariantCulture, RootRefusal, "list"));
+            return (int)ExitCode.NotAsRoot;
+        }
+
+        var report = ArchiveList.List(Input(host, loaded, request.Agent, TimeSpan.MaxValue, cancellationToken), new ArchiveListRequest(request.Agent, request.Month, request.RunId));
+        _ = Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.ArchiveListReport) : RenderList(report));
+        return report.Outcome is RunOutcomes.Done or RunOutcomes.NoBase ? (int)ExitCode.Ok : (int)ExitCode.RunFailed;
+    }
+
+    private static string RenderRestore(ArchiveRunReport report)
+    {
+        var text = new StringBuilder().AppendLine(CommandLine.Printable($"wsl-care archive restore {report.RunId} ({report.SideFolder}): {report.Outcome}{(report.Stop.Length > 0 ? " - " + report.Stop : string.Empty)}; restored {report.Restore.Restored}, already there {report.Restore.AlreadyThere}, refused {report.Restore.Refused}"));
+        foreach (var session in report.Restore.Sessions)
+        {
+            text.AppendLine(CommandLine.Printable($"  {session.Outcome,-13} {session.Agent} {session.Key} ({session.EntryId}): {session.Note}"));
+        }
+
+        foreach (var note in report.Reconcile.Notes)
+        {
+            text.AppendLine(CommandLine.Printable("  " + note));
+        }
+
+        return text.ToString().TrimEnd();
+    }
+
+    private static string RenderList(ArchiveListReport report)
+    {
+        var text = new StringBuilder().AppendLine(CommandLine.Printable($"wsl-care archive list ({report.SideFolder}): {report.Outcome}{(report.Note.Length > 0 ? " - " + report.Note : string.Empty)}; {report.Entries.Count} entries, {report.SkippedLines} index lines skipped"));
+        foreach (var entry in report.Entries)
+        {
+            text.AppendLine(CommandLine.Printable(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"  {entry.EntryId} {entry.Agent,-12} {entry.Month} {entry.Status,-13}{(entry.Verified ? string.Empty : " UNVERIFIED")} {entry.Files} file(s), {entry.Bytes} bytes  {entry.Key}")));
+        }
+
+        foreach (var note in report.Notes)
+        {
+            text.AppendLine(CommandLine.Printable("  " + note));
+        }
+
+        return text.ToString().TrimEnd();
+    }
+
     public static int Status(Request.ArchiveStatus request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr)
     {
         if (host.Privilege.IsRoot)
