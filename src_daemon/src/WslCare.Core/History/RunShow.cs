@@ -48,11 +48,16 @@ public sealed record RunShowReport(int SchemaVersion, string RunId, string State
     /// <summary>The run's history line, as <c>runs</c> answers it (done / refused / interrupted).</summary>
     public RunLine? Run { get; init; }
 
-    /// <summary><c>present</c>, <c>lost</c> (the line names a detail that is gone), <c>none</c> or <c>unreadable</c>.</summary>
+    /// <summary><c>present</c>, <c>lost</c> (the line names a detail that is gone), <c>none</c> or <c>unreadable</c> (present, but
+    /// it does not parse or is of a kind this build does not read — <see cref="DetailProblem"/> says the latter).</summary>
     public string? DetailState { get; init; }
 
-    /// <summary>The run's full detail, when its file is present and parses.</summary>
+    /// <summary>The run's full detail, when its file is present, parses and is of a kind this build reads.</summary>
     public RunShowDetail? Detail { get; init; }
+
+    /// <summary>Why a present detail is <c>unreadable</c> when the reason is its kind: one this build does not read (a newer
+    /// build's) — the line is answered, the detail never shown as a full run's (PR #16 retro round O1). Absent otherwise.</summary>
+    public string? DetailProblem { get; init; }
 
     /// <summary>The <c>running</c> block of a run that holds <c>running.json</c> (running, or a dead one: interrupted).</summary>
     public RunningReport? Running { get; init; }
@@ -95,12 +100,13 @@ public static class RunShow
     /// <summary>The history holds the run: done, refused or interrupted — with its line and its detail.</summary>
     private static RunShowReport Recorded(IHostPaths paths, IFileSystem files, RunRecord line)
     {
-        var (state, detail) = Detail(paths, files, line);
+        var read = Detail(paths, files, line);
         return new RunShowReport(SchemaVersion.Current, line.RunId.Text, StateOf(line.Outcome), line.Reason)
         {
-            Run = RunLogs.Line(line, DetailStateOf(state)),
-            DetailState = state,
-            Detail = detail,
+            Run = RunLogs.Line(line, DetailStateOf(read.State)),
+            DetailState = read.State,
+            Detail = read.Detail,
+            DetailProblem = read.Problem,
         };
     }
 
@@ -140,46 +146,65 @@ public static class RunShow
             Request = new RunShowRequest(request.Kind, request.Actions, RunningReports.TriggerName(request.Trigger), request.CreatedAt, request.Shown.Count),
         };
 
-    /// <summary>The detail file the line names: its state, and its content when it is present and parses.</summary>
-    private static (string State, RunShowDetail? Detail) Detail(IHostPaths paths, IFileSystem files, RunRecord line)
+    /// <summary>A detail file as read: its state, its content when shown, and why a present one is not shown by its kind.</summary>
+    private sealed record DetailRead(string State, RunShowDetail? Detail, string? Problem);
+
+    private static readonly DetailRead Unreadable = new("unreadable", null, null);
+
+    /// <summary>The detail file the line names: its state, and its content when it is present, parses and is of a kind this
+    /// build reads.</summary>
+    private static DetailRead Detail(IHostPaths paths, IFileSystem files, RunRecord line)
     {
         if (line.DetailPath.Length == 0)
         {
-            return ("none", null);
+            return new("none", null, null);
         }
 
         return files.ReadFile(RunDetailStore.Absolute(paths, line.DetailPath), RootFileCaps.History) switch
         {
             FileReadResult.Content content => Parsed(content.Bytes),
-            FileReadResult.Missing => ("lost", null),
-            _ => ("unreadable", null),
+            FileReadResult.Missing => new("lost", null, null),
+            _ => Unreadable,
         };
     }
 
-    private static (string State, RunShowDetail? Detail) Parsed(byte[] json)
+    /// <summary>Explicit branches by the detail's kind (PR #16 retro round O1): an act's, a full run's (no member) — and a kind
+    /// this build does not read, answered with what is known and never as a full run.</summary>
+    private static DetailRead Parsed(byte[] json)
     {
         try
         {
-            var detail = RunLogs.IsAct(json) ? FromAct(json) : FromFullRun(json);
-            return detail is null ? ("unreadable", null) : ("present", detail);
+            var member = RunLogs.DetailMember(json);
+            return RunKinds.OfDetail(member) switch
+            {
+                DetailKind.Act => Shown(FromAct(json)),
+                DetailKind.FullRun => Shown(FromFullRun(json)),
+                _ => Unreadable with { Problem = UnknownKind(member) },
+            };
         }
         catch (System.Text.Json.JsonException)
         {
-            return ("unreadable", null);
+            return Unreadable;
         }
     }
 
+    private static DetailRead Shown(RunShowDetail? detail) => detail is null ? Unreadable : new("present", detail, null);
+
+    /// <summary>What <c>runs show</c> says of a detail whose kind this build does not read.</summary>
+    public static string UnknownKind(RecordedKind member) =>
+        $"the detail's kind is {member}, which this build does not read (a newer wsl-care wrote it?); its history line is answered, its detail is not";
+
     private static RunShowDetail? FromAct(byte[] json) =>
         System.Text.Json.JsonSerializer.Deserialize(json, Json.WslCareJsonContext.Default.ActRunDetail) is { } act
-            ? new RunShowDetail("act", act.DryRun, act.DryRunReason, act.TargetUser, Normalised(act.Actions), RunLogs.OrEmpty(act.Notes))
+            ? new RunShowDetail(RunKinds.ActName, act.DryRun, act.DryRunReason, act.TargetUser, Normalised(act.Actions), RunLogs.OrEmpty(act.Notes))
             : null;
 
     /// <summary>A full run's detail: its timer pass (none for a full run from a terminal or the panel — no action ran).</summary>
     private static RunShowDetail? FromFullRun(byte[] json) =>
         System.Text.Json.JsonSerializer.Deserialize(json, Json.WslCareJsonContext.Default.TimerPassView) is { } view
             ? view.TimerPass is { } pass
-                ? new RunShowDetail("collect", pass.DryRun, pass.DryRunReason, pass.TargetUser, Normalised(pass.Actions), RunLogs.OrEmpty(pass.Notes))
-                : new RunShowDetail("collect", null, null, null, [], [])
+                ? new RunShowDetail(RunKinds.FullCheckName, pass.DryRun, pass.DryRunReason, pass.TargetUser, Normalised(pass.Actions), RunLogs.OrEmpty(pass.Notes))
+                : new RunShowDetail(RunKinds.FullCheckName, null, null, null, [], [])
             : null;
 
     /// <summary>A detail written before a member existed reads it as null under the source generator (C# doctrine §4a):

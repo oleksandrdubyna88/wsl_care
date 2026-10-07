@@ -1286,8 +1286,10 @@ outside for a full check (`CollectRun` records its own cut-offs first): its line
 `DetachedRuns.CutOff` appends. `Core.Tests/Records/RunKindTests`: an older `running.json` is a full check only in the exact
 shape `CollectRun` writes (five shapes); a dead holder's line takes its kind and lists only actions (a measuring full check,
 the timer's pass, an `act --timer` of the same ids, older files of both); a swept act request names `act` with its ids
-interrupted; the reconcile reads an orphan's kind from its detail; a line without `kind` parses and answers none; a line with
-an unknown kind is counted unparseable (the stated residual); `runs` answers each line's kind; a refused full check adds no
+interrupted; the reconcile reads an orphan's kind from its detail (since the PR #16 retro round over raw fixtures, in
+`RunKindDowngradeTests`); a line without `kind` parses and answers none; a line with an unknown kind is counted unparseable
+(the stated residual — REVERSED by the PR #16 retro round below, its test removed and the opposite held); `runs` answers each
+line's kind; a refused full check adds no
 `collect` entry to `perAction`; no action id is the reserved name. `ContractFilesTests` (Scenarios) holds
 `contracts/history-reasons.json`, checks the registry AND the checked-in `contracts/actions.json` for the reserved name, and
 (review round) freezes the three on-disk reasons to literals; the companion asserts the reasons as written start with the
@@ -1332,6 +1334,67 @@ red (Windows, Debug; the mutation checked applied, the file restored by writing 
 G3 (the handler lookup in `FullCheckLineTests`) and O1 (`Cli.Tests/DetachedRunHarness`, shared by `DetachedRunsTests` and
 `FullCheckLineTests`) are refactors of tests with no behaviour of their own: both classes green before and after (54 and
 22). O5 is documentation (plan §15o decision 6, `research/architecture-daemon-e6.md`).
+
+### The PR #16 retro round (2026-10-06)
+
+A retro coai review of the merged PR #16 (plan §15o, `kind` on the history line and in `running.json`), consultation
+0d924598 and an own review — plan §15o, *Retro coai round over PR #16*. The new class is
+`Core.Tests/Records/RunKindDowngradeTests`: every fixture is RAW JSON (the bytes on disk, not this build's reading of them),
+so each RED test compiled against the unfixed code. Doctor's two are in `Core.Tests/Doctor/DoctorTests`.
+
+| Finding | Tests |
+|---|---|
+| P0 + consultant: absent vs unknown in `running.json` — two files identical but for `kind`, both `["collect"]` + current `collect` | `RunKindDowngradeTests.An_older_running_json_is_inferred_a_full_check_only_when_its_kind_is_missing_never_when_it_is_unknown` (missing → the swept line says `collect`; `"archive"`, `null`, `0` → no kind, the sweep `Clear`), `…A_running_json_with_a_kind_this_build_does_not_know_is_still_read_and_judged` (`"archive"`, `1` → `Live`) |
+| P0: an unknown kind on a history line parses and the history-first checks see the run's line | `…A_history_line_with_a_kind_this_build_does_not_know_still_parses` (`"archive"`, `null`, `0`), `…The_sweep_of_a_dead_holder_sees_its_unknown_kind_line_and_writes_no_second_one`, `…The_request_sweep_sees_an_unknown_kind_line_and_only_removes_the_request`, `…The_reconcile_sees_an_unknown_kind_line_and_files_its_detail_as_no_orphan` (`act --request`'s own check reads the same parser, `RunHistory.ParseLine`) |
+| G2: integers are never names | `…An_integer_kind_on_a_history_line_is_never_read_as_a_name` (`runs` answers `"0"`, not `collect`), `…An_integer_trigger_or_outcome_makes_the_line_unparseable_like_any_unknown_value` (trigger `0` / `2`, outcome `0` / `4`), `…An_integer_trigger_in_running_json_makes_it_unreadable` |
+| G0 + consultant: a detail's kind is absent / act / unknown — an explicit `null` is not a missing member | `…A_reconciled_orphan_s_kind_comes_from_its_detail_s_kind_member_absent_act_or_unknown` (missing → `collect`, `act` → `act`; `null`, `""`, `archive`, `collect`, `Act`, `0` → none, and the readable reason) |
+| O1 + consultant: `runs show` / `logs` never read an unknown detail as a full run's | `…Runs_show_answers_a_detail_of_an_unknown_kind_with_what_is_known_never_as_a_full_run` (state `done`, the line, `detail` absent, `detailState: unreadable`, `detailProblem` naming `"archive"`), `…Logs_never_read_timer_pass_outcomes_from_a_detail_of_an_unknown_kind` (the fixture's `timerPass` WOULD yield two removed objects) |
+| consultant: `doctor`'s `lastRun` judges the newest full check | `DoctorTests.A_fresh_act_line_never_hides_a_stale_full_check`, `…A_kind_less_line_is_judged_as_before_and_an_unknown_kind_is_no_full_check` (missing → `ok`, today's rule; `"archive"` → `problem`) |
+| the wire type itself | `…Every_json_value_of_kind_reads_as_a_known_name_or_as_unknown_never_as_a_failure` (string, case, `null`, number, boolean, object, array), `…A_missing_kind_reads_as_absent_and_a_known_one_round_trips` (absent is not written), `…An_unknown_kind_is_never_written` (the converter refuses; `ForWriting` maps unknown to absent) |
+| G1 (the prefix constant moved into `Records`), the `RunLine.Kind` nit, O2 (docs) | none new — no behaviour: `ContractFilesTests` (its frozen literal, now over `HistoryReasons.UnusableRequestPrefix`) and `RunKindTests.Runs_answer_each_line_s_kind` stay green |
+
+The existing tests that compared a kind with `RunKind` now compare `RecordedKind` (`ActionEngineTests`, `TimerPassTests`,
+`RunKindTests`) — FluentAssertions' `Be` on a struct is `Equals`, so a `RunKind` there would have been a red that says
+nothing. `RunKindTests`' typed reconcile theory and its pinned residual moved into / were reversed by the class above.
+
+**Red first** (Windows Debug, on c61ec98, before any fix — 18 of 27 red, each naming the real symptom): P0 —
+*Expected type to be …RunningSweep+Clear because a dead holder whose kind is "archive" is swept, never a state that refuses
+every run, but found …RunningSweep+Blocked*; *Expected type to be …RunningStatus+Live … but found …RunningStatus+Unreadable*;
+*Expected read.Unparseable to be 0 because an unknown kind is a fact about the line, not a broken line, but found 1*; the
+history-first checks — *Expected HistoryLines() to contain a single item because the run recorded itself; its request only
+loses its file, but found {…"kind":"archive"}, {…"outcome":"interrupted",…"kind":"act","reason":"swept: the detached run
+never recorded itself…"}*, *Expected report.Interrupted to be empty because the detail's run has its line, but found
+{"20261002T115100Z-4321"}*, and the sweep *found …RunningSweep+Blocked*; the consultant's case — *Expected KindOf(line) to be
+<null> because kind null: only a MISSING member is inferred … but found "collect"* (and the same for `0`); G2 — *Expected
+RunLogs.Runs(…).Runs to be "0" … but "collect"*, *Expected read.Unparseable to be 1 because "trigger": 0 is no name of a
+trigger, but found 0* (×4), *Expected type to be …RunningStatus+Unreadable because "trigger": 1 is no trigger's name, but
+found …RunningStatus+Live*; G0 — *Expected KindOf(line) to be <null> because detail kind null … but found "collect"* and, for
+`0`, the reason was the UNREADABLE one; O1 — *Expected show.Detail to be <null> because a detail of a kind this build does
+not read is never shown as a full run's …, but found RunShowDetail { Kind = collect … }*, *Expected cleanup.Removed to be
+empty …, but found at least one item*; doctor — *Expected check.State to be "problem" … because the newest FULL check is 6 h
+old, whatever acted since (20261002T115000Z-2: completed, 0.2 h ago), but "ok"*. Green after the fix (rebased onto main
+7e65e16): the class 39 of 39, `DoctorTests` 10 of 10.
+
+**Teeth** (Windows Debug, one production line changed, the named tests run, the file restored by writing it back and
+compared by SHA-256 — every restore byte-identical, then green again):
+
+| Mutation | Red |
+|---|---|
+| `RecordedKind.Parse` throwing for an unknown name (the old strict enum) | 2 — *found 1* unparseable; *found …RunningStatus+Unreadable* |
+| `KindOrMarker` inferring from any non-known kind (`Kind.IsKnown ? Kind : OlderShape()`) — the consultant's trap | 3 — `archive` / `null` / `0`: *Expected KindOf(line) to be <null> … but found "collect"* |
+| `RunTrigger` back on `JsonStringEnumConverter` | 3 — the two trigger integers and `running.json`'s |
+| `RunOutcome` back on `JsonStringEnumConverter` | 2 — outcome `0` and `4` |
+| an integer kind read as the ordinal | 1 — *but "collect"* |
+| an explicit `null` detail kind read as a full run's | 1 — *… but found "collect"* |
+| `runs show`'s unknown branch back to the full-run reading | 1 — *Expected show.Detail to be <null>* |
+| `logs`' unknown branch back to the timer pass | 1 — *Expected cleanup.Removed to be empty* |
+| `doctor` back on the newest line of any kind | 2 — the act line, and the unknown kind |
+
+Final (Debug, on main 7e65e16 + this change): Windows — Core 1391 passed / 59 skipped, Cli 274 / 2, Scenarios 208 / 197 (the
+Linux flows), none failed; WSL (normal user, `nice -n 19`, a `/tmp` copy, load 14–25) — Core 1447 / 3, Cli 275 / 1, Scenarios
+403 / 2, none failed. No golden moved: the `runs` / `runs show` wire changes only for a kind or a detail this build does not
+know (`kind` as written, `detailProblem`), which no golden scene stages. `dotnet format --verify-no-changes` and
+`plan-lifecycle.mjs` clean.
 
 ### The configuration trust (E7.S0, 2026-10-05, plan §15q R1)
 

@@ -177,7 +177,7 @@ public sealed class ContractFilesTests
     {
         const string Frozen = "these strings are on disk; a change is a contract break";
 
-        Core.Actions.Engine.RequestSweep.UnusablePrefix.Should().Be("refused: its request could not be used", Frozen);
+        Core.Records.HistoryReasons.UnusableRequestPrefix.Should().Be("refused: its request could not be used", Frozen);
         Core.Records.RunReconcile.InterruptedReason.Should().Be("the run wrote its detail and ended before its history line (found by the next run's reconcile)", Frozen);
         Core.Records.RunReconcile.UnreadableDetailReason.Should().Be("the run left a detail that cannot be read; its start is the second its id names", Frozen);
         Core.Records.HistoryReasons.NotAFullCheckWithoutKind.Select(p => p.Prefix).Should().Equal(

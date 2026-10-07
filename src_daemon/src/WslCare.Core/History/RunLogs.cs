@@ -10,8 +10,8 @@ using WslCare.Core.Records;
 
 namespace WslCare.Core.History;
 
-/// <summary>A detail file read only for its kind (<c>act</c>, or a full run's, which carries none).</summary>
-public sealed record DetailKindView(string? Kind);
+/// <summary>A detail file read only for its <c>kind</c> member (<c>act</c>, absent in a full run's, anything else unknown).</summary>
+public sealed record DetailKindView(RecordedKind Kind);
 
 /// <summary>A full run's detail read only for its timer pass.</summary>
 public sealed record TimerPassView(TimerPass? TimerPass);
@@ -121,7 +121,7 @@ public static class RunLogs
             r.Reason)
         {
             Metrics = r.Metrics,
-            Kind = r.Kind is { } kind ? Camel(kind.ToString()) : null,
+            Kind = r.Kind.IsAbsent ? null : r.Kind.Text,
         };
     }
 
@@ -222,7 +222,12 @@ public static class RunLogs
     {
         try
         {
-            return IsAct(json) ? ActOutcomes(json) : TimerPassOutcomes(json);
+            return KindOf(json) switch
+            {
+                DetailKind.Act => ActOutcomes(json),
+                DetailKind.FullRun => TimerPassOutcomes(json),
+                _ => [],
+            };
         }
         catch (JsonException)
         {
@@ -230,7 +235,13 @@ public static class RunLogs
         }
     }
 
-    internal static bool IsAct(byte[] json) => RunKinds.OfDetailKind(JsonSerializer.Deserialize(json, WslCareJsonContext.Default.DetailKindView)?.Kind) == RunKind.Act;
+    /// <summary>A detail's <c>kind</c> member as written; unknown for a detail that is no JSON object at all.</summary>
+    internal static RecordedKind DetailMember(byte[] json) =>
+        JsonSerializer.Deserialize(json, WslCareJsonContext.Default.DetailKindView) is { } view ? view.Kind : RecordedKind.Unknown("null");
+
+    /// <summary>What a detail is — read by explicit kind, never guessed: a detail of a kind this build does not know yields no
+    /// outcomes (its objects are not read from a timer pass it may not have; PR #16 retro round O1).</summary>
+    internal static DetailKind KindOf(byte[] json) => RunKinds.OfDetail(DetailMember(json));
 
     private static IReadOnlyList<ActionOutcome> ActOutcomes(byte[] json) => JsonSerializer.Deserialize(json, WslCareJsonContext.Default.ActRunDetail)?.Actions ?? [];
 

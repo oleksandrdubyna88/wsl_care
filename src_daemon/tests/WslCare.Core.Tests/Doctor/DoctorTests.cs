@@ -79,6 +79,35 @@ public sealed class DoctorTests : IDisposable
         report.Checks.Where(c => c.State == DoctorRun.Problem).Select(c => c.Id).Should().Contain(["lastRun", "unit.wsl-care.timer", "unit.wsl-care-events.service", "eventsFollower"]);
     }
 
+    /// <summary>The PR #16 retro round (consultation 0d924598): <c>lastRun</c> speaks of the last full run, so frequent <c>act</c>
+    /// lines must not hide a timer that stopped running full checks.</summary>
+    [Fact]
+    public async Task A_fresh_act_line_never_hides_a_stale_full_check()
+    {
+        Installed(lastRun: Now.AddHours(-6), covered: Now.AddMinutes(-3));
+        var act = RunId.New(Now.AddMinutes(-10), 2);
+        new RunRecordWriter(Paths, new PhysicalFileSystem(Paths)).Append(new RunRecord(1, act, RunTrigger.Manual, Now.AddMinutes(-10), Now.AddMinutes(-9), RunOutcome.Completed, [], RunKind.Act));
+
+        var check = (await RunAsync(Runner())).Checks.Single(c => c.Id == "lastRun");
+
+        check.State.Should().Be(DoctorRun.Problem, $"the newest FULL check is 6 h old, whatever acted since ({check.Detail})");
+        check.Detail.Should().Contain(RunId.New(Now.AddHours(-6), 1).Text, "the message names the full check it judged").And.NotContain(act.Text);
+    }
+
+    /// <summary>A line written before <c>kind</c> existed keeps today's rule (it is judged as before) — the fallback for an older
+    /// history; a line whose kind this build does not know is never taken for a full check.</summary>
+    [Theory]
+    [InlineData(null, DoctorRun.Ok)]
+    [InlineData("\"archive\"", DoctorRun.Problem)]
+    public async Task A_kind_less_line_is_judged_as_before_and_an_unknown_kind_is_no_full_check(string? kindJson, string expected)
+    {
+        Installed(lastRun: Now.AddHours(-6), covered: Now.AddMinutes(-3));
+        var kind = kindJson is null ? string.Empty : $",\"kind\":{kindJson}";
+        File.AppendAllText(RunRecordWriter.HistoryFileIn(Paths), $$"""{"schemaVersion":1,"runId":"20261002T115000Z-3","trigger":"timer","startedAt":"2026-10-02T11:50:00+00:00","endedAt":"2026-10-02T11:51:00+00:00","outcome":"completed","actions":[]{{kind}}}""" + "\n");
+
+        (await RunAsync(Runner())).Checks.Single(c => c.Id == "lastRun").State.Should().Be(expected, $"kind {kindJson ?? "missing"}");
+    }
+
     [Fact]
     public async Task A_fresh_machine_says_nothing_was_ever_recorded_and_writes_nothing()
     {

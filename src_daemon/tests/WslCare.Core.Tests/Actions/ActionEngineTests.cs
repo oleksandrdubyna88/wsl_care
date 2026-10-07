@@ -62,7 +62,7 @@ public sealed class ActionEngineTests : IDisposable
     public async Task Actions_run_in_the_fixed_order_whatever_order_they_were_asked_in_and_running_json_names_each_while_it_runs()
     {
         var current = new List<string>();
-        var kinds = new List<RunKind?>();
+        var kinds = new List<RecordedKind>();
         Func<ActionContext, Task<ActionRun>> note = _ =>
         {
             var running = JsonSerializer.Deserialize(File.ReadAllBytes(RunningState.File(_sandbox.Paths)), WslCareJsonContext.Default.RunningFile)!;
@@ -85,8 +85,8 @@ public sealed class ActionEngineTests : IDisposable
         line.RunId.Should().Be(done.Detail.RunId);
         line.Detail.Should().Be(done.DetailFile);
         line.Actions.Select(a => (a.Id, a.Status, a.FreedBytes)).Should().Equal(("A5", "ran", 100L), ("A4", "ran", 100L), ("A10", "ran", 100L));
-        line.Kind.Should().Be(RunKind.Act, "plan §15o: an act's line names it");
-        kinds.Should().AllBeEquivalentTo(RunKind.Act, "and so does its running.json");
+        line.Kind.Should().Be(RecordedKind.Act, "plan §15o: an act's line names it");
+        kinds.Should().NotBeEmpty().And.OnlyContain(k => k == RecordedKind.Act, "and so does its running.json");
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public sealed class ActionEngineTests : IDisposable
         UserConfig("""{ "dryRun": false }""");
         Directory.CreateDirectory(_sandbox.Paths.StateDirectory);
         File.WriteAllText(DryRunWindow.File(_sandbox.Paths), $$"""{ "schemaVersion": 1, "at": "{{FixedTimeProvider.DefaultNow.AddDays(-30):O}}" }""");
-        var kinds = new List<RunKind?>();
+        var kinds = new List<RecordedKind>();
         var action = new ScriptedAction("A10", _journal)
         {
             OnRun = _ =>
@@ -129,8 +129,8 @@ public sealed class ActionEngineTests : IDisposable
         var result = await Engine(action).ExecuteAsync(Run(trigger, "A10"), CancellationToken.None);
 
         Statuses(result).Should().Equal("A10:ran");
-        kinds.Should().Equal([RunKind.Act], "running.json was read while the act ran");
-        History().Single().Kind.Should().Be(RunKind.Act);
+        kinds.Should().Equal([RecordedKind.Act], "running.json was read while the act ran");
+        History().Single().Kind.Should().Be(RecordedKind.Act);
     }
 
     [Fact]

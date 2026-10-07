@@ -42,7 +42,7 @@ public sealed class RunKindTests : IDisposable
     [InlineData(new[] { "collect", "A4" }, "collect", null)]
     public void A_running_json_without_kind_is_a_full_check_only_in_the_exact_shape_a_full_check_writes(string[] actions, string current, RunKind? expected)
     {
-        Running(actions, current, RunTrigger.Manual, kind: null).KindOrMarker().Should().Be(expected);
+        Running(actions, current, RunTrigger.Manual, kind: null).KindOrMarker().Should().Be((RecordedKind)expected);
     }
 
     [Theory]
@@ -50,7 +50,7 @@ public sealed class RunKindTests : IDisposable
     [InlineData(RunKind.Act)]
     public void A_running_json_with_kind_is_read_by_its_kind_alone(RunKind kind)
     {
-        Running(["A10"], "A10", RunTrigger.Timer, kind).KindOrMarker().Should().Be(kind);
+        Running(["A10"], "A10", RunTrigger.Timer, kind).KindOrMarker().Should().Be(RecordedKind.Of(kind));
     }
 
     // ---------- the sweep of a dead holder ----------
@@ -75,7 +75,7 @@ public sealed class RunKindTests : IDisposable
         RunningSweep.Apply(_sandbox.Paths, _sandbox.Files, new FakeProcessTable(), Now, RunningReadRetry.Default, RunId.New(Now, 1), 1).Should().BeOfType<RunningSweep.Clear>(what);
 
         var line = History().Should().ContainSingle(what).Subject;
-        line.Kind.Should().Be(expected, what);
+        line.Kind.Should().Be((RecordedKind)expected, what);
         line.Actions.Select(a => a.Id).Should().Equal(rows, what);
         line.Actions.Select(a => a.Status).Should().AllBe(ActionStatus.Interrupted, what);
     }
@@ -105,7 +105,7 @@ public sealed class RunKindTests : IDisposable
         await RequestSweep.ApplyAsync(_sandbox.Paths, _sandbox.Files, runner, new FakeProcessTable(), Now, own: null);
 
         var line = History().Should().ContainSingle().Subject;
-        line.Kind.Should().Be(RunKind.Act);
+        line.Kind.Should().Be(RecordedKind.Act);
         line.Actions.Select(a => (a.Id, a.Status)).Should().Equal(("A10", ActionStatus.Interrupted), ("A4", ActionStatus.Interrupted));
     }
 
@@ -121,7 +121,7 @@ public sealed class RunKindTests : IDisposable
 
         var line = request.TerminalLine(Now, Now, RunOutcome.Refused, ActionStatus.Refused, "busy: a test");
 
-        line.Kind.Should().BeNull($"\"{kind}\" is neither act nor collect");
+        line.Kind.IsAbsent.Should().BeTrue($"\"{kind}\" is neither act nor collect - the line carries no kind");
         line.Actions.Should().BeEmpty("rows of an unknown kind would be guesses");
     }
 
@@ -132,28 +132,11 @@ public sealed class RunKindTests : IDisposable
     {
         var request = new RunRequestFile(1, RunId.New(Now, 83), kind, kind == "act" ? ["A10"] : ["collect"], RunTrigger.Manual, Now);
 
-        request.TerminalLine(Now, Now, RunOutcome.Refused, ActionStatus.Refused, "busy: a test").Kind.Should().Be(expected);
+        request.TerminalLine(Now, Now, RunOutcome.Refused, ActionStatus.Refused, "busy: a test").Kind.Should().Be(RecordedKind.Of(expected));
     }
 
-    // ---------- the reconcile ----------
-
-    /// <summary>§15o review G1: a detail kind this build does not know (a future one) is no kind — never a full check.</summary>
-    [Theory]
-    [InlineData("act", RunKind.Act)]
-    [InlineData(null, RunKind.Collect)]
-    [InlineData("archive", null)]
-    [InlineData("Act", null)]
-    public void A_reconciled_orphan_takes_its_kind_from_its_detail(string? detailKind, RunKind? expected)
-    {
-        var runId = RunId.New(Now, 95);
-        var path = RunDetailStore.Absolute(_sandbox.Paths, RunDetailStore.RelativePath(runId));
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(new RunDetailHead(1, runId, RunTrigger.Manual, Now, Now, false) { Kind = detailKind }, WslCareJsonContext.Default.RunDetailHead));
-
-        RunReconcile.Apply(_sandbox.Paths, _sandbox.Files, Now);
-
-        History().Should().ContainSingle().Which.Kind.Should().Be(expected);
-    }
+    // The reconcile's reading of a detail's kind (§15o review G1, PR #16 retro G0) is RunKindDowngradeTests', over raw fixtures:
+    // a typed RunDetailHead cannot write an explicit null, an integer or a missing member on purpose.
 
     // ---------- reading ----------
 
@@ -165,22 +148,12 @@ public sealed class RunKindTests : IDisposable
         var read = RunHistory.Read(_sandbox.Paths, _sandbox.Files);
 
         read.Unparseable.Should().Be(0);
-        read.Records.Single().Kind.Should().BeNull();
+        read.Records.Single().Kind.IsAbsent.Should().BeTrue();
         RunLogs.Runs(_sandbox.Paths, _sandbox.Files, Period()).Runs.Single().Kind.Should().BeNull("absent, never guessed");
     }
 
-    /// <summary>The residual plan §15o states: a kind this build does not know makes the line unparseable — counted, never a crash
-    /// (reachable only after a downgrade, as an unknown outcome is).</summary>
-    [Fact]
-    public void A_line_with_a_kind_this_build_does_not_know_is_counted_unparseable()
-    {
-        Append("""{"schemaVersion":1,"runId":"20261002T120000Z-6","trigger":"manual","startedAt":"2026-10-02T12:00:00+00:00","endedAt":"2026-10-02T12:01:00+00:00","outcome":"completed","actions":[],"kind":"archive"}""");
-
-        var read = RunHistory.Read(_sandbox.Paths, _sandbox.Files);
-
-        read.Unparseable.Should().Be(1);
-        read.Records.Should().BeEmpty();
-    }
+    // The residual plan §15o once pinned here — an unknown kind made the line unparseable — is closed by the PR #16 retro round:
+    // RunKindDowngradeTests.A_history_line_with_a_kind_this_build_does_not_know_still_parses holds the opposite.
 
     [Fact]
     public void Runs_answer_each_line_s_kind()

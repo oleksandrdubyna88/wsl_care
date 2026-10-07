@@ -1,5 +1,3 @@
-using WslCare.Core.Actions.Engine;
-
 namespace WslCare.Core.Records;
 
 /// <summary>One reason a reader may meet on a history line, by the writer that puts it there.</summary>
@@ -16,9 +14,14 @@ public sealed record ReasonPrefix(string Writer, string Prefix);
 /// </summary>
 public static class HistoryReasons
 {
+    /// <summary>How the line of an unusable request's run begins (<c>RequestSweep.Unusable</c> writes it) — a contract
+    /// (<c>contracts/history-reasons.json</c>, plan §15o): a reader tells this kind-less line by it. Here, beside the list it
+    /// belongs to, so the records layer depends on no engine type (PR #16 retro round, gate G1).</summary>
+    public const string UnusableRequestPrefix = "refused: its request could not be used";
+
     public static IReadOnlyList<ReasonPrefix> NotAFullCheckWithoutKind { get; } =
     [
-        new("RequestSweep.Unusable", RequestSweep.UnusablePrefix),
+        new("RequestSweep.Unusable", UnusableRequestPrefix),
         new("RunReconcile.InterruptedLine", RunReconcile.InterruptedReason),
         new("RunReconcile.InterruptedLine", RunReconcile.UnreadableDetailReason),
     ];
