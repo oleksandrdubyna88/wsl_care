@@ -1,3 +1,5 @@
+using WslCare.Core.Collectors;
+
 namespace WslCare.Core.Processes;
 
 /// <summary>A captured stream: what was kept, and whether the cap cut it.</summary>
@@ -24,6 +26,13 @@ public abstract record CommandOutcome
     /// (<see cref="ResolvedExecutable.Found.OnTheSystemDrive"/>) — reported beside the bare program the policy judged;
     /// empty otherwise.</summary>
     public string StartedFrom { get; init; } = string.Empty;
+
+    /// <summary>The launcher's clock read immediately before the operating system was asked to start the process — after the
+    /// executable was resolved, so a slow lookup (the Windows system drive, up to its ceiling) is not part of it. Unavailable,
+    /// with the reason, when nothing was started or the runner (a test's scripted one) does not stamp it.</summary>
+    public Reading<DateTimeOffset> StartedAt { get; init; } = NotStamped;
+
+    private static readonly Reading<DateTimeOffset> NotStamped = Reading.Missing<DateTimeOffset>("the runner did not stamp the instant it started the process");
 
     /// <summary>The process ran to its end.</summary>
     public sealed record Exited(int ExitCode, CapturedText Stdout, CapturedText Stderr, TimeSpan Elapsed) : CommandOutcome;

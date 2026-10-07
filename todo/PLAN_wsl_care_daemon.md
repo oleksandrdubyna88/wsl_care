@@ -2724,6 +2724,28 @@ pull request's statement; §17 is the plan record).
 - **I** — after the merge: rebuild the local archive, reinstall, `systemctl start wsl-care.service`, and read the run
   record: `clock.drift` measured, A16 not refused for a missing `powershell.exe`. *Not run yet — stamped by the coordinator.*
 
+**Retro coai round over PR #10 (2026-10-06, session ad685697)** — the owner's rule of §17c: a merged PR goes through the
+gate and the consultant again. Fixed in `fix/wc-retro-pr10-system-drive`, each one red first (`research/module_tests.md`
+*The PR #10 retro round*):
+
+| # | Finding | Decision |
+|---|---|---|
+| plan round 2 | the Windows ACL of `C:\Windows\System32` should be checked; the abandoned lookup threads accumulate | **Rejected.** The ACL is outside the confused-deputy boundary (an administrator is already above the daemon) and drvfs shows no Windows ACL to check; the fallback is resolved a few times per short-lived run, so at most a few threads are abandoned, each with its process |
+| C0 | a root bind mount or a virtiofs share could pose as the drive | **Rejected.** A mount needs root; virtiofs is taken only when its source or `path=` names the drive |
+| C1 | `InteropRefusal` judged only the first registered entry: `WSLInterop` disabled beside an enabled `WSLInterop-late` was refused | **Accepted.** Empty when ANY registered entry is `enabled`; the refusal names every entry and its state |
+| C2 | (the code round's third finding, in session ad685697) | **Rejected as stated**; its concrete consequence is the clock bias below, accepted from consultation b41d9220 |
+| b41d9220 | the clock offset counted the system-drive lookup (up to its ceiling) as drift — A16 acts on drift | **Accepted.** The launcher stamps `CommandOutcome.StartedAt` immediately before `Process.Start`; the offset (the full run's and A16's, one function) is measured from it |
+| own O1 | deleting `SameFile` or the descriptor's `OnTheMount` in `HeadIdentityProblem` left the suite green | **Accepted.** `HeadProblem` tested over the two readings; each check shown red by its deletion |
+| own O2 | deleting the link arm or the uid arm of `AncestorProblem` left the suite green | **Accepted.** `/proc/self` (a root-owned link) and this account's home; each arm shown red by its deletion (WSL) |
+| own O3 | the super options were unescaped: a drvfs mount of a folder named `C:\134` read as the whole drive | **Accepted.** The super options are read raw, as the kernel prints them |
+| own O4 | an EIO from the head read on a failing 9p share threw out of the whole collect, wrapped in `AggregateException` | **Accepted.** The read failure is a reason; `Bounded.Run` surfaces the lookup's own exception |
+| own O5 | `SystemDriveLookup.ThisMachine` froze `commands.systemDriveLookupSeconds` in a static | **Accepted.** Built per use; `NumbersAreConfigurationTests` holds it |
+| own O6 | `MountInfoLine.Parse` cyclomatic complexity 5 | **Accepted.** Split (`Separator`), no behaviour change |
+
+**Open for the owner:** (1) a mount-identity check — `statx` `STATX_MNT_ID` against the mountinfo id — would refuse a root
+bind of a `C:\` subfolder over `/mnt/c`; it is root-only and hardening, not a hole. (2) Two mount points of the same device
+(Docker Desktop binding `/mnt/c` again) are refused fail-closed, so on such a machine the fallback does not run.
+
 ### 17b. Retro review of PR #9 (E5) — coai codex + the consultant (2026-10-06)
 
 E5 was re-reviewed after its merge (owner, 2026-10-06: every merged PR through the gate and the consultant). Plan round

@@ -157,6 +157,68 @@ public sealed class SystemDriveFilesTests : IDisposable
         SystemDriveFiles.MountPointRefusal("/tmp/anything/c").Should().Contain("/tmp").And.Contain("writable by its group or by others");
     }
 
+    /// <summary>PR #10 retro round, own O2: a LINK above the mount point is refused by its own arm. <c>/proc/self</c> is a
+    /// root-owned symbolic link on every Linux, below <c>/proc</c> (root's, 555) — without the arm its 0777 link mode would be
+    /// refused for another reason, which is why the test names the arm's words.</summary>
+    [Fact]
+    public void A_link_above_the_mount_point_is_refused_as_not_a_directory()
+    {
+        SkipOnWindows();
+        Stat("/proc/self").Should().BeOfType<Reading<FileStatus>.Available>().Which.Value
+            .Should().Match<FileStatus>(s => s.IsSymbolicLink && s.OwnerUid == 0, "the fixture is a root-owned link");
+
+        SystemDriveFiles.MountPointRefusal("/proc/self/c").Should().Contain("/proc/self, above the drive's mount point, is not a directory");
+    }
+
+    /// <summary>PR #10 retro round, own O2: an ancestor owned by an account other than root is refused naming its uid — this
+    /// account's home, whose own ancestors pass (checked first, so the refusal can only be the home's).</summary>
+    [Fact]
+    public void An_ancestor_owned_by_another_account_than_root_is_refused_naming_its_uid()
+    {
+        SkipOnWindows();
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var owner = Stat(home) is Reading<FileStatus>.Available { Value: { IsDirectory: true } status } ? status.OwnerUid : 0u;
+        Assert.SkipWhen(owner == 0, $"{home} is not a directory another account than root owns (this run is root's, or the home is a link)");
+        Assert.SkipUnless(SystemDriveFiles.MountPointRefusal(home).Length == 0, $"an ancestor of {home} is refused already: {SystemDriveFiles.MountPointRefusal(home)}");
+
+        SystemDriveFiles.MountPointRefusal(home + "/drive/c").Should().Be(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{home}, above the drive's mount point, is owned by uid {owner}, not root"));
+    }
+
+    /// <summary>PR #10 retro round, own O1: the checks on the OPENED descriptor, over the two readings the walk and the open
+    /// produce. A positive first, so the fixture is shown to pass every check it is not about.</summary>
+    [Fact]
+    public void The_opened_file_the_path_check_saw_on_the_mount_with_its_header_passes()
+    {
+        SystemDriveFiles.HeadProblem(OnDrive, Reading.Of(Program(inode: 41)), Reading.Of(new FileHead(Program(inode: 41), Mz)), DriveC).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_file_swapped_between_the_path_check_and_the_open_is_refused()
+    {
+        SystemDriveFiles.HeadProblem(OnDrive, Reading.Of(Program(inode: 41)), Reading.Of(new FileHead(Program(inode: 42), Mz)), DriveC)
+            .Should().Be($"{OnDrive} changed between its check and its open");
+    }
+
+    [Fact]
+    public void An_opened_file_off_the_drives_mount_is_refused_even_when_the_path_check_saw_that_same_file()
+    {
+        var elsewhere = Program(inode: 41) with { DeviceMajor = 8, DeviceMinor = 96 };
+
+        SystemDriveFiles.HeadProblem(OnDrive, Reading.Of(elsewhere), Reading.Of(new FileHead(elsewhere, Mz)), DriveC)
+            .Should().Be($"{OnDrive} is on device 8:96, not on the drive's mount (0:159)");
+    }
+
+    private static Reading<FileStatus> Stat(string path) => OperatingSystem.IsLinux() ? RegularFiles.StatNoFollow(path) : Reading.Missing<FileStatus>("not Linux");
+
+    private static readonly SystemDriveMount DriveC = new("/mnt/c", 0, 159);
+
+    private static readonly byte[] Mz = "MZ"u8.ToArray();
+
+    private static string OnDrive => $"/mnt/c/{Folder}/{HealthCommands.PowerShell}";
+
+    /// <summary>A regular file, mode 0555 (what drvfs reports, observed 2026-10-04), on the drive's device.</summary>
+    private static FileStatus Program(ulong inode) => new(0x8000, 0x16D, 1000, inode, DriveC.DeviceMajor, DriveC.DeviceMinor);
+
     [Fact]
     public void On_windows_the_checks_answer_that_the_drive_is_the_distros()
     {

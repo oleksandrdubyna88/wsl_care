@@ -102,7 +102,9 @@ public static class SystemDriveFiles
         var reading => reading.ReasonOrEmpty,
     };
 
-    private static string HeadProblem(string path, Reading<FileStatus> checkedPath, Reading<FileHead> head, SystemDriveMount mount) => head switch
+    /// <summary>The file as its descriptor answered (<paramref name="head"/>) against what the path walk saw
+    /// (<paramref name="checkedPath"/>) and the mount — pure over the two readings, so each check is a unit test.</summary>
+    internal static string HeadProblem(string path, Reading<FileStatus> checkedPath, Reading<FileHead> head, SystemDriveMount mount) => head switch
     {
         Reading<FileHead>.Available { Value: var opened } => OpenedFileProblem(path, checkedPath, opened, mount),
         var reading => reading.ReasonOrEmpty,

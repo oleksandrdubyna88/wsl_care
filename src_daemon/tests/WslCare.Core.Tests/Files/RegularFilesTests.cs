@@ -27,6 +27,22 @@ public sealed class RegularFilesTests : IDisposable
         RegularFiles.Read(Path.Combine(_root.Path, "absent.txt"), 64).Should().BeOfType<FileReadResult.Missing>();
     }
 
+    /// <summary>PR #10 retro round, own O4: the head read of a file on a 9p share the host serves can fail (EIO) — that is a
+    /// reason the file is not started, never an exception that ends the whole collect.</summary>
+    [Fact]
+    public void A_head_read_that_fails_is_a_reason_naming_the_file_never_an_exception()
+    {
+        var status = new FileStatus(0x8000, 0x16D, 1000, 41, 0, 159);
+        const string File = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
+
+        RegularFiles.Head(File, status, 2, _ => throw new IOException("Input/output error"))
+            .Should().BeOfType<Core.Collectors.Reading<FileHead>.Unavailable>().Which.Reason.Should().Contain(File).And.Contain("Input/output error");
+        RegularFiles.Head(File, status, 2, _ => throw new UnauthorizedAccessException("Access to the path is denied."))
+            .Should().BeOfType<Core.Collectors.Reading<FileHead>.Unavailable>().Which.Reason.Should().Contain(File).And.Contain("denied");
+        RegularFiles.Head(File, status, 2, bytes => { bytes[0] = (byte)'M'; bytes[1] = (byte)'Z'; return 2; })
+            .Should().BeOfType<Core.Collectors.Reading<FileHead>.Available>("a read that answers is the head").Which.Value.Bytes.Should().Equal("MZ"u8.ToArray());
+    }
+
     [Fact]
     public void The_cap_counts_bytes_read_never_the_length_a_stream_claims()
     {

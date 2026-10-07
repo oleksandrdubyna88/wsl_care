@@ -214,14 +214,25 @@ public static partial class RegularFiles
         }
 
         var status = Status(buffer);
-        return status.IsRegular ? Reading.Of(Head(handle, status, count)) : Reading.Missing<FileHead>($"{path} is {NotRegular} ({Describe(status.Type)})");
+        return status.IsRegular ? Head(path, status, count, bytes => RandomAccess.Read(handle, bytes, 0)) : Reading.Missing<FileHead>($"{path} is {NotRegular} ({Describe(status.Type)})");
     }
 
-    private static FileHead Head(SafeFileHandle handle, FileStatus status, int count)
+    /// <summary>The first <paramref name="count"/> bytes <paramref name="read"/> answers for the descriptor of <paramref name="path"/>
+    /// (<see cref="ReadHead"/> reads it with <see cref="RandomAccess"/>; a test hands in a failing one) — or, when the read
+    /// fails (EIO on a 9p share the host stopped serving well), why, like the open and statx failures above: a reason, never an
+    /// exception that ends the whole collect (PR #10 retro round).</summary>
+    internal static Reading<FileHead> Head(string path, FileStatus status, int count, Func<byte[], int> read)
     {
         var bytes = new byte[count];
-        var read = RandomAccess.Read(handle, bytes, 0);
-        return new FileHead(status, bytes[..read]);
+        try
+        {
+            var length = read(bytes);
+            return Reading.Of(new FileHead(status, bytes[..length]));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return Reading.Missing<FileHead>($"{path}: its first bytes could not be read ({e.Message})");
+        }
     }
 
     /// <summary><c>stx_mode</c> (u16 at 28: type and permission bits), <c>stx_uid</c> (u32 at 20), <c>stx_ino</c> (u64 at 32),

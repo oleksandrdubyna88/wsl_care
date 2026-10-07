@@ -19,11 +19,12 @@ public sealed record SystemDriveLookup(
     Func<SystemDriveMount, string, string, string> Inspect,
     TimeSpan Ceiling)
 {
-    /// <summary>This machine's mountinfo, binfmt_misc and files — what the product's <see cref="ExecutableResolver.Resolve(string, CancellationToken)"/> asks.</summary>
-    public static SystemDriveLookup ThisMachine { get; } = new(
+    /// <summary>This machine's mountinfo, binfmt_misc and files — what the product's <see cref="ExecutableResolver.Resolve(string, CancellationToken)"/> asks.
+    /// Built per use, so its ceiling is the one in force (<c>commands.systemDriveLookupSeconds</c>), never one frozen at first use.</summary>
+    public static SystemDriveLookup ThisMachine => new(
         WindowsSystemDrive.MountHere, WindowsSystemDrive.InteropRefusalHere, SystemDriveFiles.MountPointRefusal, SystemDriveFiles.Problem, WindowsSystemDrive.Ceiling);
 
-    /// <summary>No system drive at all: the lookup is PATH alone.</summary>
-    public static SystemDriveLookup NotConsulted { get; } = new(
+    /// <summary>No system drive at all: the lookup is PATH alone (built per use, like <see cref="ThisMachine"/>).</summary>
+    public static SystemDriveLookup NotConsulted => new(
         () => Reading.Missing<SystemDriveMount>("this lookup consults PATH alone"), () => string.Empty, _ => string.Empty, (_, _, _) => string.Empty, WindowsSystemDrive.Ceiling);
 }

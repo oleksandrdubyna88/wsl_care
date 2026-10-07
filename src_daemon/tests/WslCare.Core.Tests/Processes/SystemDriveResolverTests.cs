@@ -217,4 +217,25 @@ public sealed class SystemDriveResolverTests : IDisposable
 
         outcome.Should().BeOfType<CommandOutcome.Exited>().Which.StartedFrom.Should().BeEmpty();
     }
+
+    /// <summary>PR #10 retro round (consultation b41d9220): the launcher stamps the instant it starts the process AFTER the
+    /// lookup — a system-drive lookup that takes its time (here four seconds on the test's clock) is not part of the launch
+    /// instant the clock probe's offset is measured from.</summary>
+    [Fact]
+    public async Task The_launch_instant_is_taken_after_the_lookup_so_a_slow_lookup_is_not_part_of_it()
+    {
+        var clock = new ManualTimeProvider(FixedTimeProvider.DefaultNow);
+        var lookup = TimeSpan.FromSeconds(4);
+        var runnable = OperatingSystem.IsWindows() ? Path.Combine(Environment.SystemDirectory, "whoami.exe") : "/bin/true";
+        var runner = ProcessCommandRunner.WithResolverForItsOwnTests(CommandPolicy.Product, (_, _) =>
+        {
+            clock.Advance(lookup);
+            return new ResolvedExecutable.Found(runnable) { OnTheSystemDrive = true };
+        }, clock);
+
+        var outcome = await runner.RunAsync(HealthCommands.WindowsClock.ToRequest(), TestContext.Current.CancellationToken);
+
+        outcome.Should().BeOfType<CommandOutcome.Exited>("{0}", outcome).Which.StartedAt
+            .Should().Be(Reading.Of(FixedTimeProvider.DefaultNow + lookup), "the instant is read when the process starts, after the lookup");
+    }
 }

@@ -33,8 +33,10 @@ public sealed record SystemDriveMount(string MountPoint, uint DeviceMajor, uint 
 /// the drive. WSL mounts the share by a TAG and bind-mounts a child of it onto the drive's folder, so such a line names
 /// neither and is NOT taken — the refusal then names the filesystem found at the automount folder.</item>
 /// </list>
-/// <para>Fields are decoded from the kernel's octal escapes (<c>\040</c> space, <c>\011</c> tab, <c>\012</c> newline,
-/// <c>\134</c> backslash) and options split at both <c>,</c> and <c>;</c>. One mount point is the answer (several lines
+/// <para>The root, the mount point and the source are decoded from the kernel's octal escapes (<c>\040</c> space, <c>\011</c>
+/// tab, <c>\012</c> newline, <c>\134</c> backslash); the super options are NOT — the kernel prints them raw (observed: Docker's
+/// <c>path=C:\Program Files\…</c>), and decoding them would read a folder named <c>C:\134</c> as <c>C:\</c> (PR #10 retro
+/// round). Options split at both <c>,</c> and <c>;</c>. One mount point is the answer (several lines
 /// for it — mounts stacked on one folder — agree, and the last, the one a path reaches, gives the device); several
 /// DIFFERENT mount points are refused, naming them: which one is the drive is not guessed. Derived this way,
 /// <c>[automount] root=</c> is honoured as WSL applied it, and a folder nobody mounted is never searched (only root and
@@ -45,7 +47,7 @@ public sealed record SystemDriveMount(string MountPoint, uint DeviceMajor, uint 
 /// create on a DATA drive (<c>D:\Windows\System32\…</c>) be started by the root daemon.</para>
 /// <para><b>Interop</b> (<see cref="InteropRefusal"/>): a Windows program runs only through WSL's binfmt_misc handler, so
 /// the handler must be registered and <c>enabled</c> (observed 2026-10-04: <c>WSLInterop</c>, interpreter <c>/init</c>,
-/// magic <c>4d5a</c> = <c>MZ</c>).</para>
+/// magic <c>4d5a</c> = <c>MZ</c>) — under ANY of its names: one enabled entry is enough (PR #10 retro round, gate C1).</para>
 /// </remarks>
 public static partial class WindowsSystemDrive
 {
@@ -101,27 +103,27 @@ public static partial class WindowsSystemDrive
         return ReadText(MountInfo).Bind(text => Mount(text, automount));
     }
 
-    /// <summary>Empty when WSL interop is registered and enabled per <paramref name="read"/> (one of <see cref="InteropEntries"/>
-    /// whose first line is <c>enabled</c>); otherwise why a Windows program cannot run from here.</summary>
+    /// <summary>Empty when WSL interop is registered and enabled per <paramref name="read"/> — ANY of <see cref="InteropEntries"/>
+    /// whose first line is <c>enabled</c> (a disabled <c>WSLInterop</c> beside an enabled <c>WSLInterop-late</c> runs Windows
+    /// programs); otherwise why a Windows program cannot run from here, naming every registered entry and its state.</summary>
     public static string InteropRefusal(Func<string, Reading<string>> read)
     {
         var readings = InteropEntries.Select(e => (Entry: e, Text: read(e))).ToList();
-        var registered = readings.Where(r => r.Text.IsAvailable).ToList();
+        var registered = readings.Where(r => r.Text.IsAvailable).Select(r => (r.Entry, State: FirstLine(r.Text.ValueOr(string.Empty)))).ToList();
         return registered.Count == 0
             ? $"WSL interop is not registered ({string.Join("; ", readings.Select(r => r.Text.ReasonOrEmpty))}), so no Windows program can run from this distro"
-            : EnabledOrWhy(registered[0].Entry, registered[0].Text.ValueOr(string.Empty));
+            : EnabledOrWhy(registered);
     }
 
     /// <summary><see cref="InteropRefusal"/> over this machine's binfmt_misc.</summary>
     public static string InteropRefusalHere() => InteropRefusal(ReadText);
 
-    private static string EnabledOrWhy(string entry, string text)
-    {
-        var first = text.Split('\n')[0].Trim();
-        return first == "enabled"
+    private static string EnabledOrWhy(IReadOnlyList<(string Entry, string State)> registered) =>
+        registered.Any(r => r.State == "enabled")
             ? string.Empty
-            : $"WSL interop is registered but not enabled ({entry} says \"{first}\"), so no Windows program can run from this distro";
-    }
+            : $"WSL interop is registered but not enabled ({string.Join("; ", registered.Select(r => $"{r.Entry} says \"{r.State}\""))}), so no Windows program can run from this distro";
+
+    private static string FirstLine(string text) => text.Split('\n')[0].Trim();
 
     private static bool IsTheDrive(MountInfoLine line) => IsAWholeDriveAtAnAbsolutePoint(line) && IsADrvfsMountOfTheDrive(line);
 
@@ -182,14 +184,23 @@ public static partial class WindowsSystemDrive
     /// <summary>One mountinfo line: <c>id parent major:minor root mount-point options [optional…] - type source super-options</c>.</summary>
     private sealed record MountInfoLine(string Root, string MountPoint, uint Major, uint Minor, string Type, string Source, IReadOnlyList<string> Options)
     {
-        /// <summary>The line, or nothing when it is not one (empty, or short of its fields).</summary>
+        /// <summary>The line, or nothing when it is not one (empty, or short of its fields). The kernel escapes the root, the
+        /// mount point and the source (decoded here); the SUPER OPTIONS it prints raw — live, Docker's line carries
+        /// <c>path=C:\Program Files\…</c> — so they are never decoded: a folder named <c>C:\134</c> must not read as <c>C:\</c>.</summary>
         public static IEnumerable<MountInfoLine> Parse(string line)
         {
             var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var dash = f.Length >= 10 ? Array.IndexOf(f, "-", 6) : -1;
-            return dash > 0 && dash + 3 < f.Length && Device(f[2]) is [var major, var minor]
-                ? [new(Unescaped(f[3]), Unescaped(f[4]), major, minor, f[dash + 1], Unescaped(f[dash + 2]), Unescaped(f[dash + 3]).Split([',', ';']))]
+            var dash = Separator(f);
+            return dash > 0 && Device(f[2]) is [var major, var minor]
+                ? [new(Unescaped(f[3]), Unescaped(f[4]), major, minor, f[dash + 1], Unescaped(f[dash + 2]), f[dash + 3].Split([',', ';']))]
                 : [];
+        }
+
+        /// <summary>Where the <c>-</c> that ends the optional fields is, when the line holds every field around it; -1 otherwise.</summary>
+        private static int Separator(string[] f)
+        {
+            var dash = f.Length >= 10 ? Array.IndexOf(f, "-", 6) : -1;
+            return dash > 0 && dash + 3 < f.Length ? dash : -1;
         }
 
         public SystemDriveMount ToMount() => new(MountPoint, Major, Minor);
