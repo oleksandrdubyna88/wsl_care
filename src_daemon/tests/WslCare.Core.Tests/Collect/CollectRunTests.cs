@@ -70,7 +70,7 @@ public sealed class CollectRunTests : IDisposable
     [Fact]
     public async Task A_history_line_that_cannot_be_written_fails_the_run_and_the_next_run_records_it_as_interrupted()
     {
-        var first = await CollectRun.RunAsync(Context(new FailingHistoryAppends(_sandbox.Files), pid: 1), CancellationToken.None);
+        var first = await CollectRun.RunAsync(Context(new RefusingHistoryAppends(_sandbox.Files), pid: 1), CancellationToken.None);
 
         first.Recording.Should().Be(Recording.Failed);
         first.Reason.Should().Contain("the history line could not be written");
@@ -188,12 +188,6 @@ public sealed class CollectRunTests : IDisposable
             Writes.Add($"lock:{lockPath}");
             return base.TryLockExclusive(lockPath);
         }
-    }
-
-    private sealed class FailingHistoryAppends(IFileSystem inner) : DelegatingFileSystem(inner)
-    {
-        public override void AppendLine(string path, string line, TimeSpan lockTimeout) =>
-            throw new IOException("the history file is on a disk that went away (test)");
     }
 
     /// <summary>What an unprivileged process meets on the installed layout: the probe answers no.</summary>

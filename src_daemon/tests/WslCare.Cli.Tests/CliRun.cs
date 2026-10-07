@@ -37,6 +37,17 @@ internal static class CliRun
         return (exit, stdout.ToString(), stderr.ToString());
     }
 
+    /// <summary>The whole program as <c>Main</c> runs it — its last frame included (<c>Program.Guarded</c>): a cancellation the
+    /// token asked for is the interrupted code, a defect the internal one.</summary>
+    public static (int Exit, string Stdout, string Stderr) Guarded(CliHost host, CancellationToken cancellationToken, params string[] args)
+    {
+        var loaded = host.LoadConfig();
+        using var stdout = new StringWriter();
+        using var stderr = new StringWriter();
+        var exit = Program.Guarded(() => Program.Run(args, stdout, stderr, host, loaded, Logger.None, cancellationToken), Logger.None, stderr, cancellationToken);
+        return (exit, stdout.ToString(), stderr.ToString());
+    }
+
     /// <summary>Lines as a terminal shows them: ANY line break counts, not only this platform's
     /// <see cref="Environment.NewLine"/> — splitting on "\r\n" alone let a bare "\n" pass as one line.</summary>
     public static string[] Lines(string text) => text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);

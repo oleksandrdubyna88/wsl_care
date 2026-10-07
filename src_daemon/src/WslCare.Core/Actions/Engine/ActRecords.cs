@@ -28,6 +28,10 @@ public sealed record ActRequest(IReadOnlyList<ActionId> Ids, RunTrigger Trigger,
     /// <summary>Housekeeping run UNDER the lock, after the running.json sweep and the reconcile — <c>act --request</c> sweeps the
     /// request folder here (plan §15k #15); its notes join the run's. Nothing by default.</summary>
     public Func<RunId, CancellationToken, Task<IReadOnlyList<string>>> UnderLock { get; init; } = static (_, _) => Task.FromResult<IReadOnlyList<string>>([]);
+
+    /// <summary>How long the run waits for THE run lock (<see cref="RunLock.TakeAsync"/>): zero — refuse at once — for every run
+    /// but an accepted detached one, whose lock a <c>--detach</c> check may hold for a moment (retro round over PR #11, O1).</summary>
+    public TimeSpan LockWait { get; init; }
 }
 
 /// <summary>What became of one action in a run — the closed set of <see cref="ActionStatus"/> names.</summary>
@@ -127,7 +131,12 @@ public abstract record ActResult
     public sealed record Previewed(IReadOnlyList<ActionOutcome> Actions, TargetUserReport TargetUser) : ActResult;
 
     /// <summary>The run happened (or tried to): its detail, and how its records went.</summary>
-    public sealed record Done(ActRunDetail Detail, Recording Recording, string DetailFile, string Reason) : ActResult;
+    public sealed record Done(ActRunDetail Detail, Recording Recording, string DetailFile, string Reason) : ActResult
+    {
+        /// <summary>Whether the run's history line was written — until it is, <c>running.json</c> (or the request) is the run's only
+        /// trace and is kept for the next root run's sweep (retro round over PR #11, O2).</summary>
+        public bool LineWritten { get; init; } = true;
+    }
 
     /// <summary>Another run holds the lock, or a LIVE run claims <c>running.json</c>: nothing was done.</summary>
     public sealed record Busy(string Reason) : ActResult;

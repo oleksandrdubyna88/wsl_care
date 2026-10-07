@@ -279,6 +279,50 @@ public sealed class DetachedRunsTests : IDisposable
         Requests().Should().HaveCount(kept ? 1 : 0);
     }
 
+    /// <summary>Retro round over PR #11 (consultation 9064487b): a start that timed out while the run ALREADY ran and recorded
+    /// itself was answered 71 "did not succeed" — the person told a completed cleanup failed, and invited to run it again. The
+    /// history is asked after the unit: a terminal line for the run is an accepted run, and nothing is removed.</summary>
+    [Fact]
+    public void A_timed_out_start_whose_run_already_recorded_itself_answers_accepted_with_its_run_id()
+    {
+        Runner.ScriptEffect(argv => argv is ["systemctl", "start", ..], request =>
+        {
+            // systemd ran the unit while systemctl waited: the run recorded itself and removed its own request.
+            var unit = request.Argv[^1];
+            var runId = RunId.TryParse(unit["wsl-care-act@".Length..^".service".Length])!;
+            new RunRecordWriter(Sandbox.Paths, Sandbox.Files).Append(new RunRecord(1, runId, RunTrigger.Manual, Now, Now, RunOutcome.Completed, [], RunKind.Act));
+            RunRequests.Remove(Sandbox.Paths, Sandbox.Files, runId);
+            return new CommandOutcome.TimedOut(CapturedText.Empty, CapturedText.Empty, UnitCommands.StartCeiling);
+        });
+        Runner.Script(argv => argv is ["systemctl", "show", ..], RecordingCommandRunner.Exited(0, "ActiveState=inactive\nJob=\n"));
+
+        var (exit, stdout, stderr) = CliRun.Over(Host(), "act", "A10", "--confirm", "--detach", "--json");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        var answer = HandOff(stdout);
+        answer.Result.Should().Be("accepted");
+        History().Should().ContainSingle().Which.RunId.Text.Should().Be(answer.RunId, "the answer names the run that recorded itself");
+    }
+
+    /// <summary>Retro round over PR #11 (consultation 9064487b), the detach's half: a fresh request beside a left-over running.json
+    /// (its run recorded itself, then died before removing the file) read "none", so a second detach was ACCEPTED beside it.</summary>
+    [Fact]
+    public void A_detach_beside_a_left_over_running_json_and_a_queued_request_is_busy()
+    {
+        var leftOver = new RunningFile(1, RunId.New(Now.AddMinutes(-9), 998), RunTrigger.Manual, ["A9"], "A9", 998, Now.AddHours(-1), Now.AddMinutes(-9), Now.AddMinutes(-8), RunKind.Act);
+        Directory.CreateDirectory(Sandbox.Paths.StateDirectory);
+        File.WriteAllText(RunningState.File(Sandbox.Paths), JsonSerializer.Serialize(leftOver, WslCareJsonContext.Default.RunningFile));
+        new RunRecordWriter(Sandbox.Paths, Sandbox.Files).Append(new RunRecord(1, leftOver.RunId, RunTrigger.Manual, Now.AddMinutes(-9), Now.AddMinutes(-8), RunOutcome.Completed, [], RunKind.Act));
+        var queued = Plant("act", ["A9"], TimeSpan.FromSeconds(10));
+
+        var (exit, _, stderr) = CliRun.Over(Host(), "act", "A10", "--confirm", "--detach");
+
+        exit.Should().Be((int)ExitCode.Busy, stderr);
+        stderr.Should().Contain(queued.RunId.Text);
+        Requests().Should().ContainSingle("one root operation at a time");
+        Starts().Should().BeEmpty();
+    }
+
     [Fact]
     public void A_full_request_folder_is_refused_with_73_naming_the_budget()
 
@@ -437,6 +481,8 @@ public sealed class DetachedRunsTests : IDisposable
     [Fact]
     public void A_request_that_meets_the_lock_is_recorded_refused_and_removed_never_a_silent_busy()
     {
+        // The accepted run waits for the lock (retro round over PR #11, O1); a holder that keeps it past the wait still refuses it.
+        _harness.MachineLayer("""{ "requests": { "lockWaitSeconds": 1 } }""");
         var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
         var held = (ExclusiveLock.Held)RunLock.TryTake(Sandbox.Paths, Sandbox.Files);
         int exit;
@@ -454,6 +500,75 @@ public sealed class DetachedRunsTests : IDisposable
         line.Reason.Should().Contain("busy:");
         line.Actions.Should().ContainSingle().Which.Status.Should().Be(ActionStatus.Refused);
         Requests().Should().BeEmpty("every terminal path removes its request");
+    }
+
+    /// <summary>Retro round over PR #11 (O1): a <c>--detach</c> CHECK holds THE run lock while it sweeps, counts and reads the running
+    /// state; the run an EARLIER detach accepted took the lock with TryTake (never waiting) — so a second click in that window met
+    /// Busy and recorded the ACCEPTED run refused ("another run holds the run lock - a full run (collect), most likely") and
+    /// removed its request. An accepted run waits for the lock (<c>requests.lockWaitSeconds</c>), so a check's moment is no
+    /// refusal.</summary>
+    [Fact]
+    public async Task An_accepted_run_meeting_the_lock_a_detach_check_holds_for_a_moment_waits_and_runs()
+    {
+        var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
+        var held = (ExclusiveLock.Held)RunLock.TryTake(Sandbox.Paths, Sandbox.Files);
+        var check = Task.Run(
+            async () =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(300), TestContext.Current.CancellationToken);
+                held.Handle.Dispose();
+            },
+            TestContext.Current.CancellationToken);
+
+        var (exit, _, stderr) = CliRun.Over(Host(), "act", "--request", request.RunId.Text);
+        await check;
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        History().Should().ContainSingle().Which.Should().Match<RunRecord>(r => r.RunId == request.RunId && r.Outcome == RunOutcome.Completed);
+    }
+
+    /// <summary>Retro round over PR #11 (O2): <c>Refused</c> was <c>try { the refused line } finally { remove the request }</c> — a
+    /// line that could not be written (the history lock timed out, a disk full) took the request anyway and the exception left
+    /// through Main's catch-all (70): no line, no request, <c>runs show</c> unknown for an ACCEPTED run. The request now stays
+    /// for the next root run's sweep, and the answer is 1 (not recorded).</summary>
+    [Fact]
+    public void A_refusal_that_cannot_be_recorded_keeps_the_request_for_the_sweep_and_exits_1_never_70()
+    {
+        var request = Plant("act", ["A10"], TimeSpan.FromSeconds(5));
+        PlantWedged(RunId.New(Now.AddMinutes(-9), 999), pid: 999);
+        var host = _harness.Host(files: new RefusingHistoryAppends(Sandbox.Files, () => new TimeoutException("could not take history.jsonl.lock within 5 s (test)"))) with { Processes = WedgedTable(999) };
+
+        (int Exit, string Stdout, string Stderr) result = default;
+        var thrown = Record.Exception(() => result = CliRun.Over(host, "act", "--request", request.RunId.Text));
+
+        Requests().Should().ContainSingle("the refusal could not be recorded, so the request — the accepted run's only trace — stays for the sweep");
+        thrown.Should().BeNull();
+        result.Exit.Should().Be((int)ExitCode.RunFailed);
+        result.Stderr.Should().Contain("could not be recorded").And.Contain("the request stays");
+    }
+
+    /// <summary>Retro round over PR #11 (O2 + the consultation): the engine removed running.json — and the request was already
+    /// gone — although the run's line could not be written: nothing named the accepted run. running.json now stays until a
+    /// line is written, so <c>runs show</c> answers from it and the next root run's sweep records the run.</summary>
+    [Theory]
+    [InlineData("act", "A10")]
+    [InlineData("collect", "collect")]
+    public void An_accepted_run_whose_line_cannot_be_written_stays_discoverable_and_the_next_root_run_records_it(string kind, string action)
+    {
+        var request = Plant(kind, [action], TimeSpan.FromSeconds(5));
+
+        var (exit, _, _) = CliRun.Over(_harness.Host(files: new RefusingHistoryAppends(Sandbox.Files)), "act", "--request", request.RunId.Text);
+
+        exit.Should().Be((int)ExitCode.RunFailed);
+        var (_, shown, _) = CliRun.Over(Host(), "runs", "show", request.RunId.Text, "--json");
+        var show = JsonSerializer.Deserialize(shown, WslCareJsonContext.Default.RunShowReport)!;
+        show.State.Should().NotBe(Core.History.RunShowState.Unknown, show.Reason);
+        File.Exists(RunningState.File(Sandbox.Paths)).Should().BeTrue("no line was written, so running.json stays for the next root run's sweep");
+
+        var (next, _, nextErr) = CliRun.Over(Host(), "collect");
+
+        next.Should().Be((int)ExitCode.Ok, nextErr);
+        History().Should().Contain(r => r.RunId == request.RunId && r.Outcome == RunOutcome.Interrupted, "the sweep records the run that could not record itself");
     }
 
     [Fact]
@@ -508,7 +623,7 @@ public sealed class DetachedRunsTests : IDisposable
 
         var (exit, _, stderr) = CliRun.Over(Host(), "act", "--request", runId.Text);
 
-        exit.Should().Be((int)ExitCode.Usage);
+        exit.Should().Be((int)ExitCode.RequestUnusable, "recorded refused: a success exit of the unit, never the usage error (retro round over PR #11, O3)");
         stderr.Should().Contain("cannot be used").And.Contain("shown");
         History().Should().ContainSingle().Which.Should().Match<RunRecord>(r => r.RunId == runId && r.Outcome == RunOutcome.Refused, "E6.S1 review D5: recorded, never left to block every detach");
         File.Exists(path).Should().BeFalse();
@@ -529,7 +644,7 @@ public sealed class DetachedRunsTests : IDisposable
 
         var (exit, _, stderr) = CliRun.Over(Host(), "act", "--request", request.RunId.Text);
 
-        exit.Should().Be((int)ExitCode.Usage);
+        exit.Should().Be((int)ExitCode.RequestUnusable);
         stderr.Should().Contain("cannot be used");
         History().Should().ContainSingle().Which.Outcome.Should().Be(RunOutcome.Refused, "nothing ran; the refusal is recorded and the request removed");
         File.Exists(RunRequests.File(Sandbox.Paths, request.RunId)).Should().BeFalse();

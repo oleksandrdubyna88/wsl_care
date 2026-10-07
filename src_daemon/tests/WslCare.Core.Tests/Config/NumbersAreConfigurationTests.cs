@@ -40,7 +40,7 @@ public sealed class NumbersAreConfigurationTests
     public static readonly TheoryData<string> GroupB =
     [
         "walk.maxEntries", "walk.maxSeconds", "agents.walkBudgetSeconds", "agents.sessionMaxEntries", "agents.maxPackageJsonBytes",
-        "agents.lookupCeilingSeconds", "requests.maxRead", "requests.maxQueued", "requests.graceSeconds", "requests.futureSkewSeconds",
+        "agents.lookupCeilingSeconds", "requests.maxRead", "requests.maxQueued", "requests.graceSeconds", "requests.futureSkewSeconds", "requests.lockWaitSeconds",
         "act.maxShownNames", "act.maxListBytes", "act.stdinTimeoutSeconds", "stops.maxMarkerBytes", "timer.firstDryWindowDays",
         "timer.periodHours", "timer.lateSlackMinutes", "timer.randomizedDelayMinutes", "timer.accuracyMinutes", "units.nice",
         "units.memoryMaxMb", "units.stopTimeoutSeconds", "units.eventsRestartSeconds", "docker.probeTimeoutSeconds",

@@ -101,6 +101,41 @@ public sealed class RunningReportsTests : IDisposable
         report.Reason.Should().Contain("recorded itself as completed").And.Contain("only its running.json is left");
     }
 
+    /// <summary>Retro round over PR #11 (consultation 9064487b): a fresh request beside a LEFT-OVER running.json — a dead holder,
+    /// recorded or not — read <c>none</c> / <c>dead</c>, because the requests were asked only when nothing held running.json; a
+    /// second <c>--detach</c> was then allowed and install.sh's wait saw an idle machine. A pending request is in flight; an idle
+    /// or dead holder never hides it.</summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void A_fresh_request_beside_a_dead_holder_is_queued_whether_or_not_the_holder_recorded_itself(bool holderRecorded)
+    {
+        var file = Running(Now.AddMinutes(-1));
+        Stage(file);
+        if (holderRecorded)
+        {
+            new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, file.RunId, RunTrigger.Manual, file.StartedAt, Now, RunOutcome.Completed, [], null));
+        }
+
+        var request = RequestFor(Now, 77);
+        Request(request);
+
+        var report = Read(new FakeProcessTable());
+
+        report.State.Should().Be(RunningStateName.Queued, report.Reason);
+        report.RunId.Should().Be(request.RunId.Text);
+    }
+
+    /// <summary>The companion: a LIVE holder still comes first — a request queued behind an acting run reads <c>live</c>.</summary>
+    [Fact]
+    public void A_request_behind_a_live_holder_still_reads_live()
+    {
+        Stage(Running(Now.AddSeconds(-1)));
+        Request(RequestFor(Now, 77));
+
+        Read(new FakeProcessTable().Alive(Pid, ProcessStart)).State.Should().Be(RunningStateName.Live);
+    }
+
     /// <summary>D4: a request that vanished as status read it has just become a run — running.json is read again, and the run
     /// it now names is reported, never "none".</summary>
     [Fact]

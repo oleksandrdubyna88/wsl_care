@@ -205,7 +205,10 @@ public sealed class DetachedRunTests : IDisposable
 
         var line = History().Should().ContainSingle().Subject;
         line.Outcome.Should().Be(RunOutcome.Interrupted);
-        line.Reason.Should().StartWith("stopped: act --stop asked systemd to stop it").And.Contain("did not exit within 90 s of SIGTERM").And.Contain("pid 999 is gone");
+        // Retro round over PR #11 (consultation 9064487b): a marker proves only that a stop was REQUESTED — the reason says that
+        // and that the run died unrecorded, never that systemd killed it after the stop timeout.
+        line.Reason.Should().StartWith($"stopped: a stop was requested at {Now.AddMinutes(-2).UtcDateTime:O} through wsl-care-act@{runId}.service (act --stop), and the run died without recording itself")
+            .And.NotContain("systemd killed it").And.Contain("pid 999 is gone");
         StopMarkers.List(_sandbox.Paths, _sandbox.Files).Should().BeEmpty();
     }
 

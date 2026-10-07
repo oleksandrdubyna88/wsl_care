@@ -118,6 +118,40 @@ public sealed class ReadContractCommandTests : IDisposable
         Directory.Exists(_sandbox.Paths.StateDirectory).Should().BeFalse("runs show is read-only");
     }
 
+    /// <summary>Retro round over PR #11 (G0): the human form of a recorded run with its detail, line by line — pinned before
+    /// <c>LogsCommand.ShowText</c> was split into helpers, so the refactor is held to the text it printed.</summary>
+    [Fact]
+    public void Runs_show_as_text_lists_each_action_with_what_it_removed_and_every_command_with_its_exit()
+    {
+        var id = RunId.New(Now.AddHours(-1), 12);
+        static ActionCommandRecord Command(string display, string outcome, int? exit) => new("template", display, outcome, exit, string.Empty);
+        var ran = new ActionRun(2, 1_500_000_000, "measured", null, null, [], [Command("journalctl --vacuum-time=30d", "exited", 0), Command("docker volume rm x", "timedOut", null)], string.Empty)
+        {
+            NotRemoved = [new ActionItem("volume", "in-use", null)],
+        };
+        var nothing = new ActionRun(0, null, "nothing to remove", null, null, [], [], string.Empty);
+        var detail = new ActRunDetail(1, id, RunTrigger.Manual, Now.AddHours(-1), Now.AddHours(-1), false, "act", RunOutcome.Completed, "wsl", string.Empty, new TargetUserReport(true, "me", "/home/me", "test"),
+            [
+                new ActionOutcome("A10", "the journal", ActionStatus.Ran, "ran", null, ran),
+                new ActionOutcome("A9", "apt's cache", ActionStatus.Refused, "no target user", null, null),
+                new ActionOutcome("A4", "volumes", ActionStatus.Ran, "ran", null, nothing),
+            ],
+            []);
+        RunDetailStore.Write(_sandbox.Paths, _sandbox.Files, id, JsonSerializer.SerializeToUtf8Bytes(detail, WslCareJsonContext.Default.ActRunDetail));
+        Line(new RunRecord(1, id, RunTrigger.Manual, Now.AddHours(-1), Now.AddHours(-1), RunOutcome.Completed, [], RunKind.Act) { Detail = RunDetailStore.RelativePath(id) });
+
+        var (exit, stdout, stderr) = CliRun.Over(Host(), "runs", "show", id.Text);
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        stdout.Split('\n').Select(l => l.TrimEnd('\r')).Where(l => l.Length > 0).Should().Equal(
+            $"wsl-care runs show {id}: done",
+            "  A10               ran       2 removed, 1 not removed, freed 1.50 GB",
+            "      journalctl --vacuum-time=30d -> exited 0",
+            "      docker volume rm x -> timedOut",
+            "  A9                refused   no target user",
+            "  A4                ran       0 removed, 0 not removed, freed 0.00 GB");
+    }
+
     // ---------- the instant range ----------
 
     [Fact]

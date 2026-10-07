@@ -34,7 +34,7 @@ public sealed class FullCheckLineTests : IDisposable
         [Ending.CutOffBeforeItStarted] = ("interrupted", "cut off before it started"),
         [Ending.SweptRequest] = ("interrupted", "swept: the detached run never recorded itself"),
         [Ending.SweptHolder] = ("interrupted", "swept: "),
-        [Ending.SweptHolderAfterAStop] = ("interrupted", "stopped: act --stop asked systemd"),
+        [Ending.SweptHolderAfterAStop] = ("interrupted", "stopped: a stop was requested at"),
     };
 
     private readonly DetachedRunHarness _harness = new("full-check-line");
@@ -195,6 +195,7 @@ public sealed class FullCheckLineTests : IDisposable
 
     private RunId RefusedAtTheLock(RunRequestFile request)
     {
+        _harness.MachineLayer("""{ "requests": { "lockWaitSeconds": 0 } }""");
         var held = (Core.Files.ExclusiveLock.Held)RunLock.TryTake(_harness.Sandbox.Paths, _harness.Sandbox.Files);
         using (held.Handle)
         {

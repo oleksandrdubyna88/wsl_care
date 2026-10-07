@@ -67,6 +67,10 @@
       "code": 81
     },
     {
+      "name": "requestUnusable",
+      "code": 82
+    },
+    {
       "name": "interrupted",
       "code": 130
     }

@@ -155,20 +155,31 @@ internal static class LogsCommand
 
     /// <summary>The human form of <c>runs show</c>: the state and why, then — when the detail was read — one line per action
     /// with what it removed and every command with its exit.</summary>
+    /// <remarks>Split into one helper per line kind (retro round over PR #11, G0: the method held two loops and three ternaries,
+    /// over the complexity limit); the text is pinned by <c>ReadContractCommandTests.Runs_show_as_text_lists_each_action_…</c>.</remarks>
     private static string ShowText(RunShowReport r)
     {
-        var text = new StringBuilder().AppendLine($"wsl-care runs show {r.RunId}: {r.State}{(r.Reason is { Length: > 0 } reason ? $" - {CommandLine.Printable(reason)}" : string.Empty)}");
-        foreach (var action in r.Detail?.Actions ?? [])
+        var text = new StringBuilder().AppendLine(ShowHead(r));
+        foreach (var line in (r.Detail?.Actions ?? []).SelectMany(ShowAction))
         {
-            text.AppendLine(Invariant($"  {action.Id,-17} {action.Status,-9} {(action.Run is { } run ? $"{run.Count} removed, {run.NotRemoved.Count} not removed, freed {Gb(run.FreedBytes ?? 0)}" : CommandLine.Printable(action.Reason))}"));
-            foreach (var command in action.Run?.Commands ?? [])
-            {
-                text.AppendLine(Invariant($"      {CommandLine.Printable(command.Display)} -> {command.Outcome}{(command.Exit is { } exit ? $" {exit}" : string.Empty)}"));
-            }
+            text.AppendLine(line);
         }
 
         return text.ToString().TrimEnd();
     }
+
+    private static string ShowHead(RunShowReport r) =>
+        $"wsl-care runs show {r.RunId}: {r.State}{(r.Reason is { Length: > 0 } reason ? $" - {CommandLine.Printable(reason)}" : string.Empty)}";
+
+    /// <summary>An action's line, then one line per command it ran.</summary>
+    private static IEnumerable<string> ShowAction(Core.Actions.Engine.ActionOutcome action) =>
+        [Invariant($"  {action.Id,-17} {action.Status,-9} {ShowOutcome(action)}"), .. (action.Run?.Commands ?? []).Select(ShowCommand)];
+
+    private static string ShowOutcome(Core.Actions.Engine.ActionOutcome action) =>
+        action.Run is { } run ? Invariant($"{run.Count} removed, {run.NotRemoved.Count} not removed, freed {Gb(run.FreedBytes ?? 0)}") : CommandLine.Printable(action.Reason);
+
+    private static string ShowCommand(Core.Actions.ActionCommandRecord command) =>
+        Invariant($"      {CommandLine.Printable(command.Display)} -> {command.Outcome}{(command.Exit is { } exit ? $" {exit}" : string.Empty)}");
 
     private static string Gb(long bytes) => Invariant($"{bytes / BytesPerGigabyte:0.00} GB");
 

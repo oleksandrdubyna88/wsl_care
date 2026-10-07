@@ -83,12 +83,20 @@ public static class RunningReports
     /// <summary>Why a request of an earlier boot is reported dead (coai E6 code round #6).</summary>
     public const string EarlierBootReason = "written in an earlier boot; systemd never started it - the next root run records it interrupted";
 
-    /// <summary>The block: <c>running.json</c> judged; with no holder, the requests — and when they show nothing (or a file
-    /// vanished as it was read), <c>running.json</c> ONCE more, because states move request → running.json → history line and
-    /// a request that just disappeared has just become a run (E6.S0 review D4). <paramref name="history"/> is what the caller
-    /// already read: a dead holder whose run has a line is not "dead, nothing recorded it" (review D3).</summary>
+    /// <summary>The block: <c>running.json</c> judged; a holder that ACTS or cannot be told (live, wedged, unknown, unreadable) is
+    /// the answer. With no holder — or an idle or dead one (a left-over file, a run that died) — the requests decide first (retro
+    /// round over PR #11, consultation 9064487b: a dead holder used to hide a fresh request, so a second detach was allowed and
+    /// install.sh's wait saw an idle machine); and when they show nothing (or a file vanished as it was read),
+    /// <c>running.json</c> ONCE more, because states move request → running.json → history line and a request that just
+    /// disappeared has just become a run (E6.S0 review D4). <paramref name="history"/> is what the caller already read: a dead
+    /// holder whose run has a line is not "dead, nothing recorded it" (review D3).</summary>
     public static RunningReport Read(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry, HistoryRead history) =>
-        OfHolder(RunningState.Read(paths, files, processes, now, retry), history) ?? AfterRequests(paths, files, processes, now, retry, history);
+        OfHolder(RunningState.Read(paths, files, processes, now, retry), history) is { } holder && Acting(holder)
+            ? holder
+            : AfterRequests(paths, files, processes, now, retry, history);
+
+    /// <summary>A holder whose state no pending request may hide: everything but an idle (<c>none</c>) or <c>dead</c> one.</summary>
+    private static bool Acting(RunningReport holder) => holder.State is not (RunningStateName.None or RunningStateName.Dead);
 
     private static RunningReport AfterRequests(IHostPaths paths, IFileSystem files, IProcessTable processes, DateTimeOffset now, RunningReadRetry retry, HistoryRead history) =>
         FromRequests(RunRequests.Peek(paths, files), processes.Boot()) is { State: not RunningStateName.None } fromRequests

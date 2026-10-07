@@ -53,10 +53,18 @@ public sealed record CollectContext(
 
     /// <summary>How the run waits a measuring window (the MCP servers' CPU window, plan §15q E7.S2d); a test returns at once.</summary>
     public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
+
+    /// <summary>How long the run waits for THE run lock: zero — refuse at once — except for an accepted detached full run, whose lock
+    /// a <c>--detach</c> check may hold for a moment (<see cref="RunLock.TakeAsync"/>; retro round over PR #11, O1).</summary>
+    public TimeSpan LockWait { get; init; }
 }
 
 /// <summary>How a full run ended for its records, and its detail (none when another run held the lock).</summary>
-public sealed record CollectResult(Recording Recording, string Reason, string DetailFile, RunDetail? Detail);
+public sealed record CollectResult(Recording Recording, string Reason, string DetailFile, RunDetail? Detail)
+{
+    /// <summary>Whether the run's history line was written — a detached run's request goes only then (retro round over PR #11, O2).</summary>
+    public bool LineWritten { get; init; } = true;
+}
 
 /// <summary>
 /// <c>collect</c> (plan §6): the FULL run — the fast sample, Docker's full numbers and the cleanup rows, the slow
@@ -97,7 +105,7 @@ public static class CollectRun
             return new CollectResult(Recording.ReadOnly, $"{ReadOnlyNote} ({denied.Reason})", string.Empty, measured);
         }
 
-        switch (RunLock.TryTake(c.Paths, c.Files))
+        switch (await RunLock.TakeAsync(c.Paths, c.Files, c.LockWait, cancellationToken).ConfigureAwait(false))
         {
             case ExclusiveLock.Busy busy:
                 return new CollectResult(Recording.Busy, $"another run is in progress (a full run or an act): {busy.Reason}", string.Empty, null);
@@ -136,7 +144,7 @@ public static class CollectRun
             var measured = await MeasuredOrRecordedAsync(c, running, owned, housekeeping, cancellationToken).ConfigureAwait(false);
             var (detail, engine) = await TimerPassAsync(c, measured, runId, started, cancellationToken).ConfigureAwait(false);
             var result = Record(c, detail);
-            var left = EndPass(engine);
+            var left = result.LineWritten ? EndPass(engine) : ActionEngine.KeptForTheSweep;
             cancellationToken.ThrowIfCancellationRequested();
             return left.Length == 0 ? result : result with { Reason = Joined(result.Reason, left) };
         }
@@ -230,21 +238,28 @@ public static class CollectRun
         }
     }
 
-    /// <summary>Removes this run's <c>running.json</c> — only its OWN (the timer pass may have removed it already).</summary>
+    /// <summary>Removes this run's <c>running.json</c> — only its OWN (the timer pass may have removed it already), and only once
+    /// the history holds the run's line: until then it is the run's only trace, kept for the next root run's sweep, whichever way
+    /// the run ended (retro round over PR #11, O2 — a line that could not be written, a cut-off line that could not either).</summary>
     private static void EndRunning(CollectContext c, RunId runId, bool owned)
     {
-        if (owned && RunningState.RunIdIn(c.Paths, c.Files) == runId)
+        if (!Ends(c, runId, owned))
         {
-            try
-            {
-                RunningState.Remove(c.Paths, c.Files);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                // The next run's sweep finds a dead pid and removes it without a second history line: this run has one.
-            }
+            return;
+        }
+
+        try
+        {
+            RunningState.Remove(c.Paths, c.Files);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // The next run's sweep finds a dead pid and removes it without a second history line: this run has one.
         }
     }
+
+    private static bool Ends(CollectContext c, RunId runId, bool owned) =>
+        owned && RunningState.RunIdIn(c.Paths, c.Files) == runId && RunHistory.Read(c.Paths, c.Files).Records.Any(r => r.RunId == runId);
 
     private static string SweepNote(RunningSweep sweep, bool owned) => sweep switch
     {
@@ -296,7 +311,7 @@ public static class CollectRun
         return recorded switch
         {
             { Recording: Recording.Recorded } => new CollectResult(Recording.Recorded, string.Empty, recorded.DetailFile, detail),
-            { LineWritten: false } => new CollectResult(Recording.Failed, recorded.Reason, recorded.DetailFile, detail),
+            { LineWritten: false } => new CollectResult(Recording.Failed, recorded.Reason, recorded.DetailFile, detail) { LineWritten = false },
             _ => new CollectResult(Recording.Failed, recorded.Reason, string.Empty, detail with { Outcome = RunOutcome.Failed }),
         };
     }
