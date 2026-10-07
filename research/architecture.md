@@ -818,7 +818,9 @@ sequenceDiagram
 ```
 
 **The gates, in order, per action** (each stop is an outcome with its reason, never a silent skip): the action's SIDE
-(`skipped`); observe-only (`skipped`); on the timer its `auto.<id>` switch (`skipped`); the LIVE preview (unreadable →
+(`skipped`); observe-only (`skipped`); on the timer, a user layer that was not read — root with no single target user —
+(`skipped`, every action: a switch the person turned off there cannot be seen, and a default must not re-enable it; retro
+gate over PR #7, 2026-10-06 — a button still runs); on the timer its `auto.<id>` switch (`skipped`); the LIVE preview (unreadable →
 `refused`); on the timer its trigger (`skipped`); a user-scoped action without a target user (`refused`); the
 preview's own refusal (`refused`); the idle gate (`deferred`, logged as a warning); the dry run (`dryRun`, the preview
 recorded as *would have freed*); then the run — `ran`, or `failed` with the reason, and the next action. ANY exception
@@ -2806,6 +2808,7 @@ flowchart LR
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); anonymised through the identity list and held by `FixturePrivacyTests` (2026-10-04); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate. Module overview: [module_vs_code.md](module_vs_code.md) |
+| daemon module overview | [module_daemon.md](module_daemon.md) | the map from the daemon's purpose, entities, entry points and dependencies into this file's epic sections | added by the retro review of PR #7 (2026-10-06) |
 
 ## Cross-repository
 
