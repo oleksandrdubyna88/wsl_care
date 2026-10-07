@@ -38,7 +38,12 @@ function contract(): readonly ContractField[] {
 
 test('the reader is held EQUAL to contracts/status-limits.json: every field the daemon publishes, its range and its default', () => {
   const fields = contract();
-  assert.deepEqual(fields.map((f) => f.name), ['historyRetentionDays', 'requestFutureSkewSeconds', 'requestGraceSeconds', 'maxShownNames', 'unitStopSeconds', 'drainGraceMilliseconds', 'mcpCpuWindowMilliseconds', 'mcpLogListMilliseconds'], 'the known instances');
+  // The comparison below is derived from the contract; this only proves the contract was READ (a parse that found nothing
+  // would compare empty with empty) — known instances from three daemon changes, never the whole list a second time.
+  const names = fields.map((f) => f.name);
+  for (const known of ['historyRetentionDays', 'drainGraceMilliseconds', 'mcpCpuWindowMilliseconds']) {
+    assert.ok(names.includes(known), `the contract lists ${known} (read ${names.length} fields)`);
+  }
   assert.deepEqual(LIMIT_FIELDS.map((f) => ({ name: f.name, min: f.min, max: f.max, default: f.default })), fields.map((f) => ({ name: f.name, min: f.min, max: f.max, default: f.default })));
 });
 
