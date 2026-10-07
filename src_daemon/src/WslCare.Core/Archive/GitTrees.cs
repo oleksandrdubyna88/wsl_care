@@ -34,9 +34,13 @@ public static class GitTrees
     public static bool NamesGit(string relative) =>
         relative.Split('/').Any(segment => string.Equals(segment, Marker, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>The <c>.git</c> entry in <paramref name="folder"/> or in any folder above it up to the file system's root; empty when
-    /// none is — the folder is then inside no working tree.</summary>
-    public static string Around(IFileSystem files, string folder)
+    /// <summary>The <c>.git</c> entry in <paramref name="folder"/> or in any folder above it up to the file system's root — along the
+    /// path as spelled AND along its real path (security review M-1: a link on the way may lead into a working tree the spelled path
+    /// has nothing of); empty when none is — the folder is then inside no working tree.</summary>
+    public static string Around(IFileSystem files, string folder) =>
+        AroundSpelled(files, folder) is { Length: > 0 } spelled ? spelled : AroundReal(files, folder);
+
+    private static string AroundSpelled(IFileSystem files, string folder)
     {
         for (var at = folder; !string.IsNullOrEmpty(at); at = Path.GetDirectoryName(at))
         {
@@ -61,10 +65,14 @@ public static class GitTrees
     /// one bounded walk each (the walk's own limits, no link followed), whose files are checked the same way.</summary>
     public static GitTreeFound InUnit(IFileSystem files, string under, string key, IReadOnlyList<string> originals)
     {
-        var around = Around(files, Path.GetDirectoryName(Path.Combine(under, key)) ?? under);
+        var keyFolder = Path.GetDirectoryName(Path.Combine(under, key)) ?? under;
+        var around = Around(files, keyFolder);
         var found = around.Length > 0 ? around : originals.FirstOrDefault(NamesGit) ?? Between(files, under, originals);
         return found.Length > 0 ? new GitTreeFound.Found(found) : Below(files, under, Tops(ArchiveRemove.LeftFolders(key, originals)));
     }
+
+    private static string AroundReal(IFileSystem files, string folder) =>
+        files.ResolvePath(folder) is RealPathResult.Resolved real && !string.Equals(real.Path, folder, StringComparison.Ordinal) ? AroundSpelled(files, real.Path) : string.Empty;
 
     /// <summary>The outermost of the companion folders (a folder inside another is walked with it).</summary>
     private static IEnumerable<string> Tops(IReadOnlyList<string> folders) =>

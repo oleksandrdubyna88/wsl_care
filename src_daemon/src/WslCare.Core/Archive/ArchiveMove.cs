@@ -35,6 +35,15 @@ public sealed record MoveContext(IArchiveFiles Files, string BaseFolder, string 
 
     /// <summary>Names and stats only — what phase 2's git re-check reads (owner rule 2026-10-07).</summary>
     public required IFileSystem Stats { get; init; }
+
+    /// <summary>The target user's home — phase 2 judges the agent's folder against it as the selection does (security review M-1).</summary>
+    public required string Home { get; init; }
+
+    /// <summary>This run's open-file scan — phase 2 never touches a unit an agent may be working on (security review M-2).</summary>
+    public required InUseView InUse { get; init; }
+
+    /// <summary>A path as the open-file scan spells it (the distribution's spelling under a sandbox root).</summary>
+    public required Func<string, string> Distro { get; init; }
 }
 
 /// <summary>What phase 1 did with one unit — a closed set.</summary>
@@ -55,7 +64,7 @@ public abstract record CopyOutcome
 
     /// <summary>The run must STOP (coai G1: a second read-back mismatch; or the index could not be written): a base that lies is not
     /// written again.</summary>
-    public sealed record Stop(string Why) : CopyOutcome;
+    public sealed record Stop(string Kind, string Why) : CopyOutcome;
 }
 
 /// <summary>
@@ -74,7 +83,7 @@ public static class ArchiveCopy
         var intent = new InflightEntry(ArchiveIndex.EntryIdOf(c.Side, agent, unit.Key, []), agent, under, unit.Key, unit.Month, InflightStates.Copying, c.RunId, DateTimeOffset.MinValue, unit.Files.Count, string.Empty);
         if (c.Book.Put(intent) is { Length: > 0 } unwritten)
         {
-            return new CopyOutcome.Stop($"the in-flight file could not be written ({unwritten})");
+            return new CopyOutcome.Stop(StopKinds.StateWrite, $"the in-flight file could not be written ({unwritten})");
         }
 
         c.Step(MoveSteps.Intent);
@@ -194,7 +203,18 @@ public static class ArchiveCopy
     /// the folder flushed and the file read back. A mismatch removes OUR file and retries once; the second stops the run.</summary>
     private static FileResult Written(MoveContext c, string under, UnitFile file, BeneathFolder folder, string name, ExclusiveFile.Created created, bool retried)
     {
-        var copied = Streamed(c, under, file, created);
+        FileHash copied;
+        try
+        {
+            copied = Streamed(c, under, file, created);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Correctness review M8: the base failed while the copy was written — our partial copy goes, and the run stops.
+            _ = c.Files.RemoveOwnCopy(folder, name, created.Identity, c.BaseScope);
+            return new FileFailed(new CopyOutcome.Stop(StopKinds.BaseFailed, $"{file.Relative}: the base failed while its copy was written ({e.Message}); the partial copy was removed and the run stops (nothing was removed at the source)"));
+        }
+
         if (copied is not FileHash.Hashed { Sha256: var sha, Length: var length })
         {
             _ = c.Files.RemoveOwnCopy(folder, name, created.Identity, c.BaseScope);
@@ -212,12 +232,12 @@ public static class ArchiveCopy
         _ = c.Files.FlushFolder(folder);
         if (retried)
         {
-            return new FileFailed(new CopyOutcome.Stop($"{file.Relative}: its copy read back different twice — the base does not keep what it is given; the run stops (nothing was removed)"));
+            return new FileFailed(new CopyOutcome.Stop(StopKinds.Verification, $"{file.Relative}: its copy read back different twice — the base does not keep what it is given; the run stops (nothing was removed)"));
         }
 
         return c.Files.CreateExclusive(folder, name, c.BaseScope) is ExclusiveFile.Created again
             ? Written(c, under, file, folder, name, again, retried: true)
-            : new FileFailed(new CopyOutcome.Stop($"{file.Relative}: its copy read back different and could not be written again; the run stops"));
+            : new FileFailed(new CopyOutcome.Stop(StopKinds.Verification, $"{file.Relative}: its copy read back different and could not be written again; the run stops"));
     }
 
     private static FileHash Streamed(MoveContext c, string under, UnitFile file, ExclusiveFile.Created created)
@@ -234,7 +254,7 @@ public static class ArchiveCopy
         var buffer = new byte[CopyBuffer];
         long length = 0;
         int read;
-        while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+        while ((read = SourceChunk(source, buffer)) > 0)
         {
             sha.AppendData(buffer, 0, read);
             target.Write(buffer, 0, read);
@@ -243,10 +263,28 @@ public static class ArchiveCopy
             c.Step(MoveSteps.CopyChunk);
         }
 
+        if (read < 0)
+        {
+            return new FileHash.Unreadable($"{file.Relative} could not be read to its end");
+        }
+
         target.Flush(flushToDisk: true);
         File.SetLastWriteTimeUtc(target.SafeFileHandle, opened.LastWriteUtc.UtcDateTime);
         c.Step(MoveSteps.FinalFlushed);
         return new FileHash.Hashed(Convert.ToHexStringLower(sha.GetHashAndReset()), length);
+    }
+
+    /// <summary>One chunk of the SOURCE; -1 when reading it failed — the source's failure, never the base's (correctness review M8).</summary>
+    private static int SourceChunk(Stream source, byte[] buffer)
+    {
+        try
+        {
+            return source.Read(buffer, 0, buffer.Length);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return -1;
+        }
     }
 
     private static bool Verified(MoveContext c, BeneathFolder folder, string name, string sha, long length) =>
@@ -263,7 +301,7 @@ public static class ArchiveCopy
         if (appended.Length > 0)
         {
             c.Book.Drop(intent.EntryId);
-            return new CopyOutcome.Stop($"the month index could not be written ({appended}); the copies stay without an index line and authorise nothing");
+            return new CopyOutcome.Stop(StopKinds.IndexWrite, $"the month index could not be written ({appended}); the copies stay without an index line and authorise nothing");
         }
 
         c.Step(MoveSteps.IndexFlushed);

@@ -29,11 +29,13 @@ internal static class ArchiveRunCommand
 
         var budget = TimeSpan.FromSeconds(request.BudgetSeconds > 0 ? request.BudgetSeconds : loaded.Config.Int(ConfigKeys.Archive.RunBudgetMinutes) * 60);
         var gate = new object();
+        var answered = false;
         void Line(ArchiveProgressLine line)
         {
-            if (request.Json)
+            lock (gate)
             {
-                lock (gate)
+                // Review m1: Timer.Change does not wait for a callback already running — one that wakes after the answer writes nothing.
+                if (request.Json && !answered)
                 {
                     Output.Progress(stdout, JsonSerializer.Serialize(line, WslCareJsonContext.Compact.ArchiveProgressLine));
                 }
@@ -47,6 +49,7 @@ internal static class ArchiveRunCommand
         heartbeat.Change(Timeout.Infinite, Timeout.Infinite);
         lock (gate)
         {
+            answered = true;
             return Answered(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveRunReport) : Render(report), report);
         }
     }
@@ -108,7 +111,7 @@ internal static class ArchiveRunCommand
         {
             RunOutcomes.Done or RunOutcomes.NoBase => (int)ExitCode.Ok,
             RunOutcomes.Busy => (int)ExitCode.Busy,
-            RunOutcomes.Stopped when report.Stop.Contains("read back different", StringComparison.Ordinal) => (int)ExitCode.RunFailed,
+            RunOutcomes.Stopped when StopKinds.IsFault(report.StopKind) => (int)ExitCode.RunFailed,
             RunOutcomes.Stopped => (int)ExitCode.Ok,
             _ => (int)ExitCode.RunFailed,
         };

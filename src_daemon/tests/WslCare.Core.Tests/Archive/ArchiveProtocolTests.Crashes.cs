@@ -66,6 +66,9 @@ public sealed partial class ArchiveProtocolTests
             var latest = contents[^1];
             Kept(latest).Should().BeTrue($"\"{latest}\", the last the agent wrote, must be at the source or in an indexed archived copy");
         }
+
+        // Review m6: every file of the unit, the companion too — the agent never touches it, so its one content must survive.
+        Kept("a subagent").Should().BeTrue("the session's companion must be at the source or in an indexed archived copy");
     }
 
     /// <summary>Phase 1, then phase 2 a day later — stopped wherever the fault seam throws.</summary>

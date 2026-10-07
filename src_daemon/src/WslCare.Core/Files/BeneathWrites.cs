@@ -121,7 +121,7 @@ internal static partial class BeneathWrites
     /// <summary>A file of the base opened to APPEND to it (E9.S2b: the month index): created 0600 when missing, never through a link.</summary>
     [SupportedOSPlatform("linux")]
     internal static NativeOpen AppendAt(int folder, string name) =>
-        Handle(Linux.OpenAt(folder, name, Linux.WriteOnly | Linux.Append | Linux.Create | Linux.NoFollow | Linux.CloseOnExec, Linux.PrivateFile));
+        Handle(Linux.OpenAt(folder, name, Linux.ReadWrite | Linux.Append | Linux.Create | Linux.NoFollow | Linux.CloseOnExec, Linux.PrivateFile));
 
     [SupportedOSPlatform("linux")]
     internal static Native RenameNoReplace(int folder, string from, string to) => Call(Linux.RenameAt2(folder, from, folder, to, Linux.NoReplace));
@@ -210,6 +210,7 @@ internal static partial class BeneathWrites
     {
         public const int ReadOnly = 0;
         public const int WriteOnly = 1;
+        public const int ReadWrite = 2;
         public const int Create = 0x40;
         public const int Exclusive = 0x80;
         public const int Append = 0x400;

@@ -45,6 +45,9 @@ public sealed record ArchiveRunReport(
 {
     /// <summary>What <c>archive reconcile --scan</c> re-indexed (zero for a plain run).</summary>
     public ScanReport Scan { get; init; } = new(0, 0, 0, []);
+
+    /// <summary>Why a <c>stopped</c> run stopped (<see cref="StopKinds"/>): a limit or a fault — the exit code is decided by it.</summary>
+    public string StopKind { get; init; } = StopKinds.None;
 }
 
 /// <summary>A progress line of <c>archive run --json</c>: no names, a kind (<c>file</c>, <c>heartbeat</c>), the counts so far.</summary>
@@ -129,9 +132,10 @@ public static class ArchiveRun
         state.EnsureFolder();
         var now = new BaseRecord(ArchiveState.Version, judged.Folder, judged.Mount.Type, judged.Mount.Source, judged.Mount.MountPoint);
         var recorded = state.Base();
-        return recorded is null || recorded.Folder != now.Folder ? Recorded(state, now)
+        return recorded is null && state.BaseRecorded ? $"{RunOutcomes.Refused}|the recorded mount of the base ({state.BaseFile}) could not be read; nothing is written until it is — remove that file by hand only once you are sure the base is the storage you chose"
+            : recorded is null || recorded.Folder != now.Folder ? Recorded(state, now)
             : recorded with { V = now.V } == now ? string.Empty
-            : $"{RunOutcomes.Refused}|the base is not mounted as when it was first used ({recorded.MountType} {recorded.MountSource} at {recorded.MountPoint}; now {now.MountType} {now.MountSource} at {now.MountPoint})";
+            : $"{RunOutcomes.Refused}|the base is not mounted as when it was first used ({recorded.MountType} {recorded.MountSource} at {recorded.MountPoint}; now {now.MountType} {now.MountSource} at {now.MountPoint}); mount it as before — or, if it really moved and is the same storage, remove {state.BaseFile} by hand and the next run records the new mount";
     }
 
     private static string Recorded(ArchiveState state, BaseRecord now) =>
@@ -188,9 +192,16 @@ public static class ArchiveRun
     private static ArchiveRunReport Moved(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key, string side, List<string> notes)
     {
         var meter = new RunMeter(input, started);
-        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, meter.Moved) { Stats = input.Files };
+        var inUse = input.InUseScan(input);
+        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, meter.Moved)
+        {
+            Stats = input.Files,
+            Home = input.Paths.Home,
+            InUse = inUse,
+            Distro = DistroOf(input.Paths),
+        };
         var reconcile = ArchiveReconcile.FromInflight(context);
-        var selectionInput = new SelectionInput(input.Paths, input.Files, input.Config, input.Clock.GetUtcNow(), input.Zone, input.InUseScan(input), input.Environment) { OnlyAgent = input.OnlyAgent, Token = input.Token };
+        var selectionInput = new SelectionInput(input.Paths, input.Files, input.Config, input.Clock.GetUtcNow(), input.Zone, inUse, input.Environment) { OnlyAgent = input.OnlyAgent, Token = input.Token };
         var selected = Selection.Select(selectionInput).Where(s => s.Enabled).ToList();
         foreach (var agent in selected)
         {
@@ -198,43 +209,97 @@ public static class ArchiveRun
         }
 
         var tally = new RunTally(selected.Select(s => s.Entry.Id));
-        var stop = RemoveDue(input, context, selected, tally) is { Length: > 0 } removalStop ? removalStop : CopyDue(input, context, selected, tally, meter);
-        var report = Answer(input, started, stop.Length == 0 ? RunOutcomes.Done : RunOutcomes.Stopped, stop, reconcile with { Notes = [.. reconcile.Notes, .. notes] }, ArchivePreview.InUseOf(selectionInput.InUse), tally.Reports(selected, context.Book));
+        var removal = RemoveDue(input, context, selected, tally, meter);
+        var stop = removal.Stop.Stopped ? removal.Stop : CopyDue(input, context, selected, tally, meter);
+        var report = Answer(input, started, stop.Stopped ? RunOutcomes.Stopped : RunOutcomes.Done, stop.Why, reconcile with { Notes = [.. reconcile.Notes, .. notes, .. removal.Notes] }, ArchivePreview.InUseOf(selectionInput.InUse), tally.Reports(selected, context.Book)) with { StopKind = stop.Kind };
         _ = state.WriteLastRun(new LastRunRecord(ArchiveState.Version, input.RunId, started, report.EndedUtc, report.Outcome, report.Stop, report.Agents.Sum(a => a.Copied), report.Agents.Sum(a => a.Removed), report.Agents.Sum(a => a.CopiedBytes)));
         return report with { FilesPerSecond = meter.FilesPerSecond, MegabytesPerSecond = meter.MegabytesPerSecond };
     }
 
     private static ArchiveRunReport Scanned(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key, string side, List<string> notes)
     {
-        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, static (_, _) => { }) { Stats = input.Files };
+        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, static (_, _) => { })
+        {
+            Stats = input.Files,
+            Home = input.Paths.Home,
+            InUse = InUseView.NotChecked("a scan removes nothing"),
+            Distro = DistroOf(input.Paths),
+        };
         var agents = ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.OnlyAgent, input.Environment).Where(t => t.Enabled).Select(t => t.Entry.Id);
         var scan = ArchiveScan.Scan(context, input.Files, agents, input.Token);
         return Answer(input, started, RunOutcomes.Done, string.Empty, ArchiveReconcileReport.Empty with { Notes = notes }, NotChecked, []) with { Scan = scan };
     }
 
-    /// <summary>Phase 2 for every entry of a selected agent whose <c>archived</c> is at least <c>archive.removeAfterHours</c> old.</summary>
-    private static string RemoveDue(ArchiveRunInput input, MoveContext context, IReadOnlyList<AgentSelection> selected, RunTally tally)
+    /// <summary>A path as the open-file scan spells it: the distribution's spelling on Linux, the path itself elsewhere.</summary>
+    private static Func<string, string> DistroOf(IHostPaths paths) => paths is LinuxHostPaths linux ? linux.ToDistro : static p => p;
+
+    /// <summary>What phase 2 did: why it stopped (if it did) and what it let go.</summary>
+    private sealed record RemovalPass(RunStop Stop, IReadOnlyList<string> Notes);
+
+    /// <summary>Phase 2 for every entry whose <c>archived</c> is at least <c>archive.removeAfterHours</c> old, within the budget (correctness
+    /// M4: both phases share <c>--budget-seconds</c>). An entry of an agent <c>archive.agents</c> no longer names is let go (m2: never
+    /// stranded); one of an agent this run was not asked for (<c>--agent</c>) waits.</summary>
+    private static RemovalPass RemoveDue(ArchiveRunInput input, MoveContext context, IReadOnlyList<AgentSelection> selected, RunTally tally, RunMeter meter)
     {
         var after = TimeSpan.FromHours(input.Config.Int(ConfigKeys.Archive.RemoveAfterHours));
-        var agents = selected.Select(s => s.Entry.Id).ToHashSet(StringComparer.Ordinal);
-        var due = context.Book.Entries.Where(e => e.State == InflightStates.Archived && agents.Contains(e.Agent) && input.Clock.GetUtcNow() - e.ArchivedAtUtc >= after).ToList();
-        foreach (var entry in due.TakeWhile(_ => !input.Token.IsCancellationRequested))
+        var pass = new RemovalScope(
+            selected.Select(s => s.Entry.Id).ToHashSet(StringComparer.Ordinal),
+            ArchiveTargets.Of(input.Paths, input.Files, input.Config, string.Empty, input.Environment).Where(t => t.Enabled).Select(t => t.Entry.Id).ToHashSet(StringComparer.Ordinal),
+            []);
+        foreach (var entry in context.Book.Entries.Where(e => e.State == InflightStates.Archived && input.Clock.GetUtcNow() - e.ArchivedAtUtc >= after).ToList())
         {
-            var indexed = MonthIndex.Entries(context, entry.Agent, entry.Month).FirstOrDefault(e => e.EntryId == entry.EntryId);
-            tally.Removal(entry.Agent, indexed is null ? new RemoveOutcome.Kept("its index line is not readable") : ArchiveRemove.Remove(context, entry, indexed));
+            var stop = RemoveOne(input, context, tally, meter, entry, pass);
+            if (stop.Stopped)
+            {
+                return new RemovalPass(stop, pass.Notes);
+            }
         }
 
-        return string.Empty;
+        return new RemovalPass(RunStop.None, pass.Notes);
+    }
+
+    /// <summary>The agents this run was asked for, those <c>archive.agents</c> names, and what phase 2 let go.</summary>
+    private sealed record RemovalScope(IReadOnlySet<string> Asked, IReadOnlySet<string> Archived, List<string> Notes);
+
+    private static RunStop RemoveOne(ArchiveRunInput input, MoveContext context, RunTally tally, RunMeter meter, InflightEntry entry, RemovalScope pass)
+    {
+        if (input.Token.IsCancellationRequested)
+        {
+            return new RunStop(StopKinds.Cancelled, "the run was stopped");
+        }
+
+        if (!pass.Archived.Contains(entry.Agent))
+        {
+            context.Book.Drop(entry.EntryId);
+            pass.Notes.Add($"{entry.Key}: its agent {entry.Agent} is no longer in {ConfigKeys.Archive.Agents.Name}; the archived session is let go and its source stays");
+            return RunStop.None;
+        }
+
+        return pass.Asked.Contains(entry.Agent) ? Removed(input, context, tally, meter, entry) : RunStop.None;
+    }
+
+    private static RunStop Removed(ArchiveRunInput input, MoveContext context, RunTally tally, RunMeter meter, InflightEntry entry)
+    {
+        var indexed = MonthIndex.Entries(context, entry.Agent, entry.Month).FirstOrDefault(e => e.EntryId == entry.EntryId);
+        var bytes = indexed?.Files.Sum(f => f.Bytes) ?? 0;
+        if (meter.WouldOverrun(bytes * 2))
+        {
+            return new RunStop(StopKinds.Budget, $"the budget ({input.Budget.TotalSeconds:0} s) would not fit the next removal (its copies and its source hashed: {bytes * 2} bytes at the rate measured); the rest wait for the next run");
+        }
+
+        var outcome = indexed is null ? new RemoveOutcome.Kept("its index line is not readable") : ArchiveRemove.Remove(context, entry, indexed);
+        tally.Removal(entry.Agent, ArchiveRemove.LetGo(context, entry, outcome));
+        return RunStop.None;
     }
 
     /// <summary>Phase 1 for the due units, oldest first per agent, never one already on its way; stopped by the budget, the session
     /// cap, the base's free space or a <see cref="CopyOutcome.Stop"/>.</summary>
-    private static string CopyDue(ArchiveRunInput input, MoveContext context, IReadOnlyList<AgentSelection> selected, RunTally tally, RunMeter meter)
+    private static RunStop CopyDue(ArchiveRunInput input, MoveContext context, IReadOnlyList<AgentSelection> selected, RunTally tally, RunMeter meter)
     {
         var cap = input.Config.Int(ConfigKeys.Archive.MaxSessionsPerRun);
         foreach (var (agent, unit) in selected.SelectMany(s => s.Due.Select(u => (s, u))).Where(p => !OnItsWay(context.Book, p.s.Entry.Id, p.u.Key)))
         {
-            if (Limit(input, context, tally, meter, unit, cap) is { Length: > 0 } stop)
+            if (Limit(input, context, tally, meter, unit, cap) is { Stopped: true } stop)
             {
                 return stop;
             }
@@ -247,28 +312,28 @@ public static class ArchiveRun
             }
             if (copied is CopyOutcome.Stop stopped)
             {
-                return stopped.Why;
+                return new RunStop(stopped.Kind, stopped.Why);
             }
         }
 
-        return string.Empty;
+        return RunStop.None;
     }
 
     private static bool OnItsWay(InflightBook book, string agent, string key) => book.Entries.Any(e => e.Agent == agent && e.Key == key);
 
     /// <summary>Why the next unit is not started; empty when it may be.</summary>
-    private static string Limit(ArchiveRunInput input, MoveContext context, RunTally tally, RunMeter meter, UnitFound unit, int cap) =>
-        input.Token.IsCancellationRequested ? "the run was stopped"
-        : tally.Started >= cap ? $"{ConfigKeys.Archive.MaxSessionsPerRun.Name} ({cap}) sessions this run; the rest go next run"
-        : meter.WouldOverrun(unit.Bytes) ? $"the budget ({input.Budget.TotalSeconds:0} s) would not fit the next session ({unit.Bytes} bytes at the rate measured); the rest go next run, oldest first"
+    private static RunStop Limit(ArchiveRunInput input, MoveContext context, RunTally tally, RunMeter meter, UnitFound unit, int cap) =>
+        input.Token.IsCancellationRequested ? new RunStop(StopKinds.Cancelled, "the run was stopped")
+        : tally.Started >= cap ? new RunStop(StopKinds.SessionCap, $"{ConfigKeys.Archive.MaxSessionsPerRun.Name} ({cap}) sessions this run; the rest go next run")
+        : meter.WouldOverrun(unit.Bytes) ? new RunStop(StopKinds.Budget, $"the budget ({input.Budget.TotalSeconds:0} s) would not fit the next session ({unit.Bytes} bytes at the rate measured); the rest go next run, oldest first")
         : FreeSpaceProblem(input, context, unit);
 
-    private static string FreeSpaceProblem(ArchiveRunInput input, MoveContext context, UnitFound unit)
+    private static RunStop FreeSpaceProblem(ArchiveRunInput input, MoveContext context, UnitFound unit)
     {
         var keep = (long)input.Config.Int(ConfigKeys.Archive.MinFreeGb) << 30;
         return input.Files.MeasureVolume(context.BaseFolder) is VolumeReadResult.Measured volume && volume.AvailableBytes - unit.Bytes < keep
-            ? $"the base would keep less than {ConfigKeys.Archive.MinFreeGb.Name} free; nothing more is copied"
-            : string.Empty;
+            ? new RunStop(StopKinds.FreeSpace, $"the base would keep less than {ConfigKeys.Archive.MinFreeGb.Name} free; nothing more is copied")
+            : RunStop.None;
     }
 
     private static ArchiveRunReport Answer(ArchiveRunInput input, DateTimeOffset started, string outcome, string stop, ArchiveReconcileReport reconcile, InUseReport inUse, IReadOnlyList<AgentRunReport> agents) =>
@@ -307,7 +372,7 @@ internal sealed class RunTally(IEnumerable<string> agents)
             CopyOutcome.Archived archived => a with { Copied = a.Copied + 1, CopiedFiles = a.CopiedFiles + archived.Files, CopiedBytes = a.CopiedBytes + archived.Bytes },
             CopyOutcome.GoneAtSource => a with { GoneAtSource = a.GoneAtSource + 1 },
             CopyOutcome.Skipped skipped => a with { Skipped = Added(a.Skipped, "copy-skipped", skipped.Why) },
-            CopyOutcome.Stop stopped => a with { Skipped = Added(a.Skipped, "verification-failed", stopped.Why) },
+            CopyOutcome.Stop stopped => a with { Skipped = Added(a.Skipped, stopped.Kind, stopped.Why) },
             _ => a,
         };
     }
@@ -321,6 +386,7 @@ internal sealed class RunTally(IEnumerable<string> agents)
             RemoveOutcome.Superseded => a with { Superseded = a.Superseded + 1 },
             RemoveOutcome.Damaged => a with { Damaged = a.Damaged + 1 },
             RemoveOutcome.Kept kept => a with { Skipped = Added(a.Skipped, "removal-waits", kept.Why) },
+            RemoveOutcome.Dropped dropped => a with { Skipped = Added(a.Skipped, "dropped", dropped.Why) },
             _ => a,
         };
     }

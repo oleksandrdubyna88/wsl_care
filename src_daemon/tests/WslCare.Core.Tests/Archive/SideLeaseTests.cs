@@ -131,6 +131,21 @@ public sealed class SideLeaseTests : IDisposable
         File.ReadAllText(LeaseFile).Should().Be("{ not a lease");
     }
 
+    /// <summary>Correctness review M2: a lease naming this host with no boot id (or no host, no run id) is malformed — left for a person,
+    /// never a crash of every later run.</summary>
+    [Theory]
+    [InlineData("{\"v\":1,\"host\":\"host\",\"pid\":7,\"startTicks\":1,\"startUtc\":\"2026-10-01T12:00:00+00:00\",\"runId\":\"r1\",\"sinceUtc\":\"2026-10-01T12:00:00+00:00\"}")]
+    [InlineData("{\"v\":1,\"bootId\":\"boot-1\",\"pid\":7,\"startTicks\":1,\"startUtc\":\"2026-10-01T12:00:00+00:00\",\"runId\":\"r1\",\"sinceUtc\":\"2026-10-01T12:00:00+00:00\"}")]
+    [InlineData("{\"v\":1,\"host\":\"host\",\"bootId\":\"boot-1\",\"pid\":7,\"startTicks\":1,\"startUtc\":\"2026-10-01T12:00:00+00:00\",\"sinceUtc\":\"2026-10-01T12:00:00+00:00\"}")]
+    public void A_lease_with_a_missing_field_is_left_for_a_person_never_thrown(string lease)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(LeaseFile)!);
+        File.WriteAllText(LeaseFile, lease);
+
+        Take(new ScriptedProcessTable()).Should().BeOfType<LeaseTaken.Refused>().Which.Why.Should().Contain("could not be parsed");
+        File.ReadAllText(LeaseFile).Should().Be(lease);
+    }
+
     /// <summary>A process table answering from a script; an unscripted pid is gone.</summary>
     private sealed class ScriptedProcessTable : IProcessTable
     {

@@ -15,7 +15,7 @@ namespace WslCare.Core.Tests.Archive;
 /// differently than at its first run, a busy lock, an unreachable base and a full one each stop before anything is copied; a due
 /// session is copied by one run and removed by a run a day later, the lease and the lock released, the last run recorded.
 /// </summary>
-public sealed class ArchiveRunTests : IDisposable
+public sealed partial class ArchiveRunTests : IDisposable
 {
     private const string Base = "/mnt/v/ai-archive";
     private static readonly DateTimeOffset Now = new(2026, 10, 6, 12, 0, 0, TimeSpan.Zero);

@@ -1,3 +1,5 @@
+using WslCare.Core.Agents;
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
 
@@ -41,7 +43,9 @@ public static class ArchiveRemove
     private sealed record Aside(IndexFile File, string Path);
 
     public static RemoveOutcome Remove(MoveContext c, InflightEntry entry, IndexEntry indexed) =>
-        Unremovable(entry, indexed) is { } early ? Early(c, entry, early)
+        PlaceKept(c, entry) is { } place ? place
+        : Unremovable(entry, indexed) is { } early ? Early(c, entry, early)
+        : LiveProblem(c, entry, indexed) is { Length: > 0 } live ? new RemoveOutcome.Kept($"{live}; nothing is touched")
         : CopiesProblem(c, entry, indexed) is { Length: > 0 } damaged ? MarkDamaged(c, entry, indexed, damaged)
         : GitTreeKept(c, entry, indexed, []) is { } git ? git
         : Quarantined(c, entry, indexed);
@@ -50,12 +54,22 @@ public static class ArchiveRemove
     /// re-hashes each archived copy first) and the entry closed.</summary>
     public static RemoveOutcome Resume(MoveContext c, InflightEntry entry, IndexEntry indexed)
     {
+        if (PlaceKept(c, entry) is { } place)
+        {
+            return place;
+        }
+
         if (Unremovable(entry, indexed) is { } early)
         {
             return Early(c, entry, early);
         }
 
         IReadOnlyList<Aside> aside = [.. indexed.Files.Select(f => new Aside(f, QuarantinePath(entry.Under, f.Original, entry.QuarantineRun)))];
+        if (LiveProblem(c, entry, indexed) is { Length: > 0 } live)
+        {
+            return Deferred(c, entry, aside, live);
+        }
+
         if (CopiesProblem(c, entry, indexed) is { Length: > 0 } damaged)
         {
             RenameBack(c, entry, aside);
@@ -63,6 +77,42 @@ public static class ArchiveRemove
         }
 
         return GitTreeKept(c, entry, indexed, aside) ?? Finish(c, entry, indexed, aside);
+    }
+
+    /// <summary>Security review M-1: phase 2 never acts where the selection would refuse to walk — a link on the way to the agent's
+    /// folder (it was stowed into a repository, say), another filesystem, a folder that cannot be resolved. Nothing is touched; the
+    /// entry waits.</summary>
+    private static RemoveOutcome? PlaceKept(MoveContext c, InflightEntry entry) =>
+        AgentWalk.PlaceProblem(c.Stats, c.Home, entry.Under) is { Length: > 0 } why
+            ? new RemoveOutcome.Kept($"{entry.Under} is no longer where the selection may walk ({why}); nothing is touched")
+            : null;
+
+    /// <summary>Security review M-2: an agent may be working on the unit now — the scan was not complete, a file of it is open, or
+    /// Claude Code works in its project. Empty when none can be.</summary>
+    private static string LiveProblem(MoveContext c, InflightEntry entry, IndexEntry indexed) =>
+        Liveness.Problem(c.InUse, c.Distro, entry.Agent, entry.Under, entry.Key, indexed.Files.Select(f => f.Original));
+
+    /// <summary>Past the commit point an agent turned out to be working on the unit: every file goes back under its name and the entry
+    /// returns to <c>archived</c> — the removal starts again in a later run.</summary>
+    private static RemoveOutcome Deferred(MoveContext c, InflightEntry entry, IReadOnlyList<Aside> aside, string why)
+    {
+        RenameBack(c, entry, aside);
+        c.Book.Replace(entry.EntryId, entry with { State = InflightStates.Archived, QuarantineRun = string.Empty });
+        return new RemoveOutcome.Kept($"{why}; every file went back under its name and the removal waits");
+    }
+
+    /// <summary>Correctness review M5: an entry kept waiting past <c>archive.keptEntryDays</c> since it was archived is let go — dropped
+    /// from the in-flight file, its source where it is; the caller returns what is aside. Any other outcome is returned unchanged.</summary>
+    public static RemoveOutcome LetGo(MoveContext c, InflightEntry entry, RemoveOutcome outcome)
+    {
+        var days = Tuning.Current.Int(ConfigKeys.Archive.KeptEntryDays);
+        if (outcome is not RemoveOutcome.Kept kept || entry.ArchivedAtUtc == DateTimeOffset.MinValue || c.Clock.GetUtcNow() - entry.ArchivedAtUtc < TimeSpan.FromDays(days))
+        {
+            return outcome;
+        }
+
+        c.Book.Drop(entry.EntryId);
+        return new RemoveOutcome.Dropped($"{kept.Why}; it waited past {ConfigKeys.Archive.KeptEntryDays.Name} ({days}) and is let go — its source stays");
     }
 
     private static RemoveOutcome? Unremovable(InflightEntry entry, IndexEntry indexed) =>
@@ -251,8 +301,16 @@ public static class ArchiveRemove
         _ = RenameBack(c, entry, kept);
         c.Step(MoveSteps.FoldersStart);
         RemoveFolders(c, entry, indexed);
-        return Close(c, entry, indexed, kept.Count == 0 ? ArchiveIndex.Events.SourceRemoved : ArchiveIndex.Events.Split, bytes, kept.Count == 0 ? string.Empty : $"{kept.Count} companion file(s) changed after the commit and went back under their names");
+        var back = Reappeared(c, entry, indexed, kept);
+        return Close(c, entry, indexed, kept.Count == 0 && back.Length == 0 ? ArchiveIndex.Events.SourceRemoved : ArchiveIndex.Events.Split, bytes, kept.Count > 0 ? $"{kept.Count} companion file(s) changed after the commit and went back under their names" : back);
     }
+
+    /// <summary>Security review M-2: a file the agent wrote at an original name while the session was aside (it resumed the session by
+    /// its path) — the history is in the archive and the new file stays, so the entry is <c>split</c>, never <c>sourceRemoved</c>.</summary>
+    private static string Reappeared(MoveContext c, InflightEntry entry, IndexEntry indexed, IReadOnlyList<Aside> kept) =>
+        kept.Count == 0 && indexed.Files.FirstOrDefault(f => c.Stats.FileExists(Path.Combine(entry.Under, f.Original))) is { } back
+            ? $"{back.Original} exists again (the agent wrote it meanwhile); it stays"
+            : string.Empty;
 
     /// <summary>The transcript changed after the commit point: the whole unit goes back, nothing of it is removed (C-3).</summary>
     private static RemoveOutcome TranscriptChanged(MoveContext c, InflightEntry entry, IndexEntry indexed, IReadOnlyList<Aside> aside)

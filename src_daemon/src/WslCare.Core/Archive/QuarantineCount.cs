@@ -25,6 +25,9 @@ public static class QuarantineCount
         found.UnionWith(atLevel.Select(q => q.Name));
         found.UnionWith(unitFiles.Select(f => f.Relative).Where(Marked));
         found.UnionWith(atLevel.Where(q => q.Session).SelectMany(q => InCompanions(look, Original(q.Name))));
+        // Security review m-3: a companion left aside after its transcript was removed (it changed after the commit, and could not
+        // go back) belongs to no session any more — one bounded walk of the whole layout finds it wherever it is.
+        found.UnionWith(MarkedIn(look, look.Under));
         return found;
     }
 

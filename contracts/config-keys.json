@@ -3199,6 +3199,19 @@
       "machineOnly": true,
       "daemonUnused": false,
       "zeroIsUnbounded": false
+    },
+    {
+      "name": "archive.keptEntryDays",
+      "shape": "int",
+      "min": 1,
+      "max": 365,
+      "default": 14,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
     }
   ]
 }

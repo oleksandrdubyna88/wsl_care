@@ -11,7 +11,7 @@ namespace WslCare.Core.Tests.Archive;
 /// its <c>archived</c> event; a repeated line is the same fact; a torn last line, a malformed or a hostile one is skipped and counted;
 /// a line this side's key did not sign reads unverified, never invalid.
 /// </summary>
-public sealed class ArchiveIndexTests
+public sealed partial class ArchiveIndexTests
 {
     private static readonly byte[] Key = Enumerable.Range(1, 32).Select(i => (byte)i).ToArray();
     private static readonly DateTimeOffset At = new(2026, 10, 1, 12, 0, 0, TimeSpan.Zero);

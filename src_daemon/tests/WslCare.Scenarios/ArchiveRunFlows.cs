@@ -50,9 +50,13 @@ public sealed class ArchiveRunFlows
         return home;
     }
 
-    private static ArchiveRunReport Answer(ChildResult result) =>
-        JsonSerializer.Deserialize(result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last(l => !l.StartsWith("{\"progress\"", StringComparison.Ordinal)), WslCareJsonContext.Default.ArchiveRunReport)
-        ?? throw new InvalidOperationException(result.Stderr);
+    /// <summary>The answer — the LAST line, always (review m1: no heartbeat may follow it).</summary>
+    private static ArchiveRunReport Answer(ChildResult result)
+    {
+        var last = result.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).Last();
+        last.Should().NotStartWith("{\"progress\"", "the answer is the last line of archive run --json");
+        return JsonSerializer.Deserialize(last, WslCareJsonContext.Default.ArchiveRunReport) ?? throw new InvalidOperationException(result.Stderr);
+    }
 
     /// <summary>The removal is due: every in-flight entry's <c>archivedAtUtc</c> moved two days back (a run a day later, without waiting).</summary>
     private static void ADayLater(ScenarioHome home)

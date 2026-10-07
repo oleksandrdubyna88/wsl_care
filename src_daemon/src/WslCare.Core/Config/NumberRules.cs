@@ -99,9 +99,10 @@ public static class NumberRules
         .. ArchiveRules,
     ];
 
-    /// <summary>The bytes one session takes in the archive's in-flight file: its entry id, agent, key (a key that does not fit is
-    /// refused by the run, E9.S2b), month, state and file count. Its files' hashes and archived paths live in the index only
-    /// (E9.S0 review round C3) — so an entry's size does not grow with its files.</summary>
+    /// <summary>An ESTIMATE of the bytes one session takes in the archive's in-flight file: its entry id, agent, folder, key, month,
+    /// state, run ids and file count; its files' hashes and archived paths live in the index only (E9.S0 review round C3). It is no
+    /// guarantee: a file that would pass <c>archive.maxStateFileBytes</c> is never written — the run stops with <c>state-write</c>
+    /// before it touches the next session (E9.S2b own review round m2), so a long key costs a stop, never lost state.</summary>
     public const int BytesPerInflightSession = 600;
 
     /// <summary>Plan §15r E9.S0: the archive's coupled limits — ahead of the agents' own deletion, within the watchdog and the

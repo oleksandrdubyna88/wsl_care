@@ -697,6 +697,11 @@ public static partial class ConfigKeys
         /// create, so one still empty is a run that died in between and is taken over (plan §15r D4, E9.S2b). Longer is safer.
         /// Default 2000.</summary>
         public static readonly ConfigKey.IntKey LeaseSettleMilliseconds = new("archive.leaseSettleMilliseconds", 100, 30000) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
+
+        /// <summary>An in-flight entry phase 2 keeps waiting (its index unreadable, a line unverified, its folder behind a link) this many
+        /// days after it was archived is let go: dropped, its quarantined files renamed back, its source left where it is (correctness
+        /// review M5). Default 14.</summary>
+        public static readonly ConfigKey.IntKey KeptEntryDays = new("archive.keptEntryDays", 1, 365) { Trust = KeyTrust.Display };
     }
 
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
@@ -879,5 +884,6 @@ public static partial class ConfigKeys
         Archive.ProgressLineMaxBytes,
         Archive.InUseScanSeconds,
         Archive.LeaseSettleMilliseconds,
+        Archive.KeptEntryDays,
     ];
 }

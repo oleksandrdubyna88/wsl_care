@@ -123,7 +123,8 @@
     "childOutputCapBytes": 1048576,
     "progressLineMaxBytes": 256,
     "inUseScanSeconds": 20,
-    "leaseSettleMilliseconds": 2000
+    "leaseSettleMilliseconds": 2000,
+    "keptEntryDays": 14
   },
   "idle": {
     "cpuPercent": 20,

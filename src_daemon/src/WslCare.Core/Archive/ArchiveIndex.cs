@@ -91,7 +91,7 @@ public static partial class ArchiveIndex
         {
             if (Parse(text) is { } line && ShapeProblem(line).Length == 0)
             {
-                records.Add(new IndexRecord(line, key.Length > 0 && FixedTimeEquals(line.Mac, MacOf(line with { Mac = string.Empty }, key))));
+                records.Add(new IndexRecord(line, Signed(line, key)));
             }
             else
             {
@@ -101,6 +101,12 @@ public static partial class ArchiveIndex
 
         return new IndexRead(records, skipped);
     }
+
+    /// <summary>The line's MAC holds under this side's key — and it is not a <c>recovered</c> line: D4, correctness M7 / security M-3, a
+    /// recovered line names a copy no line of ours did (a crashed run's, or a file someone put on a shared base), so it is unverified
+    /// whoever signed it.</summary>
+    private static bool Signed(IndexLine line, byte[] key) =>
+        key.Length > 0 && line.Event != Events.Recovered && FixedTimeEquals(line.Mac, MacOf(line with { Mac = string.Empty }, key));
 
     private static IndexLine? Parse(string text)
     {
@@ -122,10 +128,17 @@ public static partial class ArchiveIndex
         line.V != SchemaVersion ? $"schema {line.V}"
         : !Events.All.Contains(line.Event ?? string.Empty) ? "an unknown event"
         : !EntryIdShape().IsMatch(line.EntryId ?? string.Empty) ? "an entry id that is not 16 hex"
+        : MissingField(line) ? "a field missing"
+        : !IsPlainRelative(line.Key) ? "a key that is not a plain relative path"
         : FilesProblem(line);
 
+    /// <summary>Correctness review M2: a field the line must carry is absent (JSON reads it as null) — malformed, never a crash later.</summary>
+    private static bool MissingField(IndexLine line) =>
+        line.Mac is null || line.Agent is null || line.Side is null || line.Key is null || line.Month is null || line.Zone is null || line.RunId is null || line.Files is null;
+
     private static string FilesProblem(IndexLine line) =>
-        (line.Files ?? []).FirstOrDefault(f => !IsPlainRelative(f.Original) || !IsPlainRelative(f.Archived) || !Sha256Shape().IsMatch(f.Sha256 ?? string.Empty) || f.Bytes < 0) is { } bad
+        line.Files.Any(f => f is null) ? "a file entry that is null"
+        : line.Files.FirstOrDefault(f => !IsPlainRelative(f.Original) || !IsPlainRelative(f.Archived) || !Sha256Shape().IsMatch(f.Sha256 ?? string.Empty) || f.Bytes < 0) is { } bad
             ? $"a file that is not a plain relative path with a hash ({bad.Original})"
             : string.Empty;
 
@@ -134,15 +147,20 @@ public static partial class ArchiveIndex
         !string.IsNullOrEmpty(path) && !path.Contains('\\', StringComparison.Ordinal) && !path.StartsWith('/') && !path.Contains(':', StringComparison.Ordinal)
         && path.Split('/').All(segment => segment is not ("" or "." or ".."));
 
-    /// <summary>The entries of <paramref name="records"/> merged per id: files from the first <c>archived</c> event (a repeated line
-    /// is the same fact), the status of the last event in file order. An entry with no <c>archived</c> event has no files.</summary>
+    /// <summary>The entries of <paramref name="records"/> merged per id: files from the LATEST <c>archived</c> event (correctness M1: a
+    /// damaged entry copied again names its repaired copy), the status of the last event in file order. When the entry has a verified
+    /// <c>archived</c> event only its verified events count (M5 A: a planted or edited line never changes it) and it is verified;
+    /// otherwise every event counts and it is not. An entry with no <c>archived</c> event has no files.</summary>
     public static IReadOnlyList<IndexEntry> Merge(IEnumerable<IndexRecord> records) =>
         [.. records.GroupBy(r => r.Line.EntryId, StringComparer.Ordinal).Select(Merged)];
 
     private static IndexEntry Merged(IGrouping<string, IndexRecord> events)
     {
-        var archived = events.FirstOrDefault(e => e.Line.Event is Events.Archived or Events.Recovered);
-        var last = events.Last();
+        var verified = events.Where(e => e.Verified).ToList();
+        var trusted = verified.Any(IsArchived);
+        var counted = trusted ? verified : [.. events];
+        var archived = counted.LastOrDefault(IsArchived);
+        var last = counted[^1];
         return new IndexEntry(
             events.Key,
             last.Line.Agent,
@@ -150,9 +168,11 @@ public static partial class ArchiveIndex
             last.Line.Month,
             archived?.Line.Files ?? [],
             last.Line.Event,
-            events.All(e => e.Verified),
+            trusted,
             archived?.Line.AtUtc ?? DateTimeOffset.MinValue);
     }
+
+    private static bool IsArchived(IndexRecord record) => record.Line.Event is Events.Archived or Events.Recovered;
 
     [GeneratedRegex("^[0-9a-f]{16}$")]
     private static partial Regex EntryIdShape();

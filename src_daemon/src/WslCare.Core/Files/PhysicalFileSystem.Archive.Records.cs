@@ -24,8 +24,15 @@ public sealed partial class PhysicalFileSystem
         }
 
         var copy = bytes.ToArray();
-        return own.With(() => AppendIn(own, name, copy, scope), why => new DurableAppend.Refused(why));
+        var created = ReadCapped(folder, name, 0) is FileReadResult.Missing;
+        var appended = own.With(() => AppendIn(own, name, copy, scope), why => new DurableAppend.Refused(why));
+        return appended is DurableAppend.Appended && created ? Entered(FlushFolder(folder), name) : appended;
     }
+
+    /// <summary>Review m-2: a file the append CREATED counts only once its entry is flushed into its folder too.</summary>
+    private static DurableAppend Entered(FolderFlush flushed, string name) => flushed is FolderFlush.Failed failed
+        ? new DurableAppend.Failed($"{name} was created but its folder could not be flushed ({failed.Why})")
+        : new DurableAppend.Appended();
 
     public FileReadResult ReadCapped(BeneathFolder folder, string name, int maxBytes) =>
         folder is OpenedFolder own ? own.With(() => ReadCappedIn(own, name, maxBytes), why => new FileReadResult.Unreadable(why)) : new FileReadResult.Unreadable(ForeignFolder(folder));
@@ -59,11 +66,13 @@ public sealed partial class PhysicalFileSystem
 
     /// <summary>The bytes written whole, the fault seam asked, then the file flushed to the disk — a failure of either is
     /// <see cref="DurableAppend.Failed"/>, never counted.</summary>
-    private DurableAppend Written(FileStream stream, byte[] bytes, string path)
+    private DurableAppend Written(FileStream stream, byte[] bytes, string path, bool torn)
     {
         try
         {
-            stream.Write(bytes);
+            // Review M3 (the history's rule, gate finding #6): torn remains of a writer that died mid-append are ended first, so
+            // this line is never glued onto them and lost with them.
+            stream.Write(torn ? [(byte)'\n', .. bytes] : bytes);
             _onArchiveStep(ArchiveFileStep.Appended, path);
             stream.Flush(flushToDisk: true);
             return new DurableAppend.Appended();
@@ -105,7 +114,7 @@ public sealed partial class PhysicalFileSystem
 
         using var stream = new FileStream(file.Handle, FileAccess.Write, bufferSize: 0);
         return BeneathWrites.Stat(BeneathWrites.Descriptor(file.Handle), string.Empty).IsPlainFile
-            ? Written(stream, bytes, Path.Combine(folder.Path, name))
+            ? Written(stream, bytes, Path.Combine(folder.Path, name), EndsTorn(file.Handle))
             : new DurableAppend.Refused($"{name} {NotPlain}");
     }
 
@@ -144,6 +153,7 @@ public sealed partial class PhysicalFileSystem
     private DurableAppend AppendWindows(OpenedFolder folder, string name, byte[] bytes)
     {
         var path = Path.Combine(folder.Path, name);
+        var torn = TornWindows(path);
         FileStream stream;
         try
         {
@@ -157,9 +167,17 @@ public sealed partial class PhysicalFileSystem
         using (stream)
         {
             return BeneathWrites.Describe(stream.SafeFileHandle).IsPlainFile && InHeldFolder(stream.SafeFileHandle, folder, name)
-                ? Written(stream, bytes, path)
+                ? Written(stream, bytes, path, torn)
                 : new DurableAppend.Refused($"{name} {NotPlain}");
         }
+    }
+
+    /// <summary>Whether the file ends torn, read before the append opens it (the side's lease makes this run its one writer).</summary>
+    [SupportedOSPlatform("windows")]
+    private static bool TornWindows(string path)
+    {
+        using var opened = BeneathWrites.OpenWindows(path, delete: false, unbuffered: false);
+        return opened is NativeOpen.Opened file && EndsTorn(file.Handle);
     }
 
     [SupportedOSPlatform("windows")]

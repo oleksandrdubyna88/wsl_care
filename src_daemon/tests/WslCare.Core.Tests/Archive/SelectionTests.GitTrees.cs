@@ -1,6 +1,7 @@
 using FluentAssertions;
 
 using WslCare.Core.Archive;
+using WslCare.TestSupport;
 
 namespace WslCare.Core.Tests.Archive;
 
@@ -56,5 +57,23 @@ public sealed partial class SelectionTests
         claude.Due.Should().BeEmpty();
         claude.Skipped.Should().BeEmpty();
         claude.Note.Should().Contain(".git", "the refusal names the repository it found");
+    }
+
+    /// <summary>Security review M-1: the home is a link (allowed) into a folder whose parent is a working tree — the spelled path
+    /// has no .git above it, the real one has, and the agent selects nothing.</summary>
+    [Fact]
+    public void An_agent_folder_whose_real_path_lies_in_a_git_working_tree_selects_nothing()
+    {
+        File("/home/me/.claude/projects/p/s1.jsonl", DaysAgo(40));
+        var real = Path.GetFullPath(_sandbox.Paths.DistroPath("/data/me"));
+        Directory.CreateDirectory(Path.GetDirectoryName(real)!);
+        Directory.Move(Path.GetFullPath(_sandbox.Paths.DistroPath("/home/me")), real);
+        File("/data/.git/HEAD", DaysAgo(40));
+        Assert.SkipUnless(DirectoryLinks.TryCreate(Path.GetFullPath(_sandbox.Paths.DistroPath("/home/me")), real), "this machine cannot make a directory link");
+
+        var claude = Claude();
+
+        claude.Due.Should().BeEmpty();
+        claude.Note.Should().Contain(".git");
     }
 }

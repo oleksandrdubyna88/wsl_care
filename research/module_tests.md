@@ -2499,6 +2499,58 @@ be "overlap" … but "" has a length of 0`; the table now holds what the kernel 
 (`WindowsSystemDrive`'s parser had been extracted into it by E9.S0), and the in-use check names an agent through main's
 `AgentProcesses` over the raw argv (`AgentOfPrograms`) instead of a second space-split copy.
 
+### The E9.S2b own review round (2026-10-07, plan §15r *E9.S2b own review round*)
+
+A correctness (`C-`) and a security (`S-`) review of `34891b5`. The new tests live in the `*.OwnReview.cs` parts of
+`ArchiveProtocolTests`, `ArchiveIndexTests` and `ArchiveRunTests`, plus rows in `SideLeaseTests`, `SelectionTests` and
+`ArchiveRunFlows`.
+
+| Guarantee | Tests |
+|---|---|
+| S-M-1: phase 2 never acts behind a link on the way to the agent folder (not even the quarantine starts); a folder stowed into a dotfiles repository, or a home whose REAL path lies in a working tree, is never removed; the selection checks the real path too | `A_session_whose_agent_folder_was_stowed_into_a_git_tree_is_never_removed`, `A_session_whose_agent_folder_became_a_link_is_never_touched`, `A_session_whose_home_really_lies_in_a_git_tree_is_never_removed`, `SelectionTests.An_agent_folder_whose_real_path_lies_in_a_git_working_tree_selects_nothing` |
+| C-M3 / S-m-1, S-m-2: the append after a torn index line starts on its own line; an index the append created is flushed into its folder | `The_append_after_a_torn_index_line_starts_on_a_line_of_its_own`, `An_index_the_append_created_is_flushed_into_its_folder` |
+| C-M2: a line with a field missing (9 shapes) is skipped and counted, never thrown; a lease with a field missing is left for a person | `ArchiveIndexTests.A_line_with_a_missing_field_is_skipped_never_thrown` (9 rows), `SideLeaseTests.A_lease_with_a_missing_field_is_left_for_a_person_never_thrown` (3 rows) |
+| C-M1: an entry archived again after damage names its latest files; the repaired copy is what the next run removes against | `ArchiveIndexTests.An_entry_archived_again_after_damage_names_the_files_of_its_latest_archived_event`, `A_damaged_copy_is_repaired_into_a_new_name_and_the_next_run_removes_against_it` |
+| C-M5 (A), C-M7 / S-M-3: an unverified line never changes a verified entry; a `recovered` entry is unverified even signed by this side | `An_unverified_line_never_changes_a_verified_entry`, `A_recovered_entry_is_unverified_even_signed_by_this_side` |
+| C-M5 (B): an entry kept past `archive.keptEntryDays` is let go, its source where it is; a `removing` entry whose index became unreadable returns every quarantined file | `An_entry_kept_past_its_days_is_let_go_and_its_source_stays`, `A_removing_entry_whose_index_became_unreadable_returns_its_files_when_let_go` |
+| S-M-2: phase 2 never touches a session whose project Claude Code works in; a file written at an original name while aside closes the entry `split` | `Phase_2_never_touches_a_session_whose_project_claude_code_works_in`, `A_file_written_at_the_original_name_while_aside_closes_the_entry_split` |
+| C-M4, C-m2, C-M9: phase 2 stops at the budget; an archived session of an agent no longer archived is let go; an index that cannot be written stops the run as a FAULT | `ArchiveRunTests.Phase_2_stops_at_the_budget_and_removes_nothing_past_it`, `…An_archived_session_of_an_agent_no_longer_archived_is_let_go_and_its_source_stays`, `…A_run_stopped_by_an_index_it_cannot_write_says_it_was_a_fault` |
+| C-M8: a base failing mid-copy stops the run (`base-failed`) and leaves no partial copy | `A_base_that_fails_mid_copy_stops_the_run_and_leaves_no_partial_copy` |
+| C-M6: the scan skips a month whose index cannot be read (Linux: a mode bit) | `The_scan_skips_a_month_whose_index_cannot_be_read` |
+| C-m4: a recorded mount that does not read refuses the run and names the way out | `ArchiveRunTests.A_recorded_mount_that_does_not_read_refuses_the_run_and_names_the_way_out` |
+| S-m-3: a companion stranded without its session is still found | `SelectionTests.A_companion_stranded_without_its_session_is_still_found` |
+| C-m1: the answer is the LAST line of `archive run --json` | `ArchiveRunFlows.Answer` (every flow) |
+| C-m6: every file of the unit (the companion too) survives each of the 56 crash rows; every removed file equals an archived copy the index recorded, re-hashed from the disk; a read-only base stops the run before any copy (Linux) | `A_crash_at_each_of_the_fourteen_points…` (the companion assertion), `Every_removed_file_equals_an_archived_copy_the_index_recorded`, `ArchiveRunTests.A_read_only_base_stops_the_run_before_any_copy` |
+
+**Red first (observed before the fix):**
+- S-M-1, the stow test: `Expected type not to be …RemoveOutcome+Removed …, but it is` — files inside a git working tree were removed.
+- C-M3: the close line was lost (`Status to be "sourceRemoved" … they differ`).
+- C-M2: 12 rows red, among them `System.ArgumentNullException : Value cannot be null. (Parameter 's')` (no `mac`), a
+  `NullReferenceException` (`"files":[null]`), and a lease without `runId` that was TAKEN OVER (`found …LeaseTaken+Held`).
+- C-M1: `{"projects/p/s.jsonl", …} contains 1 item(s) too many`.
+- C-M5 (A): `Expected entry.Verified to be True, but found False`.
+- C-M7: `Expected … Verified to be False, but found True`.
+
+The rest were written with their fix. Each one is proved by its break-it check below.
+
+**Teeth.** Each check broke one line, rebuilt, ran the archive namespace, then restored the file (sha256 compared) and rebuilt
+again at the end.
+
+Windows: every check was red except one.
+- M3: 1 red. m-2: 1. M-1 place: 1. M-1 real path: 2. M2 index: 7. M2 lease: 3. M1: 2. M5 (A): 1. M7: 1. M4: 1. m2: 1. M9: 1.
+  M5 let go: 2. M5 return aside: 1. M-2 scan: 1. M-2 split: 1. M8: 1. m4: 1. m-3: 1.
+- M6 (Linux only) is green on Windows, as expected: its test skips there.
+- Found on the way: the place check (M-1) was GREEN at first. The stow test was also caught by the real-path git check, so the
+  link test (the quarantine must not even start) was added, and that check is now red.
+
+Linux (in the existing `/tmp` copy, `nice 19`, nothing deleted): all 20 checks were red.
+- The same counts as Windows.
+- M6 (an unreadable index scanned as empty) was red too: 1.
+
+**Not break-it checked:**
+- C-m1: the heartbeat race has no deterministic test. The flows assert the outcome (the last line).
+- M8 for the lease's write: no test can make a `FileStream` write fail on an open lease file.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

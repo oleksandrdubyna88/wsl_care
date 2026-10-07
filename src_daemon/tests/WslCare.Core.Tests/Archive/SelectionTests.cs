@@ -278,6 +278,16 @@ public sealed partial class SelectionTests : IDisposable
         Claude().Quarantined.Should().Be(2);
     }
 
+    /// <summary>Security review m-3: a companion left aside after its transcript was removed — it changed after the commit point and
+    /// could not go back — belongs to no session any more; it is still found, wherever below the layout it is.</summary>
+    [Fact]
+    public void A_companion_stranded_without_its_session_is_still_found()
+    {
+        File("/home/me/.claude/projects/p/s9/subagents/a.jsonl.wsl-care-q-20261001T000000Z-1", DaysAgo(5));
+
+        Claude().QuarantinedFiles.Should().Equal(["projects/p/s9/subagents/a.jsonl.wsl-care-q-20261001T000000Z-1"]);
+    }
+
     [Fact]
     public void Only_the_agents_of_archive_agents_are_selected()
     {

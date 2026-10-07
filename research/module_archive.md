@@ -31,7 +31,8 @@ flowchart TD
     selection --> run["archive run (E9.S2b)<br/>lock · reach · lease · reconcile · phase 2 · phase 1"]
     run -- "every file act" --> seam
     run --> local["local state (ArchiveState)<br/>inflight · base.json · summary · index.key"]
-    run --> index["month index on the base (ArchiveIndex)<br/>per agent / month / side, MAC'd lines"]["Files/IArchiveFiles<br/>(PhysicalFileSystem.Archive + BeneathWrites)"]
+    run --> index["month index on the base (ArchiveIndex)<br/>per agent / month / side, MAC'd lines"]
+    seam["Files/IArchiveFiles<br/>(PhysicalFileSystem.Archive + BeneathWrites)"]
     policy["Files/Deletion/DeletionPolicy<br/>(ArchiveQuarantine, ArchiveRemoval, RestoreIntoAgentFolder)"] --> seam
 ```
 
@@ -124,7 +125,9 @@ Every built verb runs as the user; root is refused with exit 81.
   judged), and acts along it — never along the spelled path, so a link swapped in anywhere afterwards, the root's ancestors
   included, makes the act refuse. A folder handle the seam made is refused once closed (every verb holds a reference on it for
   the call). The archive's own copy is removed only while its name still names the file the create made (`FileIdentity`).
-  Every failure is a closed answer — `Gone`, `Kept`, `Refused` — never an exception.
+  Every failure of a seam VERB is a closed answer — `Gone`, `Kept`, `Refused` — never an exception. The stream a create hands
+  out is written by the copy (and the lease) itself; an I/O failure there is caught by them since the S2b own review round (M8:
+  the partial copy or the lease removed again, the run stopped as `base-failed`).
 - **Linux:** the chain is opened from the file system's root with `O_NOFOLLOW` at every level, each folder from the previous
   one's descriptor, so a link on the way is refused and nothing can be swapped between the open and the act. Only a regular
   file is renamed, and the new name must hold the same device and inode afterwards. A removal takes a write lease (the kernel grants it
@@ -146,6 +149,26 @@ Every built verb runs as the user; root is refused with exit 81.
 - **Both:** creates never replace (`O_EXCL` / `CREATE_NEW`), renames never replace (`RENAME_NOREPLACE` / no replace flag), a
   removal acts only when the bytes hash equal to the hash the caller passes (E9.S2b passes the archived copy's re-hash), and
   every write is judged first by the deletion policy on the REAL paths.
+
+## The protocol's guarantees after the E9.S2b own review round (2026-10-07, plan §15r *E9.S2b own review round*)
+
+- **Phase 2 asks again, before it touches anything:** the agent's folder is still where the selection may walk (no link on the
+  way — a folder stowed into a dotfiles repository is never acted on), no git working tree is around the key along the spelled
+  OR the real path, below its companion folders or on the way to its files, and no agent works on it (`Archive/Liveness.cs`, the
+  selection's own rules: the open-file scan, taken before the reconcile, is complete, no file is open, Claude Code is not in its
+  project). Past the commit point a live agent sends every file back and the entry returns to `archived`.
+- **The index, untrusted:** a line with a field missing is malformed (skipped, counted); a `recovered` line is unverified
+  whoever signed it; an entry with a verified `archived` event counts its verified events only; its files are those of its
+  LATEST `archived` event (a damaged copy copied again is removed against the repaired one); an append after a torn last line
+  starts on a line of its own, and an index the append created is flushed into its folder. `MonthIndex.Open` tells
+  `Missing` / `Read` / `Unreadable` — the scan never takes an unreadable index for an empty one.
+- **No entry waits for ever:** past `archive.keptEntryDays` (14) an entry phase 2 keeps waiting is let go — its source where it
+  is; a `removing` one first returns every file under its quarantine name. An archived entry of an agent `archive.agents` no
+  longer names is let go too. The selection's quarantine count walks the whole layout, so a companion stranded aside is found.
+- **Stops by kind** (`Archive/RunStops.cs`): limits (budget — phase 2 included —, session cap, free space, cancelled) exit 0,
+  faults (verification, state write, index write, a base that failed mid-copy) exit 1; `archive run --json` carries `stopKind`.
+  An I/O failure of the base mid-copy removes our partial copy and stops the run (`base-failed`); one of the source skips the
+  unit. A file back at an original name after the removal closes the entry `split`.
 
 ## External dependencies
 
@@ -350,6 +373,6 @@ flowchart LR
   levels are HELD by handles that never share delete (neither the folder nor its parents can then be renamed — measured), a new
   level is flushed in its held parent and `FlushFolder` flushes the held handle. A Windows source must be owned by this
   account's SID. `BeneathFolder` became abstract (any `IArchiveFiles` can make one; `PhysicalFileSystem` refuses one it did not
-  open), and the source rules moved to the pure `Files/ArchiveSourceRules.cs`. Deep-dive: [module_archive.md](module_archive.md).
+  open), and the source rules moved to the pure `Files/ArchiveSourceRules.cs`.
 - **The own review round** (plan §15r *E9.S2a own review round*): every act follows the judged REAL path; the seam hashes the
-  archived copy itself before a removal; details in [module_archive.md](module_archive.md).
+  archived copy itself before a removal; the details are in this file's sections above.

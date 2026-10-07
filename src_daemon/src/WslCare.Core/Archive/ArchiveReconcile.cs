@@ -1,6 +1,7 @@
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
+using WslCare.Core.Folders;
 
 namespace WslCare.Core.Archive;
 
@@ -56,11 +57,32 @@ public static class ArchiveReconcile
     private static ArchiveReconcileReport Removing(MoveContext c, InflightEntry entry, ArchiveReconcileReport report)
     {
         var indexed = MonthIndex.Entries(c, entry.Agent, entry.Month).FirstOrDefault(e => e.EntryId == entry.EntryId);
-        var outcome = indexed is null ? new RemoveOutcome.Kept("its index line is not readable now") : ArchiveRemove.Resume(c, entry, indexed);
+        var outcome = ArchiveRemove.LetGo(c, entry, indexed is null ? new RemoveOutcome.Kept("its index line is not readable now") : ArchiveRemove.Resume(c, entry, indexed));
+        if (outcome is RemoveOutcome.Dropped letGo && entry.QuarantineRun.Length > 0)
+        {
+            return ReturnAside(c, entry, report with { Dropped = report.Dropped + 1, Notes = [.. report.Notes, $"{entry.Key}: {letGo.Why}"] });
+        }
+
         return outcome is RemoveOutcome.Removed
             ? report with { Resumed = report.Resumed + 1 }
             : report with { Notes = [.. report.Notes, $"{entry.Key}: the interrupted removal waits ({Why(outcome)})"] };
     }
+
+    /// <summary>Correctness review M5: a <c>removing</c> entry let go — every file below its agent's folder still under ITS quarantine
+    /// name (its run id) renamed back, found by one bounded walk (names only; <c>memory</c> never entered), never replacing.</summary>
+    private static ArchiveReconcileReport ReturnAside(MoveContext c, InflightEntry entry, ArchiveReconcileReport report)
+    {
+        var mark = ArchiveNames.QuarantineMark + entry.QuarantineRun;
+        var listed = c.Stats.WalkTree(entry.Under, FolderSizes.Limits, AsideRules, CancellationToken.None) is TreeMeasure.Measured m ? m.Listed : [];
+        foreach (var relative in listed.Select(f => Path.GetRelativePath(entry.Under, f.Path).Replace('\\', '/')).Where(r => r.EndsWith(mark, StringComparison.Ordinal)))
+        {
+            report = Back(c, entry.Agent, entry.Under, relative, report);
+        }
+
+        return report;
+    }
+
+    private static readonly TreeRules AsideRules = new(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal) { "memory" }) { ListFiles = true };
 
     /// <summary>Every quarantined file of <paramref name="agent"/> no <c>removing</c> entry covers, renamed back without replacing.</summary>
     public static ArchiveReconcileReport RenameBack(MoveContext c, string agent, string under, IEnumerable<string> quarantined, ArchiveReconcileReport report)
@@ -115,23 +137,46 @@ public static class ArchiveReconcile
     };
 }
 
-/// <summary>A month index of this side read from the base: missing is empty, past <c>archive.maxIndexBytes</c> refused.</summary>
+/// <summary>What reading a month index gave — a closed set (correctness review M6: not read is not empty).</summary>
+public abstract record MonthRead
+{
+    private MonthRead()
+    {
+    }
+
+    /// <summary>No index, and no folder for it: the month holds nothing of this side.</summary>
+    public sealed record Missing : MonthRead;
+
+    public sealed record Read(IndexRead Index) : MonthRead;
+
+    /// <summary>It exists and could not be read (past <c>archive.maxIndexBytes</c>, not a plain file, an I/O failure).</summary>
+    public sealed record Unreadable(string Why) : MonthRead;
+}
+
+/// <summary>A month index of this side read from the base.</summary>
 public static class MonthIndex
 {
+    /// <summary>Its entries; an unreadable index has none here — phase 2 then keeps every entry of it waiting, never acting.</summary>
     public static IReadOnlyList<IndexEntry> Entries(MoveContext c, string agent, string month) => ArchiveIndex.Merge(Read(c, agent, month).Records);
 
-    public static IndexRead Read(MoveContext c, string agent, string month)
+    public static IndexRead Read(MoveContext c, string agent, string month) => Open(c, agent, month) is MonthRead.Read read ? read.Index : new IndexRead([], 0);
+
+    public static MonthRead Open(MoveContext c, string agent, string month)
     {
-        if (c.Files.OpenExistingFolderBeneath(c.BaseFolder, ArchiveCopy.Levels(agent, month, c.Side, [])) is not FolderBeneath.Ready { Folder: var folder })
+        var opened = c.Files.OpenExistingFolderBeneath(c.BaseFolder, ArchiveCopy.Levels(agent, month, c.Side, []));
+        if (opened is not FolderBeneath.Ready { Folder: var folder })
         {
-            return new IndexRead([], 0);
+            return opened is FolderBeneath.Refused refused ? new MonthRead.Unreadable(refused.Why) : new MonthRead.Missing();
         }
 
         using (folder)
         {
-            return c.Files.ReadCapped(folder, ArchiveIndex.FileName, Tuning.Current.Int(ConfigKeys.Archive.MaxIndexBytes)) is FileReadResult.Content content
-                ? ArchiveIndex.Read(content.Bytes, c.Key)
-                : new IndexRead([], 0);
+            return c.Files.ReadCapped(folder, ArchiveIndex.FileName, Tuning.Current.Int(ConfigKeys.Archive.MaxIndexBytes)) switch
+            {
+                FileReadResult.Content content => new MonthRead.Read(ArchiveIndex.Read(content.Bytes, c.Key)),
+                FileReadResult.Unreadable unreadable => new MonthRead.Unreadable(unreadable.Reason),
+                _ => new MonthRead.Missing(),
+            };
         }
     }
 }

@@ -589,13 +589,16 @@ public sealed partial class PhysicalFileSystem : IFileSystem, IArchiveFiles
         }
 
         using var stream = OpenForReading(path);
-        if (stream.Length == 0)
-        {
-            return false;
-        }
+        return EndsTorn(stream.SafeFileHandle);
+    }
 
-        stream.Seek(-1, SeekOrigin.End);
-        return stream.ReadByte() != '\n';
+    /// <summary>Whether the file behind <paramref name="readable"/> is non-empty and its last byte is not a newline — the one test the
+    /// history and the archive's month index share (review M3).</summary>
+    internal static bool EndsTorn(Microsoft.Win32.SafeHandles.SafeFileHandle readable)
+    {
+        var length = RandomAccess.GetLength(readable);
+        Span<byte> last = stackalloc byte[1];
+        return length > 0 && RandomAccess.Read(readable, last, length - 1) == 1 && last[0] != (byte)'\n';
     }
 
     public DeletionVerdict DeleteFile(string path, DeletionScope scope) =>

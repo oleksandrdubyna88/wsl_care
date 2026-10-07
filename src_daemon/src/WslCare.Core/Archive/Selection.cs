@@ -247,7 +247,7 @@ public static class Selection
         c => RuleVerdict.When(c.GatherNote.Length > 0, SkipRule.NotWhole, () => $"not every file of it was seen ({c.GatherNote}); a unit moves whole or not at all"),
         c => MayBeOpen(c.Input.Files, c.Under, c.Unit, c.Key),
         c => ScanIncomplete(c.Input.InUse),
-        c => InUse(c.Input, c.Files),
+        c => InUse(c.Input, c.Under, c.Files),
         c => AgentHere(c.Input, c.Entry, c.Key),
     ];
 
@@ -287,26 +287,22 @@ public static class Selection
 
     /// <summary>E9.S1 review round M1: only a COMPLETE open-file scan lets a due unit move — a cut one saw nothing of what it did not
     /// reach, and one that never ran (Windows until E9.S5) saw nothing at all.</summary>
-    private static RuleVerdict ScanIncomplete(InUseView view) => view.State switch
-    {
-        InUseState.Complete => RuleVerdict.Holds,
-        InUseState.Cut => new RuleVerdict.Refuses(SkipRule.InUse, $"the open-file scan was cut ({view.Note}); what it did not reach may be open"),
-        _ => new RuleVerdict.Refuses(SkipRule.InUse, $"which files are open was not checked ({view.Note})"),
-    };
+    private static RuleVerdict ScanIncomplete(InUseView view) =>
+        Liveness.ScanProblem(view) is { Length: > 0 } why ? new RuleVerdict.Refuses(SkipRule.InUse, why) : RuleVerdict.Holds;
 
-    private static RuleVerdict InUse(SelectionInput input, IReadOnlyList<UnitFile> files) =>
-        files.FirstOrDefault(f => input.InUse.OpenFiles.Contains(Distro(input.Paths, f.OnDisk))) is { } open
-            ? new RuleVerdict.Refuses(SkipRule.InUse, $"{open.Relative} is open in a process")
+    private static RuleVerdict InUse(SelectionInput input, string under, IReadOnlyList<UnitFile> files) =>
+        Liveness.OpenFile(input.InUse, p => Distro(input.Paths, p), under, files.Select(f => f.Relative)) is { Length: > 0 } open
+            ? new RuleVerdict.Refuses(SkipRule.InUse, $"{open} is open in a process")
             : RuleVerdict.Holds;
 
     /// <summary>A live Claude Code process whose working directory is this session's project (§15r D2.2).</summary>
     private static RuleVerdict AgentHere(SelectionInput input, AgentEntry entry, string key)
     {
-        var segments = key.Split('/');
+        var project = Liveness.ProjectOf(entry.Id, key);
         return RuleVerdict.When(
-            entry.Id == "claude-code" && segments.Length > 1 && input.InUse.ClaudeProjects.Contains(segments[1]),
+            project.Length > 0 && input.InUse.ClaudeProjects.Contains(project),
             SkipRule.AgentWorkingHere,
-            () => $"Claude Code is working in the project {segments[1]}");
+            () => $"Claude Code is working in the project {project}");
     }
 
     private static string Distro(IHostPaths paths, string onDisk) => paths is LinuxHostPaths linux ? linux.ToDistro(onDisk) : onDisk;

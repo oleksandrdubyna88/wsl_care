@@ -187,6 +187,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Files/BeneathWrites.cs: Regular"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: ReadOnly"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: WriteOnly"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
+        ["WslCare.Core/Files/BeneathWrites.cs: ReadWrite"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: Create"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: Exclusive"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: NonBlocking"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",

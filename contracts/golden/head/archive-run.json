@@ -47,5 +47,6 @@
     "files": 0,
     "recovered": 0,
     "notes": []
-  }
+  },
+  "stopKind": ""
 }

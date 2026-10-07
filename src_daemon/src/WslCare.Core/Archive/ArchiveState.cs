@@ -64,7 +64,14 @@ public sealed class ArchiveState(IHostPaths paths, IFileSystem files)
 
     public string WriteInflight(InflightFile file) => Write(Join("inflight.json"), JsonSerializer.SerializeToUtf8Bytes(file, WslCareJsonContext.Compact.InflightFile));
 
-    public BaseRecord? Base() => Read(Join("base.json"), WslCareJsonContext.Compact.BaseRecord);
+    /// <summary>The base's recorded mount; <c>null</c> when none is recorded or it does not read whole (see <see cref="BaseRecorded"/>).</summary>
+    public BaseRecord? Base() => Read(BaseFile, WslCareJsonContext.Compact.BaseRecord) is { Folder: not null, MountType: not null, MountSource: not null, MountPoint: not null } whole ? whole : null;
+
+    /// <summary>Where the base's mount is recorded.</summary>
+    public string BaseFile => Join("base.json");
+
+    /// <summary>Whether a record exists — review m4: one that exists and does not read is a refusal, never silently recorded again.</summary>
+    public bool BaseRecorded => files.FileExists(BaseFile);
 
     public string WriteBase(BaseRecord record) => Write(Join("base.json"), JsonSerializer.SerializeToUtf8Bytes(record, WslCareJsonContext.Compact.BaseRecord));
 

@@ -68,19 +68,36 @@ public static class SideLease
         switch (files.CreateExclusive(folder, name, scope))
         {
             case ExclusiveFile.Created created:
-                using (created.Stream)
-                {
-                    created.Stream.Write(JsonSerializer.SerializeToUtf8Bytes(me, WslCareJsonContext.Compact.LeaseRecord));
-                    created.Stream.Flush(flushToDisk: true);
-                }
-
-                return new LeaseTaken.Held(folder, name, created.Identity, note);
+                return Written(files, folder, name, me, scope, created) is { Length: > 0 } failed
+                    ? new LeaseTaken.Refused($"the lease could not be written ({failed}); it was removed again")
+                    : new LeaseTaken.Held(folder, name, created.Identity, note);
             case ExclusiveFile.Exists:
                 return new LeaseTaken.Refused(ExistsMark);
             case ExclusiveFile.Refused refused:
                 return new LeaseTaken.Refused($"the lease could not be created ({refused.Why})");
             default:
                 return new LeaseTaken.Refused("the lease could not be created");
+        }
+    }
+
+    /// <summary>The record written into the lease this run created; on a failure of the base (correctness review M8) the lease is
+    /// removed again — never left empty to stop every later run. Empty when written.</summary>
+    private static string Written(IArchiveFiles files, BeneathFolder folder, string name, LeaseRecord me, DeletionScope scope, ExclusiveFile.Created created)
+    {
+        try
+        {
+            using (created.Stream)
+            {
+                created.Stream.Write(JsonSerializer.SerializeToUtf8Bytes(me, WslCareJsonContext.Compact.LeaseRecord));
+                created.Stream.Flush(flushToDisk: true);
+            }
+
+            return string.Empty;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            _ = files.RemoveOwnCopy(folder, name, created.Identity, scope);
+            return e.Message;
         }
     }
 
@@ -150,7 +167,8 @@ public static class SideLease
     {
         try
         {
-            return JsonSerializer.Deserialize(Encoding.UTF8.GetString(bytes), WslCareJsonContext.Compact.LeaseRecord);
+            // Correctness review M2: a lease with a field missing (JSON reads it as null) is malformed, never judged.
+            return JsonSerializer.Deserialize(Encoding.UTF8.GetString(bytes), WslCareJsonContext.Compact.LeaseRecord) is { Host: not null, BootId: not null, RunId: not null } whole ? whole : null;
         }
         catch (JsonException)
         {

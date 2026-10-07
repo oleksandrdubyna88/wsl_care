@@ -47,7 +47,15 @@ public static partial class ArchiveScan
             return report;
         }
 
-        var known = MonthIndex.Entries(c, agent, month).SelectMany(e => e.Files.Select(f => f.Archived)).ToHashSet(StringComparer.Ordinal);
+        var index = MonthIndex.Open(c, agent, month);
+        if (index is MonthRead.Unreadable unreadable)
+        {
+            // Correctness review M6: an index that could not be read is not an empty one — re-indexing the month would add a line
+            // for every file it already names.
+            return report with { Notes = [.. report.Notes, $"{agent} {month}: its index could not be read ({unreadable.Why}); nothing of the month was re-indexed"] };
+        }
+
+        var known = (index is MonthRead.Read read ? ArchiveIndex.Merge(read.Index.Records) : []).SelectMany(e => e.Files.Select(f => f.Archived)).ToHashSet(StringComparer.Ordinal);
         var listed = files.WalkTree(sideFolder, FolderSizes.Limits, new TreeRules(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal)) { ListFiles = true }, token) switch
         {
             TreeMeasure.Measured measured => measured.Listed,
