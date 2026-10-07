@@ -3,7 +3,7 @@
 > Part of [architecture.md](architecture.md), which stays the entry point (system overview, module map, cross-cutting
 > concerns). These three sections were moved here unchanged on 2026-10-06 because `architecture.md` had outgrown the
 > 256 KiB the conventions resolver (`.agents/conventions/tools/rules.mjs`) accepts for a required source;
-> `.agents/PROJECT.md` requires both files. The extension's E5 sections (client, status bar and panel, *Install daemon*
+> `.agents/PROJECT.md` requires each of the split files; the daemon's half of E6 is [architecture-daemon-e6.md](architecture-daemon-e6.md). The extension's E5 sections (client, status bar and panel, *Install daemon*
 > and its release) are still in [architecture.md](architecture.md).
 
 ## The extension: the root boundary (E6.S2)
