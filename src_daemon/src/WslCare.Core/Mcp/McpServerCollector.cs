@@ -61,23 +61,40 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
         var boot = BootIdentity.Read(paths, files);
         var before = boot.Length == 0 ? McpCpuFile.Empty : McpCpuLedger.Read(files, ledger, settings.LedgerMaxBytes);
         var started = clock.GetTimestamp();
-        var firstAt = SampleTime.Of(clock);
-        var first = listed.Select(f => FirstRead(f.Process) switch
-        {
-            Reading<PidSample>.Available { Value: var s } => new Measuring(f.Process.Pid, Reading.Of(s), ReadingOf(s, firstAt)),
-            var unread => new Measuring(f.Process.Pid, unread, null),
-        }).ToList();
+        var first = FirstReads(listed, SampleTime.Of(clock));
         var fromLedger = first.ToDictionary(m => m.Pid, m => FromLedger(m, before, boot, kernel, settings.Bounds));
         var windowed = await WindowAsync([.. first.Where(m => m.Read is not null && fromLedger[m.Pid] is null)], settings.Window, started, kernel, cancellationToken).ConfigureAwait(false);
-        var cpu = first.ToDictionary(m => m.Pid, m => fromLedger[m.Pid] ?? (windowed.TryGetValue(m.Pid, out var w) ? w.Cpu : McpCpu.Unmeasured(m.Sample.ReasonOrEmpty)));
-        IReadOnlyList<McpCpuReading> readings = [.. first.Select(m => fromLedger[m.Pid] is not null ? m.Read : windowed.GetValueOrDefault(m.Pid).Read).OfType<McpCpuReading>()];
-        return (cpu, boot.Length == 0
-            ? McpCpuBaseline.NotRecorded(ledger.FileOrEmpty, "the boot id cannot be read, so no reading can name its process across samples")
-            : McpCpuLedger.Record(files, ledger, before, McpCpuLedger.Next(before, boot, readings, settings.Bounds)));
+        var measured = first.Select(m => Combine(m, fromLedger[m.Pid], windowed)).ToList();
+        return (measured.ToDictionary(m => m.Pid, m => m.Cpu), RecordAll(boot, before, measured, settings));
     }
 
     /// <summary>One listed instance being measured: its first read, and that read as a ledger reading when it was taken.</summary>
     private sealed record Measuring(int Pid, Reading<PidSample> Sample, McpCpuReading? Read);
+
+    /// <summary>One instance measured: its CPU, and the reading the ledger keeps for the next sample (none when it has none).</summary>
+    private sealed record Measured(int Pid, McpCpu Cpu, McpCpuReading? Read);
+
+    private List<Measuring> FirstReads(IReadOnlyList<McpFound> listed, SampleTime at) =>
+    [
+        .. listed.Select(f => FirstRead(f.Process) switch
+        {
+            Reading<PidSample>.Available { Value: var s } => new Measuring(f.Process.Pid, Reading.Of(s), ReadingOf(s, at)),
+            var unread => new Measuring(f.Process.Pid, unread, null),
+        }),
+    ];
+
+    /// <summary>The interval answer when there was one (its reading is the first read), else the window's (its second read),
+    /// else unmeasured with why.</summary>
+    private static Measured Combine(Measuring m, McpCpu? fromLedger, IReadOnlyDictionary<int, (McpCpu Cpu, McpCpuReading? Read)> windowed) =>
+        fromLedger is { } interval ? new(m.Pid, interval, m.Read)
+        : windowed.TryGetValue(m.Pid, out var w) ? new(m.Pid, w.Cpu, w.Read)
+        : new(m.Pid, McpCpu.Unmeasured(m.Sample.ReasonOrEmpty), null);
+
+    /// <summary>This sample's readings into the caller's ledger, by the two-point rule, capped to what its read cap holds.</summary>
+    private McpCpuBaseline RecordAll(string boot, McpCpuFile before, IReadOnlyList<Measured> measured, McpSettings settings) =>
+        boot.Length == 0
+            ? McpCpuBaseline.NotRecorded(ledger.FileOrEmpty, "the boot id cannot be read, so no reading can name its process across samples")
+            : McpCpuLedger.Record(files, ledger, before, McpCpuLedger.Next(before, boot, [.. measured.Select(m => m.Read).OfType<McpCpuReading>()], settings.Bounds, McpCpuLedger.MaxEntries(settings.LedgerMaxBytes)));
 
     private static McpCpuReading ReadingOf(PidSample sample, SampleTime at) => new(sample.Pid, sample.StartTicks, new McpCpuPoint(sample.CpuTicks, at.Wall, at.MonotonicMs));
 
@@ -87,10 +104,13 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
             ? IntervalCpu(now.At, from, kernel)
             : null;
 
+    /// <summary>Unmeasured, with no basis, when the kernel's tick rate cannot be read (own code review, finding 2).</summary>
     private static McpCpu IntervalCpu(McpCpuPoint now, McpCpuPoint from, Reading<KernelFacts> kernel)
     {
         var over = TimeSpan.FromMilliseconds(now.MonotonicMs - from.MonotonicMs);
-        return new McpCpu(kernel.Map(k => Percent(now.CpuTicks - from.CpuTicks, k, over.TotalSeconds)), McpCpuBasis.Interval, over);
+        return kernel is Reading<KernelFacts>.Available { Value: var k }
+            ? new McpCpu(Reading.Of(Percent(now.CpuTicks - from.CpuTicks, k, over.TotalSeconds)), McpCpuBasis.Interval, over)
+            : McpCpu.Unmeasured(kernel.ReasonOrEmpty);
     }
 
     /// <summary>The window fallback: the second read across <paramref name="window"/> for each instance with no baseline — the wait

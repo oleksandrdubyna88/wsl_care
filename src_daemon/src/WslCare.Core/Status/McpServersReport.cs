@@ -12,7 +12,8 @@ namespace WslCare.Core.Status;
 /// (<c>mcpServers.maxInstances</c>).</param>
 /// <param name="BusyWithoutActivityCount">Busy (CPU at or above the idle line) with no log write in the activity window.</param>
 /// <param name="NotUnderAgent">Processes of a watched server under a live process that is no AI agent: not instances.</param>
-/// <param name="CpuCores">Σ CPU across the window ÷ 100 over the <paramref name="CpuMeasured"/> instances measured.</param>
+/// <param name="CpuCores">Σ CPU (each over its interval or across the window — its <c>cpuBasis</c>) ÷ 100 over the
+/// <paramref name="CpuMeasured"/> instances measured.</param>
 /// <param name="HeldBytes">Σ <c>RssAnon + RssShmem</c> over every instance.</param>
 public sealed record McpServersReport(
     bool Available,

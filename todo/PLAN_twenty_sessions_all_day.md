@@ -397,3 +397,21 @@ Built on `fix/wc-mcp-cpu-since-last-run`; the guarantees, the red and the teeth 
 - **Not built here:** the temp-file sweep (§ 7 residual, S2's), and S2's re-classification of the two keys.
 - **Review rounds:** the coai code round is OWED (the coai MCP server did not connect in this session); one own code
   review stood in — § 14.
+- **After the code review:** the ledger is written as one compact JSON line, holds at most `records.maxStateFileBytes` ÷
+  320 entries (the newest processes; a test serialises the widest entry and a full ledger under the smallest cap), and is
+  read only when well formed (this schema, no null entry or point).
+
+## 14. S1 code review (2026-10-07; one reviewer, `feature-dev:code-reviewer` on Opus, read-only)
+
+Verified as fine: the rate and clocks, the baseline selection, the two-point rule, which reading is recorded, the identity,
+write-only-when-changed, concurrency, the root/user trust split, the hand-edited golden (property order, path, reason, the
+new rule), the keys and the read-site table, the tests' reasons, the docs. 1 Major, 4 Minor, each RED first where it is a
+behaviour, then green, then its line broken and seen red:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 (Major) | JSON that parses with the wrong shape (`"entries":[null]`, an entry with no `points`, a null point) crashed `status` and the timer before the file could be rewritten; the schema was not checked | **Fixed** — `WellFormed`. RED: three cases *NullReferenceException* / *ArgumentNullException*, the schema case *Expected … Window … but found Interval*; green after |
+| 2 (Minor) | without the kernel's tick rate the interval path said `interval` for an unmeasured figure | **Fixed** — `McpCpu.Unmeasured`. RED: *Expected … None … but found Interval* |
+| 3 (Minor) | the ledger could outgrow its own read cap (indented, up to 1 024 instances) and then read as empty for ever | **Fixed** — compact JSON and at most cap ÷ `BytesPerEntry` entries, the oldest processes dropped; teeth: the cap removed → red |
+| 4 (Minor) | nullable returns (`Baseline`, `EntryOf`, `FromLedger`, a reading) and `CpuAsync`'s complexity | **Accepted in part** — `CpuAsync` split (`FirstReads`, `Combine`, `RecordAll`); the nullables are **kept**: each is a legitimate "not found" (no point, no entry, no reading), which the doctrine allows, as `PidSamples.Read` does |
+| 5 (Minor) | no test that a root `status` READS the timer's ledger; three "across the window" texts stale | **Fixed** — `A_root_status_measures_over_the_interval_from_the_timers_ledger_and_leaves_it_as_it_was` (teeth: the root place made "none" → red); the texts say "over its interval or across the window" |

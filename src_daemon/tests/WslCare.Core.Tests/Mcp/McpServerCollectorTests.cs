@@ -289,16 +289,70 @@ public sealed class McpServerCollectorTests : IDisposable
     [Theory]
     [InlineData("{ not json")]
     [InlineData("{\"schemaVersion\": 1, \"bootId\": \"\", \"entries\": []}")]
+    // Own code review, finding 1: JSON that parses but has the wrong shape — a null entry, this instance's entry with no points
+    // or a null point, another schema — must read as "no baseline", never crash status and the timer for good.
+    [InlineData("{\"schemaVersion\": 1, \"bootId\": \"" + SyntheticProcTree.FirstBootId + "\", \"entries\": [null]}")]
+    [InlineData("{\"schemaVersion\": 1, \"bootId\": \"" + SyntheticProcTree.FirstBootId + "\", \"entries\": [{\"pid\": 300, \"startTicks\": START}]}")]
+    [InlineData("{\"schemaVersion\": 1, \"bootId\": \"" + SyntheticProcTree.FirstBootId + "\", \"entries\": [{\"pid\": 300, \"startTicks\": START, \"points\": [null]}]}")]
     public void An_unreadable_or_malformed_ledger_is_no_baseline_never_a_failed_sample(string content)
     {
         Session(200, 300, TimeSpan.FromHours(1));
         Directory.CreateDirectory(Path.GetDirectoryName(LedgerFile)!);
-        File.WriteAllText(LedgerFile, content);
+        File.WriteAllText(LedgerFile, content.Replace("START", StartTicksFor(TimeSpan.FromHours(1)).ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal));
 
         var sample = Sample(wait: Burn(300));
 
         sample.Instances.Single().CpuBasis.Should().Be(McpCpuBasis.Window);
         sample.Baseline.Recorded.Should().BeTrue("the ledger is rewritten from this sample");
+    }
+
+    [Fact]
+    public void A_ledger_of_another_schema_version_is_no_baseline()
+    {
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        SampleAt(clock, 1000);
+        File.WriteAllText(LedgerFile, File.ReadAllText(LedgerFile).Replace("\"schemaVersion\":1", "\"schemaVersion\":99", StringComparison.Ordinal).Replace("\"schemaVersion\": 1", "\"schemaVersion\": 99", StringComparison.Ordinal));
+        clock.Advance(TimeSpan.FromSeconds(121));
+
+        SampleAt(clock, 2000).CpuBasis.Should().Be(McpCpuBasis.Window, "a file of another schema is not read as this one's");
+    }
+
+    [Fact]
+    public void Without_the_kernels_tick_rate_the_cpu_is_unmeasured_on_either_basis()
+    {
+        // Own code review, finding 2: the interval path said "interval" for a figure it could not compute.
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        SampleAt(clock, 1000);
+        clock.Advance(TimeSpan.FromSeconds(121));
+        File.Delete(_tree.Paths.DistroPath("/proc/self/auxv"));
+
+        var instance = SampleAt(clock, 2000);
+
+        instance.CpuPercent.IsAvailable.Should().BeFalse();
+        instance.CpuBasis.Should().Be(McpCpuBasis.None, "a figure that was not measured has no basis");
+    }
+
+    [Fact]
+    public void A_full_ledger_stays_inside_its_read_cap_and_keeps_the_newest_processes()
+    {
+        // Own code review, finding 3: a ledger larger than records.maxStateFileBytes reads as empty for ever — every sample a window.
+        var widest = new McpCpuPoint(long.MaxValue, DateTimeOffset.MaxValue, long.MaxValue);
+        McpCpuFile Of(int entries) => new(Core.SchemaVersion.Current, SyntheticProcTree.FirstBootId,
+            [.. Enumerable.Range(0, entries).Select(i => new McpCpuEntry(int.MaxValue - i, long.MaxValue - i, [widest, widest]))]);
+        var perEntry = McpCpuLedger.Serialise(Of(2)).Length - McpCpuLedger.Serialise(Of(1)).Length;
+        var cap = ConfigKeys.Records.MaxStateFileBytes.Min;
+        var readings = Enumerable.Range(0, McpCpuLedger.MaxEntries(cap) + 5)
+            .Select(i => new McpCpuReading(1000 + i, i, new McpCpuPoint(i, Now, 1)))
+            .ToList();
+
+        var next = McpCpuLedger.Next(McpCpuFile.Empty, SyntheticProcTree.FirstBootId, readings, McpSettings.From(Defaults()).Bounds, McpCpuLedger.MaxEntries(cap));
+
+        perEntry.Should().BeLessThanOrEqualTo(McpCpuLedger.BytesPerEntry, "the bound the cap is divided by");
+        McpCpuLedger.Serialise(Of(McpCpuLedger.MaxEntries(cap))).Length.Should().BeLessThanOrEqualTo(cap, "a full ledger of the widest entries is still read back");
+        next.Entries.Should().HaveCount(McpCpuLedger.MaxEntries(cap));
+        next.Entries.Min(e => e.StartTicks).Should().Be(5, "past the cap the OLDEST processes go (no baseline: the window answers)");
     }
 
     [Fact]

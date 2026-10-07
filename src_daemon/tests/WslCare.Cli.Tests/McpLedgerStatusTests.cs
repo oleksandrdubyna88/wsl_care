@@ -72,6 +72,26 @@ public sealed class McpLedgerStatusTests : IDisposable
     }
 
     [Fact]
+    public async Task A_root_status_measures_over_the_interval_from_the_timers_ledger_and_leaves_it_as_it_was()
+    {
+        // Own code review, finding 5: that a root status WRITES nothing was held; that it READS root's ledger was not.
+        var clock = new ManualTimeProvider(ProcfsFixture.CapturedAt) { SteppedTimestamps = true };
+        var host = Host(clock, root: true, []);
+        var defaults = Core.Config.ConfigLoader.Load([(Core.Config.ConfigLoader.DefaultsFile, new FileReadResult.Content(Core.Config.ConfigLoader.EmbeddedDefaults()))]).Config;
+        var timer = await McpSampling.SampleAsync(Paths, host.Files, clock, host.Wait, McpCpuLedgerPlace.ForCollect(Paths, mayRecord: true, "unused"), host.Probe.Sample(CancellationToken.None), defaults, CancellationToken.None);
+        var rootLedger = Paths.Rules.Join(Paths.StateDirectory, McpCpuLedger.FileName);
+        var written = File.ReadAllBytes(rootLedger);
+        clock.Advance(TimeSpan.FromSeconds(121));
+
+        var (exit, stdout, stderr) = CliRun.Over(host, "status", "--json");
+
+        timer.Should().BeOfType<Core.Collectors.Reading<McpSample>.Available>().Which.Value.Baseline.Recorded.Should().BeTrue();
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        Mcp(stdout).Instances!.Should().OnlyContain(i => i.CpuBasis == "interval", "status as root reads the timer's ledger");
+        File.ReadAllBytes(rootLedger).Should().Equal(written, "and writes nothing");
+    }
+
+    [Fact]
     public void A_root_status_writes_no_ledger_anywhere()
     {
         // Own plan review, finding 1: every verb run as root is re-homed to the target user, so a root status writing "its own"

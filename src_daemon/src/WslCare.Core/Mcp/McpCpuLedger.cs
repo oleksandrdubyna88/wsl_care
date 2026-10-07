@@ -111,13 +111,27 @@ public static class McpCpuLedger
 
         try
         {
-            return JsonSerializer.Deserialize(content.Bytes, WslCareJsonContext.Default.McpCpuFile) is { BootId.Length: > 0, Entries: not null } file ? file : McpCpuFile.Empty;
+            return JsonSerializer.Deserialize(content.Bytes, WslCareJsonContext.Compact.McpCpuFile) is { } file && WellFormed(file) ? file : McpCpuFile.Empty;
         }
         catch (JsonException)
         {
             return McpCpuFile.Empty;
         }
     }
+
+    /// <summary>This schema, a boot, and no null where the records promise a value — the deserializer does not enforce the
+    /// annotations, and a null entry or point would crash every later sample before the file could be rewritten (own code
+    /// review, finding 1).</summary>
+    private static bool WellFormed(McpCpuFile file) =>
+        file is { SchemaVersion: Core.SchemaVersion.Current, BootId.Length: > 0, Entries: not null }
+        && file.Entries.All(e => e is { Points: not null } && e.Points.All(p => p is not null));
+
+    /// <summary>A serialised entry with two points at their widest (compact JSON): what bounds how many entries fit under the
+    /// read cap (own code review, finding 3 — a ledger past its own cap would read as empty for ever).</summary>
+    public const int BytesPerEntry = 320;
+
+    /// <summary>The most entries a ledger read back under <paramref name="maxBytes"/> can hold.</summary>
+    public static int MaxEntries(int maxBytes) => maxBytes / BytesPerEntry;
 
     /// <summary>The newest point of this identity, in this boot, that lies within <paramref name="bounds"/> of <paramref name="now"/>
     /// and whose ticks are not above now's; <c>null</c> when there is none.</summary>
@@ -127,12 +141,15 @@ public static class McpCpuLedger
             .MaxBy(p => p.MonotonicMs);
 
     /// <summary>The next ledger: each reading's identity with its points by the two-point rule; identities not read now, points
-    /// outside the bounds and another boot's file dropped.</summary>
-    public static McpCpuFile Next(McpCpuFile before, string bootId, IReadOnlyList<McpCpuReading> readings, McpCpuBounds bounds) =>
+    /// outside the bounds and another boot's file dropped; at most <paramref name="maxEntries"/> — past it the OLDEST processes
+    /// go, which only makes them "no baseline" (the window answers).</summary>
+    public static McpCpuFile Next(McpCpuFile before, string bootId, IReadOnlyList<McpCpuReading> readings, McpCpuBounds bounds, int maxEntries) =>
         new(Core.SchemaVersion.Current, bootId,
         [
             .. readings
                 .Select(r => new McpCpuEntry(r.Pid, r.StartTicks, Points(EntryOf(before, bootId, r), r.At, bounds)))
+                .OrderByDescending(e => e.StartTicks)
+                .Take(maxEntries)
                 .OrderBy(e => e.Pid)
                 .ThenBy(e => e.StartTicks),
         ]);
@@ -176,8 +193,8 @@ public static class McpCpuLedger
 
     private static McpCpuBaseline Write(IFileSystem files, string directory, string file, McpCpuFile before, McpCpuFile next)
     {
-        var json = JsonSerializer.SerializeToUtf8Bytes(next, WslCareJsonContext.Default.McpCpuFile);
-        if (json.AsSpan().SequenceEqual(JsonSerializer.SerializeToUtf8Bytes(before, WslCareJsonContext.Default.McpCpuFile)))
+        var json = Serialise(next);
+        if (json.AsSpan().SequenceEqual(Serialise(before)))
         {
             return new McpCpuBaseline(file, true, string.Empty);
         }
@@ -194,4 +211,7 @@ public static class McpCpuLedger
             return McpCpuBaseline.NotRecorded(file, e.Message);
         }
     }
+
+    /// <summary>The ledger as written: one line (<see cref="WslCareJsonContext.Compact"/>), so <see cref="BytesPerEntry"/> holds.</summary>
+    public static byte[] Serialise(McpCpuFile ledger) => JsonSerializer.SerializeToUtf8Bytes(ledger, WslCareJsonContext.Compact.McpCpuFile);
 }

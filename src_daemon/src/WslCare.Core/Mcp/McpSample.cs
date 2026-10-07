@@ -6,7 +6,7 @@ namespace WslCare.Core.Mcp;
 /// <summary>What an MCP server instance is doing (plan §15q E7.S2d, Decided 6) — a closed set, decided in this order.</summary>
 public enum McpKind
 {
-    /// <summary>Its CPU could not be measured across the window.</summary>
+    /// <summary>Its CPU could not be measured, over the interval or across the window.</summary>
     Unknown,
 
     /// <summary>Below the idle CPU line and younger than the idle minimum age.</summary>
@@ -126,7 +126,7 @@ public sealed record McpSample(int WindowMilliseconds, int Count, int NotUnderAg
 
     /// <summary>Σ CPU % ÷ 100 over the measured instances; unavailable when instances exist and none could be measured.</summary>
     public Reading<double> CpuCores => Count > 0 && CpuMeasured == 0
-        ? Reading.Missing<double>("no instance's CPU could be measured across the window")
+        ? Reading.Missing<double>("no instance's CPU could be measured, over its interval or across the window")
         : Reading.Of(Math.Round(Instances.Sum(i => i.CpuPercent.ValueOr(0)) / PercentPerCore, 2));
 
     /// <summary>One core, in percent — the unit of every CPU figure here.</summary>

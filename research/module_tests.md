@@ -1837,7 +1837,15 @@ ignored → 2 (the four-hour average, older-than-the-maximum); the boot check �
 root `status` place → `A_place_that_may_not_write…` and, through the CLI, `A_root_status_writes_no_ledger_anywhere`; an
 unprivileged `status` pointed at the state directory → `An_unprivileged_status_keeps_its_ledger…`. **Goldens:** only
 `status.json` carries an available `mcpServers` block; it gained `cpuBasis` / `cpuIntervalSeconds` per instance and
-`cpuBaseline` (the captured tree has no boot id, so `recorded: false` with that reason). The goldens are the LINUX binary's
+`cpuBaseline` (the captured tree has no boot id, so `recorded: false` with that reason). **Own code review (2026-10-07):**
+a ledger that parses with the wrong shape (a null entry, an entry with no points, a null point) was RED with
+*NullReferenceException* / *ArgumentNullException* and another schema *Expected … Window … but found Interval*; an
+interval figure without the kernel's tick rate *Expected … None … but found Interval* — green after (`WellFormed`,
+`McpCpu.Unmeasured`), held by `…An_unreadable_or_malformed_ledger_is_no_baseline_never_a_failed_sample` (5),
+`…A_ledger_of_another_schema_version_is_no_baseline`, `…Without_the_kernels_tick_rate_the_cpu_is_unmeasured_on_either_basis`;
+the read cap by `…A_full_ledger_stays_inside_its_read_cap_and_keeps_the_newest_processes` (teeth: the cap removed → red);
+a root `status` READING the timer's ledger by `Cli.Tests/McpLedgerStatusTests.A_root_status_measures_over_the_interval_from_the_timers_ledger_and_leaves_it_as_it_was`
+(teeth: the root place made "none" → red, with the two other root tests). The goldens are the LINUX binary's
 answers and the agent machine was overloaded (no WSL runs that evening): the file was edited by hand to the shape the
 serializer writes, and CI's Linux leg (`GoldenContractTests`) is what verifies it; a new normalisation rule
 (`**.cpuIntervalSeconds.value` → 1: the window is the longer of one second and the real wait) keeps a loaded runner from
