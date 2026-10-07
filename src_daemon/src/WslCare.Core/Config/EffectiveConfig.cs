@@ -61,6 +61,15 @@ public abstract record ConfigLoadResult
     /// <summary>The SHA-256 of the user layer as read; empty when there was none (plan §15q R1.7).</summary>
     public string UserLayerDigest { get; init; } = string.Empty;
 
+    /// <summary>Non-empty: the user layer was NOT read (root with no single target user) and this says why. The timer then runs
+    /// no action at all (retro gate over PR #7): a switch the person turned off in that layer is invisible to root, and a
+    /// default must never re-enable it (plan §15a #1). A button still runs — it previews and asks first.</summary>
+    public string UserLayerSkipped { get; init; } = string.Empty;
+
+    /// <summary>The FACT that the user layer was not read — what the engine's timer gate decides on; <see cref="UserLayerSkipped"/>
+    /// is only its wording (fix-PR code round: a safety decision never hangs on presentation text).</summary>
+    public bool UserLayerUnread { get; init; }
+
     public bool IsObserveOnly => this is ObserveOnly;
 
     public sealed record Valid(EffectiveConfig Config) : ConfigLoadResult

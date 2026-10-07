@@ -189,7 +189,7 @@ public abstract record HomeOwner
     public sealed record Unknown(string Reason) : HomeOwner;
 
     /// <summary>Why the user configuration layer is left out of this run; empty when it is read.</summary>
-    public string UserLayerSkipped => this is Unknown u ? $"the user layer is not read: no single target user ({u.Reason}); user-scoped actions refuse until /etc/wsl.conf names one under [user] default=" : string.Empty;
+    public string UserLayerSkipped => this is Unknown u ? $"the user layer is not read: no single target user ({u.Reason}); user-scoped actions refuse and the timer runs no action until /etc/wsl.conf names one under [user] default=" : string.Empty;
 }
 
 /// <summary>

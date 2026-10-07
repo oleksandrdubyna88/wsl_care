@@ -2445,6 +2445,20 @@ is OWED — the shared consult cap was reached. Fixed in `fix/wc-retro-pr5-colle
 measuring before the first tool is asked anything (a full run said nothing for minutes). The fix's own plan round narrowed
 the promise: the line says the run started; a slow stage may stay silent until it ends or reaches its ceiling.
 
+### 17e. Retro gate over PR #7 (E3) — coai codex, 2026-10-06
+
+Plan round session `69109113` (1/1 reviewer, `proceed`, 2 findings: 1 accepted, 1 rejected — a button's A7 preview lists
+every reclaimable entry, exactly what `builder prune -a -f` removes). Code round (4/4 reviewers, `proceed`, 3 findings: 2
+accepted, 1 rejected — `WSL_CARE_SANDBOX_PRIVILEGED` keeps the caller's own uid, so no boundary is crossed). The
+consultation for this round is OWED — the shared consult cap was reached; the question consultant had no row switched on.
+Fixed in `fix/wc-retro-pr7-engine`:
+
+| # | Defect in what shipped (still on main) | Fix |
+|---|---|---|
+| P0 | §15d #2's residual: with no single target user the user layer is not read, and the TIMER still ran machine-scoped cleanups on the defaults — a switch the person turned off there was overridden (§15a #1) | while the user layer is skipped the timer runs no action, naming why; a button still runs. This reverses §15d #2 for the timer — an owner question |
+| C0 | No module document for the daemon (`common.knowledge-base`) | [module_daemon.md](../research/module_daemon.md), a map into `architecture.md`'s epic sections, as the retro of PR #9 did for the extension; it also answers PR #5's rejected F0 |
+| C2 | A confirmed `act` said nothing while a slow action ran | one log line before the first tool is asked; a preview says nothing extra |
+
 ### 17f. Retro gate over PR #17 (E7, the daemon half) — coai codex, 2026-10-06
 
 Plan round session `2c1df544` (1/1 reviewer, `proceed`, 2 findings, both rejected: `wsl.exe -u root` asks no password by
