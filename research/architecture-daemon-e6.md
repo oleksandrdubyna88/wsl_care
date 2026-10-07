@@ -331,14 +331,17 @@ read it so), so the fix is a second member, additive, `schemaVersion` 1:
   exact full-check shape, or names one this build does not know. Their reasons — the reconciled orphans' and the unusable
   request's — begin with the prefixes `contracts/history-reasons.json` carries (`HistoryReasons.NotAFullCheckWithoutKind`,
   from the daemon's constants; the unusable prefix itself is `HistoryReasons.UnusableRequestPrefix` since the PR #16 retro
-  round G1, so `Records` depends on no engine type): the fallback a reader uses for a line WITHOUT a kind. A line with a kind is told by it alone — a reconciled full-check orphan carries `kind: collect` AND the reconcile's
+  round G1, so `Records` depends on no engine type): the fallback a reader uses for a line WITHOUT a kind. Since the PR44
+  gate round EVERY kind-less writer is covered: the swept line of a holder whose kind is not known and a request's terminal
+  line of an unknown kind begin with `its kind is not known` (`HistoryReasons.KindNotKnownPrefix`, the contract's fourth
+  prefix), and `doctor`'s `lastRun` applies the same rule — a kind-less line is a full check only when no prefix marks it. A line with a kind is told by it alone — a reconciled full-check orphan carries `kind: collect` AND the reconcile's
   prefix, and kind wins. Those three reason texts are FROZEN (`ContractFilesTests` pins them to literals): they are on disk.
 - **Unknown is never guessed** (§15o review G1 / G2, PR #16 retro round): `RunKinds.OfRequest` and `OfDetail` answer
   `collect` / `act` only for the exact spellings (a full run's detail: no `kind` member at all) and NO kind for anything
   else — a request of an unknown kind gets a line with no kind and no action rows. `runs show` answers a detail of an
   unknown kind with its state and its line, `detailState: "unreadable"` and a `detailProblem` naming the kind — never as a
   full run's detail — and `logs` reads no objects from it (its cleanups say `unreadable`). `doctor`'s `lastRun` judges the
-  newest FULL check (`kind: collect`; a kind-less older line is judged as before; an act or an unknown kind never), so
+  newest FULL check (`kind: collect`; a kind-less line only when no contract prefix marks it; an act or an unknown kind never), so
   frequent `act` lines cannot hide a timer that stopped.
 - **The wire:** `RunLine.kind` on `runs` / `runs show` — `collect`, `act`, or an unknown value AS WRITTEN (never mapped to
   either, so a reader's "`kind == collect` is a full check" stays true); absent when the line has none. The `runs-*.json`

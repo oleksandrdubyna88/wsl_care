@@ -82,7 +82,12 @@ public static class RunKinds
     public const string ActName = "act";
 
     /// <summary>A kind's name on the wire — what the history line, <c>running.json</c> and <c>runs</c>' <c>kind</c> carry.</summary>
-    public static string Name(RunKind kind) => kind == RunKind.Act ? ActName : FullCheckName;
+    public static string Name(RunKind kind) => kind switch
+    {
+        RunKind.Collect => FullCheckName,
+        RunKind.Act => ActName,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "a RunKind with no name: add it here (PR #44 gate round — never filed as collect)"),
+    };
 
     /// <summary>The kind <paramref name="name"/> spells EXACTLY; <c>null</c> for anything else (a different case included).</summary>
     public static RunKind? Known(string name) => name switch

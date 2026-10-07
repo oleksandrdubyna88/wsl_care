@@ -1396,6 +1396,30 @@ Linux flows), none failed; WSL (normal user, `nice -n 19`, a `/tmp` copy, load 1
 know (`kind` as written, `detailProblem`), which no golden scene stages. `dotnet format --verify-no-changes` and
 `plan-lifecycle.mjs` clean.
 
+**PR44 gate round** (coai session 7e2f290a over PR #44, codex + gemini; accepted findings fixed on the same branch, each red
+first on Windows Debug, then green, then its line broken and red again, restored byte-identical):
+
+| Finding | Test | Red before the fix | Teeth |
+|---|---|---|---|
+| plan round: `logs` counted a detail it could not read (an unknown kind, JSON that does not parse) as read, indistinguishable from one that held nothing | `RunKindDowngradeTests.Logs_count_a_detail_they_could_not_read_as_not_read_never_as_read` (`archive`, `not json`) | 2 — *Expected logs.DetailsRead to be 0 because a detail that is archive was opened but not read, but found 1* | the count back to "every opened detail": 2 |
+| code round (3 reviewers): `doctor` took EVERY kind-less line for a full check | `DoctorTests.A_recent_kind_less_line_that_is_not_a_full_check_never_hides_a_stale_one` (the unusable request's, the unreadable orphan's and the readable orphan's reasons) | 3 — *Expected check.State to be "problem" … (20261002T115000Z-4: interrupted, 0.2 h ago), but "ok"* | the prefix check deleted: 3 |
+| code round: every kind-less writer marked — the swept line of a holder whose kind is not known carried no prefix | `RunKindDowngradeTests.The_swept_line_of_a_holder_whose_kind_is_not_known_is_marked_not_a_full_check` (`archive`, `null`, `0`) | 3 — *Expected HistoryReasons.MarksNotAFullCheck(…) to be True because a kind-less line must be told by its reason ({… "reason":"swept: pid 4321 is gone; …"})* | the prefix dropped from `SweepDead`: 3 |
+| code round (2 reviewers): `RunKinds.Name` filed any non-act member as `collect` | `RunKindDowngradeTests.Every_run_kind_has_its_own_name_and_an_unmapped_member_throws` (over `Enum.GetValues<RunKind>()`) | 1 — *Expected a <System.ArgumentOutOfRangeException> to be thrown … but no exception was thrown* | the ternary back: 1 |
+| code round: `RecordedKind.Known` answered `collect` for an absent or unknown kind | `RunKindDowngradeTests.The_known_kind_of_an_absent_or_unknown_kind_is_refused_never_collect` | 1 — *Expected a <System.InvalidOperationException> to be thrown because absent is not collect, but no exception was thrown* | the guard removed: 1 |
+
+The new contract prefix `its kind is not known` (`HistoryReasons.KindNotKnownPrefix`, written by `RunningSweep.SweepDead` and
+`RunRequestFile.TerminalLine` for a line with no kind) is in `contracts/history-reasons.json` (regenerated with
+`WSL_CARE_WRITE_GOLDENS=1`), frozen in `ContractFilesTests.The_reasons_already_on_disk_are_frozen`, and in the extension's
+compiled copy (`src_vs_code/src/cleanup/runMatching.ts`, held equal by `runFollower.test.ts`, now 4 instances). Rejected and
+recorded: rebuilding the test JSON fixtures immutably; keeping the raw text of an object / array kind.
+
+Final after the gate round (Debug, on main 7e65e16 + both commits): Windows — Core 1401 passed / 59 skipped, Cli 274 / 2,
+Scenarios 208 / 197, none failed; the extension's `npm test` 772 passed / 1 skipped. WSL (normal user, `nice -n 19`, a `/tmp`
+copy) — Core 1457 / 3, Cli 275 / 1, Scenarios 402 / 2 and ONE failed: `StatusFlows.Status_json_over_the_captured_procfs_answers_within_the_budget_and_starts_no_slow_process`,
+the 3 s wall-clock budget (*found 5.9 s*, load 12), red again on its one re-run (*9.4 s*, load 23–28 — another process
+loaded the VM). It is the load-bound budget class this repository records on `main` too; `status` reads no `kind`. The
+first commit's WSL run (load 14–25) passed that class.
+
 ### The configuration trust (E7.S0, 2026-10-05, plan §15q R1)
 
 What a root run may take from another account's configuration layer, and what no setting may do at all

@@ -228,6 +228,65 @@ public sealed class RunKindDowngradeTests : IDisposable
         cleanup.DetailState.Should().Be("unreadable");
     }
 
+    /// <summary>PR #44 gate round, plan round: a detail logs could not read — of a kind this build does not read, or one that
+    /// does not parse — is not a detail read with nothing in it ("absent is not zero"): it counts as NOT read, and its cleanups
+    /// say <c>unreadable</c>, as <c>runs show</c> does.</summary>
+    [Theory]
+    [InlineData("archive")]
+    [InlineData("not json")]
+    public void Logs_count_a_detail_they_could_not_read_as_not_read_never_as_read(string what)
+    {
+        var at = Now.AddHours(-1);
+        var id = RunId.New(at, 33);
+        StageDetail(id, what == "archive" ? ArchiveDetail(id, at) : "{ this is not json");
+        new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, id, RunTrigger.Manual, at, at, RunOutcome.Completed, [new ActionRecord("A10", 2, 2_000) { Status = ActionStatus.Ran }], RunKind.Act) { Detail = RunDetailStore.RelativePath(id) });
+
+        var logs = RunLogs.Logs(_sandbox.Paths, _sandbox.Files, Period(), action: null, detail: true);
+
+        logs.DetailsRead.Should().Be(0, $"a detail that is {what} was opened but not read");
+        logs.DetailsNotRead.Should().Be(1);
+        logs.Cleanups.Should().ContainSingle().Which.DetailState.Should().Be("unreadable");
+    }
+
+    /// <summary>PR #44 gate round, code round: every kind-less line carries a reason the contract's prefixes mark — a dead holder
+    /// whose kind is not known included — so a reader that falls back to the prefixes never takes it for a full check.</summary>
+    [Theory]
+    [InlineData("\"archive\"")]
+    [InlineData("null")]
+    [InlineData("0")]
+    public void The_swept_line_of_a_holder_whose_kind_is_not_known_is_marked_not_a_full_check(string kindJson)
+    {
+        PlantRunning(kindJson, heartbeatAgo: TimeSpan.FromMinutes(5));
+
+        RunningSweep.Apply(_sandbox.Paths, _sandbox.Files, new FakeProcessTable(), Now, NoWait, RunId.New(Now, 1), 1).Should().BeOfType<RunningSweep.Clear>();
+
+        var line = HistoryLines().Should().ContainSingle().Subject;
+        KindOf(line).Should().BeNull();
+        HistoryReasons.MarksNotAFullCheck(line.GetProperty("reason").GetString()!).Should().BeTrue($"a kind-less line must be told by its reason ({line.GetRawText()})");
+    }
+
+    /// <summary>PR #44 gate round, code round: every <see cref="RunKind"/> has its own name, and a member nobody mapped is a
+    /// defect that throws — never silently <c>collect</c>.</summary>
+    [Fact]
+    public void Every_run_kind_has_its_own_name_and_an_unmapped_member_throws()
+    {
+        var names = Enum.GetValues<RunKind>().Select(RunKinds.Name).ToList();
+
+        names.Should().OnlyHaveUniqueItems().And.HaveCount(Enum.GetValues<RunKind>().Length);
+        Enum.GetValues<RunKind>().Should().OnlyContain(k => RunKinds.Known(RunKinds.Name(k)) == k, "each name reads back as its kind");
+        FluentActions.Invoking(() => RunKinds.Name((RunKind)99)).Should().Throw<ArgumentOutOfRangeException>("an unmapped member is never filed as collect");
+    }
+
+    /// <summary>PR #44 gate round, code round: an absent or unknown kind has no known kind — reading one is refused, never the
+    /// enum's default (<c>collect</c>).</summary>
+    [Fact]
+    public void The_known_kind_of_an_absent_or_unknown_kind_is_refused_never_collect()
+    {
+        RecordedKind.Act.Known.Should().Be(RunKind.Act);
+        FluentActions.Invoking(() => RecordedKind.Absent.Known).Should().Throw<InvalidOperationException>("absent is not collect");
+        FluentActions.Invoking(() => RecordedKind.Unknown("archive").Known).Should().Throw<InvalidOperationException>("unknown is not collect");
+    }
+
     // ---------- the wire type itself ----------
 
     [Theory]

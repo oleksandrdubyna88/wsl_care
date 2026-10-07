@@ -129,9 +129,12 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
     }
 
     /// <summary>Whether <c>lastRun</c> judges this line: a full check (<c>kind: collect</c>) — never an <c>act</c>, whose frequent
-    /// lines would hide a timer that stopped, nor a kind this build does not know. A line WITHOUT a kind (written before plan
-    /// §15o) keeps the rule it had: it is judged (PR #16 retro round, consultation 0d924598).</summary>
-    private static bool IsFullCheck(RunRecord line) => line.Kind.IsAbsent || line.Kind == RecordedKind.Collect;
+    /// lines would hide a timer that stopped, nor a kind this build does not know (PR #16 retro round, consultation 0d924598). A
+    /// line WITHOUT a kind is a full check only when its reason starts with none of the contract's prefixes — the follower's rule
+    /// (<see cref="HistoryReasons.NotAFullCheckWithoutKind"/>, PR #44 gate round): an unusable request's or a reconciled orphan's
+    /// line is not one.</summary>
+    private static bool IsFullCheck(RunRecord line) =>
+        line.Kind == RecordedKind.Collect || line.Kind.IsAbsent && !HistoryReasons.MarksNotAFullCheck(line.Reason ?? string.Empty);
 
     private DoctorCheck DetailsLost()
     {

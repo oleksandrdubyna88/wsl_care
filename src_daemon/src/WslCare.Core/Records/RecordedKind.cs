@@ -64,8 +64,10 @@ public readonly record struct RecordedKind
 
     public bool IsUnknown => _state == State.Unknown;
 
-    /// <summary>The known kind; meaningful only when <see cref="IsKnown"/>.</summary>
-    public RunKind Known => _known;
+    /// <summary>The known kind — refused for an absent or unknown one, whose backing value is the enum's default (<c>collect</c>)
+    /// and must never be read as a kind (PR #44 gate round). Ask <see cref="IsKnown"/> first, or compare with
+    /// <see cref="Collect"/> / <see cref="Act"/>.</summary>
+    public RunKind Known => IsKnown ? _known : throw new InvalidOperationException($"the kind is {this}: it has no known kind");
 
     /// <summary>The name of a known kind, the value of an unknown one as written; empty when absent.</summary>
     public string Text => _text ?? string.Empty;

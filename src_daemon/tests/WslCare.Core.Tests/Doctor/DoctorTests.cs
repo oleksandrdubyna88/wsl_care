@@ -108,6 +108,24 @@ public sealed class DoctorTests : IDisposable
         (await RunAsync(Runner())).Checks.Single(c => c.Id == "lastRun").State.Should().Be(expected, $"kind {kindJson ?? "missing"}");
     }
 
+    /// <summary>PR #44 gate round, code round (3 reviewers): a recent kind-less line that is NOT a full check — an unusable
+    /// request's, a reconciled orphan's of an unreadable or unknown detail — never stands in for the stale full check: a kind-less
+    /// line counts only when its reason starts with none of the contract's prefixes.</summary>
+    [Theory]
+    [InlineData(HistoryReasons.UnusableRequestPrefix)]
+    [InlineData(RunReconcile.UnreadableDetailReason)]
+    [InlineData(RunReconcile.InterruptedReason)]
+    public async Task A_recent_kind_less_line_that_is_not_a_full_check_never_hides_a_stale_one(string reason)
+    {
+        Installed(lastRun: Now.AddHours(-6), covered: Now.AddMinutes(-3));
+        File.AppendAllText(RunRecordWriter.HistoryFileIn(Paths), $$"""{"schemaVersion":1,"runId":"20261002T115000Z-4","trigger":"manual","startedAt":"2026-10-02T11:50:00+00:00","endedAt":"2026-10-02T11:50:00+00:00","outcome":"interrupted","actions":[],"reason":"{{reason}} (test)"}""" + "\n");
+
+        var check = (await RunAsync(Runner())).Checks.Single(c => c.Id == "lastRun");
+
+        check.State.Should().Be(DoctorRun.Problem, $"the newest FULL check is 6 h old ({check.Detail})");
+        check.Detail.Should().Contain(RunId.New(Now.AddHours(-6), 1).Text);
+    }
+
     [Fact]
     public async Task A_fresh_machine_says_nothing_was_ever_recorded_and_writes_nothing()
     {

@@ -81,9 +81,12 @@ public abstract record RunningSweep
         // file.Actions is never null here: a Dead status comes only from RunningState.Read, which refuses a file without it
         // (`Actions: not null`), so an older or broken file is Unreadable and never reaches this sweep (§15o review G4).
         var actions = file.Actions.Where(a => a != RunKinds.FullCheckName).Select(a => new ActionRecord(a, 0, 0) { Status = ActionStatus.Interrupted });
-        var line = new RunRecord(Core.SchemaVersion.Current, file.RunId, file.Trigger, file.StartedAt, file.HeartbeatAt, RunOutcome.Interrupted, [.. actions], file.KindOrMarker())
+        var kind = file.KindOrMarker();
+        var reason = $"{(stopped.Length > 0 ? stopped + "; swept" : "swept")}: {dead.Why}; it was on {(file.Current.Length > 0 ? file.Current : "no action yet")}, last heartbeat {file.HeartbeatAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z";
+        // PR #44 gate round: a line with no kind is marked by its reason, so no reader falls back to calling it a full check.
+        var line = new RunRecord(Core.SchemaVersion.Current, file.RunId, file.Trigger, file.StartedAt, file.HeartbeatAt, RunOutcome.Interrupted, [.. actions], kind)
         {
-            Reason = $"{(stopped.Length > 0 ? stopped + "; swept" : "swept")}: {dead.Why}; it was on {(file.Current.Length > 0 ? file.Current : "no action yet")}, last heartbeat {file.HeartbeatAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z",
+            Reason = kind.IsAbsent ? HistoryReasons.KindNotKnown(reason) : reason,
         };
         new RunRecordWriter(paths, files).Append(line);
         RunningState.Remove(paths, files);

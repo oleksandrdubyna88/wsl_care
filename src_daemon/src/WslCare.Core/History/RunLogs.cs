@@ -62,7 +62,9 @@ public static class RunLogs
         var lines = runs.Select(r => Line(Narrowed(r, action), StateOf(paths, files, r))).ToList();
         var withCleanup = runs.Select(r => Narrowed(r, action)).Where(IsCleanup).ToList();
         var read = DetailsToRead(withCleanup, detail, action);
-        var cleanups = withCleanup.SelectMany(r => Cleanups(paths, files, r, read.Contains(r.RunId))).ToList();
+        var opened = withCleanup.Select(r => (Run: r, Detail: read.Contains(r.RunId) ? Outcomes(paths, files, r) : NotOpened)).ToList();
+        var cleanups = opened.SelectMany(o => Cleanups(o.Run, o.Detail)).ToList();
+        var detailsRead = opened.Count(o => o.Detail.State is not (NotRead or Unreadable));
         var freed = lines.Where(l => l.FreedBytes > 0).ToList();
         return new LogsReport(
             SchemaVersion.Current,
@@ -79,8 +81,8 @@ public static class RunLogs
             history.Unparseable,
             Problem(history))
         {
-            DetailsRead = read.Count,
-            DetailsNotRead = withCleanup.Count - read.Count,
+            DetailsRead = detailsRead,
+            DetailsNotRead = withCleanup.Count - detailsRead,
         };
     }
 
@@ -180,20 +182,30 @@ public static class RunLogs
             return new MetricExtremes(reader.Name, reader.Unit, points.Count, points.MaxBy(p => p.Value), points.MinBy(p => p.Value));
         })];
 
+    /// <summary>A run's detail as <c>logs</c> read it: its state — <c>present</c> only when it was READ (it parsed and is of a kind
+    /// this build reads), <c>unreadable</c> when it was opened and could not be (an I/O error, JSON that does not parse, a kind this
+    /// build does not read), <c>lost</c>, <c>none</c>, or <see cref="NotRead"/> when it was not opened — and its outcomes. An
+    /// unreadable detail is never a detail read with nothing in it, and counts as NOT read (PR #44 gate round).</summary>
+    private sealed record DetailOutcomes(string State, IReadOnlyList<ActionOutcome> Outcomes);
+
+    private const string Present = "present";
+
+    private static readonly DetailOutcomes NotOpened = new(NotRead, []);
+
+    private const string Unreadable = "unreadable";
+
+    private static readonly DetailOutcomes UnreadableDetail = new(Unreadable, []);
+
     /// <summary>Every action that ACTED (ran, or failed) and removed (or freed) something in <paramref name="run"/>, its failure
-    /// beside its figures — and, when <paramref name="readDetail"/>, its objects from the run's detail (state <c>notRead</c>
-    /// otherwise).</summary>
-    private static IEnumerable<CleanupDetail> Cleanups(IHostPaths paths, IFileSystem files, RunRecord run, bool readDetail)
-    {
-        var (state, outcomes) = readDetail ? Outcomes(paths, files, run) : (NotRead, []);
-        return run.Actions.Where(Removed).Select(a => Cleanup(run, a, state, outcomes.FirstOrDefault(o => o.Id == a.Id)));
-    }
+    /// beside its figures — and its objects from the run's detail when that was read.</summary>
+    private static IEnumerable<CleanupDetail> Cleanups(RunRecord run, DetailOutcomes detail) =>
+        run.Actions.Where(Removed).Select(a => Cleanup(run, a, detail.State, detail.Outcomes.FirstOrDefault(o => o.Id == a.Id)));
 
     /// <summary>One cleanup: its history line's figures and failure, and — when its detail was read and holds its outcome — the
     /// objects it removed and kept (a detail read without its outcome is <c>unreadable</c>).</summary>
     private static CleanupDetail Cleanup(RunRecord run, ActionRecord action, string state, ActionOutcome? outcome) => outcome is { Run: { } done }
         ? Head(run, action, state) with { FreedBasis = done.FreedBasis, Removed = OrEmpty(done.Removed), NotRemoved = OrEmpty(done.NotRemoved), Notes = OrEmpty(done.Notes) }
-        : Head(run, action, state == "present" ? "unreadable" : state);
+        : Head(run, action, state == Present ? "unreadable" : state);
 
     private static CleanupDetail Head(RunRecord run, ActionRecord action, string state) =>
         new(run.RunId.Text, run.StartedAt, Camel(run.Trigger.ToString()), action.Id, action.Status ?? string.Empty, action.Count, action.FreedBytes, null, state, [], [], []) { Failure = action.Failure };
@@ -203,35 +215,35 @@ public static class RunLogs
     internal static IReadOnlyList<T> OrEmpty<T>(IReadOnlyList<T>? list) => list ?? [];
 
     /// <summary>The action outcomes the run's detail holds — an <c>act</c>'s, or a full run's timer pass — and the detail's state.</summary>
-    private static (string State, IReadOnlyList<ActionOutcome> Outcomes) Outcomes(IHostPaths paths, IFileSystem files, RunRecord run)
+    private static DetailOutcomes Outcomes(IHostPaths paths, IFileSystem files, RunRecord run)
     {
         if (run.DetailPath.Length == 0)
         {
-            return ("none", []);
+            return new("none", []);
         }
 
         return files.ReadFile(RunDetailStore.Absolute(paths, run.DetailPath), RootFileCaps.History) switch
         {
-            FileReadResult.Content content => ("present", Parse(content.Bytes)),
-            FileReadResult.Missing => ("lost", []),
-            _ => ("unreadable", []),
+            FileReadResult.Content content => Parse(content.Bytes),
+            FileReadResult.Missing => new("lost", []),
+            _ => UnreadableDetail,
         };
     }
 
-    private static IReadOnlyList<ActionOutcome> Parse(byte[] json)
+    private static DetailOutcomes Parse(byte[] json)
     {
         try
         {
             return KindOf(json) switch
             {
-                DetailKind.Act => ActOutcomes(json),
-                DetailKind.FullRun => TimerPassOutcomes(json),
-                _ => [],
+                DetailKind.Act => new(Present, ActOutcomes(json)),
+                DetailKind.FullRun => new(Present, TimerPassOutcomes(json)),
+                _ => UnreadableDetail,
             };
         }
         catch (JsonException)
         {
-            return [];
+            return UnreadableDetail;
         }
     }
 
