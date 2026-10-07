@@ -2181,7 +2181,7 @@ test was changed); WSL (normal user, `nice -n 19`, load 4–6) — Core 1475 / 3
 ### The AI-session archive: catalogue blocks, keys, base folder (E9.S0, 2026-10-06, plan §15r)
 
 What the catalogue lets the archive move, the archive's keys and their coupled rules, and the base folder rules with
-`archive check-base` (`research/architecture.md` § *The AI-session archive*). The tests:
+`archive check-base` (`research/module_archive.md`). The tests:
 
 | Guarantee | Tests |
 |---|---|
@@ -2206,7 +2206,7 @@ the base not judged — 1; `check-base` as root not refused — 1.
 
 ### Selection and archive preview (E9.S1, 2026-10-06, plan §15r D2.1–D2.2, D10)
 
-What the archive would move and why the rest stays (`research/architecture.md` § *Selection and `archive preview`*). The tests:
+What the archive would move and why the rest stays (`research/module_archive.md` § *Selection and `archive preview`*). The tests:
 
 | Guarantee | Tests |
 |---|---|
@@ -2327,7 +2327,7 @@ ignored — 1; the listing budget not derived — 3; companions walked with a fr
 
 ### The archive's seam (E9.S2a, 2026-10-06, plan §15r R1, review M12, risk consult 9/9.2)
 
-The only way the archive touches a file (`research/architecture.md` § *The archive's seam*). The tests:
+The only way the archive touches a file (`research/module_archive.md` § *The archive's seam*). The tests:
 
 | Guarantee | Tests |
 |---|---|

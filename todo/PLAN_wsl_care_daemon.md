@@ -3101,7 +3101,7 @@ archive*. **Deviations from the text above:**
 #### E9.S1 as built (2026-10-06)
 
 Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
-§ *Selection and archive preview (E9.S1)*, the design `research/architecture.md` § *Selection and `archive preview`*.
+§ *Selection and archive preview (E9.S1)*, the design `research/module_archive.md` § *Selection and `archive preview`*.
 **Deviations from the text above:**
 
 - **The effective age subtracts the removal's whole days too:** max(1, min(`olderThanDays`, retention − `marginDays` −
@@ -3147,7 +3147,7 @@ what did not:
 #### E9.S2a as built (2026-10-06)
 
 Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
-§ *The archive's seam (E9.S2a)*, the design `research/architecture.md` § *The archive's seam*. **Deviations from the text above:**
+§ *The archive's seam (E9.S2a)*, the design `research/module_archive.md` § *The archive's seam*. **Deviations from the text above:**
 
 - **The seam is its own interface, `IArchiveFiles`**, implemented by `PhysicalFileSystem` in a partial file
   (`Files/PhysicalFileSystem.Archive.cs`), with the natives in `Files/BeneathWrites.cs` — not new members of `IFileSystem` (no

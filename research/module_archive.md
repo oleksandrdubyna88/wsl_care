@@ -6,7 +6,7 @@
 > the Windows open-file check (E9.S5). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
 > red runs and their break-it checks: [module_tests.md](module_tests.md), the E9 sections (from *The AI-session archive:
 > catalogue blocks, keys, base folder* to *The E9.S2a gate round*). The longer history of each
-> story: [architecture.md](architecture.md) § *The AI-session archive*.
+> story: *Story history* below.
 
 ## Purpose
 
@@ -147,3 +147,188 @@ Both built verbs run as the user; root is refused with exit 81.
 - **Configuration:** the `archive.*` keys (`Config/ConfigKeys.cs`, `Config/ConfigKeys.Numbers.cs`) and their coupled rules
   (`Config/NumberRules.cs` → `ArchiveRules`).
 - **Other modules:** the AI-agent catalogue and walk (E7), the deletion policy (E3), `TreeWalk` (`TreeRules.ListFiles`).
+
+## Story history (moved from architecture.md, 2026-10-07)
+
+What each story built and changed, in the order it landed; plan §15r has the decisions and the review tables.
+
+### The archive's catalogue blocks, keys and base folder (E9.S0, 2026-10-06, plan §15r)
+
+E9.S0 lands what everything later in E9 reads: what the catalogue says the archive may move, the archive's keys and the rules
+between them, and where the archive may live. Nothing is moved yet (the move is E9.S2a/S2b; A13 in the engine E9.S4).
+
+**The catalogue's `archive` blocks** (`Agents/agents.json`, `Agents/AgentArchive.cs`). An entry may carry `archive: { units,
+neverMove, retention }`: a `session` unit is the entry's own session layout with its companions — never redefined (§15q D2) —
+and a `file` unit is a glob of its own, each file aged on its own last write (Antigravity's `log/cli-*.log`); `skipWhilePresent`
+names companions whose presence keeps a unit in place (Antigravity's `{dir}/{id}.db-wal`); `neverMove` the archive plan's
+"never moved" column (`memory` for every agent whatever a block says); `retention` where the agent keeps its own deletion
+(`claude-settings`, 30 days by default) or `none` with what was checked. Claude Code, Codex, Gemini CLI and Antigravity carry
+one (`AgentCatalogue.ArchivableIds`); the one-time run's Windows Antigravity layout (`%USERPROFILE%\.gemini\antigravity-cli`) and
+the conversation's SQLite sidecars joined the catalogue here. `AgentArchiveRules.Problems` holds the blocks sound — no unit's
+literal name matches a never-move name, the kinds and sources are the closed sets — and `AgentArchiveRules.IsNeverMoved` is the
+check the selection (E9.S1) applies to every concrete path.
+
+**The keys** (`Config/ConfigKeys.cs`, `Config/ConfigKeys.Numbers.cs` → `Archive`): the ages (`olderThanDays` 14,
+`removeAfterHours` 24, `marginDays` 7, `agentRetentionDays` 30, `urgentWithinDays` 7), `minFreeGb`, `copyBufferKib` — the
+user's; the budget, the ceilings and the caps of what root reads back (`runBudgetMinutes`, `finishGraceMinutes`,
+`minRunMinutes`, `previewTimeoutSeconds`, `reachabilitySeconds`, `progressSilenceSeconds`, `restoreLimitMinutes`,
+`maxSessionsPerRun`, `maxIndexBytes`, `maxStateFileBytes`, `childOutputCapBytes`, `progressLineMaxBytes`, `inUseScanSeconds`) —
+machine-layer only. `archive.agents` is a closed list over the archivable ids (safe direction: a subset). The coupled rules
+(`Config/NumberRules.cs` → `ArchiveRules`, held per layer like every rule): ⌈removeAfterHours / 24⌉ + olderThanDays +
+marginDays ≤ agentRetentionDays (1 + 14 + 7 ≤ 30); urgentWithinDays ≤ marginDays; noProgressMinutes × 60 ≥
+progressSilenceSeconds + 60 s; (runBudgetMinutes + finishGraceMinutes) × 60 + 60 s ≤ commands.maxTimeoutHours × 3600;
+maxStateFileBytes ≥ 600 B × maxSessionsPerRun.
+
+**`archive.baseFolder` is an ordinary key** (was machine-only, §15q R1.3): root never opens, writes or removes anything under it
+— the target user's own process moves (§15r D1) — so the user layer may name it. Its shape (`TextRule.AbsolutePathOrEmpty`) now
+takes a Windows share too (`\\server\share\…`, never a device path); its filesystem rules are `Archive/BaseFolderRules.cs`.
+
+```mermaid
+flowchart TD
+    given["archive check-base &lt;path&gt; / config set archive.baseFolder<br/>(as the user; root refused, exit 81)"] --> shape{"shape:<br/>/…, X:\…, \\server\share\…"}
+    shape -- distro --> table["/proc/self/mountinfo<br/>(MountTable, shared with the system-drive lookup)"]
+    table --> drive{"X:\… ?"}
+    drive -- yes --> place["placed at the drvfs mount of X:<br/>(drive-not-mounted otherwise)"]
+    drive -- no --> place
+    shape -- windows --> wplace["the drive's kind and format,<br/>or the share"]
+    place --> rules
+    wplace --> rules
+    rules["in order: missing (never created) · not a folder · link on the way · too broad (fs / drive / share root, the home) ·<br/>overlap (agent folders, ~/git, Claude temp, the temp folder, cleanup folders, wsl-care's own) ·<br/>volatile filesystem (tmpfs, ramfs, …, a RAM disk) · not writable (a probe that never creates the folder)"]
+    rules -- accepted --> warn["warnings: other accounts may read it (modes on Linux, not on drvfs; ACLs on Windows),<br/>the distribution's own disk · notes: FAT's 2-s times, drvfs modes"]
+    rules -- refused --> answer["accepted: false, rule, refusal (exit 0)"]
+```
+
+- **`Files/MountTable.cs`** is the ONE mountinfo parser (extracted from `WindowsSystemDrive`, which now asks
+  `MountTable.IsWholeDrive(entry, 'C')`): the escapes decoded once, `Holding` the deepest mount a path lies on,
+  `IsWholeDrive` a drvfs mount of a whole drive letter.
+- **`ExtraAgentRules.ProtectedPlaces`** is the shared list a manual agent's folder and the base both stay clear of; the base adds
+  every agent root of its side and the temporary folder.
+- **`IFileSystem.ProbeExistingWriteAccess`** writes the probe file inside an EXISTING folder only (`ProbeWriteAccess` creates a
+  missing one).
+- **`Archive/WindowsAccess.cs`** reads a folder's access rules on Windows and names Everyone / Users / Authenticated Users when
+  they may read it.
+- **The answer** is `BaseFolderReport` (`contracts/golden/head/archive-check-base.json`), the capability `archive.checkBase`.
+  Its mount is reported, not yet recorded: `base.json` and its check at every run are E9.S2b's.
+
+**The E9.S0 review round (2026-10-06, plan §15r *E9.S0 review round*)** widened the base rules where a spelling could hide
+what a folder IS:
+
+- **A device's folders are judged under its canonical mount** (`Archive/BaseFolderPlacement.cs`): a bind mount (root ≠ `/`) or a
+  second mount of a filesystem is judged as the folder it really is under that device's whole mount — the distribution's `/`
+  when it is that disk — so `/mnt/bound` bound from `~/.claude` is `~/.claude`; a device mounted whole nowhere is refused. The
+  distribution's own disk is the root mount's DEVICE, not the mount point `/`.
+- **A drvfs base is a Windows folder too** (`Archive/WindowsProfilePlaces.cs`): spelt as Windows spells it (the mount's `path=`)
+  and judged, case-blind, against the Windows profile's places — from the profile the last full run's clock probe found
+  (`BaseFolderContext.WindowsProfile`) — and against any profile's `AppData` and agent folders whoever's they are.
+- **On Windows a share back to this machine is refused by name** (`WindowsShares`: `\\wsl$`, `\\wsl.localhost`, loopback, this
+  machine's name, `X$` / `ADMIN$` / `IPC$`), and the overlap rule compares the file system's IDENTITY of the base and every folder
+  above it with each protected place's (`Archive/WindowsIdentity.cs`: volume serial + file index, through an attributes-only
+  handle that follows no reparse point).
+- **Owners on the way are said** (a folder owned by an account other than root and this one), and `config set
+  archive.baseFolder` as root is refused (81) before anything is looked at.
+- **Every rule answers a closed `RuleVerdict`** (`Holds` / `Refuses(rule, why)`, `Archive/RuleVerdict.cs`) — the base rules and
+  the selection's keepers alike — and `BaseFolderReport.Mount` is never null (`BaseMountReport.Unknown`).
+- **The judge is advice at the moment it answers:** a run binds itself to the base through its own no-follow descriptor chain
+  with the recorded mount compared on the opened descriptor (E9.S2a/S2b), never through `Judge`'s verdict.
+- **The keys:** `archive.minRunMinutes` ≤ `archive.runBudgetMinutes`; `archive.restoreLimitMinutes` 1–59 (59); the in-flight
+  file bounded by the WAITING sessions — `maxStateFileBytes` ≥ 600 B × `maxSessionsPerRun` × (⌈`removeAfterHours` /
+  `timer.periodHours`⌉ + 1), each file's hash and archived path in the index only — with `maxSessionsPerRun` 1 000 and
+  `maxStateFileBytes` 8 MiB; an invalid user-layer `archive.baseFolder` is a notice, never observe-only.
+- **Manual agents may be archived** (`Archive/ArchiveTargets.cs`, off by default): `archive.agents` takes `manual:<name>`; a named
+  manual agent with a `sessionGlob` is judged by `ExtraAgentRules` at every selection and archived by its own glob under its first
+  data folder.
+
+#### Selection and `archive preview` (E9.S1, 2026-10-06, plan §15r D2.1–D2.2, D10)
+
+`archive preview [--agent <id>] [--json]` answers what the archive WOULD move on this side now, per agent, as the user (root is
+refused with 81, like `check-base`) — from listings and stats alone. Not one session file is opened (the inotify proof of E7.S1,
+carried over), nothing is written; the agent's own retention setting is the one file read.
+
+```mermaid
+flowchart TD
+    verb["archive preview [--agent a] [--json]<br/>(as the user; root refused, exit 81)"] --> inuse["InUse.Scan: /proc/&lt;pid&gt;/fd/* read as links (never followed),<br/>a Claude Code process's cwd → its project folder name<br/>(bounded by archive.inUseScanSeconds; on Windows not checked until E9.S5)"]
+    verb --> agents["the agents of archive.agents (or the one named)<br/>that carry an archive block"]
+    agents --> retention["AgentRetentionReader: Claude Code's cleanupPeriodDays —<br/>managed settings → CLAUDE_CONFIG_DIR/settings.json → ~/.claude/settings.json<br/>→ the documented default (30); 0 or an unusable value warned"]
+    retention --> age["effective age = max(1, min(olderThanDays,<br/>retention − marginDays − ⌈removeAfterHours/24⌉))"]
+    agents --> list["the layout listed (SessionGlob over the agent walk's rules:<br/>no link followed, memory never entered, the device kept)"]
+    list --> unit["one unit = the session file + its companions ({dir}, {id} expanded):<br/>a file by stat, a folder by TreeWalk with ListFiles (each file's length and last write)"]
+    unit --> newest["the NEWEST last write over all its files → its age and its month (yyyy/MM in the side's zone)"]
+    age --> due{"older than the effective age?"}
+    newest --> due
+    due -- no --> younger["counted younger"]
+    due -- yes --> keepers{"keepers, in order: never-moved (memory.jsonl refused whole) · name<br/>(NTFS-illegal, reserved, trailing dot/space, invalid UTF-8, case-only twins) ·<br/>not-whole · may-be-open (a -wal present) · in-use (an open descriptor) ·<br/>agent-working-here (Claude Code's cwd is its project)"}
+    inuse --> keepers
+    keepers -- kept --> skipped["skipped, by rule (count + the first with its sentence)"]
+    keepers -- none --> taken["due, oldest first (the first preview.maxItems listed)"]
+    list --> quarantine["files carrying .wsl-care-q- counted (resolved by S2b's reconcile)"]
+```
+
+- **`Archive/Selection.cs`** is the selection the run (E9.S2b) will move by: `Select(SelectionInput)` → per agent an
+  `AgentSelection` (`Due`, `Skipped` with their `SkipRule`, `Younger`, `Quarantined`, the listing's `Note`). The keepers are an
+  ordered array of checks (complexity ≤ 4); a unit is moved whole or not at all, so a companion folder the walk could not see
+  whole (cut, unreadable, holding `memory` or another filesystem) keeps it as `not-whole`.
+- **`Files/TreeWalk.cs` widened, not copied:** `TreeRules.ListFiles` makes the same walk return each counted file
+  (`TreeFile(Path, Length, LastWriteUtc)` in `TreeMeasure.Measured.Listed`); every other caller's answer is unchanged.
+- **`Archive/InUse.cs`** reads `/proc` as the user (only this account's `fd` folders open — and the agents are this account's);
+  the Claude Code attribution reuses `AgentOrphans.AgentOfCommandLine` (extracted from `AgentOf`). On Windows it answers
+  "not checked" with `NotOnWindowsYet` — the Restart Manager query is E9.S5.
+- **`Archive/ArchiveNames.cs`**: the name rules (`Problem`, `CaseCollision`), Claude's project-folder encoding
+  (`ClaudeProjectOf`), the quarantine mark, and the side folder (`SideName`: `windows-<host>`, `wsl-<host>-<distro>`, §15r D4).
+- **`Archive/AgentRetentionReader.cs`** reads one key through the bounded user-file reader (`userFiles.maxJsonBytes`).
+- **The answer** is `ArchivePreviewReport` (`contracts/golden/head/archive-preview.json`): the side, its side folder, the zone,
+  the configured base (empty is fine — the preview still answers), what the open-file check saw, and per agent its retention,
+  its effective age, due units / files / bytes, the oldest due write, the skip counts, the quarantined count and the warnings.
+  The capability is `archive.preview`. Its listing budget is DERIVED from the ceiling it runs under — three quarters of
+  `archive.previewTimeoutSeconds` — and the open-file scan, the layouts and every companion walk share it (E9.S1 review round
+  m1; the first build coupled it to `agents.measureBudgetSeconds` by a rule that made the bottom of its own range invalid).
+  Only a COMPLETE open-file scan lets a due unit move (`inUse.state`: `complete` / `cut` / `not-checked` — on Windows every
+  due unit stays until E9.S5); an agent asked for by `--agent` that `archive.agents` does not hold is previewed with
+  `enabled: false`; Claude Code is not listed while `CLAUDE_CONFIG_DIR` names another folder than `~/.claude`; a session whose
+  id is empty or a dot name is refused (its companions would name the folder around it); the agents' own retention is a closed
+  `Known(days)` / `Unknown(why)`, unknown warned (E9.S1 review round, plan §15r).
+
+#### The archive's seam (E9.S2a, 2026-10-06, plan §15r R1, review M12, risk consult 9/9.2)
+
+E9.S2a lands the ONLY way the archive touches a file — `Files/IArchiveFiles.cs`, implemented by `PhysicalFileSystem`
+(`Files/PhysicalFileSystem.Archive.cs`) with its natives in `Files/BeneathWrites.cs`. Nothing moves yet: E9.S2b's protocol
+(`archive run`) is the first caller.
+
+```mermaid
+flowchart LR
+    subgraph seam["IArchiveFiles (the seam)"]
+        open["OpenSource — from the layout root's descriptor, O_NOFOLLOW each level;<br/>a regular file of THIS account with ONE link (a FIFO never waited on)"]
+        tree["OpenFolderBeneath — each level mkdirat 0700 from its parent's descriptor,<br/>never a link; a new level's entry fsynced in its parent<br/>(Windows: each level HELD, never sharing delete; FlushFileBuffers on the held parent)"]
+        create["CreateExclusive — O_CREAT|O_EXCL|O_NOFOLLOW 0600 (Windows CREATE_NEW, write-through);<br/>an existing name is never replaced"]
+        back["ReadBack — hashed again (Windows past the cache, FILE_FLAG_NO_BUFFERING)"]
+        rename["QuarantineRename / RenameBack — renameat2(RENAME_NOREPLACE)<br/>(Windows: FileRenameInfo without replace, through a checked handle): an agent's file at the name is KEPT"]
+        remove["RemoveVerified — write lease (no other open anywhere), hash = the archived copy's,<br/>lease still whole, same inode → unlinkat (Windows: one DELETE|READ handle, share READ,<br/>the delete disposition set only after equality)"]
+        empty["RemoveEmptyFolder — never recursive"]
+    end
+    policy["DeletionPolicy on the REAL paths — permits: ArchiveQuarantine (to/from the mark, same folder),<br/>ArchiveRemoval (a mark-named file with its copy outside every protected place; an empty folder<br/>strictly inside, never the agent's folder), RestoreIntoAgentFolder (create only); memory never"]
+    policy --> seam
+    fault["fault seam: Action&lt;ArchiveFileStep, string&gt; between every primitive step"] -.-> seam
+```
+
+- **The policy** (`Files/Deletion/DeletionPolicy.cs`) gained `FileOperation.Create`, three permits and the rule `ArchiveShape`;
+  a plain delete under an agent's folder stays refused by every permit, and `projects/*/memory` by all of them. The quarantine
+  mark (`.wsl-care-q-`) lives on the policy; `ArchiveNames.QuarantineMark` reads it.
+- **Why a write lease** (risk consult 9/9.2): a `/proc/*/fd` scan does not see a child that inherited a writer by fork after the
+  scan's snapshot, nor a writable shared mapping whose descriptor was closed; the kernel grants `F_SETLEASE F_WRLCK` only when no
+  other open file description of the inode exists — those included. A lease break is routed to SIGURG (ignored), never SIGIO; the
+  lease must still be whole after the hash. Residual: a NEW opener of the quarantine name after the final check, with the
+  remover stalled for `fs.lease-break-time`.
+- **The scan** (`ArchitectureTests.ArchiveSeam.cs`): outside the seam's files (`PhysicalFileSystem.cs`, its archive halves,
+  `BeneathWrites.cs`, `RegularFiles.cs`) no `File.Copy` / `File.Replace`, no `FileInfo` `CopyTo` / `Replace`, no
+  `FileOptions.DeleteOnClose`, no delete disposition, and no native rename / unlink / link / rmdir / move entry point — each
+  pattern with a planted companion.
+- **The gate round (coai code round, plan §15r *E9.S2a gate round*)** closed the Windows path windows: every Windows verb that
+  opens by path (the source, the removal, the rename, the empty-folder removal) asks the open handle where it really is
+  (`GetFinalPathNameByHandleW`) and acts only when that is where its path says — a folder swapped for a junction after the
+  reparse check makes it refuse, never act elsewhere; the rename and the folder removal go through that handle
+  (`FileRenameInfo` without replace, the delete disposition) instead of `MoveFileExW` / `Directory.Delete`. The destination's
+  levels are HELD by handles that never share delete (neither the folder nor its parents can then be renamed — measured), a new
+  level is flushed in its held parent and `FlushFolder` flushes the held handle. A Windows source must be owned by this
+  account's SID. `BeneathFolder` became abstract (any `IArchiveFiles` can make one; `PhysicalFileSystem` refuses one it did not
+  open), and the source rules moved to the pure `Files/ArchiveSourceRules.cs`. Deep-dive: [module_archive.md](module_archive.md).
+- **The own review round** (plan §15r *E9.S2a own review round*): every act follows the judged REAL path; the seam hashes the
+  archived copy itself before a removal; details in [module_archive.md](module_archive.md).
