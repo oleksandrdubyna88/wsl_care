@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
@@ -12,9 +13,15 @@ namespace WslCare.Core.Records;
 /// reconcile to write the <c>interrupted</c> history line of a detail that has none (plan §15b #1).</summary>
 public sealed record RunDetailHead(int SchemaVersion, RunId RunId, RunTrigger Trigger, DateTimeOffset StartedAt, DateTimeOffset EndedAt, bool DryRun)
 {
-    /// <summary>The detail's own <c>kind</c> — <c>act</c> in an act's detail, absent in a full run's (read through
-    /// <see cref="RunKinds.OfDetailKind"/>, plan §15o).</summary>
-    public string? Kind { get; init; }
+    /// <summary>The detail's own <c>kind</c> member as it is on disk — <c>act</c> in an act's detail, absent in a full run's, and
+    /// unknown for anything else, an explicit <c>null</c> included (PR #16 retro round G0: only a MISSING member is a full run's).
+    /// Read through <see cref="Detail"/>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public RecordedKind Kind { get; init; }
+
+    /// <summary>What the detail is (<see cref="RunKinds.OfDetail"/>, plan §15o).</summary>
+    [JsonIgnore]
+    public DetailKind Detail => RunKinds.OfDetail(Kind);
 }
 
 /// <summary>One detail file on disk: its path relative to the state directory, and the run it names.</summary>

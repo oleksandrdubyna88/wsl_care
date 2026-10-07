@@ -46,7 +46,7 @@ public sealed record RunRequestFile(int SchemaVersion, RunId RunId, string Kind,
     {
         var kind = RunKinds.OfRequest(Kind);
         IReadOnlyList<ActionRecord> actions = kind == RunKind.Act ? [.. Actions.Select(a => new ActionRecord(a, 0, 0) { Status = status })] : [];
-        return new RunRecord(Core.SchemaVersion.Current, RunId, Trigger, startedAt, endedAt, outcome, actions, kind) { Reason = reason };
+        return new RunRecord(Core.SchemaVersion.Current, RunId, Trigger, startedAt, endedAt, outcome, actions, kind) { Reason = kind is null ? HistoryReasons.KindNotKnown(reason) : reason };
     }
 }
 

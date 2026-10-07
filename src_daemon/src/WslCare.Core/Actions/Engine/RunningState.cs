@@ -19,7 +19,8 @@ namespace WslCare.Core.Actions.Engine;
 /// a reused pid has a different start, so it is <i>mismatched</i>, never mistaken for the run.</param>
 /// <param name="Kind">What the run is (plan §15o) — the timer's pass holds the registry's ids like an <c>act --timer</c> of the
 /// same ids, so only this tells the sweep of a dead holder which it was. POSITIONAL so every writer decides; absent from older
-/// writers (read through <see cref="KindOrMarker"/>).</param>
+/// writers, and UNKNOWN — never unreadable — for a value this build does not know (PR #16 retro round). Read through
+/// <see cref="KindOrMarker"/>.</param>
 public sealed record RunningFile(
     int SchemaVersion,
     RunId RunId,
@@ -30,15 +31,20 @@ public sealed record RunningFile(
     DateTimeOffset ProcessStartUtc,
     DateTimeOffset StartedAt,
     DateTimeOffset HeartbeatAt,
-    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] RunKind? Kind)
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] RecordedKind Kind)
 {
-    /// <summary>The run's kind — or, for a file from an older writer, <c>collect</c> for the EXACT shape a full check writes
-    /// while it measures (its one action and its step both <see cref="RunKinds.FullCheckName"/>; the engine writes registry ids
-    /// and starts its step empty), else unknown (plan §15o, coai plan round #2). Null-safe as written: the one reader
-    /// (<c>RunningState.Read</c>) admits no file without <c>actions</c> and <c>current</c>, and a list pattern is simply
-    /// false on a null list (§15o review G4).</summary>
-    public RunKind? KindOrMarker() =>
-        Kind ?? (Actions is [RunKinds.FullCheckName] && Current == RunKinds.FullCheckName ? RunKind.Collect : null);
+    /// <summary>The kind the swept line of this file's run carries: its own kind when known; for a file WITHOUT the member (an
+    /// older writer) <c>collect</c> in the EXACT shape a full check writes while it measures (its one action and its step both
+    /// <see cref="RunKinds.FullCheckName"/>; the engine writes registry ids and starts its step empty), else none; and none for a
+    /// kind this build does not know — the inference is for a MISSING member only, never for an unknown value (PR #16 retro
+    /// round, consultation 0d924598), and an unknown value is never written back. Null-safe as written: the one reader
+    /// (<c>RunningState.Read</c>) admits no file without <c>actions</c> and <c>current</c>, and a list pattern is simply false
+    /// on a null list (§15o review G4).</summary>
+    public RecordedKind KindOrMarker() =>
+        Kind.IsAbsent ? OlderShape() : Kind.ForWriting;
+
+    private RecordedKind OlderShape() =>
+        Actions is [RunKinds.FullCheckName] && Current == RunKinds.FullCheckName ? RecordedKind.Collect : RecordedKind.Absent;
 
     /// <summary>Linux: the process's <c>starttime</c> (clock ticks after boot, <c>/proc/[pid]/stat</c> field 22) — its
     /// identity within <see cref="BootId"/>, which no wall-clock step moves (E6.S0 review D1). Absent from older writers.</summary>

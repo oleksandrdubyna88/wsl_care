@@ -305,8 +305,14 @@ Before, a reader could not tell a full check's line by one rule: a completed or 
 orphan `[]` too. `actions` means per-action RESULTS (plan §6; `logs`' `perAction`, `IsCleanup`, the cleanup details and A15
 read it so), so the fix is a second member, additive, `schemaVersion` 1:
 
-- **`kind`** (`RunKind`: `collect` | `act`) on `RunRecord` and on `RunningFile` — a POSITIONAL parameter of both, so every
-  writer decides (`null` only where it cannot be known). Read back absent from older lines and files.
+- **`kind`** on `RunRecord` and on `RunningFile` — a POSITIONAL parameter of both, so every writer decides. Writers write
+  `collect` | `act` (`RunKind`) or none. On disk it is a `RecordedKind` (PR #16 retro round, 2026-10-06): THREE states,
+  never collapsed — **absent** (no member: an older writer, or a line whose kind is not known), **known** (`collect` /
+  `act` exactly, the names `RunKinds.Name` holds — the one table the converter and `RunLine.kind` both read), **unknown**
+  (anything else: a newer build's name, an explicit `null`, an integer, any other JSON value — kept as written). Its
+  converter (`RecordedKindJsonConverter`, registered on the type, so the source generator instantiates it — no reflection)
+  never fails a read, and refuses to WRITE an unknown kind: a writer that carries a read kind forward goes through
+  `RecordedKind.ForWriting` (unknown → absent), so no line claims a kind this build only guessed at.
 - **`actions` holds results only.** The `collect` pseudo-row is no longer written; a refused, cut-off or swept full check
   writes `actions: []` with `kind: "collect"`. `collect` is RESERVED (`RunKinds.FullCheckName`, `ActionId`'s doc): no action
   id may carry it, which `RunKindTests` and `ContractFilesTests` hold.
@@ -315,28 +321,46 @@ read it so), so the fix is a second member, additive, `schemaVersion` 1:
   check none). The timer's pass rewrites `running.json` with the registry's ids and `kind: collect` (`ActRequest.Kind`, set
   only by `ActionEngine.TimerPassAsync`), so the sweep of a dead holder can tell it from an `act --timer` of the same ids. A
   file from an older writer is a full check only in the exact shape `CollectRun` writes (`["collect"]` and current
-  `collect`: `RunningFile.KindOrMarker`). The reconcile takes an orphan's kind from its detail (`RunKinds.OfDetailKind`, the
-  rule `logs` / `runs show` read a detail by).
-- **Who carries no kind:** the line of an unusable request (`RequestSweep.Unusable`) and of an orphan whose detail cannot be
-  read. Their reasons — and the readable orphan's — begin with the prefixes `contracts/history-reasons.json` carries
-  (`HistoryReasons.NotAFullCheckWithoutKind`, from the daemon's constants): the fallback a reader uses for a line WITHOUT a
-  kind. A line with a kind is told by it alone — a reconciled full-check orphan carries `kind: collect` AND the reconcile's
+  `collect`: `RunningFile.KindOrMarker`) — and that inference applies ONLY when the member is ABSENT: an unknown kind of that
+  same shape is not a missing one, and its swept line carries no kind (consultation 0d924598: mapping unknown to "no kind"
+  first would have filed it `collect`). The reconcile takes an orphan's kind from its detail (`RunKinds.OfDetail` →
+  `DetailKind`: no member is a full run's, `act` an act's, ANY other value — an explicit `null` included, PR #16 retro G0 —
+  unknown, and its line then carries none: `RunKinds.LineKindOf`), the rule `logs` / `runs show` read a detail by.
+- **Who carries no kind:** the line of an unusable request (`RequestSweep.Unusable`), of an orphan whose detail cannot be
+  read or is of a kind this build does not know, and of a dead `running.json` holder that names no kind and is not the
+  exact full-check shape, or names one this build does not know. Their reasons — the reconciled orphans' and the unusable
+  request's — begin with the prefixes `contracts/history-reasons.json` carries (`HistoryReasons.NotAFullCheckWithoutKind`,
+  from the daemon's constants; the unusable prefix itself is `HistoryReasons.UnusableRequestPrefix` since the PR #16 retro
+  round G1, so `Records` depends on no engine type): the fallback a reader uses for a line WITHOUT a kind. Since the PR44
+  gate round EVERY kind-less writer is covered: the swept line of a holder whose kind is not known and a request's terminal
+  line of an unknown kind begin with `its kind is not known` (`HistoryReasons.KindNotKnownPrefix`, the contract's fourth
+  prefix), and `doctor`'s `lastRun` applies the same rule — a kind-less line is a full check only when no prefix marks it. A line with a kind is told by it alone — a reconciled full-check orphan carries `kind: collect` AND the reconcile's
   prefix, and kind wins. Those three reason texts are FROZEN (`ContractFilesTests` pins them to literals): they are on disk.
-- **Unknown is never guessed** (§15o review G1 / G2): `RunKinds.OfRequest` and `OfDetailKind` answer `collect` / `act` only
-  for the exact spellings (a full run's detail: no `kind` member at all) and NO kind for anything else — a request of an
-  unknown kind gets a line with no kind and no action rows.
-- **The wire:** `RunLine.kind` on `runs` / `runs show` (absent when the line has none); the `runs-*.json` goldens pin it.
-- **The downgrade residual** (the class `RunOutcome` already carries; no code): after `install.sh --version <older>` to a build
-  that does not know a kind a newer one wrote, an unknown `kind` in `running.json` makes it unreadable — every `act` and timer
-  pass refuses until it is removed by hand — and a history line with an unknown kind is unparseable, which every
-  history-first check (`RunningSweep.SweepDead`, the request sweep, `act --request`, the reconcile) reads as NO line: a run
-  could then get a second terminal line, or `act --request` run a request whose run had already recorded itself.
+- **Unknown is never guessed** (§15o review G1 / G2, PR #16 retro round): `RunKinds.OfRequest` and `OfDetail` answer
+  `collect` / `act` only for the exact spellings (a full run's detail: no `kind` member at all) and NO kind for anything
+  else — a request of an unknown kind gets a line with no kind and no action rows. `runs show` answers a detail of an
+  unknown kind with its state and its line, `detailState: "unreadable"` and a `detailProblem` naming the kind — never as a
+  full run's detail — and `logs` reads no objects from it (its cleanups say `unreadable`). `doctor`'s `lastRun` judges the
+  newest FULL check (`kind: collect`; a kind-less line only when no contract prefix marks it; an act or an unknown kind never), so
+  frequent `act` lines cannot hide a timer that stopped.
+- **The wire:** `RunLine.kind` on `runs` / `runs show` — `collect`, `act`, or an unknown value AS WRITTEN (never mapped to
+  either, so a reader's "`kind == collect` is a full check" stays true); absent when the line has none. The `runs-*.json`
+  goldens pin it.
+- **The downgrade residual — closed for `kind`** (PR #16 retro round, 2026-10-06): after `install.sh --version <older>` to a
+  build that does not know a kind a newer one wrote, `running.json` stays readable (the run is judged live / wedged / dead as
+  any other) and the history line parses, so every history-first check (`RunningSweep.SweepDead`, the request sweep, `act
+  --request`, the reconcile — all through the one parser, `RunHistory.ParseLine`) sees the run's line. **What remains:**
+  `RunTrigger` and `RunOutcome` (and an action's `status`, a free string the readers compare to known names) are still
+  strict — a value a newer build adds (a future outcome) makes its line unparseable and `running.json` unreadable, with the
+  consequences above. Since the same round they are strict about integers too (`StrictStringEnumConverter`,
+  `allowIntegerValues: false`: `"trigger": 0` was read as `timer`). Whether they too read an unknown value as unknown is an
+  owner question (plan §15o, *Retro coai round over PR #16*).
 
 | Writer | `kind` | `actions` |
 |---|---|---|
 | `CollectRun.Line` (completed / observeOnly / failed), `CollectRun.RecordCutOff` | `collect` | the timer pass's results, else `[]` |
 | `RunRequestFile.TerminalLine` (`DetachedRuns.Refused`, `DetachedRuns.CutOff`, `RequestSweep` swept) | the request's (none when unknown) | an act's ids marked refused / interrupted; a full check or an unknown kind `[]` |
-| `RunningSweep.SweepDead` | `running.json`'s (or the older shape) | its ids marked interrupted, `collect` never a row |
+| `RunningSweep.SweepDead` | `running.json`'s when known; the older shape's `collect` only when the member is absent; none for an unknown kind | its ids marked interrupted, `collect` never a row |
 | `ActionEngine.Line` | `act` | each action's result |
 | `RunReconcile.InterruptedLine` | from the detail; none when unreadable or of an unknown kind | `[]` |
 | `RequestSweep.Unusable` | none | `[]` |

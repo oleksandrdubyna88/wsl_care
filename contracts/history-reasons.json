@@ -13,6 +13,10 @@
     {
       "writer": "RunReconcile.InterruptedLine",
       "prefix": "the run left a detail that cannot be read; its start is the second its id names"
+    },
+    {
+      "writer": "RunningSweep.SweepDead, RunRequestFile.TerminalLine",
+      "prefix": "its kind is not known"
     }
   ]
 }

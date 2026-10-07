@@ -482,7 +482,11 @@ for a LOCAL day, which crosses UTC midnight. `runs` lines carry the `metrics` th
 `MemAvailable`, page cache, swap, `/`, Docker reclaimable, container starts; none for an `act`), and its `kind`: `collect` for
 a full check — whatever started or ended it — or `act`; a line's `actions` list only what its actions did, so a full check
 that never reached its actions (refused, cut off, swept) has none. A line written before `kind` existed, or whose kind
-cannot be known (a request that could not be read), has no `kind`.
+cannot be known — a request that could not be read, an orphaned run whose detail cannot be read or is of a kind this
+version does not know, a dead run whose running state named no kind (and was not an older full check's) or one this
+version does not know — has no `kind`. A kind this version does not know (written by a newer version, met after a
+downgrade) is answered as written and never taken for `collect` or `act`; the line still counts, and `runs show` answers
+such a run's detail as `unreadable` with a `detailProblem` saying why.
 
 `runs show <runId>` answers one run: `done` (with its history line and its detail — every action, every object it removed
 and did not remove, every command it ran and its exit), `refused`, `interrupted` (also a run whose process died before

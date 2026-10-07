@@ -1,4 +1,5 @@
 using WslCare.Core.Config;
+using WslCare.Core.Json;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -6,7 +7,7 @@ using System.Text.Json.Serialization;
 namespace WslCare.Core.Records;
 
 /// <summary>What started a run (plan §6).</summary>
-[JsonConverter(typeof(JsonStringEnumConverter<RunTrigger>))]
+[JsonConverter(typeof(StrictStringEnumConverter<RunTrigger>))]
 public enum RunTrigger
 {
     [JsonStringEnumMemberName("timer")]
@@ -24,7 +25,7 @@ public enum RunTrigger
 /// <summary>How a run ended. <c>interrupted</c> is here from the first record (plan §15a #0): the
 /// startup sweep that finds a dead <c>running.json</c> writes one, so history never shows a run that
 /// silently vanished.</summary>
-[JsonConverter(typeof(JsonStringEnumConverter<RunOutcome>))]
+[JsonConverter(typeof(StrictStringEnumConverter<RunOutcome>))]
 public enum RunOutcome
 {
     [JsonStringEnumMemberName("completed")]
@@ -49,15 +50,25 @@ public enum RunOutcome
 
 /// <summary>What a run WAS (plan §15o): a full check (<c>collect</c>, whatever started it) or an <c>act</c>. It is the ONE rule a
 /// reader tells a full check's history line by; <see cref="RunRecord.Actions"/> holds per-action results only and never names
-/// the full check itself.</summary>
-[JsonConverter(typeof(JsonStringEnumConverter<RunKind>))]
+/// the full check itself. Never serialized itself: on disk a kind is a <see cref="RecordedKind"/>, which also holds "absent" and
+/// "unknown", and whose names are <see cref="RunKinds.Name"/> — the one table of them.</summary>
 public enum RunKind
 {
-    [JsonStringEnumMemberName("collect")]
     Collect,
 
-    [JsonStringEnumMemberName("act")]
     Act,
+}
+
+/// <summary>What a run detail IS, read from its <c>kind</c> member (plan §15o, PR #16 retro round G0): a full run's detail
+/// carries NO member, an act's says <c>act</c>, and anything else — an explicit <c>null</c>, <c>""</c>, <c>collect</c>, a future
+/// kind, an integer — is a detail this build does not read.</summary>
+public enum DetailKind
+{
+    FullRun,
+
+    Act,
+
+    Unknown,
 }
 
 /// <summary>The few places a run's kind is read from something that predates it, each one rule (plan §15o).</summary>
@@ -70,23 +81,41 @@ public static class RunKinds
     /// <summary>An act's name, as a request's <c>kind</c> and an act's detail spell it.</summary>
     public const string ActName = "act";
 
-    /// <summary>A request's <c>kind</c>: <c>collect</c> or <c>act</c> exactly, anything else UNKNOWN (<c>null</c>) — never guessed
-    /// into either (§15o review G2; the reader refuses such a request already, the mapping does not lean on it).</summary>
-    public static RunKind? OfRequest(string kind) => kind switch
+    /// <summary>A kind's name on the wire — what the history line, <c>running.json</c> and <c>runs</c>' <c>kind</c> carry.</summary>
+    public static string Name(RunKind kind) => kind switch
+    {
+        RunKind.Collect => FullCheckName,
+        RunKind.Act => ActName,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "a RunKind with no name: add it here (PR #44 gate round — never filed as collect)"),
+    };
+
+    /// <summary>The kind <paramref name="name"/> spells EXACTLY; <c>null</c> for anything else (a different case included).</summary>
+    public static RunKind? Known(string name) => name switch
     {
         FullCheckName => RunKind.Collect,
         ActName => RunKind.Act,
         _ => null,
     };
 
-    /// <summary>A run detail's kind from its <c>kind</c> member: an act's detail says <c>act</c>; a full run's detail carries NO
-    /// member; any other value is a kind this build does not know (a future one) and is unknown, never a full check (§15o
-    /// review G1). The one rule the reconcile and <c>logs</c> / <c>runs show</c> read a detail by.</summary>
-    public static RunKind? OfDetailKind(string? kind) => kind switch
+    /// <summary>A request's <c>kind</c>: <c>collect</c> or <c>act</c> exactly, anything else UNKNOWN (<c>null</c>) — never guessed
+    /// into either (§15o review G2; the reader refuses such a request already, the mapping does not lean on it).</summary>
+    public static RunKind? OfRequest(string kind) => Known(kind);
+
+    /// <summary>A run detail's kind from its <c>kind</c> member: NO member is a full run's detail, <c>act</c> an act's, and any
+    /// other value — present but not <c>act</c> — is <see cref="DetailKind.Unknown"/>, never a full run (§15o review G1, PR #16
+    /// retro G0: an explicit <c>null</c> is a value, not a missing member). The one rule the reconcile and <c>logs</c> /
+    /// <c>runs show</c> read a detail by.</summary>
+    public static DetailKind OfDetail(RecordedKind member) =>
+        member.IsAbsent ? DetailKind.FullRun
+        : member == RecordedKind.Act ? DetailKind.Act
+        : DetailKind.Unknown;
+
+    /// <summary>The kind the line of a run with such a detail carries — none for a detail of an unknown kind.</summary>
+    public static RecordedKind LineKindOf(DetailKind detail) => detail switch
     {
-        null => RunKind.Collect,
-        ActName => RunKind.Act,
-        _ => null,
+        DetailKind.FullRun => RecordedKind.Collect,
+        DetailKind.Act => RecordedKind.Act,
+        _ => RecordedKind.Absent,
     };
 }
 
@@ -160,9 +189,12 @@ public sealed record ActionRecord(string Id, int Count, long FreedBytes)
 /// <param name="Actions">Per-action RESULTS (plan §6, §15o): the actions that ran, were skipped, refused, interrupted — never
 /// the full check itself. <c>[]</c> means no action produced a result; whether the run was a full check is <paramref name="Kind"/>'s
 /// answer.</param>
-/// <param name="Kind">What the run was (plan §15o). POSITIONAL so every writer decides; <c>null</c> only where it cannot be
-/// known (an unusable request, an orphan whose detail cannot be read) and on lines written before it existed (read back as
-/// absent — additive, schema 1).</param>
+/// <param name="Kind">What the run was (plan §15o). POSITIONAL so every writer decides. Writers write <c>collect</c> or
+/// <c>act</c>, or none (<see cref="RecordedKind.Absent"/>) where the kind is not known: an unusable request, an orphan whose
+/// detail cannot be read or is of a kind this build does not know, the dead holder of a <c>running.json</c> that names no kind
+/// and is not the exact full-check shape, or one whose kind this build does not know. Read back: absent on lines written before
+/// it existed (additive, schema 1), and UNKNOWN — never guessed, never unparseable — for a value this build does not know (a
+/// newer build's, met after a downgrade; PR #16 retro round).</param>
 public sealed record RunRecord(
     int SchemaVersion,
     RunId RunId,
@@ -171,7 +203,7 @@ public sealed record RunRecord(
     DateTimeOffset EndedAt,
     RunOutcome Outcome,
     IReadOnlyList<ActionRecord> Actions,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] RunKind? Kind)
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] RecordedKind Kind)
 {
     /// <summary>The slow parts a full run sampled (plan §15b #5); absent (<c>null</c>) on a run that sampled
     /// none, and on every line written before E2 — read only through <see cref="LastFullRun"/>.</summary>

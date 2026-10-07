@@ -66,13 +66,9 @@ public static class RequestSweep
         return [.. notes.Where(n => n.Length > 0)];
     }
 
-    /// <summary>How the line of an unusable request's run begins — a contract (<c>contracts/history-reasons.json</c>, plan §15o):
-    /// a reader tells this kind-less line by it.</summary>
-    public const string UnusablePrefix = "refused: its request could not be used";
-
     /// <summary>A request that cannot be used (review D5): ONE <c>refused</c> line naming why — unless its run has a line — then it
     /// goes. Shared with <c>act --request</c>, which meets its own. Its kind cannot be known (the request did not read), so the line
-    /// carries none (plan §15o).</summary>
+    /// carries none, and its reason begins with <see cref="HistoryReasons.UnusableRequestPrefix"/> (plan §15o).</summary>
     public static string Unusable(IHostPaths paths, IFileSystem files, DateTimeOffset now, RunId runId, string why)
     {
         if (HistoryProblem(paths, files) is { Length: > 0 } problem)
@@ -82,9 +78,9 @@ public static class RequestSweep
 
         if (!Recorded(paths, files).Contains(runId))
         {
-            new RunRecordWriter(paths, files).Append(new RunRecord(Core.SchemaVersion.Current, runId, RunTrigger.Manual, now, now, RunOutcome.Refused, [], Kind: null)
+            new RunRecordWriter(paths, files).Append(new RunRecord(Core.SchemaVersion.Current, runId, RunTrigger.Manual, now, now, RunOutcome.Refused, [], RecordedKind.Absent)
             {
-                Reason = $"{UnusablePrefix} ({why}); nothing was run",
+                Reason = $"{HistoryReasons.UnusableRequestPrefix} ({why}); nothing was run",
             });
         }
 

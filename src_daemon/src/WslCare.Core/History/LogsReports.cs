@@ -116,10 +116,12 @@ public sealed record LogsReport(
     int UnparseableLines,
     string? Problem)
 {
-    /// <summary>How many run details were opened for the cleanups' objects (none unless asked: <c>--detail</c> or one
-    /// <c>--action</c>, gate finding #10).</summary>
+    /// <summary>How many run details were looked up for the cleanups' objects (none unless asked: <c>--detail</c> or one
+    /// <c>--action</c>, gate finding #10) — a detail opened but UNREADABLE (it does not parse, or is of a kind this build does not
+    /// read) is not counted here (PR #44 gate round).</summary>
     public int DetailsRead { get; init; }
 
-    /// <summary>How many runs with a cleanup are listed from their history line alone — not asked for, or past the bound.</summary>
+    /// <summary>How many runs with a cleanup are listed from their history line alone — not asked for, past the bound, or whose
+    /// detail was opened and could not be read (its cleanups say <c>unreadable</c>).</summary>
     public int DetailsNotRead { get; init; }
 }

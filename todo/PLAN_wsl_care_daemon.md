@@ -1118,8 +1118,10 @@ real results on a timer line and a `collect` entry into `perAction` for every fu
 **Decision (additive, `schemaVersion` stays 1).**
 
 1. **`kind` on the history line** (`RunRecord`): `"collect"` | `"act"` — what the run WAS. Written by every writer that
-   knows it; absent on lines written before this change and on the two lines whose kind cannot be known (an unusable
-   request; an orphan whose detail cannot be read). A reader's one rule: `kind == "collect"` is a full check.
+   knows it; absent on lines written before this change and on the lines whose kind cannot be known (an unusable
+   request; an orphan whose detail cannot be read — and, as built, one whose detail is of an unknown kind and the dead
+   holder of a `running.json` that names no kind and is not the exact full-check shape, or names an unknown one: the PR
+   #16 retro round, O2). A reader's one rule: `kind == "collect"` is a full check.
 2. **`actions` keeps ONE meaning — per-action results.** The `collect` pseudo-row is no longer written: a refused, cut off
    before it started, swept-request or swept-while-measuring full check writes `actions: []` with `kind: "collect"`. `[]`
    then means only "no action produced a result"; whether the run was a full check is `kind`'s answer. *Why the removal is
@@ -1131,7 +1133,10 @@ real results on a timer line and a `collect` entry into `perAction` for every fu
    so both sides read ONE list instead of two copies; and `FullCheckLineTests` drives every writer of a `kind: "collect"`
    line — `DetachedRuns.Refused` (the lock), `DetachedRuns.CutOff`, `RequestSweep.Interrupted`, `RunningSweep.SweepDead`
    (with and without a stop marker), `CollectRun.RecordCutOff` (both moments), `CollectRun.Line` (completed, observe-only,
-   failed on its detail) — and asserts that no such line's reason starts with any of them. Lines written by pre-release
+   failed on its detail) — and asserts that no such line's reason starts with any of them. **Not every `kind: "collect"`
+   writer, though** (corrected by the PR #16 retro round, O2): the READABLE reconciled full-check orphan
+   (`RunReconcile.InterruptedLine`) carries `collect` AND the reconcile's prefix — the deviation the status above records;
+   correct because a reader reads `kind` first and the prefixes only for a line without one. Lines written by pre-release
    builds keep their row and are reported AS STORED (no read-side rewriting); they age out with the 90-day retention. *Alternative weighed:* keep the row (strictly additive) — rejected: two shapes
    for one fact forever, and the zero `collect` entry in `perAction` stays.
 3. **`kind` in `running.json` too** (`RunningFile`, additive): the sweep of a dead holder cannot otherwise tell the timer's
@@ -1160,7 +1165,9 @@ real results on a timer line and a `collect` entry into `perAction` for every fu
    `unparseableLines`), and every history-first check treats an unparseable line as NO line — `RunningSweep.SweepDead`
    (`RunningSweep.cs:70`), the request sweep (`RequestSweep.cs:144` / `:154`), `act --request`'s own check
    (`DetachedRuns.cs:195`-`196`) and the reconcile (`RunReconcile.cs:28`-`30`) — so after such a downgrade a run could get a
-   SECOND terminal line, or `act --request` could run a request whose run had already recorded itself.
+   SECOND terminal line, or `act --request` could run a request whose run had already recorded itself. **Closed for `kind`
+   by the PR #16 retro round** (below): the member is read as a three-state `RecordedKind`, so neither (a) nor (b) happens
+   for a kind; the same hazard stays open for `RunTrigger` / `RunOutcome` (an owner question, below).
 
 **Not changed:** the request file (`kind`, `actions: ["collect"]`, its reader), `status.running` (still `actions:
 ["collect"]` while a full check measures; exposing `running.kind` is a possible follow-up this fix does not need), `logs`'
@@ -1229,7 +1236,9 @@ file.
 **Definition of Done.**
 
 - [ ] Every history line written after this change for a full check carries `kind: "collect"`, for an act `kind: "act"`;
-      only an unusable request's and an unreadable orphan's line carry none.
+      only the lines whose kind is not known carry none — an unusable request's, an orphan's whose detail cannot be read or
+      is of an unknown kind, and a dead holder's whose `running.json` names no kind (and is not the exact full-check shape)
+      or an unknown one (corrected by the PR #16 retro round, O2).
 - [ ] No new line carries a `collect` row in `actions`; `actions` holds per-action results only.
 - [ ] `running.json` carries `kind`; a dead holder's swept line takes it (or the `["collect"]` marker of an older file).
 - [ ] `runs` / `runs show` answer `kind`; `schemaVersion` 1 everywhere.
@@ -1257,6 +1266,41 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 | O3 (own) | the "cut off before it started" ending never called `DetachedRuns.CutOff` | **Fixed** — the reachable path is driven: an ACT request cut off inside its request sweep → ONE `act` line, the asked ids interrupted (`FullCheckLineTests.An_act_request_cut_off_inside_its_request_sweep_…`); the full check's shape of that line stays an `Ending` built through the same expression (no path reaches it from outside) |
 | O4 (own) | the follower check ran in the weak direction and nothing froze the reason text on disk | **Fixed** — `ContractFilesTests.The_reasons_already_on_disk_are_frozen` pins the three reasons (and the contract's list) to literals ("these strings are on disk; a change is a contract break"); the companion asserts the reasons AS WRITTEN start with the follower's prefixes |
 | O5 (own) | the downgrade residual understated | **Documented** — decision 6 and `research/architecture-daemon-e6.md` (moved from `architecture.md` on 2026-10-06) state both halves (an unreadable `running.json` blocks every act / timer pass until removed by hand; an unparseable line is "no line" to every history-first check) |
+
+**Retro coai round over PR #16 (2026-10-06, session e41b0440).** The merged §15o diff reviewed after the fact: the plan
+round's P0 accepted; the code round's G0 / G1 / G2 accepted; consultation 0d924598 (absent vs unknown, the explicit `null`,
+`runs show` guessing, `doctor`'s `lastRun`); the own review's O1 / O2. Built on `fix/wc-retro-pr16-run-kind`; every
+behaviour fix red first, green, and its load-bearing line broken and seen red again — the record is
+`research/module_tests.md`, *The PR #16 retro round*.
+
+| # | Finding | Disposition |
+|---|---|---|
+| P0 (plan round) | strict `kind` parsing strands the daemon after a downgrade: an unknown kind made `running.json` UNREADABLE (every act and timer pass refused until the file is removed by hand) and a history line unparseable (every history-first check then saw NO line — a second terminal line, or a recorded run re-run) | **Fixed** — `RecordedKind` (`Records/RecordedKind.cs`): absent / known / unknown, its converter registered on the type (source-generated, AOT, no reflection) and never failing a read. The legacy inference (`RunningFile.KindOrMarker`) applies ONLY to an absent member — the consultant's point: mapping unknown to "no kind" first would have filed an unknown kind of the exact full-check shape as `collect`. Writers write `collect` / `act` or none; an unknown kind read from disk is carried forward as absent (`ForWriting`) and the converter refuses to write one |
+| G2 (code round) | the enum converters accepted integers: `"kind":0` parsed as `collect`; `RunTrigger` / `RunOutcome` the same | **Fixed** — for `kind`, any non-string token is unknown; `RunTrigger` / `RunOutcome` use `StrictStringEnumConverter` (`JsonStringEnumConverter<T>(null, allowIntegerValues: false)`, a subclass because the attribute form takes no arguments), so an integer is a parse failure like any unknown value today. Only `kind` became TOLERANT: an unknown outcome or trigger is a wider question (below) |
+| G0 (code round) + consultant | `RunDetailHead.Kind` was `string?`, so an explicit `"kind": null` bound like a missing member and the reconcile filed the orphan `collect` | **Fixed** — the head's kind is a `RecordedKind`; `RunKinds.OfDetail` → `DetailKind` (`FullRun` only for NO member, `Act` for `act`, `Unknown` for anything else — `null`, `""`, `collect`, `Act`, an integer); the reconcile's line takes `RunKinds.LineKindOf` (none for unknown) |
+| O1 (own) + consultant | `runs show` / `logs` guessed an unknown detail kind as a full run (`IsAct ? act : full run`): a detail `{"kind":"archive",…}` showed `detail.kind: "collect"` and `logs` read timer-pass outcomes from it | **Fixed** — explicit act / full-run / unknown branches in `RunShow.Parsed` and `RunLogs.Parse`; unknown answers the state and the line, `detailState: "unreadable"` and a new `detailProblem` naming the kind; `logs` reads no objects (its cleanups say `unreadable`) |
+| G1 (code round) | `Records/HistoryReasons` depended on `Actions.Engine.RequestSweep.UnusablePrefix` | **Fixed** — the constant is `HistoryReasons.UnusableRequestPrefix`; `RequestSweep.Unusable` uses it; `contracts/history-reasons.json` and the frozen literals unchanged |
+| consultant (pre-existing) | `doctor`'s `lastRun` took the newest line of ANY kind, so frequent `act` lines hid a dead timer while the message spoke of the last full run | **Fixed** — it judges the newest FULL check (`kind: collect`); a kind-less older line keeps today's rule (it is judged — narrowed by the PR44 gate round below: unless a contract prefix marks it); an act or an unknown kind never |
+| O2 (own, docs) | `RunRecord.Kind`'s doc, the README and this section's first DoD bullet said only an unusable request and an unreadable orphan carry no kind; decision 2 said every `kind: collect` writer avoids the prefixes | **Fixed** — all three now list every kind-less line (an orphan of an unknown detail kind; a dead holder with no kind outside the exact shape, or an unknown one); decision 2 names the readable reconciled orphan's `collect` + prefix |
+| nit | `RunLine.Kind` was `Camel(kind.ToString())`, a second spelling of the names | **Fixed** — `RecordedKind.Text`, from `RunKinds.Name`, the one table the converter writes with; `RunKind` carries no JSON attributes of its own any more |
+
+**PR44 gate round** (coai session 7e2f290a over PR #44, codex + gemini) — accepted and fixed on the same branch:
+
+| # | Finding | Disposition |
+|---|---|---|
+| PR44 gate round, plan | `logs` counted a detail of an unknown kind, or one that does not parse, as READ with no outcomes — indistinguishable from a cleanup that removed nothing | **Fixed** — such a detail is `unreadable` and counts in `detailsNotRead`, never `detailsRead` |
+| PR44 gate round, code (3 reviewers) | `doctor`'s `lastRun` took EVERY kind-less line for a full check (an unusable request's, a reconciled orphan's, an unknown-kind holder's swept line) | **Fixed** — a kind-less line is a full check only when its reason starts with none of `HistoryReasons.NotAFullCheckWithoutKind` (the follower's rule); every kind-less writer is now covered — the swept line of a holder whose kind is not known and a request's terminal line of an unknown kind start with a new contract prefix, `its kind is not known` (frozen; the extension's copy updated) |
+| PR44 gate round, code (2 reviewers) | `RunKinds.Name` mapped every non-act member to `collect` | **Fixed** — an exhaustive switch that throws on an unmapped member; a test over `Enum.GetValues` |
+| PR44 gate round, code | `RecordedKind.Known` answered the enum's default (`collect`) for an absent or unknown kind | **Fixed** — it throws unless the kind is known (no caller read it); superseded by the third round below |
+| PR44 gate round, third (8 of 8 reviewers) | the doctor test listed three prefixes by hand and so missed `its kind is not known` | **Fixed** — its cases are derived from `HistoryReasons.NotAFullCheckWithoutKind` (`[MemberData]`), so every prefix, present and future, gets a doctor case |
+| PR44 gate round, third | a throwing `RecordedKind.Known` is an exception for an expected answer | **Fixed** — the property is removed (nothing called it); a caller compares with `RecordedKind.Collect` / `Act` |
+| PR44 gate round | rebuild the test JSON fixtures immutably; keep the raw text of an object / array kind | **Rejected** (recorded in the round) |
+
+**Open for the owner:** should `RunOutcome` / `RunTrigger` (and an action's `status`) also read an unknown value as unknown
+instead of making the line unparseable? It is the same downgrade hazard for a future new outcome (a history line counted
+unparseable is "no line" to every history-first check; an unknown trigger in `running.json` makes it unreadable). Not done
+here: a tolerant outcome needs a decision on how each reader (`runs show`'s state, `doctor`, `logs`' counts, the sweeps)
+treats an outcome it cannot name.
 
 ### 15p. E6.S4 review round (coai code round + two own reviews, 2026-10-05)
 

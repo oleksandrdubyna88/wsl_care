@@ -635,7 +635,7 @@ test('§15o (daemon #16): a reconciled full-check orphan whose detail was readab
 test('§15o (daemon #16): the fallback reason prefixes for a line WITHOUT a kind are exactly the daemon\'s contract file\'s', () => {
   const contract = JSON.parse(fs.readFileSync(path.join(REPOSITORY_ROOT, 'contracts', 'history-reasons.json'), 'utf8')) as { notAFullCheckWithoutKind: { prefix: string }[] };
   assert.deepEqual([...NOT_A_FULL_CHECK_PREFIXES], contract.notAFullCheckWithoutKind.map((r) => r.prefix));
-  assert.equal(NOT_A_FULL_CHECK_PREFIXES.length, 3, 'the known instances');
+  assert.equal(NOT_A_FULL_CHECK_PREFIXES.length, 4, 'the known instances');
 });
 
 test('§15p: the follower takes the daemon\'s skew from its limits — a line 2 minutes before the confirm matches only when the daemon allows 5, not 1', async () => {
