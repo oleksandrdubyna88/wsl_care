@@ -8,21 +8,24 @@ namespace WslCare.Core.Archive;
 /// (<c>&lt;name&gt;.wsl-care-q-&lt;runId&gt;</c>): inside the units the selection found, at the layout's own level, AND inside the
 /// companions of a session whose MAIN file is quarantined — that session no longer matches its glob, so its companions are found
 /// through the id of the quarantined name. Each file counted once, however it was reached. Counted only; resolving them is the
-/// run's reconcile (E9.S2b).
+/// run's reconcile (E9.S2b), from <see cref="Found"/>.
 /// </summary>
 public static class QuarantineCount
 {
     /// <summary>What the count looks at.</summary>
     public sealed record Look(SelectionInput Input, AgentEntry Entry, string Under, SessionListing Listing, TreeRules Rules);
 
-    public static int Of(Look look, IEnumerable<UnitFile> unitFiles)
+    public static int Of(Look look, IEnumerable<UnitFile> unitFiles) => Found(look, unitFiles).Count;
+
+    /// <summary>The marked files themselves, relative to the layout root (E9.S2b: what the run's reconcile renames back).</summary>
+    public static IReadOnlySet<string> Found(Look look, IEnumerable<UnitFile> unitFiles)
     {
         var atLevel = Levels(look.Entry).SelectMany(level => SessionGlob.Find(look.Listing, look.Under, QuarantineGlob(level.Glob)).Sessions.Select(s => (level.Session, s.Session.Name))).ToList();
         var found = new HashSet<string>(StringComparer.Ordinal);
         found.UnionWith(atLevel.Select(q => q.Name));
         found.UnionWith(unitFiles.Select(f => f.Relative).Where(Marked));
         found.UnionWith(atLevel.Where(q => q.Session).SelectMany(q => InCompanions(look, Original(q.Name))));
-        return found.Count;
+        return found;
     }
 
     /// <summary>Each unit's glob, and whether it is a session unit (whose companions follow its id).</summary>
@@ -60,7 +63,7 @@ public static class QuarantineCount
     private static bool Marked(string name) => name.Contains(ArchiveNames.QuarantineMark, StringComparison.Ordinal);
 
     /// <summary>The name a quarantined file had: everything before its mark.</summary>
-    private static string Original(string quarantined) => quarantined[..quarantined.IndexOf(ArchiveNames.QuarantineMark, StringComparison.Ordinal)];
+    public static string Original(string quarantined) => quarantined[..quarantined.IndexOf(ArchiveNames.QuarantineMark, StringComparison.Ordinal)];
 
     /// <summary>The glob's last segment replaced by "any file carrying the quarantine mark".</summary>
     private static string QuarantineGlob(string glob)

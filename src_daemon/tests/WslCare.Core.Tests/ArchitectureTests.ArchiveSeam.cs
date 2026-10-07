@@ -14,7 +14,7 @@ public sealed partial class ArchitectureTests
     {
         var seam = Metadata("WslCare.FileSystemSeam");
         var folder = Path.GetDirectoryName(seam)!;
-        return [seam, Path.Combine(folder, "PhysicalFileSystem.Archive.cs"), Path.Combine(folder, "PhysicalFileSystem.Archive.Windows.cs"), Path.Combine(folder, "BeneathWrites.cs"), Path.Combine(folder, "RegularFiles.cs")];
+        return [seam, Path.Combine(folder, "PhysicalFileSystem.Archive.cs"), Path.Combine(folder, "PhysicalFileSystem.Archive.Windows.cs"), Path.Combine(folder, "PhysicalFileSystem.Archive.Records.cs"), Path.Combine(folder, "BeneathWrites.cs"), Path.Combine(folder, "RegularFiles.cs")];
     }
 
     [Fact]

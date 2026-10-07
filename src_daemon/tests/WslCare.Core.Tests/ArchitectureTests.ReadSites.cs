@@ -113,6 +113,9 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Archive/AgentRetentionReader.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged) },
         ["WslCare.Core/Archive/InUse.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ListEntries"] = (1, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Archive/Selection.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Archive/ArchiveScan.cs"] = new() { ["ListDirectories"] = (2, ReadClass.TargetHomeMetadata), ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Archive/ArchiveState.cs"] = new() { ["ReadRegularFile"] = (2, ReadClass.OwnUnprivileged) },
+        ["WslCare.Core/Archive/ArchiveStatus.cs"] = new() { ["ReadFile"] = (1, ReadClass.System) },
         ["WslCare.Core/Archive/QuarantineCount.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/BaseFolderPlacement.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Processes/WindowsSystemDrive.cs"] = new() { ["ReadAllText"] = (1, ReadClass.System), ["ReadText"] = (3, ReadClass.System) },
@@ -148,7 +151,7 @@ public sealed partial class ArchitectureTests
 
     /// <summary>The file system's own implementation files — the readers themselves, not their callers.</summary>
     private static readonly string[] ReaderImplementations =
-        ["WslCare.Core/Files/PhysicalFileSystem.cs", "WslCare.Core/Files/IFileSystem.cs", "WslCare.Core/Files/RegularFiles.cs", "WslCare.Core/Files/TreeWalk.cs", "WslCare.Core/Files/BeneathFiles.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.Windows.cs", "WslCare.Core/Files/BeneathWrites.cs"];
+        ["WslCare.Core/Files/PhysicalFileSystem.cs", "WslCare.Core/Files/IFileSystem.cs", "WslCare.Core/Files/RegularFiles.cs", "WslCare.Core/Files/TreeWalk.cs", "WslCare.Core/Files/BeneathFiles.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.Windows.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.Records.cs", "WslCare.Core/Files/BeneathWrites.cs"];
 
     /// <summary>Every read call in <paramref name="source"/>, normalised (<c>File.ReadAllText</c> → <c>ReadAllText</c>).</summary>
     internal static IReadOnlyList<string> ReadCalls(string source) =>

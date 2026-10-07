@@ -2679,10 +2679,10 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-06 — E9.S0, E9.S1 and E9.S2a built, the S0 and S1 review rounds and the S2a gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-07 — E9.S0, E9.S1, E9.S2a and E9.S2b built, the S0 and S1 review rounds, the S2a gate round and the S2a own review round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
 > as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built*, *Risk consult
-> 9/9.4* and *E9.S2a gate round*); E9.S2b–E9.S5 and the E9 live gate open. Originally: plan only,
+> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round* and *E9.S2b as built*); E9.S3–E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -2856,7 +2856,11 @@ NAS, a lost `fsync`) is caught before anything is removed. Each step is durable 
    as a snapshot and an event `superseded` is appended. **Renaming back never replaces** (review B1): when the original name
    exists again (the agent re-created it meanwhile), the agent's file is KEPT, the quarantined one is unlinked only when it
    equals its archived copy (else it stays under its quarantine name and is reported), and the event is `split`.
-9. **Remove:** after the commit point only quarantined files that still hash equal are unlinked (a changed one is kept — `split`).
+9. **Remove — per UNIT, never per file** (consult 26b4a958 C-3, E9.S2b): after the commit point the session's OWN file (its key,
+   the transcript) is removed first; if it changed since the commit (the seam keeps it), NOT ONE file of the session is removed —
+   every quarantined file is renamed back and the entry is `superseded` (a transcript never stays at the source without its
+   companions). Once the transcript is gone, a companion that changed after the commit is renamed back under its own name (it holds
+   what the agent wrote since its copy) and the entry is `split`; every other companion is unlinked.
    Linux: by name, after the hash. Windows (review B2): ONE handle, opened with `DELETE | READ` and `FileShare.Read`, hashed, and
    only after equality `SetFileInformationByHandle(FileDispositionInfoEx, DELETE | POSIX_SEMANTICS)` — never
    `FileOptions.DeleteOnClose`, which deletes on ANY close (a mismatch, an exception, a kill mid-hash). Then an EMPTY companion or
@@ -3186,6 +3190,42 @@ folded in as E9.S4 requirements:
 | 2 | is `runuser` from a service clean (PAM session, environment, cgroup)? | **Read** `/etc/pam.d/runuser` on Ubuntu 24.04 (WSL): `pam_rootok`; session `pam_keyinit` (revoke), `pam_limits`, `pam_unix` — **no `pam_systemd`** (only `runuser-l` has it, and `-l` is never used): no session scope is created, the child stays in the service's cgroup, its environment is the one passed plus HOME/SHELL/USER/LOGNAME | **Kept `runuser`** (A8 / A17 already launch through it — one launcher). **E9.S4:** `doctor` and the A13 / A19 preview refuse when the distribution's `runuser` stack names `pam_systemd`; stdin is `/dev/null` for A13 and a bounded, cancelled pipe for A19; no PTY. `setpriv` (explicit credentials, cleared capabilities, `no_new_privs`) recorded as the alternative |
 | 3 | user-controlled metadata (a lease file, the child's answer) naming another pid or cgroup could become root's signal target | Not yet a defect (nothing acts on it) | **Rule for E9.S4:** root signals ONLY identities its own launcher recorded; the child's JSON and every file on the base are data. RED test: another process's valid pid and start time, a foreign cgroup and root-only paths in the child's answer and in lease metadata → zero root opens, writes or signals |
 | 4 | a streamed child bounds each line, not the count | **Confirmed by reading** `PumpLinesAsync` | **E9.S4:** `archive.childOutputCapBytes` bounds the TOTAL (past it the stream stops and the child is killed); a cut or truncated line is rejected as a record, never parsed as a prefix; A19's stdin writer is cancelled with the ceiling. RED: a flood of tiny lines, an oversized line with a valid-looking prefix, a child that stops reading its stdin |
+
+#### E9.S2b as built (2026-10-07)
+
+Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The archive's protocol (E9.S2b)*, the design `research/module_archive.md`. **Deviations from the text above:**
+
+- **The files:** phase 1 `Archive/ArchiveMove.cs` (`ArchiveCopy`, the `InflightBook`), phase 2 `Archive/ArchiveRemove.cs`, the
+  reconcile `Archive/ArchiveReconcile.cs` (with `MonthIndex`), `Archive/ArchiveIndex.cs`, `Archive/ArchiveState.cs` (the local
+  state: in-flight file, `base.json`, `holder.json`, `last-run.json`, `summary.json`, `index.key`; `restored.json` read only — E9.S3
+  writes it), `Archive/SideLease.cs`, `Archive/ArchiveRun.cs`, `Archive/ArchiveScan.cs`, `Archive/ArchiveStatus.cs`, and
+  `Cli/Commands/ArchiveRunCommand.cs` — not the planned `Mover.cs` / `Inflight.cs` / `Reconcile.cs`. The seam gained four verbs:
+  `OpenExistingFolderBeneath` (a reader never creates a level), `AppendDurably` (an index line counts once it is flushed),
+  `ReadCapped` (the untrusted base read under a cap) and `RemoveIfUnchanged` (a dead run's lease taken over).
+- **Removal is per UNIT** (consult 26b4a958, C-3; D2 step 9 corrected above): the transcript first; when it changed after the commit
+  point no file of the session is removed. Red first: the removal answered `Removed` and the companion was gone.
+- **A `copying` entry the index does not hold is dropped and its copies are LEFT** (D3 said they are removed): a copy without an index
+  line authorises nothing, the next copy reuses an equal one by its hash, and `archive reconcile --scan` re-indexes the rest — the
+  reconcile never deletes in the base on a guess.
+- **A quarantined file no `removing` entry covers is renamed back** (risk consult 9/9.2 row 2); when the agent wrote a new file at the
+  original name, the quarantined one is removed only when it equals an archived copy of a verified index line of this side (B1's
+  split), else both stay and are reported.
+- **`base.json` is written by the first RUN**, not by `check-base` (which stays read-only, E9.S1's rule) — every later run compares it.
+- **The reachability check is in-process** here (a task abandoned after `archive.reachabilitySeconds`); the SHORT CHILD root starts
+  first is E9.S4's (D1).
+- **`archive run --json` is a stream of one-line JSON objects**: `{"progress":"file",…}` per file done, `{"progress":"heartbeat",…}`
+  at least every `archive.progressSilenceSeconds`, the answer LAST and compact; no line names a session.
+- **`archive status`** reads local state only and takes the side's lock for an instant when it is free (a run starting in that
+  instant answers `busy` once); a holder in state `D` reads `stuck-in-kernel`.
+- **On Windows `archive run` moves nothing yet**: the open-file check is E9.S5's, so every due unit is kept (`in-use`, not checked);
+  the reconcile and phase 2 of entries already archived would run.
+- **The 14 kill points** run twice: in process (`ArchiveProtocolTests`, the fault seam throwing, each point × the agent doing nothing,
+  appending, writing a new file at the old name, deleting — 56 rows) and against the BUILT child killed by its own pid
+  (`ArchiveRunFlows`, Linux legs, each point × the base gone for the next run — 28 rows). The whole-protocol property is that
+  in-process theory: after every row the agent's last content is at the source or in an indexed archived copy.
+- **Not built:** the 1 GiB sparse session (its cost on CI; the streaming copy is the same code a 120-file session exercises); the
+  root-side child, its budget and its streaming are E9.S4's.
 
 #### Stories
 
@@ -3724,7 +3764,7 @@ tagged (B3). Then, after the E6 daemon live gate's stamp:
 | E9.S0 | the catalogue's `archive` blocks, the `archive.*` keys and coupled rules, the base rules, `archive check-base` — §15r (re-split 2026-10-06: the three rows planned on 2026-10-02 became S0–S5, S2 split by the §15r review round). **Built 2026-10-06** — deviations in §15r *E9.S0 as built*; **the review round fixed 2026-10-06** (§15r *E9.S0 review round*) | Opus + two own reviews |
 | E9.S1 | selection, the effective age, in-use checks, `archive preview` (read-only) — §15r. **Built 2026-10-06** — deviations in §15r *E9.S1 as built* | Opus + two own reviews |
 | E9.S2a | the seam: no-link streaming copy and exclusive create, no-replace renames, the verified removal (Linux and Windows semantics), the policy, the widened scan, the fault seam — §15r R1. **Built 2026-10-06** — deviations in §15r *E9.S2a as built* (the removal takes a write lease: risk consult 9/9.2) | Opus (Fable asked for by the gate; its monthly limit is spent — recorded) + two own reviews — irreplaceable data |
-| E9.S2b | the two-phase protocol, the index (merged, MAC'd), the in-flight file, the lease, the reconcile, `archive run` / `status` / `reconcile --scan` — §15r R1 | Opus (Fable spent, recorded) + two own reviews |
+| E9.S2b | the two-phase protocol, the index (merged, MAC'd), the in-flight file, the lease, the reconcile, `archive run` / `status` / `reconcile --scan` — §15r R1. **Built 2026-10-07** — deviations in §15r *E9.S2b as built* | Opus (Fable spent, recorded) + two own reviews |
 | E9.S3 | restore (create-only), `archive list` — §15r R1 | Opus (Fable spent, recorded) + two own reviews — the reverse move |
 | E9.S4 | A13 and A19 in the engine, the root → user child boundary, streaming, the budget — §15r R2 | Opus + two own reviews |
 | E9.S5 | the Windows side of the verbs — §15r | Opus + one own review |

@@ -38,6 +38,16 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// at once and changes what the second read sees.</summary>
     public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
 
+    /// <summary>The archive's seam (plan §15r E9.S2a): the same file system, seen through its archive verbs.</summary>
+    public IArchiveFiles ArchiveFiles() => Files as IArchiveFiles ?? throw new InvalidOperationException($"the file system {Files.GetType().Name} has no archive seam");
+
+    /// <summary>The archive protocol's fault seam (<see cref="Core.Archive.MoveSteps"/>): nothing on a machine; under a sandbox
+    /// <see cref="ArchiveKillVariable"/> names the step at which the process KILLS itself — the scenario suite's 14 kill points.</summary>
+    public Action<string> ArchiveFault { get; init; } = static _ => { };
+
+    /// <summary>Honoured only together with <see cref="HostPaths.SandboxRootVariable"/>: <c>&lt;step&gt;</c> or <c>&lt;step&gt;#&lt;n&gt;</c> (its n-th time).</summary>
+    public const string ArchiveKillVariable = "WSL_CARE_TEST_ARCHIVE_KILL";
+
     /// <summary>The actions this build holds.</summary>
     public ActionRegistry Actions { get; init; } = ActionRegistry.Product;
 
@@ -133,6 +143,7 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         var files = FilesFor(paths);
         return new CliHost(paths, files, TimeProvider.System, new ProcessCommandRunner(CommandPolicy.Product))
         {
+            ArchiveFault = KillFault(),
             Rewire = static (layout, _) => FilesAndSignalsFor(layout),
             Privilege = privilege,
             HomeOwner = owner,
@@ -157,8 +168,34 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         return (files, SignalsFor(paths, files));
     }
 
-    private static PhysicalFileSystem FilesFor(IHostPaths paths) =>
-        new(paths) { TrustedStateOwner = Sandboxed() ? RegularFiles.EffectiveUid() : 0, OwnersAreThisProcess = Sandboxed() };
+    private static PhysicalFileSystem FilesFor(IHostPaths paths)
+    {
+        var fault = KillFault();
+        return new(paths, PhysicalFileSystem.ReadLinkTarget, static (_, _) => { }, (step, _) => fault(step.ToString()))
+        {
+            TrustedStateOwner = Sandboxed() ? RegularFiles.EffectiveUid() : 0,
+            OwnersAreThisProcess = Sandboxed(),
+        };
+    }
+
+    /// <summary>The archive kill point a scenario names (<see cref="ArchiveKillVariable"/>, sandbox only): at that step — its n-th
+    /// time — this process kills ITSELF (by its own handle, never by a name), as a crash would. Nothing on a machine.</summary>
+    internal static Action<string> KillFault()
+    {
+        var spec = Sandboxed() ? Environment.GetEnvironmentVariable(ArchiveKillVariable) ?? string.Empty : string.Empty;
+        var parts = spec.Split('#');
+        var nth = parts.Length > 1 && int.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 1;
+        var seen = 0;
+        return spec.Length == 0 ? static _ => { }
+        : name =>
+        {
+            if (name == parts[0] && Interlocked.Increment(ref seen) == nth)
+            {
+                using var self = System.Diagnostics.Process.GetCurrentProcess();
+                self.Kill();
+            }
+        };
+    }
 
     private static IHostPaths WithLoginHomesProtected(IHostPaths paths) =>
         paths is LinuxHostPaths linux ? linux.WithProtectedHomes(TargetUserDiscovery.ProtectedHomes(new PhysicalFileSystem(linux), linux)) : paths;

@@ -1,8 +1,8 @@
 # Module — the AI-session archive (E9)
 
 > Built so far: **E9.S0** (catalogue blocks, keys, base folder rules, `archive check-base`), **E9.S1** (the selection and
-> `archive preview`, read-only), **E9.S2a** (the file seam `IArchiveFiles`, with its gate round). Not built yet: the move
-> protocol and `archive run` (E9.S2b), restore / list / status (E9.S3), A13 in the engine and the root → user boundary (E9.S4),
+> `archive preview`, read-only), **E9.S2a** (the file seam `IArchiveFiles`, with its gate round and own review round), **E9.S2b**
+> (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`). Not built yet: restore / list (E9.S3), A13 in the engine and the root → user boundary (E9.S4),
 > the Windows open-file check (E9.S5). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
 > red runs and their break-it checks: [module_tests.md](module_tests.md), the E9 sections (from *The AI-session archive:
 > catalogue blocks, keys, base folder* to *The E9.S2a gate round*). The longer history of each
@@ -28,8 +28,10 @@ flowchart TD
     retention["Archive/AgentRetentionReader<br/>(the agent's own deletion age)"] --> selection
     selection --> preview["archive preview<br/>(ArchivePreviewReport)"]
     base --> checkbase["archive check-base<br/>(BaseFolderReport)"]
-    selection -. "E9.S2b" .-> run["archive run (not built)"]
-    run -. "every file act" .-> seam["Files/IArchiveFiles<br/>(PhysicalFileSystem.Archive + BeneathWrites)"]
+    selection --> run["archive run (E9.S2b)<br/>lock · reach · lease · reconcile · phase 2 · phase 1"]
+    run -- "every file act" --> seam
+    run --> local["local state (ArchiveState)<br/>inflight · base.json · summary · index.key"]
+    run --> index["month index on the base (ArchiveIndex)<br/>per agent / month / side, MAC'd lines"]["Files/IArchiveFiles<br/>(PhysicalFileSystem.Archive + BeneathWrites)"]
     policy["Files/Deletion/DeletionPolicy<br/>(ArchiveQuarantine, ArchiveRemoval, RestoreIntoAgentFolder)"] --> seam
 ```
 
@@ -95,6 +97,11 @@ C-M4 / S-M2).
 | `FileIdentity` | `Files/IArchiveFiles.cs` | what names one file whatever its name (Linux device + inode, Windows volume serial + file index): the own-copy removal and the Windows base rules |
 | `NativeOpen`, `WindowsFileInfo`, `BeneathWrites` | `Files/BeneathWrites.cs` | the natives and their closed answers |
 | `ArchiveFileStep` | `Files/PhysicalFileSystem.Archive.cs` | the fault seam's steps between the primitive acts |
+| `ArchiveIndex`, `IndexLine`, `IndexEntry` | `Archive/ArchiveIndex.cs` | the month index: one MAC'd JSON line per event, read as untrusted input, merged per `entryId` |
+| `ArchiveState`, `InflightEntry`, `InflightBook` | `Archive/ArchiveState.cs`, `Archive/ArchiveMove.cs` | the side's local state: the in-flight file (`copying` / `archived` / `removing`), `base.json`, `holder.json`, `last-run.json`, `summary.json`, `index.key` |
+| `ArchiveCopy`, `ArchiveRemove`, `ArchiveReconcile`, `MoveSteps` | `Archive/ArchiveMove.cs`, `Archive/ArchiveRemove.cs`, `Archive/ArchiveReconcile.cs` | phase 1, phase 2 (per UNIT: the transcript first), the reconcile; the protocol's own fault steps |
+| `SideLease`, `LeaseRecord` | `Archive/SideLease.cs` | one writer per side on the base: the lease file, another host refused, a dead run taken over |
+| `ArchiveRun`, `ArchiveRunReport`, `ArchiveScan`, `ArchiveStatus` | `Archive/ArchiveRun.cs`, `Archive/ArchiveScan.cs`, `Archive/ArchiveStatus.cs` | one run of a side; `reconcile --scan`; the status from local state only |
 | archive permits | `Files/Deletion/DeletionPolicy.cs` | `ArchiveQuarantine`, `ArchiveRemoval`, `RestoreIntoAgentFolder`; rule `ArchiveShape`; `memory` never |
 
 ## Entry points
@@ -104,9 +111,12 @@ C-M4 / S-M2).
 | `archive check-base <path> [--json]` | `WslCare.Cli/Commands/ArchiveCommand.cs` | `contracts/golden/head/archive-check-base.json`, capability `archive.checkBase` | built (E9.S0) |
 | `archive preview [--agent <id>] [--json]` | `WslCare.Cli/Commands/ArchiveCommand.cs` | `contracts/golden/head/archive-preview.json`, capability `archive.preview` | built (E9.S1) |
 | `config set archive.baseFolder` | the config verbs | the base rules, refused as root (81) | built (E9.S0) |
-| `archive run`, `restore`, `list`, `status`, `reconcile --scan` | — | — | E9.S2b–E9.S4 |
+| `archive run [--agent <id>] [--budget-seconds <n>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-run.json`; `--json` streams one-line JSON objects, the answer last | built (E9.S2b) |
+| `archive status [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-status.json` | built (E9.S2b) |
+| `archive reconcile --scan [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | the run's answer with its `scan` counts | built (E9.S2b) |
+| `archive restore`, `list`; A13 / A19 | — | — | E9.S3, E9.S4 |
 
-Both built verbs run as the user; root is refused with exit 81.
+Every built verb runs as the user; root is refused with exit 81.
 
 ## The seam's guarantees (E9.S2a, its gate round and its own review round)
 

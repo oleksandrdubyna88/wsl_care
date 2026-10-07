@@ -61,6 +61,16 @@ internal abstract record Request
     /// as this user — read-only; <paramref name="Agent"/> empty = every agent of <c>archive.agents</c>.</summary>
     internal sealed record ArchivePreview(string Agent, bool Json) : Request;
 
+    /// <summary><c>archive run [--agent &lt;id&gt;] [--budget-seconds &lt;n&gt;] [--json]</c> (plan §15r E9.S2b): one run of this side's
+    /// archive as this user; <paramref name="BudgetSeconds"/> 0 = <c>archive.runBudgetMinutes</c>.</summary>
+    internal sealed record ArchiveRun(string Agent, int BudgetSeconds, bool Json) : Request;
+
+    /// <summary><c>archive status [--json]</c> (plan §15r E9.S2b): the side's lock, the entries on their way, the last run — local state only.</summary>
+    internal sealed record ArchiveStatus(bool Json) : Request;
+
+    /// <summary><c>archive reconcile --scan [--json]</c> (plan §15r D3): re-index the archived files no index line names.</summary>
+    internal sealed record ArchiveReconcileScan(bool Json) : Request;
+
     /// <summary><c>units dropin &lt;unit&gt;</c> (E7.S2c): the drop-in install.sh writes for one unit, from the machine
     /// configuration — the timer's period, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec.</summary>
     internal sealed record UnitsDropIn(string Unit) : Request;
@@ -233,6 +243,9 @@ internal static class CommandLine
         new([["agents", "probe"]], "agents probe <path> [--json]", "what the CLI at <path> is, as this user and never as root: a file it may start (looked at, never run, never read), a name from its file name, and its conventional data folders with their sizes and whether they could be a manual agent's (read-only)", ["agents", "probe", "/home/me/.local/bin/mycli", "--json"], ParseAgentsProbe),
         new([["archive", "check-base"]], "archive check-base <path> [--json]", "whether the AI-session archive may live at <path>, as this user (never as root): an existing folder (never created), no link on the way, no root, nothing it moves or a cleanup removes, a filesystem that survives a shutdown, writable — a Windows drive path answered with the folder it is mounted at; who else may read it (read-only)", ["archive", "check-base", "/mnt/v/ai-archive", "--json"], ParseArchiveCheckBase),
         new([["archive", "preview"]], "archive preview [--agent <id>] [--json]", "what the AI-session archive would move on this side now, as this user (never as root): per agent the due sessions oldest first, their newest write and month, what is kept in place and why (open, an agent working there, a name NTFS refuses, what never moves), the age they are due at and the agent's own retention (read-only: no session file is opened, nothing is written)", ["archive", "preview", "--json"], ParseArchivePreview),
+        new([["archive", "run"]], "archive run [--agent <id>] [--budget-seconds <n>] [--json]", "one run of this side's AI-session archive, as this user (never as root): the reconcile of what an interrupted run left, the removal of sessions archived at least archive.removeAfterHours ago once their copies hash equal again, then the due sessions copied, verified and indexed, oldest first, within the budget; --json streams a progress line per file and a heartbeat, no line names a session", ["archive", "run", "--json"], ParseArchiveRun),
+        new([["archive", "status"]], "archive status [--json]", "the archive of this side now, as this user: whether a run holds its lock (and whether that run is stuck in the kernel on a share), the sessions on their way, the last run (local state only: the base is never read)", ["archive", "status", "--json"], rest => JsonOnly("archive status", rest, json => new Request.ArchiveStatus(json))),
+        new([["archive", "reconcile"]], "archive reconcile --scan [--json]", "as this user: walk this side's folders of the base and re-index, as recovered, every archived file no index line names (a copy an interrupted run left); nothing at the source is touched", ["archive", "reconcile", "--scan", "--json"], ParseArchiveReconcile),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
@@ -564,6 +577,32 @@ internal static class CommandLine
                 new Request.Failed($"\"{BinaryName} archive preview --agent\" takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)} or {Core.Agents.ExtraAgent.IdPrefix}<name>; got \"{Printable(agent)}\"."),
             var (options, _) => new Request.ArchivePreview(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Flags.Contains(JsonFlag)),
         };
+
+    private const string BudgetFlag = "--budget-seconds";
+    private const string ScanFlag = "--scan";
+
+    /// <summary>Optionally <c>--agent &lt;id&gt;</c> (as <c>archive preview</c>), <c>--budget-seconds &lt;n&gt;</c> (1 to the most
+    /// <c>archive.runBudgetMinutes</c> allows) and <c>--json</c>.</summary>
+    private static Request ParseArchiveRun(IReadOnlyList<string> rest) =>
+        ReadOptions("archive run", rest, [AgentFlag, BudgetFlag], [JsonFlag]) switch
+        {
+            (_, { } failure) => failure,
+            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && (agent.Contains(',', StringComparison.Ordinal) || Core.Config.ConfigValidation.Parse(Core.Config.ConfigKeys.Archive.Agents, agent) is not Core.Config.ValueCheck.Ok) =>
+                new Request.Failed($"\"{BinaryName} archive run --agent\" takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)} or {Core.Agents.ExtraAgent.IdPrefix}<name>; got \"{Printable(agent)}\"."),
+            var (options, _) when options.Values.TryGetValue(BudgetFlag, out var budget) && !ValidBudget(budget) =>
+                new Request.Failed($"\"{BinaryName} archive run {BudgetFlag}\" takes a whole number of seconds from 1 to {Core.Config.ConfigKeys.Archive.RunBudgetMinutes.Max * 60}; got \"{Printable(options.Values[BudgetFlag])}\"."),
+            var (options, _) => new Request.ArchiveRun(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.TryGetValue(BudgetFlag, out var b) ? int.Parse(b, System.Globalization.CultureInfo.InvariantCulture) : 0, options.Flags.Contains(JsonFlag)),
+        };
+
+    private static bool ValidBudget(string text) =>
+        int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds) && seconds >= 1 && seconds <= Core.Config.ConfigKeys.Archive.RunBudgetMinutes.Max * 60;
+
+    private static Request ParseArchiveReconcile(IReadOnlyList<string> rest) => rest switch
+    {
+        [ScanFlag] => new Request.ArchiveReconcileScan(false),
+        [ScanFlag, JsonFlag] or [JsonFlag, ScanFlag] => new Request.ArchiveReconcileScan(true),
+        _ => new Request.Failed($"\"{BinaryName} archive reconcile\" needs {ScanFlag} (the reconcile itself runs at the start of every archive run) and optionally {JsonFlag}."),
+    };
 
     private static Request ParseArchiveCheckBase(IReadOnlyList<string> rest) => rest switch
     {

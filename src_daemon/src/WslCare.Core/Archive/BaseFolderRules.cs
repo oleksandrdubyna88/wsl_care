@@ -101,6 +101,9 @@ public static partial class BaseFolderRules
 
     /// <summary>Judges <paramref name="given"/> as the base of this side's archive, the Windows profile unknown.</summary>
     /// <param name="cleanupRoots">The folders the registry's actions clean (<see cref="ExtraAgentRules.CleanupRoots"/>).</param>
+    /// <summary>The answer for "no base configured" — never judged, never accepted (E9.S2b: the run answers <c>no-base</c>).</summary>
+    public static BaseFolderReport Unconfigured { get; } = new(SchemaVersion.Current, string.Empty, string.Empty, false, string.Empty, string.Empty, "no archive.baseFolder is set", BaseMountReport.Unknown, [], []);
+
     public static BaseFolderReport Judge(IHostPaths paths, IFileSystem files, IReadOnlyList<ForbiddenFolder> cleanupRoots, string given) =>
         Judge(paths, files, new BaseFolderContext(cleanupRoots, string.Empty), given);
 

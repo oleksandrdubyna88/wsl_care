@@ -20,6 +20,7 @@ public enum ArchiveFileStep
     ReadBackChunk,
     OwnCopyRemoved,
     FolderFlushed,
+    Appended,
     Renamed,
     ArchivedCopyHashed,
     RemovalOpened,
@@ -55,7 +56,10 @@ public sealed partial class PhysicalFileSystem
     };
 
     public FolderBeneath OpenFolderBeneath(string baseFolder, IReadOnlyList<string> levels, DeletionScope scope) =>
-        FolderProblem(baseFolder, levels, scope) is { Length: > 0 } problem ? new FolderBeneath.Refused(problem) : FolderByOs(baseFolder, levels);
+        FolderProblem(baseFolder, levels, scope) is { Length: > 0 } problem ? new FolderBeneath.Refused(problem) : FolderByOs(baseFolder, levels, create: true);
+
+    public FolderBeneath OpenExistingFolderBeneath(string baseFolder, IReadOnlyList<string> levels) =>
+        LevelsProblem(levels) is { Length: > 0 } bad ? new FolderBeneath.Refused(bad) : FolderByOs(baseFolder, levels, create: false);
 
     public ExclusiveFile CreateExclusive(BeneathFolder folder, string name, DeletionScope scope) =>
         folder is OpenedFolder own ? own.With(() => CreateIn(own, name, scope), why => new ExclusiveFile.Refused(why)) : new ExclusiveFile.Refused(ForeignFolder(folder));
@@ -142,9 +146,9 @@ public sealed partial class PhysicalFileSystem
 
     private static string LevelsProblem(IReadOnlyList<string> levels) => levels.Select(NameProblem).FirstOrDefault(p => p.Length > 0) ?? string.Empty;
 
-    private FolderBeneath FolderByOs(string baseFolder, IReadOnlyList<string> levels) =>
-        OperatingSystem.IsLinux() ? FolderLinux(baseFolder, levels)
-        : OperatingSystem.IsWindows() ? FolderWindows(baseFolder, levels)
+    private FolderBeneath FolderByOs(string baseFolder, IReadOnlyList<string> levels, bool create) =>
+        OperatingSystem.IsLinux() ? FolderLinux(baseFolder, levels, create)
+        : OperatingSystem.IsWindows() ? FolderWindows(baseFolder, levels, create)
         : new FolderBeneath.Refused(NotThisOs);
 
     private ExclusiveFile CreateIn(OpenedFolder folder, string name, DeletionScope scope)
@@ -377,7 +381,7 @@ public sealed partial class PhysicalFileSystem
     /// <summary>Linux: the base opened from the file system's root along its REAL path, no link at any level; then each level made
     /// (0700) or opened from its parent's descriptor.</summary>
     [SupportedOSPlatform("linux")]
-    private FolderBeneath FolderLinux(string baseFolder, IReadOnlyList<string> levels)
+    private FolderBeneath FolderLinux(string baseFolder, IReadOnlyList<string> levels, bool create)
     {
         var at = Real(baseFolder) is RealPathResult.Resolved resolved ? FromFileSystemRoot(resolved.Path) : Located.Refused($"{baseFolder} could not be resolved");
         if (at.Problem.Length > 0)
@@ -387,20 +391,20 @@ public sealed partial class PhysicalFileSystem
 
         var chain = BeneathWrites.OpenChain(at.Top, [.. at.Folders, at.Name], readable: true);
         return chain.Folder.Failed
-            ? new FolderBeneath.Refused($"{baseFolder}: {LinkOrNotAFolder} (at {chain.FailedAt}, errno {chain.Folder.Errno})")
-            : LevelsLinux(chain.Folder.Value, at.RealPath, levels);
+            ? FolderFailure(chain.Folder.Errno, create, $"{baseFolder}: {LinkOrNotAFolder} (at {chain.FailedAt}, errno {chain.Folder.Errno})")
+            : LevelsLinux(chain.Folder.Value, at.RealPath, levels, create);
     }
 
     [SupportedOSPlatform("linux")]
-    private FolderBeneath LevelsLinux(int current, string path, IReadOnlyList<string> levels)
+    private FolderBeneath LevelsLinux(int current, string path, IReadOnlyList<string> levels, bool create)
     {
         foreach (var level in levels)
         {
-            var next = LevelLinux(current, level, Path.Combine(path, level));
+            var next = create ? LevelLinux(current, level, Path.Combine(path, level)) : BeneathWrites.OpenFolderAt(current, level, readable: true);
             BeneathWrites.Close(current);
             if (next.Failed)
             {
-                return new FolderBeneath.Refused($"{LinkOrNotAFolder} (at {level}, errno {next.Errno})");
+                return FolderFailure(next.Errno, create, $"{LinkOrNotAFolder} (at {level}, errno {next.Errno})");
             }
 
             (current, path) = (next.Value, Path.Combine(path, level));
@@ -409,6 +413,10 @@ public sealed partial class PhysicalFileSystem
 
         return new FolderBeneath.Ready(new OpenedFolder(path, new SafeFileHandle(current, ownsHandle: true)));
     }
+
+    /// <summary>A level that could not be opened: MISSING when the reader asked for existing levels only (E9.S2b) and it is not there.</summary>
+    private static FolderBeneath FolderFailure(int errno, bool create, string why) =>
+        !create && errno == BeneathWrites.NoEntry ? new FolderBeneath.Missing() : new FolderBeneath.Refused(why);
 
     /// <summary>One level: created 0700 when missing (an existing one kept) and, when it is new, its ENTRY made durable by flushing
     /// the parent that holds it (risk consult 9/9.2); then opened from its parent's descriptor, never a link.</summary>

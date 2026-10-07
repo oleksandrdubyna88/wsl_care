@@ -108,6 +108,13 @@ internal static partial class GoldenContracts
         new("running.heartbeatAt", "a live or wedged run's heartbeat is staged relative to now — it is judged against the clock (E6.S0)", _ => FixedInstant),
         new("running.heartbeatAgeSeconds", "now minus the staged heartbeat: fresh for live (0), ten minutes for wedged (600)", age => age.GetValue<double>() >= 30 ? 600 : 0),
         new("run.startedAt", "runs show: the confirmed act started now (E6.S0)", _ => FixedInstant),
+        new("startedUtc", "archive run: the run started now (E9.S2b)", _ => FixedInstant),
+        new("endedUtc", "archive run: the run ended now (E9.S2b)", _ => FixedInstant),
+        new("filesPerSecond", "archive run: the rate this machine measured (E9.S2b)", _ => 0),
+        new("megabytesPerSecond", "archive run: the rate this machine measured (E9.S2b)", _ => 0),
+        new("inflight[*].archivedAtUtc", "archive status: the entry was archived by the run just before (E9.S2b)", _ => FixedInstant),
+        new("lastRun.startedUtc", "archive status: the last run started now (E9.S2b)", _ => FixedInstant),
+        new("lastRun.endedUtc", "archive status: the last run ended now (E9.S2b)", _ => FixedInstant),
         new("run.endedAt", "runs show: the confirmed act ended now (E6.S0)", _ => FixedInstant),
     ];
 
@@ -279,6 +286,12 @@ internal static partial class GoldenContracts
             }
 
             files.Add(Answered("archive-preview.json", archive, await archive.RunAsync("archive", "preview", "--json"), matched));
+
+            // E9.S2b: one run over that session (its answer is the LAST line — the lines before it are progress), then the status.
+            (await archive.RunAsync("config", "set", "archive.baseFolder", "/mnt/v/ai-archive")).Exit.Should().Be((int)ExitCode.Ok);
+            var run = await archive.RunAsync("archive", "run", "--agent", "claude-code", "--json");
+            files.Add(Answered("archive-run.json", archive, run with { Stdout = run.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
+            files.Add(Answered("archive-status.json", archive, await archive.RunAsync("archive", "status", "--json"), matched));
         }
 
         using var day = new ScenarioHome("golden-local-day");

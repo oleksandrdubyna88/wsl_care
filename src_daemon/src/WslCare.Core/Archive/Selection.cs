@@ -48,6 +48,9 @@ public sealed record AgentSelection(AgentEntry Entry, string Under, RetentionFou
     /// <summary>Whether <c>archive.agents</c> holds it — an agent asked for by <c>--agent</c> alone is previewed but never moved (E9.S1
     /// review round m4).</summary>
     public bool Enabled { get; init; } = true;
+
+    /// <summary>The quarantined files themselves, relative to <see cref="Under"/> (E9.S2b: the reconcile renames them back).</summary>
+    public IReadOnlyList<string> QuarantinedFiles { get; init; } = [];
 }
 
 /// <summary>Everything the selection reads, and when it is.</summary>
@@ -118,14 +121,15 @@ public static class Selection
         var units = entry.Archive!.Units.SelectMany(unit => Units(input, entry, under, unit, listing, rules)).ToList();
         var cutoff = input.Now - TimeSpan.FromDays(age);
         var due = units.Where(u => u.Unit.NewestWriteUtc < cutoff).OrderBy(u => u.Unit.NewestWriteUtc).ThenBy(u => u.Unit.Key, StringComparer.Ordinal).ToList();
-        var quarantined = QuarantineCount.Of(new QuarantineCount.Look(input, entry, under, listing, rules), units.SelectMany(u => u.Unit.Files));
+        var quarantined = QuarantineCount.Found(new QuarantineCount.Look(input, entry, under, listing, rules), units.SelectMany(u => u.Unit.Files));
         return new AgentSelection(
             entry, under, retention, age,
             [.. due.Where(u => u.Unit.SkipRule.Length == 0).Select(u => u.Unit)],
             [.. due.Where(u => u.Unit.SkipRule.Length > 0).Select(u => u.Unit)],
             units.Count - due.Count,
-            quarantined,
-            string.Join("; ", units.Select(u => u.ListingNote).Where(n => n.Length > 0).Distinct(StringComparer.Ordinal)));
+            quarantined.Count,
+            string.Join("; ", units.Select(u => u.ListingNote).Where(n => n.Length > 0).Distinct(StringComparer.Ordinal)))
+        { QuarantinedFiles = [.. quarantined.Order(StringComparer.Ordinal)] };
     }
 
     /// <summary>A unit, and what the listing that found it could not see.</summary>

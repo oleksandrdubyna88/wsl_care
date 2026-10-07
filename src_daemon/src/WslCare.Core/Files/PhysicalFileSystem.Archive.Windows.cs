@@ -90,13 +90,13 @@ public sealed partial class PhysicalFileSystem
     /// handle that refuses the folder's and its parents' rename while open, so a level checked once stays the folder that was
     /// checked; a new level's entry flushed in its held parent; the last level's handle kept in the <see cref="OpenedFolder"/>.</summary>
     [SupportedOSPlatform("windows")]
-    private FolderBeneath FolderWindows(string baseFolder, IReadOnlyList<string> levels)
+    private FolderBeneath FolderWindows(string baseFolder, IReadOnlyList<string> levels, bool create)
     {
         var at = Real(baseFolder) is RealPathResult.Resolved resolved ? FromFileSystemRoot(resolved.Path) : Located.Refused($"{baseFolder} could not be resolved");
         return at.Problem.Length > 0 ? new FolderBeneath.Refused(at.Problem) : HeldBase(at) switch
         {
-            HeldLevel.Held held => LevelsWindows(held.Handle, at.RealPath, levels),
-            HeldLevel.Refused refused => new FolderBeneath.Refused($"{baseFolder}: {refused.Why}"),
+            HeldLevel.Held held => LevelsWindows(held.Handle, at.RealPath, levels, create),
+            HeldLevel.Refused refused => MissingOr(at.RealPath, create, $"{baseFolder}: {refused.Why}"),
             _ => new FolderBeneath.Refused(baseFolder),
         };
     }
@@ -116,14 +116,14 @@ public sealed partial class PhysicalFileSystem
     }
 
     [SupportedOSPlatform("windows")]
-    private FolderBeneath LevelsWindows(SafeFileHandle current, string path, IReadOnlyList<string> levels)
+    private FolderBeneath LevelsWindows(SafeFileHandle current, string path, IReadOnlyList<string> levels, bool create)
     {
         foreach (var level in levels)
         {
             HeldLevel next;
             try
             {
-                next = LevelWindows(current, Path.Combine(path, level));
+                next = create ? LevelWindows(current, Path.Combine(path, level)) : HeldFolder(Path.Combine(path, level));
             }
             finally
             {
@@ -132,7 +132,7 @@ public sealed partial class PhysicalFileSystem
 
             if (next is not HeldLevel.Held held)
             {
-                return new FolderBeneath.Refused($"{next.Problem} (at {level})");
+                return MissingOr(Path.Combine(path, level), create, $"{next.Problem} (at {level})");
             }
 
             (current, path) = (held.Handle, Path.Combine(path, level));
@@ -141,6 +141,10 @@ public sealed partial class PhysicalFileSystem
 
         return new FolderBeneath.Ready(new OpenedFolder(path, current));
     }
+
+    /// <summary>A level that could not be held: MISSING when the reader asked for existing levels only and nothing is there.</summary>
+    private static FolderBeneath MissingOr(string path, bool create, string why) =>
+        !create && !Path.Exists(path) ? new FolderBeneath.Missing() : new FolderBeneath.Refused(why);
 
     /// <summary>One level below a held parent: created when missing — a refusal, never an exception, when it cannot be (a file of
     /// that name, a denied access: own review round M1, security m4) — its entry flushed in the parent, then held itself.</summary>

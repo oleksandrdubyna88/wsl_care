@@ -34,7 +34,27 @@ public abstract record FolderBeneath
 
     public sealed record Ready(BeneathFolder Folder) : FolderBeneath;
 
+    /// <summary>A level is not there — answered only by <see cref="IArchiveFiles.OpenExistingFolderBeneath"/> (a month never archived).</summary>
+    public sealed record Missing : FolderBeneath;
+
     public sealed record Refused(string Why) : FolderBeneath;
+}
+
+/// <summary>A durable append to a file of the base (<see cref="IArchiveFiles.AppendDurably"/>, E9.S2b: the month index).</summary>
+public abstract record DurableAppend
+{
+    private DurableAppend()
+    {
+    }
+
+    /// <summary>Written whole and flushed to the disk.</summary>
+    public sealed record Appended : DurableAppend;
+
+    /// <summary>Nothing written: the name is a link, a folder or a file of more than one link, or the policy refused it.</summary>
+    public sealed record Refused(string Why) : DurableAppend;
+
+    /// <summary>The write or its flush failed: what was written may not survive a crash — never counted as durable.</summary>
+    public sealed record Failed(string Why) : DurableAppend;
 }
 
 /// <summary>An exclusive create of an archived file (<see cref="IArchiveFiles.CreateExclusive"/>).</summary>
@@ -157,6 +177,24 @@ public interface IArchiveFiles
     /// <summary>Opens (creating each missing level, 0700) <paramref name="levels"/> below <paramref name="baseFolder"/>, each level from
     /// the previous level's descriptor — a level that is a link, or not a folder, refuses.</summary>
     FolderBeneath OpenFolderBeneath(string baseFolder, IReadOnlyList<string> levels, DeletionScope scope);
+
+    /// <summary>Opens the EXISTING <paramref name="levels"/> below <paramref name="baseFolder"/> as <see cref="OpenFolderBeneath"/> does,
+    /// creating none (E9.S2b: the base's readers) — <see cref="FolderBeneath.Missing"/> when a level is not there.</summary>
+    FolderBeneath OpenExistingFolderBeneath(string baseFolder, IReadOnlyList<string> levels);
+
+    /// <summary>Appends <paramref name="bytes"/> to <paramref name="name"/> in <paramref name="folder"/> — created 0600 when missing,
+    /// never through a link, refused when it is not a plain file of one link — and flushes the file before answering (E9.S2b: an
+    /// index line counts only once it is on the disk).</summary>
+    DurableAppend AppendDurably(BeneathFolder folder, string name, ReadOnlySpan<byte> bytes, DeletionScope scope);
+
+    /// <summary>Reads <paramref name="name"/> in <paramref name="folder"/> whole, never through a link, a plain file of one link only,
+    /// refused past <paramref name="maxBytes"/> (E9.S2b: the base is untrusted input).</summary>
+    FileReadResult ReadCapped(BeneathFolder folder, string name, int maxBytes);
+
+    /// <summary>Removes <paramref name="name"/> in <paramref name="folder"/> only while its bytes still hash to
+    /// <paramref name="expectedSha256"/> — the bytes the caller read and judged (E9.S2b: a dead run's lease taken over); anything
+    /// else at the name is kept.</summary>
+    VerifiedRemoval RemoveIfUnchanged(BeneathFolder folder, string name, string expectedSha256, DeletionScope scope);
 
     /// <summary>Creates <paramref name="name"/> in <paramref name="folder"/> ONLY when nothing has that name (<c>O_CREAT | O_EXCL |
     /// O_NOFOLLOW</c>, 0600; Windows <c>CREATE_NEW</c> written through).</summary>

@@ -29,6 +29,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="WslCare.Core.Tests" />
     <InternalsVisibleTo Include="WslCare.Cli.Tests" />
+    <InternalsVisibleTo Include="wsl-care" />
   </ItemGroup>
 
 </Project>

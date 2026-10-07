@@ -1,8 +1,8 @@
 # PLAN — move old AI-agent sessions into a dated archive instead of losing them
 
-> Status: **in progress, 2026-10-06 — E9.S0, E9.S1 and E9.S2a (the archive's file seam) built, the review rounds fixed** (the catalogue's archive blocks, the archive's keys, the base folder
+> Status: **in progress, 2026-10-07 — E9.S0, E9.S1, E9.S2a (the archive's file seam) and E9.S2b (the two-phase move, `archive run`) built, the review rounds fixed** (the catalogue's archive blocks, the archive's keys, the base folder
 > rules and `archive check-base`; the selection and `archive preview`, read-only; the parent plan's §15r *E9.S0 as built* and
-> *E9.S1 as built*); nothing is moved yet. Planned 2026-10-02. Scope: a new `archive` capability of the
+> *E9.S1 as built*, *E9.S2b as built*); sessions move on the distribution's side by `archive run` (A13 in the timer is E9.S4; Windows after E9.S5). Planned 2026-10-02. Scope: a new `archive` capability of the
 > `wsl-care` daemon on **both** sides (WSL and Windows), its settings, its page in the VS Code extension.
 >
 > Parent plan: [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) (§4.6 AI-agent monitoring).
@@ -163,7 +163,10 @@ from the side that reads it fast (Windows, for a Windows path).
 - **The index is written before the source goes** (finding 7): copy → fsync → verify hash → append the
   index line → fsync the index → delete the source. At startup a reconcile finishes the delete for an
   index entry whose source still exists with the same hash, re-indexes an archive file that has no
-  entry, and REPORTS any mismatch — it never deletes on a mismatch.
+  entry, and REPORTS any mismatch — it never deletes on a mismatch. *(Read with §8b, never alone: the
+  delete — and its resume — is decided per SESSION, not per file; a session one of whose files changed
+  keeps EVERY file. §15r D2 step 9 of the parent plan says how a removal stopped half way is finished:
+  the transcript first, and when it changed nothing of the session goes — consult 26b4a958, C-3.)*
 - **Whose month** (finding 16): the machine's local time zone at archive time; the index records the UTC
   instant and the zone id, so the placement can be reproduced.
 

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "sideFolder": "wsl-host-distro",
+  "runId": "20000101T000000Z-1",
+  "startedUtc": "2000-01-01T00:00:00+00:00",
+  "endedUtc": "2000-01-01T00:00:00+00:00",
+  "baseFolder": "/golden-root/mnt/v/ai-archive",
+  "outcome": "done",
+  "stop": "",
+  "reconcile": {
+    "indexed": 0,
+    "dropped": 0,
+    "resumed": 0,
+    "renamedBack": 0,
+    "keptAside": 0,
+    "notes": []
+  },
+  "inUse": {
+    "state": "complete",
+    "openFiles": 0,
+    "claudeProjects": 0,
+    "note": ""
+  },
+  "agents": [
+    {
+      "id": "claude-code",
+      "enabled": true,
+      "copied": 1,
+      "copiedFiles": 2,
+      "copiedBytes": 200,
+      "removed": 0,
+      "removedBytes": 0,
+      "goneAtSource": 0,
+      "superseded": 0,
+      "damaged": 0,
+      "waiting": 1,
+      "skipped": [],
+      "note": ""
+    }
+  ],
+  "filesPerSecond": 0,
+  "megabytesPerSecond": 0,
+  "notes": [],
+  "scan": {
+    "sideFolders": 0,
+    "files": 0,
+    "recovered": 0,
+    "notes": []
+  }
+}

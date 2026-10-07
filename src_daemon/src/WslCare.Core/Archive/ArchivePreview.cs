@@ -75,8 +75,11 @@ public static class ArchivePreview
             input.Now,
             input.Zone.Id,
             input.Config.Text(ConfigKeys.Archive.BaseFolder),
-            new InUseReport(StateName(input.InUse.State), input.InUse.OpenFiles.Count, input.InUse.ClaudeProjects.Count, input.InUse.Note),
+            InUseOf(input.InUse),
             [.. selected.Select(s => Agent(input.Config, s))]);
+
+    /// <summary>What the open-file check saw, as an answer reports it (the preview's and the run's).</summary>
+    public static InUseReport InUseOf(InUseView view) => new(StateName(view.State), view.OpenFiles.Count, view.ClaudeProjects.Count, view.Note);
 
     private static string StateName(InUseState state) => state switch
     {
