@@ -44,17 +44,22 @@ public sealed class McpServerCollectorTests : IDisposable
         return this;
     }
 
-    private ProcessSnapshot Snapshot() =>
-        new ProcessCollector(_tree.Files, _tree.Paths, new FixedTimeProvider(Now))
+    private ProcessSnapshot Snapshot() => Snapshot(Now);
+
+    private ProcessSnapshot Snapshot(DateTimeOffset at) =>
+        new ProcessCollector(_tree.Files, _tree.Paths, new FixedTimeProvider(at))
             .Read(Reading.Of(new KernelFacts(Hz, 4096)), new ContainerSet([]), CancellationToken.None)
             .Should().BeOfType<Reading<ProcessSnapshot>.Available>().Subject.Value;
 
     /// <summary>The embedded defaults — what the product runs under with no layer.</summary>
     private static EffectiveConfig Defaults() => Configured();
 
-    private McpSample Sample(Func<TimeSpan, CancellationToken, Task>? wait = null, EffectiveConfig? config = null, IFileSystem? files = null, TimeProvider? clock = null, ProcessSnapshot? snapshot = null)
+    /// <summary>An unprivileged status's ledger: this account's own state folder in the sandbox (plan E14 S1).</summary>
+    private McpCpuLedgerPlace OwnLedger => McpCpuLedgerPlace.ForStatus(_tree.Paths, root: false);
+
+    private McpSample Sample(Func<TimeSpan, CancellationToken, Task>? wait = null, EffectiveConfig? config = null, IFileSystem? files = null, TimeProvider? clock = null, ProcessSnapshot? snapshot = null, McpCpuLedgerPlace? ledger = null)
     {
-        var collector = new McpServerCollector(files ?? _tree.Files, _tree.Paths, clock ?? new FixedTimeProvider(Now), wait ?? ((_, _) => Task.CompletedTask));
+        var collector = new McpServerCollector(files ?? _tree.Files, _tree.Paths, clock ?? new FixedTimeProvider(Now), wait ?? ((_, _) => Task.CompletedTask), ledger ?? OwnLedger);
         var result = collector.SampleAsync(Reading.Of(snapshot ?? Snapshot()), config ?? Defaults(), CancellationToken.None).GetAwaiter().GetResult();
         return result.Should().BeOfType<Reading<McpSample>.Available>().Subject.Value;
     }
@@ -131,6 +136,223 @@ public sealed class McpServerCollectorTests : IDisposable
         waited.Should().Be(TimeSpan.FromMilliseconds(1000), "the default window");
         sample.Instances.Single().CpuPercent.Should().Be(Reading.Of(50.0), "50 ticks at 100 ticks/s across 1 s is half a core: 100 × 0.5 ÷ 1.0");
         sample.CpuCores.Should().Be(Reading.Of(0.5));
+    }
+
+    [Fact]
+    public void A_server_that_bursts_every_minute_is_measured_busy_over_the_interval_not_idle_in_a_quiet_second()
+    {
+        // Measured 2026-10-07 19:40Z (research/2026-10-07_evening_overload.md M1-M3): coai-mcp burned in bursts about once a
+        // minute — up to 1.69 cores together in a 5 s slice — while daemon 0.2.0's status read every instance 0 % and idle,
+        // because its one 1 s window fell between bursts. Here: a whole core for 10 s of every 60 s (16.7 % on average), the
+        // bursts at seconds 30-40 of each minute after the first sample; both samples' own 1 s windows fall in quiet seconds.
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        Log(300, Now - TimeSpan.FromHours(1), Now - TimeSpan.FromMinutes(15));
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        var quiet = Advancing(clock);
+
+        var first = Sample(wait: quiet, clock: clock, snapshot: Snapshot(clock.GetUtcNow())).Instances.Single();
+        clock.Advance(TimeSpan.FromSeconds(120));
+        _tree.Stat(300, 200, "coai-mcp", 0, StartTicksFor(TimeSpan.FromHours(1)), 1000 + (2 * 10 * Hz));
+        var second = Sample(wait: quiet, clock: clock, snapshot: Snapshot(clock.GetUtcNow())).Instances.Single();
+
+        first.Kind.Should().Be(McpKind.Idle, "a first sighting has only the window, and its second was quiet");
+        second.CpuPercent.Should().Be(Reading.Of(16.7), "2 bursts × 10 s × 100 ticks over the 120 s since the previous sample: 100 × 20 ÷ 120");
+        second.Kind.Should().Be(McpKind.BusyWithoutActivity, "a sixth of a core with no log write for 17 minutes is the measured state, not idle");
+    }
+
+    /// <summary>A window that moves <paramref name="clock"/> by its length and changes no tick — a quiet second.</summary>
+    private static Func<TimeSpan, CancellationToken, Task> Advancing(ManualTimeProvider clock, List<TimeSpan>? waits = null) => (window, _) =>
+    {
+        waits?.Add(window);
+        clock.Advance(window);
+        return Task.CompletedTask;
+    };
+
+    /// <summary>Plan E14 S1: a stepped clock, and one sample of pid 300 at its current instant with the ticks <paramref name="cpuTicks"/>.</summary>
+    private McpInstance SampleAt(ManualTimeProvider clock, long cpuTicks, List<TimeSpan>? waits = null, IFileSystem? files = null)
+    {
+        _tree.Stat(300, 200, "coai-mcp", 0, StartTicksFor(TimeSpan.FromHours(1)), cpuTicks);
+        return Sample(wait: Advancing(clock, waits), clock: clock, snapshot: Snapshot(clock.GetUtcNow()), files: files).Instances.Single(i => i.Process.Pid == 300);
+    }
+
+    private string LedgerFile => _tree.Paths.Rules.Join(_tree.Paths.UserStateDirectory, McpCpuLedger.FileName);
+
+    [Fact]
+    public void A_first_sighting_falls_back_to_the_window_and_says_so()
+    {
+        Session(200, 300, TimeSpan.FromHours(1));
+
+        var sample = Sample(wait: Burn(300));
+        var instance = sample.Instances.Single();
+
+        instance.CpuBasis.Should().Be(McpCpuBasis.Window, "no point of this identity exists yet");
+        instance.CpuOver.Should().Be(TimeSpan.FromSeconds(1));
+        instance.CpuPercent.Should().Be(Reading.Of(50.0));
+        sample.Baseline.Should().Be(new McpCpuBaseline(LedgerFile, true, string.Empty), "an unprivileged status keeps its readings in its own state folder");
+        File.Exists(LedgerFile).Should().BeTrue();
+    }
+
+    [Fact]
+    public void No_wait_when_every_instance_has_a_baseline()
+    {
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        var waits = new List<TimeSpan>();
+
+        SampleAt(clock, 1000, waits);
+        clock.Advance(TimeSpan.FromSeconds(121));
+        var second = SampleAt(clock, 1600, waits);
+
+        waits.Should().Equal([TimeSpan.FromSeconds(1)], "only the first sighting paid the window; the second had its baseline");
+        second.CpuBasis.Should().Be(McpCpuBasis.Interval);
+        second.CpuOver.Should().Be(TimeSpan.FromSeconds(121), "from the first sample's second read to now");
+        second.CpuPercent.Should().Be(Reading.Of(5.0), "600 ticks at 100 ticks/s over 121 s: 100 × 6 ÷ 121 = 4.96, one decimal 5.0");
+    }
+
+    [Fact]
+    public void Two_callers_a_second_apart_both_measure_over_the_interval()
+    {
+        // Review of the two-point rule: two VS Code windows polling status every 120 s, one second apart, must not starve each other.
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+
+        SampleAt(clock, 1000);
+        SampleAt(clock, 1000);
+        clock.Advance(TimeSpan.FromSeconds(120));
+        var a = SampleAt(clock, 2200);
+        var b = SampleAt(clock, 2200);
+
+        a.CpuBasis.Should().Be(McpCpuBasis.Interval);
+        b.CpuBasis.Should().Be(McpCpuBasis.Interval, "the second caller finds the OLDER point, still at least the minimum old");
+        b.CpuOver.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(120));
+    }
+
+    [Theory]
+    [InlineData("boot")]
+    [InlineData("pid")]
+    [InlineData("older than the maximum")]
+    public void A_baseline_of_another_boot_a_reused_pid_or_older_than_the_maximum_is_not_used(string change)
+    {
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        SampleAt(clock, 1000);
+        clock.Advance(change == "older than the maximum" ? TimeSpan.FromMinutes(21) : TimeSpan.FromSeconds(121));
+        switch (change)
+        {
+            case "boot":
+                _tree.BootId("6d1c1c5e-0000-4000-8000-000000000002");
+                break;
+            case "pid":
+                // The same pid, another process: started 10 s ago.
+                _tree.Process(300, 200, "/a", 30_000, words: [Coai], startTicks: StartTicksFor(TimeSpan.FromHours(1)) + (3600 * Hz), cpuTicks: 5000);
+                break;
+        }
+
+        var instance = Sample(wait: Advancing(clock), clock: clock, snapshot: Snapshot(clock.GetUtcNow())).Instances.Single();
+
+        instance.CpuBasis.Should().Be(McpCpuBasis.Window, $"a point of {change} is no baseline");
+    }
+
+    [Fact]
+    public void A_four_hour_average_does_not_make_a_now_quiet_server_busy_without_activity()
+    {
+        // Review finding 3: a server that burned for an hour, three hours ago, and is quiet now — an average over four hours
+        // (the root timer's interval) is above the idle line, and with no log write for ten minutes it would read "busy without
+        // activity". The maximum interval (20 min) keeps the kind about NOW: the window answers instead.
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        Log(300, Now - TimeSpan.FromHours(1), Now - TimeSpan.FromMinutes(15));
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        SampleAt(clock, 1000);
+        clock.Advance(TimeSpan.FromHours(4));
+
+        var instance = SampleAt(clock, 1000 + (3600 * Hz));
+
+        instance.CpuBasis.Should().Be(McpCpuBasis.Window);
+        instance.Kind.Should().Be(McpKind.Idle, "it is quiet now; an hour of CPU three hours ago is not activity now");
+    }
+
+    [Fact]
+    public void A_wall_clock_jump_does_not_change_the_rate()
+    {
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        SampleAt(clock, 1000);
+        clock.Advance(TimeSpan.FromSeconds(120));
+        clock.JumpWallClock(TimeSpan.FromHours(3));
+
+        var instance = SampleAt(clock, 1000 + (2 * 10 * Hz));
+
+        instance.CpuBasis.Should().Be(McpCpuBasis.Interval);
+        instance.CpuPercent.Should().Be(Reading.Of(16.7), "the monotonic clock is the denominator: 120 s passed, not 3 h");
+    }
+
+    [Theory]
+    [InlineData("{ not json")]
+    [InlineData("{\"schemaVersion\": 1, \"bootId\": \"\", \"entries\": []}")]
+    public void An_unreadable_or_malformed_ledger_is_no_baseline_never_a_failed_sample(string content)
+    {
+        Session(200, 300, TimeSpan.FromHours(1));
+        Directory.CreateDirectory(Path.GetDirectoryName(LedgerFile)!);
+        File.WriteAllText(LedgerFile, content);
+
+        var sample = Sample(wait: Burn(300));
+
+        sample.Instances.Single().CpuBasis.Should().Be(McpCpuBasis.Window);
+        sample.Baseline.Recorded.Should().BeTrue("the ledger is rewritten from this sample");
+    }
+
+    [Fact]
+    public void An_unchanged_ledger_is_not_rewritten()
+    {
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        var writes = new CountingWrites(_tree.Files);
+        SampleAt(clock, 1000, files: writes);
+
+        var second = Sample(wait: Advancing(clock), clock: clock, snapshot: Snapshot(clock.GetUtcNow()), files: writes);
+
+        writes.Count.Should().Be(1, "a point younger than the minimum changes nothing, so the second sample writes nothing");
+        second.Baseline.Recorded.Should().BeTrue("what it would write is already there");
+    }
+
+    [Fact]
+    public void A_place_that_may_not_write_records_nothing_and_says_why()
+    {
+        Session(200, 300, TimeSpan.FromHours(1));
+        var root = McpCpuLedgerPlace.ForStatus(_tree.Paths, root: true);
+        var readOnlyCollect = McpCpuLedgerPlace.ForCollect(_tree.Paths, mayRecord: false, "read-only: run as root to record");
+
+        var asRoot = Sample(wait: Burn(300), ledger: root);
+        var unprivilegedCollect = Sample(wait: Burn(300), ledger: readOnlyCollect);
+
+        asRoot.Baseline.Should().Be(McpCpuBaseline.NotRecorded(_tree.Paths.Rules.Join(_tree.Paths.StateDirectory, McpCpuLedger.FileName), McpCpuLedger.ReadOnlyRoot));
+        unprivilegedCollect.Baseline.Reason.Should().Contain("read-only");
+        Directory.Exists(_tree.Paths.StateDirectory).Should().BeFalse("status as root and a read-only collect write no ledger");
+        File.Exists(LedgerFile).Should().BeFalse();
+    }
+
+    [Fact]
+    public void The_root_timer_records_its_ledger_in_the_state_directory()
+    {
+        Session(200, 300, TimeSpan.FromHours(1));
+
+        var sample = Sample(wait: Burn(300), ledger: McpCpuLedgerPlace.ForCollect(_tree.Paths, mayRecord: true, "unused"));
+
+        sample.Baseline.Recorded.Should().BeTrue(sample.Baseline.Reason);
+        File.Exists(_tree.Paths.Rules.Join(_tree.Paths.StateDirectory, McpCpuLedger.FileName)).Should().BeTrue();
+        File.Exists(LedgerFile).Should().BeFalse("root never writes into the user's home");
+    }
+
+    /// <summary>Counts the private atomic writes — the ledger's only write.</summary>
+    private sealed class CountingWrites(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public int Count { get; private set; }
+
+        public override Core.Files.Deletion.DeletionVerdict WritePrivateFileAtomically(string path, ReadOnlySpan<byte> content, Core.Files.Deletion.DeletionScope scope)
+        {
+            Count++;
+            return base.WritePrivateFileAtomically(path, content, scope);
+        }
     }
 
     [Theory]

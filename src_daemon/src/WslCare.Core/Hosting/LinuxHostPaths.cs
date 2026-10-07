@@ -60,9 +60,13 @@ public sealed class LinuxHostPaths(LinuxEnvironment environment) : IHostPaths
 
     public string LogDirectory => _rules.Join(environment.Var, "log", Product);
 
+    /// <summary><c>$XDG_STATE_HOME/wsl-care</c>, by default <c>~/.local/state/wsl-care</c>: this account's own state — the run logs of
+    /// a run that may not write <c>/var/log/wsl-care</c> (plan §15b #3) and the MCP servers' CPU ledger of <c>status</c> (plan E14 S1).</summary>
+    public string UserStateDirectory =>
+        _rules.Join(environment.StateHome.Length > 0 ? environment.StateHome : _rules.Join(environment.Home, ".local", "state"), Product);
+
     /// <summary><c>$XDG_STATE_HOME/wsl-care/logs</c>, by default <c>~/.local/state/wsl-care/logs</c> (plan §15b #3).</summary>
-    public string UserLogDirectory =>
-        _rules.Join(environment.StateHome.Length > 0 ? environment.StateHome : _rules.Join(environment.Home, ".local", "state"), Product, "logs");
+    public string UserLogDirectory => _rules.Join(UserStateDirectory, "logs");
 
     public string TempDirectory => environment.Tmp;
 

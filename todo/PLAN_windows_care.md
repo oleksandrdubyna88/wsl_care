@@ -55,6 +55,7 @@ over Memory (Available MBytes, Committed Bytes, Pool Nonpaged/Paged Bytes, Stand
 | Health | reliability index trend, pending reboot, Windows Update state, Defender status (+ exclusions and Dev Drive trust when elevated), Search service and scope, power mode, event-log sizes | index < 5 |
 | WSL from outside | VHDX sizes vs. used inside, `.wslconfig` audit (cap, `autoMemoryReclaim`, no `sparseVhd`), Docker Desktop `daemon.json` (log rotation, builder GC) | |
 | AI agents | Windows side of the parent plan §4.6 and the archive plan — the Windows agents walk and its one-file cache are built by the parent's E7.S5 (parent plan §15q, *Boundaries*); the Windows collectors, task and history stay here (E11); `%TEMP%\claude\` is never walked or cleaned | |
+| MCP servers of the AI agents | `coai-mcp.exe`, and `creds-mcp.exe` once the catalogue opens (parent plan E7.S2d Q-M2): count, owner, orphans (parent gone, or a parent created after the child — a reused pid), CPU over the interval through `GetProcessTimes` — named by [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S7 (measured 2026-10-07: 85 `creds-mcp.exe`, 66 orphaned, 1.32 GB); the collector is E11's, a stop button by pid AND creation time is E12's | orphans > 0 |
 | Dev caches | NuGet (`global-packages`, `http-cache`, `v3-cache`), npm, pnpm, pip, VS Code (`Cache`, `CachedData`, `GPUCache`, logs, `CachedExtensionVSIXs`, `workspaceStorage` of missing folders), Playwright, .NET SDK/workload inventory | |
 
 ## 4. Actions (Windows)

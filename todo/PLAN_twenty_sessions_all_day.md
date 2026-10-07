@@ -1,0 +1,399 @@
+# PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
+
+> Status: **in progress, 2026-10-07: S1 built (§ 13); S2–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
+> signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
+>
+> Related docs: [2026-10-07_evening_overload.md](../research/2026-10-07_evening_overload.md) (the evidence),
+> [module_mcp_servers.md](../research/module_mcp_servers.md) (the metric S1 fixes), [module_daemon.md](../research/module_daemon.md),
+> [architecture.md](../research/architecture.md), [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) § *E7.S2d* (the metric's
+> plan, its owner question Q-M1 that S2 answers), [PLAN_windows_care.md](PLAN_windows_care.md) (E11/E12, where S7 lands).
+
+## 1. Symptom
+
+**The owner's goal, 2026-10-07 evening:** "I need 20 Claude sessions to run normally for 24 h." Today the machine degrades by
+evening and the agents' MCP servers cannot reconnect. Measured that evening
+([2026-10-07_evening_overload.md](../research/2026-10-07_evening_overload.md), each row with its method and time):
+
+| What | Evidence | Row |
+|---|---|---|
+| Windows saturated | CPU 100 % of 24, 22.5 GB free of 91.6 GB, commit 89 of 146 GB, `vmmemWSL` 29.5 GB (32.5 GB at 19:47Z) | W1–W3, W8 |
+| WSL saturated | load 36 on 24 CPUs, PSI cpu some avg10 31 %, swap 9.9 of 12 GB used, `Committed_AS` 49 GB > `MemTotal` 47 GB | L1–L3 |
+| who burned it | `coai-mcp` 6.9 cores (8 instances of the unfixed 0.44.0), `dotnet` 4.9, `VBCSCompiler` 4.9, `claude` 0.65 — during another agent's busy-loop test (a confound) | L7, W5 |
+| why MCP could not reconnect | `coai-mcp` 0.44.0 reads its vault through Windows interop and sweeps its session files BEFORE answering `initialize`; under load that took > 30 s and Claude Code's 30 s connect budget killed it | L8 |
+| **our metric was blind** | daemon 0.2.0 `status --json`: all 8 instances `cpuPercent 0`, kind `idle` — while 5 s slices showed up to 1.69 cores (mean 0.61): the servers burst with a period near a minute (not measured exactly) and the 1 s window misses the burst | M1–M3 |
+| Windows MCP leak | 85 `creds-mcp.exe`, 1.32 GB, **66 with a dead parent** | W9 |
+
+The upstream defects (`coai-mcp`'s start path — ConnectOtherAIs #690, shipping as 0.44.2; `creds-mcp.exe` not exiting when
+its client goes) are not this repository's to fix. What IS ours: a care daemon whose metric reported the exact failure as
+"idle", that can see but not stop a leaking server, that cannot tell an agent "the machine is busy now, wait", and that
+has never been run against the target load.
+
+## 2. Goal and pass criteria
+
+Twenty Claude Code sessions (plus their MCP servers, builds and tests) run for 24 hours on this machine with:
+
+- **no MCP connect timeout** attributable to load (Claude Code's own "connection timed out after 30000ms" lines, counted);
+- **PSI cpu some avg300 below a threshold X** (owner question Q8; the 2026-10-07 evening read 31 % avg10) and no swap
+  exhaustion (swap free never below Y GB);
+- **MCP servers idle when idle**: the S1 metric's idle-period CPU of all `coai-mcp` instances together below Z cores;
+- **every number above read from the daemon itself** (S1, S6) and recorded by the soak campaign (S8) in `research/`.
+
+The pass criteria are S8's; S1–S7 are what is built so that S8 can pass and so that a failing hour is attributable.
+
+## 3. What exists already (reuse first)
+
+| Capability | Where (verified at `56d9c0b`) | Used by |
+|---|---|---|
+| MCP instances, owner walk, kinds, starts | `src_daemon/src/WslCare.Core/Mcp/McpServerCollector.cs:17-79` (`SampleAsync`, `CpuAsync`), `McpJudge.Kind` `:107-112` | S1 changes the CPU basis; S2 selects from it |
+| one pid's start ticks + CPU ticks | `Collectors/Procfs/PidSamples.cs:23-29` (`PidSamples.Read`) | S1, S2, S3 |
+| a per-identity CPU history across runs (pid + start ticks + boot id, both clocks, root state file, private, capped) | `Actions/Suspects/AgentCpuHistory.cs:18-148` (`AgentCpuFile`, `SampleTime` `:27-31`, `BootId` `:130-131`) | S1's ledger follows its shape; `SampleTime` and the boot id move to `Collectors/Procfs` so a collector does not depend on the Actions layer (the coai code-round finding 1 of E7.S2d, same reason) |
+| signals by pid AND start (pidfd), SIGTERM then SIGKILL after a grace | `Actions/Suspects/SuspectSignals.cs:41` (`EndAllAsync`), keys `:19` | S2 |
+| a button-only action id | `Actions/ActionId.cs:41-44` (`ButtonOnlyIds`, A18) | S2's A19 |
+| `dotnet build-server shutdown` as the target user, refused during a build | `Actions/BuildServers/BuildServerShutdown.cs:26-166` (A3; trigger = alive ≥ `buildServers.idleHours`, `:79-85`) | S3 widens it |
+| PSI memory/io/cpu read | `Collectors/MemoryCollector.cs:8` (`PressureSet`), `Collectors/Procfs/Pressure.cs:14` | S6 (only `memory.pressure` is judged today, `Thresholds/ThresholdRules.cs:182`) |
+| swap verdict, `.wslconfig` reader and advice | `Thresholds/ThresholdRules.cs:99` (`memory.swap`), `Health/HealthParsers.cs:92-98`, `Collect/HealthReport.cs:36` (`WslConfigReport`) | S5 |
+| the writable-or-user choice of a folder | `src_daemon/src/WslCare.Cli/Logging/WslCareLogging.cs:90` (state log dir if writable, else `$XDG_STATE_HOME/wsl-care/logs`, `Hosting/LinuxHostPaths.cs:64-65`) | S1's ledger place |
+| a state file's read cap | `Config/ConfigKeys.Numbers.cs:440` (`records.maxStateFileBytes`, default 1 MiB) | S1 (no new cap key) |
+| the root service's own niceness | `src_daemon/systemd/wsl-care.service:67-68` (`Nice=19`, `IOSchedulingClass=idle`; key `units.nice`) | S4 measures whether `nice` matters at all |
+| the Windows probe (host RAM, system drive, `vmmemWSL` only) | `Collectors/WindowsProbe.cs:16-26` | S7 (E11) |
+
+## 4. Decisions taken in this plan
+
+1. **One epic, E14, eight stories; S1 first and alone in its pull request** (it fixes a measured defect, so `fix(daemon):`).
+   S2–S8 each get their own branch and pull request, in the build order of § 8.
+2. **Every behavioural number is a configuration key** (the owner's rule of 2026-10-05): each new number below names its
+   key, range, default and trust; `ArchitectureTests.Numbers`, `ContractFilesTests` and `contracts/config-keys.json` hold it.
+3. **Nothing is stopped by name.** Every action that ends a process does so by pid AND start ticks (and boot id where
+   state crosses runs), never by image name, never the AI agent's own process, never root's processes.
+4. **Measure before building on an assumption** (S2's "the agent restarts a killed server", S4's "nice does nothing in
+   WSL", S3's "build servers outlive their sessions"): each such story opens with its measurement, recorded in `research/`,
+   and the design below is conditional on it.
+5. **A cross-repository defect is named, not fixed here.** `coai-mcp`'s start path (ConnectOtherAIs) and `creds-mcp.exe`'s
+   orphans (CredsForDevs) are reported to their owners — the report itself is outward-facing and waits for the owner (Q7).
+
+## 5. Stories
+
+### S1 — the MCP metric measures what matters (fixes M1–M3)
+
+**Defect.** `McpServerCollector.CpuAsync` (`McpServerCollector.cs:50-63`) reads each instance's `stat` twice across
+`mcpServers.cpuWindowMilliseconds` (1 s by default). A server that burns in bursts with a period near a minute (M1; the
+period is not measured exactly) reads 0 % in most calls, and the kind (`McpJudge.Kind`, `:107-112`) follows the reading:
+busy-without-activity servers are reported `idle`.
+
+**Design** (own plan review folded in — § 12).
+
+1. **CPU over the interval since the previous sample.** Each sampling records, per listed instance, its identity (boot id,
+   pid, start ticks) and its CPU ticks at an instant on BOTH clocks (`SampleTime`: wall and monotonic) in a small ledger,
+   `mcp-cpu.json`. The next sampling finds that instance's newest recorded point whose MONOTONIC age is at least
+   `mcpServers.cpuIntervalMinSeconds` and at most `mcpServers.cpuIntervalMaxMinutes`, and reports
+   `CPU % = 100 × (Δticks ÷ ticks per second) ÷ (Δmonotonic in seconds)` — basis `interval`, with the interval on the
+   wire. A point with Δticks < 0 or Δmonotonic ≤ 0 is not a baseline. The monotonic clock is the denominator because a wall
+   clock that jumps after the host slept would distort the rate; whether the guest's monotonic clock stops while the
+   Windows host sleeps is **not measured** (S8 records it) — if it does not, a reading across a sleep is diluted, never
+   inflated.
+2. **The interval is bounded so the kind stays true NOW.** `McpJudge.Kind` compares the CPU with a log write inside
+   `mcpServers.activityWindowMinutes` (10). An average over hours would call a server that burned three hours ago and is
+   quiet now `busyWithoutActivity` (and dilute a burn that began twenty minutes ago). So the maximum interval defaults to
+   **20 minutes** — two activity windows — and a point older than that is not used: the window answers instead. The root
+   timer (every 4 h) therefore measures over the window until S2 gives root a denser sampler (Q1b); the basis on the wire
+   says which.
+3. **The short window only as a fallback** for an instance with no usable point (a first sighting, a new boot, a reused
+   pid, a point older than the maximum, a ledger that could not be read): today's two reads across the window, basis
+   `window`. The window is waited only when at least one listed instance needs it — so a machine whose instances all have a
+   baseline answers `status` **faster** than today (no wait at all).
+4. **Two points per identity**, so concurrent callers do not starve each other. The update rule: a new identity stores its
+   point; when the newest stored point is at least the minimum interval old, it becomes the older point and now becomes the
+   newer one; otherwise both stay. A caller polling 1 s after another therefore still finds the older point ≥ the minimum
+   old (two VS Code windows each polling `status` every 120 s, the default of
+   [2026-10-04_extension_poll_churn.md](../research/2026-10-04_extension_poll_churn.md)); a single caller faster than the
+   minimum measures over intervals between the minimum and about twice it. Points older than the maximum interval,
+   identities not listed now, and a ledger of another boot are dropped. **Written only when it changed.**
+5. **Where the ledger lives.** `CliHost.ForThisMachine` re-homes EVERY verb run as root to the target user
+   (`CliHost.cs:122`, `TargetHome.Resolve`), so "the caller's own folder" is not root's when root runs `status` (review
+   finding 1). Three places, one per caller:
+   - **the root timer's `collect`** (state directory writable): `/var/lib/wsl-care/mcp-cpu.json`, written atomically and
+     private (0600 — it names other accounts' pids), read back as root's state (`IFileSystem.ReadStateFile`);
+   - **an unprivileged `status`** (the extension's poll): `$XDG_STATE_HOME/wsl-care/mcp-cpu.json` (default
+     `~/.local/state/wsl-care/`, `LinuxHostPaths.UserStateDirectory` — the folder an unprivileged run's logs already go
+     to), read with `ReadUserFile` (owner = this process's uid, reached from that folder through no link — review finding
+     2: `ReadStateFile` trusts only root's files on a real machine, so it would silently find "no baseline" forever) and
+     written atomically, private;
+   - **`status` as root** reads root's ledger and writes NOTHING (status never writes the root state directory — §15b #3,
+     §15j M3 of the parent plan — and never root-owned files into the target user's home); **an unprivileged `collect`**
+     reads and writes no ledger (its read-only rule: *read-only: run as root to record*) and measures over the window.
+   A missing, unreadable, foreign-owned, foreign-boot or malformed ledger is "no baseline" (the window fallback), never an
+   error of the run; a write that fails is reported in the block (`cpuBaseline.recorded: false` + reason), never a failed
+   `status`. **This makes an unprivileged `status` write one file it did not write before** — in its own state folder, only
+   when an MCP instance runs and the ledger changed. Owner question Q9. The documents that say "status writes no state"
+   (`Mcp/McpSample.cs:52`, the parent plan's E7.S2d Decided 8) are amended in the same change.
+6. **"Busy without activity" follows the interval reading** — the kind rule itself is unchanged (`McpJudge.Kind`); its
+   input is now the interval CPU over at most twenty minutes, so a server that burns a sixth of a core in bursts with no
+   log write in the activity window is `busyWithoutActivity`, as measured.
+7. **Read-only towards the servers, as before**: no signal, no file opened under the log root. The only write is the
+   ledger above.
+
+**Keys (new).**
+
+| Key | Range | Default | Trust | Why this default |
+|---|---|---|---|---|
+| `mcpServers.cpuIntervalMinSeconds` | 10–600 | 120 | display | two periods of a burst near a minute (M1, not measured exactly); the extension's default poll is 120 s |
+| `mcpServers.cpuIntervalMaxMinutes` | 10–1440 | 20 | display | two activity windows (`mcpServers.activityWindowMinutes`, 10): a longer average stops describing now (design 2) |
+
+The ranges cannot contradict each other (the largest minimum, 600 s, is the smallest maximum), so no coupled rule is
+needed. Both are display keys while they steer only a metric; S2, which acts on the interval as evidence, re-classifies
+them (review finding 10). `mcpServers.cpuWindowMilliseconds` stays (the fallback's window). No cap key is added: the read
+cap is `records.maxStateFileBytes`, the entries are bounded by `mcpServers.maxInstances` × 2 points.
+
+**Wire (additive; goldens regenerated).** Per instance: `cpuBasis` (`interval` \| `window` \| `none`) and `cpuIntervalSeconds`
+(a figure). The block: `cpuBaseline` (`file`, `recorded`, `reason`). The text line says how many instances were measured
+over an interval. Capabilities unchanged (`status.mcpServers` already advertises the block).
+
+**Files.** `Mcp/McpCpuLedger.cs` (new: the file records, read, next, baseline, write, the place), `Mcp/McpServerCollector.cs`
+(the CPU path), `Mcp/McpSample.cs` (basis + interval on an instance, the baseline note on the sample, the "no state"
+sentence), `Status/McpServersReport.cs`, `Cli/Commands/StatusCommand.cs:27` and `Collect/CollectRun.cs:380` (pass the
+place), `Collectors/Procfs/SampleTime.cs` + the boot id (moved from `AgentCpuHistory.cs:27-31`, `:130-131`),
+`Hosting/LinuxHostPaths.cs` (`UserStateDirectory`, the parent of `UserLogDirectory`), `Config/ConfigKeys.Numbers.cs`,
+`Config/default.json`, `contracts/config-keys.json`, goldens, the read-site table (`ArchitectureTests.ReadSites.cs`).
+
+**RED first (the measured shape).** `A_server_that_bursts_every_minute_is_measured_busy_over_the_interval_not_idle_in_a_quiet_second`:
+a fixture whose `stat` ticks grow only during a 10 s burst every 60 s (100 % of a core in the burst = 16.7 % average); a
+first sample at t0, a second at t0 + 121 s whose own 1 s window would fall in a quiet second. Today: 0 %, `idle`.
+Expected: 16.7 % over 120 s, `busyWithoutActivity` (its log last written 17 min ago). Also:
+`A_first_sighting_falls_back_to_the_window_and_says_so`, `Two_callers_a_second_apart_both_measure_over_the_interval`,
+`A_baseline_of_another_boot_a_reused_pid_or_older_than_the_maximum_is_not_used`,
+`A_four_hour_average_does_not_make_a_now_quiet_server_busy_without_activity` (review finding 3),
+`No_wait_when_every_instance_has_a_baseline`, `An_unreadable_or_malformed_ledger_is_no_baseline_never_a_failed_status`,
+`A_wall_clock_jump_does_not_change_the_rate`, `An_unchanged_ledger_is_not_rewritten`; at the CLI, over a sandbox WITH a
+`coai-mcp` instance (review finding 4: the existing "status writes nothing" test has none, so it cannot see a ledger):
+`An_unprivileged_status_keeps_its_ledger_in_its_own_state_folder_and_never_in_the_state_directory`,
+`A_root_status_writes_no_ledger_anywhere`, `An_unprivileged_collect_writes_no_ledger`.
+
+**Acceptance.** The RED test seen red with today's 0 % and `idle`, then green; each guard broken and seen red (the
+interval path removed, the two-point rule replaced by "always replace", the maximum interval, the boot check, the identity
+check, the place rule); Windows suites full and CI green (Linux legs); docs per § 9.
+
+### S2 — an MCP watchdog action, A19 (answers the parent plan's Q-M1)
+
+**Problem.** S1 shows a leaking or wedged server; nothing ends it. On 2026-10-07 eight servers held 6.9 cores (L7).
+
+**Measure first (recorded in `research/` before the design is final):** what Claude Code does when one of its stdio MCP
+servers is ended — does it restart it on the next tool call, mark it failed until `/mcp` reconnect, or end the session's
+tools? (Q-M1 of the parent plan said "restarts on its next tool call" without a measurement.) If it does not restart,
+"restart" here means *end* and the action must say so in its preview.
+
+**Design (conditional on the measurement).** A19 = SIGTERM, then SIGKILL after `processes.termGraceSeconds`, through
+`SuspectSignals.EndAllAsync` (pid AND start ticks, pidfd) — of instances of a WATCHED catalogue server (never the agent
+process itself, never root's, never a process that is not the snapshot's instance) that are:
+`busyWithoutActivity` over an `interval` basis for at least `mcpWatchdog.busyMinutes` (the S1 ledger gains a per-identity
+`busyWithoutActivitySince`, kept across samples), **or** `orphaned` (owner gone, parent plan Decided 1) and idle for at least
+`mcpWatchdog.orphanIdleMinutes`. A button by default (`ActionId.ButtonOnlyIds`, as A18). **Owner question Q1:** may it run
+automatically? The coordinator's recommendation: automatic, behind a switch that is OFF by default until the owner says yes.
+A watchdog on the 4-hour timer is too slow to matter; if Q1 is yes, a second, short timer (`wsl-care-watch.timer`,
+`mcpWatchdog.periodMinutes`, default 5) runs only `act A19` — a decision for the owner as well (Q1b).
+
+**Two things the design must settle before its code round (own plan review, findings 5, 6, 10, 11):**
+
+- **`EndAllAsync` as it is would end nothing here.** Its recheck refuses every target whose CPU ticks moved since the
+  preview (`SuspectSignals.cs:71`, "used CPU … since the preview: kept") — the right guard for A11 and A18's idle
+  processes, and exactly the property a busy server has. A19 needs a recheck mode that keeps the identity, uid and terminal
+  checks and drops the CPU one, used by A19 only; RED tests prove A11 and A18 still refuse a moved CPU.
+- **Which evidence root acts on.** A19 runs as root (`act`). It reads ONLY root's ledger (`ReadStateFile`), never a user's
+  file; and root's ledger is dense enough only with the short sampler of Q1b — so Q1b is a prerequisite of an automatic
+  A19, not an option. Its scope (the target user only, as A18, or every non-root account) is stated in the preview. The S1
+  keys that bound the interval become evidence for an action here, so they are re-classified (machine-only or a safe
+  direction), and every new key of this story (`mcpWatchdog.*`) gets its range, default and trust in this plan before the
+  code round.
+
+**RED:** `A_busy_without_activity_server_for_longer_than_the_key_is_selected_by_pid_and_start`, `A_reused_pid_is_never_signalled`,
+`The_agent_process_and_unwatched_servers_are_never_targets`, `A_window_basis_reading_never_selects` (only an interval reading
+is evidence of a sustained burn).
+
+### S3 — the build-server reaper (widens A3)
+
+**Problem.** L7: `dotnet` 4.9 and `VBCSCompiler` 4.9 cores; 51 `dotnet` processes for 10 sessions (L4). A3 today stops
+the target user's build servers only when one is ALIVE for `buildServers.idleHours` (`BuildServerShutdown.cs:79-85`) —
+age, not idleness — and never sees a language server whose VS Code window closed.
+
+**Measure first:** over one working day, how many MSBuild node-reuse processes, `VBCSCompiler` and
+`Microsoft.CodeAnalysis.LanguageServer` processes exist per open VS Code window and per closed one, and their CPU (the S1
+ledger shape, keyed by identity). **Design:** A3's selection widens to (a) build servers whose CPU did not move for
+`buildServers.idleMinutes` (measured over the ledger, not age), and (b) language servers of the `vscode-server` family
+(`Collectors/ProcessFamilies.cs:69`) whose VS Code server parent is gone (orphaned) — those through `SuspectSignals`
+(pid AND start), the build servers still through `dotnet build-server shutdown` as their user (the official command; the
+refusal while a build runs stays). A3 keeps its `auto.A3` switch; the new rule (b) is a button until the owner says
+otherwise (Q1 covers it).
+
+### S4 — CPU fairness that works inside WSL
+
+**Problem.** Agents' builds and tests (L7) compete with the sessions they serve on equal terms. `nice` is believed to have
+no effect in this WSL (no `cpu` controller delegated below `system.slice`) — **not yet measured**.
+
+**Measure first (recorded):** `/sys/fs/cgroup/cgroup.controllers`, the `subtree_control` of `/`, `system.slice`,
+`user.slice` and `user@<uid>.service`; then two busy loops pinned to one CPU, `nice 0` vs `nice 19`, in the same cgroup and
+in sibling cgroups — the share each gets. **Design (if the measurement says the controller is missing below the user
+manager):** a systemd drop-in `user@.service.d/50-wsl-care-delegate.conf` (`Delegate=cpu io memory pids`) written by
+`install.sh` only on the owner's yes (Q3), and `wsl-care low -- <cmd…>` — `systemd-run --user --scope -p
+CPUWeight=<lowCpu.cpuWeight> -p IOWeight=<lowCpu.ioWeight> -- <cmd…>` through the command policy as a declared template
+(the command's own argv passed as data, never a shell string) — or documentation only (Q4). Agent prompts (the family's
+rules) then say: heavy builds and test runs go through it.
+
+### S5 — memory and swap before the evening
+
+**Problem.** L3: 2.4 GB of 12 GB swap left, `Committed_AS` above `MemTotal`, at 21:30. `memory.swap` warns on swap USED
+(`ThresholdRules.cs:99`, `thresholds.swapWarnGb`); nothing judges swap LEFT or commit.
+
+**Design.** New verdicts `memory.swapFree` (warn below `thresholds.swapFreeWarnGb`), `memory.committed` (warn above
+`thresholds.committedWarnPercent` of `MemTotal`), from `/proc/meminfo` fields the collector already reads generically;
+A1/A2's triggers may also take memory PSI (`thresholds.memoryPressureWarn` exists) — measured against the 2026-10-02
+baseline first. `.wslconfig` advice (memory cap, swap size, `autoMemoryReclaim`) extends the existing `WslConfigReport`
+(`HealthReport.cs:36`): **shown, never written** by the product (Q5).
+
+### S6 — a "machine busy" signal agents can poll
+
+**Problem.** Agents start heavy builds into an already saturated machine (L1–L2, L7). PSI cpu and io are read
+(`MemoryCollector.cs:8`) but only memory PSI is judged (`ThresholdRules.cs:182`).
+
+**Design.** Verdicts `pressure.cpu` and `pressure.io` (avg60 against `thresholds.cpuPressureWarnPercent`,
+`thresholds.ioPressureWarnPercent`), and a fast verb `wsl-care busy [--json]` that reads only `/proc/pressure/*` and
+`/proc/loadavg` (milliseconds, no MCP window, no history) and exits `0` calm / a new documented exit code for busy
+(`contracts/exit-codes.json`), naming which pressure crossed which key. Agent tooling polls it before a heavy step and waits
+with a bounded backoff.
+
+### S7 — the Windows side (inside E11/E12's scope)
+
+**Problem.** W9: 85 `creds-mcp.exe`, 66 orphaned, 1.32 GB; the Windows binary has no process collector, so `coai-mcp.exe`
+and `creds-mcp.exe` are invisible (`module_mcp_servers.md` *Residuals*). **Design (lands in E11 / E12 of
+[PLAN_windows_care.md](PLAN_windows_care.md)):** the MCP catalogue on Windows (`coai-mcp.exe`, and `creds-mcp.exe` once the
+parent plan's Q-M2 opens the catalogue), a Toolhelp snapshot for parents and creation times (an orphan = parent gone, or a
+parent created AFTER the child — a reused pid), CPU through `GetProcessTimes` with the S1 ledger shape; the stop action as an
+E12 button (W-A, by pid AND creation time). `vmmemWSL` reclaim advice (`autoMemoryReclaim`) in the S5 report. **Defender
+exclusions** for build and tool folders are a security trade-off: Q6, never automatic, at most advice.
+
+### S8 — the 24 h × 20 sessions soak campaign
+
+**What is sampled, every `soak.periodMinutes` (10):** `wsl-care status --json` (the S1 MCP block, S5/S6 verdicts, memory,
+PSI), `wsl-care busy --json`, the count of Claude Code "connection timed out after 30000ms" lines since the previous sample
+(read-only, from Claude Code's own MCP logs), Windows counters (CPU, commit, `vmmemWSL`, `creds-mcp.exe` count and
+orphans), and one fact S1 assumes: whether the guest's monotonic clock stops while the Windows host sleeps (a sample before
+and after a host sleep, wall against monotonic). **By what:** a harness in the product's language (`src_daemon/tests/WslCare.Soak`, a console runner under git,
+not a shell script), started by the owner with twenty sessions open, writing one JSON line per sample to
+`research/soak/<date>/samples.jsonl` and a summary to `research/<date>_soak.md`. **Pass:** § 2's criteria with the owner's
+numbers (Q8). **Budget:** ~2 KB per sample (the summarised fields, not the whole status) × 144 samples ≈ 290 KB per day,
+kept in git per run.
+
+## 6. Boundaries with the neighbouring plans
+
+| Item | Built by | The other plan's part |
+|---|---|---|
+| the MCP metric's CPU basis | this plan, S1 | [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) § *E7.S2d* built the metric; its *as built* gains a pointer here |
+| stopping MCP servers (Q-M1 there) | this plan, S2 (A19) | E7.S2d left it as Q-M1; answered here |
+| open catalogue names (Q-M2 there) | E7.S2d's Q-M2 | S7's `creds-mcp.exe` waits on it |
+| Windows process collector, Windows stop actions | [PLAN_windows_care.md](PLAN_windows_care.md) E11 / E12 | S7 names what they must include for MCP servers |
+| `.wslconfig` advice | the parent plan's `wslconfig.memory` (exists) | S5 extends the report, never writes |
+| agents waiting on "machine busy" (S6), heavy steps through `wsl-care low` (S4) | the verb and its exit code: this plan | the CONSUMER is the family's shared agent rules and prompts (the conventions repository), outside this one — an outward-facing change proposed there, never edited from here |
+
+Disjoint otherwise. Order: S1 first (S2 and S3 read its ledger); E11 before S7's Windows half.
+
+## 7. Growth and budget
+
+| Surface | Projected size | Who retires it | Interrupted |
+|---|---|---|---|
+| `mcp-cpu.json` (root, and one per account) | ≤ `maxInstances` (256) × 2 points × ~120 B ≈ 60 KB worst; ~20 instances × 2 × 120 B ≈ 5 KB typical | rewritten whole when it changed: dead identities, other boots and points older than `cpuIntervalMaxMinutes` dropped | written atomically (temp + rename); a torn or malformed file reads as "no baseline". Residual (review finding 9): a `status` killed between the temp write and the rename (the extension's 20 s ceiling) leaves one temp file beside the ledger that nothing removes — a few KB per such kill; written only when changed, which makes it rarer. A sweep of the ledger's own temp names is S2's, which owns the ledger's next shape |
+| the `mcpServers` block in each run detail | +~60 B per instance over today's ~400 B | the run details' 90-day retention | — |
+| S2's `busyWithoutActivitySince` | one timestamp per ledger identity | same as the ledger | same |
+| S8 samples in `research/soak/` | ≈ 290 KB per 24 h run | kept in git per run (a record), one run per campaign | the harness writes per sample (beside + move), so a stopped campaign keeps every sample taken |
+
+## 8. Build order
+
+1. **S1** (this pull request) — the metric; nothing else can be judged without it.
+2. S6 (the busy signal; small, read-only) and S5 (verdicts; read-only).
+3. S2 (after its measurement; reads S1's ledger).
+4. S3 (after its measurement).
+5. S4 (after its measurement and Q3/Q4).
+6. S7 inside E11/E12.
+7. S8 — first with S1+S5+S6 shipped (a baseline day), again after S2–S4.
+
+## 9. Test plan
+
+Per story: the RED tests named above, each seen red for the real symptom, then green, then the guarding line removed and
+seen red again; fixtures of `/proc` in the sandbox (`SyntheticProcTree`) with fake trees, no real account name
+(`FixtureIdentity`). A scenario flow per new verb or block (`WslCare.Scenarios`, the built binary) catalogued in
+`research/module_tests.md`. Windows suites run in full locally; the Linux legs are CI's while the machine is overloaded (no
+WSL builds or test runs by agents until the owner lifts that). Goldens regenerated and read when a JSON shape changes.
+
+## 10. Definition of Done (the epic)
+
+- [ ] Each story's RED tests seen red, green, and with teeth; whole suites green on Windows and on CI's Linux legs.
+- [ ] Every new number a key with range, default and trust; contracts regenerated; `ArchitectureTests.Numbers` green.
+- [ ] No process ended by name; every end by pid AND start; the agent process and root never targets.
+- [ ] Each "measure first" recorded in `research/` before its design was final.
+- [ ] Docs: `research/module_mcp_servers.md`, `research/architecture.md` (module map), `research/module_tests.md`,
+      `README.md`'s status section; this plan's *as built* per story.
+- [ ] S8 run for 24 h with twenty sessions and its result recorded against § 2 — pass or the failing hour attributed.
+- [ ] The owner questions answered or recorded as open.
+
+## 11. Owner questions
+
+- **Q1 — A19 automatic?** May the MCP watchdog run without a click? Recommended by the coordinator: yes, behind an `auto`
+  switch OFF by default until the owner says yes. **Q1b:** if yes, a second 5-minute timer for it, or the 4-hour timer only?
+- **Q2 — what "restart" means** once S2's measurement says what Claude Code does with an ended server.
+- **Q3 — cgroup delegation:** may `install.sh` write `user@.service.d/50-wsl-care-delegate.conf` (a system setting)?
+- **Q4 — `wsl-care low`:** a verb, or documentation of the `systemd-run` line only?
+- **Q5 — `.wslconfig` advice:** confirm "shown, never written"; which of memory cap, swap size, `autoMemoryReclaim` to advise.
+- **Q6 — Defender exclusions:** advise them at all? (A security trade-off; never automatic.)
+- **Q7 — upstream reports:** may an agent open issues in ConnectOtherAIs (`coai-mcp` start path under load) and CredsForDevs
+  (`creds-mcp.exe` not exiting when its client goes — W9)? Outward-facing, so asked first.
+- **Q8 — the soak's pass numbers** X (PSI cpu avg300), Y (swap free), Z (idle MCP cores).
+- **Q9 — `status` writes one file now** (`$XDG_STATE_HOME/wsl-care/mcp-cpu.json`, only when an MCP server runs). The
+  alternative without any write is a lifetime average, which the parent plan rejected (E7.S2d Decided 5). Accept?
+- **Q10 — S1's defaults:** 120 s minimum interval, 20 min maximum (two activity windows — a longer average stops
+  describing now, so the 4-hour timer measures over the window until Q1b's sampler exists).
+
+## 12. Review rounds
+
+- **coai plan round: OWED.** The coai MCP server did not connect in the authoring session ("connection timed out after
+  30000ms" — the very symptom of § 1), so `review_plan` could not run. It is owed before S2's code round; S1's code round
+  is owed with it.
+- **Own plan review (stand-in, 2026-10-07; one reviewer, `feature-dev:code-reviewer` on Opus, read-only).** Verified as
+  fine: every S1 file:line, the CPU formula and units, the two-point rule (no starvation for one poller with jitter, two
+  pollers 1 s apart, or a poller faster than the minimum), the growth bound, concurrent writers (the atomic write's temp
+  name is unique), the identity, the monotonic denominator. 14 findings (6 Major, 8 Minor), each disposed:
+
+| # | Finding | Disposition |
+|---|---|---|
+| 1 (Major) | a root `status` is re-homed to the target user (`CliHost.cs:122`) and would write a root-owned ledger into that user's home | **Accepted** — root `status` reads root's ledger and writes nothing (S1 design 5); a CLI test holds it |
+| 2 (Major) | `ReadStateFile` trusts only root's files on a real machine: the user's ledger would be "no baseline" forever while sandbox tests pass | **Accepted** — the user ledger is read with `ReadUserFile` (owner = this uid, no link) |
+| 3 (Major) | a kind judged over a 4–6 h interval calls a now-quiet server busy without activity | **Accepted** — the maximum interval is 20 min (two activity windows); beyond it the window answers; RED test added |
+| 4 (Major) | the "status writes nothing" test has no MCP instance, so it cannot see a ledger | **Accepted** — new CLI tests over a sandbox with a `coai-mcp` instance |
+| 5 (Major) | S2: `EndAllAsync`'s recheck refuses a target whose CPU moved — every busy server | **Accepted** — S2 names an A19-only recheck mode, A11/A18 tests kept |
+| 6 (Major) | S2: which ledger root trusts, and a 4 h ledger is no evidence | **Accepted** — root's ledger only; Q1b is a prerequisite |
+| 7 (Minor) | refuse Δticks < 0, Δmonotonic ≤ 0, a rate above the machine's cores | **Accepted in part** — the first two refused; the cap is **rejected**: the ledger root reads is root's own, and a user's own ledger can only misstate that user's own view; a cap needs the online CPU count, which the collector does not read |
+| 8 (Minor) | "the monotonic clock stops while the VM is paused" is unmeasured | **Accepted** — marked unmeasured in S1, measured in S8 |
+| 9 (Minor) | orphaned temp files and an fsync per `status` | **Accepted in part** — written only when changed; the temp-file sweep is a recorded residual (§ 7) |
+| 10 (Minor) | the interval keys become evidence for S2 | **Accepted** — S2 re-classifies them |
+| 11 (Minor) | S2–S8's keys lack range, default, trust | **Accepted** — each story's plan revision gives them before its code round (stated in S2; the same holds for S3–S8) |
+| 12 (Minor) | "measured ~60 s burst" overstates the evidence | **Accepted** — "a period near a minute, not measured exactly" |
+| 13 (Minor) | `McpSample.cs:52` and the parent plan's Decided 8 say status writes no state | **Accepted** — amended in S1's change |
+| 14 (Minor) | S6/S4's consumers are the family's agent rules, outside this repository | **Accepted** — a boundary row in § 6 |
+
+## 13. S1 as built (2026-10-07)
+
+Built on `fix/wc-mcp-cpu-since-last-run`; the guarantees, the red and the teeth are in
+[module_tests.md](../research/module_tests.md) § *MCP server instances of the AI agents* (the E14 S1 rows), the design in
+[module_mcp_servers.md](../research/module_mcp_servers.md). **Deviations from § 5 S1:**
+
+- **The ledger's code:** `Mcp/McpCpuLedger.cs` holds the file records, the place (`McpCpuLedgerPlace.ForStatus` /
+  `ForCollect`), `Baseline`, `Next` and `Record`; the collector's CPU path splits into the ledger reading and the window
+  fallback (`WindowAsync`), each instance carrying its `McpCpu` (figure, basis, interval).
+- **The boot id and `SampleTime`** moved to `Collectors/Procfs/SampleTime.cs` (`BootIdentity.Read`); A18's history calls them
+  there — a refactor, A18's tests unchanged and green.
+- **`SyntheticProcTree` gained a boot id** (every synthetic tree starts in one boot), so the collector tests exercise the
+  ledger; the CAPTURED tree has none, which keeps `status` over it from writing into the checked-in fixture
+  (`McpStatusTests` holds that).
+- **Goldens edited by hand:** only `status.json` carries an available block; the agent machine was overloaded and the
+  goldens are the Linux binary's answers, so the file was edited to the serializer's shape and CI's Linux leg verifies it.
+  A normalisation rule was added (`**.cpuIntervalSeconds.value`: the window is the longer of one second and the real wait).
+- **Not built here:** the temp-file sweep (§ 7 residual, S2's), and S2's re-classification of the two keys.
+- **Review rounds:** the coai code round is OWED (the coai MCP server did not connect in this session); one own code
+  review stood in — § 14.

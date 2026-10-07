@@ -554,6 +554,16 @@ public static partial class ConfigKeys
 
         /// <summary>The deadline of one server's log listing. Default 1000.</summary>
         public static readonly ConfigKey.IntKey LogListMilliseconds = new("mcpServers.logListMilliseconds", 100, 5000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The shortest interval an instance's CPU is measured over from the ledger (plan E14 S1): a recorded point younger
+        /// than this is no baseline. Two periods of a burst near a minute (research/2026-10-07_evening_overload.md M1). Its range
+        /// ends where <see cref="CpuIntervalMaxMinutes"/>' begins, so the two cannot contradict. Default 120.</summary>
+        public static readonly ConfigKey.IntKey CpuIntervalMinSeconds = new("mcpServers.cpuIntervalMinSeconds", 10, 600) { Trust = KeyTrust.Display };
+
+        /// <summary>The longest interval an instance's CPU is measured over from the ledger: an older point is no baseline and the
+        /// window answers — an average over hours would judge the kind on the past (plan E14 S1, review finding 3). Two activity
+        /// windows. Default 20.</summary>
+        public static readonly ConfigKey.IntKey CpuIntervalMaxMinutes = new("mcpServers.cpuIntervalMaxMinutes", 10, 1440) { Trust = KeyTrust.Display };
     }
 
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
@@ -702,5 +712,7 @@ public static partial class ConfigKeys
         McpServers.MaxLogEntries,
         McpServers.LogListMilliseconds,
         McpServers.MaxStartsListed,
+        McpServers.CpuIntervalMinSeconds,
+        McpServers.CpuIntervalMaxMinutes,
     ];
 }

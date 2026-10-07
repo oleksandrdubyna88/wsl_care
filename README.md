@@ -187,7 +187,8 @@ wsl-care status --json    # the fast snapshot the extension reads; schemaVersion
 wsl-care status           # the same, as a few lines for a terminal
 ```
 
-`status` answers in well under 2 s — plus the MCP servers' CPU window (1 s by default) when an AI agent's MCP server runs —
+`status` answers in well under 2 s — plus the MCP servers' CPU window (1 s by default) when an AI agent's MCP server runs
+that its CPU ledger has no baseline of —
 and starts no process: it reads `/proc` and the cgroup tree (inside
 the distro) or asks Windows for its counters (`wsl-care.exe`), and nothing else. Inside the distro it
 reports VM memory (`MemAvailable`, page cache, anonymous and inactive anonymous memory, shared memory,
@@ -233,8 +234,15 @@ first). `status` stays read-only and needs no root for any of it. The text form 
 block): every process of a watched MCP server (`mcpServers.watched`, closed over the built-in catalogue — `coai-mcp`
 today) whose parent chain reaches an AI-agent session, or that was left behind when its agent died (`orphaned`). Per
 instance: pid, owner (the agent session's pid, name and redacted command line), user, state, age, **CPU % of one core
-measured across a window** (`mcpServers.cpuWindowMilliseconds`, default 1 000 ms: two `/proc` reads; the wait happens
-only when an instance runs), memory held (`RssAnon + RssShmem`), the newest write of its own run log, and a `kind`:
+measured over the interval since that process's previous sample** (`cpuBasis: "interval"`, `cpuIntervalSeconds`: from a
+small ledger of each instance's CPU ticks, `mcp-cpu.json`, a point between `mcpServers.cpuIntervalMinSeconds`, 120, and
+`mcpServers.cpuIntervalMaxMinutes`, 20, old — a server that burns in a burst about once a minute is seen; the 2026-10-07
+evening's servers read `idle` at 0 % in a one-second window) **or, with no such point, across a window**
+(`cpuBasis: "window"`, `mcpServers.cpuWindowMilliseconds`, default 1 000 ms: two `/proc` reads; the wait happens only for
+an instance without a baseline). The ledger is the caller's own: an unprivileged `status` keeps it in
+`$XDG_STATE_HOME/wsl-care/` (default `~/.local/state/wsl-care/`, the one file `status` writes, and only while an MCP server
+runs), the root timer in `/var/lib/wsl-care/`; `status` as root reads root's and writes nothing; `cpuBaseline` says where
+and whether this answer's readings were kept. Memory held (`RssAnon + RssShmem`), the newest write of its own run log, and a `kind`:
 `starting` (below `mcpServers.idleCpuPercent`, 2 %, and younger than `mcpServers.idleMinAgeMinutes`, 10), `idle`,
 `busy`, `busyWithoutActivity` (busy while its log was last written more than `mcpServers.activityWindowMinutes`, 10, ago
 — the state measured on 2026-10-06: seven `coai-mcp` at 27–54 % of a core each with no log line for 10+ minutes) or
@@ -245,10 +253,11 @@ first, at most `mcpServers.maxStartsListed`, 50) — the restart storm of 2026-1
 at 16:50Z, before the update it was first blamed on, which only the start times show. Three verdicts judge them now:
 `mcp.instances` (warn above `mcpServers.warnInstances`, 12), `mcp.cpu` (warn above `mcpServers.warnCpuPercent`, 100 % of
 one core in total), `mcp.starts` (warn when a server started more than `mcpServers.warnStarts`, 10, times in the window).
-Read-only: nothing is stopped. The Windows binary answers the block unavailable — `coai-mcp.exe` on Windows arrives with
+Read-only towards the servers: nothing is stopped. The Windows binary answers the block unavailable — `coai-mcp.exe` on Windows arrives with
 the Windows collectors (E11). Capability `status.mcpServers`; `limits` publishes `mcpCpuWindowMilliseconds` and
 `mcpLogListMilliseconds`, the two waits a client's `status` ceiling must allow for. The text form adds one line:
-`mcp servers: 7 (0 idle, 7 busy without a log write), 2.6 cores, 0.40 GiB; starts coai-mcp 34 in 10 min`.
+`mcp servers: 7 (0 idle, 7 busy without a log write), 2.6 cores (7 over their last interval, 0 over a 1000 ms window),
+0.40 GiB; starts coai-mcp 34 in 10 min`.
 
 **Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts`,
 `productVersion`, `actions`, `capabilities`, `running` and `lastCleanup`) never bumps it, so a reader ignores keys it does

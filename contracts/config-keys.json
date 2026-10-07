@@ -2541,6 +2541,32 @@
       "machineOnly": false,
       "daemonUnused": false,
       "zeroIsUnbounded": false
+    },
+    {
+      "name": "mcpServers.cpuIntervalMinSeconds",
+      "shape": "int",
+      "min": 10,
+      "max": 600,
+      "default": 120,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "mcpServers.cpuIntervalMaxMinutes",
+      "shape": "int",
+      "min": 10,
+      "max": 1440,
+      "default": 20,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
     }
   ]
 }

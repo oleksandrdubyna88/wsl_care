@@ -2438,6 +2438,15 @@ broken and seen red again (`research/module_tests.md` § *MCP server instances*)
 | 6 (codex, Major) | a pid reused between the snapshot and the FIRST CPU read reports another process's CPU | **Fixed** — the snapshot keeps each process's start ticks (`ProcessEntry.StartTicks`) and the first read must match them. RED: *Expected instance.CpuPercent.IsAvailable to be False … but found True*; teeth: the arm removed, red again |
 | 7 (codex, Minor) | a stderr progress line | **Rejected** a third time — the earlier reason stands |
 
+##### Continued by plan E14 (2026-10-07)
+
+Measured on the evening of 2026-10-07 ([2026-10-07_evening_overload.md](../research/2026-10-07_evening_overload.md) M1–M3):
+Decided 5's one window cannot see a server that bursts about once a minute — daemon 0.2.0 reported eight burning servers
+`idle` at 0 %. [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S1 measures each instance over the interval
+since its previous sample (a per-caller CPU ledger), the window only as the fallback — which amends Decided 8's "status
+writes no state": an unprivileged `status` now keeps that one ledger in its own `$XDG_STATE_HOME/wsl-care`, never the root
+state directory. Q-M1 (a stop action) is that plan's S2 (A19); the Windows half of the Residuals is its S7, inside E11/E12.
+
 #### Stories
 
 | # | Story | Files (verified above) | Acceptance | Model, reviews |

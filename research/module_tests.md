@@ -1802,6 +1802,11 @@ Two first attempts (the identity and missing-history rules mutated in `IdleFor`)
 | final code round 4: a folder behind an untraversable parent lists as unreadable, never empty (Linux, non-root) | `Files/BoundedListingTests.A_folder_under_an_untraversable_parent_is_unreadable_never_empty` (RED in WSL first) |
 | each start in the window listed with its time, pid, last log write and whether it still runs, newest first; capped by `mcpServers.maxStartsListed`, the count never (the owner, 2026-10-07: churn attributable to a time) | `…Each_start_in_the_window_is_listed_with_its_time_pid_last_write_and_whether_it_runs`, `…The_listed_starts_are_capped_by_their_key_and_the_count_is_not`; built binary: `McpServersFlows` (34 start times) |
 | round 3 finding 6: a pid reused between the snapshot and the first CPU read is unavailable, never another process's CPU | `…A_pid_reused_between_the_snapshot_and_the_first_read_has_cpu_unavailable` |
+| **E14 S1 (2026-10-07):** a server that bursts a whole core for 10 s of every 60 s is measured over the interval since its previous sample (16.7 %, `busyWithoutActivity`), not idle in a quiet second | `…A_server_that_bursts_every_minute_is_measured_busy_over_the_interval_not_idle_in_a_quiet_second` |
+| E14 S1: a first sighting falls back to the window and says so; no wait once every instance has a baseline; two callers a second apart both measure over the interval | `…A_first_sighting_falls_back_to_the_window_and_says_so`, `…No_wait_when_every_instance_has_a_baseline`, `…Two_callers_a_second_apart_both_measure_over_the_interval` |
+| E14 S1: a point of another boot, of a reused pid, or older than the maximum is no baseline; a four-hour average does not make a now-quiet server busy without activity (plan review finding 3) | `…A_baseline_of_another_boot_a_reused_pid_or_older_than_the_maximum_is_not_used` (3), `…A_four_hour_average_does_not_make_a_now_quiet_server_busy_without_activity` |
+| E14 S1: the monotonic clock is the denominator (a wall-clock jump changes nothing); a malformed ledger is no baseline, never a failed sample; an unchanged ledger is not rewritten | `…A_wall_clock_jump_does_not_change_the_rate`, `…An_unreadable_or_malformed_ledger_is_no_baseline_never_a_failed_sample` (2), `…An_unchanged_ledger_is_not_rewritten` |
+| E14 S1: where the ledger lives — root's timer in the state directory, never the user's home; `status` as root and a read-only `collect` record nothing and say why; through the CLI over a copy of the captured tree WITH a boot id: an unprivileged `status` keeps its ledger in its own state folder and never in the state directory, and its second call measures over the interval without waiting; a root `status` writes no ledger anywhere (plan review findings 1 and 4) | `…The_root_timer_records_its_ledger_in_the_state_directory`, `…A_place_that_may_not_write_records_nothing_and_says_why`, `Cli.Tests/McpLedgerStatusTests` (2); `McpStatusTests` holds that the captured tree (no boot id) writes no ledger into the checked-in fixture |
 
 **Red first:** C-1 was red for the real symptom — A18 *Expected preview.Count to be 0 … but found 1* (an agent process judged
 idle beside a folder nobody could read) and the scan *Expected scan.Complete to be False … but found True*; C-2 was red with
@@ -1821,6 +1826,22 @@ capability and the two limits; `config-keys.json` and `status-limits.json` regen
 
 **Status budget:** `StatusFlows`' first flow now allows 2 s plus the CPU window (the captured tree runs two servers); the
 probe's own `sampleMilliseconds` is still held under 2 s.
+
+**E14 S1 — red first and teeth (2026-10-07, Windows suites).** The burst test was written against the unfixed collector and
+went red for the real symptom: *Expected … Value = 16.7 … because 2 bursts × 10 s × 100 ticks over the 120 s since the
+previous sample … but found … Value = 0.0* — the 1 s window of daemon 0.2.0 reading a quiet second, as measured on
+2026-10-07 (research/2026-10-07_evening_overload.md M2). Green after the ledger. Then each guard was broken and its tests
+seen red (files restored by writing, rebuilt): the interval path removed → 4 red (the burst, no-wait, two callers, wall-clock
+jump); the two-point rule replaced by "always replace" → 2 (two callers, unchanged-not-rewritten); the maximum interval
+ignored → 2 (the four-hour average, older-than-the-maximum); the boot check → 1; the start-ticks identity check → 1; the
+root `status` place → `A_place_that_may_not_write…` and, through the CLI, `A_root_status_writes_no_ledger_anywhere`; an
+unprivileged `status` pointed at the state directory → `An_unprivileged_status_keeps_its_ledger…`. **Goldens:** only
+`status.json` carries an available `mcpServers` block; it gained `cpuBasis` / `cpuIntervalSeconds` per instance and
+`cpuBaseline` (the captured tree has no boot id, so `recorded: false` with that reason). The goldens are the LINUX binary's
+answers and the agent machine was overloaded (no WSL runs that evening): the file was edited by hand to the shape the
+serializer writes, and CI's Linux leg (`GoldenContractTests`) is what verifies it; a new normalisation rule
+(`**.cpuIntervalSeconds.value` → 1: the window is the longer of one second and the real wait) keeps a loaded runner from
+moving it.
 
 
 ### Every number is configuration (E7.S2c, 2026-10-05, owner rule)

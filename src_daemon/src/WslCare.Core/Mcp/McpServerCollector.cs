@@ -7,19 +7,19 @@ using WslCare.Core.Hosting;
 namespace WslCare.Core.Mcp;
 
 /// <summary>
-/// The MCP server instances of the AI agents (plan §15q E7.S2d): READ-ONLY — it holds no command runner and no signal sender,
-/// opens no file under a log root and writes nothing. It takes the process snapshot the probe already read (one <c>/proc</c>
-/// walk), reads each instance's <c>stat</c> twice across <c>mcpServers.cpuWindowMilliseconds</c> (<see cref="PidSamples.Read"/>, the
-/// sampler A11 and A18 share) — waiting only when an instance exists — and the watched servers' run logs (<see cref="McpRunLogs"/>).
+/// The MCP server instances of the AI agents (plan §15q E7.S2d): READ-ONLY towards the servers — it holds no command runner and no
+/// signal sender and opens no file under a log root. It takes the process snapshot the probe already read (one <c>/proc</c> walk),
+/// measures each instance's CPU (<see cref="PidSamples.Read"/>, the sampler A11 and A18 share) over the interval since its previous
+/// sample in the caller's CPU ledger (<see cref="McpCpuLedger"/>, plan E14 S1) — or, for an instance the ledger has no usable point
+/// of, across <c>mcpServers.cpuWindowMilliseconds</c>, waiting only then — and reads the watched servers' run logs
+/// (<see cref="McpRunLogs"/>). Its one write is that ledger, where the caller's place allows it.
 /// </summary>
 /// <remarks>Not inside the probe: the action engine takes the probe's sample several times per run, and each would pay the
 /// window. Called by <c>status</c> and by <c>collect</c> after their probe.</remarks>
-public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait)
+public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait, McpCpuLedgerPlace ledger)
 {
     /// <summary>Why the Windows binary answers no MCP servers.</summary>
     public const string WindowsNotYet = "the Windows binary has no process collector yet (E11): coai-mcp.exe is not counted on Windows";
-
-
 
     public async Task<Reading<McpSample>> SampleAsync(Reading<ProcessSnapshot> processes, EffectiveConfig config, CancellationToken cancellationToken)
     {
@@ -32,7 +32,7 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
         var found = McpInstances.Find(snapshot.All, settings.Watched);
         var listed = found.Instances.Take(settings.MaxInstances).ToList();
         var agesAt = clock.GetUtcNow();
-        var cpu = await CpuAsync(listed, settings.Window, cancellationToken).ConfigureAwait(false);
+        var (cpu, baseline) = await CpuAsync(listed, settings, cancellationToken).ConfigureAwait(false);
         var now = clock.GetUtcNow();
         var logs = settings.Watched.ToDictionary(s => s.Name, s => McpRunLogs.Read(files, paths.Home, s, now, settings, clock, cancellationToken), StringComparer.Ordinal);
         var judge = new McpJudge(settings, now, agesAt, snapshot.All);
@@ -42,25 +42,83 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
             found.NotUnderAgent,
             found.Instances.Sum(f => f.Process.HeldBytes),
             [.. listed.Select(f => judge.Instance(f, cpu[f.Process.Pid], logs[f.Server.Name])).OrderByDescending(i => i.CpuPercent.ValueOr(-1)).ThenBy(i => i.Process.Pid)],
-            [.. settings.Watched.Select(s => judge.Summary(s, found.Instances, logs[s.Name]))]));
+            [.. settings.Watched.Select(s => judge.Summary(s, found.Instances, logs[s.Name]))])
+        {
+            Baseline = baseline,
+        });
     }
 
-    /// <summary>Each instance's CPU % of one core across the window: 100 × (Δticks ÷ ticks per second) ÷ the window in seconds — the
-    /// LONGER of the configured window and the measured elapsed time (plan round finding 0).</summary>
-    private async Task<IReadOnlyDictionary<int, Reading<double>>> CpuAsync(IReadOnlyList<McpFound> listed, TimeSpan window, CancellationToken cancellationToken)
+    /// <summary>Each instance's CPU % of one core: over the interval since the ledger's point of its identity when there is one
+    /// (plan E14 S1), else across the window; then the readings recorded for the next sample where the place allows.</summary>
+    private async Task<(IReadOnlyDictionary<int, McpCpu> Cpu, McpCpuBaseline Baseline)> CpuAsync(IReadOnlyList<McpFound> listed, McpSettings settings, CancellationToken cancellationToken)
     {
         if (listed.Count == 0)
         {
-            return new Dictionary<int, Reading<double>>();
+            return (new Dictionary<int, McpCpu>(), McpCpuBaseline.NotRecorded(ledger.FileOrEmpty, "no MCP server instance to record"));
         }
 
         var kernel = ProcText.Bytes(files, $"{paths.ProcRoot}/self/auxv").Bind(bytes => KernelFacts.FromAuxVector(bytes));
+        var boot = BootIdentity.Read(paths, files);
+        var before = boot.Length == 0 ? McpCpuFile.Empty : McpCpuLedger.Read(files, ledger, settings.LedgerMaxBytes);
         var started = clock.GetTimestamp();
-        var first = listed.Select(f => (f.Process.Pid, Sample: FirstRead(f.Process))).ToList();
+        var firstAt = SampleTime.Of(clock);
+        var first = listed.Select(f => FirstRead(f.Process) switch
+        {
+            Reading<PidSample>.Available { Value: var s } => new Measuring(f.Process.Pid, Reading.Of(s), ReadingOf(s, firstAt)),
+            var unread => new Measuring(f.Process.Pid, unread, null),
+        }).ToList();
+        var fromLedger = first.ToDictionary(m => m.Pid, m => FromLedger(m, before, boot, kernel, settings.Bounds));
+        var windowed = await WindowAsync([.. first.Where(m => m.Read is not null && fromLedger[m.Pid] is null)], settings.Window, started, kernel, cancellationToken).ConfigureAwait(false);
+        var cpu = first.ToDictionary(m => m.Pid, m => fromLedger[m.Pid] ?? (windowed.TryGetValue(m.Pid, out var w) ? w.Cpu : McpCpu.Unmeasured(m.Sample.ReasonOrEmpty)));
+        IReadOnlyList<McpCpuReading> readings = [.. first.Select(m => fromLedger[m.Pid] is not null ? m.Read : windowed.GetValueOrDefault(m.Pid).Read).OfType<McpCpuReading>()];
+        return (cpu, boot.Length == 0
+            ? McpCpuBaseline.NotRecorded(ledger.FileOrEmpty, "the boot id cannot be read, so no reading can name its process across samples")
+            : McpCpuLedger.Record(files, ledger, before, McpCpuLedger.Next(before, boot, readings, settings.Bounds)));
+    }
+
+    /// <summary>One listed instance being measured: its first read, and that read as a ledger reading when it was taken.</summary>
+    private sealed record Measuring(int Pid, Reading<PidSample> Sample, McpCpuReading? Read);
+
+    private static McpCpuReading ReadingOf(PidSample sample, SampleTime at) => new(sample.Pid, sample.StartTicks, new McpCpuPoint(sample.CpuTicks, at.Wall, at.MonotonicMs));
+
+    /// <summary>The CPU over the interval since the ledger's point of this identity; <c>null</c> when the ledger has none usable.</summary>
+    private static McpCpu? FromLedger(Measuring m, McpCpuFile before, string boot, Reading<KernelFacts> kernel, McpCpuBounds bounds) =>
+        m.Read is { } now && McpCpuLedger.Baseline(before, boot, now, bounds) is { } from
+            ? IntervalCpu(now.At, from, kernel)
+            : null;
+
+    private static McpCpu IntervalCpu(McpCpuPoint now, McpCpuPoint from, Reading<KernelFacts> kernel)
+    {
+        var over = TimeSpan.FromMilliseconds(now.MonotonicMs - from.MonotonicMs);
+        return new McpCpu(kernel.Map(k => Percent(now.CpuTicks - from.CpuTicks, k, over.TotalSeconds)), McpCpuBasis.Interval, over);
+    }
+
+    /// <summary>The window fallback: the second read across <paramref name="window"/> for each instance with no baseline — the wait
+    /// paid only when there is one — at 100 × (Δticks ÷ ticks per second) ÷ the window in seconds, the LONGER of the configured
+    /// window and the measured elapsed time (plan round finding 0). Each answer carries the second read as a ledger reading when it
+    /// is still the same process.</summary>
+    private async Task<IReadOnlyDictionary<int, (McpCpu Cpu, McpCpuReading? Read)>> WindowAsync(IReadOnlyList<Measuring> pending, TimeSpan window, long started, Reading<KernelFacts> kernel, CancellationToken cancellationToken)
+    {
+        if (pending.Count == 0)
+        {
+            return new Dictionary<int, (McpCpu, McpCpuReading?)>();
+        }
+
         await wait(window, cancellationToken).ConfigureAwait(false);
         var seconds = Math.Max(window.TotalSeconds, clock.GetElapsedTime(started).TotalSeconds);
-        return first.ToDictionary(f => f.Pid, f => Rate(f.Sample, PidSamples.Read(files, paths, f.Pid), kernel, seconds));
+        var secondAt = SampleTime.Of(clock);
+        return pending.ToDictionary(m => m.Pid, m => Windowed(m.Sample, PidSamples.Read(files, paths, m.Pid), kernel, seconds, secondAt));
     }
+
+    private static (McpCpu Cpu, McpCpuReading? Read) Windowed(Reading<PidSample> first, PidSample? after, Reading<KernelFacts> kernel, double seconds, SampleTime at)
+    {
+        var rate = Rate(first, after, kernel, seconds);
+        var cpu = new McpCpu(rate, rate.IsAvailable ? McpCpuBasis.Window : McpCpuBasis.None, rate.IsAvailable ? TimeSpan.FromSeconds(seconds) : TimeSpan.Zero);
+        return (cpu, rate.IsAvailable && after is not null ? ReadingOf(after, at) : null);
+    }
+
+    private static double Percent(long deltaTicks, KernelFacts kernel, double seconds) =>
+        Math.Round(McpSample.PercentPerCore * deltaTicks / kernel.ClockTicksPerSecond / seconds, 1);
 
     /// <summary>The first read, and only when it is still the process the snapshot saw (final round 3 finding 6: a pid reused
     /// between the snapshot and this read would report another process's CPU as the server's).</summary>
@@ -75,16 +133,17 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
     private static Reading<double> Rate(Reading<PidSample> first, PidSample? after, Reading<KernelFacts> kernel, double seconds) =>
         first.Bind(before => after is null ? Reading.Missing<double>("it exited during the window")
             : after.StartTicks != before.StartTicks ? Reading.Missing<double>("its pid was taken by another process during the window")
-            : kernel.Map(k => Math.Round(McpSample.PercentPerCore * (after.CpuTicks - before.CpuTicks) / k.ClockTicksPerSecond / seconds, 1)));
+            : kernel.Map(k => Percent(after.CpuTicks - before.CpuTicks, k, seconds)));
 }
 
 /// <summary>The one road in for <c>status</c> and <c>collect</c>: the distro's MCP servers from the probe's own process table, or
-/// unavailable on the Windows binary (<see cref="McpServerCollector.WindowsNotYet"/>, the E11 next step).</summary>
+/// unavailable on the Windows binary (<see cref="McpServerCollector.WindowsNotYet"/>, the E11 next step). <paramref name="ledger"/>
+/// is the caller's CPU ledger (<see cref="McpCpuLedgerPlace.ForStatus"/>, <see cref="McpCpuLedgerPlace.ForCollect"/>).</summary>
 public static class McpSampling
 {
-    public static Task<Reading<McpSample>> SampleAsync(IHostPaths paths, IFileSystem files, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait, ProbeSample sample, EffectiveConfig config, CancellationToken cancellationToken) =>
+    public static Task<Reading<McpSample>> SampleAsync(IHostPaths paths, IFileSystem files, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait, McpCpuLedgerPlace ledger, ProbeSample sample, EffectiveConfig config, CancellationToken cancellationToken) =>
         paths is LinuxHostPaths linux
-            ? new McpServerCollector(files, linux, clock, wait).SampleAsync(sample.Vm.Bind(vm => vm.Processes), config, cancellationToken)
+            ? new McpServerCollector(files, linux, clock, wait, ledger).SampleAsync(sample.Vm.Bind(vm => vm.Processes), config, cancellationToken)
             : Task.FromResult(Reading.Missing<McpSample>(McpServerCollector.WindowsNotYet));
 }
 
@@ -97,10 +156,14 @@ public sealed class McpJudge(McpSettings settings, DateTimeOffset now, DateTimeO
 {
     private readonly Dictionary<int, ProcessEntry> _byPid = processes.GroupBy(p => p.Pid).ToDictionary(g => g.Key, g => g.First());
 
-    public McpInstance Instance(McpFound found, Reading<double> cpu, Reading<McpLogs> logs)
+    public McpInstance Instance(McpFound found, McpCpu cpu, Reading<McpLogs> logs)
     {
         var lastWrite = LastLogWrite(found.Process, logs);
-        return new McpInstance(found.Process, found.Server.Name, found.Owner, cpu, lastWrite, Kind(found.Process, cpu, lastWrite));
+        return new McpInstance(found.Process, found.Server.Name, found.Owner, cpu.Percent, lastWrite, Kind(found.Process, cpu.Percent, lastWrite))
+        {
+            CpuBasis = cpu.Basis,
+            CpuOver = cpu.Over,
+        };
     }
 
     /// <summary>The kind, in the plan's order: unknown, starting, idle, busy without activity, busy.</summary>

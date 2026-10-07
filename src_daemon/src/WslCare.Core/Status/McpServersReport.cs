@@ -29,14 +29,24 @@ public sealed record McpServersReport(
     IReadOnlyList<McpServerReport>? Servers,
     IReadOnlyList<McpInstanceReport>? Instances)
 {
+    /// <summary>Whether this sample's readings were recorded for the next one's interval, and where (plan E14 S1). Additive.</summary>
+    public McpCpuBaselineReport? CpuBaseline { get; init; }
+
     public static McpServersReport From(Reading<McpSample> reading) => reading switch
     {
         Reading<McpSample>.Available { Value: var s } => new(
             true, null, s.WindowMilliseconds, s.Count, s.Instances.Count, s.IdleCount, s.BusyWithoutActivityCount, s.NotUnderAgent,
-            StatusReports.Number(s.CpuCores), s.CpuMeasured, s.HeldBytes, [.. s.Servers.Select(McpServerReport.From)], [.. s.Instances.Select(McpInstanceReport.From)]),
+            StatusReports.Number(s.CpuCores), s.CpuMeasured, s.HeldBytes, [.. s.Servers.Select(McpServerReport.From)], [.. s.Instances.Select(McpInstanceReport.From)])
+        {
+            CpuBaseline = new(s.Baseline.File, s.Baseline.Recorded, s.Baseline.Recorded ? null : s.Baseline.Reason),
+        },
         _ => new(false, reading.ReasonOrEmpty, null, null, null, null, null, null, null, null, null, null, null),
     };
 }
+
+/// <summary>The CPU ledger of this caller (plan E14 S1): its file (empty when it has none), whether this sample's readings are in it,
+/// and why not.</summary>
+public sealed record McpCpuBaselineReport(string File, bool Recorded, string? Reason);
 
 /// <summary>One watched server: its instances and its starts in the window, and how they were counted (<c>logNames</c> or the
 /// lower bound <c>liveYounger</c>); <see cref="StartTimes"/> lists those starts newest first (<c>mcpServers.maxStartsListed</c>).</summary>
@@ -85,6 +95,13 @@ public sealed record McpInstanceReport(
     McpOwnerReport Owner,
     McpActivityReport Activity)
 {
+    /// <summary><c>interval</c> (since this identity's previous sample), <c>window</c> (two reads across the window, the fallback) or
+    /// <c>none</c> (not measured) — plan E14 S1. Additive.</summary>
+    public string CpuBasis { get; init; } = BasisName(McpCpuBasis.None);
+
+    /// <summary>How long <see cref="McpInstanceReport.CpuPercent"/> was measured over, in seconds; unavailable when it was not. Additive.</summary>
+    public NumberFigure CpuIntervalSeconds { get; init; } = StatusReports.Number(Reading.Missing<double>("not measured"));
+
     public static McpInstanceReport From(McpInstance i) => new(
         i.Process.Pid,
         i.Server,
@@ -95,7 +112,19 @@ public sealed record McpInstanceReport(
         i.Process.HeldBytes,
         KindName(i.Kind),
         McpOwnerReport.From(i.Owner),
-        i.LastLogWrite is Reading<DateTimeOffset>.Available { Value: var at } ? new(true, at, null) : new(false, null, i.LastLogWrite.ReasonOrEmpty));
+        i.LastLogWrite is Reading<DateTimeOffset>.Available { Value: var at } ? new(true, at, null) : new(false, null, i.LastLogWrite.ReasonOrEmpty))
+    {
+        CpuBasis = BasisName(i.CpuBasis),
+        CpuIntervalSeconds = StatusReports.Number(i.CpuPercent.Map(_ => Math.Round(i.CpuOver.TotalSeconds, 1))),
+    };
+
+    /// <summary>The CPU basis as the wire names it.</summary>
+    public static string BasisName(McpCpuBasis basis) => basis switch
+    {
+        McpCpuBasis.Interval => "interval",
+        McpCpuBasis.Window => "window",
+        _ => "none",
+    };
 
     public static string KindName(McpKind kind) => kind switch
     {

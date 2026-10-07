@@ -291,6 +291,8 @@
     "maxInstances": 256,
     "maxLogEntries": 20000,
     "logListMilliseconds": 1000,
-    "maxStartsListed": 50
+    "maxStartsListed": 50,
+    "cpuIntervalMinSeconds": 120,
+    "cpuIntervalMaxMinutes": 20
   }
 }
