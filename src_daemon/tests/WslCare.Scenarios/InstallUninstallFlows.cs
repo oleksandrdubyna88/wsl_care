@@ -2,6 +2,8 @@ using System.Runtime.Versioning;
 
 using FluentAssertions;
 
+using WslCare.TestSupport;
+
 using static WslCare.Scenarios.InstallChecks;
 
 namespace WslCare.Scenarios;
@@ -93,6 +95,89 @@ public sealed class InstallUninstallFlows
 
         File.Exists(world.At(InstallWorld.BinaryPath + ".new")).Should().BeFalse();
         Directory.Exists(world.At("/opt/wsl-care")).Should().BeFalse("its emptied folders go with it");
+    }
+
+    /// <summary>Retro review of PR #8, G1: <c>--purge</c> removed the state, the logs and the run lock while a run started by hand
+    /// (<c>sudo wsl-care collect</c> in a terminal) could still hold that lock. The lock is held here exactly as the daemon's
+    /// <c>RunLock</c> holds it — an exclusive open (<c>FileShare.None</c>, which .NET takes as <c>flock(LOCK_EX)</c> on Linux): the
+    /// purge refuses naming the step and why, keeps every byte of the state, and the same command purges once the run has ended.</summary>
+    [Fact]
+    public async Task A_purge_while_a_run_holds_the_run_lock_is_refused_and_removes_nothing_of_the_state()
+    {
+        Linux();
+        using var world = new InstallWorld("purge-locked");
+        Succeeded(await world.RunAsync());
+        world.Write("/var/lib/wsl-care/history.jsonl", "{\"runId\":\"x\"}\n");
+        world.Write("/var/log/wsl-care/2026-10-06/wsl-care-12-00-00-1.log", "a run log\n");
+        ScriptUninstall(world);
+        var state = new[] { "/var/lib/wsl-care/history.jsonl", "/var/log/wsl-care/2026-10-06/wsl-care-12-00-00-1.log", "/etc/wsl-care/config.json" }
+            .ToDictionary(p => p, p => File.ReadAllBytes(world.At(p)));
+
+        ChildResult refused;
+        using (new FileStream(world.At("/run/wsl-care.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None))
+        {
+            refused = await world.RunAsync("--uninstall", "--purge");
+        }
+
+        FailedAt(refused, "purge");
+        refused.Stderr.Should().Contain("a wsl-care run holds the run lock /run/wsl-care.lock")
+            .And.Contain("nothing of the state was removed").And.Contain("run --uninstall --purge again when it ends");
+        foreach (var (path, bytes) in state)
+        {
+            File.ReadAllBytes(world.At(path)).Should().Equal(bytes, $"{path} is kept while a run holds the lock");
+        }
+
+        File.Exists(world.At("/run/wsl-care.lock")).Should().BeTrue("the lock of a run in flight is never removed under it");
+
+        var again = await world.RunAsync("--uninstall", "--purge");
+
+        Succeeded(again);
+        foreach (var gone in new[] { "/var/lib/wsl-care", "/var/log/wsl-care", "/etc/wsl-care" })
+        {
+            Directory.Exists(world.At(gone)).Should().BeFalse($"once the run has ended, the same command purges {gone}");
+        }
+
+        File.Exists(world.At("/run/wsl-care.lock")).Should().BeFalse("the lock file goes last, under the lock");
+    }
+
+    /// <summary>The purge opens the lock to take it; with no lock file there before, it leaves none behind either.</summary>
+    [Fact]
+    public async Task A_purge_with_no_run_lock_file_takes_the_lock_and_leaves_no_lock_file_behind()
+    {
+        Linux();
+        using var world = new InstallWorld("purge-no-lock-file");
+        Succeeded(await world.RunAsync());
+        ScriptUninstall(world);
+        File.Exists(world.At("/run/wsl-care.lock")).Should().BeFalse();
+
+        Succeeded(await world.RunAsync("--uninstall", "--purge"));
+
+        File.Exists(world.At("/run/wsl-care.lock")).Should().BeFalse();
+        Directory.Exists(world.At("/var/lib/wsl-care")).Should().BeFalse();
+    }
+
+    /// <summary>Without <c>flock</c> the lock cannot be taken, so <c>--purge</c> refuses BEFORE anything is stopped or removed,
+    /// naming the tool; a plain <c>--uninstall</c> removes no state and needs no lock.</summary>
+    [Fact]
+    public async Task Without_flock_a_purge_is_refused_before_anything_changes_and_a_plain_uninstall_still_works()
+    {
+        Linux();
+        using var world = new InstallWorld("purge-no-flock", withoutRealTools: ["flock"]);
+        Succeeded(await world.RunAsync());
+        ScriptUninstall(world);
+        var installed = world.Tree();
+        var systemctlBefore = world.CallsOf("systemctl").Count;
+
+        var refused = await world.RunAsync("--uninstall", "--purge");
+
+        FailedAt(refused, "preflight");
+        refused.Stderr.Should().Contain("flock (from util-linux) is not installed").And.Contain("nothing was changed");
+        world.Tree().Should().BeEquivalentTo(installed, "refused before anything was stopped or removed");
+        world.CallsOf("systemctl").Should().HaveCount(systemctlBefore, "no unit was touched");
+
+        Succeeded(await world.RunAsync("--uninstall"));
+        File.Exists(world.At(InstallWorld.BinaryPath)).Should().BeFalse();
+        Directory.Exists(world.At("/var/lib/wsl-care")).Should().BeTrue("a plain uninstall keeps the state");
     }
 
     /// <summary>What a world's systemctl answers during an uninstall.</summary>

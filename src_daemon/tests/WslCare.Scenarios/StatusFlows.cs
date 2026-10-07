@@ -28,6 +28,12 @@ public sealed class StatusFlows
     /// <summary>Plan §6: <c>status --json</c> answers in under 2 s.</summary>
     private static readonly TimeSpan Budget = TimeSpan.FromSeconds(2);
 
+    /// <summary>Plan §15q E7.S2d: when an MCP server of an AI agent runs, <c>status</c> also measures its CPU across the window
+    /// (<c>mcpServers.cpuWindowMilliseconds</c>, its default here) — a deliberate wait on top of the fast snapshot, published in
+    /// <c>limits</c> for the extension's ceiling. The captured tree runs two such servers.</summary>
+    private static TimeSpan BudgetWithMcpWindow(StatusReport report) =>
+        report.McpServers is { Count: > 0 } ? Budget + TimeSpan.FromMilliseconds(report.Limits!.McpCpuWindowMilliseconds) : Budget;
+
     private static StatusReport Report(ChildResult result)
     {
         result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
@@ -57,8 +63,9 @@ public sealed class StatusFlows
         var (result, elapsed) = await TimedAsync(home, "status", "--json");
 
         var report = Report(result);
-        elapsed.Should().BeLessThan(Budget, "plan §6: status --json is a fast snapshot");
-        report.SampleMilliseconds.Should().BeLessThan((long)Budget.TotalMilliseconds);
+        report.McpServers!.Count.Should().Be(2, "the capture holds two claude sessions, each running coai-mcp");
+        elapsed.Should().BeLessThan(BudgetWithMcpWindow(report), "plan §6: status --json is a fast snapshot — plus the MCP servers' CPU window (§15q E7.S2d)");
+        report.SampleMilliseconds.Should().BeLessThan((long)Budget.TotalMilliseconds, "the probe's own sample is still the fast one");
         report.SchemaVersion.Should().Be(SchemaVersion.Current);
         report.Side.Should().Be("wsl");
         report.Vm.Memory!.Total!.Bytes.Should().Be(47_066_772L * 1024);

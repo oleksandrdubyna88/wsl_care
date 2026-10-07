@@ -1323,9 +1323,9 @@ flowchart TD
     files["/opt/wsl-care/bin/wsl-care 0755 · link /usr/local/bin/wsl-care<br/>the units → /etc/systemd/system 0644<br/>/etc/wsl-care/config.json ONLY if absent<br/>/var/lib/wsl-care · /var/log/wsl-care 0755"]
     conf["/etc/wsl.conf: [user] default= ONLY with the flag and only when none is set<br/>otherwise advice, nothing written"]
     pkgs["sysstat + atop via apt when missing<br/>debconf sysstat/enable=true; dpkg-reconfigure when still off"]
-    units["systemctl daemon-reload · try-restart follower (upgrade)<br/>enable --now wsl-care.timer wsl-care-events.service<br/>enable --now sysstat.service atop.service"]
-    first["/opt/wsl-care/bin/wsl-care collect<br/>(one full run: records, never acts)"]
-    ver["verify: sar · atop on PATH → is-active timer · events<br/>→ doctor --json healthy (bounded wait)"]
+    units["systemctl daemon-reload · try-restart follower (upgrade)<br/>enable --now wsl-care.timer wsl-care-events.service<br/>enable --now sysstat.service atop.service<br/>each call ≤ WSL_CARE_INSTALL_SYSTEMCTL_SECONDS (900) + 10 s kill grace"]
+    first["said first: may take minutes, at most 900 s<br/>/opt/wsl-care/bin/wsl-care collect<br/>(one full run: records, never acts; ≤ 900 s + 30 s kill grace)"]
+    ver["verify: sar · atop on PATH → is-active timer · events<br/>→ doctor --json healthy (wall-clock wait ≤ WSL_CARE_INSTALL_DOCTOR_SECONDS,<br/>each call cut to the deadline, at least 10 s)"]
     fail["exit 1: FAILED at step #quot;…#quot;<br/>+ how to re-run or --uninstall once something was written"]
     ok["summary"]
 
@@ -1376,15 +1376,40 @@ a banner on stderr and the checksum still applies.
 **Every step that writes goes through `run`**, which under `--dry-run` only prints `would run: …`; the dry run still
 downloads and verifies into its temporary folder, needs no root, and changes nothing else. A failed step exits 1 naming
 it (`preflight`, `resolve-release`, `download`, `checksum`, `attestation`, `unpack`, `install-binary`, `install-units`,
-`machine-config`, `wsl-conf`, `packages`, `enable-units`, `first-run`, `verify: …`); a usage refusal exits 2.
+`machine-config`, `wsl-conf`, `packages`, `upgrade-wait`, `enable-units`, `first-run`, `verify: …`; uninstall: `units`, `purge`,
+`verify: …`); a usage refusal exits 2.
 `apt-get install` has no kill ceiling on purpose (a dpkg killed mid-configure breaks the package database) — its waits
 are bounded by `DPkg::Lock::Timeout=300`; every other wait has one (`curl --max-time`, `timeout` around `gh`, `apt-get
-update`, `collect` and `doctor`).
+update`, `units dropin`, `status`, every job-waiting `systemctl`, `collect` and `doctor`).
+
+**The ceilings** (retro reviews of PR #8 and PR #11, 2026-10-06). Every `timeout` carries `-k`: SIGTERM at the ceiling,
+SIGKILL after a grace (10 s; 30 s for the first `collect`), so a child that ignores SIGTERM never outlives its ceiling by
+more than the grace. Every `systemctl` call that waits for a job — `daemon-reload`, `try-restart`, `enable --now`,
+`disable --now`, `stop` — goes through `systemctl_job`, under `WSL_CARE_INSTALL_SYSTEMCTL_SECONDS` (default 900: above a stop's
+worst case, `TimeoutStopSec` ≤ 300 s twice); measured on WSL Ubuntu, `sysstat.service` is `Type=oneshot` with
+`TimeoutStartUSec=infinity` and `JobTimeoutUSec=infinity`, so `enable --now` had no ceiling at all. At the ceiling only the
+WAIT ends — the step fails saying the job may still be running (`systemctl list-jobs`); a dry run prints the plain systemctl
+command. The two waits run on the WALL clock and end at their deadline: the health wait
+(`WSL_CARE_INSTALL_DOCTOR_SECONDS`, 120) gives each `doctor --json` what is left of it (at least 10 s) and never sleeps past
+it, then at most the last look and the readable report, 10 s each plus the kill grace — a refusal within 120 + 40 s (it
+counted only its 5 s sleeps before, so 120 s could stretch to ~50 minutes of 120 s calls); the upgrade wait
+(`WSL_CARE_INSTALL_RUN_WAIT_SECONDS`, 600) does the same with each `status --json` (`WSL_CARE_INSTALL_STATUS_SECONDS`, 30, cut to
+what is left, at least 5 s unless set lower). Every ceiling variable (and `WSL_CARE_INSTALL_PROGRESS_SECONDS`) is a whole number of seconds,
+no leading zero, at most a day, or a usage refusal (exit 2) before anything runs; `SYSTEMCTL` and `STATUS` refuse 0, which
+`timeout` reads as no ceiling. The first full run is announced before it starts — it takes minutes. An installed binary
+that EXISTS but cannot be started is no status answer (in flight, then the refusal with the manual escape); only a binary
+that does not exist means a fresh install.
 
 **Uninstall** stops and disables the timer and the follower, stops a running full run, removes the units (every loaded `wsl-care-act@*` instance stopped first), the
 binary, the link (only when it is the installer's) and the emptied `/opt/wsl-care`, and verifies the timer inactive and
 the files gone. It keeps `/var/lib/wsl-care`, `/var/log/wsl-care` and `/etc/wsl-care`; `--purge` names and removes
-exactly those and `/run/wsl-care.lock`. It never removes sysstat, atop, `/etc/wsl.conf` or a user's own layer.
+exactly those and `/run/wsl-care.lock` — **only while it holds the run lock** (retro review of PR #8, G1): the daemon's
+`RunLock` is `flock(2)` on `/run/wsl-care.lock` (.NET's `FileShare.None`), so after the units are stopped and the binary is
+gone the installer takes `flock -n` on that file (fd 9) and removes the three folders and then the lock file itself, LAST,
+inside the locked section — with no binary left nothing can lock a new file at that path in between. A run started by hand
+(`sudo wsl-care collect`) still holding it refuses the purge at step `purge`: nothing of the state is removed, and the same
+command purges once that run has ended. `--purge` needs `flock` (util-linux) and refuses at `preflight`, before anything
+changes, without it. It never removes sysstat, atop, `/etc/wsl.conf` or a user's own layer.
 
 **The units** (`src_daemon/systemd/`, all root):
 
@@ -2361,6 +2386,12 @@ flowchart LR
   environment that moves no agent home, at least one session found. Idle is the SHORTER of the wall and the monotonic clock over
   a dense chain of sightings (no gap over two timer periods). `agent-cpu.json` is 0600; past its cap the oldest go.
 
+## MCP server instances of the AI agents (E7.S2d, 2026-10-06, owner request)
+
+A read-only collector over the one process snapshot and the `status --json` `mcpServers` block (also in every run detail),
+three verdicts (`mcp.instances`, `mcp.cpu`, `mcp.starts`) and the `mcpServers.*` keys; the Windows binary answers it
+unavailable (E11). The module, its diagram, entities, flows and residuals: [module_mcp_servers.md](module_mcp_servers.md).
+
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
 "Every number we have must be configurable" (the owner, 2026-10-05). From now on **a new behavioural number is a
@@ -2402,7 +2433,9 @@ flowchart LR
   `Fixed(values)`: a key is read when a request is built, never when the template is declared.
 - **The units follow the configuration through drop-ins** (`Systemd/UnitDropIns.cs`): the timer's period
   (`timer.periodHours`, the ONE source of every copy of the period — `CollectRun.DefaultWindow`, `DoctorRun.LastRunMaxAge`),
-  its randomized delay and accuracy, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec. The shipped
+  its randomized delay and accuracy — the calendar `*-*-* 00/<hours>:00:00`, or `*-*-* 00:00:00` for 24, which systemd 255
+  refuses as `00/24` ("Invalid argument"; retro review of PR #8, O1; `TimerCalendarTests` runs `systemd-analyze calendar` over
+  every accepted period) — the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec. The shipped
   unit files carry the defaults; both root services start with `TimeoutStartSec=infinity` (N-4).
 - **`status --json` → `limits`** publishes the daemon values the extension mirrors instead of copying
   (`historyRetentionDays`, `requestFutureSkewSeconds`, `requestGraceSeconds`, `maxShownNames`, `unitStopSeconds`,
@@ -2806,7 +2839,7 @@ flowchart LR
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3); the status verdicts and the golden contracts' writer and drift test (E5.S0) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |

@@ -50,6 +50,9 @@ public sealed record CollectContext(
 
     /// <summary>What cancelled the run, in words — the CLI names the signal (E6.S0 review: a full run cut off records why).</summary>
     public Func<string> InterruptCause { get; init; } = static () => "a signal";
+
+    /// <summary>How the run waits a measuring window (the MCP servers' CPU window, plan §15q E7.S2d); a test returns at once.</summary>
+    public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
 }
 
 /// <summary>How a full run ended for its records, and its detail (none when another run held the lock).</summary>
@@ -344,6 +347,7 @@ public static class CollectRun
         var since = newestFirst.FirstOrDefault()?.StartedAt ?? started - DefaultWindow;
         var last = LastFullRun.FromRecords(newestFirst, started);
         var sample = c.Probe.Sample(cancellationToken);
+        var mcp = await Mcp.McpSampling.SampleAsync(c.Paths, c.Files, c.Clock, c.Wait, sample, c.Loaded.Config, cancellationToken).ConfigureAwait(false);
         var health = await new HealthCollector(c.Commands, c.Files, c.Paths, c.Clock).CollectAsync(since, cancellationToken).ConfigureAwait(false);
         var folders = c.Paths is LinuxHostPaths linux && FolderSizes.Due(last.Folders, started)
             ? await new FolderSizes(c.Files, c.Commands, c.Clock).MeasureAsync(linux, cancellationToken).ConfigureAwait(false)
@@ -356,7 +360,7 @@ public static class CollectRun
         var stats = await DockerStats.SampleAsync(new DockerCli(c.Commands), c.Clock, cancellationToken).ConfigureAwait(false);
         var starts = Coverage.Last24h(new ContainerStartsStore(c.Paths, c.Files).ReadAll(), c.Clock.GetUtcNow());
         var slow = new SlowParts { ContainerStats = stats, WindowsClock = health.WindowsClock, Folders = folders, Agents = agents };
-        var verdicts = ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow), c.Loaded.Config);
+        IReadOnlyList<Verdict> verdicts = [.. ThresholdRules.Evaluate(Inputs(sample, health, started - since, last, docker, foldersNow), c.Loaded.Config), .. McpVerdicts.From(mcp, c.Loaded.Config)];
         var ended = c.Clock.GetUtcNow();
         var thisRun = LastFullRun.FromRecords([new RunRecord(Core.SchemaVersion.Current, runId, c.Trigger, started, ended, RunOutcome.Completed, [], RunKind.Collect) { Slow = slow }, .. newestFirst], ended);
         var folderReport = FoldersReports.From(foldersNow, foldersBefore, folders is not null);
@@ -370,7 +374,7 @@ public static class CollectRun
             c.Loaded.Config.Bool(ConfigKeys.DryRun),
             c.Loaded.IsObserveOnly,
             c.Paths.Side == HostSide.Wsl ? "wsl" : "windows",
-            StatusReports.From(sample, thisRun, c.Loaded) with { ContainerStarts = starts, Folders = folderReport },
+            StatusReports.From(sample, thisRun, c.Loaded) with { ContainerStarts = starts, Folders = folderReport, McpServers = McpServersReport.From(mcp) },
             docker.Report,
             HealthReports.From(health),
             verdicts,

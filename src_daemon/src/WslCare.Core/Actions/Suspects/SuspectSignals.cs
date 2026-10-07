@@ -1,5 +1,6 @@
 using System.Globalization;
 
+using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
 
@@ -15,7 +16,7 @@ public static class SuspectSignals
 {
     /// <summary>The key a preview item carries: <c>pid:start:cpu:uid</c> — who it is, the CPU ticks the preview saw and the account
     /// it ran as (E7.S2b review A-L2: the kill-time re-check compares the account, not only "not root").</summary>
-    public static string Key(SuspectSample sample) =>
+    public static string Key(PidSample sample) =>
         string.Create(CultureInfo.InvariantCulture, $"{sample.Pid}:{sample.StartTicks}:{sample.CpuTicks}:{sample.Uid}");
 
     /// <summary>The <c>pid:start</c> a key names — what a modal shows and a button run passes back (review A-H1).</summary>
@@ -54,7 +55,7 @@ public static class SuspectSignals
 
     /// <summary>Why a target is not signalled after all — gone, another process now, or it used CPU / gained a terminal /
     /// became root's since the preview; <c>null</c> when it is still the idle suspect the preview saw.</summary>
-    private static SignalOutcome? Recheck(SuspectSample? now, ActionItem target)
+    private static SignalOutcome? Recheck(PidSample? now, ActionItem target)
     {
         var parts = target.Key.Split(':');
         var (identity, cpu, uid) = (Identity(target), long.Parse(parts[2], CultureInfo.InvariantCulture), parts.Length > 3 ? int.Parse(parts[3], CultureInfo.InvariantCulture) : -1);
@@ -67,7 +68,7 @@ public static class SuspectSignals
         };
     }
 
-    private static bool Changed(SuspectSample now, long cpu, int uid) => now.CpuTicks != cpu || now.Tty != 0 || now.Uid == 0 || now.Uid != uid;
+    private static bool Changed(PidSample now, long cpu, int uid) => now.CpuTicks != cpu || now.Tty != 0 || now.Uid == 0 || now.Uid != uid;
 
     /// <summary>What one outcome means for the record: ended (and how), kept (and why), and the failure it counts as, if any.</summary>
     public static (bool Ended, ActionItem Item, string Failure) Verdict(ActionItem item, SignalOutcome outcome) => outcome switch

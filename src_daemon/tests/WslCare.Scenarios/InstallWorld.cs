@@ -49,7 +49,7 @@ internal sealed class InstallWorld : IDisposable
     /// <summary>The real tools linked onto the script's PATH: text and file tools only, acting on the temporary folder
     /// and the prefix.</summary>
     public static readonly IReadOnlyList<string> RealTools =
-        ["awk", "cat", "chmod", "cut", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "date", "sort", "tail", "tar", "timeout", "tr", "wc"];
+        ["awk", "cat", "chmod", "cut", "flock", "grep", "gzip", "head", "install", "ln", "ls", "mkdir", "mktemp", "mv", "od", "readlink", "rm", "rmdir", "sed", "sha256sum", "sleep", "date", "sort", "tail", "tar", "timeout", "tr", "wc"];
 
     private readonly TempRoot _root;
     private readonly List<FakeAnswer> _answers = [];
@@ -72,7 +72,8 @@ internal sealed class InstallWorld : IDisposable
     /// <param name="awk">The awk the script runs (<c>/usr/bin/mawk</c>, <c>/usr/bin/gawk</c>); empty = the system's
     /// <c>awk</c>. Ubuntu ships mawk, a runner image may point <c>awk</c> at gawk: the snappy decoder must give both the
     /// same bytes.</param>
-    public InstallWorld(string purpose, IReadOnlyList<string>? withoutTools = null, string awk = "")
+    /// <param name="withoutRealTools">Real tools left OFF the PATH — a tool this distro does not have (<c>flock</c>).</param>
+    public InstallWorld(string purpose, IReadOnlyList<string>? withoutTools = null, string awk = "", IReadOnlyList<string>? withoutRealTools = null)
     {
         _root = new TempRoot($"install-{purpose}");
         Root = _root.Dir("root");
@@ -85,7 +86,7 @@ internal sealed class InstallWorld : IDisposable
         StubLog = _root.Under("stub-invocations.log");
         ScenarioHome.InstallFakes(FakeBin, [.. FakedTools.Except(withoutTools ?? [])]);
         ScenarioHome.InstallFakes(StubBin, ["wsl-care"]);
-        LinkRealTools(RealBin, awk);
+        LinkRealTools(RealBin, awk, withoutRealTools ?? []);
         SeedMachine();
         ScriptTheHappyPath();
     }
@@ -123,6 +124,10 @@ internal sealed class InstallWorld : IDisposable
 
     /// <summary><c>WSL_CARE_INSTALL_SKIP_RUN_WAIT</c>: the escape for an installed binary that cannot answer.</summary>
     public bool SkipRunWait { get; set; }
+
+    /// <summary>Installer variables set on top of <see cref="Environment"/> — a ceiling such as
+    /// <c>WSL_CARE_INSTALL_SYSTEMCTL_SECONDS</c>, or <c>WSL_CARE_INSTALL_DOCTOR_SECONDS</c> in place of the world's 0.</summary>
+    public Dictionary<string, string> Variables { get; } = new(StringComparer.Ordinal);
 
     /// <summary>The second the scripted clock starts at (<see cref="UseScriptedClock"/>): 2026-10-04T12:00:00Z.</summary>
     public const long ScriptedClockStart = 1_791_115_200;
@@ -338,9 +343,13 @@ internal sealed class InstallWorld : IDisposable
     public static void AddFile(TarWriter tar, string name, byte[] bytes, UnixFileMode mode) =>
         tar.WriteEntry(new UstarTarEntry(TarEntryType.RegularFile, name) { Mode = mode, DataStream = new MemoryStream(bytes) });
 
+    /// <summary>Shell lines the stub runs after logging and before it hands its argv to the fake — a binary that behaves in a
+    /// way the fake cannot (one that ignores SIGTERM). Set it, then <see cref="Publish"/> again: the archive holds the stub.</summary>
+    public string StubPrelude { get; set; } = string.Empty;
+
     /// <summary>The bytes of the binary a release carries here: the stub.</summary>
     public string StubScript() =>
-        $"#!/bin/sh\nprintf '%s\\n' \"$0\" >> '{StubLog}'\nexec '{Path.Combine(StubBin, "wsl-care")}' \"$@\"\n";
+        $"#!/bin/sh\nprintf '%s\\n' \"$0\" >> '{StubLog}'\n{StubPrelude}exec '{Path.Combine(StubBin, "wsl-care")}' \"$@\"\n";
 
     /// <summary>What <c>doctor --json</c> prints, written by the product's own serializer — never a guessed shape.</summary>
     public static string DoctorJson(bool healthy) =>
@@ -360,7 +369,13 @@ internal sealed class InstallWorld : IDisposable
     public Task<ChildResult> RunAsync(params string[] args) =>
         ChildProcess.RunAsync("/bin/sh", [ShippedFiles.InstallScript, .. args], Environment, _root.Path, TimeSpan.FromSeconds(60));
 
-    public IReadOnlyDictionary<string, string?> Environment => new Dictionary<string, string?>(StringComparer.Ordinal)
+    /// <summary>Runs the real <c>install.sh</c> with its stderr joined to its stdout in ONE pipe, so the result's
+    /// <see cref="ChildResult.Stdout"/> holds every line in the order it was written — the script's own and those of the
+    /// commands it starts (a fake's scripted stderr) — and a test can say which came first.</summary>
+    public Task<ChildResult> RunMergedAsync(params string[] args) =>
+        ChildProcess.RunAsync("/bin/sh", ["-c", "exec /bin/sh \"$0\" \"$@\" 2>&1", ShippedFiles.InstallScript, .. args], Environment, _root.Path, TimeSpan.FromSeconds(60));
+
+    public IReadOnlyDictionary<string, string?> Environment => WithVariables(new Dictionary<string, string?>(StringComparer.Ordinal)
     {
         ["PATH"] = $"{FakeBin}:{RealBin}",
         ["WSL_CARE_INSTALL_ROOT"] = Root,
@@ -374,7 +389,17 @@ internal sealed class InstallWorld : IDisposable
         ["WSL_CARE_INSTALL_RUN_WAIT_SECONDS"] = RunWaitSeconds.Length == 0 ? null : RunWaitSeconds,
         ["WSL_CARE_INSTALL_PROGRESS_SECONDS"] = ProgressSeconds.Length == 0 ? null : ProgressSeconds,
         ["WSL_CARE_INSTALL_SKIP_RUN_WAIT"] = SkipRunWait ? "1" : null,
-    };
+    });
+
+    private Dictionary<string, string?> WithVariables(Dictionary<string, string?> environment)
+    {
+        foreach (var (name, value) in Variables)
+        {
+            environment[name] = value;
+        }
+
+        return environment;
+    }
 
     /// <summary>Every entry under the prefix: path → kind, mode, link target or content hash. Equal before and after a
     /// run = the run changed nothing there.</summary>
@@ -391,9 +416,9 @@ internal sealed class InstallWorld : IDisposable
         _ => $"file {File.GetUnixFileMode(info.FullName)} {Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(info.FullName)))}",
     };
 
-    private static void LinkRealTools(string bin, string awk)
+    private static void LinkRealTools(string bin, string awk, IReadOnlyList<string> without)
     {
-        foreach (var tool in RealTools)
+        foreach (var tool in RealTools.Except(without))
         {
             var real = (tool == "awk" && awk.Length > 0 ? awk : null)
                 ?? new[] { "/usr/bin", "/bin" }.Select(d => Path.Combine(d, tool)).FirstOrDefault(File.Exists)

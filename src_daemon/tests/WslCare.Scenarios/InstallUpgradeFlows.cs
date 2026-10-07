@@ -22,8 +22,9 @@ public sealed class InstallUpgradeFlows
     {
         Linux();
         using var world = new InstallWorld("upgrade");
-        world.Write(InstallWorld.BinaryPath, "#!/bin/sh\necho old\n");
-        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+        // Executable, as an installed binary is: one that cannot be started is no answer, and the wait refuses (retro of PR #11).
+        // Its "old" is an answer with no running block — a binary older than E6.S0 — so nothing is in flight.
+        Installed(world, "#!/bin/sh\necho old\n", InstallWorld.Executable);
         world.Override("systemctl", ["try-restart", "wsl-care-events.service"], 0);
 
         Succeeded(await world.RunAsync());
@@ -217,6 +218,99 @@ public sealed class InstallUpgradeFlows
 
         FailedAt(result, "upgrade-wait");
         (DateTime.UtcNow - started).Should().BeLessThan(TimeSpan.FromSeconds(24), "the refusal comes at the advertised ceiling plus one status call and one sleep");
+    }
+
+    // ---------- the retro review of PR #11 (2026-10-06): the wait ends AT its deadline ----------
+
+    /// <summary>An installed binary whose <c>status --json</c> takes <paramref name="seconds"/> seconds on the real clock, and
+    /// first writes the instant it started (nanoseconds since the epoch, the real <c>date</c>) to <paramref name="stamp"/>.</summary>
+    private static string SlowBinaryAnswering(string state, int seconds, string stamp) =>
+        $"#!/bin/sh\ndate +%s%N > '{stamp}'\nsleep {seconds}\n" + OldBinaryAnswering(state)["#!/bin/sh\n".Length..];
+
+    /// <summary>How long ago the last status call started, read from its stamp — the call's own life plus the refusal after it,
+    /// without the install's prelude, so a loaded machine does not blur a difference of seconds.</summary>
+    private static TimeSpan SinceTheLastStatusCallStarted(string stamp) =>
+        DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(long.Parse(File.ReadAllText(stamp).Trim(), System.Globalization.CultureInfo.InvariantCulture) / 1_000_000);
+
+    private static void Installed(InstallWorld world, string binary, UnixFileMode mode)
+    {
+        world.Write(InstallWorld.BinaryPath, binary);
+        File.SetUnixFileMode(world.At(InstallWorld.BinaryPath), mode);
+        world.Link(InstallWorld.LinkPath, InstallWorld.BinaryPath);
+    }
+
+    /// <summary>G3: the 5 s sleep ran past the deadline — a 7 s wait refused at 10 s. On the scripted clock, where time moves only
+    /// when the script sleeps: the last sleep ends AT the deadline and the refusal comes there.</summary>
+    [Fact]
+    public async Task The_wait_never_sleeps_past_its_deadline()
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-sleep-deadline") { RunWaitSeconds = "7" };
+        world.UseScriptedClock();
+        Installed(world, OldBinaryAnswering("live"), InstallWorld.Executable);
+
+        var result = await world.RunAsync();
+
+        FailedAt(result, "upgrade-wait");
+        result.Stderr.Should().Contain("a wsl-care run is live (20261004T120000Z-4242), still after 7s");
+        world.ClockSeconds.Should().Be(InstallWorld.ScriptedClockStart + 7, "a sleep of 5 s, then of the 2 s left — never a whole 5 s past the deadline");
+    }
+
+    /// <summary>G3: a status call started just before the deadline ran its whole 30 s ceiling past it. Here every status takes
+    /// 25 s and the wait is 8 s: the call is cut at the deadline (no answer, so in flight) and the refusal comes ~8 s after it
+    /// started, not 25.</summary>
+    [Fact]
+    public async Task A_status_call_is_cut_at_the_waits_deadline()
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-status-deadline") { RunWaitSeconds = "8" };
+        var stamp = world.At("/status-call-started");
+        Installed(world, SlowBinaryAnswering("live", 25, stamp), InstallWorld.Executable);
+
+        var result = await world.RunAsync();
+
+        FailedAt(result, "upgrade-wait");
+        result.Stderr.Should().Contain("the installed binary gave no status answer");
+        SinceTheLastStatusCallStarted(stamp).Should().BeLessThan(TimeSpan.FromSeconds(12), "the call ends at the wait's deadline, 8 s after it started — not after the binary's 25 s");
+    }
+
+    /// <summary>G1: the status call's ceiling was a bare 30 in the call. It is <c>WSL_CARE_INSTALL_STATUS_SECONDS</c> now, in
+    /// force: 1 s here — below the 5 s floor a call near the deadline gets — against a status that takes 25 s.</summary>
+    [Fact]
+    public async Task The_status_call_ceiling_is_the_setting_in_force()
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-status-setting") { RunWaitSeconds = "0" };
+        world.Variables["WSL_CARE_INSTALL_STATUS_SECONDS"] = "1";
+        var stamp = world.At("/status-call-started");
+        Installed(world, SlowBinaryAnswering("live", 25, stamp), InstallWorld.Executable);
+
+        var result = await world.RunAsync();
+
+        FailedAt(result, "upgrade-wait");
+        result.Stderr.Should().Contain("the installed binary gave no status answer");
+        SinceTheLastStatusCallStarted(stamp).Should().BeLessThan(TimeSpan.FromSeconds(3.5), "the status call ends at its 1 s setting, not at the 5 s floor");
+    }
+
+    /// <summary>The wait failed OPEN on an installed binary that exists but cannot be started (<c>[ -x ]</c>): the upgrade went
+    /// ahead as if nothing were in flight. It answers nothing, so it takes the no-answer path — in flight, then the refusal with
+    /// the manual escape; only a binary that does not exist at all is a fresh install.</summary>
+    [Fact]
+    public async Task An_installed_binary_that_cannot_be_started_is_no_answer_never_nothing_in_flight()
+    {
+        Linux();
+        using var world = new InstallWorld("upgrade-not-executable") { RunWaitSeconds = "0" };
+        Installed(world, OldBinaryAnswering("live"), InstallWorld.Regular);
+        const string request = """{"schemaVersion":1,"runId":"20261004T120000Z-4321","kind":"act","actions":["A10"],"trigger":"manual","createdAt":"2026-10-04T12:00:00+00:00"}""";
+        world.Write("/var/lib/wsl-care/requests/20261004T120000Z-4321.json", request);
+
+        var result = await world.RunAsync();
+
+        FailedAt(result, "upgrade-wait");
+        result.Stderr.Should().Contain("the installed binary gave no status answer").And.Contain("WSL_CARE_INSTALL_SKIP_RUN_WAIT=1");
+        File.ReadAllText(world.At(InstallWorld.BinaryPath)).Should().Be(OldBinaryAnswering("live"), "nothing was replaced");
+        File.ReadAllText(world.At("/var/lib/wsl-care/requests/20261004T120000Z-4321.json")).Should().Be(request);
+        world.CallsOf("systemctl").Should().BeEmpty("no unit was touched");
     }
 
     [Fact]

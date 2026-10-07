@@ -125,7 +125,7 @@ public sealed class AgentOrphans : ICleanupAction, IBoundToShownList
     }
 
     /// <summary>What one judgement reads: the context, the target user, the whole process table, the samples, the idle clock.</summary>
-    public sealed record Judging(ActionContext Context, LinuxHostPaths Linux, TargetUser User, IReadOnlyList<ProcessEntry> Processes, IReadOnlyList<SuspectSample> Samples, Func<SuspectSample, TimeSpan> IdleFor, TimeSpan Window, DateTimeOffset Now);
+    public sealed record Judging(ActionContext Context, LinuxHostPaths Linux, TargetUser User, IReadOnlyList<ProcessEntry> Processes, IReadOnlyList<PidSample> Samples, Func<PidSample, TimeSpan> IdleFor, TimeSpan Window, DateTimeOffset Now);
 
     /// <summary>Every AI-agent process of the target user, each judged (plan §15q E7.S2b item 2).</summary>
     public static IReadOnlyList<OrphanJudgement> Judge(Judging judging)
@@ -238,22 +238,14 @@ public sealed class AgentOrphans : ICleanupAction, IBoundToShownList
             : string.Empty;
     }
 
-    /// <summary>The ONE catalogue agent whose binary the process runs (its program, or the script node runs); <c>null</c> for none
-    /// or more than one.</summary>
-    public static AgentEntry? AgentOf(ProcessEntry process)
-    {
-        var names = process.CommandLine.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2)
-            .Select(word => Path.GetFileName(word.Replace('\\', '/')))
-            .Select(name => name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name)
-            .ToList();
-        var agents = AgentCatalogue.Agents.Where(a => a.Binaries.Any(b => names.Contains(b, StringComparer.Ordinal))).ToList();
-        return agents.Count == 1 ? agents[0] : null;
-    }
+    /// <summary>The ONE catalogue agent whose binary the process runs (<see cref="AgentProcesses.AgentOf"/>, the one attribution
+    /// A18 and the MCP servers' owner walk share); <c>null</c> for none or more than one.</summary>
+    public static AgentEntry? AgentOf(ProcessEntry process) => AgentProcesses.AgentOf(process);
 
     private static string Kept(IReadOnlyList<OrphanJudgement> judged) =>
         string.Join("; ", judged.Where(j => !j.Eligible).GroupBy(j => j.Kept).Select(g => string.Create(CultureInfo.InvariantCulture, $"{g.Count()} because {g.Key}")));
 
-    private static ActionItem Item(OrphanJudgement judged, SuspectSample sample) =>
+    private static ActionItem Item(OrphanJudgement judged, PidSample sample) =>
         new(Kind, string.Create(CultureInfo.InvariantCulture, $"{judged.Process.Pid} {judged.Process.Name}"), judged.Process.HeldBytes,
             string.Create(CultureInfo.InvariantCulture, $"{judged.Agent}, pid {judged.Process.Pid}, no CPU for {judged.IdleFor.TotalHours:0.0} h, in {judged.Process.Cwd.ValueOr("an unknown folder")}"))
         {

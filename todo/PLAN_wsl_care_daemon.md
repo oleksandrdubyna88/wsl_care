@@ -760,6 +760,32 @@ for the real symptom (`research/module_tests.md`, *The E4 review*). Each row OVE
 | B8 | docs, tests | **Accepted.** `module_tests.md` (ubuntu-24.04; the smoke's home), README row (A1–A3, A15, A16 ship in 0.1.0); the stale skip deleted (part A); `WorkflowYaml.Quoted` / `PlainScalar` / `SingleQuotedEnd` / `ParseLiteral` and `ShippedFilesTests.Unit` at complexity ≤ 4; `ReleaseScripts.OnPath` replaced by `ExecutableResolver`, `EnsureParent` by the TempRoot. |
 | B9 | E4.S1 | **Accepted.** `install.sh` picked the newest tag with a line-based `sed`; a compact (one-line) answer found none. It now takes every `"tag_name": "daemon-v<x.y.z>"` from the joined answer and the numerically highest version (`sort -t. -k1,1n -k2,2n -k3,3n`), pre-releases excluded. |
 
+**Retro coai round over PR #8 (2026-10-06, session `5c23779d`)** — a review of the merged E4 diff after the fact, plus the
+consultant (`ad2e68fb`) and an own review. Shipped in one fix pull request (`fix/wc-retro-pr8-installer-ceilings`); every
+behaviour landed with a test seen red first (`research/module_tests.md`, *The PR #8 retro round*). Three items of the PR #11
+retro round (session `f4bdf605`, consultation `9064487b`) touch the same wait code and ship in the same pull request.
+
+| # | Source | Decision |
+|---|---|---|
+| plan round | gate | **3 findings rejected:** a truncated download (`install.sh` is truncation-safe by structure — the work starts only in the `if` on its last lines; before it, a cut stream parses and checks arguments and defines functions, then ends having changed nothing); the E6 stop path (shipped since: `act --stop`, `TimeoutStopSec`); apt unbounded (bounded and attended: `apt-get update` under a ceiling, `install` by `DPkg::Lock::Timeout=300`, on the person's terminal). |
+| G0 | gate, code round | **Rejected:** plan §9's ru-RU text — an owner policy question, not a code defect. |
+| G1 | gate, code round | **Accepted.** `--uninstall --purge` removed the state while a run started by hand could still hold the run lock. The purge now runs under `flock -n` on `/run/wsl-care.lock` (the daemon's `RunLock` is `flock(2)` there) and removes the lock file LAST inside the locked section; a held lock refuses at step `purge`, nothing of the state removed; no `flock` refuses at `preflight` before anything changes. |
+| G2 | gate, code round (narrowed) | **Accepted.** Every job-waiting `systemctl` call (`daemon-reload`, `try-restart`, `enable --now`, `disable --now`, `stop`) runs under `WSL_CARE_INSTALL_SYSTEMCTL_SECONDS` (900) with a kill grace — on WSL Ubuntu `sysstat.service` is `Type=oneshot` with `TimeoutStartUSec=infinity` and `JobTimeoutUSec=infinity`; at the ceiling the step fails saying the job may still be running. The dry run still prints the systemctl command. |
+| G3 | gate + consultant | **Accepted.** The first full run is announced, with its 900 s ceiling, before `collect` starts. |
+| C1 | consultant (missed by the gate) | **Accepted.** The health wait counted only its 5 s sleeps while each `doctor --json` could take 120 s (2 minutes → ~50 minutes). Now a wall-clock deadline; each call gets what is left (at least 10 s), no sleep past it. |
+| C2 | consultant (missed by the gate) | **Accepted.** No `timeout` had `-k`: a child ignoring SIGTERM outlived every ceiling. Every `timeout` now has `-k` (10 s; 30 s for the first `collect`). |
+| O1 | own review (origin E7.S2c) | **Accepted.** `timer.periodHours = 24` passed validation and rendered `OnCalendar=*-*-* 00/24:00:00`, which systemd 255 refuses — the timer never fired. 24 renders `*-*-* 00:00:00`; a Core test runs `systemd-analyze calendar` over every accepted period (it EXITS 0 on a refused calendar — the output is read). `systemd-analyze verify` of the timer drop-in at every accepted period in `verify-systemd-units.sh` (merged with `fix/wc-act-unit-collectmode` while this round ran) is a follow-up. |
+| O3 | own review | **Accepted.** `POST_DEPLOY.md` item 10 piped `curl … \| sh`, which exits 0 when curl fails (measured with a 404); it downloads to a file first. |
+| O4 | own review | **Accepted.** The extension rollback check (docs/repo-settings.md, README) used `--signer-workflow` (a prefix match); it pins `--cert-identity …/release-extension.yml@refs/tags/extension-v<previous>` + `--repo` + `--deny-self-hosted-runners`, and a test holds every documented attestation command to that. |
+| O5 | own review | **Accepted.** Only `WSL_CARE_INSTALL_DOCTOR_SECONDS` was validated; a non-numeric RUN_WAIT made the upgrade wait endless. Every ceiling variable is a whole number of seconds in its range or a usage refusal (exit 2) before anything runs. |
+| R11-G1 | from the PR #11 retro round | **Accepted.** The status call's bare `timeout 30` is `WSL_CARE_INSTALL_STATUS_SECONDS` (30), validated, with the kill grace. |
+| R11-G3 | from the PR #11 retro round | **Accepted.** The upgrade wait could overrun RUN_WAIT by a status call plus a sleep; each status call is cut to what is left (at least 5 s) and no sleep reaches past the deadline. |
+| R11-C | from the PR #11 retro round | **Accepted.** `run_in_flight` failed OPEN on an installed binary that exists but is not executable (`[ -x ]`); it now takes the no-answer path — in flight, then the refusal with the manual escape. |
+| PR34-G | coai gate round on PR #34 (session `7c89fe30`) | **Accepted (1 of 5; 4 rejected in that round).** The health wait printed its readable `doctor` report AFTER the deadline, past the bound its comment and refusal stated. The report is kept; the comment states the true bound (DOCTOR_SECONDS + 2 × (floor + grace), 160 s by default) and the refusal says the measured time of the wait ("still not healthy after <n>s of a <s>s wait") rather than "at most". No behaviour change. |
+| PR34-R | rebase onto `fdc9de6` (#28) | **Fixed.** #28 added a draft check to docs/repo-settings.md without `--deny-self-hosted-runners`, wrapped over two lines; the O4 scan read it cut at the line break (CI red). The scan follows wrapped spans now, and the command has the flag. |
+| S1 | own review | **Open for the owner:** move the daemon release's attestation into its own job, as the extension release did. |
+| O2 | own review | **Open for the owner, needs a measurement:** `Nice=19` / `IOSchedulingClass=idle` give no background priority against the user's processes on WSL — the block scheduler is `none` and no cpu controller is delegated to `system.slice`. |
+
 ### 15f. Cadence critique, epics 4–6 (own-agent stand-in for coai, 2026-10-03)
 
 The coai gate's vendors were out of quota, so the cadence round for {E4–E6} was done by the agent itself, after the E4
@@ -1169,7 +1195,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
 > Status: **in progress, 2026-10-05 — E7.S0 built and its review round fixed** (the configuration trust and contract; deviations in *E7.S0 as built*, the review in *E7.S0 review round*
-> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); **the E7.S2b/S2c review round and the coai E7 code round (passed) fixed 2026-10-06** (*E7.S2b/S2c review round*: A18 bound to its modal, the two-clock dense idle, the progress watchdog and the timer run limit — N-4 reversed —, the rules held per layer); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open. Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
+> below); **E7.S1, E7.S2 and E7.S2b built 2026-10-05** (the agent catalogue, discovery, the walk, `agents list`; `aiAgents.extra`, `agents probe`; A18; deviations in *E7.S1 as built*, *E7.S2 as built*, *E7.S2b as built*; the E7.S1/S2 review round fixed, *E7.S1/S2 review round*); **E7.S2c built 2026-10-05** (every number a key, `Tuning`, the unit drop-ins, `status` `limits`; deviations in *E7.S2c as built*); **the E7.S2b/S2c review round and the coai E7 code round (passed) fixed 2026-10-06** (*E7.S2b/S2c review round*: A18 bound to its modal, the two-clock dense idle, the progress watchdog and the timer run limit — N-4 reversed —, the rules held per layer); E7.S3–E7.S5 (with E7.S2b and E7.S2c added by the owner 2026-10-05) and the E7 live gate still open; **E7.S2d (the MCP server instances, owner request 2026-10-06) built 2026-10-06** (*E7.S2d as built*). Originally: plan only, nothing implemented yet, 2026-10-05. Scope: epic E7 — the daemon's `agents list` / `agents
 > probe`, the AI-agent sizes on the daily walk, the trust model of the user configuration layer that `config set` writes
 > and the root timer reads, `aiAgents.extra`; the extension's AI-agents section, *Add CLI path…*, the settings editor
 > mirrored to the daemon's config, the bundled `wsl-care.exe`. Branch `feat/wc-e7-agents-settings` — this plan AND the daemon
@@ -1938,6 +1964,338 @@ major). Eight findings, all accepted, fixed in `fix(daemon): coai E7 code round 
 | 7 | Major (UX): `agents list --measure` silent for up to its budget | one stderr line before the walk ("measuring N agent folder(s), up to <budget> s…") and one per folder as it starts (`AgentWalk.OnFolder`); stdout untouched | yes (RED for each line dropped) |
 | 8 | Minor (UX): the ~250-character interop explanation repeated per key | ONE notice without a key carries it; each key's notice says the short fact; goldens regenerated (`status.json`, `doctor.json`) | yes (RED with the per-key text back) |
 
+#### E7.S2d — MCP server instances of the AI agents (owner request 2026-10-06)
+
+> Status: **built 2026-10-06** (deviations in *E7.S2d as built* below; the coai code round and the PR still open). Originally: plan only, 2026-10-06. Scope: a read-only daemon collector and a `status --json`
+> metric (also in every full run's detail), three threshold verdicts, thirteen configuration keys (the thirteenth, `mcpServers.maxStartsListed`, added 2026-10-07). Branch `feat/wc-e7-mcp-instances`.
+> The extension shows it later (not in this story). Nothing is ever stopped or killed by it.
+
+**The ask (owner, 2026-10-06, verbatim in translation):** "a separate metric for coai: how many MCP instances run, which hang
+idle, how much they eat".
+
+**The symptom, measured 2026-10-06 in WSL Ubuntu (24 cores).** Seven `coai-mcp` processes ran — one stdio MCP server per
+Claude Code session. Each one's program is `~/.vscode-server/data/User/globalStorage/remsoftdev.connect-other-ais/coai-mcp`,
+its parent the `claude` native binary of the Claude Code extension
+(`~/.vscode-server/extensions/anthropic.claude-code-<v>-linux-x64/resources/native-binary/claude`), the grandparent the VS Code
+server's `node`. Each burned 27–54 % of a core CONTINUOUSLY while its log had no line for 10+ minutes (≈ 2.6 cores together).
+After the extension updated `coai-mcp` to 0.43.0, a start took 20–32 s at 100 % of a core; Claude Code's 30 s MCP connect
+timeout SIGTERMed it and started it again — **34 starts in 10 minutes**. The logs follow the family's logging contract:
+`~/.local/share/coai-mcp/logs/<UTC day>/coai-mcp-<HH-mm-ss UTC>-<pid>.log` (lines "starting", "consultants: wrote …",
+"SIGTERM asked this server to stop"; 110 files in that day's folder by 19:18 local time). Nothing in wsl-care shows any of it
+today: the process table (`Collectors/ProcessCollector.cs:86`) files these processes under the family `vscode-server`
+(`Collectors/ProcessFamilies.cs:40`, the program path holds `/.vscode-server/`), with no CPU rate, no owner agent and no
+restart count.
+
+**Goal.** A metric any reader of `status --json` can act on: how many MCP servers of AI agents run, which ones are idle, which
+burn CPU with no activity, how much CPU and memory they hold together, and how often each server was STARTED lately — the
+restart storm is the signal the owner actually hit.
+
+##### Decided
+
+1. **What an instance is (generic, not coai-only).** A process of the snapshot (`ProcessSnapshot.All`, the ONE `/proc`
+   walk — no second walker) whose PROGRAM matches an entry of the MCP server catalogue: the file names of its first two argv
+   words, `.exe` stripped — the attribution `AgentOrphans.AgentOf` already uses (`Actions/Suspects/AgentOrphans.cs:243`),
+   EXTRACTED into the agents module (`Agents/AgentProcesses.cs`, new: `ProgramNames`, `AgentOf`) so A18 and this collector
+   call one function. Its OWNER is found by walking `ParentPid` through the same snapshot (a visited set ends any loop) to the
+   first process whose family is `ai-agents` AND that `AgentOf` attributes to exactly one catalogue agent: that is the
+   owning agent session (its pid, the catalogue agent's name, its shown — redacted, cut — command line). **Deviation from the
+   ask's wording, a decision:** a chain that reaches pid 1 with no agent on it is KEPT as an instance, `orphaned: true`,
+   agent none — an MCP server whose agent died is exactly the leak this metric exists to show. A chain that reaches a live
+   process that is not an agent (some other host running the same server) is NOT an instance; such processes are only
+   counted (`notUnderAgent`).
+2. **The catalogue** (`McpServers/McpServerCatalogue.cs`, new, embedded in code — a closed list of records): per server its
+   name, its program names and an optional LOG LAYOUT, a closed hierarchy: `None`, or `FamilyRunLogs(root under the home,
+   file prefix)` — the family logging contract `{root}/{yyyy-MM-dd}/{prefix}-{HH-mm-ss}-{pid}.log`, UTC, with a run that
+   outlives the day continuing in a `00-00-00` segment of the same pid. First and only entry: `coai-mcp` (programs `coai-mcp`;
+   logs `.local/share/coai-mcp/logs`, prefix `coai-mcp`). A server with another layout later adds its own case — one module
+   per layout behind the one record, never an `if` on a server's name.
+3. **Which servers are watched is a configuration key**, `mcpServers.watched`, a list CLOSED over the catalogue's names
+   (`ConfigKey.TextListKey`, as every list key since E7.S0 B1 — free text is allowed for no key a run reads, `ConfigKeyShapeTests`),
+   default every catalogue name. A server outside the catalogue needs a catalogue entry (code); an open list of names would be a
+   new key shape — an owner question (Q-M2), not built.
+4. **Per instance:** pid, server, user, state (`/proc/<pid>/status` `State`), age, CPU % over the window, held memory
+   (`RssAnon + RssShmem`, the product's one memory measure — never `VmRSS`, §15b #4), owner agent (pid, name, command line) or
+   `orphaned`, last activity, and a KIND.
+5. **CPU % is MEASURED over a window, never derived from the lifetime average.** Each instance's `/proc/<pid>/stat` is read
+   (`SuspectTermination.Sample`, `Actions/Suspects/SuspectTermination.cs:143` — reused as is: pid, start ticks, CPU ticks), the
+   collector waits `mcpServers.cpuWindowMilliseconds`, and reads it again. CPU % = 100 × (Δticks ÷ clock ticks per second —
+   the kernel's, from `auxv`, as the process table reads it) ÷ the window in SECONDS (milliseconds ÷ 1000), the window being
+   the LONGER of the configured window and the measured elapsed time, so a late wake-up never inflates the rate (50 ticks at
+   100 ticks/s over 1 000 ms = 100 × 0.5 ÷ 1.0 = 50 % — plan round finding 0). A different start (a reused pid) or a process gone at the second
+   read = CPU unavailable with the reason ("it exited during the window"), never 0. The wait happens only when at least one
+   instance exists, so a machine without MCP servers pays nothing; the window is bounded (machine-only key, hard maximum
+   5 s — inside the extension's 20 s `status` ceiling with room).
+6. **The kind of an instance** — a closed set, one rule each, evaluated in this order:
+   `unknown` (CPU unavailable) · `starting` (CPU below `mcpServers.idleCpuPercent` and younger than
+   `mcpServers.idleMinAgeMinutes`) · `idle` (CPU below the threshold AND age at or above the minimum) · `busyWithoutActivity`
+   (CPU at or above the threshold AND its last activity is KNOWN and older than `mcpServers.activityWindowMinutes`) · `busy`
+   (CPU at or above the threshold otherwise — recent activity, or activity not derivable). "Busy without activity" is the
+   measured 2026-10-06 state and is reported separately from idle, as the owner's brief asks.
+7. **Activity, where it is derivable: the newest log file of THAT pid.** For a server with `FamilyRunLogs`, the collector lists
+   the log root's day folders for today and yesterday (UTC) — names and stat only, through `SessionGlob.Find`
+   (`Agents/SessionGlob.cs:39`, the listing A18 uses: each folder listed once, no link followed, no file opened, the device
+   held, an entry cap and a deadline), after `AgentWalk.PlaceProblem` (`Agents/AgentWalk.cs:69`) accepts the root (its real
+   path under the real home, the home's device). A file whose name time is earlier than the process's start (beyond the
+   start tolerance of `RunningState.StartTolerance`) belongs to an earlier process with the same pid and is ignored. The
+   instance's last activity is the newest last-write of its files; none found = activity unknown ("no log file of this pid in
+   <root>"), so the instance can be `busy`, never `busyWithoutActivity`. **Not derivable generically, said:** a server with no
+   log layout has activity "not derivable: <server> has no log layout in the catalogue". Another account's instance is never
+   matched to this home's logs (its pid has no file there).
+8. **Restart churn per server — starts in the last `mcpServers.startsWindowMinutes`.** With `FamilyRunLogs`: the log files
+   whose NAME instant (day folder + `HH-mm-ss`, UTC) lies in the window, a `00-00-00` continuation excepted. Plan round
+   finding 1 (a reused pid must not hide a start): when the pid runs NOW, its `00-00-00` file is a continuation only if
+   that process started before the midnight the name marks (its start from the snapshot's age, within
+   `RunningState.StartTolerance`) — otherwise it is a start; when the pid no longer runs, it is a continuation if the previous
+   day's folder holds a file of the same pid. *Residual, stated:* an exited server that started at exactly 00:00:00 on a pid
+   an earlier run of the previous day also used is read as a continuation — one start missed, never one invented. A listing cut short makes the count unavailable with the
+   reason, never partial-as-whole. **Generic fallback, and why it is weaker:** the live instances younger than the window — a
+   LOWER bound, marked `basis: "liveYounger"`; a process killed within the window is not seen. The ask's "distinct pids seen
+   across runs" is NOT built: `status` is unprivileged and writes no state (§15b #3), and the root timer runs every 4 h — far
+   too rarely to see a 10-minute storm. Said in the field.
+9. **Totals:** instances, idle, busy without activity, CPU in cores (Σ CPU % ÷ 100, over the instances whose CPU was read —
+   a total over fewer instances says how many), held bytes Σ, and per server: count and starts.
+10. **Where it runs.** `McpServers/McpServerCollector.cs` (new) takes the snapshot the probe already read, the layout, the
+    file system, the clock and a wait seam. **Not inside `LinuxProbe.Sample`**: `ActionEngine` takes the probe's sample
+    several times per run (`Actions/Engine/ActionEngine.cs:162`, `:219`, `:555`), and each would pay the window. Called by
+    `status` (`Cli/Commands/StatusCommand.cs:23`, after the probe) and by `collect` (`Collect/CollectRun.cs:346`, after the
+    probe — root: the paths follow the TARGET user's home, as every per-user read of a full run does). The Windows binary
+    answers the block unavailable: "the Windows binary has no process collector yet (E11)".
+11. **The wire shape** — `status --json` gains an additive `mcpServers` block (absent from every older daemon; `available`
+    + values or `available: false` + `reason`, figures unread never 0, §15b #7): `windowMilliseconds`, `count`, `idleCount`,
+    `busyWithoutActivityCount`, `notUnderAgent`, `cpuCores` (number figure), `heldBytes`, `servers[]` (`name`, `count`,
+    `starts`: figure + `windowMinutes` + `basis`), `instances[]` (largest CPU first, at most `mcpServers.maxInstances`, then
+    `listed`/`count` say so). The run detail embeds the same block through its `sample` (`RunDetail.Sample`). Capability
+    `status.mcpServers`. The text form of `status` prints one line ("mcp servers: 7 (0 idle, 7 busy without activity),
+    2.60 cores, 0.4 GiB; starts coai-mcp 34 in 10 min").
+12. **Three verdicts** in the threshold evaluator (`Thresholds/ThresholdRules.cs`, a new `FromMcp`, the existing `Above`
+    shape and wording), evaluated over the collector's sample: in `status` NOW (source `sample`) and in every full run's
+    `thresholds`. `mcp.instances` — warn > `mcpServers.warnInstances` ("MCP server processes of AI agents, one per agent
+    session"); `mcp.cpu` — warn > `mcpServers.warnCpuPercent` % of one core in total ("CPU the agents' MCP servers burn
+    together; N of them busy without activity"); `mcp.starts` — warn when any server's starts in the window exceed
+    `mcpServers.warnStarts` ("<server> started N times in M min — a restart storm: the agent's MCP connect timeout kills a
+    slow start and starts it again"); unknown with the reason when not derivable.
+13. **Read-only, by construction.** No signal, no file opened under the log root, nothing written; the collector holds no
+    command runner and no signal sender. A "stop the idle / busy-without-activity MCP servers" action is NOT in scope —
+    owner question Q-M1.
+
+##### Keys (every number and list configurable — the owner's rule of 2026-10-05)
+
+| Key | Group | Range | Default | Trust | Why this default |
+|---|---|---|---|---|---|
+| `mcpServers.watched` | list, closed over the catalogue | catalogue names | `["coai-mcp"]` | display | every catalogued server |
+| `mcpServers.cpuWindowMilliseconds` | B (root waits on it) | 200–5000 | 1000 | lower, machine-only | at 100 ticks/s one tick is 1 % of a core over 1 s — the resolution the 2 % idle line needs; costs `status` 1 s only when an instance exists |
+| `mcpServers.idleCpuPercent` | A | 0–100 | 2 | display | a server waiting on stdin uses no tick at all; 2 % (2 ticks a second) is above a timer or GC blip and far below the measured burn of 27–54 % |
+| `mcpServers.idleMinAgeMinutes` | A | 0–1440 | 10 | display | a server that just started and had no request yet is not hanging; 10 min is the gap the owner saw before calling it a hang |
+| `mcpServers.activityWindowMinutes` | A | 1–1440 | 10 | display | the measured "no log line for 10+ minutes" |
+| `mcpServers.startsWindowMinutes` | A | 1–1440 | 10 | display | the measured storm was counted over 10 min; ≤ 1 day so today's and yesterday's folders always cover it |
+| `mcpServers.warnInstances` | A | 0–10000 | 12 | display | 7 measured in a normal working day (one per session); 12 is ~1.7× that |
+| `mcpServers.warnCpuPercent` | A | 1–100000 (% of one core) | 100 | display | healthy servers idle at ~0; one whole core for servers serving nothing is a defect; the storm measured 260 % |
+| `mcpServers.warnStarts` | A | 0–100000 | 10 | display | one start per session start; more than 10 in 10 min is not people opening sessions — 34 measured in the storm |
+| `mcpServers.maxInstances` | B (bounds root's reads) | 1–1024 | 256 | lower, machine-only | the instances sampled and listed; ~36× the measured 7 |
+| `mcpServers.maxLogEntries` | B | 100–100000 | 20000 | lower, machine-only | entries one log listing sees; a storm of 34 / 10 min is ~5 000 a day |
+| `mcpServers.logListMilliseconds` | B | 100–5000 | 1000 | lower, machine-only | the listing's deadline; two folders of a few thousand names take milliseconds |
+
+All in `ConfigKeys` (`McpServers` group) + `default.json` + `contracts/config-keys.json` (generated, `ContractFilesTests`); no
+coupled rule is needed (`startsWindowMinutes` ≤ 1 day is the range itself). `SessionListing` gains an optional entry cap
+(default `SessionGlob.MaxEntries`, today's behaviour) — widened, not copied. `ArchitectureTests.Numbers` stays green: no
+new literal outside the group-C allowlist (the day-folder count 2 is the definition of "today and yesterday", group C with
+its reason, or derived from the starts window's maximum).
+
+##### Growth
+
+| Surface | Projected size | Who retires it |
+|---|---|---|
+| the `mcpServers` block in each run detail | typical 7 instances × ~400 B ≈ 3 KB per full run; worst `maxInstances` 256 × ~400 B ≈ 100 KB | the run details' 90-day retention (6 runs/day ≈ 1.6 MB typical over 90 days) |
+| `status --json` | the same block, never stored | — |
+
+No state file, no history-line field: nothing new grows on disk except inside the run detail.
+
+##### Windows
+
+The Windows binary has no process collector (`Collectors/WindowsProbe.cs`: host RAM, the system drive and `vmmemWSL` through
+`Process.GetProcessesByName` only — no parent pids, no CPU times). `coai-mcp.exe` under VS Code's `globalStorage`
+(`remsoftdev.connect-other-ais`) is therefore **the next step, recorded for E11** (the Windows collectors,
+[PLAN_windows_care.md](PLAN_windows_care.md)): the same catalogue, a Toolhelp snapshot for parents, `GetProcessTimes` twice
+across the window; the block answers unavailable on Windows until then.
+
+##### Test plan — RED first, fixtures of `/proc` with fake trees (no real account name: `FixtureIdentity`)
+
+- `An_mcp_server_under_a_claude_session_is_an_instance_with_its_owner_agent` (sandbox `/proc`: `node` → `claude` → `coai-mcp`).
+- `An_mcp_server_whose_agent_died_is_an_orphaned_instance` (parent pid 1) and `An_mcp_server_under_another_host_is_not_an_instance`.
+- `Cpu_percent_is_measured_across_the_window_from_two_stat_reads` (the wait seam rewrites `stat` ticks: 50 ticks over 1 s = 50 %).
+- `A_pid_reused_or_gone_during_the_window_has_cpu_unavailable_never_zero`.
+- `Each_kind_at_its_edge` (idle / starting / busy / busyWithoutActivity / unknown, the thresholds read from the keys).
+- `Busy_without_activity_needs_a_known_log_older_than_the_window` (a log of this pid written 15 min ago; one written now = busy;
+  none = busy with activity unknown).
+- `A_log_of_an_earlier_process_with_the_same_pid_is_not_its_activity`.
+- `The_restart_storm_counts_34_starts_in_10_minutes` (34 fixture log files in today's folder, 3 older; a `00-00-00`
+  continuation not counted; a start just before midnight counted from yesterday's folder), and
+  `A_midnight_file_of_a_live_process_started_after_midnight_is_a_start` (a reused pid with a file yesterday).
+- `Starts_without_a_log_layout_are_a_lower_bound_marked_liveYounger`.
+- `A_linked_or_foreign_device_log_root_is_not_listed` (PlaceProblem) and `A_cut_listing_makes_starts_unavailable_not_partial`.
+- `No_wait_when_no_instance_runs` (the seam is never called).
+- `The_three_verdicts_warn_above_their_keys` and `An_unwatched_server_is_not_counted` (`mcpServers.watched`).
+- Status: the golden `status.json` regenerated (the block and the three verdicts), the text line, capability; the Windows
+  binary's block unavailable with its reason; collect: the run detail carries the block and the verdicts.
+- `AgentOf` extraction: A18's tests unchanged and green (a refactor), plus a direct test of `AgentProcesses.AgentOf`.
+- Scenario (`WslCare.Scenarios`, built binary, sandbox): `status --json` over a fixture tree with a fake `coai-mcp` under a fake
+  `claude` and a storm of log files → the block and `mcp.starts` warn; `research/module_tests.md` names the flow.
+- Teeth, each: remove the window's second read, the parent walk, the pid-start guard, the continuation exception, the
+  `PlaceProblem` check — and watch the named test go red.
+
+##### Definition of Done
+
+- [ ] The RED tests above seen red for the real symptom, then green, each guard broken and seen red again.
+- [ ] One `/proc` walk: the collector reads only the snapshot plus two `stat` reads per instance; `AgentOf` has ONE home.
+- [ ] Every number and the server list are keys with ranges and defaults; `ArchitectureTests.Numbers`, `ContractFilesTests`
+      and the config-shape tests green.
+- [ ] `status --json` `mcpServers` + capability + three verdicts; goldens regenerated and read; the run detail carries it.
+- [ ] Read-only: no signal, no file opened, nothing written (a recording file system asserts no open under the log root).
+- [ ] Windows recorded as the E11 next step; docs: `research/architecture.md`, `research/module_tests.md`, README's status
+      section; this subsection's deviations recorded when built.
+- [ ] Daemon suites green on Windows and WSL (normal user, `nice -n 19`, one at a time); `dotnet format --verify-no-changes`.
+
+##### Open questions for the owner
+
+- **Q-M1 — a stop action.** Should wsl-care offer a button (never the timer) that SIGTERMs MCP servers that are
+  `busyWithoutActivity` or `idle` and orphaned, by pid AND start as A11/A18 do? Not built; the agent restarts a killed server
+  on its next tool call, so the value is unclear.
+- **Q-M2 — open server names.** `mcpServers.watched` is closed over the catalogue (the E7.S0 B1 rule). Should a user be able
+  to name ANY program as an MCP server (a new list-with-a-shape key kind, a contract change)?
+- **Q-M3 — the orphan rule.** An MCP server whose agent died is counted (`orphaned: true`) — keep, or leave it out as the
+  literal "parent chain reaches an agent" reads?
+- **Q-M4 — the defaults** above (2 %, 10 min, 12 instances, 1 core, 10 starts / 10 min).
+- **Q-M5 — the status budget** (added at build): with an MCP server running, `status` takes 2 s + the CPU window (1 s by default,
+  machine-only, 200–5 000 ms). Keep, lower the default window (500 ms halves the resolution to 2 % per tick — at the idle
+  line), or measure the CPU only in the full run (a 4-hour-old figure, which misses a 10-minute storm)?
+
+##### Plan round (coai session `7f843e99`, 2026-10-06)
+
+Verdict **proceed**, 1 of 1 reviewer answered (codex), 2 findings, both ACCEPTED and folded into the text above: **0** (Major)
+the CPU formula gave a fraction, not a percent — the ×100 and the millisecond → second conversion are now explicit (Decided 5);
+**1** (Minor) a reused pid could make a real start at midnight read as a continuation — the continuation rule now checks the
+live process's start, with the remaining residual stated (Decided 8) and a test added.
+
+##### Cadence consultation, epics 7–9 (coai `26b4a958`, codex, 2026-10-06) — verified, and these OVERRIDE the text above
+
+- **C-1, verified true:** `SessionGlob`'s entry cap and deadline are checked only BETWEEN listings, and
+  `PhysicalFileSystem.ListEntries` (`Files/PhysicalFileSystem.cs:167`) reads and sorts a whole folder first and answers `[]`
+  for a folder it cannot read — so an unreadable day folder would read as "complete, zero starts". **Fixed by widening, not
+  copying:** `IFileSystem` gains a bounded listing, `ListEntries(path, maxEntries)` → `EntryListing` (`Listed(entries,
+  Complete)` | `Unreadable(reason)`; a missing folder is `Listed([], true)`), the physical one enumerating lazily and stopping
+  one entry past the cap, the default member (every fake) answering from today's listing. `SessionGlob` lists through it, so
+  a cut or unreadable folder makes its scan NOT complete — which also corrects A18 and the agents' session counts. Follow-up
+  turn 2 (verified): the bounded listing takes the caller's deadline and cancellation too, checked at every entry, and the
+  REMAINING allowance of the whole walk, not a fresh one per folder; it does not set `IgnoreInaccessible` (the physical
+  listing's `true`, `PhysicalFileSystem.cs:186`, skips unreadable entries silently), so an error is `Unreadable`. A cooperative
+  check cannot interrupt one blocked file-system call — it is a bound on work between calls, not a wall-time guarantee, and is
+  described so. **A18, corrected:** "none found is kept" did not cover readable OLD sessions beside an unreadable folder —
+  today that scan is complete and the process can become eligible (`AgentOrphans.cs:235`); with the fix any failed or cut
+  folder makes the whole scan incomplete and A18 keeps the process ("cannot tell"). **The agents' counts:** `AgentWalk`
+  chooses "not counted" by `Reached`, not `Complete` (`Agents/AgentWalk.cs:162`); a scan that reached its level but lost a
+  folder shows its count as a LOWER bound (`complete: false` with the note), never a complete zero. RED tests:
+  `An_unreadable_sibling_folder_keeps_the_agent_process_cannot_tell` (A18: one project folder with an old session, one
+  unreadable), `An_unreadable_folder_makes_the_scan_incomplete_never_zero`, `The_listing_stops_at_its_cap_and_its_deadline`,
+  `An_agents_count_with_an_unreadable_folder_is_a_lower_bound`.
+- **C-2, verified true:** `ProcessEntry.CommandLine` is display text — redacted and cut to `processes.shownCommandChars`
+  (`Collectors/ProcessCollector.cs:128`), so splitting it on spaces loses a program whose path holds a space or passes the
+  cut. **Fixed:** the snapshot keeps the program names from the RAW argv (`ProcessEntry.Programs`, the file names of the first
+  two words, `.exe` stripped — `Agents/AgentProcesses.ProgramNames`, one function), and `AgentOf` reads them. **The MCP match
+  is narrower than `AgentOf`'s:** the PROGRAM (argv[0]) only, so `printf coai-mcp` is not a server; a catalogue entry may
+  name scripts for a server an interpreter runs (none today). RED tests: `A_program_path_with_spaces_or_past_the_display_cut_is_still_recognised`,
+  `A_server_name_as_an_argument_of_another_program_is_not_an_instance`.
+- **C-3 (E9, `PLAN_ai_session_archive.md` §8a vs §8b — per-entry resume vs keep-every-file-of-a-changed-session):** not this
+  story's; passed to the coordinator for E9, unverified here.
+- **On the two doubts:** keep ONE live window in `status` (a 4-hour-old full-run figure misses a 10-minute storm) — and, my
+  inference from `Status/StatusLimits.cs`' own rule (publish every value a host decision rests on whose machine range reaches
+  above its default), `limits` publishes `mcpCpuWindowMilliseconds` and `mcpLogListMilliseconds`, so the extension's status
+  ceiling can count them (`contracts/status-limits.json` regenerated). Reading another product's log NAMES and stats is within
+  the E7 walk rules; the kind's sentence says "no log write in N min", never "no activity" as a fact.
+- **Closed `solved`** (2026-10-06): C-1 and C-2 verified and fixed RED-GREEN-RED before the collector was built on them.
+
+##### E7.S2d as built (2026-10-06)
+
+Built on `feat/wc-e7-mcp-instances`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *MCP server instances of the AI agents (E7.S2d)*, the design `research/architecture.md` § *MCP server instances of the AI
+agents*. **Deviations from the text above:**
+
+- **Where it lives:** `Core/Mcp/` (`McpServerCatalogue`, `McpInstances`, `McpRunLogs`, `McpServerCollector` with `McpJudge` and
+  the one road in `McpSampling`, `McpSample`), the verdicts in `Thresholds/McpVerdicts.cs` — not a `FromMcp` inside
+  `ThresholdRules.cs`, which is already near 400 lines; the wire shape in `Status/McpServersReport.cs`.
+- **The kind's sentence** reads "busy with no log write in the activity window" (consultation turn 1: an absent log write does
+  not prove absent work); the JSON keeps `busyWithoutActivity` as the owner's brief named it.
+- **The status budget (a decision, Q-M5 below):** the scenario's 2 s budget became 2 s PLUS the CPU window when an instance
+  runs — the captured 2026-10-02 tree already holds two `claude` → `coai-mcp` sessions, so `status` over it now waits 1 s by
+  design. The probe's own `sampleMilliseconds` is still held under 2 s. The other WSL timing failures of the first run (a
+  status with no instance at 4.1 s, a Docker ceiling at 26 s against 25 s, four install flows) were load (~55 on 24 cores):
+  re-run alone at load ~21, every one green.
+- **Found in the fixture:** the captured tree of 2026-10-02 holds the measured shape (`claude` 7203 → `coai-mcp` 7329, `claude`
+  8290 → `coai-mcp` 8380) — the CLI tests and the goldens run over real shapes, not only synthetic ones. It also holds
+  `creds-mcp` (native, and the Windows `.exe` through `/init`) and `playwright-mcp` run by `npx` — catalogue candidates for
+  Q-M2, not added (no log layout is known for them).
+- **The orphan rule** (Decided 1) uses the product's own `ProcessEntry.Orphaned` (parent pid 1 or a `systemd --user`), not
+  "pid 1" alone; a WSL session relay (`/init` with another pid) is a live non-agent parent, so such a server counts as
+  `notUnderAgent` — residual, stated.
+- **Residual of the continuation rule:** with `startsWindowMinutes` at its maximum (one day) just after midnight, a dead run's
+  `00-00-00` file of YESTERDAY whose earlier file is two days old (not listed) reads as a start — the only way it can invent one.
+- **Windows:** the block answers unavailable with "the Windows binary has no process collector yet (E11)"; a CLI test holds it.
+
+##### E7.S2d code round (coai session `7f843e99`, 2026-10-06) and an own review
+
+**coai:** verdict **proceed**, 4 of 4 reviewers answered (codex), 6 findings: 5 ACCEPTED, 1 rejected. **Own review** (one
+Opus reviewer, read-only, run at the same time): no Blocking, 1 Major, 3 Minor. Each fix RED first, then green, then its line
+broken and seen red again (`research/module_tests.md` § *MCP server instances*).
+
+| # | Finding | Disposition |
+|---|---|---|
+| coai 0 (Major) | the starts basis an untyped string in the model | **Fixed** — `McpStartsBasis` an enum; the wire name given at the edge (`McpServerReport.BasisName`); JSON unchanged |
+| coai 1 (Major) | the collector depends on the Actions layer (`SuspectTermination.Sample`, `RunningState.StartTolerance`) | **Fixed by extraction** — `Collectors/Procfs/PidSamples` (the record `PidSample`, `Read`, `StartTolerance`); A11, A18's history, the shared signal path and the MCP collector all use it; A11/A18 tests unchanged and green |
+| coai 2 (Major) | `Directory.Exists` answers false for a folder it may not traverse — an unreadable log root read as "no logs, 0 starts" | **Fixed** — `McpRunLogs.Present` walks down from the home with the bounded listing: unreadable or cut = unavailable, only a whole listing without the folder = absent. RED: *Expected starts.Count.IsAvailable to be False … but found True* |
+| coai 3 (Major) | past `mcpServers.maxInstances` the idle / busy counts covered the listed ones only, unsaid | **Fixed** — the verdict says "CPU, idle and busy figures over the N listed: mcpServers.maxInstances", the text line "of the N listed". RED: the value lacked it |
+| coai 4 (Minor) | each instance scanned every log entry | **Fixed** — `McpLogs.ByPid`, grouped once |
+| coai 5 (Minor) | status blocks silently for the window | **Rejected** — 1 s by default, at most 5 s, only when a server runs; a stderr line would land in the extension's log on every poll; the wait is in the contract (`limits`), the README and Q-M5 |
+| own M1 (Major) | the start was computed as now − age with a now taken AFTER the window: a 3 s window moved it past the log's name and the instance lost its own log | **Fixed** — `McpJudge` takes `agesAt`, read before the window. RED: *Expected instance.LastLogWrite.IsAvailable to be True … but found False* |
+| own m1 (Minor) | the live-start rule applied to ANY process at the pid, so a reused pid could invent a start | **Fixed** — only a live process that is this server; else the dead-pid rule. RED with the fixture's file inside the window (its first version passed for the wrong reason: the file was outside the window) |
+| own m2 (Minor) | a missing or unseen log root = a measured zero | **Covered by coai 2** for the unseen case; a root a WHOLE listing shows absent stays 0 starts — that is a measurement, not a guess |
+| own m3 (Minor) | a link swapped in between the lstat checks and the listing (inherited from A18's listing) | **Residual, recorded** — only `coai-mcp-HH-mm-ss-pid.log` names are kept, nothing is opened, the listing is capped; the full fix is a descriptor-based listing (`openat` + `O_NOFOLLOW` + `O_DIRECTORY`) for every `SessionGlob` user, a story of its own |
+
+**Final coai round** (`again`, same session, 2026-10-06): verdict **proceed**, 4 of 4 reviewers answered, 7 findings: 3 ACCEPTED,
+4 rejected with reasons.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 0 (Blocking) | no `research/module_*.md` for the MCP module | **Rejected** — checked: `research/` holds no `module_*.md` but `module_tests.md`; every daemon module is a section of `architecture.md`, and this one has its section, diagram and module-map row |
+| 1 (Major) | nullable lists on the wire report | **Rejected** — the status wire's stated convention (`StatusReport.cs` header): an unavailable block carries no value keys; `[]` would read as "available, zero instances" |
+| 2, 3 (Major, two reviewers) | `mcp.cpu` did not say it covers the listed instances only | **Fixed** — the same note as `mcp.instances`. RED: the value lacked it |
+| 4 (Major) | `Directory.Exists` is false for a folder behind an untraversable parent; the bounded listing answered "empty, complete" | **Fixed** in `PhysicalFileSystem.ListEntries(path, bounds)`: the attributes tell not-found (empty, whole) from access denied (`Unreadable`). RED in WSL: *Expected … Unreadable, but found … Listed* |
+| 5 (Minor) | a progress line for the window | **Rejected** again — round 1's reason stands; `status` writes to stderr only to refuse |
+| 6 (Minor) | `status` read beside `stat` in the CPU window | **Rejected** — a few hundred bytes per pid, bounded by `mcpServers.maxInstances`; one sampler for three callers is round 1's extraction |
+
+##### After the rounds (2026-10-07)
+
+- **Start times (the owner's correction, 2026-10-07):** the storm of 2026-10-06 began at 16:50Z, BEFORE the 0.43.0 binary's
+  mtime of 16:54Z — so the churn is attributable only per start time, and "busy without activity" stays the key signal.
+  Each server now lists the starts inside the window with their time, pid, run-log last write and whether they still run
+  (`McpStart`, `startTimes` on the wire), newest first, capped by a thirteenth key `mcpServers.maxStartsListed` (0–1000,
+  default 50; the count is never capped). RED first (empty lists), GREEN, teeth (the running rule and the cap).
+- **Final round finding 0 reversed:** after the rebase onto `main`, `research/` HAS the module-document convention
+  (`module_vs_code.md`, added 2026-10-06 after the same kind of finding), so the rejection — made on the older tree — no
+  longer held: [module_mcp_servers.md](../research/module_mcp_servers.md) now carries the module, and `architecture.md`
+  keeps a pointer and the module-map row (it is near the conventions resolver's 256 KiB cap).
+- **Round 3** (`again`, same session, after the rebase onto `main` `1654e56`, 2026-10-07): verdict **proceed**, **8 of 8**
+  reviewers answered (codex AND gemini — the gate now runs two vendors), 8 findings: 2 ACCEPTED, 6 rejected with reasons.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 0 (gemini, Major) | the server match looks at argv[0] only, so an interpreter-run server cannot be matched | **Rejected** — deliberate (C-2: `printf coai-mcp` is not a server, a test holds it); no catalogued server is interpreter-run; a catalogue entry may declare scripts when one is added (Q-M2) |
+| 1 (gemini, Major) | the verdicts bypass `ThresholdRules.Evaluate` | **Rejected** — `McpVerdicts` is the one evaluator of the three ids, called by the two entry points that hold an MCP sample; the engine must not pay the CPU window where it samples the probe |
+| 2 (gemini, Major) | the bounded listing's DEFAULT member reads an unreadable folder as empty | **Rejected** — only test doubles use it; the one production file system overrides it; doubles that need "unreadable" re-implement it (three test files do) |
+| 3 (gemini, Major) | "a hard-coded pid 4242" in the activity reason | **Rejected, false** — the golden normaliser's rule `pidInText` (`GoldenContracts.cs:141`); the product names the instance's own pid, a test holds it |
+| 4 (codex, Major) | nullable lists on the wire | **Rejected** again — the stated wire convention |
+| 5 (codex, Minor) | a new log layout would fall back to the live count silently | **Fixed** — an exhaustive match on `McpLogLayout` in the summary and the log reader (refactor, no behaviour) |
+| 6 (codex, Major) | a pid reused between the snapshot and the FIRST CPU read reports another process's CPU | **Fixed** — the snapshot keeps each process's start ticks (`ProcessEntry.StartTicks`) and the first read must match them. RED: *Expected instance.CpuPercent.IsAvailable to be False … but found True*; teeth: the arm removed, red again |
+| 7 (codex, Minor) | a stderr progress line | **Rejected** a third time — the earlier reason stands |
+
 #### Stories
 
 | # | Story | Files (verified above) | Acceptance | Model, reviews |
@@ -1947,6 +2305,7 @@ major). Eight findings, all accepted, fixed in `fix(daemon): coai E7 code round 
 | **E7.S2** | **`aiAgents.extra` and `agents probe` (daemon) — R2.** A fifth value shape (`AgentListKey`: `{cli, side, name, dataFolders[], sessionGlob}`) with R2.1's validation; `config set aiAgents.extra -` reading compact JSON from stdin (the bounded stdin reader of `--only -`, `Cli/StdinList.cs:20`, widened, 1 MiB / 10 s); `agents probe <path> --json` unprivileged only (C3's refusal text); the declared cleanup roots (M8); the two-phase host (M1); extras in the walk and — failing or not — in the protected roots (B2); capabilities `agents.list`, `agents.probe`, `config.agentsExtra` | `ConfigKey.cs`, `ConfigValidation.cs`, `ConfigDocument.cs`, `UserConfigWriter.cs`, `StdinList.cs`, `Agents/`, `ProtectedRoots.cs`, `CliHost.cs`, `Program.cs`, `Capabilities.cs`, `ICleanupAction.cs`, `CacheFolders.cs`, `NpmCacheClean.cs`, `ToolCacheTrims.cs`, `BrowserAndHttpCaches.cs` | each R2.1 refusal names the rule (the product's own folders included); a manual folder makes A12 / A17 refuse under it; a valid extra, then a new overlapping cleanup root → the action refuses (B2); the run's policy holds the extras (M1); every user-home action declares its roots; the probe refuses as root naming uid 0 and the fix; the probe opens nothing; `cli` never a path argument in a root run | **Opus**; two own reviews: path validation / confused deputy, data safety |
 | **E7.S2b** | **Orphaned AI-agent processes (daemon) — owner decision 2026-10-05.** A18, a button only: the target user's `ai-agents` processes that are orphaned, have no TTY, used NO CPU for `processes.aiAgentsIdleHours` (default 4) MEASURED by identity `(pid, boot_id, start ticks)` against the root-only `agent-cpu.json`, and whose agent (confirmed layout only) has no session file modified within that window; SIGTERM then SIGKILL after 10 s; every process in the record | see *E7.S2b* above | the RED tests listed there | **Opus**; the coai code round after E7.S2 (or its own) |
 | **E7.S2c** | **Every number configurable (daemon + extension) — owner rule 2026-10-05.** The inventory's A rows as ordinary keys, its B rows as machine-layer-only keys with hard maxima (three raise-only), coupled limits derived; every call site reads the effective configuration; the extension's ceilings as settings whose minimum is the daemon's computed worst case; the structural no-literal test with group C as its allowlist; defects N-1–N-6 fixed RED first | see *E7.S2c* above | see *E7.S2c — the story* | **Opus**; two own reviews (root safety of the B keys; the extension ceilings) |
+| **E7.S2d** | **MCP server instances of the AI agents (daemon) — owner request 2026-10-06.** A read-only collector over the one process snapshot: catalogued MCP servers (`coai-mcp` first, `mcpServers.watched`) under an agent session (or orphaned), CPU % measured across a window, idle / busy-without-activity by the server's own log, restart churn from its log names; `status --json` `mcpServers` with each start's time, three verdicts, thirteen keys | see *E7.S2d* above | the RED tests listed there | **Opus**; the coai gate (plan + code round) and an own review |
 | — | *(gate)* the daemon parts merge; `extension-v0.1.0` tagged (E5 live gate) and E6.S2 merged (PR #12) before E7.S3 | | | |
 | **E7.S3** | **Settings ↔ config (extension) — R1's other half.** `package.json` settings generated from / held equal to `contracts/config-keys.json` (`application`, `ignoreSync`); ONE module `src/config/configCall.ts` (only `config get --json`, `config set <key> <value>`, `config reset <key>`, `config set aiAgents.extra -`, no `-u`); the bundle scan amended: `config` allowed ONLY in that region, forbidden in the root region and everywhere else; `-u`, `root`, `--timer` forbidden in the config region; the reconcile + one-time notice; mirror-on-change, revert-on-refusal, the loosening modal; a daemon without `config.contract` → the settings shown read-only "update the daemon" | `src/config/` (new), `client/verbs.ts`, `client/WslCareClient.ts`, `extension.ts`, `package.json`, `test/bundleScan.test.ts`, `test/structure.test.ts`, the fake `wsl.exe` | each mirrored setting's exact argv; the scan red with `config` planted outside its region, `-u` planted inside it; a refused value reverted with its message; one notice per digest across a reload; no `-u` anywhere on the path | **Opus**; two own reviews: confused deputy (argv, scopes, sync), durable state of the notice / revert loop |
 | **E7.S4** | **The AI-agents section and *Add CLI path…* (extension, WSL side).** The panel section of §7.2 from `agents list --json` (on panel open / refresh, never polled — §15g M1); D4's flow; the manual badge and Remove; warnings (`aiAgents.warnGb`, `sessionWarnMb`); "—" for unconfirmed sessions; R2.4 sanitising | `src/agents/` (new), `panel/fieldMap.ts`, `panel/viewModel.ts`, `panel/messages.ts`, `panel/panelHtml.ts`, `media/panel.js`, `research/architecture.md` field map (:1830) | the path-mapping table (UNC, `\\wsl$`, another distro, `X:\`, a control character, a leading `-`); the probe's exact argv with no `-u`; the webview's two messages only; a crafted project name renders inert | **Opus**; two own reviews: confused deputy (path → argv), webview / rendering |
@@ -2084,6 +2443,8 @@ measures the added time on the fixture and the live gate on this machine, agains
       owner decided on 2026-10-05, `processes.aiAgentsIdleHours` (E7.S2b).
 - [x] E7.S2c (daemon, 2026-10-05; the extension's settings and N-1–N-3 on PR #12): every behavioural number a key or a setting (the owner rule 2026-10-05), the structural no-literal test green with
       group C as its reasoned allowlist; no extension ceiling below the daemon's computed worst case (N-1–N-3).
+- [x] E7.S2d (2026-10-06): the MCP server instances of the AI agents in `status --json` and the run detail, three verdicts, thirteen
+      keys, read-only; Windows recorded as the E11 next step.
 - [ ] E7.S2b: an orphaned `ai-agents` process ends only by the button, only after N h without CPU measured by identity,
       never with a live session of its agent; the timer never ends one (test).
 - [ ] `wsl-care.exe` bundled byte-for-byte from the attested asset (S5a); the Windows agents rows (S5b) and the Windows

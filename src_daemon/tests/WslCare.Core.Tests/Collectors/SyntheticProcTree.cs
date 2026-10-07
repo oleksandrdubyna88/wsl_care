@@ -42,17 +42,39 @@ internal sealed class SyntheticProcTree : IDisposable
 
     /// <summary>One process. <paramref name="rssFileKib"/> is the page-cache share VmRSS carries and the
     /// held figure must NOT: a test that sums VmRSS sees it.</summary>
-    public SyntheticProcTree Process(int pid, int ppid, string cgroup, long rssAnonKib, long rssShmemKib = 0, long rssFileKib = 0, string argv = "", int uid = 1000, int tty = 0, long startTicks = 100)
+    /// <param name="words">The argv word by word, when a word itself holds a space (plan §15q E7.S2d C-2); else <paramref name="argv"/>
+    /// split on spaces.</param>
+    /// <param name="cpuTicks">utime + stime (split evenly).</param>
+    public SyntheticProcTree Process(int pid, int ppid, string cgroup, long rssAnonKib, long rssShmemKib = 0, long rssFileKib = 0, string argv = "", int uid = 1000, int tty = 0, long startTicks = 100, IReadOnlyList<string>? words = null, long cpuTicks = 100)
     {
-        var name = argv.Length == 0 ? $"p{pid}" : Path.GetFileName(argv.Split(' ')[0]);
+        var argvWords = words ?? (argv.Length == 0 ? [] : argv.Split(' '));
+        var name = argvWords.Count == 0 ? $"p{pid}" : Path.GetFileName(argvWords[0]);
         var vmRss = rssAnonKib + rssShmemKib + rssFileKib;
         _root.File($"proc/{pid}/status", string.Create(CultureInfo.InvariantCulture,
             $"Name:\t{name}\nState:\tS (sleeping)\nPPid:\t{ppid}\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\nKthread:\t0\nVmRSS:\t{vmRss} kB\nRssAnon:\t{rssAnonKib} kB\nRssFile:\t{rssFileKib} kB\nRssShmem:\t{rssShmemKib} kB\n"));
-        _root.File($"proc/{pid}/stat", $"{pid} ({name}) S {ppid} {pid} {pid} {tty} -1 0 0 0 0 0 50 50 0 0 20 0 1 0 {startTicks} 0 0\n");
+        Stat(pid, ppid, name, tty, startTicks, cpuTicks);
         _root.File($"proc/{pid}/cgroup", $"0::{cgroup}\n");
-        File.WriteAllBytes(_root.Under($"proc/{pid}/cmdline"), Encoding.UTF8.GetBytes((argv.Length == 0 ? name : argv).Replace(' ', '\0') + "\0"));
+        File.WriteAllBytes(_root.Under($"proc/{pid}/cmdline"), Encoding.UTF8.GetBytes(string.Join('\0', argvWords.Count == 0 ? [name] : argvWords) + "\0"));
         return this;
     }
+
+    /// <summary>Rewrites one process's <c>stat</c> — what a test does "during" a CPU window.</summary>
+    public SyntheticProcTree Stat(int pid, int ppid, string name, int tty, long startTicks, long cpuTicks)
+    {
+        _root.File($"proc/{pid}/stat", string.Create(CultureInfo.InvariantCulture, $"{pid} ({name}) S {ppid} {pid} {pid} {tty} -1 0 0 0 0 0 {cpuTicks / 2} {cpuTicks - (cpuTicks / 2)} 0 0 20 0 1 0 {startTicks} 0 0\n"));
+        return this;
+    }
+
+    /// <summary>A file under the tree at the DISTRO path <paramref name="distroPath"/>, last written at <paramref name="modifiedAt"/>.</summary>
+    public string FileAt(string distroPath, DateTimeOffset modifiedAt)
+    {
+        var path = _root.File(distroPath.TrimStart('/'), "x");
+        File.SetLastWriteTimeUtc(path, modifiedAt.UtcDateTime);
+        return path;
+    }
+
+    /// <summary>Removes one process from the tree — it exited.</summary>
+    public void Exit(int pid) => Directory.Delete(_root.Under($"proc/{pid}"), recursive: true);
 
     /// <summary>A container cgroup: the cgroupfs driver's <c>docker/&lt;id&gt;</c>, or with
     /// <paramref name="systemdDriver"/> the systemd driver's <c>system.slice/docker-&lt;id&gt;.scope</c>.</summary>

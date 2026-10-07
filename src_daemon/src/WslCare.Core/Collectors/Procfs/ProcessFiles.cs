@@ -99,6 +99,17 @@ public static class CommandLineText
 
     private static readonly string[] SecretWords = ["token", "secret", "password", "passwd", "apikey", "api-key", "api_key", "credential"];
 
+    /// <summary>The program and the word after it, as FILE NAMES (<c>.exe</c> stripped) — what an agent or an interpreter-run script
+    /// is recognised by (plan §15q E7.S2d C-2). Taken from the RAW argv: the shown line is redacted and cut, and splitting it on
+    /// spaces loses a program whose path holds one.</summary>
+    public static IReadOnlyList<string> ProgramNames(IEnumerable<string> argv) =>
+        [.. argv.Take(ProgramWords).Select(word => Path.GetFileName(word.Replace('\\', '/'))).Select(StripExe)];
+
+    /// <summary>The program and its first argument: an interpreter (<c>node</c>) names its script there.</summary>
+    private const int ProgramWords = 2;
+
+    private static string StripExe(string name) => name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
+
     public static IReadOnlyList<string> Arguments(ReadOnlySpan<byte> cmdline) =>
         Encoding.UTF8.GetString(cmdline).Split('\0').SkipLast(cmdline.Length > 0 && cmdline[^1] == 0 ? 1 : 0).ToList();
 
