@@ -1160,6 +1160,18 @@ contract test (`the client names EXACTLY the codes of contracts/exit-codes.json`
 test holds the lock as a check would); the derived exit lists cover the endings `UnitSuccessExitTests` enumerates — a new branch
 of `DetachedRuns.FromRequest` must join its enum.
 
+**PR43 gate round** (the coai code round on pull request #43; same discipline — red on the unfixed code, fixed, the fix
+reverted red, restored byte-identical):
+
+| # | Test | Red (unfixed) | Break-it |
+|---|---|---|---|
+| 1 `CollectRun.Ends` re-read the whole history | `CollectRunTests.A_recorded_full_run_ends_its_running_json_from_what_it_wrote_never_rereading_the_history` (the history unreadable once the run's line is appended) | *System.IO.IOException : the history is on a disk that went away after the line (test)* — thrown out of the run's `finally` | the history read put back into `Ends` → the same; the run's `LineMark` gate dropped → the collect case of `An_accepted_run_whose_line_cannot_be_written_…` red (*Expected show.State not to be "unknown"*) |
+| 3 the endings catalog was hand-kept | `UnitSuccessExitTests.Every_exit_code_is_classified_for_both_units`, `Each_unit_counts_exactly_its_classified_answers_as_success` (both units) | new tests (a table over every `ExitCode` member, per unit: answer / failure / not reachable) | a row removed → *Expected Classified.Keys to be a collection with 18 item(s)*; 130 classified a timer failure → *Expected SuccessExits(unit) to be equal to {75} … but {75, 130}* and the driven timer endings disagree |
+| 4 the lock wait overran its deadline | `Core RunLockWaitTests.The_wait_never_pauses_past_its_deadline_nor_takes_the_lock_after_it` (manual clock, 10 ms wait, 20–21 ms jitter, the holder lets go at 15 ms) | *Expected type to be …ExclusiveLock+Busy because the lock was free only after requests.lockWaitSeconds had passed, but found …ExclusiveLock+Held* | the pause cap removed → the same |
+
+Item 2 (a stale `SuccessExitStatus` row in `architecture.md`) and item 5 (`StageRequest` over the complexity limit, now a switch
+expression of stagings) change no behaviour.
+
 ### The progress flow made deterministic (2026-10-05)
 
 `InstallUpgradeFlows.A_long_wait_says_every_progress_period_…` (finding 4 above) failed once in a full WSL Scenarios run under

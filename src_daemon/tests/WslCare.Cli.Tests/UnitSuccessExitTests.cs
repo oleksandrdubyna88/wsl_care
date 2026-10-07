@@ -22,7 +22,10 @@ namespace WslCare.Cli.Tests;
 /// changed nothing at all — and derives the list each unit must carry from the exits the code returned.
 /// </summary>
 /// <remarks>The endings are the branches of <c>DetachedRuns.FromRequest</c> and of <c>collect --timer</c>; a new branch is added
-/// to <see cref="DetachedEnding"/> / <see cref="TimerEnding"/> in the same change (the enumeration is the deliverable).</remarks>
+/// to <see cref="DetachedEnding"/> / <see cref="TimerEnding"/> in the same change (the enumeration is the deliverable). PR43 gate
+/// round #3: so that adding an exit FORCES that decision, every <see cref="ExitCode"/> member is classified per unit in
+/// <see cref="Classified"/> — a recorded answer, a failure, or not reachable from the unit — held complete against the enum, the
+/// units' lists derived from it, and the driven endings held to agree with it.</remarks>
 public sealed class UnitSuccessExitTests
 {
     private static readonly DateTimeOffset Now = DetachedRunHarness.Now;
@@ -52,6 +55,50 @@ public sealed class UnitSuccessExitTests
         LineNotWritten,
     }
 
+    /// <summary>What an exit code means for the run a unit starts.</summary>
+    private enum UnitAnswer
+    {
+        /// <summary>A recorded end (or a no-op): the unit must count it as success.</summary>
+        Answer,
+
+        /// <summary>An end that was not recorded, or a defect: a failed unit.</summary>
+        Failure,
+
+        /// <summary>The unit's verb never returns it (another verb's code).</summary>
+        NotReachable,
+    }
+
+    /// <summary>EVERY exit code, for the template unit's <c>act --request</c> and the timer's <c>collect --timer</c>. A member
+    /// added to <see cref="ExitCode"/> without a row here fails <c>Every_exit_code_is_classified_for_both_units</c>.</summary>
+    private static readonly IReadOnlyDictionary<ExitCode, (UnitAnswer Detached, UnitAnswer Timer)> Classified = new Dictionary<ExitCode, (UnitAnswer, UnitAnswer)>
+    {
+        [ExitCode.Ok] = (UnitAnswer.Answer, UnitAnswer.Answer),
+        [ExitCode.RunFailed] = (UnitAnswer.Failure, UnitAnswer.Failure),
+        [ExitCode.Usage] = (UnitAnswer.Failure, UnitAnswer.Failure),
+        [ExitCode.ActionFailed] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
+        [ExitCode.RecordsUnreadable] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.DetachUnavailable] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.Internal] = (UnitAnswer.Failure, UnitAnswer.Failure),
+        [ExitCode.DetachStartFailed] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.QueueFull] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.Busy] = (UnitAnswer.Answer, UnitAnswer.Answer),
+        [ExitCode.Wedged] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
+        [ExitCode.NeedsRoot] = (UnitAnswer.Failure, UnitAnswer.NotReachable),
+        [ExitCode.ObserveOnly] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
+        [ExitCode.StateUnreadable] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
+        [ExitCode.RequestGone] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
+        [ExitCode.NotAsRoot] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.RequestUnusable] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
+        [ExitCode.Interrupted] = (UnitAnswer.Answer, UnitAnswer.Answer),
+    };
+
+    private static UnitAnswer AnswerOf(string unit, int exit) =>
+        Classified.TryGetValue((ExitCode)exit, out var answer) ? (unit == DetachedUnit ? answer.Detached : answer.Timer) : UnitAnswer.NotReachable;
+
+    private const string DetachedUnit = "wsl-care-act@.service";
+
+    private const string TimerUnit = "wsl-care.service";
+
     /// <summary>One ending as observed: what the program exited with, and whether the end was answered (recorded or a no-op).</summary>
     private sealed record Observed(string Ending, int Exit, bool Answered);
 
@@ -71,11 +118,27 @@ public sealed class UnitSuccessExitTests
     }
 
     [Fact]
+    public void Every_exit_code_is_classified_for_both_units()
+    {
+        Classified.Keys.Should().BeEquivalentTo(Enum.GetValues<ExitCode>(), "a new exit code is a decision for both units: a recorded answer, a failure, or not reachable");
+    }
+
+    [Theory]
+    [InlineData(DetachedUnit)]
+    [InlineData(TimerUnit)]
+    public void Each_unit_counts_exactly_its_classified_answers_as_success(string unit)
+    {
+        var answers = Classified.Keys.Where(code => code != ExitCode.Ok && AnswerOf(unit, (int)code) == UnitAnswer.Answer).Select(code => (int)code).Order().ToList();
+
+        SuccessExits(unit).Should().Equal(answers, $"{unit}: SuccessExitStatus is derived from the classification of every exit code");
+    }
+
+    [Fact]
     public void The_detached_run_s_template_counts_exactly_the_exits_of_its_answered_endings_as_success()
     {
         var observed = Enum.GetValues<DetachedEnding>().Select(Detached).ToList();
 
-        Hold("wsl-care-act@.service", observed);
+        Hold(DetachedUnit, observed);
     }
 
     [Fact]
@@ -83,18 +146,18 @@ public sealed class UnitSuccessExitTests
     {
         var observed = Enum.GetValues<TimerEnding>().Select(Timer).ToList();
 
-        Hold("wsl-care.service", observed);
+        Hold(TimerUnit, observed);
     }
 
-    /// <summary>The unit's list is exactly the non-zero exits of the answered endings; no unanswered ending exits 0 or a listed
-    /// code (a failure must stay a failed unit).</summary>
+    /// <summary>The unit's list is exactly the non-zero exits of the answered endings; every driven ending agrees with the
+    /// classification (an answered end exits an Answer code, an unanswered one a Failure code) — a failure stays a failed unit.</summary>
     private static void Hold(string unit, IReadOnlyList<Observed> observed)
     {
         var listed = SuccessExits(unit);
         var answered = observed.Where(o => o.Answered && o.Exit != 0).Select(o => o.Exit).Distinct().Order().ToList();
 
         listed.Should().Equal(answered, $"{unit}: SuccessExitStatus is exactly what the recorded endings exit with — observed {Describe(observed)}");
-        observed.Where(o => !o.Answered).Should().OnlyContain(o => o.Exit != 0 && !listed.Contains(o.Exit), $"an end that was not recorded is a failed unit — observed {Describe(observed)}");
+        observed.Should().OnlyContain(o => AnswerOf(unit, o.Exit) == (o.Answered ? UnitAnswer.Answer : UnitAnswer.Failure), $"the driven endings agree with the classification — observed {Describe(observed)}");
         observed.Should().Contain(o => !o.Answered, "a file of answers needs one failure: the predicate can tell them apart");
     }
 
@@ -111,48 +174,41 @@ public sealed class UnitSuccessExitTests
     }
 
     /// <summary>The world of one ending, and the run id <c>act --request</c> is started with.</summary>
-    private static RunId Stage(DetachedRunHarness h, DetachedEnding ending)
+    private static RunId Stage(DetachedRunHarness h, DetachedEnding ending) => ending switch
     {
-        switch (ending)
-        {
-            case DetachedEnding.NoRequest:
-                return RunId.New(Now, 41);
-            case DetachedEnding.UnusableRequest:
-                var bad = RunId.New(Now, 42);
-                WriteState(RunRequests.File(h.Sandbox.Paths, bad), "{ not json");
-                return bad;
-            default:
-                return StageRequest(h, ending);
-        }
+        DetachedEnding.NoRequest => RunId.New(Now, 41),
+        DetachedEnding.UnusableRequest => PlantUnusable(h, RunId.New(Now, 42)),
+        _ => StageRequest(h, ending),
+    };
+
+    private static RunId PlantUnusable(DetachedRunHarness h, RunId runId)
+    {
+        WriteState(RunRequests.File(h.Sandbox.Paths, runId), "{ not json");
+        return runId;
     }
 
+    /// <summary>A usable request, and what else the ending needs beside it (<see cref="Staging"/>).</summary>
     private static RunId StageRequest(DetachedRunHarness h, DetachedEnding ending)
     {
         var request = h.Plant("act", ["A10"], TimeSpan.FromSeconds(5));
-        switch (ending)
-        {
-            case DetachedEnding.ActionFailed:
-                h.Runner.Script(["journalctl", "--vacuum-time=30d"], 1, stderr: "Failed to vacuum (test)");
-                break;
-            case DetachedEnding.RefusedWedged:
-                PlantRunning(h, RunId.New(Now.AddMinutes(-9), 999), heartbeat: Now.AddMinutes(-5));
-                break;
-            case DetachedEnding.RefusedStateUnreadable:
-                WriteState(RunningState.File(h.Sandbox.Paths), "{}");
-                break;
-            case DetachedEnding.RefusedObserveOnly:
-                h.Sandbox.Write("/home/me/.config/wsl-care/config.json", "{ \"journal\": { \"keepDays\": 0 } }");
-                break;
-            case DetachedEnding.AlreadyRecorded:
-                new RunRecordWriter(h.Sandbox.Paths, h.Sandbox.Files).Append(new RunRecord(1, request.RunId, RunTrigger.Manual, Now, Now, RunOutcome.Completed, [], RunKind.Act));
-                break;
-            case DetachedEnding.RefusedAtTheLock:
-                h.MachineLayer("""{ "requests": { "lockWaitSeconds": 0 } }""");
-                break;
-        }
-
+        Staging(ending)(h, request.RunId);
         return request.RunId;
     }
+
+    /// <summary>What one ending stages beside its request (PR43 gate round #5: a switch expression, not a branching method).</summary>
+    private static Action<DetachedRunHarness, RunId> Staging(DetachedEnding ending) => ending switch
+    {
+        DetachedEnding.ActionFailed => static (h, _) => h.Runner.Script(["journalctl", "--vacuum-time=30d"], 1, stderr: "Failed to vacuum (test)"),
+        DetachedEnding.RefusedWedged => static (h, _) => PlantRunning(h, RunId.New(Now.AddMinutes(-9), 999), heartbeat: Now.AddMinutes(-5)),
+        DetachedEnding.RefusedStateUnreadable => static (h, _) => WriteState(RunningState.File(h.Sandbox.Paths), "{}"),
+        DetachedEnding.RefusedObserveOnly => static (h, _) => h.Sandbox.Write("/home/me/.config/wsl-care/config.json", "{ \"journal\": { \"keepDays\": 0 } }"),
+        DetachedEnding.AlreadyRecorded => static (h, id) => new RunRecordWriter(h.Sandbox.Paths, h.Sandbox.Files).Append(new RunRecord(1, id, RunTrigger.Manual, Now, Now, RunOutcome.Completed, [], RunKind.Act)),
+        DetachedEnding.RefusedAtTheLock => static (h, _) => h.MachineLayer("""{ "requests": { "lockWaitSeconds": 0 } }"""),
+        _ => NoStaging,
+    };
+
+    /// <summary>An ending that needs nothing beside its request.</summary>
+    private static readonly Action<DetachedRunHarness, RunId> NoStaging = static (_, _) => { };
 
     private static int RunDetached(DetachedRunHarness h, DetachedEnding ending, RunId runId)
     {

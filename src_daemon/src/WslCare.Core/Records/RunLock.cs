@@ -34,13 +34,19 @@ public static class RunLock
 
     /// <summary>The lock, tried again for up to <paramref name="wait"/> (measured on the monotonic clock) while another holds it;
     /// a zero wait is one try, exactly <see cref="TryTake"/>. A cancellation ends the wait (the caller records the run cut off).</summary>
-    public static async Task<ExclusiveLock> TakeAsync(IHostPaths paths, IFileSystem files, TimeSpan wait, CancellationToken cancellationToken)
+    public static Task<ExclusiveLock> TakeAsync(IHostPaths paths, IFileSystem files, TimeSpan wait, CancellationToken cancellationToken) =>
+        TakeAsync(paths, files, wait, TimeProvider.System, static (delay, token) => Task.Delay(delay, token), cancellationToken);
+
+    /// <summary>The same, on <paramref name="clock"/>'s monotonic timestamps, pausing through <paramref name="pause"/> — a test's
+    /// manual clock and a pause that advances it. Each pause is capped to what is left of the wait, and no try is made once the
+    /// deadline has passed (PR43 gate round #4: a whole jitter interval could overrun it and take the lock after it).</summary>
+    public static async Task<ExclusiveLock> TakeAsync(IHostPaths paths, IFileSystem files, TimeSpan wait, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> pause, CancellationToken cancellationToken)
     {
-        var waited = System.Diagnostics.Stopwatch.StartNew();
+        var started = clock.GetTimestamp();
         var taken = TryTake(paths, files);
-        while (taken is ExclusiveLock.Busy && waited.Elapsed < wait)
+        while (taken is ExclusiveLock.Busy && wait - clock.GetElapsedTime(started) is var left && left > TimeSpan.Zero)
         {
-            await Task.Delay(Pause(), cancellationToken).ConfigureAwait(false);
+            await pause(TimeSpan.FromTicks(Math.Min(Pause().Ticks, left.Ticks)), cancellationToken).ConfigureAwait(false);
             taken = TryTake(paths, files);
         }
 

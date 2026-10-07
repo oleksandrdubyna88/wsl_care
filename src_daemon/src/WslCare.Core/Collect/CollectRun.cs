@@ -137,21 +137,32 @@ public static class CollectRun
             c.OnRunningWritten();
         }
 
+        var line = new LineMark();
         try
         {
-            var requests = await SweptOrRecordedAsync(c, running, started, runId).ConfigureAwait(false);
+            var requests = await SweptOrRecordedAsync(c, running, started, runId, line).ConfigureAwait(false);
             var housekeeping = Housekeep(c, started) with { Running = SweepNote(sweep, owned), Requests = requests };
-            var measured = await MeasuredOrRecordedAsync(c, running, owned, housekeeping, cancellationToken).ConfigureAwait(false);
+            var measured = await MeasuredOrRecordedAsync(c, running, owned, housekeeping, line, cancellationToken).ConfigureAwait(false);
             var (detail, engine) = await TimerPassAsync(c, measured, runId, started, cancellationToken).ConfigureAwait(false);
             var result = Record(c, detail);
+            line.Note(result.LineWritten);
             var left = result.LineWritten ? EndPass(engine) : ActionEngine.KeptForTheSweep;
             cancellationToken.ThrowIfCancellationRequested();
             return left.Length == 0 ? result : result with { Reason = Joined(result.Reason, left) };
         }
         finally
         {
-            EndRunning(c, runId, owned);
+            EndRunning(c, runId, owned && line.Written);
         }
+    }
+
+    /// <summary>Whether THIS run wrote its terminal line — its own record, or a cut-off line — as the writer reported it (PR43 gate
+    /// round #1: never learnt by reading the whole history again). Set at most to true; a run has one terminal line.</summary>
+    private sealed class LineMark
+    {
+        public bool Written { get; private set; }
+
+        public void Note(bool written) => Written |= written;
     }
 
     /// <summary>
@@ -160,7 +171,7 @@ public static class CollectRun
     /// full run cut off mid-measurement used to leave no record at all, its <c>running.json</c> removed by the <c>finally</c>, so
     /// <c>runs show</c> answered "unknown".
     /// </summary>
-    private static async Task<RunDetail> MeasuredOrRecordedAsync(CollectContext c, RunningFile running, bool owned, HousekeepingReport housekeeping, CancellationToken cancellationToken)
+    private static async Task<RunDetail> MeasuredOrRecordedAsync(CollectContext c, RunningFile running, bool owned, HousekeepingReport housekeeping, LineMark line, CancellationToken cancellationToken)
     {
         try
         {
@@ -168,14 +179,14 @@ public static class CollectRun
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            RecordCutOff(c, running, "during the measurement");
+            line.Note(RecordCutOff(c, running, "during the measurement"));
             throw;
         }
     }
 
     /// <summary>The request sweep — and when a cancellation cuts it off, the same ONE <c>interrupted</c> line as a cut-off
     /// measurement (E6.S1 review D2: the sweep ran outside that guard, and a signal there left zero lines for the run).</summary>
-    private static async Task<IReadOnlyList<string>> SweptOrRecordedAsync(CollectContext c, RunningFile running, DateTimeOffset started, RunId runId)
+    private static async Task<IReadOnlyList<string>> SweptOrRecordedAsync(CollectContext c, RunningFile running, DateTimeOffset started, RunId runId, LineMark line)
     {
         try
         {
@@ -183,12 +194,13 @@ public static class CollectRun
         }
         catch (OperationCanceledException)
         {
-            RecordCutOff(c, running, "while it swept the request folder");
+            line.Note(RecordCutOff(c, running, "while it swept the request folder"));
             throw;
         }
     }
 
-    private static void RecordCutOff(CollectContext c, RunningFile running, string when)
+    /// <summary>ONE <c>interrupted</c> line for a run cut off; whether it was written.</summary>
+    private static bool RecordCutOff(CollectContext c, RunningFile running, string when)
     {
         try
         {
@@ -196,10 +208,12 @@ public static class CollectRun
             {
                 Reason = $"interrupted by {c.InterruptCause()} {when}: nothing was recorded but this line",
             });
+            return true;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
         {
             // The cancellation still flies; with no line, the next run's reconcile and sweep are what is left.
+            return false;
         }
     }
 
@@ -239,11 +253,11 @@ public static class CollectRun
     }
 
     /// <summary>Removes this run's <c>running.json</c> — only its OWN (the timer pass may have removed it already), and only once
-    /// the history holds the run's line: until then it is the run's only trace, kept for the next root run's sweep, whichever way
-    /// the run ended (retro round over PR #11, O2 — a line that could not be written, a cut-off line that could not either).</summary>
-    private static void EndRunning(CollectContext c, RunId runId, bool owned)
+    /// the run's line is written: until then it is the run's only trace, kept for the next root run's sweep, whichever way the run
+    /// ended (retro round over PR #11, O2 — a line that could not be written, a cut-off line that could not either).</summary>
+    private static void EndRunning(CollectContext c, RunId runId, bool ownedAndRecorded)
     {
-        if (!Ends(c, runId, owned))
+        if (!Ends(c, runId, ownedAndRecorded))
         {
             return;
         }
@@ -258,8 +272,9 @@ public static class CollectRun
         }
     }
 
-    private static bool Ends(CollectContext c, RunId runId, bool owned) =>
-        owned && RunningState.RunIdIn(c.Paths, c.Files) == runId && RunHistory.Read(c.Paths, c.Files).Records.Any(r => r.RunId == runId);
+    /// <param name="ownedAndRecorded">The run wrote its running.json AND its terminal line (what the writer reported).</param>
+    private static bool Ends(CollectContext c, RunId runId, bool ownedAndRecorded) =>
+        ownedAndRecorded && RunningState.RunIdIn(c.Paths, c.Files) == runId;
 
     private static string SweepNote(RunningSweep sweep, bool owned) => sweep switch
     {

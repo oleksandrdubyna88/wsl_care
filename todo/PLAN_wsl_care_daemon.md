@@ -1017,7 +1017,15 @@ restored (`research/module_tests.md`, *The retro round over PR #11*).
 | C2 | consultant (missed) | **Accepted.** A timed-out `systemctl start` whose run already finished was answered 71 "did not succeed" (inviting a duplicate); the history is read after the unit — a line for the run answers `accepted` with its id, nothing removed. |
 | C3 | consultant (confirmed) | **Accepted.** `install.sh`'s `run_in_flight` failed open on a non-executable binary — fixed in the PR #8 retro pull request (row R11-C there). |
 | C4 | own suspicion, consultant confirmed | **Accepted.** `StopMarkers.StoppedReason` said systemd killed the run; a marker proves only that a stop was REQUESTED. The reason now says "a stop was requested at <time> through <unit> (act --stop), and the run died without recording itself". |
+| PR43-1 | PR43 gate round (session `c923708c`) | **Accepted.** `CollectRun.Ends` re-read the whole history after every full run to learn what `RunRecorder` had just returned (O(N) per timer run; a read error flew out of the `finally`). The run now keeps a `LineMark` of its own line — the record or a cut-off line, as the writer reported it. |
+| PR43-2 | PR43 gate round | **Accepted.** `architecture.md`'s unit row still said `3 75 76 78 79 80`. |
+| PR43-3 | PR43 gate round | **Accepted.** `UnitSuccessExitTests` classifies EVERY `ExitCode` member per unit (answer / failure / not reachable), held complete against the enum; the units' lists are derived from it, and the driven endings must agree with it. |
+| PR43-4 | PR43 gate round | **Accepted.** `RunLock.TakeAsync` could pause a whole jitter interval past `requests.lockWaitSeconds` and take the lock after it; each pause is capped to what is left, and no try is made past the deadline. |
+| PR43-5 | PR43 gate round | **Accepted.** `UnitSuccessExitTests.StageRequest` over the complexity limit — a switch expression of stagings. One finding rejected in that round: moving `AcceptedRunWait` out of `RunLock`. |
 | open | consultant | `RunRequests.Peek` reads only the OLDEST request (E6 code round #7), so an unswept request of an earlier boot can read `dead` while a newer one is queued. Not changed here. |
+| open | own review of this pull request | `RequestSweep.ApplyAsync` appends its `interrupted` and `refused` lines without a guard: a failed history append during a `--detach` or a root run's sweep reaches Main's catch-all (exit 70) instead of a recorded refusal. Not changed here. |
+| open | own review of this pull request | `RunningSweep.SweepDead` writes an `interrupted` line even when the history cannot be read (a duplicate is then possible); O2 leaves `running.json` behind more often, so this now matters more. Not changed here. |
+| open | own review of this pull request | `ActionEngine.KeptForTheSweep` ("running.json is kept") is also joined to a full run's result when that run wrote no `running.json` of its own (another run's state stood) — imprecise words, no wrong action. Not changed here. |
 
 ### 15n. E6.S3 review round (coai code round + two own reviews, 2026-10-05)
 
