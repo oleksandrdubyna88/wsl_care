@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { MIN_DAEMON_FOR_RENDER } from '../client/handshake';
+import { INSTALL_DAEMON, MIN_DAEMON_FOR_RENDER } from '../client/handshake';
 import { EXTENSION_ROOT } from './support/paths';
 
 /**
@@ -17,11 +17,11 @@ function readJson(file: string): unknown {
   return JSON.parse(fs.readFileSync(file, 'utf8')) as unknown;
 }
 
-test('the checked-in min-daemon.json — what the release guard reads at the tag — is MIN_DAEMON_FOR_RENDER, and nothing else', () => {
-  assert.deepEqual(readJson(path.join(EXTENSION_ROOT, 'min-daemon.json')), { minDaemonForRender: MIN_DAEMON_FOR_RENDER },
+test('the checked-in min-daemon.json — what the release guard reads at the tag — is MIN_DAEMON_FOR_RENDER and INSTALL_DAEMON, and nothing else', () => {
+  assert.deepEqual(readJson(path.join(EXTENSION_ROOT, 'min-daemon.json')), { minDaemonForRender: MIN_DAEMON_FOR_RENDER, installDaemon: INSTALL_DAEMON },
     'change the constant and this file in the same commit: the guard refuses a release whose minimum daemon is not published and verified');
 });
 
-test('the bundle step emitted dist/min-daemon.json from the compiled constant (npm test bundles before it tests)', () => {
-  assert.deepEqual(readJson(path.join(EXTENSION_ROOT, 'dist', 'min-daemon.json')), { minDaemonForRender: MIN_DAEMON_FOR_RENDER });
+test('the bundle step emitted dist/min-daemon.json from the compiled constants (npm test bundles before it tests)', () => {
+  assert.deepEqual(readJson(path.join(EXTENSION_ROOT, 'dist', 'min-daemon.json')), { minDaemonForRender: MIN_DAEMON_FOR_RENDER, installDaemon: INSTALL_DAEMON });
 });

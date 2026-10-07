@@ -27,22 +27,26 @@ public sealed class ReleaseExtensionScriptFlows
     private sealed record Checkout(string Dir, IReadOnlyDictionary<string, string?> Env, string GhLog);
 
     /// <summary>A checkout of the tag: package.json, the handshake's minimum, POST_DEPLOY.md — and a fake gh.</summary>
-    /// <summary>The checked-in artefact the guard reads the minimum daemon from (E5 code round #2/#5).</summary>
-    private static string MinDaemonJson(string min) => $"{{\n  \"minDaemonForRender\": \"{min}\"\n}}\n";
+    /// <summary>The checked-in artefact the guard reads the two daemon versions from (E5 code round #2/#5; the install
+    /// pin since 2026-10-06) — the release Install daemon types defaults to the render minimum.</summary>
+    private static string MinDaemonJson(string min, string? install = null) => $"{{\n  \"minDaemonForRender\": \"{min}\",\n  \"installDaemon\": \"{install ?? min}\"\n}}\n";
 
-    private static Checkout Make(TempRoot root, string version = "0.1.0", string publisher = "wsl-care-dev", string min = "0.1.0", string stamp = Verified, string? ghAnswer = Published, string? handshake = null, string? minDaemonJson = "")
+    private static Checkout Make(TempRoot root, string version = "0.1.0", string publisher = "wsl-care-dev", string min = "0.1.0", string stamp = Verified, string? ghAnswer = Published, string? handshake = null, string? minDaemonJson = "", string? install = null, string drafts = "")
     {
         var dir = root.Dir("checkout");
         root.File("checkout/src_vs_code/package.json", $"{{\n  \"name\": \"{ReleaseFiles.ExtensionName}\",\n  \"version\": \"{version}\",\n  \"publisher\": \"{publisher}\",\n  \"scripts\": {{\n    \"version\": \"not-the-top-level-one\"\n  }}\n}}\n");
         root.File("checkout/src_vs_code/src/client/handshake.ts", handshake ?? $"export const SUPPORTED_SCHEMA: readonly number[] = [1];\n\nexport const MIN_DAEMON_FOR_RENDER = '{min}';\n");
         if (minDaemonJson is not null)
         {
-            root.File("checkout/src_vs_code/min-daemon.json", minDaemonJson.Length == 0 ? MinDaemonJson(min) : minDaemonJson);
+            root.File("checkout/src_vs_code/min-daemon.json", minDaemonJson.Length == 0 ? MinDaemonJson(min, install) : minDaemonJson);
         }
 
         root.File("checkout/POST_DEPLOY.md", $"# Post-deploy checks\n\nTarget: x\n{stamp}\n\n| # | a | b | c |\n");
         var log = root.Under("gh.log");
-        var gh = root.File("bin/gh", "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\n[ -n \"$FAKE_GH_FAIL\" ] && { echo 'HTTP 404: Not Found' >&2; exit 1; }\nprintf '%s\\n' \"$FAKE_GH_ANSWER\"\n");
+        // FAKE_GH_ANSWER=by-tag answers every release query for ITS tag: published, unless the tag is in FAKE_GH_DRAFTS.
+        var gh = root.File("bin/gh", "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\n[ -n \"$FAKE_GH_FAIL\" ] && { echo 'HTTP 404: Not Found' >&2; exit 1; }\n" +
+            "if [ \"$FAKE_GH_ANSWER\" = by-tag ]; then t=\"${*##*releases/tags/}\"; t=\"${t%% *}\"; case \" $FAKE_GH_DRAFTS \" in *\" $t \"*) d=true ;; *) d=false ;; esac; printf '%s\\t%s\\n' \"$d\" \"$t\"; exit 0; fi\n" +
+            "printf '%s\\n' \"$FAKE_GH_ANSWER\"\n");
         File.SetUnixFileMode(gh, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         var env = new Dictionary<string, string?>
         {
@@ -52,6 +56,7 @@ public sealed class ReleaseExtensionScriptFlows
             ["FAKE_GH_LOG"] = log,
             ["FAKE_GH_ANSWER"] = ghAnswer ?? string.Empty,
             ["FAKE_GH_FAIL"] = ghAnswer is null ? "1" : null,
+            ["FAKE_GH_DRAFTS"] = drafts,
             ["GITHUB_OUTPUT"] = null,
         };
         return new Checkout(dir, env, log);
@@ -68,7 +73,7 @@ public sealed class ReleaseExtensionScriptFlows
         var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, new Dictionary<string, string?>(checkout.Env) { ["GITHUB_OUTPUT"] = output });
 
         result.Exit.Should().Be(0, result.Stdout + result.Stderr);
-        File.ReadAllText(output).Should().Be("version=0.1.0\npublisher=wsl-care-dev\nmin_daemon=0.1.0\n");
+        File.ReadAllText(output).Should().Be("version=0.1.0\npublisher=wsl-care-dev\nmin_daemon=0.1.0\ninstall_daemon=0.1.0\n");
         File.ReadAllText(checkout.GhLog).Should().Contain("api repos/oleksandrdubyna88/wsl_care/releases/tags/daemon-v0.1.0", "it asked GitHub for the minimum daemon's release");
     }
 
@@ -550,6 +555,52 @@ public sealed class ReleaseExtensionScriptFlows
             var lzma = await ReleaseScripts.RunAsync("compare-installed-extension.sh", [vsix, root.Dir("installed")], root.Path);
             lzma.Exit.Should().Be(2, $"a damaged LZMA member is an unreadable .vsix:\n{lzma.Stdout}{lzma.Stderr}");
             lzma.Stderr.Should().Contain("is not a readable .vsix");
+        }
+    }
+
+    /// <summary>The install pin (2026-10-06): min-daemon.json's `installDaemon` is the release Install daemon types, a value
+    /// of its own at or above `minDaemonForRender` — daemon 0.1.0's act unit is defective, so a new install gets 0.1.2 while
+    /// 0.1.0 still renders. The guard admits it only when BOTH releases are published (non-draft) and the stamp is at or
+    /// above the install pin, and emits it as `install_daemon` for check-vsix.</summary>
+    [Fact]
+    public async Task The_guard_admits_an_install_pin_above_the_render_minimum_only_when_both_are_published_and_the_stamp_reaches_it()
+    {
+        Linux();
+        const string stamp012 = "Last verified: 2026-10-06 · the owner's installation · daemon 0.1.2";
+
+        using (var root = new TempRoot("ext-guard-install-ok"))
+        {
+            var checkout = Make(root, install: "0.1.2", stamp: stamp012, ghAnswer: "by-tag");
+            var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
+
+            result.Exit.Should().Be(0, result.Stdout + result.Stderr);
+            result.StdoutLines.Should().Contain("min_daemon=0.1.0").And.Contain("install_daemon=0.1.2");
+            File.ReadAllText(checkout.GhLog).Should().Contain("releases/tags/daemon-v0.1.0").And.Contain("releases/tags/daemon-v0.1.2", "both releases are asked about");
+        }
+
+        var refusals = new (string What, string Install, string Stamp, string Drafts, string Says)[]
+        {
+            ("the install pin is a draft", "0.1.2", stamp012, "daemon-v0.1.2", "Install daemon installs, daemon-v0.1.2 is not a published, non-draft release"),
+            ("the stamp is below the install pin", "0.1.2", Verified, "", "older than 0.1.2, the release Install daemon types"),
+            ("the install pin is below the render minimum", "0.0.9", stamp012, "", "installDaemon 0.0.9 is below minDaemonForRender 0.1.0"),
+        };
+        foreach (var (what, install, stamp, drafts, says) in refusals)
+        {
+            using var root = new TempRoot("ext-guard-install-bad");
+            var checkout = Make(root, install: install, stamp: stamp, ghAnswer: "by-tag", drafts: drafts);
+            var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
+
+            result.Exit.Should().Be(1, $"{what}:\n{result.Stdout}{result.Stderr}");
+            (result.Stdout + result.Stderr).Should().Contain(says, what);
+        }
+
+        using (var root = new TempRoot("ext-guard-install-missing"))
+        {
+            var checkout = Make(root, minDaemonJson: MinDaemonJson("0.1.0").Replace(",\n  \"installDaemon\": \"0.1.0\"", string.Empty, StringComparison.Ordinal));
+            var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
+
+            result.Exit.Should().Be(1, result.Stdout + result.Stderr);
+            (result.Stdout + result.Stderr).Should().Contain("carries no installDaemon");
         }
     }
 }

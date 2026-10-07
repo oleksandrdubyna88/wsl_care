@@ -192,8 +192,11 @@ export interface MinDaemonInputs {
   readonly released?: string | undefined;
 }
 
-function minDaemonOf(json: unknown): string | undefined {
-  const value = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>).minDaemonForRender : undefined;
+/** The two daemon versions min-daemon.json carries: the render minimum and the release *Install daemon* installs. */
+export type DaemonVersionKey = 'minDaemonForRender' | 'installDaemon';
+
+function minDaemonOf(json: unknown, key: DaemonVersionKey): string | undefined {
+  const value = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>)[key] : undefined;
 
   return typeof value === 'string' ? value : undefined;
 }
@@ -202,13 +205,15 @@ function minDaemonOf(json: unknown): string | undefined {
  * The four must agree: the compiled constant, what the bundle step emitted, the checked-in artefact the guard read and —
  * at a release — the minimum the guard verified. One finding per place that disagrees, naming it and what to do.
  */
-export function minDaemonFindings(inputs: MinDaemonInputs): string[] {
+export function minDaemonFindings(inputs: MinDaemonInputs, key: DaemonVersionKey = 'minDaemonForRender'): string[] {
   const { constant, emitted, checkedIn, released } = inputs;
   const shown = (value: string | undefined): string => (value === undefined ? 'nothing readable' : value);
+  const which = key === 'minDaemonForRender' ? '' : ` for ${key}`;
+  const guard = key === 'minDaemonForRender' ? `the minimum daemon ${released ?? ''}, but this .vsix renders ${constant}` : `the daemon to install ${released ?? ''}, but this .vsix installs ${constant}`;
 
   return [
-    ...(minDaemonOf(emitted) === constant ? [] : [`dist/min-daemon.json says ${shown(minDaemonOf(emitted))}, handshake.ts says ${constant} — the bundle step that built this .vsix saw another constant (run npm run bundle)`]),
-    ...(minDaemonOf(checkedIn) === constant ? [] : [`src_vs_code/min-daemon.json (what the release guard reads at the tag) says ${shown(minDaemonOf(checkedIn))}, handshake.ts says ${constant} — change both in one commit`]),
-    ...(released === undefined || released === constant ? [] : [`the release guard verified the minimum daemon ${released}, but this .vsix renders and installs ${constant}`]),
+    ...(minDaemonOf(emitted, key) === constant ? [] : [`dist/min-daemon.json says ${shown(minDaemonOf(emitted, key))}${which}, handshake.ts says ${constant} — the bundle step that built this .vsix saw another constant (run npm run bundle)`]),
+    ...(minDaemonOf(checkedIn, key) === constant ? [] : [`src_vs_code/min-daemon.json (what the release guard reads at the tag) says ${shown(minDaemonOf(checkedIn, key))}${which}, handshake.ts says ${constant} — change both in one commit`]),
+    ...(released === undefined || released === constant ? [] : [`the release guard verified ${guard}`]),
   ];
 }
