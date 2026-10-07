@@ -96,6 +96,7 @@ public sealed class ArchiveRunFlows
     public async Task Without_a_base_the_run_answers_no_base_and_status_answers_free()
     {
         using var home = new ScenarioHome("archive-run-nobase");
+        Assert.SkipWhen(Environment.IsPrivilegedProcess, "root (or an elevated Windows account, the CI runner's) is refused by every archive verb (81): that refusal is the row above");
 
         var run = await home.RunAsync("archive", "run", "--json");
         var status = await home.RunAsync("archive", "status", "--json");

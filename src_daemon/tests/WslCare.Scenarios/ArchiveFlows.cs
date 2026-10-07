@@ -128,6 +128,7 @@ public sealed class ArchiveFlows
     {
         using var home = new ScenarioHome("archive-windows");
         Assert.SkipUnless(home.Paths.Side == HostSide.Windows, "the Windows binary's own rules: the Windows legs");
+        Assert.SkipWhen(Environment.IsPrivilegedProcess, "an elevated Windows account is root to the archive verbs (refused, 81): the CI runner's; a normal account runs it");
         var folder = Path.Combine(home.SandboxRoot, "archive");
         Directory.CreateDirectory(folder);
 
