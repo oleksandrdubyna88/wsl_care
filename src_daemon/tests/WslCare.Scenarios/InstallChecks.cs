@@ -7,12 +7,13 @@ using WslCare.TestSupport;
 
 namespace WslCare.Scenarios;
 
-/// <summary>What every <c>Install*Flows</c> class checks the same way: the Linux-only skip, an install's success or the
-/// step it failed at, an untouched prefix, and the verifying <c>gh</c> calls.</summary>
+/// <summary>What every <c>Install*Flows</c> class checks the same way: the Linux-only skip (also the scripted clock's tests',
+/// the installer's harness), an install's success or the step it failed at, an untouched prefix, and the verifying <c>gh</c>
+/// calls.</summary>
 [SupportedOSPlatform("linux")]
 internal static class InstallChecks
 {
-    internal const string LinuxOnly = "install.sh is POSIX sh over GNU coreutils and tar: covered on the Linux legs (and by hand in WSL)";
+    internal const string LinuxOnly = "install.sh and its harness (the scripted clock on its PATH) are POSIX sh over GNU coreutils and tar: covered on the Linux legs (and by hand in WSL)";
 
     internal static readonly string[] EnableOurUnits = ["enable", "--now", "wsl-care.timer", "wsl-care-events.service"];
 

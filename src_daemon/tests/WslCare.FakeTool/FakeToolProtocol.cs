@@ -50,6 +50,10 @@ public sealed record FakeCall(string Tool, IReadOnlyList<string> Argv)
     /// environment, with their values; a variable absent from the call is absent here.</summary>
     public IReadOnlyDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
 
+    /// <summary>The process id of the fake that answered — so a test can look for that process after the harness gave up on it
+    /// (0 in a log written before the field existed).</summary>
+    public int ProcessId { get; init; }
+
     public string Display => Argv.Count == 0 ? Tool : $"{Tool} {string.Join(' ', Argv)}";
 
     public bool Matches(string tool, IReadOnlyList<string> argv) =>
@@ -109,6 +113,7 @@ public static class FakeCallLog
 
             json.WriteEndArray();
             json.WriteString("location", call.Location);
+            json.WriteNumber("pid", call.ProcessId);
             json.WriteStartObject("env");
             foreach (var (name, value) in call.Environment)
             {
@@ -132,6 +137,7 @@ public static class FakeCallLog
         {
             Location = root.TryGetProperty("location", out var location) ? location.GetString() ?? string.Empty : string.Empty,
             Environment = root.TryGetProperty("env", out var env) ? ReadEnvironment(env) : new Dictionary<string, string>(StringComparer.Ordinal),
+            ProcessId = root.TryGetProperty("pid", out var pid) ? pid.GetInt32() : 0,
         };
     }
 

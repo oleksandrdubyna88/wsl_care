@@ -54,7 +54,9 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   - `tests/WslCare.TestSupport` — the doubles and fixtures the test projects share (a temp root, a
     frozen clock, the recording command runner, a sandboxed host, a directory-link maker, and
     `ChildProcess` — the one launcher for a built executable: argv list, a ceiling or a progress wait
-    (`ProgressWait`: killed after a silence, or at a cap), tree kill).
+    (`ProgressWait`: killed after a silence, or at a cap), tree kill — the killed child awaited before the timeout is
+    raised, and an output still held open 5 s after the child's exit ended as a named timeout; and a manual clock whose
+    timers fire only when a test advances it, held to the system timer's contract by its own tests).
   - `tests/WslCare.Core.Tests`, `tests/WslCare.Cli.Tests` — xUnit v3 on Microsoft Testing Platform,
     run as executables.
   - `tests/fixtures/procfs/ubuntu-2026-10-02` — the procfs / cgroup tree CAPTURED from WSL `Ubuntu` on

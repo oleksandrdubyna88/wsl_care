@@ -87,7 +87,7 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
     {
         while (NextDue() is { } due)
         {
-            due.Callback(due.State);
+            due.Fire();
         }
     }
 
@@ -110,16 +110,29 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
                 due.DueAt += due.Period;
             }
 
+            due.Begin();
             return due;
         }
     }
 
     /// <summary>A timer of a clock that <see cref="DrivesTimers"/>: its due time is on the clock's monotonic reading.</summary>
+    /// <remarks>Held to what the system's timer was SEEN to do (<c>ManualTimeProviderTests</c> runs the contract over both): a
+    /// time below -1 ms or above the longest the system takes is refused; <see cref="Change"/> after disposal schedules nothing
+    /// and answers false — <see cref="PeriodicTimer"/> reads that false as "disposed"; and <see cref="DisposeAsync"/> completes
+    /// only once a callback already picked to fire has returned. A callback counts as picked from the moment an
+    /// <see cref="Advance"/> selects it under the clock's lock, so a disposal between the pick and the call still waits for it
+    /// (the retro round over PR #20, 2026-10-07).</remarks>
     private sealed class ManualTimer(ManualTimeProvider clock, TimerCallback callback, object? state) : ITimer
     {
-        public TimerCallback Callback { get; } = callback;
+        /// <summary>The longest due time or period the system's timer takes: 0xfffffffe ms.</summary>
+        private static readonly TimeSpan Longest = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
 
-        public object? State { get; } = state;
+        private bool _disposed;
+
+        /// <summary>Callbacks picked to fire and not yet returned, and what <see cref="DisposeAsync"/> waits on — both under the
+        /// clock's lock.</summary>
+        private int _running;
+        private TaskCompletionSource _idle = Idle();
 
         public TimeSpan DueAt { get; set; }
 
@@ -127,18 +140,64 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
 
         public bool Change(TimeSpan dueTime, TimeSpan period)
         {
+            Refuse(dueTime, nameof(dueTime));
+            Refuse(period, nameof(period));
             lock (clock._gate)
             {
-                clock._timers.Remove(this);
-                Period = period;
-                if (dueTime == Timeout.InfiniteTimeSpan)
-                {
-                    return true;
-                }
+                return !_disposed && Reschedule(dueTime, period);
+            }
+        }
 
+        private static void Refuse(TimeSpan time, string name)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(time, Timeout.InfiniteTimeSpan, name);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(time, Longest, name);
+        }
+
+        /// <summary>Under the clock's lock: due <paramref name="dueTime"/> from now, or not scheduled when it is infinite.</summary>
+        private bool Reschedule(TimeSpan dueTime, TimeSpan period)
+        {
+            clock._timers.Remove(this);
+            Period = period;
+            if (dueTime != Timeout.InfiniteTimeSpan)
+            {
                 DueAt = clock._monotonic + dueTime;
                 clock._timers.Add(this);
-                return true;
+            }
+
+            return true;
+        }
+
+        /// <summary>Under the clock's lock, when an advance picks this timer to fire.</summary>
+        public void Begin()
+        {
+            if (_running++ == 0)
+            {
+                _idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            }
+        }
+
+        /// <summary>The callback, on the advancing thread and outside the lock (it may make or change a timer).</summary>
+        public void Fire()
+        {
+            try
+            {
+                callback(state);
+            }
+            finally
+            {
+                End();
+            }
+        }
+
+        private void End()
+        {
+            lock (clock._gate)
+            {
+                if (--_running == 0)
+                {
+                    _idle.TrySetResult();
+                }
             }
         }
 
@@ -146,14 +205,30 @@ public sealed class ManualTimeProvider(DateTimeOffset start) : TimeProvider
         {
             lock (clock._gate)
             {
-                clock._timers.Remove(this);
+                Retire();
             }
         }
 
         public ValueTask DisposeAsync()
         {
-            Dispose();
-            return ValueTask.CompletedTask;
+            lock (clock._gate)
+            {
+                Retire();
+                return new ValueTask(_idle.Task);
+            }
+        }
+
+        private void Retire()
+        {
+            _disposed = true;
+            clock._timers.Remove(this);
+        }
+
+        private static TaskCompletionSource Idle()
+        {
+            var idle = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            idle.SetResult();
+            return idle;
         }
     }
 
