@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 
 using WslCare.Core.Actions.Engine;
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
 using WslCare.Core.Json;
@@ -38,7 +39,9 @@ public static class SideLease
     private const string Sides = "sides";
     private const int MaxLeaseBytes = 4096;
 
-    public static LeaseTaken Take(IArchiveFiles files, string baseFolder, string side, LeaseRecord me, IProcessTable processes)
+    /// <param name="settle">How the settle wait over an EMPTY lease waits (<see cref="Thread.Sleep(TimeSpan)"/> when omitted); a test
+    /// records it or writes the lease meanwhile.</param>
+    public static LeaseTaken Take(IArchiveFiles files, string baseFolder, string side, LeaseRecord me, IProcessTable processes, Action<TimeSpan>? settle = null)
     {
         var scope = new DeletionScope(baseFolder, "A13");
         if (files.OpenFolderBeneath(baseFolder, [Folder, Sides], scope) is not FolderBeneath.Ready { Folder: var folder })
@@ -48,7 +51,7 @@ public static class SideLease
 
         var name = side + ".lease";
         var first = Create(files, folder, name, me, scope, note: string.Empty);
-        return first is LeaseTaken.Refused { Why: ExistsMark } ? TakeOver(files, folder, name, me, scope, processes) : Disposed(first, folder);
+        return first is LeaseTaken.Refused { Why: ExistsMark } ? TakeOver(files, folder, name, me, scope, processes, settle ?? Thread.Sleep) : Disposed(first, folder);
     }
 
     /// <summary>The lease removed — only the file this run created.</summary>
@@ -81,16 +84,16 @@ public static class SideLease
         }
     }
 
-    private static LeaseTaken TakeOver(IArchiveFiles files, BeneathFolder folder, string name, LeaseRecord me, DeletionScope scope, IProcessTable processes)
+    private static LeaseTaken TakeOver(IArchiveFiles files, BeneathFolder folder, string name, LeaseRecord me, DeletionScope scope, IProcessTable processes, Action<TimeSpan> settle)
     {
-        if (files.ReadCapped(folder, name, MaxLeaseBytes) is not FileReadResult.Content { Bytes: var bytes })
+        if (Settled(files, folder, name, settle) is not FileReadResult.Content { Bytes: var bytes })
         {
             folder.Dispose();
             return new LeaseTaken.Refused($"the side's lease {name} exists and could not be read; nothing was done");
         }
 
         var holder = Parsed(bytes);
-        var why = HolderLives(holder, me, processes);
+        var why = bytes.Length == 0 ? string.Empty : HolderLives(holder, me, processes);
         if (why.Length > 0)
         {
             folder.Dispose();
@@ -99,9 +102,27 @@ public static class SideLease
 
         var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
         return files.RemoveIfUnchanged(folder, name, sha, scope) is VerifiedRemoval.Removed or VerifiedRemoval.Gone
-            ? Disposed(Create(files, folder, name, me, scope, $"the lease of a dead run ({Describe(holder)}) was taken over"), folder)
+            ? Disposed(Create(files, folder, name, me, scope, TakenOver(bytes, holder)), folder)
             : Disposed(new LeaseTaken.Refused("the side's lease changed while it was taken over; nothing was done"), folder);
     }
+
+    /// <summary>The lease's bytes — read AGAIN after the settle wait when they were empty: the creator writes its record right after
+    /// its exclusive create, so a lease still empty is a run that died between the two (a kill at that point, seen in WSL).</summary>
+    private static FileReadResult Settled(IArchiveFiles files, BeneathFolder folder, string name, Action<TimeSpan> settle)
+    {
+        var first = files.ReadCapped(folder, name, MaxLeaseBytes);
+        if (first is not FileReadResult.Content { Bytes.Length: 0 })
+        {
+            return first;
+        }
+
+        settle(TimeSpan.FromMilliseconds(Tuning.Current.Int(ConfigKeys.Archive.LeaseSettleMilliseconds)));
+        return files.ReadCapped(folder, name, MaxLeaseBytes);
+    }
+
+    private static string TakenOver(byte[] bytes, LeaseRecord? holder) => bytes.Length == 0
+        ? "an empty lease (its run stopped between creating and writing it) was taken over"
+        : $"the lease of a dead run ({Describe(holder)}) was taken over";
 
     /// <summary>Empty when the holder is dead on THIS host and boot; why the run must not start otherwise.</summary>
     public static string HolderLives(LeaseRecord? holder, LeaseRecord me, IProcessTable processes) =>

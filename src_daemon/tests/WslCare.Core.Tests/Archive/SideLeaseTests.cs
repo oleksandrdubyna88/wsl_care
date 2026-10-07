@@ -5,6 +5,7 @@ using FluentAssertions;
 
 using WslCare.Core.Actions.Engine;
 using WslCare.Core.Archive;
+using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Json;
 using WslCare.TestSupport;
@@ -84,6 +85,50 @@ public sealed class SideLeaseTests : IDisposable
 
         Planted(Me with { BootId = "boot-0", Pid = 7, RunId = "r0" });
         Take(new ScriptedProcessTable { [7] = new ProcessLookup.Alive(Since) { StartTicks = 1000 } }).Should().BeOfType<LeaseTaken.Held>("a lease of an earlier boot is dead whatever pid it names");
+    }
+
+    /// <summary>A run killed between the lease's exclusive create and its write (seen in WSL: the built child killed at its first
+    /// <c>ExclusiveCreated</c>) leaves an EMPTY lease; once it is still empty after the settle wait its creator is dead, and the
+    /// lease is taken over — never "remove it by hand" for ever after.</summary>
+    [Fact]
+    public void A_lease_its_creator_left_empty_is_taken_over_after_the_settle_wait()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(LeaseFile)!);
+        File.WriteAllBytes(LeaseFile, []);
+        var waited = new List<TimeSpan>();
+
+        var held = SideLease.Take(_sandbox.Files, On(Base), Side, Me, new ScriptedProcessTable(), waited.Add).Should().BeOfType<LeaseTaken.Held>().Subject;
+
+        held.Note.Should().Contain("empty");
+        waited.Should().Equal([TimeSpan.FromMilliseconds(Tuning.Current.Int(ConfigKeys.Archive.LeaseSettleMilliseconds))]);
+        File.ReadAllText(LeaseFile).Should().Contain("\"runId\":\"r2\"");
+        SideLease.Release(_sandbox.Files, held, On(Base));
+    }
+
+    /// <summary>The creator was alive and only slow: it wrote the lease during the settle wait — the lease is then judged by what
+    /// it says, and a live holder refuses the run.</summary>
+    [Fact]
+    public void An_empty_lease_its_live_creator_writes_during_the_settle_wait_refuses_the_run()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(LeaseFile)!);
+        File.WriteAllBytes(LeaseFile, []);
+        var processes = new ScriptedProcessTable { [7] = new ProcessLookup.Alive(Since) { StartTicks = 500 } };
+
+        var taken = SideLease.Take(_sandbox.Files, On(Base), Side, Me, processes, _ => Planted(Me with { Pid = 7, StartTicks = 500, RunId = "r1" }));
+
+        taken.Should().BeOfType<LeaseTaken.Refused>().Which.Why.Should().Contain("another archive run");
+        File.ReadAllText(LeaseFile).Should().Contain("\"runId\":\"r1\"");
+    }
+
+    /// <summary>A lease with bytes that do not parse is not a crash this code can leave behind: it stays for a person.</summary>
+    [Fact]
+    public void A_lease_whose_bytes_do_not_parse_is_left_for_a_person()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(LeaseFile)!);
+        File.WriteAllText(LeaseFile, "{ not a lease");
+
+        Take(new ScriptedProcessTable()).Should().BeOfType<LeaseTaken.Refused>().Which.Why.Should().Contain("could not be parsed");
+        File.ReadAllText(LeaseFile).Should().Be("{ not a lease");
     }
 
     /// <summary>A process table answering from a script; an unscripted pid is gone.</summary>

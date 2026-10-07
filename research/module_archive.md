@@ -100,7 +100,7 @@ C-M4 / S-M2).
 | `ArchiveIndex`, `IndexLine`, `IndexEntry` | `Archive/ArchiveIndex.cs` | the month index: one MAC'd JSON line per event, read as untrusted input, merged per `entryId` |
 | `ArchiveState`, `InflightEntry`, `InflightBook` | `Archive/ArchiveState.cs`, `Archive/ArchiveMove.cs` | the side's local state: the in-flight file (`copying` / `archived` / `removing`), `base.json`, `holder.json`, `last-run.json`, `summary.json`, `index.key` |
 | `ArchiveCopy`, `ArchiveRemove`, `ArchiveReconcile`, `MoveSteps` | `Archive/ArchiveMove.cs`, `Archive/ArchiveRemove.cs`, `Archive/ArchiveReconcile.cs` | phase 1, phase 2 (per UNIT: the transcript first), the reconcile; the protocol's own fault steps |
-| `SideLease`, `LeaseRecord` | `Archive/SideLease.cs` | one writer per side on the base: the lease file, another host refused, a dead run taken over |
+| `SideLease`, `LeaseRecord` | `Archive/SideLease.cs` | one writer per side on the base: the lease file, another host refused, a dead run taken over; an EMPTY lease (a run killed between its create and its write) read again after `archive.leaseSettleMilliseconds` and, still empty, taken over |
 | `ArchiveRun`, `ArchiveRunReport`, `ArchiveScan`, `ArchiveStatus` | `Archive/ArchiveRun.cs`, `Archive/ArchiveScan.cs`, `Archive/ArchiveStatus.cs` | one run of a side; `reconcile --scan`; the status from local state only |
 | archive permits | `Files/Deletion/DeletionPolicy.cs` | `ArchiveQuarantine`, `ArchiveRemoval`, `RestoreIntoAgentFolder`; rule `ArchiveShape`; `memory` never |
 
@@ -243,7 +243,9 @@ what a folder IS:
 - **The keys:** `archive.minRunMinutes` ≤ `archive.runBudgetMinutes`; `archive.restoreLimitMinutes` 1–59 (59); the in-flight
   file bounded by the WAITING sessions — `maxStateFileBytes` ≥ 600 B × `maxSessionsPerRun` × (⌈`removeAfterHours` /
   `timer.periodHours`⌉ + 1), each file's hash and archived path in the index only — with `maxSessionsPerRun` 1 000 and
-  `maxStateFileBytes` 8 MiB; an invalid user-layer `archive.baseFolder` is a notice, never observe-only.
+  `maxStateFileBytes` 16 MiB (8 MiB until the rebase onto main of 2026-10-07: at 8 MiB the hourly timer — 25 waiting runs — broke
+  the rule, so a machine layer asking for `timer.periodHours` 1 was refused and the daemon fell to observe-only; main's
+  `TimerCalendarTests` caught it); an invalid user-layer `archive.baseFolder` is a notice, never observe-only.
 - **Manual agents may be archived** (`Archive/ArchiveTargets.cs`, off by default): `archive.agents` takes `manual:<name>`; a named
   manual agent with a `sessionGlob` is judged by `ExtraAgentRules` at every selection and archived by its own glob under its first
   data folder.
@@ -266,7 +268,7 @@ flowchart TD
     age --> due{"older than the effective age?"}
     newest --> due
     due -- no --> younger["counted younger"]
-    due -- yes --> keepers{"keepers, in order: never-moved (memory.jsonl refused whole) · name<br/>(NTFS-illegal, reserved, trailing dot/space, invalid UTF-8, case-only twins) ·<br/>not-whole · may-be-open (a -wal present) · in-use (an open descriptor) ·<br/>agent-working-here (Claude Code's cwd is its project)"}
+    due -- yes --> keepers{"keepers, in order: git-tree (a .git entry among or above its files) · never-moved (memory.jsonl refused whole) · name<br/>(NTFS-illegal, reserved, trailing dot/space, invalid UTF-8, case-only twins) ·<br/>not-whole · may-be-open (a -wal present) · in-use (an open descriptor) ·<br/>agent-working-here (Claude Code's cwd is its project)"}
     inuse --> keepers
     keepers -- kept --> skipped["skipped, by rule (count + the first with its sentence)"]
     keepers -- none --> taken["due, oldest first (the first preview.maxItems listed)"]
@@ -277,10 +279,15 @@ flowchart TD
   `AgentSelection` (`Due`, `Skipped` with their `SkipRule`, `Younger`, `Quarantined`, the listing's `Note`). The keepers are an
   ordered array of checks (complexity ≤ 4); a unit is moved whole or not at all, so a companion folder the walk could not see
   whole (cut, unreadable, holding `memory` or another filesystem) keeps it as `not-whole`.
+- **Nothing inside a git working tree is selected** (owner rule 2026-10-07, `Archive/GitTrees.cs`): an agent folder with a `.git`
+  entry in it or in any folder above it, up to the root, selects nothing (the note names the entry); a unit with a file under a
+  `.git` name (any case), or a folder on its way that holds a `.git` entry — a folder (a clone), a FILE (a worktree's or a
+  submodule's pointer) or a link — is kept whole as `git-tree`, its neighbours untouched. Names and stats only, nothing opened.
 - **`Files/TreeWalk.cs` widened, not copied:** `TreeRules.ListFiles` makes the same walk return each counted file
   (`TreeFile(Path, Length, LastWriteUtc)` in `TreeMeasure.Measured.Listed`); every other caller's answer is unchanged.
 - **`Archive/InUse.cs`** reads `/proc` as the user (only this account's `fd` folders open — and the agents are this account's);
-  the Claude Code attribution reuses `AgentOrphans.AgentOfCommandLine` (extracted from `AgentOf`). On Windows it answers
+  the Claude Code attribution reuses `AgentProcesses.AgentOfPrograms` over the raw argv (main's one attribution, shared with A18
+  and the MCP servers since the rebase of 2026-10-07). On Windows it answers
   "not checked" with `NotOnWindowsYet` — the Restart Manager query is E9.S5.
 - **`Archive/ArchiveNames.cs`**: the name rules (`Problem`, `CaseCollision`), Claude's project-folder encoding
   (`ClaudeProjectOf`), the quarantine mark, and the side folder (`SideName`: `windows-<host>`, `wsl-<host>-<distro>`, §15r D4).

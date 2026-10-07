@@ -17,10 +17,12 @@ namespace WslCare.Core.Tests.Archive;
 /// </summary>
 public sealed class BaseFolderS1ReviewTests : IDisposable
 {
+    // The source is escaped by the kernel, the super options are printed raw (main's PR #10 retro round, O3) — this table had
+    // them escaped until the rebase of 2026-10-07, which the parser no longer decodes.
     private const string MountInfo =
         "523 504 8:96 / / rw,relatime - ext4 /dev/sdg rw,discard,errors=remount-ro,data=ordered\n" +
-        @"481 523 0:153 / /mnt/c rw,noatime - 9p C:\134 rw,aname=drvfs;path=C:\134;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=5,wfd=5" + "\n" +
-        @"482 523 0:160 / /mnt/lh rw,noatime - 9p \134\134localhost\134C$ rw,aname=drvfs;path=\134\134localhost\134C$;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=7,wfd=7" + "\n" +
+        @"481 523 0:153 / /mnt/c rw,noatime - 9p C:\134 rw,aname=drvfs;path=C:\;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=5,wfd=5" + "\n" +
+        @"482 523 0:160 / /mnt/lh rw,noatime - 9p \134\134localhost\134C$ rw,aname=drvfs;path=\\localhost\C$;uid=1000;gid=1000;symlinkroot=/mnt/,cache=0x5,access=client,msize=65536,trans=fd,rfd=7,wfd=7" + "\n" +
         "600 523 0:60 / /dev/shm rw,nosuid,nodev - tmpfs tmpfs rw\n" +
         "702 523 8:96 / /data rw,relatime - ext4 /dev/sdg rw\n" +
         "703 523 8:96 /home/me/.claude /mnt/bound rw,relatime - ext4 /dev/sdg rw\n" +

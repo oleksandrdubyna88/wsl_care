@@ -119,10 +119,11 @@
     "restoreLimitMinutes": 59,
     "maxSessionsPerRun": 1000,
     "maxIndexBytes": 67108864,
-    "maxStateFileBytes": 8388608,
+    "maxStateFileBytes": 16777216,
     "childOutputCapBytes": 1048576,
     "progressLineMaxBytes": 256,
-    "inUseScanSeconds": 20
+    "inUseScanSeconds": 20,
+    "leaseSettleMilliseconds": 2000
   },
   "idle": {
     "cpuPercent": 20,

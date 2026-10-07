@@ -3126,7 +3126,8 @@ Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and
 - **The name rules are wider than the text:** besides the NTFS characters, case-only twins and invalid UTF-8 (U+FFFD or a lone
   surrogate in the decoded name), a control character, a trailing dot or space and the reserved device names (`CON`, `PRN`,
   `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, with or without an extension) refuse a unit with the reason.
-- **Extracted, not copied:** `AgentOrphans.AgentOfCommandLine` (from `AgentOf`) attributes a `/proc` cmdline to Claude Code;
+- **Extracted, not copied:** `AgentOrphans.AgentOfCommandLine` (from `AgentOf`) attributed a `/proc` cmdline to Claude Code — since the
+  rebase of 2026-10-07 main's `AgentProcesses.AgentOfPrograms` over the raw argv does, the space-split copy gone;
   `AgentDiscovery.SessionsUnderOf` exposes the layout's folder on this side; `TreeRules.ListFiles` widens the walk.
 - **Additions:** the side folder (`ArchiveNames.SideName`, §15r D4) is in the answer already; the capability `archive.preview`;
   the golden `contracts/golden/head/archive-preview.json`; the `phase-2 candidates` of the story text are not listed yet —
@@ -3224,6 +3225,16 @@ Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and
   appending, writing a new file at the old name, deleting — 56 rows) and against the BUILT child killed by its own pid
   (`ArchiveRunFlows`, Linux legs, each point × the base gone for the next run — 28 rows). The whole-protocol property is that
   in-process theory: after every row the agent's last content is at the source or in an indexed archived copy.
+- **An EMPTY side lease is a dead run's** (found by the built-child kill rows in WSL, point `ExclusiveCreated`): a run killed between
+  the lease's exclusive create and its write left an empty lease that refused every later run "by hand". The lease is now read again
+  after `archive.leaseSettleMilliseconds` (2 000, machine-only, higher is safer) and, still empty, taken over through
+  `RemoveIfUnchanged`; a lease written during the wait is judged by what it says; bytes that do not parse still wait for a person.
+- **Nothing inside a git working tree is ever selected** (owner rule 2026-10-07; `Archive/GitTrees.cs`): an agent folder with a
+  `.git` entry in it or in any folder above it up to the root selects nothing (a note names the entry); a unit with a file under a
+  `.git` name, or a folder on its way holding a `.git` entry (a folder, a worktree's `.git` FILE, a link), is kept whole under the
+  new skip rule `git-tree`. Red first: every row was `Due` before the rule.
+- **`archive.maxStateFileBytes` defaults to 16 MiB** (was 8 MiB): main's `TimerCalendarTests` showed the hourly timer refused under
+  the defaults by the in-flight rule (25 waiting runs × 1 000 × 600 B), which made a machine layer asking for it observe-only.
 - **Not built:** the 1 GiB sparse session (its cost on CI; the streaming copy is the same code a 120-file session exercises); the
   root-side child, its budget and its streaming are E9.S4's.
 
@@ -3315,10 +3326,11 @@ section's *as built* deviations.
 | `archive.restoreLimitMinutes` (built under this name; planned as `restoreTimeoutMinutes`, 1–1440, 240) | B | 1–59 | 59 | lower | A19's child ceiling (a button, never in a timer run) — under the least `commands.maxTimeoutHours` with the 60 s a ceiling keeps (review round C5) |
 | `archive.maxSessionsPerRun` | B | 1–100 000 | 1 000 (review round C3; was 5 000) | lower | bounds one run, its in-flight file and its answer |
 | `archive.maxIndexBytes` | B | 1 MiB–256 MiB | 64 MiB | lower | one month index read |
-| `archive.maxStateFileBytes` | B | 64 KiB–64 MiB | 8 MiB (review round C3; was 4 MiB) | lower | `inflight.json`, `summary.json`, `restored.json` |
+| `archive.maxStateFileBytes` | B | 64 KiB–64 MiB | 16 MiB (rebase onto main 2026-10-07: the hourly timer must stay valid; review round C3 had 8 MiB; was 4 MiB) | lower | `inflight.json`, `summary.json`, `restored.json` |
 | `archive.childOutputCapBytes` | B | 64 KiB–16 MiB | 1 MiB | lower | the child's answer root reads |
 | `archive.progressLineMaxBytes` | B | 64–4 096 | 256 | lower | one progress line root reads |
 | `archive.inUseScanSeconds` | B | 1–120 | 20 | lower | the `/proc/*/fd` scan / the Restart Manager query |
+| `archive.leaseSettleMilliseconds` | B | 100–30000 | 2000 | higher | an EMPTY side lease read again after it (E9.S2b: a run killed between the lease's create and its write) |
 
 Coupled rules (`NumberRules`, a violation refuses the layer naming the keys, held per layer as today):
 ⌈`archive.removeAfterHours` / 24⌉ + `archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays`;

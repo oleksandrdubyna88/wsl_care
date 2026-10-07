@@ -2452,7 +2452,8 @@ kill point.
 | an earlier run's copy with the same bytes is reused; other bytes get a new name (never replaced) | `A_copy_an_earlier_run_left_with_the_same_bytes_is_reused_and_other_bytes_get_a_new_name` |
 | shapes: a 0-byte transcript, 121 files in one session; a `restored` entry never removed; a line this side did not sign never acted on | `ArchiveProtocolTests.Shapes.cs` (4) |
 | the index: an entry's events merged with its files; a torn, malformed or hostile line skipped and counted; an unsigned line reads unverified; the entry id is 16 hex of side, agent, key and hashes | `Archive/ArchiveIndexTests` (4) |
-| the side lease: taken and released; another host's refuses; a live run of this host refuses; a dead run of this host and boot, or an earlier boot, taken over | `Archive/SideLeaseTests` (4) |
+| the side lease: taken and released; another host's refuses; a live run of this host refuses; a dead run of this host and boot, or an earlier boot, taken over; an EMPTY lease (a run killed between its create and its write) read again after `archive.leaseSettleMilliseconds` and taken over, one its live creator wrote meanwhile judged by what it says; bytes that do not parse left for a person | `Archive/SideLeaseTests` (7) |
+| owner rule 2026-10-07 — **nothing inside a git working tree is selected**: a session with a `.git` folder, a `.git` file (a worktree) or a `.GIT` folder among its files; a session whose project folder holds a `.git` folder or file (its neighbour still due); an agent folder below a `.git` entry (in the home, or at the root) selects nothing and says which | `Archive/SelectionTests.GitTrees.cs` (8 rows) |
 | the run: no base → `no-base`, nothing touched; a refused base stops before any copy; a base whose recorded mount is gone is never written; a locked side → `busy`; an unreachable base stops and defers the reconcile; a full or read-only base stops; one run copies, a run a day later removes; a run cut by its budget leaves only whole sessions | `Archive/ArchiveRunTests` (8) |
 | the built child: root refused with its own exit code; `no-base` and a free `status`; a full cycle; **a run killed (`WSL_CARE_TEST_ARCHIVE_KILL`, honoured only under `WSL_CARE_ROOT`) at each point, the base present or gone, is finished by the next runs and loses nothing**; the scan re-indexes a copy no line names and touches nothing at the source | `WslCare.Scenarios/ArchiveRunFlows` (5; the kill theory 28 rows; Linux only — a Windows home has no WSL side) |
 | the answers' shapes | goldens `archive-run.json`, `archive-status.json` (`GoldenContracts`) |
@@ -2464,15 +2465,35 @@ copy expected the pre-crash bytes at the source — the invariant is now *the la
 supersedes the archived prefix; a delete releases it); an orphaned quarantine name whose original was taken again stayed aside
 forever (now removed only when equal to an indexed copy — `SplitRemoved`); a resumed removal with a damaged copy closed as
 `split` (`Resume` now re-hashes the copies first and renames back). The rest of the protocol tests were written alongside the
-code; the teeth below are what proves each guards its line.
+code; the teeth below are what proves each guards its line. **The empty lease** was found by the built-child kill rows in WSL
+(point `ExclusiveCreated`, base present and gone): `Expected finishing.Exit to be 0 … "outcome":"refused","stop":"the side's
+lease exists and could not be parsed; remove it by hand…"` — red again in-process before the settle wait (`Expected type to be
+…LeaseTaken+Held, but found …LeaseTaken+Refused`, and the live-creator row naming *could not be parsed*). **The git-tree rule**:
+all 8 rows red before it (`Expected claude.Due to be empty …, but found at least one item`; the project row `… contains 1 item(s)
+too many`) — the guarantee did NOT already hold.
 **Teeth, Windows** (each line broken, the archive namespace run, the file restored byte-identical — sha256 compared — and a
 rebuild at the end): the read-back never compared — 1 red; phase 2 never re-hashes the copies — 1; the quarantine check skipped
 — 1 (GREEN at first: the post-commit per-file check shadowed it, since every test changed the TRANSCRIPT; the companion test
 was added); a restored entry removed — 1; an unverified line trusted — 1; C-3 per file again — 1; another host leased over —
 1; a changed mount accepted — 1; orphans never renamed back — 5 (the orphan test and kill rows); an unindexed copying entry
-kept — 6; the budget never stops a run — 1. **Teeth, Linux:** LINUX_TEETH_PENDING
+kept — 6; the budget never stops a run — 1; a working tree on the way ignored — 2; a working tree above the agent folder
+ignored — 3; a `.git` FILE not seen — 2; an empty lease never read again — 2; a `.git` name among the files ignored — GREEN on
+Windows (NTFS finds `.GIT` when asked for `.git`, so the folder check shadows it; its row has teeth on Linux only). **Teeth,
+Linux** (a NEW `/tmp` copy, `nice 19`, nothing deleted — the 2026-10-07 incident rules): all 16 red — the same counts as
+Windows for the eleven protocol rows (the quarantine check 1, with the companion test), the `.git` name 1 (the `.GIT` row: ext4
+does not fold case), a working tree on the way 2, above the agent folder 3, a `.git` FILE 2, the empty lease 2.
 **Not break-it checked:** the heartbeat timer of `archive run` (a liveness line, no protocol state rests on it) and the
 network-share flush (owner interim ruling: nothing is written to the real share — unmeasured, the refuse-to-create stays).
+
+**The rebase onto main (2026-10-07)** met main's tests red twice. `Config/TimerCalendarTests.The_accepted_periods_are_the_divisors_of_a_day_and_include_the_whole_day`
+(main, PR #34): `Expected … {1, 2, 3, 4, 6, 8, 12, 24} …, but {2, 3, 4, 6, 8, 12, 24} contains 1 item(s) less` — the archive's
+in-flight rule (E9.S0 review C3) refused an hourly timer under the defaults (25 waiting runs × 1 000 × 600 B > 8 MiB), so a
+machine layer asking for it fell to observe-only; `archive.maxStateFileBytes` defaults to 16 MiB now and
+`Config/ArchiveKeysTests`' row names 8 MiB explicitly. `Archive/BaseFolderS1ReviewTests` (6 rows): its mount table escaped the
+super options, which main's parser (PR #10 retro O3: the kernel prints them raw) no longer decodes — `Expected Judge(…).Rule to
+be "overlap" … but "" has a length of 0`; the table now holds what the kernel prints. `MountTable` took main's parser change
+(`WindowsSystemDrive`'s parser had been extracted into it by E9.S0), and the in-use check names an agent through main's
+`AgentProcesses` over the raw argv (`AgentOfPrograms`) instead of a second space-split copy.
 
 ## The extension (`src_vs_code/`)
 

@@ -21,7 +21,10 @@ public static class SkipRule
     public const string NeverMoved = "never-moved";
     public const string NotWhole = "not-whole";
 
-    public static IReadOnlyList<string> All { get; } = [InUse, AgentWorkingHere, MayBeOpen, Name, NeverMoved, NotWhole];
+    /// <summary>Owner rule 2026-10-07: a file of the unit lies inside a git working tree or a <c>.git</c> folder.</summary>
+    public const string GitTree = "git-tree";
+
+    public static IReadOnlyList<string> All { get; } = [InUse, AgentWorkingHere, MayBeOpen, Name, NeverMoved, NotWhole, GitTree];
 }
 
 /// <summary>One unit the archive would move as a whole (plan §15r D2.1): a session with its companions, or a file of its own.</summary>
@@ -112,6 +115,7 @@ public static class Selection
     private static string Placed(SelectionInput input, AgentEntry entry, string under) =>
         under.Length == 0 ? $"{entry.Name} keeps no session layout on this side"
         : !input.Files.DirectoryExists(under) ? $"{under} does not exist"
+        : GitTrees.Around(input.Files, under) is { Length: > 0 } repository ? $"{under} lies inside a git working tree ({repository} exists); nothing of it is archived"
         : AgentWalk.PlaceProblem(input.Files, input.Paths.Home, under);
 
     private static AgentSelection Listed(SelectionInput input, AgentEntry entry, string under, RetentionFound retention, int age)
@@ -237,6 +241,7 @@ public static class Selection
     /// <summary>The rules that keep a due unit where it is, in order.</summary>
     private static readonly Func<UnitCheck, RuleVerdict>[] Keepers =
     [
+        c => GitTree(c.Input.Files, c.Under, c.Files),
         c => NeverMoved(c.Entry, c.Files, c.Companions),
         c => NameProblem(c.Files),
         c => RuleVerdict.When(c.GatherNote.Length > 0, SkipRule.NotWhole, () => $"not every file of it was seen ({c.GatherNote}); a unit moves whole or not at all"),
@@ -252,6 +257,14 @@ public static class Selection
         RuleVerdict.Refuses kept => (kept.Rule, kept.Why),
         _ => (string.Empty, string.Empty),
     };
+
+    /// <summary>Owner rule 2026-10-07: a unit with a file in a `.git` folder, a `.git` file, or a folder on its way that holds a
+    /// `.git` entry (the project folder is a working tree) is kept WHOLE — nothing inside a repository is ever selected.</summary>
+    private static RuleVerdict GitTree(IFileSystem files, string under, IReadOnlyList<UnitFile> unit)
+    {
+        var found = unit.Select(f => f.Relative).FirstOrDefault(GitTrees.NamesGit) ?? GitTrees.Between(files, under, unit.Select(f => f.Relative));
+        return RuleVerdict.When(found.Length > 0, SkipRule.GitTree, () => $"{found} is part of a git repository; nothing inside a working tree is archived");
+    }
 
     /// <summary>Plan §15q H2, §15r: a unit any of whose files — or a companion it names, present or not — lies at or under a name that
     /// never moves is refused WHOLE (a session named <c>memory.jsonl</c> names the companion <c>projects/&lt;p&gt;/memory</c>).</summary>

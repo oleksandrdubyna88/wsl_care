@@ -16,7 +16,7 @@ namespace WslCare.Core.Tests.Archive;
 /// rule — when open, when Claude Code works in its project, when a database's <c>-wal</c> exists, when a name cannot be held on
 /// NTFS, when it names what never moves, when not every file of it was seen. Never selected: what the layout does not name.
 /// </summary>
-public sealed class SelectionTests : IDisposable
+public sealed partial class SelectionTests : IDisposable
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 6, 12, 0, 0, TimeSpan.Zero);
 

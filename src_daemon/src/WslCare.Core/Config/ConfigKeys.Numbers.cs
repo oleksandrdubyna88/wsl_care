@@ -680,7 +680,8 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey MaxIndexBytes = new("archive.maxIndexBytes", 1048576, 268435456) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
         /// <summary>The archive's local state files (the in-flight file, the summary, the restored map) — the in-flight file holds
-        /// the sessions of every run still waiting for its removal (E9.S0 review round C3). Default 8388608.</summary>
+        /// the sessions of every run still waiting for its removal (E9.S0 review round C3); 16 MiB so the hourly timer (25 waiting
+        /// runs × 1000 × 600 B) stays valid under the defaults. Default 16777216.</summary>
         public static readonly ConfigKey.IntKey MaxStateFileBytes = new("archive.maxStateFileBytes", 65536, 67108864) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
         /// <summary>The archive child's answer root reads. Default 1048576.</summary>
@@ -691,6 +692,11 @@ public static partial class ConfigKeys
 
         /// <summary>The open-file scan (<c>/proc/*/fd</c>) or the Restart Manager query of one run. Default 20.</summary>
         public static readonly ConfigKey.IntKey InUseScanSeconds = new("archive.inUseScanSeconds", 1, 120) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>An EMPTY side lease is read again after this wait: a creator that is alive writes it right after its exclusive
+        /// create, so one still empty is a run that died in between and is taken over (plan §15r D4, E9.S2b). Longer is safer.
+        /// Default 2000.</summary>
+        public static readonly ConfigKey.IntKey LeaseSettleMilliseconds = new("archive.leaseSettleMilliseconds", 100, 30000) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
     }
 
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
@@ -872,5 +878,6 @@ public static partial class ConfigKeys
         Archive.ChildOutputCapBytes,
         Archive.ProgressLineMaxBytes,
         Archive.InUseScanSeconds,
+        Archive.LeaseSettleMilliseconds,
     ];
 }
