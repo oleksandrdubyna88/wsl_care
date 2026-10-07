@@ -1119,7 +1119,7 @@ Order: the daemon first (additive; nothing breaks in between). Disjoint otherwis
 `Actions/Engine/RequestSweep.cs`, `Actions/Engine/RunningSweep.cs`, `Records/RunReconcile.cs` + `Records/RunDetailStore.cs`
 (the head's kind), `Cli/Commands/DetachedRuns.cs`, `History/LogsReports.cs`, `History/RunLogs.cs`; the tests constructing
 `RunRecord` / `RunningFile` (mechanical); `contracts/golden/head/*` only where the wire changed; `README.md` (*Logs and
-runs*), `research/architecture.md` (the run-records seam row, *The daemon read contract*), `research/module_tests.md`, this
+runs*), `research/architecture.md` (the run-records seam row), `research/architecture-daemon-e6.md` (*The daemon read contract*, moved there on 2026-10-06), `research/module_tests.md`, this
 section and the §6 table's history row.
 
 **Build order.** 1 the RED test (below) · 2 `RunKind` and the positional members, the build fixed site by site · 3 the
@@ -1190,7 +1190,7 @@ reverting it), green, and its load-bearing line broken and seen red again — th
 | O2 (own) | no writer-side test that `act --timer` stays `act` in `running.json` | **Fixed** — `ActionEngineTests.An_act_names_itself_act_…` over Cli / Manual / Timer, running.json read while the act runs and the line |
 | O3 (own) | the "cut off before it started" ending never called `DetachedRuns.CutOff` | **Fixed** — the reachable path is driven: an ACT request cut off inside its request sweep → ONE `act` line, the asked ids interrupted (`FullCheckLineTests.An_act_request_cut_off_inside_its_request_sweep_…`); the full check's shape of that line stays an `Ending` built through the same expression (no path reaches it from outside) |
 | O4 (own) | the follower check ran in the weak direction and nothing froze the reason text on disk | **Fixed** — `ContractFilesTests.The_reasons_already_on_disk_are_frozen` pins the three reasons (and the contract's list) to literals ("these strings are on disk; a change is a contract break"); the companion asserts the reasons AS WRITTEN start with the follower's prefixes |
-| O5 (own) | the downgrade residual understated | **Documented** — decision 6 and `research/architecture.md` state both halves (an unreadable `running.json` blocks every act / timer pass until removed by hand; an unparseable line is "no line" to every history-first check) |
+| O5 (own) | the downgrade residual understated | **Documented** — decision 6 and `research/architecture-daemon-e6.md` (moved from `architecture.md` on 2026-10-06) state both halves (an unreadable `running.json` blocks every act / timer pass until removed by hand; an unparseable line is "no line" to every history-first check) |
 
 ### 15q. E7 split and design — AI-agent discovery, settings ↔ config, Add CLI path
 
@@ -2433,6 +2433,17 @@ F2 (log retention under observe-only) was real at the merge and is already fixed
 **Owner question (PR #4):** the lossy-repair fix chose to keep §15a #1's promise that `config set` repairs a broken layer and
 to pin `dryRun = true`; the consultant preferred refusing a lossy repair outright (the person edits the file, or a future
 explicit `config repair`). Pinning keeps the panel able to repair; refusing never changes a setting the person did not name.
+
+### 17d. Retro gate over PR #5 (E2) — coai codex, 2026-10-06
+
+Plan round session `b69d827b` (1/1 reviewer, `proceed`, 2 findings, both rejected: the engine-restart mark was measured and
+its residuals are documented in `DockerEngineStart.cs`; `volume-seen.json` holds only anonymous volumes, whose names are
+random 64-hex ids). Code round (4/4 reviewers, `proceed`, 4 findings: 1 accepted, 3 rejected — the module docs live as
+sections of `research/architecture.md` since E1, an owner question; a `CliHost` test seam is no shipped defect; the
+inspect template emits only a mount's type and name, so no bind source is ever captured). The consultation for this round
+is OWED — the shared consult cap was reached. Fixed in `fix/wc-retro-pr5-collect-progress`: `collect` logs that it is
+measuring before the first tool is asked anything (a full run said nothing for minutes). The fix's own plan round narrowed
+the promise: the line says the run started; a slow stage may stay silent until it ends or reaches its ceiling.
 
 ### 17f. Retro gate over PR #17 (E7, the daemon half) — coai codex, 2026-10-06
 

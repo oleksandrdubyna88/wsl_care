@@ -17,6 +17,14 @@ export const SUPPORTED_SCHEMA: readonly number[] = [1];
 
 export const MIN_DAEMON_FOR_RENDER = '0.1.0';
 
+/**
+ * The daemon release *Install daemon* installs — a value of its own, at or above `MIN_DAEMON_FOR_RENDER` (2026-10-06):
+ * daemon 0.1.0's act unit carries the CollectMode defect (fixed in 0.1.1, first published as 0.1.2), so a NEW install
+ * gets 0.1.2, while an installed 0.1.0 still renders. The release guard requires it published and stamped as verified;
+ * min-daemon.json carries it as `installDaemon`.
+ */
+export const INSTALL_DAEMON = '0.1.2';
+
 const MINIMUM: readonly [number, number, number] = [0, 1, 0];
 
 const VERSION = /^(\d+)\.(\d+)\.(\d+)(?:\+[0-9A-Za-z.-]+)?$/;

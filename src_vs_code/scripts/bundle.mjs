@@ -11,8 +11,9 @@
  *   - no source map and no sourcesContent — nothing of the sources or this machine's paths ships;
  *   - not minified — the bundle scan reads it, and a reader of the .vsix can too.
  *
- * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>" }`, the minimum daemon this build renders and
- * installs (E5 code round #2/#5). The value is read by RUNNING src/client/handshake.ts (esbuild's transform, then a
+ * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>", "installDaemon": "<x.y.z>" }`, the minimum
+ * daemon this build renders and the release its *Install daemon* installs (E5 code round #2/#5; two values since
+ * 2026-10-06). The value is read by RUNNING src/client/handshake.ts (esbuild's transform, then a
  * bounded node:vm with an empty context — the module imports types only), never with a pattern over its text.
  * scripts/check-vsix.mjs compares it with the compiled constant and with the checked-in src_vs_code/min-daemon.json —
  * the artefact the release guard reads at the tag, with a JSON parser, instead of parsing TypeScript.
@@ -34,18 +35,21 @@ if (typeof version !== 'string' || !RELEASE_VERSION.test(version)) {
   process.exit(1);
 }
 
-/** MIN_DAEMON_FOR_RENDER as the module itself exports it — transformed by esbuild and run, not matched as text. */
-function minDaemonForRender() {
+/** MIN_DAEMON_FOR_RENDER and INSTALL_DAEMON as the module itself exports them — transformed by esbuild and run, not matched as text. */
+function daemonVersions() {
   const { code } = transformSync(readFileSync(join(ROOT, 'src', 'client', 'handshake.ts'), 'utf8'), { loader: 'ts', format: 'cjs', target: 'node18' });
   const module = { exports: {} };
   runInNewContext(code, { module, exports: module.exports }, { timeout: 5000 });
-  const value = module.exports.MIN_DAEMON_FOR_RENDER;
-  if (typeof value !== 'string' || !RELEASE_VERSION.test(value)) {
-    console.error(`bundle: src/client/handshake.ts exports no x.y.z MIN_DAEMON_FOR_RENDER (${String(value)})`);
-    process.exit(1);
-  }
+  const read = (name) => {
+    const value = module.exports[name];
+    if (typeof value !== 'string' || !RELEASE_VERSION.test(value)) {
+      console.error(`bundle: src/client/handshake.ts exports no x.y.z ${name} (${String(value)})`);
+      process.exit(1);
+    }
+    return value;
+  };
 
-  return value;
+  return { minDaemonForRender: read('MIN_DAEMON_FOR_RENDER'), installDaemon: read('INSTALL_DAEMON') };
 }
 
 buildSync({
@@ -63,7 +67,7 @@ buildSync({
   define: { WSL_CARE_BUILD_STAMP: JSON.stringify(`wsl-care-build ${version}`) },
 });
 
-const minDaemon = minDaemonForRender();
+const daemons = daemonVersions();
 mkdirSync(join(ROOT, 'dist'), { recursive: true });
-writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify({ minDaemonForRender: minDaemon }, null, 2)}\n`);
-console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says ${minDaemon}`);
+writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify(daemons, null, 2)}\n`);
+console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says render ${daemons.minDaemonForRender}, install ${daemons.installDaemon}`);
