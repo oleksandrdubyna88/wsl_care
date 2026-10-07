@@ -38,7 +38,7 @@ function contract(): readonly ContractField[] {
 
 test('the reader is held EQUAL to contracts/status-limits.json: every field the daemon publishes, its range and its default', () => {
   const fields = contract();
-  assert.deepEqual(fields.map((f) => f.name), ['historyRetentionDays', 'requestFutureSkewSeconds', 'requestGraceSeconds', 'maxShownNames', 'unitStopSeconds', 'drainGraceMilliseconds'], 'the known instances');
+  assert.deepEqual(fields.map((f) => f.name), ['historyRetentionDays', 'requestFutureSkewSeconds', 'requestGraceSeconds', 'maxShownNames', 'unitStopSeconds', 'drainGraceMilliseconds', 'mcpCpuWindowMilliseconds', 'mcpLogListMilliseconds'], 'the known instances');
   assert.deepEqual(LIMIT_FIELDS.map((f) => ({ name: f.name, min: f.min, max: f.max, default: f.default })), fields.map((f) => ({ name: f.name, min: f.min, max: f.max, default: f.default })));
 });
 
@@ -51,6 +51,8 @@ test('no `limits` in the answer (every daemon before E7.S2c): every field its co
     maxShownNames: defaults.maxShownNames,
     unitStopSeconds: defaults.unitStopSeconds,
     drainGraceMs: defaults.drainGraceMilliseconds,
+    mcpCpuWindowMs: defaults.mcpCpuWindowMilliseconds,
+    mcpLogListMs: defaults.mcpLogListMilliseconds,
   });
   for (const body of [undefined, {}, { limits: null }, { limits: 'x' }, { limits: [] }]) {
     assert.deepEqual(daemonLimitsOf(body), FALLBACK_LIMITS, JSON.stringify(body));
@@ -68,8 +70,8 @@ test('each field is the daemon\'s when it is a whole number inside the contract\
       assert.deepEqual(read(bad), fallback, `${field.name} ${String(bad)}`);
     }
   }
-  assert.deepEqual(daemonLimitsOf({ limits: { historyRetentionDays: 30, requestFutureSkewSeconds: 120, unitStopSeconds: 600, drainGraceMilliseconds: 10_000, requestGraceSeconds: 300, maxShownNames: 50 } }),
-    { historyRetentionDays: 30, futureSkewMs: 120_000, unitStopSeconds: 600, drainGraceMs: 10_000, requestGraceMs: 300_000, maxShownNames: 50 });
+  assert.deepEqual(daemonLimitsOf({ limits: { historyRetentionDays: 30, requestFutureSkewSeconds: 120, unitStopSeconds: 600, drainGraceMilliseconds: 10_000, requestGraceSeconds: 300, maxShownNames: 50, mcpCpuWindowMilliseconds: 2500, mcpLogListMilliseconds: 400 } }),
+    { historyRetentionDays: 30, futureSkewMs: 120_000, unitStopSeconds: 600, drainGraceMs: 10_000, requestGraceMs: 300_000, maxShownNames: 50, mcpCpuWindowMs: 2500, mcpLogListMs: 400 });
 });
 
 test('the Logs page keeps the history the DAEMON keeps: 30 days answered → the picker and the clamp stop at 30', () => {

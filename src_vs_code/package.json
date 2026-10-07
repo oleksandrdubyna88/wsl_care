@@ -135,7 +135,7 @@
         "wslCare.timeouts.statusSeconds": {
           "type": "integer",
           "default": 20,
-          "minimum": 10,
+          "minimum": 12,
           "maximum": 600,
           "scope": "application",
           "markdownDescription": "How long `status --json` may take before `wsl.exe` is stopped and the call reads \"timed out\", in seconds."
