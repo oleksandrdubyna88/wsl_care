@@ -96,7 +96,26 @@ public sealed partial class ArchiveFilesTests
         var rule = new System.Security.AccessControl.FileSystemAccessRule(me, System.Security.AccessControl.FileSystemRights.CreateDirectories, System.Security.AccessControl.AccessControlType.Deny);
         security.AddAccessRule(rule);
         new DirectoryInfo(folder).SetAccessControl(security);
-        return new DeniedFolder(true, () => Allow(folder, rule));
+        // The deny is real only when it stops this process: a CI runner's administrator token creates through it (seen on the
+        // win-x64 leg, 2026-10-07), and then there is nothing to test — the test skips with that reason instead of failing.
+        return new DeniedFolder(!CanCreateIn(folder), () => Allow(folder, rule));
+    }
+
+    /// <summary>Whether a plain create of a folder in <paramref name="folder"/> succeeds for this process (the probe folder made by it
+    /// is the test's own, in its sandbox, and goes again).</summary>
+    private static bool CanCreateIn(string folder)
+    {
+        var probe = Path.Combine(folder, "probe-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(probe);
+            Directory.Delete(probe);
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
