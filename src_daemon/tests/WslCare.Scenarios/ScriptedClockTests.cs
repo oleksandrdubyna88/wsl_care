@@ -4,6 +4,8 @@ using FluentAssertions;
 
 using WslCare.TestSupport;
 
+using static WslCare.Scenarios.InstallChecks;
+
 namespace WslCare.Scenarios;
 
 /// <summary>
@@ -15,10 +17,6 @@ namespace WslCare.Scenarios;
 [SupportedOSPlatform("linux")]
 public sealed class ScriptedClockTests
 {
-    private const string LinuxOnly = "the scripted clock is POSIX sh on the installer's PATH: covered on the Linux legs (and by hand in WSL)";
-
-    private static void Linux() => Assert.SkipUnless(OperatingSystem.IsLinux(), LinuxOnly);
-
     private static Task<ChildResult> Shell(InstallWorld world, string command) =>
         ChildProcess.RunAsync("/bin/sh", ["-c", command], world.Environment, world.Root);
 

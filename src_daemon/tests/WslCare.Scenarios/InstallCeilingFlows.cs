@@ -16,8 +16,12 @@ namespace WslCare.Scenarios;
 /// </summary>
 /// <remarks>Linux only: the script is POSIX sh over GNU coreutils and tar, which the Linux CI legs have and the Windows leg does
 /// not. The timed flows measure on the real clock from where their wait BEGINS (a stamp the stub binary writes at its first
-/// <c>doctor --json</c>), never the whole run: on a machine at load 100 the install's prelude alone took tens of seconds.</remarks>
+/// <c>doctor --json</c>), never the whole run: on a machine at load 100 the install's prelude alone took tens of seconds.
+/// In <see cref="WallClock"/>, which runs alone (the retro round over PR #14, 2026-10-07): the health wait's ~17 s against 28 s
+/// and the SIGTERM flow's ~20 s against 35 s are the same kind of budget as the upgrade wait's, which a parallel install class
+/// pushed to 26.8 s and 34 s against its 24 s; no bound was loosened.</remarks>
 [SupportedOSPlatform("linux")]
+[Collection(WallClock.Name)]
 public sealed class InstallCeilingFlows
 {
     private const string SystemctlSeconds = "WSL_CARE_INSTALL_SYSTEMCTL_SECONDS";

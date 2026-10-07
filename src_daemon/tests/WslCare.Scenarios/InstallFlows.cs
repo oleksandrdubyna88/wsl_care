@@ -13,7 +13,8 @@ namespace WslCare.Scenarios;
 /// real <c>/bin/sh</c>, over a temporary prefix, with curl / gh / systemctl / apt-get faked (<see cref="InstallWorld"/>).
 /// Every guarantee of the install trust boundary is one flow in an <c>Install*Flows</c> class; this one holds a fresh
 /// install — the release it picks and downloads, the checksum, the machine layer, the verify steps, a dry run and the
-/// preflight refusals. The attestation, the upgrade, the uninstall and the default user have a class each.
+/// preflight refusals. The attestation, the upgrade, the uninstall and the default user have a class each; the flows that hold
+/// a budget on the real clock — the ceilings, the upgrade wait's — run alone, in <see cref="WallClock"/>.
 /// </summary>
 /// <remarks>Linux only: the script is POSIX sh over GNU coreutils and tar, which the Linux CI legs have and the Windows
 /// leg does not. Run by hand in WSL from a copy of the worktree under <c>/tmp</c>, as the test user — never as root, so a

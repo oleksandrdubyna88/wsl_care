@@ -20,6 +20,7 @@ internal static class Program
         {
             Location = Path.GetDirectoryName(Environment.ProcessPath) ?? string.Empty,
             Environment = RecordedEnvironment(),
+            ProcessId = Environment.ProcessId,
         };
         FakeCallLog.Append(calls, call);
 
