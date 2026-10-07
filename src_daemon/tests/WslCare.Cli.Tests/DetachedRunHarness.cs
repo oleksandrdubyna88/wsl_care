@@ -56,6 +56,10 @@ internal sealed class DetachedRunHarness : IDisposable
         return request;
     }
 
+    /// <summary>The machine layer (<c>/etc/wsl-care/config.json</c>) — where a machine-only key such as
+    /// <c>requests.lockWaitSeconds</c> is set.</summary>
+    public void MachineLayer(string json) => Sandbox.Write("/etc/wsl-care/config.json", json);
+
     public IReadOnlyList<RunRequestRead> Requests() => RunRequests.List(Sandbox.Paths, Sandbox.Files);
 
     public IReadOnlyList<RunRecord> History() => RunHistory.Read(Sandbox.Paths, Sandbox.Files).Records;

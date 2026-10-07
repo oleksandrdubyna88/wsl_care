@@ -48,9 +48,10 @@
 #                         units.stopTimeoutSeconds, timer.runLimitMinutes:
 #                         install.sh writes wsl-care.service.d/50-wsl-care-config.conf from the machine configuration
 #                         (wsl-care units dropin), and doctor names a drop-in that no longer matches
-#   SuccessExitStatus=75  "another run holds the lock" (a button's collect or act) is the designed answer
+#   SuccessExitStatus=75 130  75 "another run holds the lock" (a button's collect or act) is the designed answer
 #                         of a second run (§5 global guards), not a failed unit — the health collector
-#                         counts failed units
+#                         counts failed units; 130 a stop asked for (act --stop of a wedged run), recorded interrupted
+#                         (retro over PR #11; UnitSuccessExitTests derives the list from the run's endings)
 #   KillMode=control-group (the default, spelt out since E6.S1 so ShippedFilesTests can hold this unit's hardening equal to
 #                         wsl-care-act@.service's): a stop or a timeout ends every child the run started, the tree kill
 #                         the reliability rule asks of the CLI's own ceilings too
@@ -67,7 +68,7 @@ Nice=19
 IOSchedulingClass=idle
 MemoryMax=1G
 TimeoutStartSec=240min
-SuccessExitStatus=75
+SuccessExitStatus=75 130
 NoNewPrivileges=yes
 KillMode=control-group
 TimeoutStopSec=90

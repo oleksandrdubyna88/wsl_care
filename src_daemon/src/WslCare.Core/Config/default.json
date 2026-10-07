@@ -162,7 +162,8 @@
     "maxQueued": 32,
     "maxBytes": 1048576,
     "graceSeconds": 60,
-    "futureSkewSeconds": 300
+    "futureSkewSeconds": 300,
+    "lockWaitSeconds": 30
   },
   "act": {
     "maxShownNames": 10000,

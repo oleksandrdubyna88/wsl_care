@@ -47,21 +47,29 @@ internal static class Program
         var (host, protectedLoad) = first.WithAgentExtras(loaded);
         loaded = protectedLoad;
         using var logger = WslCareLogging.Start(host, loaded, AppName, Console.Error);
+        return Guarded(() => Run(args, Console.Out, Console.Error, host, loaded, logger, shutdown.Token), logger, Console.Error, shutdown.Token);
+    }
+
+    /// <summary>The program's last frame, as <see cref="Main"/> runs it — and as a test runs it (the retro round over PR #11
+    /// derives the units' success exits from what a run ENDS with, and a stopped run's 130 is answered here): a cancellation the
+    /// signal asked for is the interrupted code; any other exception is a defect.</summary>
+    internal static int Guarded(Func<int> run, ILogger logger, TextWriter stderr, CancellationToken cancellationToken)
+    {
         try
         {
-            return Run(args, Console.Out, Console.Error, host, loaded, logger, shutdown.Token);
+            return run();
         }
-        catch (OperationCanceledException) when (shutdown.Token.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             logger.Warning("interrupted by a signal before the command finished");
-            return Output.Interrupted(Console.Error);
+            return Output.Interrupted(stderr);
         }
         catch (Exception e)
         {
             // The last frame before "nobody above me": a defect escaping here is reported in one
             // line and a distinct code instead of a .NET crash dump the extension cannot parse.
             logger.Fatal(e, "internal error");
-            return Output.Internal(Console.Error, $"{e.GetType().Name}: {e.Message}");
+            return Output.Internal(stderr, $"{e.GetType().Name}: {e.Message}");
         }
     }
 

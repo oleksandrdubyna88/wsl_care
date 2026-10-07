@@ -19,7 +19,8 @@
 #                             reads WEDGED although its heartbeat beats (E7.S2b/S2c review C-H2), and act --stop ends it
 #   SuccessExitStatus=…       the RECORDED answers are not failures (§15k #8): 3 an action failed (recorded, the rest ran),
 #                             75 / 76 / 78 / 79 the run was refused and that is on its history line, 80 its request was gone (a
-#                             no-op)
+#                             no-op), 82 its request was unusable (recorded refused), 130 a stop asked for (recorded
+#                             interrupted). Derived, not copied: UnitSuccessExitTests drives every ending (retro over PR #11)
 #   CollectMode=inactive-or-failed  an instance that ended — failed or not — is unloaded, so no finished run lingers in
 #                             `systemctl --failed` (the health collector counts failed units). It stands for §15k #8's
 #                             reset-failed: systemd's own mechanism, no command of ours. It sits in [Unit], the only
@@ -47,4 +48,4 @@ NoNewPrivileges=yes
 KillMode=control-group
 TimeoutStartSec=infinity
 TimeoutStopSec=90
-SuccessExitStatus=3 75 76 78 79 80
+SuccessExitStatus=3 75 76 78 79 80 82 130

@@ -696,7 +696,7 @@ holds the value; no red was needed for it.
 
 **The shipped files** (`ShippedFilesTests`, every OS): each unit's `ExecStart` starts `/opt/wsl-care/bin/wsl-care` and
 its argv is parsed by the CLI's own `CommandLine.Parse` — the timer's service to `Request.Collect { Timer: true }`
-(§15d CI), the follower's to `Request.EventsFollow(Once: false)`; `SuccessExitStatus` equals `ExitCode.Busy`; the timer
+(§15d CI), the follower's to `Request.EventsFollow(Once: false)`; `SuccessExitStatus` held by `UnitSuccessExitTests`; the timer
 is `OnCalendar` every 4 h with `Persistent=true`; no unit sets a sandbox directive that breaks a named action (its
 companion: the same scan finds `NoNewPrivileges`); `install.sh`'s `UNITS` line equals the folder's files; the machine
 layer loads VALID through the real `ConfigLoader` and sets nothing, and the example in its own comment loads valid as
@@ -1015,17 +1015,16 @@ All green after the fixes, on Windows and in WSL. Goldens regenerated in WSL: on
 `AlreadyExists` and the first request stands byte for byte; 0755 / 0644 on Linux — the request sweep: history first, a
 request younger than its grace (60 s monotonic since the review round) left alone, a queued job or any active state pending, a done unit ONE `interrupted` line
 and the request gone, an unreadable unit kept, the run's own request never swept; the stop marker turning a SIGKILLed run's
-sweep reason into "stopped: … did not exit within 90 s of SIGTERM"; old markers removed; the engine and `collect` under a
+sweep reason into "stopped: a stop was requested at … (act --stop), and the run died without recording itself"; old markers removed; the engine and `collect` under a
 pre-allocated run id, hearing `running.json` before the request goes; a `collect` cancelled during the measurement leaving
 ONE `interrupted` line naming the cause) and `UnitCommandsTests` (the three systemctl templates, every name of
 `HostileInputs.HostileUnitNames` refused by template AND policy, 100 000 seeded mutations of a valid unit name of which
 every accepted one is exactly `wsl-care-act@<yyyyMMddTHHmmssZ>-<pid>.service`, `Busy`). CLI in-process:
 `DetachedRunsTests` (the parse, every `--detach` refusal and its code, the accepted answer, stdin, `act --request`, `act
---stop`). The BUILT CLI: `DetachFlows` (accepted → `act --request` records under the answered id; the timer's lock →
+--stop`); `UnitSuccessExitTests` (every ending of both units' runs, each unit's `SuccessExitStatus` derived from them). The BUILT CLI: `DetachFlows` (accepted → `act --request` records under the answered id; the timer's lock →
 `refused` recorded; a stale request swept by `collect`; no systemd → 69; a never-exiting child ended by its own ceiling;
 the request folder 0755 and the request 0644 under `umask 077`), `ShippedFilesTests` (the act template's `ExecStart`
-parsed by the CLI with `%i` = a run id, `TimeoutStartSec=infinity`, `CollectMode` in `[Unit]` (since 0.1.1), `SuccessExitStatus` = exactly the
-recorded answers, the hardening of the two root units EQUAL with a companion that reads every key), `Install*Flows` (the act
+parsed by the CLI with `%i` = a run id, `TimeoutStartSec=infinity`, `CollectMode` in `[Unit]` (since 0.1.1), the hardening of the two root units EQUAL with a companion that reads every key), `Install*Flows` (the act
 unit installed and uninstalled with its instances stopped, the bounded wait refusing under `live` / `queued`, the rename,
 a request surviving an upgrade) and the golden `act-detach-accepted.json`.
 
@@ -1134,6 +1133,44 @@ against the OLD `install.sh` (the file at `bef4ba4`) in WSL:
 | 8 (WSL) | `InstallUpgradeFlows.The_wait_ceiling_is_measured_on_the_wall_clock_…` (a status that takes 6 s, ceiling 10 s) | *Expected (DateTime.UtcNow - started) to be less than 24s …, but found 28s, 832ms* |
 
 All green after the fixes (the new `install.sh` restored and compared byte for byte), on Windows and in WSL.
+
+### The retro round over PR #11 (2026-10-06, plan §15m)
+
+A retro coai review of the merged PR #11 (E6.S0's read contract, E6.S1's detached runs), the own review (O1–O3) and
+consultation 9064487b. Each finding was written as a test and run against the UNFIXED code (red, the message below — observed
+on the `c61ec98` tree, the code under test unchanged since), then fixed (green), then the fix's load-bearing line reverted
+(red again with the same symptom) and restored byte-identical (SHA-256 compared). Windows; the suites also ran in WSL.
+
+| Finding | Test | Red (unfixed) | Break-it (line reverted) |
+|---|---|---|---|
+| G0 `LogsCommand.ShowText` over the complexity limit (refactor) | `ReadContractCommandTests.Runs_show_as_text_lists_each_action_…` — pins the text first; green before and after | — (a pure refactor) | the outcome line drops its not-removed count → *Expected … to be equal to {… "2 removed, 1 not removed, freed 1.50 GB" …}, but {… "2 removed, freed 1.50 GB" …}* |
+| O1 a detach check's lock refused an ACCEPTED run | `DetachedRunsTests.An_accepted_run_meeting_the_lock_a_detach_check_holds_for_a_moment_waits_and_runs` (the lock released after 300 ms) | *Expected exit to be 0 because wsl-care: run … refused (recorded): busy: another run holds the run lock - a full run (collect), most likely* | `LockWait = RunLock.AcceptedRunWait` removed → the same message |
+| O2 `Refused` removed the request in a `finally` | `…A_refusal_that_cannot_be_recorded_keeps_the_request_for_the_sweep_and_exits_1_never_70` (`RefusingHistoryAppends` throwing `TimeoutException`) | *Expected Requests() to contain a single item because the refusal could not be recorded, so the request - the accepted run's only trace - stays for the sweep, but the collection is empty* | the catch removes and rethrows → the same message |
+| O2 the engine / `CollectRun` dropped `running.json` without a line | `…An_accepted_run_whose_line_cannot_be_written_stays_discoverable_and_the_next_root_run_records_it` (act, collect) | 2 red: *Expected show.State not to be "unknown" because no history line, running state or request names this run* | the engine's `LineWritten` check → the act case; `CollectRun.Ends`' history check → the collect case, same message |
+| O3 success exits were a circular hand-copied list | `UnitSuccessExitTests` (both units; every ending driven through `Program.Guarded`) | *Expected listed to be equal to {2, 3, 76, 78, 79, 80, 130} … but {3, 75, 76, 78, 79, 80}* (act unit; `RefusedAtTheLock` read 78 there — the new key did not exist yet); *… {75, 130} … but {75}* (timer) | 82 back to `Usage` → *… {2, 3, 75, …} … differs at index 0*; 130 dropped from the act unit → *… contains 1 item(s) less* |
+| running block: a dead / left-over holder hid a request | `RunningReportsTests.A_fresh_request_beside_a_dead_holder_is_queued_…` (2 cases), `DetachedRunsTests.A_detach_beside_a_left_over_running_json_and_a_queued_request_is_busy` | *Expected report.State to be "queued" … but "dead"* / *… but "none"*; *Expected exit to be 75, but found 0* | `Acting` → `true` → the same three |
+| a timed-out start whose run already finished | `DetachedRunsTests.A_timed_out_start_whose_run_already_recorded_itself_answers_accepted_with_its_run_id` | *Expected exit to be 0 because wsl-care: systemctl start --no-block … did not succeed (timed out after 30 s); the request was removed* | the history check → `false` → the same |
+| the stop marker claimed systemd killed the run | `Core DetachedRunTests.A_dead_run_whose_stop_was_asked_…` | *Expected line.Reason to start with "stopped: a stop was requested at … (act --stop), and the run died without recording itself", but "stopped: act --stop asked systemd to stop it (…) and it did not exit within 90 s of SIGTERM, so systemd killed it …"* | the old wording → the same |
+
+Tests changed by the round: the two unusable-request tests expect 82; the lock-held refusals (`DetachedRunsTests`, `FullCheckLineTests`,
+`DetachFlows`) set `requests.lockWaitSeconds` (1 or 0) in the machine layer; `FullCheckLineTests` expects the new stop reason;
+`ShippedFilesTests`' two hand-typed `SuccessExitStatus` comparisons are gone (replaced by `UnitSuccessExitTests`); the two private
+history-append fakes became `TestSupport/RefusingHistoryAppends`. The extension's exit-code mirror (`src_vs_code/src/client/exitCodes.ts`, the root kinds) names 82 `requestUnusable`: its
+contract test (`the client names EXACTLY the codes of contracts/exit-codes.json`) went red on the pull request's first CI run, as designed. Not covered: a REAL `--detach` racing a real unit (the O1
+test holds the lock as a check would); the derived exit lists cover the endings `UnitSuccessExitTests` enumerates — a new branch
+of `DetachedRuns.FromRequest` must join its enum.
+
+**PR43 gate round** (the coai code round on pull request #43; same discipline — red on the unfixed code, fixed, the fix
+reverted red, restored byte-identical):
+
+| # | Test | Red (unfixed) | Break-it |
+|---|---|---|---|
+| 1 `CollectRun.Ends` re-read the whole history | `CollectRunTests.A_recorded_full_run_ends_its_running_json_from_what_it_wrote_never_rereading_the_history` (the history unreadable once the run's line is appended) | *System.IO.IOException : the history is on a disk that went away after the line (test)* — thrown out of the run's `finally` | the history read put back into `Ends` → the same; the run's `LineMark` gate dropped → the collect case of `An_accepted_run_whose_line_cannot_be_written_…` red (*Expected show.State not to be "unknown"*) |
+| 3 the endings catalog was hand-kept | `UnitSuccessExitTests.Every_exit_code_is_classified_for_both_units`, `Each_unit_counts_exactly_its_classified_answers_as_success` (both units) | new tests (a table over every `ExitCode` member, per unit: answer / failure / not reachable) | a row removed → *Expected Classified.Keys to be a collection with 18 item(s)*; 130 classified a timer failure → *Expected SuccessExits(unit) to be equal to {75} … but {75, 130}* and the driven timer endings disagree |
+| 4 the lock wait overran its deadline | `Core RunLockWaitTests.The_wait_never_pauses_past_its_deadline_nor_takes_the_lock_after_it` (manual clock, 10 ms wait, 20–21 ms jitter, the holder lets go at 15 ms) | *Expected type to be …ExclusiveLock+Busy because the lock was free only after requests.lockWaitSeconds had passed, but found …ExclusiveLock+Held* | the pause cap removed → the same |
+
+Item 2 (a stale `SuccessExitStatus` row in `architecture.md`) and item 5 (`StageRequest` over the complexity limit, now a switch
+expression of stagings) change no behaviour.
 
 ### The progress flow made deterministic (2026-10-05)
 
@@ -2575,7 +2612,7 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `install.sh --dry-run` (install and uninstall): the prefix tree identical, no unit / package / binary call, every step printed, no root needed | covered (Linux legs) | `InstallFlows.Dry_run_changes_nothing_needs_no_root_and_prints_every_step` |
 | `install.sh --set-default-user <name>`: without the flag nothing written (advice printed); with it and no default, `[user] default=` appended and read back by the daemon's `TargetUserDiscovery.DefaultUser`; an existing default never rewritten; an unknown user or a `[user]` section without `default=` refused before anything; the installer's reader and the daemon's agree on ten wsl.conf shapes | covered (Linux legs) | `InstallDefaultUserFlows.Without_the_flag_wsl_conf_is_never_written…`, `…With_the_flag_and_no_default_user…`, `…With_the_flag_an_existing_default_user_is_never_rewritten`, `…The_flag_for_an_unknown_user…`, `…The_installer_and_the_daemon_read_the_same_default_user_from_every_wsl_conf_shape` |
 | `install.sh` preflight refusals: not root (the `sudo sh -s --` line, sudo never called), no systemd, an unknown architecture, a foreign `/usr/local/bin/wsl-care`, a hostile archive member (`..`, outside the folder, a link — each riding a complete release); arm64 installs the `linux-arm64` asset; an upgrade restarts the follower | covered (Linux legs) | `InstallFlows.A_non_root_run_is_refused…`, `…Without_systemd_running…`, `…On_arm64…`, `…A_wsl_care_on_the_link_path…`, `…An_archive_member_that_leaves_its_folder_or_is_a_link…`, `InstallUpgradeFlows.An_upgrade_restarts_the_running_follower…` |
-| the shipped units and machine layer: `ExecStart` argv parsed by the CLI (`collect --timer`, `events follow`), `SuccessExitStatus` = `ExitCode.Busy`, the timer's calendar, no breaking sandbox directive, `install.sh`'s unit list = the folder, every key of every unit and drop-in in the section systemd reads it from (the act template's `CollectMode` in `[Unit]`), the machine layer valid and empty | covered (every OS) | `ShippedFilesTests`; systemd's own parser: CI `verify-systemd-units.sh` (Linux legs) |
+| the shipped units and machine layer: `ExecStart` argv parsed by the CLI (`collect --timer`, `events follow`), the timer's calendar, no breaking sandbox directive, `install.sh`'s unit list = the folder, every key of every unit and drop-in in the section systemd reads it from (the act template's `CollectMode` in `[Unit]`), the machine layer valid and empty | covered (every OS) | `ShippedFilesTests`; systemd's own parser: CI `verify-systemd-units.sh` (Linux legs) |
 | the CI unit gate (`verify-systemd-units.sh`): every file of the folder read by `systemd-analyze verify`, a template through an instance, each unit with its rendered drop-in; any output fails (an unknown key, a key in the wrong section, a drop-in's key), a failed drop-in render and an empty folder fail; the workflow runs it over the folder with the built binary and names no unit | covered (Linux legs with `systemd-analyze`; the structural check on every OS) | `SystemdUnitVerifyFlows` |
 | POST_DEPLOY items 1, 5, 7, 11 as `post-deploy-check --target` runs them: each passes on the healthy installation and FAILS on the broken state it names (a unit not active, `"healthy": false`, `CollectMode=inactive`, a `collect` without `--timer`, an empty journal, an OOM kill, a logged snap refusal; a journal line with a quote or `$(…)` read as data) | covered (Linux legs; stand-in `wsl.exe` that re-parses a `--` line as the real one does, `systemctl` / `journalctl` / `wsl-care`; the extraction is the checker's own `inspect`) | `PostDeployCommandFlows` |
 | `install.sh`'s pinned identity is this repository's attesting `release.yml` AT the release tag, and no command line of it uses `--signer-workflow` | covered (every OS) | `InstallAttestationFlows.The_identity_the_installer_pins_is_this_repositorys_attesting_release_workflow_at_the_release_tag`; `ReleaseWorkflowTests.The_release_scripts_agree_with_the_installer_on_what_a_version_is` (the identity's tag = the trigger) |

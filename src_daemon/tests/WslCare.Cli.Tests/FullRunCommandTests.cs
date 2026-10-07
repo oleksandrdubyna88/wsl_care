@@ -149,7 +149,7 @@ public sealed class FullRunCommandTests
     {
         using var sandbox = new SandboxHost("collect-fail");
 
-        var (exit, stdout, stderr) = CliRun.Over(Host(sandbox, new FailingAppends(sandbox.Files), Tools(), DockerFixture.CapturedAt), "collect", "--json");
+        var (exit, stdout, stderr) = CliRun.Over(Host(sandbox, new RefusingHistoryAppends(sandbox.Files), Tools(), DockerFixture.CapturedAt), "collect", "--json");
 
         exit.Should().Be((int)ExitCode.RunFailed);
         Collect(stdout).Recording.Should().Be("failed");
@@ -293,11 +293,6 @@ public sealed class FullRunCommandTests
     private sealed class NotWritable(IFileSystem inner) : DelegatingFileSystem(inner)
     {
         public override WriteAccess ProbeWriteAccess(string directory) => new WriteAccess.NotWritable($"{directory}: permission denied (test)");
-    }
-
-    private sealed class FailingAppends(IFileSystem inner) : DelegatingFileSystem(inner)
-    {
-        public override void AppendLine(string path, string line, TimeSpan lockTimeout) => throw new IOException("read-only file system (test)");
     }
 
     // Retro gate over PR #5 (code round, F3): a full run can spend minutes in Docker's disk figures and the folder walks, and

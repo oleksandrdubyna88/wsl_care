@@ -154,8 +154,8 @@ to systemd (plan §15j B2, M2, M4, M9; the coai E6 plan round §15k). Nothing he
   `ExecStart=/opt/wsl-care/bin/wsl-care act --request %i` — the instance name IS the run id, the only variable, validated
   by the CLI's parse. `TimeoutStartSec=infinity` (a confirm is never time-killed as a whole — every command it starts has
   its own ceiling with a tree kill, §15k #0), `TimeoutStopSec=90` (both units, §15k #18), `SuccessExitStatus=3 75 76 78
-  79 80` (the RECORDED answers — an action failed, a refusal recorded `refused`, a missing request — are not unit failures,
-  §15k #8), and in `[Unit]` — the only section systemd.unit(5) reads it from — `CollectMode=inactive-or-failed` (a
+  79 80 82 130` (the RECORDED answers — an action failed, a refusal recorded `refused`, a missing request, an unusable request
+  recorded `refused`, a stop recorded `interrupted` — are not unit failures, §15k #8; derived by `UnitSuccessExitTests`), and in `[Unit]` — the only section systemd.unit(5) reads it from — `CollectMode=inactive-or-failed` (a
   finished instance is unloaded, failed or not, so none lingers in `systemctl --failed` — systemd's own mechanism
   standing for §15k #8's `reset-failed`; daemon 0.1.0 had it under `[Service]`, where systemd 255 ignores it with a
   warning, and the live install showed `CollectMode=inactive` — fixed at daemon-v0.1.1, first published in 0.1.2), and the hardening of
@@ -163,13 +163,14 @@ to systemd (plan §15j B2, M2, M4, M9; the coai E6 plan round §15k). Nothing he
   held EQUAL by `ShippedFilesTests` (§15k #9).
 - **`act --request <runId>`** (`DetachedRuns.FromRequest`, what the unit runs): no request → exit 80, a named no-op, no
   history line (§15k #2); a request the hardened reader refuses (`RunRequests.Find` → `ReadStateFile`: root's, no group
-  / other write, ≤ 1 MiB, schema 1, known ids, 64-hex shown names) → exit 2, nothing run; a request whose run already has a
+  / other write, ≤ 1 MiB, schema 1, known ids, 64-hex shown names) → recorded `refused`, removed, exit 82, nothing run; a request whose run already has a
   history line (it recorded itself and died before removing the file) → removed, exit 80 — never run twice. Otherwise the engine (or
   `CollectRun`) runs under the request's run id (`ActRequest.RunId` / `CollectContext.RunId`) with the persisted shown
   list, and the request is removed by `OnRunningWritten` — once `running.json` stands, never before (the E6.S0 review
-  round: states move request → `running.json` → history line, with no gap) — and again on every other way out. Meeting
-  the lock, a wedged or unreadable state, or observe-only, it appends ONE history line with the outcome `refused` and the
-  reason, removes the request and exits with the refusal's code (never a silent busy).
+  round: states move request → `running.json` → history line, with no gap); `running.json` (or a request still there) goes
+  only once the run's line is written. Meeting a wedged or unreadable state, or observe-only — or the lock still held after
+  `requests.lockWaitSeconds` (30 s) — it appends ONE history line with the outcome `refused` and the reason, THEN removes the
+  request and exits with the refusal's code (never a silent busy).
 - **The request sweep** (`Actions/Engine/RequestSweep`), at the start of every ROOT run under the lock — `collect` (timer
   or detached) and `act --request` (through `ActRequest.UnderLock`) — never by `status` (§15k #15): history FIRST (a
   request whose run has a line only loses its file); a request younger than 60 s (`RequestSweep.Grace`, on the MONOTONIC clock
@@ -186,7 +187,8 @@ to systemd (plan §15j B2, M2, M4, M9; the coai E6 plan round §15k). Nothing he
   `{state}/stops/<runId>` (`StopMarkers`), then `systemctl stop <unit>` (`UnitCommands.Stop`, a 120 s ceiling above
   systemd's 90 s); SIGTERM lets the run record itself `interrupted` (the E6.S0 cancellation path); a run SIGKILLed after
   90 s leaves `running.json`, and the next root run's `RunningSweep` records it `interrupted` with the reason "stopped:
-  act --stop asked systemd to stop it (…) and it did not exit within 90 s of SIGTERM". A refused stop removes the marker;
+  a stop was requested at <time> through <unit> (act --stop), and the run died without recording itself" (the marker proves
+  the request, not a kill). A refused stop removes the marker;
   the sweep removes markers whose run has a line, or older than a day. Never a kill by pid.
 - **The commands** — `UnitCommands.All` (start `--no-block`, stop, show), in `CommandCatalogue.Product`, each with the
   CLOSED unit slot `SlotKind.ActUnit` (`wsl-care-act@` + a run id `RunId.TryParse` accepts + `.service`; a stop also
@@ -276,6 +278,25 @@ flowchart TB
 - **`install.sh`**: the running block's state is read without layout; in flight unless `none` / `dead` (fails closed for any other
   state); the wait is measured on the wall clock, prints progress every 30 s, and when the installed binary cannot answer names
   the manual escape (`WSL_CARE_INSTALL_SKIP_RUN_WAIT=1`, or removing `running.json` / `requests/*.json` by hand).
+
+### What the retro round over PR #11 changed (2026-10-06, plan §15m)
+
+- **An accepted run waits for the lock** (O1): a `--detach` check holds THE run lock while it sweeps and counts; `act --request`
+  (act or collect) now takes it with `RunLock.TakeAsync`, retrying with the lock jitter for up to `requests.lockWaitSeconds`
+  (machine-only, 0–120, default 30; 0 is the old refuse-at-once) — its request stands meanwhile, so the block reads `queued`.
+  Every other run still refuses at once.
+- **A trace is handed on, never dropped** (O2): a request or `running.json` is removed only after the run's terminal line is
+  written. `Refused` appends first and keeps the request (exit 1) when the line fails; the engine and `CollectRun` keep
+  `running.json` without a line (`ActionEngine.KeptForTheSweep`), so `runs show` answers from it and the next root run's
+  sweep records the run `interrupted`.
+- **Success exits are derived** (O3): exit 82 `requestUnusable` replaces 2 for a recorded unusable request; 130 (a stop asked
+  for, recorded) is a success exit of both units — `wsl-care.service` is `SuccessExitStatus=75 130`.
+  `Cli.Tests/UnitSuccessExitTests` drives every ending of both runs through `Program.Guarded` and holds each list equal to the
+  exits of the answered endings.
+- **The running block**: a live / wedged / unknown / unreadable holder comes first; an idle (`none`) or `dead` one never hides
+  a pending request (`queued` wins), so `--detach` and `install.sh`'s wait see it.
+- **A timed-out start** whose run already recorded itself answers `accepted` with its run id and removes nothing.
+- **The stop marker's reason** says a stop was requested, and when — not that systemd killed the run.
 
 ### A full check's history line names itself — `kind` (2026-10-05, plan §15o)
 

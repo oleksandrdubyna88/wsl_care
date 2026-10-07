@@ -1246,6 +1246,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "requests.lockWaitSeconds",
+      "shape": "int",
+      "min": 0,
+      "max": 120,
+      "default": 30,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "act.maxShownNames",
       "shape": "int",
       "min": 1,

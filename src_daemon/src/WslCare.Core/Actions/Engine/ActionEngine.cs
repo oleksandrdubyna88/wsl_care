@@ -76,10 +76,11 @@ public sealed class ActionEngine(EngineContext c)
         return new ActResult.Previewed(outcomes, TargetUserReport.From(target));
     }
 
-    /// <summary>The run: refused at once (never waiting) when another run holds the lock.</summary>
+    /// <summary>The run: refused when another run holds the lock — at once, or after the request's bounded
+    /// <see cref="ActRequest.LockWait"/> (an accepted detached run only).</summary>
     public async Task<ActResult> ExecuteAsync(ActRequest request, CancellationToken cancellationToken)
     {
-        switch (RunLock.TryTake(c.Paths, c.Files))
+        switch (await RunLock.TakeAsync(c.Paths, c.Files, request.LockWait, cancellationToken).ConfigureAwait(false))
         {
             case ExclusiveLock.Busy busy:
                 return WhileLocked(busy.Reason);
@@ -116,7 +117,7 @@ public sealed class ActionEngine(EngineContext c)
         notes.AddRange(await request.UnderLock(runId, cancellationToken).ConfigureAwait(false));
         var pass = await PassAsync(runId, request, started, notes, cancellationToken).ConfigureAwait(false);
         var recorded = Record(Detail(runId, request.Trigger, started, pass.Dry, pass.Target, pass.Outcomes, notes, pass.Outcome));
-        var result = pass.RunningWritten ? RemoveRunning(recorded) : recorded;
+        var result = pass.RunningWritten ? EndRunning(recorded) : recorded;
         cancellationToken.ThrowIfCancellationRequested();
         return result;
     }
@@ -485,6 +486,14 @@ public sealed class ActionEngine(EngineContext c)
         }
     }
 
+    /// <summary>Why <c>running.json</c> stays when the run's line could not be written (retro round over PR #11, O2).</summary>
+    public const string KeptForTheSweep = "running.json is kept, the run's only trace: the next root run's sweep records it";
+
+    /// <summary><c>running.json</c> goes only once the run's history line is written; with no line it is the run's only trace and
+    /// stays for the next root run's sweep, which records the run <c>interrupted</c> (retro round over PR #11, O2).</summary>
+    private ActResult.Done EndRunning(ActResult.Done recorded) =>
+        recorded.LineWritten ? RemoveRunning(recorded) : recorded with { Reason = Joined(recorded.Reason, KeptForTheSweep) };
+
     /// <summary>The run is recorded: <c>running.json</c> goes. A removal that fails is said in the result — the next run sweeps
     /// it (its pid will be gone) without a second history line, because the run already has one.</summary>
     private ActResult.Done RemoveRunning(ActResult.Done result)
@@ -507,7 +516,7 @@ public sealed class ActionEngine(EngineContext c)
     {
         var json = JsonSerializer.SerializeToUtf8Bytes(detail, WslCareJsonContext.Default.ActRunDetail);
         var recorded = RunRecorder.Record(c.Paths, c.Files, detail.RunId, json, (relative, failure) => Line(detail, relative, failure));
-        return new ActResult.Done(detail, recorded.Recording, recorded.DetailFile, recorded.Reason);
+        return new ActResult.Done(detail, recorded.Recording, recorded.DetailFile, recorded.Reason) { LineWritten = recorded.LineWritten };
     }
 
     private static RunRecord Line(ActRunDetail d, string relative, string failure) =>

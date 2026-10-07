@@ -2,6 +2,7 @@ using System.Text.Json;
 
 using FluentAssertions;
 
+using WslCare.Core.Actions.Engine;
 using WslCare.Core.Collect;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
@@ -70,7 +71,7 @@ public sealed class CollectRunTests : IDisposable
     [Fact]
     public async Task A_history_line_that_cannot_be_written_fails_the_run_and_the_next_run_records_it_as_interrupted()
     {
-        var first = await CollectRun.RunAsync(Context(new FailingHistoryAppends(_sandbox.Files), pid: 1), CancellationToken.None);
+        var first = await CollectRun.RunAsync(Context(new RefusingHistoryAppends(_sandbox.Files), pid: 1), CancellationToken.None);
 
         first.Recording.Should().Be(Recording.Failed);
         first.Reason.Should().Contain("the history line could not be written");
@@ -84,6 +85,46 @@ public sealed class CollectRunTests : IDisposable
         lines.Should().HaveCount(2);
         lines[0].Should().Match<RunRecord>(r => r.RunId == first.Detail.RunId && r.Outcome == RunOutcome.Interrupted && r.Detail == first.DetailFile);
         lines[0].Reason.Should().Be(RunReconcile.InterruptedReason);
+    }
+
+    /// <summary>Retro round over PR #11, PR43 gate round #1: <c>CollectRun.Ends</c> read and parsed the WHOLE history after every
+    /// full run to learn whether its own line was written — which <c>RunRecorder</c> had just returned — an O(N) read per timer
+    /// run, and a read error there flew out of the <c>finally</c>. The run's end now comes from what it wrote.</summary>
+    [Fact]
+    public async Task A_recorded_full_run_ends_its_running_json_from_what_it_wrote_never_rereading_the_history()
+    {
+        var files = new HistoryUnreadableAfterALine(_sandbox.Files, RunHistory.File(_sandbox.Paths));
+
+        var result = await CollectRun.RunAsync(Context(files), CancellationToken.None);
+
+        result.Recording.Should().Be(Recording.Recorded, result.Reason);
+        File.Exists(RunningState.File(_sandbox.Paths)).Should().BeFalse("the run's line was written, so its running.json goes");
+        files.ReadsAfterTheLine.Should().Be(0, "the run knows it wrote its line; it never reads the history again for that");
+    }
+
+    /// <summary>The real file system — except that once a line was appended to the history, every read of the history fails.</summary>
+    private sealed class HistoryUnreadableAfterALine(IFileSystem inner, string history) : DelegatingFileSystem(inner)
+    {
+        private bool _appended;
+
+        public int ReadsAfterTheLine { get; private set; }
+
+        public override void AppendLine(string path, string line, TimeSpan lockTimeout)
+        {
+            base.AppendLine(path, line, lockTimeout);
+            _appended |= path == history;
+        }
+
+        public override FileReadResult ReadFile(string path)
+        {
+            if (!_appended || path != history)
+            {
+                return base.ReadFile(path);
+            }
+
+            ReadsAfterTheLine++;
+            throw new IOException("the history is on a disk that went away after the line (test)");
+        }
     }
 
     [Fact]
@@ -188,12 +229,6 @@ public sealed class CollectRunTests : IDisposable
             Writes.Add($"lock:{lockPath}");
             return base.TryLockExclusive(lockPath);
         }
-    }
-
-    private sealed class FailingHistoryAppends(IFileSystem inner) : DelegatingFileSystem(inner)
-    {
-        public override void AppendLine(string path, string line, TimeSpan lockTimeout) =>
-            throw new IOException("the history file is on a disk that went away (test)");
     }
 
     /// <summary>What an unprivileged process meets on the installed layout: the probe answers no.</summary>

@@ -64,6 +64,8 @@ export type RootFailure =
   | { readonly kind: 'stateUnreadable'; readonly messages: readonly string[] }
   /** 80: no request names the run. */
   | { readonly kind: 'requestGone'; readonly messages: readonly string[] }
+  /** 82: the run's request could not be used — recorded refused and removed; nothing ran. */
+  | { readonly kind: 'requestUnusable'; readonly messages: readonly string[] }
   /** 3: an action failed. */
   | { readonly kind: 'actionFailed'; readonly messages: readonly string[] }
   /** 4: the records cannot be read. */

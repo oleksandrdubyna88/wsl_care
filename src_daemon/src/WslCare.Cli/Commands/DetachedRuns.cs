@@ -25,8 +25,10 @@ namespace WslCare.Cli.Commands;
 /// </summary>
 /// <remarks>Exit codes: 0 accepted / unknown / recorded · 69 no systemd · 71 the unit would not start (the request removed) ·
 /// 73 the request budget is full · 75 / 76 / 79 a run is live or queued / wedged / unreadable — at <c>--request</c> time
-/// RECORDED as <c>refused</c> · 77 needs root · 80 no request names the run (a no-op) · 2 usage, or an unusable request (recorded
-/// <c>refused</c>, removed).</remarks>
+/// RECORDED as <c>refused</c> · 77 needs root · 80 no request names the run (a no-op) · 82 an unusable request (recorded
+/// <c>refused</c>, removed) · 1 a run whose end could not be recorded (its request or running.json kept for the sweep) · 2 usage.
+/// Every RECORDED end of <c>act --request</c> exits 0 or a code in the template unit's <c>SuccessExitStatus</c>
+/// (<c>UnitSuccessExitTests</c> derives the list from these endings; retro round over PR #11, O3).</remarks>
 internal static class DetachedRuns
 {
     private const string SystemdMarker = "/run/systemd/system";
@@ -150,8 +152,16 @@ internal static class DetachedRuns
         {
             UnitState.Busy => Accepted(runId, asked, stdout, log, "accepted", $" (systemctl start {Describe(started)}, but systemd holds the job)"),
             UnitState.Unread unread => Accepted(runId, asked, stdout, log, "unknown", $" - but whether it started is UNKNOWN: systemctl start {Describe(started)} and its state could not be read ({unread.Why}); the request stays and the next root run settles it"),
-            _ => StartFailed(runId, started, host, stderr, log),
+            _ => DoneAfterTimedOutStart(runId, asked, started, host, stdout, stderr, log),
         };
+
+    /// <summary>The unit is no longer busy: when the run already ran and recorded itself while <c>systemctl start</c> waited, the
+    /// run WAS accepted — answered so, nothing removed (the run removed its own request); only a silent run is a failed start
+    /// (retro round over PR #11, consultation 9064487b). The history is read AFTER the unit, as the sweep reads it.</summary>
+    private static int DoneAfterTimedOutStart(RunId runId, Asked asked, CommandOutcome started, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
+        AlreadyRecorded(host, runId)
+            ? Accepted(runId, asked, stdout, log, "accepted", $" (systemctl start {Describe(started)}, but the run already ran and recorded itself)")
+            : StartFailed(runId, started, host, stderr, log);
 
     private static int StartFailed(RunId runId, CommandOutcome started, CliHost host, TextWriter stderr, ILogger log)
     {
@@ -188,11 +198,22 @@ internal static class DetachedRuns
     }
 
     /// <summary>A request the hardened reader refuses (review D5): recorded <c>refused</c> with why, then removed — it must not hold
-    /// the state <c>unreadable</c> and refuse every detach forever. Nothing is run.</summary>
+    /// the state <c>unreadable</c> and refuse every detach forever. Nothing is run. Recorded, it exits
+    /// <see cref="ExitCode.RequestUnusable"/> (a success exit of the unit, retro round over PR #11, O3); when no line could be
+    /// written the request stays for the next root run's sweep and the exit is 1.</summary>
     private static int Unusable(CliHost host, RunId runId, RunRequestRead.Bad bad, TextWriter stderr, ILogger log)
     {
-        var note = RequestSweep.Unusable(host.Paths, host.Files, host.Clock.GetUtcNow(), runId, bad.Why);
-        return Refuse(stderr, log, ExitCode.Usage, $"the request {bad.Path} cannot be used: {bad.Why}; nothing was run ({note})");
+        try
+        {
+            var note = RequestSweep.Unusable(host.Paths, host.Files, host.Clock.GetUtcNow(), runId, bad.Why);
+            return AlreadyRecorded(host, runId)
+                ? Refuse(stderr, log, ExitCode.RequestUnusable, $"the request {bad.Path} cannot be used: {bad.Why}; nothing was run ({note})")
+                : Refuse(stderr, log, ExitCode.RunFailed, $"the request {bad.Path} cannot be used: {bad.Why}; nothing was run, and its refusal was not recorded ({note})");
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
+        {
+            return Refuse(stderr, log, ExitCode.RunFailed, $"the request {bad.Path} cannot be used: {bad.Why}; nothing was run - and its refusal could not be recorded ({e.Message}); the request stays for the next root run's sweep");
+        }
     }
 
     /// <summary>History first for its OWN request too (plan §15k #2): a run that recorded itself and died before removing its
@@ -225,6 +246,7 @@ internal static class DetachedRuns
             ShownVolumes = file.Shown.Count > 0 ? ShownList.Of(file.Shown) : ShownList.None,
             ShownProcesses = file.ShownProcesses.Count > 0 ? ShownList.Of(file.ShownProcesses) : ShownList.None,
             OnRunningWritten = () => RunRequests.Remove(host.Paths, host.Files, file.RunId),
+            LockWait = RunLock.AcceptedRunWait,
             UnderLock = (own, _) => RequestSweep.ApplyAsync(host.Paths, host.Files, host.Commands, host.Processes, host.Clock.GetUtcNow(), own),
         };
         var result = Executed(() => engine.ExecuteAsync(act, cancellationToken).GetAwaiter().GetResult(), file, host, cancellationToken);
@@ -277,9 +299,15 @@ internal static class DetachedRuns
     /// <summary>Why a requested run cut off before it recorded anything has its one line.</summary>
     internal static string CutOffReason(string cause) => $"interrupted by {cause} before it recorded anything (cut off before it started)";
 
+    /// <summary>The run ended: its request goes only when its line was written (retro round over PR #11, O2) — a request still here
+    /// means running.json was never written, so with no line it is the run's only trace, kept for the next root run's sweep.</summary>
     private static int Finished(ActResult result, CliHost host, RunRequestFile file, TextWriter stdout, TextWriter stderr)
     {
-        RunRequests.Remove(host.Paths, host.Files, file.RunId);
+        if (result is ActResult.Done { LineWritten: true })
+        {
+            RunRequests.Remove(host.Paths, host.Files, file.RunId);
+        }
+
         Output.Answer(stdout, ActCommand.Answer(result, json: true));
         return ActCommand.Exit(result, stderr);
     }
@@ -295,12 +323,18 @@ internal static class DetachedRuns
             OnRunningWritten = () => RunRequests.Remove(host.Paths, host.Files, file.RunId),
             InterruptCause = host.InterruptCause,
             Wait = host.Wait,
+            LockWait = RunLock.AcceptedRunWait,
         };
         var result = Executed(() => CollectRun.RunAsync(context, cancellationToken).GetAwaiter().GetResult(), file, host, cancellationToken);
-        RunRequests.Remove(host.Paths, host.Files, file.RunId);
         if (result.Recording == Recording.Busy)
         {
             return Refused(file, host, stderr, log, ExitCode.Busy, result.Reason);
+        }
+
+        // Retro round over PR #11 (O2): the request goes only once the run's line is written - never as the only trace of it.
+        if (result.LineWritten)
+        {
+            RunRequests.Remove(host.Paths, host.Files, file.RunId);
         }
 
         Output.Answer(stdout, JsonSerializer.Serialize(CollectCommand.Report(result), WslCareJsonContext.Default.CollectReport));
@@ -308,7 +342,10 @@ internal static class DetachedRuns
     }
 
     /// <summary>A detached run that may not start now: ONE terminal history line with the outcome <c>refused</c> and why (never
-    /// a silent busy, plan §15j B2), then its request goes; the exit code says which refusal it was.</summary>
+    /// a silent busy, plan §15j B2), THEN its request goes; the exit code says which refusal it was. A line that cannot be written
+    /// (the history lock timed out, a full disk) leaves the request - the accepted run's only trace - for the next root run's
+    /// sweep, and exits 1 (retro round over PR #11, O2: it used to remove the request in a <c>finally</c> and leave through Main's
+    /// catch-all, 70).</summary>
     private static int Refused(RunRequestFile file, CliHost host, TextWriter stderr, ILogger log, ExitCode code, string reason)
     {
         var now = host.Clock.GetUtcNow();
@@ -316,11 +353,12 @@ internal static class DetachedRuns
         {
             new RunRecordWriter(host.Paths, host.Files).Append(file.TerminalLine(now, now, RunOutcome.Refused, ActionStatus.Refused, reason));
         }
-        finally
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or TimeoutException)
         {
-            RunRequests.Remove(host.Paths, host.Files, file.RunId);
+            return Refuse(stderr, log, ExitCode.RunFailed, $"run {file.RunId} refused ({reason}) - but the refusal could not be recorded ({e.Message}); the request stays for the next root run's sweep, which records the run");
         }
 
+        RunRequests.Remove(host.Paths, host.Files, file.RunId);
         return Refuse(stderr, log, code, $"run {file.RunId} refused (recorded): {reason}");
     }
 

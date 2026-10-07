@@ -20,6 +20,9 @@
     <!-- Where the CLI's source is, for the scan that holds every stream write to Output and the
          console sink: stamped by the build rather than walked up to from the test binary. -->
     <AssemblyMetadata Include="WslCare.CliSourceRoot" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\src\WslCare.Cli'))" />
+    <!-- The shipped units, read where they live: UnitSuccessExitTests holds each unit's SuccessExitStatus to the exits the
+         program's recorded endings return (retro round over PR #11). -->
+    <AssemblyMetadata Include="WslCare.SystemdDirectory" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\systemd'))" />
   </ItemGroup>
 
   <ItemGroup>

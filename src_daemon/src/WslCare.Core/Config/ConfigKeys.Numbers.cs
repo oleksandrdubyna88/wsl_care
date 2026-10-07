@@ -226,6 +226,10 @@ public static partial class ConfigKeys
 
         /// <summary>How far a request may be ahead of the clock before it is stale (published in status --json limits). Default 300.</summary>
         public static readonly ConfigKey.IntKey FutureSkewSeconds = new("requests.futureSkewSeconds", 60, 3600) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>How long an ACCEPTED detached run waits for THE run lock before it is recorded refused — a --detach check holds
+        /// the lock for its sweep and count (retro round over PR #11, O1); 0 is the old refuse-at-once. Default 30.</summary>
+        public static readonly ConfigKey.IntKey LockWaitSeconds = new("requests.lockWaitSeconds", 0, 120) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
     public static partial class Act
@@ -594,6 +598,7 @@ public static partial class ConfigKeys
         Requests.MaxBytes,
         Requests.GraceSeconds,
         Requests.FutureSkewSeconds,
+        Requests.LockWaitSeconds,
         Act.MaxShownNames,
         Act.MaxListBytes,
         Act.StdinTimeoutSeconds,

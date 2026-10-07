@@ -76,6 +76,14 @@ internal enum ExitCode
     /// root-owned file in their home would lock them out) — refused whole, naming the fix.</summary>
     NotAsRoot = 81,
 
-    /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention).</summary>
+    /// <summary><c>act --request &lt;runId&gt;</c>: the request cannot be used (the hardened reader refuses it) - RECORDED as
+    /// <c>refused</c> with the reason and removed; nothing was run. A success exit of the unit (retro round over PR #11, O3: it
+    /// used to exit 2, the usage error, which the unit counted as a failure).</summary>
+    RequestUnusable = 82,
+
+    /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention). Under a unit the only signal
+    /// is systemd's SIGTERM - a stop someone asked for (<c>act --stop</c>, <c>systemctl stop</c>, a shutdown) - and the run records
+    /// itself <c>interrupted</c> first (or leaves running.json / its request for the sweep), so both units count it as a success
+    /// exit (retro round over PR #11, O3).</summary>
     Interrupted = 130,
 }

@@ -35,11 +35,19 @@ public static class StopMarkers
         return files.WriteFileAtomically(File(paths, runId), System.Text.Encoding.UTF8.GetBytes(text), new DeletionScope(Directory(paths), Action));
     }
 
-    /// <summary>The reason a swept run whose stop was asked records; empty when no stop was asked for it.</summary>
+    /// <summary>The reason a swept run whose stop was asked records; empty when no stop was asked for it. A marker proves only
+    /// that a stop was REQUESTED, and when: the reason says that and that the run died without recording itself — never that
+    /// systemd killed it after the stop timeout, which nothing here observed (retro round over PR #11, consultation 9064487b).</summary>
     public static string StoppedReason(IHostPaths paths, IFileSystem files, RunId runId) =>
         files.ReadStateFile(File(paths, runId), Tuning.Current.Int(ConfigKeys.Stops.MaxMarkerBytes)) is FileReadResult.Content content
-            ? $"stopped: act --stop asked systemd to stop it ({System.Text.Encoding.UTF8.GetString(content.Bytes).Trim()}) and it did not exit within {Tuning.Current.Text(ConfigKeys.Units.StopTimeoutSeconds)} s of SIGTERM, so systemd killed it before it could record itself"
+            ? $"stopped: {Requested(System.Text.Encoding.UTF8.GetString(content.Bytes).Trim())} (act --stop), and the run died without recording itself"
             : string.Empty;
+
+    /// <summary>The marker's <c>&lt;time&gt; &lt;unit&gt;</c> in words; a marker of another shape is quoted as it is.</summary>
+    private static string Requested(string marker) =>
+        marker.IndexOf(' ', StringComparison.Ordinal) is var space and > 0
+            ? $"a stop was requested at {marker[..space]} through {marker[(space + 1)..]}"
+            : $"a stop was requested ({marker})";
 
     /// <summary>Removes the marker of <paramref name="runId"/> when there is one.</summary>
     public static void Remove(IHostPaths paths, IFileSystem files, RunId runId)

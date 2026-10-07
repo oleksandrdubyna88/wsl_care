@@ -84,13 +84,6 @@ public sealed partial class ShippedFilesTests
         Unit("wsl-care.service").Should().NotContainKey("Install", "started by its timer only, never enabled on its own");
     }
 
-    [Fact]
-    public void The_service_counts_only_the_busy_exit_as_success()
-    {
-        Single(Unit("wsl-care.service"), "Service", "SuccessExitStatus").Should().Be(((int)ExitCode.Busy).ToString(System.Globalization.CultureInfo.InvariantCulture),
-            "a second run meeting the lock is the designed answer (plan §5), not a failed unit");
-    }
-
     /// <summary>The cgroup ceiling covers every child of the run (npm, dotnet, pip, the docker CLIs, the folder walk):
     /// plan §8's 256M would OOM-kill a child mid-cleanup (E4 review, 2026-10-03).</summary>
     [Fact]
@@ -323,15 +316,8 @@ public sealed partial class ShippedFilesTests
     private static string Comparable(string key, string value) =>
         key == "MemoryMax" && value.EndsWith('G') ? (int.Parse(value[..^1], System.Globalization.CultureInfo.InvariantCulture) * 1024).ToString(System.Globalization.CultureInfo.InvariantCulture) + "M" : value;
 
-    [Fact]
-    public void The_detached_run_s_template_counts_exactly_the_recorded_answers_as_success()
-    {
-        var codes = Single(Unit("wsl-care-act@.service"), "Service", "SuccessExitStatus").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-        codes.Should().Equal(new[] { ExitCode.ActionFailed, ExitCode.Busy, ExitCode.Wedged, ExitCode.ObserveOnly, ExitCode.StateUnreadable, ExitCode.RequestGone }
-            .Select(c => ((int)c).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-            "an action that failed (recorded), a refusal (recorded as refused) and a missing request (a no-op) are answers, not unit failures (§15k #8)");
-    }
+    // The units' SuccessExitStatus lists are held by Cli.Tests/UnitSuccessExitTests, DERIVED from the exits every recorded ending
+    // of the two runs returns (retro round over PR #11, O3) — the hand-typed comparisons that stood here were circular.
 
     [Fact]
     public void The_installer_installs_exactly_the_units_this_repository_ships()

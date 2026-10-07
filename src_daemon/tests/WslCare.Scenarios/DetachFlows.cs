@@ -88,6 +88,8 @@ public sealed class DetachFlows
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), LinuxOnly);
         using var home = Home("detach-refused");
+        // An accepted run waits for the lock (retro round over PR #11, O1); a holder that keeps it past the wait still refuses it.
+        home.WriteFile(Path.GetRelativePath(home.WorkingDirectory, home.Paths.MachineConfigFile), """{ "requests": { "lockWaitSeconds": 1 } }""");
         var answer = Accepted(await home.RunAsync("act", "A10", "--confirm", "--detach", "--json"));
 
         ChildResult run;
