@@ -3,10 +3,9 @@ using System.Runtime.Versioning;
 
 using Microsoft.Win32.SafeHandles;
 
-namespace WslCare.Core.Archive;
+using WslCare.Core.Files;
 
-/// <summary>What a Windows file system says a folder IS, whatever it was called: its volume's serial and its file index.</summary>
-public readonly record struct FileIdentity(uint VolumeSerial, ulong FileIndex);
+namespace WslCare.Core.Archive;
 
 /// <summary>
 /// E9.S0 review round S3 — a folder's identity on Windows, read through a handle opened for its attributes only (no data, no

@@ -193,6 +193,8 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Files/BeneathWrites.cs: EmptyPath"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: NoReplace"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: ShareWrite"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
+        ["WslCare.Core/Files/BeneathWrites.cs: NanosecondsPerSecond"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
+        ["WslCare.Core/Files/BeneathWrites.cs: BirthTimeMask"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: FileRenameInfo"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: ReadAttributes"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",
         ["WslCare.Core/Files/BeneathWrites.cs: LongestPath"] = "a kernel or Win32 ABI constant (a flag, an errno, an error code, a struct size) — the operating system decides it",

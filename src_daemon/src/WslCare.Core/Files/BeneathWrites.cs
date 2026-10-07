@@ -5,12 +5,53 @@ using Microsoft.Win32.SafeHandles;
 
 namespace WslCare.Core.Files;
 
+/// <summary>An open of a file or a folder by a native call (plan §15r E9.S2a own review round m4: one closed answer for both
+/// systems, never a tuple): the handle, or the system's error code. Disposing it closes an opened handle.</summary>
+internal abstract record NativeOpen : IDisposable
+{
+    private NativeOpen()
+    {
+    }
+
+    public sealed record Opened(SafeFileHandle Handle) : NativeOpen
+    {
+        public override void Dispose() => Handle.Dispose();
+    }
+
+    public sealed record Failed(int Error) : NativeOpen
+    {
+        public override void Dispose()
+        {
+        }
+    }
+
+    public abstract void Dispose();
+
+    /// <summary>The system's error code of a failed open; 0 for an opened one.</summary>
+    public int ErrorCode => this is Failed failed ? failed.Error : 0;
+}
+
+/// <summary>What <c>GetFileInformationByHandle</c> said about an open Windows file; <see cref="Unknown"/> when it could not say.</summary>
+internal readonly record struct WindowsFileInfo(bool Known, uint Attributes, uint Links, uint VolumeSerial, ulong Index)
+{
+    public static WindowsFileInfo Unknown { get; } = new(false, 0, 0, 0, 0);
+
+    public FileIdentity Identity => new(VolumeSerial, Index);
+
+    /// <summary>No reparse point, and a folder exactly when <paramref name="folder"/> is the directory attribute (0: a file).</summary>
+    public bool Is(uint folder) => Known && (Attributes & (BeneathWrites.WindowsReparsePoint | BeneathWrites.WindowsDirectory)) == folder;
+
+    /// <summary>A regular file — no folder, no reparse point — of ONE link.</summary>
+    public bool IsPlainFile => Is(0) && Links == 1;
+}
+
 /// <summary>
 /// The archive seam's native calls (plan §15r E9.S2a) — the ONLY place outside <see cref="PhysicalFileSystem"/> that may name
-/// <c>renameat2</c>, <c>unlinkat</c>, <c>mkdirat</c>, a rename by handle (<c>FILE_RENAME_INFO</c>) or a delete disposition (the architecture scan holds every
-/// other file to that). Linux: every folder below a trusted one is opened from the previous one's descriptor with
-/// <c>O_NOFOLLOW</c>, so a link on the way is refused, never followed, and nothing can be swapped between the open and the act.
-/// Windows: a handle opened for exactly the access it needs, a reparse point never followed.
+/// <c>renameat2</c>, <c>unlinkat</c>, <c>mkdirat</c>, a rename by handle (<c>FILE_RENAME_INFO</c>) or a delete disposition (the
+/// architecture scan holds every other file to that). Linux: every folder is opened from the previous one's descriptor with
+/// <c>O_NOFOLLOW</c>, from the file system's root along the path the policy judged (own review round, security m1), so a link
+/// anywhere on the way is refused, never followed. Windows: a handle opened for exactly the access it needs, a reparse point never
+/// followed, and asked afterwards where it really is.
 /// </summary>
 internal static partial class BeneathWrites
 {
@@ -19,6 +60,9 @@ internal static partial class BeneathWrites
     {
         public bool Failed => Value < 0;
     }
+
+    /// <summary>A folder chain's answer: the last folder's descriptor, or the errno and the component that failed.</summary>
+    internal readonly record struct Chain(Native Folder, string FailedAt);
 
     internal const int NoEntry = 2;
     internal const int Exists = 17;
@@ -31,12 +75,12 @@ internal static partial class BeneathWrites
     /// from the previous one's descriptor with <c>O_NOFOLLOW</c> — for <c>*at</c> calls (<c>O_PATH</c>); the last one opened
     /// <paramref name="readable"/> when the caller must <c>fsync</c> or create in it.</summary>
     [SupportedOSPlatform("linux")]
-    internal static (Native Folder, string Failed) OpenChain(string start, IReadOnlyList<string> components, bool readable)
+    internal static Chain OpenChain(string start, IReadOnlyList<string> components, bool readable)
     {
         var first = Linux.Open(start, FolderFlags(components.Count == 0 && readable), 0);
         if (first < 0)
         {
-            return (new Native(-1, Marshal.GetLastPInvokeError()), start);
+            return new Chain(new Native(-1, Marshal.GetLastPInvokeError()), start);
         }
 
         var folder = first;
@@ -47,13 +91,13 @@ internal static partial class BeneathWrites
             _ = Linux.Close(folder);
             if (next < 0)
             {
-                return (new Native(-1, errno), components[i]);
+                return new Chain(new Native(-1, errno), components[i]);
             }
 
             folder = next;
         }
 
-        return (new Native(folder, 0), string.Empty);
+        return new Chain(new Native(folder, 0), string.Empty);
     }
 
     [SupportedOSPlatform("linux")]
@@ -63,20 +107,16 @@ internal static partial class BeneathWrites
     [SupportedOSPlatform("linux")]
     internal static Native OpenFolderAt(int folder, string name, bool readable) => Call(Linux.OpenAt(folder, name, FolderFlags(readable), 0));
 
-    /// <summary>A folder by its path, its last component never a link.</summary>
-    [SupportedOSPlatform("linux")]
-    internal static Native OpenFolder(string path, bool readable) => Call(Linux.Open(path, FolderFlags(readable), 0));
-
     [SupportedOSPlatform("linux")]
     internal static Native MakeFolderAt(int folder, string name) =>
         Linux.MkdirAt(folder, name, Linux.PrivateFolder) == 0 ? new Native(0, 0) : new Native(-1, Marshal.GetLastPInvokeError());
 
     [SupportedOSPlatform("linux")]
-    internal static Native OpenReadAt(int folder, string name) => Call(Linux.OpenAt(folder, name, Linux.ReadOnly | Linux.NonBlocking | Linux.NoFollow | Linux.CloseOnExec, 0));
+    internal static NativeOpen OpenReadAt(int folder, string name) => Handle(Linux.OpenAt(folder, name, Linux.ReadOnly | Linux.NonBlocking | Linux.NoFollow | Linux.CloseOnExec, 0));
 
     [SupportedOSPlatform("linux")]
-    internal static Native CreateExclusiveAt(int folder, string name) =>
-        Call(Linux.OpenAt(folder, name, Linux.WriteOnly | Linux.Create | Linux.Exclusive | Linux.NoFollow | Linux.CloseOnExec, Linux.PrivateFile));
+    internal static NativeOpen CreateExclusiveAt(int folder, string name) =>
+        Handle(Linux.OpenAt(folder, name, Linux.WriteOnly | Linux.Create | Linux.Exclusive | Linux.NoFollow | Linux.CloseOnExec, Linux.PrivateFile));
 
     [SupportedOSPlatform("linux")]
     internal static Native RenameNoReplace(int folder, string from, string to) => Call(Linux.RenameAt2(folder, from, folder, to, Linux.NoReplace));
@@ -91,7 +131,7 @@ internal static partial class BeneathWrites
     /// file description of the file exists anywhere — a descriptor a child inherited by fork, a writable shared mapping whose
     /// descriptor was closed, another account's open — and while it is held a new open of the file must first break it. Its break
     /// is announced by SIGURG (ignored by default), never by SIGIO (which would end this process): the holder asks
-    /// <see cref="LeaseHeld"/> instead. <c>false</c> with the errno when the kernel refused it.</summary>
+    /// <see cref="LeaseHeld"/> instead.</summary>
     [SupportedOSPlatform("linux")]
     internal static Native TakeWriteLease(int descriptor) =>
         Linux.Fcntl(descriptor, Linux.SetSignal, Linux.UrgentSignal) < 0 ? new Native(-1, Marshal.GetLastPInvokeError()) : Call(Linux.Fcntl(descriptor, Linux.SetLease, Linux.WriteLock));
@@ -103,35 +143,49 @@ internal static partial class BeneathWrites
     [SupportedOSPlatform("linux")]
     internal static void Close(int descriptor) => _ = Linux.Close(descriptor);
 
+    /// <summary>The descriptor number inside an open handle — valid only while the caller holds the handle.</summary>
+    internal static int Descriptor(SafeFileHandle handle) => (int)handle.DangerousGetHandle();
+
     /// <summary>The identity and kind of a descriptor (<paramref name="name"/> empty) or of a name in a folder, never following a
-    /// link: <c>stx_mode</c>'s type, <c>stx_nlink</c>, <c>stx_uid</c>, <c>stx_ino</c>, the device, <c>stx_size</c> and <c>stx_mtime</c>.</summary>
+    /// link; <see cref="LinuxStatus.None"/> (not <see cref="LinuxStatus.Known"/>) when <c>statx</c> failed.</summary>
     [SupportedOSPlatform("linux")]
-    internal static (bool Ok, LinuxStatus Status) Stat(int folder, string name)
+    internal static LinuxStatus Stat(int folder, string name)
     {
         var buffer = new byte[Linux.StatxSize];
         var flags = name.Length == 0 ? Linux.EmptyPath : Linux.SymlinkNoFollow;
-        return Linux.Statx(folder, name, flags, Linux.StatxBasic, buffer) == 0
-            ? (true, LinuxStatus.From(buffer))
-            : (false, LinuxStatus.None);
+        return Linux.Statx(folder, name, flags, Linux.StatxBasic, buffer) == 0 ? LinuxStatus.From(buffer) : LinuxStatus.None;
     }
 
     private static Native Call(int result) => result < 0 ? new Native(-1, Marshal.GetLastPInvokeError()) : new Native(result, 0);
 
-    /// <summary>What a <c>statx</c> said.</summary>
-    internal readonly record struct LinuxStatus(int Type, uint Links, uint Owner, ulong Inode, uint DeviceMajor, uint DeviceMinor, long Size, DateTimeOffset LastWriteUtc)
+    private static NativeOpen Handle(int result) =>
+        result < 0 ? new NativeOpen.Failed(Marshal.GetLastPInvokeError()) : new NativeOpen.Opened(new SafeFileHandle(result, ownsHandle: true));
+
+    /// <summary>What a <c>statx</c> said; <see cref="None"/> is "it could not be read".</summary>
+    internal readonly record struct LinuxStatus(bool Known, int Type, uint Links, uint Owner, ulong Inode, uint DeviceMajor, uint DeviceMinor, long Size, DateTimeOffset LastWriteUtc, long BornNanoseconds)
     {
         public const int Regular = 0x8000;
 
-        public static LinuxStatus None { get; } = new(0, 0, 0, 0, 0, 0, 0, DateTimeOffset.UnixEpoch);
+        public static LinuxStatus None { get; } = new(false, 0, 0, 0, 0, 0, 0, 0, DateTimeOffset.UnixEpoch, 0);
 
-        public bool IsRegular => Type == Regular;
+        public bool IsRegular => Known && Type == Regular;
 
-        public bool SameFile(LinuxStatus other) => Inode == other.Inode && DeviceMajor == other.DeviceMajor && DeviceMinor == other.DeviceMinor;
+        /// <summary>A regular file of ONE link.</summary>
+        public bool IsPlainFile => IsRegular && Links == 1;
+
+        /// <summary>The device, the inode and — where the file system keeps it — the birth time: what names one file on Linux. The
+        /// birth time tells a file from a later one that reused a freed inode number (seen on ext4: a file removed and another
+        /// created at once get the same inode).</summary>
+        public FileIdentity Identity => new(((ulong)DeviceMajor << 32) | DeviceMinor, Inode, BornNanoseconds);
+
+        public bool SameFile(LinuxStatus other) => Known && other.Known && Identity == other.Identity;
 
         /// <summary>The fields of the 256-byte <c>struct statx</c>: <c>stx_nlink</c> (u32 at 16), <c>stx_uid</c> (u32 at 20), <c>stx_mode</c>
         /// (u16 at 28), <c>stx_ino</c> (u64 at 32), <c>stx_size</c> (u64 at 40), <c>stx_mtime</c> (i64 + u32 at 112),
-        /// <c>stx_dev_major</c> / <c>stx_dev_minor</c> (u32 at 136 / 140).</summary>
+        /// <c>stx_dev_major</c> / <c>stx_dev_minor</c> (u32 at 136 / 140), and <c>stx_btime</c> (i64 + u32 at 80) when <c>stx_mask</c>
+        /// (u32 at 0) holds <c>STATX_BTIME</c> — 0 where the file system keeps none.</summary>
         public static LinuxStatus From(byte[] statx) => new(
+            true,
             BitConverter.ToUInt16(statx, 28) & 0xF000,
             BitConverter.ToUInt32(statx, 16),
             BitConverter.ToUInt32(statx, 20),
@@ -139,7 +193,11 @@ internal static partial class BeneathWrites
             BitConverter.ToUInt32(statx, 136),
             BitConverter.ToUInt32(statx, 140),
             (long)BitConverter.ToUInt64(statx, 40),
-            DateTimeOffset.FromUnixTimeSeconds(BitConverter.ToInt64(statx, 112)).AddTicks(BitConverter.ToUInt32(statx, 120) / 100));
+            DateTimeOffset.FromUnixTimeSeconds(BitConverter.ToInt64(statx, 112)).AddTicks(BitConverter.ToUInt32(statx, 120) / 100),
+            (BitConverter.ToUInt32(statx, 0) & BirthTimeMask) != 0 ? (BitConverter.ToInt64(statx, 80) * NanosecondsPerSecond) + BitConverter.ToUInt32(statx, 88) : 0);
+
+        private const uint BirthTimeMask = 0x800;
+        private const long NanosecondsPerSecond = 1_000_000_000;
     }
 
     [SupportedOSPlatform("linux")]
@@ -163,7 +221,7 @@ internal static partial class BeneathWrites
         public const int GetLease = 1025;
         public const int WriteLock = 1;
         public const int UrgentSignal = 23;
-        public const uint StatxBasic = 0x7FF;
+        public const uint StatxBasic = 0xFFF;
         public const int StatxSize = 256;
 
         private const string Libc = "libc.so.6";
@@ -205,29 +263,45 @@ internal static partial class BeneathWrites
     /// same handle; sharing READ only while it is held (no other process may write, rename or delete it meanwhile); a reparse point
     /// opened as itself, never followed; with <paramref name="unbuffered"/> read past the system cache (<c>FILE_FLAG_NO_BUFFERING</c>).</summary>
     [SupportedOSPlatform("windows")]
-    internal static (SafeFileHandle Handle, int Error) OpenWindows(string path, bool delete, bool unbuffered)
+    internal static NativeOpen OpenWindows(string path, bool delete, bool unbuffered)
     {
         var access = Windows.GenericRead | (delete ? Windows.Delete : 0);
         var flags = Windows.OpenReparsePoint | Windows.SequentialScan | (unbuffered ? Windows.NoBuffering : 0);
-        var handle = Windows.CreateFile(path, access, Windows.ShareRead, IntPtr.Zero, Windows.OpenExisting, flags, IntPtr.Zero);
-        return (handle, handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0);
+        return Handle(Windows.CreateFile(path, access, Windows.ShareRead, IntPtr.Zero, Windows.OpenExisting, flags, IntPtr.Zero));
     }
+
+    /// <summary>A session file opened to COPY it: read only, sharing read, write and delete (the agent keeps appending and may delete
+    /// it — never blocked by the archive), the reparse point itself opened, never followed.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static NativeOpen OpenSourceWindows(string path) =>
+        Handle(Windows.CreateFile(path, Windows.GenericRead, Windows.ShareRead | Windows.ShareWrite | Windows.ShareDelete, IntPtr.Zero, Windows.OpenExisting, Windows.OpenReparsePoint | Windows.SequentialScan, IntPtr.Zero));
 
     /// <summary>A Windows folder held for the archive's creates (gate round findings 3 and 4): the folder itself, never a reparse
     /// point followed (<c>FILE_FLAG_OPEN_REPARSE_POINT</c>); <c>FILE_ADD_FILE</c>, the right <c>FlushFileBuffers</c> needs on a
     /// folder (measured: read-only or attributes-only handles answer error 5); sharing READ and WRITE but never DELETE, so while
     /// it is held neither the folder nor any folder above it can be renamed (measured on NTFS) — nothing can swap it for a link.</summary>
     [SupportedOSPlatform("windows")]
-    internal static (SafeFileHandle Handle, int Error) HoldFolderWindows(string path)
-    {
-        var handle = Windows.CreateFile(path, Windows.AddFile, Windows.ShareRead | Windows.ShareWrite, IntPtr.Zero, Windows.OpenExisting, Windows.BackupSemantics | Windows.OpenReparsePoint, IntPtr.Zero);
-        return (handle, handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0);
-    }
+    internal static NativeOpen HoldFolderWindows(string path) =>
+        Handle(Windows.CreateFile(path, Windows.AddFile, Windows.ShareRead | Windows.ShareWrite, IntPtr.Zero, Windows.OpenExisting, Windows.BackupSemantics | Windows.OpenReparsePoint, IntPtr.Zero));
 
-    /// <summary>A handle only good for asking where a file or folder IS (no access right; links on the way followed).</summary>
+    /// <summary>A file or a folder opened to rename or remove it THROUGH this handle (gate round finding 3): <c>DELETE</c> and
+    /// attributes, the reparse point itself never followed, sharing everything as a rename by path does — so an agent's open
+    /// blocks no more than before.</summary>
     [SupportedOSPlatform("windows")]
-    internal static SafeFileHandle OpenForName(string path) =>
-        Windows.CreateFile(path, 0, Windows.ShareRead | Windows.ShareWrite | Windows.ShareDelete, IntPtr.Zero, Windows.OpenExisting, Windows.BackupSemantics, IntPtr.Zero);
+    internal static NativeOpen OpenToChangeWindows(string path) =>
+        Handle(Windows.CreateFile(path, Windows.Delete | Windows.ReadAttributes, Windows.ShareRead | Windows.ShareWrite | Windows.ShareDelete, IntPtr.Zero, Windows.OpenExisting, Windows.BackupSemantics | Windows.OpenReparsePoint, IntPtr.Zero));
+
+    private static NativeOpen Handle(SafeFileHandle handle)
+    {
+        if (!handle.IsInvalid)
+        {
+            return new NativeOpen.Opened(handle);
+        }
+
+        var error = Marshal.GetLastPInvokeError();
+        handle.Dispose();
+        return new NativeOpen.Failed(error);
+    }
 
     /// <summary>Flushes an open file or a held folder to the disk; 0 or the Win32 error.</summary>
     [SupportedOSPlatform("windows")]
@@ -248,15 +322,19 @@ internal static partial class BeneathWrites
         : path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path[4..]
         : path;
 
-    /// <summary>The attributes and link count of an open Windows file.</summary>
+    /// <summary>The attributes, link count and identity of an open Windows file.</summary>
     [SupportedOSPlatform("windows")]
-    internal static (bool Ok, uint Attributes, uint Links) Describe(SafeFileHandle handle) =>
-        Windows.GetFileInformationByHandle(handle, out var info) ? (true, info.FileAttributes, info.NumberOfLinks) : (false, 0, 0);
+    internal static WindowsFileInfo Describe(SafeFileHandle handle) =>
+        Windows.GetFileInformationByHandle(handle, out var info)
+            ? new WindowsFileInfo(true, info.FileAttributes, info.NumberOfLinks, info.VolumeSerialNumber, ((ulong)info.FileIndexHigh << 32) | info.FileIndexLow)
+            : WindowsFileInfo.Unknown;
 
-    /// <summary>Marks the open file for deletion when its handle closes — set only by the caller AFTER its bytes were found equal:
-    /// POSIX semantics first (the name goes at once), the classic disposition where the file system has none.</summary>
+    /// <summary>Marks the open file for deletion when its handle closes — set only by the caller AFTER it checked what it removes:
+    /// POSIX semantics (the name goes at once). Where the file system has none, the classic disposition (the name stays, delete-
+    /// pending, until every handle closes) only when <paramref name="classicAllowed"/> — never under an AI agent's folder, where an
+    /// agent re-creating the name would be refused (own review round m2); 0 or the Win32 error.</summary>
     [SupportedOSPlatform("windows")]
-    internal static int MarkForDeletion(SafeFileHandle handle)
+    internal static int MarkForDeletion(SafeFileHandle handle, bool classicAllowed)
     {
         var posix = Windows.DispositionDelete | Windows.DispositionPosix;
         if (Windows.SetFileInformationByHandle(handle, Windows.FileDispositionInfoEx, ref posix, sizeof(uint)))
@@ -264,18 +342,11 @@ internal static partial class BeneathWrites
             return 0;
         }
 
+        var posixError = Marshal.GetLastPInvokeError();
         var classic = 1u;
-        return Windows.SetFileInformationByHandle(handle, Windows.FileDispositionInfo, ref classic, 1) ? 0 : Marshal.GetLastPInvokeError();
-    }
-
-    /// <summary>A file or a folder opened to rename or remove it THROUGH this handle (gate round finding 3): <c>DELETE</c> and
-    /// attributes, the reparse point itself never followed, sharing everything as a rename by path does — so an agent's open
-    /// blocks no more than before.</summary>
-    [SupportedOSPlatform("windows")]
-    internal static (SafeFileHandle Handle, int Error) OpenToChangeWindows(string path)
-    {
-        var handle = Windows.CreateFile(path, Windows.Delete | Windows.ReadAttributes, Windows.ShareRead | Windows.ShareWrite | Windows.ShareDelete, IntPtr.Zero, Windows.OpenExisting, Windows.BackupSemantics | Windows.OpenReparsePoint, IntPtr.Zero);
-        return (handle, handle.IsInvalid ? Marshal.GetLastPInvokeError() : 0);
+        return !classicAllowed ? posixError
+            : Windows.SetFileInformationByHandle(handle, Windows.FileDispositionInfo, ref classic, 1) ? 0
+            : Marshal.GetLastPInvokeError();
     }
 
     /// <summary>Renames the OPEN file to <paramref name="destination"/> (a full path), never replacing: <c>FILE_RENAME_INFO</c> with

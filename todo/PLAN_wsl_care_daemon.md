@@ -2709,7 +2709,7 @@ the archive loses the sessions that turn 30 that day. (The coordinator has told 
 
 | # | Constraint | Held by |
 |---|---|---|
-| H1 | Nothing inside an AI agent's folder is deleted — EXCEPT the archive's verified move: copy → verify the hash → index → only then the source is removed | E9.S2a: the deletion policy allows a removal under an agent folder only as the second phase of a move whose archived copy exists, was re-hashed in a LATER run and hashes equal (D2); E9.S2b's whole-protocol property: every removed inode's content equals an archived copy the index recorded |
+| H1 | Nothing inside an AI agent's folder is deleted — EXCEPT the archive's verified move: copy → verify the hash → index → only then the source is removed | **What each story holds** (corrected by the *E9.S2a own review round*, C-M4 / S-M2). **E9.S2a (the seam):** under an agent folder the policy allows a file removal only of a name carrying the quarantine mark, with an archived copy NAMED outside every protected place; the seam then opens that archived copy along its real path through no link and hashes it (Windows past the cache), and removes the source only when the copy exists AND both the copy and the quarantined bytes hash to the expected hash — `A_quarantined_file_whose_archived_copy_is_missing_or_changed_is_never_removed`. **E9.S2b holds the rest:** the expected hash is the INDEX's, the copy was written in an EARLIER run (the in-flight entry's `archived` time ≥ `archive.removeAfterHours` before), and every resumed `removing` entry is re-verified; held by `The_source_is_removed_only_by_a_later_run_after_its_copy_is_re_hashed` and the whole-protocol property `Every_removed_inode_equals_an_archived_copy_the_index_recorded` |
 | H2 | `projects/*/memory/` of any agent is never touched — not read, not moved, not entered | E9.S1: selection never enters a `memory` folder (any agent, any case — E7's rule) and refuses a session WHOLE whose companion would be one (a session named `memory.jsonl` has the companion `projects/<p>/memory`); `DeletionPolicy` refuses it for every operation (exists, `Files/Deletion/DeletionPolicy.cs:111-121`); restore refuses it as a destination |
 | H3 | `%TEMP%\claude\` (and `/tmp/claude`) is never cleaned, never selected, never a base folder | E9.S0 (base rules), E9.S1 (selection reads only the catalogue's layouts) |
 | H4 | Every behavioural number is a configuration key (the owner's rule, 2026-10-05: group A user, group B machine-layer-only, group C formats — §15q *E7.S2c*, `research/architecture.md` § *Numbers are configuration*) | every story: *Configuration* below; `ArchitectureTests.Numbers` fails on a new literal; `NumbersAreConfigurationTests.The_defaults_hold_every_coupled_rule` (`src_daemon/tests/WslCare.Core.Tests/Config/NumbersAreConfigurationTests.cs:236`) stays green |
@@ -3160,10 +3160,10 @@ Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and
   inside an agent's — never the agent's folder itself), `RestoreIntoAgentFolder` (a create); `FileOperation.Create`; the
   rule `ArchiveShape`. A plain delete under an agent's folder stays refused by every permit; memory by all of them. The old
   `MoveOutOfAgentFolder` permit stays (unused by the protocol, which copies and removes).
-- **The scan** forbids, outside the seam's four files, `File.Copy` / `File.Replace`, a `FileInfo`'s `CopyTo` / `Replace` (chained
+- **The scan** forbids, outside the seam's files (five since the gate round: `PhysicalFileSystem.cs`, its archive halves `PhysicalFileSystem.Archive.cs` and `.Archive.Windows.cs`, `BeneathWrites.cs`, `RegularFiles.cs`), `File.Copy` / `File.Replace`, a `FileInfo`'s `CopyTo` / `Replace` (chained
   or on a name declared as one), `FileOptions.DeleteOnClose`, `SetFileInformationByHandle`, `FileDisposition*`, and the native
   entry points `rename`, `renameat(2)`, `unlink(at)`, `link(at)`, `rmdir`, `MoveFileEx`, `DeleteFile`, `RemoveDirectory`,
-  `CopyFile(2)`, `ReplaceFile`; the first scan's seam is the same four files.
+  `CopyFile(2)`, `ReplaceFile`; the first scan's seam is the same files.
 - **The fault seam** is an `Action<ArchiveFileStep, string>` asked between the primitive steps (`SourceOpened`,
   `FolderLevelReady`, `FolderLevelSynced`, `ExclusiveCreated`, `ReadBackChunk`, `OwnCopyRemoved`, `FolderFlushed`, `Renamed`,
   `RemovalOpened`, `RemovalHashChunk`, `RemovalHashed`, `Removed`, `FolderRemoved`); it throws in-process here — the BUILT child
@@ -3554,7 +3554,9 @@ ACCEPTED and fixed in one `fix(daemon): E9.S2a gate round …` commit, each with
 
 **Residuals after the round.** Windows: between the final-path check and the act nothing can move the file (the removal's handle
 shares read only; the rename's and folder's handles are the act) — but the open itself is by path, so a swap makes the act
-REFUSE (`Kept` / `Refused`), it never redirects it. Linux is unchanged (the descriptor chain had no such window).
+REFUSE (`Kept` / `Refused`), it never redirects it. *(Corrected by the own review round, security m1: "Linux had no such window" was true
+for the last component only — the chain's root and its ancestors were opened by path. Both systems now act along the REAL path
+the policy judged: Linux from the file system's root with `O_NOFOLLOW` at every level, Windows compared with it.)*
 
 **Owner questions from the round (asked 2026-10-06, open — the coordinator's interim rulings stand until the owner answers).**
 
@@ -3563,6 +3565,36 @@ REFUSE (`Kept` / `Refused`), it never redirects it. Linux is unchanged (the desc
   one built: a level whose new entry cannot be flushed REFUSES (`FolderBeneath.Refused`), so nothing is moved there.
 - **A Windows session file owned by `Administrators`** (an elevated process may create one) is refused as a source and stays
   where it is — the safe direction — until the owner decides whether such a file may be archived when this account is a member.
+  *Said plainly (own review round, security note):* "it stays" means Claude Code's own `cleanupPeriodDays` sweep deletes it — such
+  a session is LOST, not kept, until the owner decides.
+
+**Live-gate items (unmeasured here, recorded by the own review round; before E9.S5):** `FlushFileBuffers` on a folder handle
+over SMB; `fsync` of a folder on a real drvfs mount; an unaligned last read with `FILE_FLAG_NO_BUFFERING` over SMB.
+
+#### E9.S2a own review round (2026-10-06) — a correctness and a security review of the seam
+
+Two own reviews of `9f59df4` (E9.S2a) and `a31f966` (its gate round), read against the files: every finding ACCEPTED except where
+the row says otherwise, fixed in ONE `fix(daemon): E9.S2a own review round` commit, each with its red run or its break-it check
+(`research/module_tests.md` § *The E9.S2a own review round*). Each row OVERRIDES the text it names. Correctness findings are `C-`,
+security findings `S-`.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| C-M1 + S-m4 (Major) | Windows verbs threw where Linux answers: an uncreatable level (a FILE of its name, a denied create) threw and left the held parent open; the own-copy removal used `File.Exists` + `File.Delete` by path (a sharing violation threw; a file gone in between answered Removed); `ReparseOnTheWay`'s `GetAttributes` threw `FileNotFoundException` when the agent deleted the file | **Fixed:** every native open answers a closed `NativeOpen` (`Opened` / `Failed`); an uncreatable level is `Refused`, the parent disposed in `finally`; the own copy is removed through ONE `DELETE` handle; `ReparseOnTheWay` is gone — the open's real location is checked instead (S-m1); a vanished file is `Gone` on both systems | `Files/PhysicalFileSystem.Archive.Windows.cs`, `Files/BeneathWrites.cs` |
+| C-M2 (Major) | `RemoveOwnCopy` removed ANY name in the held folder | **Fixed:** `ExclusiveFile.Created` carries the file's `FileIdentity` (Linux device + inode + birth time, Windows volume serial + file index — measured in WSL: a file removed and another created at once got the SAME inode on ext4, so device + inode alone was red; the birth time tells them apart); `RemoveOwnCopy` takes it and keeps any other file at that name. `FileIdentity` is the ONE record — the E9.S0 `Archive.FileIdentity` moved to `Files` and widened, not copied. Residual (Linux): a rename onto the name between the check and the unlink, inside the base the side's lease gives one writer | `Files/IArchiveFiles.cs`, both halves |
+| C-M3 (Major) | the native-call scan matched only `EntryPoint = "…"` | **Fixed:** the declaration idiom `extern`/`partial` + the function's own name is matched too, planted in both forms | `tests/…/ArchitectureTests.ArchiveSeam.cs` |
+| C-M4 = S-M2 (Major) | H1's "held by" overclaimed; `RemoveVerified` never read the archived copy | **Fixed in the seam (the security review's fix, chosen over rewording only):** `RemoveVerified` opens the archived copy along its real path through no link, hashes it (Windows past the cache) BEFORE the source, and keeps the source when the copy is missing, unreadable or not equal to the expected hash. *Cost accepted:* phase 2 re-reads every archived file once more than D2.7's re-verify — on a slow share that doubles the reads of a removal, and data safety wins (a `removing` entry resumed after a crash is re-verified by this read even if S2b forgot to). H1 reworded to what each story holds | `Files/PhysicalFileSystem.Archive.cs`; H1 above |
+| C-M5 (Major, docs) | `module_archive.md`'s sequence diagram showed the rejected one-run protocol | **Fixed:** redrawn — two runs, the in-flight file, the index, the commit point | `research/module_archive.md` |
+| C-M6 (Major, tests) | the swap tests passed when the swap never happened | **Fixed:** `SwapAtTheCheck` answers whether it fired and every test asserts it, and the answer's type | `tests/…/ArchiveFilesTests.GateRound.cs` |
+| S-M1 (Major) | a disposed `OpenedFolder` was still accepted; its descriptor number could be reused | **Fixed:** the folder's handle (both systems) is a `SafeFileHandle`; every verb runs inside `OpenedFolder.With`, which holds a reference for the call — a closed folder is refused, its number never reused under a verb | `Files/PhysicalFileSystem.Archive.cs` |
+| S-m1 | the chain's root (and on Linux its ancestors) were opened by path, not along the judged path | **Fixed:** every act locates its target on its REAL path (`Located`): Linux opens the chain from the file system's root with `O_NOFOLLOW` at every level; Windows opens the real path and compares the open handle's final path WITH IT (not with the root's current final path). The destination base is held by its real path and checked in place too. Residual: a short (8.3) spelling refuses | both halves |
+| S-m2 | Linux quarantined a folder or a link | **Fixed:** only a regular file is renamed (`statx` no-follow before), and the new name must hold the same device + inode after | `Files/PhysicalFileSystem.Archive.cs` |
+| S-m3 | Windows accepted `:` (an alternate stream of ANOTHER file), device names, a trailing dot or space | **Fixed:** on Windows every name and every part below the root must pass `ArchiveNames.Problem` (the selection's rules, reused) | `Files/PhysicalFileSystem.Archive.cs` |
+| C-m1 | Linux-only tests without a Windows counterpart | **Fixed:** a junction at the final name (Windows); a writable mapping with its stream disposed (Windows) | the test files |
+| C-m2 | the classic disposition fallback left the name delete-pending yet answered Removed | **Fixed:** under an agent's folder (the verified removal, the empty-folder removal) only the POSIX disposition is accepted — without it the file stays, `Kept`; the classic one is kept for the archive's OWN copy in the base (a share may have no POSIX deletes) | `Files/BeneathWrites.cs` |
+| C-m3 | complexity > 4 in `OpenFolderBeneath`, `Rename`, `VerifyThenUnlink`, `HashThenUnlink` | **Fixed:** extracted (`FolderProblem`, `RenameProblem`, `LeasedThenUnlink`, the pure `ArchiveSourceRules.LinuxRemovalProblem`) | as named |
+| C-m4 | ad-hoc outcome tuples in the natives | **Fixed:** `NativeOpen` (shared), `BeneathWrites.Chain`, `LinuxStatus.Known`, `WindowsFileInfo`, `HeldLevel` | `Files/BeneathWrites.cs`, the Windows half |
+| C-m5 | stale texts (`MoveFileEx`, "four files", the owner questions) | **Fixed** (the owner questions were already added in `31f101e`) | the docs and test comments |
 
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 

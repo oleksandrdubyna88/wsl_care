@@ -11,8 +11,16 @@ internal static class ArchiveSourceRules
     internal readonly record struct WindowsSource(bool Ok, uint Attributes, uint Links, string Owner);
 
     /// <summary>Empty when the Linux file is copyable; why not otherwise.</summary>
-    public static string LinuxProblem(string name, bool ok, BeneathWrites.LinuxStatus status, uint me) =>
-        ok ? LinuxShapeProblem(name, status, me) : $"{name}: its status could not be read";
+    public static string LinuxProblem(string name, BeneathWrites.LinuxStatus status, uint me) =>
+        status.Known ? LinuxShapeProblem(name, status, me) : $"{name}: its status could not be read";
+
+    /// <summary>The Linux verified removal's checks after its hash (own review round m3: pure, complexity ≤ 4): the bytes equal the
+    /// archived copy's, the write lease is still whole, and the name still names the file that was hashed — empty when it may go.</summary>
+    public static string LinuxRemovalProblem(string name, bool hashEqual, bool leaseHeld, bool sameFile) =>
+        !hashEqual ? $"{name}'s bytes differ from its archived copy; it stays"
+        : !leaseHeld ? $"{name} was opened while it was hashed; it stays"
+        : !sameFile ? $"{name} is no longer the file that was hashed; it stays"
+        : string.Empty;
 
     /// <summary>Empty when the Windows file is copyable; why not otherwise. An owner that could not be read is never this account's.</summary>
     public static string WindowsProblem(string name, WindowsSource source, string me) =>

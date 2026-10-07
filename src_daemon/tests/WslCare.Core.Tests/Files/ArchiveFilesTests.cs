@@ -11,7 +11,8 @@ namespace WslCare.Core.Tests.Files;
 
 /// <summary>
 /// Plan §15r E9.S2a — the archive's seam over the real disk, on the OS that runs the test (Linux: descriptors, <c>openat</c>,
-/// <c>renameat2</c>; Windows: reparse checks, <c>CREATE_NEW</c>, <c>MoveFileEx</c>, one-handle disposition): a source opened
+/// <c>renameat2</c>; Windows: handles checked for where they really are, <c>CREATE_NEW</c>, a rename and a POSIX delete through
+/// one handle): a source opened
 /// through no link, regular, of one link; a destination tree that follows no link; creates that never replace; renames that
 /// never replace an agent's file; a removal that hashes before it removes, and leaves the file when it stops mid-hash.
 /// </summary>
@@ -84,16 +85,24 @@ public sealed partial class ArchiveFilesTests : IDisposable
         Directory.EnumerateFileSystemEntries(elsewhere).Should().BeEmpty("nothing was created through the link");
     }
 
+    /// <summary>Own review round m1: on Windows too — a junction at the final name needs no privilege, and the create is by path.</summary>
     [Fact]
     public void A_link_at_the_final_name_is_never_written_through()
     {
-        Assert.SkipUnless(OperatingSystem.IsLinux(), "a file symbolic link needs a privilege on Windows: the Linux legs");
         using var folder = Folder("codex");
-        var target = On($"{Base}/codex/target.txt");
-        File.CreateSymbolicLink(Path.Combine(folder.Path, "rollout.jsonl"), target);
+        var target = On($"{Base}/codex-target");
+        Directory.CreateDirectory(target);
+        var link = Path.Combine(folder.Path, "rollout.jsonl");
+        Assert.SkipUnless(OperatingSystem.IsLinux() ? MakeFileLink(link, Path.Combine(target, "target.txt")) : DirectoryLinks.TryCreate(link, target), "this account may not create a link here");
 
         Files.CreateExclusive(folder, "rollout.jsonl", BaseScope).Should().BeOfType<ExclusiveFile.Exists>();
-        File.Exists(target).Should().BeFalse("the link's target was never created");
+        Directory.EnumerateFileSystemEntries(target).Should().BeEmpty("nothing was created through the link");
+    }
+
+    private static bool MakeFileLink(string link, string target)
+    {
+        File.CreateSymbolicLink(link, target);
+        return true;
     }
 
     [Fact]

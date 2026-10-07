@@ -2341,7 +2341,7 @@ The only way the archive touches a file (`research/architecture.md` § *The arch
 | risk consult 9/9.2: a writer descriptor opened before the removal (appending at `RemovalHashed`), another process holding it, a forked CHILD only holding it, a writable shared MAPPING only holding it — kept every time | `ArchiveFilesTests` (2 facts + a 2-row theory; the process, child and mapping rows on the Linux legs) |
 | a refused removal or rename touches nothing (an unquarantined file, a rename under memory, a removal without the permit); only an EMPTY folder is removed, never the agent's folder | `ArchiveFilesTests` (2) |
 | durability: each new destination level's entry synced into its parent (Linux), the destination's flush answering `Done`; the fault seam asked between the primitive steps of a removal in order | `ArchiveFilesTests` (2) |
-| the scan: a planted `File.Copy`, `File.Replace` across lines, a chained and a named `FileInfo` copy/replace, `DeleteOnClose`, a delete disposition and five native entry points all found; a string `Replace`, a stream `CopyTo` and the word "rename" not; no file outside the seam's four files holds one; the seam's own natives still found | `ArchitectureTests` (4 new; the first scan now takes the same four seam files) |
+| the scan: a planted `File.Copy`, `File.Replace` across lines, a chained and a named `FileInfo` copy/replace, `DeleteOnClose`, a delete disposition and five native entry points all found; a string `Replace`, a stream `CopyTo` and the word "rename" not; no file outside the seam's files (five since the gate round) holds one; the seam's own natives still found | `ArchitectureTests` (4 new; the first scan now takes the same seam files) |
 
 **Red first:** the policy tests against the permits with no logic behind them (every allowing row refused by `AgentFolder`, every shape row answering `AgentFolder` instead of `ArchiveShape` — the quarantine
 rename, the removal of a quarantined file, the empty folder, the restore's create); the seam tests against stubs that answered
@@ -2394,6 +2394,44 @@ done — 1; the Linux owner rule dropped — 1; the rename not checked where it 
 set) — 2; the folder removal not checked where it is — 1. The S2a teeth row *the rename with `MOVEFILE_REPLACE_EXISTING`* is
 replaced by *the rename replacing*: `MoveFileExW` is no longer used. **Not break-it checked:** that `FlushFileBuffers` really
 reached the disk (no test can see durability; only the call and its answer are checked).
+
+### The E9.S2a own review round (2026-10-06, plan §15r *E9.S2a own review round*)
+
+Two own reviews of the seam (correctness `C-`, security `S-`). The swap tests now assert that their swap HAPPENED (C-M6), and the
+step they swap at, `PathChecked`, is asked after the policy judged the path and BEFORE anything is opened along it — on Linux
+too, so a swap there meets the descriptor chain from the file system's root and refuses (the gate round's Linux rows, which acted
+through an already-open chain, now expect a refusal on both systems).
+
+| Guarantee | Tests (`Files/ArchiveFilesTests.OwnReview.cs` unless named) |
+|---|---|
+| C-M1: a level a FILE names, and a level whose create is DENIED (an ACL deny on Windows, mode 0500 on Linux), are refused — never thrown | `A_destination_level_that_cannot_be_created_is_refused_never_thrown`, `A_destination_level_whose_create_is_denied_is_refused_never_thrown` |
+| C-M1 + C-M2: the archive's own copy is removed; while the create's stream is open it is KEPT on Windows (removed on Linux, which allows it); a second removal is `Gone` | `The_archives_own_copy_is_removed_and_an_open_one_never_throws` |
+| C-M2: a file that replaced the copy at its name is kept — on Linux even when it got the freed inode number (seen red in WSL with device + inode alone: ext4 reused the inode; the birth time is part of the identity since) | `The_archives_own_copy_is_removed_only_while_its_name_names_that_file` |
+| S-m4: the agent deletes the file between the check and the act — the source, the rename, the verified removal and the folder removal answer `Gone` | `A_file_the_agent_deletes_after_the_check_is_gone_never_thrown` |
+| S-M2: the archived copy missing, or changed, keeps the quarantined file; equal removes it, the copy hashed BEFORE the source is opened | `A_quarantined_file_whose_archived_copy_is_missing_or_changed_is_never_removed` |
+| S-M1: a closed folder handle is refused by every verb; a folder opened after it (the reused descriptor number on Linux) is never touched | `A_closed_destination_folder_is_refused_and_its_descriptor_is_never_reused` |
+| S-m1: the HOME holding the layout root swapped for a link after the check — the file behind it stays | `A_layout_root_swapped_for_a_link_after_its_check_never_removes_the_file_the_link_leads_to` |
+| S-m2: a folder (both) and a symbolic link (Linux) are never quarantined | `A_quarantine_rename_never_renames_a_folder_or_a_link` |
+| S-m3: on Windows `s.jsonl:x`, `CON`, a trailing dot or space are refused as a create, and a "quarantined" stream is never removed | `On_windows_a_name_naming_an_alternate_stream_or_a_device_is_refused` |
+| C-m1: a junction at the final name (Windows) and a writable mapping with its stream disposed (Windows) | `ArchiveFilesTests.A_link_at_the_final_name_is_never_written_through` (both systems now), `On_windows_a_quarantined_file_a_shared_mapping_holds_is_never_removed` |
+| C-M3: the declaration idiom (`extern int rename(`, `partial int unlinkat(`, `extern bool MoveFileExW(`) found by the scan | `ArchitectureTests.The_architecture_scan_finds_a_planted_copy_replace_delete_on_close_and_rename` (three planted lines more) |
+
+**Red first — by revert.** The fixes and the tests were written together (the tests need the fixed API: `FileIdentity`, the
+new fault step), so each guarantee was proved by REVERTING its fix in place and watching its test go red, the file restored
+byte-identical after (sha256 compared). **Teeth, Windows:** an uncreatable level throws again (the catch removed) — 1 red; the
+own copy removed by name alone — 1; the scan without the declaration idiom — 1; the archived copy never hashed — 1; a closed folder
+still used (no reference held) — 1; the open never checked in place — 5 (the four swap rows and the root row); NTFS names not
+refused — 1; a vanished folder not answered `Gone` — 1; the check emitted after the open — 3. **Teeth, Linux** (a `/tmp` copy,
+`nice 19`): the S2a rows re-pointed at the refactored lines — the rename replacing 2 red, the lease taken away 3, the create
+without `O_EXCL` 2, folders followed through links 6 (the four swap rows, the root row, a destination link), hard links copied 2,
+non-regular files copied 2, new levels not synced 1; the own round — the own copy removed by device + inode alone (the birth time
+dropped) 1, a closed folder still used 1, the archived copy never hashed 1, the chain started at the spelled root 1, a folder or
+link renamed 1. **Found on the way:** the S2a row *the source hash not compared* went GREEN once the seam hashed the archived copy
+first (every existing test made the copy differ too, so the copy check shadowed the source check) — a test where ONLY the source
+differs was added, and the mutation is red on both systems (1 each). The Linux identity test was red at first with device +
+inode alone: ext4 gave a file created right after a removal the SAME inode number — the birth time joined the identity. **Not break-it checked:** the POSIX-only delete under an agent folder (C-m2 — no file system here lacks
+POSIX deletes; the call and its answer only), and the Windows mapping row (the operating system keeps the mapped file whichever
+sharing the removal asks for — the row documents the behaviour, it guards no line of ours).
 
 ## The extension (`src_vs_code/`)
 

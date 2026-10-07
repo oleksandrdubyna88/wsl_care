@@ -34,9 +34,13 @@ public sealed partial class ArchitectureTests
             [LibraryImport("libc", EntryPoint = "linkat")]
             [LibraryImport("libc", EntryPoint = "rmdir")]
             [LibraryImport("kernel32.dll", EntryPoint = "MoveFileExW")]
+            [DllImport("libc")] static extern int rename(string a, string b);
+            [LibraryImport("libc")] private static partial int unlinkat(int d, string p, int f);
+            [DllImport("kernel32.dll")] public static extern bool MoveFileExW(string a, string b, uint f);
             """;
 
-        ArchiveSeamScan(planted).Select(h => h.Line).Distinct().Should().Equal(1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13);
+        // Own review round M3: the default idiom — the function's own name, no EntryPoint — is found too.
+        ArchiveSeamScan(planted).Select(h => h.Line).Distinct().Should().Equal(1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16);
     }
 
     [Fact]
@@ -67,7 +71,7 @@ public sealed partial class ArchitectureTests
     /// <summary>A copy or a replace by <c>File</c>, a delete-on-close, a delete disposition, and the native rename / unlink / link /
     /// rmdir / move entry points — written across whitespace, as the first scan is.</summary>
     [System.Text.RegularExpressions.GeneratedRegex(
-        @"\bFile\s*\.\s*(?:Copy|Replace)\s*\(|\bFileOptions\s*\.\s*DeleteOnClose\b|\bSetFileInformationByHandle\b|\bFileDisposition\w*|EntryPoint\s*=\s*""(?:rename|renameat2?|unlink|unlinkat|link|linkat|rmdir|MoveFileExW?|MoveFileW?|DeleteFileW?|RemoveDirectoryW?|CopyFileW?|CopyFile2|ReplaceFileW?)""",
+        @"\bFile\s*\.\s*(?:Copy|Replace)\s*\(|\bFileOptions\s*\.\s*DeleteOnClose\b|\bSetFileInformationByHandle\b|\bFileDisposition\w*|EntryPoint\s*=\s*""(?:rename|renameat2?|unlink|unlinkat|link|linkat|rmdir|MoveFileExW?|MoveFileW?|DeleteFileW?|RemoveDirectoryW?|CopyFileW?|CopyFile2|ReplaceFileW?)""|\b(?:extern|partial)\s+[\w.]+\s+(?:rename|renameat2?|unlink|unlinkat|link|linkat|rmdir|MoveFileExW?|MoveFileW?|DeleteFileW?|RemoveDirectoryW?|CopyFileW?|CopyFile2|ReplaceFileW?)\s*\(",
         System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
     private static partial System.Text.RegularExpressions.Regex ArchiveForbiddenCall();
 

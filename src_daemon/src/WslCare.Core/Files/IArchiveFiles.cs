@@ -2,6 +2,12 @@ using WslCare.Core.Files.Deletion;
 
 namespace WslCare.Core.Files;
 
+/// <summary>What names ONE file whatever its name: Linux the device, the inode and the birth time (<paramref name="Born"/>, 0 where
+/// unknown), Windows the volume serial and the file index (whose sequence number already tells a reused one apart)
+/// (plan §15r E9.S2a own review round M2) — what a removal of the archive's own copy checks the name still names, and what the
+/// Windows base rules compare two spellings of a folder by (E9.S0 review round S3; moved here from <c>Archive</c>, widened).</summary>
+public readonly record struct FileIdentity(ulong Volume, ulong Index, long Born = 0);
+
 /// <summary>A session file opened for copying (<see cref="IArchiveFiles.OpenSource"/>) — a closed set.</summary>
 public abstract record SourceOpen
 {
@@ -38,8 +44,9 @@ public abstract record ExclusiveFile
     {
     }
 
-    /// <summary>A new, empty file (0600) open for writing; the caller writes, flushes and disposes it.</summary>
-    public sealed record Created(FileStream Stream) : ExclusiveFile;
+    /// <summary>A new, empty file (0600) open for writing; the caller writes, flushes and disposes it. <paramref name="Identity"/>
+    /// is what <see cref="IArchiveFiles.RemoveOwnCopy"/> needs to remove THIS file and no other.</summary>
+    public sealed record Created(FileStream Stream, FileIdentity Identity) : ExclusiveFile;
 
     /// <summary>Something already has that name; nothing was changed — never replaced.</summary>
     public sealed record Exists : ExclusiveFile;
@@ -158,8 +165,10 @@ public interface IArchiveFiles
     /// <summary>Reads <paramref name="name"/> in <paramref name="folder"/> back and hashes it (Windows: unbuffered, from the disk).</summary>
     FileHash ReadBack(BeneathFolder folder, string name);
 
-    /// <summary>Removes a file THIS run created in <paramref name="folder"/> (a copy that failed its verification).</summary>
-    VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, DeletionScope scope);
+    /// <summary>Removes a file THIS run created in <paramref name="folder"/> (a copy that failed its verification) — only while
+    /// <paramref name="name"/> still names the file <see cref="ExclusiveFile.Created"/> answered (<paramref name="created"/>); any
+    /// other file at that name is kept (own review round M2: after phase 2 an archived copy is the only copy).</summary>
+    VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, FileIdentity created, DeletionScope scope);
 
     /// <summary>Flushes <paramref name="folder"/> itself (Linux: <c>fsync</c> of the directory, so a new name survives a crash).</summary>
     FolderFlush FlushFolder(BeneathFolder folder);
@@ -170,8 +179,10 @@ public interface IArchiveFiles
     /// <summary>Renames a quarantined file back to <paramref name="originalName"/>, never replacing what the agent wrote there since.</summary>
     NoReplaceRename RenameBack(string layoutRoot, string quarantinedPath, string originalName, DeletionScope scope);
 
-    /// <summary>Removes the quarantined <paramref name="path"/> only when its bytes hash to <paramref name="expectedSha256"/> — the
-    /// archived copy <paramref name="archivedCopy"/>'s hash — read from the same open file the removal acts on.</summary>
+    /// <summary>Removes the quarantined <paramref name="path"/> only when the archived copy <paramref name="archivedCopy"/> — opened
+    /// through no link and hashed first (Windows: past the cache) — AND the quarantined bytes, read from the same open file the
+    /// removal acts on, both hash to <paramref name="expectedSha256"/> (own review round, security M2): a missing or changed copy
+    /// keeps the source.</summary>
     VerifiedRemoval RemoveVerified(string layoutRoot, string path, string expectedSha256, string archivedCopy, DeletionScope scope);
 
     /// <summary>Removes <paramref name="folder"/> only when it is empty (never recursive).</summary>

@@ -11,6 +11,7 @@ namespace WslCare.Core.Files;
 /// <summary>The primitive steps of the archive's seam the fault seam is asked between (plan §15r E9.S2a).</summary>
 public enum ArchiveFileStep
 {
+    /// <summary>The path was judged by the policy and located on its real path; nothing is opened along it yet.</summary>
     PathChecked,
     SourceOpened,
     FolderLevelReady,
@@ -20,6 +21,7 @@ public enum ArchiveFileStep
     OwnCopyRemoved,
     FolderFlushed,
     Renamed,
+    ArchivedCopyHashed,
     RemovalOpened,
     RemovalHashChunk,
     RemovalHashed,
@@ -30,8 +32,9 @@ public enum ArchiveFileStep
 /// <summary>
 /// Plan §15r E9.S2a — <see cref="IArchiveFiles"/> on the disk: every write and removal judged by the deletion policy on the REAL
 /// paths first (the archive's permits: <see cref="DeletionPermit.ArchiveQuarantine"/>, <see cref="DeletionPermit.ArchiveRemoval"/>,
-/// <see cref="DeletionPermit.RestoreIntoAgentFolder"/>), then acted on through the descriptors (Linux) or the checked handles
-/// (Windows) of <see cref="BeneathWrites"/> — never through a link, never replacing, removing only what hashes equal.
+/// <see cref="DeletionPermit.RestoreIntoAgentFolder"/>), then acted on along those real paths — Linux through a descriptor chain
+/// from the file system's root with no link followed at any level, Windows through handles that are asked where they really are
+/// (own review round, security m1) — never replacing, removing only what hashes equal.
 /// </summary>
 public sealed partial class PhysicalFileSystem
 {
@@ -43,38 +46,28 @@ public sealed partial class PhysicalFileSystem
 
     // ---- the verbs -------------------------------------------------------------------------------------------------------------
 
-    public SourceOpen OpenSource(string layoutRoot, string path) => Below(layoutRoot, path) switch
+    public SourceOpen OpenSource(string layoutRoot, string path) => Locate(layoutRoot, path) switch
     {
-        { Problem.Length: > 0 } below => new SourceOpen.Refused(below.Problem),
-        var below when OperatingSystem.IsLinux() => OpenSourceLinux(layoutRoot, below),
-        var below when OperatingSystem.IsWindows() => OpenSourceWindows(layoutRoot, below),
+        { Problem.Length: > 0 } located => new SourceOpen.Refused(located.Problem),
+        var located when OperatingSystem.IsLinux() => OpenSourceLinux(located),
+        var located when OperatingSystem.IsWindows() => OpenSourceWindows(located),
         _ => new SourceOpen.Refused(NotThisOs),
     };
 
-    public FolderBeneath OpenFolderBeneath(string baseFolder, IReadOnlyList<string> levels, DeletionScope scope)
-    {
-        var target = levels.Aggregate(baseFolder, Path.Combine);
-        var problem = levels.Select(NameProblem).FirstOrDefault(p => p.Length > 0) ?? Why(JudgeArchive(FileOperation.Create, target, string.Empty, scope).Verdict);
-        return problem.Length > 0 ? new FolderBeneath.Refused(problem)
-            : OperatingSystem.IsLinux() ? FolderLinux(baseFolder, levels)
-            : OperatingSystem.IsWindows() ? FolderWindows(baseFolder, levels)
-            : new FolderBeneath.Refused(NotThisOs);
-    }
+    public FolderBeneath OpenFolderBeneath(string baseFolder, IReadOnlyList<string> levels, DeletionScope scope) =>
+        FolderProblem(baseFolder, levels, scope) is { Length: > 0 } problem ? new FolderBeneath.Refused(problem) : FolderByOs(baseFolder, levels);
 
     public ExclusiveFile CreateExclusive(BeneathFolder folder, string name, DeletionScope scope) =>
-        folder is OpenedFolder own ? CreateIn(own, name, scope) : new ExclusiveFile.Refused(ForeignFolder(folder));
+        folder is OpenedFolder own ? own.With(() => CreateIn(own, name, scope), why => new ExclusiveFile.Refused(why)) : new ExclusiveFile.Refused(ForeignFolder(folder));
 
     public FileHash ReadBack(BeneathFolder folder, string name) =>
-        folder is not OpenedFolder own ? new FileHash.Unreadable(ForeignFolder(folder))
-        : NameProblem(name) is { Length: > 0 } bad ? new FileHash.Unreadable(bad)
-        : OperatingSystem.IsLinux() ? ReadBackLinux(own, name)
-        : ReadBackWindows(own, name);
+        folder is OpenedFolder own ? own.With(() => ReadBackIn(own, name), why => new FileHash.Unreadable(why)) : new FileHash.Unreadable(ForeignFolder(folder));
 
-    public VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, DeletionScope scope) =>
-        folder is OpenedFolder own ? RemoveOwnIn(own, name, scope) : new VerifiedRemoval.Refused(ForeignFolder(folder));
+    public VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, FileIdentity created, DeletionScope scope) =>
+        folder is OpenedFolder own ? own.With(() => RemoveOwnIn(own, name, created, scope), why => new VerifiedRemoval.Refused(why)) : new VerifiedRemoval.Refused(ForeignFolder(folder));
 
     public FolderFlush FlushFolder(BeneathFolder folder) =>
-        folder is OpenedFolder own ? Flushed(own) : new FolderFlush.Failed(ForeignFolder(folder));
+        folder is OpenedFolder own ? own.With(() => Flushed(own), why => new FolderFlush.Failed(why)) : new FolderFlush.Failed(ForeignFolder(folder));
 
     public NoReplaceRename QuarantineRename(string layoutRoot, string path, string quarantinedName, DeletionScope scope) =>
         Rename(layoutRoot, path, quarantinedName, scope);
@@ -84,46 +77,75 @@ public sealed partial class PhysicalFileSystem
 
     public VerifiedRemoval RemoveVerified(string layoutRoot, string path, string expectedSha256, string archivedCopy, DeletionScope scope)
     {
-        var below = Below(layoutRoot, path);
-        var problem = below.Problem.Length > 0 ? below.Problem : Why(JudgeArchive(FileOperation.Delete, path, string.Empty, scope, archivedCopy, folder: false).Verdict);
-        return problem.Length > 0 ? new VerifiedRemoval.Refused(problem)
-            : OperatingSystem.IsLinux() ? RemoveVerifiedLinux(layoutRoot, below, expectedSha256)
-            : RemoveVerifiedWindows(layoutRoot, below, expectedSha256);
+        var located = Locate(layoutRoot, path);
+        var problem = located.Problem.Length > 0 ? located.Problem : Why(JudgeArchive(FileOperation.Delete, path, string.Empty, scope, archivedCopy, folder: false).Verdict);
+        return problem.Length > 0 ? new VerifiedRemoval.Refused(problem) : CopyThenSource(located, archivedCopy, expectedSha256);
     }
 
     public VerifiedRemoval RemoveEmptyFolder(string layoutRoot, string folder, DeletionScope scope)
     {
-        var below = Below(layoutRoot, folder);
-        var problem = below.Problem.Length > 0 ? below.Problem : Why(JudgeArchive(FileOperation.Delete, folder, string.Empty, scope, string.Empty, folder: true).Verdict);
+        var located = Locate(layoutRoot, folder);
+        var problem = located.Problem.Length > 0 ? located.Problem : Why(JudgeArchive(FileOperation.Delete, folder, string.Empty, scope, string.Empty, folder: true).Verdict);
         return problem.Length > 0 ? new VerifiedRemoval.Refused(problem)
-            : OperatingSystem.IsLinux() ? RemoveFolderLinux(layoutRoot, below)
-            : RemoveFolderWindows(layoutRoot, below);
+            : OperatingSystem.IsLinux() ? RemoveFolderLinux(located)
+            : RemoveFolderWindows(located);
     }
 
     // ---- shared ----------------------------------------------------------------------------------------------------------------
 
     private const string NotThisOs = "the archive's seam runs on Linux and Windows only";
 
-    /// <summary>The folder this seam opened (gate round finding 2): the Linux descriptor (-1 on Windows) or the Windows folder handle
-    /// (an invalid one on Linux), released once however often it is disposed.</summary>
-    internal sealed class OpenedFolder(string path, int descriptor, SafeFileHandle handle, Action close) : BeneathFolder(path)
+    /// <summary>The folder this seam opened (gate round finding 2): its handle — the Linux descriptor, or the Windows folder handle
+    /// that pins it. Every verb acts INSIDE <see cref="With{T}"/>, which holds a reference on the handle for the call: a disposed
+    /// folder is refused, and its descriptor number is never reused under a verb (own review round, security M1).</summary>
+    internal sealed class OpenedFolder(string path, SafeFileHandle handle) : BeneathFolder(path)
     {
-        private int _closed;
-
-        internal int Descriptor { get; } = descriptor;
-
         internal SafeFileHandle Handle { get; } = handle;
+
+        /// <summary>The Linux descriptor — valid only inside <see cref="With{T}"/>.</summary>
+        internal int Descriptor => BeneathWrites.Descriptor(Handle);
+
+        internal T With<T>(Func<T> act, Func<string, T> refused)
+        {
+            var added = false;
+            try
+            {
+                Handle.DangerousAddRef(ref added);
+                return act();
+            }
+            catch (ObjectDisposedException)
+            {
+                return refused($"{Path}: this folder was closed; nothing was done in it");
+            }
+            finally
+            {
+                if (added)
+                {
+                    Handle.DangerousRelease();
+                }
+            }
+        }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing && Interlocked.Exchange(ref _closed, 1) == 0)
+            if (disposing)
             {
-                close();
+                Handle.Dispose();
             }
         }
     }
 
     private static string ForeignFolder(BeneathFolder folder) => $"{folder.Path}: a folder this seam did not open is never trusted";
+
+    private string FolderProblem(string baseFolder, IReadOnlyList<string> levels, DeletionScope scope) =>
+        LevelsProblem(levels) is { Length: > 0 } bad ? bad : Why(JudgeArchive(FileOperation.Create, levels.Aggregate(baseFolder, Path.Combine), string.Empty, scope).Verdict);
+
+    private static string LevelsProblem(IReadOnlyList<string> levels) => levels.Select(NameProblem).FirstOrDefault(p => p.Length > 0) ?? string.Empty;
+
+    private FolderBeneath FolderByOs(string baseFolder, IReadOnlyList<string> levels) =>
+        OperatingSystem.IsLinux() ? FolderLinux(baseFolder, levels)
+        : OperatingSystem.IsWindows() ? FolderWindows(baseFolder, levels)
+        : new FolderBeneath.Refused(NotThisOs);
 
     private ExclusiveFile CreateIn(OpenedFolder folder, string name, DeletionScope scope)
     {
@@ -133,12 +155,17 @@ public sealed partial class PhysicalFileSystem
             : CreateWindows(folder, name);
     }
 
-    private VerifiedRemoval RemoveOwnIn(OpenedFolder folder, string name, DeletionScope scope)
+    private FileHash ReadBackIn(OpenedFolder folder, string name) =>
+        NameProblem(name) is { Length: > 0 } bad ? new FileHash.Unreadable(bad)
+        : OperatingSystem.IsLinux() ? ReadBackLinux(folder, name)
+        : ReadBackWindows(folder, name);
+
+    private VerifiedRemoval RemoveOwnIn(OpenedFolder folder, string name, FileIdentity created, DeletionScope scope)
     {
         var problem = NameProblem(name) is { Length: > 0 } bad ? bad : Why(JudgeArchive(FileOperation.Delete, Path.Combine(folder.Path, name), string.Empty, scope).Verdict);
         return problem.Length > 0 ? new VerifiedRemoval.Refused(problem)
-            : OperatingSystem.IsLinux() ? UnlinkOwnLinux(folder, name)
-            : UnlinkOwnWindows(folder, name);
+            : OperatingSystem.IsLinux() ? UnlinkOwnLinux(folder, name, created)
+            : UnlinkOwnWindows(folder, name, created);
     }
 
     /// <summary>The folder itself flushed — Linux <c>fsync</c> of its descriptor, Windows <c>FlushFileBuffers</c> of its held handle
@@ -155,6 +182,39 @@ public sealed partial class PhysicalFileSystem
         : OperatingSystem.IsWindows() ? BeneathWrites.FlushWindows(folder.Handle)
         : -1;
 
+    /// <summary>A target on its REAL, link-free path (own review round, security m1): the file system's root it hangs from, every
+    /// folder from there, its own name — or why it is not one. The acts open along THIS path, never the spelled one, so a link
+    /// swapped in anywhere after the policy judged it — the root's ancestors included — refuses the act.</summary>
+    private sealed record Located(string RealPath, string Top, IReadOnlyList<string> Folders, string Name, string Problem)
+    {
+        public static Located Refused(string why) => new(string.Empty, string.Empty, [], string.Empty, why);
+    }
+
+    /// <summary><paramref name="path"/> located on its real path, which must lie below <paramref name="root"/>'s real path — each part
+    /// below it one plain name (on Windows also one NTFS can hold: own review round, security m3).</summary>
+    private Located Locate(string root, string path)
+    {
+        var realRoot = Real(root);
+        var realPath = Real(path);
+        if (FirstFailure(realRoot, realPath) is { } failure)
+        {
+            return Located.Refused($"{path}: {failure.Reason}");
+        }
+
+        var below = Below(PathOf(realRoot), PathOf(realPath));
+        return below.Problem.Length > 0 ? Located.Refused($"{path}: {below.Problem}") : FromFileSystemRoot(PathOf(realPath));
+    }
+
+    /// <summary>A real path split from the file system's root (<c>/</c>, <c>C:\</c>, <c>\\server\share\</c>).</summary>
+    private static Located FromFileSystemRoot(string realPath)
+    {
+        var top = Path.GetPathRoot(realPath) ?? string.Empty;
+        var parts = realPath[top.Length..].Split(NameSeparators, StringSplitOptions.RemoveEmptyEntries);
+        return top.Length == 0 || parts.Length == 0
+            ? Located.Refused($"{realPath} is not a file below a root")
+            : new Located(realPath, top, parts[..^1], parts[^1], string.Empty);
+    }
+
     /// <summary>A path below a trusted folder: the folders on the way, its own name — or why it is not one.</summary>
     private sealed record BelowRoot(IReadOnlyList<string> Folders, string Name, string Problem);
 
@@ -162,14 +222,17 @@ public sealed partial class PhysicalFileSystem
     {
         var relative = Path.GetRelativePath(root, path);
         var parts = relative.Split(NameSeparators);
-        return Path.IsPathRooted(relative) || parts.Any(p => p is "" or "." or "..")
-            ? new BelowRoot([], string.Empty, $"{path} is not a plain path below {root}")
+        return Path.IsPathRooted(relative) || parts.Any(p => NameProblem(p).Length > 0)
+            ? new BelowRoot([], string.Empty, $"not a plain path below {root}")
             : new BelowRoot(parts[..^1], parts[^1], string.Empty);
     }
 
-    /// <summary>Empty when <paramref name="name"/> is one plain name; why not otherwise.</summary>
+    /// <summary>Empty when <paramref name="name"/> is one plain name; why not otherwise. On Windows also a name NTFS holds as itself
+    /// — no <c>:</c> (an alternate stream of another file), no reserved device name, no trailing dot or space (security m3).</summary>
     private static string NameProblem(string name) =>
-        name is "" or "." or ".." || name.IndexOfAny(NameSeparators) >= 0 ? $"\"{name}\" is not one plain name" : string.Empty;
+        name is "" or "." or ".." || name.IndexOfAny(NameSeparators) >= 0 ? $"\"{name}\" is not one plain name"
+        : OperatingSystem.IsWindows() ? Archive.ArchiveNames.Problem(name)
+        : string.Empty;
 
     private static string Why(DeletionVerdict verdict) => verdict is DeletionVerdict.Refused refused ? refused.Reason : string.Empty;
 
@@ -191,14 +254,41 @@ public sealed partial class PhysicalFileSystem
 
     private NoReplaceRename Rename(string layoutRoot, string path, string newName, DeletionScope scope)
     {
-        var below = Below(layoutRoot, path);
-        var problem = below.Problem.Length > 0 ? below.Problem
-            : NameProblem(newName) is { Length: > 0 } bad ? bad
-            : Why(JudgeArchive(FileOperation.Move, path, Path.Combine(Path.GetDirectoryName(path) ?? path, newName), scope).Verdict);
+        var located = Locate(layoutRoot, path);
+        var problem = RenameProblem(located, path, newName, scope);
         return problem.Length > 0 ? new NoReplaceRename.Refused(problem)
-            : OperatingSystem.IsLinux() ? RenameLinux(layoutRoot, below, newName)
-            : RenameWindows(layoutRoot, below, newName);
+            : OperatingSystem.IsLinux() ? RenameLinux(located, newName)
+            : RenameWindows(located, newName);
     }
+
+    private string RenameProblem(Located located, string path, string newName, DeletionScope scope) =>
+        located.Problem.Length > 0 ? located.Problem
+        : NameProblem(newName) is { Length: > 0 } bad ? bad
+        : Why(JudgeArchive(FileOperation.Move, path, Path.Combine(Path.GetDirectoryName(path) ?? path, newName), scope).Verdict);
+
+    /// <summary>Own review round, security M2: the archived copy is opened through no link and hashed (Windows past the cache) BEFORE
+    /// the source is touched — a copy that is missing, unreadable or changed keeps the source; then the source's own checks.</summary>
+    private VerifiedRemoval CopyThenSource(Located source, string archivedCopy, string expected) =>
+        ArchivedCopyProblem(HashArchived(archivedCopy), expected) is { Length: > 0 } problem ? new VerifiedRemoval.Kept(problem)
+        : OperatingSystem.IsLinux() ? RemoveVerifiedLinux(source, expected)
+        : RemoveVerifiedWindows(source, expected);
+
+    private FileHash HashArchived(string archivedCopy)
+    {
+        var located = Real(archivedCopy) is RealPathResult.Resolved resolved ? FromFileSystemRoot(resolved.Path) : Located.Refused("its path could not be resolved");
+        var hashed = located.Problem.Length > 0 ? new FileHash.Unreadable(located.Problem)
+            : OperatingSystem.IsLinux() ? HashFileLinux(located)
+            : HashFileWindows(located);
+        _onArchiveStep(ArchiveFileStep.ArchivedCopyHashed, archivedCopy);
+        return hashed;
+    }
+
+    private static string ArchivedCopyProblem(FileHash copy, string expected) => copy switch
+    {
+        FileHash.Hashed hashed => string.Equals(hashed.Sha256, expected, StringComparison.OrdinalIgnoreCase) ? string.Empty : "its archived copy's bytes differ from the expected hash; the source stays",
+        FileHash.Gone => "its archived copy is missing; the source stays",
+        _ => "its archived copy could not be read; the source stays",
+    };
 
     /// <summary>The lowercase hex SHA-256 of a stream, the fault seam asked after every chunk.</summary>
     private (string Sha256, long Length) Hash(Stream stream, ArchiveFileStep chunk, string path)
@@ -219,20 +309,46 @@ public sealed partial class PhysicalFileSystem
 
     // ---- Linux -----------------------------------------------------------------------------------------------------------------
 
-    [SupportedOSPlatform("linux")]
-    private SourceOpen OpenSourceLinux(string root, BelowRoot below)
+    /// <summary>Linux: the folder holding <paramref name="at"/>, opened from the file system's root along its real path with
+    /// <c>O_NOFOLLOW</c> at every level, handed to <paramref name="act"/> and closed after; <paramref name="failed"/> answers a level
+    /// that is missing (<c>ENOENT</c>) or a link.</summary>
+    /// <summary>The fault seam asked that the path was judged and located — before anything is opened along it.</summary>
+    private Located Checked(Located at)
     {
-        var (folder, failed) = BeneathWrites.OpenChain(root, below.Folders, readable: false);
-        if (folder.Failed)
+        _onArchiveStep(ArchiveFileStep.PathChecked, at.Name);
+        return at;
+    }
+
+    [SupportedOSPlatform("linux")]
+    private static T WithChain<T>(Located at, bool readable, Func<int, T> act, Func<int, string, T> failed)
+    {
+        var chain = BeneathWrites.OpenChain(at.Top, at.Folders, readable);
+        if (chain.Folder.Failed)
         {
-            return folder.Errno == BeneathWrites.NoEntry ? new SourceOpen.Gone() : new SourceOpen.Refused($"{LinkOrNotAFolder} (at {failed})");
+            return failed(chain.Folder.Errno, chain.FailedAt);
         }
 
-        _onArchiveStep(ArchiveFileStep.PathChecked, below.Name);
-        var opened = BeneathWrites.OpenReadAt(folder.Value, below.Name);
-        BeneathWrites.Close(folder.Value);
-        return opened.Failed ? SourceFailure(opened.Errno, below.Name) : JudgedSource(opened.Value, below.Name);
+        try
+        {
+            return act(chain.Folder.Value);
+        }
+        finally
+        {
+            BeneathWrites.Close(chain.Folder.Value);
+        }
     }
+
+    [SupportedOSPlatform("linux")]
+    private SourceOpen OpenSourceLinux(Located at) =>
+        WithChain(Checked(at), readable: false, folder =>
+        {
+            return BeneathWrites.OpenReadAt(folder, at.Name) switch
+            {
+                NativeOpen.Opened opened => JudgedSource(opened.Handle, at.Name),
+                NativeOpen.Failed failed => SourceFailure(failed.Error, at.Name),
+                _ => new SourceOpen.Refused(at.Name),
+            };
+        }, (errno, level) => errno == BeneathWrites.NoEntry ? new SourceOpen.Gone() : new SourceOpen.Refused($"{LinkOrNotAFolder} (at {level})"));
 
     private static SourceOpen SourceFailure(int errno, string name) => errno switch
     {
@@ -244,11 +360,10 @@ public sealed partial class PhysicalFileSystem
     /// <summary>A regular file of THIS account with ONE link — a FIFO, a device, another's file or a hard link to something else
     /// is never copied (the descriptor was opened non-blocking, so a FIFO is never waited on).</summary>
     [SupportedOSPlatform("linux")]
-    private SourceOpen JudgedSource(int fd, string name)
+    private SourceOpen JudgedSource(SafeFileHandle handle, string name)
     {
-        var handle = new SafeFileHandle(fd, ownsHandle: true);
-        var (ok, status) = BeneathWrites.Stat(fd, string.Empty);
-        var problem = ArchiveSourceRules.LinuxProblem(name, ok, status, RegularFiles.EffectiveUid());
+        var status = BeneathWrites.Stat(BeneathWrites.Descriptor(handle), string.Empty);
+        var problem = ArchiveSourceRules.LinuxProblem(name, status, RegularFiles.EffectiveUid());
         if (problem.Length > 0)
         {
             handle.Dispose();
@@ -259,31 +374,40 @@ public sealed partial class PhysicalFileSystem
         return new SourceOpen.Opened(new FileStream(handle, FileAccess.Read, bufferSize: 0), status.Size, status.LastWriteUtc);
     }
 
+    /// <summary>Linux: the base opened from the file system's root along its REAL path, no link at any level; then each level made
+    /// (0700) or opened from its parent's descriptor.</summary>
     [SupportedOSPlatform("linux")]
     private FolderBeneath FolderLinux(string baseFolder, IReadOnlyList<string> levels)
     {
-        var current = BeneathWrites.OpenFolder(baseFolder, readable: true);
-        if (current.Failed)
+        var at = Real(baseFolder) is RealPathResult.Resolved resolved ? FromFileSystemRoot(resolved.Path) : Located.Refused($"{baseFolder} could not be resolved");
+        if (at.Problem.Length > 0)
         {
-            return new FolderBeneath.Refused($"{baseFolder}: {LinkOrNotAFolder} (errno {current.Errno})");
+            return new FolderBeneath.Refused(at.Problem);
         }
 
-        var path = baseFolder;
+        var chain = BeneathWrites.OpenChain(at.Top, [.. at.Folders, at.Name], readable: true);
+        return chain.Folder.Failed
+            ? new FolderBeneath.Refused($"{baseFolder}: {LinkOrNotAFolder} (at {chain.FailedAt}, errno {chain.Folder.Errno})")
+            : LevelsLinux(chain.Folder.Value, at.RealPath, levels);
+    }
+
+    [SupportedOSPlatform("linux")]
+    private FolderBeneath LevelsLinux(int current, string path, IReadOnlyList<string> levels)
+    {
         foreach (var level in levels)
         {
-            var next = LevelLinux(current.Value, level, Path.Combine(path, level));
-            BeneathWrites.Close(current.Value);
+            var next = LevelLinux(current, level, Path.Combine(path, level));
+            BeneathWrites.Close(current);
             if (next.Failed)
             {
                 return new FolderBeneath.Refused($"{LinkOrNotAFolder} (at {level}, errno {next.Errno})");
             }
 
-            (current, path) = (next, Path.Combine(path, level));
+            (current, path) = (next.Value, Path.Combine(path, level));
             _onArchiveStep(ArchiveFileStep.FolderLevelReady, path);
         }
 
-        var descriptor = current.Value;
-        return new FolderBeneath.Ready(new OpenedFolder(path, descriptor, new SafeFileHandle(), () => BeneathWrites.Close(descriptor)));
+        return new FolderBeneath.Ready(new OpenedFolder(path, new SafeFileHandle(current, ownsHandle: true)));
     }
 
     /// <summary>One level: created 0700 when missing (an existing one kept) and, when it is new, its ENTRY made durable by flushing
@@ -309,56 +433,82 @@ public sealed partial class PhysicalFileSystem
     }
 
     [SupportedOSPlatform("linux")]
-    private ExclusiveFile CreateLinux(OpenedFolder folder, string name)
+    private ExclusiveFile CreateLinux(OpenedFolder folder, string name) => BeneathWrites.CreateExclusiveAt(folder.Descriptor, name) switch
     {
-        var created = BeneathWrites.CreateExclusiveAt(folder.Descriptor, name);
-        if (created.Failed)
-        {
-            return created.Errno == BeneathWrites.Exists ? new ExclusiveFile.Exists() : new ExclusiveFile.Refused($"{name} could not be created (errno {created.Errno})");
-        }
+        NativeOpen.Opened opened => CreatedLinux(opened.Handle, Path.Combine(folder.Path, name)),
+        NativeOpen.Failed { Error: BeneathWrites.Exists } => new ExclusiveFile.Exists(),
+        NativeOpen.Failed failed => new ExclusiveFile.Refused($"{name} could not be created (errno {failed.Error})"),
+        _ => new ExclusiveFile.Refused(name),
+    };
 
-        _onArchiveStep(ArchiveFileStep.ExclusiveCreated, Path.Combine(folder.Path, name));
-        return new ExclusiveFile.Created(new FileStream(new SafeFileHandle(created.Value, ownsHandle: true), FileAccess.Write, bufferSize: 0));
+    [SupportedOSPlatform("linux")]
+    private ExclusiveFile CreatedLinux(SafeFileHandle handle, string path)
+    {
+        var identity = BeneathWrites.Stat(BeneathWrites.Descriptor(handle), string.Empty).Identity;
+        _onArchiveStep(ArchiveFileStep.ExclusiveCreated, path);
+        return new ExclusiveFile.Created(new FileStream(handle, FileAccess.Write, bufferSize: 0), identity);
     }
 
     [SupportedOSPlatform("linux")]
-    private FileHash ReadBackLinux(OpenedFolder folder, string name)
+    private FileHash ReadBackLinux(OpenedFolder folder, string name) => BeneathWrites.OpenReadAt(folder.Descriptor, name) switch
     {
-        var opened = BeneathWrites.OpenReadAt(folder.Descriptor, name);
-        if (opened.Failed)
+        NativeOpen.Opened opened => HashedThrough(opened.Handle, Path.Combine(folder.Path, name)),
+        NativeOpen.Failed { Error: BeneathWrites.NoEntry } => new FileHash.Gone(),
+        NativeOpen.Failed failed => new FileHash.Unreadable($"{name} could not be opened again (errno {failed.Error})"),
+        _ => new FileHash.Unreadable(name),
+    };
+
+    /// <summary>A plain file's bytes hashed through its open handle, then the handle closed; anything else unreadable.</summary>
+    [SupportedOSPlatform("linux")]
+    private FileHash HashedThrough(SafeFileHandle handle, string path)
+    {
+        using var stream = new FileStream(handle, FileAccess.Read, bufferSize: 0);
+        if (!BeneathWrites.Stat(BeneathWrites.Descriptor(handle), string.Empty).IsPlainFile)
         {
-            return opened.Errno == BeneathWrites.NoEntry ? new FileHash.Gone() : new FileHash.Unreadable($"{name} could not be opened again (errno {opened.Errno})");
+            return new FileHash.Unreadable($"{path} is not a plain file of one link");
         }
 
-        using var stream = new FileStream(new SafeFileHandle(opened.Value, ownsHandle: true), FileAccess.Read, bufferSize: 0);
-        var (sha, length) = Hash(stream, ArchiveFileStep.ReadBackChunk, Path.Combine(folder.Path, name));
+        var (sha, length) = Hash(stream, ArchiveFileStep.ReadBackChunk, path);
         return new FileHash.Hashed(sha, length);
     }
 
+    /// <summary>Linux (own review round M2): the archive's own copy is unlinked only while the name still names the file this run
+    /// created — its device and inode. Residual: a rename onto the name between the check and the unlink (inside the base, which
+    /// the side's lease gives to one writer).</summary>
     [SupportedOSPlatform("linux")]
-    private VerifiedRemoval UnlinkOwnLinux(OpenedFolder folder, string name)
+    private VerifiedRemoval UnlinkOwnLinux(OpenedFolder folder, string name, FileIdentity created)
     {
-        var removed = BeneathWrites.UnlinkAt(folder.Descriptor, name, directory: false);
-        _onArchiveStep(ArchiveFileStep.OwnCopyRemoved, Path.Combine(folder.Path, name));
-        return !removed.Failed ? new VerifiedRemoval.Removed()
-            : removed.Errno == BeneathWrites.NoEntry ? new VerifiedRemoval.Gone()
-            : new VerifiedRemoval.Refused($"{name} could not be removed (errno {removed.Errno})");
-    }
-
-    [SupportedOSPlatform("linux")]
-    private NoReplaceRename RenameLinux(string root, BelowRoot below, string newName)
-    {
-        var (folder, failed) = BeneathWrites.OpenChain(root, below.Folders, readable: false);
-        if (folder.Failed)
+        var now = BeneathWrites.Stat(folder.Descriptor, name);
+        if (!now.Known || !now.IsRegular || now.Identity != created)
         {
-            return folder.Errno == BeneathWrites.NoEntry ? new NoReplaceRename.Gone() : new NoReplaceRename.Refused($"{LinkOrNotAFolder} (at {failed})");
+            return now.Known ? new VerifiedRemoval.Kept($"{name} is not the copy this run created; it stays") : new VerifiedRemoval.Gone();
         }
 
-        _onArchiveStep(ArchiveFileStep.PathChecked, below.Name);
-        var renamed = BeneathWrites.RenameNoReplace(folder.Value, below.Name, newName);
-        BeneathWrites.Close(folder.Value);
+        var removed = BeneathWrites.UnlinkAt(folder.Descriptor, name, directory: false);
+        _onArchiveStep(ArchiveFileStep.OwnCopyRemoved, Path.Combine(folder.Path, name));
+        return removed.Failed ? new VerifiedRemoval.Kept($"{name} could not be removed (errno {removed.Errno})") : new VerifiedRemoval.Removed();
+    }
+
+    /// <summary>Linux (own review round, security m2): only a REGULAR file is renamed — never a folder or a link — and the entry the
+    /// new name holds afterwards must be the file that was checked (its device and inode).</summary>
+    [SupportedOSPlatform("linux")]
+    private NoReplaceRename RenameLinux(Located at, string newName) =>
+        WithChain(Checked(at), readable: false, folder =>
+        {
+            var before = BeneathWrites.Stat(folder, at.Name);
+            return !before.Known ? new NoReplaceRename.Gone()
+                : !before.IsRegular ? new NoReplaceRename.Refused($"{at.Name} is not a regular file (a folder or a link), never renamed")
+                : RenamedLinux(folder, at.Name, newName, before);
+        }, (errno, level) => errno == BeneathWrites.NoEntry ? new NoReplaceRename.Gone() : new NoReplaceRename.Refused($"{LinkOrNotAFolder} (at {level})"));
+
+    [SupportedOSPlatform("linux")]
+    private NoReplaceRename RenamedLinux(int folder, string name, string newName, BeneathWrites.LinuxStatus before)
+    {
+        var renamed = BeneathWrites.RenameNoReplace(folder, name, newName);
         _onArchiveStep(ArchiveFileStep.Renamed, newName);
-        return RenameAnswer(renamed);
+        return renamed.Failed || BeneathWrites.Stat(folder, newName).SameFile(before)
+            ? RenameAnswer(renamed)
+            : new NoReplaceRename.Refused($"the entry renamed to {newName} is not the file that was checked (it changed in between); it keeps that name and is reported");
     }
 
     private static NoReplaceRename RenameAnswer(BeneathWrites.Native renamed) => renamed switch
@@ -371,56 +521,51 @@ public sealed partial class PhysicalFileSystem
     };
 
     [SupportedOSPlatform("linux")]
-    private VerifiedRemoval RemoveVerifiedLinux(string root, BelowRoot below, string expected)
-    {
-        var (folder, failed) = BeneathWrites.OpenChain(root, below.Folders, readable: false);
-        if (folder.Failed)
+    private VerifiedRemoval RemoveVerifiedLinux(Located at, string expected) =>
+        WithChain(Checked(at), readable: false, folder =>
         {
-            return folder.Errno == BeneathWrites.NoEntry ? new VerifiedRemoval.Gone() : new VerifiedRemoval.Refused($"{LinkOrNotAFolder} (at {failed})");
-        }
+            return VerifyThenUnlink(folder, at.Name, expected);
+        }, (errno, level) => errno == BeneathWrites.NoEntry ? new VerifiedRemoval.Gone() : new VerifiedRemoval.Refused($"{LinkOrNotAFolder} (at {level})"));
 
-        try
-        {
-            _onArchiveStep(ArchiveFileStep.PathChecked, below.Name);
-            return VerifyThenUnlink(folder.Value, below.Name, expected);
-        }
-        finally
-        {
-            BeneathWrites.Close(folder.Value);
-        }
-    }
-
-    /// <summary>Linux: the file opened from its folder's descriptor, judged, hashed; only an equal hash — and the name still naming
-    /// THAT file (its inode and device) — unlinks it. Residual: between that check and the unlink the name could be renamed over by
-    /// another process of this account; the archive never does, and an agent writes by appending or creating, not by renaming
-    /// onto a quarantine name.</summary>
+    /// <summary>Linux: the file opened from its folder's descriptor, judged, leased, hashed; only an equal hash — the lease still
+    /// whole and the name still naming THAT file — unlinks it. Residual: between that check and the unlink the name could be renamed
+    /// over by another process of this account; the archive never does, and an agent writes by appending or creating, not by
+    /// renaming onto a quarantine name.</summary>
     [SupportedOSPlatform("linux")]
     private VerifiedRemoval VerifyThenUnlink(int folder, string name, string expected)
     {
-        var opened = BeneathWrites.OpenReadAt(folder, name);
-        if (opened.Failed)
+        using var opened = BeneathWrites.OpenReadAt(folder, name);
+        return opened switch
         {
-            return opened.Errno == BeneathWrites.NoEntry ? new VerifiedRemoval.Gone() : new VerifiedRemoval.Kept($"{name} could not be opened (errno {opened.Errno})");
-        }
-
-        using var stream = new FileStream(new SafeFileHandle(opened.Value, ownsHandle: true), FileAccess.Read, bufferSize: 0);
-        var (_, status) = BeneathWrites.Stat(opened.Value, string.Empty);
-        _onArchiveStep(ArchiveFileStep.RemovalOpened, name);
-        return !status.IsRegular || status.Links != 1 ? new VerifiedRemoval.Kept($"{name} is not a plain file of one link")
-            : BeneathWrites.TakeWriteLease(opened.Value) is { Failed: true } lease ? new VerifiedRemoval.Kept($"{name} is open elsewhere (no write lease: errno {lease.Errno}) — a writer could still add to it; it stays")
-            : HashThenUnlink(folder, name, expected, stream, status, opened.Value);
+            NativeOpen.Opened file => LeasedThenUnlink(folder, name, expected, file.Handle),
+            NativeOpen.Failed { Error: BeneathWrites.NoEntry } => new VerifiedRemoval.Gone(),
+            NativeOpen.Failed failed => new VerifiedRemoval.Kept($"{name} could not be opened (errno {failed.Error})"),
+            _ => new VerifiedRemoval.Kept(name),
+        };
     }
 
     [SupportedOSPlatform("linux")]
-    private VerifiedRemoval HashThenUnlink(int folder, string name, string expected, Stream stream, BeneathWrites.LinuxStatus opened, int descriptor)
+    private VerifiedRemoval LeasedThenUnlink(int folder, string name, string expected, SafeFileHandle handle)
     {
+        var descriptor = BeneathWrites.Descriptor(handle);
+        var status = BeneathWrites.Stat(descriptor, string.Empty);
+        _onArchiveStep(ArchiveFileStep.RemovalOpened, name);
+        return !status.IsPlainFile ? new VerifiedRemoval.Kept($"{name} is not a plain file of one link")
+            : BeneathWrites.TakeWriteLease(descriptor) is { Failed: true } lease ? new VerifiedRemoval.Kept($"{name} is open elsewhere (no write lease: errno {lease.Errno}) — a writer could still add to it; it stays")
+            : HashThenUnlink(folder, name, expected, handle, status);
+    }
+
+    [SupportedOSPlatform("linux")]
+    private VerifiedRemoval HashThenUnlink(int folder, string name, string expected, SafeFileHandle handle, BeneathWrites.LinuxStatus opened)
+    {
+        var stream = new FileStream(handle, FileAccess.Read, bufferSize: 0);
         var (sha, _) = Hash(stream, ArchiveFileStep.RemovalHashChunk, name);
         _onArchiveStep(ArchiveFileStep.RemovalHashed, name);
-        var (still, now) = BeneathWrites.Stat(folder, name);
-        var problem = !string.Equals(sha, expected, StringComparison.OrdinalIgnoreCase) ? $"{name}'s bytes differ from its archived copy; it stays"
-            : !BeneathWrites.LeaseHeld(descriptor) ? $"{name} was opened while it was hashed; it stays"
-            : !still || !now.SameFile(opened) ? $"{name} is no longer the file that was hashed; it stays"
-            : string.Empty;
+        var problem = ArchiveSourceRules.LinuxRemovalProblem(
+            name,
+            string.Equals(sha, expected, StringComparison.OrdinalIgnoreCase),
+            BeneathWrites.LeaseHeld(BeneathWrites.Descriptor(handle)),
+            BeneathWrites.Stat(folder, name).SameFile(opened));
         return problem.Length > 0 ? new VerifiedRemoval.Kept(problem) : Unlinked(BeneathWrites.UnlinkAt(folder, name, directory: false), name);
     }
 
@@ -431,20 +576,13 @@ public sealed partial class PhysicalFileSystem
     }
 
     [SupportedOSPlatform("linux")]
-    private VerifiedRemoval RemoveFolderLinux(string root, BelowRoot below)
-    {
-        var (folder, failed) = BeneathWrites.OpenChain(root, below.Folders, readable: false);
-        if (folder.Failed)
+    private VerifiedRemoval RemoveFolderLinux(Located at) =>
+        WithChain(Checked(at), readable: false, folder =>
         {
-            return folder.Errno == BeneathWrites.NoEntry ? new VerifiedRemoval.Gone() : new VerifiedRemoval.Refused($"{LinkOrNotAFolder} (at {failed})");
-        }
-
-        _onArchiveStep(ArchiveFileStep.PathChecked, below.Name);
-        var removed = BeneathWrites.UnlinkAt(folder.Value, below.Name, directory: true);
-        BeneathWrites.Close(folder.Value);
-        _onArchiveStep(ArchiveFileStep.FolderRemoved, below.Name);
-        return FolderAnswer(removed, below.Name);
-    }
+            var removed = BeneathWrites.UnlinkAt(folder, at.Name, directory: true);
+            _onArchiveStep(ArchiveFileStep.FolderRemoved, at.Name);
+            return FolderAnswer(removed, at.Name);
+        }, (errno, level) => errno == BeneathWrites.NoEntry ? new VerifiedRemoval.Gone() : new VerifiedRemoval.Refused($"{LinkOrNotAFolder} (at {level})"));
 
     private static VerifiedRemoval FolderAnswer(BeneathWrites.Native removed, string name) => removed switch
     {
@@ -453,4 +591,15 @@ public sealed partial class PhysicalFileSystem
         { Errno: BeneathWrites.NotEmpty or BeneathWrites.Exists } => new VerifiedRemoval.Kept($"{name} is not empty"),
         _ => new VerifiedRemoval.Kept($"{name} could not be removed as an empty folder (errno {removed.Errno})"),
     };
+
+    /// <summary>Linux: a file along its real path, no link at any level, hashed when it is a plain file (the archived copy).</summary>
+    [SupportedOSPlatform("linux")]
+    private FileHash HashFileLinux(Located at) =>
+        WithChain(at, readable: false, folder => BeneathWrites.OpenReadAt(folder, at.Name) switch
+        {
+            NativeOpen.Opened opened => HashedThrough(opened.Handle, at.RealPath),
+            NativeOpen.Failed { Error: BeneathWrites.NoEntry } => new FileHash.Gone(),
+            NativeOpen.Failed failed => new FileHash.Unreadable($"{at.Name} could not be opened (errno {failed.Error})"),
+            _ => new FileHash.Unreadable(at.Name),
+        }, (errno, level) => errno == BeneathWrites.NoEntry ? new FileHash.Gone() : new FileHash.Unreadable($"{LinkOrNotAFolder} (at {level})"));
 }

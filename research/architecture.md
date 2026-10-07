@@ -2625,7 +2625,7 @@ flowchart LR
   other open file description of the inode exists — those included. A lease break is routed to SIGURG (ignored), never SIGIO; the
   lease must still be whole after the hash. Residual: a NEW opener of the quarantine name after the final check, with the
   remover stalled for `fs.lease-break-time`.
-- **The scan** (`ArchitectureTests.ArchiveSeam.cs`): outside the seam's four files (`PhysicalFileSystem.cs`, its archive half,
+- **The scan** (`ArchitectureTests.ArchiveSeam.cs`): outside the seam's files (`PhysicalFileSystem.cs`, its archive halves,
   `BeneathWrites.cs`, `RegularFiles.cs`) no `File.Copy` / `File.Replace`, no `FileInfo` `CopyTo` / `Replace`, no
   `FileOptions.DeleteOnClose`, no delete disposition, and no native rename / unlink / link / rmdir / move entry point — each
   pattern with a planted companion.
@@ -2638,6 +2638,8 @@ flowchart LR
   level is flushed in its held parent and `FlushFolder` flushes the held handle. A Windows source must be owned by this
   account's SID. `BeneathFolder` became abstract (any `IArchiveFiles` can make one; `PhysicalFileSystem` refuses one it did not
   open), and the source rules moved to the pure `Files/ArchiveSourceRules.cs`. Deep-dive: [module_archive.md](module_archive.md).
+- **The own review round** (plan §15r *E9.S2a own review round*): every act follows the judged REAL path; the seam hashes the
+  archived copy itself before a removal; details in [module_archive.md](module_archive.md).
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
