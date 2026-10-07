@@ -23,7 +23,7 @@
 | I3 | existing machine config | kept (`/etc/wsl-care/config.json` is still the empty `{}` of the 2026-10-04 local install) |
 | I4 | default user | `/etc/wsl.conf` names none → the single login account (uid ≥ 1000) is the target; nothing written |
 | I5 | first full run | 30 s (16:11:42 → 16:12:12Z), recorded as `20261006T161142Z-<pid>` |
-| I6 | first-run warnings | page cache 16.80 GiB · inactive anonymous 19.38 GiB · swap 10.13 GiB · fragmentation (1 order-7 block, 382 order-4) · journal reaches 4.1 days · 274 clock jumps in 2.2 h (≈ 504 per 4 h) · 1 failed unit (`getty@tty1.service`, not ours) · wsl-pro enabled + active · 11.41 GB unused tagged Docker images |
+| I6 | first-run warnings | page cache 16.80 GiB · inactive anonymous 19.38 GiB · swap 10.13 GiB · fragmentation (1 order-7 block, 382 order-4) · journal reaches 4.1 days · 274 clock jumps in 2.2 h (the daemon printed "504 per 4 h", scaled from its unrounded window; 274 ÷ 2.2 × 4 = 498) · 1 failed unit (`getty@tty1.service`, not ours) · wsl-pro enabled + active · 11.41 GB unused tagged Docker images |
 | I7 | installed binary | sha256 `ec14cc13…2677` = the `wsl-care` inside the release archive (agent, read-only) |
 | I8 | `dryRun` | `true (default)`; the first-week window runs from 2026-10-04T14:02:48Z to 2026-10-11T14:02:48Z — the timer stays dry while EITHER holds, so cleanups do **not** start by themselves on 2026-10-11 (`DryRunWindow`) |
 
@@ -86,37 +86,50 @@ Not measured yet (live-gate items before E9.S5): `FlushFileBuffers` on a directo
 The owner reported a sudden WSL slowdown and `MCP server "coai" connection timed out after 30000ms` in about half of
 the Claude Code sessions.
 
-### 6a. What loaded the VM (19:01–19:10 local, = 17:01–17:10Z)
+### 6a. What loaded the VM (samples at 17:01:59Z and 17:09:24Z)
 
 | # | Observed | Value |
 |---|---|---|
-| L1 | load average | 44 → 21 → 61 on 24 CPUs across ten minutes |
-| L2 | pressure (PSI) | CPU `some avg10` 60 %; memory and I/O ≈ 0 — the slowdown was CPU, not memory or disk |
-| L3 | memory | 26 GiB used, 19 GiB cache, 1–2 GiB free, swap 8–9 GiB of 12 in use |
-| L4 | CPU by working folder (one `ps` snapshot) | the owner's other projects ≈ 9 cores (builds, `dotnet test`, jest e2e, Playwright Chromium); the shared compiler server `VBCSCompiler` 3–7 cores; this repository's agent builds and test runs ≈ 3–4 cores; `coai-mcp` ≈ 2.6 cores |
+| L1 | load average (1 / 5 / 15 min) | 17:01:59Z: 21.3 / 36.4 / 44.2 · 17:09:24Z: 61.8 / 49.1 / 45.8 — on 24 CPUs |
+| L2 | pressure (PSI `/proc/pressure/*`) | CPU `some` avg10 / avg60 / avg300: 3.1 / 14.0 / 26.1 % at 17:01:59Z, 60.8 / 53.1 / 38.8 % at 17:09Z; memory and I/O `some` avg300 ≤ 1.1 % at both — the slowdown was CPU, not memory or disk |
+| L3 | memory (`free -g`, 17:01:59Z) | total 44, used 26, free 1, buff/cache 19, **available 17** GiB; swap 8 of 12 GiB used. The columns do not add up to the total by design: procps-ng counts `used` against `available`, and cache is partly reclaimable — read `available` |
+| L4 | CPU by working folder (one snapshot ≈ 17:10Z) | the owner's other projects ≈ 9 cores (builds, `dotnet test`, jest e2e, Playwright Chromium); the SDK folder (the shared `VBCSCompiler` + MSBuild nodes) ≈ 3.4 cores; this repository's agent builds and test runs ≈ 3.9 cores |
+| L5 | `coai-mcp` | ≈ 2.6 cores — from the 45 s `/proc/<pid>/stat` sample of M6, NOT from L4's snapshot |
 
-### 6b. `coai-mcp` 0.43.0 — a slow start that becomes a restart storm
+L4's method, so it is read for what it is: the 80 processes highest in `ps -eo pid --sort=-pcpu`, each `%CPU` summed
+under the first five segments of `/proc/<pid>/cwd` (unreadable cwd dropped). `ps`'s `%CPU` is each process's CPU time
+divided by its OWN lifetime — a lifetime average, not the instant: a long-lived server reads lower than `top` shows it
+(in the same minute `top` gave `VBCSCompiler` 674 % over 5 s, `ps` 139 %). L4 ranks who was busy; it is not a precise
+breakdown of the 24 cores.
 
-The ConnectOtherAIs extension auto-updated the WSL `coai-mcp` to 0.43.0 at 16:54Z (binary in the extension's
-`globalStorage` under `~/.vscode-server`); the Windows side stayed 0.41.1. Its log lines (`~/.local/share/coai-mcp/
-logs/<UTC day>/coai-mcp-<HH-mm-ss>-<pid>.log`) give the start time as `starting` → `consultants: wrote …/health/
-consultants.json`:
+### 6b. `coai-mcp` — a slow start, then client kills and restarts
+
+Each start logs `starting: <provider> enabled, …` and then `consultants: wrote …/health/consultants.json`
+(`~/.local/share/coai-mcp/logs/<UTC day>/coai-mcp-<HH-mm-ss>-<pid>.log`; the line names no version). Two things changed
+within minutes of each other, and the logs cannot separate them:
+- the provider row: every earlier start that day logged `qwen enabled`; from 16:50:43Z they log `codex enabled`;
+- the binary: the WSL `coai-mcp` (ConnectOtherAIs extension `globalStorage` under `~/.vscode-server`) has mtime
+  16:54Z and answers `--version` 0.43.0; the Windows side stayed 0.41.1.
+
+The first slow starts (16:50:43Z → SIGTERM at 16:51:14Z; 16:52:48Z → SIGTERM at 16:53:19Z) come BEFORE that mtime. So
+the slowdown is attributed to "the 16:50–16:54Z change" — the codex row, 0.43.0, or both — not to 0.43.0 alone.
 
 | # | Observed | Value |
 |---|---|---|
-| M1 | start time before 0.43.0 (earlier logs that day) | 3–15 s |
-| M2 | start time after 0.43.0 | 19–32 s, at ≈ 100 % of one core |
-| M3 | Claude Code's MCP connect budget | 30 s → `SIGTERM asked this server to stop` at ≈ 30 s, then a new start |
-| M4 | starts per 10 minutes | 34 in 16:50–17:00Z (≤ 9 in any earlier 10-minute slot that day) |
-| M5 | client kills | 20 logs ending in SIGTERM within 30 minutes |
-| M6 | idle CPU of a started instance | 27–54 % of one core EACH over a 45 s `/proc/<pid>/stat` sample (7 instances ≈ 2.6 cores) while its log had no line for 10+ minutes; a shorter 20 s sample earlier read lower — the load is bursty |
+| M1 | start time, earlier logs that day (`qwen enabled`) | 3–15 s |
+| M2 | start time from 16:50Z (`codex enabled`) | 19–32 s, at ≈ 100 % of one core |
+| M3 | Claude Code's MCP connect budget | 30 s; the client then sends SIGTERM (`SIGTERM asked this server to stop`) and starts a new server |
+| M4 | starts per 5 minutes (by log-file name, counted 17:09Z) | 16:50–16:54Z: 13 · 16:55–16:59Z: 21 · 17:00–17:04Z: 5. Before 16:50Z no 5-minute slot that day had more than 9 |
+| M5 | how starts ended | log files modified ≈ 16:39–17:09Z with a SIGTERM line: 20. Others ended with SIGINT (an ordinary stop when a session closes), and 7 were still running at 17:09Z; the rest were not classified — so not every start ended in a client kill |
+| M6 | idle CPU of a started instance | 27–54 % of one core EACH over a 45 s `/proc/<pid>/stat` sample at ≈ 17:10Z (7 instances ≈ 2.6 cores) while its log had no line for 10+ minutes; a 20 s sample at ≈ 17:04Z read lower — the load is bursty |
 | M7 | what an idle instance touches | rewrites `runs/<id>.json` (≈ 140 B) about every 10 s; the whole state folder is 68 MB — not a large scan |
 | M8 | the Windows side (0.41.1) | two instances, 0 % CPU over 10 s |
 
-**Hypothesis, not measured:** a feedback loop — each failed start costs a core for ≈ 30 s, and the extra load makes
-the next start slower still. What IS measured is the co-occurrence (M2–M5 in the same ten minutes as L1–L2); no
-time-correlated series shows load rising before, and lengthening, a later start. The ConnectOtherAIs fix is measured
-on its own (start time and idle CPU of an isolated instance), not by re-running this evening.
+**Timing, as recorded:** the restart burst (M4, peaking 16:55–16:59Z) came BEFORE the load samples L1–L2 (17:01–17:10Z);
+the idle CPU of M6 overlaps them. **Hypothesis, not measured:** a feedback loop — each failed start costs a core for
+≈ 30 s and the extra load makes the next start slower still. No time-correlated series shows load rising before, and
+lengthening, a later start. The ConnectOtherAIs fix will be measured in ConnectOtherAIs' own research record (start time
+and idle CPU of an isolated instance); no figures for it exist yet and none are claimed here.
 Remediation applied on the owner's word: `"env": {"MCP_TIMEOUT": "90000"}` in the distro's `~/.claude/settings.json`
 (takes effect for new sessions / a window reload). The defect itself is being fixed in ConnectOtherAIs (answer
 `initialize` first, run and share the consultants health probe in the background, no idle polling); this repository
