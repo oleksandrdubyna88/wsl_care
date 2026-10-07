@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.2.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.1.2...daemon-v0.2.0) (2026-10-07)
+
+
+### Features
+
+* **daemon:** MCP server instances of the AI agents in status and every full run (E7.S2d) ([#38](https://github.com/oleksandrdubyna88/wsl_care/issues/38)) ([c5b6542](https://github.com/oleksandrdubyna88/wsl_care/commit/c5b6542d31fd882e65155f6525df501bac78ba2a))
+
+
+### Bug Fixes
+
+* **cli:** doctor's versions line is printable, the act parser neither mutates nor copies per key ([#36](https://github.com/oleksandrdubyna88/wsl_care/issues/36)) ([664e464](https://github.com/oleksandrdubyna88/wsl_care/commit/664e464ead7a607dcf667d51c4ff37d8171ea3ab))
+* **daemon:** collect says it is measuring before its slow phases start ([#32](https://github.com/oleksandrdubyna88/wsl_care/issues/32)) ([8fd2ee2](https://github.com/oleksandrdubyna88/wsl_care/commit/8fd2ee279e5d1877ad7dc58541e4ce20cba59411))
+* **daemon:** the PR [#10](https://github.com/oleksandrdubyna88/wsl_care/issues/10) retro round — interop on any entry, the launch instant, read errors as reasons, raw super options ([#42](https://github.com/oleksandrdubyna88/wsl_care/issues/42)) ([cb4e9ea](https://github.com/oleksandrdubyna88/wsl_care/commit/cb4e9ea2a01934581be2f8c540d13e84b914018e))
+* **daemon:** the PR [#11](https://github.com/oleksandrdubyna88/wsl_care/issues/11) retro round — accepted runs wait, traces kept, derived success exits ([#43](https://github.com/oleksandrdubyna88/wsl_care/issues/43)) ([7e65e16](https://github.com/oleksandrdubyna88/wsl_care/commit/7e65e16cf16823c1af29dcb5251c6822f9263723))
+* **daemon:** the PR [#16](https://github.com/oleksandrdubyna88/wsl_care/issues/16) retro round — an unknown kind is read as unknown, never guessed ([#44](https://github.com/oleksandrdubyna88/wsl_care/issues/44)) ([05ec294](https://github.com/oleksandrdubyna88/wsl_care/commit/05ec2944796e891abfccc29815d7633787f6010e))
+* **daemon:** the timer runs no action while the user layer cannot be read ([#35](https://github.com/oleksandrdubyna88/wsl_care/issues/35)) ([abcdb9f](https://github.com/oleksandrdubyna88/wsl_care/commit/abcdb9f6303e9d0d4a8d16d8a85980360581456b))
+* **install:** the PR [#8](https://github.com/oleksandrdubyna88/wsl_care/issues/8) retro round — purge under the run lock, wall-clock ceilings, a calendar systemd accepts for a daily timer ([#34](https://github.com/oleksandrdubyna88/wsl_care/issues/34)) ([4237537](https://github.com/oleksandrdubyna88/wsl_care/commit/4237537d12d1b128bdf5bf6bdf19891919497ed4))
+
 ## [0.1.2](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.1.1...daemon-v0.1.2) (2026-10-06)
 
 
