@@ -39,15 +39,25 @@ public sealed record McpServersReport(
 }
 
 /// <summary>One watched server: its instances and its starts in the window, and how they were counted (<c>logNames</c> or the
-/// lower bound <c>liveYounger</c>).</summary>
+/// lower bound <c>liveYounger</c>); <see cref="StartTimes"/> lists those starts newest first (<c>mcpServers.maxStartsListed</c>).</summary>
 public sealed record McpServerReport(string Name, int Count, NumberFigure Starts, int StartsWindowMinutes, string StartsBasis)
 {
+    /// <summary>Each start with its time, pid, its run log's last write and whether it still runs — churn attributable to a time
+    /// (the owner, 2026-10-07). Additive.</summary>
+    public IReadOnlyList<McpStartReport> StartTimes { get; init; } = [];
+
     public static McpServerReport From(McpServerSummary s) =>
-        new(s.Name, s.Count, StatusReports.Number(s.Starts.Count.Map(c => (double)c)), s.Starts.WindowMinutes, BasisName(s.Starts.Basis));
+        new(s.Name, s.Count, StatusReports.Number(s.Starts.Count.Map(c => (double)c)), s.Starts.WindowMinutes, BasisName(s.Starts.Basis))
+        {
+            StartTimes = [.. s.Starts.Recent.Select(r => new McpStartReport(r.At, r.Pid, r.LastWrite, r.Running))],
+        };
 
     /// <summary>The basis as the wire names it.</summary>
     public static string BasisName(McpStartsBasis basis) => basis == McpStartsBasis.LiveYounger ? "liveYounger" : "logNames";
 }
+
+/// <summary>One start: when (its run log's name, UTC), which pid, its log's last write, whether it still runs.</summary>
+public sealed record McpStartReport(DateTimeOffset At, int Pid, DateTimeOffset LastWriteAt, bool Running);
 
 /// <summary>Who owns an instance: the agent session above it, or none (<paramref name="Orphaned"/>).</summary>
 public sealed record McpOwnerReport(bool Orphaned, int? Pid, string? Agent, string? CommandLine)

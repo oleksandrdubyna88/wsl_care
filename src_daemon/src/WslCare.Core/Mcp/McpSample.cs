@@ -53,8 +53,19 @@ public enum McpStartsBasis
     LiveYounger,
 }
 
-/// <summary>A server's starts in the window, and how they were counted.</summary>
-public sealed record McpStarts(Reading<int> Count, McpStartsBasis Basis, int WindowMinutes);
+/// <summary>One start inside the window (the owner's correction of 2026-10-07: churn must be attributable to a time — the storm
+/// of 2026-10-06 began before the binary that was blamed for it was installed).</summary>
+/// <param name="At">When it started: its run log's name (UTC), or for the live-younger fallback the process's start.</param>
+/// <param name="LastWrite">Its run log's last write — with <paramref name="At"/>, how long that run lived when it is gone.</param>
+/// <param name="Running">Its pid runs now as this server.</param>
+public sealed record McpStart(DateTimeOffset At, int Pid, DateTimeOffset LastWrite, bool Running);
+
+/// <summary>A server's starts in the window, and how they were counted; <paramref name="Recent"/> lists them, newest first, at most
+/// <c>mcpServers.maxStartsListed</c> (the count is never capped).</summary>
+public sealed record McpStarts(Reading<int> Count, McpStartsBasis Basis, int WindowMinutes)
+{
+    public IReadOnlyList<McpStart> Recent { get; init; } = [];
+}
 
 /// <summary>One watched server: its instances and its starts.</summary>
 public sealed record McpServerSummary(string Name, int Count, McpStarts Starts);
@@ -92,7 +103,8 @@ public sealed record McpSettings(
     TimeSpan StartsWindow,
     int MaxInstances,
     int MaxLogEntries,
-    TimeSpan LogListBudget)
+    TimeSpan LogListBudget,
+    int MaxStartsListed)
 {
     public static McpSettings From(EffectiveConfig config) => new(
         [.. McpServerCatalogue.Servers.Where(s => config.TextList(ConfigKeys.McpServers.Watched).Contains(s.Name, StringComparer.Ordinal))],
@@ -103,5 +115,6 @@ public sealed record McpSettings(
         TimeSpan.FromMinutes(config.Int(ConfigKeys.McpServers.StartsWindowMinutes)),
         config.Int(ConfigKeys.McpServers.MaxInstances),
         config.Int(ConfigKeys.McpServers.MaxLogEntries),
-        TimeSpan.FromMilliseconds(config.Int(ConfigKeys.McpServers.LogListMilliseconds)));
+        TimeSpan.FromMilliseconds(config.Int(ConfigKeys.McpServers.LogListMilliseconds)),
+        config.Int(ConfigKeys.McpServers.MaxStartsListed));
 }

@@ -43,6 +43,7 @@ public sealed class McpServersFlows
         report.McpServers!.Count.Should().Be(2, "two claude sessions each run one coai-mcp in the capture");
         report.McpServers.Instances!.Should().OnlyContain(i => i.Owner.Agent == "Claude Code" && !i.Owner.Orphaned);
         report.McpServers.Servers!.Single().Starts.Value.Should().Be(34);
+        report.McpServers.Servers!.Single().StartTimes.Should().HaveCount(34, "each start is listed with its own time (the owner, 2026-10-07)").And.OnlyContain(s => !s.Running && s.At <= s.LastWriteAt);
         report.Verdicts!.Single(v => v.Id == McpVerdicts.Starts).Level.Should().Be(Level.Warn, "34 starts in 10 minutes is a restart storm");
         report.Capabilities.Should().Contain(Capabilities.StatusMcpServers);
         home.Calls.Should().BeEmpty("counting MCP servers starts no process");

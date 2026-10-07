@@ -1665,6 +1665,7 @@ Two first attempts (the identity and missing-history rules mutated in `IdleFor`)
 | own review m1: a midnight file whose pid now belongs to another program is a continuation, not a start | `…A_midnight_file_whose_pid_now_belongs_to_another_program_is_not_a_start` |
 | final code round 2/3: `mcp.cpu` says when its total covers the listed instances only | `…Figures_over_a_capped_list_say_they_cover_only_the_listed_instances` |
 | final code round 4: a folder behind an untraversable parent lists as unreadable, never empty (Linux, non-root) | `Files/BoundedListingTests.A_folder_under_an_untraversable_parent_is_unreadable_never_empty` (RED in WSL first) |
+| each start in the window listed with its time, pid, last log write and whether it still runs, newest first; capped by `mcpServers.maxStartsListed`, the count never (the owner, 2026-10-07: churn attributable to a time) | `…Each_start_in_the_window_is_listed_with_its_time_pid_last_write_and_whether_it_runs`, `…The_listed_starts_are_capped_by_their_key_and_the_count_is_not`; built binary: `McpServersFlows` (34 start times) |
 
 **Red first:** C-1 was red for the real symptom — A18 *Expected preview.Count to be 0 … but found 1* (an agent process judged
 idle beside a folder nobody could read) and the scan *Expected scan.Complete to be False … but found True*; C-2 was red with

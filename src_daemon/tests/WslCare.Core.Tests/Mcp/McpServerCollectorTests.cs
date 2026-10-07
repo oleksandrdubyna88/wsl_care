@@ -231,6 +231,40 @@ public sealed class McpServerCollectorTests : IDisposable
     }
 
     [Fact]
+    public void Each_start_in_the_window_is_listed_with_its_time_pid_last_write_and_whether_it_runs()
+    {
+        // The owner's correction (2026-10-07): the storm of 2026-10-06 began at 16:50Z, BEFORE the 0.43.0 binary's mtime of
+        // 16:54Z — a count per window cannot say when churn began; each start must carry its own time.
+        Session(200, 300, TimeSpan.FromMinutes(2));
+        Log(300, Now - TimeSpan.FromMinutes(2), Now);
+        Log(1001, Now - TimeSpan.FromMinutes(6), Now - TimeSpan.FromMinutes(6) + TimeSpan.FromSeconds(30));
+        Log(1002, Now - TimeSpan.FromMinutes(20), Now - TimeSpan.FromMinutes(19));
+
+        var starts = Sample().Servers.Single().Starts;
+
+        starts.Recent.Select(s => (s.At, s.Pid, s.LastWrite, s.Running)).Should().Equal(
+            [
+                (Now - TimeSpan.FromMinutes(2), 300, Now, true),
+                (Now - TimeSpan.FromMinutes(6), 1001, Now - TimeSpan.FromMinutes(6) + TimeSpan.FromSeconds(30), false),
+            ],
+            "newest first, only the starts inside the window; a dead start that lived 30 s is the shape of a connect timeout");
+    }
+
+    [Fact]
+    public void The_listed_starts_are_capped_by_their_key_and_the_count_is_not()
+    {
+        for (var i = 0; i < 5; i++)
+        {
+            Log(1000 + i, Now - TimeSpan.FromMinutes(1 + i), Now);
+        }
+
+        var starts = Sample(config: Configured(("mcpServers", "{\"maxStartsListed\": 2}"))).Servers.Single().Starts;
+
+        starts.Count.Should().Be(Reading.Of(5));
+        starts.Recent.Select(s => s.Pid).Should().Equal(1000, 1001);
+    }
+
+    [Fact]
     public void A_midnight_file_of_a_live_process_started_after_midnight_is_a_start()
     {
         // Plan round finding 1: pid 300 also has a file from an earlier run yesterday; the process running now started after

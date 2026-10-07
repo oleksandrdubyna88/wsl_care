@@ -2453,6 +2453,19 @@
       "machineOnly": true,
       "daemonUnused": false,
       "zeroIsUnbounded": false
+    },
+    {
+      "name": "mcpServers.maxStartsListed",
+      "shape": "int",
+      "min": 0,
+      "max": 1000,
+      "default": 50,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
     }
   ]
 }

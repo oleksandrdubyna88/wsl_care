@@ -284,6 +284,7 @@
     "warnStarts": 10,
     "maxInstances": 256,
     "maxLogEntries": 20000,
-    "logListMilliseconds": 1000
+    "logListMilliseconds": 1000,
+    "maxStartsListed": 50
   }
 }

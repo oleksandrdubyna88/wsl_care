@@ -238,7 +238,9 @@ only when an instance runs), memory held (`RssAnon + RssShmem`), the newest writ
 — the state measured on 2026-10-06: seven `coai-mcp` at 27–54 % of a core each with no log line for 10+ minutes) or
 `unknown`. Per server: the instances and the **starts in the last `mcpServers.startsWindowMinutes`** (10), counted from
 the names of its run logs (`~/.local/share/coai-mcp/logs/<UTC day>/coai-mcp-<HH-mm-ss>-<pid>.log`, names and dates only,
-no file opened) — the restart storm of 2026-10-06 was 34 starts in 10 minutes. Three verdicts judge them now:
+no file opened), each start listed with its time, pid, last log write and whether it still runs (`startTimes`, newest
+first, at most `mcpServers.maxStartsListed`, 50) — the restart storm of 2026-10-06 was 34 starts in 10 minutes, and it began
+at 16:50Z, before the update it was first blamed on, which only the start times show. Three verdicts judge them now:
 `mcp.instances` (warn above `mcpServers.warnInstances`, 12), `mcp.cpu` (warn above `mcpServers.warnCpuPercent`, 100 % of
 one core in total), `mcp.starts` (warn when a server started more than `mcpServers.warnStarts`, 10, times in the window).
 Read-only: nothing is stopped. The Windows binary answers the block unavailable — `coai-mcp.exe` on Windows arrives with

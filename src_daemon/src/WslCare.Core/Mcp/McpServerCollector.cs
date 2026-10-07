@@ -123,15 +123,38 @@ public sealed class McpJudge(McpSettings settings, DateTimeOffset now, DateTimeO
         var mine = instances.Where(i => i.Server.Name == server.Name).ToList();
         var minutes = (int)settings.StartsWindow.TotalMinutes;
         return new McpServerSummary(server.Name, mine.Count, server.Logs is McpLogLayout.FamilyRunLogs
-            ? new McpStarts(logs.Map(l => StartsFromLogs(server, l.Files)), McpStartsBasis.LogNames, minutes)
-            : new McpStarts(Reading.Of(mine.Count(m => Young(m.Process, settings.StartsWindow))), McpStartsBasis.LiveYounger, minutes));
+            ? FromLogs(server, logs, minutes)
+            : FromLive(mine, minutes));
     }
+
+    private McpStarts FromLogs(McpServerEntry server, Reading<McpLogs> logs, int minutes)
+    {
+        var started = logs.Map(l => StartsFromLogs(server, l.Files));
+        return new McpStarts(started.Map(s => s.Count), McpStartsBasis.LogNames, minutes)
+        {
+            Recent = [.. started.ValueOr([]).OrderByDescending(f => f.NamedAt).ThenBy(f => f.Pid).Take(settings.MaxStartsListed).Select(f => new McpStart(f.NamedAt, f.Pid, f.LastWrite, IsRunningRun(server, f)))],
+        };
+    }
+
+    /// <summary>The live-younger fallback: each young instance is a start at its own start time, running.</summary>
+    private McpStarts FromLive(IReadOnlyList<McpFound> mine, int minutes)
+    {
+        var young = mine.Where(m => Young(m.Process, settings.StartsWindow) && StartOf(m.Process) is not null).ToList();
+        return new McpStarts(Reading.Of(young.Count), McpStartsBasis.LiveYounger, minutes)
+        {
+            Recent = [.. young.Select(m => new McpStart(StartOf(m.Process)!.Value, m.Process.Pid, StartOf(m.Process)!.Value, true)).OrderByDescending(s => s.At).ThenBy(s => s.Pid).Take(settings.MaxStartsListed)],
+        };
+    }
+
+    /// <summary>This start's run still runs: its pid is this server now, and that process is the one the file was named for.</summary>
+    private bool IsRunningRun(McpServerEntry server, McpLogFile file) =>
+        _byPid.TryGetValue(file.Pid, out var running) && McpInstances.ServerOf(running, [server]) is not null && IsOf(file, running);
 
     private static bool Young(ProcessEntry process, TimeSpan window) => process.Age is Reading<TimeSpan>.Available { Value: var age } && age < window;
 
     /// <summary>The run logs named within the window, a continuation of a run that outlived the day excepted (Decided 8).</summary>
-    private int StartsFromLogs(McpServerEntry server, IReadOnlyList<McpLogFile> files) =>
-        files.Count(f => f.NamedAt >= now - settings.StartsWindow && f.NamedAt <= now && !IsContinuation(server, f, files));
+    private List<McpLogFile> StartsFromLogs(McpServerEntry server, IReadOnlyList<McpLogFile> files) =>
+        [.. files.Where(f => f.NamedAt >= now - settings.StartsWindow && f.NamedAt <= now && !IsContinuation(server, f, files))];
 
     /// <summary>A <c>00-00-00</c> file is a continuation when its pid runs now AS THIS SERVER and started before that midnight;
     /// otherwise — the pid no longer runs, or now belongs to another program (own review m1) — when the day before holds a file

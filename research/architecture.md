@@ -2383,43 +2383,9 @@ flowchart LR
 
 ## MCP server instances of the AI agents (E7.S2d, 2026-10-06, owner request)
 
-```mermaid
-flowchart LR
-    probe["LinuxProbe.Sample<br/>(the one /proc walk)"] -- "ProcessSnapshot<br/>Programs from the raw argv" --> find["McpInstances.Find<br/>watched program · owner walk"]
-    catalogue["McpServerCatalogue<br/>(mcpServers.watched)"] --> find
-    agentof["AgentProcesses.AgentOf<br/>(shared with A18)"] --> find
-    find --> collector["McpServerCollector"]
-    collector -- "SuspectTermination.Sample twice<br/>across mcpServers.cpuWindowMilliseconds" --> cpu["CPU % of one core"]
-    collector -- "PlaceProblem, then SessionGlob<br/>(bounded listing, names + stat)" --> logs["~/.local/share/coai-mcp/logs<br/>today + yesterday (UTC)"]
-    collector --> sample["McpSample"]
-    sample --> report["status --json mcpServers<br/>run detail sample.mcpServers"]
-    sample --> verdicts["McpVerdicts<br/>mcp.instances · mcp.cpu · mcp.starts"]
-```
-
-- **One road in:** `McpSampling.SampleAsync`, called by `status` and by `collect` AFTER their probe — never inside
-  `LinuxProbe.Sample`, which the action engine takes several times per run (each would pay the window). The Windows binary
-  answers it unavailable (`McpServerCollector.WindowsNotYet`): it has no process collector (E11).
-- **An instance** is a snapshot process whose PROGRAM (argv[0] from the RAW argv, `ProcessEntry.Programs`) is a watched
-  catalogue server's; its owner is the first ancestor of the `ai-agents` family that `AgentProcesses.AgentOf` attributes to
-  one catalogue agent (the attribution A18 uses, extracted from it), else `orphaned` when the process was re-parented (the
-  product's own orphan rule); a server under a live non-agent process is only counted (`notUnderAgent`).
-- **The per-pid sampler** is `Collectors/Procfs/PidSamples` (extracted from A11 by the coai code round): A11, A18's history and
-  the MCP collector read a pid's start, CPU ticks, terminal and owner through it; its `StartTolerance` is the run state's too.
-- **CPU** is measured, never the lifetime average: 100 × (Δticks ÷ ticks per second) ÷ the longer of the window and the
-  elapsed time; a pid gone or reused across the window is `unknown`, never 0. No wait when no instance runs.
-- **Activity and starts** come from the server's log layout (`McpLogLayout.FamilyRunLogs`, the family logging contract):
-  the newest last-write of that pid's files named after the process started; starts are the files named in the window, a
-  `00-00-00` continuation excepted (a live process started before that midnight, or a dead pid with a file the day before).
-  A cut or unreadable listing makes them unavailable, never partial. A server with no layout falls back to the live
-  instances younger than the window (`liveYounger`, a lower bound); pids across runs are not tracked (status writes no state).
-- **The bounded listing** (consultation C-1): `IFileSystem.ListEntries(path, ListingBounds)` asks the cap, the deadline and
-  the cancellation at every entry and answers an unreadable folder `Unreadable`; `SessionGlob` lists through it, so a
-  folder it lost makes the scan incomplete — for A18 ("cannot tell") and the agents' session counts (a lower bound) too.
-- **Read-only by construction:** the collector holds no command runner and no signal sender; it opens no file under a log
-  root and writes nothing. A stop action is an open owner question (plan §15q E7.S2d Q-M1).
-- **Twelve keys** (`mcpServers.*`): the window and three listing / sampling bounds machine-only (root waits on them), the
-  idle, age, activity and starts windows and the three warn limits ordinary; `limits` publishes the two waits.
-- **The status budget** is now 2 s **plus** the CPU window when an instance runs (the probe's own sample stays under 2 s).
+A read-only collector over the one process snapshot and the `status --json` `mcpServers` block (also in every run detail),
+three verdicts (`mcp.instances`, `mcp.cpu`, `mcp.starts`) and the `mcpServers.*` keys; the Windows binary answers it
+unavailable (E11). The module, its diagram, entities, flows and residuals: [module_mcp_servers.md](module_mcp_servers.md).
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -2868,7 +2834,7 @@ flowchart LR
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3); the status verdicts and the golden contracts' writer and drift test (E5.S0) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |

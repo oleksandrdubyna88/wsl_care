@@ -538,6 +538,9 @@ public static partial class ConfigKeys
         /// <summary>The most entries one log listing sees. Default 20000.</summary>
         public static readonly ConfigKey.IntKey MaxLogEntries = new("mcpServers.maxLogEntries", 100, 100000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
+        /// <summary>The most starts one server lists with their times (newest first); the count is never capped. Default 50.</summary>
+        public static readonly ConfigKey.IntKey MaxStartsListed = new("mcpServers.maxStartsListed", 0, 1000) { Trust = KeyTrust.Display };
+
         /// <summary>The deadline of one server's log listing. Default 1000.</summary>
         public static readonly ConfigKey.IntKey LogListMilliseconds = new("mcpServers.logListMilliseconds", 100, 5000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
@@ -684,5 +687,6 @@ public static partial class ConfigKeys
         McpServers.MaxInstances,
         McpServers.MaxLogEntries,
         McpServers.LogListMilliseconds,
+        McpServers.MaxStartsListed,
     ];
 }
