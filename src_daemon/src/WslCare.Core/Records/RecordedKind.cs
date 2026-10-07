@@ -28,13 +28,13 @@ public readonly record struct RecordedKind
     }
 
     private readonly State _state;
-    private readonly RunKind _known;
     private readonly string? _text;
 
-    private RecordedKind(State state, RunKind known, string text)
+    /// <summary>No member exposes a <see cref="RunKind"/>: a caller compares with <see cref="Collect"/> / <see cref="Act"/>, so an
+    /// absent or unknown kind can never be read as the enum's default (PR #44, third gate round).</summary>
+    private RecordedKind(State state, string text)
     {
         _state = state;
-        _known = known;
         _text = text;
     }
 
@@ -47,10 +47,10 @@ public readonly record struct RecordedKind
     /// <summary>An <c>act</c>.</summary>
     public static RecordedKind Act { get; } = Of(RunKind.Act);
 
-    public static RecordedKind Of(RunKind kind) => new(State.Known, kind, RunKinds.Name(kind));
+    public static RecordedKind Of(RunKind kind) => new(State.Known, RunKinds.Name(kind));
 
     /// <summary>A value this build does not know, as it was written (a JSON string's text, else the JSON token itself).</summary>
-    public static RecordedKind Unknown(string written) => new(State.Unknown, default, written);
+    public static RecordedKind Unknown(string written) => new(State.Unknown, written);
 
     /// <summary>A kind's name: <c>collect</c> / <c>act</c> exactly — anything else, a different case included, is unknown.</summary>
     public static RecordedKind Parse(string name) => RunKinds.Known(name) is { } kind ? Of(kind) : Unknown(name);
@@ -63,11 +63,6 @@ public readonly record struct RecordedKind
     public bool IsKnown => _state == State.Known;
 
     public bool IsUnknown => _state == State.Unknown;
-
-    /// <summary>The known kind — refused for an absent or unknown one, whose backing value is the enum's default (<c>collect</c>)
-    /// and must never be read as a kind (PR #44 gate round). Ask <see cref="IsKnown"/> first, or compare with
-    /// <see cref="Collect"/> / <see cref="Act"/>.</summary>
-    public RunKind Known => IsKnown ? _known : throw new InvalidOperationException($"the kind is {this}: it has no known kind");
 
     /// <summary>The name of a known kind, the value of an unknown one as written; empty when absent.</summary>
     public string Text => _text ?? string.Empty;

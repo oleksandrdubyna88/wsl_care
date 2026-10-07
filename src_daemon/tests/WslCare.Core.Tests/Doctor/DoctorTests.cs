@@ -108,13 +108,16 @@ public sealed class DoctorTests : IDisposable
         (await RunAsync(Runner())).Checks.Single(c => c.Id == "lastRun").State.Should().Be(expected, $"kind {kindJson ?? "missing"}");
     }
 
+    /// <summary>Every prefix of the contract, read from <see cref="HistoryReasons.NotAFullCheckWithoutKind"/> — never retyped, so
+    /// a prefix added later gets its doctor case (PR #44, third gate round: a hand list had missed the fourth).</summary>
+    public static TheoryData<string> NotAFullCheckPrefixes => [.. HistoryReasons.NotAFullCheckWithoutKind.Select(p => p.Prefix)];
+
     /// <summary>PR #44 gate round, code round (3 reviewers): a recent kind-less line that is NOT a full check — an unusable
-    /// request's, a reconciled orphan's of an unreadable or unknown detail — never stands in for the stale full check: a kind-less
-    /// line counts only when its reason starts with none of the contract's prefixes.</summary>
+    /// request's, a reconciled orphan's of an unreadable or unknown detail, a swept holder's or a request's whose kind is not
+    /// known — never stands in for the stale full check: a kind-less line counts only when its reason starts with none of the
+    /// contract's prefixes.</summary>
     [Theory]
-    [InlineData(HistoryReasons.UnusableRequestPrefix)]
-    [InlineData(RunReconcile.UnreadableDetailReason)]
-    [InlineData(RunReconcile.InterruptedReason)]
+    [MemberData(nameof(NotAFullCheckPrefixes))]
     public async Task A_recent_kind_less_line_that_is_not_a_full_check_never_hides_a_stale_one(string reason)
     {
         Installed(lastRun: Now.AddHours(-6), covered: Now.AddMinutes(-3));

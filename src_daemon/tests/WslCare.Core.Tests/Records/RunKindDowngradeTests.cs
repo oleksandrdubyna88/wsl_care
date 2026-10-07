@@ -277,14 +277,19 @@ public sealed class RunKindDowngradeTests : IDisposable
         FluentActions.Invoking(() => RunKinds.Name((RunKind)99)).Should().Throw<ArgumentOutOfRangeException>("an unmapped member is never filed as collect");
     }
 
-    /// <summary>PR #44 gate round, code round: an absent or unknown kind has no known kind — reading one is refused, never the
-    /// enum's default (<c>collect</c>).</summary>
+    /// <summary>PR #44 gate rounds: an absent or unknown kind is never equal to a known one — not even an unknown value spelt like
+    /// a known name — and the default value is absent, never <c>collect</c>. (The type exposes no <see cref="RunKind"/> to read.)</summary>
     [Fact]
-    public void The_known_kind_of_an_absent_or_unknown_kind_is_refused_never_collect()
+    public void An_absent_or_unknown_kind_is_never_a_known_kind()
     {
-        RecordedKind.Act.Known.Should().Be(RunKind.Act);
-        FluentActions.Invoking(() => RecordedKind.Absent.Known).Should().Throw<InvalidOperationException>("absent is not collect");
-        FluentActions.Invoking(() => RecordedKind.Unknown("archive").Known).Should().Throw<InvalidOperationException>("unknown is not collect");
+        default(RecordedKind).Should().Be(RecordedKind.Absent);
+        foreach (var notKnown in new[] { RecordedKind.Absent, RecordedKind.Unknown("archive"), RecordedKind.Unknown(RunKinds.FullCheckName), RecordedKind.Unknown(RunKinds.ActName) })
+        {
+            notKnown.IsKnown.Should().BeFalse(notKnown.ToString());
+            notKnown.Should().NotBe(RecordedKind.Collect, notKnown.ToString()).And.NotBe(RecordedKind.Act, notKnown.ToString());
+        }
+
+        RecordedKind.Parse(RunKinds.FullCheckName).Should().Be(RecordedKind.Collect);
     }
 
     // ---------- the wire type itself ----------
