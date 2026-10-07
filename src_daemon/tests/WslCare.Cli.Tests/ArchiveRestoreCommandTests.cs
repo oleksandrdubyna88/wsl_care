@@ -34,6 +34,8 @@ public sealed class ArchiveRestoreCommandTests : IDisposable
     [InlineData("archive", "restore", "--agent", "no-such-agent", "--month", "2026-09")]
     [InlineData("archive", "restore", "--agent", "claude-code", "--session", "../outside.jsonl")]
     [InlineData("archive", "restore", "--agent", "claude-code", "--session", "/home/me/.claude/projects/p/s.jsonl")]
+    [InlineData("archive", "restore", "--agent", "claude-code", "--month", "2026-09", "--accept-unverified")]
+    [InlineData("archive", "restore", "--agent", "claude-code", "--session", "projects/p/s.jsonl", "--accept-unverified")]
     [InlineData("archive", "list", "--month", "september")]
     [InlineData("archive", "list", "--run", "not-a-run")]
     [InlineData("archive", "list", "--agent", "a,b")]
@@ -66,5 +68,14 @@ public sealed class ArchiveRestoreCommandTests : IDisposable
         restore.Stdout.Should().Contain("\"outcome\":\"no-base\"");
         list.Exit.Should().Be((int)ExitCode.Ok, list.Stderr);
         list.Stdout.Should().Contain("\"outcome\": \"no-base\"");
+    }
+
+    /// <summary>E9.S3 own review round C-9: an elevated Windows user IS the user whose sessions move — the refusal tells them to run it
+    /// from a terminal that is not elevated, never "not as uid 0 … as that user".</summary>
+    [Fact]
+    public void The_root_refusal_speaks_the_words_of_its_side()
+    {
+        Commands.ArchiveRunCommand.RootRefusalFor(HostSide.Windows, "restore").Should().Contain("not elevated").And.NotContain("uid 0");
+        Commands.ArchiveRunCommand.RootRefusalFor(HostSide.Wsl, "restore").Should().Contain("not as uid 0");
     }
 }

@@ -99,17 +99,49 @@ public sealed class ArchiveState(IHostPaths paths, IFileSystem files)
 
     /// <summary>The entries restored into the agent folders and not archived again (plan §15r D5, D6, review M10) — what lets a restored
     /// session be archived again as an EVENT only, without its bytes. An entry with a field missing is skipped.</summary>
-    public IReadOnlyList<RestoredEntry> Restored() =>
-        Read(Join(RestoredName), WslCareJsonContext.Compact.RestoredFile) is { Entries: { } entries }
-            ? [.. entries.Where(e => e is { EntryId: not null, Agent: not null, Key: not null, Month: not null })]
-            : [];
+    public IReadOnlyList<RestoredEntry> Restored() => ReadRestored() is RestoredRead.Read read ? read.Entries : [];
 
-    /// <summary>The entry added (replacing one of the same id); empty when written.</summary>
-    public string AddRestored(RestoredEntry entry) =>
-        WriteRestored([.. Restored().Where(e => e.EntryId != entry.EntryId), entry]);
+    /// <summary>The entry added (replacing one of the same id), every entry restored more than <c>archive.restoredKeepDays</c> before
+    /// <paramref name="now"/> dropped (E9.S3 own review round C-6: a session restored and then deleted by its agent would stay for
+    /// ever); empty when written. A file that does not read is never overwritten — why is answered.</summary>
+    public string AddRestored(RestoredEntry entry, DateTimeOffset now)
+    {
+        var keep = TimeSpan.FromDays(Tuning.Current.Int(ConfigKeys.Archive.RestoredKeepDays));
+        return ReadRestored() switch
+        {
+            RestoredRead.Unreadable unreadable => $"{Join(RestoredName)} could not be read ({unreadable.Why}); it is not written over",
+            var read => WriteRestored([.. EntriesOf(read).Where(e => e.EntryId != entry.EntryId && now - e.RestoredAtUtc <= keep), entry]),
+        };
+    }
 
-    /// <summary>The entry removed — it was archived again; empty when written.</summary>
-    public string DropRestored(string entryId) => WriteRestored([.. Restored().Where(e => e.EntryId != entryId)]);
+    /// <summary>The entry removed — it was archived again; empty when written (a file that does not read is not written over).</summary>
+    public string DropRestored(string entryId) => ReadRestored() switch
+    {
+        RestoredRead.Unreadable unreadable => $"{Join(RestoredName)} could not be read ({unreadable.Why}); it is not written over",
+        var read => WriteRestored([.. EntriesOf(read).Where(e => e.EntryId != entryId)]),
+    };
+
+    private static IReadOnlyList<RestoredEntry> EntriesOf(RestoredRead read) => read is RestoredRead.Read whole ? whole.Entries : [];
+
+    /// <summary>What <c>restored.json</c> held — a closed set: missing is empty, a file that does not read is NOT (C-6).</summary>
+    private abstract record RestoredRead
+    {
+        public sealed record Missing : RestoredRead;
+
+        public sealed record Read(IReadOnlyList<RestoredEntry> Entries) : RestoredRead;
+
+        public sealed record Unreadable(string Why) : RestoredRead;
+    }
+
+    private RestoredRead ReadRestored() => files.ReadRegularFile(Join(RestoredName), Cap) switch
+    {
+        FileReadResult.Content content => Parsed(content.Bytes, WslCareJsonContext.Compact.RestoredFile) is { Entries: { } entries }
+            ? new RestoredRead.Read([.. entries.Where(e => e is { EntryId: not null, Agent: not null, Key: not null, Month: not null })])
+            : new RestoredRead.Unreadable("it does not parse"),
+        FileReadResult.Missing => new RestoredRead.Missing(),
+        FileReadResult.Unreadable unreadable => new RestoredRead.Unreadable(unreadable.Reason),
+        _ => new RestoredRead.Unreadable("it could not be read"),
+    };
 
     private string WriteRestored(IReadOnlyList<RestoredEntry> entries) =>
         Write(Join(RestoredName), JsonSerializer.SerializeToUtf8Bytes(new RestoredFile(Version, entries), WslCareJsonContext.Compact.RestoredFile));
@@ -168,7 +200,11 @@ public sealed record SummaryRow(string Agent, string Month, int Sessions, int Fi
 public sealed record SummaryFile(int V, IReadOnlyList<SummaryRow> Months);
 
 /// <summary>One entry restored into an agent folder: where its index line is (the agent and the month) and the unit it is.</summary>
-public sealed record RestoredEntry(string EntryId, string Agent, string Key, string Month);
+public sealed record RestoredEntry(string EntryId, string Agent, string Key, string Month)
+{
+    /// <summary>When it was restored — what bounds the file (E9.S3 own review round C-6).</summary>
+    public DateTimeOffset RestoredAtUtc { get; init; }
+}
 
 /// <summary><c>restored.json</c> (plan §15r D5): the entries whose latest status is <c>restored</c>.</summary>
 public sealed record RestoredFile(int V, IReadOnlyList<RestoredEntry> Entries);

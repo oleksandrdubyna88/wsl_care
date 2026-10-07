@@ -217,6 +217,11 @@ public interface IArchiveFiles
     /// <summary>Renames a quarantined file back to <paramref name="originalName"/>, never replacing what the agent wrote there since.</summary>
     NoReplaceRename RenameBack(string layoutRoot, string quarantinedPath, string originalName, DeletionScope scope);
 
+    /// <summary>E9.S3 own review round S-B2: renames a restore's verified TEMPORARY copy (<c>&lt;name&gt;.wsl-care-r-&lt;runId&gt;</c>) to
+    /// <paramref name="finalName"/> in its own folder, never replacing — under the <c>RestoreIntoAgentFolder</c> permit, which allows
+    /// exactly this rename.</summary>
+    NoReplaceRename PromoteRestored(string layoutRoot, string temporaryPath, string finalName, DeletionScope scope);
+
     /// <summary>Removes the quarantined <paramref name="path"/> only when the archived copy <paramref name="archivedCopy"/> — opened
     /// through no link and hashed first (Windows: past the cache) — AND the quarantined bytes, read from the same open file the
     /// removal acts on, both hash to <paramref name="expectedSha256"/> (own review round, security M2): a missing or changed copy

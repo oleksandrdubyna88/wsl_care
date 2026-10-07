@@ -81,6 +81,21 @@ public sealed class ArchivePermitTests
         }
     }
 
+    /// <summary>E9.S3 own review round S-B2: the restore's TEMPORARY copy may be renamed to its own name in its own folder — and removed
+    /// (its own failed copy) — and nothing else: no other rename, no other name, no other folder.</summary>
+    [Fact]
+    public void A_restore_may_promote_and_remove_only_its_own_temporary_copy()
+    {
+        const string temporary = Session + ".wsl-care-r-r1";
+        Decide(FileOperation.Move, temporary, Session, DeletionPermit.RestoreIntoAgentFolder).IsAllowed.Should().BeTrue();
+        Decide(FileOperation.Delete, temporary, string.Empty, DeletionPermit.RestoreIntoAgentFolder).IsAllowed.Should().BeTrue();
+        RuleOf(Decide(FileOperation.Move, Session, temporary, DeletionPermit.RestoreIntoAgentFolder)).Should().Be(DeletionRule.ArchiveShape, "never the other way");
+        RuleOf(Decide(FileOperation.Move, temporary, "/home/me/.claude/projects/q/s1.jsonl", DeletionPermit.RestoreIntoAgentFolder)).Should().Be(DeletionRule.ArchiveShape, "never into another folder");
+        RuleOf(Decide(FileOperation.Move, temporary, "/home/me/.claude/projects/p/other.jsonl", DeletionPermit.RestoreIntoAgentFolder)).Should().Be(DeletionRule.ArchiveShape, "never to another name");
+        RuleOf(Decide(FileOperation.Delete, Session, string.Empty, DeletionPermit.RestoreIntoAgentFolder)).Should().Be(DeletionRule.AgentFolder, "a session file is never removed by a restore");
+        RuleOf(Decide(FileOperation.Move, "/home/me/.claude/projects/p/memory/a.md.wsl-care-r-r1", "/home/me/.claude/projects/p/memory/a.md", DeletionPermit.RestoreIntoAgentFolder)).Should().Be(DeletionRule.AgentMemory);
+    }
+
     [Fact]
     public void A_restore_may_create_under_an_agent_folder_and_nothing_else_may()
     {

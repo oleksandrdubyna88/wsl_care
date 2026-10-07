@@ -57,7 +57,11 @@ public abstract record CopyOutcome
     }
 
     /// <summary>Copied (or found already there, equal), verified, indexed; the entry waits for phase 2.</summary>
-    public sealed record Archived(InflightEntry Entry, long Bytes, int Files) : CopyOutcome;
+    public sealed record Archived(InflightEntry Entry, long Bytes, int Files) : CopyOutcome
+    {
+        /// <summary>A restored session archived again as an event only (no bytes) — already counted in its month (review C-5).</summary>
+        public bool EventOnly { get; init; }
+    }
 
     /// <summary>A file of it was removed by the agent before it could be copied — counted, never a failure; nothing is indexed.</summary>
     public sealed record GoneAtSource(string Why) : CopyOutcome;
@@ -117,7 +121,7 @@ public static class ArchiveCopy
         var entry = new InflightEntry(indexed.EntryId, agent, under, unit.Key, indexed.Month, InflightStates.Archived, c.RunId, now, indexed.Files.Count, string.Empty);
         return c.Book.Put(entry) is { Length: > 0 } unrecorded
             ? new CopyOutcome.Stop(StopKinds.StateWrite, $"the in-flight file could not be written ({unrecorded})")
-            : new CopyOutcome.Archived(entry, 0, indexed.Files.Count);
+            : new CopyOutcome.Archived(entry, 0, indexed.Files.Count) { EventOnly = true };
     }
 
     private static CopyOutcome CopyBytes(MoveContext c, string agent, string under, UnitFound unit)
@@ -377,6 +381,9 @@ public static class ArchiveCopy
     public static IReadOnlyList<string> Levels(string agent, string month, string side, IReadOnlyList<string> folders) =>
         [agent, .. month.Split('/'), side, .. folders];
 
+    /// <summary>The folder of a relative path, <c>/</c>-joined (<c>projects/p/s.jsonl</c> → <c>projects/p</c>; a top-level file → empty).</summary>
+    public static string FolderOf(string relative) => string.Join('/', Folders(relative));
+
     /// <summary>The folders of a relative path (<c>projects/p/s.jsonl</c> → <c>projects</c>, <c>p</c>).</summary>
     public static IReadOnlyList<string> Folders(string relative)
     {
@@ -436,7 +443,7 @@ public sealed class InflightBook(ArchiveState state)
     /// <summary>The restored entry of this unit (plan §15r D6, review M10) when it was restored and not archived again.</summary>
     public RestoredEntry? RestoredOf(string agent, string key) => state.Restored().FirstOrDefault(e => e.Agent == agent && e.Key == key);
 
-    public string AddRestored(RestoredEntry entry) => state.AddRestored(entry);
+    public string AddRestored(RestoredEntry entry, DateTimeOffset now) => state.AddRestored(entry, now);
 
     public string DropRestored(string entryId) => state.DropRestored(entryId);
 }

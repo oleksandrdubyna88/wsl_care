@@ -26,6 +26,15 @@ public static class RestoreOutcomes
     public const string AlreadyThere = "already-there";
 
     public const string Refused = "refused";
+
+    /// <summary>A split entry: the missing files restored, the ones the agent changed kept as they are (E9.S3 own review round C-4).</summary>
+    public const string Partial = "partial";
+
+    /// <summary>An entry id or a session asked for that no readable index of this side holds (C-3).</summary>
+    public const string NotFound = "not-found";
+
+    /// <summary>A month index that could not be read: what it holds is not known (C-3).</summary>
+    public const string Unreadable = "unreadable";
 }
 
 /// <summary>One session a restore looked at: what became of it and why.</summary>
@@ -36,11 +45,13 @@ public sealed record RestoreReport(int Restored, int AlreadyThere, int Refused, 
 {
     public static RestoreReport Empty { get; } = new(0, 0, 0, []);
 
+    /// <summary>The session counted: a partial restore counts as restored (files were created); not found and unreadable count as
+    /// refused — the restore did not do what it was asked (E9.S3 own review round C-3).</summary>
     public RestoreReport With(RestoredSession session) => this with
     {
-        Restored = Restored + (session.Outcome == RestoreOutcomes.Restored ? 1 : 0),
+        Restored = Restored + (session.Outcome is RestoreOutcomes.Restored or RestoreOutcomes.Partial ? 1 : 0),
         AlreadyThere = AlreadyThere + (session.Outcome == RestoreOutcomes.AlreadyThere ? 1 : 0),
-        Refused = Refused + (session.Outcome == RestoreOutcomes.Refused ? 1 : 0),
+        Refused = Refused + (session.Outcome is RestoreOutcomes.Refused or RestoreOutcomes.NotFound or RestoreOutcomes.Unreadable ? 1 : 0),
         Sessions = [.. Sessions, session],
     };
 }
@@ -59,11 +70,83 @@ public sealed record RestoreReport(int Restored, int AlreadyThere, int Refused, 
 /// </summary>
 public static class ArchiveRestore
 {
-    /// <summary>One entry asked for, with the agent it belongs to and that agent's layout root on this side.</summary>
-    public sealed record Candidate(ArchiveTarget Target, IndexEntry Entry);
+    /// <summary>One entry asked for, with the agent it belongs to and that agent's layout root on this side; <paramref name="Chosen"/>
+    /// says why this one was taken when several matched.</summary>
+    public sealed record Candidate(ArchiveTarget Target, IndexEntry Entry)
+    {
+        public string Chosen { get; init; } = string.Empty;
+    }
+
+    /// <summary>What a request names, decided before anything is touched: the entries to restore, and the rows that answer what could
+    /// not even be looked at (not found, an index that cannot be read, an id found twice).</summary>
+    public sealed record RestoreSelection(IReadOnlyList<Candidate> Candidates, IReadOnlyList<RestoredSession> Answered);
 
     public static RestoreReport Restore(MoveContext c, IReadOnlyList<Candidate> candidates, bool acceptUnverified) =>
-        candidates.Aggregate(RestoreReport.Empty, (report, candidate) => report.With(One(c, candidate, acceptUnverified)));
+        Restore(c, new RestoreSelection(candidates, []), acceptUnverified);
+
+    public static RestoreReport Restore(MoveContext c, RestoreSelection selection, bool acceptUnverified) =>
+        selection.Candidates.Aggregate(
+            selection.Answered.Aggregate(RestoreReport.Empty, (report, row) => report.With(row)),
+            (report, candidate) => report.With(One(c, candidate, acceptUnverified)));
+
+    /// <summary>The statuses of an entry whose source is gone — the ones a session or a month restore takes.</summary>
+    private static bool SourceGone(IndexEntry entry) => entry.Status is ArchiveIndex.Events.SourceRemoved or ArchiveIndex.Events.Split;
+
+    /// <summary>E9.S3 own review round S-M1, C-2, C-3: the entries of this side's readable month indexes whose agent and month are the
+    /// folder's own (a line naming another is never taken); every unreadable month answered; then by id (one entry per id — an id found
+    /// in two months restores nothing and names them), by session (its NEWEST entry whose source is gone, verified first), or by month
+    /// (each session of the month once, the same way).</summary>
+    public static RestoreSelection Select(MoveContext c, IFileSystem files, RestoreRequest asked, IReadOnlyList<ArchiveTarget> targets)
+    {
+        var months = ArchiveList.Months(c, files, targets, ArchiveList.MonthOf(asked.Month)).ToList();
+        IReadOnlyList<RestoredSession> unread = [.. months.Where(m => m.Read is MonthRead.Unreadable).Select(m => Row(string.Empty, m.Target.Entry.Id, string.Empty, m.Month, RestoreOutcomes.Unreadable, $"its index could not be read ({((MonthRead.Unreadable)m.Read).Why}); what it holds is not known"))];
+        var all = months.Where(m => m.Read is MonthRead.Read)
+            .SelectMany(m => ArchiveIndex.Merge(((MonthRead.Read)m.Read).Index.Records).Where(e => e.Agent == m.Target.Entry.Id && e.Month == m.Month).Select(e => new Candidate(m.Target, e)))
+            .ToList();
+        var picked = asked.EntryIds.Count > 0 ? ById(all, asked.EntryIds)
+            : asked.Session.Length > 0 ? BySession(all, asked.Session)
+            : new RestoreSelection([.. all.Where(x => SourceGone(x.Entry)).GroupBy(x => x.Target.Entry.Id + "\n" + x.Entry.Key, StringComparer.Ordinal).Select(g => Newest([.. g]))], []);
+        return picked with { Answered = [.. unread, .. picked.Answered] };
+    }
+
+    private static RestoreSelection ById(IReadOnlyList<Candidate> all, IReadOnlyList<string> ids)
+    {
+        var candidates = new List<Candidate>();
+        var rows = new List<RestoredSession>();
+        foreach (var id in ids.Distinct(StringComparer.Ordinal))
+        {
+            var matches = all.Where(x => x.Entry.EntryId == id).ToList();
+            if (matches.Count == 1)
+            {
+                candidates.Add(matches[0]);
+                continue;
+            }
+
+            rows.Add(matches.Count == 0
+                ? Row(id, string.Empty, string.Empty, string.Empty, RestoreOutcomes.NotFound, "no readable index of this side holds that entry id")
+                : Row(id, matches[0].Entry.Agent, matches[0].Entry.Key, string.Empty, RestoreOutcomes.Refused, $"the id is in {matches.Count} months ({string.Join(", ", matches.Select(x => x.Entry.Month).Order(StringComparer.Ordinal))}) — one may be planted on the share; nothing is restored"));
+        }
+
+        return new RestoreSelection(candidates, rows);
+    }
+
+    private static RestoreSelection BySession(IReadOnlyList<Candidate> all, string session)
+    {
+        var gone = all.Where(x => x.Entry.Key == session && SourceGone(x.Entry)).ToList();
+        return gone.Count > 0
+            ? new RestoreSelection([Newest(gone)], [])
+            : new RestoreSelection([], [Row(string.Empty, string.Empty, session, string.Empty, RestoreOutcomes.NotFound, "no entry of that session whose source was removed is in a readable index of this side")]);
+    }
+
+    /// <summary>C-2, S-M1: the newest of a session's entries, a verified one before any other; it says so when there was a choice.</summary>
+    private static Candidate Newest(IReadOnlyList<Candidate> matches)
+    {
+        var newest = matches.OrderByDescending(x => x.Entry.Verified).ThenByDescending(x => x.Entry.ArchivedAtUtc).First();
+        return matches.Count == 1 ? newest : newest with { Chosen = $"the newest verified of {matches.Count} entries of the session ({newest.Entry.EntryId}, {newest.Entry.Month}); " };
+    }
+
+    private static RestoredSession Row(string entryId, string agent, string key, string month, string outcome, string note) =>
+        new(entryId, agent, key, month, outcome, 0, 0, note);
 
     private static RestoredSession One(MoveContext c, Candidate candidate, bool acceptUnverified)
     {
@@ -74,9 +157,21 @@ public static class ArchiveRestore
         }
 
         var plan = Planned(c, target.Under, entry);
-        return plan.Problem.Length > 0 ? Session(entry, RestoreOutcomes.Refused, 0, plan.Problem)
+        var session = plan.Problem.Length > 0 ? Session(entry, RestoreOutcomes.Refused, 0, plan.Problem)
             : plan.Missing.Count == 0 ? Session(entry, RestoreOutcomes.AlreadyThere, 0, "every file is already there with its archived bytes")
-            : Written(c, target, entry, plan.Missing);
+            : SpaceProblem(c, target.Under, plan.Missing) is { Length: > 0 } space ? Session(entry, RestoreOutcomes.Refused, 0, space)
+            : Written(c, target, entry, plan);
+        return session with { Note = candidate.Chosen + session.Note };
+    }
+
+    /// <summary>S-M1: the agent folder's disk must hold what the index says will be written — a hostile index naming huge files never
+    /// fills it; a disk that cannot be measured is not refused (the stream is capped at each file's indexed length anyway).</summary>
+    private static string SpaceProblem(MoveContext c, string under, IReadOnlyList<IndexFile> missing)
+    {
+        var needed = missing.Sum(f => f.Bytes);
+        return c.Stats.MeasureVolume(under) is VolumeReadResult.Measured volume && volume.AvailableBytes < needed
+            ? $"the agent folder's disk has {volume.AvailableBytes} bytes free, the session needs {needed}; nothing is restored"
+            : string.Empty;
     }
 
     private static RestoredSession Session(IndexEntry entry, string outcome, long bytes, string note) =>
@@ -88,7 +183,20 @@ public static class ArchiveRestore
         : entry.Files.Count == 0 ? "its index holds no files for it"
         : !entry.Verified && !acceptUnverified ? "its index lines are not all this side's (unverified, or recovered by a scan); it is restored only with --accept-unverified"
         : c.Book.Entries.Any(e => e.EntryId == entry.EntryId || (e.Agent == entry.Agent && e.Key == entry.Key)) ? "it is on its way through an archive run (in the in-flight file); restore it after the run finished it"
-        : LayoutProblem(target.Entry, entry);
+        : LayoutProblem(target.Entry, entry) is { Length: > 0 } layout ? layout
+        : PlaceProblem(c, target, entry);
+
+    /// <summary>E9.S3 own review round S-B1 (owner rule 2026-10-07): nothing is ever restored where the selection would not walk — a
+    /// link on the way to the agent's folder, another filesystem — nor inside a git working tree: a <c>.git</c> above the key's folder
+    /// (spelled or real path), on the way to a file, below a companion folder, or named by a file itself.</summary>
+    private static string PlaceProblem(MoveContext c, ArchiveTarget target, IndexEntry entry) =>
+        AgentWalk.PlaceProblem(c.Stats, c.Home, target.Under) is { Length: > 0 } place ? $"{target.Under} is not where the selection may walk ({place}); nothing is restored"
+        : GitTrees.InUnit(c.Stats, target.Under, entry.Key, [.. entry.Files.Select(f => f.Original)]) switch
+        {
+            GitTreeFound.Found found => $"{found.Entry} is part of a git repository; nothing is restored inside a working tree",
+            GitTreeFound.Unchecked notChecked => $"whether a git repository is on its way is not known ({notChecked.Why}); nothing is restored",
+            _ => string.Empty,
+        };
 
     /// <summary>Review M4: every file must be the unit's own — the key a session (or file unit) of the agent's layout, every other file
     /// inside a companion of it — and none may name what never moves.</summary>
@@ -120,23 +228,34 @@ public static class ArchiveRestore
         : glob[g] == SessionGlob.AnyDepth ? Matches(glob, g + 1, path, p) || (p < path.Length && Matches(glob, g, path, p + 1))
         : p < path.Length && SessionGlob.Matches(glob[g], path[p]) && Matches(glob, g + 1, path, p + 1);
 
-    /// <summary>The files still to create, or why the session is refused — decided for EVERY file before any is written.</summary>
-    private sealed record RestorePlan(IReadOnlyList<IndexFile> Missing, string Problem);
+    /// <summary>The files still to create, the files a SPLIT entry keeps as the agent changed them, or why the session is refused —
+    /// decided for EVERY file before any is written.</summary>
+    private sealed record RestorePlan(IReadOnlyList<IndexFile> Missing, IReadOnlyList<IndexFile> Kept, string Problem);
 
     private static RestorePlan Planned(MoveContext c, string under, IndexEntry entry)
     {
         var missing = new List<IndexFile>();
+        var kept = new List<IndexFile>();
         foreach (var file in entry.Files)
         {
             var problem = CopyProblem(c, entry, file) is { Length: > 0 } damaged ? damaged : TargetProblem(c, under, file, missing);
+            if (problem.Length > 0 && entry.Status == ArchiveIndex.Events.Split && problem.StartsWith(OtherBytes, StringComparison.Ordinal))
+            {
+                kept.Add(file);
+                continue;
+            }
+
             if (problem.Length > 0)
             {
-                return new RestorePlan([], problem);
+                return new RestorePlan([], [], $"{file.Original} {problem}");
             }
         }
 
-        return new RestorePlan(missing, string.Empty);
+        return new RestorePlan(missing, kept, string.Empty);
     }
+
+    /// <summary>The start of the answer for a target that exists with other bytes — C-4: a split entry keeps such a file.</summary>
+    private const string OtherBytes = "exists with other bytes";
 
     /// <summary>D6: the archived copy, inside the entry's own folder, opened and hashed first — a damaged copy is never restored.</summary>
     private static string CopyProblem(MoveContext c, IndexEntry entry, IndexFile file)
@@ -164,23 +283,24 @@ public static class ArchiveRestore
                 missing.Add(file);
                 return string.Empty;
             case SourceOpen.Opened opened:
-                return ArchiveCopy.Sha256Of(opened.Stream) == file.Sha256 ? string.Empty : $"{file.Original} exists with other bytes (a live session of that name); nothing of it is restored";
+                return ArchiveCopy.Sha256Of(opened.Stream) == file.Sha256 ? string.Empty : $"{OtherBytes} (a live session of that name); nothing of it is restored";
             case SourceOpen.Refused refused:
-                return $"{file.Original} cannot be checked ({refused.Why}); nothing of it is restored";
+                return $"cannot be checked ({refused.Why}); nothing of it is restored";
             default:
-                return $"{file.Original} cannot be checked";
+                return "cannot be checked";
         }
     }
 
     /// <summary>Every missing file created; then the <c>restored</c> event and <c>restored.json</c>.</summary>
-    private static RestoredSession Written(MoveContext c, ArchiveTarget target, IndexEntry entry, IReadOnlyList<IndexFile> missing)
+    private static RestoredSession Written(MoveContext c, ArchiveTarget target, IndexEntry entry, RestorePlan plan)
     {
+        var missing = plan.Missing;
         long bytes = 0;
         foreach (var file in missing)
         {
             if (Created(c, target.Under, entry, file) is { Length: > 0 } failed)
             {
-                return Session(entry, RestoreOutcomes.Refused, bytes, $"{failed}; the files restored before it stay (they hold the archived bytes)");
+                return Session(entry, RestoreOutcomes.Refused, bytes, $"{failed}; the files restored before it stay (each was verified and promoted whole), nothing of this one is left");
             }
 
             bytes += file.Bytes;
@@ -188,8 +308,10 @@ public static class ArchiveRestore
 
         var restored = new IndexLine(ArchiveIndex.SchemaVersion, ArchiveIndex.Events.Restored, entry.EntryId, entry.Agent, c.Side, entry.Key, entry.Month, c.Clock.GetUtcNow(), c.Zone.Id, c.RunId, [], string.Empty);
         var unwritten = ArchiveCopy.AppendLine(c, entry.Agent, entry.Month, restored) is { Length: > 0 } index ? $"; its restored line could not be written ({index})" : string.Empty;
-        var unrecorded = c.Book.AddRestored(new RestoredEntry(entry.EntryId, entry.Agent, entry.Key, entry.Month)) is { Length: > 0 } local ? $"; restored.json could not be written ({local})" : string.Empty;
-        return Session(entry, RestoreOutcomes.Restored, bytes, $"{missing.Count} file(s) created{unwritten}{unrecorded}");
+        var unrecorded = c.Book.AddRestored(new RestoredEntry(entry.EntryId, entry.Agent, entry.Key, entry.Month) { RestoredAtUtc = c.Clock.GetUtcNow() }, c.Clock.GetUtcNow()) is { Length: > 0 } local ? $"; restored.json could not be written ({local})" : string.Empty;
+        return plan.Kept.Count == 0
+            ? Session(entry, RestoreOutcomes.Restored, bytes, $"{missing.Count} file(s) created{unwritten}{unrecorded}")
+            : Session(entry, RestoreOutcomes.Partial, bytes, $"{missing.Count} file(s) created; kept as the agent changed them: {string.Join(", ", plan.Kept.Select(f => f.Original))}{unwritten}{unrecorded}");
     }
 
     private static DeletionScope RestoreScope(string under) => new(under, "A19", DeletionPermit.RestoreIntoAgentFolder);
@@ -206,18 +328,32 @@ public static class ArchiveRestore
 
         using (folder)
         {
-            var name = Path.GetFileName(file.Original);
-            return c.Files.CreateExclusive(folder, name, scope) switch
+            var temporary = Path.GetFileName(file.Original) + ArchiveNames.RestoreMark + c.RunId;
+            return c.Files.CreateExclusive(folder, temporary, scope) switch
             {
-                ExclusiveFile.Created created => Filled(c, entry, file, folder, name, created),
-                ExclusiveFile.Exists => $"{file.Original} appeared while it was restored; it was not replaced",
+                ExclusiveFile.Created created => Filled(c, under, entry, file, folder, temporary, created),
+                ExclusiveFile.Exists => $"{file.Original}: a temporary copy of an earlier restore ({temporary}) is in the way; it is left for a person",
                 ExclusiveFile.Refused refused => $"{file.Original} could not be created ({refused.Why})",
                 _ => $"{file.Original} could not be created",
             };
         }
     }
 
-    private static string Filled(MoveContext c, IndexEntry entry, IndexFile file, BeneathFolder folder, string name, ExclusiveFile.Created created)
+    /// <summary>S-B2 / C-1: the copy streamed into the TEMPORARY name, capped at the indexed length, hashed, flushed, read back — then
+    /// promoted to the session's name without replacing. Any failure removes that temporary file (by the identity the create gave it),
+    /// so nothing that did not match ever stands under the session's name, and a later restore is not refused for ever.</summary>
+    private static string Filled(MoveContext c, string under, IndexEntry entry, IndexFile file, BeneathFolder folder, string temporary, ExclusiveFile.Created created)
+    {
+        var problem = Verified(c, entry, file, folder, temporary, created) is { Length: > 0 } unverified ? unverified : Promoted(c, under, file, folder, temporary);
+        if (problem.Length > 0)
+        {
+            _ = c.Files.RemoveOwnCopy(folder, temporary, created.Identity, RestoreScope(under));
+        }
+
+        return problem;
+    }
+
+    private static string Verified(MoveContext c, IndexEntry entry, IndexFile file, BeneathFolder folder, string temporary, ExclusiveFile.Created created)
     {
         var sideFolder = Path.Combine([c.BaseFolder, .. ArchiveCopy.Levels(entry.Agent, entry.Month, c.Side, [])]);
         try
@@ -232,10 +368,19 @@ public static class ArchiveRestore
             return $"{file.Original} could not be written ({e.Message})";
         }
 
-        return c.Files.FlushFolder(folder) is FolderFlush.Done && c.Files.ReadBack(folder, name) is FileHash.Hashed back && back.Sha256 == file.Sha256
+        return c.Files.FlushFolder(folder) is FolderFlush.Done && c.Files.ReadBack(folder, temporary) is FileHash.Hashed back && back.Sha256 == file.Sha256 && back.Length == file.Bytes
             ? string.Empty
             : $"{file.Original} did not read back equal to its archived copy";
     }
+
+    private static string Promoted(MoveContext c, string under, IndexFile file, BeneathFolder folder, string temporary) =>
+        c.Files.PromoteRestored(under, Path.Combine(under, ArchiveCopy.FolderOf(file.Original), temporary), Path.GetFileName(file.Original), RestoreScope(under)) switch
+        {
+            NoReplaceRename.Renamed => c.Files.FlushFolder(folder) is FolderFlush.Done ? string.Empty : $"{file.Original} was restored but its folder could not be flushed",
+            NoReplaceRename.NameTaken => $"{file.Original} appeared while it was restored; it was not replaced",
+            NoReplaceRename.Refused refused => $"{file.Original} could not be given its name ({refused.Why})",
+            _ => $"{file.Original} could not be given its name",
+        };
 
     /// <summary>The archived copy's bytes into the created file, hashed on the way; flushed; its last write the restore time.</summary>
     private static string Streamed(MoveContext c, string sideFolder, IndexFile file, ExclusiveFile.Created created)
@@ -250,17 +395,24 @@ public static class ArchiveRestore
         {
             using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             var buffer = new byte[RestoreBuffer];
+            long length = 0;
             int read;
             while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
             {
+                length += read;
+                if (length > file.Bytes)
+                {
+                    return $"{file.Archived} is longer than its index line says ({file.Bytes} bytes); it changed after its check and is not restored";
+                }
+
                 sha.AppendData(buffer, 0, read);
                 target.Write(buffer, 0, read);
                 c.Step(MoveSteps.RestoreChunk);
             }
 
-            if (Convert.ToHexStringLower(sha.GetHashAndReset()) != file.Sha256)
+            if (Convert.ToHexStringLower(sha.GetHashAndReset()) != file.Sha256 || length != file.Bytes)
             {
-                return $"{file.Archived} changed while it was read";
+                return $"{file.Archived} changed after its check; it is not restored";
             }
         }
 

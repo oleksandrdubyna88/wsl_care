@@ -18,6 +18,9 @@ public static partial class ArchiveNames
     /// <summary>The mark of a file an interrupted removal renamed aside (§15r D2.8, review M3): <c>&lt;name&gt;.wsl-care-q-&lt;runId&gt;</c>.</summary>
     public const string QuarantineMark = Files.Deletion.DeletionPolicy.QuarantineMark;
 
+    /// <summary>A restore's temporary copy carries it (E9.S3 own review round S-B2).</summary>
+    public const string RestoreMark = Files.Deletion.DeletionPolicy.RestoreMark;
+
     /// <summary>Why <paramref name="name"/> (one segment) cannot be held by the archive; empty when it can. A name the distro's bytes
     /// did not decode holds U+FFFD or a lone surrogate — both enumerate as the replacement rune; a surrogate PAIR is one valid character.</summary>
     public static string Problem(string name) =>

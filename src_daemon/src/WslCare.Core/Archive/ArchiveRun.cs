@@ -56,6 +56,15 @@ public sealed record ArchiveRunReport(
 /// <summary>A progress line of <c>archive run --json</c>: no names, a kind (<c>file</c>, <c>heartbeat</c>), the counts so far.</summary>
 public sealed record ArchiveProgressLine(string Progress, int Files, long Bytes, double Seconds);
 
+/// <summary>What ends a run, a restore or a list before anything is touched (E9.S3 own review round C-7: a closed record, never a
+/// marker word split off a sentence): its outcome (<see cref="RunOutcomes"/>) and why; <see cref="None"/> when nothing does.</summary>
+public sealed record EarlyStop(string Outcome, string Why)
+{
+    public static EarlyStop None { get; } = new(string.Empty, string.Empty);
+
+    public bool Stopped => Outcome.Length > 0;
+}
+
 public static class RunOutcomes
 {
     public const string Done = "done";
@@ -118,30 +127,32 @@ public static class ArchiveRun
         var started = input.Clock.GetUtcNow();
         var state = new ArchiveState(input.Paths, input.Files);
         var early = Early(input, state);
-        return early.Length > 0 ? Answer(input, started, Outcome(early), early, ArchiveReconcileReport.Empty, NotChecked, []) : Locked(input, state, started);
+        return early.Stopped ? Answer(input, started, early.Outcome, early.Why, ArchiveReconcileReport.Empty, NotChecked, []) : Locked(input, state, started);
     }
 
     private static readonly InUseReport NotChecked = new("not-checked", 0, 0, string.Empty);
 
-    /// <summary>What ends the run before anything is touched: no base, a refused base, a changed mount. A marker word leads.</summary>
-    private static string Early(ArchiveRunInput input, ArchiveState state) =>
-        input.Config.Text(ConfigKeys.Archive.BaseFolder).Length == 0 ? $"{RunOutcomes.NoBase}|no {ConfigKeys.Archive.BaseFolder.Name} is set; the archive is not configured"
-        : !input.JudgedBase.Accepted ? $"{RunOutcomes.Refused}|the base is refused by its rules ({input.JudgedBase.Rule}: {input.JudgedBase.Refusal})"
-        : MountProblem(input.JudgedBase, state);
+    /// <summary>What ends the run before anything is touched: no base, a refused base, a changed mount.</summary>
+    private static EarlyStop Early(ArchiveRunInput input, ArchiveState state) =>
+        BaseProblem(input) is { Stopped: true } early ? early : MountProblem(input.JudgedBase, state);
 
-    private static string Outcome(string early) => early[..early.IndexOf('|', StringComparison.Ordinal)];
+    /// <summary>No base, or a base its rules refuse — what stops a run, a restore and a list alike.</summary>
+    internal static EarlyStop BaseProblem(ArchiveRunInput input) =>
+        input.Config.Text(ConfigKeys.Archive.BaseFolder).Length == 0 ? new EarlyStop(RunOutcomes.NoBase, $"no {ConfigKeys.Archive.BaseFolder.Name} is set; the archive is not configured")
+        : !input.JudgedBase.Accepted ? new EarlyStop(RunOutcomes.Refused, $"the base is refused by its rules ({input.JudgedBase.Rule}: {input.JudgedBase.Refusal})")
+        : EarlyStop.None;
 
     /// <summary>D7: the base's mount recorded at its first run and compared at every later one — an unmounted share leaves a plain folder
     /// on the distribution's own disk, which must never be written.</summary>
-    private static string MountProblem(BaseFolderReport judged, ArchiveState state)
+    private static EarlyStop MountProblem(BaseFolderReport judged, ArchiveState state)
     {
         state.EnsureFolder();
         var now = MountOf(judged);
         var recorded = state.Base();
-        return recorded is null && state.BaseRecorded ? $"{RunOutcomes.Refused}|the recorded mount of the base ({state.BaseFile}) could not be read; nothing is written until it is — remove that file by hand only once you are sure the base is the storage you chose"
+        return recorded is null && state.BaseRecorded ? new EarlyStop(RunOutcomes.Refused, $"the recorded mount of the base ({state.BaseFile}) could not be read; nothing is written until it is — remove that file by hand only once you are sure the base is the storage you chose")
             : recorded is null || recorded.Folder != now.Folder ? Recorded(state, now)
-            : MountChange(recorded, now) is { Length: > 0 } changed ? $"{RunOutcomes.Refused}|{changed}; mount it as before — or, if it really moved and is the same storage, remove {state.BaseFile} by hand and the next run records the new mount"
-            : string.Empty;
+            : MountChange(recorded, now) is { Length: > 0 } changed ? new EarlyStop(RunOutcomes.Refused, $"{changed}; mount it as before — or, if it really moved and is the same storage, remove {state.BaseFile} by hand and the next run records the new mount")
+            : EarlyStop.None;
     }
 
     /// <summary>The base as judged now, in the record's shape.</summary>
@@ -153,8 +164,8 @@ public static class ArchiveRun
             ? string.Empty
             : $"the base is not mounted as when it was first used ({recorded.MountType} {recorded.MountSource} at {recorded.MountPoint}; now {now.MountType} {now.MountSource} at {now.MountPoint})";
 
-    private static string Recorded(ArchiveState state, BaseRecord now) =>
-        state.WriteBase(now) is { Length: > 0 } unwritten ? $"{RunOutcomes.Refused}|the base's mount could not be recorded ({unwritten})" : string.Empty;
+    private static EarlyStop Recorded(ArchiveState state, BaseRecord now) =>
+        state.WriteBase(now) is { Length: > 0 } unwritten ? new EarlyStop(RunOutcomes.Refused, $"the base's mount could not be recorded ({unwritten})") : EarlyStop.None;
 
     private static ArchiveRunReport Locked(ArchiveRunInput input, ArchiveState state, DateTimeOffset started)
     {
@@ -251,28 +262,10 @@ public static class ArchiveRun
         var context = ContextOf(input, state, key, InUseView.NotChecked("a restore removes nothing"), static (_, _) => { });
         var reconcile = ArchiveReconcile.FromInflight(context);
         var targets = ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.Restore.Agent, input.Environment);
-        var candidates = Candidates(context, input, targets);
-        var restore = ArchiveRestore.Restore(context, candidates, input.Restore.AcceptUnverified);
-        var unread = candidates.Count == 0 && input.Restore.EntryIds.Count > 0 ? ["no entry of this side's indexes has the ids asked for"] : Array.Empty<string>();
-        return Answer(input, started, RunOutcomes.Done, string.Empty, reconcile with { Notes = [.. reconcile.Notes, .. notes, .. unread] }, NotChecked, []) with { Restore = restore };
+        var selection = ArchiveRestore.Select(context, input.Files, input.Restore, targets);
+        var restore = ArchiveRestore.Restore(context, selection, input.Restore.AcceptUnverified);
+        return Answer(input, started, RunOutcomes.Done, string.Empty, reconcile with { Notes = [.. reconcile.Notes, .. notes] }, NotChecked, []) with { Restore = restore };
     }
-
-    /// <summary>The entries asked for: by id (any agent of <c>archive.agents</c>, or the one named), every entry of one agent's month
-    /// whose source was removed, or the one session of one agent by its key.</summary>
-    private static IReadOnlyList<ArchiveRestore.Candidate> Candidates(MoveContext context, ArchiveRunInput input, IReadOnlyList<ArchiveTarget> targets)
-    {
-        var asked = input.Restore;
-        var month = ArchiveList.MonthOf(asked.Month);
-        return [.. ArchiveList.Months(context, input.Files, targets, month)
-            .Where(m => m.Read is MonthRead.Read)
-            .SelectMany(m => ArchiveIndex.Merge(((MonthRead.Read)m.Read).Index.Records).Select(e => new ArchiveRestore.Candidate(m.Target, e)))
-            .Where(c => Wanted(asked, c.Entry))];
-    }
-
-    private static bool Wanted(RestoreRequest asked, IndexEntry entry) =>
-        asked.EntryIds.Contains(entry.EntryId, StringComparer.Ordinal)
-        || (asked.Session.Length > 0 && entry.Key == asked.Session)
-        || (asked.Month.Length > 0 && asked.Session.Length == 0 && asked.EntryIds.Count == 0 && entry.Status is ArchiveIndex.Events.SourceRemoved or ArchiveIndex.Events.Split);
 
     /// <summary>A path as the open-file scan spells it: the distribution's spelling on Linux, the path itself elsewhere.</summary>
     private static Func<string, string> DistroOf(IHostPaths paths) => paths is LinuxHostPaths linux ? linux.ToDistro : static p => p;
@@ -350,9 +343,9 @@ public static class ArchiveRun
 
             var copied = ArchiveCopy.Copy(context, agent.Entry.Id, agent.Under, unit);
             tally.Copy(agent.Entry.Id, copied);
-            if (copied is CopyOutcome.Archived archived)
+            if (copied is CopyOutcome.Archived { EventOnly: false } archived)
             {
-                _ = new ArchiveState(input.Paths, input.Files).Count(agent.Entry.Id, unit.Month, archived.Files, archived.Bytes, archived.Entry.ArchivedAtUtc);
+                _ = new ArchiveState(input.Paths, input.Files).Count(agent.Entry.Id, archived.Entry.Month, archived.Files, archived.Bytes, archived.Entry.ArchivedAtUtc);
             }
             if (copied is CopyOutcome.Stop stopped)
             {
@@ -390,7 +383,7 @@ public static class ArchiveRun
             input.Clock.GetUtcNow(),
             input.JudgedBase.Folder,
             outcome,
-            stop.Contains('|', StringComparison.Ordinal) ? stop[(stop.IndexOf('|', StringComparison.Ordinal) + 1)..] : stop,
+            stop,
             reconcile,
             inUse,
             agents,

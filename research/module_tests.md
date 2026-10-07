@@ -2597,6 +2597,65 @@ run the suites.
 - The restore's read-back after the create: no test can make the disk return other bytes.
 - A write failing midway: that path leaves the files restored so far and is answered `refused`.
 
+### The E9.S3 own review round (2026-10-07, plan §15r *E9.S3 own review round*)
+
+| Guarantee | Tests |
+|---|---|
+| S-B1: nothing is restored into a folder stowed into a git tree, nor a file naming `.git` (even accepted unverified) | `ArchiveProtocolTests.RestoreReview.cs` — `A_restore_into_an_agent_folder_stowed_into_a_git_tree_writes_nothing`, `An_accepted_unverified_entry_naming_a_git_folder_is_never_restored` |
+| S-B2 / C-1: a copy changed after its check never lands under the session's name, and its stream stops at the indexed length; a failure on the second file leaves the first promoted whole, no partial file and no temporary file, and the next restore finishes it | `A_copy_that_changes_after_its_check_never_lands_under_the_sessions_name`, `A_failure_mid_restore_leaves_no_partial_file_under_its_name` |
+| the permit: the temporary copy promoted to its own name in its own folder, and removed — nothing else (no reverse rename, no other folder or name, no session file removed, never `memory`) | `Files/ArchivePermitTests.A_restore_may_promote_and_remove_only_its_own_temporary_copy` |
+| C-8b: decide-before-write — a conflict on the companion refuses the session before the transcript is written | `A_conflict_on_a_companion_refuses_the_session_before_the_transcript_is_written` |
+| C-4: a split entry restores only its missing files (`partial`, the kept file named) | `A_split_entry_restores_only_the_missing_files_and_answers_partial` |
+| S-M1: a session restore takes the verified entry, never one planted beside it; an id in two months restores nothing and names them; `--accept-unverified` only with `--entry` | `ArchiveRunTests.RestoreReview.cs` — `A_session_restore_takes_the_verified_entry_never_one_planted_beside_it`, `An_entry_id_found_in_two_months_restores_nothing_and_names_them`; `Cli.Tests/ArchiveRestoreCommandTests` (2 rows more) |
+| C-2: the newest entry of a session (after a restore, resume and re-archive; and of two removed entries of one name) | `A_session_restore_takes_the_newest_entry_of_that_session`, `Of_two_removed_entries_of_a_session_the_restore_takes_the_newest` |
+| C-3: an unknown id and an unreadable month are rows that fail the restore | `An_entry_id_not_found_is_named_and_the_restore_does_not_succeed`, `A_month_whose_index_cannot_be_read_is_named_and_the_restore_does_not_succeed` |
+| C-5, C-6: an event-only re-archive is not counted again; an unreadable `restored.json` is never written over, and old entries leave it | `An_event_only_re_archive_is_not_counted_again_in_the_summary`, `An_unreadable_restored_json_is_never_overwritten_and_old_entries_leave_it` |
+| C-9: the refusal of a privileged process speaks its side's words | `Cli.Tests/ArchiveRestoreCommandTests.The_root_refusal_speaks_the_words_of_its_side` |
+
+**Red first** (each run against the unfixed code):
+- S-B1: both rows answered `restored`.
+- S-B2: the changed copy stood under the session's name (`Expected File.Exists(…) to be False … but found True`).
+- C-1: the failure left both files (`… but found {"projects/p/s73.jsonl", "projects/p/s73/subagents/a.jsonl"}`).
+- S-M1:
+  - the planted entry was a second candidate (`Expected report.Restore.Sessions to contain a single item`);
+  - the doubled id restored (`Expected … Restored to be 0, but found 1`);
+  - the CLI accepted the flag with `--month` / `--session` (exit 0, not 2).
+- C-2: the old snapshot came back (`"the transcript" … differs near "t"`).
+- C-3: `Refused to be 1, but found 0`, and `… greater than 0, but found 0`.
+- C-4: `refused`, not `partial`.
+- C-5: `Sessions to be 1, but found 2`.
+- C-6: the torn file was written over.
+- C-9: the Windows text named `uid 0`.
+
+The C-8b row passed at once: decide-before-write already held, and the row now pins it. C-7 is a refactor with no test of its own.
+
+**Teeth, Windows:** 12 checks, all red.
+- the place and git checks skipped: 2;
+- the stream not capped: 1;
+- written under the real name: 16;
+- a failed temporary copy left: 2;
+- an id in two months taken: 1;
+- every entry of a session taken: 1;
+- the oldest entry chosen: 1;
+- an unknown id silent: 2;
+- a split entry refused whole: 1;
+- an event-only re-archive counted: 1;
+- an unreadable `restored.json` written over: 1;
+- old entries kept: 1.
+
+Two checks were GREEN at first:
+- The stream cap was shadowed by the hash and length check after the stream. The changed-copy test now also asserts that the
+  stream stopped at its first chunk past the indexed length.
+- "The oldest entry chosen" had no test with two removed entries of one name. The test
+  `Of_two_removed_entries_of_a_session_the_restore_takes_the_newest` was added.
+
+Both checks are now red.
+
+**Teeth, Linux: OWED** (WSL halted).
+
+**Owed:** `archive-restore.json` from a scene with a restored and an already-there session (C-8a). A golden can only be written on
+Linux.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

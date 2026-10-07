@@ -3334,6 +3334,7 @@ section's *as built* deviations.
 | `archive.progressLineMaxBytes` | B | 64–4 096 | 256 | lower | one progress line root reads |
 | `archive.inUseScanSeconds` | B | 1–120 | 20 | lower | the `/proc/*/fd` scan / the Restart Manager query |
 | `archive.leaseSettleMilliseconds` | B | 100–30000 | 2000 | higher | an EMPTY side lease read again after it (E9.S2b: a run killed between the lease's create and its write) |
+| `archive.restoredKeepDays` | A | 1–3650 | 180 | — | a restored entry leaves `restored.json` this long after its restore (E9.S3 own review round C-6) |
 | `archive.keptEntryDays` | A | 1–365 | 14 | — | an in-flight entry phase 2 keeps waiting this long after it was archived is let go (E9.S2b own review round, C-M5) |
 
 Coupled rules (`NumberRules`, a violation refuses the layer naming the keys, held per layer as today):
@@ -3692,7 +3693,28 @@ list (E9.S3)*; the design is in `research/module_archive.md`.
   - A19, the engine's button-only restore, which is E9.S4's.
   - The drvfs-like temp base round trip: the seam is the same on any folder; the 9p base is the E9 live gate's.
 - **Not RED first:** the restore was written before its tests. Every guarantee is proved by a break-it check instead (12, red on
-  Windows and Linux).
+  Windows; the Linux checks are OWED — WSL was halted while they started, own review round docs finding).
+
+#### E9.S3 own review round (2026-10-07) — a security and a correctness review of the restore
+
+Two own reviews of `94c5ed5` / `b91549c` (E9.S3), each finding ACCEPTED unless the row says otherwise, folded into ONE
+`fix(daemon): E9.S3 own review round` commit. Each fix has its red run or its break-it check (`research/module_tests.md`
+§ *The E9.S3 own review round*). Each row OVERRIDES the text it names. Security findings are `S-`, correctness findings `C-`.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| S-B1 (owner rule) | the restore never checked a git tree or a link on the way: a folder stowed into a dotfiles repository received the session; an accepted unverified line naming `.git/config` created a repository | **Fixed:** the session is refused before any write when `AgentWalk.PlaceProblem` refuses the agent folder, or `GitTrees.InUnit` finds a `.git` (around the key's folder on the spelled and the real path, on the way to a file, below a companion, or named by a file). Red first: both answered `restored` | `Archive/ArchiveRestore.cs` (`PlaceProblem`) |
+| S-B2 = C-1 | a copy changed after its check was written whole, unbounded, under the session's name; any failure after the create left a corrupt file there, refusing every later restore | **Fixed:** each file is streamed into a TEMPORARY name (`<name>.wsl-care-r-<runId>`). The stream stops past the indexed length; the hash, the length and the read-back are checked; then the file is renamed to its name without replacing (`IArchiveFiles.PromoteRestored`). On any failure that temporary file is removed by the identity its create gave it. The permit allows exactly this: the promotion in the same folder, and the removal of a temporary name. Red first: the changed copy landed, and a failure left two files | `Archive/ArchiveRestore.cs`, `Files/IArchiveFiles.cs`, `Files/Deletion/DeletionPolicy.cs` |
+| S-M1 | `--accept-unverified` covered every candidate; a planted entry could take a session's name first; one id could match in two months; no free-space check | **Fixed:** the flag is accepted only with `--entry` (a usage error otherwise). Only entries whose agent and month are their folder's own are taken. A session or a month takes its newest VERIFIED entry and says which. An id found in two months restores nothing and names them. The agent folder's disk must hold the declared bytes. Red first: the planted entry was a second candidate; the doubled id restored | `Archive/ArchiveRestore.cs` (`Select`), `Cli/CommandLine.cs` |
+| C-2 | `--session` restored every entry of that key in listing order — the old snapshot first | **Fixed** with S-M1: the newest entry whose source is gone. Red first: the old content came back | the same |
+| C-3 | unreadable months and unknown ids were silent, and the restore exited 0 | **Fixed:** each unreadable month is a row `unreadable`, each id or session not found a row `not-found`. Both count as refused (exit 1). Red first | the same |
+| C-4 | a `split` entry was always refused | **The safe default, owner decision pending:** the MISSING files are restored and an existing (changed) file is never touched. The answer is `partial`, naming the files kept. Red first | `Archive/ArchiveRestore.cs` (`Planned`) |
+| C-5 | an event-only re-archive was counted again in `summary.json`, under the restore month | **Fixed:** `CopyOutcome.Archived.EventOnly` is not counted, and a counted copy uses its entry's month. Red first | `Archive/ArchiveMove.cs`, `Archive/ArchiveRun.cs` |
+| C-6 | an unreadable `restored.json` read as empty and was overwritten; the file grew for ever | **Fixed:** a closed read (missing / read / unreadable); a file that does not read is never written over. Entries leave after `archive.restoredKeepDays` (180). Red first | `Archive/ArchiveState.cs`, the key |
+| C-7 | "marker\|sentence" strings split by `IndexOf('\|')` | **Fixed:** `EarlyStop(Outcome, Why)`, shared by the run, the restore and the list (a refactor, no test of its own) | `Archive/ArchiveRun.cs`, `Archive/ArchiveList.cs` |
+| C-8 | tests that stayed green when wrong | (a) **OWED:** `archive-restore.json` from a scene with a restored and an already-there session; a golden can only be written on Linux, and WSL is halted. (b) **Done:** the conflict on the COMPANION refuses the session before the transcript is written. (c) **Done:** the fault tests at `restore-chunk`: a changed copy, a failure on the second file | the tests |
+| C-9 | an elevated Windows user was told "not as uid 0 … run it as that user" | **Fixed:** on Windows the refusal says to run it from a terminal that is not elevated. Red first. **Recorded gap:** on the elevated windows CI runner no CLI flow of run, restore or list runs (they skip); the Windows leg covers them in-process only | `Cli/Commands/ArchiveRunCommand.cs` |
+| docs | §15r "E9.S3 as built" claimed the break-it checks were red on Linux too | **Corrected:** the Linux checks are owed until WSL is free | this plan |
 
 #### E9.S2b own review round (2026-10-07) — a correctness and a security review of the protocol
 

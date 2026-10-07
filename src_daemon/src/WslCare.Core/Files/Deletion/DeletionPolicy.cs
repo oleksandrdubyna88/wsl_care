@@ -29,6 +29,10 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
     /// <summary>The mark of a file the archive renamed aside in its own folder (plan §15r D2.8): <c>&lt;name&gt;.wsl-care-q-&lt;runId&gt;</c>.</summary>
     public const string QuarantineMark = ".wsl-care-q-";
 
+    /// <summary>The mark of a restore's TEMPORARY copy (<c>&lt;name&gt;.wsl-care-r-&lt;runId&gt;</c>, E9.S3 own review round S-B2): written and
+    /// verified under it, then renamed to the name without replacing.</summary>
+    public const string RestoreMark = ".wsl-care-r-";
+
     public DeletionVerdict Decide(DeletionRequest request)
     {
         if (IsAgentMemory(request.RealPath) || (request.Operation == FileOperation.Move && IsAgentMemory(request.RealDestination)))
@@ -39,6 +43,11 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
         if (request is { Operation: FileOperation.Move, Permit: DeletionPermit.ArchiveQuarantine })
         {
             return JudgeQuarantine(request);
+        }
+
+        if (request is { Operation: FileOperation.Move, Permit: DeletionPermit.RestoreIntoAgentFolder })
+        {
+            return JudgeRestorePromotion(request);
         }
 
         var source = JudgeSource(request);
@@ -99,6 +108,7 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
         (FileOperation.Move, DeletionPermit.MoveOutOfAgentFolder) => DeletionVerdict.Allowed,
         (FileOperation.Delete, DeletionPermit.ArchiveRemoval) => JudgeArchiveRemoval(request, agentRoot),
         (FileOperation.Create, DeletionPermit.RestoreIntoAgentFolder) => JudgeInsideRoot(request, request.RealPath),
+        (FileOperation.Delete, DeletionPermit.RestoreIntoAgentFolder) when IsRestoreTemporary(Name(request.RealPath)) => JudgeInsideRoot(request, request.RealPath),
         _ => Refuse(DeletionRule.AgentFolder, request, $"it is under the AI agent folder {agentRoot}; nothing under an agent's folder is ever deleted (plan §5)"),
     };
 
@@ -125,6 +135,18 @@ public sealed class DeletionPolicy(ProtectedRoots roots, PathRules rules)
         Under(request.RealPath, roots.ClaudeTempRoots) is { } temp ? Refuse(DeletionRule.ClaudeTemp, request, $"it is under Claude Code's temp folder {temp}, which is never cleaned")
         : Under(request.RealPath, roots.GitRoots) is { } git ? Refuse(DeletionRule.GitFolder, request, $"it is under the repositories folder {git}; nothing under it is ever deleted")
         : JudgeInsideRoot(request, request.RealPath);
+
+    /// <summary>E9.S3 own review round S-B2: a restore's temporary copy renamed to its name — in the SAME folder, from
+    /// <c>&lt;name&gt;.wsl-care-r-&lt;runId&gt;</c> to <c>&lt;name&gt;</c>, nothing else.</summary>
+    private DeletionVerdict JudgeRestorePromotion(DeletionRequest request) =>
+        rules.PathEquals(Parent(request.RealPath), Parent(request.RealDestination)) && IsRestoreTemporaryOf(Name(request.RealPath), Name(request.RealDestination))
+            ? JudgeNotNeverList(request)
+            : Refuse(DeletionRule.ArchiveShape, request, $"{request.RealDestination} is not the name of the restore's temporary copy it renames; a restore renames nothing else");
+
+    private static bool IsRestoreTemporaryOf(string temporary, string final) =>
+        temporary.StartsWith(final + RestoreMark, StringComparison.Ordinal) && temporary.Length > final.Length + RestoreMark.Length;
+
+    private static bool IsRestoreTemporary(string name) => name.IndexOf(RestoreMark, StringComparison.Ordinal) is var at and > 0 && name.Length > at + RestoreMark.Length;
 
     /// <summary><paramref name="to"/> is <paramref name="from"/> renamed aside (<c>s.jsonl</c> → <c>s.jsonl.wsl-care-q-r1</c>), or back.</summary>
     private static bool IsQuarantinePair(string from, string to) => IsAsideOf(to, from) || IsAsideOf(from, to);

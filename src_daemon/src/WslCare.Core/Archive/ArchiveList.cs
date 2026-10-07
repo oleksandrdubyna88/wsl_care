@@ -28,9 +28,9 @@ public static class ArchiveList
     public static ArchiveListReport List(ArchiveRunInput input, ArchiveListRequest request)
     {
         var problem = Unlistable(input);
-        if (problem.Length > 0)
+        if (problem.Stopped)
         {
-            return Report(input, problem[..problem.IndexOf('|', StringComparison.Ordinal)], problem[(problem.IndexOf('|', StringComparison.Ordinal) + 1)..], [], 0, []);
+            return Report(input, problem.Outcome, problem.Why, [], 0, []);
         }
 
         var state = new ArchiveState(input.Paths, input.Files);
@@ -74,12 +74,11 @@ public static class ArchiveList
             .Select(e => new ArchiveListEntry(e.EntryId, e.Agent, e.Key, e.Month, e.Status, e.Verified, e.Files.Count, e.Files.Sum(f => f.Bytes), e.ArchivedAtUtc));
     }
 
-    /// <summary>Why nothing is listed — a marker word, then the sentence; empty when the base may be read.</summary>
-    private static string Unlistable(ArchiveRunInput input) =>
-        input.Config.Text(ConfigKeys.Archive.BaseFolder).Length == 0 ? $"{RunOutcomes.NoBase}|no {ConfigKeys.Archive.BaseFolder.Name} is set; the archive is not configured"
-        : !input.JudgedBase.Accepted ? $"{RunOutcomes.Refused}|the base is refused by its rules ({input.JudgedBase.Rule}: {input.JudgedBase.Refusal})"
-        : !input.Reachable(input.JudgedBase.Folder, TimeSpan.FromSeconds(input.Config.Int(ConfigKeys.Archive.ReachabilitySeconds))) ? $"{RunOutcomes.Unreachable}|the base did not answer within {ConfigKeys.Archive.ReachabilitySeconds.Name}"
-        : string.Empty;
+    /// <summary>Why nothing is listed; <see cref="EarlyStop.None"/> when the base may be read.</summary>
+    private static EarlyStop Unlistable(ArchiveRunInput input) =>
+        ArchiveRun.BaseProblem(input) is { Stopped: true } early ? early
+        : !input.Reachable(input.JudgedBase.Folder, TimeSpan.FromSeconds(input.Config.Int(ConfigKeys.Archive.ReachabilitySeconds))) ? new EarlyStop(RunOutcomes.Unreachable, $"the base did not answer within {ConfigKeys.Archive.ReachabilitySeconds.Name}")
+        : EarlyStop.None;
 
     private static ArchiveListReport Report(ArchiveRunInput input, string outcome, string note, IReadOnlyList<ArchiveListEntry> entries, int skipped, IReadOnlyList<string> notes) =>
         new(SchemaVersion.Current, input.Paths.Side == Hosting.HostSide.Wsl ? "wsl" : "windows", SideName.OfThisProcess(input.Paths.Side), input.JudgedBase.Folder, outcome, note, entries, skipped, notes);

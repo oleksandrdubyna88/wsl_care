@@ -79,6 +79,9 @@ public sealed partial class PhysicalFileSystem
     public NoReplaceRename RenameBack(string layoutRoot, string quarantinedPath, string originalName, DeletionScope scope) =>
         Rename(layoutRoot, quarantinedPath, originalName, scope);
 
+    public NoReplaceRename PromoteRestored(string layoutRoot, string temporaryPath, string finalName, DeletionScope scope) =>
+        Rename(layoutRoot, temporaryPath, finalName, scope);
+
     public VerifiedRemoval RemoveVerified(string layoutRoot, string path, string expectedSha256, string archivedCopy, DeletionScope scope)
     {
         var located = Locate(layoutRoot, path);

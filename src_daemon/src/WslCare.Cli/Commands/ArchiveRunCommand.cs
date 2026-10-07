@@ -19,11 +19,19 @@ internal static class ArchiveRunCommand
     internal const string RootRefusal =
         "archive {0} runs as the user whose sessions the archive moves, not as uid 0 — that user's own process moves them (plan §15r D1): run it as that user. Nothing was touched.";
 
+    /// <summary>The refusal of a privileged process, in the words of its side (E9.S3 own review round C-9).</summary>
+    internal static string RootRefusalFor(Core.Hosting.HostSide side, string verb) =>
+        string.Format(System.Globalization.CultureInfo.InvariantCulture, side == Core.Hosting.HostSide.Windows ? ElevatedRefusal : RootRefusal, verb);
+
+    /// <summary>On Windows a privileged process is an ELEVATED one — the same user, so "as that user" would tell them nothing.</summary>
+    internal const string ElevatedRefusal =
+        "archive {0} runs in this user's own, NOT elevated process — an elevated (administrator) one is refused (plan §15r D1): run it from a terminal that is not elevated. Nothing was touched.";
+
     public static int Run(Request.ArchiveRun request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
     {
         if (host.Privilege.IsRoot)
         {
-            Output.Note(stderr, string.Format(System.Globalization.CultureInfo.InvariantCulture, RootRefusal, "run"));
+            Output.Note(stderr, RootRefusalFor(host.Paths.Side, "run"));
             return (int)ExitCode.NotAsRoot;
         }
 
@@ -58,7 +66,7 @@ internal static class ArchiveRunCommand
     {
         if (host.Privilege.IsRoot)
         {
-            Output.Note(stderr, string.Format(System.Globalization.CultureInfo.InvariantCulture, RootRefusal, "reconcile --scan"));
+            Output.Note(stderr, RootRefusalFor(host.Paths.Side, "reconcile --scan"));
             return (int)ExitCode.NotAsRoot;
         }
 
@@ -72,7 +80,7 @@ internal static class ArchiveRunCommand
     {
         if (host.Privilege.IsRoot)
         {
-            Output.Note(stderr, string.Format(System.Globalization.CultureInfo.InvariantCulture, RootRefusal, "restore"));
+            Output.Note(stderr, RootRefusalFor(host.Paths.Side, "restore"));
             return (int)ExitCode.NotAsRoot;
         }
 
@@ -88,7 +96,7 @@ internal static class ArchiveRunCommand
     {
         if (host.Privilege.IsRoot)
         {
-            Output.Note(stderr, string.Format(System.Globalization.CultureInfo.InvariantCulture, RootRefusal, "list"));
+            Output.Note(stderr, RootRefusalFor(host.Paths.Side, "list"));
             return (int)ExitCode.NotAsRoot;
         }
 
@@ -133,7 +141,7 @@ internal static class ArchiveRunCommand
     {
         if (host.Privilege.IsRoot)
         {
-            Output.Note(stderr, string.Format(System.Globalization.CultureInfo.InvariantCulture, RootRefusal, "status"));
+            Output.Note(stderr, RootRefusalFor(host.Paths.Side, "status"));
             return (int)ExitCode.NotAsRoot;
         }
 

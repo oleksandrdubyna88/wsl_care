@@ -124,7 +124,8 @@
     "progressLineMaxBytes": 256,
     "inUseScanSeconds": 20,
     "leaseSettleMilliseconds": 2000,
-    "keptEntryDays": 14
+    "keptEntryDays": 14,
+    "restoredKeepDays": 180
   },
   "idle": {
     "cpuPercent": 20,

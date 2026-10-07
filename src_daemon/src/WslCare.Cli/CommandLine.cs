@@ -635,6 +635,7 @@ internal static class CommandLine
         var v = options.Values;
         var modes = (v.ContainsKey(EntryFlag) ? 1 : 0) + (v.ContainsKey(MonthFlag) ? 1 : 0) + (v.ContainsKey(SessionFlag) ? 1 : 0);
         return modes != 1 ? $"takes exactly one of {EntryFlag} <id>[,<id>...], {AgentFlag} <id> {MonthFlag} <yyyy-MM>, {AgentFlag} <id> {SessionFlag} <path>"
+            : options.Flags.Contains(AcceptUnverifiedFlag) && !v.ContainsKey(EntryFlag) ? $"takes {AcceptUnverifiedFlag} only with {EntryFlag} <id>[,<id>...]: name each unverified entry archive list showed — a month or a session could take an entry planted on the share"
             : v.ContainsKey(EntryFlag) ? EntryProblem(v[EntryFlag])
             : !v.ContainsKey(AgentFlag) ? $"needs {AgentFlag} <id> with {(v.ContainsKey(MonthFlag) ? MonthFlag : SessionFlag)}"
             : AgentValueProblem(v[AgentFlag]) is { Length: > 0 } agent ? agent

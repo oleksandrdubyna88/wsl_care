@@ -192,8 +192,22 @@ flowchart TD
   - The source is the entry's own `<agent>/<yyyy>/<MM>/<side>/` folder; the copy is hashed first.
   - Files are only ever created, never replaced; the copies stay. A restore writes the restore time as each file's last write,
     so Claude's own sweep does not delete the session at its next start.
+  - **After the own review round** (plan §15r *E9.S3 own review round*):
+    - Nothing is restored where the selection would not walk, nor inside a git working tree (`AgentWalk.PlaceProblem`,
+      `GitTrees.InUnit`).
+    - Each file is streamed into `<name>.wsl-care-r-<runId>`, capped at its indexed length, hashed and read back, then renamed
+      to its name without replacing (`IArchiveFiles.PromoteRestored`). Any failure removes that temporary file by its identity,
+      so nothing that did not match stands under the session's name. The permit allows exactly the promotion and that removal.
+    - Only entries whose agent and month are their folder's own are taken. A session or a month takes its newest VERIFIED
+      entry whose source is gone. An id found in two months restores nothing. `--accept-unverified` goes with `--entry` only.
+    - Unread months and unknown ids are rows (`unreadable`, `not-found`) and fail the restore.
+    - A `split` entry restores only its missing files (`partial`).
+    - The disk must hold the declared bytes.
+- **`restored.json`** is read as a closed result: a file that does not read is never written over. An entry leaves after
+  `archive.restoredKeepDays`.
 - **Re-archive** (`ArchiveCopy.Rearchived`): a unit in `restored.json` is hashed. If it is identical to its entry, one `archived`
-  event in the original month names the existing copies (no bytes, `CopyOutcome.Archived` with 0 bytes). Otherwise it is copied
+  event in the original month names the existing copies (no bytes, `CopyOutcome.Archived` with `EventOnly`, not counted again in
+  `summary.json`). Otherwise it is copied
   as any session. Either way it leaves `restored.json`.
 - **`Archive/ArchiveList.cs`:** `archive list` is read-only.
   - Only the months asked are read, through `MonthIndex.Open`, so an unreadable index is named, never shown as empty.

@@ -702,6 +702,10 @@ public static partial class ConfigKeys
         /// days after it was archived is let go: dropped, its quarantined files renamed back, its source left where it is (correctness
         /// review M5). Default 14.</summary>
         public static readonly ConfigKey.IntKey KeptEntryDays = new("archive.keptEntryDays", 1, 365) { Trust = KeyTrust.Display };
+
+        /// <summary>A restored entry leaves <c>restored.json</c> this many days after its restore when another is added (E9.S3 own review
+        /// round C-6): past it the session is either archived again (it left already) or gone. Default 180.</summary>
+        public static readonly ConfigKey.IntKey RestoredKeepDays = new("archive.restoredKeepDays", 1, 3650) { Trust = KeyTrust.Display };
     }
 
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
@@ -885,5 +889,6 @@ public static partial class ConfigKeys
         Archive.InUseScanSeconds,
         Archive.LeaseSettleMilliseconds,
         Archive.KeptEntryDays,
+        Archive.RestoredKeepDays,
     ];
 }
