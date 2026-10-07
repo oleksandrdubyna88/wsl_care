@@ -43,6 +43,7 @@ public static class ArchiveRemove
     public static RemoveOutcome Remove(MoveContext c, InflightEntry entry, IndexEntry indexed) =>
         Unremovable(entry, indexed) is { } early ? Early(c, entry, early)
         : CopiesProblem(c, entry, indexed) is { Length: > 0 } damaged ? MarkDamaged(c, entry, indexed, damaged)
+        : GitTreeKept(c, entry, indexed, []) is { } git ? git
         : Quarantined(c, entry, indexed);
 
     /// <summary>A <c>removing</c> entry found by the reconcile: past its commit point, so the quarantined files are removed (the seam
@@ -61,7 +62,7 @@ public static class ArchiveRemove
             return MarkDamaged(c, entry, indexed, damaged);
         }
 
-        return Finish(c, entry, indexed, aside);
+        return GitTreeKept(c, entry, indexed, aside) ?? Finish(c, entry, indexed, aside);
     }
 
     private static RemoveOutcome? Unremovable(InflightEntry entry, IndexEntry indexed) =>
@@ -79,6 +80,30 @@ public static class ArchiveRemove
         }
 
         return early;
+    }
+
+    /// <summary>Owner rule 2026-10-07: a git working tree that appeared since the copy keeps the WHOLE unit at the source — every file
+    /// already aside goes back; found → the entry is superseded (the copies stay a snapshot); not checkable → it waits for the next
+    /// run. <c>null</c> when no tree touches it.</summary>
+    private static RemoveOutcome? GitTreeKept(MoveContext c, InflightEntry entry, IndexEntry indexed, IReadOnlyList<Aside> aside)
+    {
+        var found = GitTrees.InUnit(c.Stats, entry.Under, entry.Key, [.. indexed.Files.Select(f => f.Original)]);
+        if (found is GitTreeFound.None)
+        {
+            return null;
+        }
+
+        RenameBack(c, entry, aside);
+        return found is GitTreeFound.Found tree
+            ? Superseded(c, entry, indexed, $"{tree.Entry} is part of a git repository now; nothing of the session is removed and the copies stay a snapshot")
+            : new RemoveOutcome.Kept($"whether a git repository touches it is not known ({((GitTreeFound.Unchecked)found).Why}); nothing is removed");
+    }
+
+    private static RemoveOutcome Superseded(MoveContext c, InflightEntry entry, IndexEntry indexed, string why)
+    {
+        _ = ArchiveCopy.AppendLine(c, entry.Agent, entry.Month, Event(c, entry, indexed, ArchiveIndex.Events.Superseded));
+        c.Book.Drop(entry.EntryId);
+        return new RemoveOutcome.Superseded(why);
     }
 
     /// <summary>Every archived file opened again and hashed against its index row; empty when all equal (D2 step 7).</summary>

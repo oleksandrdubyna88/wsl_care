@@ -32,6 +32,9 @@ public static class MoveSteps
 public sealed record MoveContext(IArchiveFiles Files, string BaseFolder, string Side, string RunId, byte[] Key, TimeProvider Clock, TimeZoneInfo Zone, InflightBook Book, Action<string> Step, Action<long, bool> Progress)
 {
     public DeletionScope BaseScope => new(BaseFolder, "A13");
+
+    /// <summary>Names and stats only — what phase 2's git re-check reads (owner rule 2026-10-07).</summary>
+    public required IFileSystem Stats { get; init; }
 }
 
 /// <summary>What phase 1 did with one unit — a closed set.</summary>

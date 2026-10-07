@@ -188,7 +188,7 @@ public static class ArchiveRun
     private static ArchiveRunReport Moved(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key, string side, List<string> notes)
     {
         var meter = new RunMeter(input, started);
-        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, meter.Moved);
+        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, meter.Moved) { Stats = input.Files };
         var reconcile = ArchiveReconcile.FromInflight(context);
         var selectionInput = new SelectionInput(input.Paths, input.Files, input.Config, input.Clock.GetUtcNow(), input.Zone, input.InUseScan(input), input.Environment) { OnlyAgent = input.OnlyAgent, Token = input.Token };
         var selected = Selection.Select(selectionInput).Where(s => s.Enabled).ToList();
@@ -206,7 +206,7 @@ public static class ArchiveRun
 
     private static ArchiveRunReport Scanned(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key, string side, List<string> notes)
     {
-        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, static (_, _) => { });
+        var context = new MoveContext(input.Archive, input.JudgedBase.Folder, side, input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, static (_, _) => { }) { Stats = input.Files };
         var agents = ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.OnlyAgent, input.Environment).Where(t => t.Enabled).Select(t => t.Entry.Id);
         var scan = ArchiveScan.Scan(context, input.Files, agents, input.Token);
         return Answer(input, started, RunOutcomes.Done, string.Empty, ArchiveReconcileReport.Empty with { Notes = notes }, NotChecked, []) with { Scan = scan };

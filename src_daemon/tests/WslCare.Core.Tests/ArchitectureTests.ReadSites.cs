@@ -113,6 +113,7 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Archive/AgentRetentionReader.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged) },
         ["WslCare.Core/Archive/InUse.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ListEntries"] = (1, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Archive/Selection.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Archive/GitTrees.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/ArchiveScan.cs"] = new() { ["ListDirectories"] = (2, ReadClass.TargetHomeMetadata), ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Archive/ArchiveState.cs"] = new() { ["ReadRegularFile"] = (2, ReadClass.OwnUnprivileged) },
         ["WslCare.Core/Archive/ArchiveStatus.cs"] = new() { ["ReadFile"] = (1, ReadClass.System) },

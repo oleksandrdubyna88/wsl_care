@@ -3232,7 +3232,10 @@ Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and
 - **Nothing inside a git working tree is ever selected** (owner rule 2026-10-07; `Archive/GitTrees.cs`): an agent folder with a
   `.git` entry in it or in any folder above it up to the root selects nothing (a note names the entry); a unit with a file under a
   `.git` name, or a folder on its way holding a `.git` entry (a folder, a worktree's `.git` FILE, a link), is kept whole under the
-  new skip rule `git-tree`. Red first: every row was `Due` before the rule.
+  new skip rule `git-tree`. Red first: every row was `Due` before the rule. **Phase 2 checks again** (`GitTrees.InUnit`; the
+  coordinator's safe default until the owner decides): a repository that appeared after the copy keeps the whole session at the
+  source — before the quarantine, and in a resumed removal past the commit point (every file renamed back) — and the entry is
+  superseded; one more bounded walk per unit.
 - **`archive.maxStateFileBytes` defaults to 16 MiB** (was 8 MiB): main's `TimerCalendarTests` showed the hourly timer refused under
   the defaults by the in-flight rule (25 waiting runs × 1 000 × 600 B), which made a machine layer asking for it observe-only.
 - **Not built:** the 1 GiB sparse session (its cost on CI; the streaming copy is the same code a 120-file session exercises); the

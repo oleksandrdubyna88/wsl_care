@@ -283,6 +283,10 @@ flowchart TD
   entry in it or in any folder above it, up to the root, selects nothing (the note names the entry); a unit with a file under a
   `.git` name (any case), or a folder on its way that holds a `.git` entry — a folder (a clone), a FILE (a worktree's or a
   submodule's pointer) or a link — is kept whole as `git-tree`, its neighbours untouched. Names and stats only, nothing opened.
+  **Phase 2 checks again** (`GitTrees.InUnit`, through `MoveContext.Stats`): around the key's folder up to the root, on the way to
+  every indexed file, and below every companion-only folder (one bounded walk each). A repository that appeared since the copy
+  keeps the whole session — before the quarantine, or, resumed past the commit point, with every file renamed back — and the
+  entry is `superseded` (the copies stay a snapshot); a walk that could not finish keeps the entry for the next run.
 - **`Files/TreeWalk.cs` widened, not copied:** `TreeRules.ListFiles` makes the same walk return each counted file
   (`TreeFile(Path, Length, LastWriteUtc)` in `TreeMeasure.Measured.Listed`); every other caller's answer is unchanged.
 - **`Archive/InUse.cs`** reads `/proc` as the user (only this account's `fd` folders open — and the agents are this account's);

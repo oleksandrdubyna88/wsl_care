@@ -1,6 +1,24 @@
 using WslCare.Core.Files;
+using WslCare.Core.Folders;
 
 namespace WslCare.Core.Archive;
+
+/// <summary>What phase 2's re-check found — a closed set.</summary>
+public abstract record GitTreeFound
+{
+    private GitTreeFound()
+    {
+    }
+
+    /// <summary>No <c>.git</c> entry touches the unit.</summary>
+    public sealed record None : GitTreeFound;
+
+    /// <summary>A <c>.git</c> entry touches it: <paramref name="Entry"/> names it.</summary>
+    public sealed record Found(string Entry) : GitTreeFound;
+
+    /// <summary>A companion folder could not be walked whole, so whether one does is not known.</summary>
+    public sealed record Unchecked(string Why) : GitTreeFound;
+}
 
 /// <summary>
 /// Owner rule 2026-10-07 — the archive never selects anything inside a git working tree or a <c>.git</c> folder, an original clone and a
@@ -37,6 +55,37 @@ public static class GitTrees
         relatives.SelectMany(Folders).Distinct(StringComparer.Ordinal)
             .Select(folder => EntryIn(files, Path.Combine(under, folder)))
             .FirstOrDefault(found => found.Length > 0) ?? string.Empty;
+
+    /// <summary>Phase 2 (owner rule 2026-10-07): a git working tree may have APPEARED since the copy. The unit is checked around its
+    /// key's folder up to the root, in every folder on the way to its files, and below every folder only its companions live in —
+    /// one bounded walk each (the walk's own limits, no link followed), whose files are checked the same way.</summary>
+    public static GitTreeFound InUnit(IFileSystem files, string under, string key, IReadOnlyList<string> originals)
+    {
+        var around = Around(files, Path.GetDirectoryName(Path.Combine(under, key)) ?? under);
+        var found = around.Length > 0 ? around : originals.FirstOrDefault(NamesGit) ?? Between(files, under, originals);
+        return found.Length > 0 ? new GitTreeFound.Found(found) : Below(files, under, Tops(ArchiveRemove.LeftFolders(key, originals)));
+    }
+
+    /// <summary>The outermost of the companion folders (a folder inside another is walked with it).</summary>
+    private static IEnumerable<string> Tops(IReadOnlyList<string> folders) =>
+        folders.Where(f => !folders.Any(g => f.StartsWith(g + "/", StringComparison.Ordinal)));
+
+    private static GitTreeFound Below(IFileSystem files, string under, IEnumerable<string> tops) =>
+        tops.Select(top => Walked(files, under, top)).FirstOrDefault(g => g is not GitTreeFound.None) ?? new GitTreeFound.None();
+
+    private static readonly TreeRules WalkRules = new(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.Ordinal)) { ListFiles = true };
+
+    private static GitTreeFound Walked(IFileSystem files, string under, string top) =>
+        files.WalkTree(Path.Combine(under, top), FolderSizes.Limits, WalkRules, CancellationToken.None) switch
+        {
+            TreeMeasure.Measured { Complete: true } m => FoundIn(files, under, [.. m.Listed.Select(f => Path.GetRelativePath(under, f.Path).Replace('\\', '/'))]),
+            TreeMeasure.Measured m => new GitTreeFound.Unchecked($"{top} could not be walked whole ({m.Note})"),
+            TreeMeasure.Unreadable u => new GitTreeFound.Unchecked($"{top}: {u.Reason}"),
+            _ => new GitTreeFound.None(),
+        };
+
+    private static GitTreeFound FoundIn(IFileSystem files, string under, IReadOnlyList<string> relatives) =>
+        (relatives.FirstOrDefault(NamesGit) ?? Between(files, under, relatives)) is { Length: > 0 } found ? new GitTreeFound.Found(found) : new GitTreeFound.None();
 
     /// <summary>Every folder of a relative file path, outermost first (<c>a/b/c.jsonl</c> → <c>a</c>, <c>a/b</c>).</summary>
     private static IEnumerable<string> Folders(string relative)

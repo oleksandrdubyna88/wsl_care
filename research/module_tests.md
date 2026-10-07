@@ -2454,6 +2454,7 @@ kill point.
 | the index: an entry's events merged with its files; a torn, malformed or hostile line skipped and counted; an unsigned line reads unverified; the entry id is 16 hex of side, agent, key and hashes | `Archive/ArchiveIndexTests` (4) |
 | the side lease: taken and released; another host's refuses; a live run of this host refuses; a dead run of this host and boot, or an earlier boot, taken over; an EMPTY lease (a run killed between its create and its write) read again after `archive.leaseSettleMilliseconds` and taken over, one its live creator wrote meanwhile judged by what it says; bytes that do not parse left for a person | `Archive/SideLeaseTests` (7) |
 | owner rule 2026-10-07 — **nothing inside a git working tree is selected**: a session with a `.git` folder, a `.git` file (a worktree) or a `.GIT` folder among its files; a session whose project folder holds a `.git` folder or file (its neighbour still due); an agent folder below a `.git` entry (in the home, or at the root) selects nothing and says which | `Archive/SelectionTests.GitTrees.cs` (8 rows) |
+| the same in phase 2 (coordinator's safe default, 2026-10-07): a repository that APPEARED after the copy — in a companion folder, or the project folder made a worktree — keeps the whole session at the source and supersedes the entry; past the commit point the resumed removal sends every quarantined file back | `ArchiveProtocolTests.Shapes.cs` — `A_git_tree_that_appeared_after_the_copy_keeps_the_whole_session_at_the_source` (2 rows), `A_git_tree_that_appeared_after_the_commit_point_sends_the_whole_session_back` |
 | the run: no base → `no-base`, nothing touched; a refused base stops before any copy; a base whose recorded mount is gone is never written; a locked side → `busy`; an unreachable base stops and defers the reconcile; a full or read-only base stops; one run copies, a run a day later removes; a run cut by its budget leaves only whole sessions | `Archive/ArchiveRunTests` (8) |
 | the built child: root refused with its own exit code; `no-base` and a free `status`; a full cycle; **a run killed (`WSL_CARE_TEST_ARCHIVE_KILL`, honoured only under `WSL_CARE_ROOT`) at each point, the base present or gone, is finished by the next runs and loses nothing**; the scan re-indexes a copy no line names and touches nothing at the source | `WslCare.Scenarios/ArchiveRunFlows` (5; the kill theory 28 rows; Linux only — a Windows home has no WSL side) |
 | the answers' shapes | goldens `archive-run.json`, `archive-status.json` (`GoldenContracts`) |
@@ -2470,7 +2471,10 @@ code; the teeth below are what proves each guards its line. **The empty lease** 
 lease exists and could not be parsed; remove it by hand…"` — red again in-process before the settle wait (`Expected type to be
 …LeaseTaken+Held, but found …LeaseTaken+Refused`, and the live-creator row naming *could not be parsed*). **The git-tree rule**:
 all 8 rows red before it (`Expected claude.Due to be empty …, but found at least one item`; the project row `… contains 1 item(s)
-too many`) — the guarantee did NOT already hold.
+too many`) — the guarantee did NOT already hold. **Phase 2's re-check**: both rows red first (`Expected type to be
+RemoveOutcome+Superseded, but found RemoveOutcome+Removed`); the resumed-removal test was written with the fix and proved by its
+teeth. Windows teeth: phase 2 never re-checks — 2 red; a resumed removal never re-checks — 1; never walks below the companion
+folders — 2.
 **Teeth, Windows** (each line broken, the archive namespace run, the file restored byte-identical — sha256 compared — and a
 rebuild at the end): the read-back never compared — 1 red; phase 2 never re-hashes the copies — 1; the quarantine check skipped
 — 1 (GREEN at first: the post-commit per-file check shadowed it, since every test changed the TRANSCRIPT; the companion test

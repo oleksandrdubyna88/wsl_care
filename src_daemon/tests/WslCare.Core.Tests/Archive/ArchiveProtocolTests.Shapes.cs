@@ -54,6 +54,56 @@ public sealed partial class ArchiveProtocolTests
         File.ReadAllText(Source("projects/p/s23.jsonl")).Should().Be("the transcript");
     }
 
+    /// <summary>Owner rule 2026-10-07, phase 2: a git working tree that APPEARED after the copy — a repository inside the session's
+    /// companion folder, or the project folder made a working tree (a worktree's <c>.git</c> file) — keeps the whole unit at the
+    /// source; nothing is renamed or removed, and the copies stay a snapshot.</summary>
+    [Theory]
+    [InlineData("projects/p/s24/subagents/repo/.git/HEAD")]
+    [InlineData("projects/p/.git")]
+    public void A_git_tree_that_appeared_after_the_copy_keeps_the_whole_session_at_the_source(string gitEntry)
+    {
+        var entry = Copied(Run("r1"), Session("s24"));
+        Write($"{Layout}/{gitEntry}", "gitdir: elsewhere");
+
+        var (later, outcome) = RemoveLater(entry);
+
+        outcome.Should().BeOfType<RemoveOutcome.Superseded>().Which.Why.Should().Contain(".git");
+        File.ReadAllText(Source("projects/p/s24.jsonl")).Should().Be("the transcript");
+        File.ReadAllText(Source("projects/p/s24/subagents/a.jsonl")).Should().Be("a subagent");
+        Directory.EnumerateFiles(On(Layout), "*" + ArchiveNames.QuarantineMark + "*", SearchOption.AllDirectories).Should().BeEmpty();
+        Index(later).Single(e => e.EntryId == entry.EntryId).Status.Should().Be(ArchiveIndex.Events.Superseded);
+        later.Book.Entries.Should().BeEmpty();
+    }
+
+    /// <summary>The same past the commit point: the run stopped at its first removal, a repository appeared in the companion folder,
+    /// and the reconcile's resumed removal sends every quarantined file back instead of removing them.</summary>
+    [Fact]
+    public void A_git_tree_that_appeared_after_the_commit_point_sends_the_whole_session_back()
+    {
+        var entry = Copied(Run("r1"), Session("s25"));
+        var stopped = false;
+        _fault = step =>
+        {
+            if (step == nameof(WslCare.Core.Files.ArchiveFileStep.RemovalOpened) && !stopped)
+            {
+                stopped = true;
+                throw new OperationCanceledException("killed at the first removal");
+            }
+        };
+        var act = () => RemoveLater(entry);
+        act.Should().Throw<OperationCanceledException>();
+        _fault = static _ => { };
+        Write($"{Layout}/projects/p/s25/subagents/repo/.git/HEAD", "ref: refs/heads/main");
+
+        _clock.Advance(TimeSpan.FromHours(25));
+        var report = ArchiveReconcile.FromInflight(Run("r3"));
+
+        report.Resumed.Should().Be(0);
+        File.ReadAllText(Source("projects/p/s25.jsonl")).Should().Be("the transcript");
+        File.ReadAllText(Source("projects/p/s25/subagents/a.jsonl")).Should().Be("a subagent");
+        Directory.EnumerateFiles(On(Layout), "*" + ArchiveNames.QuarantineMark + "*", SearchOption.AllDirectories).Should().BeEmpty();
+    }
+
     [Fact]
     public void A_session_with_many_small_files_moves_whole()
     {

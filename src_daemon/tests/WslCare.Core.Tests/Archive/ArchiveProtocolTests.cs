@@ -57,7 +57,7 @@ public sealed partial class ArchiveProtocolTests : IDisposable
     private static string Sha(string content) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
 
     /// <summary>A run's context: its own run id, a fresh in-flight book read from the state (as a new process would).</summary>
-    private MoveContext Run(string runId) => new(Files, On(Base), Side, runId, Key, _clock, TimeZoneInfo.Utc, new InflightBook(State), step => Hit(step, string.Empty), static (_, _) => { });
+    private MoveContext Run(string runId) => new(Files, On(Base), Side, runId, Key, _clock, TimeZoneInfo.Utc, new InflightBook(State), step => Hit(step, string.Empty), static (_, _) => { }) { Stats = Files };
 
     /// <summary>A Claude session <c>projects/p/&lt;id&gt;.jsonl</c> with a subagent companion, written, as the selection would find it.</summary>
     private UnitFound Session(string id, string main = "the transcript", string companion = "a subagent")
