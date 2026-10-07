@@ -140,4 +140,38 @@ public sealed class WindowsSystemDriveTests
         WindowsSystemDrive.InteropRefusal(e => Reading.Missing<string>($"{e} does not exist"))
             .Should().Contain("not registered").And.Contain("WSLInterop-late");
     }
+
+    /// <summary>PR #10 retro round, gate C1: interop runs when ANY registered entry is enabled — <c>WSLInterop</c> left
+    /// <c>disabled</c> beside an enabled <c>WSLInterop-late</c> is a machine where Windows programs run.</summary>
+    [Fact]
+    public void Interop_runs_when_any_registered_entry_is_enabled_even_beside_a_disabled_one()
+    {
+        WindowsSystemDrive.InteropRefusal(e => Reading.Of(e.EndsWith("-late", StringComparison.Ordinal) ? Interop : Disabled))
+            .Should().BeEmpty("WSLInterop-late is registered and enabled, so a Windows program runs from this distro");
+    }
+
+    [Fact]
+    public void Every_registered_entry_disabled_is_a_refusal_naming_each_entry_and_its_state()
+    {
+        var refusal = WindowsSystemDrive.InteropRefusal(_ => Reading.Of(Disabled));
+
+        refusal.Should().Contain("not enabled");
+        foreach (var entry in WindowsSystemDrive.InteropEntries)
+        {
+            refusal.Should().Contain($"{entry} says \"disabled\"");
+        }
+    }
+
+    /// <summary>PR #10 retro round, own O3: the kernel escapes the source, the mount point and the root — never the super
+    /// options (live, Docker's line carries a raw <c>path=C:\Program Files\…</c>). A drvfs mount of a FOLDER named
+    /// <c>C:\134</c> writes <c>path=C:\134</c>, which decoded would read <c>C:\</c>: the whole drive.</summary>
+    [Fact]
+    public void A_mount_of_a_folder_named_134_is_not_the_whole_drive_because_the_super_options_are_never_unescaped()
+    {
+        Refusal(@"503 523 0:173 / /mnt/c rw,noatime - 9p C:\134134 rw,aname=drvfs;path=C:\134;uid=1000")
+            .Should().Contain("which this rule does not identify as");
+        MountOf(ObservedOthers + ObservedC + "\n").Should().Be(Reading.Of(new SystemDriveMount("/mnt/c", 0, 159)), "the observed table still names the drive");
+    }
+
+    private static string Disabled => Interop.Replace("enabled", "disabled", StringComparison.Ordinal);
 }

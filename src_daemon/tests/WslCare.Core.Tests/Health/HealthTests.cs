@@ -120,6 +120,47 @@ public sealed class HealthTests : IDisposable
             (a[0] == "systemctl" || a[0] == "journalctl" || a[0] == "timedatectl") ? SystemdCommands.IsReadVerb(a.Skip(1).ToList()) : a.SequenceEqual(HealthCommands.WindowsClock.Argv));
     }
 
+    /// <summary>
+    /// PR #10 retro round (consultation b41d9220, accepted): the system-drive lookup runs inside the launcher BEFORE the start
+    /// and may take up to its ceiling; counted from an instant taken before the call, that time read as clock drift — and A16
+    /// acts on drift. The offset is Windows' process start minus the instant the launcher STARTED it. One function serves the
+    /// full run and A16 (<see cref="HealthCollector.MeasureWindowsClockAsync"/>), so this holds both.
+    /// </summary>
+    [Fact]
+    public async Task A_slow_executable_lookup_before_the_start_is_not_counted_as_clock_drift()
+    {
+        var clock = new ManualTimeProvider(HealthFixture.CapturedAt);
+        var lookup = TimeSpan.FromSeconds(4);
+        var drift = TimeSpan.FromMilliseconds(250);
+        var runner = new RecordingCommandRunner().ScriptEffect(a => a.SequenceEqual(HealthCommands.WindowsClock.Argv), _ =>
+        {
+            clock.Advance(lookup);
+            var startedAt = clock.GetUtcNow();
+            var windowsStart = startedAt + drift;
+            var printed = $"{(windowsStart + TimeSpan.FromSeconds(0.75)):O}\n{windowsStart:O}\nC:\\Users\\user\n";
+            return new CommandOutcome.Exited(0, new CapturedText(printed, false), CapturedText.Empty, TimeSpan.FromSeconds(1)) { StartedAt = Reading.Of(startedAt) };
+        });
+
+        var sample = await HealthCollector.MeasureWindowsClockAsync(runner, clock, TestContext.Current.CancellationToken);
+
+        sample.Measured.Should().BeTrue(sample.Unavailable);
+        sample.OffsetSeconds.Should().BeApproximately(drift.TotalSeconds, 0.0001, "the {0} s lookup happened before the start and is not drift", lookup.TotalSeconds);
+        sample.LaunchLatencySeconds.Should().BeApproximately(0.75, 0.0001);
+    }
+
+    /// <summary>A runner that does not stamp its start (every scripted one) is measured from the instant before the call, as before.</summary>
+    [Fact]
+    public async Task A_runner_that_does_not_stamp_its_start_is_measured_from_the_instant_before_the_call()
+    {
+        var clock = new FixedTimeProvider(HealthFixture.CapturedAt);
+        var windowsStart = HealthFixture.CapturedAt + TimeSpan.FromSeconds(2);
+        var runner = new RecordingCommandRunner().Script(HealthCommands.WindowsClock.Argv, 0, $"{windowsStart:O}\n{windowsStart:O}\nC:\\Users\\user\n");
+
+        var sample = await HealthCollector.MeasureWindowsClockAsync(runner, clock, TestContext.Current.CancellationToken);
+
+        sample.OffsetSeconds.Should().BeApproximately(2, 0.0001);
+    }
+
     [Fact]
     public async Task On_the_windows_layout_the_distro_parts_name_the_linux_binary_and_wslconfig_is_read_directly()
     {

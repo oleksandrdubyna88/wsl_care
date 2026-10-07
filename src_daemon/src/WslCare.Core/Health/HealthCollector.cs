@@ -161,10 +161,17 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     /// live observation (E3.S3), so the offset is computed ONE way: the probe's start minus our launch instant, its launch
     /// latency subtracted. Unmeasured, with the reason, when the probe does not answer.
     /// </summary>
+    /// <remarks>The launch instant is the one the runner stamped immediately before the start
+    /// (<see cref="CommandOutcome.StartedAt"/>): the executable lookup runs inside the runner BEFORE it, and the Windows system
+    /// drive's may take up to its ceiling — counted from an instant taken before the call, that time read as drift and A16
+    /// acts on drift (PR #10 retro round, consultation b41d9220). A runner that stamps nothing (a test's scripted one) is
+    /// measured from the instant before the call. In the product both instants are the system clock.</remarks>
     public static async Task<WindowsClockSample> MeasureWindowsClockAsync(ICommandRunner runner, TimeProvider clock, CancellationToken cancellationToken)
     {
-        var launched = clock.GetUtcNow();
-        var answer = (await ToolAnswers.RunAsync(runner, HealthCommands.WindowsClock, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.WindowsClock);
+        var called = clock.GetUtcNow();
+        var outcome = await runner.RunAsync(HealthCommands.WindowsClock.ToRequest(), cancellationToken).ConfigureAwait(false);
+        var launched = outcome.StartedAt.ValueOr(called);
+        var answer = ToolAnswers.Read(HealthCommands.WindowsClock, outcome).Bind(HealthParsers.WindowsClock);
         return answer is Reading<WindowsClockAnswer>.Available { Value: var probe }
             ? new WindowsClockSample(launched, (probe.ProcessStartedAt - launched).TotalSeconds, (probe.PrintedAt - probe.ProcessStartedAt).TotalSeconds, string.Empty) { WindowsProfile = probe.Profile }
             : new WindowsClockSample(clock.GetUtcNow(), 0, 0, answer.ReasonOrEmpty);

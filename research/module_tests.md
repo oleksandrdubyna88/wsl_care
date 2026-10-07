@@ -1755,6 +1755,59 @@ every workflow that runs the Scenarios executable — red first on `release.yml/
 on a third job nobody had named, `sonarcloud.yml/sonar` (skipped today for want of `SONAR_TOKEN`, so it would have failed
 the day the token arrives); both fetch it now, green. The fix ships as daemon 0.1.2.
 
+### The PR #10 retro round (2026-10-06, plan §17a *Retro coai round over PR #10*)
+
+The Windows system-drive fallback (§17 #1) after a retro gate round (session ad685697), consultation b41d9220 and an own
+review. Every behaviour fix was written red first and shown red again by deleting its load-bearing line; the two test gaps
+(O1, O2) were checks that already existed and that the suite did not reach — each new test was shown red by deleting the
+check it covers.
+
+| Finding | Tests |
+|---|---|
+| C1: interop runs when ANY registered entry is enabled; the refusal names every entry and its state | `Core.Tests/Processes/WindowsSystemDriveTests.Interop_runs_when_any_registered_entry_is_enabled_even_beside_a_disabled_one`, `…Every_registered_entry_disabled_is_a_refusal_naming_each_entry_and_its_state` (the entries read from `InteropEntries`, not retyped) |
+| b41d9220: the system-drive lookup is not counted as clock drift — the launcher stamps `StartedAt` immediately before the start and the offset (the full run's and A16's: one function) is measured from it; a runner that stamps nothing is measured from the instant before the call | `Health/HealthTests.A_slow_executable_lookup_before_the_start_is_not_counted_as_clock_drift` (a scripted runner advances a `ManualTimeProvider` four seconds before the start), `…A_runner_that_does_not_stamp_its_start_is_measured_from_the_instant_before_the_call`; `Processes/SystemDriveResolverTests.The_launch_instant_is_taken_after_the_lookup_so_a_slow_lookup_is_not_part_of_it` (the real launcher, a lookup that advances the clock) |
+| O4: a failed head read (EIO on a failing 9p share) is a reason naming the file; a lookup that throws surfaces its own exception, not an `AggregateException` | `Files/RegularFilesTests.A_head_read_that_fails_is_a_reason_naming_the_file_never_an_exception` (the read injected through `RegularFiles.Head`); `Processes/BoundedTests` (3: the unwrapped exception, the answer and the timed-out answer, the caller's cancellation) |
+| O3: the super options are never unescaped — a drvfs mount of a folder named `C:\134` is not the whole drive; the observed table still names it | `WindowsSystemDriveTests.A_mount_of_a_folder_named_134_is_not_the_whole_drive_because_the_super_options_are_never_unescaped` |
+| O1: the checks on the OPENED descriptor — swapped between the path check and the open, off the drive's mount although the path check saw that same file — and one positive with the same fixture | `Processes/SystemDriveFilesTests.A_file_swapped_between_the_path_check_and_the_open_is_refused`, `…An_opened_file_off_the_drives_mount_is_refused_even_when_the_path_check_saw_that_same_file`, `…The_opened_file_the_path_check_saw_on_the_mount_with_its_header_passes` (over `SystemDriveFiles.HeadProblem`, every leg) |
+| O2: an ancestor that is a link, and one owned by another uid than root (Linux) | `…A_link_above_the_mount_point_is_refused_as_not_a_directory` (`/proc/self`, asserted a root-owned link first), `…An_ancestor_owned_by_another_account_than_root_is_refused_naming_its_uid` (this account's home, its own ancestors asserted to pass; skipped with the reason when the run is root's) |
+| O5: the lookup's ceiling is read when the lookup is asked for, never frozen in a static | `Config/NumbersAreConfigurationTests.A_machine_value_reaches_the_command_the_wait_and_the_walk_it_bounds` (`ThisMachine` and `NotConsulted`, read once under the defaults first) |
+| O6: `MountInfoLine.Parse` split under complexity 4 | none new — a pure refactor; the `WindowsSystemDriveTests` above stay green |
+
+**Red first** (Windows Debug, before each fix): C1 — `Expected … InteropRefusal(…) to be empty because WSLInterop-late is
+registered and enabled …, but found "WSL interop is registered but not enabled (/proc/sys/fs/binfmt_misc/WSLInterop says
+"disabled") …"`, and the naming test `… to contain "/proc/sys/fs/binfmt_misc/WSLInterop-late says "disabled""`; the clock —
+`Expected sample.OffsetSeconds to approximate 0.25 +/- 0.0001 because the 4 s lookup happened before the start and is not
+drift, but 4.25 differed by 4.0`, and the launcher stamping at the call's entry (the old instant, moved into the runner) —
+`Expected … Value = <2026-10-02 12:00:04 +0h> … but found … Value = <2026-10-02 12:00:00 +0h>`; O4 — `System.IO.IOException :
+Input/output error` (the read escaped) and `Expected type to be System.IO.IOException, but found System.AggregateException`;
+O3 — `Expected type to be …Reading`1+Unavailable[…SystemDriveMount], but found …Reading`1+Available[…]`; O5 — `Expected 9s
+because PR #10 retro round O5: … but found 5s`.
+
+**Teeth** (one production line changed, the test red, the file restored byte-identical; Windows Debug unless named):
+
+| Mutation | Red |
+|---|---|
+| interop judged on the first registered entry again | 1 (*… WSLInterop says "disabled"; … WSLInterop-late says "enabled" …*) |
+| the super options unescaped again | 1 |
+| the offset measured from the instant before the call | 1 (*4.25 differed by 4.0*) |
+| the launcher not carrying `StartedAt` | 1 |
+| the head read's catch narrowed away | 1 (*IOException : Input/output error*) |
+| `Bounded.Run` back on `Task.Wait` | 1 (*found System.AggregateException*) |
+| `ThisMachine` a static again | 1 (*found 5s*) |
+| `!SameFile` deleted / the descriptor's `!OnTheMount` deleted | 1 / 1 (*but "" has a length of 0*) |
+| the ancestor's link arm deleted (WSL) | 1 — *"/proc/self, … is writable by its group or by others (mode 777)" to contain "/proc/self, … is not a directory"* |
+| the ancestor's uid arm deleted (WSL) | 1 — the refusal moved on to *"/home/…/drive does not exist"* |
+
+Met on the way: after the WSL break-its, a restore that re-extracted the source with its OLDER timestamp left the break-it
+binary in place, and the full WSL core run failed the uid test with exactly the mutation's message — `testing.md`'s *a green
+suite proves only the binaries you ran*, in the red direction; the file touched and rebuilt, the run green.
+
+Final (Debug, on main 1654e56): Windows — Core 1302 passed / 48 skipped, Cli 257 / 2, Scenarios 208 / 163 (the Linux
+flows), none failed; WSL (normal user, `nice -n 19`) — Core 1347 / 3, Cli 258 / 1, Scenarios 367 passed, 2 skipped, and 2
+failed: `StatusFlows`' two `status --json` 2 s budgets (*found 4 s*), on a VM at load 40–85. The same class over a build
+of `main` itself, interleaved with this branch's at the same load, failed 2 of 4 runs against this branch's 1 of 4 — the
+budget is the machine's, not this change's (status starts no process and resolves nothing).
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

@@ -32,16 +32,18 @@ public sealed class ProcessCommandRunner : ICommandRunner
 
     private readonly Func<CommandRequest, CommandVerdict> _review;
     private readonly Func<string, CancellationToken, ResolvedExecutable> _resolve;
+    private readonly TimeProvider _clock;
 
     public ProcessCommandRunner(Policy.CommandPolicy policy)
-        : this(PolicyOf(policy).Review, static (name, token) => ExecutableResolver.Resolve(name, token))
+        : this(PolicyOf(policy).Review, static (name, token) => ExecutableResolver.Resolve(name, token), TimeProvider.System)
     {
     }
 
-    private ProcessCommandRunner(Func<CommandRequest, CommandVerdict> review, Func<string, CancellationToken, ResolvedExecutable> resolve)
+    private ProcessCommandRunner(Func<CommandRequest, CommandVerdict> review, Func<string, CancellationToken, ResolvedExecutable> resolve, TimeProvider clock)
     {
         _review = review;
         _resolve = resolve;
+        _clock = clock;
     }
 
     private static Policy.CommandPolicy PolicyOf(Policy.CommandPolicy policy)
@@ -53,12 +55,17 @@ public sealed class ProcessCommandRunner : ICommandRunner
     /// <summary>The runner with a review of the test's own — ONLY for the runner's tests, whose subject's child is a
     /// shell (a process that spawns a grandchild), which the never-list rightly refuses. Never called from product code.</summary>
     internal static ProcessCommandRunner UnguardedForItsOwnTests(Func<CommandRequest, CommandVerdict> review) =>
-        new(review, static (name, token) => ExecutableResolver.Resolve(name, token));
+        new(review, static (name, token) => ExecutableResolver.Resolve(name, token), TimeProvider.System);
 
     /// <summary>The runner under a real <paramref name="policy"/> with a lookup of the test's own — ONLY for the tests that
     /// prove the policy judges the bare program while the launcher starts the file the lookup found.</summary>
     internal static ProcessCommandRunner WithResolverForItsOwnTests(Policy.CommandPolicy policy, Func<string, CancellationToken, ResolvedExecutable> resolve) =>
-        new(PolicyOf(policy).Review, resolve);
+        WithResolverForItsOwnTests(policy, resolve, TimeProvider.System);
+
+    /// <summary>As above, with the clock the runner stamps <see cref="CommandOutcome.StartedAt"/> from — ONLY for the test that
+    /// proves a slow lookup is not part of the launch instant.</summary>
+    internal static ProcessCommandRunner WithResolverForItsOwnTests(Policy.CommandPolicy policy, Func<string, CancellationToken, ResolvedExecutable> resolve, TimeProvider clock) =>
+        new(PolicyOf(policy).Review, resolve, clock);
 
     public async Task<CommandOutcome> RunAsync(CommandRequest request, CancellationToken cancellationToken)
     {
@@ -70,10 +77,10 @@ public sealed class ProcessCommandRunner : ICommandRunner
         cancellationToken.ThrowIfCancellationRequested();
         using var process = new Process();
         var started = Stopwatch.StartNew();
-        var (notStarted, startedFrom) = Start(process, request, cancellationToken);
-        if (notStarted is not null)
+        var launch = Start(process, request, cancellationToken);
+        if (launch.NotStarted is not null)
         {
-            return notStarted;
+            return launch.NotStarted;
         }
 
         // A command started is a step of the run (E7.S2b/S2c review C-H2); its end is another (below, and in the timed-out path).
@@ -94,12 +101,12 @@ public sealed class ProcessCommandRunner : ICommandRunner
             await KillAndReapAsync(process, reads).ConfigureAwait(false);
             Actions.Engine.RunProgress.Mark();
             cancellationToken.ThrowIfCancellationRequested();
-            return new CommandOutcome.TimedOut(stdout.Snapshot(), stderr.Snapshot(), request.Timeout) { StartedFrom = startedFrom };
+            return new CommandOutcome.TimedOut(stdout.Snapshot(), stderr.Snapshot(), request.Timeout) { StartedFrom = launch.StartedFrom, StartedAt = launch.StartedAt };
         }
 
         await DrainAsync(reads).ConfigureAwait(false);
         Actions.Engine.RunProgress.Mark();
-        return new CommandOutcome.Exited(process.ExitCode, stdout.Snapshot(), stderr.Snapshot(), started.Elapsed) { StartedFrom = startedFrom };
+        return new CommandOutcome.Exited(process.ExitCode, stdout.Snapshot(), stderr.Snapshot(), started.Elapsed) { StartedFrom = launch.StartedFrom, StartedAt = launch.StartedAt };
     }
 
     public async Task<CommandOutcome> StreamAsync(CommandRequest request, Action<string> onStdoutLine, CancellationToken cancellationToken)
@@ -112,10 +119,10 @@ public sealed class ProcessCommandRunner : ICommandRunner
         cancellationToken.ThrowIfCancellationRequested();
         using var process = new Process();
         var started = Stopwatch.StartNew();
-        var (notStarted, startedFrom) = Start(process, request, cancellationToken);
-        if (notStarted is not null)
+        var launch = Start(process, request, cancellationToken);
+        if (launch.NotStarted is not null)
         {
-            return notStarted;
+            return launch.NotStarted;
         }
 
         var stderr = new OutputCapture(request.OutputCapChars);
@@ -151,31 +158,44 @@ public sealed class ProcessCommandRunner : ICommandRunner
         if (!ended)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return new CommandOutcome.TimedOut(CapturedText.Empty, stderr.Snapshot(), request.Timeout) { StartedFrom = startedFrom };
+            return new CommandOutcome.TimedOut(CapturedText.Empty, stderr.Snapshot(), request.Timeout) { StartedFrom = launch.StartedFrom, StartedAt = launch.StartedAt };
         }
 
         await DrainAsync(errors).ConfigureAwait(false);
-        return new CommandOutcome.Exited(process.ExitCode, CapturedText.Empty, stderr.Snapshot(), started.Elapsed) { StartedFrom = startedFrom };
+        return new CommandOutcome.Exited(process.ExitCode, CapturedText.Empty, stderr.Snapshot(), started.Elapsed) { StartedFrom = launch.StartedFrom, StartedAt = launch.StartedAt };
     }
 
     private CommandOutcome.Refused? Refusal(CommandRequest request) =>
         _review(request) is CommandVerdict.Refused refused ? new CommandOutcome.Refused(refused.Reason) : null;
 
     /// <summary>Starts the process from the FULL path <see cref="ExecutableResolver"/> found — the operating system is never
-    /// handed a bare name to search for, and that path is started as found, never looked up again; the outcome when there is
-    /// none or the operating system would not start it (<c>null</c> when it runs), and the file started when it came from
-    /// the Windows system drive (empty otherwise).</summary>
-    private (CommandOutcome.FailedToStart? NotStarted, string StartedFrom) Start(Process process, CommandRequest request, CancellationToken cancellationToken) =>
+    /// handed a bare name to search for, and that path is started as found, never looked up again.</summary>
+    private Launch Start(Process process, CommandRequest request, CancellationToken cancellationToken) =>
         _resolve(request.Argv[0], cancellationToken) switch
         {
-            ResolvedExecutable.Found found => (StartAt(process, request, found.Path), found.OnTheSystemDrive ? found.Path : string.Empty),
-            ResolvedExecutable.NotFound missing => (new CommandOutcome.FailedToStart(missing.Reason), string.Empty),
+            ResolvedExecutable.Found found => StartFound(process, request, found),
+            ResolvedExecutable.NotFound missing => new Launch(new CommandOutcome.FailedToStart(missing.Reason), string.Empty, NotLaunched),
             _ => throw new UnreachableException("ResolvedExecutable is a closed set"),
         };
 
-    private static CommandOutcome.FailedToStart? StartAt(Process process, CommandRequest request, string executable)
+    /// <summary>The launch instant is read HERE — after the lookup (the Windows system drive may take up to its ceiling),
+    /// immediately before the operating system is asked: what the clock probe's offset is measured from (PR #10 retro round).</summary>
+    private Launch StartFound(Process process, CommandRequest request, ResolvedExecutable.Found found)
     {
-        process.StartInfo = StartInfo(request, executable);
+        process.StartInfo = StartInfo(request, found.Path);
+        var startedAt = _clock.GetUtcNow();
+        return new Launch(StartAt(process, found.Path), found.OnTheSystemDrive ? found.Path : string.Empty, Collectors.Reading.Of(startedAt));
+    }
+
+    private static readonly Collectors.Reading<DateTimeOffset> NotLaunched = Collectors.Reading.Missing<DateTimeOffset>("nothing was started");
+
+    /// <summary>How a start went: the outcome when there is no executable or the operating system would not start it
+    /// (<c>null</c> when it runs), the file started when it came from the Windows system drive (empty otherwise), and the
+    /// launcher's clock immediately before the start.</summary>
+    private sealed record Launch(CommandOutcome.FailedToStart? NotStarted, string StartedFrom, Collectors.Reading<DateTimeOffset> StartedAt);
+
+    private static CommandOutcome.FailedToStart? StartAt(Process process, string executable)
+    {
         try
         {
             return process.Start() ? null : new CommandOutcome.FailedToStart($"the operating system did not start {executable}");

@@ -128,7 +128,7 @@ public sealed class NumbersAreConfigurationTests
               "units": { "stopTimeoutSeconds": 100 },
               "running": { "heartbeatSeconds": 2, "wedgedAfterSeconds": 40 },
               "walk": { "maxEntries": 5000, "maxSeconds": 9 },
-              "commands": { "maxTimeoutHours": 2 }
+              "commands": { "maxTimeoutHours": 2, "systemDriveLookupSeconds": 9 }
             }
             """);
         loaded.IsObserveOnly.Should().BeFalse(string.Join("; ", loaded.Errors.Select(e => e.Display)));
@@ -136,6 +136,8 @@ public sealed class NumbersAreConfigurationTests
         // declared shows here instead of hiding behind a first use inside the scope.
         Core.Actions.Clock.ClockFix.WindowsClock.Ceiling.Should().Be(TimeSpan.FromSeconds(20));
         Core.Systemd.UnitCommands.StopTemplate.Ceiling.Should().Be(TimeSpan.FromSeconds(120));
+        Core.Processes.SystemDriveLookup.ThisMachine.Ceiling.Should().Be(TimeSpan.FromSeconds(5));
+        Core.Processes.SystemDriveLookup.NotConsulted.Ceiling.Should().Be(TimeSpan.FromSeconds(5));
 
         using (Tuning.Use(loaded.Config))
         {
@@ -148,6 +150,8 @@ public sealed class NumbersAreConfigurationTests
             Core.Actions.Engine.RunningState.StaleAfter.Should().Be(TimeSpan.FromSeconds(40));
             Core.Folders.FolderSizes.Limits.Should().Be(new Core.Files.TreeLimits(5000, TimeSpan.FromSeconds(9)));
             Core.Processes.CommandRequest.MaxTimeout.Should().Be(TimeSpan.FromHours(2));
+            Core.Processes.SystemDriveLookup.ThisMachine.Ceiling.Should().Be(TimeSpan.FromSeconds(9), "PR #10 retro round O5: the system-drive lookup's ceiling is read when the lookup is asked for");
+            Core.Processes.SystemDriveLookup.NotConsulted.Ceiling.Should().Be(TimeSpan.FromSeconds(9));
         }
 
         Core.Docker.DockerCommands.Version.Ceiling.Should().Be(TimeSpan.FromSeconds(10), "outside the scope the defaults are back");
