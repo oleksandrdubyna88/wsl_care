@@ -584,7 +584,7 @@ lines, over the 800-line limit), sharing `InstallChecks`:
 |---|---|
 | `root/` | `WSL_CARE_INSTALL_ROOT`, the stand-in for `/`: every path the script reads or writes as a file sits under it. Seeded with `/run/systemd/system` (systemd booted), an `/etc/passwd` with `alice` and `zed`, and `/etc/default/sysstat` with `ENABLED="true"` |
 | `fakebin/` | the fake tool (`WslCare.FakeTool`) as `curl`, `gh`, `systemctl`, `apt-get`, `debconf-set-selections`, `dpkg-reconfigure`, `runuser`, `sudo`, `id`, `uname`, `sar`, `atop` — everything that changes the machine, reaches the network, or answers who and where the script runs (so a test can be root, or arm64, without being either). A test leaves one out to stand for a tool that is not installed |
-| `realbin/` | links to an ALLOWLIST of real text and file tools (`awk`, `cat`, `chmod`, `cut`, `grep`, `gzip`, `head`, `install`, `ln`, `ls`, `mkdir`, `mktemp`, `mv`, `od`, `readlink`, `rm`, `rmdir`, `sed`, `sha256sum`, `sleep`, `date`, `sort`, `tar`, `timeout`, `tr`, `wc`). `PATH` is exactly `fakebin:realbin`, so a script change that reaches for another tool fails here first. A world may link `awk` to a named one (`/usr/bin/mawk`, `/usr/bin/gawk`) — the snappy decoder is run under both |
+| `realbin/` | links to an ALLOWLIST of real text and file tools (`awk`, `cat`, `chmod`, `cut`, `flock` — since the PR #8 retro round; a world may leave it out with `withoutRealTools` —, `grep`, `gzip`, `head`, `install`, `ln`, `ls`, `mkdir`, `mktemp`, `mv`, `od`, `readlink`, `rm`, `rmdir`, `sed`, `sha256sum`, `sleep`, `date`, `sort`, `tar`, `timeout`, `tr`, `wc`). `PATH` is exactly `fakebin:realbin`, so a script change that reaches for another tool fails here first. A world may link `awk` to a named one (`/usr/bin/mawk`, `/usr/bin/gawk`) — the snappy decoder is run under both |
 | the scripted clock | since 2026-10-05, `UseScriptedClock()`: `realbin/date` and `realbin/sleep` become two POSIX sh scripts over one file — `date +%s` answers the second in it (start `ScriptedClockStart`, 2026-10-04T12:00:00Z), `sleep N` adds N and returns at once — so a wait's output and its refusal depend on the seconds the script SLEPT, not on how long its status calls took. Stricter than the real tools: any other `date` form and any `sleep` that is not one whole number exits 2 naming what it was asked (`ScriptedClockTests`). Used by the progress flow; the wall-clock ceiling flow keeps the real clock on purpose |
 | the attestations | since the E4 review: every published release carries one attestation per signer — a bundle in Sigstore's shape (`AttestationBundles`: a self-signed certificate with the SAN and the Fulcio extensions, a DSSE statement naming the archive's digest), snappy-compressed (literals only), served at a bundle URL that the fake attestation API names (`bundle: null`, `&` written `\u0026`). The fake `gh` VERIFIES (`VerifiesAttestation`, `FakeAttestation`): `--cert-identity` exact, `--signer-workflow` a literal prefix, `--repo`, `--source-ref`, `--deny-self-hosted-runners`, the artifact's digest — gh's semantics as measured on gh 2.97.0. Every fake call records `HOME`, `GH_CONFIG_DIR`, `XDG_*_HOME`, `GH_TOKEN`, `GITHUB_TOKEN` (`WSL_CARE_FAKE_RECORD_ENV`), so whose configuration gh ran under is asserted. A captured cli/cli bundle (`src_daemon/tests/fixtures/attestation/`, 64 literal + 69 copy elements, bytes above 127) is served where the decoder's copies must be right |
 | `tmp/` | the script's `TMPDIR`; every flow asserts it is EMPTY afterwards (the trap removed the temporary folder on success, on failure and on refusal) |
@@ -595,7 +595,13 @@ It runs as the test user, never root: a path that escaped the prefix would be re
 changed `/etc` or `/opt`. Linux only (POSIX sh, GNU coreutils and tar): the two Linux CI legs run it; the Windows leg
 skips each flow with that reason. On the owner's machine it ran in WSL `Ubuntu` from a copy of the worktree under
 `/tmp`, built there (`dotnet build wsl_care.slnx -c Release -m:4`, then the Scenarios executable with
-`--filter-class "*InstallFlows"`; since the split, `--filter-class "*.Install*Flows"` runs all five classes).
+`--filter-class "*InstallFlows"`; since the split, one `--filter-class "*.<Class>"` per class — `*.InstallFlows`,
+`*.InstallCeilingFlows`, `*.InstallAttestationFlows`, `*.InstallUpgradeFlows`, `*.InstallUninstallFlows`,
+`*.InstallDefaultUserFlows`: the runner allows a wildcard only at the start and end, so `"*.Install*Flows"`, written here
+before, is refused as invalid — observed 2026-10-06). Since the PR #8 retro round a world also takes `Variables` (installer
+variables over its environment — a ceiling, or `WSL_CARE_INSTALL_DOCTOR_SECONDS` over its 0), `StubPrelude` (shell lines the
+stub binary runs before the fake — one that ignores SIGTERM) and `RunMergedAsync` (stderr joined to stdout in one pipe, so a
+test can say which line came first).
 
 **Red, per guarantee** (2026-10-03, in WSL `Ubuntu`). The flows passed at their first run, which proves nothing by
 itself (testing rule), so each guarantee was proved to have teeth by deleting the line its behaviour rests on in a copy
@@ -702,6 +708,81 @@ with systemd's parser — a template through an instance name (`wsl-care-act@200
 the drop-in the job's own Release build renders — and fails on any output: `systemd-analyze verify` exits 0 on an
 unknown key, observed in `ubuntu:24.04` (systemd 255) with a planted `Persistant=`, and again on 2026-10-06 with the
 0.1.0 template's `CollectMode=` under `[Service]` (below, *The act template's CollectMode*).
+
+### The PR #8 retro round (2026-10-06)
+
+A coai retro review of the merged E4 diff (session `5c23779d`), the consultant (`ad2e68fb`) and an own review — plan §15e
+*Retro coai round over PR #8* — plus three items of the PR #11 retro round (session `f4bdf605`) in the same wait code. Every
+installer test was written first and run in WSL `Ubuntu` against the UNFIXED `install.sh` (the file at `c61ec98`), from a
+clone under `/tmp` overlaid with the worktree and built there; the `-k` test against the fixed file with every `-k` removed
+(the state that finding is about). The Core and documentation tests went red on Windows first.
+
+| Finding | Test | Red against the unfixed code |
+|---|---|---|
+| G1 purge under the run lock | `InstallUninstallFlows.A_purge_while_a_run_holds_the_run_lock_…` | `Expected result.Exit to be 1 because the install should fail` — the purge removed the state under a held lock |
+| G1 no `flock` | `…Without_flock_a_purge_is_refused_…` | `Expected result.Exit to be 1 because the install should fail` — purged without being able to take the lock |
+| G2 a job-waiting `systemctl` | `InstallCeilingFlows.A_systemctl_job_that_never_finishes_…` | `Expected result.Exit to be 1 because the install should fail` — it waited out the fake's whole hang and installed |
+| G3 the first run announced | `…The_first_run_is_announced_with_its_ceiling_before_collect_starts` | `Expected said to be greater than or equal to 0 because the installer says the first run may take minutes` — the merged output held the fake's `collect has started` and no announcement |
+| C1 the health wait's deadline | `…The_health_wait_refuses_at_its_wall_clock_deadline_…` | `… "FAILED at step "verify: doctor healthy": … doctor --json is not healthy after 15s …" to contain "(at most 12s)"` — it said 15 s (counted sleeps) after ~40 s of wall time |
+| C2 `-k` | `…A_child_that_ignores_sigterm_is_killed_…` (every `-k` removed from the fixed file) | `Expected Since(stamp) to be less than 35s … but found 44s, 366ms` (measured from the doctor call's own start) — the child outlived its ceiling by its whole 45 s |
+| O5 the ceiling variables | `…A_ceiling_variable_that_is_not_a_whole_number_of_seconds_…` (10 rows) | 9 of 10 red: `Expected result.Exit to be 2 because WSL_CARE_INSTALL_RUN_WAIT_SECONDS=ten is a usage error` (and the same for `99999999999999999999`, `PROGRESS=30s` / `0`, `DOCTOR=010`, `SYSTEMCTL=abc` / `0`, `STATUS=x` / `0`); `DOCTOR=2m` was already refused (a regression guard) |
+| O1 the 24-hour calendar | `Core.Tests/Config/TimerCalendarTests.Every_accepted_period_renders_…(hours: 24)` (Windows) | `… they differ at index 8: "*-*-* 00/24:00:00" / "*-*-* 00:00:00"` |
+| O4 the documented attestation identity | `ReleaseExtensionWorkflowTests.Every_documented_attestation_check_pins_the_exact_identity_…` (Windows) | `Expected commands to contain only items matching (… --cert-identity … && !--signer-workflow) …` naming `README.md` and `docs/repo-settings.md` — both rollback checks used `--signer-workflow` |
+| R11-G1 the status ceiling a setting | `InstallUpgradeFlows.The_status_call_ceiling_is_the_setting_in_force` | `… "a wsl-care run is live (…), still after 25s …" to contain "the installed binary gave no status answer"` — the 1 s setting did not exist |
+| R11-G3 the status call cut at the deadline | `…A_status_call_is_cut_at_the_waits_deadline` | the same: `still after 25s` — the call ran its own 25 s past an 8 s wait |
+| R11-G3 no sleep past the deadline | `…The_wait_never_sleeps_past_its_deadline` (scripted clock) | `… "still after 10s …" to contain "… still after 7s"` |
+| R11-C the fail-open `[ -x ]` | `…An_installed_binary_that_cannot_be_started_is_no_answer_…` | `… "fake systemctl: no scripted answer for: systemctl try-restart wsl-care-events.service …"` — the upgrade went ahead past the non-executable binary |
+
+O3 (`POST_DEPLOY.md` item 10) is a checklist command, not code: measured in WSL with a 404 URL — `curl … | sh -s -- --dry-run`
+exits **0**, the download-to-a-file form exits **22**. The fix's own measurement: `systemd-analyze calendar` (systemd 255)
+EXITS 0 on a calendar it refuses (`Failed to parse calendar specification '*-*-* 00/24:00:00': Invalid argument`), so the
+calendar test reads the output — `Normalized form:` and the elapses — never the exit code. One existing fixture changed:
+`An_upgrade_restarts_the_running_follower_onto_the_new_binary` wrote its old binary without the executable bit, so it passed
+only through the `[ -x ]` fail-open this round closes (it timed out at the 600 s wait after the fix); its binary is
+executable now, as an installed one is.
+
+**Green** after the fixes (the new `install.sh` restored and compared byte for byte): the installer flows, Core, Cli and
+Scenarios on Windows and in WSL (totals in the pull request).
+
+**Teeth** — each fixed line bent in a copy (one `sed`/`awk`, the change counted with `diff`), the one test run, the file
+restored and compared with `cmp`; every one red:
+
+| The line bent | The red |
+|---|---|
+| `flock -n -E 75 9` → `true` (the lock never taken) | the held-lock flow: `Expected result.Exit to be 1 because the install should fail` |
+| the `have flock` preflight made a no-op | the no-flock flow: `Expected result.Stderr "…install.sh: 552: flock: not found …" to contain "FAILED at step \"preflight\""` — the uninstall had already removed the units when it met the missing tool |
+| `systemctl_job` calling `systemctl` without its `timeout` | the systemctl flow: `Expected result.Exit to be 1` |
+| the announcement removed | the first-run flow: `Expected said to be greater than or equal to 0` |
+| the health wait's wall clock replaced by a count of polls × 5 s | the health flow: `TimeoutException: … did not exit within 60 s` |
+| every `-k` removed | the SIGTERM flow: `… less than 35s … but found 44s, 366ms` (the C2 red above) |
+| the RUN_WAIT validation removed | 2 of the 10 rows: `Expected result.Exit to be 2 because WSL_CARE_INSTALL_RUN_WAIT_SECONDS=ten …` / `=99999999999999999999` |
+| the cap at `STATUS_SECONDS` removed | the status-setting flow: `Expected SinceTheLastStatusCallStarted(stamp) to be less than 3s and 500ms … but found 4s, 316ms` |
+| the status call not cut to what is left | the deadline flow: `… still after 24s …` |
+| the last sleep a whole 5 s again | the scripted flow: `… still after 10s …` |
+| `[ -e ]` back to `[ -x ]` | the not-executable flow: the upgrade went ahead (`no scripted answer for: systemctl try-restart …`) |
+| `UnitDropIns.Calendar`'s 24 case removed (Windows; WSL rebuild of Core.Tests) | Windows: the render row for 24; WSL: also `Expected output "Failed to parse calendar specification '*-*-* 00/24:00:00': Invalid argument" to contain "Normalized form:"` |
+| `docs/repo-settings.md`'s rollback back to `--signer-workflow` | the documents test, naming `docs/repo-settings.md` |
+
+**The gate round on PR #34** (session `7c89fe30`, 2026-10-06): 4 of 5 findings rejected; one accepted — the health wait
+runs its readable `doctor` report AFTER the deadline, so the refusal could come up to one more floor call plus its grace
+later than the bound the comment and the refusal stated ("DOCTOR_SECONDS + one floor call", "at most 12s"). The smallest
+honest fix was taken: the report is kept (it is what tells the person why), and the comment now states the true bound —
+DOCTOR_SECONDS + 2 × (floor + grace), 160 s with the defaults — and the refusal says what was measured, "still not healthy
+after <n>s of a <DOCTOR_SECONDS>s wait", instead of an "at most" the report itself overran. No behaviour changed, so no red:
+`The_health_wait_refuses_…` now asserts the new sentence, and its timing bound (from the first doctor call) already
+counted the report.
+
+**A sibling met on the rebase onto `fdc9de6`** (#28, the manual Marketplace upload): its new draft check in
+`docs/repo-settings.md` pins `--cert-identity` but not `--deny-self-hosted-runners`, and wraps across two lines. CI on the
+merge commit was red — the scan read the command only to its first line break (`Expected commands … to contain only items
+matching …`). The scan now follows a wrapped inline span (a line break ends a command only before a blank line; whitespace
+read as one space), a companion asserts it finds that wrapped command, and the command gained the flag: with the flag taken
+out again the test is red naming `gh attestation verify ai-os-care-<x.y.z>.vsix --repo oleksandrdubyna88/wsl_care
+--cert-identity "…release-extension.yml@refs/tags/extension-v<x.y.z>"`, with it green.
+
+**Not done here:** running `systemd-analyze verify` over the timer drop-in at EVERY accepted period belongs in
+`.github/scripts/verify-systemd-units.sh` (reworked by `fix/wc-act-unit-collectmode`, merged into main while this round was
+in flight); it is a follow-up. The Core test above already parses every rendered calendar on the Linux CI legs.
 
 ## The release pipeline's tests (E4.S2)
 
@@ -2153,6 +2234,10 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `install.sh`: an existing `/etc/wsl-care/config.json` kept byte for byte | covered (Linux legs) | `InstallFlows.An_existing_machine_configuration_is_kept_byte_for_byte` |
 | `install.sh`: a unit not active → step `verify: wsl-care-events.service active`; an unhealthy `doctor --json` → step `verify: doctor healthy` with doctor's checks on stderr; sar missing after apt → step `verify: sysstat (sar on PATH)`; sysstat still off after `dpkg-reconfigure` → step `packages` | covered (Linux legs) | `InstallFlows.A_unit_that_is_not_active_after_enabling_fails_the_install_naming_that_step`, `…An_unhealthy_doctor_fails…`, `…Missing_sysstat_and_atop_are_installed_with_apt…`, `…Sysstat_switched_off_is_switched_on_through_debconf…` |
 | `install.sh --uninstall`: units, binary, link and `/opt/wsl-care` gone, history / logs / machine layer kept and named; `--purge` removes exactly the three folders and the lock, names each, touches nothing else | covered (Linux legs) | `InstallUninstallFlows.Uninstall_removes_the_units_binary_and_link_and_keeps_history_logs_and_machine_config`, `InstallUninstallFlows.Uninstall_with_purge_removes_exactly_the_state_logs_machine_config_and_lock_and_names_them` |
+| `install.sh --uninstall --purge` under the run lock (retro of PR #8, G1): a run holding `/run/wsl-care.lock` (`FileShare.None`, the daemon's `RunLock`) → step `purge`, every byte of the state kept, the lock file kept, the same command purging once it is released; no lock file before → none after; no `flock` → step `preflight` before anything is stopped, a plain `--uninstall` still works | covered (Linux legs) | `InstallUninstallFlows.A_purge_while_a_run_holds_the_run_lock_is_refused_and_removes_nothing_of_the_state`, `…A_purge_with_no_run_lock_file_takes_the_lock_and_leaves_no_lock_file_behind`, `…Without_flock_a_purge_is_refused_before_anything_changes_and_a_plain_uninstall_still_works` |
+| `install.sh`'s ceilings (retro of PR #8 / #11): a job-waiting `systemctl` that never ends fails `enable-units` at `WSL_CARE_INSTALL_SYSTEMCTL_SECONDS` saying the job may still run; the first run announced, with its ceiling, before `collect` starts; the health wait refuses at its wall-clock deadline (two doctor calls, not four); a child ignoring SIGTERM is SIGKILLed after the grace; every ceiling variable malformed, out of range or with a leading zero → exit 2 before any call; the upgrade wait never sleeps past its deadline (scripted clock), a status call is cut at it, the status ceiling is `WSL_CARE_INSTALL_STATUS_SECONDS`, and an installed binary that cannot be started is no answer (refusal with the escape), never "nothing in flight" | covered (Linux legs) | `InstallCeilingFlows` (5 facts and a 10-row theory); `InstallUpgradeFlows.The_wait_never_sleeps_past_its_deadline`, `…A_status_call_is_cut_at_the_waits_deadline`, `…The_status_call_ceiling_is_the_setting_in_force`, `…An_installed_binary_that_cannot_be_started_is_no_answer_never_nothing_in_flight` |
+| the timer drop-in's calendar for EVERY accepted `timer.periodHours` (derived: the key's range through the loader's rules = 1, 2, 3, 4, 6, 8, 12, 24): `00/<h>`, and `00:00:00` for 24; parsed by `systemd-analyze calendar` with consecutive elapses exactly `h` apart (it exits 0 on a calendar it refuses, so the output is read) | covered (render: every OS; systemd's parser: Linux legs where `systemd-analyze` exists, skipped with that reason elsewhere) | `Core.Tests/Config/TimerCalendarTests` |
+| every documented `gh attestation verify` command (README, `POST_DEPLOY.md`, `docs/repo-settings.md`) pins `--cert-identity …@refs/tags/…`, `--repo`, `--deny-self-hosted-runners`, never `--signer-workflow`; the scan's companion: it still finds a command in each of the three files | covered (every OS) | `ReleaseExtensionWorkflowTests.Every_documented_attestation_check_pins_the_exact_identity_never_a_signer_workflow_prefix` |
 | `install.sh --dry-run` (install and uninstall): the prefix tree identical, no unit / package / binary call, every step printed, no root needed | covered (Linux legs) | `InstallFlows.Dry_run_changes_nothing_needs_no_root_and_prints_every_step` |
 | `install.sh --set-default-user <name>`: without the flag nothing written (advice printed); with it and no default, `[user] default=` appended and read back by the daemon's `TargetUserDiscovery.DefaultUser`; an existing default never rewritten; an unknown user or a `[user]` section without `default=` refused before anything; the installer's reader and the daemon's agree on ten wsl.conf shapes | covered (Linux legs) | `InstallDefaultUserFlows.Without_the_flag_wsl_conf_is_never_written…`, `…With_the_flag_and_no_default_user…`, `…With_the_flag_an_existing_default_user_is_never_rewritten`, `…The_flag_for_an_unknown_user…`, `…The_installer_and_the_daemon_read_the_same_default_user_from_every_wsl_conf_shape` |
 | `install.sh` preflight refusals: not root (the `sudo sh -s --` line, sudo never called), no systemd, an unknown architecture, a foreign `/usr/local/bin/wsl-care`, a hostile archive member (`..`, outside the folder, a link — each riding a complete release); arm64 installs the `linux-arm64` asset; an upgrade restarts the follower | covered (Linux legs) | `InstallFlows.A_non_root_run_is_refused…`, `…Without_systemd_running…`, `…On_arm64…`, `…A_wsl_care_on_the_link_path…`, `…An_archive_member_that_leaves_its_folder_or_is_a_link…`, `InstallUpgradeFlows.An_upgrade_restarts_the_running_follower…` |
@@ -2224,8 +2309,12 @@ The extension's own limits are listed in its section (§ *The extension* — *Wh
   checker itself (`node` importing `post-deploy-check.mjs`'s exported `inspect`, from the submodule `ci · daemon` now
   fetches), so a change to the checker's row or span rules is what these flows run; without Node or the submodule they
   FAIL in CI and skip, saying which, on a developer machine.
-- **The doctor wait is proved at 0 seconds** (`WSL_CARE_INSTALL_DOCTOR_SECONDS=0`): one attempt. The 2-minute wait for
-  the follower's first marker on a live machine is not timed.
+- **The doctor wait is proved at 0 seconds** (`WSL_CARE_INSTALL_DOCTOR_SECONDS=0`) in every flow but two: one attempt.
+  `InstallCeilingFlows` times it at 12 s against a 6 s doctor (the wall-clock deadline) and at 0 s against one that ignores
+  SIGTERM (the kill grace). The 2-minute wait for the follower's first marker on a live machine is not timed. The timed
+  installer flows measure from where their wait begins (a stamp the stub binary writes), never the whole install: on a
+  machine at load ~100 (other work, 2026-10-06) the prelude alone stretched by tens of seconds, and the harness's own 60 s
+  child ceiling was hit by flows that pass in seconds at rest — such a run is re-run at rest, never read as a product failure.
 
 - **A5's "goes with the container" is Docker's decision, not ours.** The preview counts a mounted volume as going with
   `docker rm -v` when `system df -v` labels it anonymous; Docker itself removes a volume whose MOUNT named no source

@@ -41,7 +41,7 @@ public static class UnitDropIns
             "[Timer]",
             // A drop-in ADDS a calendar to the unit's own: the empty assignment clears it first (systemd.timer(5)).
             "OnCalendar=",
-            $"OnCalendar=*-*-* 00/{Text(ConfigKeys.Timer.PeriodHours)}:00:00",
+            $"OnCalendar={Calendar(Tuning.Current.Int(ConfigKeys.Timer.PeriodHours))}",
             $"RandomizedDelaySec={Text(ConfigKeys.Timer.RandomizedDelayMinutes)}min",
             $"AccuracySec={Text(ConfigKeys.Timer.AccuracyMinutes)}min"),
         // The timer's run is ended as a whole at timer.runLimitMinutes (review C-H2, above its derived worst case); a detached
@@ -91,6 +91,14 @@ public static class UnitDropIns
         [.. Normalised(text).Split('\n').Where(l => l.Contains('=', StringComparison.Ordinal) && !l.EndsWith('=')).Select(l => l.Trim())];
 
     private static string Normalised(string text) => string.Join('\n', text.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n').Select(l => l.TrimEnd()).Where(l => l.Length > 0 && !l.StartsWith('#')));
+
+    /// <summary>The timer's calendar for a period that divides the day: every <paramref name="hours"/> from midnight
+    /// (<c>00/&lt;hours&gt;</c>) — and once a day, midnight itself, for 24. Retro review of PR #8, O1: systemd 255 refuses
+    /// <c>*-*-* 00/24:00:00</c> ("Invalid argument"), so a timer given it never fired.</summary>
+    private static string Calendar(int hours) =>
+        hours == HoursPerDay ? "*-*-* 00:00:00" : string.Create(CultureInfo.InvariantCulture, $"*-*-* 00/{hours}:00:00");
+
+    private const long HoursPerDay = TimeSpan.TicksPerDay / TimeSpan.TicksPerHour;
 
     private static string Text(ConfigKey.IntKey key) => Tuning.Current.Int(key).ToString(CultureInfo.InvariantCulture);
 
