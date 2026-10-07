@@ -95,5 +95,19 @@ public sealed partial class ArchiveRunTests
         ArchiveList.List(Input(config), new ArchiveListRequest(string.Empty, string.Empty, string.Empty)).Outcome.Should().Be(RunOutcomes.NoBase);
     }
 
+    /// <summary>Owner decision 2026-10-07: the list reads only, so a base mounted differently than at its first run is not refused — but
+    /// the answer says so, naming the recorded mount and today's (what it read may be a plain folder in place of the share).</summary>
+    [Fact]
+    public void The_list_over_a_changed_mount_answers_with_a_note_naming_the_change()
+    {
+        ArchivedAndRemoved("s1");
+
+        var listed = ArchiveList.List(Input(Config(), Accepted(On(Base), mountType: "ext4")), new ArchiveListRequest("claude-code", string.Empty, string.Empty));
+
+        listed.Outcome.Should().Be(RunOutcomes.Done);
+        listed.Notes.Should().Contain(n => n.Contains("not mounted as when it was first used", StringComparison.Ordinal) && n.Contains("ext4", StringComparison.Ordinal) && n.Contains("9p", StringComparison.Ordinal));
+        ArchiveList.List(Input(Config()), new ArchiveListRequest("claude-code", string.Empty, string.Empty)).Notes.Should().BeEmpty("the same mount is no news");
+    }
+
     private static Core.Config.EffectiveConfig ConfigLoaderDefaults() => Core.Config.ConfigLoader.Load([Defaults()]).Config;
 }

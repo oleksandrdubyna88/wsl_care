@@ -136,13 +136,22 @@ public static class ArchiveRun
     private static string MountProblem(BaseFolderReport judged, ArchiveState state)
     {
         state.EnsureFolder();
-        var now = new BaseRecord(ArchiveState.Version, judged.Folder, judged.Mount.Type, judged.Mount.Source, judged.Mount.MountPoint);
+        var now = MountOf(judged);
         var recorded = state.Base();
         return recorded is null && state.BaseRecorded ? $"{RunOutcomes.Refused}|the recorded mount of the base ({state.BaseFile}) could not be read; nothing is written until it is — remove that file by hand only once you are sure the base is the storage you chose"
             : recorded is null || recorded.Folder != now.Folder ? Recorded(state, now)
-            : recorded with { V = now.V } == now ? string.Empty
-            : $"{RunOutcomes.Refused}|the base is not mounted as when it was first used ({recorded.MountType} {recorded.MountSource} at {recorded.MountPoint}; now {now.MountType} {now.MountSource} at {now.MountPoint}); mount it as before — or, if it really moved and is the same storage, remove {state.BaseFile} by hand and the next run records the new mount";
+            : MountChange(recorded, now) is { Length: > 0 } changed ? $"{RunOutcomes.Refused}|{changed}; mount it as before — or, if it really moved and is the same storage, remove {state.BaseFile} by hand and the next run records the new mount"
+            : string.Empty;
     }
+
+    /// <summary>The base as judged now, in the record's shape.</summary>
+    internal static BaseRecord MountOf(BaseFolderReport judged) => new(ArchiveState.Version, judged.Folder, judged.Mount.Type, judged.Mount.Source, judged.Mount.MountPoint);
+
+    /// <summary>The sentence naming how the base's mount changed since it was recorded; empty when it did not (D7).</summary>
+    internal static string MountChange(BaseRecord recorded, BaseRecord now) =>
+        recorded with { V = now.V } == now
+            ? string.Empty
+            : $"the base is not mounted as when it was first used ({recorded.MountType} {recorded.MountSource} at {recorded.MountPoint}; now {now.MountType} {now.MountSource} at {now.MountPoint})";
 
     private static string Recorded(ArchiveState state, BaseRecord now) =>
         state.WriteBase(now) is { Length: > 0 } unwritten ? $"{RunOutcomes.Refused}|the base's mount could not be recorded ({unwritten})" : string.Empty;

@@ -3683,7 +3683,8 @@ list (E9.S3)*; the design is in `research/module_archive.md`.
 - **The re-archive** of an identical restored session writes only an `archived` event in the entry's ORIGINAL month, naming the
   existing copies. Phase 2 then removes against those copies.
 - **`archive list`** is read-only: no lock, no lease, and no key is made (`ArchiveState.ExistingIndexKey`; without one every line
-  reads unverified). It does not compare the base's mount either, because it writes nothing.
+  reads unverified). A base mounted differently than at its first run does not refuse it (it writes nothing): the answer carries a
+  note naming the recorded mount and today's (owner decision 2026-10-07; red first: the note was missing).
 - **Exit codes:**
   - `archive restore`: 0 when every session was restored or already there, 1 when one was refused, 81 as root.
   - `archive list`: 0, or 1 for a refused or unreachable base.

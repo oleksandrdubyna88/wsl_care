@@ -2178,6 +2178,7 @@ Final (Debug, on main `05ec294` plus this change): Windows — Core 1419 passed 
 (the Linux flows), none failed (the Scenarios run that found the 3 s cap's start-up race above was the one red, before the
 test was changed); WSL (normal user, `nice -n 19`, load 4–6) — Core 1475 / 3, Cli 275 / 1, Scenarios 406 / 2, none failed.
 `dotnet format --verify-no-changes` and `plan-lifecycle.mjs` clean.
+
 ### The AI-session archive: catalogue blocks, keys, base folder (E9.S0, 2026-10-06, plan §15r)
 
 What the catalogue lets the archive move, the archive's keys and their coupled rules, and the base folder rules with
@@ -2564,7 +2565,7 @@ Linux (in the existing `/tmp` copy, `nice 19`, nothing deleted): all 20 checks w
 | coai G5 / review M10: a restored session due again is archived as an EVENT only (0 bytes, no copy added), leaves `restored.json`, and the next run removes it against the same copies; a changed one is copied as any session | `A_restored_session_archived_again_writes_only_an_event_and_is_removed_against_the_same_copies`, `A_restored_session_that_changed_is_copied_again_as_any_session` |
 | the layout glob: one pattern per segment, `**` any depth | `A_layout_glob_matches_one_pattern_per_segment` (5 rows) |
 | the run's pipeline: restored by its month, its session path or its entry id under the lock and the lease (released after); the restored session is young again, so the next run leaves it alone | `Archive/ArchiveRunTests.Restore.cs` — `A_removed_session_is_restored_by_its_month_its_path_or_its_entry_id` (3 rows), `A_restored_session_is_left_alone_by_the_next_run` |
-| the list: only the months asked, the status of each entry, `--run` filters by the run's lines; a torn line skipped and counted, an edited archived line marks its entry unverified; without a base, `no-base` | `The_list_reads_only_the_months_asked_and_says_each_entrys_status`, `The_list_skips_a_torn_line_and_marks_an_unverified_entry`, `Without_a_base_the_list_answers_no_base_and_reads_nothing` |
+| the list: only the months asked, the status of each entry, `--run` filters by the run's lines; a torn line skipped and counted, an edited archived line marks its entry unverified; without a base, `no-base`; a changed mount is NOT refused but noted, naming both mounts (owner decision; red first: `Expected listed.Notes {empty} to have an item matching …`, break-it 1 red) | `The_list_reads_only_the_months_asked_and_says_each_entrys_status`, `The_list_skips_a_torn_line_and_marks_an_unverified_entry`, `Without_a_base_the_list_answers_no_base_and_reads_nothing`, `The_list_over_a_changed_mount_answers_with_a_note_naming_the_change` |
 | the command line: 13 wrong namings are usage errors naming the rule; root refused (81); `no-base` answers exit 0 | `Cli.Tests/ArchiveRestoreCommandTests` |
 | the built CLI: listed, restored, listed `restored`, already there by id; a file planted on the share and re-indexed is listed unverified, refused without `--accept-unverified` (exit 1), never reaches the agent folder; root refused | `ArchiveRunFlows.A_removed_session_is_listed_restored_and_listed_restored_through_the_built_cli`, `…Run_status_and_scan_as_root_are_refused_with_their_own_exit_code` |
 | the answers' shapes | goldens `archive-list.json`, `archive-restore.json` |

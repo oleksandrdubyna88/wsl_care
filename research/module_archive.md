@@ -200,6 +200,8 @@ flowchart TD
   - A torn line is counted as skipped.
   - An entry is `verified: false` unless its archived event is this side's. A `recovered` entry is never verified.
   - `--run` lists the entries that run's lines touched.
+  - A base mounted differently than at its first run is not refused (the list reads only); a note names the recorded mount and
+    today's (owner decision 2026-10-07).
 
 ## External dependencies
 

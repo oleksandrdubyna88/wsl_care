@@ -40,7 +40,17 @@ public static class ArchiveList
         var entries = months.SelectMany(m => Listed(m, request.RunId)).OrderBy(e => e.Agent, StringComparer.Ordinal).ThenBy(e => e.Month, StringComparer.Ordinal).ThenBy(e => e.Key, StringComparer.Ordinal).ToList();
         var skipped = months.Sum(m => m.Read is MonthRead.Read read ? read.Index.Skipped : 0);
         var notes = months.Where(m => m.Read is MonthRead.Unreadable).Select(m => $"{m.Target.Entry.Id} {m.Month}: its index could not be read ({((MonthRead.Unreadable)m.Read).Why})").ToList();
-        return Report(input, RunOutcomes.Done, string.Empty, entries, skipped, notes);
+        return Report(input, RunOutcomes.Done, string.Empty, entries, skipped, [.. MountNote(input, state), .. notes]);
+    }
+
+    /// <summary>Owner decision 2026-10-07: the list reads only, so a changed mount does not refuse it (a run would be) — the answer says
+    /// so instead: what it read may be a plain folder in place of the share. Nothing is recorded.</summary>
+    private static IEnumerable<string> MountNote(ArchiveRunInput input, ArchiveState state)
+    {
+        var now = ArchiveRun.MountOf(input.JudgedBase);
+        return state.Base() is { } recorded && recorded.Folder == now.Folder && ArchiveRun.MountChange(recorded, now) is { Length: > 0 } changed
+            ? [$"{changed}: what is listed may be a plain folder in place of the share; a run refuses until it is mounted as before"]
+            : [];
     }
 
     /// <summary>Every month index of <paramref name="targets"/> on this side — only <paramref name="month"/> (<c>yyyy/MM</c>) when given.</summary>
