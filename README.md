@@ -527,8 +527,9 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   distribution is validated first (the setting's pattern, then `wsl.exe --list`); a modal shows the exact command and
   what the distribution needs (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0 or newer, `sudo`); on confirmation a
   terminal opens in that distribution, in your home folder, with the command TYPED, never run — `curl -fsSL
-  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.0/install.sh | sudo sh -s -- --version 0.1.0`,
-  pinned to the minimum daemon the extension renders, never `--skip-attestation`.
+  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.2/install.sh | sudo sh -s -- --version 0.1.2`,
+  pinned to `INSTALL_DAEMON` (0.1.2 — 0.1.0's act unit carries the CollectMode defect), a value of its own at or above
+  the minimum daemon the extension renders (`MIN_DAEMON_FOR_RENDER`, 0.1.0), never `--skip-attestation`.
 - **The package** is one universal `.vsix` (`npm run package`) holding exactly `vsix-files.txt` (`.vscodeignore` is an
   allowlist); `npm run check:vsix` opens it and refuses machine paths, this machine's user name, e-mail addresses,
   source maps and a bundle built for another version — on every pull request, on both CI legs.
@@ -634,8 +635,10 @@ An extension release is the tag `extension-v<version>`: release-please's `extens
 **`release-extension.yml`** — a file of its own, so the Marketplace secret is never in a workflow a daemon release runs:
 
 1. **guard** — the tag matches `package.json`'s version, the publisher is real, the commit is on `main`, and the
-   **minimum daemon** (`src_vs_code/min-daemon.json` — the `MIN_DAEMON_FOR_RENDER` *Install daemon* types, as the bundle
-   step emits it) is a published release that `POST_DEPLOY.md` names as last verified (`release-extension-guard.sh`);
+   two daemon versions of `src_vs_code/min-daemon.json`, as the bundle step emits them — the **minimum** the extension
+   renders (`MIN_DAEMON_FOR_RENDER`) and the release *Install daemon* types (`INSTALL_DAEMON`, since 2026-10-06 a value
+   of its own) — are published releases, and `POST_DEPLOY.md`'s last-verified daemon is at or above the install pin
+   (`release-extension-guard.sh`);
 2. **build** — every test, `vsce package` once, the leak checks with `--release` and the guard's minimum, the `.vsix`'s
    `.sha256`; it can read the repository and nothing more;
 3. **attest** — the only job that can sign: it downloads the build's `.vsix`, checks it against its `.sha256` and

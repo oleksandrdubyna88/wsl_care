@@ -1,5 +1,5 @@
 ---
-requires: ["README.md","research/architecture.md"]
+requires: ["README.md","research/architecture.md","research/architecture-daemon-e6.md"]
 ---
 # Project instructions — wsl_care
 

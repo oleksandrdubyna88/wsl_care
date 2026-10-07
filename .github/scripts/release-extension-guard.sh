@@ -12,8 +12,11 @@
 #      time, and the extension's tests and check-vsix hold the checked-in copy equal to it) — is a PUBLISHED, non-draft
 #      GitHub release `daemon-v<MIN>` (asked through `gh api` with the job's read-only token), AND POST_DEPLOY.md's
 #      `Last verified:` line names a date and a verified daemon at or above that minimum (`… · daemon <x.y.z> …`, compared
-#      by lib/versions.sh, the functions POST_DEPLOY item 6 ranks versions with). An extension whose *Install daemon*
-#      types `--version <MIN>` must never ship before that daemon is out and was seen working.
+#      by lib/versions.sh, the functions POST_DEPLOY item 6 ranks versions with). Since 2026-10-06 the artefact also carries
+#      `installDaemon`, the release *Install daemon* types (`INSTALL_DAEMON`, at or above the render minimum — 0.1.0's act
+#      unit is defective, so a new install gets 0.1.2): it too must be a published, non-draft release, and the stamp must
+#      be at or above it. An extension whose *Install daemon* types `--version <x.y.z>` must never ship before that daemon
+#      is out and was seen working.
 #
 #   release-extension-guard.sh <tag> [<main-ref>]
 #
@@ -69,36 +72,53 @@ if [ "$#" -eq 2 ]; then
   git merge-base --is-ancestor HEAD "$2" 2> /dev/null || refuse "the tagged commit is not on $2 — a release is cut from main only"
 fi
 
-# The minimum daemon, from the JSON artefact, read by a JSON parser (python3, on every Ubuntu runner): neither a
-# reformatted TypeScript source nor a second matching line can change what the guard believes.
-[ -f "$MIN_DAEMON_FILE" ] || refuse "$MIN_DAEMON_FILE is missing at this checkout — the minimum daemon this extension renders, emitted by scripts/bundle.mjs from MIN_DAEMON_FOR_RENDER and checked in beside it"
-min="$(python3 -c '
+# The two daemon versions, from the JSON artefact, read by a JSON parser (python3, on every Ubuntu runner): neither a
+# reformatted TypeScript source nor a second matching line can change what the guard believes. `minDaemonForRender` is
+# the oldest daemon this extension renders; `installDaemon` is the release *Install daemon* types (2026-10-06: daemon
+# 0.1.0's act unit carries the CollectMode defect, so a new install gets 0.1.2 while 0.1.0 still renders).
+[ -f "$MIN_DAEMON_FILE" ] || refuse "$MIN_DAEMON_FILE is missing at this checkout — the daemon versions this extension renders and installs, emitted by scripts/bundle.mjs from MIN_DAEMON_FOR_RENDER and INSTALL_DAEMON and checked in beside them"
+version_of() {
+  python3 -c '
 import json, sys
 try:
     with open(sys.argv[1], encoding="utf-8") as f:
-        value = json.load(f).get("minDaemonForRender")
+        value = json.load(f).get(sys.argv[2])
 except (ValueError, AttributeError):
     value = None
 print(value if isinstance(value, str) else "")
-' "$MIN_DAEMON_FILE")"
+' "$MIN_DAEMON_FILE" "$1"
+}
+min="$(version_of minDaemonForRender)"
 [[ "$min" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForRender \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_RENDER (npm test holds the two equal)"
+install="$(version_of installDaemon)"
+[[ "$install" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no installDaemon \"x.y.z\" — restore it from the extension's INSTALL_DAEMON (npm test holds the two equal)"
+version_at_least "$install" "$min" || refuse "$MIN_DAEMON_FILE: installDaemon $install is below minDaemonForRender $min — Install daemon would install a daemon this extension refuses"
 
-# The minimum daemon is a PUBLISHED release. GitHub answers a draft's tag with 404 to a read-only token, and the jq
-# filter makes a published one print `false<TAB>daemon-v<MIN>` — anything else is not a published release.
-daemon_tag="daemon-v$min"
-answer="$(gh api "repos/${GH_REPO:?GH_REPO is required}/releases/tags/$daemon_tag" --jq '[(.draft | tostring), .tag_name] | @tsv' 2> /dev/null)" \
-  || refuse "the minimum daemon $daemon_tag is not a published release of $GH_REPO — publish it first (the E4 live gate), then tag the extension"
-[ "$answer" = "false	$daemon_tag" ] || refuse "the minimum daemon $daemon_tag is not a published, non-draft release (GitHub answered '$answer')"
+# Both are PUBLISHED releases: the render minimum, and the release Install daemon types. GitHub answers a draft's tag
+# with 404 to a read-only token, and the jq filter makes a published one print `false<TAB>daemon-v<x.y.z>` — anything
+# else is not a published release.
+require_published() {
+  local what="$1" daemon_tag="daemon-v$2" answer
+  answer="$(gh api "repos/${GH_REPO:?GH_REPO is required}/releases/tags/$daemon_tag" --jq '[(.draft | tostring), .tag_name] | @tsv' 2> /dev/null)" \
+    || refuse "$what $daemon_tag is not a published release of $GH_REPO — publish it first (the E4 live gate), then tag the extension"
+  [ "$answer" = "false	$daemon_tag" ] || refuse "$what $daemon_tag is not a published, non-draft release (GitHub answered '$answer')"
+}
+require_published "the minimum daemon" "$min"
+if [ "$install" != "$min" ]; then
+  require_published "the daemon Install daemon installs," "$install"
+fi
 
-# …and was seen working: POST_DEPLOY.md's stamp names a date and a daemon at or above the minimum.
+# …and was seen working: POST_DEPLOY.md's stamp names a date and a daemon at or above the release Install daemon types
+# (which is at or above the render minimum).
 [ -f "$STAMP_FILE" ] || refuse "$STAMP_FILE is missing at this checkout"
 stamp="$(sed -n 's/^Last verified: //p' "$STAMP_FILE" | head -n 1)"
 [[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\  ]] || refuse "$STAMP_FILE's 'Last verified:' line names no date — the minimum daemon $min was never verified live (run POST_DEPLOY.md and stamp it)"
 verified="$(printf '%s\n' "$stamp" | sed -n 's/.*daemon \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')"
 [ -n "$verified" ] || refuse "$STAMP_FILE's 'Last verified:' line names no 'daemon <x.y.z>' — stamp the verified daemon version"
 version_at_least "$verified" "$min" || refuse "$STAMP_FILE last verified daemon $verified, older than the minimum $min this extension needs"
+version_at_least "$verified" "$install" || refuse "$STAMP_FILE last verified daemon $verified, older than $install, the release Install daemon types"
 
-for line in "version=$version" "publisher=$publisher" "min_daemon=$min"; do
+for line in "version=$version" "publisher=$publisher" "min_daemon=$min" "install_daemon=$install"; do
   echo "$line"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "$line" >> "$GITHUB_OUTPUT"
