@@ -1155,7 +1155,8 @@ on the `c61ec98` tree, the code under test unchanged since), then fixed (green),
 Tests changed by the round: the two unusable-request tests expect 82; the lock-held refusals (`DetachedRunsTests`, `FullCheckLineTests`,
 `DetachFlows`) set `requests.lockWaitSeconds` (1 or 0) in the machine layer; `FullCheckLineTests` expects the new stop reason;
 `ShippedFilesTests`' two hand-typed `SuccessExitStatus` comparisons are gone (replaced by `UnitSuccessExitTests`); the two private
-history-append fakes became `TestSupport/RefusingHistoryAppends`. Not covered: a REAL `--detach` racing a real unit (the O1
+history-append fakes became `TestSupport/RefusingHistoryAppends`. The extension's exit-code mirror (`src_vs_code/src/client/exitCodes.ts`, the root kinds) names 82 `requestUnusable`: its
+contract test (`the client names EXACTLY the codes of contracts/exit-codes.json`) went red on the pull request's first CI run, as designed. Not covered: a REAL `--detach` racing a real unit (the O1
 test holds the lock as a check would); the derived exit lists cover the endings `UnitSuccessExitTests` enumerates — a new branch
 of `DetachedRuns.FromRequest` must join its enum.
 

@@ -48,6 +48,7 @@ const WORDS: Words = {
   observeOnly: (f) => ({ label: 'observe-only', sentence: `This installation is set to observe only; it runs no cleanup.${lines(f.messages)}` }),
   stateUnreadable: (f) => ({ label: 'state unreadable', sentence: `The daemon cannot read its own running state; nothing was written.${lines(f.messages)}` }),
   requestGone: (f) => ({ label: 'request gone', sentence: `No request names that run any more.${lines(f.messages)}` }),
+  requestUnusable: (f) => ({ label: 'request unusable', sentence: `The run's request could not be used; it was recorded as refused and nothing ran.${lines(f.messages)}` }),
   actionFailed: (f) => ({ label: 'an action failed', sentence: `An action failed.${lines(f.messages)}` }),
   recordsUnreadable: (f) => ({ label: 'records unreadable', sentence: `The daemon's records cannot be read.${lines(f.messages)}` }),
 };
