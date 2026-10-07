@@ -52,10 +52,10 @@ public sealed class McpServerCollectorTests : IDisposable
     /// <summary>The embedded defaults — what the product runs under with no layer.</summary>
     private static EffectiveConfig Defaults() => Configured();
 
-    private McpSample Sample(Func<TimeSpan, CancellationToken, Task>? wait = null, EffectiveConfig? config = null, IFileSystem? files = null, TimeProvider? clock = null)
+    private McpSample Sample(Func<TimeSpan, CancellationToken, Task>? wait = null, EffectiveConfig? config = null, IFileSystem? files = null, TimeProvider? clock = null, ProcessSnapshot? snapshot = null)
     {
         var collector = new McpServerCollector(files ?? _tree.Files, _tree.Paths, clock ?? new FixedTimeProvider(Now), wait ?? ((_, _) => Task.CompletedTask));
-        var result = collector.SampleAsync(Reading.Of(Snapshot()), config ?? Defaults(), CancellationToken.None).GetAwaiter().GetResult();
+        var result = collector.SampleAsync(Reading.Of(snapshot ?? Snapshot()), config ?? Defaults(), CancellationToken.None).GetAwaiter().GetResult();
         return result.Should().BeOfType<Reading<McpSample>.Available>().Subject.Value;
     }
 
@@ -158,6 +158,21 @@ public sealed class McpServerCollectorTests : IDisposable
         instance.CpuPercent.IsAvailable.Should().BeFalse();
         instance.Kind.Should().Be(McpKind.Unknown);
         sample.CpuCores.IsAvailable.Should().BeFalse("no instance's CPU was measured: not 0 cores");
+    }
+
+    [Fact]
+    public void A_pid_reused_between_the_snapshot_and_the_first_read_has_cpu_unavailable()
+    {
+        // Final-round-3 finding 6: the two CPU reads were compared with each other only — a server that exited after the
+        // snapshot, its pid taken by another process before the first read, had THAT process's CPU reported as its own.
+        Session(200, 300, TimeSpan.FromHours(1));
+        var snapshot = Snapshot();
+        _tree.Stat(300, 200, "coai-mcp", 0, StartTicksFor(TimeSpan.FromSeconds(5)), 5000);
+
+        var instance = Sample(wait: Burn(300), snapshot: snapshot).Instances.Single();
+
+        instance.CpuPercent.IsAvailable.Should().BeFalse("the first read is another process than the one the snapshot saw");
+        instance.CpuPercent.ReasonOrEmpty.Should().Contain("after the snapshot");
     }
 
     [Fact]

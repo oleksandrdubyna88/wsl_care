@@ -2282,6 +2282,19 @@ broken and seen red again (`research/module_tests.md` § *MCP server instances*)
   (`module_vs_code.md`, added 2026-10-06 after the same kind of finding), so the rejection — made on the older tree — no
   longer held: [module_mcp_servers.md](../research/module_mcp_servers.md) now carries the module, and `architecture.md`
   keeps a pointer and the module-map row (it is near the conventions resolver's 256 KiB cap).
+- **Round 3** (`again`, same session, after the rebase onto `main` `1654e56`, 2026-10-07): verdict **proceed**, **8 of 8**
+  reviewers answered (codex AND gemini — the gate now runs two vendors), 8 findings: 2 ACCEPTED, 6 rejected with reasons.
+
+| # | Finding | Disposition |
+|---|---|---|
+| 0 (gemini, Major) | the server match looks at argv[0] only, so an interpreter-run server cannot be matched | **Rejected** — deliberate (C-2: `printf coai-mcp` is not a server, a test holds it); no catalogued server is interpreter-run; a catalogue entry may declare scripts when one is added (Q-M2) |
+| 1 (gemini, Major) | the verdicts bypass `ThresholdRules.Evaluate` | **Rejected** — `McpVerdicts` is the one evaluator of the three ids, called by the two entry points that hold an MCP sample; the engine must not pay the CPU window where it samples the probe |
+| 2 (gemini, Major) | the bounded listing's DEFAULT member reads an unreadable folder as empty | **Rejected** — only test doubles use it; the one production file system overrides it; doubles that need "unreadable" re-implement it (three test files do) |
+| 3 (gemini, Major) | "a hard-coded pid 4242" in the activity reason | **Rejected, false** — the golden normaliser's rule `pidInText` (`GoldenContracts.cs:141`); the product names the instance's own pid, a test holds it |
+| 4 (codex, Major) | nullable lists on the wire | **Rejected** again — the stated wire convention |
+| 5 (codex, Minor) | a new log layout would fall back to the live count silently | **Fixed** — an exhaustive match on `McpLogLayout` in the summary and the log reader (refactor, no behaviour) |
+| 6 (codex, Major) | a pid reused between the snapshot and the FIRST CPU read reports another process's CPU | **Fixed** — the snapshot keeps each process's start ticks (`ProcessEntry.StartTicks`) and the first read must match them. RED: *Expected instance.CpuPercent.IsAvailable to be False … but found True*; teeth: the arm removed, red again |
+| 7 (codex, Minor) | a stderr progress line | **Rejected** a third time — the earlier reason stands |
 
 #### Stories
 

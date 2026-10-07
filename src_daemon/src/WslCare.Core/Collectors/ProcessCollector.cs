@@ -37,6 +37,10 @@ public sealed record ProcessEntry(
     /// <summary>What the process holds of <c>AnonPages</c> + <c>Shmem</c>: the ranking key.</summary>
     public long HeldBytes => RssAnonBytes + RssShmemBytes;
 
+    /// <summary><c>/proc/[pid]/stat</c> field 22 as the snapshot read it — the process's identity within this boot, so a later read
+    /// of the same pid can tell it is still this process (plan §15q E7.S2d, final round 3 finding 6).</summary>
+    public Reading<long> StartTicks { get; init; } = Reading.Missing<long>("the snapshot did not read the start ticks");
+
     private readonly IReadOnlyList<string>? _programs;
 
     /// <summary>The program and the word after it as file names (<see cref="CommandLineText.ProgramNames"/>) — set by the collector
@@ -142,6 +146,7 @@ public sealed class ProcessCollector(IFileSystem files, LinuxHostPaths paths, Ti
             IsUnderMnt(raw))
         {
             Programs = CommandLineText.ProgramNames(raw.Argv.Count > 0 ? raw.Argv : [raw.Status.Name]),
+            StartTicks = raw.Stat.Map(s => s.StartTicks),
         };
 
     private static Reading<TimeSpan> Age(Reading<ProcStat> stat, Clocks clocks) =>

@@ -39,7 +39,13 @@ public static class McpRunLogs
 
     public static Reading<McpLogs> Read(IFileSystem files, string home, McpServerEntry server, DateTimeOffset now, McpSettings settings, TimeProvider clock, CancellationToken cancellationToken)
     {
-        if (server.Logs is not McpLogLayout.FamilyRunLogs layout)
+        var layout = server.Logs switch
+        {
+            McpLogLayout.FamilyRunLogs family => family,
+            McpLogLayout.None => null,
+            _ => throw new System.Diagnostics.UnreachableException("McpLogLayout is a closed set"),
+        };
+        if (layout is null)
         {
             return Reading.Missing<McpLogs>(NoLayout(server.Name));
         }

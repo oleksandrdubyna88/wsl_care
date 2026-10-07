@@ -56,17 +56,26 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
 
         var kernel = ProcText.Bytes(files, $"{paths.ProcRoot}/self/auxv").Bind(bytes => KernelFacts.FromAuxVector(bytes));
         var started = clock.GetTimestamp();
-        var first = listed.Select(f => (f.Process.Pid, Sample: PidSamples.Read(files, paths, f.Process.Pid))).ToList();
+        var first = listed.Select(f => (f.Process.Pid, Sample: FirstRead(f.Process))).ToList();
         await wait(window, cancellationToken).ConfigureAwait(false);
         var seconds = Math.Max(window.TotalSeconds, clock.GetElapsedTime(started).TotalSeconds);
         return first.ToDictionary(f => f.Pid, f => Rate(f.Sample, PidSamples.Read(files, paths, f.Pid), kernel, seconds));
     }
 
-    private static Reading<double> Rate(PidSample? before, PidSample? after, Reading<KernelFacts> kernel, double seconds) =>
-        before is null ? Reading.Missing<double>("its /proc stat could not be read")
-        : after is null ? Reading.Missing<double>("it exited during the window")
-        : after.StartTicks != before.StartTicks ? Reading.Missing<double>("its pid was taken by another process during the window")
-        : kernel.Map(k => Math.Round(McpSample.PercentPerCore * (after.CpuTicks - before.CpuTicks) / k.ClockTicksPerSecond / seconds, 1));
+    /// <summary>The first read, and only when it is still the process the snapshot saw (final round 3 finding 6: a pid reused
+    /// between the snapshot and this read would report another process's CPU as the server's).</summary>
+    private Reading<PidSample> FirstRead(ProcessEntry process) => PidSamples.Read(files, paths, process.Pid) switch
+    {
+        null => Reading.Missing<PidSample>("its /proc stat could not be read"),
+        var sample when process.StartTicks is Reading<long>.Available { Value: var ticks } && ticks != sample.StartTicks =>
+            Reading.Missing<PidSample>("its pid was taken by another process after the snapshot"),
+        var sample => Reading.Of(sample),
+    };
+
+    private static Reading<double> Rate(Reading<PidSample> first, PidSample? after, Reading<KernelFacts> kernel, double seconds) =>
+        first.Bind(before => after is null ? Reading.Missing<double>("it exited during the window")
+            : after.StartTicks != before.StartTicks ? Reading.Missing<double>("its pid was taken by another process during the window")
+            : kernel.Map(k => Math.Round(McpSample.PercentPerCore * (after.CpuTicks - before.CpuTicks) / k.ClockTicksPerSecond / seconds, 1)));
 }
 
 /// <summary>The one road in for <c>status</c> and <c>collect</c>: the distro's MCP servers from the probe's own process table, or
@@ -122,9 +131,13 @@ public sealed class McpJudge(McpSettings settings, DateTimeOffset now, DateTimeO
     {
         var mine = instances.Where(i => i.Server.Name == server.Name).ToList();
         var minutes = (int)settings.StartsWindow.TotalMinutes;
-        return new McpServerSummary(server.Name, mine.Count, server.Logs is McpLogLayout.FamilyRunLogs
-            ? FromLogs(server, logs, minutes)
-            : FromLive(mine, minutes));
+        // Final round 3 finding 5: an exhaustive match — a new layout must say how its starts are counted, never fall back silently.
+        return new McpServerSummary(server.Name, mine.Count, server.Logs switch
+        {
+            McpLogLayout.FamilyRunLogs => FromLogs(server, logs, minutes),
+            McpLogLayout.None => FromLive(mine, minutes),
+            _ => throw new System.Diagnostics.UnreachableException("McpLogLayout is a closed set"),
+        });
     }
 
     private McpStarts FromLogs(McpServerEntry server, Reading<McpLogs> logs, int minutes)
