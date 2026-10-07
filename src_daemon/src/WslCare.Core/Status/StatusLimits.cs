@@ -19,13 +19,19 @@ namespace WslCare.Core.Status;
 /// <param name="MaxShownNames"><c>act.maxShownNames</c>: the most names one shown list may carry.</param>
 /// <param name="UnitStopSeconds"><c>systemd.unitStopTimeoutSeconds</c>: the ceiling of <c>act --stop</c>'s <c>systemctl stop</c>.</param>
 /// <param name="DrainGraceMilliseconds"><c>commands.drainGraceMilliseconds</c>: what a killed command adds, twice, to its ceiling.</param>
+/// <param name="McpCpuWindowMilliseconds"><c>mcpServers.cpuWindowMilliseconds</c>: what <c>status</c> waits when an MCP server runs
+/// (plan §15q E7.S2d) — part of its worst case.</param>
+/// <param name="McpLogListMilliseconds"><c>mcpServers.logListMilliseconds</c>: one watched server's log listing deadline — part of
+/// <c>status</c>' worst case, once per watched server.</param>
 public sealed record StatusLimits(
     int HistoryRetentionDays,
     int RequestFutureSkewSeconds,
     int RequestGraceSeconds,
     int MaxShownNames,
     int UnitStopSeconds,
-    int DrainGraceMilliseconds)
+    int DrainGraceMilliseconds,
+    int McpCpuWindowMilliseconds,
+    int McpLogListMilliseconds)
 {
     /// <summary>Every field: its wire name, the key it publishes, its unit — in wire order.</summary>
     public static IReadOnlyList<(string Name, ConfigKey.IntKey Key, string Unit)> Fields { get; } =
@@ -36,6 +42,8 @@ public sealed record StatusLimits(
         ("maxShownNames", ConfigKeys.Act.MaxShownNames, "names"),
         ("unitStopSeconds", ConfigKeys.Systemd.UnitStopTimeoutSeconds, "seconds"),
         ("drainGraceMilliseconds", ConfigKeys.Commands.DrainGraceMilliseconds, "milliseconds"),
+        ("mcpCpuWindowMilliseconds", ConfigKeys.McpServers.CpuWindowMilliseconds, "milliseconds"),
+        ("mcpLogListMilliseconds", ConfigKeys.McpServers.LogListMilliseconds, "milliseconds"),
     ];
 
     /// <summary>The values in force under <paramref name="config"/>.</summary>
@@ -45,5 +53,7 @@ public sealed record StatusLimits(
         config.Int(ConfigKeys.Requests.GraceSeconds),
         config.Int(ConfigKeys.Act.MaxShownNames),
         config.Int(ConfigKeys.Systemd.UnitStopTimeoutSeconds),
-        config.Int(ConfigKeys.Commands.DrainGraceMilliseconds));
+        config.Int(ConfigKeys.Commands.DrainGraceMilliseconds),
+        config.Int(ConfigKeys.McpServers.CpuWindowMilliseconds),
+        config.Int(ConfigKeys.McpServers.LogListMilliseconds));
 }

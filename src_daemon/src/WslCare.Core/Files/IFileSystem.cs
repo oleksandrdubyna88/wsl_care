@@ -128,6 +128,32 @@ public enum EntryKind
 /// <summary>One entry of a directory listing (plan §15q D2: a session is found by its name and its stat, never by its content).</summary>
 public sealed record FileEntry(string Name, EntryKind Kind, long Length, DateTimeOffset LastWriteUtc);
 
+/// <summary>The bounds of one listing (plan §15q E7.S2d, consultation C-1): at most <paramref name="MaxEntries"/> entries, the
+/// caller's deadline and its cancellation — asked at EVERY entry. A cooperative bound on the work between file-system calls,
+/// not a wall-time guarantee: one blocked call is not interrupted.</summary>
+public sealed record ListingBounds(int MaxEntries, Func<bool> OutOfTime, CancellationToken Token);
+
+/// <summary>What a bounded listing produced — a closed set. A folder that does not exist is <see cref="Listed"/> with no
+/// entries and complete; a folder that exists and cannot be read is <see cref="Unreadable"/>, never an empty list.</summary>
+public abstract record EntryListing
+{
+    private EntryListing()
+    {
+    }
+
+    /// <summary>The entries listed, in ordinal order of name; <paramref name="Complete"/> = the folder was listed to its end,
+    /// otherwise <paramref name="Note"/> says where it stopped.</summary>
+    public sealed record Listed(IReadOnlyList<FileEntry> Entries, bool Complete, string Note) : EntryListing;
+
+    public sealed record Unreadable(string Reason) : EntryListing;
+
+    /// <summary>Why a listing stopped at its cap, in the words every caller uses.</summary>
+    public static string StoppedAt(int maxEntries, string path) => $"stopped after {maxEntries} entries in {path}";
+
+    /// <summary>Why a listing stopped at its deadline.</summary>
+    public static string OutOfTime(string path) => $"stopped at the time budget while listing {path}";
+}
+
 /// <summary>The ceiling on one walk of a tree (reliability rule: every wait has a ceiling): how many entries it
 /// may visit and how long it may take. A walk that reaches either stops and says so.</summary>
 public sealed record TreeLimits(int MaxEntries, TimeSpan MaxDuration);
@@ -266,6 +292,19 @@ public interface IFileSystem
     /// <summary>The entries directly in <paramref name="path"/> — name, kind (a link is a link, never followed), length and last
     /// write — from the directory listing alone: no entry is opened. Empty when the folder does not exist or cannot be listed.</summary>
     IReadOnlyList<FileEntry> ListEntries(string path);
+
+    /// <summary>The same listing under <paramref name="bounds"/> (plan §15q E7.S2d, consultation C-1): stops at the cap or the
+    /// deadline and says so, and answers <see cref="EntryListing.Unreadable"/> for a folder it cannot read — the unbounded
+    /// listing above answers both as an empty or a whole list. A double that does not override this answers from its unbounded
+    /// listing: never unreadable, cut at the cap.</summary>
+    EntryListing ListEntries(string path, ListingBounds bounds)
+    {
+        bounds.Token.ThrowIfCancellationRequested();
+        var all = ListEntries(path);
+        return all.Count > bounds.MaxEntries
+            ? new EntryListing.Listed([.. all.Take(bounds.MaxEntries)], false, EntryListing.StoppedAt(bounds.MaxEntries, path))
+            : new EntryListing.Listed(all, true, string.Empty);
+    }
 
     /// <summary>Where <paramref name="path"/> really is — every link followed, <c>..</c> applied to the real parent (the walk the
     /// deletion policy decides on, <see cref="RealPath"/>); nothing is opened.</summary>

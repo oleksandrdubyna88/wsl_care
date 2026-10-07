@@ -312,6 +312,42 @@
       "basis": {
         "source": "fullRun"
       }
+    },
+    {
+      "id": "mcp.instances",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 12 instances (mcpServers.warnInstances)",
+      "reason": "the process table could not be read: /golden-root/proc does not exist: no procfs to read processes from",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "mcp.cpu",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 100 % of one core in total (mcpServers.warnCpuPercent)",
+      "reason": "the process table could not be read: /golden-root/proc does not exist: no procfs to read processes from",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "mcp.starts",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn when a server started more than 10 times in the starts window (mcpServers.warnStarts)",
+      "reason": "the process table could not be read: /golden-root/proc does not exist: no procfs to read processes from",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
     }
   ],
   "productVersion": "unknown",
@@ -347,7 +383,8 @@
     "config.contract",
     "agents.list",
     "agents.probe",
-    "config.agentsExtra"
+    "config.agentsExtra",
+    "status.mcpServers"
   ],
   "running": {
     "state": "wedged",
@@ -374,6 +411,12 @@
     "requestGraceSeconds": 60,
     "maxShownNames": 10000,
     "unitStopSeconds": 120,
-    "drainGraceMilliseconds": 2000
+    "drainGraceMilliseconds": 2000,
+    "mcpCpuWindowMilliseconds": 1000,
+    "mcpLogListMilliseconds": 1000
+  },
+  "mcpServers": {
+    "available": false,
+    "reason": "the process table could not be read: /golden-root/proc does not exist: no procfs to read processes from"
   }
 }

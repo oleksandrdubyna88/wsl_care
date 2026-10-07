@@ -125,6 +125,13 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.AgentListKey Extra = new("aiAgents.extra");
     }
 
+    public static partial class McpServers
+    {
+        /// <summary>The MCP servers of the AI agents the daemon counts (plan §15q E7.S2d): a list CLOSED over the catalogue's names
+        /// (the E7.S0 B1 rule), every catalogued server by default. Read-only metric: it steers no action, so no safe direction.</summary>
+        public static readonly ConfigKey.TextListKey Watched = new("mcpServers.watched", Mcp.McpServerCatalogue.Names) { Trust = KeyTrust.Display };
+    }
+
     public static class Archive
     {
         public static readonly ConfigKey.IntKey OlderThanDays = new("archive.olderThanDays", 1, DaysCeiling) { Trust = KeyTrust.Higher };
@@ -175,6 +182,7 @@ public static partial class ConfigKeys
         Processes.IdleOlderThanHours, Processes.Families, Processes.AiAgentsIdleHours,
         Thresholds.MemAvailableWarnPercent, Thresholds.MemAvailableActPercent, Thresholds.SwapWarnGb,
         AiAgents.WarnGb, AiAgents.SessionWarnMb, AiAgents.Extra,
+        McpServers.Watched,
         Archive.OlderThanDays, Archive.BaseFolder,
         Idle.CpuPercent, Idle.Minutes,
         Clock.MaxDriftSeconds,

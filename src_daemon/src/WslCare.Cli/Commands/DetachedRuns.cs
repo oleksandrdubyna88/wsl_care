@@ -294,6 +294,7 @@ internal static class DetachedRuns
             RunId = file.RunId,
             OnRunningWritten = () => RunRequests.Remove(host.Paths, host.Files, file.RunId),
             InterruptCause = host.InterruptCause,
+            Wait = host.Wait,
         };
         var result = Executed(() => CollectRun.RunAsync(context, cancellationToken).GetAwaiter().GetResult(), file, host, cancellationToken);
         RunRequests.Remove(host.Paths, host.Files, file.RunId);

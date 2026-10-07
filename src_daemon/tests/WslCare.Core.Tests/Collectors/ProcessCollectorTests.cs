@@ -149,6 +149,22 @@ public sealed class ProcessCollectorTests
     }
 
     [Fact]
+    public void A_program_path_with_spaces_or_past_the_display_cut_is_still_recognised()
+    {
+        // Plan §15q E7.S2d, consultation C-2: the shown command line is display text — redacted, cut to
+        // processes.shownCommandChars — so a program whose path holds spaces, or is longer than the cut, lost its name when the
+        // agent attribution split that text on spaces.
+        var deep = "/home/me/" + string.Join('/', Enumerable.Repeat("very-long-folder-name", 12));
+        using var tree = new SyntheticProcTree().MemInfo(1000, 0)
+            .Process(10, 1, "/a", 10, words: ["/home/me/My Agent Tools/claude", "--resume"])
+            .Process(11, 1, "/a", 10, words: [deep + "/claude"]);
+
+        var agents = Collect(tree).All.OrderBy(p => p.Pid).Select(p => WslCare.Core.Agents.AgentProcesses.AgentOf(p)?.Id).ToList();
+
+        agents.Should().Equal("claude-code", "claude-code");
+    }
+
+    [Fact]
     public void A_cancelled_token_stops_the_walk()
     {
         using var tree = new SyntheticProcTree().MemInfo(1000, 0).Process(10, 1, "/a", 10);

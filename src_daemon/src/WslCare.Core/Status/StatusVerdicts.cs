@@ -39,6 +39,10 @@ public static class StatusVerdicts
         return [.. fromSample.Select(v => v with { Basis = basis }), .. ThresholdRules.UnreadFullRun(config).Select(unread => Carried(unread, fullRun, now))];
     }
 
+    /// <summary>Verdicts evaluated over THIS answer's own sample (the MCP servers', plan §15q E7.S2d), with the sample's basis.</summary>
+    public static IReadOnlyList<Verdict> Sampled(IReadOnlyList<Verdict> verdicts, DateTimeOffset sampledAt) =>
+        [.. verdicts.Select(v => v with { Basis = new VerdictBasis(VerdictSource.Sample, null, sampledAt, 0) })];
+
     /// <summary>The full run's record of <paramref name="unread"/>'s id, or <c>unknown</c> under its limit with the reason.</summary>
     private static Verdict Carried(Verdict unread, Reading<RecordedVerdicts> fullRun, DateTimeOffset now) => fullRun switch
     {

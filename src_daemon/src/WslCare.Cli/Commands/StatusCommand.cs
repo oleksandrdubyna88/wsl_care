@@ -6,8 +6,10 @@ using WslCare.Core.Collect;
 using WslCare.Core.Config;
 using WslCare.Core.Events;
 using WslCare.Core.Json;
+using WslCare.Core.Mcp;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
+using WslCare.Core.Thresholds;
 
 namespace WslCare.Cli.Commands;
 
@@ -21,6 +23,8 @@ internal static class StatusCommand
     public static int Run(Request.Status request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, CancellationToken cancellationToken)
     {
         var sample = host.Probe.Sample(cancellationToken);
+        // A console program has no synchronisation context; the MCP servers' CPU window is the one wait status has (plan §15q E7.S2d).
+        var mcp = McpSampling.SampleAsync(host.Paths, host.Files, host.Clock, host.Wait, sample, loaded.Config, cancellationToken).GetAwaiter().GetResult();
         var now = host.Clock.GetUtcNow();
         var history = RunHistory.Read(host.Paths, host.Files);
         var last = LastFullRun.From(history, now);
@@ -29,7 +33,7 @@ internal static class StatusCommand
             // The follower's summary, never the raw day files: status's cost must not grow with the starts recorded (gate finding #8).
             ContainerStarts = new ContainerStartsStore(host.Paths, host.Files).ReadSummary(now),
             Folders = FoldersReports.From(last.Folders, last.PreviousFolders, measuredThisRun: false),
-            Verdicts = StatusVerdicts.From(sample, FullRunVerdicts.Read(host.Paths, host.Files, history), loaded.Config, now),
+            Verdicts = [.. StatusVerdicts.From(sample, FullRunVerdicts.Read(host.Paths, host.Files, history), loaded.Config, now), .. StatusVerdicts.Sampled(McpVerdicts.From(mcp, loaded.Config), sample.SampledAt)],
             ProductVersion = Program.VersionText,
             Actions = ThisSidesActions(host),
             Capabilities = Capabilities.All,
@@ -37,6 +41,7 @@ internal static class StatusCommand
             Running = RunningReports.Read(host.Paths, host.Files, host.Processes, now, Core.Actions.Engine.RunningReadRetry.Default, history),
             LastCleanup = LastCleanups.From(history),
             Limits = StatusLimits.From(loaded.Config),
+            McpServers = McpServersReport.From(mcp),
         };
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
     }
@@ -65,12 +70,22 @@ internal static class StatusText
         AppendHost(text, report.Host);
         text.AppendLine($"docker stats: {Slow(report.Slow.ContainerStats)}");
         text.AppendLine($"windows clock: {Slow(report.Slow.WindowsClock)}");
+        text.AppendLine(McpServers(report.McpServers));
         text.AppendLine(Verdicts(report.Verdicts ?? []));
         text.AppendLine(Running(report.Running));
         text.AppendLine(LastCleanup(report.LastCleanup));
         text.Append(Starts(report.ContainerStarts));
         return text.ToString();
     }
+
+    /// <summary>One line (plan §15q E7.S2d): <c>mcp servers: 7 (0 idle, 7 busy without a log write), 2.60 cores, 0.40 GiB; starts
+    /// coai-mcp 34 in 10 min</c>.</summary>
+    private static string McpServers(McpServersReport? mcp) => mcp switch
+    {
+        null => "mcp servers: not read",
+        { Available: true } => Invariant($"mcp servers: {mcp.Count} ({(mcp.Listed < mcp.Count ? Invariant($"of the {mcp.Listed} listed: ") : string.Empty)}{mcp.IdleCount} idle, {mcp.BusyWithoutActivityCount} busy without a log write), {Number(mcp.CpuCores!)} cores, {mcp.HeldBytes / BytesPerGibibyte:0.00} GiB; starts ") + string.Join(", ", mcp.Servers!.Select(s => Invariant($"{s.Name} {(s.Starts.Available ? Invariant($"{s.Starts.Value:0}") : "?")} in {s.StartsWindowMinutes} min"))),
+        _ => $"mcp servers: unavailable ({mcp.Reason})",
+    };
 
     /// <summary><c>running: none</c>, or the state and what it means (<c>running: wedged - run … is wedged: …</c>).</summary>
     private static string Running(RunningReport? running) => running switch

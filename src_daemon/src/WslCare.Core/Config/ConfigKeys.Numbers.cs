@@ -504,6 +504,47 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey MaxBytes = new("agentCpu.maxBytes", 16384, 262144) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
+    public static partial class McpServers
+    {
+        /// <summary>The window an MCP server's CPU is measured across: two /proc reads this far apart (plan §15q E7.S2d). Root waits on
+        /// it inside a full run, so machine-only; at 100 ticks/s one tick is 1 % of a core over 1 s. Default 1000.</summary>
+        public static readonly ConfigKey.IntKey CpuWindowMilliseconds = new("mcpServers.cpuWindowMilliseconds", 200, 5000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>Below this CPU % of one core an instance is idle (or starting). Default 2.</summary>
+        public static readonly ConfigKey.IntKey IdleCpuPercent = new("mcpServers.idleCpuPercent", 0, 100) { Trust = KeyTrust.Display };
+
+        /// <summary>An instance younger than this is starting, not idle. Default 10.</summary>
+        public static readonly ConfigKey.IntKey IdleMinAgeMinutes = new("mcpServers.idleMinAgeMinutes", 0, 1440) { Trust = KeyTrust.Display };
+
+        /// <summary>A busy instance whose newest log write is older than this is busy without activity. Default 10.</summary>
+        public static readonly ConfigKey.IntKey ActivityWindowMinutes = new("mcpServers.activityWindowMinutes", 1, 1440) { Trust = KeyTrust.Display };
+
+        /// <summary>The starts of each server are counted over this window (at most a day: today's and yesterday's log folders cover
+        /// it). Default 10.</summary>
+        public static readonly ConfigKey.IntKey StartsWindowMinutes = new("mcpServers.startsWindowMinutes", 1, 1440) { Trust = KeyTrust.Display };
+
+        /// <summary><c>mcp.instances</c> warns above this many instances. Default 12.</summary>
+        public static readonly ConfigKey.IntKey WarnInstances = new("mcpServers.warnInstances", 0, 10000) { Trust = KeyTrust.Display };
+
+        /// <summary><c>mcp.cpu</c> warns above this total, in % of one core. Default 100.</summary>
+        public static readonly ConfigKey.IntKey WarnCpuPercent = new("mcpServers.warnCpuPercent", 1, 100000) { Trust = KeyTrust.Display };
+
+        /// <summary><c>mcp.starts</c> warns when a server started more often than this within the starts window. Default 10.</summary>
+        public static readonly ConfigKey.IntKey WarnStarts = new("mcpServers.warnStarts", 0, 100000) { Trust = KeyTrust.Display };
+
+        /// <summary>The most instances whose CPU is sampled and that are listed — it bounds root's /proc reads. Default 256.</summary>
+        public static readonly ConfigKey.IntKey MaxInstances = new("mcpServers.maxInstances", 1, 1024) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The most entries one log listing sees. Default 20000.</summary>
+        public static readonly ConfigKey.IntKey MaxLogEntries = new("mcpServers.maxLogEntries", 100, 100000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The most starts one server lists with their times (newest first); the count is never capped. Default 50.</summary>
+        public static readonly ConfigKey.IntKey MaxStartsListed = new("mcpServers.maxStartsListed", 0, 1000) { Trust = KeyTrust.Display };
+
+        /// <summary>The deadline of one server's log listing. Default 1000.</summary>
+        public static readonly ConfigKey.IntKey LogListMilliseconds = new("mcpServers.logListMilliseconds", 100, 5000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+    }
+
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
     private static IReadOnlyList<ConfigKey> NumberKeys() =>
     [
@@ -635,5 +676,17 @@ public static partial class ConfigKeys
         FileLocks.LockJitterMaxMilliseconds,
         AgentCpu.MaxEntries,
         AgentCpu.MaxBytes,
+        McpServers.CpuWindowMilliseconds,
+        McpServers.IdleCpuPercent,
+        McpServers.IdleMinAgeMinutes,
+        McpServers.ActivityWindowMinutes,
+        McpServers.StartsWindowMinutes,
+        McpServers.WarnInstances,
+        McpServers.WarnCpuPercent,
+        McpServers.WarnStarts,
+        McpServers.MaxInstances,
+        McpServers.MaxLogEntries,
+        McpServers.LogListMilliseconds,
+        McpServers.MaxStartsListed,
     ];
 }

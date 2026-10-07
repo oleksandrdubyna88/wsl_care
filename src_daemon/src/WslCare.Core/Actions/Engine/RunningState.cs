@@ -123,7 +123,7 @@ public static class RunningState
 
     /// <summary>How far two readings of one process's start may differ and still be the same process — the operating
     /// system derives it from the boot time and a 10 ms tick, and two readers can disagree by less than this.</summary>
-    public static readonly TimeSpan StartTolerance = TimeSpan.FromSeconds(2);
+    public static TimeSpan StartTolerance => Collectors.Procfs.PidSamples.StartTolerance;
 
     private const string Action = "running-state";
 

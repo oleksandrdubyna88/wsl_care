@@ -10,10 +10,6 @@ using WslCare.Core.Processes.Policy;
 
 namespace WslCare.Core.Actions.Suspects;
 
-/// <summary>One process A11 would end, as read twice across the CPU window: who it is (pid AND start) and its CPU ticks
-/// at the second read — what the run compares with again just before the signal.</summary>
-public sealed record SuspectSample(int Pid, long StartTicks, long CpuTicks, int Tty, int Uid);
-
 /// <summary>
 /// A11 (plan §5, §4.2): end the SUSPECT processes — reparented to init or to a user's <c>systemd --user</c>, in one of the
 /// families of <c>processes.families</c>, older than <c>processes.idleOlderThanHours</c> — with <c>SIGTERM</c>, then
@@ -88,7 +84,7 @@ public sealed class SuspectTermination : ICleanupAction
     }
 
     /// <summary>The same process (its start), no CPU tick used, still no terminal, not root's — across the window.</summary>
-    private static bool StayedIdle(SuspectSample before, SuspectSample? after) =>
+    private static bool StayedIdle(PidSample before, PidSample? after) =>
         after is { } now
         && Checks.All(now, n => n.StartTicks == before.StartTicks, n => n.CpuTicks == before.CpuTicks, n => n.Tty == 0, n => n.Uid != 0);
 
@@ -137,18 +133,12 @@ public sealed class SuspectTermination : ICleanupAction
 
     /// <summary>The pid's start, CPU ticks, terminal and owner as <c>/proc</c> answers now; <c>null</c> when it cannot be read
     /// (gone — or never a target: an unread process is not signalled).</summary>
-    public static SuspectSample? Sample(ActionContext context, LinuxHostPaths linux, int pid) => Sample(context.Files, linux, pid);
+    public static PidSample? Sample(ActionContext context, LinuxHostPaths linux, int pid) => Sample(context.Files, linux, pid);
 
     /// <summary>The same, through <paramref name="files"/> (the full run's CPU history, E7.S2b).</summary>
-    public static SuspectSample? Sample(IFileSystem files, LinuxHostPaths linux, int pid)
-    {
-        var dir = $"{linux.ProcRoot}/{pid.ToString(CultureInfo.InvariantCulture)}";
-        var stat = ProcText.Read(files, $"{dir}/stat").Bind(t => ProcStat.Parse(t, $"{dir}/stat"));
-        var status = ProcText.Read(files, $"{dir}/status").Bind(t => ProcStatus.Parse(t, $"{dir}/status"));
-        return Reading.Combine(stat, status, (s, st) => new SuspectSample(pid, s.StartTicks, s.CpuTicks, s.TtyNumber, st.Uid)) is Reading<SuspectSample>.Available { Value: var sample } ? sample : null;
-    }
+    public static PidSample? Sample(IFileSystem files, LinuxHostPaths linux, int pid) => PidSamples.Read(files, linux, pid);
 
-    private static ActionItem Item(ProcessEntry entry, SuspectSample sample) =>
+    private static ActionItem Item(ProcessEntry entry, PidSample sample) =>
         new(Kind, string.Create(CultureInfo.InvariantCulture, $"{entry.Pid} {entry.Name}"), entry.HeldBytes,
             string.Create(CultureInfo.InvariantCulture, $"{entry.Family}, {entry.User}, {entry.Age.Map(a => a.TotalHours).ValueOr(0):0.0} h old: {entry.CommandLine}"))
         {

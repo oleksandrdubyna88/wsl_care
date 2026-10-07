@@ -7,6 +7,7 @@ using WslCare.Core.Actions;
 using WslCare.Core.Actions.Engine;
 using WslCare.Core.Actions.Suspects;
 using WslCare.Core.Collectors;
+using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Config;
 using WslCare.Core.Json;
 using WslCare.Core.Processes;
@@ -39,11 +40,21 @@ public sealed class AgentOrphansTests : IDisposable
         BootId(Boot);
     }
 
-    /// <summary>The real sandbox, with the <c>/proc/&lt;pid&gt;/exe</c> links a test names (a link needs a privilege on Windows).</summary>
-    private sealed class LinkedFiles(Core.Files.IFileSystem inner, Dictionary<string, string> links) : DelegatingFileSystem(inner)
+    /// <summary>The real sandbox, with the <c>/proc/&lt;pid&gt;/exe</c> links a test names (a link needs a privilege on Windows), and
+    /// the folders a test makes unreadable — listed as the physical file system lists one it cannot read: empty unbounded,
+    /// <see cref="Core.Files.EntryListing.Unreadable"/> bounded (plan §15q E7.S2d, consultation C-1).</summary>
+    private sealed class LinkedFiles(Core.Files.IFileSystem inner, Dictionary<string, string> links) : DelegatingFileSystem(inner), Core.Files.IFileSystem
     {
+        public HashSet<string> Unreadable { get; } = new(StringComparer.OrdinalIgnoreCase);
+
         public override Core.Files.LinkReadResult ReadLink(string path) =>
             links.TryGetValue(path.Replace('\\', '/'), out var target) ? new Core.Files.LinkReadResult.Target(target) : base.ReadLink(path);
+
+        public override IReadOnlyList<Core.Files.FileEntry> ListEntries(string path) =>
+            Unreadable.Contains(Path.GetFullPath(path)) ? [] : base.ListEntries(path);
+
+        Core.Files.EntryListing Core.Files.IFileSystem.ListEntries(string path, Core.Files.ListingBounds bounds) =>
+            Unreadable.Contains(Path.GetFullPath(path)) ? new Core.Files.EntryListing.Unreadable($"{path}: permission denied") : Inner.ListEntries(path, bounds);
     }
 
     private void Exe(int pid, string target) => _links[$"{_sandbox.Paths.ProcRoot}/{pid}/exe".Replace('\\', '/')] = target;
@@ -174,6 +185,25 @@ public sealed class AgentOrphansTests : IDisposable
     }
 
     [Fact]
+    public async Task An_unreadable_sibling_folder_keeps_the_agent_process_cannot_tell()
+    {
+        // Plan §15q E7.S2d, consultation C-1: an OLD session readable, a sibling project folder unreadable. The listing used to
+        // answer an unreadable folder as empty and the scan as complete — so the process became eligible, while a session in
+        // the folder nobody could read may have been written a minute ago.
+        Stat(10, cpuTicks: 500);
+        Session(TimeSpan.FromDays(3));
+        Record([Agent(10)]);
+        _clock.Advance(TimeSpan.FromHours(6));
+        _sandbox.Sized("/home/me/.claude/projects/q/t.jsonl", 10, _clock.GetUtcNow() - TimeSpan.FromMinutes(1));
+        _files.Unreadable.Add(Path.GetFullPath(_sandbox.Paths.DistroPath("/home/me/.claude/projects/q")));
+
+        var preview = await Preview([Agent(10)]);
+
+        preview.Count.Should().Be(0, "a folder that could not be listed may hold a live session: cannot tell");
+        preview.Basis.Should().Contain(AgentOrphans.CannotTell);
+    }
+
+    [Fact]
     public async Task An_unconfirmed_layout_keeps_the_agent_process()
     {
         Stat(10, cpuTicks: 500);
@@ -266,10 +296,10 @@ public sealed class AgentOrphansTests : IDisposable
     public void The_cpu_history_is_root_state_bounded_and_pruned_to_live_processes()
     {
         var now = At(TimeSpan.Zero);
-        var before = AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new SuspectSample(10, 1, 5, 0, 1000), new SuspectSample(11, 1, 5, 0, 1000)], now);
-        var many = Enumerable.Range(2, AgentCpuHistory.MaxEntries + 50).Select(pid => new SuspectSample(pid, pid, 1, 0, 1000)).ToList();
+        var before = AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new PidSample(10, 1, 5, 0, 1000), new PidSample(11, 1, 5, 0, 1000)], now);
+        var many = Enumerable.Range(2, AgentCpuHistory.MaxEntries + 50).Select(pid => new PidSample(pid, pid, 1, 0, 1000)).ToList();
 
-        AgentCpuHistory.Next(before, Boot, [new SuspectSample(10, 1, 5, 0, 1000)], At(TimeSpan.FromHours(1))).Entries.Select(e => e.Pid).Should().Equal(10);
+        AgentCpuHistory.Next(before, Boot, [new PidSample(10, 1, 5, 0, 1000)], At(TimeSpan.FromHours(1))).Entries.Select(e => e.Pid).Should().Equal(10);
         var kept = AgentCpuHistory.Next(before, Boot, many, now).Entries;
         kept.Should().HaveCount(AgentCpuHistory.MaxEntries);
         kept.Min(e => e.StartTicks).Should().Be(many.Max(m => m.StartTicks) - AgentCpuHistory.MaxEntries + 1, "review A-L1: past the cap the OLDEST processes are dropped (no history = kept)");
@@ -447,7 +477,7 @@ public sealed class AgentOrphansTests : IDisposable
     public void The_cpu_history_is_private_to_root()
     {
         Assert.SkipUnless(OperatingSystem.IsLinux(), "file modes are Linux's: run in WSL or on the Linux legs");
-        AgentCpuHistory.Write(_sandbox.Paths, _sandbox.Files, AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new SuspectSample(10, 1, 5, 0, 1000)], At(TimeSpan.Zero))).Should().BeEmpty();
+        AgentCpuHistory.Write(_sandbox.Paths, _sandbox.Files, AgentCpuHistory.Next(AgentCpuFile.Empty, Boot, [new PidSample(10, 1, 5, 0, 1000)], At(TimeSpan.Zero))).Should().BeEmpty();
 
         if (OperatingSystem.IsLinux())
         {
