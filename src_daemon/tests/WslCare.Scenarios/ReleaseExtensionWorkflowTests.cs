@@ -232,7 +232,7 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var step = Steps(guard)[StepIndex(guard, GuardScript)];
         Run(step).Should().Contain("\"$GITHUB_REF_NAME\" origin/main");
         step["env"].Map["GH_TOKEN"].Text.Should().Be("${{ github.token }}", "the job's read-only token asks for the daemon release");
-        guard["outputs"].Map.Keys.Should().Equal(["version", "publisher", "min_daemon", "min_daemon_actions", "install_daemon", "root_allowed"], "every line the guard emits is a declared output (E5 code round #7; E6.S2)");
+        guard["outputs"].Map.Keys.Should().Equal(GuardOutputNames(), "every line the guard emits is a declared output (E5 code round #7; E6.S2)");
         guard["outputs"].Map["min_daemon"].Text.Should().Be("${{ steps.guard.outputs.min_daemon }}");
         guard["outputs"].Map["min_daemon_actions"].Text.Should().Be("${{ steps.guard.outputs.min_daemon_actions }}");
         guard["outputs"].Map["root_allowed"].Text.Should().Be("${{ steps.guard.outputs.root_allowed }}");
@@ -251,13 +251,15 @@ public sealed partial class ReleaseExtensionWorkflowTests
     /// them by the extension's tests and by check-vsix. Its shape is held here, on every OS, rather than discovered on a
     /// release day.</summary>
     [Fact]
-    public void The_minimum_daemon_artefact_the_guard_reads_is_two_json_members_each_an_x_y_z()
+    public void The_daemon_versions_artefact_the_guard_reads_is_three_json_members_each_an_x_y_z()
     {
         using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(ReleaseFiles.Root, MinDaemonFile)));
 
         json.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal(["minDaemonForRender", "minDaemonForActions", "installDaemon"]);
-        json.RootElement.GetProperty("minDaemonForRender").GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$");
-        json.RootElement.GetProperty("minDaemonForActions").GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$");
+        foreach (var member in json.RootElement.EnumerateObject())
+        {
+            member.Value.GetString().Should().MatchRegex(@"^\d+\.\d+\.\d+$", $"{member.Name} is what the guard compares and asks GitHub about");
+        }
     }
 
     /// <summary>E5 code round #6: POST_DEPLOY item 6 compares by CONTAINMENT and RANK — the newest published extension tag's
@@ -337,4 +339,14 @@ public sealed partial class ReleaseExtensionWorkflowTests
 
     [GeneratedRegex("""^  [a-z][a-z0-9-]*:\s*$""")]
     private static partial Regex JobKeyLine();
+
+    /// <summary>The names the guard emits, read from its own `for line in "name=$value" …; do` loop — the source of truth the
+    /// workflow's declared outputs are held to (coai round 8: never a second hand-kept list).</summary>
+    private static IReadOnlyList<string> GuardOutputNames()
+    {
+        var loop = File.ReadAllLines(Path.Combine(ReleaseFiles.Root, GuardScript)).Single(l => l.StartsWith("for line in \"version=", StringComparison.Ordinal));
+        var names = System.Text.RegularExpressions.Regex.Matches(loop, "\"([a-z_]+)=").Select(m => m.Groups[1].Value).ToList();
+        names.Should().Contain(["version", "install_daemon", "root_allowed"], "the parse still finds known outputs");
+        return names;
+    }
 }
