@@ -1,15 +1,23 @@
+using System.Runtime.Versioning;
+
 using FluentAssertions;
 
 using WslCare.TestSupport;
 
+using static WslCare.Scenarios.ReleaseExtensionCheckout;
+
 namespace WslCare.Scenarios;
 
 /// <summary>
-/// The install pin flows of <see cref="ReleaseExtensionScriptFlows"/> (#37 joined with E6.S2), a part of its own so neither
-/// file passes the 800-line limit (coai round 8). It shares the checkout helper and the fake <c>gh</c> of the main part.
+/// The install pin of release-extension-guard.sh (#37 joined with E6.S2), run as release-extension.yml runs it: the release
+/// Install daemon types is admitted only above both minima, published and stamped. The checkout and the fake <c>gh</c> are
+/// <see cref="ReleaseExtensionCheckout"/>.
 /// </summary>
-public sealed partial class ReleaseExtensionScriptFlows
+[SupportedOSPlatform("linux")]
+public sealed class ReleaseExtensionInstallPinFlows
 {
+    private static void Linux() => Assert.SkipUnless(OperatingSystem.IsLinux(), ReleaseScripts.LinuxOnly);
+
     /// <summary>The install pin (#37, 2026-10-06), joined with the actions minimum of E6.S2: min-daemon.json's
     /// `installDaemon` is the release Install daemon types, a value of its own at or above BOTH minima — daemon 0.1.0's act
     /// unit is defective, so a new install gets 0.1.2 while 0.1.0 still renders and acts. The guard admits it only when every
