@@ -210,6 +210,17 @@ test('the actions minimum: clean when the four agree; each place that disagrees 
   assert.match(minDaemonFindings({ ...ACTIONS_AGREED, released: '0.2.0' }, 'minDaemonForActions')[0] ?? '', /verified the actions minimum 0\.2\.0/);
 });
 
+const INSTALL_AGREED = { constant: '0.1.2', emitted: { minDaemonForRender: '0.1.0', minDaemonForActions: '0.1.0', installDaemon: '0.1.2' }, checkedIn: { minDaemonForRender: '0.1.0', minDaemonForActions: '0.1.0', installDaemon: '0.1.2' }, released: '0.1.2' };
+
+test('the daemon to install (installDaemon, #37) is compared in the same four places, apart from both minima', () => {
+  assert.deepEqual(minDaemonFindings(INSTALL_AGREED, 'installDaemon'), []);
+  assert.deepEqual(minDaemonFindings({ ...INSTALL_AGREED, constant: '0.1.0', released: '0.1.0' }, 'minDaemonForRender'), [], 'the render minimum keeps its own value beside it');
+  assert.deepEqual(minDaemonFindings({ ...INSTALL_AGREED, constant: '0.1.0', released: '0.1.0' }, 'minDaemonForActions'), [], 'so does the actions minimum');
+  assert.match(minDaemonFindings({ ...INSTALL_AGREED, emitted: { minDaemonForRender: '0.1.0' } }, 'installDaemon')[0] ?? '', /dist\/min-daemon\.json says nothing readable for installDaemon/);
+  assert.match(minDaemonFindings({ ...INSTALL_AGREED, checkedIn: { installDaemon: '0.1.0' } }, 'installDaemon')[0] ?? '', /says 0\.1\.0 for installDaemon, handshake\.ts says 0\.1\.2/);
+  assert.match(minDaemonFindings({ ...INSTALL_AGREED, released: '0.1.0' }, 'installDaemon')[0] ?? '', /the release guard verified the daemon to install 0\.1\.0, but this \.vsix installs 0\.1\.2/);
+});
+
 // ---- E6.S2 (plan §15j B3, §15k #7): a release the tags do not allow a root path must not carry the root module ----
 
 const ROOT_MARKER_LINE = '// src/root/rootCall.ts';

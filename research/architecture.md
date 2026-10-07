@@ -2023,7 +2023,8 @@ the E5 live gate's, `docs/repo-settings.md` steps 9–11).
 - **One module builds the command** (`install/installCommand.ts`): `curl -fsSL
   https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v<V>/install.sh | sudo sh -s -- --version <V>`,
   `V` = the compiled `INSTALL_DAEMON` (0.1.2 since 2026-10-06 — 0.1.0's act unit carries the CollectMode defect), a value
-  of its own never below `MIN_DAEMON_FOR_RENDER` (0.1.0, the oldest daemon the extension renders), checked `x.y.z` when
+  of its own never below `MIN_DAEMON_FOR_RENDER` (0.1.0, the oldest daemon the extension renders) nor, since E6.S2,
+  `MIN_DAEMON_FOR_ACTIONS` (0.1.0), checked `x.y.z` when
   the module loads; never `--skip-attestation`,
   never `main`, no argument at all. The ref is spelt in full, `refs/tags/…`, so no branch of that name can be served
   instead (observed 2026-10-04: raw.githubusercontent.com answers 200 for an existing tag in that form, 404 for a missing
@@ -2074,7 +2075,7 @@ sequenceDiagram
   `vscode:prepublish` runs `scripts/bundle.mjs` — esbuild's API with the CLI's old options (CommonJS, node18, `vscode`
   external, no source map) plus a **build stamp**: `WSL_CARE_BUILD_STAMP` := `"wsl-care-build <package.json version>"`
   (`src/buildStamp.ts`; the test API reads it back in the extension host). It also EMITS `dist/min-daemon.json` —
-  `{ "minDaemonForRender": "<x.y.z>", "installDaemon": "<x.y.z>" }` — read by RUNNING `src/client/handshake.ts` (esbuild's transform in a bounded
+  `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>", "installDaemon": "<x.y.z>" }` — read by RUNNING `src/client/handshake.ts` (esbuild's transform in a bounded
   `node:vm`), never matched as text; the checked-in `src_vs_code/min-daemon.json` is the copy the release guard reads at
   the tag with a JSON parser (E5 code round #2/#5), held equal to the constant by `minDaemon.test.ts` on every pull request.
 - **`.vscodeignore` is an ALLOWLIST** (`**`, then `package.json`, `README.md`, `CHANGELOG.md`, `LICENSE`,
@@ -2103,7 +2104,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     tag["push: tags extension-v* — the only trigger"]
-    guard["guard · contents: read<br/>release-extension-guard.sh: tag = package.json version · real publisher · on main<br/>min-daemon.json (JSON) → daemon-v&lt;MIN&gt; and daemon-v&lt;INSTALL&gt; published non-draft (gh api, read-only token)<br/>POST_DEPLOY.md 'Last verified: date · … · daemon x.y.z', x.y.z ≥ INSTALL ≥ MIN (lib/versions.sh)<br/>outputs: version · publisher · min_daemon · install_daemon"]
+    guard["guard · contents: read<br/>release-extension-guard.sh: tag = package.json version · real publisher · on main<br/>min-daemon.json (JSON) → daemon-v&lt;MIN&gt;, daemon-v&lt;ACTIONS&gt; and daemon-v&lt;INSTALL&gt; published non-draft (gh api, read-only token)<br/>POST_DEPLOY.md 'Last verified: date · … · daemon x.y.z', x.y.z ≥ INSTALL ≥ ACTIONS ≥ MIN (lib/versions.sh)<br/>root module only above a root-free, published extension-v0.1.0<br/>outputs: version · publisher · min_daemon · min_daemon_actions · install_daemon · root_allowed"]
     build["build · contents: read ONLY<br/>npm ci → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release --min-daemon → .sha256 → artifact"]
     attest["attest · contents: read + id-token: write + attestations: write<br/>sparse checkout of .github/scripts · NO npm, no node<br/>download artifact → verify the pair → attest-build-provenance(.vsix)"]
     draft["github-draft · contents: write<br/>verify set → upload only what the DRAFT lacks (never replace; nothing if public)<br/>→ download back → verify + cmp (a difference: re-run FAILED jobs only)"]
@@ -2129,11 +2130,12 @@ flowchart TD
   .vsix that is not byte-identical while the Marketplace may already serve the first, so an asset on the release is
   NEVER replaced (draft or public): the draft upload adds only what is missing, and both GitHub jobs compare the release
   with this run's build and refuse on a difference, saying to re-run failed jobs only.
-- **The guard's two daemon versions** — the render minimum and the release *Install daemon* types — come from
+- **The guard's three daemon versions** — the render minimum, the actions minimum (E6.S2) and the release *Install
+  daemon* types — come from
   `src_vs_code/min-daemon.json` (JSON, `python3`), never from TypeScript with a line
   pattern, and its comparisons — and POST_DEPLOY item 6's ranking of the versions the Marketplace serves — go through ONE
   POSIX file, `.github/scripts/lib/versions.sh` (`version_at_least`, `highest_version`, `is_top_version`). Every line the
-  guard prints is a declared output; the build checks its .vsix against `min_daemon` and `install_daemon`.
+  guard prints is a declared output; the build checks its .vsix against `min_daemon`, `min_daemon_actions` and `install_daemon`.
 - **The credential**: none — the owner's decision of 2026-10-06 is a MANUAL upload of the attested `.vsix` (no `VSCE_PAT`,
   `POST_DEPLOY.md` item 12 accepts `none — manual upload`; `docs/repo-settings.md` step 9). The served check names a
   version only, so before approving `publish-marketplace` (which then skips) the owner runs

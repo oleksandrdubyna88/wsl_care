@@ -11,7 +11,7 @@
  *   - no source map and no sourcesContent — nothing of the sources or this machine's paths ships;
  *   - not minified — the bundle scan reads it, and a reader of the .vsix can too.
  *
- * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>" }`, the minimum
+ * It also EMITS dist/min-daemon.json — `{ "minDaemonForRender": "<x.y.z>", "minDaemonForActions": "<x.y.z>", "installDaemon": "<x.y.z>" }`, the minimum
  * daemon this build renders and the one it acts with and installs (E5 code round #2/#5, E6.S2 / plan §15j M5). The values
  * are read by RUNNING src/client/handshake.ts (esbuild's transform, then a
  * bounded node:vm with an empty context — the module imports types only), never with a pattern over its text.
@@ -49,7 +49,7 @@ function minDaemons() {
     return value;
   };
 
-  return { minDaemonForRender: read('MIN_DAEMON_FOR_RENDER'), minDaemonForActions: read('MIN_DAEMON_FOR_ACTIONS') };
+  return { minDaemonForRender: read('MIN_DAEMON_FOR_RENDER'), minDaemonForActions: read('MIN_DAEMON_FOR_ACTIONS'), installDaemon: read('INSTALL_DAEMON') };
 }
 
 buildSync({
@@ -70,4 +70,4 @@ buildSync({
 const minima = minDaemons();
 mkdirSync(join(ROOT, 'dist'), { recursive: true });
 writeFileSync(join(ROOT, 'dist', 'min-daemon.json'), `${JSON.stringify(minima, null, 2)}\n`);
-console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says render ${minima.minDaemonForRender}, actions ${minima.minDaemonForActions}`);
+console.log(`bundle: dist/extension.js built for ${version}, dist/min-daemon.json says render ${minima.minDaemonForRender}, actions ${minima.minDaemonForActions}, install ${minima.installDaemon}`);

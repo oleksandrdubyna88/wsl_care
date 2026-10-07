@@ -211,7 +211,7 @@ export interface MinDaemonInputs {
 }
 
 /** The two minima `min-daemon.json` holds: the daemon this build renders, and the one it acts with (E6.S2, §15j M5). */
-export type MinDaemonKey = 'minDaemonForRender' | 'minDaemonForActions';
+export type MinDaemonKey = 'minDaemonForRender' | 'minDaemonForActions' | 'installDaemon';
 
 function minDaemonOf(json: unknown, key: MinDaemonKey): string | undefined {
   const value = typeof json === 'object' && json !== null && !Array.isArray(json) ? (json as Record<string, unknown>)[key] : undefined;
@@ -227,7 +227,11 @@ export function minDaemonFindings(inputs: MinDaemonInputs, key: MinDaemonKey = '
   const { constant, emitted, checkedIn, released } = inputs;
   const shown = (value: string | undefined): string => (value === undefined ? 'nothing readable' : value);
   const which = key === 'minDaemonForRender' ? '' : ` for ${key}`;
-  const guard = key === 'minDaemonForRender' ? `the minimum daemon ${released ?? ''}, but this .vsix renders and installs ${constant}` : `the actions minimum ${released ?? ''}, but this .vsix acts with and installs ${constant}`;
+  const guard = {
+    minDaemonForRender: `the minimum daemon ${released ?? ''}, but this .vsix renders ${constant}`,
+    minDaemonForActions: `the actions minimum ${released ?? ''}, but this .vsix acts with ${constant}`,
+    installDaemon: `the daemon to install ${released ?? ''}, but this .vsix installs ${constant}`,
+  }[key];
 
   return [
     ...(minDaemonOf(emitted, key) === constant ? [] : [`dist/min-daemon.json says ${shown(minDaemonOf(emitted, key))}${which}, handshake.ts says ${constant} — the bundle step that built this .vsix saw another constant (run npm run bundle)`]),

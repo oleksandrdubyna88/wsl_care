@@ -128,8 +128,14 @@ min="$(minimum_of minDaemonForRender)"
 [[ "$min" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForRender \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_RENDER (npm test holds the two equal)"
 min_actions="$(minimum_of minDaemonForActions)"
 [[ "$min_actions" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no minDaemonForActions \"x.y.z\" — restore it from the extension's MIN_DAEMON_FOR_ACTIONS (npm test holds the two equal)"
-# Install daemon types the ACTIONS minimum, so it may never be below the render minimum (coai E6.S2 code round #0).
-version_at_least "$min_actions" "$min" || refuse "$MIN_DAEMON_FILE: minDaemonForActions $min_actions is below minDaemonForRender $min — Install daemon types the actions minimum, so it must be at or above the render minimum"
+# A daemon the extension acts with must also render (coai E6.S2 code round #0).
+version_at_least "$min_actions" "$min" || refuse "$MIN_DAEMON_FILE: minDaemonForActions $min_actions is below minDaemonForRender $min — a daemon the extension acts with must be one it renders"
+# The release Install daemon types (#37, 2026-10-06: daemon 0.1.0's act unit is defective, so a new install gets 0.1.2) is a
+# value of its own, at or above both minima: a fresh install must render AND act.
+install="$(minimum_of installDaemon)"
+[[ "$install" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "$MIN_DAEMON_FILE carries no installDaemon \"x.y.z\" — restore it from the extension's INSTALL_DAEMON (npm test holds the two equal)"
+version_at_least "$install" "$min" || refuse "$MIN_DAEMON_FILE: installDaemon $install is below minDaemonForRender $min — Install daemon would install a daemon this extension refuses"
+version_at_least "$install" "$min_actions" || refuse "$MIN_DAEMON_FILE: installDaemon $install is below minDaemonForActions $min_actions — Install daemon would install a daemon this extension cannot act with"
 
 # Each minimum is a PUBLISHED release. GitHub answers a draft's tag with 404 to a read-only token, and the jq filter makes a
 # published one print `false<TAB>daemon-v<MIN>` — anything else is not a published release.
@@ -143,6 +149,9 @@ require_published "$min"
 if [ "$min_actions" != "$min" ]; then
   require_published "$min_actions"
 fi
+if [ "$install" != "$min" ] && [ "$install" != "$min_actions" ]; then
+  require_published "$install"
+fi
 
 # …and was seen working: POST_DEPLOY.md's stamp names a date and a daemon at or above both minima.
 [ -f "$STAMP_FILE" ] || refuse "$STAMP_FILE is missing at this checkout"
@@ -152,8 +161,9 @@ verified="$(printf '%s\n' "$stamp" | sed -n 's/.*daemon \([0-9][0-9]*\.[0-9][0-9
 [ -n "$verified" ] || refuse "$STAMP_FILE's 'Last verified:' line names no 'daemon <x.y.z>' — stamp the verified daemon version"
 version_at_least "$verified" "$min" || refuse "$STAMP_FILE last verified daemon $verified, older than the minimum $min this extension needs"
 version_at_least "$verified" "$min_actions" || refuse "$STAMP_FILE last verified daemon $verified, older than the actions minimum $min_actions this extension acts with"
+version_at_least "$verified" "$install" || refuse "$STAMP_FILE last verified daemon $verified, older than $install, the release Install daemon types"
 
-for line in "version=$version" "publisher=$publisher" "min_daemon=$min" "min_daemon_actions=$min_actions" "root_allowed=$root_allowed"; do
+for line in "version=$version" "publisher=$publisher" "min_daemon=$min" "min_daemon_actions=$min_actions" "install_daemon=$install" "root_allowed=$root_allowed"; do
   echo "$line"
   if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "$line" >> "$GITHUB_OUTPUT"

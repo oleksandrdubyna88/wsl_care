@@ -561,8 +561,10 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   distribution is validated first (the setting's pattern, then `wsl.exe --list`); a modal shows the exact command and
   what the distribution needs (systemd, Ubuntu 24.04 / glibc 2.39, `gh` 2.56.0 or newer, `sudo`); on confirmation a
   terminal opens in that distribution, in your home folder, with the command TYPED, never run — `curl -fsSL
-  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.0/install.sh | sudo sh -s -- --version 0.1.0`,
-  pinned to the minimum daemon the extension acts with (`MIN_DAEMON_FOR_ACTIONS`, since E6.S2), never `--skip-attestation`.
+  https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/refs/tags/daemon-v0.1.2/install.sh | sudo sh -s -- --version 0.1.2`,
+  pinned to `INSTALL_DAEMON` (0.1.2 — 0.1.0's act unit carries the CollectMode defect), a value of its own never below the
+  minimum the extension renders (`MIN_DAEMON_FOR_RENDER`) nor the one it acts with (`MIN_DAEMON_FOR_ACTIONS`, since
+  E6.S2; both 0.1.0), never `--skip-attestation`.
 - **The package** is one universal `.vsix` (`npm run package`) holding exactly `vsix-files.txt` (`.vscodeignore` is an
   allowlist); `npm run check:vsix` opens it and refuses machine paths, this machine's user name, e-mail addresses,
   source maps and a bundle built for another version — on every pull request, on both CI legs.
@@ -709,9 +711,10 @@ An extension release is the tag `extension-v<version>`: release-please's `extens
 **`release-extension.yml`** — a file of its own, so the Marketplace secret is never in a workflow a daemon release runs:
 
 1. **guard** — the tag matches `package.json`'s version, the publisher is real, the commit is on `main`, and the
-   **minimum daemon** (`src_vs_code/min-daemon.json` — since E6.S2 two minima, `minDaemonForRender` and the
-   `minDaemonForActions` *Install daemon* types, as the bundle step emits them) is a published release — each of them —
-   that `POST_DEPLOY.md` names as last verified, and **the first public extension stays root-free**: a checkout carrying
+   **daemon versions** of `src_vs_code/min-daemon.json`, as the bundle step emits them — the minimum the extension renders
+   (`minDaemonForRender`), since E6.S2 the one it acts with (`minDaemonForActions`), and since #37 the release *Install
+   daemon* types (`installDaemon`, at or above both) — are published releases, each of them, and `POST_DEPLOY.md`'s
+   last-verified daemon is at or above the install pin, and **the first public extension stays root-free**: a checkout carrying
    the root module is refused unless the release is above `extension-v0.1.0` AND that tag's own tree carries no root
    module AND it is a published, non-draft GitHub release — keyed on the tags, never on the manifest (`release-extension-guard.sh`; the build's check-vsix refuses the bundle the same way);
 2. **build** — every test, `vsce package` once, the leak checks with `--release` and the guard's minimum, the `.vsix`'s
