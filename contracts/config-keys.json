@@ -3123,6 +3123,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "archive.maxRestoreEntries",
+      "shape": "int",
+      "min": 1,
+      "max": 5000,
+      "default": 1000,
+      "safeDirection": "lower",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "archive.maxIndexBytes",
       "shape": "int",
       "min": 1048576,

@@ -39,6 +39,8 @@ public sealed class ArchiveRestoreCommandTests : IDisposable
     [InlineData("archive", "restore", "--entry", "0123456789abcdef", "--agent", "../outside")]
     [InlineData("archive", "run", "--agent", "claude-code,codex")]
     [InlineData("archive", "run", "--agent", "../outside")]
+    [InlineData("archive", "run", "--run-id", "not-a-run-id")]
+    [InlineData("archive", "run", "--budget-seconds", "30", "--run-id", "20261006T120000Z-042")]
     [InlineData("archive", "list", "--month", "september")]
     [InlineData("archive", "list", "--run", "not-a-run")]
     [InlineData("archive", "list", "--agent", "a,b")]
@@ -53,6 +55,7 @@ public sealed class ArchiveRestoreCommandTests : IDisposable
     [Theory]
     [InlineData("restore", "--entry", "0123456789abcdef")]
     [InlineData("list")]
+    [InlineData("reach")]
     public void As_root_restore_and_list_are_refused_with_their_own_exit_code(params string[] args)
     {
         var run = CliRun.Over(Host(root: true), ["archive", .. args]);

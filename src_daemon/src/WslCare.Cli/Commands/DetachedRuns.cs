@@ -36,7 +36,7 @@ internal static class DetachedRuns
     // ---------- --detach ----------
 
     public static int Detach(Request.Act request, RunTrigger trigger, ShownList shown, ShownList processes, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
-        Accept(new Asked("act", [.. request.Ids.Select(i => i.Text)], trigger, [.. shown.Names.Order(StringComparer.Ordinal)], request.Json) { ShownProcesses = [.. processes.Names.Order(StringComparer.Ordinal)] }, host, stdout, stderr, log);
+        Accept(new Asked("act", [.. request.Ids.Select(i => i.Text)], trigger, [.. shown.Names.Order(StringComparer.Ordinal)], request.Json) { ShownProcesses = [.. processes.Names.Order(StringComparer.Ordinal)], ShownEntries = [.. request.Entries.Order(StringComparer.Ordinal)] }, host, stdout, stderr, log);
 
     public static int CollectDetach(Request.Collect request, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
         ActCommand.NotRoot(host) is { } refused
@@ -48,6 +48,9 @@ internal static class DetachedRuns
     {
         /// <summary>The processes A18's preview showed (E7.S2b review A-H1); none for every other request.</summary>
         public IReadOnlyList<string> ShownProcesses { get; init; } = [];
+
+        /// <summary>The archived entries A20's preview showed (plan §15r E9.S4); none for every other request.</summary>
+        public IReadOnlyList<string> ShownEntries { get; init; } = [];
     }
 
     /// <summary>systemd asked; then UNDER THE RUN LOCK the request folder swept (review D1: an orphaned request blocks nothing for
@@ -98,6 +101,7 @@ internal static class DetachedRuns
         {
             Shown = asked.Shown,
             ShownProcesses = asked.ShownProcesses,
+            ShownEntries = asked.ShownEntries,
             BootId = boot.Known ? boot.BootId : string.Empty,
             CreatedMonotonicMs = boot.Known ? boot.MonotonicMilliseconds : 0,
         };
@@ -245,6 +249,7 @@ internal static class DetachedRuns
             RunId = file.RunId,
             ShownVolumes = file.Shown.Count > 0 ? ShownList.Of(file.Shown) : ShownList.None,
             ShownProcesses = file.ShownProcesses.Count > 0 ? ShownList.Of(file.ShownProcesses) : ShownList.None,
+            ShownEntries = file.ShownEntries.Count > 0 ? ShownList.Of(file.ShownEntries) : ShownList.None,
             OnRunningWritten = () => RunRequests.Remove(host.Paths, host.Files, file.RunId),
             LockWait = RunLock.AcceptedRunWait,
             UnderLock = (own, _) => RequestSweep.ApplyAsync(host.Paths, host.Files, host.Commands, host.Processes, host.Clock.GetUtcNow(), own),

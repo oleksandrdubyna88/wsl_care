@@ -54,7 +54,12 @@ public sealed record ArchivePreviewReport(
     string Zone,
     string BaseFolder,
     InUseReport InUse,
-    IReadOnlyList<AgentPreviewReport> Agents);
+    IReadOnlyList<AgentPreviewReport> Agents)
+{
+    /// <summary>The sessions this side archived at least <c>archive.removeAfterHours</c> ago, waiting for a run to remove their source
+    /// (plan §15r E9.S4: A13's trigger fires on these too) — from the local in-flight file only; the base is never read.</summary>
+    public int RemovalsDue { get; init; }
+}
 
 /// <summary>Builds <see cref="ArchivePreviewReport"/> from a selection.</summary>
 public static class ArchivePreview
@@ -76,7 +81,17 @@ public static class ArchivePreview
             input.Zone.Id,
             input.Config.Text(ConfigKeys.Archive.BaseFolder),
             InUseOf(input.InUse),
-            [.. selected.Select(s => Agent(input.Config, s))]);
+            [.. selected.Select(s => Agent(input.Config, s))])
+        {
+            RemovalsDue = RemovalsDueOf(input),
+        };
+
+    /// <summary>The in-flight entries archived and past <c>archive.removeAfterHours</c> — what the next run's phase 2 takes.</summary>
+    private static int RemovalsDueOf(SelectionInput input)
+    {
+        var after = TimeSpan.FromHours(input.Config.Int(ConfigKeys.Archive.RemoveAfterHours));
+        return new ArchiveState(input.Paths, input.Files).Inflight().Entries.Count(e => e.State == InflightStates.Archived && input.Now - e.ArchivedAtUtc >= after);
+    }
 
     /// <summary>What the open-file check saw, as an answer reports it (the preview's and the run's).</summary>
     public static InUseReport InUseOf(InUseView view) => new(StateName(view.State), view.OpenFiles.Count, view.ClaudeProjects.Count, view.Note);

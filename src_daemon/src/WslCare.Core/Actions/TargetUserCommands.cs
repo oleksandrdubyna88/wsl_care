@@ -42,24 +42,43 @@ public static class TargetUserCommands
     }
 
     /// <summary><paramref name="arguments"/> bound into <paramref name="template"/> and wrapped for <paramref name="user"/>.</summary>
-    public static UserCommand Build(CommandTemplate template, IReadOnlyList<string> arguments, TargetUser user, IReadOnlyList<UserBinFolder> folders)
+    public static UserCommand Build(CommandTemplate template, IReadOnlyList<string> arguments, TargetUser user, IReadOnlyList<UserBinFolder> folders) =>
+        Build(template, arguments, user, folders, SelfBinary.Product);
+
+    /// <summary>As above; a SELF-INVOCATION template (plan §15r D1) starts the product's own binary at the path
+    /// <paramref name="self"/> checked — never a file of the user's bin folders, where a <c>wsl-care</c> would be the user's own.</summary>
+    public static UserCommand Build(CommandTemplate template, IReadOnlyList<string> arguments, TargetUser user, IReadOnlyList<UserBinFolder> folders, Func<SelfBinaryResult> self)
     {
         if (template.Scope != CommandScope.User)
         {
             return new UserCommand.Refused($"{template.Name} is not a user-scoped template");
         }
 
-        return ExecutableResolver.ResolveIn(template.Executable, [.. folders.Select(f => f.OnDisk)], OperatingSystem.IsWindows()) switch
+        return template.SelfInvocation ? SelfInvoked(template, arguments, user, folders, self()) : Resolved(template, arguments, user, folders);
+    }
+
+    private static UserCommand Resolved(CommandTemplate template, IReadOnlyList<string> arguments, TargetUser user, IReadOnlyList<UserBinFolder> folders) =>
+        ExecutableResolver.ResolveIn(template.Executable, [.. folders.Select(f => f.OnDisk)], OperatingSystem.IsWindows()) switch
         {
-            ResolvedExecutable.Found found => new UserCommand.Ready(new CommandRequest(TargetUserArgv.Build(user.Name, found.Path, arguments), template.Ceiling)
-            {
-                OutputCapChars = template.OutputCapChars,
-                Environment = new CommandEnvironment.Clean(Environment(user, folders)),
-            }),
+            ResolvedExecutable.Found found => new UserCommand.Ready(Wrapped(template, arguments, user, folders, found.Path)),
             ResolvedExecutable.NotFound missing => new UserCommand.Refused($"{template.Executable} is not in {user.Name}'s bin folders: {missing.Reason}"),
             _ => throw new System.Diagnostics.UnreachableException("ResolvedExecutable is a closed set"),
         };
-    }
+
+    private static UserCommand SelfInvoked(CommandTemplate template, IReadOnlyList<string> arguments, TargetUser user, IReadOnlyList<UserBinFolder> folders, SelfBinaryResult self) => self switch
+    {
+        SelfBinaryResult.Found found => new UserCommand.Ready(Wrapped(template, arguments, user, folders, found.Path)),
+        SelfBinaryResult.Refused refused => new UserCommand.Refused($"{template.Name} starts only the product's own root-owned binary: {refused.Reason}"),
+        _ => throw new System.Diagnostics.UnreachableException("SelfBinaryResult is a closed set"),
+    };
+
+    private static CommandRequest Wrapped(CommandTemplate template, IReadOnlyList<string> arguments, TargetUser user, IReadOnlyList<UserBinFolder> folders, string path) =>
+        new(TargetUserArgv.Build(user.Name, path, arguments), template.Ceiling)
+        {
+            OutputCapChars = template.OutputCapChars,
+            Environment = new CommandEnvironment.Clean(Environment(user, folders)),
+            StdinClosed = template.SelfInvocation,
+        };
 
     /// <summary>The whole environment the child gets: nothing of this process's.</summary>
     public static IReadOnlyDictionary<string, string> Environment(TargetUser user, IReadOnlyList<UserBinFolder> folders) =>

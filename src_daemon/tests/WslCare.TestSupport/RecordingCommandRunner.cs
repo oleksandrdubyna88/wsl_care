@@ -82,6 +82,9 @@ public sealed class RecordingCommandRunner : ICommandRunner
     /// kept in <see cref="Requests"/> and answered <see cref="CommandOutcome.Refused"/>, and nothing scripted is played.</summary>
     public CommandPolicy? Policy { get; init; }
 
+    /// <summary>The pid a started stream announces (<see cref="CommandRequest.OnStarted"/>) — nothing is started, a test names it.</summary>
+    public int StartedPid { get; init; } = 4242;
+
     public static CommandOutcome.Exited Exited(int exitCode, string stdout = "", string stderr = "") =>
         new(exitCode, new CapturedText(stdout, false), new CapturedText(stderr, false), TimeSpan.Zero);
 
@@ -108,8 +111,15 @@ public sealed class RecordingCommandRunner : ICommandRunner
         lock (_gate)
         {
             _requests.Add(request);
+            if (Policy?.Review(request) is CommandVerdict.Refused refused)
+            {
+                return new CommandOutcome.Refused(refused.Reason);
+            }
+
             script = _streams.Count > 0 ? _streams.Dequeue() : null;
         }
+
+        request.OnStarted(StartedPid);
 
         if (script is null)
         {

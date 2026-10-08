@@ -27,6 +27,10 @@ public sealed record RunRequestFile(int SchemaVersion, RunId RunId, string Kind,
     /// every other request.</summary>
     public IReadOnlyList<string> ShownProcesses { get; init; } = [];
 
+    /// <summary>The archived entries A20's preview showed and the person confirmed, by entry id (plan §15r E9.S4); empty for every
+    /// other request.</summary>
+    public IReadOnlyList<string> ShownEntries { get; init; } = [];
+
     /// <summary>The boot the request was written in (<c>/proc/sys/kernel/random/boot_id</c>, E6.S1 review D3); empty when the
     /// writer could not tell. A request of another boot is stale at once.</summary>
     public string BootId { get; init; } = string.Empty;
@@ -222,7 +226,7 @@ public static class RunRequests
         {
             return JsonSerializer.Deserialize(bytes, WslCareJsonContext.Default.RunRequestFile) switch
             {
-                { RunId: not null, Kind: not null, Actions: not null } file when file.RunId == filedAs => Validated(path, file with { Shown = file.Shown ?? [], ShownProcesses = file.ShownProcesses ?? [], BootId = file.BootId ?? string.Empty }),
+                { RunId: not null, Kind: not null, Actions: not null } file when file.RunId == filedAs => Validated(path, file with { Shown = file.Shown ?? [], ShownProcesses = file.ShownProcesses ?? [], ShownEntries = file.ShownEntries ?? [], BootId = file.BootId ?? string.Empty }),
                 { RunId: not null } other => new RunRequestRead.Bad(path, $"names run {other.RunId} but is filed as {filedAs}"),
                 _ => new RunRequestRead.Bad(path, "does not parse: it is not a run request"),
             };
@@ -246,6 +250,7 @@ public static class RunRequests
         : !KnownActions(file) ? $"names an action this daemon does not know for a {file.Kind} request"
         : !ValidShown(file.Shown) ? $"carries a shown list that is not at most {ShownList.MaxNames} anonymous volume names (64 lowercase hex digits)"
         : !ValidShownProcesses(file.ShownProcesses) ? $"carries a shown process list that is not at most {ShownList.MaxNames} pid:start keys"
+        : !ValidShownEntries(file.ShownEntries) ? $"carries a shown entry list that is not at most {ShownList.MaxNames} archived entry ids (16 lowercase hex digits)"
         : string.Empty;
 
     /// <summary>What root writes (E6.S1 review S2): a detached act is the panel's (<c>manual</c>) or a terminal's (<c>cli</c>), a
@@ -260,4 +265,6 @@ public static class RunRequests
     private static bool ValidShown(IReadOnlyList<string> shown) => shown.Count <= ShownList.MaxNames && shown.All(Docker.DockerJson.IsFullId);
 
     private static bool ValidShownProcesses(IReadOnlyList<string> shown) => shown.Count <= ShownList.MaxNames && shown.All(Suspects.SuspectSignals.IsShownKey);
+
+    private static bool ValidShownEntries(IReadOnlyList<string> shown) => shown.Count <= ShownList.MaxNames && shown.All(Archive.ArchiveIndex.IsEntryId);
 }

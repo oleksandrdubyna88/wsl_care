@@ -2,8 +2,8 @@
 
 > Built so far: **E9.S0** (catalogue blocks, keys, base folder rules, `archive check-base`), **E9.S1** (the selection and
 > `archive preview`, read-only), **E9.S2a** (the file seam `IArchiveFiles`, with its gate round and own review round), **E9.S2b**
-> (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`, with its own review round), **E9.S3** (`archive restore`, `archive list`). Not built yet: A13 / A20 in the engine and the root → user boundary (E9.S4),
-> the Windows open-file check (E9.S5). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
+> (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`, with its own review round), **E9.S3** (`archive restore`, `archive list`), **E9.S4** (A13 and A20 in the engine — the root → user boundary,
+> `archive reach`). Not built yet: the Windows open-file check (E9.S5). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
 > red runs and their break-it checks: [module_tests.md](module_tests.md), the E9 sections (from *The AI-session archive:
 > catalogue blocks, keys, base folder* to *The E9.S2a gate round*). The longer history of each
 > story: *Story history* below.
@@ -112,12 +112,14 @@ C-M4 / S-M2).
 | `archive check-base <path> [--json]` | `WslCare.Cli/Commands/ArchiveCommand.cs` | `contracts/golden/head/archive-check-base.json`, capability `archive.checkBase` | built (E9.S0) |
 | `archive preview [--agent <id>] [--json]` | `WslCare.Cli/Commands/ArchiveCommand.cs` | `contracts/golden/head/archive-preview.json`, capability `archive.preview` | built (E9.S1) |
 | `config set archive.baseFolder` | the config verbs | the base rules, refused as root (81) | built (E9.S0) |
-| `archive run [--agent <id>] [--budget-seconds <n>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-run.json`; `--json` streams one-line JSON objects, the answer last | built (E9.S2b) |
+| `archive run [--agent <id>] [--budget-seconds <n>] [--run-id <runId>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-run.json`; `--json` streams one-line JSON objects, the answer last; `--run-id` carries root's run id (E9.S4) | built (E9.S2b) |
+| `archive reach [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `ArchiveRun.Run` with `ReachOnly` | the run's answer: `done` / `unreachable` / `busy` / `refused` / `no-base`; exit 1 unless `done` or `no-base` | built (E9.S4) |
 | `archive status [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-status.json` | built (E9.S2b) |
 | `archive reconcile --scan [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | the run's answer with its `scan` counts | built (E9.S2b) |
 | `archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveRestore.cs` | the run's answer with its `restore` block (`contracts/golden/head/archive-restore.json`); `--json` streams one-line JSON progress objects, the answer last (the gate round); exit 1 when a session was refused | built (E9.S3) |
 | `archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveList.cs` | `contracts/golden/head/archive-list.json`; read-only (no lock, no lease, no key made) | built (E9.S3) |
-| A13 / A20 (the restore button: A19 is main's idle-MCP-server stop, E14 S2a) | — | — | E9.S4 |
+| `act A13 (--preview or --confirm) [--manual or --timer]` (as root; the timer's pass) | `Archive/ArchiveAction.cs` | the engine's run record — agents and counts, never a session; capability `archive.run` | built (E9.S4) |
+| `act A20 (--preview or --confirm) --manual --entry <id>...` (as root; a button only — A19 is the idle MCP servers' stop, E14 S2a) | `Archive/RestoreAction.cs` | the engine's run record — entry ids, never a key; capability `archive.restore` | built (E9.S4) |
 
 Every built verb runs as the user; root is refused with exit 81. The progress of `archive run` and `archive restore` goes through one writer, `WslCare.Cli/Commands/ArchiveProgress.cs`
 (JSON lines on stdout with `--json`, human lines on stderr without it).
@@ -226,6 +228,38 @@ flowchart TD
   - A base mounted differently than at its first run is not refused (the list reads only); a note names the recorded mount and
     today's (owner decision 2026-10-07).
 - **`archive status`** (human form) names each entry on its way: state, agent, key, files and month (the gate round).
+
+## A13 and A20 — the root → user boundary (E9.S4, 2026-10-08, plan §15r D1, D8, *E9.S4 as built*)
+
+```mermaid
+flowchart TD
+    timer["root: the timer's pass, or a button (act A13 / act A20 --entry …)"] --> gates{"before any child:<br/>archive.baseFolder set? · runuser's PAM stack without pam_systemd? ·<br/>the product binary root's alone? · no recorded child alive? · slack ≥ minRunMinutes (timer)"}
+    gates -- no --> skip["skipped / refused, with the reason"]
+    gates -- yes --> preview["runuser -u &lt;user&gt; -- /opt/wsl-care/bin/wsl-care archive preview --json<br/>(A20: archive list --json) — clean env, stdin at EOF"]
+    preview --> judged["the answer judged (schema, closed sets, ranges) → COUNTS per agent<br/>(A20: verified entries removed at the source, by id)"]
+    judged --> reach["A13: archive reach --json — the side's lock, the base within reachabilitySeconds"]
+    reach --> run["archive run --budget-seconds &lt;slack&gt; --run-id &lt;act's run&gt; --json<br/>(A20: archive restore --entry &lt;shown ∩ restorable&gt; --json) — STREAMED"]
+    run --> stream["each line: progress (validated, a run step, dropped) or THE answer (≤ childOutputCapBytes)<br/>a cut line, a 2nd answer, a broken line → the child is killed"]
+    run --> ids["archive-children.json (root's state): the launcher at its start, the worker at its first line;<br/>emptied when both are gone"]
+    stream --> result["the action's result: counts and bytes per agent (A20: entry ids) — never a session's name"]
+```
+
+- **Why root starts the product's own binary** (D1): root never opens a session file nor the base. A child of the TARGET USER
+  does every byte. Its executable is checked as root's alone every time (`Processes/SelfBinary.cs`, `Processes/RootOwnedPaths.cs`
+  — the latter shared with the Windows system drive's check), and the policy allows that path only for the self-invocation
+  templates (`Archive/ArchiveChildren.cs`).
+- **What root reads of a child:** the last line, judged by `Archive/ArchiveChildAnswers.cs`, and counts only. The child's notes,
+  keys and first-skipped names never reach root's world-readable run detail. Progress lines are dropped after their check
+  (`Archive/ArchiveChildStream.cs`).
+- **The budget** (D8): the run child is budgeted from the run limit's slack (`RunBudget.WorstCaseOf` the actions behind A13 —
+  A20, A1, A2 — and the margin) and is no term of the timer run's worst case. The restore is a button only, never in a timer run.
+  Both are streamed, so a long run is progress line by line.
+- **Containment** (risk consult 9/9.4): a recorded child of this boot still alive (pid and start ticks) — stuck in the kernel on a
+  share, most likely — keeps A13 and A20 from starting a second one. The reach child takes the side's lock before it touches the
+  base, so a stuck reach holds the lock and a run beside it answers `busy`. Root signals nothing a child or the base names.
+- **`archive preview`** now carries `removalsDue` (the archived entries past `archive.removeAfterHours`, from the local in-flight
+  file): A13's trigger fires on a session due OR a removal due, from ONE child.
+- **Doctor** adds the `archive.runuser` check: a problem only where an archive is configured.
 
 ## External dependencies
 

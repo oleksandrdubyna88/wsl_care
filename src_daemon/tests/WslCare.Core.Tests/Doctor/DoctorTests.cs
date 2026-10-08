@@ -211,4 +211,30 @@ public sealed class DoctorTests : IDisposable
         runner.Requests.Select(r => r.Argv).Should().OnlyContain(a =>
             a[0] == "docker" ? DockerCommands.IsReadVerb(a.Skip(1).ToList()) : SystemdCommands.IsReadVerb(a.Skip(1).ToList()));
     }
+
+    /// <summary>Plan §15r risk consult 9/9.4 #2: where an archive is configured, a runuser PAM stack naming pam_systemd is a problem —
+    /// the archive's children would get a login session root does not bound; without an archive it is a note.</summary>
+    [Theory]
+    [InlineData("session optional pam_systemd.so\n", true, DoctorRun.Problem)]
+    [InlineData("session optional pam_systemd.so\n", false, DoctorRun.Ok)]
+    [InlineData("session required pam_unix.so\n", true, DoctorRun.Ok)]
+    public async Task The_archive_runuser_check_flags_pam_systemd_where_an_archive_is_configured(string stack, bool withBase, string state)
+    {
+        Installed(lastRun: Now.AddHours(-1), covered: Now.AddMinutes(-3));
+        _root.File("etc/pam.d/runuser", stack);
+        var trusted = new PhysicalFileSystem(Paths) { TrustedStateOwner = RegularFiles.EffectiveUid(), OwnersAreThisProcess = true };
+        var loaded = ConfigLoader.Load([
+            (ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults())),
+            (new ConfigLayerFile(ConfigLayer.User, "user.json"), new FileReadResult.Content(System.Text.Encoding.UTF8.GetBytes(withBase ? """{ "archive": { "baseFolder": "/mnt/v/ai-archive" } }""" : "{}"))),
+        ]);
+
+        var report = await new DoctorRun(Paths, trusted, Runner(), new FixedTimeProvider(Now)).RunAsync(loaded, "0.0.0", CancellationToken.None);
+
+        var check = report.Checks.Single(c => c.Id == DoctorRun.ArchiveRunuserId);
+        check.State.Should().Be(state, check.Detail);
+        if (stack.Contains("pam_systemd", StringComparison.Ordinal))
+        {
+            check.Detail.Should().Contain("pam_systemd");
+        }
+    }
 }

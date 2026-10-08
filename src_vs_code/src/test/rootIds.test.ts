@@ -26,7 +26,8 @@ test('an action id is one of the registry, spelt exactly — anything else is re
   assert.equal(actionIdOf('A4'), 'A4');
   assert.equal(actionIdOf('A5Testcontainers'), 'A5Testcontainers');
   assert.equal(actionIdOf('A19'), 'A19', 'daemon E14 S2a added A19');
-  for (const bad of ['a4', 'A4 ', 'A20', 'A4,A5', '--timer', '', 'A', 4, undefined, null, ['A4']]) {
+  assert.equal(actionIdOf('A20'), 'A20', 'daemon E9.S4 added A20, the archive restore button');
+  for (const bad of ['a4', 'A4 ', 'A21', 'A4,A5', '--timer', '', 'A', 4, undefined, null, ['A4']]) {
     assert.equal(actionIdOf(bad), undefined, JSON.stringify(bad));
   }
 });

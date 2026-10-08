@@ -37,8 +37,25 @@ internal static class ArchiveRunCommand
 
         var budget = TimeSpan.FromSeconds(request.BudgetSeconds > 0 ? request.BudgetSeconds : loaded.Config.Int(ConfigKeys.Archive.RunBudgetMinutes) * 60);
         using var progress = new ArchiveProgress(stdout, stderr, request.Json, host.Clock, Silence(loaded.Config));
-        var report = ArchiveRun.Run(Input(host, loaded, request.Agent, budget, cancellationToken) with { Progress = progress.Line });
+        var input = Input(host, loaded, request.Agent, budget, cancellationToken);
+        var report = ArchiveRun.Run(input with { Progress = progress.Line, RunId = request.RunId.Length > 0 ? request.RunId : input.RunId });
         return progress.Answer(() => Answered(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveRunReport) : Render(report), report));
+    }
+
+    /// <summary><c>archive reach</c> (plan §15r D1, E9.S4): the side's lock and the base within <c>archive.reachabilitySeconds</c>;
+    /// exit 0 when it answered (or no base is set: nothing to reach), <see cref="ExitCode.RunFailed"/> when it did not, was refused or the
+    /// lock is held.</summary>
+    public static int Reach(Request.ArchiveReach request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
+    {
+        if (host.Privilege.IsRoot)
+        {
+            Output.Note(stderr, RootRefusalFor(host.Paths.Side, "reach"));
+            return (int)ExitCode.NotAsRoot;
+        }
+
+        var report = ArchiveRun.Run(Input(host, loaded, string.Empty, TimeSpan.MaxValue, cancellationToken) with { ReachOnly = true });
+        var exit = Answered(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveRunReport) : Render(report), report);
+        return exit == (int)ExitCode.Ok && report.Outcome is not (RunOutcomes.Done or RunOutcomes.NoBase) ? (int)ExitCode.RunFailed : exit;
     }
 
     public static int ReconcileScan(Request.ArchiveReconcileScan request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)

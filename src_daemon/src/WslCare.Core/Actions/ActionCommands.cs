@@ -16,6 +16,42 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
     /// <summary>Every command asked for so far, in order — refused ones included.</summary>
     public IReadOnlyList<ActionCommandRecord> Ran => [.. _ran];
 
+    /// <summary>Where a self-invocation template's binary is (plan §15r D1): the product's own, checked again for every request; a
+    /// test passes its own.</summary>
+    public Func<SelfBinaryResult> Self { get; init; } = SelfBinary.Product;
+
+    /// <summary>
+    /// A template the action declared STREAMED (plan §15r D8; every other template is refused here): each stdout line goes to
+    /// <paramref name="stream"/>'s line callback as it arrives, and the command's ceiling is the one the action chose for this
+    /// request — never above the template's own. Recorded as every command is.
+    /// </summary>
+    public async Task<CommandOutcome> StreamAsync(CommandTemplate template, IReadOnlyList<string> values, StreamRequest stream, CancellationToken cancellationToken)
+    {
+        var request = template.Streamed ? Request(template, values) : new UserCommand.Refused($"{action.Id} did not declare {template.Name} streamed; an action streams only what it declared streamed");
+        var refusal = request is UserCommand.Refused refused ? refused.Reason : CeilingRefusal(template, stream.Ceiling);
+        if (refusal.Length > 0)
+        {
+            return Record(template, $"{template.Shape} ({string.Join(' ', values)})", new CommandOutcome.Refused(refusal));
+        }
+
+        var ready = Limited(((UserCommand.Ready)request).Request, stream);
+        return Record(template, ready.Display, await runner.StreamAsync(ready, stream.OnLine, cancellationToken).ConfigureAwait(false));
+    }
+
+    /// <summary>Why the ceiling an action chose cannot be a stream's: not positive, or above the template's own; empty otherwise.</summary>
+    private static string CeilingRefusal(CommandTemplate template, TimeSpan ceiling) =>
+        ceiling <= TimeSpan.Zero || ceiling > template.Ceiling ? $"{template.Name}: a ceiling of {ceiling} is outside (0, {template.Ceiling}]" : string.Empty;
+
+    /// <summary>The request with the ceiling the action chose and its start callback.</summary>
+    private static CommandRequest Limited(CommandRequest request, StreamRequest stream) =>
+        new(request.Argv, stream.Ceiling, request.WorkingDirectory)
+        {
+            OutputCapChars = request.OutputCapChars,
+            Environment = request.Environment,
+            StdinClosed = request.StdinClosed,
+            OnStarted = stream.OnStarted,
+        };
+
     public async Task<CommandOutcome> RunAsync(CommandTemplate template, IReadOnlyList<string> values, CancellationToken cancellationToken)
     {
         var request = Request(template, values);
@@ -46,10 +82,18 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
             return ExecutableResolver.Resolve(template.Executable);
         }
 
-        return targetUser is TargetUserResult.Found
-            ? ExecutableResolver.ResolveIn(template.Executable, [.. userBinFolders.Select(f => f.OnDisk)], OperatingSystem.IsWindows())
+        return template.SelfInvocation ? SelfLocated(Self())
+            : targetUser is TargetUserResult.Found ? ExecutableResolver.ResolveIn(template.Executable, [.. userBinFolders.Select(f => f.OnDisk)], OperatingSystem.IsWindows())
             : new ResolvedExecutable.NotFound(targetUser.Refusal);
     }
+
+    /// <summary>A self-invocation's executable is the product's own checked binary, never a lookup (plan §15r D1).</summary>
+    private static ResolvedExecutable SelfLocated(SelfBinaryResult self) => self switch
+    {
+        SelfBinaryResult.Found found => new ResolvedExecutable.Found(found.Path),
+        SelfBinaryResult.Refused refused => new ResolvedExecutable.NotFound(refused.Reason),
+        _ => throw new System.Diagnostics.UnreachableException("SelfBinaryResult is a closed set"),
+    };
 
     /// <summary>
     /// This executor as an <see cref="ICommandRunner"/>, for the product's own READ machinery (the Docker collector) to run
@@ -102,7 +146,7 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
 
     private UserCommand ForTargetUser(CommandTemplate template, IReadOnlyList<string> arguments) =>
         targetUser is TargetUserResult.Found found
-            ? TargetUserCommands.Build(template, arguments, found.User, userBinFolders)
+            ? TargetUserCommands.Build(template, arguments, found.User, userBinFolders, Self)
             : new UserCommand.Refused(targetUser.Refusal);
 
     private CommandOutcome Record(CommandTemplate template, string display, CommandOutcome outcome)
@@ -122,4 +166,11 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
     }
 
     private static string FirstLine(string text) => text.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0) ?? string.Empty;
+}
+
+/// <summary>One streamed command (plan §15r D8): the ceiling the action chose for it, where each stdout line goes, and who hears
+/// the started process's id (the archive records its children, risk consult 9/9.4 #1).</summary>
+public sealed record StreamRequest(TimeSpan Ceiling, Action<string> OnLine)
+{
+    public Action<int> OnStarted { get; init; } = static _ => { };
 }

@@ -63,7 +63,7 @@ public sealed class NumbersAreConfigurationTests
         "config.maxLayerBytes", "patterns.matchTimeoutMilliseconds", "files.renameRetryMilliseconds", "files.renameRetrySleepMilliseconds",
         "files.lockJitterMinMilliseconds", "files.lockJitterMaxMilliseconds", "agentCpu.maxEntries", "agentCpu.maxBytes", "requests.maxBytes", "events.startsRetentionDays", "timer.runLimitMinutes", "running.noProgressMinutes",
         "archive.runBudgetMinutes", "archive.finishGraceMinutes", "archive.minRunMinutes", "archive.previewTimeoutSeconds",
-        "archive.reachabilitySeconds", "archive.progressSilenceSeconds", "archive.restoreLimitMinutes", "archive.maxSessionsPerRun",
+        "archive.reachabilitySeconds", "archive.progressSilenceSeconds", "archive.restoreLimitMinutes", "archive.maxSessionsPerRun", "archive.maxRestoreEntries",
         "archive.maxIndexBytes", "archive.maxStateFileBytes", "archive.childOutputCapBytes", "archive.progressLineMaxBytes",
         "archive.inUseScanSeconds",
     ];

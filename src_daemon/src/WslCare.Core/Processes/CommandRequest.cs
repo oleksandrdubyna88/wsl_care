@@ -53,6 +53,15 @@ public sealed record CommandRequest
     /// holding exactly the variables given — what a tool run as the target user gets (plan §15c #2).</summary>
     public CommandEnvironment Environment { get; init; } = CommandEnvironment.Inherited;
 
+    /// <summary>The child's stdin is a pipe closed at once — it reads end-of-file, never this process's stdin (a terminal when a
+    /// person runs <c>act</c>): what the product's own self-invocations get (plan §15r risk consult 9/9.4 #2). Every other
+    /// command inherits this process's stdin, as before.</summary>
+    public bool StdinClosed { get; init; }
+
+    /// <summary>Told the started process's id right after the start (the archive records its children, risk consult 9/9.4 #1);
+    /// nothing by default. Never told for a command that did not start.</summary>
+    public Action<int> OnStarted { get; init; } = static _ => { };
+
     /// <summary>The command as a person would read it in a log — for messages only, never executed.</summary>
     public string Display => string.Join(' ', Argv);
 }

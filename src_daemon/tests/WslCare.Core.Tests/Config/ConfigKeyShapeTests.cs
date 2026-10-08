@@ -71,6 +71,8 @@ public sealed class ConfigKeyShapeTests
             [("journalctl-vacuum-time", "keep")] = (ConfigKeys.Journal.KeepDays, 1),
             [("curl-head-date", "seconds")] = (ConfigKeys.Clock.ReferenceTimeoutSeconds, 1),
             [("docker-image-prune-unused", "until")] = (ConfigKeys.Images.UnusedOlderThanDays, 24),
+            // E9.S4: A13 passes its budget in seconds — at most archive.runBudgetMinutes, at least archive.minRunMinutes (≥ 1 min).
+            [("archive-run", "budget")] = (ConfigKeys.Archive.RunBudgetMinutes, 60),
         };
         var notConfig = new HashSet<(string, string)>
         {

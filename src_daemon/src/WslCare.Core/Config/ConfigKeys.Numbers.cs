@@ -676,6 +676,11 @@ public static partial class ConfigKeys
         /// ~4 500 sessions drains in five runs). Default 1000.</summary>
         public static readonly ConfigKey.IntKey MaxSessionsPerRun = new("archive.maxSessionsPerRun", 1, 100000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
+        /// <summary>The most entries one A20 press restores (plan §15r E9.S4 plan round, finding 0): the ids reach the restore child as
+        /// ONE argument, so its ceiling keeps that argument far below the kernel's per-argument limit (128 KiB; 5 000 ids of 16 hex and a
+        /// comma are 85 000 bytes). Default 1000.</summary>
+        public static readonly ConfigKey.IntKey MaxRestoreEntries = new("archive.maxRestoreEntries", 1, 5000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
         /// <summary>One month index read. Default 67108864.</summary>
         public static readonly ConfigKey.IntKey MaxIndexBytes = new("archive.maxIndexBytes", 1048576, 268435456) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
@@ -882,6 +887,7 @@ public static partial class ConfigKeys
         Archive.ProgressSilenceSeconds,
         Archive.RestoreLimitMinutes,
         Archive.MaxSessionsPerRun,
+        Archive.MaxRestoreEntries,
         Archive.MaxIndexBytes,
         Archive.MaxStateFileBytes,
         Archive.ChildOutputCapBytes,

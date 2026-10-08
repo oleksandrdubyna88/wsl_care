@@ -57,6 +57,17 @@ public static class Capabilities
     /// (plan §15r E9.S1).</summary>
     public const string ArchivePreview = "archive.preview";
 
+    /// <summary><c>act A13</c> archives aged AI-agent sessions as the target user through the product's own binary — the timer's and
+    /// the button's (<c>archive run / status / reach --json</c> as the user) (plan §15r D1, D8, E9.S4).</summary>
+    public const string ArchiveRun = "archive.run";
+
+    /// <summary><c>act A20 --entry &lt;id&gt;…</c> restores the archived entries its preview showed, a button only (<c>archive restore</c> as
+    /// the user) (plan §15r D6, E9.S4).</summary>
+    public const string ArchiveRestore = "archive.restore";
+
+    /// <summary><c>archive list [--agent] [--month] [--run] --json</c> answers this side's archived entries, as the user (plan §15r E9.S3).</summary>
+    public const string ArchiveList = "archive.list";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase, ArchivePreview];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase, ArchivePreview, ArchiveRun, ArchiveRestore, ArchiveList];
 }

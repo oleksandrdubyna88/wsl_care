@@ -74,7 +74,7 @@ internal static class ActCommand
             Signals = host.Signals,
             InterruptCause = host.InterruptCause,
         });
-        var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List, ShownProcesses = ShownProcesses(request) };
+        var act = new ActRequest(request.Ids, Trigger(request), request.Confirm) { ShownVolumes = shown.List, ShownProcesses = ShownProcesses(request), ShownEntries = ShownEntries(request) };
         LogStart(log, request);
         // A console program has no synchronisation context; blocking here is the verb's whole job.
         var result = Dispatch(engine, act, cancellationToken).GetAwaiter().GetResult();
@@ -142,6 +142,9 @@ internal static class ActCommand
 
     /// <summary>The processes A18's preview showed (<c>--process</c>, E7.S2b review A-H1); none given = none.</summary>
     private static ShownList ShownProcesses(Request.Act request) => request.Processes.Count > 0 ? ShownList.Of(request.Processes) : ShownList.None;
+
+    /// <summary>The archived entries A20's preview showed (<c>--entry</c>, plan §15r E9.S4); none when not given.</summary>
+    internal static ShownList ShownEntries(Request.Act request) => request.Entries.Count > 0 ? ShownList.Of(request.Entries) : ShownList.None;
 
     /// <summary>The volumes A4's preview showed, from <c>--volume</c> and the <c>--only</c> file together — or why the file
     /// cannot be used (it is read as root: its content is validated line by line and never echoed).</summary>

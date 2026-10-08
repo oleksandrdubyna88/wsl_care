@@ -125,10 +125,13 @@ public sealed class ProcessCommandRunner : ICommandRunner
             return launch.NotStarted;
         }
 
+        // A started stream is a step of the run, and so is every line it prints (plan §15r D8: a long archive child that
+        // reports reads live, one that falls silent reads wedged); each end, below, is another.
+        Actions.Engine.RunProgress.Mark();
         var stderr = new OutputCapture(request.OutputCapChars);
         var errors = stderr.DrainAsync(process.StandardError);
         Observe(errors);
-        var lines = PumpLinesAsync(process.StandardOutput, onStdoutLine, request.OutputCapChars);
+        var lines = PumpLinesAsync(process.StandardOutput, line => Stepped(line, onStdoutLine), request.OutputCapChars);
         Observe(lines);
 
         using var ceiling = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -155,6 +158,7 @@ public sealed class ProcessCommandRunner : ICommandRunner
             }
         }
 
+        Actions.Engine.RunProgress.Mark();
         if (!ended)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -163,6 +167,13 @@ public sealed class ProcessCommandRunner : ICommandRunner
 
         await DrainAsync(errors).ConfigureAwait(false);
         return new CommandOutcome.Exited(process.ExitCode, CapturedText.Empty, stderr.Snapshot(), started.Elapsed) { StartedFrom = launch.StartedFrom, StartedAt = launch.StartedAt };
+    }
+
+    /// <summary>One streamed line: a step of the run, then the caller's.</summary>
+    private static void Stepped(string line, Action<string> onStdoutLine)
+    {
+        Actions.Engine.RunProgress.Mark();
+        onStdoutLine(line);
     }
 
     private CommandOutcome.Refused? Refusal(CommandRequest request) =>
@@ -184,7 +195,25 @@ public sealed class ProcessCommandRunner : ICommandRunner
     {
         process.StartInfo = StartInfo(request, found.Path);
         var startedAt = _clock.GetUtcNow();
-        return new Launch(StartAt(process, found.Path), found.OnTheSystemDrive ? found.Path : string.Empty, Collectors.Reading.Of(startedAt));
+        var notStarted = StartAt(process, found.Path);
+        if (notStarted is null)
+        {
+            Started(process, request);
+        }
+
+        return new Launch(notStarted, found.OnTheSystemDrive ? found.Path : string.Empty, Collectors.Reading.Of(startedAt));
+    }
+
+    /// <summary>A started child: its stdin closed when the request says so (it reads end-of-file, plan §15r risk consult 9/9.4 #2),
+    /// and its id told to whoever asked (the archive records its children, #1).</summary>
+    private static void Started(Process process, CommandRequest request)
+    {
+        if (request.StdinClosed)
+        {
+            process.StandardInput.Close();
+        }
+
+        request.OnStarted(process.Id);
     }
 
     private static readonly Collectors.Reading<DateTimeOffset> NotLaunched = Collectors.Reading.Missing<DateTimeOffset>("nothing was started");
@@ -213,7 +242,7 @@ public sealed class ProcessCommandRunner : ICommandRunner
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = false,
+            RedirectStandardInput = request.StdinClosed,
             CreateNoWindow = true,
             WorkingDirectory = request.WorkingDirectory,
         };
@@ -249,8 +278,11 @@ public sealed class ProcessCommandRunner : ICommandRunner
         }
     }
 
-    /// <summary>The tree killed, the child waited for (never past the grace), then the readers drained: when this returns the
-    /// child is gone, not merely signalled.</summary>
+    /// <summary>The tree killed, the child waited for (never past the grace), then the readers drained. When this returns the
+    /// child has normally gone — but NOT always: a child in uninterruptible sleep (state <c>D</c>, a read the host stopped
+    /// serving) cannot die until the kernel releases it, and the wait ends at the grace either way (plan §15r risk consult 9/9.4
+    /// #1, which corrected the claim this said before). The archive therefore records the identities of its children and
+    /// launches no second one while one of them lives (<c>Archive/ArchiveChildren.cs</c>).</summary>
     private static async Task KillAndReapAsync(Process process, Task reads)
     {
         Kill(process);

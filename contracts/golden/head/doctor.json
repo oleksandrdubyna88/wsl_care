@@ -85,6 +85,11 @@
       "id": "root",
       "state": "notChecked",
       "detail": "root reachability (wsl.exe -u root -- true) is checked by the extension's root boundary (E6)"
+    },
+    {
+      "id": "archive.runuser",
+      "state": "ok",
+      "detail": "runuser's PAM stack names no pam_systemd: the archive's children stay in the service's cgroup"
     }
   ],
   "versions": [

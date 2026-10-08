@@ -2679,10 +2679,10 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-08 — E9.S0, E9.S1, E9.S2a, E9.S2b and E9.S3 built, the S0 and S1 review rounds, the S2a gate round, the S2a, S2b and S3 own review rounds and the S2b/S3 gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-08 — E9.S0, E9.S1, E9.S2a, E9.S2b, E9.S3 and E9.S4 built (S4: the plan round folded in, its code round and its own reviews owed), the S0 and S1 review rounds, the S2a gate round, the S2a, S2b and S3 own review rounds and the S2b/S3 gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
 > as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built*, *Risk consult
-> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round*, *E9.S3 as built*, *E9.S3 own review round* and *E9.S2b/S3 gate round*); E9.S4–E9.S5 and the E9 live gate open. Originally: plan only,
+> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round*, *E9.S3 as built*, *E9.S3 own review round*, *E9.S2b/S3 gate round*, *E9.S4 plan round* and *E9.S4 as built*); E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3328,6 +3328,7 @@ section's *as built* deviations.
 | `archive.progressSilenceSeconds` | B | 10–600 | 60 | lower | the child prints a line at least this often |
 | `archive.restoreLimitMinutes` (built under this name; planned as `restoreTimeoutMinutes`, 1–1440, 240) | B | 1–59 | 59 | lower | A20's child ceiling (a button, never in a timer run), and since the coai code round over S2b/S3 the budget `archive restore` itself keeps between sessions — under the least `commands.maxTimeoutHours` with the 60 s a ceiling keeps (review round C5) |
 | `archive.maxSessionsPerRun` | B | 1–100 000 | 1 000 (review round C3; was 5 000) | lower | bounds one run, its in-flight file and its answer |
+| `archive.maxRestoreEntries` (E9.S4 plan round, finding 0) | B | 1–5 000 | 1 000 | lower | the most entries one A20 press restores — its ids are ONE argument of the child |
 | `archive.maxIndexBytes` | B | 1 MiB–256 MiB | 64 MiB | lower | one month index read |
 | `archive.maxStateFileBytes` | B | 64 KiB–64 MiB | 16 MiB (rebase onto main 2026-10-07: the hourly timer must stay valid; review round C3 had 8 MiB; was 4 MiB) | lower | `inflight.json`, `summary.json`, `restored.json` |
 | `archive.childOutputCapBytes` | B | 64 KiB–16 MiB | 1 MiB | lower | the child's answer root reads |
@@ -3753,6 +3754,103 @@ servers" — a button and the timer, bound to the processes its modal showed —
 (2026-10-08) that the archive's button-only restore is **A20**: a button only, bound to the entry ids its modal showed. Every
 mention of the restore's A19 in this section, in §16's E9 rows and in the archive's code and docs now says A20; every A19 that
 means the MCP servers is unchanged. Nothing about the restore's design changes with the id.
+
+#### E9.S4 plan round (2026-10-08) — the coai plan round over the S4 row
+
+A plan round over the E9.S4 row, D1, D8, D9, R2 and the risk consult 9/9.4 requirements, on the story branch `feat/wc-e9-s4`
+(gate session `f3cd22a3`; the epic's session had closed with its last code round). Reviewer codex (gemini was out of quota):
+verdict *proceed*, three findings, every one ACCEPTED. The round also carried three amendments of my own (the as-built rows below
+record them). Each row OVERRIDES the text it names.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0 (Major) | A20 joined up to 100 000 ids into ONE `--entry` argument: past a few thousand, `execve` fails on the kernel's per-argument limit (128 KiB) | **Accepted:** a new key `archive.maxRestoreEntries` (group B, 1–5 000, default 1 000) bounds one press; 5 000 ids of 16 hex and a comma are 85 000 bytes. A press over it is refused before anything starts |
+| 1 (Major) | the total output cap could kill a valid run that copies many files, one progress line each | **Accepted:** progress lines are validated (shape, `archive.progressLineMaxBytes`), counted as a step and DROPPED — never kept. `archive.childOutputCapBytes` bounds the ANSWER only (the lines that are not progress) |
+| 2 (Minor) | no retirement for the recorded child identities | **Accepted:** ONE file (`archive-children.json` in root's state), replaced at every launch, emptied once its children are gone (checked at the next preview too) — never a growing list |
+
+#### E9.S4 as built (2026-10-08)
+
+A13 and A20 are in the engine. Root decides WHEN; the target user's own process does every byte. Nothing below changes D1's split.
+
+- **The self-invocation templates** (`Archive/ArchiveChildren.cs`): `archive preview --json`, `archive reach --json`, `archive run
+  --budget-seconds <n> --run-id <runId> --json` (STREAMED, BUDGETED), `archive list --json`, `archive restore --entry <ids> --json`
+  (STREAMED, button-only). They are user-scoped and marked `SelfInvocation`, with closed verbs and typed slots (`SlotKind.RunIdText`,
+  `SlotKind.HexList`; the budget slot is `archive.runBudgetMinutes` × 60).
+- **The product's own binary** (`Processes/SelfBinary.cs`): `Environment.ProcessPath` (`/opt/wsl-care/bin/wsl-care` when
+  installed), accepted only as a regular, root-owned, executable file named `wsl-care` that neither group nor others may write,
+  with every folder above it root's alone. That last check is `Processes/RootOwnedPaths.cs`, extracted from `SystemDriveFiles`
+  (reuse-first, step 2: the shared half now serves both). The path is checked again at every build of a request AND every policy
+  review.
+  - `TargetUserCommands` starts a self-invocation only at that path, never a name looked up in the user's bin folders.
+  - `CommandPolicy` allows a self-invocation template ONLY with that path, and that path ONLY for such a template: a `wsl-care` in
+    `~/.local/bin` matches the name and is still refused.
+- **The launcher** (`ProcessCommandRunner`):
+  - a self-invocation's stdin is a pipe closed at once (`CommandRequest.StdinClosed`), so it reads end-of-file;
+  - the started pid is told to the caller (`OnStarted`);
+  - every streamed line is a `RunProgress` step;
+  - the comment that claimed a killed child is always gone is corrected (9/9.4 #1).
+- **Streaming and budgets**:
+  - `ActionCommands.StreamAsync` streams only a template declared `Streamed`, under a ceiling the action chose that never passes the
+    template's own.
+  - `CommandLimits.Budgeted` / `ButtonOnly` say they are no term of a timer run's worst case.
+  - `RunBudget` leaves them out, and the templates only button-only actions declare (A20's list). It gains `WorstCaseOf(actions)`,
+    and `LongestStep` counts `archive.progressSilenceSeconds` for a streamed template. `timer.runLimitMinutes` stays 240 and the
+    units are unchanged.
+- **The child's stream and answer**:
+  - `Archive/ArchiveChildStream.cs` applies finding 1. A line as long as the runner's cut is refused, never parsed as a prefix. A
+    second answer, anything after the answer, or a malformed progress line ends the child.
+  - `Archive/ArchiveChildAnswers.cs` judges the answer: the schema version, the closed sets, every count within the run's own
+    bounds, an agent id `archive.agents` could hold. Root takes COUNTS only, never a key, a note or a first-skipped name.
+- **A13** (`Archive/ArchiveAction.cs`):
+  - It skips with the reason when `archive.baseFolder` is empty, when a recorded child is still alive, or when a timer run has
+    less slack than `archive.minRunMinutes`.
+  - It refuses where `runuser`'s PAM stack names `pam_systemd` (`Archive/RunuserPam.cs`, one include level) or the binary is not
+    root's.
+  - Its preview is the child's, in aggregates per agent. The trigger is a session due or a removal due. It is urgent within
+    `archive.urgentWithinDays` of the agent's own deletion.
+  - Its run: the reach child, then the run child, under min(`archive.runBudgetMinutes`, the slack after the actions behind it at
+    their worst and the run margin) + `archive.finishGraceMinutes`.
+  - A fault stop, a refusal, `no-base` or `unreachable` fails it; `busy` and a limit stop do not. "Freed" is what the removals
+    took, basis "moved to the archive".
+- **A20** (`Archive/RestoreAction.cs`):
+  - A button only, `IBoundToShownList` over entry ids.
+  - Its preview offers the VERIFIED entries removed at their source (`sourceRemoved`, `split`); an unverified one is never offered
+    (`--accept-unverified` stays a terminal decision).
+  - A run without the shown entries refuses. A refused session fails the run, naming the entry ids only.
+- **The child identities** (`ArchiveChildren.Launched / WorkerSeen / Ended / Survivor`):
+  - the launcher at its start;
+  - the worker (the process whose parent is the launcher) at the first line;
+  - the record is emptied when both are gone.
+  - A live identity of this boot (pid and start ticks) keeps A13 and A20 from starting another.
+  - Root signals nothing from this record. It is read only to decide NOT to launch (9/9.4 #3).
+- **Doctor** has a new check, `archive.runuser`: a problem only when an archive is configured.
+- **Capabilities**: `archive.run`, `archive.restore`, `archive.list`.
+- **The extension's compiled id list** knows A20 (a button-only id, as A18 and A19), so its contract test holds
+  `contracts/actions.json`.
+
+**Deviations from the text above:**
+
+1. **The restore button is A20** (the note above).
+2. **The order** is `… A10, A15, A16, A3, A11, A18, A19, A13, A20, A1, A2`: A13 comes after main's A19, and A20 right after A13.
+3. **A13's preview is ONE child.** `archive preview --json` now counts the archived sessions due to be removed (`removalsDue`, from
+   the local in-flight file only). A second, `archive status` child under the preview's ceiling pushed the worst case past 240 min
+   at the top of `archive.previewTimeoutSeconds`' range (`ArchiveKeysTests` caught it).
+4. **The shown entries reach `act` as `--entry <id>`** (repeatable, as A18 / A19's `--process`), and the detached request carries
+   them (`shownEntries`). `--only` stays A4's volume list. The child receives the ids as one typed argument; its stdin is empty.
+5. **`archive reach` is a new verb**, and `archive run` takes `--run-id`, so `archive list --run <act's runId>` finds what A13 did.
+6. **The plan's RED names as built:**
+   - "a long run reads live" / "a silent child reads wedged" are held by `A_streamed_line_is_a_run_step` (the launcher) and
+     `A_streamed_templates_step_is_its_line_silence_not_its_ceiling` (the budget), on the existing wedged machinery. No
+     engine-level timing test was written.
+   - The rest carry the plan's names or close ones (`research/module_tests.md` § *E9.S4*).
+7. **Not RED first:** the boundary part was built before its tests. A13 and A20 were RED first against a skeleton ("not built").
+   Every guarantee has its break-it check (module_tests).
+
+**Owed / open:**
+
+- The live gate's blackholed-share step, and a real `runuser` from the service: both need the owner's machine.
+- E10 is owed: the panel's A20 button and *Archive now*.
+- The owner's open questions of S2b/S3 stand.
 
 #### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
 

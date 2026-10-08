@@ -290,6 +290,15 @@ test('root: an --only - list that is not one 64-hex name per line, or --only - w
 
 test('root: an id outside the contract registry ∩ the daemon\'s status.actions is refused, naming it', async () => {
   await within(UBUNTU_RUNNING, async (world) => {
+    // Since daemon E9.S4 the head golden reports A13: an OLDER daemon's status, without it, shows the intersection.
+    const answers = path.join(world.folder, 'answers-no-a13');
+    fs.mkdirSync(answers);
+    for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
+      fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(answers, file));
+    }
+    const status = JSON.parse(fs.readFileSync(path.join(answers, 'status.json'), 'utf8')) as { actions: string[] };
+    fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify({ ...status, actions: status.actions.filter((id) => id !== 'A13') }));
+    world.rewrite({ answers });
     for (const ids of ['A13', 'A99', 'A4,A13', 'a4']) {
       const { code, stderr } = exitOf(await rootAsk(world, ['act', ids, '--preview', '--json']));
       assert.equal(code, FAKE_EXIT.refused, ids);

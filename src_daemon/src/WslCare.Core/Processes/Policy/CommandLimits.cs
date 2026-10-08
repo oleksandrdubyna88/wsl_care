@@ -13,6 +13,10 @@ public abstract record CommandLimits
 
     public abstract int OutputCapChars { get; }
 
+    /// <summary>Whether a timer run's worst case counts this ceiling (<see cref="RunBudget.TimerRunWorstCase"/>): a BUDGETED
+    /// template takes the run limit's slack instead, and a button-only one is never part of a timer run (plan §15r D8).</summary>
+    public virtual bool CountsInTimerRun => true;
+
     /// <summary>Read from the process's configuration (<see cref="Tuning.Current"/>) each time.</summary>
     public sealed record Keyed(ConfigKey.IntKey TimeoutSeconds, ConfigKey.IntKey OutputCapBytes) : CommandLimits
     {
@@ -27,6 +31,29 @@ public abstract record CommandLimits
         public override TimeSpan Ceiling => Command().Ceiling;
 
         public override int OutputCapChars => Command().OutputCapChars;
+    }
+
+    /// <summary>The archive run's child (plan §15r D8): its ceiling is chosen PER REQUEST by the action from the run limit's slack,
+    /// at most <paramref name="BudgetMinutes"/> + <paramref name="GraceMinutes"/> — the most a request may ask, and what this
+    /// reports; never a term of the timer run's worst case.</summary>
+    public sealed record Budgeted(ConfigKey.IntKey BudgetMinutes, ConfigKey.IntKey GraceMinutes, ConfigKey.IntKey OutputCapBytes) : CommandLimits
+    {
+        public override TimeSpan Ceiling => TimeSpan.FromMinutes(Tuning.Current.Int(BudgetMinutes) + Tuning.Current.Int(GraceMinutes));
+
+        public override int OutputCapChars => Tuning.Current.Int(OutputCapBytes);
+
+        public override bool CountsInTimerRun => false;
+    }
+
+    /// <summary>A button-only action's child (A20, the restore): <paramref name="LimitMinutes"/> and the margin a ceiling keeps
+    /// (the session in flight finishes); never part of a timer run.</summary>
+    public sealed record ButtonOnly(ConfigKey.IntKey LimitMinutes, ConfigKey.IntKey OutputCapBytes) : CommandLimits
+    {
+        public override TimeSpan Ceiling => TimeSpan.FromMinutes(Tuning.Current.Int(LimitMinutes)) + TimeSpan.FromSeconds(NumberRules.CeilingMarginSeconds);
+
+        public override int OutputCapChars => Tuning.Current.Int(OutputCapBytes);
+
+        public override bool CountsInTimerRun => false;
     }
 
     /// <summary>Values fixed when the template was made.</summary>

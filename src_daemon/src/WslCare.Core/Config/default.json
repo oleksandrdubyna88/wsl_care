@@ -118,6 +118,7 @@
     "progressSilenceSeconds": 60,
     "restoreLimitMinutes": 59,
     "maxSessionsPerRun": 1000,
+    "maxRestoreEntries": 1000,
     "maxIndexBytes": 67108864,
     "maxStateFileBytes": 16777216,
     "childOutputCapBytes": 1048576,

@@ -98,6 +98,11 @@ public sealed record ArchiveRunInput(
     /// <summary><c>archive restore</c>: under the same lock and lease, after the reconcile, only restore what it names (E9.S3).</summary>
     public RestoreRequest Restore { get; init; } = RestoreRequest.None;
 
+    /// <summary><c>archive reach</c> (plan §15r D1, risk consult 9/9.4 #1): the side's lock taken, the base reached, nothing else —
+    /// the SHORT child root starts before the long one, so a share that blocks the reader in the kernel holds a 10-second child and
+    /// the side's lock, never the run.</summary>
+    public bool ReachOnly { get; init; }
+
     /// <summary>The fault seam (<see cref="MoveSteps"/>); does nothing in a real run.</summary>
     public Action<string> Step { get; init; } = static _ => { };
 
@@ -187,6 +192,11 @@ public static class ArchiveRun
         if (!input.Reachable(baseFolder, TimeSpan.FromSeconds(input.Config.Int(ConfigKeys.Archive.ReachabilitySeconds))))
         {
             return Answer(input, started, RunOutcomes.Unreachable, $"the base did not answer within {ConfigKeys.Archive.ReachabilitySeconds.Name}; nothing was touched (the reconcile waits too)", ArchiveReconcileReport.Empty, NotChecked, []);
+        }
+
+        if (input.ReachOnly)
+        {
+            return Answer(input, started, RunOutcomes.Done, string.Empty, ArchiveReconcileReport.Empty, NotChecked, []);
         }
 
         var key = state.IndexKey();

@@ -73,6 +73,10 @@ public sealed class CommandPolicyPropertyTests
     /// <summary>The action property: run every action of <paramref name="registry"/> — preview AND run — for generated
     /// configs and generated journal contents, through a runner that applies <paramref name="policy"/>; every argv it asked
     /// for must be allowed, an instance of one of ITS OWN declared templates, and never a never-command.</summary>
+    /// <summary>The product's own binary at its installed path (plan §15r D1): what the archive's self-invocations start — the
+    /// executor and the policy are handed the same one, as the product's are (both check the running binary).</summary>
+    internal static readonly Func<SelfBinaryResult> InstalledSelf = static () => new SelfBinaryResult.Found("/opt/wsl-care/bin/wsl-care");
+
     internal static async Task<(IReadOnlyList<string> Violations, int Commands, IReadOnlySet<string> Covered)> JudgeActionsAsync(ActionRegistry registry, CommandPolicy policy, int seed, int cases)
     {
         var inputs = new HostileInputs(seed);
@@ -103,10 +107,13 @@ public sealed class CommandPolicyPropertyTests
                 var context = new ActionContext(sandbox.Paths, files, new FixedTimeProvider(), config, trigger, new TargetUserResult.Found(me, "test"))
                 {
                     ShownVolumes = inputs.Next(2) == 0 ? ShownList.Of(world.Shown()) : ShownList.None,
+                    ShownEntries = inputs.Next(2) == 0 ? ShownList.Of(GeneratedWorld.ListedEntries) : ShownList.None,
                     Processes = _ => processes,
                     RanEarlier = _ => inputs.Next(2) == 0,
+                    RunId = "20261002T000000Z-1",
+                    RunStarted = FixedTimeProvider.DefaultNow,
                 };
-                var executor = new ActionCommands(action, runner, context.TargetUser, TargetUserCommands.BinFolders(me, sandbox.Paths, files));
+                var executor = new ActionCommands(action, runner, context.TargetUser, TargetUserCommands.BinFolders(me, sandbox.Paths, files)) { Self = InstalledSelf };
                 var preview = await action.PreviewAsync(context, executor, CancellationToken.None);
                 await action.RunAsync(context, preview, executor, CancellationToken.None);
                 commands += runner.Requests.Count;
@@ -190,7 +197,7 @@ public sealed class CommandPolicyPropertyTests
     [Fact]
     public async Task Every_argv_a_registered_action_asks_for_under_any_config_and_any_journal_is_allowed_declared_and_never_a_never_command()
     {
-        var (violations, commands, covered) = await JudgeActionsAsync(ActionRegistry.Product, CommandPolicy.Product, Seed, ActionCases);
+        var (violations, commands, covered) = await JudgeActionsAsync(ActionRegistry.Product, CommandPolicy.Over(CommandCatalogue.Product, InstalledSelf), Seed, ActionCases);
 
         violations.Should().BeEmpty();
         commands.Should().BeGreaterThan(ActionCases * 5, "every case previews and runs every action");
@@ -241,7 +248,8 @@ public sealed class CommandPolicyPropertyTests
         sandbox.Write("/home/me/.config/wsl-care/config.json", $$"""
             { "journal": { "keepDays": {{keep}} }, "dryRun": {{(inputs.Next(2) == 0 ? "true" : "false")}},
               "volumes": { "anonymousOlderThanDays": {{Pick(0, 1)}} }, "containers": { "stoppedOlderThanDays": {{Pick(0, 7)}}, "testcontainersOlderThanHours": {{Pick(0, 2)}} },
-              "images": { "unusedOlderThanDays": {{Pick(0, 7)}} }, "buildCache": { "maxGb": {{Pick(0, 20)}}, "olderThanDays": {{Pick(0, 7)}} } }
+              "images": { "unusedOlderThanDays": {{Pick(0, 7)}} }, "buildCache": { "maxGb": {{Pick(0, 20)}}, "olderThanDays": {{Pick(0, 7)}} },
+              "archive": { "baseFolder": "{{(inputs.Next(4) == 0 ? string.Empty : "/mnt/v/ai-archive")}}" } }
             """);
         return ConfigLoader.Load(sandbox.Paths, sandbox.Files).Config;
     }

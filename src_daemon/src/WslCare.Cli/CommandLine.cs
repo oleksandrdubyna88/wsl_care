@@ -63,7 +63,16 @@ internal abstract record Request
 
     /// <summary><c>archive run [--agent &lt;id&gt;] [--budget-seconds &lt;n&gt;] [--json]</c> (plan §15r E9.S2b): one run of this side's
     /// archive as this user; <paramref name="BudgetSeconds"/> 0 = <c>archive.runBudgetMinutes</c>.</summary>
-    internal sealed record ArchiveRun(string Agent, int BudgetSeconds, bool Json) : Request;
+    internal sealed record ArchiveRun(string Agent, int BudgetSeconds, bool Json) : Request
+    {
+        /// <summary><c>--run-id &lt;runId&gt;</c> (plan §15r D8, E9.S4): the run id the child's index lines and progress carry — root's
+        /// own, so <c>archive list --run</c> finds what A13's run did; empty = a new one.</summary>
+        public string RunId { get; init; } = string.Empty;
+    }
+
+    /// <summary><c>archive reach [--json]</c> (plan §15r D1, E9.S4): the side's lock taken and the base reached within
+    /// <c>archive.reachabilitySeconds</c>, nothing else — the short child root starts before a run.</summary>
+    internal sealed record ArchiveReach(bool Json) : Request;
 
     /// <summary><c>archive status [--json]</c> (plan §15r E9.S2b): the side's lock, the entries on their way, the last run — local state only.</summary>
     internal sealed record ArchiveStatus(bool Json) : Request;
@@ -155,6 +164,10 @@ internal abstract record Request
         /// showed and the person confirmed.</summary>
         public IReadOnlyList<string> Processes { get; init; } = [];
 
+        /// <summary>Every <c>--entry</c> given (plan §15r E9.S4), each already a 16-hex entry id: the archived entries A20's preview
+        /// showed and the person confirmed.</summary>
+        public IReadOnlyList<string> Entries { get; init; } = [];
+
         /// <summary>Whether a shown list was passed at all.</summary>
         public bool HasShownList => Volumes.Count > 0 || OnlyFile.Length > 0;
 
@@ -243,7 +256,7 @@ internal static class CommandLine
         new([["busy"]], "busy [--json]", "is the machine too busy to start heavy work now: cpu, io and memory pressure (PSI some avg60) against their keys; exit 83 busy (wait), 0 calm or unknown (go); reads /proc/pressure and /proc/loadavg only", ["busy", "--json"], rest => JsonOnly("busy", rest, json => new Request.Busy(json))),
         new([["watch"]], "watch [--timer] [--json]", "as root: the watch timer's run (wsl-care-watch.timer, every mcpWatchdog.periodMinutes): records the MCP servers' CPU ledger and the agents' CPU history under the run lock; with --timer, A19 may then stop the MCP servers idle or busy without a log write, under the dry-run rules, as a recorded act (a watch that stops nothing writes no history line)", ["watch", "--json"], ParseWatch),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
-        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed, --process the processes A18's or A19's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
+        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed, --process the processes A18's or A19's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
         new([["act", "--request"]], "act --request <runId>", "as root, the template unit's start: run the request --detach wrote, recorded under its run id (refused, recorded, when another run holds the lock)", ["act", "--request", "20261002T120000Z-123"], ParseActFromRequest),
         new([["act", "--stop"]], "act --stop <runId> [--json]", "as root: stop a WEDGED run through systemd, only when its process lives in wsl-care.service or that run's own unit", ["act", "--stop", "20261002T120000Z-123", "--json"], ParseActStop),
         new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["logs", "--period", "today", "--json"], ParseLogs),
@@ -252,7 +265,8 @@ internal static class CommandLine
         new([["agents", "probe"]], "agents probe <path> [--json]", "what the CLI at <path> is, as this user and never as root: a file it may start (looked at, never run, never read), a name from its file name, and its conventional data folders with their sizes and whether they could be a manual agent's (read-only)", ["agents", "probe", "/home/me/.local/bin/mycli", "--json"], ParseAgentsProbe),
         new([["archive", "check-base"]], "archive check-base <path> [--json]", "whether the AI-session archive may live at <path>, as this user (never as root): an existing folder (never created), no link on the way, no root, nothing it moves or a cleanup removes, a filesystem that survives a shutdown, writable — a Windows drive path answered with the folder it is mounted at; who else may read it (read-only)", ["archive", "check-base", "/mnt/v/ai-archive", "--json"], ParseArchiveCheckBase),
         new([["archive", "preview"]], "archive preview [--agent <id>] [--json]", "what the AI-session archive would move on this side now, as this user (never as root): per agent the due sessions oldest first, their newest write and month, what is kept in place and why (open, an agent working there, a name NTFS refuses, what never moves), the age they are due at and the agent's own retention (read-only: no session file is opened, nothing is written)", ["archive", "preview", "--json"], ParseArchivePreview),
-        new([["archive", "run"]], "archive run [--agent <id>] [--budget-seconds <n>] [--json]", "one run of this side's AI-session archive, as this user (never as root): the reconcile of what an interrupted run left, the removal of sessions archived at least archive.removeAfterHours ago once their copies hash equal again, then the due sessions copied, verified and indexed, oldest first, within the budget; --json streams a progress line per file and a heartbeat, no line names a session", ["archive", "run", "--json"], ParseArchiveRun),
+        new([["archive", "run"]], "archive run [--agent <id>] [--budget-seconds <n>] [--run-id <runId>] [--json]", "one run of this side's AI-session archive, as this user (never as root): the reconcile of what an interrupted run left, the removal of sessions archived at least archive.removeAfterHours ago once their copies hash equal again, then the due sessions copied, verified and indexed, oldest first, within the budget; --json streams a progress line per file and a heartbeat, no line names a session", ["archive", "run", "--json"], ParseArchiveRun),
+        new([["archive", "reach"]], "archive reach [--json]", "as this user: take this side's archive lock and see whether the base answers within archive.reachabilitySeconds, nothing else — the short check root runs before the archive's long run, so a share that hangs holds a short child, never the run", ["archive", "reach", "--json"], rest => JsonOnly("archive reach", rest, json => new Request.ArchiveReach(json))),
         new([["archive", "status"]], "archive status [--json]", "the archive of this side now, as this user: whether a run holds its lock (and whether that run is stuck in the kernel on a share), the sessions on their way, the last run (local state only: the base is never read)", ["archive", "status", "--json"], rest => JsonOnly("archive status", rest, json => new Request.ArchiveStatus(json))),
         new([["archive", "restore"]], "archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]", "as this user: archived sessions created back in their agent's folder under their original names - never replacing a file, never through a link, never what never moves - each copy hashed first and read back after, given the restore time as its last write; a session whose lines are not all this side's needs --accept-unverified; the archived copies stay", ["archive", "restore", "--agent", "claude-code", "--month", "2026-09", "--json"], ParseArchiveRestore),
         new([["archive", "list"]], "archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]", "as this user, read-only: this side's archived entries from its month indexes (only the months asked are read) - each with its status, whether every line of it is this side's, its files and bytes; a torn or hostile line is skipped and counted", ["archive", "list", "--json"], ParseArchiveList),
@@ -430,14 +444,17 @@ internal static class CommandLine
     {
         ({ Failure: { } failure }) => failure,
         var split when ActFlags(split.Flags) is { } failure => failure,
-        var split when (ShownListFailure(ids, split.Volumes, split.Only) ?? ShownProcessesFailure(ids, split.Processes)) is { } failure => failure,
-        var split => new Request.Act(ids, split.Flags.Contains(ConfirmFlag), split.Flags.Contains(JsonFlag)) { Manual = split.Flags.Contains(ManualFlag), Timer = split.Flags.Contains(TimerFlag), Detach = split.Flags.Contains(DetachFlag), Volumes = split.Volumes, OnlyFile = split.Only, Processes = split.Processes },
+        var split when (ShownListFailure(ids, split.Volumes, split.Only) ?? ShownProcessesFailure(ids, split.Processes) ?? ShownEntriesFailure(ids, split.Entries)) is { } failure => failure,
+        var split => new Request.Act(ids, split.Flags.Contains(ConfirmFlag), split.Flags.Contains(JsonFlag)) { Manual = split.Flags.Contains(ManualFlag), Timer = split.Flags.Contains(TimerFlag), Detach = split.Flags.Contains(DetachFlag), Volumes = split.Volumes, OnlyFile = split.Only, Processes = split.Processes, Entries = split.Entries },
     };
 
     /// <summary>An act's options apart: its flags, the <c>--volume</c> values, the <c>--only</c> file, the <c>--process</c> keys.</summary>
     /// <remarks>Retro gate over PR #17: immutable lists, so taking a value neither mutates the split nor copies the whole list
     /// (an <see cref="ImmutableList{T}"/> add shares its tree: ten thousand <c>--process</c> keys copied 400 MB before).</remarks>
-    private sealed record ActSplit(ImmutableList<string> Flags, ImmutableList<string> Volumes, string Only, ImmutableList<string> Processes, Request.Failed? Failure);
+    private sealed record ActSplit(ImmutableList<string> Flags, ImmutableList<string> Volumes, string Only, ImmutableList<string> Processes, Request.Failed? Failure)
+    {
+        public ImmutableList<string> Entries { get; init; } = [];
+    }
 
     /// <summary>The flags, the <c>--volume</c> values, the <c>--only</c> file and the <c>--process</c> keys, apart — or the first refusal.</summary>
     private static ActSplit SplitActOptions(IReadOnlyList<string> rest)
@@ -454,7 +471,7 @@ internal static class CommandLine
     /// per-flag dispatch apart); how many arguments it used.</summary>
     private static int TakeOption(IReadOnlyList<string> rest, int i, ref ActSplit split)
     {
-        if (rest[i] is not (VolumeFlag or OnlyFlag or ProcessFlag))
+        if (rest[i] is not (VolumeFlag or OnlyFlag or ProcessFlag or EntryFlag))
         {
             split = split with { Flags = split.Flags.Add(rest[i]) };
             return 1;
@@ -468,6 +485,7 @@ internal static class CommandLine
     private static ActSplit WithValue(ActSplit split, string flag, string value) => flag switch
     {
         ProcessFlag => split with { Processes = split.Processes.Add(value) },
+        EntryFlag => split with { Entries = split.Entries.Add(value) },
         OnlyFlag => split with { Only = value },
         _ => split with { Volumes = split.Volumes.Add(value) },
     };
@@ -482,6 +500,7 @@ internal static class CommandLine
     {
         VolumeFlag => "a 64-hex anonymous volume name",
         ProcessFlag => "a process A18's or A19's preview showed, as <pid>:<start ticks>",
+        EntryFlag => "an archived entry A20's preview showed, as its 16-hex id",
         _ => "a file of 64-hex names, one per line",
     };
 
@@ -501,7 +520,7 @@ internal static class CommandLine
 
     private static Request.Failed? UnknownActFlag(IReadOnlyList<string> flags) =>
         flags.Any(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag or DetachFlag)) || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count
-            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name>, {OnlyFlag} <file or -> and {ProcessFlag} <pid:start>; got \"{Printable(string.Join(' ', flags))}\".")
+            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name>, {OnlyFlag} <file or ->, {ProcessFlag} <pid:start> and {EntryFlag} <id>; got \"{Printable(string.Join(' ', flags))}\".")
             : null;
 
     private static Request.Failed? ActMode(IReadOnlyList<string> flags) =>
@@ -532,6 +551,17 @@ internal static class CommandLine
         _ when !ids.Any(Core.Actions.ActionId.ShownProcessIds.Contains) => new Request.Failed($"\"{BinaryName} act\": {ProcessFlag} names the processes a preview of {string.Join(" or ", Core.Actions.ActionId.ShownProcessIds)} showed; it needs one of them among the actions."),
         _ when processes.FirstOrDefault(p => !Core.Actions.Suspects.SuspectSignals.IsShownKey(p)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {ProcessFlag} \"{Printable(bad)}\" is not a process as A18's or A19's preview shows it (<pid>:<start ticks>)."),
         _ when processes.Count > MaxShownVolumes => new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} processes."),
+        _ => null,
+    };
+
+    /// <summary>A shown entry list belongs to A20 (plan §15r E9.S4), and every <c>--entry</c> is an archived entry's 16-hex id, none twice.</summary>
+    private static Request.Failed? ShownEntriesFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> entries) => entries switch
+    {
+        { Count: 0 } => null,
+        _ when !ids.Any(id => id.Text == "A20") => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} names the archived entries A20's preview showed; it needs A20 among the actions."),
+        _ when entries.FirstOrDefault(e => !Core.Archive.ArchiveIndex.IsEntryId(e)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} \"{Printable(bad)}\" is not an archived entry's id (16 lowercase hex digits)."),
+        _ when entries.Distinct(StringComparer.Ordinal).Count() != entries.Count => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} names an entry twice."),
+        _ when entries.Count > MaxShownVolumes => new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} entries."),
         _ => null,
     };
 
@@ -590,18 +620,24 @@ internal static class CommandLine
         };
 
     private const string BudgetFlag = "--budget-seconds";
+    private const string RunIdFlag = "--run-id";
     private const string ScanFlag = "--scan";
 
     /// <summary>Optionally <c>--agent &lt;id&gt;</c> (as <c>archive preview</c>), <c>--budget-seconds &lt;n&gt;</c> (1 to the most
     /// <c>archive.runBudgetMinutes</c> allows) and <c>--json</c>.</summary>
     private static Request ParseArchiveRun(IReadOnlyList<string> rest) =>
-        ReadOptions("archive run", rest, [AgentFlag, BudgetFlag], [JsonFlag]) switch
+        ReadOptions("archive run", rest, [AgentFlag, BudgetFlag, RunIdFlag], [JsonFlag]) switch
         {
             (_, { } failure) => failure,
             var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive run\" {bad}."),
             var (options, _) when options.Values.TryGetValue(BudgetFlag, out var budget) && !ValidBudget(budget) =>
                 new Request.Failed($"\"{BinaryName} archive run {BudgetFlag}\" takes a whole number of seconds from 1 to {Core.Config.ConfigKeys.Archive.RunBudgetMinutes.Max * 60}; got \"{Printable(options.Values[BudgetFlag])}\"."),
-            var (options, _) => new Request.ArchiveRun(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.TryGetValue(BudgetFlag, out var b) ? int.Parse(b, System.Globalization.CultureInfo.InvariantCulture) : 0, options.Flags.Contains(JsonFlag)),
+            var (options, _) when options.Values.TryGetValue(RunIdFlag, out var runId) && Core.Records.RunId.TryParse(runId) is null =>
+                new Request.Failed($"\"{BinaryName} archive run {RunIdFlag}\" takes a run id as act names it (yyyyMMddTHHmmssZ-<pid>); got \"{Printable(runId)}\"."),
+            var (options, _) => new Request.ArchiveRun(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.TryGetValue(BudgetFlag, out var b) ? int.Parse(b, System.Globalization.CultureInfo.InvariantCulture) : 0, options.Flags.Contains(JsonFlag))
+            {
+                RunId = options.Values.GetValueOrDefault(RunIdFlag, string.Empty),
+            },
         };
 
     private static bool ValidBudget(string text) =>
