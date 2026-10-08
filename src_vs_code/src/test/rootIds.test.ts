@@ -25,7 +25,8 @@ test('the compiled registry is EXACTLY the ids of contracts/actions.json — the
 test('an action id is one of the registry, spelt exactly — anything else is refused', () => {
   assert.equal(actionIdOf('A4'), 'A4');
   assert.equal(actionIdOf('A5Testcontainers'), 'A5Testcontainers');
-  for (const bad of ['a4', 'A4 ', 'A19', 'A4,A5', '--timer', '', 'A', 4, undefined, null, ['A4']]) {
+  assert.equal(actionIdOf('A19'), 'A19', 'daemon E14 S2a added A19');
+  for (const bad of ['a4', 'A4 ', 'A20', 'A4,A5', '--timer', '', 'A', 4, undefined, null, ['A4']]) {
     assert.equal(actionIdOf(bad), undefined, JSON.stringify(bad));
   }
 });

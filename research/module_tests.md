@@ -1807,6 +1807,7 @@ Two first attempts (the identity and missing-history rules mutated in `IdleFor`)
 | E14 S1: a point of another boot, of a reused pid, or older than the maximum is no baseline; a four-hour average does not make a now-quiet server busy without activity (plan review finding 3) | `…A_baseline_of_another_boot_a_reused_pid_or_older_than_the_maximum_is_not_used` (3), `…A_four_hour_average_does_not_make_a_now_quiet_server_busy_without_activity` |
 | E14 S1: the monotonic clock is the denominator (a wall-clock jump changes nothing); a malformed ledger is no baseline, never a failed sample; an unchanged ledger is not rewritten | `…A_wall_clock_jump_does_not_change_the_rate`, `…An_unreadable_or_malformed_ledger_is_no_baseline_never_a_failed_sample` (2), `…An_unchanged_ledger_is_not_rewritten` |
 | E14 S1: where the ledger lives — root's timer in the state directory, never the user's home; `status` as root and a read-only `collect` record nothing and say why; through the CLI over a copy of the captured tree WITH a boot id: an unprivileged `status` keeps its ledger in its own state folder and never in the state directory, and its second call measures over the interval without waiting; a root `status` writes no ledger anywhere (plan review findings 1 and 4) | `…The_root_timer_records_its_ledger_in_the_state_directory`, `…A_place_that_may_not_write_records_nothing_and_says_why`, `Cli.Tests/McpLedgerStatusTests` (2); `McpStatusTests` holds that the captured tree (no boot id) writes no ledger into the checked-in fixture |
+| **E14 S2a (2026-10-08): A19 stops idle MCP servers** — an instance idle (no CPU, by identity over the timer's history) past `mcpWatchdog.idleMinutes` is a target keyed pid:start:cpu:uid, 30 min is not enough, missing history or one tick keeps it; an orphan re-parented to init needs only `mcpWatchdog.orphanIdleMinutes`, a `systemd --user` child and one under its agent the full window; another user's, root's and the agent process are never targets; a terminal, a child process or a stale snapshot keeps it; a button run is refused without its shown list and signals only what its modal showed, by pid AND start; the timer's history records the MCP servers beside the agents once each; `auto.A19` is on by default and its trigger fires on any target; `--process` is accepted for A19 and refused without A18 or A19 | `Core.Tests/Actions/McpServerStopTests` (8), `Cli.Tests/ActCommandTests.The_process_flag_is_accepted_for_A19_and_refused_without_A18_or_A19` |
 
 **Red first:** C-1 was red for the real symptom — A18 *Expected preview.Count to be 0 … but found 1* (an agent process judged
 idle beside a folder nobody could read) and the scan *Expected scan.Complete to be False … but found True*; C-2 was red with
@@ -1827,6 +1828,13 @@ capability and the two limits; `config-keys.json` and `status-limits.json` regen
 **Status budget:** `StatusFlows`' first flow now allows 2 s plus the CPU window (the captured tree runs two servers); the
 probe's own `sampleMilliseconds` is still held under 2 s.
 
+**E14 S2a — red first and teeth (2026-10-08, Windows suites).** The eight A19 tests were written against a skeleton that
+selects nothing: six RED for the real absence (*Expected … to contain a single item, but the collection is empty*; *the
+history … {200} contains 1 item(s) less*; *Expected unbound.Refusal …*; *Expected … Fired to be True*), the two negative
+ones green as they should be; the `--process` test RED (*Expected … Act, but found … Failed*). Green after. Teeth — each
+guard broken in PRODUCT code: the terminal guard, the child guard, the same-process guard → the keep test red; the idle
+window → 3 red; the init-only orphan window → 1; the button binding → 1; the history widening → 5. The target-user filter
+alone has no teeth: the same-process guard's uid re-check refuses another account as well (two guards, either sufficient).
 **E14 S1 — red first and teeth (2026-10-07, Windows suites).** The burst test was written against the unfixed collector and
 went red for the real symptom: *Expected … Value = 16.7 … because 2 bursts × 10 s × 100 ticks over the 120 s since the
 previous sample … but found … Value = 0.0* — the 1 s window of daemon 0.2.0 reading a quiet second, as measured on

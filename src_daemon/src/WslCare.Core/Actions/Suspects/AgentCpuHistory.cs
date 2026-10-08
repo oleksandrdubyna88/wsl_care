@@ -119,11 +119,15 @@ public static class AgentCpuHistory
         }
     }
 
-    /// <summary>The AI-agent processes of non-root accounts in <paramref name="processes"/>, sampled from <c>/proc</c> now.</summary>
+    /// <summary>The AI-agent processes AND the catalogued MCP servers' processes (plan E14 S2a: A19's evidence — one history, one
+    /// sampler) of non-root accounts in <paramref name="processes"/>, sampled from <c>/proc</c> now, each pid once (the merge keys
+    /// by identity and would refuse a duplicate — the risk consultation of 2026-10-08).</summary>
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
         [.. processes
-            .Where(p => p.Family == ProcessFamilies.AiAgents && p.User != "root" && p.Pid > 1)
-            .Select(p => SuspectTermination.Sample(files, paths, p.Pid))
+            .Where(p => (p.Family == ProcessFamilies.AiAgents || Mcp.McpInstances.ServerOf(p, Mcp.McpServerCatalogue.Servers) is not null) && p.User != "root" && p.Pid > 1)
+            .Select(p => p.Pid)
+            .Distinct()
+            .Select(pid => SuspectTermination.Sample(files, paths, pid))
             .OfType<PidSample>()
             .Where(s => s.Uid != 0)];
 

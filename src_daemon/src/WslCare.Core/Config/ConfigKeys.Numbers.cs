@@ -566,6 +566,18 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.IntKey CpuIntervalMaxMinutes = new("mcpServers.cpuIntervalMaxMinutes", 10, 1440) { Trust = KeyTrust.Display };
     }
 
+    public static partial class McpWatchdog
+    {
+        /// <summary>A19 (plan E14 S2a): an MCP server with NO CPU for at least this long, measured by identity over the timer's CPU
+        /// history, is stopped — the owner's "idle > 60 min" of 2026-10-08. It decides what ends, so a user layer may only lengthen
+        /// it. Default 60.</summary>
+        public static readonly ConfigKey.IntKey IdleMinutes = new("mcpWatchdog.idleMinutes", 10, 10080) { Trust = KeyTrust.Higher };
+
+        /// <summary>A19: the same for a server whose agent died (re-parented to init) — nobody can talk to it any more (the owner's
+        /// Q-M3). Default 10.</summary>
+        public static readonly ConfigKey.IntKey OrphanIdleMinutes = new("mcpWatchdog.orphanIdleMinutes", 1, 10080) { Trust = KeyTrust.Higher };
+    }
+
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
     private static IReadOnlyList<ConfigKey> NumberKeys() =>
     [
@@ -714,5 +726,7 @@ public static partial class ConfigKeys
         McpServers.MaxStartsListed,
         McpServers.CpuIntervalMinSeconds,
         McpServers.CpuIntervalMaxMinutes,
+        McpWatchdog.IdleMinutes,
+        McpWatchdog.OrphanIdleMinutes,
     ];
 }

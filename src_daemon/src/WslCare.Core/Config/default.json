@@ -21,7 +21,8 @@
     "A14": true,
     "A15": true,
     "A16": true,
-    "A17": false
+    "A17": false,
+    "A19": true
   },
   "volumes": {
     "anonymousMaxCount": 100,
@@ -294,5 +295,9 @@
     "maxStartsListed": 50,
     "cpuIntervalMinSeconds": 120,
     "cpuIntervalMaxMinutes": 20
+  },
+  "mcpWatchdog": {
+    "idleMinutes": 60,
+    "orphanIdleMinutes": 10
   }
 }

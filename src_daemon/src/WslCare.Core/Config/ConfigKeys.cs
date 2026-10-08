@@ -52,6 +52,10 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.BoolKey A15 = new("auto.A15") { Trust = KeyTrust.Off };
         public static readonly ConfigKey.BoolKey A16 = new("auto.A16") { Trust = KeyTrust.Off };
         public static readonly ConfigKey.BoolKey A17 = new("auto.A17") { Trust = KeyTrust.Off };
+
+        /// <summary>A19, the idle MCP servers' watchdog (plan E14 S2a): ON by default — the owner's decision of 2026-10-08; the
+        /// daemon's dry-run rules (<c>dryRun</c>, the first week) still govern what the timer actually does.</summary>
+        public static readonly ConfigKey.BoolKey A19 = new("auto.A19") { Trust = KeyTrust.Off };
     }
 
     public static class Volumes
@@ -186,7 +190,7 @@ public static partial class ConfigKeys
     [
         DryRun, Distro, RefreshSeconds,
         Auto.A1, Auto.A2, Auto.A3, Auto.A4, Auto.A5, Auto.A5Testcontainers, Auto.A6, Auto.A6Unused, Auto.A7, Auto.A8,
-        Auto.A9, Auto.A10, Auto.A11, Auto.A12, Auto.A13, Auto.A14, Auto.A15, Auto.A16, Auto.A17,
+        Auto.A9, Auto.A10, Auto.A11, Auto.A12, Auto.A13, Auto.A14, Auto.A15, Auto.A16, Auto.A17, Auto.A19,
         Volumes.AnonymousMaxCount, Volumes.AnonymousMaxGb, Volumes.AnonymousOlderThanDays,
         Containers.StoppedOlderThanDays, Containers.TestcontainersOlderThanHours,
         Images.UnusedOlderThanDays, Images.UnusedMaxGb,

@@ -201,7 +201,7 @@ internal static class CommandLine
         new([["collect"]], "collect [--timer or --detach] [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise); --timer is the systemd timer's mark, the only run that also acts; --detach (as root) starts it in its own unit and answers accepted at once", ["collect", "--json"], ParseCollect),
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
-        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed, --process the processes A18's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
+        new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed, --process the processes A18's or A19's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
         new([["act", "--request"]], "act --request <runId>", "as root, the template unit's start: run the request --detach wrote, recorded under its run id (refused, recorded, when another run holds the lock)", ["act", "--request", "20261002T120000Z-123"], ParseActFromRequest),
         new([["act", "--stop"]], "act --stop <runId> [--json]", "as root: stop a WEDGED run through systemd, only when its process lives in wsl-care.service or that run's own unit", ["act", "--stop", "20261002T120000Z-123", "--json"], ParseActStop),
         new([["logs"]], "logs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--action <A#>] [--detail] [--json]", "what the runs of a period freed, per action; runs with and without a cleanup; max and min; every object removed with --detail or one --action (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["logs", "--period", "today", "--json"], ParseLogs),
@@ -427,7 +427,7 @@ internal static class CommandLine
     private static string ShownValueKind(string flag) => flag switch
     {
         VolumeFlag => "a 64-hex anonymous volume name",
-        ProcessFlag => "a process A18's preview showed, as <pid>:<start ticks>",
+        ProcessFlag => "a process A18's or A19's preview showed, as <pid>:<start ticks>",
         _ => "a file of 64-hex names, one per line",
     };
 
@@ -470,12 +470,13 @@ internal static class CommandLine
         _ => null,
     };
 
-    /// <summary>A shown process list belongs to A18 alone (E7.S2b review A-H1), and every <c>--process</c> is <c>pid:start</c>.</summary>
+    /// <summary>A shown process list belongs to the actions bound to one (<see cref="Core.Actions.ActionId.ShownProcessIds"/>: A18,
+    /// E7.S2b review A-H1; A19, plan E14 S2a), and every <c>--process</c> is <c>pid:start</c>.</summary>
     private static Request.Failed? ShownProcessesFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> processes) => processes switch
     {
         { Count: 0 } => null,
-        _ when !ids.Any(id => id.Text == "A18") => new Request.Failed($"\"{BinaryName} act\": {ProcessFlag} names the processes A18's preview showed; it needs A18 among the actions."),
-        _ when processes.FirstOrDefault(p => !Core.Actions.Suspects.SuspectSignals.IsShownKey(p)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {ProcessFlag} \"{Printable(bad)}\" is not a process as A18's preview shows it (<pid>:<start ticks>)."),
+        _ when !ids.Any(Core.Actions.ActionId.ShownProcessIds.Contains) => new Request.Failed($"\"{BinaryName} act\": {ProcessFlag} names the processes a preview of {string.Join(" or ", Core.Actions.ActionId.ShownProcessIds)} showed; it needs one of them among the actions."),
+        _ when processes.FirstOrDefault(p => !Core.Actions.Suspects.SuspectSignals.IsShownKey(p)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {ProcessFlag} \"{Printable(bad)}\" is not a process as A18's or A19's preview shows it (<pid>:<start ticks>)."),
         _ when processes.Count > MaxShownVolumes => new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} processes."),
         _ => null,
     };

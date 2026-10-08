@@ -260,6 +260,17 @@ public sealed class ActCommandTests : IDisposable
         CommandLine.Parse(["act", rest[0], "--confirm", .. rest.Skip(1)]).Should().BeOfType<Request.Failed>();
     }
 
+    /// <summary>Plan E14 S2a: A19's button run is bound to the processes its modal showed, as A18's — the parser takes the ids
+    /// from <see cref="Core.Actions.ActionId.ShownProcessIds"/>, one place.</summary>
+    [Fact]
+    public void The_process_flag_is_accepted_for_A19_and_refused_without_A18_or_A19()
+    {
+        CommandLine.Parse(["act", "A19", "--confirm", "--manual", "--process", "300:4000"]).Should().BeOfType<Request.Act>()
+            .Which.Processes.Should().Equal("300:4000");
+        CommandLine.Parse(["act", "A10", "--confirm", "--process", "300:4000"]).Should().BeOfType<Request.Failed>()
+            .Which.Message.Should().Contain("A18").And.Contain("A19");
+    }
+
     [Fact]
     public void A_shown_process_list_parses_beside_a4_s_volumes()
     {
