@@ -23,8 +23,10 @@ public sealed class ShellRefusalScanTests
     [Fact]
     public void No_shipped_shell_script_calls_a_refusing_function_inside_a_command_substitution()
     {
-        var findings = ShippedScripts()
-            .SelectMany(path => ShellRefusalScan.Findings(Lines(path)).Select(f => $"{Path.GetRelativePath(ReleaseFiles.Root, path)}:{f.Line} {f.Function}"))
+        var scripts = ShippedScripts().Select(path => (Path: path, Lines: Lines(path))).ToList();
+        var refusing = ShellRefusalScan.RefusingFunctions(scripts.Select(s => (IReadOnlyList<string>)s.Lines));
+        var findings = scripts
+            .SelectMany(s => ShellRefusalScan.Findings(s.Lines, refusing).Select(f => $"{Path.GetRelativePath(ReleaseFiles.Root, s.Path)}:{f.Line} {f.Function}"))
             .ToList();
 
         findings.Should().BeEmpty($"a refusing function inside $( … ) loses its message and leaves only the exit status — call it as a plain command and assign through a named variable (release-extension-guard.sh's manifest_field); every site: {string.Join(", ", findings)}");
@@ -66,5 +68,37 @@ public sealed class ShellRefusalScanTests
 
         ShellRefusalScan.Findings(shipped).Should().Equal(new ShellRefusalScan.Finding(10, "manifest_field"), new ShellRefusalScan.Finding(11, "manifest_field"));
         ShellRefusalScan.Findings(fixedForm).Should().BeEmpty();
+    }
+
+    /// <summary>The same call reformatted over lines — the name on the line after <c>$(</c>, or after a continuation — is the
+    /// same defect, reported at the line of its <c>$(</c>.</summary>
+    [Fact]
+    public void A_command_substitution_split_across_lines_is_still_found_at_its_opening_line()
+    {
+        string[] script =
+        [
+            "manifest_field() {",
+            "  refuse \"no single top-level $1\"",
+            "}",
+            "recorded=\"$(",
+            "  manifest_field version",
+            ")\"",
+            "publisher=\"$( \\",
+            "manifest_field publisher)\"",
+        ];
+
+        ShellRefusalScan.Findings(script).Should().Equal(new ShellRefusalScan.Finding(4, "manifest_field"), new ShellRefusalScan.Finding(7, "manifest_field"));
+    }
+
+    /// <summary>Scripts source each other's libraries: a refusing function defined in one file and called inside <c>$( … )</c>
+    /// in another is found once the refusing set is taken over both — and not from the calling file alone.</summary>
+    [Fact]
+    public void A_refusing_function_from_a_sourced_library_is_found_in_the_script_that_calls_it()
+    {
+        string[] library = ["lib_value() {", "  [ -n \"$1\" ] || fail \"no value\"", "  printf '%s' \"$1\"", "}"];
+        string[] caller = [". \"$here/lib/values.sh\"", "v=\"$(lib_value \"$x\")\""];
+
+        ShellRefusalScan.Findings(caller, ShellRefusalScan.RefusingFunctions([library, caller])).Should().Equal(new ShellRefusalScan.Finding(2, "lib_value"));
+        ShellRefusalScan.Findings(caller).Should().BeEmpty("the calling file alone does not define it — which is why the prohibition takes the set over every script");
     }
 }
