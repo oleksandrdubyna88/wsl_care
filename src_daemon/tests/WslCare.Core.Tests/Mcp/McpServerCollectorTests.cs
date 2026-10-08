@@ -294,6 +294,9 @@ public sealed class McpServerCollectorTests : IDisposable
     [InlineData("{\"schemaVersion\": 1, \"bootId\": \"" + SyntheticProcTree.FirstBootId + "\", \"entries\": [null]}")]
     [InlineData("{\"schemaVersion\": 1, \"bootId\": \"" + SyntheticProcTree.FirstBootId + "\", \"entries\": [{\"pid\": 300, \"startTicks\": START}]}")]
     [InlineData("{\"schemaVersion\": 1, \"bootId\": \"" + SyntheticProcTree.FirstBootId + "\", \"entries\": [{\"pid\": 300, \"startTicks\": START, \"points\": [null]}]}")]
+    // The cadence consultation (2026-10-08): a point whose monotonic reading is absurd overflowed the age into an exception.
+    [InlineData("{\"schemaVersion\": 1, \"bootId\": \"" + SyntheticProcTree.FirstBootId + "\", \"entries\": [{\"pid\": 300, \"startTicks\": START, \"points\": [{\"cpuTicks\": 1, \"wall\": \"2026-10-03T00:00:00+00:00\", \"monotonicMs\": -1000000000000000}]}]}")]
+    [InlineData("{\"schemaVersion\": 1, \"bootId\": \"" + SyntheticProcTree.FirstBootId + "\", \"entries\": [{\"pid\": 300, \"startTicks\": START, \"points\": [{\"cpuTicks\": -5, \"wall\": \"2026-10-03T00:00:00+00:00\", \"monotonicMs\": 1}]}]}")]
     public void An_unreadable_or_malformed_ledger_is_no_baseline_never_a_failed_sample(string content)
     {
         Session(200, 300, TimeSpan.FromHours(1));
@@ -353,6 +356,26 @@ public sealed class McpServerCollectorTests : IDisposable
         McpCpuLedger.Serialise(Of(McpCpuLedger.MaxEntries(cap))).Length.Should().BeLessThanOrEqualTo(cap, "a full ledger of the widest entries is still read back");
         next.Entries.Should().HaveCount(McpCpuLedger.MaxEntries(cap));
         next.Entries.Min(e => e.StartTicks).Should().Be(5, "past the cap the OLDEST processes go (no baseline: the window answers)");
+    }
+
+    [Fact]
+    public void A_ledger_that_is_a_link_is_not_written_through()
+    {
+        // The cadence consultation (2026-10-08): the read refused a linked ledger, but the atomic writer resolved the link and
+        // replaced its target — a sibling file in the same folder passed the scope check.
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "a file link needs no privilege on Linux");
+        Session(200, 300, TimeSpan.FromHours(1));
+        var folder = Path.GetDirectoryName(LedgerFile)!;
+        Directory.CreateDirectory(folder);
+        var sentinel = Path.Combine(folder, "sentinel.txt");
+        File.WriteAllText(sentinel, "keep me");
+        File.CreateSymbolicLink(LedgerFile, sentinel);
+
+        var sample = Sample(wait: Burn(300));
+
+        File.ReadAllText(sentinel).Should().Be("keep me", "the ledger's place is a link, and a link is never written through");
+        sample.Baseline.Recorded.Should().BeFalse();
+        sample.Baseline.Reason.Should().Contain("link");
     }
 
     [Fact]

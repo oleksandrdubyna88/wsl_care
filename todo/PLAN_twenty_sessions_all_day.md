@@ -371,6 +371,10 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
   them. 3 (orphaned temp files until S2): accepted, built in S1. 4 (the 4 h timer falls back to the window): rejected —
   deliberate (design 2, own review finding 3); the live metric is the extension's 120 s `status`. 6 (X/Y/Z unresolved):
   accepted, S8 waits for Q8. 7 (soak retention): accepted, two runs ≈ 0.6 MB kept.
+- **Cadence consultation (coai, codex, 2026-10-08, closed solved):** two real defects, both fixed: a ledger that is a link
+  was written through (the atomic writer replaced the sibling it pointed at) — now refused; a negative monotonic point
+  overflowed the age — every point must be non-negative. Its third idea (a separate 4-hour historical CPU figure beside the
+  bounded reading) is declined for S1 and left to S2.
 - **Own plan review (stand-in, 2026-10-07; one reviewer, `feature-dev:code-reviewer` on Opus, read-only).** Verified as
   fine: every S1 file:line, the CPU formula and units, the two-point rule (no starvation for one poller with jitter, two
   pollers 1 s apart, or a poller faster than the minimum), the growth bound, concurrent writers (the atomic write's temp

@@ -125,7 +125,7 @@ public static partial class McpCpuLedger
     /// review, finding 1).</summary>
     private static bool WellFormed(McpCpuFile file) =>
         file is { SchemaVersion: Core.SchemaVersion.Current, BootId.Length: > 0, Entries: not null }
-        && file.Entries.All(e => e is { Points: not null } && e.Points.All(p => p is not null));
+        && file.Entries.All(e => e is { Points: not null } && e.Points.All(p => p is { CpuTicks: >= 0, MonotonicMs: >= 0 }));
 
     /// <summary>A serialised entry with two points at their widest (compact JSON): what bounds how many entries fit under the
     /// read cap (own code review, finding 3 — a ledger past its own cap would read as empty for ever).</summary>
@@ -196,6 +196,13 @@ public static partial class McpCpuLedger
 
     private static McpCpuBaseline Write(IFileSystem files, string directory, string file, McpCpuFile before, McpCpuFile next, McpCpuSweep sweep)
     {
+        // The cadence consultation (2026-10-08): the atomic writer resolves a link and replaces its target, and a sibling target
+        // passes the folder's scope — so a ledger that is a link is refused here, as its read already refuses it.
+        if (files.ReadLink(file) is LinkReadResult.Target link)
+        {
+            return McpCpuBaseline.NotRecorded(file, $"{file} is a link (to {link.Path}); a link is never written through");
+        }
+
         var json = Serialise(next);
         try
         {
