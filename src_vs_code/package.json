@@ -98,6 +98,16 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.installWindowsTimeGuard",
+        "title": "Install the Windows Time guard (a SYSTEM scheduled task, one UAC prompt)…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.removeWindowsTimeGuard",
+        "title": "Remove the Windows Time guard (one UAC prompt)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.openLogs",
         "title": "Logs",
         "category": "AI OS Care",
@@ -209,6 +219,22 @@
           "scope": "application",
           "markdownDescription": "How long *Start Windows Time* may take, in seconds — it waits for YOU at the UAC prompt, then starts the Windows Time service and resyncs (up to three tries)."
         },
+        "wslCare.timeouts.windowsTimeGuardSeconds": {
+          "type": "integer",
+          "default": 180,
+          "minimum": 30,
+          "maximum": 3600,
+          "scope": "application",
+          "markdownDescription": "How long installing or removing the Windows Time guard may take, in seconds — it waits for YOU at the UAC prompt, then registers or deletes one scheduled task."
+        },
+        "wslCare.timeouts.windowsTimeGuardQuerySeconds": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 5,
+          "maximum": 300,
+          "scope": "application",
+          "markdownDescription": "How long the read-only Task Scheduler query behind the panel's *Windows Time guard* line may take, in seconds."
+        },
         "wslCare.windowsTime.setAutomaticStart": {
           "type": "boolean",
           "default": true,
@@ -262,6 +288,38 @@
           "maximum": 256,
           "scope": "application",
           "markdownDescription": "How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped."
+        },
+        "wslCare.windowsTime.guard.everyHours": {
+          "type": "integer",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 168,
+          "scope": "application",
+          "markdownDescription": "The Windows Time guard runs every this many hours (besides at startup, at logon and when the Windows Time service logs that it is stopping). Applies when the guard is installed (again)."
+        },
+        "wslCare.windowsTime.guard.minMinutesBetweenStarts": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "maximum": 1440,
+          "scope": "application",
+          "markdownDescription": "The Windows Time guard starts the service at most once in this many minutes, so it never loops against software that stops it again. Applies when the guard is installed (again)."
+        },
+        "wslCare.windowsTime.guard.delaySeconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 0,
+          "maximum": 3600,
+          "scope": "application",
+          "markdownDescription": "How long after startup, a logon, or the service's stop event the Windows Time guard waits before it runs, in seconds (0 = at once). Applies when the guard is installed (again)."
+        },
+        "wslCare.windowsTime.guard.timeLimitMinutes": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 60,
+          "scope": "application",
+          "markdownDescription": "How long one run of the Windows Time guard may take before Task Scheduler stops it, in minutes. Applies when the guard is installed (again)."
         },
         "wslCare.logs.maxRunIndex": {
           "type": "integer",

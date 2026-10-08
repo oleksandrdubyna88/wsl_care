@@ -614,8 +614,19 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   *AI OS Care: Start Windows Time…*). A modal shows the exact script first; on confirmation ONE Windows PowerShell runs it
   elevated — Windows' UAC asks you — to set the service to start Automatic (`wslCare.windowsTime.setAutomaticStart`,
   default on), start it and run `w32tm /resync /force`; then a full check runs so the panel shows the result. Nothing
-  else on Windows is changed, and nothing restarts the service if other software stops it again (planned: a scheduled
-  guard, `todo/PLAN_windows_time_task.md`).
+  else on Windows is changed, and nothing restarts the service if other software stops it again — that is the guard below.
+- **The Windows Time guard (2026-10-08).** *AI OS Care: Install the Windows Time guard…* (also a button on the panel's
+  *Health* section) registers ONE scheduled task, `\wsl-care\windows-time-guard`, that runs as SYSTEM at startup, at logon,
+  every `wslCare.windowsTime.guard.everyHours` (4) hours and when the Windows Time service logs that it is stopping (its own
+  event 258 — the Service Control Manager's 7036 is not logged on Windows 11 at all, measured in
+  [research/2026-10-08_windows_time_guard_trigger.md](research/2026-10-08_windows_time_guard_trigger.md)). Each run only sets
+  the start type to Automatic (while `wslCare.windowsTime.setAutomaticStart` is on), starts the service — at most once per
+  `…guard.minMinutesBetweenStarts` (10) minutes, so it never loops against software that stops it again — and runs
+  `w32tm /resync /force`. Before anything runs, the exact elevated script (the task's XML inside it) opens in a read-only
+  tab and a modal names what will run; then ONE UAC prompt. The panel's line shows, from Task Scheduler itself, whether the
+  guard is installed, whether it is what the current settings would install, and its last result. *Remove the Windows Time
+  guard…* deletes the task, its folder and its rate-limit stamp (the service's start type is left as it is). The settings
+  `wslCare.windowsTime.guard.*` are baked in at install: change one and the panel says to install it again.
 - **The cleanup buttons (E6.S3).** Each cleanup row has **Clean** and **Select**; **Clean selected (n)** runs every ticked
   row as ONE run; **Run full check now** starts a full measurement (it does not clean); a wedged run of the daemon's own
   units gets **Stop** (any other wedged run is named with its pid). A press asks the daemon for a fresh preview, shows it in

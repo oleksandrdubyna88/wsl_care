@@ -6,6 +6,7 @@ import { at, unavailableAncestor } from './jsonPath';
 import { isUnavailable, unavailableText } from './read';
 import { RENDERERS, type Rendered } from './rowRenderers';
 import type { CleanupControls, PanelView, ViewLevel, ViewRow, ViewSection } from './view';
+import type { GuardView } from '../windowsTime/guardState';
 import { windowsTimeNeedsFix } from '../windowsTime/windowsTimeNeed';
 
 /**
@@ -113,7 +114,11 @@ function actions(snapshot: Snapshot): PanelView['actions'] {
 /** The controls before the host has derived any (the page greys every cleanup button). */
 export const NO_CLEANUP: CleanupControls = { enabled: false, state: '', stateLevel: 'none', reason: 'checking…', rows: [], fullCheck: false, stop: undefined, stopText: '', results: [], dockerAfter: '' };
 
-/** `cleanup` is the host's derivation (`cleanup/cleanupView.ts`) — this module reads nothing of the root paths. */
-export function buildPanelView(snapshot: Snapshot, cleanup: CleanupControls = NO_CLEANUP): PanelView {
-  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), cleanup };
+/** The guard's line before the host has read Task Scheduler. */
+export const NO_GUARD: GuardView = { line: 'Windows Time guard: checking…', level: 'none', buttons: [] };
+
+/** `cleanup` is the host's derivation (`cleanup/cleanupView.ts`) — this module reads nothing of the root paths; `guard` is the
+ * Windows Time guard host's (`windowsTime/guardHost.ts`). */
+export function buildPanelView(snapshot: Snapshot, cleanup: CleanupControls = NO_CLEANUP, guard: GuardView = NO_GUARD): PanelView {
+  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), cleanup, windowsTimeGuard: guard };
 }

@@ -20,6 +20,10 @@ import { OutcomeStore } from './state/outcomeStore';
 import { daemonLimitsOf, type DaemonLimits } from './shared/daemonLimits';
 import { StatusBar } from './statusBar/statusBar';
 import { clientRunner, type WslCareTestApi } from './testApi';
+import { WindowsTimeGuardHost } from './windowsTime/guardHost';
+import { sweepPending } from './windowsTime/guardPending';
+import type { GuardOptions } from './windowsTime/guardTask';
+import { guardUiFor, newGuardRecorder, type GuardRecorder } from './windowsTime/guardUi';
 import { startWindowsTime } from './windowsTime/windowsTimeFix';
 import { newWindowsTimeRecorder, windowsTimeUiFor, type WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import { distroSettingText } from './wsl/distros';
@@ -91,6 +95,8 @@ interface Parts {
   readonly cleanup: CleanupController;
   readonly install: InstallRecorder;
   readonly windowsTime: WindowsTimeRecorder;
+  readonly guardRecorder: GuardRecorder;
+  readonly guard: WindowsTimeGuardHost;
   readonly cleanRecorder: CleanRecorder;
   readonly host: CleanupHost;
   readonly choice: RunnerChoice;
@@ -137,7 +143,47 @@ function build(context: vscode.ExtensionContext): Parts {
     ui: cleanUiFor(testMode, cleanRecorder), timers: ONE_SHOT, now: () => performance.now(), wallNow: () => Date.now(), log: (line) => log.error(line), numbers,
   });
 
-  return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), cleanRecorder, host, choice, calls, store, poller, focus, log };
+  const guardRecorder = newGuardRecorder();
+  const guard = windowsTimeGuard(context, testMode, guardRecorder);
+
+  return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, cleanRecorder, host, choice, calls, store, poller, focus, log };
+}
+
+/** The Windows Time guard's settings, read NOW (PLAN_windows_time_task.md D6): the task is built from them at install. */
+function guardOptions(): GuardOptions {
+  const n = numbers();
+  return {
+    setAutomaticStart: settings().get<boolean>('windowsTime.setAutomaticStart', true) !== false,
+    everyHours: n.guardEveryHours,
+    minMinutesBetweenStarts: n.guardMinMinutesBetweenStarts,
+    delaySeconds: n.guardDelaySeconds,
+    timeLimitMinutes: n.guardTimeLimitMinutes,
+  };
+}
+
+/**
+ * The Windows Time guard (PLAN_windows_time_task.md): its host reads Task Scheduler through the REAL runner (never the fake
+ * wsl.exe; a recorder in Test mode), and its install / remove run ONE elevated PowerShell each. A pending run past its
+ * deadline is swept at activation, so nothing stays "waiting" after a crash.
+ */
+function windowsTimeGuard(context: vscode.ExtensionContext, testMode: boolean, recorder: GuardRecorder): WindowsTimeGuardHost {
+  void sweepPending(context.globalState, Date.now());
+
+  return new WindowsTimeGuardHost({
+    env: process.env,
+    options: guardOptions,
+    opTimeoutMs: () => numbers().windowsTimeGuardSeconds * 1000,
+    queryTimeoutMs: () => numbers().windowsTimeGuardQuerySeconds * 1000,
+    ui: guardUiFor(testMode, recorder, runnerFor({ kind: 'real' }), context.subscriptions),
+    durable: context.globalState,
+    nowUtcMs: () => Date.now(),
+    formatInstant: (iso) => new Date(iso).toLocaleString(),
+  });
+}
+
+/** A guard flow from a button or the palette — its faults logged at the detached edge, never thrown into VS Code. */
+function guardFlow(parts: Parts, op: 'install' | 'remove'): () => void {
+  return () => { void parts.guard.run(op).catch((e: unknown) => { parts.log.error(`Windows Time guard ${op} failed: ${String(e)}`); }); };
 }
 
 /** *Install daemon*: the client resolves the distribution, the modal and the terminal are real — or recorded in Test mode. */
@@ -186,8 +232,10 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
   const windowsTime = windowsTimeFixer(parts);
   const logs = logsPanel(context, parts);
   const bar = new StatusBar(store, OPEN_PANEL);
+  const installGuard = guardFlow(parts, 'install');
+  const removeGuard = guardFlow(parts, 'remove');
   const panel = new PanelProvider(context.extensionUri, store, {
-    refresh: (options) => poller.refreshPanel(options),
+    refresh: (options) => { void parts.guard.refresh(); return poller.refreshPanel(options); },
     openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'wslCare'); },
     installDaemon: install,
     startWindowsTime: windowsTime,
@@ -197,6 +245,10 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     cleanup: () => host.controls(),
     onCleanupChange: (listener) => host.onChange(listener),
     openRunLogs: () => { void logs.show(lastCleanupPeriod(store.snapshot().status)); },
+    guard: () => parts.guard.view(),
+    onGuardChange: (listener) => parts.guard.onChange(listener),
+    installWindowsTimeGuard: installGuard,
+    removeWindowsTimeGuard: removeGuard,
   });
   context.subscriptions.push(
     bar,
@@ -205,16 +257,20 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     { dispose: () => host.dispose() },
     vscode.window.registerWebviewViewProvider(PanelProvider.viewId, panel),
     vscode.commands.registerCommand(OPEN_PANEL, () => vscode.commands.executeCommand(`${PanelProvider.viewId}.focus`)),
-    vscode.commands.registerCommand('wslCare.refresh', () => poller.refreshPanel()),
+    vscode.commands.registerCommand('wslCare.refresh', () => { void parts.guard.refresh(); return poller.refreshPanel(); }),
     vscode.commands.registerCommand('wslCare.startWsl', () => poller.refreshPanel({ startIfStopped: true })),
     vscode.commands.registerCommand('wslCare.installDaemon', install),
     vscode.commands.registerCommand('wslCare.startWindowsTime', windowsTime),
+    vscode.commands.registerCommand('wslCare.installWindowsTimeGuard', installGuard),
+    vscode.commands.registerCommand('wslCare.removeWindowsTimeGuard', removeGuard),
     logs,
     vscode.commands.registerCommand('wslCare.openLogs', () => logs.show()),
     { dispose: store.onChange(() => logs.statusChanged()) },
     vscode.window.registerWebviewPanelSerializer(LogsPanel.viewType, { deserializeWebviewPanel: (restored) => { logs.restore(restored); return Promise.resolve(); } }),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
     vscode.workspace.onDidChangeConfiguration((event) => configurationChanged(event, parts, panel)),
+    // A guard setting re-derives the guard's line at once: "install it again to update it" follows the setting (gemini).
+    vscode.workspace.onDidChangeConfiguration((event) => { if (event.affectsConfiguration('wslCare.windowsTime')) { parts.guard.settingsChanged(); } }),
   );
 
   return { bar, panel, logs };
@@ -245,6 +301,8 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     lastRendered: () => panel.lastRendered(),
     install: () => parts.install,
     windowsTime: () => parts.windowsTime,
+    windowsTimeGuard: () => parts.guard,
+    guardRecorder: () => parts.guardRecorder,
     cleanup: () => parts.cleanup,
     cleanupHost: () => parts.host,
     cleanRecorder: () => parts.cleanRecorder,

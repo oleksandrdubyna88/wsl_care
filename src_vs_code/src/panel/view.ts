@@ -1,3 +1,5 @@
+import type { GuardView } from '../windowsTime/guardState';
+
 /**
  * What the host posts to the page — plain strings, numbers and arrays only (structured-cloneable, and nothing the page
  * could mistake for markup). The page builds its DOM from this with `createElement` / `textContent` and nothing else
@@ -76,6 +78,12 @@ export interface CleanupControls {
   readonly dockerAfter: string;
 }
 
+/**
+ * The Windows Time guard's line on the *Health* section (PLAN_windows_time_task.md D5, D8 o5): derived by the host from what
+ * Task Scheduler answered and the pending elevated run it persisted (`windowsTime/guardState.ts`) — never a page flag.
+ */
+export type { GuardView } from '../windowsTime/guardState';
+
 export interface PanelView {
   readonly heading: string;
   /** One sentence above the sections ('' when there is nothing to say). */
@@ -84,4 +92,5 @@ export interface PanelView {
   readonly actions: readonly { readonly id: PageAction; readonly label: string }[];
   readonly sections: readonly ViewSection[];
   readonly cleanup: CleanupControls;
+  readonly windowsTimeGuard: GuardView;
 }

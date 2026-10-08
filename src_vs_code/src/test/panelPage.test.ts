@@ -286,3 +286,36 @@ test('E6.S3 review C15: a Select press toggles the tick and posts NOTHING', () =
   assert.equal(page.posted.length, before);
   assert.equal(root.one('button[data-select="A4"]').attributes['aria-pressed'], 'true');
 });
+
+// ---- PLAN_windows_time_task.md D5, D8 o5: the Windows Time guard's line, RUN in the strict harness ----
+
+test('the Windows Time guard line sits in the Health section as TEXT, and its buttons post only their bare ids', () => {
+  const hostile = 'Windows Time guard: </script><img src=x onerror=alert(1)>';
+  const view = buildPanelView(snapshot(goldenOutcomes()), undefined, { line: hostile, level: 'warn', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: true }, { id: 'removeWindowsTimeGuard', label: 'Remove the Windows Time guard', enabled: true }] });
+  const { page, root } = show(view);
+  const box = root.one('section[data-section="health"]').one('div[data-guard]');
+  assert.equal(box.one('p[data-guard-line]').textContent, hostile);
+  assert.equal(box.one('p[data-guard-line]').dataset.level, 'warn');
+  page.click(box.one('button[data-guard-action="installWindowsTimeGuard"]'));
+  assert.deepEqual(page.posted.at(-1), { type: 'installWindowsTimeGuard' });
+  page.click(box.one('button[data-guard-action="removeWindowsTimeGuard"]'));
+  assert.deepEqual(page.posted.at(-1), { type: 'removeWindowsTimeGuard' });
+  assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
+});
+
+test('while the guard elevated run is pending its buttons are disabled, and a press posts nothing', () => {
+  const view = buildPanelView(snapshot(goldenOutcomes()), undefined, { line: 'Windows Time guard: Waiting for the elevated PowerShell that installs it…', level: 'none', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: false }, { id: 'removeWindowsTimeGuard', label: 'Remove the Windows Time guard', enabled: false }] });
+  const { page, root } = show(view);
+  const buttons = root.one('div[data-guard]').all('button[data-guard-action]');
+  assert.equal(buttons.length, 2);
+  assert.ok(buttons.every((b) => b.disabled));
+  const before = page.posted.length;
+  buttons.forEach((b) => page.click(b));
+  assert.equal(page.posted.length, before);
+});
+
+test('only the Health section carries the guard line', () => {
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes())));
+  assert.deepEqual(root.all('div[data-guard]').length, 1);
+  assert.match(root.one('section[data-section="health"]').one('p[data-guard-line]').textContent, /checking…/);
+});

@@ -1,7 +1,7 @@
 # PLAN — the Windows Time guard: see which clock is wrong, never step WSL to a wrong host, start `w32time`
 
-> Status: **IMPLEMENTED, 2026-10-08 (story 1).** Story 2 — the SYSTEM scheduled task (D9) — is NOT built: extracted to
-> [PLAN_windows_time_task.md](../todo/PLAN_windows_time_task.md). Scope as shipped: the daemon's clock probe, health
+> Status: **IMPLEMENTED, 2026-10-08 (story 1).** Story 2 — the SYSTEM scheduled task (D9) — was extracted to
+> [PLAN_windows_time_task.md](PLAN_windows_time_task.md) and is IMPLEMENTED there (2026-10-08). Scope as shipped: the daemon's clock probe, health
 > collectors, thresholds, `doctor`, A16 and the live contract (`src_daemon/`); one extension command and panel button
 > (`src_vs_code/`); docs and `POST_DEPLOY.md`. Deviations from the text below are in §12 (the code round) — the largest:
 > the elevated launcher is `Process.Start` with the `runas` verb, not `Start-Process` (D7), and A16 asks the
@@ -254,8 +254,9 @@ from the product (one road in), so the release checklist and `status` say the sa
 
 ### D9 — story 2 (planned, NOT built here): the scheduled task
 
-> **Extracted** on 2026-10-08 to [PLAN_windows_time_task.md](../todo/PLAN_windows_time_task.md), which owns it now; the
-> text below is the design as this plan left it.
+> **Extracted** on 2026-10-08 to [PLAN_windows_time_task.md](PLAN_windows_time_task.md), which owns it and built it the
+> same day; the text below is the design as this plan left it — the 7036 trigger it names was measured absent and replaced
+> by the Time-Service's own event 258 there.
 
 The extension command *Install the Windows Time guard* shows the task XML and asks UAC once to register
 `\wsl-care\windows-time-guard`: principal `SYSTEM`, triggers at startup, at logon, every `N` hours, and on the System
