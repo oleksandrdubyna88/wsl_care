@@ -62,7 +62,9 @@ public static class McpServerCatalogue
     /// are not. A script run through its shebang is <c>node</c> too, so the server is never its own program here. No log layout.</summary>
     public static readonly McpServerEntry PlaywrightMcp = new("playwright-mcp", [], new McpLogLayout.None())
     {
-        RunAs = [new McpScriptMatch(["node", "nodejs"], ["playwright-mcp"], ["/node_modules/"])],
+        // coai code round 2026-10-08, finding 5: the package's bin link or the package itself — never a same-named file in
+        // another package.
+        RunAs = [new McpScriptMatch(["node", "nodejs"], ["playwright-mcp"], ["/node_modules/.bin/", "/node_modules/@playwright/mcp/"])],
     };
 
     public static IReadOnlyList<McpServerEntry> Servers { get; } = [CoaiMcp, PlaywrightMcp];

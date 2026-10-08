@@ -66,7 +66,9 @@ public sealed class McpInterpreterServersTests : IDisposable
             .Process(330, 200, "/a", 10, words: ["node", "/home/me/git/p/server.js", "--name", NpxBin])
             .Process(340, 200, "/a", 10, words: ["node", "/tmp/playwright-mcp"])
             .Process(350, 200, "/a", 10, words: ["/usr/local/bin/playwright-mcp"])
-            .Process(360, 200, "/a", 10, words: ["python3", NpxBin]);
+            .Process(360, 200, "/a", 10, words: ["python3", NpxBin])
+            // coai code round 2026-10-08 (session bf45d6ae), finding 5: a same-named file inside ANOTHER package is not the bin link.
+            .Process(370, 200, "/a", 10, words: ["node", "/home/me/git/p/node_modules/other-package/playwright-mcp"]);
 
         var found = Find();
 
@@ -91,7 +93,8 @@ public sealed class McpInterpreterServersTests : IDisposable
     [Fact]
     public void Playwright_mcp_is_watched_by_default_and_refused_as_a_user_program()
     {
-        McpSettings.From(Defaults()).Watched.Select(s => s.Name).Should().Contain(["coai-mcp", "playwright-mcp"], "every catalogued server is watched by default");
+        // coai code round 2026-10-08, finding 0: derived from the catalogue, so a third server is covered too.
+        McpSettings.From(Defaults()).Watched.Select(s => s.Name).Should().Equal(McpServerCatalogue.Names, "every catalogued server is watched by default");
         McpServerCatalogue.Names.Should().Contain("playwright-mcp");
         ConfigValidation.Parse(ConfigKeys.McpServers.Programs, "playwright-mcp").Should().BeOfType<ValueCheck.Invalid>()
             .Which.Message.Should().Contain(McpUserPrograms.ACatalogueServer);

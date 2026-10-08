@@ -388,7 +388,7 @@ interpreter. An MCP server started through `npx` runs that way. The captured 202
 `node /home/user/.npm/_npx/<hash>/node_modules/.bin/playwright-mcp` (pids 7472, 8477). The tree shows no other
 interpreter-run MCP server. The shell between `npm exec` and `node` (ppids 7471, 8476) is not in the capture.
 
-**Design.**
+**Design** (as first written; items 1 and 2 were superseded by the plan round — see *S2d as built* below).
 1. `McpServerEntry` gains `Interpreters` (default empty). A process is the server when its PROGRAM is one of `Programs`
    (as today) OR its program is one of `Interpreters` AND its SCRIPT — the second word of `ProcessEntry.Programs`, a file name,
    `.exe` stripped — is one of `Programs`. It is never a match on an argument further on (consultation C-2 still holds). The
@@ -424,6 +424,20 @@ interpreter-run MCP server. The shell between `npm exec` and `node` (ppids 7471,
   - (4) A19 is shown to target an idle one and keep one with a browser child.
 - **Rejected:** (0) bridging a missing parent. On a live system a parent that exits re-parents its child at once. The capture omits processes (the interop relay's parent 559 is missing too), so the golden reports the capture as it is.
 - **Built:** `McpServerEntry.RunAs` (`McpScriptMatch`: interpreters, scripts, folders) and `CommandLineText.ScriptOf` / `FileNameOf`. Tests that assumed one watched server now name `coai-mcp`.
+- **Code round** (same session, 8 of 8 reviewers): `proceed`, 7 findings.
+  - **Accepted:**
+    - (0) the default-watched test derives from the catalogue.
+    - (4) a scenario flow: the built CLI, with the capture's missing shells added to the sandbox tree, counts both `playwright-mcp` as instances of Claude Code.
+    - (5) a same-named file in another package matched. The folders are now the bin link `/node_modules/.bin/` and the package `/node_modules/@playwright/mcp/`. RED first, green, then red again with the bare `/node_modules/`.
+  - **Rejected, with reasons:**
+    - (1) moving `FileNameOf` out of `Collectors.Procfs`: it is the one place the comparison lives, and it is compiled for every target.
+    - (2) a Python `-m` form: no such server is measured; it would be a new case.
+    - (3) a positional `RunAs`: it would have to be nullable.
+    - (6) parsing `node` options with values: a documented safe miss.
+- **Own review** (Opus, read-only): nothing serious. Its notes are recorded:
+  - The leaked tree: agent gone, launchers re-parented, `node` alive. It counts as not under an agent and is never an orphan target. This is a residual in `module_mcp_servers.md`, measured in S8.
+  - The other missed launch forms (a global install, a relative path, `cli.js`).
+  - The stale "read-only metric" comment on `mcpServers.watched`, now corrected.
 
 ### S3 — the build-server reaper (widens A3)
 

@@ -132,7 +132,7 @@ public static partial class ConfigKeys
     public static partial class McpServers
     {
         /// <summary>The MCP servers of the AI agents the daemon counts (plan §15q E7.S2d): a list CLOSED over the catalogue's names
-        /// (the E7.S0 B1 rule), every catalogued server by default. Read-only metric: it steers no action, so no safe direction.</summary>
+        /// (the E7.S0 B1 rule), every catalogued server by default. Since E14 S2a it also says which servers A19 may stop; it stays a display key — A19 stops only the target user's own idle servers, with every guard.</summary>
         public static readonly ConfigKey.TextListKey Watched = new("mcpServers.watched", Mcp.McpServerCatalogue.Names) { Trust = KeyTrust.Display };
 
         /// <summary>The user's OWN MCP servers, by program file name (plan E14 S2c, the owner's Q-M2 of 2026-10-08): an OPEN list,
