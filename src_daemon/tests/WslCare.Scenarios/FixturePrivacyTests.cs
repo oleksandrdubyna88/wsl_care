@@ -105,7 +105,12 @@ public sealed class FixturePrivacyTests
     /// this read cannot see would otherwise leave the parity green while the lists differ.</summary>
     private static List<string> VsixServiceAccounts(string source)
     {
-        var body = System.Text.RegularExpressions.Regex.Match(source, @"export const SERVICE_ACCOUNTS[^=]*=\s*\[(?<body>[^\]]*)\]").Groups["body"].Value;
+        var declarations = System.Text.RegularExpressions.Regex.Matches(source, @"export const SERVICE_ACCOUNTS[^=]*=\s*\[(?<body>[^\]]*)\]");
+        if (declarations.Count > 1)
+        {
+            throw new InvalidDataException($"vsixCheck.ts holds {declarations.Count} declarations of SERVICE_ACCOUNTS — a commented-out copy would be read in place of the live one");
+        }
+        var body = declarations.Count == 0 ? string.Empty : declarations[0].Groups["body"].Value;
         var code = string.Join('\n', body.Split('\n').Select(line => line.Split("//")[0]));
         const string QuotedName = @"'(?<name>[^']+)'";
         var rest = System.Text.RegularExpressions.Regex.Replace(code, QuotedName, string.Empty);
@@ -139,6 +144,16 @@ public sealed class FixturePrivacyTests
         var source = $"export const SERVICE_ACCOUNTS: readonly string[] = [\n  {body}\n];";
 
         FluentActions.Invoking(() => VsixServiceAccounts(source)).Should().Throw<InvalidDataException>();
+    }
+
+    /// <summary>A second declaration — a commented-out copy above the live one — could be read in its place and keep
+    /// the parity green (coai code round, 2026-10-08), so more than one is refused.</summary>
+    [Fact]
+    public void The_service_account_read_refuses_a_second_declaration()
+    {
+        const string source = "// export const SERVICE_ACCOUNTS = ['runner'];\nexport const SERVICE_ACCOUNTS: readonly string[] = [\n  'runner',\n  'root',\n];";
+
+        FluentActions.Invoking(() => VsixServiceAccounts(source)).Should().Throw<InvalidDataException>().WithMessage("*2 declarations*");
     }
 
     private static string ByFileAndRule(IEnumerable<string> findings) =>
