@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-07: S1 built (§ 13); S2–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19); S2b–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -211,6 +211,82 @@ A19, under the daemon's dry-run rules (the first-week dry run and `dryRun`), wit
 `The_agent_process_and_unwatched_servers_are_never_targets`, `A_window_basis_reading_never_selects` (only an interval reading
 is evidence of a sustained burn).
 
+#### S2a — what is built first: the IDLE watchdog (2026-10-08, after the owner's decisions)
+
+The owner asked for "a STOP button for idle MCP servers AND a setting to do it automatically" (idle > 60 min, the automatic
+switch default ON). **Idle needs no interval and no new sampler**: a server whose CPU ticks did not move between two sightings
+of the same identity used no CPU in between, however far apart they are — the evidence A18 already relies on. So the idle
+half ships first, on the existing 4-hour timer and as a button; the BUSY half (busy without activity, which needs interval
+evidence and therefore the watch timer above) is **S2b**, the next slice, with the two design points above.
+
+1. **A19 `McpServerStop`** (`Actions/Suspects/McpServerStop.cs`, beside A18): SIGTERM, then SIGKILL after
+   `processes.termGraceSeconds`, through `SuspectSignals.EndAllAsync` — by pid AND start ticks (pidfd), each target re-read just
+   before; its CPU re-check is exactly right for an IDLE target (a server that used CPU since the preview is kept).
+2. **Who is a target** — ALL of: an instance of a watched MCP server (`McpInstances.Find` over the one process snapshot,
+   `mcpServers.watched`: the PROGRAM is the server, so an agent process is never one); the TARGET user's (A18's rule), never
+   root's, never this process, not a zombie, no terminal; and **no CPU for at least `mcpWatchdog.idleMinutes`** (default **60**,
+   the owner's), measured by identity over a dense chain of sightings on both clocks (`AgentCpuHistory.IdleFor` — missing
+   history is "not idle", so the first runs end nothing). An instance whose agent died (`orphaned`, the owner's Q-M3: a stop
+   candidate) needs only **`mcpWatchdog.orphanIdleMinutes`** (default **10**): nobody can talk to it any more.
+3. **The evidence:** every timer run already records the AI-agent processes' CPU ticks (`ActionEngine.RecordAgentCpu` →
+   `AgentCpuHistory.Record`, `agent-cpu.json`, root's, private, capped by `agentCpu.maxEntries`). It is WIDENED to record the
+   instances of every catalogued MCP server as well (one history, one sampler — reuse, not a second file). A preview merges
+   "now" in memory and writes nothing, as A18's does.
+4. **Button and timer.** `auto.A19` is a new switch, **default ON** (the owner's decision — the first auto switch that starts
+   on) — and the daemon's dry-run rules govern it unchanged: while `dryRun` is on or the first-week window runs, the timer
+   records what it WOULD stop and stops nothing. Trigger: any target. A button run is bound to what its modal showed, as A18's
+   (`IBoundToShownList`, `--process <pid:start>`): the parser's "`--process` needs A18" becomes "needs an action bound to shown
+   processes" (A18 or A19), decided in ONE place.
+5. **An action record per stop:** the engine's run record — each stopped server an item (pid, server, its owner agent or
+   "orphaned", idle time, memory held), each kept one in `notRemoved` with why.
+6. **Keys:** `mcpWatchdog.idleMinutes` 10–10080, default 60; `mcpWatchdog.orphanIdleMinutes` 1–10080, default 10 — both decide
+   what ends, so a user layer may only LENGTHEN them (`SafeDirection.Higher`), as `processes.aiAgentsIdleHours`.
+7. **The extension** knows the id (`rootIds.ts`, held equal to `contracts/actions.json`) and leaves it out of the E6 cleanup
+   ops, as A18 (`BUTTON_ONLY_IDS`: its confirm takes `--process`); the panel's button is an extension story.
+8. **What it does not settle (said in the preview):** what Claude Code does with an ended stdio server (the measurement of
+   S2 above is owed: it needs a real session and was off-limits on the overloaded machine) — the preview says "the session
+   may need `/mcp` to reconnect it". The 60 minutes are a FLOOR: on the 4-hour timer a server is stopped at the first run
+   that sees it unchanged since the previous one, so up to ~4 h idle in practice until S2b's watch timer.
+
+**RED (S2a):** `An_mcp_server_idle_for_longer_than_the_key_is_a_target_by_pid_and_start`,
+`An_mcp_server_that_used_cpu_within_the_window_or_has_no_history_is_kept`,
+`An_orphaned_mcp_server_needs_only_the_orphan_idle_minutes`, `Another_users_or_roots_server_and_agent_processes_are_never_targets`,
+`A_button_run_ends_only_what_its_modal_showed`, `The_timer_records_mcp_servers_in_the_cpu_history`,
+`Auto_A19_is_on_by_default_and_the_dry_run_rules_stop_nothing`, `The_process_flag_is_accepted_for_A19_and_refused_without_A18_or_A19`.
+
+#### S2a as built (2026-10-08, branch `feat/wc-mcp-watchdog`)
+
+**coai plan round (session `f60fbbf6`):** verdict **proceed**, 2 of 2 reviewers (codex, gemini), 6 findings: 1 accepted, 5
+rejected with reasons. Accepted: a server with a controlling terminal is never stopped (the shared signal path keeps one —
+said, not widened). Rejected: two asking for `auto.A19` OFF until the reconnect is measured (the owner decided ON; the
+dry-run default still stops nothing until the owner switches `dryRun` off), interpreted servers by argv[0] (the watched list
+is closed over the catalogue, whose one server is native; an agent cannot match), lifetime CPU for the button (every server
+spends CPU starting), and "no orphan mechanism" (the E7.S2d owner walk exists and is tested).
+**Risk consultation (codex, story 14.2):** verified and taken — a child process keeps a server (it may be waiting on work it
+started: `coai-mcp`'s reviewers are child CLIs); the orphan window only for a server re-parented to INIT (a `systemd --user`
+child may have a live client); the snapshot's start ticks and the account re-checked against `/proc` before a server is a
+target; the history's sample de-duplicated by pid. Its warning stands as a residual: CPU silence does not prove no request is
+in flight (a server waiting on a REMOTE call spends nothing either) — the owner's accepted cost, said in every item.
+**Deviations from S2a's text:** the selection gained the child, start-ticks and account checks above; the owner's Q-M2 (users
+may add their own programs to the watched list) is NOT in this slice — it is a configuration-contract change of its own, next.
+Nothing else differs, except item 5's wording: a server the JUDGEMENT keeps (terminal, child, snapshot, CPU) is counted with
+its reason in the preview's basis, not listed as an item; `notRemoved` holds the targets the signal-time re-checks refused.
+**coai code round (session `f60fbbf6`):** verdict **proceed**, **8 of 8** reviewers, 15 findings: 7 accepted, 8 rejected with
+reasons. Accepted and built RED-first with teeth: the child guard repeated on a fresh process table just before the signal
+(RED: *signals.Asked … found at least one item*), the held-memory fact of a narrowed button preview (RED: *7000000 … found
+12000000*), the CPU history sampling the WATCHED list rather than the whole catalogue (so Q-M2's user programs are recorded),
+the judgement as a switch expression with a pid → sample map, the cheap filters first, and a scenario flow over the built CLI
+(`McpServerStopFlows`, Linux). Rejected: the grace "hard-coded" (it is `processes.termGraceSeconds` through `Tuning`), the
+contract order (generated; the extension compares sorted), the CLI message (`ActionId.ToString()` is its text), a rename of
+`BUTTON_ONLY_IDS` (the extension story's), a collection-expression nit.
+**Own code review (Opus):** no wrong-process path found. Taken: an orphan window never longer than the idle one (RED: *found
+0*). Recorded, not built here: **an existing install whose `dryRun` is already off and whose first-week window has passed gets
+NO dry period for A19** — the window is global, stamped at the first timer run ever — so the owner switching to a release with
+A19 starts stopping idle servers at the second timer run after the upgrade (owner question below, Q11); `mcpServers.watched`
+still a display key although it now steers A19 (the Q-M2 story re-classifies it with the open list); a server answering only
+short requests may spend under one 10 ms tick in an hour (a residual beside "a remote call in flight"); an engine-level A19
+dry-run test (the dry-run gate is the engine's, held for every auto action by `TimerPassTests` and the A1/A2/A10 tests).
+
 ### S3 — the build-server reaper (widens A3)
 
 **Problem.** L7: `dotnet` 4.9 and `VBCSCompiler` 4.9 cores; 51 `dotnet` processes for 10 sessions (L4). A3 today stops
@@ -360,6 +436,10 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
 - **Q8 — the soak's pass numbers** X (PSI cpu avg300), Y (swap free), Z (idle MCP cores).
 - **Q9 — `status` writes one file now** (`$XDG_STATE_HOME/wsl-care/mcp-cpu.json`, only when an MCP server runs). The
   alternative without any write is a lifetime average, which the parent plan rejected (E7.S2d Decided 5). Accept?
+- **Q11 — A19 on an install already past its dry week (own code review, 2026-10-08):** the daemon's dry-run window is
+  global, so an install whose `dryRun` is off and whose first week has passed starts stopping idle MCP servers at the second
+  timer run after the upgrade, with no dry observation of A19. Keep that (the owner's "default ON"), or give a NEW action its
+  own first-week dry window (an engine change, its own story)?
 - **Q10 — S1's defaults:** 120 s minimum interval, 20 min maximum (two activity windows — a longer average stops
   describing now, so the 4-hour timer measures over the window until Q1b's sampler exists).
 

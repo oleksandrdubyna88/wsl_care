@@ -96,7 +96,20 @@ public static class FakeCallLog
             return [];
         }
 
-        return [.. File.ReadAllLines(path).Where(l => l.Length > 0).Select(Deserialize)];
+        // A fake appends under an EXCLUSIVE open (Append above), so a read at that instant is refused with a sharing violation:
+        // wait for the writer, as a writer waits for another writer (main's win-x64 leg, run 37793636777, 2026-10-08).
+        var deadline = DateTime.UtcNow + LockCeiling;
+        while (true)
+        {
+            try
+            {
+                return [.. File.ReadAllLines(path).Where(l => l.Length > 0).Select(Deserialize)];
+            }
+            catch (IOException) when (DateTime.UtcNow < deadline)
+            {
+                Thread.Sleep(20);
+            }
+        }
     }
 
     private static string Serialize(FakeCall call)

@@ -165,7 +165,7 @@ public sealed class ActionEngine(EngineContext c)
             return;
         }
 
-        if (Suspects.AgentCpuHistory.Record(linux, c.Files, snapshot.All, Collectors.Procfs.SampleTime.Of(c.Clock)) is { Length: > 0 } failure)
+        if (Suspects.AgentCpuHistory.Record(linux, c.Files, snapshot.All, Collectors.Procfs.SampleTime.Of(c.Clock), Mcp.McpSettings.From(c.Loaded.Config).Watched) is { Length: > 0 } failure)
         {
             notes.Add($"the AI-agent CPU history was not recorded: {failure}");
         }

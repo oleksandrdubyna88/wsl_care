@@ -248,6 +248,17 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "auto.A19",
+      "shape": "bool",
+      "default": true,
+      "safeDirection": "off",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "volumes.anonymousMaxCount",
       "shape": "int",
       "min": 0,
@@ -2563,6 +2574,32 @@
       "default": 20,
       "safeDirection": "none",
       "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "mcpWatchdog.idleMinutes",
+      "shape": "int",
+      "min": 10,
+      "max": 10080,
+      "default": 60,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "mcpWatchdog.orphanIdleMinutes",
+      "shape": "int",
+      "min": 1,
+      "max": 10080,
+      "default": 10,
+      "safeDirection": "higher",
+      "rootEffective": true,
       "tightenOnlyForRoot": false,
       "machineOnly": false,
       "daemonUnused": false,

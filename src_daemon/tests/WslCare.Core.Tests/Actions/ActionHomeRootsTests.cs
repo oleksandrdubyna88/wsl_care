@@ -30,6 +30,7 @@ public sealed partial class ActionHomeRootsTests : IDisposable
     {
         ["A3"] = "it shuts down build servers by their own command; no folder is cleaned",
         ["A18"] = "it ends orphaned AI-agent processes by pid and start; no folder is cleaned",
+        ["A19"] = "it stops idle MCP servers by pid and start; no folder is cleaned",
     };
 
     private readonly LinuxSandbox _sandbox = new("home-roots");

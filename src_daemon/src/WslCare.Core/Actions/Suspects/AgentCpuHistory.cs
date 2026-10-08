@@ -119,20 +119,33 @@ public static class AgentCpuHistory
         }
     }
 
-    /// <summary>The AI-agent processes of non-root accounts in <paramref name="processes"/>, sampled from <c>/proc</c> now.</summary>
-    public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
+    /// <summary>The AI-agent processes AND the processes of the WATCHED MCP servers (plan E14 S2a: A19's evidence — one history,
+    /// one sampler; coai code round 2026-10-08: the watched list, never the whole catalogue, so a server A19 may judge is one the
+    /// history records) of non-root accounts in <paramref name="processes"/>, sampled from <c>/proc</c> now, each pid once (the merge
+    /// keys by identity and would refuse a duplicate — the risk consultation of 2026-10-08).</summary>
+    public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, IReadOnlyList<Mcp.McpServerEntry> watched) =>
         [.. processes
-            .Where(p => p.Family == ProcessFamilies.AiAgents && p.User != "root" && p.Pid > 1)
-            .Select(p => SuspectTermination.Sample(files, paths, p.Pid))
+            .Where(p => p.Pid > 1 && p.User != "root" && (p.Family == ProcessFamilies.AiAgents || Mcp.McpInstances.ServerOf(p, watched) is not null))
+            .Select(p => p.Pid)
+            .Distinct()
+            .Select(pid => SuspectTermination.Sample(files, paths, pid))
             .OfType<PidSample>()
             .Where(s => s.Uid != 0)];
 
+    /// <summary>The same over every catalogued MCP server (A18's judgement, which reads the agents only).</summary>
+    public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
+        Sample(paths, files, processes, Mcp.McpServerCatalogue.Servers);
+
     /// <summary>One root run's record (the timer's full run): sample, merge, write. Empty when written.</summary>
-    public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at)
+    public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at) =>
+        Record(paths, files, processes, at, Mcp.McpServerCatalogue.Servers);
+
+    /// <summary>One root run's record over the WATCHED MCP servers (the timer passes <c>mcpServers.watched</c>). Empty when written.</summary>
+    public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at, IReadOnlyList<Mcp.McpServerEntry> watched)
     {
         var boot = BootIdentity.Read(paths, files);
         return boot.Length == 0
             ? "the boot id cannot be read; the AI-agent CPU history is not recorded"
-            : Write(paths, files, Next(Read(paths, files), boot, Sample(paths, files, processes), at));
+            : Write(paths, files, Next(Read(paths, files), boot, Sample(paths, files, processes, watched), at));
     }
 }

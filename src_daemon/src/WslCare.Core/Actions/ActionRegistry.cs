@@ -35,6 +35,7 @@ public sealed class ActionRegistry
         new JournalVacuum(),
         new Suspects.SuspectTermination(),
         new Suspects.AgentOrphans(),
+        new Suspects.McpServerStop(),
         new UserCaches.BrowserAndHttpCaches(),
         new UserCaches.EditorServerCleanup(),
         new UserCaches.ToolCacheTrims(),

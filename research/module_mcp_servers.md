@@ -16,8 +16,8 @@ Show how many MCP server processes of the AI agents run, which are idle, which b
 memory they hold together, and **when** each server was started lately — so a restart storm is visible and attributable to
 its own time. Measured 2026-10-06 in WSL: seven `coai-mcp` (one stdio MCP server per Claude Code session) at 27–54 % of a
 core each with no log line for 10+ minutes; 34 starts in 16:50–17:00Z, which began **before** the 0.43.0 binary's mtime of
-16:54Z (the owner, 2026-10-07: a count per window cannot say when churn began — the start times can). Nothing is stopped:
-a stop action is owner question Q-M1, now plan E14 S2 (A19).
+16:54Z (the owner, 2026-10-07: a count per window cannot say when churn began — the start times can). The metric stops nothing; the
+stop action is A19 (E14 S2a, below).
 
 ## Diagram
 
@@ -84,6 +84,24 @@ flowchart LR
    marked a lower bound.
 5. **Verdicts and wire:** the three verdicts judged now in `status` (basis `sample`) and in each full run's detail; the
    block in `status --json` and the run detail's `sample`; capability `status.mcpServers`; `limits` publishes the two waits.
+
+## A19 — stopping idle MCP servers (E14 S2a, 2026-10-08, the owner's decision)
+
+`Actions/Suspects/McpServerStop.cs`. The metric above stays read-only; the action is separate and goes through the engine
+like every action: a button (bound to the processes its preview showed, `--process <pid:start>`, as A18) AND the timer
+(`auto.A19`, **on by default** — the owner; the daemon's dry-run rules still decide whether the timer stops anything).
+A target is an instance found by `McpInstances.Find` (the same owner walk) that is the target user's, never root's, has no
+terminal (the shared signal path keeps one with a terminal), has no child process (a server waiting on a child it started —
+`coai-mcp`'s reviewers are child CLIs — spends no CPU of its own), is the process the snapshot saw (start ticks and account
+re-read), and used **no CPU for `mcpWatchdog.idleMinutes`** (60) — or `mcpWatchdog.orphanIdleMinutes` (10) when it was
+re-parented to INIT (a `systemd --user` child gets the ordinary window: its client may live). Idleness is measured by
+`AgentCpuHistory` — the timer's per-identity CPU history, which since S2a records the WATCHED MCP servers beside the AI
+agents — so missing history is "not idle" and on the 4-hour timer the 60 minutes are a floor. Just before the signal the child check runs again on a fresh process table (a server that started
+work since the preview is kept). Signals through
+`SuspectSignals.EndAllAsync`: SIGTERM, SIGKILL after `processes.termGraceSeconds`, by pid AND start, each re-read (a server
+that used CPU since the preview is kept). Every item says the agent's session may need `/mcp` to reconnect: what an agent
+does with an ended stdio server is not measured yet (plan S2). The busy-without-activity half (interval evidence, a watch
+timer) is S2b.
 
 ## Entry points
 
