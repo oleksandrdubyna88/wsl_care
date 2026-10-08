@@ -10,7 +10,8 @@ namespace WslCare.Scenarios;
 /// A checkout of an extension release tag as release-extension-guard.sh reads it — package.json, the handshake's minimum,
 /// min-daemon.json, POST_DEPLOY.md, optionally the root module — and a fake <c>gh</c> on PATH that records what it was
 /// asked and answers the release queries. One unit, used by <see cref="ReleaseExtensionScriptFlows"/>,
-/// <see cref="ReleaseExtensionInstallPinFlows"/> and <see cref="ReleaseExtensionStampSourceFlows"/> (coai round 9: a named
+/// <see cref="ReleaseExtensionInstallPinFlows"/>, <see cref="ReleaseExtensionStampSourceFlows"/> and
+/// <see cref="ReleaseExtensionManifestFlows"/> (coai round 9: a named
 /// unit, never a partial class, keeps the files under the 800-line limit).
 /// </summary>
 [SupportedOSPlatform("linux")]
