@@ -2,7 +2,7 @@
   "name": "ai-os-care",
   "displayName": "AI OS Care",
   "description": "Shows what the wsl-care daemon measures inside WSL — memory, swap, disk, containers and the cleanup candidates — and runs a cleanup only after you confirm it. Windows with WSL only; the daemon is installed separately.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "remsoftdev",
   "preview": true,
   "license": "MIT",
