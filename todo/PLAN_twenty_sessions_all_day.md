@@ -380,6 +380,40 @@ scenario flow `A_user_program_from_the_config_is_reported_and_recorded_by_the_ti
   this plan say plainly that root reads it. Below its threshold: user-program processes of every non-root account enter the
   CPU history and can push older agent entries past `agentCpu.maxEntries` (fails safe: missing history keeps a process).
 
+#### S2d — interpreter-run MCP servers in the catalogue (Q13, coordinator default 2026-10-08)
+
+**The gap.** `mcpServers.programs` refuses an interpreter as a program (S2c), because argv[0] of every script it runs is the
+interpreter. An MCP server started through `npx` runs that way. The captured 2026-10-02 tree shows it twice:
+`npm exec @playwright/mcp@latest` (pids 7377, 8415, children of the two `claude` sessions) and, below it,
+`node /home/user/.npm/_npx/<hash>/node_modules/.bin/playwright-mcp` (pids 7472, 8477). The tree shows no other
+interpreter-run MCP server. The shell between `npm exec` and `node` (ppids 7471, 8476) is not in the capture.
+
+**Design.**
+1. `McpServerEntry` gains `Interpreters` (default empty). A process is the server when its PROGRAM is one of `Programs`
+   (as today) OR its program is one of `Interpreters` AND its SCRIPT — the second word of `ProcessEntry.Programs`, a file name,
+   `.exe` stripped — is one of `Programs`. It is never a match on an argument further on (consultation C-2 still holds). The
+   specific script name is what makes an interpreter safe to name here. A user program cannot do this, because it names no
+   script.
+2. Catalogue entry `playwright-mcp`: `Programs ["playwright-mcp"]` (a direct start through its shebang has argv[0]
+   `playwright-mcp`; `npx` gives `node …/.bin/playwright-mcp`), `Interpreters ["node", "nodejs"]`, no log layout (starts =
+   `liveYounger`). `npm exec` (the wrapper) is never the server; it is one of its ancestors, and the owner walk crosses it to
+   the agent.
+3. It is watched by default, like every catalogued server (`default.json` `mcpServers.watched`), so A19 sees it with every
+   S2a guard. One guard matters here: Playwright keeps a browser CHILD while it works, and A19 keeps a server with a child.
+4. It is NOT added: the Windows `creds-mcp.exe` reached through WSL interop (`/init …/creds-mcp.exe`, pids 5252, 7334, 7741,
+   8389). `/init` is the interop relay, not an interpreter. Stopping the relay may leave the Windows process running (W9
+   already shows 66 orphaned `creds-mcp.exe` on the Windows side), so the Windows side's E11 owns it.
+5. Wire: additive — one more server in `mcpServers.servers`. In the captured tree the two `playwright-mcp` processes have
+   their parent missing from the capture, so they count as `notUnderAgent` (2), not as instances. The status golden changes
+   to match. `processes`/agents are unaffected. `mcpServers.watched`'s allowed list and default gain `playwright-mcp`.
+   `mcpServers.programs` now refuses it (a catalogue server; a layer that listed it is left out with a notice, S2c's
+   tolerance).
+
+**RED (S2d):** `An_npx_started_playwright_mcp_is_an_instance_under_its_agent_through_npm_exec`,
+`Node_running_another_script_is_not_playwright_mcp_and_a_mention_after_the_script_is_not_either`,
+`Playwright_mcp_started_directly_by_its_shebang_is_the_server`, `The_wrapper_npm_exec_is_never_the_server`,
+`Playwright_mcp_is_watched_by_default_and_refused_as_a_user_program`, and the golden update.
+
 ### S3 — the build-server reaper (widens A3)
 
 **Problem.** L7: `dotnet` 4.9 and `VBCSCompiler` 4.9 cores; 51 `dotnet` processes for 10 sessions (L4). A3 today stops
