@@ -7,13 +7,18 @@ namespace WslCare.Scenarios;
 /// through another such function — being called inside a command substitution <c>$( … )</c>. There the refusal's message is
 /// captured into the value and thrown away, and only the exit status survives: release-extension-guard.sh's
 /// <c>recorded="$(manifest_field version)"</c> stopped every broken release with exit 1 and an empty log until 2026-10-08.
-/// <para>A text scan, not a shell parser. A function is <c>name() {</c> at column 0 up to the next <c>}</c> at column 0 (or the
-/// same line, for a one-line function); comment lines are skipped; a bare <c>exit</c> (an awk program's own) is not a refusal.
+/// <para>A text scan, not a shell parser. A function is <c>name() {</c> (or <c>name(){</c>, <c>function name {</c>) at column 0
+/// up to the next <c>}</c> at column 0 (or the same line, for a one-line function); comment lines are skipped; a bare <c>exit</c> (an awk program's own) is not a refusal.
 /// The refusing set is computed over ALL the scripts given, because scripts source each other's libraries (<c>lib/*.sh</c>):
 /// a function defined in one file and called in another counts. A call site is <c>$(</c> followed by the function's name with
 /// only whitespace or line continuations between — across lines — and is reported at the line the <c>$(</c> is on. It
 /// over-approximates (a refusing callee checked with <c>||</c> inside a body still counts; two files' functions of one name
 /// are merged), which is the safe direction for a prohibition.</para>
+/// <para>WHAT IT DOES NOT SEE (no shipped script uses any of these; each would need a shell parser): a refusing call that is
+/// not the FIRST command of the substitution (<c>$(a; fn)</c>, <c>$(a | fn)</c>, inside an <c>if</c> in it), one behind an
+/// assignment prefix (<c>$(MODE=x fn)</c>), a comment line between <c>$(</c> and the command, backtick substitutions, and a
+/// function defined other than at column 0. A green run is a statement about the shapes above, not about every shell
+/// construct.</para>
 /// </summary>
 internal static partial class ShellRefusalScan
 {
@@ -95,7 +100,9 @@ internal static partial class ShellRefusalScan
 
     private static bool IsComment(string line) => line.TrimStart().StartsWith('#');
 
-    [GeneratedRegex(@"^(?<name>[A-Za-z_][A-Za-z0-9_]*)\(\) \{", RegexOptions.CultureInvariant)]
+    /// <summary><c>name() {</c>, <c>name(){</c>, <c>function name {</c> or <c>function name() {</c> — at column 0, so an awk
+    /// program's indented <c>function f(x) {</c> inside a script is not read as a shell function.</summary>
+    [GeneratedRegex(@"^(?:function[ \t]+(?<name>[A-Za-z_][A-Za-z0-9_]*)(?:[ \t]*\(\))?|(?<name>[A-Za-z_][A-Za-z0-9_]*)[ \t]*\(\))[ \t]*\{", RegexOptions.CultureInvariant)]
     private static partial Regex Definition();
 
     [GeneratedRegex(@"(?<![A-Za-z0-9_])(?:refuse|fail|usage_fail)(?![A-Za-z0-9_])|(?<![A-Za-z0-9_])exit\s+[0-9]", RegexOptions.CultureInvariant)]

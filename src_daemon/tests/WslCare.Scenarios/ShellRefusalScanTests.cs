@@ -90,6 +90,27 @@ public sealed class ShellRefusalScanTests
         ShellRefusalScan.Findings(script).Should().Equal(new ShellRefusalScan.Finding(4, "manifest_field"), new ShellRefusalScan.Finding(7, "manifest_field"));
     }
 
+    /// <summary>Every bash spelling of a definition at column 0 is read; an awk program's indented <c>function</c> is not.</summary>
+    [Fact]
+    public void A_function_is_recognised_in_each_bash_definition_form_and_not_inside_an_awk_program()
+    {
+        string[] script =
+        [
+            "tight(){ refuse \"x\"; }",
+            "function keyword {",
+            "  fail \"y\"",
+            "}",
+            "function both() { exit 3; }",
+            "a=\"$(tight)\"; b=\"$(keyword)\"; c=\"$(both)\"",
+            "awk '",
+            "    function bad(why) { exit 1 }",
+            "'",
+        ];
+
+        ShellRefusalScan.RefusingFunctions(script).Should().BeEquivalentTo(["tight", "keyword", "both"]);
+        ShellRefusalScan.Findings(script).Select(f => f.Function).Should().Equal("tight", "keyword", "both");
+    }
+
     /// <summary>Scripts source each other's libraries: a refusing function defined in one file and called inside <c>$( … )</c>
     /// in another is found once the refusing set is taken over both — and not from the calling file alone.</summary>
     [Fact]
