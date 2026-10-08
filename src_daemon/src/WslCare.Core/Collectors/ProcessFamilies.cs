@@ -31,12 +31,18 @@ public static partial class ProcessFamilies
     /// <summary>The family name of the AI agents' CLIs — never choosable for A11 (§15q Q13: their processes are the owner's work).</summary>
     public const string AiAgents = "ai-agents";
 
+    /// <summary>The C# language server (E14 S3) — a family of its own, before <c>vscode-server</c>, so A11 can name it without
+    /// naming the VS Code server itself (daemonised, parent 1, no terminal: an A11 suspect at an idle desk — coai plan round
+    /// 2026-10-08, finding 5).</summary>
+    public const string LanguageServers = "language-servers";
+
     public static readonly IReadOnlyList<ProcessFamily> Catalogue =
     [
         new("dotnet-build-servers", BuildServers(), HeadOnly: false),
         new("testhost", TestHost(), HeadOnly: false),
         new(AiAgents, AiAgentCli(), HeadOnly: true),
         new("docker-desktop-proxy", DockerDesktopProxy(), HeadOnly: true),
+        new(LanguageServers, LanguageServer(), HeadOnly: true),
         new("vscode-server", VsCodeServer(), HeadOnly: false),
         new("node", Node(), HeadOnly: true),
     ];
@@ -65,7 +71,13 @@ public static partial class ProcessFamilies
     [GeneratedRegex(@"docker-desktop-user-distro|docker-desktop-proxy", RegexOptions.CultureInvariant)]
     private static partial Regex DockerDesktopProxy();
 
-    /// <summary>Everything VS Code runs in the distro: the server, extension hosts, ServiceHub, the C# language server.</summary>
+    /// <summary>The Roslyn language server C# Dev Kit runs (measured in the captured 2026-10-02 tree): the program, or the
+    /// <c>.dll</c> <c>dotnet</c> runs.</summary>
+    [GeneratedRegex(@"(?:^|[/ ])Microsoft\.CodeAnalysis\.LanguageServer(?:\.dll|\.exe)?(?:\s|$)", RegexOptions.CultureInvariant)]
+    private static partial Regex LanguageServer();
+
+    /// <summary>Everything else VS Code runs in the distro: the server, extension hosts, ServiceHub (the C# language server is
+    /// matched first, as <see cref="LanguageServers"/>).</summary>
     [GeneratedRegex(@"/\.vscode-server/|\bServiceHub\b|Microsoft\.CodeAnalysis\.LanguageServer|Microsoft\.VisualStudio\.Code\.", RegexOptions.CultureInvariant)]
     private static partial Regex VsCodeServer();
 

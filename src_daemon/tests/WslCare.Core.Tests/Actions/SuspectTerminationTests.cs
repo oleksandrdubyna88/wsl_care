@@ -74,6 +74,33 @@ public sealed class SuspectTerminationTests : IDisposable
         SuspectTermination.Candidates(all, families, TimeSpan.FromHours(8), ownPid: 17, targetUser: "me").Select(p => p.Pid).Should().Equal(10);
     }
 
+    /// <summary>E14 S3, rule (b) (coai plan round 2026-10-08, finding 5): the C# language server whose VS Code window closed is
+    /// re-parented — an A11 suspect once the user lists <c>language-servers</c>, a family of its OWN, so that listing it never
+    /// makes the VS Code server itself (daemonised, parent 1, no terminal, idle at a desk) a suspect. One whose extension host
+    /// lives is not orphaned and is kept.</summary>
+    [Fact]
+    public async Task A11_ends_an_orphaned_idle_language_server_when_language_servers_is_listed_and_never_the_vscode_server()
+    {
+        const string LanguageServer = "/home/me/.vscode-server/extensions/ms-dotnettools.csharp-2.0.0-linux-x64/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information";
+        const string VsCodeServer = "/home/me/.vscode-server/bin/abc/node /home/me/.vscode-server/bin/abc/out/server-main.js --start-server";
+        _sandbox.Write("/etc/wsl-care/config.json", "{ \"processes\": { \"families\": [\"language-servers\"] } }");
+        Stat(30, cpuTicks: 100);
+        Stat(31, cpuTicks: 100);
+        Stat(32, cpuTicks: 100);
+        var orphaned = UserWorld.Process(30, LanguageServer, family: ProcessFamilies.Of(LanguageServer.Split(' '), "Microsoft.CodeA"), orphaned: true);
+        var underItsHost = UserWorld.Process(31, LanguageServer, family: ProcessFamilies.Of(LanguageServer.Split(' '), "Microsoft.CodeA"), orphaned: false);
+        var server = UserWorld.Process(32, VsCodeServer, family: ProcessFamilies.Of(VsCodeServer.Split(' '), "node"), orphaned: true);
+        var context = Context([orphaned, underItsHost, server], new RecordingSignals());
+        var action = new SuspectTermination();
+
+        var preview = await action.PreviewAsync(context, new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []), CancellationToken.None);
+
+        orphaned.Family.Should().Be(ProcessFamilies.LanguageServers);
+        server.Family.Should().Be("vscode-server");
+        ProcessFamilies.ChoosableForA11.Should().Contain(ProcessFamilies.LanguageServers);
+        preview.Targets.Select(t => t.Name).Should().Equal("30 p30");
+    }
+
     [Fact]
     public async Task A_process_that_used_cpu_in_the_window_is_not_a_suspect_and_one_that_stayed_idle_is_signalled_by_pid_and_start()
     {

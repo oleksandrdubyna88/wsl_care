@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs); S2b and S3–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S3 built (A3's timer waits for idle build servers; language servers for A11); S2b and S4–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -427,6 +427,26 @@ Reading the code first changed two things.
 `The_timer_records_build_servers_in_the_cpu_history`, `A11_ends_an_orphaned_idle_language_server_when_vscode_server_is_listed`,
 and the config/contract tests for `buildServers.idleMinutes`.
 
+#### S3 as built (2026-10-08)
+
+- **Plan round** (coai session `b0d57159`): `proceed`, 2 of 2 reviewers, 7 findings.
+  - **Accepted:**
+    - (1, 6) the growth budget is now stated (below).
+    - (2) the conservative semantics on the 4-hour timer: a burst anywhere inside the interval restarts the idle clock at the sighting that sees it, so `idleMinutes` is a floor and the shutdown waits for a later pass. This is tested.
+    - (5) listing `vscode-server` for A11 would make the VS Code server itself a suspect: the server is daemonised (parent 1, no terminal), so it is "orphaned" by A11's rule and idle at an idle desk. Rule (b) therefore uses a family of its OWN, `language-servers` (`Microsoft.CodeAnalysis.LanguageServer`, the program or its `.dll`), matched before `vscode-server`. The README and architecture now say not to list `vscode-server` for A11.
+  - **Rejected, with reasons:**
+    - (0) the window between the build re-check and the command is A3's existing behaviour. No lock in the SDK can make it atomic.
+    - (3) "all idle never happens under twenty sessions": holding the whole-user command while any server works is the safe behaviour. Per-process reaping of idle ORPHANED build servers already exists in A11, whose default families include `dotnet-build-servers`. Whether A11 should be on by default is asked (Q15).
+    - (4) "a 4-hour cadence never fires": two unchanged sightings 4 h apart give 4 h idle. The true part is finding 2's. A denser sampler is Q1b/S2b.
+- **Growth budget** (findings 1 and 6): `AgentCpuHistory` holds LIVE identities only. An identity not seen at a run is dropped at that run's merge, so dead build servers retire at the next timer run. There is no stranded state to sweep: the file is rewritten whole, atomically, by root's timer. It is capped at `agentCpu.maxEntries` (512) and `agentCpu.maxBytes` (256 KiB). Past the cap the OLDEST identities drop, which makes them "no history", so they are kept, never stopped. At the E14 load (20 sessions: ≈ 20 agents + ≈ 40 MCP servers + ≈ 50 build servers alive at once) that is about 110 entries ≈ 34 KiB.
+- **Code:**
+  - `BuildServerShutdown` gained the `busyServers` fact: the servers not measured idle for `buildServers.idleMinutes` (new key, 10–10080, default 60, `KeyTrust.Higher`). The history is merged with now in memory and nothing is written.
+  - The trigger is `old > 0 && busy == 0`.
+  - `AgentCpuHistory.Sample` records the `dotnet-build-servers` family.
+  - `ProcessFamilies` gained `language-servers`, which is choosable for A11 (`processes.families` closed list, contract regenerated). The captured tree's pid 6612 moves to it: status golden hand-edited (family count and held bytes, the Linux CI legs verify it).
+  - A3's button run is unchanged.
+- **Not done:** the day-long measurement (S8). L7's busy servers are S4's.
+
 ### S4 — CPU fairness that works inside WSL
 
 **Problem.** Agents' builds and tests (L7) compete with the sessions they serve on equal terms. `nice` is believed to have
@@ -578,7 +598,14 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
   one), in a small separate PR after S3.
 - **Q14 — orphaned VS Code language servers (S3):** A11 already ends orphaned, idle, old processes of the families in
   `processes.families`, by pid and start; `vscode-server` is choosable but not in the default list, and A11 is off by default.
-  Add `vscode-server` to the default families? (Asked, not done: S3 rule (b) stays a choice of the owner, as Q1 said.)
+  Revised after the S3 plan round: `vscode-server` must NOT be listed (it matches the daemonised VS Code server itself);
+  the C# language server is now its own family, `language-servers`. Add `language-servers` to the default families? (Asked,
+  not done: S3 rule (b) stays a choice of the owner, as Q1 said.)
+- **Q15 — A11 on by default? (S3 plan round, finding 3):** A11 already reaps idle ORPHANED build servers one by one (its
+  default families are `dotnet-build-servers` and `testhost`), which A3's whole-user shutdown cannot do while any server
+  works; but A11 is off by default. Switch `auto.A11` on?
+- **Q16 — `vscode-server` stays choosable for A11:** narrowing the closed list would make an existing layer that names it
+  invalid (observe-only). Keep it choosable with the warning, or remove it (and accept the layer error)?
 
 ## 12. Review rounds
 

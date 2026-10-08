@@ -24,7 +24,7 @@ public sealed class BuildServerTests : IDisposable
         UserWorld.Process(pid, "/usr/share/dotnet/dotnet /usr/share/dotnet/sdk/10.0.100/MSBuild.dll /nodemode:1 /nodeReuse:true", family: BuildServerShutdown.Family, ageHours: ageHours, user: user);
 
     [Fact]
-    public async Task The_preview_lists_the_target_users_servers_only_and_the_timer_fires_on_one_older_than_idle_hours()
+    public async Task The_preview_lists_the_target_users_servers_only_and_the_timer_fires_on_one_older_than_idle_hours_while_none_works()
     {
         _world.Tool("dotnet");
         _world.Processes.AddRange([Server(10, 5), Server(11, 1), Server(12, 9, user: "other"), UserWorld.Process(13, "node server.js", family: "node")]);
@@ -36,8 +36,11 @@ public sealed class BuildServerTests : IDisposable
         preview.Refusal.Should().BeEmpty();
         preview.Items.Select(i => i.Name).Should().Equal("10 p10", "11 p11");
         preview.Facts[BuildServerShutdown.IdleServersFact].Should().Be(1, "only pid 10 is 4 h old or older (buildServers.idleHours)");
-        _action.Trigger(preview, context.Config).Fired.Should().BeTrue();
-        _action.Trigger(preview with { Facts = new Dictionary<string, long> { [BuildServerShutdown.IdleServersFact] = 0 } }, context.Config).Fired.Should().BeFalse();
+        // E14 S3: no CPU history in this sandbox, so neither server is measured idle — the timer is held (BuildServerIdleTests).
+        preview.Facts[BuildServerShutdown.BusyServersFact].Should().Be(2);
+        _action.Trigger(preview, context.Config).Fired.Should().BeFalse();
+        _action.Trigger(preview with { Facts = new Dictionary<string, long> { [BuildServerShutdown.IdleServersFact] = 1, [BuildServerShutdown.BusyServersFact] = 0 } }, context.Config).Fired.Should().BeTrue();
+        _action.Trigger(preview with { Facts = new Dictionary<string, long> { [BuildServerShutdown.IdleServersFact] = 0, [BuildServerShutdown.BusyServersFact] = 0 } }, context.Config).Fired.Should().BeFalse();
         _world.Runner.Requests.Should().BeEmpty("a preview reads the process table only");
     }
 

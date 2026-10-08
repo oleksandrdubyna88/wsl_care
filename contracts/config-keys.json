@@ -434,6 +434,7 @@
         "dotnet-build-servers",
         "testhost",
         "docker-desktop-proxy",
+        "language-servers",
         "vscode-server",
         "node"
       ],
@@ -1988,6 +1989,19 @@
       "rootEffective": true,
       "tightenOnlyForRoot": false,
       "machineOnly": true,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "buildServers.idleMinutes",
+      "shape": "int",
+      "min": 10,
+      "max": 10080,
+      "default": 60,
+      "safeDirection": "higher",
+      "rootEffective": true,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
       "daemonUnused": false,
       "zeroIsUnbounded": false
     },

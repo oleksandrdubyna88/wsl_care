@@ -137,7 +137,8 @@ the daemon could read is copied aside, so it stays in place until the repaired o
 you typed, a key read from the file, a path — are shown as `?`.
 
 **What a setting can and cannot do** (plan §15q R1). No setting is free text: `processes.families` takes only the named
-families (`dotnet-build-servers`, `testhost`, `docker-desktop-proxy`, `vscode-server`, `node` — never `other`, the
+families (`dotnet-build-servers`, `testhost`, `docker-desktop-proxy`, `language-servers` — the C# language server, an A11 suspect once its VS Code window closed —, `vscode-server` — which
+also matches the VS Code server itself, daemonised and so "orphaned": do not list it for A11 —, `node` — never `other`, the
 catch-all, and never `ai-agents`), `distro` a distribution name, `archive.baseFolder` an absolute path — and that one only
 in the MACHINE file (`config set` refuses it; a user-file value is ignored). No setting changes what may run or be
 deleted — only when a declared cleanup runs and with which bounded number. `contracts/config-keys.json` lists every key
@@ -402,7 +403,7 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 | `A17` | `pnpm store prune`, `uv cache prune`, `pip cache purge` as the target user | each cache before/after | `cargo sweep` is not run (it would delete under `~/git`); Gradle prunes its own caches |
 | `A1` | `sync`, then `sysctl -w vm.drop_caches=1` (never another value) | memory, not disk: the page cache and `MemAvailable` before/after | the timer: `MemAvailable` below `thresholds.memAvailableActPercent`, or a page cache above 12 GiB with less than 30 % available; waits for an idle machine on the timer |
 | `A2` | `sysctl -w vm.compact_memory=1` | the free 512 KiB (order-7) blocks before/after | the timer: after A1 ran, or AT ONCE — without waiting for idle — when no order-7 block is left or the kernel logged a `page allocation failure` since the last run |
-| `A3` | `dotnet build-server shutdown` as the target user | the build servers gone after (memory, not disk) | the timer: a server alive for `buildServers.idleHours`; refused while any `dotnet build`, `test` or `run` is alive, a button too |
+| `A3` | `dotnet build-server shutdown` as the target user | the build servers gone after (memory, not disk) | the timer: a server alive for `buildServers.idleHours` AND none used CPU for `buildServers.idleMinutes` (default 60, measured by identity over the timer's CPU history, which now records the build servers too — the command stops every server at once, so one that works, or one not measured yet, holds the timer; on the 4-hour timer the window is a floor); refused while any `dotnet build`, `test` or `run` is alive, a button too (a button is not held by idleness) |
 | `A15` | `fstrim -av` | what fstrim reports trimmed per filesystem (returned to the VHDX) | the timer: weekly, only without `discard` on `/` and with `fstrim.timer` off; waits for an idle machine |
 | `A16` | `chronyc makestep` (chronyd running) or `hwclock -s` | the clock offset before/after | skipped when time sync reports synchronised or the clock agrees — and, since 2026-10-08, unless an independent reference shows the step brings the distro CLOSER to true time: a wrong Windows clock, or no reference at all, is never stepped to; the timer: once per drift seen on two observations 5 minutes apart (`clock.maxDriftSeconds`); at most once an hour |
 

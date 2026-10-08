@@ -122,15 +122,20 @@ public static class AgentCpuHistory
     /// <summary>The AI-agent processes AND the processes of the WATCHED MCP servers (plan E14 S2a: A19's evidence — one history,
     /// one sampler; coai code round 2026-10-08: the watched list, never the whole catalogue, so a server A19 may judge is one the
     /// history records) of non-root accounts in <paramref name="processes"/>, sampled from <c>/proc</c> now, each pid once (the merge
-    /// keys by identity and would refuse a duplicate — the risk consultation of 2026-10-08).</summary>
+    /// keys by identity and would refuse a duplicate — the risk consultation of 2026-10-08) — and, since E14 S3, the .NET build
+    /// servers (A3's timer runs its shutdown only when every one is measured idle).</summary>
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, IReadOnlyList<Mcp.McpServerEntry> watched) =>
         [.. processes
-            .Where(p => p.Pid > 1 && p.User != "root" && (p.Family == ProcessFamilies.AiAgents || Mcp.McpInstances.ServerOf(p, watched) is not null))
+            .Where(p => p.Pid > 1 && p.User != "root" && IsRecorded(p, watched))
             .Select(p => p.Pid)
             .Distinct()
             .Select(pid => SuspectTermination.Sample(files, paths, pid))
             .OfType<PidSample>()
             .Where(s => s.Uid != 0)];
+
+    /// <summary>An AI agent's process (A18), a watched MCP server's (A19) or a .NET build server (A3's timer, E14 S3).</summary>
+    private static bool IsRecorded(ProcessEntry process, IReadOnlyList<Mcp.McpServerEntry> watched) =>
+        process.Family is ProcessFamilies.AiAgents or BuildServers.BuildServerShutdown.Family || Mcp.McpInstances.ServerOf(process, watched) is not null;
 
     /// <summary>The same over every catalogued MCP server (A18's judgement, which reads the agents only).</summary>
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
