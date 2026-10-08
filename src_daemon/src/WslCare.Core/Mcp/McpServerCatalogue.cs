@@ -18,11 +18,23 @@ public abstract record McpLogLayout
     public sealed record FamilyRunLogs(string UnderHome, string Prefix) : McpLogLayout;
 }
 
+/// <summary>Where a watched server's entry comes from (plan E14 S2c).</summary>
+public enum McpServerOrigin
+{
+    /// <summary>The embedded catalogue: a name this product chose, specific to that server.</summary>
+    Catalogue,
+
+    /// <summary>A program file name the user listed in <c>mcpServers.programs</c>: once no agent holds such a process, it may be
+    /// an unrelated program of the same name.</summary>
+    UserProgram,
+}
+
 /// <summary>One MCP server the daemon recognises.</summary>
-/// <param name="Name">The name <c>mcpServers.watched</c> lists and the report shows.</param>
+/// <param name="Name">The name <c>mcpServers.watched</c> (or <c>mcpServers.programs</c>) lists and the report shows.</param>
 /// <param name="Programs">The PROGRAM file names (argv[0], <c>.exe</c> stripped) that are this server — never an argument of
 /// another program (plan §15q E7.S2d C-2: <c>printf coai-mcp</c> is not a server).</param>
-public sealed record McpServerEntry(string Name, IReadOnlyList<string> Programs, McpLogLayout Logs);
+/// <param name="Origin">The catalogue's, or the user's own (plan E14 S2c).</param>
+public sealed record McpServerEntry(string Name, IReadOnlyList<string> Programs, McpLogLayout Logs, McpServerOrigin Origin = McpServerOrigin.Catalogue);
 
 /// <summary>
 /// The MCP servers of AI agents the daemon watches (plan §15q E7.S2d) — embedded, a closed list; which of them are watched is

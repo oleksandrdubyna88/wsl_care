@@ -153,7 +153,9 @@ public sealed record McpSettings(
     public required int LedgerMaxBytes { get; init; }
 
     public static McpSettings From(EffectiveConfig config) => new(
-        [.. McpServerCatalogue.Servers.Where(s => config.TextList(ConfigKeys.McpServers.Watched).Contains(s.Name, StringComparer.Ordinal))],
+        // Plan E14 S2c: the watched catalogue servers, then the user's own programs — ONE list the metric, the history and A19 read.
+        [.. McpServerCatalogue.Servers.Where(s => config.TextList(ConfigKeys.McpServers.Watched).Contains(s.Name, StringComparer.Ordinal)),
+            .. McpUserPrograms.Entries(config.TextList(ConfigKeys.McpServers.Programs))],
         TimeSpan.FromMilliseconds(config.Int(ConfigKeys.McpServers.CpuWindowMilliseconds)),
         config.Int(ConfigKeys.McpServers.IdleCpuPercent),
         TimeSpan.FromMinutes(config.Int(ConfigKeys.McpServers.IdleMinAgeMinutes)),

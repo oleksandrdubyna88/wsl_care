@@ -25,6 +25,7 @@ stop action is A19 (E14 S2a, below).
 flowchart LR
     probe["LinuxProbe.Sample<br/>(the one /proc walk)"] -- "ProcessSnapshot<br/>Programs from the raw argv" --> find["McpInstances.Find<br/>watched program · owner walk"]
     catalogue["McpServerCatalogue<br/>(mcpServers.watched)"] --> find
+    programs["McpUserPrograms<br/>(mcpServers.programs, the user's own)"] --> find
     agentof["AgentProcesses.AgentOf<br/>(shared with A18)"] --> find
     find --> collector["McpServerCollector"]
     ledger[("McpCpuLedger mcp-cpu.json<br/>root: /var/lib/wsl-care · status: $XDG_STATE_HOME/wsl-care")] -- "a point of this identity<br/>120 s to 20 min old" --> collector
@@ -42,6 +43,7 @@ flowchart LR
 | Type | What it is |
 |---|---|
 | `McpServerCatalogue`, `McpServerEntry`, `McpLogLayout` (`None` \| `FamilyRunLogs`) | the servers the daemon recognises — `coai-mcp` today — by PROGRAM name (argv[0]), each with an optional log layout; a new layout is a new case, never an `if` on a name |
+| `McpUserPrograms`, `McpServerOrigin` (`Catalogue` \| `UserProgram`), `TextRule.McpProgramName` (E14 S2c) | the user's own servers, `mcpServers.programs`: an OPEN list of program file names (`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`, at most 32), each refused when it names an AI agent's program, an interpreter, shell or launcher (a version suffix included: `python3.12`), `wsl-care`, a catalogue server, or ends in `.exe`; each becomes an `McpServerEntry` with no log layout and origin `UserProgram`; `McpSettings.Watched` = the watched catalogue servers + these |
 | `McpInstances` (`Find`, `ServerOf`, `OwnerOf`) | instances in the snapshot; owner = the first ancestor of the `ai-agents` family that `AgentProcesses.AgentOf` attributes to one catalogue agent, else `Orphaned` when re-parented; under a live non-agent host = not an instance (`notUnderAgent`) |
 | `McpRunLogs`, `McpLogs`, `McpLogFile` | the run logs of today and yesterday (UTC), names and stat only; `Present` walks down from the home with the bounded listing so an unreadable or cut folder is "cannot tell", never "no logs" |
 | `McpServerCollector`, `McpSampling` | the one road in (`status`, `collect`), handed the caller's ledger place; the CPU window waited only when a listed instance has no baseline; the Windows binary answers unavailable |
@@ -94,7 +96,9 @@ A target is an instance found by `McpInstances.Find` (the same owner walk) that 
 terminal (the shared signal path keeps one with a terminal), has no child process (a server waiting on a child it started —
 `coai-mcp`'s reviewers are child CLIs — spends no CPU of its own), is the process the snapshot saw (start ticks and account
 re-read), and used **no CPU for `mcpWatchdog.idleMinutes`** (60) — or `mcpWatchdog.orphanIdleMinutes` (10) when it was
-re-parented to INIT (a `systemd --user` child gets the ordinary window: its client may live). Idleness is measured by
+re-parented to INIT (a `systemd --user` child gets the ordinary window: its client may live). An orphan of a USER program
+(`mcpServers.programs`, S2c) is never a target: a name the user chose may be another program once no agent holds it (coai
+plan round 2026-10-08). Idleness is measured by
 `AgentCpuHistory` — the timer's per-identity CPU history, which since S2a records the WATCHED MCP servers beside the AI
 agents — so missing history is "not idle" and on the 4-hour timer the 60 minutes are a floor. Just before the signal the child check runs again on a fresh process table (a server that started
 work since the preview is kept). Signals through
@@ -110,7 +114,9 @@ own.
 
 ## Configuration (every number a key — the owner's rule of 2026-10-05)
 
-`mcpServers.watched` (closed over the catalogue), `.cpuWindowMilliseconds` (200–5000, 1000, machine-only),
+`mcpServers.watched` (closed over the catalogue), `.programs` (E14 S2c: open, rule-bound, at most 32, default empty — an
+ordinary user key although root's A19 reads it: A19 stops only the target user's own processes with every guard, and no
+orphan of a user program), `.cpuWindowMilliseconds` (200–5000, 1000, machine-only),
 `.idleCpuPercent` (2), `.idleMinAgeMinutes` (10), `.activityWindowMinutes` (10), `.startsWindowMinutes` (10, at most a day),
 `.warnInstances` (12), `.warnCpuPercent` (100 = one core), `.warnStarts` (10), `.maxInstances` (256, machine-only),
 `.maxLogEntries` (20000, machine-only), `.logListMilliseconds` (1000, machine-only), `.maxStartsListed` (50),
@@ -142,5 +148,7 @@ signal sender: read-only towards the servers by construction. Its one write is t
 - **Windows:** `coai-mcp.exe` (VS Code's `globalStorage`, `remsoftdev.connect-other-ais`) is not counted — the Windows binary
   has no process collector yet; the next step is E11 (the same catalogue, a Toolhelp snapshot for parents, `GetProcessTimes`
   twice).
-- Servers not in the catalogue (`creds-mcp`, `playwright-mcp` are in the captured 2026-10-02 tree) are not counted —
-  owner question Q-M2.
+- Servers not in the catalogue (`creds-mcp`, `playwright-mcp` are in the captured 2026-10-02 tree) are counted only when the
+  user lists their program in `mcpServers.programs` (E14 S2c). An interpreter-run server (`playwright-mcp` runs as
+  `node …/playwright-mcp`) cannot be listed that way — argv[0] is `node` — and needs a catalogue entry naming its script.
+  A Windows server reached through interop (`/init …/creds-mcp.exe`) has argv[0] `init` and is not matched.

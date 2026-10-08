@@ -8,6 +8,7 @@ using WslCare.Core.Actions.Suspects;
 using WslCare.Core.Collectors;
 using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Config;
+using WslCare.Core.Mcp;
 using WslCare.Core.Processes;
 using WslCare.Core.Processes.Policy;
 using WslCare.Core.Records;
@@ -78,9 +79,66 @@ public sealed class McpServerStopTests : IDisposable
         return await action.PreviewAsync(context, new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []), CancellationToken.None);
     }
 
-    /// <summary>What every timer run does: record the CPU ticks of the AI-agent processes AND the MCP servers by identity.</summary>
+    /// <summary>What every timer run does: record the CPU ticks of the AI-agent processes AND the WATCHED MCP servers (the
+    /// configuration's, as <c>ActionEngine</c> passes them) by identity.</summary>
     private void Record(IReadOnlyList<ProcessEntry> processes) =>
-        AgentCpuHistory.Record(_sandbox.Paths, _sandbox.Files, processes, SampleTime.Of(_clock)).Should().BeEmpty();
+        AgentCpuHistory.Record(_sandbox.Paths, _sandbox.Files, processes, SampleTime.Of(_clock), McpSettings.From(ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config).Watched).Should().BeEmpty();
+
+    private const string CredsPath = "/home/me/.local/bin/creds-mcp";
+
+    /// <summary>A user-added MCP program (<c>mcpServers.programs</c>, plan E14 S2c) under <paramref name="parent"/>.</summary>
+    private static ProcessEntry Creds(int pid, int parent = 200, string user = "me", bool orphaned = false) =>
+        UserWorld.Process(pid, CredsPath, user: user, ageHours: 6, orphaned: orphaned) with { ParentPid = parent, StartTicks = Reading.Of(Start) };
+
+    private void Programs(string json) => _sandbox.Write("/etc/wsl-care/config.json", $"{{ \"mcpServers\": {{ \"programs\": {json} }} }}");
+
+    [Fact]
+    public async Task A_user_program_is_watched_measured_and_stopped_when_idle_like_a_catalogue_server()
+    {
+        Stat(200, cpuTicks: 9000, parent: 100, name: "claude");
+        Stat(330, cpuTicks: 500, name: "creds-mcp");
+        var processes = new[] { Agent(), Creds(330) };
+
+        var unlisted = await IdleFor(TimeSpan.FromHours(2), processes);
+        Programs("[\"creds-mcp\"]");
+        var listed = await IdleFor(TimeSpan.FromHours(2), processes);
+
+        unlisted.Count.Should().Be(0, "a program nobody listed is no MCP server");
+        var target = listed.Targets.Should().ContainSingle().Subject;
+        target.Key.Should().Be("330:4000:500:1000", "the same identity the signal path re-checks as for a catalogue server");
+        target.Note.Should().Contain("creds-mcp").And.Contain("Claude Code").And.Contain("/mcp");
+        McpSettings.From(ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config).Watched.Should().Contain(s => s.Name == "creds-mcp")
+            .Which.Logs.Should().BeOfType<McpLogLayout.None>("its log layout is unknown: starts are the live-younger lower bound");
+    }
+
+    [Fact]
+    public async Task Another_users_process_of_a_user_program_is_never_stopped()
+    {
+        Programs("[\"creds-mcp\"]");
+        Stat(200, cpuTicks: 9000, parent: 100, name: "claude");
+        Stat(330, cpuTicks: 500, uid: 1001, name: "creds-mcp");
+        Stat(340, cpuTicks: 500, uid: 0, name: "creds-mcp");
+
+        var preview = await IdleFor(TimeSpan.FromHours(2), [Agent(), Creds(330, user: "other"), Creds(340, user: "root")]);
+
+        preview.Count.Should().Be(0, "a name a user adds lets root stop only that user's own processes");
+    }
+
+    [Fact]
+    public async Task An_orphaned_instance_of_a_user_program_is_never_stopped()
+    {
+        // coai plan round 2026-10-08 (session 563a1e95): a user-chosen file name is not as specific as a catalogue server's, so
+        // once no agent holds the process it may be an unrelated program of the same name.
+        Programs("[\"creds-mcp\"]");
+        Stat(300, cpuTicks: 500, parent: 1);
+        Stat(330, cpuTicks: 500, parent: 1, name: "creds-mcp");
+        Stat(340, cpuTicks: 500, parent: 900, name: "creds-mcp");
+
+        var preview = await IdleFor(TimeSpan.FromHours(2), [Server(300, parent: 1, orphaned: true), Creds(330, parent: 1, orphaned: true), Creds(340, parent: 900, orphaned: true)]);
+
+        preview.Targets.Select(t => SuspectSignals.Shown(t.Key)).Should().Equal(["300:4000"], "the catalogue server's orphan is still a target");
+        preview.Basis.Should().Contain($"2 because {McpServerStop.UserProgramOrphan}");
+    }
 
     /// <summary>The server idle across two timer sightings <paramref name="apart"/> apart.</summary>
     private async Task<ActionPreview> IdleFor(TimeSpan apart, IReadOnlyList<ProcessEntry> processes)

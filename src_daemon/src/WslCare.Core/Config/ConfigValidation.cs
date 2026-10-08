@@ -94,11 +94,16 @@ public static class ConfigValidation
         return CheckMembers(key, [.. value.EnumerateArray().Select(e => e.GetString() ?? string.Empty)]);
     }
 
-    /// <summary>Every member one of the key's allowed values (§15q R1.3, review B1) — the refusal names the first that is not.</summary>
+    /// <summary>Every member passes the key's member rule (§15q R1.3, review B1: one of the allowed values for a closed list), and
+    /// no more members than the key's cap (plan E14 S2c) — the refusal names the first member that fails, and why for an open list.</summary>
     private static ValueCheck CheckMembers(ConfigKey.TextListKey key, IReadOnlyList<string> members) =>
-        members.FirstOrDefault(m => !key.Allowed.Contains(m, StringComparer.Ordinal)) is { } stranger
-            ? new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got \"{stranger}\"")
-            : new ValueCheck.Ok(new ConfigValue.TextList(members));
+        (members.Count > key.MaxMembers, members.Select(m => (Member: m, Problem: key.Member.Problem(m))).FirstOrDefault(p => p.Problem.Length > 0)) switch
+        {
+            (true, _) => new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got {members.Count.ToString(CultureInfo.InvariantCulture)} members"),
+            (_, { Member: { } stranger, Problem: var why }) when key.Allowed.Count == 0 => new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; \"{stranger}\" is refused: {why}"),
+            (_, { Member: { } stranger }) => new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got \"{stranger}\""),
+            _ => new ValueCheck.Ok(new ConfigValue.TextList(members)),
+        };
 
     private static ValueCheck ParseBool(ConfigKey key, string text) => text.ToLowerInvariant() switch
     {

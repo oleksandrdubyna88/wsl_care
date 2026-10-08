@@ -74,6 +74,15 @@ public abstract record TextRule
 
         public override string Problem(string value) => value.Length == 0 || Processes.Policy.HttpsUrls.IsAddress(value) ? string.Empty : $"not {Describe}";
     }
+
+    /// <summary>A user-added MCP server's program file name (<c>mcpServers.programs</c>, plan E14 S2c) — the one rule
+    /// <see cref="Mcp.McpUserPrograms"/> holds, so the reader and the validation cannot disagree.</summary>
+    public sealed record McpProgramName : TextRule
+    {
+        public override string Describe => Mcp.McpUserPrograms.Description;
+
+        public override string Problem(string value) => Mcp.McpUserPrograms.Problem(value);
+    }
 }
 
 /// <summary>Which direction of change of a key is the SAFE one for a root run (plan §15q R1.2): the value a user layer may

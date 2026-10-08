@@ -24,7 +24,8 @@ public sealed record McpStopJudgement(McpFound Instance, PidSample? Sample, Time
 /// child process (a server waiting on a child it started spends no CPU of its own — the risk consultation of 2026-10-08); the
 /// process the snapshot saw (its start ticks and account re-read); and NO CPU for <c>mcpWatchdog.idleMinutes</c> measured by
 /// identity over a dense chain of the timer's sightings (<see cref="AgentCpuHistory"/> — missing history is not idle) — or, for a
-/// server re-parented to INIT (its agent died), <c>mcpWatchdog.orphanIdleMinutes</c>. Signals as A11 and A18
+/// server re-parented to INIT (its agent died), <c>mcpWatchdog.orphanIdleMinutes</c> — never an orphan of a program the USER listed
+/// (<c>mcpServers.programs</c>, plan E14 S2c), whose name may then be another program's. Signals as A11 and A18
 /// (<see cref="SuspectSignals"/>): SIGTERM, SIGKILL after the grace, by pid AND start, each re-read just before.
 /// </summary>
 /// <remarks>A BUTTON run is bound to what its modal showed, as A18's (<see cref="Shown"/>). What an AI agent does with an ended
@@ -40,6 +41,9 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
     public const string NotTheSnapshot = "its /proc entry is not the process the snapshot saw (another start, another account, or gone)";
     public const string UsedCpu = "it used CPU within its window, or its CPU history is missing, broken by a gap or shorter on the monotonic clock";
     public const string Reconnect = "the agent's session may need /mcp to reconnect it";
+
+    public const string UserProgramOrphan =
+        "it is an orphaned process of a user-added program (mcpServers.programs): once no agent holds it, a name the user chose may be another program";
 
     public const string ButtonNeedsShownProcesses =
         "a button run of A19 must pass the processes its preview SHOWED (--process <pid:start>): A19 ends only those, judged again (plan E14 S2a)";
@@ -139,16 +143,22 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
     private static McpStopJudgement JudgeOne(Judging judging, McpFound instance, bool hasChild, PidSample? sample)
     {
         var idle = sample is null ? TimeSpan.Zero : judging.IdleFor(sample);
-        var kept = (instance.Process.HasTty, hasChild, SameProcess(instance.Process, sample, judging.User), idle >= WindowOf(instance, judging.Windows)) switch
+        var kept = (OrphanOfUserProgram(instance), instance.Process.HasTty, hasChild, SameProcess(instance.Process, sample, judging.User), idle >= WindowOf(instance, judging.Windows)) switch
         {
-            (true, _, _, _) => HasTerminal,
-            (_, true, _, _) => HasChild,
-            (_, _, false, _) => NotTheSnapshot,
-            (_, _, _, false) => UsedCpu,
+            (true, _, _, _, _) => UserProgramOrphan,
+            (_, true, _, _, _) => HasTerminal,
+            (_, _, true, _, _) => HasChild,
+            (_, _, _, false, _) => NotTheSnapshot,
+            (_, _, _, _, false) => UsedCpu,
             _ => string.Empty,
         };
         return new McpStopJudgement(instance, sample, idle, kept);
     }
+
+    /// <summary>A user program's instance with no agent above it (plan E14 S2c; coai plan round 2026-10-08): a file name the user
+    /// chose is not as specific as a catalogue server's, so it is a target only while an agent still holds it.</summary>
+    private static bool OrphanOfUserProgram(McpFound instance) =>
+        instance.Server.Origin == McpServerOrigin.UserProgram && instance.Owner is McpOwner.Orphaned;
 
     /// <summary>The /proc entry read now is the process the snapshot saw — the same start ticks — and runs as the target user (the
     /// risk consultation: pidfd protects the identity it is given, not an attribution made from a stale snapshot).</summary>
