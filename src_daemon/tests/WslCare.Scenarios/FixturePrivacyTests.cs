@@ -100,13 +100,21 @@ public sealed class FixturePrivacyTests
     }
 
     /// <summary>The quoted names of the <c>SERVICE_ACCOUNTS</c> array literal in <paramref name="source"/>, its
-    /// <c>//</c> comments dropped first (a reason may hold an apostrophe). Empty when the declaration is not found.</summary>
+    /// <c>//</c> comments dropped first (a reason may hold an apostrophe). Empty when the declaration is not found; an
+    /// <see cref="InvalidDataException"/> when the body holds anything but those names, commas and whitespace — an entry
+    /// this read cannot see would otherwise leave the parity green while the lists differ.</summary>
     private static List<string> VsixServiceAccounts(string source)
     {
         var body = System.Text.RegularExpressions.Regex.Match(source, @"export const SERVICE_ACCOUNTS[^=]*=\s*\[(?<body>[^\]]*)\]").Groups["body"].Value;
         var code = string.Join('\n', body.Split('\n').Select(line => line.Split("//")[0]));
+        const string QuotedName = @"'(?<name>[^']+)'";
+        var rest = System.Text.RegularExpressions.Regex.Replace(code, QuotedName, string.Empty);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(rest, @"^[\s,]*$"))
+        {
+            throw new InvalidDataException($"SERVICE_ACCOUNTS holds something other than single-quoted names: '{rest.Trim()}'");
+        }
 
-        return [.. System.Text.RegularExpressions.Regex.Matches(code, @"'(?<name>[^']+)'").Select(m => m.Groups["name"].Value)];
+        return [.. System.Text.RegularExpressions.Regex.Matches(code, QuotedName).Select(m => m.Groups["name"].Value)];
     }
 
     [Fact]
@@ -116,6 +124,21 @@ public sealed class FixturePrivacyTests
 
         VsixServiceAccounts(source).Should().Equal("runner", "root");
         VsixServiceAccounts("const nothing = ['runner'];").Should().BeEmpty();
+    }
+
+    /// <summary>An entry the read cannot see — double-quoted, a template literal, a spread, a block comment — would
+    /// let the TypeScript list grow while the parity test stays green (own review of this change, 2026-10-08), so the
+    /// read refuses any array body that is not single-quoted names, commas, whitespace and line comments.</summary>
+    [Theory]
+    [InlineData("'runner',\n  \"builder\",")]
+    [InlineData("'runner',\n  `builder`,")]
+    [InlineData("'runner',\n  ...EXTRA,")]
+    [InlineData("'runner', /* 'x' */")]
+    public void The_service_account_read_refuses_an_entry_it_cannot_see(string body)
+    {
+        var source = $"export const SERVICE_ACCOUNTS: readonly string[] = [\n  {body}\n];";
+
+        FluentActions.Invoking(() => VsixServiceAccounts(source)).Should().Throw<InvalidDataException>();
     }
 
     private static string ByFileAndRule(IEnumerable<string> findings) =>
