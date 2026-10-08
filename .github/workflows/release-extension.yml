@@ -16,7 +16,9 @@ name: release · extension
 #   guard               the tag is extension-v<version>, src_vs_code/package.json says the same, the publisher is real,
 #                       the commit is on main — and THE MECHANICAL LIVE GATE: both minima of src_vs_code/min-daemon.json
 #                       (render, actions — E6.S2) are published non-draft releases and POST_DEPLOY.md names a verified daemon
-#                       at or above both — and the first public extension stays root-free: a checkout carrying the root
+#                       at or above both — read from MAIN'S TIP (origin/main of this job's checkout), never from the tag's
+#                       tree: the stamp is recorded after the release, so a tag cut before it landed passes on a re-run once
+#                       it has — and the first public extension stays root-free: a checkout carrying the root
 #                       module is refused at or below extension-v0.1.0, or before that tag exists (plan §15j B3, §15k #7)
 #                       (.github/scripts/release-extension-guard.sh)
 #   build               npm ci, typecheck, lint, every test (unit, page, structural, bundle scans; the extension-host tier
@@ -91,7 +93,9 @@ jobs:
       # Whether the tags allow a root-capable extension (plan §15j B3, §15k #7) — check-vsix refuses the root module otherwise.
       root_allowed: ${{ steps.guard.outputs.root_allowed }}
     steps:
-      # The whole history: "is this commit on main" is answered by git, and a shallow clone has no main to answer it.
+      # The whole history: "is this commit on main" is answered by git, and a shallow clone has no main to answer it. It
+      # also carries main's tip AS OF THIS RUN (origin/main, fetched afresh on every run and re-run), where the guard reads
+      # POST_DEPLOY.md's stamp.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0

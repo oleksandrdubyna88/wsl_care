@@ -15,7 +15,14 @@
 #      by lib/versions.sh, the functions POST_DEPLOY item 6 ranks versions with). An extension whose *Install daemon*
 #      types `--version <MIN>` must never ship before that daemon is out and was seen working. Since E6.S2 (plan §15j
 #      M5) the artefact holds TWO minima — `minDaemonForRender` and `minDaemonForActions` (the daemon the cleanups need,
-#      the one *Install daemon* types) — and BOTH must be published releases, and the stamp at or above both;
+#      the one *Install daemon* types) — and BOTH must be published releases, and the stamp at or above both.
+#      THE STAMP IS READ FROM MAIN'S TIP when a main ref is given (`git show <main-ref>:POST_DEPLOY.md`), never from the
+#      tag's tree: a stamp is a post-release fact, recorded after the daemon was installed and seen working, so it lands on
+#      main AFTER the commit the tag points at — read from the tag it could never be there (extension-v0.1.0's guard refused
+#      "names no date" on a re-run after the stamp had merged, 2026-10-08). The job's full-history checkout fetches main
+#      afresh on every run, so a stamp merged after the tag counts on "Re-run failed jobs". Everything else — package.json,
+#      min-daemon.json and its pins, the root module — is read at the tag. Without a main ref (a local run) the stamp is read
+#      from the checkout. Every stamp refusal names which of the two it read;
 #   6. THE FIRST PUBLIC EXTENSION STAYS ROOT-FREE (plan §15j B3, keyed on TAGS by §15k #7, tightened by the E6.S2 review
 #      S1): a checkout that carries the root module (src_vs_code/src/root/rootCall.ts) is refused unless ALL of: the release
 #      is above `extension-v0.1.0`; that tag exists and its OWN tree carries no root module (a refused 0.1.0 that carried it
@@ -26,7 +33,8 @@
 #
 #   release-extension-guard.sh <tag> [<main-ref>]
 #
-# Run from the repository root of the tag's checkout (the whole history: the tags are read), with GH_REPO (owner/name) and
+# Run from the repository root of the tag's checkout (the whole history: the tags are read, and main's tip, where the stamp
+# is read), with GH_REPO (owner/name) and
 # GH_TOKEN set for `gh api`. On success prints `version=…`, `publisher=…`, `min_daemon=…`, `min_daemon_actions=…` and
 # `root_allowed=…` — appended to $GITHUB_OUTPUT too when that is set; each is a declared output of release-extension.yml's
 # guard job, and the build checks its .vsix against them — and exits 0; any refusal exits 1 naming the reason. The tag
@@ -153,15 +161,27 @@ if [ "$install" != "$min" ] && [ "$install" != "$min_actions" ]; then
   require_published "$install"
 fi
 
-# …and was seen working: POST_DEPLOY.md's stamp names a date and a daemon at or above both minima.
-[ -f "$STAMP_FILE" ] || refuse "$STAMP_FILE is missing at this checkout"
-stamp="$(sed -n 's/^Last verified: //p' "$STAMP_FILE" | head -n 1)"
-[[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\  ]] || refuse "$STAMP_FILE's 'Last verified:' line names no date — the minimum daemon $min was never verified live (run POST_DEPLOY.md and stamp it)"
+# …and was seen working: POST_DEPLOY.md's stamp names a date and a daemon at or above both minima and the install pin. The
+# stamp is a post-release fact, so it is read from MAIN'S TIP when a main ref is given — the minima and the pin above stay
+# the tag's (see the header, item 5).
+if [ "$#" -eq 2 ]; then
+  stamp_source="$STAMP_FILE on $2"
+  git cat-file -e "$2:$STAMP_FILE" 2> /dev/null || refuse "$STAMP_FILE is missing on $2 — the stamp is read from main's tip, not from the tag"
+  stamp_text="$(git show "$2:$STAMP_FILE" 2> /dev/null)" || refuse "$STAMP_FILE on $2 could not be read (git show $2:$STAMP_FILE failed)"
+  stamp_advice="the stamp is read from $2's tip: merge the stamp, then Re-run FAILED jobs"
+else
+  stamp_source="$STAMP_FILE at this checkout"
+  [ -f "$STAMP_FILE" ] || refuse "$stamp_source is missing"
+  stamp_text="$(cat "$STAMP_FILE")"
+  stamp_advice="no main ref was given, so the stamp was read from this checkout — pass the main ref to read main's"
+fi
+stamp="$(printf '%s\n' "$stamp_text" | sed -n 's/^Last verified: //p' | head -n 1)"
+[[ "$stamp" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\  ]] || refuse "the 'Last verified:' line of $stamp_source names no date — the minimum daemon $min was never verified live (run POST_DEPLOY.md and stamp it; $stamp_advice)"
 verified="$(printf '%s\n' "$stamp" | sed -n 's/.*daemon \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p')"
-[ -n "$verified" ] || refuse "$STAMP_FILE's 'Last verified:' line names no 'daemon <x.y.z>' — stamp the verified daemon version"
-version_at_least "$verified" "$min" || refuse "$STAMP_FILE last verified daemon $verified, older than the minimum $min this extension needs"
-version_at_least "$verified" "$min_actions" || refuse "$STAMP_FILE last verified daemon $verified, older than the actions minimum $min_actions this extension acts with"
-version_at_least "$verified" "$install" || refuse "$STAMP_FILE last verified daemon $verified, older than $install, the release Install daemon types"
+[ -n "$verified" ] || refuse "the 'Last verified:' line of $stamp_source names no 'daemon <x.y.z>' — stamp the verified daemon version ($stamp_advice)"
+version_at_least "$verified" "$min" || refuse "$stamp_source last verified daemon $verified, older than the minimum $min this extension needs ($stamp_advice)"
+version_at_least "$verified" "$min_actions" || refuse "$stamp_source last verified daemon $verified, older than the actions minimum $min_actions this extension acts with ($stamp_advice)"
+version_at_least "$verified" "$install" || refuse "$stamp_source last verified daemon $verified, older than $install, the release Install daemon types ($stamp_advice)"
 
 for line in "version=$version" "publisher=$publisher" "min_daemon=$min" "min_daemon_actions=$min_actions" "install_daemon=$install" "root_allowed=$root_allowed"; do
   echo "$line"
