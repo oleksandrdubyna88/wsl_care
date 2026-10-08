@@ -2420,13 +2420,14 @@ lands on main after the commit the tag points at: `extension-v0.1.0`'s guard (ru
 date* when it was re-run after the stamp PR #49 had merged, and the owner published that release by hand. The guard now
 reads the stamp with `git show <main-ref>:POST_DEPLOY.md` — main's tip as the guard job's full-history checkout fetched it
 on THAT run, so a re-run sees a stamp merged after the tag — while package.json, min-daemon.json (both minima and the
-install pin) and the root module stay the tag's. Without a main ref (a local run; every flow of `ReleaseExtensionScriptFlows`
-and `ReleaseExtensionInstallPinFlows` runs that form) the stamp is still read from the checkout. Every stamp refusal names
+install pin) and the root module stay the tag's. Without a main ref (a local run; every flow of `ReleaseExtensionInstallPinFlows`
+and all but the off-`main` one of `ReleaseExtensionScriptFlows` run that form) the stamp is still read from the checkout. Every stamp refusal names
 the source it read.
 
 | Guarantee | Test | Observed red |
 |---|---|---|
 | a tag whose tree predates its stamp is admitted once main carries one (and a main stamp newer than every pin); main without a dated stamp, below the tag's install pin, or without `POST_DEPLOY.md` is refused naming main | `ReleaseExtensionStampSourceFlows` (5 flows; Linux) | the tests committed BEFORE the fix, `ci · daemon` dispatched on that commit (run 37753606004, linux-x64 and linux-arm64): exactly these 5 red, 408 green — the two admit flows *Expected result.Exit to be 0 because ::error::extension release guard: POST_DEPLOY.md's 'Last verified:' line names no date …* (the production refusal), the three refuse flows *Expected result.Exit to be 1 because version=0.1.0 … install_daemon=… , but found 0*. By hand under Git Bash, the five cases against main's guard and the fixed one: the same split |
+| the install pin the guard checks and reports is the TAG's, not main's — in the two pinned flows main's commit lowers min-daemon.json's pin to 0.1.0 | `ReleaseExtensionStampSourceFlows.A_stamp_on_main_naming_a_daemon_newer…`, `…A_stamp_on_main_below_the_tags_install_pin…` | by hand under Git Bash, a mutant guard that reads min-daemon.json from main: the below-pin case ADMITTED (`install_daemon=0.1.0`) and the newer case reports `install_daemon=0.1.0`; the real guard refuses *older than 0.1.2* and reports `install_daemon=0.1.2` |
 
 ### What each E6.S2 guarantee rests on
 

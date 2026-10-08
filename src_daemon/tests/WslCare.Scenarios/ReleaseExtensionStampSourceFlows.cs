@@ -16,9 +16,11 @@ namespace WslCare.Scenarios;
 /// (#49) had merged, and the owner published that release by hand. So the stamp is read from MAIN'S TIP, while everything
 /// else (package.json, min-daemon.json and its install pin, the root module) stays at the tag.
 /// <para>Each flow makes the checkout a throwaway git repository: the tag's commit, then main's change on top of it, then
-/// the working tree checked out back at the tag (detached), exactly what the guard job's checkout of a tag push is. The
-/// no-main-ref form (a local run) keeps reading the checkout; every flow in <see cref="ReleaseExtensionScriptFlows"/> and
-/// <see cref="ReleaseExtensionInstallPinFlows"/> runs that form.</para>
+/// the working tree checked out back at the tag (detached), exactly what the guard job's checkout of a tag push is. Where a
+/// flow pins the install above the minima, main's commit also LOWERS min-daemon.json's pin, so a guard that read the pin
+/// from main instead of the tag would answer differently. The no-main-ref form (a local run) keeps reading the checkout;
+/// every flow of <see cref="ReleaseExtensionInstallPinFlows"/> and all but the off-main one of
+/// <see cref="ReleaseExtensionScriptFlows"/> run that form.</para>
 /// </summary>
 [SupportedOSPlatform("linux")]
 public sealed class ReleaseExtensionStampSourceFlows
@@ -29,7 +31,8 @@ public sealed class ReleaseExtensionStampSourceFlows
     private static void Linux() => Assert.SkipUnless(OperatingSystem.IsLinux(), ReleaseScripts.LinuxOnly);
 
     /// <summary>The guard over a tag whose tree carries <paramref name="tagStamp"/>, with main one commit further carrying
-    /// <paramref name="mainStamp"/> — or no POST_DEPLOY.md at all when it is null.</summary>
+    /// <paramref name="mainStamp"/> — or no POST_DEPLOY.md at all when it is null. With an <paramref name="install"/> pin,
+    /// main's min-daemon.json pins the minimum (0.1.0) instead: the pin the guard reports must still be the tag's.</summary>
     private static async Task<ChildResult> GuardAsync(TempRoot root, string tagStamp, string? mainStamp, string? install = null)
     {
         var checkout = Make(root, stamp: tagStamp, install: install, ghAnswer: "by-tag");
@@ -48,6 +51,12 @@ public sealed class ReleaseExtensionStampSourceFlows
         {
             await File.WriteAllTextAsync(postDeploy, PostDeploy(mainStamp));
             await GitAsync(checkout, env, "add", "POST_DEPLOY.md");
+        }
+
+        if (install is not null)
+        {
+            await File.WriteAllTextAsync(Path.Combine(checkout.Dir, "src_vs_code", "min-daemon.json"), MinDaemonJson("0.1.0", "0.1.0", "0.1.0"));
+            await GitAsync(checkout, env, "add", "src_vs_code/min-daemon.json");
         }
 
         await GitAsync(checkout, env, "commit", "-q", "-m", "the stamp lands on main after the release");
@@ -78,7 +87,7 @@ public sealed class ReleaseExtensionStampSourceFlows
         var result = await GuardAsync(root, tagStamp: NotYetStamped, mainStamp: "Last verified: 2026-11-01 · the owner's installation · daemon 0.3.0 · extension 0.2.0", install: "0.1.2");
 
         result.Exit.Should().Be(0, result.Stdout + result.Stderr);
-        result.StdoutLines.Should().Contain("install_daemon=0.1.2", "the install pin is still the TAG's");
+        result.StdoutLines.Should().Contain("install_daemon=0.1.2", "the install pin is still the TAG's — main's min-daemon.json pins 0.1.0");
     }
 
     /// <summary>The tag's tree carries a valid stamp of its own; main's does not — main is what is read, and named.</summary>
@@ -95,7 +104,7 @@ public sealed class ReleaseExtensionStampSourceFlows
     }
 
     /// <summary>The install pin is the TAG's (min-daemon.json at the tag), the stamp is MAIN's: a main stamp below the pin
-    /// refuses, though the tag's own tree names the pin.</summary>
+    /// refuses, though the tag's own tree stamps the pin — and though main's own min-daemon.json would accept that stamp.</summary>
     [Fact]
     public async Task A_stamp_on_main_below_the_tags_install_pin_is_refused_naming_main()
     {
