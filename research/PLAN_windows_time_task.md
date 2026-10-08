@@ -10,7 +10,8 @@
 > measured, research T21); the elevated run is persisted in `globalState` and held past a timeout; "this version" is the
 > whole canonical summary of the registered definition, not its arguments. **Open tail:** registering, running as SYSTEM
 > and the event trigger firing are not exercised by any test — they are the owner's one-time check after installing it
-> (`POST_DEPLOY.md` item 9); the owner questions of §7 are open.
+> (`POST_DEPLOY.md` item 9); the owner questions of §7 are open — Q1 and Q4 answered the same day, and Q4's fifth trigger
+> (SCM 7040 for `W32Time`) shipped as §11 records.
 >
 > Related: [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) (the incident),
 > [2026-10-08_windows_time_guard_trigger.md](2026-10-08_windows_time_guard_trigger.md) (build step 1's
@@ -252,13 +253,15 @@ findings — 11 accepted, 1 rejected). Every rejection measured, research record
 
 ## 7. Owner questions
 
-- **Q1** — defaults `everyHours` 4, `minMinutesBetweenStarts` 10, `delaySeconds` 60: keep?
+- **Q1** — defaults `everyHours` 4, `minMinutesBetweenStarts` 10, `delaySeconds` 60: keep? — **answered: keep** (owner,
+  2026-10-08).
 - **Q2** — the measured 2 h after every boot (research §3) makes the boot/logon runs the guard's main job. Worth also
   investigating the firmware clock (the incident record's Q5), so the guard is a safety net rather than the fix?
 - **Q3** — the two *demand → disabled → demand* changes of `w32time`'s start type at 06:00Z and 09:50Z (research T13)
   were made from your account: were both yours (a tool you ran), or is that the software that stops it?
 - **Q4** — a fifth trigger on event 7040 (start type changed, keyed by the service name `W32Time`, which is not
-  localised — measured matchable) would undo a *disabled* within a minute. Not built (the owner listed four); want it?
+  localised — measured matchable) would undo a *disabled* within a minute. Not built (the owner listed four); want it? —
+  **answered: yes**, built (§11).
 
 ## 8. Definition of Done
 
@@ -321,3 +324,42 @@ code-reviewer, 7 findings — 5 accepted, 1 rejected, 1 a record correction).
 **Break-it for the round's fixes (product code only):** the module path through `Join-Path`; no busy check after the
 modal; a refresh in flight sharing the stale query; a finished pending run not cleared; a changed setting telling nobody;
 no checking note — six mutations, each RED with its test, restored green.
+
+## 11. As built — the fifth trigger: the start type changed (2026-10-08, later)
+
+Owner Q4 answered *yes*, Q1 *keep the defaults*. What shipped (`guardTask.ts`, `guardState.ts`):
+
+- **A fifth trigger**, a second `EventTrigger` after the 258 one with the same `delaySeconds`: `START_TYPE_QUERY` =
+  `<QueryList><Query Id="0" Path="System"><Select Path="System">*[System[Provider[@Name='Service Control Manager'] and
+  EventID=7040] and EventData[Data[@Name='param4']='W32Time']]</Select></Query></QueryList>` — measured read-only against
+  the real System log: exactly the four W32Time 7040s, and `'w32time'` matches the same four (the event log compares
+  case-insensitively); `param4` is the service KEY name, `param1`..`param3` are localised
+  ([2026-10-08_windows_time_guard_trigger.md](2026-10-08_windows_time_guard_trigger.md) §6). The System log is always on,
+  so this trigger does not depend on the channel the 258 trigger needs.
+- **No self-re-trigger loop:** the action's start-type line (story 1's `SET_AUTOMATIC`, verbatim) runs only
+  `if ($service.StartType -ne 'Automatic')`. The guard's own change is then at most one 7040; the run it triggers changes
+  nothing. Whether the SCM logs a 7040 for an UNCHANGED type is not measured (it would mean changing a service), so the
+  action does not depend on it. With `setAutomaticStart` off there is no start-type line at all and a *disabled* stays
+  disabled — the owner's switch.
+- **"Within a minute" is narrowed** (plan-round finding, accepted): `MultipleInstancesPolicy` stays `IgnoreNew`, so a 7040
+  that lands while a guard run is already running is ignored; the next trigger (another event, the timed run, boot,
+  logon) undoes it. A run takes seconds, so the window is that run's length. `Queue` was not taken: Settings' *Sync now*
+  writes two 7040s and often a 258 within two seconds
+  ([2026-10-08_who_stops_windows_time.md](2026-10-08_who_stops_windows_time.md) §1), which `IgnoreNew` turns into one run.
+- **The summary** gains the trigger's line in definition order, so an install from before reads *installed, but not as the
+  current settings would install it — install it again* through the existing comparison; no new state.
+- **The disabled-channel note** now reads *"…so a stop is caught by the timed runs only"* — a start-type change is still
+  caught.
+- **The event trigger firing is still not exercised by any test** (that needs a registered task and a changed service):
+  `POST_DEPLOY.md` item 9 now has the owner's one-time check — set Manual elevated while the service runs (a 7040 and no
+  258), then read Automatic again and the task's last run after the change (plan-round finding, accepted).
+
+Tests (RED first, observed): 6 of the 30 guard tests failed against the unchanged product with the real symptoms — four
+triggers where five were expected, one event-trigger line in the summary, a four-trigger install reading as current, an
+unconditional start-type line, the old channel note. Then green. New on the Windows leg (read-only): both subscriptions
+are queries the event log ACCEPTS (`Get-WinEvent -FilterXml -MaxEvents 1`: a match or "no events", never "invalid"); the
+existing in-memory Task Scheduler parse now reads back five triggers equal to `guardSummary`. Break-it, product code only
+(no tripwire, recorder or fake touched): the fifth trigger dropped from the XML → 3 red (the parsed definition, the zero
+delay, Task Scheduler's read-back); its summary line dropped → 3 red (the read-back, the previous-version state, the summary
+order); the start-type condition removed → 1 red. Restored: green. Whole suite: `npm test` 843 tests, 842 pass, 1 skipped
+(the pre-existing non-Windows skip), 0 fail; `npm run lint` and `tsc --noEmit` green.

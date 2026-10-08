@@ -106,3 +106,15 @@ panel's own read-back after install is that observation (`POST_DEPLOY.md`).
 | # | Read (added in the code round, same day) | Value |
 |---|---|---|
 | T23 | `GetFolder('\wsl-care-absent-probe')` and `GetTask('wsl-care-absent-probe')` through `Schedule.Service`, in **Windows PowerShell 5.1.26100** (the product's PowerShell, not pwsh 7) | `$_.Exception` is `System.IO.FileNotFoundException`, `HResult` **0x80070002** for both — the COM error itself, not a wrapper; the status query's "not installed" branch reads it, and the Windows-leg test now runs the real query unelevated (it answered `guard=absent` here) |
+
+## 6. Added for the fifth trigger: the start-type change, matched by key name (same day, ≈ 17:00Z, read-only)
+
+| # | Read | Value |
+|---|---|---|
+| T24 | one W32Time 7040's XML (RecordId 258308) | `Provider Name='Service Control Manager'`, `EventID 7040`, `Channel System`, `Security UserID` the account that made the change; `EventData` `param1` *Windows Time*, `param2` *demand start*, `param3` *disabled* (all three localised text) and **`param4` `W32Time`** (the service key name) |
+| T25 | `Get-WinEvent -FilterXml` with `<QueryList><Query Id="0" Path="System"><Select Path="System">*[System[Provider[@Name='Service Control Manager'] and EventID=7040] and EventData[Data[@Name='param4']='W32Time']]</Select></Query></QueryList>` | **4 matches** — RecordIds 257828, 257829, 258308, 258310, exactly the four W32Time 7040s of T13 |
+| T26 | the same without the `EventData` clause | 28 — every service's 7040 (BITS, IsolationSession, W32Time) |
+| T27 | the same with `'w32time'` | the same 4 — the event log's string comparison is case-insensitive, so one spelling suffices |
+
+So the fifth trigger matches by provider, number and key name, with no localised text, on a channel that is always
+enabled. As for T8, a REGISTERED trigger firing is not measured here; `POST_DEPLOY.md` item 9 is that check.

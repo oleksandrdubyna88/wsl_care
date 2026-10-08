@@ -4,7 +4,8 @@ import { BODY, EXIT, SET_AUTOMATIC } from './windowsTimeFix';
  * The Windows Time guard's scheduled task (PLAN_windows_time_task.md D1, D2, D8): ONE task `\wsl-care\windows-time-guard`
  * that runs as SYSTEM and (re)starts the Windows Time service and resyncs — at startup, at logon, every N hours and when the
  * service logs that it is stopping (Time-Service event 258; the SCM's 7036 is not logged on this build at all —
- * research/2026-10-08_windows_time_guard_trigger.md §1–§2).
+ * research/2026-10-08_windows_time_guard_trigger.md §1–§2), and when its start type is changed (the SCM's 7040 for
+ * `W32Time`, research §6 — the *disabled* of 2026-10-08 undone within `delaySeconds`).
  *
  * <p>Everything here is a PURE function of the settings, so the text a person is shown, the text registered and the text
  * the status query compares against are one computation:</p>
@@ -66,6 +67,19 @@ export const STOP_EVENT = 258;
 /** The event trigger's subscription, exactly the `QueryList` measured against the recorded stops (research T8). */
 export const STOP_QUERY = `<QueryList><Query Id="0" Path="${TIME_SERVICE_CHANNEL}"><Select Path="${TIME_SERVICE_CHANNEL}">*[System[Provider[@Name='${TIME_SERVICE_PROVIDER}'] and EventID=${STOP_EVENT}]]</Select></Query></QueryList>`;
 
+export const SYSTEM_CHANNEL = 'System';
+export const SCM_PROVIDER = 'Service Control Manager';
+/** *"The start type of the … service was changed from … to …"* — its `param1`..`param3` are localised text. */
+export const START_TYPE_EVENT = 7040;
+/** `param4` of 7040: the service's KEY name, not localised; the event log compares it case-insensitively (research §6). */
+export const TIME_SERVICE_KEY = 'W32Time';
+
+/**
+ * The fifth trigger's subscription: a start-type change of the Windows Time service — exactly the `QueryList` measured
+ * against the System log (research/2026-10-08_windows_time_guard_trigger.md §6: the four W32Time 7040s and nothing else).
+ */
+export const START_TYPE_QUERY = `<QueryList><Query Id="0" Path="${SYSTEM_CHANNEL}"><Select Path="${SYSTEM_CHANNEL}">*[System[Provider[@Name='${SCM_PROVIDER}'] and EventID=${START_TYPE_EVENT}] and EventData[Data[@Name='param4']='${TIME_SERVICE_KEY}']]</Select></Query></QueryList>`;
+
 const TICKS_PER_MINUTE = 600_000_000;
 
 /**
@@ -93,6 +107,15 @@ function rateLimitBlock(minutes: number): string {
 }
 
 /**
+ * Story 1's start-type line, run only when the start type is not already Automatic: the guard's own `Set-Service` is then
+ * at most ONE 7040 — the run that 7040 triggers finds Automatic and changes nothing — so the fifth trigger cannot re-fire
+ * the task every `delaySeconds` (whether the SCM logs a 7040 for an unchanged type is not measured, so nothing relies on it).
+ */
+function startTypeLine(): string {
+  return `if ($service.StartType -ne 'Automatic') { ${SET_AUTOMATIC} }`;
+}
+
+/**
  * The task's action as ONE line (D2, D8 o6/o10): modules from `$PSHOME`; the service must exist (22); the start type FIRST,
  * so a Disabled service is set Automatic even when the start is rate-limited; then — only when the service is not running —
  * at most one start per window, the stamp written BEFORE the start (20 / 21); then story 1's start and resync lines.
@@ -104,7 +127,7 @@ export function guardScript(options: GuardOptions): string {
     START_ALLOWED_FUNCTION,
     '$service = Get-Service -Name w32time -ErrorAction SilentlyContinue',
     `if ($null -eq $service) { exit ${GUARD_EXIT.serviceMissing} }`,
-    ...(options.setAutomaticStart ? [SET_AUTOMATIC] : []),
+    ...(options.setAutomaticStart ? [startTypeLine()] : []),
     rateLimitBlock(options.minMinutesBetweenStarts),
     ...BODY,
   ].join('; ');
@@ -139,7 +162,7 @@ function delayElement(seconds: number): string {
   return seconds > 0 ? `<Delay>PT${seconds}S</Delay>` : '';
 }
 
-/** The definition Task Scheduler registers (D1, D8): SYSTEM, four triggers, one at a time, the fixed action. */
+/** The definition Task Scheduler registers (D1, D8): SYSTEM, five triggers, one at a time, the fixed action. */
 export function guardTaskXml(options: GuardOptions): string {
   const delay = delayElement(options.delaySeconds);
 
@@ -148,7 +171,7 @@ export function guardTaskXml(options: GuardOptions): string {
     '<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
     '  <RegistrationInfo>',
     '    <Author>AI OS Care</Author>',
-    '    <Description>Starts the Windows Time service (w32time) and resyncs the Windows clock: at startup, at logon, every few hours and when the service logs that it is stopping. Installed and removed by the AI OS Care extension (Install / Remove the Windows Time guard).</Description>',
+    '    <Description>Starts the Windows Time service (w32time) and resyncs the Windows clock: at startup, at logon, every few hours, when the service logs that it is stopping and when its start type is changed. Installed and removed by the AI OS Care extension (Install / Remove the Windows Time guard).</Description>',
     `    <SecurityDescriptor>${GUARD_SDDL}</SecurityDescriptor>`,
     '  </RegistrationInfo>',
     '  <Principals>',
@@ -159,6 +182,7 @@ export function guardTaskXml(options: GuardOptions): string {
     `    <LogonTrigger><Enabled>true</Enabled>${delay}</LogonTrigger>`,
     `    <TimeTrigger><Repetition><Interval>PT${options.everyHours}H</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><StartBoundary>2026-01-01T00:00:00Z</StartBoundary><Enabled>true</Enabled></TimeTrigger>`,
     `    <EventTrigger><Enabled>true</Enabled><Subscription>${xmlText(STOP_QUERY)}</Subscription>${delay}</EventTrigger>`,
+    `    <EventTrigger><Enabled>true</Enabled><Subscription>${xmlText(START_TYPE_QUERY)}</Subscription>${delay}</EventTrigger>`,
     '  </Triggers>',
     '  <Settings>',
     '    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>',
@@ -207,6 +231,7 @@ export function guardSummary(options: GuardOptions): readonly string[] {
     `trigger=logon enabled=True delay=${delay}`,
     `trigger=time enabled=True interval=PT${options.everyHours}H`,
     `trigger=event enabled=True delay=${delay} subscription=${STOP_QUERY}`,
+    `trigger=event enabled=True delay=${delay} subscription=${START_TYPE_QUERY}`,
     `settings limit=PT${options.timeLimitMinutes}M instances=2 whenAvailable=True battery=False enabled=True`,
     `action type=0 path=${TASK_POWERSHELL} args=${guardArguments(options)}`,
   ];
