@@ -9,7 +9,7 @@ using WslCare.TestSupport;
 namespace WslCare.Scenarios;
 
 /// <summary>
-/// The automated POST_DEPLOY items that read the owner's installation (1, 5, 7, 11), run as the conventions'
+/// The automated POST_DEPLOY items that read the owner's installation (1, 5, 7, 9, 11), run as the conventions'
 /// <c>post-deploy-check.mjs --target</c> runs them — the command the checker's own <c>inspect</c> extracts (the FIRST code
 /// span of the row's Check cell, <c>\|</c> unescaped), under <c>/bin/sh -c</c> — against a stand-in <c>wsl.exe</c> that
 /// relays to stand-in <c>systemctl</c> / <c>journalctl</c> /
@@ -190,6 +190,59 @@ public sealed class PostDeployCommandFlows
         result.Exit.Should().NotBe(0, "doctor --json answers exit 0 either way (Output.Answer); the item must read \"healthy\"");
     }
 
+    /// <summary>A doctor answering the two clock checks of PLAN_windows_time_guard.md D5 — written by the product's own JSON
+    /// writer, so the stand-in cannot spell a field the real one does not.</summary>
+    private static string ClockDoctor(params Core.Doctor.DoctorCheck[] checks)
+    {
+        var report = new Core.Doctor.DoctorReport(1, "wsl", DateTimeOffset.UnixEpoch, checks.All(c => c.State != Core.Doctor.DoctorRun.Problem), false, [], checks, []);
+        var json = System.Text.Json.JsonSerializer.Serialize(report, Core.Json.WslCareJsonContext.Default.DoctorReport);
+        return "[ \"$1 $2\" = \"doctor --json\" ] || exit 2\ncat <<'JSON'\n" + json + "\nJSON\n";
+    }
+
+    private static Core.Doctor.DoctorCheck Check(string id, string state, string detail) => new(id, state, detail);
+
+    [Fact]
+    public async Task Item_9_passes_when_the_windows_time_service_runs_as_configured_and_the_clocks_agree()
+    {
+        Linux();
+        using var world = new World(wslCare: ClockDoctor(
+            Check(Core.Doctor.ClockChecks.WindowsTimeId, Core.Doctor.DoctorRun.Ok, "Running, StartType Automatic: the Windows Time service is running"),
+            Check(Core.Doctor.ClockChecks.ClockReferenceId, Core.Doctor.DoctorRun.Ok, "agree: Windows +0.3 s, the distro +0.1 s")));
+
+        var result = await world.RunAsync(9);
+
+        result.Exit.Should().Be(0, result.Stdout + result.Stderr);
+        result.Stdout.Should().Contain("windowsTime: ok - Running, StartType Automatic");
+    }
+
+    [Theory]
+    [InlineData("ok", "warning: Running, StartType Manual: does not start Automatic", "ok", "the start type is not as configured")]
+    [InlineData("problem", "Stopped, StartType Manual: the Windows Time service is not running", "problem", "the incident of 2026-10-08")]
+    [InlineData("ok", "Running, StartType Automatic", "unknown", "no reference could judge the clocks")]
+    public async Task Item_9_fails_on_a_manual_start_a_stopped_service_or_clocks_it_cannot_vouch_for(string serviceState, string serviceDetail, string referenceState, string why)
+    {
+        Linux();
+        using var world = new World(wslCare: ClockDoctor(
+            Check(Core.Doctor.ClockChecks.WindowsTimeId, serviceState, serviceDetail),
+            Check(Core.Doctor.ClockChecks.ClockReferenceId, referenceState, "the Windows clock is 7200.4 s slow against https://www.microsoft.com (HTTP Date)")));
+
+        var result = await world.RunAsync(9);
+
+        result.Exit.Should().NotBe(0, why);
+    }
+
+    [Fact]
+    public async Task Item_9_fails_on_a_daemon_older_than_the_guard_and_says_so()
+    {
+        Linux();
+        using var world = new World(wslCare: ClockDoctor(Check("lastRun", Core.Doctor.DoctorRun.Ok, "recent")));
+
+        var result = await world.RunAsync(9);
+
+        result.Exit.Should().NotBe(0);
+        result.Stdout.Should().Contain("no windowsTime check (a daemon older than the Windows Time guard)");
+    }
+
     /// <summary>The template's properties as systemd loads them; <paramref name="collectMode"/> is what 0.1.0 produced
     /// (<c>inactive</c>: the key ignored) or what 0.1.1 asks for.</summary>
     private static string Units(string collectMode, string execStart = "ExecStart=/opt/wsl-care/bin/wsl-care collect --timer") =>
@@ -316,7 +369,7 @@ public sealed class PostDeployCommandFlows
         Linux();
 
         (await CommandAsync(2)).Should().StartWith("wsl.exe -d Ubuntu -- /opt/wsl-care/bin/wsl-care --version | tr -d '\\r' | cut -d+ -f1");
-        (await Items.Value).Keys.Should().Contain(["1", "5", "7", "11"], "the items these flows run are automated")
+        (await Items.Value).Keys.Should().Contain(["1", "5", "7", "9", "11"], "the items these flows run are automated")
             .And.NotContain("3", "item 3 is manual: the checker runs nothing for it");
     }
 }

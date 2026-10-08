@@ -61,3 +61,18 @@ run as `wsl.exe -d Ubuntu -- /bin/sh <absolute path of the script>`; the Windows
 - **NOT settled — whether "Stopped" is a fault by itself.** `w32time` is trigger-started on this machine (M5), so Windows
   may stop it when idle. The plan reports Stopped as a warning unless the clock is actually wrong.
 - `--unit` and `--identifier` count different numbers of journald's own lines (M10); the plan counts `--unit` as a rate.
+
+## 4. Caused by this task — an elevated PowerShell window, and what UAC is on this machine (2026-10-08, 09:29Z)
+
+| # | Observed | Value | How |
+|---|---|---|---|
+| U1 | a break-it check of the extension's test tripwire | to prove the test *"no test can start an elevated PowerShell"* has teeth, the tripwire's RunAs refusal was neutralised for one run. That test's first line then really ran `Start-Process powershell -Verb RunAs` from the test process | the agent's own break-it script (an error: a tripwire is the one guard whose break-it must never run for real) |
+| U2 | its result | a window **"Administrator: Windows PowerShell"** (pid 20180, started 11:29:46 local) — interactive, idle; its command line is unreadable from an unelevated process, which is what an elevated process looks like | `Get-Process -Id 20180`, `Win32_Process` |
+| U3 | what did NOT run | the test stopped at its first failed assertion, BEFORE the line that hands the real fix to the runner; `w32time` read `Running, Manual` right after — the fix's `Set-Service` did not run | `Get-Service w32time` at 11:30:06 local |
+| U4 | UAC on this machine | `EnableLUA = 1`, `ConsentPromptBehaviorAdmin = 5` (Windows' default: *prompt for consent for non-Windows binaries*). Whether a prompt was shown and answered, or not shown, was not observed by the agent | `HKLM\…\Policies\System` |
+
+What it licenses: the window is the owner's to close (an unelevated process cannot end it, and nothing here ends a process
+it cannot name by pid and start). A tripwire's break-it check must replace the launcher with a recording stand-in, never let
+the real one through. And the
+modal in the extension is the confirmation the PRODUCT controls: whether Windows also shows a UAC prompt is the machine's
+UAC policy (U4), not the extension's.

@@ -211,7 +211,9 @@ into its detail (`id`, `level` = `ok` / `warn` / `critical` / `unknown`, `value`
 `basis`. The thresholds the fast sample decides (memory, page cache, inactive anonymous memory, swap, fragmentation,
 pressure, the VM's ceiling, `/`) are judged **now**, with the configuration in force — `wsl-care config set
 thresholds.memAvailableWarnPercent 30` changes the next answer (`basis.source: "sample"`). The ones only a full run can
-judge (kernel allocation failures and OOM kills, the journal, clock jumps and drift, failed units, sysstat / atop,
+judge (kernel allocation failures and OOM kills, the journal, clock jumps and drift, the Windows Time service, which clock
+is wrong against an independent reference and whether two time-keepers fight over the distro's clock — `clock.timeService`,
+`clock.reference`, `clock.fight` since 2026-10-08 — failed units, sysstat / atop,
 `discard`, the Docker and npm figures) are carried exactly as the newest full run recorded them, with its run id and
 age (`basis.source: "fullRun"`), or are `unknown` with the reason when no full run is recorded; a setting changed since
 reaches them at the next full run. The text form prints one line: `verdicts: 1 critical (memory.fragmentation), 2 warn
@@ -286,7 +288,9 @@ wsl-care collect               # as yourself: the same measurements, printed, NO
 ```
 
 `collect` is everything at once: the fast snapshot of `status`, Docker's full numbers and the cleanup rows of
-`preview`, `docker stats`, the distro's clock against Windows' (`powershell.exe`, its launch latency subtracted), the
+`preview`, `docker stats`, the distro's clock against Windows' (`powershell.exe`, its launch latency subtracted, which also
+prints the Windows Time service's state) and against an independent reference (the HTTP `Date` of `clock.referenceUrl`, one
+`curl --head`, else timesyncd when it is synchronised), the
 health of the distro (failed units, the journal's size and how far back it reaches, clock jumps, the kernel's page
 allocation failures and OOM kills since the last run, time sync, `wsl-pro.service`, `discard` / `fstrim.timer`, whether
 sysstat and atop still collect), the `.wslconfig` audit, once a day the folder sizes (`~/.npm`, `/var/cache/apt`,
@@ -385,7 +389,7 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 | `A2` | `sysctl -w vm.compact_memory=1` | the free 512 KiB (order-7) blocks before/after | the timer: after A1 ran, or AT ONCE — without waiting for idle — when no order-7 block is left or the kernel logged a `page allocation failure` since the last run |
 | `A3` | `dotnet build-server shutdown` as the target user | the build servers gone after (memory, not disk) | the timer: a server alive for `buildServers.idleHours`; refused while any `dotnet build`, `test` or `run` is alive, a button too |
 | `A15` | `fstrim -av` | what fstrim reports trimmed per filesystem (returned to the VHDX) | the timer: weekly, only without `discard` on `/` and with `fstrim.timer` off; waits for an idle machine |
-| `A16` | `chronyc makestep` (chronyd running) or `hwclock -s` | the clock offset before/after | skipped when time sync reports synchronised or the clock agrees; the timer: once per drift seen on two observations 5 minutes apart (`clock.maxDriftSeconds`); at most once an hour |
+| `A16` | `chronyc makestep` (chronyd running) or `hwclock -s` | the clock offset before/after | skipped when time sync reports synchronised or the clock agrees — and, since 2026-10-08, unless an independent reference shows the step brings the distro CLOSER to true time: a wrong Windows clock, or no reference at all, is never stepped to; the timer: once per drift seen on two observations 5 minutes apart (`clock.maxDriftSeconds`); at most once an hour |
 
 As root, every per-user path — the daily folder walk, the caches above, the user configuration layer — is the
 **target user's** home (`/etc/wsl.conf` `[user] default=`, else the single login account), never root's; when the target
@@ -595,6 +599,13 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
 - **Reading.** It asks the daemon, as your own user: `status --json`, `preview --all --json`, `doctor --json`,
   `--version`, and for the run history `runs show <runId> --json`, `runs --from … --to … --json` and
   `logs --from … --to … --json`. It never changes the daemon's configuration.
+- **Start Windows Time (2026-10-08).** When the newest full run found the Windows Time service not running or not starting
+  Automatic, or Windows' clock wrong against the reference, the panel offers **Start Windows Time** (also the command
+  *AI OS Care: Start Windows Time…*). A modal shows the exact script first; on confirmation ONE Windows PowerShell runs it
+  elevated — Windows' UAC asks you — to set the service to start Automatic (`wslCare.windowsTime.setAutomaticStart`,
+  default on), start it and run `w32tm /resync /force`; then a full check runs so the panel shows the result. Nothing
+  else on Windows is changed, and nothing restarts the service if other software stops it again (planned: a scheduled
+  guard, `todo/PLAN_windows_time_guard.md` story 2).
 - **The cleanup buttons (E6.S3).** Each cleanup row has **Clean** and **Select**; **Clean selected (n)** runs every ticked
   row as ONE run; **Run full check now** starts a full measurement (it does not clean); a wedged run of the daemon's own
   units gets **Stop** (any other wedged run is named with its pid). A press asks the daemon for a fresh preview, shows it in
