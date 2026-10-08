@@ -1828,6 +1828,13 @@ capability and the two limits; `config-keys.json` and `status-limits.json` regen
 **Status budget:** `StatusFlows`' first flow now allows 2 s plus the CPU window (the captured tree runs two servers); the
 probe's own `sampleMilliseconds` is still held under 2 s.
 
+**The fake tools' call log read during an append (2026-10-08).** Main's win-x64 leg (run 37793636777) failed
+`ProgressWaitTests.A_child_killed_at_its_silence_or_its_cap_has_exited_when_the_timeout_arrives` with *IOException … fake-calls.jsonl
+… being used by another process* instead of its timeout: the progress probe read the log while a fake held it under the
+writer's exclusive open. `FakeCallLog.ReadAll` now waits for the writer as a writer waits for another (the same ceiling).
+RED first: `Scenarios/FakeCallLogTests.A_read_while_a_fake_holds_the_log_waits_for_the_line_instead_of_failing` — *Expected
+reading.IsCompleted to be False … but found True* (the read failed at once); green after; the progress-wait flows green.
+
 **E14 S2a — red first and teeth (2026-10-08, Windows suites).** The eight A19 tests were written against a skeleton that
 selects nothing: six RED for the real absence (*Expected … to contain a single item, but the collection is empty*; *the
 history … {200} contains 1 item(s) less*; *Expected unbound.Refusal …*; *Expected … Fired to be True*), the two negative
