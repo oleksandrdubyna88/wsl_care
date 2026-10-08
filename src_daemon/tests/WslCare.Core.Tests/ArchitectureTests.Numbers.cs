@@ -84,6 +84,7 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Config/ConfigKeys.cs: DaysCeiling"] = "a key's range ceiling — the contract that bounds the configuration itself",
         ["WslCare.Core/Config/ConfigKeys.cs: HoursCeiling"] = "a key's range ceiling — the contract that bounds the configuration itself",
         ["WslCare.Core/Config/KeyRules.cs: MaxLength"] = "a path key's length in the schema (contracts/config-keys.json)",
+        ["WslCare.Core/Mcp/McpUserPrograms.cs: MaxMembers"] = "the mcpServers.programs list's cap in the schema (contracts/config-keys.json maxMembers), what bounds the configuration itself",
         ["WslCare.Core/Config/NumberRules.cs: BytesPerShownName"] = "a coupled-limit rule's factor: a 64-hex name, its quotes and its comma — the request file's format",
         ["WslCare.Core/Config/NumberRules.cs: HeartbeatsBeforeWedged"] = "the owner's rule itself: wedged is at least three heartbeats",
         ["WslCare.Core/Config/NumberRules.cs: StopCeilingMarginSeconds"] = "a coupled-limit rule's margin: the stop command's ceiling stays this far above the unit's TimeoutStopSec",

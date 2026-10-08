@@ -14,12 +14,14 @@ namespace WslCare.Core.Tests.Config;
 public sealed class ConfigKeyShapeTests
 {
     [Fact]
-    public void Every_list_key_is_closed_and_never_offers_the_catch_all_family()
+    public void Every_list_key_is_closed_or_rule_bound_and_never_offers_the_catch_all_family()
     {
         var lists = ConfigKeys.All.OfType<ConfigKey.TextListKey>().ToList();
 
         lists.Should().NotBeEmpty("processes.families is a list key");
-        lists.Should().OnlyContain(k => k.Allowed.Count > 0);
+        // E14 S2c: the one OPEN list is bound by a declared member rule and a cap — never free text.
+        lists.Should().OnlyContain(k => k.Allowed.Count > 0 || (k.Member is TextRule.McpProgramName && k.MaxMembers <= 32));
+        lists.Where(k => k.Allowed.Count == 0).Should().Equal([ConfigKeys.McpServers.Programs]);
         ConfigKeys.Processes.Families.Allowed.Should().NotContain(ProcessFamilies.Other).And.NotContain(ProcessFamilies.AiAgents)
             .And.BeSubsetOf(ProcessFamilies.Catalogue.Select(f => f.Name));
     }

@@ -34,9 +34,23 @@ public abstract record ConfigKey(string Name)
     /// <summary>A text value, accepted only by its <paramref name="Rule"/> — never free text.</summary>
     public sealed record TextKey(string Name, TextRule Rule) : ConfigKey(Name, Rule.Describe);
 
-    /// <summary>A list whose every member is one of <paramref name="Allowed"/>.</summary>
-    public sealed record TextListKey(string Name, IReadOnlyList<string> Allowed)
-        : ConfigKey(Name, $"a list of: {string.Join(", ", Allowed)} (comma-separated on the command line)");
+    /// <summary>A list whose every member passes <paramref name="Member"/>, at most <paramref name="MaxMembers"/> of them: CLOSED —
+    /// every member one of <paramref name="Allowed"/> — or OPEN (<paramref name="Allowed"/> empty), every member a declared shape
+    /// (plan E14 S2c: <c>mcpServers.programs</c>). Never free text either way.</summary>
+    public sealed record TextListKey(string Name, IReadOnlyList<string> Allowed, TextRule Member, int MaxMembers)
+        : ConfigKey(Name, ListKind(Allowed, Member, MaxMembers))
+    {
+        /// <summary>A CLOSED list: every member one of <paramref name="allowed"/>, any number of them.</summary>
+        public TextListKey(string name, IReadOnlyList<string> allowed)
+            : this(name, allowed, new TextRule.OneOf(allowed), int.MaxValue)
+        {
+        }
+
+        private static string ListKind(IReadOnlyList<string> allowed, TextRule member, int maxMembers) =>
+            allowed.Count > 0
+                ? $"a list of: {string.Join(", ", allowed)} (comma-separated on the command line)"
+                : $"a list of at most {maxMembers.ToString(CultureInfo.InvariantCulture)} members, each {member.Describe} (comma-separated on the command line)";
+    }
 
     /// <summary>The manual AI agents (<c>aiAgents.extra</c>, plan §15q R2): a structured list whose SHAPE is
     /// <see cref="Agents.ExtraAgentShape"/>'s and whose folders are judged against the disk at every root read

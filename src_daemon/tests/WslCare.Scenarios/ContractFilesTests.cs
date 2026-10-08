@@ -115,6 +115,9 @@ public sealed class ContractFilesTests
         ConfigKey.TextKey { Rule: TextRule.Matching matching } => [("shape", "text"), ("pattern", matching.Expression)],
         ConfigKey.TextKey { Rule: TextRule.AbsolutePathOrEmpty } => [("shape", "path"), ("maxLength", TextRule.AbsolutePathOrEmpty.MaxLength)],
         ConfigKey.TextKey { Rule: TextRule.HttpsUrlOrEmpty } => [("shape", "httpsUrl"), ("pattern", WslCare.Core.Processes.Policy.HttpsUrls.KeyPattern)],
+        ConfigKey.TextListKey { Allowed.Count: 0, Member: TextRule.McpProgramName } open =>
+            [("shape", "textList"), ("memberPattern", Core.Mcp.McpUserPrograms.Pattern), ("maxMembers", open.MaxMembers), ("refused", new JsonArray([.. Core.Mcp.McpUserPrograms.Refused.Select(v => (JsonNode)v)])),
+                ("launchers", new JsonArray([.. Core.Mcp.McpUserPrograms.Launchers.Select(v => (JsonNode)v)])), ("launcherVersionSuffix", Core.Mcp.McpUserPrograms.LauncherVersionSuffix)],
         ConfigKey.TextListKey list => [("shape", "textList"), ("allowed", new JsonArray([.. list.Allowed.Select(v => (JsonNode)v)]))],
         ConfigKey.AgentListKey => [("shape", "agentList"), ("maxEntries", ExtraAgentShape.MaxEntries), ("maxFolders", ExtraAgentShape.MaxFolders), ("maxPathLength", ExtraAgentShape.MaxPathLength), ("maxGlobLength", ExtraAgentShape.MaxGlobLength), ("maxNameLength", ExtraAgentShape.MaxNameLength), ("sides", new JsonArray(ExtraAgentShape.Wsl, ExtraAgentShape.Windows))],
         _ => throw new InvalidOperationException($"{key.Name}: a key shape the contract does not describe"),
@@ -139,6 +142,28 @@ public sealed class ContractFilesTests
         keys["logging.retentionDays"]["zeroIsUnbounded"]!.GetValue<bool>().Should().BeTrue();
         keys["distro"]["daemonUnused"]!.GetValue<bool>().Should().BeTrue();
         keys["aiAgents.warnGb"]["rootEffective"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    /// <summary>E14 S2c: the OPEN list (<c>mcpServers.programs</c>) is described by its member rule — the pattern, the cap and the
+    /// refused names — never as a closed list with nothing allowed.</summary>
+    [Fact]
+    public void The_config_keys_contract_describes_the_open_list()
+    {
+        var programs = JsonNode.Parse(ConfigKeysText())!["keys"]!.AsArray().Single(k => (string)k!["name"]! == "mcpServers.programs")!;
+
+        programs["shape"]!.GetValue<string>().Should().Be("textList");
+        programs["allowed"].Should().BeNull("an open list has no allowed set");
+        programs["memberPattern"]!.GetValue<string>().Should().Be(Core.Mcp.McpUserPrograms.Pattern);
+        programs["maxMembers"]!.GetValue<int>().Should().Be(32);
+        programs["refused"]!.AsArray().Select(n => (string)n!).Should().Contain(["claude", "node", "python3", "bash", "npx", "wsl-care", "coai-mcp"]);
+        programs["default"]!.AsArray().Should().BeEmpty();
+        // Own code review 2026-10-08, finding 4: what a client checks against the contract refuses what the daemon refuses —
+        // the .exe rule is in the pattern, and the launchers are published with the version-suffix rule.
+        var pattern = programs["memberPattern"]!.GetValue<string>();
+        System.Text.RegularExpressions.Regex.IsMatch("creds-mcp.exe", pattern, System.Text.RegularExpressions.RegexOptions.ECMAScript).Should().BeFalse();
+        System.Text.RegularExpressions.Regex.IsMatch("creds-mcp", pattern, System.Text.RegularExpressions.RegexOptions.ECMAScript).Should().BeTrue();
+        programs["launchers"]!.AsArray().Select(n => (string)n!).Should().Contain(["python", "node", "bunx"]);
+        System.Text.RegularExpressions.Regex.IsMatch("3.13t", programs["launcherVersionSuffix"]!.GetValue<string>(), System.Text.RegularExpressions.RegexOptions.ECMAScript).Should().BeTrue();
     }
 
     /// <summary>E7.S2c: the two field names the extension's <c>shared/daemonLimits.ts</c> reads (PR #12) are in the contract, and

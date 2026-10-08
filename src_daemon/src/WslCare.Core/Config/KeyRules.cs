@@ -19,6 +19,11 @@ public abstract record TextRule
     /// <summary>Why <paramref name="value"/> is refused; empty when it is accepted.</summary>
     public abstract string Problem(string value);
 
+    /// <summary>Why a well-formed value is refused only by what THIS build's catalogues hold — a refusal a later release may widen,
+    /// so a layer written for an older build may carry it; empty otherwise. The loader leaves such a list member out with a
+    /// notice instead of failing the layer (plan E14 S2c, own code review finding 3); <c>config set</c> still refuses it.</summary>
+    public virtual string Outdated(string value) => string.Empty;
+
     /// <summary>Exactly one of <paramref name="Values"/>, compared ordinally. The order is the order "lower" means
     /// (<c>logging.minimumLevel</c>: Verbose before Debug before Information).</summary>
     public sealed record OneOf(IReadOnlyList<string> Values) : TextRule
@@ -73,6 +78,17 @@ public abstract record TextRule
         public override string Describe => Processes.Policy.HttpsUrls.Description;
 
         public override string Problem(string value) => value.Length == 0 || Processes.Policy.HttpsUrls.IsAddress(value) ? string.Empty : $"not {Describe}";
+    }
+
+    /// <summary>A user-added MCP server's program file name (<c>mcpServers.programs</c>, plan E14 S2c) — the one rule
+    /// <see cref="Mcp.McpUserPrograms"/> holds, so the reader and the validation cannot disagree.</summary>
+    public sealed record McpProgramName : TextRule
+    {
+        public override string Describe => Mcp.McpUserPrograms.Description;
+
+        public override string Problem(string value) => Mcp.McpUserPrograms.Problem(value);
+
+        public override string Outdated(string value) => Mcp.McpUserPrograms.Outdated(value);
     }
 }
 

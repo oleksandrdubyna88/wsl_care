@@ -2413,7 +2413,9 @@ A collector over the one process snapshot — read-only towards the servers — 
 in every run detail), three verdicts (`mcp.instances`, `mcp.cpu`, `mcp.starts`) and the `mcpServers.*` keys; the Windows
 binary answers it unavailable (E11). Since E14 S1 (2026-10-07) an instance's CPU is measured over the interval since its
 previous sample from a per-caller ledger (`mcp-cpu.json`: root's under `/var/lib/wsl-care`, an unprivileged `status`'s under
-`$XDG_STATE_HOME/wsl-care`), the 1 s window only a fallback. The module, its diagram, entities, flows and residuals: [module_mcp_servers.md](module_mcp_servers.md).
+`$XDG_STATE_HOME/wsl-care`), the 1 s window only a fallback. Since E14 S2a/S2c (2026-10-08) A19 stops idle instances, and the
+user may add their own servers by program file name (`mcpServers.programs`, a rule-bound open list — the first list key that
+is not closed over a catalogue; `ConfigKey.TextListKey` carries a member rule and a cap). The module, its diagram, entities, flows and residuals: [module_mcp_servers.md](module_mcp_servers.md).
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 

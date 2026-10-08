@@ -134,6 +134,15 @@ public static partial class ConfigKeys
         /// <summary>The MCP servers of the AI agents the daemon counts (plan §15q E7.S2d): a list CLOSED over the catalogue's names
         /// (the E7.S0 B1 rule), every catalogued server by default. Read-only metric: it steers no action, so no safe direction.</summary>
         public static readonly ConfigKey.TextListKey Watched = new("mcpServers.watched", Mcp.McpServerCatalogue.Names) { Trust = KeyTrust.Display };
+
+        /// <summary>The user's OWN MCP servers, by program file name (plan E14 S2c, the owner's Q-M2 of 2026-10-08): an OPEN list,
+        /// every member a file name that is no AI agent, interpreter, shell, launcher, this product or catalogue server
+        /// (<see cref="TextRule.McpProgramName"/>), at most <see cref="Mcp.McpUserPrograms.MaxMembers"/>. Root's A19 and CPU history
+        /// read it, and it WIDENS what A19 may stop — yet it is an ordinary user key (no safe direction, not machine-only): A19 stops
+        /// only the TARGET user's own processes (the uid re-read from /proc) with every S2a guard, and never an orphan of a user
+        /// program, so a name a user adds lets root stop only what that user could stop. <c>auto.A19</c> off, or the name removed,
+        /// keeps a program running.</summary>
+        public static readonly ConfigKey.TextListKey Programs = new("mcpServers.programs", [], new TextRule.McpProgramName(), Mcp.McpUserPrograms.MaxMembers) { Trust = KeyTrust.Display };
     }
 
     public static class Archive
@@ -201,7 +210,7 @@ public static partial class ConfigKeys
         Processes.IdleOlderThanHours, Processes.Families, Processes.AiAgentsIdleHours,
         Thresholds.MemAvailableWarnPercent, Thresholds.MemAvailableActPercent, Thresholds.SwapWarnGb,
         AiAgents.WarnGb, AiAgents.SessionWarnMb, AiAgents.Extra,
-        McpServers.Watched,
+        McpServers.Watched, McpServers.Programs,
         Archive.OlderThanDays, Archive.BaseFolder,
         Idle.CpuPercent, Idle.Minutes,
         Clock.ReferenceUrl, Clock.ReferenceToleranceSeconds, Clock.ManualStartWarns,

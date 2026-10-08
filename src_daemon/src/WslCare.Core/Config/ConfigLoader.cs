@@ -234,7 +234,9 @@ public static class ConfigLoader
             return;
         }
 
-        switch (ConfigValidation.Check(key, entry.Value))
+        var layerCheck = ConfigValidation.CheckLayer(key, entry.Value);
+        state.Notices.AddRange(layerCheck.LeftOut.Select(l => new ConfigNotice(file, entry.Line, key.Name, $"\"{l.Member}\" is left out: {l.Why} (this build refuses it; remove it from the layer)")));
+        switch (layerCheck.Check)
         {
             case ValueCheck.Ok ok:
                 Take(file, key, ok.Value, entry.Line, state);

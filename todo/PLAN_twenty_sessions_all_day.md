@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19); S2b–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs); S2b and S3–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -286,6 +286,99 @@ A19 starts stopping idle servers at the second timer run after the upgrade (owne
 still a display key although it now steers A19 (the Q-M2 story re-classifies it with the open list); a server answering only
 short requests may spend under one 10 ms tick in an hour (a residual beside "a remote call in flight"); an engine-level A19
 dry-run test (the dry-run gate is the engine's, held for every auto action by `TimerPassTests` and the A1/A2/A10 tests).
+
+#### S2c — users add their own MCP programs (the owner's Q-M2, 2026-10-08)
+
+**The ask:** "users may add their own programs to the watched list (config list, validated)". Today `mcpServers.watched` is
+a list CLOSED over the built-in catalogue (one server, `coai-mcp`): no other MCP server can be measured or stopped.
+
+1. **A new key, `mcpServers.programs`** — additive, so `mcpServers.watched` keeps its meaning and its contract: a list of
+   program FILE NAMES (what `/proc/<pid>/cmdline`'s argv[0] ends in), each one an MCP server with no log layout (its starts
+   counted as the `liveYounger` lower bound, its activity "not derivable"). Default empty. `McpSettings.Watched` = the
+   watched catalogue entries + these, so the metric, the CPU history and A19 see them through the ONE list they already use.
+2. **Validated, never free text** (plan §15q R1.3): `TextListKey` gains an optional member RULE (`TextRule.McpProgramName`)
+   for an open list — widened, not a new shape — and a cap of 32 members. A member is a file name
+   `^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$` and is REFUSED when it names an AI agent's binary (the agent catalogue's), an
+   interpreter, shell or launcher (`node`, `python3`, `bash`, `npx`, `uvx`, `dotnet`, `java`, `env`, `sudo`, …: argv[0] of
+   an interpreted server is the interpreter, and matching it would make EVERY such process a server), this product
+   (`wsl-care`), or a catalogue server (it is already a `watched` choice). An interpreter-run server therefore cannot be added
+   this way — said in the refusal; it needs a catalogue entry naming its script.
+3. **Trust — a decision, a risk item:** the key is read by root (the timer's A19 and history) and it WIDENS what A19 may stop.
+   What it can widen to is bounded: A19 only ever stops the TARGET user's own processes, uid re-read from `/proc`, with every
+   guard of S2a (terminal, child, identity, idle by measurement) — so a user adding a name can make root stop only processes
+   that same user could stop. The key is therefore an ordinary user key (`KeyTrust.Display` semantics: not machine-only), and
+   the machine layer can still set it; the trust rationale is written on the key. A user who does not want a program stopped
+   switches `auto.A19` off or removes the name.
+4. **Wire:** additive — the `mcpServers` block already lists servers by name; a user program appears as a server with basis
+   `liveYounger`. Contracts: `config-keys.json` gains the key with its member rule (`memberPattern`, `maxMembers`, the refused
+   names).
+5. **An orphan of a USER program is never a stop target** (coai plan round, session `563a1e95`, accepted): a catalogue
+   server's name is ours and specific; a user-chosen file name is not, so an init-parented process of that name may be an
+   unrelated program that is not an MCP server at all. A19 stops a user program's instance only while its parent is NOT
+   init — an agent (or what the agent spawned) still holds it — and with the ordinary idle window, never the orphan window.
+6. **A real timer-path flow** (same round, accepted): a scenario over the captured process tree (which holds `creds-mcp`
+   under `claude`) with `mcpServers.programs: ["creds-mcp"]`, through the real binary, not only unit tests.
+
+**RED (S2c):** `A_user_program_is_watched_measured_and_stopped_when_idle_like_a_catalogue_server`,
+`An_agent_binary_an_interpreter_or_this_product_is_refused_as_a_program_naming_why`,
+`A_program_list_past_its_cap_or_with_a_path_is_refused`, `Another_users_process_of_a_user_program_is_never_stopped`,
+`An_orphaned_instance_of_a_user_program_is_never_stopped`, `The_config_keys_contract_describes_the_open_list`, and the
+scenario flow `A_user_program_from_the_config_is_reported_and_recorded_by_the_timer`.
+
+#### S2c as built (2026-10-08, branch `feat/wc-mcp-user-programs`)
+
+- **The key:** `ConfigKeys.McpServers.Programs` (`mcpServers.programs`, default `[]`, `KeyTrust.Display`, the trust rationale
+  on the key). `ConfigKey.TextListKey` is WIDENED, not a new shape: it now carries a member `TextRule` and a cap; a closed
+  list keeps its old constructor (member rule = `TextRule.OneOf(Allowed)`, no cap) and its refusal text word for word. The
+  open list's refusal names the member and why (`"node" is refused: it is an interpreter, shell or launcher …`), and a list
+  past the cap says how many members it got.
+- **The rule:** `Mcp/McpUserPrograms` holds it once — the pattern (the WHOLE value must match: .NET's `$` also matches before
+  a final newline), then the refusals in order: `.exe` (the daemon strips it before it compares, so such a member could
+  never match), an agent catalogue binary, a launcher (also with a version suffix: `python3.12`, `node20`), `wsl-care`, a
+  catalogue server's name or program. The launcher list is the plan's plus `tsx`, `ts-node`, `pypy`, `pip`, `pipx`, `poetry`,
+  `conda`, `ksh`, `busybox`, `nohup`, `setsid`, `nice`, `ionice`, `timeout`, `stdbuf`, `xargs`, `tmux`, `screen`, `go`,
+  `cargo`, `docker`, `podman`, `ssh`, `login`, `cron` (each is the argv[0] of programs it starts). `TextRule.McpProgramName`
+  delegates to it, so the reader and the validation cannot disagree; `McpUserPrograms.Entries` re-checks every name and
+  de-duplicates (the reader's own guard).
+- **The wire:** `McpServerEntry` gained `Origin` (`Catalogue` \| `UserProgram`, default `Catalogue`); `McpSettings.Watched` =
+  watched catalogue servers + user programs. The status wire is unchanged — a user program is one more server, basis
+  `liveYounger`. `contracts/config-keys.json` gained the key: `memberPattern`, `maxMembers`, `refused`, and no `allowed`.
+- **A19:** `OrphanOfUserProgram` is the first guard of the judgement: a user program's instance whose owner is `Orphaned` —
+  re-parented to init OR a `systemd --user` child — is kept with `UserProgramOrphan`. Item 5 read "parent not init"; the
+  build is stricter (any orphan), because the `systemd --user` child has no agent above it either.
+- **The flow:** `McpServerStopFlows.A_user_program_from_the_config_is_reported_and_recorded_by_the_timer`: the timer's full run over the captured tree with `["creds-mcp"]` reports `creds-mcp` (2
+  instances, `liveYounger`), records pids 7327 and 8378 in the CPU history and stops nothing on a first sighting. A STOP
+  through the built binary is not exercised: it would need a seeded history whose idle span reaches the window, and the
+  signal path of the built binary has no fake — the stop itself is held by the unit tests with a recording signal sender.
+  Linux legs only (CI); not run locally (the machine-load rule of 2026-10-07: no WSL builds or tests).
+- **Deviations / residuals:** `McpUserPrograms.MaxMembers` (32) is a schema limit listed in the numbers scan's `Formats`
+  (as `ExtraAgent.MaxEntries`), not a key. An interpreter-run server (`playwright-mcp` = `node …/playwright-mcp`) and a
+  Windows server through interop (`/init …/creds-mcp.exe`, argv[0] `init`) cannot be added this way. A name a user adds
+  may match an unrelated program of the same name that runs UNDER an agent (an agent's own helper with that name): the
+  idle, child, terminal and identity guards still apply, and the user chose the name.
+- **Gates:** plan round (coai session `563a1e95`): `proceed`, 1 of 2 providers answered, both findings accepted (items 5 and
+  6). Code round (same session, 4 of 8 reviewers — gemini rate-limited): `proceed`, 4 findings — ACCEPTED: (1) a closed
+  list given a member rule must still hold every member to its allowed set (`ConfigValidation.MemberProblem`), (2)
+  `python3.13t` / `python3.12d` / `node-22` passed the launcher refusal (a version-suffix pattern now allows a separator and
+  a build tag of up to two letters; `go2mcp`, `nodemcp` stay accepted); each RED first, green after, red again with the fix
+  broken. REJECTED: a typed program-name value (the whole MCP and agent model compares file-name strings; re-typing it is
+  its own refactor — proposed to the owner), and "the published pattern accepts a final newline in JavaScript" (it does
+  not: JavaScript's `$` without the `m` flag matches only at the end of the input).
+- **Own code review** (one reviewer, `feature-dev:code-reviewer` on Opus, read-only, run beside the coai round): it confirmed
+  the trust reasoning (root reads only the target user's layer, owner-checked; A19 filters on the same user and re-reads
+  the uid) and found, all accepted and each RED first, green after, red again with the fix broken: (2) `bunx`, `pnpx`,
+  `pwsh`, `tcsh`, `csh`, `ash`, `mksh`, `lua`, `luajit`, `Rscript`, `julia`, `erl`, `elixir`, `mise`, `asdf`, `corepack`,
+  `tini`, `dumb-init` are launchers too; (3) a name a LATER release refuses (a new agent, launcher or catalogue server) made a
+  layer written for an older build a configuration error, so every run went observe-only — the loader now leaves such a
+  member out with a notice (`TextRule.Outdated`, `ConfigValidation.CheckLayer`); a malformed member is still an error and
+  `config set` still refuses the name; (4) the contract could not express two rules — the `.exe` refusal is now in
+  `memberPattern` (a JavaScript-compatible negative lookahead) and the launchers are published with
+  `launcherVersionSuffix`; its finding 1 was the coai round's two, already fixed in the working tree it read. Its finding 5
+  — the contract says `rootEffective: false` for a key root's A19 reads — is kept as decided (item 3): `RootEffective` keys
+  the extension's loosening modal on a SAFE DIRECTION, and this key has none that would still let a user add a program
+  (`Subset` would let a user layer only narrow the machine layer's list, which defeats Q-M2); the key's register entry and
+  this plan say plainly that root reads it. Below its threshold: user-program processes of every non-root account enter the
+  CPU history and can push older agent entries past `agentCpu.maxEntries` (fails safe: missing history keeps a process).
 
 ### S3 — the build-server reaper (widens A3)
 

@@ -15,6 +15,13 @@ public abstract record ValueCheck
     public sealed record Invalid(string Message) : ValueCheck;
 }
 
+/// <summary>A list member a LAYER holds that this build refuses only by what its catalogues hold, and why — left out by the
+/// loader with a notice (plan E14 S2c, own code review finding 3).</summary>
+public sealed record LeftOutMember(string Member, string Why);
+
+/// <summary>A layer's value as the loader takes it: the check of what remains, and the members left out.</summary>
+public sealed record LayerCheck(ValueCheck Check, IReadOnlyList<LeftOutMember> LeftOut);
+
 /// <summary>
 /// Whether a value fits a key — from a configuration file (<see cref="Check(ConfigKey, JsonElement)"/>)
 /// or from the command line (<see cref="Parse"/>). The same ranges, the same sentences, one place.
@@ -30,6 +37,24 @@ public static class ConfigValidation
         ConfigKey.AgentListKey agents => CheckAgents(agents, value),
         _ => new ValueCheck.Invalid($"{key.Name}: unsupported key shape"),
     };
+
+    /// <summary>A LAYER's value, as the loader takes it: <see cref="Check(ConfigKey, JsonElement)"/>, except that a list member
+    /// refused only by this build's catalogues (<see cref="TextRule.Outdated"/>) is left out instead of failing the layer — an
+    /// upgrade that refuses more names must not make every run observe-only (plan E14 S2c, own code review finding 3). A
+    /// malformed member is still an error; <c>config set</c> (<see cref="Parse"/>) still refuses every one.</summary>
+    public static LayerCheck CheckLayer(ConfigKey key, JsonElement value) =>
+        key is ConfigKey.TextListKey list && IsTextArray(value)
+            ? CheckLayerList(list, [.. value.EnumerateArray().Select(e => e.GetString() ?? string.Empty)])
+            : new LayerCheck(Check(key, value), []);
+
+    private static LayerCheck CheckLayerList(ConfigKey.TextListKey key, IReadOnlyList<string> members)
+    {
+        var leftOut = members.Select(m => new LeftOutMember(m, key.Member.Outdated(m))).Where(l => l.Why.Length > 0).ToList();
+        return new LayerCheck(CheckMembers(key, [.. members.Where(m => leftOut.All(l => !string.Equals(l.Member, m, StringComparison.Ordinal)))]), leftOut);
+    }
+
+    private static bool IsTextArray(JsonElement value) =>
+        value.ValueKind == JsonValueKind.Array && value.EnumerateArray().All(e => e.ValueKind == JsonValueKind.String);
 
     /// <summary>The command-line spelling of a value for <paramref name="key"/>.</summary>
     public static ValueCheck Parse(ConfigKey key, string text) => key switch
@@ -94,11 +119,21 @@ public static class ConfigValidation
         return CheckMembers(key, [.. value.EnumerateArray().Select(e => e.GetString() ?? string.Empty)]);
     }
 
-    /// <summary>Every member one of the key's allowed values (§15q R1.3, review B1) — the refusal names the first that is not.</summary>
+    /// <summary>Every member passes the key's member rule (§15q R1.3, review B1: one of the allowed values for a closed list), and
+    /// no more members than the key's cap (plan E14 S2c) — the refusal names the first member that fails, and why for an open list.</summary>
     private static ValueCheck CheckMembers(ConfigKey.TextListKey key, IReadOnlyList<string> members) =>
-        members.FirstOrDefault(m => !key.Allowed.Contains(m, StringComparer.Ordinal)) is { } stranger
-            ? new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got \"{stranger}\"")
-            : new ValueCheck.Ok(new ConfigValue.TextList(members));
+        (members.Count > key.MaxMembers, members.Select(m => (Member: m, Problem: MemberProblem(key, m))).FirstOrDefault(p => p.Problem.Length > 0)) switch
+        {
+            (true, _) => new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got {members.Count.ToString(CultureInfo.InvariantCulture)} members"),
+            (_, { Member: { } stranger, Problem: var why }) when key.Allowed.Count == 0 => new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; \"{stranger}\" is refused: {why}"),
+            (_, { Member: { } stranger }) => new ValueCheck.Invalid($"{key.Name} must be {key.Kind}; got \"{stranger}\""),
+            _ => new ValueCheck.Ok(new ConfigValue.TextList(members)),
+        };
+
+    /// <summary>A closed list's member must be one of its allowed values AND pass its member rule — a rule narrows a catalogue,
+    /// it never replaces it (coai code round 2026-10-08, finding 1).</summary>
+    private static string MemberProblem(ConfigKey.TextListKey key, string member) =>
+        key.Allowed.Count > 0 && !key.Allowed.Contains(member, StringComparer.Ordinal) ? "not one of the allowed values" : key.Member.Problem(member);
 
     private static ValueCheck ParseBool(ConfigKey key, string text) => text.ToLowerInvariant() switch
     {
