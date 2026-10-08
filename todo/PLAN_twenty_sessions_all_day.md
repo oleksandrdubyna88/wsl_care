@@ -396,6 +396,37 @@ refusal while a build runs stays — reused unchanged: `BuildServerShutdown.Buil
 from a fresh process table just before the command, `:126-137`, with its own tests). A3 keeps its `auto.A3` switch; the new rule (b) is a button until the owner says
 otherwise (Q1 covers it).
 
+#### S3 — revised before building (2026-10-08, branch `feat/wc-build-server-reaper`)
+
+Reading the code first changed two things.
+
+1. **`dotnet build-server shutdown` stops ALL of the user's build servers at once** — there is no per-server choice
+   (`BuildServerShutdown.RunAsync`). So "the idle build servers" cannot be a selection; idleness can only decide WHEN A3's
+   timer runs. **Rule (a), as built:** the timer's trigger fires only when (unchanged) a build server is alive for
+   `buildServers.idleHours` (4) AND (new) EVERY build server of the target user used **no CPU for
+   `buildServers.idleMinutes`** (new key, 10–10080, default 60, safe direction higher), measured by identity over the same
+   CPU history A18 and A19 use (`AgentCpuHistory`, which now also records the `dotnet-build-servers` family). One server
+   that worked within the window — or has no history yet — holds the trigger: a compile in flight (an IDE build that is no
+   `dotnet build` process) is not cut. This only ever makes the timer fire LESS than today; a button run is unchanged (the
+   build refusal is its guard, as before). The facts say how many servers are busy or unmeasured.
+2. **Rule (b) already exists: A11.** A11 ends the target user's ORPHANED processes of the families in
+   `processes.families` that are older than `processes.idleOlderThanHours` and used no CPU in a measured window, by pid AND
+   start, never one with a terminal (`Actions/Suspects/SuspectTermination.cs`). `vscode-server` — which matches
+   `Microsoft.CodeAnalysis.LanguageServer` (`Collectors/ProcessFamilies.cs:69`) — is a choosable family. A language server
+   whose VS Code server went is re-parented, so it is an A11 suspect once the user lists `vscode-server`. Reuse first: no
+   second signal path; S3 adds a test that A11 picks such a language server and leaves one whose server lives, and the
+   default (A11 off, `vscode-server` not listed) stays the owner's choice (Q14).
+3. **Measure first is owed, not done:** the machine-load rule of 2026-10-07 forbids WSL commands in this session, so the
+   per-window counts move to S8's soak. The design does not depend on them: (a) only narrows the timer, (b) is opt-in.
+4. **Not addressed by S3:** L7's BUSY servers (`VBCSCompiler` at 4.9 cores). Stopping a busy compiler mid-work is never
+   safe; that is S4's (CPU fairness) ground.
+
+**RED (S3):** `The_timer_does_not_shut_build_servers_down_while_one_used_cpu_within_the_idle_window`,
+`The_timer_shuts_them_down_when_every_server_is_idle_for_the_window_and_one_is_old_enough`,
+`A_server_with_no_history_holds_the_timer`, `A_button_run_is_not_held_by_idleness_only_by_a_build`,
+`The_timer_records_build_servers_in_the_cpu_history`, `A11_ends_an_orphaned_idle_language_server_when_vscode_server_is_listed`,
+and the config/contract tests for `buildServers.idleMinutes`.
+
 ### S4 — CPU fairness that works inside WSL
 
 **Problem.** Agents' builds and tests (L7) compete with the sessions they serve on equal terms. `nice` is believed to have
@@ -529,12 +560,25 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
 - **Q8 — the soak's pass numbers** X (PSI cpu avg300), Y (swap free), Z (idle MCP cores).
 - **Q9 — `status` writes one file now** (`$XDG_STATE_HOME/wsl-care/mcp-cpu.json`, only when an MCP server runs). The
   alternative without any write is a lifetime average, which the parent plan rejected (E7.S2d Decided 5). Accept?
+  **Coordinator default (2026-10-08), owner may change: YES** — one ledger file in the user's state folder is fine.
 - **Q11 — A19 on an install already past its dry week (own code review, 2026-10-08):** the daemon's dry-run window is
   global, so an install whose `dryRun` is off and whose first week has passed starts stopping idle MCP servers at the second
   timer run after the upgrade, with no dry observation of A19. Keep that (the owner's "default ON"), or give a NEW action its
-  own first-week dry window (an engine change, its own story)?
+  own first-week dry window (an engine change, its own story)? **Coordinator default (2026-10-08), owner may change: no
+  separate A19 dry period** — it follows the daemon's `dryRun` like every action.
 - **Q10 — S1's defaults:** 120 s minimum interval, 20 min maximum (two activity windows — a longer average stops
-  describing now, so the 4-hour timer measures over the window until Q1b's sampler exists).
+  describing now, so the 4-hour timer measures over the window until Q1b's sampler exists). **Coordinator default
+  (2026-10-08), owner may change: keep 120 s / 20 min.**
+- **Q12 — a typed program name (S2c code round, rejected there as out of scope):** re-type the program-name concept across
+  the MCP catalogue, the process snapshot and the agent catalogue? **Coordinator default (2026-10-08): not now** — a
+  separate refactor, left to the owner.
+- **Q13 — interpreter-run MCP servers (S2c):** `mcpServers.programs` cannot name a server whose argv[0] is an interpreter
+  (`playwright-mcp` runs as `node …/playwright-mcp`). **Coordinator default (2026-10-08), owner may change: YES** — add
+  catalogue entries for the interpreter-run MCP servers measured on this machine (`playwright-mcp` and any other measured
+  one), in a small separate PR after S3.
+- **Q14 — orphaned VS Code language servers (S3):** A11 already ends orphaned, idle, old processes of the families in
+  `processes.families`, by pid and start; `vscode-server` is choosable but not in the default list, and A11 is off by default.
+  Add `vscode-server` to the default families? (Asked, not done: S3 rule (b) stays a choice of the owner, as Q1 said.)
 
 ## 12. Review rounds
 
