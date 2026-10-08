@@ -94,7 +94,7 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
     private McpCpuBaseline RecordAll(string boot, McpCpuFile before, IReadOnlyList<Measured> measured, McpSettings settings) =>
         boot.Length == 0
             ? McpCpuBaseline.NotRecorded(ledger.FileOrEmpty, "the boot id cannot be read, so no reading can name its process across samples")
-            : McpCpuLedger.Record(files, ledger, before, McpCpuLedger.Next(before, boot, [.. measured.Select(m => m.Read).OfType<McpCpuReading>()], settings.Bounds, McpCpuLedger.MaxEntries(settings.LedgerMaxBytes)));
+            : McpCpuLedger.Record(files, ledger, before, McpCpuLedger.Next(before, boot, [.. measured.Select(m => m.Read).OfType<McpCpuReading>()], settings.Bounds, McpCpuLedger.MaxEntries(settings.LedgerMaxBytes)), new McpCpuSweep(clock.GetUtcNow(), settings.Bounds.Min));
 
     private static McpCpuReading ReadingOf(PidSample sample, SampleTime at) => new(sample.Pid, sample.StartTicks, new McpCpuPoint(sample.CpuTicks, at.Wall, at.MonotonicMs));
 

@@ -118,7 +118,7 @@ signal sender: read-only towards the servers by construction. Its one write is t
   the ledger it waits nothing.
 - **The ledger (E14 S1):** an unprivileged `status` writes one file it did not write before (owner question Q9 of plan E14);
   a `status` killed between the atomic write's temp file and its rename (the extension's 20 s ceiling) leaves that temp file
-  beside the ledger — written only when changed, so rarely; its sweep is S2's. Whether the guest's monotonic clock stops
+  beside the ledger; the next write sweeps the ledger's own temp files (`mcp-cpu.json.<32 hex>.tmp`) older than the minimum interval (coai plan round, 2026-10-08). Whether the guest's monotonic clock stops
   while the Windows host sleeps is not measured (S8): if it does not, a reading across a sleep is diluted, never inflated.
 - **The run detail's CPU is the window's** until S2 gives root a sampler denser than the 4-hour timer.
 - **Windows:** `coai-mcp.exe` (VS Code's `globalStorage`, `remsoftdev.connect-other-ais`) is not counted — the Windows binary

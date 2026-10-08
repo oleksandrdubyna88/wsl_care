@@ -199,8 +199,10 @@ A watchdog on the 4-hour timer is too slow to matter; if Q1 is yes, a second, sh
   processes, and exactly the property a busy server has. A19 needs a recheck mode that keeps the identity, uid and terminal
   checks and drops the CPU one, used by A19 only; RED tests prove A11 and A18 still refuse a moved CPU.
 - **Which evidence root acts on.** A19 runs as root (`act`). It reads ONLY root's ledger (`ReadStateFile`), never a user's
-  file; and root's ledger is dense enough only with the short sampler of Q1b — so Q1b is a prerequisite of an automatic
-  A19, not an option. Its scope (the target user only, as A18, or every non-root account) is stated in the preview. The S1
+  file; and root's ledger holds interval readings only when root samples more often than `mcpServers.cpuIntervalMaxMinutes`
+  (the 4-hour timer never does — coai plan round 2026-10-08, finding 0). So a root sampler shorter than that maximum (the
+  watch timer of Q1b, sampling only, whether or not A19 may act on its own) is a prerequisite of A19 AT ALL, button
+  included — without it A19 would find no interval-based target. Its scope (the target user only, as A18, or every non-root account) is stated in the preview. The S1
   keys that bound the interval become evidence for an action here, so they are re-classified (machine-only or a safe
   direction), and every new key of this story (`mcpWatchdog.*`) gets its range, default and trust in this plan before the
   code round.
@@ -221,7 +223,8 @@ ledger shape, keyed by identity). **Design:** A3's selection widens to (a) build
 `buildServers.idleMinutes` (measured over the ledger, not age), and (b) language servers of the `vscode-server` family
 (`Collectors/ProcessFamilies.cs:69`) whose VS Code server parent is gone (orphaned) — those through `SuspectSignals`
 (pid AND start), the build servers still through `dotnet build-server shutdown` as their user (the official command; the
-refusal while a build runs stays). A3 keeps its `auto.A3` switch; the new rule (b) is a button until the owner says
+refusal while a build runs stays — reused unchanged: `BuildServerShutdown.Builds` / `IsDotnetBuild`, `:143-151`, re-checked
+from a fresh process table just before the command, `:126-137`, with its own tests). A3 keeps its `auto.A3` switch; the new rule (b) is a button until the owner says
 otherwise (Q1 covers it).
 
 ### S4 — CPU fairness that works inside WSL
@@ -279,8 +282,14 @@ orphans), and one fact S1 assumes: whether the guest's monotonic clock stops whi
 and after a host sleep, wall against monotonic). **By what:** a harness in the product's language (`src_daemon/tests/WslCare.Soak`, a console runner under git,
 not a shell script), started by the owner with twenty sessions open, writing one JSON line per sample to
 `research/soak/<date>/samples.jsonl` and a summary to `research/<date>_soak.md`. **Pass:** § 2's criteria with the owner's
-numbers (Q8). **Budget:** ~2 KB per sample (the summarised fields, not the whole status) × 144 samples ≈ 290 KB per day,
-kept in git per run.
+numbers (Q8) — **S8 does not start until Q8 is answered** (coai plan round finding 6: without the numbers there is no
+determinate pass). **Sessions and timeouts are observed continuously, not sampled** (findings 1 and 5): the twenty sessions
+are the owner's real ones — a synthetic driver would measure a different load, which is why none is built — and each sample
+records how many `claude` sessions and connected MCP servers run, plus EVERY "connection timed out after 30000ms" line
+Claude Code wrote to its own MCP logs since the previous sample (the logs are cumulative, so a timeout between two samples is
+counted, never missed); one timeout fails the criterion. **Budget:** ~2 KB per sample (the summarised fields, not the whole
+status) × 144 samples ≈ 290 KB per day; two runs are planned (a baseline, and one after S2–S4), ≈ 0.6 MB, kept in git for
+good as the record (finding 7).
 
 ## 6. Boundaries with the neighbouring plans
 
@@ -299,7 +308,7 @@ Disjoint otherwise. Order: S1 first (S2 and S3 read its ledger); E11 before S7's
 
 | Surface | Projected size | Who retires it | Interrupted |
 |---|---|---|---|
-| `mcp-cpu.json` (root, and one per account) | ≤ `maxInstances` (256) × 2 points × ~120 B ≈ 60 KB worst; ~20 instances × 2 × 120 B ≈ 5 KB typical | rewritten whole when it changed: dead identities, other boots and points older than `cpuIntervalMaxMinutes` dropped | written atomically (temp + rename); a torn or malformed file reads as "no baseline". Residual (review finding 9): a `status` killed between the temp write and the rename (the extension's 20 s ceiling) leaves one temp file beside the ledger that nothing removes — a few KB per such kill; written only when changed, which makes it rarer. A sweep of the ledger's own temp names is S2's, which owns the ledger's next shape |
+| `mcp-cpu.json` (root, and one per account) | ≤ `maxInstances` (256) × 2 points × ~120 B ≈ 60 KB worst; ~20 instances × 2 × 120 B ≈ 5 KB typical | rewritten whole when it changed: dead identities, other boots and points older than `cpuIntervalMaxMinutes` dropped | written atomically (temp + rename); a torn or malformed file reads as "no baseline". A `status` killed between the temp write and the rename (the extension's 20 s ceiling) leaves one temp file beside the ledger; the next write sweeps the ledger's own temp files older than the minimum interval (coai plan round finding 3, built in S1) |
 | the `mcpServers` block in each run detail | +~60 B per instance over today's ~400 B | the run details' 90-day retention | — |
 | S2's `busyWithoutActivitySince` | one timestamp per ledger identity | same as the ledger | same |
 | S8 samples in `research/soak/` | ≈ 290 KB per 24 h run | kept in git per run (a record), one run per campaign | the harness writes per sample (beside + move), so a stopped campaign keeps every sample taken |
@@ -352,9 +361,16 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
 
 ## 12. Review rounds
 
-- **coai plan round: OWED.** The coai MCP server did not connect in the authoring session ("connection timed out after
-  30000ms" — the very symptom of § 1), so `review_plan` could not run. It is owed before S2's code round; S1's code round
-  is owed with it.
+- **coai plan round (session `010a086d`, 2026-10-08):** the coai MCP server did not connect in the authoring session
+  ("connection timed out after 30000ms" — the very symptom of § 1); the round ran once it did. Verdict **good_enough**, 2 of
+  2 reviewers (gemini, codex), 8 findings: 6 accepted, 2 rejected with reasons. 0 (root ledger never interval under the 4 h
+  timer → A19 finds nothing): accepted, S2 now makes a root sampler shorter than the maximum a prerequisite of A19 at all.
+  1, 5 (S8 cannot see sessions or timeouts between samples): accepted, S8 counts every timeout line since the previous sample
+  and the live sessions; a synthetic session driver is declined (it would measure another load). 2 (S3 has no build
+  detection): rejected — `BuildServerShutdown.Builds` and its run-time re-check exist and are tested; S3 now says it reuses
+  them. 3 (orphaned temp files until S2): accepted, built in S1. 4 (the 4 h timer falls back to the window): rejected —
+  deliberate (design 2, own review finding 3); the live metric is the extension's 120 s `status`. 6 (X/Y/Z unresolved):
+  accepted, S8 waits for Q8. 7 (soak retention): accepted, two runs ≈ 0.6 MB kept.
 - **Own plan review (stand-in, 2026-10-07; one reviewer, `feature-dev:code-reviewer` on Opus, read-only).** Verified as
   fine: every S1 file:line, the CPU formula and units, the two-point rule (no starvation for one poller with jitter, two
   pollers 1 s apart, or a poller faster than the minimum), the growth bound, concurrent writers (the atomic write's temp
@@ -394,7 +410,9 @@ Built on `fix/wc-mcp-cpu-since-last-run`; the guarantees, the red and the teeth 
 - **Goldens edited by hand:** only `status.json` carries an available block; the agent machine was overloaded and the
   goldens are the Linux binary's answers, so the file was edited to the serializer's shape and CI's Linux leg verifies it.
   A normalisation rule was added (`**.cpuIntervalSeconds.value`: the window is the longer of one second and the real wait).
-- **Not built here:** the temp-file sweep (§ 7 residual, S2's), and S2's re-classification of the two keys.
+- **Not built here:** S2's re-classification of the two keys. **Built after the coai plan round:** the sweep of the
+  ledger's own orphaned temp files (finding 3) — RED first (*Expected File.Exists(orphan) to be False … but found True*),
+  green, teeth (the sweep call removed → red; the age guard removed → the in-flight temp deleted, red).
 - **Review rounds:** the coai code round is OWED (the coai MCP server did not connect in this session); one own code
   review stood in — § 14.
 - **After the code review:** the ledger is written as one compact JSON line, holds at most `records.maxStateFileBytes` ÷

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 using WslCare.Core.Files;
 using WslCare.Core.Files.Deletion;
@@ -87,7 +88,7 @@ public abstract record McpCpuLedgerPlace
 /// The file holds the listed instances only (at most <c>mcpServers.maxInstances</c> × 2 points) and is rewritten only when it
 /// changed, atomically and private.</para>
 /// </remarks>
-public static class McpCpuLedger
+public static partial class McpCpuLedger
 {
     public const string FileName = "mcp-cpu.json";
 
@@ -178,11 +179,13 @@ public static class McpCpuLedger
     private static TimeSpan AgeOf(McpCpuPoint point, McpCpuPoint now) => TimeSpan.FromMilliseconds(now.MonotonicMs - point.MonotonicMs);
 
     /// <summary>Writes <paramref name="next"/> where <paramref name="place"/> may write, only when it differs from
-    /// <paramref name="before"/>; says whether this sample's readings are recorded and, when not, why.</summary>
-    public static McpCpuBaseline Record(IFileSystem files, McpCpuLedgerPlace place, McpCpuFile before, McpCpuFile next) => place switch
+    /// <paramref name="before"/> — first sweeping the ledger's own temp files that a write which died left behind (older than
+    /// <see cref="McpCpuSweep.OrphanAfter"/>; coai plan round finding 3) — and says whether this sample's readings are recorded and,
+    /// when not, why.</summary>
+    public static McpCpuBaseline Record(IFileSystem files, McpCpuLedgerPlace place, McpCpuFile before, McpCpuFile next, McpCpuSweep sweep) => place switch
     {
-        McpCpuLedgerPlace.RootState { Writes: true } root => Write(files, root.Directory, root.File, before, next),
-        McpCpuLedgerPlace.OwnState own => Write(files, own.Directory, own.File, before, next),
+        McpCpuLedgerPlace.RootState { Writes: true } root => Write(files, root.Directory, root.File, before, next, sweep),
+        McpCpuLedgerPlace.OwnState own => Write(files, own.Directory, own.File, before, next, sweep),
         McpCpuLedgerPlace.RootState root => McpCpuBaseline.NotRecorded(root.File, ReadOnlyRoot),
         McpCpuLedgerPlace.None none => McpCpuBaseline.NotRecorded(string.Empty, none.Reason),
         _ => throw new System.Diagnostics.UnreachableException("McpCpuLedgerPlace is a closed set"),
@@ -191,16 +194,17 @@ public static class McpCpuLedger
     /// <summary>Why a root <c>status</c> records nothing.</summary>
     public const string ReadOnlyRoot = "status as root reads root's ledger and writes nothing (plan §15b #3); the root timer's full run records it";
 
-    private static McpCpuBaseline Write(IFileSystem files, string directory, string file, McpCpuFile before, McpCpuFile next)
+    private static McpCpuBaseline Write(IFileSystem files, string directory, string file, McpCpuFile before, McpCpuFile next, McpCpuSweep sweep)
     {
         var json = Serialise(next);
-        if (json.AsSpan().SequenceEqual(Serialise(before)))
-        {
-            return new McpCpuBaseline(file, true, string.Empty);
-        }
-
         try
         {
+            SweepOrphans(files, directory, sweep);
+            if (json.AsSpan().SequenceEqual(Serialise(before)))
+            {
+                return new McpCpuBaseline(file, true, string.Empty);
+            }
+
             files.CreateDirectory(directory);
             return files.WritePrivateFileAtomically(file, json, new DeletionScope(directory, Action)) is DeletionVerdict.Refused refused
                 ? McpCpuBaseline.NotRecorded(file, refused.Reason)
@@ -214,4 +218,26 @@ public static class McpCpuLedger
 
     /// <summary>The ledger as written: one line (<see cref="WslCareJsonContext.Compact"/>), so <see cref="BytesPerEntry"/> holds.</summary>
     public static byte[] Serialise(McpCpuFile ledger) => JsonSerializer.SerializeToUtf8Bytes(ledger, WslCareJsonContext.Compact.McpCpuFile);
+
+    /// <summary>Removes this ledger's temp files (<c>mcp-cpu.json.&lt;32 hex&gt;.tmp</c>, the atomic writer's exact shape) last written
+    /// more than <see cref="McpCpuSweep.OrphanAfter"/> ago — a younger one may be a concurrent writer's, about to be renamed. Every
+    /// delete goes through the deletion policy inside the ledger's own folder; a refused one stays, and is retried next time.</summary>
+    private static void SweepOrphans(IFileSystem files, string directory, McpCpuSweep sweep)
+    {
+        foreach (var temp in files.ListFiles(directory).Where(p => OrphanName().IsMatch(Path.GetFileName(p))))
+        {
+            if (files.FileSize(temp) is FileSizeResult.Measured { ModifiedAt: var at } && sweep.Now - at >= sweep.OrphanAfter)
+            {
+                files.DeleteFile(temp, new DeletionScope(directory, Action));
+            }
+        }
+    }
+
+    [GeneratedRegex(@"^mcp-cpu\.json\.[0-9a-f]{32}\.tmp$", RegexOptions.CultureInvariant)]
+    private static partial Regex OrphanName();
 }
+
+/// <summary>When a ledger temp file counts as left by a write that died: older than <paramref name="OrphanAfter"/> at
+/// <paramref name="Now"/>. The collector passes the minimum interval — a write takes milliseconds, so a temp file older than the
+/// shortest interval a baseline needs is nobody's (coai plan round finding 3).</summary>
+public sealed record McpCpuSweep(DateTimeOffset Now, TimeSpan OrphanAfter);

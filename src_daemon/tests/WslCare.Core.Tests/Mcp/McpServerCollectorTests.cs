@@ -356,6 +356,35 @@ public sealed class McpServerCollectorTests : IDisposable
     }
 
     [Fact]
+    public void A_write_sweeps_the_ledgers_own_orphaned_temp_files_and_nothing_else()
+    {
+        // coai plan round finding 3 (2026-10-08): a status killed between the atomic write's temp file and its rename (the
+        // extension's 20 s ceiling) left the temp file for ever — a run that dies must leave a state the next one sweeps.
+        Session(200, 300, TimeSpan.FromHours(1));
+        var folder = Path.GetDirectoryName(LedgerFile)!;
+        Directory.CreateDirectory(folder);
+        string Planted(string name, TimeSpan age)
+        {
+            var path = Path.Combine(folder, name);
+            File.WriteAllText(path, "{");
+            File.SetLastWriteTimeUtc(path, (Now - age).UtcDateTime);
+            return path;
+        }
+
+        var orphan = Planted($"{McpCpuLedger.FileName}.{new string('a', 32)}.tmp", TimeSpan.FromMinutes(5));
+        var inFlight = Planted($"{McpCpuLedger.FileName}.{new string('b', 32)}.tmp", TimeSpan.FromSeconds(1));
+        var foreign = Planted($"other.json.{new string('c', 32)}.tmp", TimeSpan.FromHours(5));
+        var lookalike = Planted($"{McpCpuLedger.FileName}.not-a-guid.tmp", TimeSpan.FromHours(5));
+
+        Sample(wait: Burn(300)).Baseline.Recorded.Should().BeTrue();
+
+        File.Exists(orphan).Should().BeFalse("a temp of this ledger older than the minimum interval is a write that died");
+        File.Exists(inFlight).Should().BeTrue("a young one may be a concurrent writer's, about to be renamed");
+        File.Exists(foreign).Should().BeTrue("only the ledger's own temp names are swept");
+        File.Exists(lookalike).Should().BeTrue("only the atomic writer's exact temp shape is swept");
+    }
+
+    [Fact]
     public void An_unchanged_ledger_is_not_rewritten()
     {
         Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
