@@ -89,7 +89,12 @@ public sealed class FullRunCommandTests
         if (OperatingSystem.IsLinux())
         {
             detail.Sample.McpServers!.Count.Should().Be(2);
-            waits.Should().Be(1, "one CPU window per full run");
+            // The instances come from the probe's captured tree; their CPU is read through the HOST's /proc — this sandbox has
+            // none — so no instance can be measured. Since plan E14 S1 the window is waited only for an instance it CAN measure
+            // and has no baseline of (before, it was waited here for two unmeasurable instances); the window's own count is
+            // McpServerCollectorTests' (No_wait_when_every_instance_has_a_baseline: one window for a first sighting).
+            detail.Sample.McpServers.Instances!.Should().OnlyContain(i => i.CpuBasis == "none" && !i.CpuPercent.Available);
+            waits.Should().Be(0, "no instance could be measured, so there was nothing to wait for");
         }
         else
         {
