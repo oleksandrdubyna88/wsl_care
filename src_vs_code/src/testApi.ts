@@ -1,6 +1,8 @@
 import type { CleanupHost } from './cleanup/cleanupHost';
 import type { CleanRecorder } from './cleanup/cleanRecorder';
 import type { InstallRecorder } from './install/installUi';
+import type { WindowsTimeGuardHost } from './windowsTime/guardHost';
+import type { GuardRecorder } from './windowsTime/guardUi';
 import type { WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import type { LogsPanel } from './logsPage/logsPanel';
 import type { ProcessRequest, Runner } from './process/runner';
@@ -32,6 +34,10 @@ export interface WslCareTestApi {
   install(): InstallRecorder;
   /** *Start Windows Time*'s recorded modal prompts, requests and reports — and the answers they give (no PowerShell runs). */
   windowsTime(): WindowsTimeRecorder;
+  /** The Windows Time guard's host — its state, its view and its two flows (PLAN_windows_time_task.md). */
+  windowsTimeGuard(): WindowsTimeGuardHost;
+  /** The guard's recorded document, prompts, elevated requests, queries and reports — and the answers they give. */
+  guardRecorder(): GuardRecorder;
   /** The host-side cleanup controller (E6.S2) — the API E6.S3's buttons will call; in Test mode the host suite reaches it here. */
   cleanup(): CleanupController;
   /** E6.S3: the cleanup buttons' host side — its journal, follower and transaction — as the panel's messages reach it. */

@@ -1,6 +1,6 @@
 # What a Scheduled Task can trigger on when `w32time` stops — measured 2026-10-08
 
-> The measurement build step 1 of [PLAN_windows_time_task.md](../todo/PLAN_windows_time_task.md) asked for before any
+> The measurement build step 1 of [PLAN_windows_time_task.md](PLAN_windows_time_task.md) asked for before any
 > trigger was written: can an `EventTrigger` match the Service Control Manager's event 7036 for the Windows Time service
 > entering the stopped state? Every read below is **read-only and unelevated** (`Get-WinEvent`, `Get-Service`, the
 > `Schedule.Service` COM object's `GetFolder`/`GetTask`); no task was registered, no service was started, stopped or

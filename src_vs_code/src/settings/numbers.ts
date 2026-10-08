@@ -34,6 +34,8 @@ const TIMEOUTS = {
   wslListSeconds: { key: 'timeouts.wslListSeconds', default: 15, minimum: WSL_LIST_MINIMUM_S, maximum: 300, description: 'How long each of the three `wsl.exe --list` questions asked before a daemon call may take, in seconds (measured: about 50 ms each, warm).' },
   stopSeconds: { key: 'timeouts.stopSeconds', default: 150, minimum: above(WORST_CASE_S.stop), maximum: 3600, description: 'How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds.' },
   windowsTimeFixSeconds: { key: 'timeouts.windowsTimeFixSeconds', default: 180, minimum: 30, maximum: 3600, description: 'How long *Start Windows Time* may take, in seconds — it waits for YOU at the UAC prompt, then starts the Windows Time service and resyncs (up to three tries).' },
+  windowsTimeGuardSeconds: { key: 'timeouts.windowsTimeGuardSeconds', default: 180, minimum: 30, maximum: 3600, description: 'How long installing or removing the Windows Time guard may take, in seconds — it waits for YOU at the UAC prompt, then registers or deletes one scheduled task.' },
+  windowsTimeGuardQuerySeconds: { key: 'timeouts.windowsTimeGuardQuerySeconds', default: 30, minimum: 5, maximum: 300, description: 'How long the read-only Task Scheduler query behind the panel\'s *Windows Time guard* line may take, in seconds.' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
 const CLEANUP = {
@@ -53,12 +55,23 @@ const CLEANUP = {
   journalEntries: { key: 'cleanup.journalEntries', default: 32, minimum: 4, maximum: 256, description: 'How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped.' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
+/**
+ * The Windows Time guard's task (PLAN_windows_time_task.md D6): baked into the task when it is installed — a changed value
+ * makes the panel say "install it again to update it".
+ */
+const GUARD = {
+  guardEveryHours: { key: 'windowsTime.guard.everyHours', default: 4, minimum: 1, maximum: 168, description: 'The Windows Time guard runs every this many hours (besides at startup, at logon and when the Windows Time service logs that it is stopping). Applies when the guard is installed (again).' },
+  guardMinMinutesBetweenStarts: { key: 'windowsTime.guard.minMinutesBetweenStarts', default: 10, minimum: 1, maximum: 1440, description: 'The Windows Time guard starts the service at most once in this many minutes, so it never loops against software that stops it again. Applies when the guard is installed (again).' },
+  guardDelaySeconds: { key: 'windowsTime.guard.delaySeconds', default: 60, minimum: 0, maximum: 3600, description: 'How long after startup, a logon, or the service\'s stop event the Windows Time guard waits before it runs, in seconds (0 = at once). Applies when the guard is installed (again).' },
+  guardTimeLimitMinutes: { key: 'windowsTime.guard.timeLimitMinutes', default: 5, minimum: 1, maximum: 60, description: 'How long one run of the Windows Time guard may take before Task Scheduler stops it, in minutes. Applies when the guard is installed (again).' },
+} as const satisfies Readonly<Record<string, NumberSetting>>;
+
 const LOGS = {
   maxRunIndex: { key: 'logs.maxRunIndex', default: 9_999, minimum: 100, maximum: 100_000, description: 'The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read).' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
 /** Every number setting, by the name the code uses. */
-export const NUMBER_SETTINGS = { ...TIMEOUTS, ...CLEANUP, ...LOGS } as const;
+export const NUMBER_SETTINGS = { ...TIMEOUTS, ...CLEANUP, ...GUARD, ...LOGS } as const;
 
 export type NumberName = keyof typeof NUMBER_SETTINGS;
 

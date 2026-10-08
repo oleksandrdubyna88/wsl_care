@@ -15,6 +15,9 @@ import { ROW_IDS, rowIdOf, type RowId } from '../cleanup/rowIds';
  *
  * <p>E6.S4's `openRunLogs` (*Logs* beside *Last cleanup*) is bare too: the host opens the Logs page on the run
  * `status.lastCleanup` names — the id is the host's.</p>
+ *
+ * <p>The Windows Time guard's `installWindowsTimeGuard` and `removeWindowsTimeGuard` (PLAN_windows_time_task.md D8 o5) are
+ * bare: the task, its settings and its scripts are the host's constants — nothing from the page reaches them.</p>
  */
 
 export type PageMessage =
@@ -25,13 +28,15 @@ export type PageMessage =
   | { readonly type: 'startWsl' }
   | { readonly type: 'installDaemon' }
   | { readonly type: 'startWindowsTime' }
+  | { readonly type: 'installWindowsTimeGuard' }
+  | { readonly type: 'removeWindowsTimeGuard' }
   | { readonly type: 'openRunLogs' }
   | { readonly type: 'clean'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'cleanSelected'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'runFullCheck' }
   | { readonly type: 'stop'; readonly index: number };
 
-const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'runFullCheck', 'openRunLogs']);
+const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs']);
 
 /** The host holds at most this many stoppable runs plus one (the daemon has ONE running state; the list is a list for shape only). */
 export const MAX_STOP_INDEX = 3;

@@ -5,7 +5,8 @@
 // as those characters (src/test/panelPage.test.ts runs this file in a strict DOM that throws on every HTML sink).
 //
 // It sends the host only its closed set (src/panel/messages.ts): ready, rendered, the id of a pressed button — and, since
-// E6.S3, the cleanup messages: clean / cleanSelected with row ids, runFullCheck, stop with the index the host gave it.
+// E6.S3, the cleanup messages: clean / cleanSelected with row ids, runFullCheck, stop with the index the host gave it — and the
+// Windows Time guard's bare installWindowsTimeGuard / removeWindowsTimeGuard.
 (function () {
   'use strict';
 
@@ -227,14 +228,31 @@
     return box;
   }
 
-  /** The two sections the controls belong to — by the ids of src/panel/fieldMap.ts's SECTIONS. */
-  const EXTRAS = { cleanup: cleanupControls, lastCleanup: lastCleanupParts };
+  // ---- The Windows Time guard (PLAN_windows_time_task.md D5, D8 o5): ONE line the host derived from Task Scheduler's
+  // answer and the pending elevated run it persisted, and the buttons it allows — each posts its bare id, nothing else. ----
 
-  function sectionWithExtras(model, controls) {
+  function guardPart(guard) {
+    const box = element('div', undefined, { guard: '' });
+    box.appendChild(element('p', guard.line, { 'guard-line': '', level: guard.level }));
+    guard.buttons.forEach(function (b) {
+      const id = b.id;
+      box.appendChild(actionButton(b.label, { 'guard-action': id }, !b.enabled, function () { return { type: id }; }));
+    });
+    return box;
+  }
+
+  /** The sections the host's extra parts belong to — by the ids of src/panel/fieldMap.ts's SECTIONS. */
+  const EXTRAS = {
+    cleanup: function (view) { return isObject(view.cleanup) ? cleanupControls(view.cleanup) : undefined; },
+    lastCleanup: function (view) { return isObject(view.cleanup) ? lastCleanupParts(view.cleanup) : undefined; },
+    health: function (view) { return isObject(view.windowsTimeGuard) && Array.isArray(view.windowsTimeGuard.buttons) ? guardPart(view.windowsTimeGuard) : undefined; },
+  };
+
+  function sectionWithExtras(model, view) {
     const node = section(model);
-    const extra = Object.prototype.hasOwnProperty.call(EXTRAS, model.id) ? EXTRAS[model.id] : undefined;
-    if (extra !== undefined && isObject(controls)) {
-      node.appendChild(extra(controls));
+    const extra = Object.prototype.hasOwnProperty.call(EXTRAS, model.id) ? EXTRAS[model.id](view) : undefined;
+    if (extra !== undefined) {
+      node.appendChild(extra);
     }
     return node;
   }
@@ -249,7 +267,7 @@
   }
 
   function render(view) {
-    root.replaceChildren(header(view), ...view.sections.map(function (model) { return sectionWithExtras(model, view.cleanup); }));
+    root.replaceChildren(header(view), ...view.sections.map(function (model) { return sectionWithExtras(model, view); }));
     const rows = view.sections.reduce(function (sum, model) {
       return sum + model.rows.length;
     }, 0);

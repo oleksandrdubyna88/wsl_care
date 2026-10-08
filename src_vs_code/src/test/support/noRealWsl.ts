@@ -40,6 +40,60 @@ export function isElevatedPowerShell(file: unknown, rest: unknown): boolean {
   return (name === 'powershell' || name === 'powershell.exe' || name === 'pwsh' || name === 'pwsh.exe') && /runas/i.test(text);
 }
 
+const POWERSHELLS: ReadonlySet<string> = new Set(['powershell', 'powershell.exe', 'pwsh', 'pwsh.exe']);
+
+function baseName(file: unknown): string {
+  return path.win32.basename(String(file)).toLowerCase();
+}
+
+export const TASK_TRIPWIRE_MESSAGE = 'noRealWsl: a test tried to change Task Scheduler, a service or the machine registry';
+
+/** The programs that change scheduled tasks or services by themselves (PLAN_windows_time_task.md D7, D8 o4). */
+const MACHINE_TOOLS: ReadonlySet<string> = new Set(['schtasks', 'schtasks.exe', 'sc', 'sc.exe']);
+
+/**
+ * The words a PowerShell would need to change this machine the way the Windows Time guard does — register or delete a task,
+ * start / stop / reconfigure a service, write the registry, resync the clock (D8 o4). Matched as WORDS of the decoded text,
+ * so a read — `NewTask(0).XmlText`, `GetTask`, PowerShell's parser — stays allowed, and the guard's own status query too.
+ */
+export const MUTATING = /\b(?:Register-ScheduledTask|Unregister-ScheduledTask|(?:Start|Stop|Enable|Disable|Set)-ScheduledTask|RegisterTask(?:Definition)?|DeleteTask|DeleteFolder|CreateFolder|(?:Start|Stop|Restart|Set|Suspend|Resume)-Service|Set-ItemProperty|New-Item|Remove-Item|w32tm|schtasks)\b/i;
+
+/** `-EncodedCommand`, and every prefix PowerShell accepts for it (`-e`, `-ec`, `-enc`, …). */
+const ENCODED_SWITCH = /^-(?:ec|e(?:n(?:c(?:o(?:d(?:e(?:d(?:c(?:o(?:m(?:m(?:a(?:n(?:d)?)?)?)?)?)?)?)?)?)?)?)?)?)$/i;
+
+function decodedPayload(b64: string): string {
+  return Buffer.from(b64, 'base64').toString('utf16le');
+}
+
+/**
+ * What a PowerShell is really handed: its arguments, plus every `-EncodedCommand` payload DECODED — as an argument of its
+ * own, and inside a `-Command` text that starts a second PowerShell with one (story 1's launcher). Recursive, so a payload
+ * that carries a payload is read too.
+ */
+export function revealed(words: readonly string[], depth = 0): string {
+  const text = words.join(' ');
+  if (depth > 3) {
+    return text;
+  }
+  const payloads = [
+    ...words.flatMap((w, i) => (ENCODED_SWITCH.test(w) && words[i + 1] !== undefined ? [words[i + 1] as string] : [])),
+    ...Array.from(text.matchAll(/-e(?:c|n\w*)?\s+'?([A-Za-z0-9+/=]{8,})/gi), (m) => m[1] ?? ''),
+  ].map(decodedPayload);
+
+  return [text, ...payloads.map((p) => revealed(p.split(/\s+/), depth + 1))].join(' ; ');
+}
+
+function wordsOf(rest: unknown): string[] {
+  return Array.isArray(rest) ? rest.map(String) : String(rest ?? '').split(/\s+/);
+}
+
+/** Whether a start would change this machine's tasks, services or registry the way the guard does (D7, D8 o4). */
+export function isMachineChange(file: unknown, rest: unknown): boolean {
+  const name = baseName(file);
+
+  return MACHINE_TOOLS.has(name) || (POWERSHELLS.has(name) && MUTATING.test(revealed(wordsOf(rest))));
+}
+
 type Launcher = (...args: unknown[]) => unknown;
 
 function guard(original: Launcher, firstIsCommandLine: boolean): Launcher {
@@ -51,6 +105,9 @@ function guard(original: Launcher, firstIsCommandLine: boolean): Launcher {
     }
     if (isElevatedPowerShell(program, firstIsCommandLine ? words.slice(1) : args[1])) {
       throw new Error(`${ELEVATION_TRIPWIRE_MESSAGE}: ${String(args[0])}`);
+    }
+    if (isMachineChange(program, firstIsCommandLine ? words.slice(1) : args[1])) {
+      throw new Error(`${TASK_TRIPWIRE_MESSAGE}: ${String(args[0])}`);
     }
 
     return original.apply(this, args);

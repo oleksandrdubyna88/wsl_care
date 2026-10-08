@@ -27,9 +27,11 @@ import { windowsPowerShell } from '../wsl/wslExecutable';
 /** The exit codes of the elevated script and its launcher — the closed set this module reads. */
 export const EXIT = { done: 0, setAutomaticFailed: 10, startFailed: 11, resyncFailed: 12, launchFailed: 13, declined: 1223 } as const;
 
-const SET_AUTOMATIC = `try { Set-Service -Name w32time -StartupType Automatic -ErrorAction Stop } catch { exit ${EXIT.setAutomaticFailed} }`;
+/** Story 1's start-type line — reused verbatim by the Windows Time guard's task (`guardTask.ts`). */
+export const SET_AUTOMATIC = `try { Set-Service -Name w32time -StartupType Automatic -ErrorAction Stop } catch { exit ${EXIT.setAutomaticFailed} }`;
 
-const BODY = [
+/** Start, then resync three times — the lines the Windows Time guard's task shares (`guardTask.ts`). */
+export const BODY = [
   `try { Start-Service -Name w32time -ErrorAction Stop } catch { exit ${EXIT.startFailed} }`,
   "$w32tm = Join-Path $env:SystemRoot 'System32\\w32tm.exe'",
   `for ($i = 0; $i -lt 3; $i++) { & $w32tm /resync /force | Out-Null; if ($LASTEXITCODE -eq 0) { exit ${EXIT.done} }; Start-Sleep -Seconds 2 }`,
@@ -66,14 +68,32 @@ export function outerScript(powerShell: string, inner: string): string {
   ].join('\n');
 }
 
-/** The one request this module ever builds — or why none can be (no `SystemRoot` drive folder). */
-export function fixRequest(env: Readonly<Record<string, string | undefined>>, setAutomaticStart: boolean, timeoutMs: number): ProcessRequest | string {
+/** Why no Windows PowerShell request can be built on this machine. */
+export const NO_POWERSHELL = 'SystemRoot does not name a drive folder holding System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+
+/** The absolute Windows PowerShell, when `SystemRoot` names a drive folder PowerShell can quote — else why not. */
+export function powerShellOf(env: Readonly<Record<string, string | undefined>>): string | { readonly reason: string } {
   const powerShell = windowsPowerShell(env);
-  if (powerShell === undefined || !QUOTABLE_PATH.test(powerShell)) {
-    return 'SystemRoot does not name a drive folder holding System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+
+  return powerShell === undefined || !QUOTABLE_PATH.test(powerShell) ? { reason: NO_POWERSHELL } : powerShell;
+}
+
+/**
+ * ONE elevated run of `inner` — the request *Start Windows Time* and the Windows Time guard's install / remove both build
+ * (PLAN_windows_time_task.md D3): the absolute unelevated PowerShell runs `outerScript`, which starts the elevated one.
+ */
+export function elevatedRequest(env: Readonly<Record<string, string | undefined>>, inner: string, timeoutMs: number): ProcessRequest | string {
+  const powerShell = powerShellOf(env);
+  if (typeof powerShell !== 'string') {
+    return powerShell.reason;
   }
 
-  return { file: powerShell, args: ['-NoProfile', '-NonInteractive', '-Command', outerScript(powerShell, innerScript(setAutomaticStart))], timeoutMs };
+  return { file: powerShell, args: ['-NoProfile', '-NonInteractive', '-Command', outerScript(powerShell, inner)], timeoutMs };
+}
+
+/** The one request this module ever builds — or why none can be (no `SystemRoot` drive folder). */
+export function fixRequest(env: Readonly<Record<string, string | undefined>>, setAutomaticStart: boolean, timeoutMs: number): ProcessRequest | string {
+  return elevatedRequest(env, innerScript(setAutomaticStart), timeoutMs);
 }
 
 export type FixOutcome =
@@ -83,7 +103,8 @@ export type FixOutcome =
   | { readonly kind: 'timedOut'; readonly timeoutMs: number }
   | { readonly kind: 'notStarted'; readonly reason: string };
 
-const FAILURES: Readonly<Record<number, string>> = {
+/** The sentence of each failing exit of the shared lines — the guard's last result reads the same ones. */
+export const FAILURES: Readonly<Record<number, string>> = {
   [EXIT.setAutomaticFailed]: 'Set-Service could not set the Windows Time service to start Automatic',
   [EXIT.startFailed]: 'the Windows Time service could not be started (Start-Service failed)',
   [EXIT.resyncFailed]: 'the Windows Time service runs, but `w32tm /resync /force` failed three times — it may not have found a time source yet; check again in a minute',

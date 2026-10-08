@@ -1,14 +1,21 @@
 # PLAN — the Windows Time task: restart `w32time` by itself when software stops it
 
-> Status: **plan only, nothing implemented yet, 2026-10-08.** Scope: one extension feature that registers (and removes) a
-> single-purpose SYSTEM scheduled task on the Windows host, and shows whether it is installed; nothing in the daemon.
-> Extracted from story 2 (D9) of [PLAN_windows_time_guard.md](../research/PLAN_windows_time_guard.md), whose story 1
-> shipped.
+> Status: **IMPLEMENTED, 2026-10-08.** Scope as shipped: the extension's Windows Time guard — `src_vs_code/src/windowsTime/guard*.ts`,
+> two commands, six settings, the *Health* section's line and buttons, the tripwire's new refusals; nothing in the daemon.
+> Extracted from story 2 (D9) of [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), whose story 1 shipped.
+> **Deviations from the plan as extracted** (each in D8 with its source): the 7036 trigger is replaced by the
+> Time-Service's own event 258 (7036 is not logged on this build — measured, research §1); the action is plain
+> `-Command` text, not `-EncodedCommand`; the install creates `\wsl-care` through `Schedule.Service` before
+> `Register-ScheduledTask`; the task carries a read ACE for Authenticated Users (without it the panel could not see it —
+> measured, research T21); the elevated run is persisted in `globalState` and held past a timeout; "this version" is the
+> whole canonical summary of the registered definition, not its arguments. **Open tail:** registering, running as SYSTEM
+> and the event trigger firing are not exercised by any test — they are the owner's one-time check after installing it
+> (`POST_DEPLOY.md` item 9); the owner questions of §7 are open.
 >
-> Related: [2026-10-08_windows_time_stopped.md](../research/2026-10-08_windows_time_stopped.md) (the incident),
-> [2026-10-08_windows_time_guard_trigger.md](../research/2026-10-08_windows_time_guard_trigger.md) (build step 1's
-> measurement — it changed the event trigger), [PLAN_windows_care.md](PLAN_windows_care.md) §2 *Admin work* and §8a (the
-> generic elevated channel — NOT this), [module_vs_code.md](../research/module_vs_code.md) (*Start Windows Time*, the
+> Related: [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) (the incident),
+> [2026-10-08_windows_time_guard_trigger.md](2026-10-08_windows_time_guard_trigger.md) (build step 1's
+> measurement — it changed the event trigger), [PLAN_windows_care.md](../todo/PLAN_windows_care.md) §2 *Admin work* and §8a (the
+> generic elevated channel — NOT this), [module_vs_code.md](module_vs_code.md) (*Start Windows Time*, the
 > one-click fix this automates).
 >
 > **Owner decisions, 2026-10-08:** build the task now; `www.microsoft.com` stays the daemon's reference; a wrong Windows
@@ -211,17 +218,17 @@ findings — 11 accepted, 1 rejected). Every rejection measured, research record
 
 ## 5. Build order
 
-1. ✅ Measure the trigger (read-only) — [2026-10-08_windows_time_guard_trigger.md](../research/2026-10-08_windows_time_guard_trigger.md).
-2. RED tests, then `windowsTimeGuard.ts` (D1–D3): the XML parsed by Task Scheduler's own parser on the Windows leg (four
+1. ✅ Measure the trigger (read-only) — [2026-10-08_windows_time_guard_trigger.md](2026-10-08_windows_time_guard_trigger.md).
+2. ✅ RED tests, then `guardTask.ts` / `guardScripts.ts` (D1–D3): the XML parsed by Task Scheduler's own parser on the Windows leg (four
    triggers, SYSTEM, the action decodes to the guard script); the guard script parsed by PowerShell's parser and its
    commands in order; the rate-limit function EXTRACTED from the script's AST and executed alone over its edge cases
    (nothing else of the script runs); the install/remove scripts parsed; the length bound; exit-code sentences.
-3. RED tests, then the flows (D4) and the query (D5) with recorders — order (document → modal → run → query), a decline
+3. ✅ RED tests, then the flows (D4) and the query (D5) with recorders — order (document → modal → run → query), a decline
    runs nothing, every exit one outcome, the status table's every row, the tripwire refusing `schtasks` and
    `Schedule.Service`.
-4. Wiring: commands, settings, the panel's *Health* line and buttons, the closed message set, `package.json`, the flow
+4. ✅ Wiring: commands, settings, the panel's *Health* line and buttons, the closed message set, `package.json`, the flow
    catalogue rows (`module_tests.md`).
-5. Docs: `module_vs_code.md`, `module_tests.md`, a pointer in `architecture.md` (near its cap), `README.md`,
+5. ✅ Docs: `module_vs_code.md`, `module_tests.md`, a pointer in `architecture.md` (near its cap), `README.md`,
    `POST_DEPLOY.md` (at its cap of 12: the Windows Time item is extended to read the task back, not a 13th), this plan
    promoted, the neighbouring plans' boundary lines.
 
@@ -257,7 +264,28 @@ findings — 11 accepted, 1 rejected). Every rejection measured, research record
 
 - [x] Plan round (coai `review_plan`) — `good_enough`, findings resolved (D8).
 - [x] The trigger measured and recorded in `research/` — 7036 absent; 258 matches.
-- [ ] Install / remove / status shipped with RED-first tests; no test registers a task, starts a service or raises UAC.
-- [ ] Break-it checks recorded, each mutating product code only.
-- [ ] Docs and `POST_DEPLOY.md` updated; the plan promoted.
+- [x] Install / remove / status shipped with tests; no test registers a task, starts a service or raises UAC (§9).
+- [x] Break-it checks recorded, each mutating product code only (§9).
+- [x] Docs and `POST_DEPLOY.md` updated; the plan promoted.
 - [ ] Code round (coai `review_code`) proceeded; the pull request merged.
+
+## 9. As built — the tests and the break-it checks (2026-10-08)
+
+- **Suites:** `npm test` 830 tests, 829 pass, 1 skipped (the pre-existing non-Windows skip), 0 fail; `npm run lint` and a
+  clean `tsc` green. New: `windowsTimeGuardTask.test.ts`, `windowsTimeGuardState.test.ts`, `windowsTimeGuardFlow.test.ts`,
+  `xmlTree.test.ts` (the strict XML reader's own tests), three page tests in `panelPage.test.ts`, three tripwire tests in
+  `noRealWsl.test.ts`.
+- **The Windows leg** reads, never runs: PowerShell's parser over the action, install, remove and query scripts (no
+  error; the commands each one runs, by name); Task Scheduler's parser in memory (`NewTask(0).XmlText`, nothing registered)
+  over three option sets, whose read-back through the query's own summary code equals `guardSummary(options)` line for
+  line, and whose descriptor reads back as written; the rate limit's one function extracted from the action's syntax tree
+  and run alone over seven cases (BigInt ticks — a real tick count is past `Number`'s exact integers, which is what made the
+  first draft of that test pass a one-tick case for the wrong reason).
+- **Break-it, product code only** (the tripwire, the recorders and the fakes untouched): seventeen mutations, each run, each
+  RED with the test named for it — the start type moved after the rate limit; the trigger back on 7036; the principal
+  LocalService; the window's edge `-lt` → `-le`; the read ACE dropped (first STILL GREEN — the test compared the constant
+  with itself; a test of the descriptor's ACEs was added and went RED); the summary forgetting the delay; the install
+  skipping the folder; the removal without `Test-Path`; a pending run not holding the buttons; a negative HRESULT read
+  signed; a changed setting not reading as "install again"; a timeout clearing the pending run; the modal skipped; the
+  document not shown; the guard messages taking a payload; the page dropping the line; the host querying twice at once.
+  Restored: green.

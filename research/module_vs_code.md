@@ -23,6 +23,10 @@ stopped WSL distribution unless the person presses *Start WSL and check*, never 
 2026-10-08 (PLAN_windows_time_guard.md D7) it changes ONE thing on Windows itself, and only after a modal that shows the
 exact commands: *Start Windows Time* runs one elevated Windows PowerShell (`Process.Start` with the `runas` verb) that sets the
 Windows Time service to start Automatic (while `wslCare.windowsTime.setAutomaticStart` is on), starts it and resyncs.
+And since 2026-10-08 (PLAN_windows_time_task.md) it can install, through the same launcher, ONE scheduled task that does
+that by itself — *the Windows Time guard*, `\wsl-care\windows-time-guard`, run as SYSTEM at startup, at logon, every N
+hours and on the Time-Service's stop event 258, with a rate limit on starts — after showing the exact elevated script in
+a read-only tab; it removes it the same way, and shows on the *Health* section what Task Scheduler holds.
 It runs on the Windows side (`extensionKind: ["ui"]`), on VS Code 1.85.0 or newer.
 
 ## Diagram
@@ -70,6 +74,11 @@ flowchart LR
     panel -->|"startWindowsTime (bare)"| wtime["windowsTime/<br/>(modal, then ONE run)"]
     wtime -->|"powershell.exe -Command (absolute)"| runner
     runner -->|"Process.Start(runas) -EncodedCommand"| w32["elevated PowerShell<br/>Set-Service · Start-Service · w32tm /resync"]
+    panel -->|"installWindowsTimeGuard / removeWindowsTimeGuard (bare)"| guard["windowsTime/guard*<br/>(read-only tab, modal, pending run)"]
+    guard -->|"the same runas launcher"| runner
+    runner -->|"elevated: Register-ScheduledTask / DeleteTask"| sched["Task Scheduler<br/>\wsl-care\windows-time-guard (SYSTEM)"]
+    guard -->|"unelevated query (Schedule.Service, read)"| runner
+    sched -.->|"boot · logon · every N h · event 258"| w32
 ```
 
 ## Core entities
@@ -87,6 +96,7 @@ flowchart LR
 | Cleanup buttons | `src/cleanup/` | `cleanupHost.ts` — the host transaction behind *Clean*, *Clean selected*, *Run full check now* and *Stop*: sanitised modals, the `globalState` journal of run ids until a terminal answer, the durable poll through `runs show` (E6.S3); `cleanupView.ts` derives the controls; *Last cleanup* from `status.lastCleanup`. |
 | Logs page | `src/logsPage/` | A `WebviewPanel` under the panel's shell and CSP: periods (This run, Today, Yesterday, a day, a range) become argv in `period.ts` alone, over the UTC instants of local midnights; a closed message set (`logsMessages.ts`); the selection persisted in `globalState`; nothing computed in the page (E6.S4). |
 | *Start Windows Time* | `src/windowsTime/` | PLAN_windows_time_guard.md D7: `windowsTimeFix.ts` — the elevated script as module constants (modules from `$PSHOME`, `w32tm.exe` by absolute path, one exit code per failure because an elevated child's streams cannot be read), the outer launcher that catches the UAC refusal as 1223, the request, the closed outcome, the flow (modal → one run → *Run full check now* on success); `windowsTimeNeed.ts` — the panel offers it only on the daemon's verdicts (`clock.timeService` warn/critical, `clock.reference` critical); `windowsTimeUi.ts` — the real modal, a progress notification while it runs, or a recorder in Test mode. |
+| *The Windows Time guard* | `src/windowsTime/guard*.ts` | PLAN_windows_time_task.md: `guardTask.ts` — the task as pure functions of the settings (the ONE-line action reusing story 1's start-type, start and resync lines with a rate limit on starts before them; the XML with its SYSTEM principal, four triggers, read ACE for Authenticated Users and plain `-Command` action; the canonical summary and the PowerShell that prints it); `guardScripts.ts` — the elevated install (folder through `Schedule.Service`, `Register-ScheduledTask -Xml -Force`) and removal ("if present" at every step), the unelevated read-only query, the length bound; `guardState.ts` — the query's answer as one closed state and the panel's line and buttons; `guardPending.ts` — the elevated run persisted in `globalState` before it starts, held past a timeout until its deadline, swept at activation; `guardFlow.ts` — the order (tab → modal → pending → one run → re-read) and the closed outcomes; `guardHost.ts` — one query and one flow at a time; `guardUi.ts` / `guardRecorder.ts` — the read-only tab, the modal, the progress, or a recorder in Test mode. |
 | Number settings | `src/settings/numbers.ts` | Every E6 number — the host ceilings (each above the daemon's own worst case for its call), the cleanup and Logs limits — as an `application`-scope setting, held equal to `package.json`. |
 
 ## Entry points
@@ -95,7 +105,8 @@ flowchart LR
   bar, the panel and the commands, and asks `status` once if the window is focused.
 - **Commands** — `wslCare.openPanel`, `wslCare.refresh`, `wslCare.startWsl`, `wslCare.installDaemon`, and since E6.S4
   `wslCare.openLogs` (also in the panel's title bar), and since 2026-10-08 `wslCare.startWindowsTime` (also a panel
-  button while the daemon's verdicts ask for it). No cleanup is a command: cleanups start only from the panel's
+  button while the daemon's verdicts ask for it), `wslCare.installWindowsTimeGuard` and `wslCare.removeWindowsTimeGuard`
+  (also the *Health* section's buttons beside the guard's line). No cleanup is a command: cleanups start only from the panel's
   buttons, through the host's modals.
 - **Webview panel** — `wslCare.logs` (the Logs page), restored after a reload by its serializer
   (`onWebviewPanel:wslCare.logs`).
@@ -103,7 +114,10 @@ flowchart LR
 - **Settings** — `wslCare.distro` (empty = WSL's default distribution), `wslCare.refreshSeconds` (30 to 86 400,
   default 120) and, since E6, the number table of `settings/numbers.ts` (`wslCare.timeouts.*`, `wslCare.cleanup.*`,
   `wslCare.logs.*`) — every one `application` scope, so a workspace cannot steer them; since 2026-10-08
-  `wslCare.windowsTime.setAutomaticStart` (default on) and `wslCare.timeouts.windowsTimeFixSeconds` (default 180).
+  `wslCare.windowsTime.setAutomaticStart` (default on) and `wslCare.timeouts.windowsTimeFixSeconds` (default 180); for the
+  guard `wslCare.windowsTime.guard.everyHours` (4), `….minMinutesBetweenStarts` (10), `….delaySeconds` (60),
+  `….timeLimitMinutes` (5) — baked into the task at install — and `wslCare.timeouts.windowsTimeGuardSeconds` (180),
+  `wslCare.timeouts.windowsTimeGuardQuerySeconds` (30).
 - **Test mode** — `activate()` returns a test API only in `ExtensionMode.Test`; the extension-host tier drives it.
 
 ## External dependencies
@@ -113,6 +127,7 @@ flowchart LR
 | VS Code API `^1.85.0` (`@types/vscode` pinned to it) | the host; the Node of VS Code 1.85 is 18, so the bundle targets node18 |
 | `wsl.exe` (absolute, System32) | the only way the extension reaches the distribution — facts measured in [2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md) |
 | Windows PowerShell 5.1 (absolute, `System32\WindowsPowerShell\v1.0`) and UAC | *Start Windows Time* only; the UAC prompt is Windows' own and its policy is the machine's (`ConsentPromptBehaviorAdmin`) — the extension's modal is the confirmation it controls ([2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) §4) |
+| Task Scheduler (`Schedule.Service`, `Register-ScheduledTask` from `$PSHOME\Modules`) and the Time-Service's Operational channel | the Windows Time guard only: registered and deleted elevated, read unelevated; its event trigger needs that channel enabled (measured enabled; the panel says when it is not) — [2026-10-08_windows_time_guard_trigger.md](2026-10-08_windows_time_guard_trigger.md) |
 | the `wsl-care` daemon ≥ `minDaemonForRender` of `src_vs_code/min-daemon.json` (*Install daemon* installs its `installDaemon`) | `status --json`, `preview --all --json`, `doctor --json`, `--version`, the run reads, and the root calls of `ROOT_OPS`; their shapes are the golden contracts in `contracts/golden/` and `contracts/*.json` (actions, exit codes, status limits). Acting needs `minDaemonForActions` and, as the authority, the capabilities `status` advertises |
 | esbuild (`scripts/bundle.mjs`), `@vscode/vsce`, `@vscode/test-electron`, TypeScript, typescript-eslint | build, package, extension-host tests, lint — dev only; the `.vsix` ships no runtime dependency |
 | `release-extension.yml` + `.github/scripts/release-extension-guard.sh` | the release pipeline: guard → build → attest → github-draft → publish-marketplace → github-public; the guard and `check-vsix --root-allowed` keep a root-capable bundle out of `extension-v0.1.0` and earlier (plan §15j B3, §15k #7) |

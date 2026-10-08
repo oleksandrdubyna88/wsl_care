@@ -4,7 +4,7 @@ import type { RunOptions } from '../client/WslCareClient';
 import type { OutcomeStore } from '../state/outcomeStore';
 import { parsePageMessage, type PageMessage } from './messages';
 import { newNonce, panelOptions, panelShell } from './panelHtml';
-import type { CleanupControls } from './view';
+import type { CleanupControls, GuardView } from './view';
 import { buildPanelView } from './viewModel';
 import type { RowId } from '../cleanup/rowIds';
 
@@ -35,6 +35,11 @@ export interface PanelActions {
   readonly onCleanupChange: (listener: () => void) => () => void;
   /** E6.S4: *Logs* beside *Last cleanup* — the Logs page on the run `status.lastCleanup` names. */
   readonly openRunLogs: () => void;
+  /** PLAN_windows_time_task.md: the guard's line (Task Scheduler's answer + the pending run), and its two flows. */
+  readonly guard: () => GuardView;
+  readonly onGuardChange: (listener: () => void) => () => void;
+  readonly installWindowsTimeGuard: () => void;
+  readonly removeWindowsTimeGuard: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -45,7 +50,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   private readonly unsubscribe: readonly (() => void)[];
 
   constructor(private readonly extensionUri: vscode.Uri, private readonly store: OutcomeStore, private readonly actions: PanelActions) {
-    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post())];
+    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post())];
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -91,6 +96,8 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       openSettings: () => this.actions.openSettings(),
       installDaemon: () => this.actions.installDaemon(),
       startWindowsTime: () => this.actions.startWindowsTime(),
+      installWindowsTimeGuard: () => this.actions.installWindowsTimeGuard(),
+      removeWindowsTimeGuard: () => this.actions.removeWindowsTimeGuard(),
       clean: (m) => this.actions.clean(m.rowIds, false),
       cleanSelected: (m) => this.actions.clean(m.rowIds, true),
       runFullCheck: () => this.actions.runFullCheck(),
@@ -103,6 +110,6 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup()) });
+    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard()) });
   }
 }
