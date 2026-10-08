@@ -19,7 +19,9 @@ release (assets + `.sha256`, `gh attestation verify` ×3 with the wrong-identity
 in a disposable systemd container). Items 3, 6 and 12 belong to the E5 live gate (the extension). The first daemon release and its live install were the **E4 live
 gate** (plan §16): settings with refused probes → item 4 → the release-please cut and the observed `release.yml` run →
 the live install → items 1–5, 7–11, then THIS line stamped `Last verified: <YYYY-MM-DD> · <target> · daemon <x.y.z>`.
-`release-extension.yml`'s guard READS that stamp: it refuses to release the extension until the line names a date and
+`release-extension.yml`'s guard READS that stamp — from MAIN'S TIP at the time the job runs, never from the tag's own
+tree (the stamp lands after the release, so a tag can never carry it; a stamp merged after the tag counts on "Re-run
+failed jobs"): it refuses to release the extension until the line names a date and
 a daemon at or above the release the extension's *Install daemon* types (`INSTALL_DAEMON`, itself at or above the
 render minimum `MIN_DAEMON_FOR_RENDER`). The E5 live gate then adds items 3, 6 and 12
 and the extension's version to the stamp (`… · daemon <x.y.z> · extension <x.y.z>`).

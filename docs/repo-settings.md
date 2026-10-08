@@ -288,7 +288,8 @@ pull request merged to `main` and CI green there:
    newer from GitHub's apt repository, no gh login needed).
 7. `POST_DEPLOY.md` items 1–2, 4–5 and 7–11 against the installation (inside WSL: `node .agents/conventions/tools/post-deploy-check.mjs
    --target 0.1.0`, plus the manual items; 3, 6 and 12 are the extension's, at the E5 live gate), and its `Last verified:` line
-   stamped `Last verified: <YYYY-MM-DD> · <target> · daemon 0.1.0` — `release-extension.yml`'s guard reads that shape. That stamp is
+   stamped `Last verified: <YYYY-MM-DD> · <target> · daemon 0.1.0` — `release-extension.yml`'s guard reads that shape, from
+   `main`'s tip at the time its job runs (never from the extension tag's own tree, which predates the stamp). That stamp is
    what the E5 live gate (the Marketplace publish) and every story of E6 wait for; E5.S0–S3 need not wait. Phase 0 does not gate this
    install any more — it gates the review of the dryRun week (plan §16).
 
@@ -316,7 +317,8 @@ assumed:
    --limit 5 --json databaseId`) and accept only a NEW run on event `push` for `refs/tags/extension-v0.1.0`. Push no other
    tag in the same minute (more than three tags in one push trigger nothing).
 6. `release-extension.yml`, observed job by job: guard (tag, package.json, publisher, main, the minimum daemon from
-   `src_vs_code/min-daemon.json` published and stamped) → build (tests, the extension-host tier, `vsce package` once, the
+   `src_vs_code/min-daemon.json` published, and stamped in `POST_DEPLOY.md` on `main`'s tip — a tag cut before the stamp merged
+   passes on "Re-run failed jobs" once it has) → build (tests, the extension-host tier, `vsce package` once, the
    leak checks with `--release --min-daemon`; `contents: read` only) → **attest** (the only signing job: the build's
    `.vsix` checked against its `.sha256` and attested, no npm) → **github-draft** (the `.vsix` + `.sha256` on the draft,
    read back and compared — the rollback source exists before anything is public) → **publish-marketplace** (approve it:
