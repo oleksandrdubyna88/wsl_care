@@ -99,27 +99,29 @@ public sealed class FixturePrivacyTests
             .Should().Be(FixturePrivacy.MinimumNameLength.ToString(System.Globalization.CultureInfo.InvariantCulture), "one floor for a machine name in both checks");
     }
 
-    /// <summary>The quoted names of the <c>SERVICE_ACCOUNTS</c> array literal in <paramref name="source"/>, its
-    /// <c>//</c> comments dropped first (a reason may hold an apostrophe). Empty when the declaration is not found; an
-    /// <see cref="InvalidDataException"/> when the body holds anything but those names, commas and whitespace — an entry
-    /// this read cannot see would otherwise leave the parity green while the lists differ.</summary>
+    /// <summary>The quoted names of the ONE live <c>SERVICE_ACCOUNTS</c> array literal in <paramref name="source"/>,
+    /// every <c>//</c> comment of the source dropped first (a reason may hold an apostrophe or a <c>]</c>, and a
+    /// commented-out copy is not the list). Empty when the declaration is not found; an
+    /// <see cref="InvalidDataException"/> for two live declarations, or when the body holds anything but those names,
+    /// commas and whitespace — an entry this read cannot see would otherwise leave the parity green while the lists
+    /// differ.</summary>
     private static List<string> VsixServiceAccounts(string source)
     {
-        var declarations = System.Text.RegularExpressions.Regex.Matches(source, @"export const SERVICE_ACCOUNTS[^=]*=\s*\[(?<body>[^\]]*)\]");
+        var code = string.Join('\n', source.Split('\n').Select(line => line.Split("//")[0]));
+        var declarations = System.Text.RegularExpressions.Regex.Matches(code, @"export const SERVICE_ACCOUNTS[^=]*=\s*\[(?<body>[^\]]*)\]");
         if (declarations.Count > 1)
         {
-            throw new InvalidDataException($"vsixCheck.ts holds {declarations.Count} declarations of SERVICE_ACCOUNTS — a commented-out copy would be read in place of the live one");
+            throw new InvalidDataException($"vsixCheck.ts holds {declarations.Count} declarations of SERVICE_ACCOUNTS — the parity cannot tell which is the list");
         }
         var body = declarations.Count == 0 ? string.Empty : declarations[0].Groups["body"].Value;
-        var code = string.Join('\n', body.Split('\n').Select(line => line.Split("//")[0]));
         const string QuotedName = @"'(?<name>[^']+)'";
-        var rest = System.Text.RegularExpressions.Regex.Replace(code, QuotedName, string.Empty);
+        var rest = System.Text.RegularExpressions.Regex.Replace(body, QuotedName, string.Empty);
         if (!System.Text.RegularExpressions.Regex.IsMatch(rest, @"^[\s,]*$"))
         {
             throw new InvalidDataException($"SERVICE_ACCOUNTS holds something other than single-quoted names: '{rest.Trim()}'");
         }
 
-        return [.. System.Text.RegularExpressions.Regex.Matches(code, QuotedName).Select(m => m.Groups["name"].Value)];
+        return [.. System.Text.RegularExpressions.Regex.Matches(body, QuotedName).Select(m => m.Groups["name"].Value)];
     }
 
     [Fact]
@@ -146,14 +148,19 @@ public sealed class FixturePrivacyTests
         FluentActions.Invoking(() => VsixServiceAccounts(source)).Should().Throw<InvalidDataException>();
     }
 
-    /// <summary>A second declaration — a commented-out copy above the live one — could be read in its place and keep
-    /// the parity green (coai code round, 2026-10-08), so more than one is refused.</summary>
+    /// <summary>Comments are dropped before the declaration is looked for (coai code rounds, 2026-10-08): a
+    /// commented-out copy above the live one is never read in its place, a <c>]</c> inside a line comment never ends the
+    /// list early, and two LIVE declarations are refused.</summary>
     [Fact]
-    public void The_service_account_read_refuses_a_second_declaration()
+    public void The_service_account_read_sees_only_the_live_declaration_whole()
     {
-        const string source = "// export const SERVICE_ACCOUNTS = ['runner'];\nexport const SERVICE_ACCOUNTS: readonly string[] = [\n  'runner',\n  'root',\n];";
+        const string commentedCopy = "// export const SERVICE_ACCOUNTS = ['runner'];\nexport const SERVICE_ACCOUNTS: readonly string[] = [\n  'runner',\n  'root',\n];";
+        const string bracketInComment = "export const SERVICE_ACCOUNTS: readonly string[] = [\n  'runner', // the image's [Linux] account ]\n  'root',\n];";
+        const string twoLive = "export const SERVICE_ACCOUNTS = ['runner'];\nexport const SERVICE_ACCOUNTS = ['root'];";
 
-        FluentActions.Invoking(() => VsixServiceAccounts(source)).Should().Throw<InvalidDataException>().WithMessage("*2 declarations*");
+        VsixServiceAccounts(commentedCopy).Should().Equal("runner", "root");
+        VsixServiceAccounts(bracketInComment).Should().Equal("runner", "root");
+        FluentActions.Invoking(() => VsixServiceAccounts(twoLive)).Should().Throw<InvalidDataException>().WithMessage("*2 declarations*");
     }
 
     private static string ByFileAndRule(IEnumerable<string> findings) =>
