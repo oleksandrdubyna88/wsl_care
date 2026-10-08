@@ -14,7 +14,7 @@ Last verified: 2026-10-08 · the owner's installation (WSL Ubuntu) · daemon 0.2
 — items 1, 2, 5, 7, 11 against the attested `daemon-v0.2.0` install of 2026-10-07 19:39Z (11: its first timer run,
 2026-10-08 07:52Z, `Consumed 2min 23.8s CPU time, 831.3M memory peak` — 81 % of the 1 GiB `MemoryMax`, no
 oom-kill/memory.max/snap-confine), item 4 24/24 built from the tag (a first run failed only on the Windows clock probe:
-the Windows Time service was stopped and Windows ran 2 h slow; 24/24 after the owner restarted it), items 8–10 on the
+the Windows Time service was stopped and Windows ran 2 h slow; 24/24 after the owner restarted it), items 8–10 (as then numbered; since the merge of 8 and 9 the same checks are items 8 and 10) on the
 release (assets + `.sha256`, `gh attestation verify` ×3 with the wrong-identity control failing, `install.sh --dry-run`
 in a disposable systemd container). Items 3, 6 and 12 belong to the E5 live gate (the extension). The first daemon release and its live install were the **E4 live
 gate** (plan §16): settings with refused probes → item 4 → the release-please cut and the observed `release.yml` run →
