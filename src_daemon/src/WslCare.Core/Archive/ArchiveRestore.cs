@@ -35,6 +35,9 @@ public static class RestoreOutcomes
 
     /// <summary>A month index that could not be read: what it holds is not known (C-3).</summary>
     public const string Unreadable = "unreadable";
+
+    /// <summary>Not started: the restore's budget (archive.restoreLimitMinutes) ran out before it (the gate round).</summary>
+    public const string Stopped = "stopped";
 }
 
 /// <summary>One session a restore looked at: what became of it and why.</summary>
@@ -51,7 +54,7 @@ public sealed record RestoreReport(int Restored, int AlreadyThere, int Refused, 
     {
         Restored = Restored + (session.Outcome is RestoreOutcomes.Restored or RestoreOutcomes.Partial ? 1 : 0),
         AlreadyThere = AlreadyThere + (session.Outcome == RestoreOutcomes.AlreadyThere ? 1 : 0),
-        Refused = Refused + (session.Outcome is RestoreOutcomes.Refused or RestoreOutcomes.NotFound or RestoreOutcomes.Unreadable ? 1 : 0),
+        Refused = Refused + (session.Outcome is RestoreOutcomes.Refused or RestoreOutcomes.NotFound or RestoreOutcomes.Unreadable or RestoreOutcomes.Stopped ? 1 : 0),
         Sessions = [.. Sessions, session],
     };
 }
@@ -82,12 +85,16 @@ public static class ArchiveRestore
     public sealed record RestoreSelection(IReadOnlyList<Candidate> Candidates, IReadOnlyList<RestoredSession> Answered);
 
     public static RestoreReport Restore(MoveContext c, IReadOnlyList<Candidate> candidates, bool acceptUnverified) =>
-        Restore(c, new RestoreSelection(candidates, []), acceptUnverified);
+        Restore(c, new RestoreSelection(candidates, []), acceptUnverified, static _ => false);
 
-    public static RestoreReport Restore(MoveContext c, RestoreSelection selection, bool acceptUnverified) =>
+    /// <summary>Every row answered, then each candidate restored — until <paramref name="wouldOverrun"/> says the next session (its
+    /// declared bytes) does not fit the budget (<c>archive.restoreLimitMinutes</c>, the coai code round): the rest are <c>stopped</c>.</summary>
+    public static RestoreReport Restore(MoveContext c, RestoreSelection selection, bool acceptUnverified, Func<long, bool> wouldOverrun) =>
         selection.Candidates.Aggregate(
             selection.Answered.Aggregate(RestoreReport.Empty, (report, row) => report.With(row)),
-            (report, candidate) => report.With(One(c, candidate, acceptUnverified)));
+            (report, candidate) => report.With(wouldOverrun(candidate.Entry.Files.Sum(f => f.Bytes))
+                ? Session(candidate.Entry, RestoreOutcomes.Stopped, 0, "the restore's budget (archive.restoreLimitMinutes) ran out before it; restore it again")
+                : One(c, candidate, acceptUnverified)));
 
     /// <summary>The statuses of an entry whose source is gone — the ones a session or a month restore takes.</summary>
     private static bool SourceGone(IndexEntry entry) => entry.Status is ArchiveIndex.Events.SourceRemoved or ArchiveIndex.Events.Split;
@@ -304,6 +311,7 @@ public static class ArchiveRestore
             }
 
             bytes += file.Bytes;
+            c.Progress(file.Bytes, true);
         }
 
         var restored = new IndexLine(ArchiveIndex.SchemaVersion, ArchiveIndex.Events.Restored, entry.EntryId, entry.Agent, c.Side, entry.Key, entry.Month, c.Clock.GetUtcNow(), c.Zone.Id, c.RunId, [], string.Empty);

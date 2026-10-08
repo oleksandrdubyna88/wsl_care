@@ -259,11 +259,12 @@ public static class ArchiveRun
     /// <summary>E9.S3: the reconcile first (an interrupted run is finished before anything is restored), then the restore.</summary>
     private static ArchiveRunReport Restored(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key, List<string> notes)
     {
-        var context = ContextOf(input, state, key, InUseView.NotChecked("a restore removes nothing"), static (_, _) => { });
+        var meter = new RunMeter(input, started);
+        var context = ContextOf(input, state, key, InUseView.NotChecked("a restore removes nothing"), meter.Moved);
         var reconcile = ArchiveReconcile.FromInflight(context);
         var targets = ArchiveTargets.Of(input.Paths, input.Files, input.Config, input.Restore.Agent, input.Environment);
         var selection = ArchiveRestore.Select(context, input.Files, input.Restore, targets);
-        var restore = ArchiveRestore.Restore(context, selection, input.Restore.AcceptUnverified);
+        var restore = ArchiveRestore.Restore(context, selection, input.Restore.AcceptUnverified, meter.WouldOverrun);
         return Answer(input, started, RunOutcomes.Done, string.Empty, reconcile with { Notes = [.. reconcile.Notes, .. notes] }, NotChecked, []) with { Restore = restore };
     }
 

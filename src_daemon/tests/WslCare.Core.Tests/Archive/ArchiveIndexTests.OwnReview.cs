@@ -24,6 +24,7 @@ public sealed partial class ArchiveIndexTests
     [InlineData("\"runId\":\"r1\",", "")]
     [InlineData("\"files\":[]", "\"files\":[null]")]
     [InlineData("\"files\":[]", "\"files\":null")]
+    [InlineData("\"key\":\"projects/p/s.jsonl\"", "\"key\":\"projects/p/s\\u0000.jsonl\"")]
     public void A_line_with_a_missing_field_is_skipped_never_thrown(string field, string replacement)
     {
         var line = WholeLine.Replace(field, replacement, StringComparison.Ordinal);

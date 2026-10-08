@@ -36,30 +36,9 @@ internal static class ArchiveRunCommand
         }
 
         var budget = TimeSpan.FromSeconds(request.BudgetSeconds > 0 ? request.BudgetSeconds : loaded.Config.Int(ConfigKeys.Archive.RunBudgetMinutes) * 60);
-        var gate = new object();
-        var answered = false;
-        void Line(ArchiveProgressLine line)
-        {
-            lock (gate)
-            {
-                // Review m1: Timer.Change does not wait for a callback already running — one that wakes after the answer writes nothing.
-                if (request.Json && !answered)
-                {
-                    Output.Progress(stdout, JsonSerializer.Serialize(line, WslCareJsonContext.Compact.ArchiveProgressLine));
-                }
-            }
-        }
-
-        var started = host.Clock.GetTimestamp();
-        using var heartbeat = new Timer(_ => Line(new ArchiveProgressLine("heartbeat", 0, 0, host.Clock.GetElapsedTime(started).TotalSeconds)), null, Silence(loaded.Config), Silence(loaded.Config));
-        var input = Input(host, loaded, request.Agent, budget, cancellationToken) with { Progress = Line };
-        var report = ArchiveRun.Run(input);
-        heartbeat.Change(Timeout.Infinite, Timeout.Infinite);
-        lock (gate)
-        {
-            answered = true;
-            return Answered(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveRunReport) : Render(report), report);
-        }
+        using var progress = new ArchiveProgress(stdout, stderr, request.Json, host.Clock, Silence(loaded.Config));
+        var report = ArchiveRun.Run(Input(host, loaded, request.Agent, budget, cancellationToken) with { Progress = progress.Line });
+        return progress.Answer(() => Answered(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveRunReport) : Render(report), report));
     }
 
     public static int ReconcileScan(Request.ArchiveReconcileScan request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
@@ -85,9 +64,11 @@ internal static class ArchiveRunCommand
         }
 
         var asked = new RestoreRequest(request.EntryIds, request.Agent, request.Month, request.Session, request.AcceptUnverified);
-        var report = ArchiveRun.Run(Input(host, loaded, request.Agent, TimeSpan.MaxValue, cancellationToken) with { Restore = asked });
+        var budget = TimeSpan.FromMinutes(loaded.Config.Int(ConfigKeys.Archive.RestoreLimitMinutes));
+        using var progress = new ArchiveProgress(stdout, stderr, request.Json, host.Clock, Silence(loaded.Config));
+        var report = ArchiveRun.Run(Input(host, loaded, request.Agent, budget, cancellationToken) with { Restore = asked, Progress = progress.Line });
         var text = request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveRunReport) : RenderRestore(report);
-        var exit = Answered(stdout, text, report);
+        var exit = progress.Answer(() => Answered(stdout, text, report));
         return exit == (int)ExitCode.Ok && report.Restore.Refused > 0 ? (int)ExitCode.RunFailed : exit;
     }
 
@@ -209,9 +190,14 @@ internal static class ArchiveRunCommand
         return text.ToString().TrimEnd('\r', '\n');
     }
 
-    private static string RenderStatus(ArchiveStatusReport report)
+    internal static string RenderStatus(ArchiveStatusReport report)
     {
         var text = new StringBuilder().AppendLine(CommandLine.Printable($"wsl-care archive status ({report.SideFolder}): lock {report.Lock.State}{(report.Lock.Pid > 0 ? $" (pid {report.Lock.Pid}, run {report.Lock.RunId})" : string.Empty)}; {report.Inflight.Count} on the way"));
+        foreach (var entry in report.Inflight)
+        {
+            text.AppendLine(CommandLine.Printable($"  {entry.State,-9} {entry.Agent} {entry.Key} ({entry.Files} file(s), {entry.Month})"));
+        }
+
         if (report.LastRun is { } last)
         {
             text.AppendLine(CommandLine.Printable($"  last run {last.RunId}: {last.Outcome}, copied {last.Copied}, removed {last.Removed}"));

@@ -73,6 +73,34 @@ public sealed partial class ArchiveRunTests
         File.ReadAllText(source).Should().Be("the transcript, resumed", "the newest entry, never the older snapshot");
     }
 
+    /// <summary>Gate round: a restore has a budget (archive.restoreLimitMinutes) — between sessions it stops once the time is up, and
+    /// the sessions it did not start are rows that fail the restore.</summary>
+    [Fact]
+    public void A_restore_past_its_budget_starts_no_further_session()
+    {
+        var source = ArchivedAndRemoved("s1");
+
+        var report = ArchiveRun.Run(Input(Config(), runId: "r3") with { Budget = TimeSpan.Zero, Restore = new RestoreRequest([], "claude-code", string.Empty, "projects/p/s1.jsonl", false) });
+
+        report.Restore.Restored.Should().Be(0);
+        report.Restore.Sessions.Should().ContainSingle().Which.Outcome.Should().Be(RestoreOutcomes.Stopped);
+        File.Exists(source).Should().BeFalse();
+    }
+
+    /// <summary>Gate round: a restore reports its progress — one <c>file</c> line per file put back, naming nothing — so a caller's
+    /// silence watch sees it move.</summary>
+    [Fact]
+    public void A_restore_reports_a_progress_line_per_file()
+    {
+        ArchivedAndRemoved("s1");
+        var lines = new List<ArchiveProgressLine>();
+
+        var report = ArchiveRun.Run(Input(Config(), runId: "r3") with { Progress = lines.Add, Restore = new RestoreRequest([], "claude-code", string.Empty, "projects/p/s1.jsonl", false) });
+
+        report.Restore.Restored.Should().Be(1);
+        lines.Should().ContainSingle(l => l.Progress == "file").Which.Files.Should().Be(1);
+    }
+
     /// <summary>C-2: two removed entries of one session name (a new session at the old name, archived and removed again) — the restore
     /// takes the NEWEST.</summary>
     [Fact]

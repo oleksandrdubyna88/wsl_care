@@ -3326,7 +3326,7 @@ section's *as built* deviations.
 | `archive.previewTimeoutSeconds` | B | 10–600 | 120 | lower | the preview child's ceiling (counted in the run's worst case) |
 | `archive.reachabilitySeconds` | B | 1–60 | 10 | lower | the base `stat` child before the long one |
 | `archive.progressSilenceSeconds` | B | 10–600 | 60 | lower | the child prints a line at least this often |
-| `archive.restoreLimitMinutes` (built under this name; planned as `restoreTimeoutMinutes`, 1–1440, 240) | B | 1–59 | 59 | lower | A19's child ceiling (a button, never in a timer run) — under the least `commands.maxTimeoutHours` with the 60 s a ceiling keeps (review round C5) |
+| `archive.restoreLimitMinutes` (built under this name; planned as `restoreTimeoutMinutes`, 1–1440, 240) | B | 1–59 | 59 | lower | A19's child ceiling (a button, never in a timer run), and since the coai code round over S2b/S3 the budget `archive restore` itself keeps between sessions — under the least `commands.maxTimeoutHours` with the 60 s a ceiling keeps (review round C5) |
 | `archive.maxSessionsPerRun` | B | 1–100 000 | 1 000 (review round C3; was 5 000) | lower | bounds one run, its in-flight file and its answer |
 | `archive.maxIndexBytes` | B | 1 MiB–256 MiB | 64 MiB | lower | one month index read |
 | `archive.maxStateFileBytes` | B | 64 KiB–64 MiB | 16 MiB (rebase onto main 2026-10-07: the hourly timer must stay valid; review round C3 had 8 MiB; was 4 MiB) | lower | `inflight.json`, `summary.json`, `restored.json` |
@@ -3745,6 +3745,32 @@ that hashes equal at removal time. The coai gate was not reachable this session 
 | C-m4 | a changed base mount had no way out; an unparseable `base.json` was recorded over | **Fixed:** an existing record that does not read is a refusal naming the file; the mount refusal names the recovery (mount it as before, or remove `base.json` by hand once the base is the same storage) | `Archive/ArchiveRun.cs`, `Archive/ArchiveState.cs` |
 | C-m5 | the first Mermaid diagram of `module_archive.md` was broken; the file linked itself | **Fixed** | `research/module_archive.md` |
 | C-m6 | the crash theory checked the main file only; the planned removed-equals-archived test and a read-only row were missing | **Fixed:** the companion is checked in every crash row; `Every_removed_file_equals_an_archived_copy_the_index_recorded`; `A_read_only_base_stops_the_run_before_any_copy` (Linux) | the test files |
+
+#### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
+
+The coai `review_code` round that the S2b and S3 rounds recorded as OWED, over `0f6d68c..9da05f2` (rebased on `1b5d652`; reviewers
+codex and gemini, 8 in all): verdict *good_enough*, 19 findings. They were resolved before the fixes, and the accepted ones were folded
+into ONE `fix(daemon): the coai code round over E9.S2b/S3` commit. Each fix has its red run or its break-it check
+(`research/module_tests.md` § *The E9.S2b/S3 gate round*). Each row OVERRIDES the text it names. No finding changed the design, so no
+consult was owed.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| 0 | `archive run --agent` repeated its own agent check instead of the restore's | **Fixed:** both verbs ask `AgentValueProblem` (one rule: a known archivable id or `extra:<name>`, never a list) | `Cli/CommandLine.cs` |
+| 1 | `architecture.md` still said restore and list were not built | **Fixed:** the module-map row names E9.S3 as built | `research/architecture.md` |
+| 2, 9 | the heartbeat was a `System.Threading.Timer`, and an `IOException` while writing a line (a closed pipe) escaped and crashed the process | **Fixed:** one `ArchiveProgress` writer for run and restore. Its heartbeat comes from a `PeriodicTimer` on the host clock. A failed write ENDS the progress and never the run, and the answer is still written. Nothing is written after the answer (review m1 kept) | `Cli/Commands/ArchiveProgress.cs` |
+| 3, 14 | `RestoreShapeProblem` was over complexity 4 | **Fixed:** `ModeProblem` (one way of naming, `--accept-unverified` only with `--entry`), the agent check, `NamedProblem`, `SessionProblem` — each ≤ 4 | `Cli/CommandLine.cs` |
+| 8 | `--agent` given with `--entry` was not validated (`--agent ../outside` exited 0) | **Fixed:** an agent given is always checked, whatever names the entries. Red first: exit 0 against 2 | the same |
+| 10 | a restore had no budget and reported no progress | **Fixed:** `archive.restoreLimitMinutes` (59; a machine-only ceiling) is the restore's budget. Between sessions, the run meter asks whether the next session's declared bytes fit; the sessions not started are rows `stopped` (counted as refused, exit 1). Each file put back is one `file` progress line. Red first: past a zero budget the restore restored 1 | `Archive/ArchiveRestore.cs`, `Archive/ArchiveRun.cs`, `Cli/Commands/ArchiveRunCommand.cs` |
+| 11, 17 | without `--json` the verbs said nothing until the answer | **Fixed:** a short human line on STDERR per event (counts, MiB and seconds, never a name); stdout keeps only the answer | `Cli/Commands/ArchiveProgress.cs` |
+| 13 | the human `archive status` gave only the count of entries on their way | **Fixed:** one line per in-flight entry (state, agent, key, files, month), printable-escaped. Red first: the key was missing | `Cli/Commands/ArchiveRunCommand.cs` (`RenderStatus`) |
+| 16 | `IsPlainRelative` accepted control characters (a NUL inside a key) | **Fixed:** any `char.IsControl` refuses. An index line carrying one is malformed (skipped and counted), and `--session` refuses it. Red first: the NUL row was read | `Archive/ArchiveIndex.cs` |
+| 4 | `archive list` should not need a writable base | **Rejected:** list only reads, but it reads through the same recorded base and mount check as the run. A base that changed under it carries a note naming the change (the S3 mount note); it is never written to | — |
+| 5 | split the restore out of the run pipeline | **Rejected:** the restore needs the run's lease, its reconcile of in-flight entries and its state writes. A second pipeline would be a second copy of the protocol, which `reuse-first` forbids | — |
+| 6 | the judging belongs in Core, not the CLI | **Rejected:** the CLI only parses and renders; every judgement is in `ArchiveRestore` / `ArchiveRun`. E9.S4 runs the verbs as a CLI child, so the CLI's argument checks are the boundary that has to hold | — |
+| 7 | a restore's temporary name might lack the run id | **Rejected, false:** `Leased` sets the RunId before any write; the name is `<name>.wsl-care-r-<runId>`, and the permit matches that shape only | — |
+| 12, 18 | `archive list` should stream and bound its memory | **Rejected for now:** one month's index is bounded by `archive.maxStateFileBytes`, and the list reads months one at a time. Streaming the answer would change its JSON contract (the golden); recorded for E9.S5 should a real base reach that size | — |
+| 15 | `InflightBook` should be a record | **Rejected:** it is a stateful service over the in-flight file (load, change, write under the lease) — the convention keeps those as classes | — |
 
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 

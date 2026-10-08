@@ -119,7 +119,8 @@ C-M4 / S-M2).
 | `archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveList.cs` | `contracts/golden/head/archive-list.json`; read-only (no lock, no lease, no key made) | built (E9.S3) |
 | A13 / A19 | — | — | E9.S4 |
 
-Every built verb runs as the user; root is refused with exit 81.
+Every built verb runs as the user; root is refused with exit 81. The progress of `archive run` and `archive restore` goes through one writer, `WslCare.Cli/Commands/ArchiveProgress.cs`
+(JSON lines on stdout with `--json`, human lines on stderr without it).
 
 ## The seam's guarantees (E9.S2a, its gate round and its own review round)
 
@@ -203,6 +204,14 @@ flowchart TD
     - Unread months and unknown ids are rows (`unreadable`, `not-found`) and fail the restore.
     - A `split` entry restores only its missing files (`partial`).
     - The disk must hold the declared bytes.
+  - **After the coai code round over S2b/S3** (2026-10-08, plan §15r *E9.S2b/S3 gate round*):
+    - A restore has a budget, `archive.restoreLimitMinutes`. Between sessions the run meter asks whether the next session's declared
+      bytes fit; a session not started is a row `stopped` and fails the restore.
+    - Each file put back is one `file` progress line. Run and restore share one writer, `Cli/Commands/ArchiveProgress.cs`:
+      JSON lines with `--json`, a short human line on stderr without it, a `PeriodicTimer` heartbeat, and nothing after the
+      answer. A closed pipe ends the progress, never the run.
+    - An agent given with `--entry` is validated. A key with a control character is not a plain relative path: an index line
+      carrying one is malformed.
 - **`restored.json`** is read as a closed result: a file that does not read is never written over. An entry leaves after
   `archive.restoredKeepDays`.
 - **Re-archive** (`ArchiveCopy.Rearchived`): a unit in `restored.json` is hashed. If it is identical to its entry, one `archived`
@@ -216,6 +225,7 @@ flowchart TD
   - `--run` lists the entries that run's lines touched.
   - A base mounted differently than at its first run is not refused (the list reads only); a note names the recorded mount and
     today's (owner decision 2026-10-07).
+- **`archive status`** (human form) names each entry on its way: state, agent, key, files and month (the gate round).
 
 ## External dependencies
 

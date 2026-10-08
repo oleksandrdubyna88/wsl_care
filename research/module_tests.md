@@ -2656,6 +2656,38 @@ Both checks are now red.
 **Owed:** `archive-restore.json` from a scene with a restored and an already-there session (C-8a). A golden can only be written on
 Linux.
 
+### The E9.S2b/S3 gate round (2026-10-08, plan §15r *E9.S2b/S3 gate round*)
+
+| Guarantee | Tests |
+|---|---|
+| 8: an agent given with `--entry` is validated (exit 2) | `Cli.Tests/ArchiveRestoreCommandTests` (the `--entry … --agent ../outside` usage row) |
+| 0: `archive run --agent` refuses through the same rule as the restore | `Cli.Tests/ArchiveCommandTests` (the existing unknown-agent rows) |
+| 10: a restore past its budget starts no further session (a `stopped` row that fails it), and reports one `file` progress line per file | `ArchiveRunTests.RestoreReview.cs` — `A_restore_past_its_budget_starts_no_further_session`, `A_restore_reports_a_progress_line_per_file` |
+| 13: the human `archive status` names each session on its way | `Cli.Tests/ArchiveRestoreCommandTests.The_human_status_names_each_session_on_its_way` |
+| 16: an index line whose key carries a control character is malformed | `ArchiveIndexTests.OwnReview.cs` (the NUL row of `A_line_with_a_missing_field_is_skipped_never_thrown`) |
+| 2, 9, 11, 17, m1: one progress writer — human lines on stderr without `--json`, JSON lines on stdout with it, a heartbeat when the silence runs out, nothing after the answer, a broken pipe ends the progress and never the run | `Cli.Tests/ArchiveProgressTests` (5 facts) |
+
+**Red first** (each run against the unfixed code):
+- 13: the line `…lock free; 1 on the way` did not name the key.
+- 8: `--entry 0123456789abcdef --agent ../outside` exited 0, not 2.
+- 10: `Expected report.Restore.Restored to be 0, but found 1`.
+- 16: the NUL row was read (`Expected read.Records to be empty`).
+
+The progress tests and the per-file progress row were written with their fix; their teeth are the break-it checks below.
+
+**Teeth, Windows:** 9 checks, all red, each source restored byte for byte.
+- control characters let through: 1;
+- the agent not checked with `--entry`: 2;
+- the status lists no session: 1;
+- the restore budget ignored: 1;
+- a restore reports no file progress: 1;
+- a broken pipe thrown: 1;
+- human progress not written: 2;
+- a line after the answer: 2;
+- no heartbeat: 1.
+
+**Teeth, Linux:** run with the S3 checks in WSL (below, when recorded).
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

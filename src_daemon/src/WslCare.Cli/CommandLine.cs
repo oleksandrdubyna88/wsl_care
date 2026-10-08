@@ -598,8 +598,7 @@ internal static class CommandLine
         ReadOptions("archive run", rest, [AgentFlag, BudgetFlag], [JsonFlag]) switch
         {
             (_, { } failure) => failure,
-            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && (agent.Contains(',', StringComparison.Ordinal) || Core.Config.ConfigValidation.Parse(Core.Config.ConfigKeys.Archive.Agents, agent) is not Core.Config.ValueCheck.Ok) =>
-                new Request.Failed($"\"{BinaryName} archive run --agent\" takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)} or {Core.Agents.ExtraAgent.IdPrefix}<name>; got \"{Printable(agent)}\"."),
+            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive run\" {bad}."),
             var (options, _) when options.Values.TryGetValue(BudgetFlag, out var budget) && !ValidBudget(budget) =>
                 new Request.Failed($"\"{BinaryName} archive run {BudgetFlag}\" takes a whole number of seconds from 1 to {Core.Config.ConfigKeys.Archive.RunBudgetMinutes.Max * 60}; got \"{Printable(options.Values[BudgetFlag])}\"."),
             var (options, _) => new Request.ArchiveRun(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.TryGetValue(BudgetFlag, out var b) ? int.Parse(b, System.Globalization.CultureInfo.InvariantCulture) : 0, options.Flags.Contains(JsonFlag)),
@@ -630,18 +629,30 @@ internal static class CommandLine
                 options.Flags.Contains(JsonFlag)),
         };
 
-    private static string RestoreShapeProblem(Options options)
+    /// <summary>The restore's options, each rule its own check (complexity ≤ 4, the coai code round): one way to name what is restored,
+    /// --accept-unverified with --entry only, an agent always validated when given, then the named way's own value.</summary>
+    private static string RestoreShapeProblem(Options options) =>
+        ModeProblem(options) is { Length: > 0 } mode ? mode
+        : options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } badAgent ? badAgent
+        : NamedProblem(options.Values);
+
+    private static string ModeProblem(Options options)
     {
         var v = options.Values;
-        var modes = (v.ContainsKey(EntryFlag) ? 1 : 0) + (v.ContainsKey(MonthFlag) ? 1 : 0) + (v.ContainsKey(SessionFlag) ? 1 : 0);
+        var modes = new[] { EntryFlag, MonthFlag, SessionFlag }.Count(v.ContainsKey);
         return modes != 1 ? $"takes exactly one of {EntryFlag} <id>[,<id>...], {AgentFlag} <id> {MonthFlag} <yyyy-MM>, {AgentFlag} <id> {SessionFlag} <path>"
             : options.Flags.Contains(AcceptUnverifiedFlag) && !v.ContainsKey(EntryFlag) ? $"takes {AcceptUnverifiedFlag} only with {EntryFlag} <id>[,<id>...]: name each unverified entry archive list showed — a month or a session could take an entry planted on the share"
-            : v.ContainsKey(EntryFlag) ? EntryProblem(v[EntryFlag])
-            : !v.ContainsKey(AgentFlag) ? $"needs {AgentFlag} <id> with {(v.ContainsKey(MonthFlag) ? MonthFlag : SessionFlag)}"
-            : AgentValueProblem(v[AgentFlag]) is { Length: > 0 } agent ? agent
-            : v.TryGetValue(MonthFlag, out var month) ? MonthProblem(month)
-            : Core.Archive.ArchiveIndex.IsPlainRelative(v[SessionFlag]) ? string.Empty : $"{SessionFlag} takes the session's path relative to the agent's folder (plain names joined by /); got \"{Printable(v[SessionFlag])}\"";
+            : string.Empty;
     }
+
+    private static string NamedProblem(IReadOnlyDictionary<string, string> v) =>
+        v.TryGetValue(EntryFlag, out var ids) ? EntryProblem(ids)
+        : !v.ContainsKey(AgentFlag) ? $"needs {AgentFlag} <id> with {(v.ContainsKey(MonthFlag) ? MonthFlag : SessionFlag)}"
+        : v.TryGetValue(MonthFlag, out var month) ? MonthProblem(month)
+        : SessionProblem(v[SessionFlag]);
+
+    private static string SessionProblem(string session) =>
+        Core.Archive.ArchiveIndex.IsPlainRelative(session) ? string.Empty : $"{SessionFlag} takes the session's path relative to the agent's folder (plain names joined by /); got \"{Printable(session)}\"";
 
     private static string EntryProblem(string ids) =>
         ids.Split(',').FirstOrDefault(id => !Core.Archive.ArchiveIndex.IsEntryId(id)) is { } bad ? $"{EntryFlag} takes entry ids of 16 hex, comma-separated; got \"{Printable(bad)}\"" : string.Empty;

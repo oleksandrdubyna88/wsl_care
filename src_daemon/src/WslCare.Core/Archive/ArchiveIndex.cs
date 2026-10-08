@@ -148,6 +148,7 @@ public static partial class ArchiveIndex
     /// <summary>A path of one or more plain names joined by <c>/</c>: not rooted, no empty, <c>.</c> or <c>..</c> segment, no <c>\</c>.</summary>
     public static bool IsPlainRelative(string path) =>
         !string.IsNullOrEmpty(path) && !path.Contains('\\', StringComparison.Ordinal) && !path.StartsWith('/') && !path.Contains(':', StringComparison.Ordinal)
+        && !path.Any(char.IsControl)
         && path.Split('/').All(segment => segment is not ("" or "." or ".."));
 
     /// <summary>The entries of <paramref name="records"/> merged per id: files from the LATEST <c>archived</c> event (correctness M1: a

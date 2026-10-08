@@ -36,6 +36,9 @@ public sealed class ArchiveRestoreCommandTests : IDisposable
     [InlineData("archive", "restore", "--agent", "claude-code", "--session", "/home/me/.claude/projects/p/s.jsonl")]
     [InlineData("archive", "restore", "--agent", "claude-code", "--month", "2026-09", "--accept-unverified")]
     [InlineData("archive", "restore", "--agent", "claude-code", "--session", "projects/p/s.jsonl", "--accept-unverified")]
+    [InlineData("archive", "restore", "--entry", "0123456789abcdef", "--agent", "../outside")]
+    [InlineData("archive", "run", "--agent", "claude-code,codex")]
+    [InlineData("archive", "run", "--agent", "../outside")]
     [InlineData("archive", "list", "--month", "september")]
     [InlineData("archive", "list", "--run", "not-a-run")]
     [InlineData("archive", "list", "--agent", "a,b")]
@@ -77,5 +80,15 @@ public sealed class ArchiveRestoreCommandTests : IDisposable
     {
         Commands.ArchiveRunCommand.RootRefusalFor(HostSide.Windows, "restore").Should().Contain("not elevated").And.NotContain("uid 0");
         Commands.ArchiveRunCommand.RootRefusalFor(HostSide.Wsl, "restore").Should().Contain("not as uid 0");
+    }
+
+    /// <summary>Gate round: the human status names each session on its way — its agent, key and state — not only their count.</summary>
+    [Fact]
+    public void The_human_status_names_each_session_on_its_way()
+    {
+        var report = new Core.Archive.ArchiveStatusReport(1, "wsl", "wsl-host-distro", "/mnt/v/ai-archive", new Core.Archive.ArchiveLockReport("free", 0, 0, string.Empty, null),
+            [new Core.Archive.ArchiveInflightReport("claude-code", "projects/p/s1.jsonl", "2026/09", Core.Archive.InflightStates.Removing, 2, null)], null);
+
+        Commands.ArchiveRunCommand.RenderStatus(report).Should().Contain("projects/p/s1.jsonl").And.Contain("removing").And.Contain("claude-code");
     }
 }
