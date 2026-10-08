@@ -189,7 +189,8 @@ public sealed partial class ArchiveFilesTests : IDisposable
 
         Files.RemoveVerified(On(Layout), quarantined, Sha("something else"), copy, Removal).Should().BeOfType<VerifiedRemoval.Kept>();
         File.Exists(quarantined).Should().BeTrue("a file whose bytes differ from the copy is never removed");
-        Files.RemoveVerified(On(Layout), quarantined, Sha("the session"), copy, Removal).Should().BeOfType<VerifiedRemoval.Removed>();
+        var removed = Files.RemoveVerified(On(Layout), quarantined, Sha("the session"), copy, Removal);
+        removed.Should().BeOfType<VerifiedRemoval.Removed>("an equal file nobody else has open is removed (answered: {0})", removed);
         File.Exists(quarantined).Should().BeFalse();
         Files.RemoveVerified(On(Layout), quarantined, Sha("the session"), copy, Removal).Should().BeOfType<VerifiedRemoval.Gone>();
     }

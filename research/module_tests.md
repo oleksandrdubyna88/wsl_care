@@ -2363,6 +2363,17 @@ with any permit — 1. The scan: a missed copy pattern — 1; missed natives —
 after the hash (no test can open the quarantine name between the lease and the check without a race of its own — the stated
 residual).
 
+**A flake seen once, not reproduced (2026-10-08).** CI run 37793320799 (head e1b7f74, the linux-arm64 leg; the job passed on
+its rerun) failed `ArchiveFilesTests.A_quarantined_file_is_removed_only_when_it_hashes_equal_to_its_archived_copy`: the equal
+removal answered `Kept`, not `Removed`. Kept is the safe direction (the file stays; the next run tries again), but the test
+printed only the type, not the reason. The suspected cause: the write lease was refused or broken by an opener outside the test
+(EAGAIN on `F_SETLEASE`, or an open during the hash). This symptom is already reproduced on purpose by
+`A_quarantined_file_another_open_descriptor_holds_is_never_removed` and the two other-process rows. **The attempt to reproduce
+the flake itself:** the Files namespace run 60 times and the whole Core suite 8 times in WSL (x64, under load), with no failure.
+No earlier failed `ci-daemon` run (the last 20) shows this test. **Changed:** the assertion now prints the answer, so a next
+occurrence names its reason (lease refused, lease broken, or bytes). The product is unchanged: a retry inside the run would add a
+wait for a cause that is not shown; this is to be decided if the named reason comes back.
+
 ### The E9.S2a gate round (2026-10-06, plan §15r *E9.S2a gate round*)
 
 The coai code round's six findings over the seam. The swap tests use a new fault-seam step, `PathChecked` — asked after the way
