@@ -115,9 +115,12 @@ public sealed class ClockFixTests : IDisposable
         FullRunObserved(Now.AddHours(-4), 11);
         Synchronized(false);
         WindowsAhead(12);
+        ReferenceAhead(12);
         var (context, commands) = For();
 
-        var run = await _action.RunAsync(context, await _action.PreviewAsync(context, commands, CancellationToken.None), commands, CancellationToken.None);
+        var preview = await _action.PreviewAsync(context, commands, CancellationToken.None);
+        preview.Skip.Should().BeEmpty("the reference agrees with Windows: the distro is the one 12 s behind, so the engine would run it");
+        var run = await _action.RunAsync(context, preview, commands, CancellationToken.None);
 
         run.Succeeded.Should().BeTrue();
         _runner.Commands.Should().Contain("hwclock -s").And.NotContain(c => c.StartsWith("chronyc", StringComparison.Ordinal));
@@ -128,12 +131,42 @@ public sealed class ClockFixTests : IDisposable
         _now = Now.AddHours(2);
         FullRunObserved(Now.AddHours(1), 12);
         WindowsAhead(12);
+        ReferenceAhead(12);
         (await PreviewAsync()).Decision.Should().Match<TriggerDecision>(d => !d.Fired && d.Reason.Contains("already corrected once"));
 
         // A full run that saw the clock agree closes the event: a NEW drift is corrected again.
         FullRunObserved(Now.AddHours(1.5), 1);
         FullRunObserved(Now.AddHours(1.9), 13);
-        (await PreviewAsync()).Decision.Fired.Should().BeTrue();
+        var again = await PreviewAsync();
+        again.Preview.Skip.Should().BeEmpty();
+        again.Decision.Fired.Should().BeTrue();
+    }
+
+    /// <summary>Code round (coai #12): a preview whose clocks agree asks no reference — no HEAD to the network for nothing.</summary>
+    [Fact]
+    public async Task Clocks_that_agree_ask_no_reference()
+    {
+        Synchronized(false);
+        WindowsAhead(3);
+
+        (await PreviewAsync()).Preview.Skip.Should().Contain("agrees with Windows'");
+        _runner.Commands.Should().NotContain(c => c.StartsWith("curl", StringComparison.Ordinal)).And.NotContain(c => c.Contains("timesync-status", StringComparison.Ordinal));
+    }
+
+    /// <summary>Own code review #5 / coai #7: timesyncd synchronised while the REFERENCE says the distro is off — the skip
+    /// keeps plan §15 #10 (a synchronised clock is not stepped) but never claims "not WSL's".</summary>
+    [Fact]
+    public async Task A_synchronised_skip_never_says_not_wsls_when_the_reference_says_the_distro_is_off()
+    {
+        FullRunObserved(Now.AddHours(-4), 600);
+        Synchronized(true);
+        WindowsAhead(600);
+        ReferenceAhead(600);
+
+        var skip = (await PreviewAsync()).Preview.Skip;
+
+        skip.Should().Contain("synchronised").And.NotContain("not WSL's");
+        skip.Should().Contain("the distro's clock is -600.5 s off");
     }
 
     /// <summary>The incident of 2026-10-08 (research/2026-10-08_windows_time_stopped.md): Windows 7 200 s slow on two
@@ -213,9 +246,11 @@ public sealed class ClockFixTests : IDisposable
         FullRunObserved(Now.AddHours(-4), 11);
         Synchronized(false);
         WindowsAhead(-15);
+        ReferenceAhead(-15);
         var (context, commands) = For();
 
         var preview = await _action.PreviewAsync(context, commands, CancellationToken.None);
+        preview.Skip.Should().BeEmpty("the reference agrees with Windows: the distro is the one behind");
         await _action.RunAsync(context, preview, commands, CancellationToken.None);
 
         preview.What.Should().StartWith("chronyc makestep");

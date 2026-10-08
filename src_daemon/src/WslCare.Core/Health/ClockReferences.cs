@@ -40,7 +40,7 @@ public static class ClockReferences
 
     /// <summary>Why the measurement is void — the wall clock moved more than the tolerance away from the monotonic one since
     /// <paramref name="mark"/> — or empty.</summary>
-    public static string Jumped(ClockMark mark, TimeProvider clock)
+    private static string Jumped(ClockMark mark, TimeProvider clock)
     {
         var wall = clock.GetUtcNow() - mark.Wall;
         var jump = (wall - clock.GetElapsedTime(mark.Timestamp)).TotalSeconds;

@@ -48,6 +48,10 @@ public sealed record HealthSample(
     /// <summary>The independent clock reference (PLAN_windows_time_guard.md D2), measured right after the Windows clock.</summary>
     public Reading<ClockReference> ClockReference { get; init; } = Reading.Missing<ClockReference>("not read");
 
+    /// <summary>Which clock is wrong (D3), judged ONCE when the sample is taken — the run detail and the verdicts project it,
+    /// neither re-judges (code round, coai #9).</summary>
+    public ClockJudgement ClockJudgement { get; init; } = ClockStandings.Unmeasured("not read");
+
     /// <summary>journald's "Time jumped backwards" in the last 4 h of this boot, counted on the monotonic clock (D4).</summary>
     public Reading<int> TimeJumpsBack { get; init; } = Reading.Missing<int>("not read");
 

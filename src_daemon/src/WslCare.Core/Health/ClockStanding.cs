@@ -126,6 +126,9 @@ public static class ClockStandings
         _ => Invariant($"Windows ({windowsOff:+0.0;-0.0} s) and the distro ({wslOff:+0.0;-0.0} s) agree with {source} within {tolerance} s"),
     };
 
+    /// <summary>No judgement was asked for (a preview whose clocks agree); unknown, with why.</summary>
+    public static ClockJudgement Unmeasured(string reason) => Unknown(reason);
+
     private static ClockJudgement Unknown(string reason) => new(ClockStanding.Unknown, 0, 0, false, string.Empty, reason);
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);

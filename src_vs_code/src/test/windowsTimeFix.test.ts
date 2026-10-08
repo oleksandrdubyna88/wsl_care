@@ -73,17 +73,21 @@ test('the request is ONE absolute PowerShell, the inner script travelling encode
   assert.deepEqual(r.args.slice(0, 3), ['-NoProfile', '-NonInteractive', '-Command']);
   assert.equal(r.args.length, 4);
   assert.equal(r.timeoutMs, 180_000);
-  const b64 = /-EncodedCommand','([A-Za-z0-9+/=]+)'/.exec(r.args[3] ?? '')?.[1] ?? '';
+  const b64 = /-EncodedCommand ([A-Za-z0-9+/=]+)'/.exec(r.args[3] ?? '')?.[1] ?? '';
   assert.equal(Buffer.from(b64, 'base64').toString('utf16le'), innerScript(true), 'the encoded command decodes to exactly the script the modal shows');
-  assert.match(r.args[3] ?? '', new RegExp(`-FilePath '${POWERSHELL.replace(/\\/g, '\\\\').replace(/\./g, '\\.')}' -Verb RunAs -Wait -PassThru`));
+  assert.match(r.args[3] ?? '', new RegExp(`ProcessStartInfo -ArgumentList '${POWERSHELL.replace(/\\/g, '\\\\').replace(/\./g, '\\.')}'`));
 });
 
-test('the UAC refusal Start-Process throws is caught as 1223, any other launch failure as 13', () => {
+test('the UAC refusal is caught as the Win32Exception Process.Start throws (1223), any other launch failure as 13', () => {
   const outer = outerScript(POWERSHELL, innerScript(true));
 
-  assert.match(outer, /^try \{ \$p = Start-Process /);
-  assert.match(outer, /catch \{ \$e = \$_\.Exception; while \(\$null -ne \$e\) \{ if \(\$e\.NativeErrorCode -eq 1223\) \{ exit 1223 \}; \$e = \$e\.InnerException \}; exit 13 \}/);
-  assert.match(outer, /exit \$p\.ExitCode$/);
+  // Own code review #1: Start-Process -Verb RunAs rethrows the refusal as an InvalidOperationException carrying only its
+  // message, so 1223 could never be read; System.Diagnostics.Process.Start throws the Win32Exception itself.
+  assert.doesNotMatch(outer, /Start-Process/);
+  assert.match(outer, /^\$psi = New-Object System\.Diagnostics\.ProcessStartInfo -ArgumentList '/);
+  assert.match(outer, /\$psi\.Verb = 'runas'; \$psi\.UseShellExecute = \$true; \$psi\.WindowStyle = 'Hidden'/);
+  assert.match(outer, /try \{ \$p = \[System\.Diagnostics\.Process\]::Start\(\$psi\) \} catch \[System\.ComponentModel\.Win32Exception\] \{ if \(\$_\.Exception\.NativeErrorCode -eq 1223\) \{ exit 1223 \}; exit 13 \} catch \{ exit 13 \}/);
+  assert.match(outer, /\$p\.WaitForExit\(\); exit \$p\.ExitCode$/);
 });
 
 test('no SystemRoot drive folder, or a path PowerShell could not quote, builds no request at all', () => {
@@ -136,7 +140,7 @@ test('without the Automatic setting the modal says it does not change how the se
 
   assert.doesNotMatch(off.prompts[0]?.detail ?? '', /Set-Service/);
   assert.match(off.prompts[0]?.detail ?? '', /does not change how the service starts/);
-  assert.doesNotMatch(Buffer.from(/-EncodedCommand','([^']+)'/.exec(off.requests[0]?.args[3] ?? '')?.[1] ?? '', 'base64').toString('utf16le'), /Set-Service/);
+  assert.doesNotMatch(Buffer.from(/-EncodedCommand ([A-Za-z0-9+/=]+)'/.exec(off.requests[0]?.args[3] ?? '')?.[1] ?? '', 'base64').toString('utf16le'), /Set-Service/);
 });
 
 test('the panel offers the fix only on the daemon\'s own verdicts', () => {

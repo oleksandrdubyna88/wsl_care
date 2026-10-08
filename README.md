@@ -605,7 +605,7 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   elevated — Windows' UAC asks you — to set the service to start Automatic (`wslCare.windowsTime.setAutomaticStart`,
   default on), start it and run `w32tm /resync /force`; then a full check runs so the panel shows the result. Nothing
   else on Windows is changed, and nothing restarts the service if other software stops it again (planned: a scheduled
-  guard, `todo/PLAN_windows_time_guard.md` story 2).
+  guard, `todo/PLAN_windows_time_task.md`).
 - **The cleanup buttons (E6.S3).** Each cleanup row has **Clean** and **Select**; **Clean selected (n)** runs every ticked
   row as ONE run; **Run full check now** starts a full measurement (it does not clean); a wedged run of the daemon's own
   units gets **Stop** (any other wedged run is named with its pid). A press asks the daemon for a fresh preview, shows it in

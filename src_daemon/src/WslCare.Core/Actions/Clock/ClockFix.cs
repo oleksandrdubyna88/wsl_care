@@ -86,8 +86,7 @@ public sealed class ClockFix : ICleanupAction
             return ActionPreview.Unavailable(what, $"the Windows clock could not be observed: {now.Unavailable}");
         }
 
-        var reference = await ClockReferences.MeasureAsync(commands.AsRunner(), context.Clock, mark, cancellationToken).ConfigureAwait(false);
-        var judgement = ClockStandings.Judge(now, reference, context.Config.Int(ConfigKeys.Clock.ReferenceToleranceSeconds));
+        var judgement = await JudgeAsync(context, commands, mark, now, max, cancellationToken).ConfigureAwait(false);
 
         var previous = LastFullRun.Read(context.Paths, context.Files, context.Clock).WindowsClock.Map(a => a.Value);
         var last = Read(context.Paths, context.Files);
@@ -95,6 +94,19 @@ public sealed class ClockFix : ICleanupAction
         var item = new ActionItem("clock", "the distro's clock", null, string.Create(CultureInfo.InvariantCulture, $"{now.OffsetSeconds:+0.00;-0.00} s off Windows' (launch latency {now.LaunchLatencySeconds:0.00} s subtracted)"));
         var preview = ActionPreview.Of(what, 1, null, "a live observation of the Windows clock, and the last full run's", facts, Refusal(context, last), [item]);
         return await SkipAsync(preview, now, judgement, max, commands, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Which clock is wrong — asked only when the clocks disagree beyond <c>clock.maxDriftSeconds</c>: a preview whose
+    /// clocks agree sends no request to the network (code round, coai #12).</summary>
+    private static async Task<ClockJudgement> JudgeAsync(ActionContext context, ActionCommands commands, ClockMark mark, WindowsClockSample now, int max, CancellationToken cancellationToken)
+    {
+        if (Math.Abs(now.OffsetSeconds) <= max)
+        {
+            return ClockStandings.Unmeasured("the clocks agree: no reference was asked");
+        }
+
+        var reference = await ClockReferences.MeasureAsync(commands.AsRunner(), context.Clock, mark, cancellationToken).ConfigureAwait(false);
+        return ClockStandings.Judge(now, reference, context.Config.Int(ConfigKeys.Clock.ReferenceToleranceSeconds));
     }
 
     /// <summary>The timer: a drift on two observations that has not been corrected yet.</summary>
@@ -201,10 +213,17 @@ public sealed class ClockFix : ICleanupAction
     public static string SkipReason(WindowsClockSample now, ClockJudgement judgement, int max, bool synchronized) => (synchronized, Math.Abs(now.OffsetSeconds) <= max) switch
     {
         (true, true) => "timesyncd/chrony reports the clock synchronised: it is not stepped (plan 15 #10)",
-        (true, false) => Invariant($"the Windows clock is wrong, not WSL's: timesyncd/chrony reports the distro's clock synchronised to NTP and Windows is {now.OffsetSeconds:+0.00;-0.00} s off it — {ClockStandings.WindowsFix}"),
+        (true, false) => SynchronisedSkip(now, judgement),
         (false, true) => Invariant($"the clock agrees with Windows' ({now.OffsetSeconds:+0.00;-0.00} s, the limit is {max} s)"),
         _ => ReferenceSkip(judgement, max),
     };
+
+    /// <summary>timesyncd keeps the distro on NTP, so it is not stepped (plan §15 #10) — and the sentence follows the reference:
+    /// it says "not WSL's" only when the reference does not say the distro is off too (code round coai #7, own review #5).</summary>
+    private static string SynchronisedSkip(WindowsClockSample now, ClockJudgement judgement) =>
+        judgement.Standing == ClockStanding.WslWrong || judgement.DistroAlsoOff
+            ? $"timesyncd/chrony reports the distro's clock synchronised, so it is not stepped (plan 15 #10) — yet {judgement.Reason}"
+            : Invariant($"the Windows clock is wrong, not WSL's: timesyncd/chrony reports the distro's clock synchronised to NTP and Windows is {now.OffsetSeconds:+0.00;-0.00} s off it — {ClockStandings.WindowsFix}");
 
     private static string ReferenceSkip(ClockJudgement judgement, int max) => judgement switch
     {

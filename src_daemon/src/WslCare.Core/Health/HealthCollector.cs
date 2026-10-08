@@ -63,6 +63,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             profile.Map(p => AuditWslConfig(paths.Rules.Join(p, ".wslconfig"))))
         {
             ClockReference = reference,
+            ClockJudgement = ClockStandings.Judge(clockSample, reference, ClockReferences.ToleranceSeconds),
             TimeJumpsBack = jumpsBack,
         };
     }

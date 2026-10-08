@@ -1,6 +1,6 @@
 # The Windows Time service stopped, Windows 2 h slow, and two clocks fighting inside WSL — measured 2026-10-08
 
-> The incident that started [PLAN_windows_time_guard.md](../todo/PLAN_windows_time_guard.md), kept in one place so no
+> The incident that started [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), kept in one place so no
 > number lives only in a chat transcript. Each row says HOW it was measured and by whom. No agent started, stopped or
 > changed a Windows service: the owner restarted `w32time` by hand; every agent read below is read-only.
 >

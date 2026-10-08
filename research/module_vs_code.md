@@ -21,7 +21,7 @@ stop, full check, root check), built from validated ids only and held by one hos
 stopped WSL distribution unless the person presses *Start WSL and check*, never starts one for a root call, and
 *Install daemon* only TYPES the pinned install command into a terminal (the person presses Enter). Since
 2026-10-08 (PLAN_windows_time_guard.md D7) it changes ONE thing on Windows itself, and only after a modal that shows the
-exact commands: *Start Windows Time* runs one elevated Windows PowerShell (`Start-Process -Verb RunAs`) that sets the
+exact commands: *Start Windows Time* runs one elevated Windows PowerShell (`Process.Start` with the `runas` verb) that sets the
 Windows Time service to start Automatic (while `wslCare.windowsTime.setAutomaticStart` is on), starts it and resyncs.
 It runs on the Windows side (`extensionKind: ["ui"]`), on VS Code 1.85.0 or newer.
 
@@ -69,7 +69,7 @@ flowchart LR
     logs -->|"read: logs, runs, runs show"| client
     panel -->|"startWindowsTime (bare)"| wtime["windowsTime/<br/>(modal, then ONE run)"]
     wtime -->|"powershell.exe -Command (absolute)"| runner
-    runner -->|"Start-Process -Verb RunAs -EncodedCommand"| w32["elevated PowerShell<br/>Set-Service · Start-Service · w32tm /resync"]
+    runner -->|"Process.Start(runas) -EncodedCommand"| w32["elevated PowerShell<br/>Set-Service · Start-Service · w32tm /resync"]
 ```
 
 ## Core entities

@@ -96,14 +96,14 @@ public sealed class ClockGuardTests
     [InlineData("+335us", 0.000335)]
     [InlineData("-60.856ms", -0.060856)]
     public void A_systemd_time_span_reads_as_seconds(string text, double seconds) =>
-        SystemdTimespan.Seconds(text).Should().BeApproximately(seconds, 1e-9);
+        SystemdTimespan.Seconds(text).Should().BeOfType<Reading<double>.Available>().Which.Value.Should().BeApproximately(seconds, 1e-9);
 
     [Theory]
     [InlineData("")]
     [InlineData("soon")]
     [InlineData("12 parsecs")]
     [InlineData("ms")]
-    public void Anything_else_is_not_a_time_span(string text) => SystemdTimespan.Seconds(text).Should().BeNull();
+    public void Anything_else_is_not_a_time_span(string text) => SystemdTimespan.Seconds(text).IsAvailable.Should().BeFalse();
 
     [Fact]
     public void The_captured_timesync_status_reads_its_server_and_last_offset()
@@ -112,6 +112,30 @@ public sealed class ClockGuardTests
 
         sample.Server.Should().Be("185.125.190.57 (ntp.ubuntu.com)");
         sample.OffsetSeconds.Should().BeApproximately(-0.060856, 1e-9);
+    }
+
+    /// <summary>Code round (coai, codex + gemini): a field printed twice must be an unavailable reading, never an exception
+    /// that ends the health collection.</summary>
+    [Fact]
+    public void A_timesync_status_with_a_field_printed_twice_is_unavailable_not_an_exception()
+    {
+        var twice = ClockParsers.Timesync("       Server: a\n       Offset: -1ms\n       Offset: +2h\n");
+
+        twice.IsAvailable.Should().BeFalse();
+        twice.ReasonOrEmpty.Should().Contain("more than one Offset line");
+    }
+
+    /// <summary>Own code review #3: an EMPTY tag (Get-Service answered nothing) is not a fact about the service — the
+    /// verdict is unknown, never "not running" nor "does not start Automatic".</summary>
+    [Theory]
+    [InlineData("", "Automatic", Level.Unknown)]
+    [InlineData("", "", Level.Unknown)]
+    [InlineData("Running", "", Level.Ok)]
+    public void An_empty_service_tag_is_unknown_never_a_stopped_or_manual_service(string status, string startType, Level level)
+    {
+        var agree = new ClockJudgement(ClockStanding.Agree, 0, 0, false, "the reference", "agree");
+
+        ClockVerdicts.TimeService(Reading.Of(new WindowsTimeService(status, startType)), agree, Defaults).Level.Should().Be(level, "an empty value is not a stopped service nor a manual start");
     }
 
     [Fact]

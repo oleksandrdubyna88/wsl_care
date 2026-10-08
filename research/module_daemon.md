@@ -101,7 +101,7 @@ has none.
 | configuration trust, AI agents, A18, numbers | *The configuration trust (E7.S0, 2026-10-05, plan §15q R1)*, *The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)* with its *Manual agents and `agents probe` (E7.S2, 2026-10-05, plan §15q D4, R2)*, *A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)*, *Numbers are configuration (standing convention, owner rule 2026-10-05)* |
 | the MCP server instances of the AI agents (`Core/Mcp/`, `status --json` `mcpServers`) | [module_mcp_servers.md](module_mcp_servers.md) (E7.S2d, 2026-10-06/07); architecture.md *MCP server instances of the AI agents* points there |
 | tests and the harness | [module_tests.md](module_tests.md), architecture.md *The scenario harness (E1.S3)* |
-| the Windows Time guard (2026-10-08) | the section below; the plan [PLAN_windows_time_guard.md](../todo/PLAN_windows_time_guard.md), the incident [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) |
+| the Windows Time guard (2026-10-08) | the section below; the plan [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), the incident [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) |
 
 ## The Windows Time guard (PLAN_windows_time_guard.md, 2026-10-08)
 
@@ -148,7 +148,9 @@ flowchart TB
 - **A16 steps only with proof.** Skips, in order: timesyncd synchronised (and, when Windows is off, *"the Windows clock is
   wrong, not WSL's"*); the clock agrees; the reference names Windows; NO reference (*"no independent reference can say
   which is wrong"* — this gives up stepping a lagging distro on an offline machine, deliberately); a step that would not
-  bring the distro closer to the reference. Then the old gates.
+  bring the distro closer to the reference. Then the old gates. The reference is asked only when the clocks disagree past
+  `clock.maxDriftSeconds` — a preview whose clocks agree sends nothing to the network — and a full run judges the clocks
+  ONCE (`HealthSample.ClockJudgement`), which the detail and the verdicts only project.
 - **The live contract** fails a probe a minute off with `ClockStandings.Diagnosis`: which clock, the service as printed,
   and the fix.
 - **The fix is the extension's** (*Start Windows Time*, [module_vs_code.md](module_vs_code.md)); the SYSTEM scheduled task

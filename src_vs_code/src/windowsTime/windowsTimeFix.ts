@@ -19,7 +19,8 @@ import { windowsPowerShell } from '../wsl/wslExecutable';
  *       redirection), so each failure has its OWN exit code and the sentence is ours. A result file was rejected: an
  *       elevated write to a fixed path in the user's `%TEMP%` follows a link the user's own processes can plant;</li>
  *   <li>the inner script travels as `-EncodedCommand` (UTF-16LE base64), so no quoting layer exists between the constant
- *       and the elevated PowerShell; the outer one catches the UAC refusal, which `Start-Process` THROWS, as 1223.</li>
+ *       and the elevated PowerShell; the outer one starts it with `Process.Start` and the `runas` verb and reads the UAC
+ *       refusal as the 1223 Win32Exception it throws.</li>
  * </ul>
  */
 
@@ -48,13 +49,20 @@ export function encoded(script: string): string {
 /** A path PowerShell reads inside single quotes with nothing to escape. */
 const QUOTABLE_PATH = /^[A-Za-z]:\\[^'`$\r\n"]*$/;
 
-/** The UNELEVATED launcher's script: start the elevated PowerShell and wait, catch the UAC refusal (Win32 error 1223,
- * thrown by `Start-Process`, possibly as an inner exception), hand back the elevated exit code. */
+/**
+ * The UNELEVATED launcher's script: start the elevated PowerShell through `System.Diagnostics.Process.Start` with the
+ * `runas` verb, wait, and hand back its exit code. The UAC refusal is the `Win32Exception` (1223) that `Process.Start`
+ * throws — NOT `Start-Process -Verb RunAs`, which rethrows it as an InvalidOperationException carrying only the message, so
+ * 1223 could never be read (own code review #1); any other launch failure exits 13.
+ */
 export function outerScript(powerShell: string, inner: string): string {
   return [
-    `try { $p = Start-Process -FilePath '${powerShell}' -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','${encoded(inner)}' }`,
-    `catch { $e = $_.Exception; while ($null -ne $e) { if ($e.NativeErrorCode -eq ${EXIT.declined}) { exit ${EXIT.declined} }; $e = $e.InnerException }; exit ${EXIT.launchFailed} }`,
-    'exit $p.ExitCode',
+    `$psi = New-Object System.Diagnostics.ProcessStartInfo -ArgumentList '${powerShell}'`,
+    "$psi.Verb = 'runas'; $psi.UseShellExecute = $true; $psi.WindowStyle = 'Hidden'",
+    `$psi.Arguments = '-NoProfile -NonInteractive -EncodedCommand ${encoded(inner)}'`,
+    `try { $p = [System.Diagnostics.Process]::Start($psi) } catch [System.ComponentModel.Win32Exception] { if ($_.Exception.NativeErrorCode -eq ${EXIT.declined}) { exit ${EXIT.declined} }; exit ${EXIT.launchFailed} } catch { exit ${EXIT.launchFailed} }`,
+    `if ($null -eq $p) { exit ${EXIT.launchFailed} }`,
+    '$p.WaitForExit(); exit $p.ExitCode',
   ].join('\n');
 }
 

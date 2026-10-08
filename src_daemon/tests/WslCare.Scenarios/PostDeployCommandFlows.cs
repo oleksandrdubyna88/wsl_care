@@ -219,12 +219,14 @@ public sealed class PostDeployCommandFlows
     [InlineData("ok", "warning: Running, StartType Manual: does not start Automatic", "ok", "the start type is not as configured")]
     [InlineData("problem", "Stopped, StartType Manual: the Windows Time service is not running", "problem", "the incident of 2026-10-08")]
     [InlineData("ok", "Running, StartType Automatic", "unknown", "no reference could judge the clocks")]
+    [InlineData("ok", "Running, StartType Automatic", "warning-ok", "the reference says the distro's clock is off (wslWrong is a warning)")]
     public async Task Item_9_fails_on_a_manual_start_a_stopped_service_or_clocks_it_cannot_vouch_for(string serviceState, string serviceDetail, string referenceState, string why)
     {
         Linux();
-        using var world = new World(wslCare: ClockDoctor(
-            Check(Core.Doctor.ClockChecks.WindowsTimeId, serviceState, serviceDetail),
-            Check(Core.Doctor.ClockChecks.ClockReferenceId, referenceState, "the Windows clock is 7200.4 s slow against https://www.microsoft.com (HTTP Date)")));
+        var reference = referenceState == "warning-ok"
+            ? Check(Core.Doctor.ClockChecks.ClockReferenceId, Core.Doctor.DoctorRun.Ok, "warning: wslWrong: the distro's clock is -600.5 s off https://www.microsoft.com (HTTP Date) while Windows agrees")
+            : Check(Core.Doctor.ClockChecks.ClockReferenceId, referenceState, "the Windows clock is 7200.4 s slow against https://www.microsoft.com (HTTP Date)");
+        using var world = new World(wslCare: ClockDoctor(Check(Core.Doctor.ClockChecks.WindowsTimeId, serviceState, serviceDetail), reference));
 
         var result = await world.RunAsync(9);
 

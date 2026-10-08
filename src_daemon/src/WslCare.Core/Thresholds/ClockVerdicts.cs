@@ -21,7 +21,7 @@ public static class ClockVerdicts
 
     public static IReadOnlyList<Verdict> Evaluate(HealthSample health, EffectiveConfig config)
     {
-        var judgement = ClockStandings.Judge(health.WindowsClock, health.ClockReference, config.Int(ConfigKeys.Clock.ReferenceToleranceSeconds));
+        var judgement = health.ClockJudgement;
         return [TimeService(health.WindowsClock.TimeServiceReading, judgement, config), Reference(judgement, config), Fight(health.TimeJumpsBack)];
     }
 
@@ -37,11 +37,14 @@ public static class ClockVerdicts
         };
     }
 
+    /// <summary>An EMPTY status (Get-Service answered nothing) is not a fact about the service: unknown (own code review #3).
+    /// An empty start type only skips the manual-start rule.</summary>
     private static Verdict Judged(WindowsTimeService s, ClockJudgement judgement, bool manualWarns, string limit) => s switch
     {
+        { Status.Length: 0 } => new(TimeServiceId, Level.Unknown, s.Text, limit, "the clock probe could not read the Windows Time service (Get-Service answered nothing)"),
         { IsRunning: false } when judgement.WindowsIsWrong => new(TimeServiceId, Level.Critical, s.Text, limit, $"the Windows Time service is not running and {judgement.Reason}"),
         { IsRunning: false } => new(TimeServiceId, Level.Warn, s.Text, limit, $"the Windows Time service is not running, so nothing corrects Windows' clock; on a workgroup PC Windows starts it by a trigger, so this alone is not a fault while the clock agrees — {ClockStandings.WindowsFix}"),
-        { StartsAutomatically: false } when manualWarns => new(TimeServiceId, Level.Warn, s.Text, limit, "the Windows Time service runs but does not start Automatic (Windows' default is Manual): Windows or other software can stop it again — the extension's Start Windows Time sets Automatic, which does NOT restart it after a stop; only the scheduled guard (planned) does"),
+        { StartsAutomatically: false, StartType.Length: > 0 } when manualWarns => new(TimeServiceId, Level.Warn, s.Text, limit, "the Windows Time service runs but does not start Automatic (Windows' default is Manual): Windows or other software can stop it again — the extension's Start Windows Time sets Automatic, which does NOT restart it after a stop; only the scheduled guard (planned) does"),
         _ => new(TimeServiceId, Level.Ok, s.Text, limit, "the Windows Time service is running"),
     };
 

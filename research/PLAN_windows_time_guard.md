@@ -1,14 +1,17 @@
 # PLAN — the Windows Time guard: see which clock is wrong, never step WSL to a wrong host, start `w32time`
 
-> Status: **plan only, nothing implemented yet, 2026-10-08.** Scope: the daemon's clock probe, health collectors,
-> thresholds, `doctor`, A16 and the live contract (`src_daemon/`); one new extension command and panel button
-> (`src_vs_code/`); docs and `POST_DEPLOY.md`. Story 2 (the scheduled task) is planned here and NOT built in this branch.
+> Status: **IMPLEMENTED, 2026-10-08 (story 1).** Story 2 — the SYSTEM scheduled task (D9) — is NOT built: extracted to
+> [PLAN_windows_time_task.md](../todo/PLAN_windows_time_task.md). Scope as shipped: the daemon's clock probe, health
+> collectors, thresholds, `doctor`, A16 and the live contract (`src_daemon/`); one extension command and panel button
+> (`src_vs_code/`); docs and `POST_DEPLOY.md`. Deviations from the text below are in §12 (the code round) — the largest:
+> the elevated launcher is `Process.Start` with the `runas` verb, not `Start-Process` (D7), and A16 asks the
+> reference only when the clocks disagree (D6).
 >
-> Related: [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) (§4.5, §5 A16, §15 #10, §17 live-gate item H),
-> [PLAN_windows_care.md](PLAN_windows_care.md) (§2 admin work, §8a the elevated channel),
-> [architecture.md](../research/architecture.md), [module_daemon.md](../research/module_daemon.md),
-> [module_vs_code.md](../research/module_vs_code.md), the incident record
-> [2026-10-08_windows_time_stopped.md](../research/2026-10-08_windows_time_stopped.md) (written in build step 1).
+> Related: [PLAN_wsl_care_daemon.md](../todo/PLAN_wsl_care_daemon.md) (§4.5, §5 A16, §15 #10, §17 live-gate item H),
+> [PLAN_windows_care.md](../todo/PLAN_windows_care.md) (§2 admin work, §8a the elevated channel),
+> [architecture.md](architecture.md), [module_daemon.md](module_daemon.md) § *The Windows Time guard*,
+> [module_vs_code.md](module_vs_code.md), the incident record
+> [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md).
 >
 > **Plan round 1 (coai session `b8084f2d`, codex + gemini, both answered, verdict `proceed`, 6 findings: 5 accepted,
 > 1 rejected; one consultation, codex, closed `solved`) and an own plan review (Opus, 12 findings, all accepted) are
@@ -166,11 +169,14 @@ check now* refreshes it.
 ### D6 — A16 steps only when a reference proves the step helps (RED first)
 
 In `ClockFix.SkipAsync` (`Actions/Clock/ClockFix.cs:183-194`) the preview measures the reference (D2) with its live
-Windows observation and judges (D3). A16 steps the distro to the host (`hwclock -s`) or toward chrony's sources
+Windows observation and judges (D3) — **as built, only when the live offset is above `clock.maxDriftSeconds`**: clocks
+that agree send no request to the network (code round, coai #12). A16 steps the distro to the host (`hwclock -s`) or toward chrony's sources
 (`chronyc makestep`): both are trusted only when the host is the closer clock. The gates, in order:
 
 1. timesyncd synchronised AND the live offset above `clock.maxDriftSeconds` → **Skip**: *"the Windows clock is wrong,
-   not WSL's: timesyncd keeps the distro on NTP and Windows is N s off it"* (the old text named no culprit).
+   not WSL's: timesyncd keeps the distro on NTP and Windows is N s off it"* (the old text named no culprit) — **as
+   built, only while the reference does not say the distro is off too**; then the skip keeps plan §15 #10 and quotes the
+   reference instead (code round, coai #7 / own #5).
 2. `windowsSlow` / `windowsFast` → **Skip**: *"the Windows clock is N s slow against <source>; stepping the distro to
    the host's clock would set it wrong — fix Windows (Start Windows Time)"* (+ the `distroAlsoOff` sentence).
 3. `unknown` → **Skip**: *"the clocks disagree and no independent reference can say which is wrong (<reasons>); A16
@@ -207,7 +213,12 @@ A new extension module `src_vs_code/src/windowsTime/` (the Windows side's first 
   ```
 
   The outer process is `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive
-  -Command <outer>`; `<outer>` catches the UAC refusal, which Start-Process THROWS rather than returns:
+  -Command <outer>`. **As built** (code round, own #1 — `Start-Process -Verb RunAs` rethrows the refusal as an
+  InvalidOperationException carrying only its message, so 1223 could never be read): `<outer>` builds a
+  `ProcessStartInfo` for the same absolute `powershell.exe` with `Verb = 'runas'`, `UseShellExecute`, a hidden
+  window and `-NoProfile -NonInteractive -EncodedCommand <base64>`, calls `[System.Diagnostics.Process]::Start`, reads
+  the `Win32Exception` 1223 as declined (any other launch failure 13), waits and exits with the child's code. The
+  plan's first shape, kept for the record:
   `try { $p = Start-Process -FilePath <abs powershell.exe> -Verb RunAs -Wait -PassThru -WindowStyle Hidden
   -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','<base64>' } catch { if (<1223 in the exception or its
   inner one>) { exit 1223 }; exit 13 }; exit $p.ExitCode`. The inner script travels as `-EncodedCommand` (UTF-16LE
@@ -242,6 +253,9 @@ present, `timesync-status` parses, the curl `Date` parses, the monotonic journal
 from the product (one road in), so the release checklist and `status` say the same thing.
 
 ### D9 — story 2 (planned, NOT built here): the scheduled task
+
+> **Extracted** on 2026-10-08 to [PLAN_windows_time_task.md](../todo/PLAN_windows_time_task.md), which owns it now; the
+> text below is the design as this plan left it.
 
 The extension command *Install the Windows Time guard* shows the task XML and asks UAC once to register
 `\wsl-care\windows-time-guard`: principal `SYSTEM`, triggers at startup, at logon, every `N` hours, and on the System
@@ -350,13 +364,13 @@ PLAN_windows_care.md's installer later absorbs story 2's task or leaves it singl
 
 ## 10. Definition of Done
 
-- [ ] Plan reviewed (coai `review_plan`), findings resolved.
-- [ ] Every rule of D1–D8 has a test seen RED for the real symptom, then green; break-it checks recorded.
-- [ ] The daemon suites, the scenario harness and the extension suite green; goldens and contracts regenerated.
-- [ ] `research/2026-10-08_windows_time_stopped.md`, `module_daemon.md`, `module_vs_code.md`, `module_tests.md` updated;
+- [x] Plan reviewed (coai `review_plan`), findings resolved.
+- [x] Every rule of D1–D8 has a test seen RED for the real symptom, then green; break-it checks recorded.
+- [x] The daemon suites, the scenario harness and the extension suite green; goldens and contracts regenerated.
+- [x] `research/2026-10-08_windows_time_stopped.md`, `module_daemon.md`, `module_vs_code.md`, `module_tests.md` updated;
       `architecture.md` carries a pointer only; both neighbouring plans name the boundary.
-- [ ] `POST_DEPLOY.md` has the Windows Time item, still ≤ 12 items (8 and 9 merged, said why).
-- [ ] Code round (coai `review_code`), PR merged `--squash --auto`; story 2 left open here.
+- [x] `POST_DEPLOY.md` has the Windows Time item, still ≤ 12 items (8 and 9 merged, said why).
+- [x] Code round (coai `review_code`); story 2 extracted to its own plan. The merge is the pull request's.
 
 ## 11. Plan round 1 — what changed
 
@@ -381,3 +395,36 @@ PLAN_windows_care.md's installer later absorbs story 2's task or leaves it singl
 | o11 | own, Minor | POST_DEPLOY item unspecified; the record linked as if it existed | accepted → build step 5 names the merge; the link says "written in build step 1" |
 | o12 | own, Minor | 7036 `Data` is localised; no rate limit | accepted → D9 |
 | — | coordinator | the live contract must name the cause | → D8 |
+
+## 12. Code round — what changed, and the deviations as shipped (2026-10-08)
+
+coai session `b8084f2d`, `review_code` over the branch: **all 8 reviewers answered** (codex and gemini, four roles each),
+verdict `proceed`, 14 findings — 8 accepted, 6 rejected with reasons; and one own review (Opus, feature-dev
+code-reviewer, 7 findings, all accepted).
+
+| # | Source | Finding | Decision → change |
+|---|---|---|---|
+| k1, k10 | codex + gemini | `timesync-status` with a field printed twice threw (`ToDictionary`) | accepted → read by field, twice is unavailable; RED first |
+| k3–k5 | gemini | cyclomatic complexity of the timespan parser | accepted → split into small pure functions; `SystemdTimespan.Seconds` answers a `Reading<double>` |
+| k6 | gemini | `Jumped` need not be public | accepted |
+| k9 | gemini | the run detail re-judged the clocks during serialisation | accepted → the judgement is taken ONCE in `HealthCollector` and stored on `HealthSample`; the detail and the verdicts project it |
+| k11 | gemini | POST_DEPLOY item 9 passed on a distro clock warning | accepted → it also refuses a `clockReference` "warning:"; a flow for it |
+| k12 | gemini | A16's preview asked the reference even when the clocks agree | accepted → asked only past `clock.maxDriftSeconds`; RED first |
+| k0 | codex | nullable `TimeService` on the wire records | rejected: the JSON-edge records keep nullable members for fields older lines lack (`WindowsProfile`); business logic reads `TimeServiceReading` |
+| k2 | codex | the boot-wide journal search grows with uptime | rejected: bounded by the search ceiling and output cap (past the cap: unavailable, never partial); near zero outside a fight |
+| k7 | gemini | the timesyncd gate preempts the reference | rejected as asked (plan §15 #10 keeps a synchronised clock unstepped); its sentence now follows the reference |
+| k8 | gemini | ambient `Tuning.Current` | rejected: the daemon's documented convention (`Config/Tuning.cs`) |
+| k13 | gemini | `timedatectl show` asked twice | rejected: milliseconds, only on the fallback path |
+| o1 | own | `Start-Process -Verb RunAs` hides 1223 | accepted → `Process.Start` with `runas` (D7 above) |
+| o2 | own | goldens not regenerated | accepted → written by the linux-x64 CI leg (`ci-daemon.yml` uploads them after a failure) and taken in |
+| o3 | own | an empty service tag read as "not running" | accepted → unknown; an empty start type skips the manual rule; RED first |
+| o4 | own | two A16 tests passed through a skip the engine would stop at | accepted → they script a reference and assert the preview has no skip |
+| o5 | own | the synchronised skip could say "not WSL's" while the distro is off | accepted (k7's sentence); RED first |
+| o6 | own | no scenario over the new answers | accepted → `CollectFlows.Collect_judges_the_windows_time_service_which_clock_is_wrong_and_the_clock_fight` |
+| o7 | own | the status line | accepted → this promotion |
+
+**Also found while building:** a break-it check of the test tripwire, run for real, opened an elevated PowerShell window
+on the owner's machine (the fix did NOT run) — [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md)
+§4. **Residuals as shipped:** the offline-resume recovery A16 gave up (D6 gate 3); the journald count is `--unit`, not
+`--identifier`; `CLOCK_MONOTONIC` against `/proc/uptime`'s `CLOCK_BOOTTIME`; the elevated run itself is exercised only
+by PowerShell's parser, never executed by a test; the live contract's new checks run only at the release checklist.

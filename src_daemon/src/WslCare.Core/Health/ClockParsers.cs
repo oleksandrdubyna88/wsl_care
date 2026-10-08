@@ -39,14 +39,24 @@ public static class ClockParsers
             : Reading.Missing<DateTimeOffset>(dates.Count == 0 ? "the HEAD answer carried no Date header" : $"the HEAD answer's Date header is not one RFC 1123 instant: \"{string.Join(" | ", dates)}\"");
     }
 
-    /// <summary><c>timedatectl timesync-status</c>: <c>Server: 185.125.190.57 (ntp.ubuntu.com)</c> and <c>Offset: -18.401ms</c>.</summary>
+    /// <summary><c>timedatectl timesync-status</c>: <c>Server: 185.125.190.57 (ntp.ubuntu.com)</c> and <c>Offset: -18.401ms</c>. A
+    /// field printed more than once is not read (code round, coai: a dictionary built over it would throw).</summary>
     public static Reading<TimesyncSample> Timesync(string stdout)
     {
-        var values = ProcText.Lines(stdout).Select(l => l.Split(':', 2)).Where(p => p.Length == 2).ToDictionary(p => p[0].Trim(), p => p[1].Trim(), StringComparer.Ordinal);
-        return values.TryGetValue("Offset", out var offset) && SystemdTimespan.Seconds(offset) is { } seconds
-            ? Reading.Of(new TimesyncSample(values.GetValueOrDefault("Server", string.Empty), seconds))
-            : Reading.Missing<TimesyncSample>($"timedatectl timesync-status printed no readable Offset line: \"{Cut(stdout)}\"");
+        var fields = ProcText.Lines(stdout).Select(l => l.Split(':', 2)).Where(p => p.Length == 2).Select(p => (Key: p[0].Trim(), Value: p[1].Trim())).ToList();
+        var offsets = Field(fields, "Offset");
+        return offsets.Count == 1
+            ? OffsetSample(offsets[0], Field(fields, "Server"), stdout)
+            : Reading.Missing<TimesyncSample>(offsets.Count == 0 ? $"timedatectl timesync-status printed no Offset line: \"{Cut(stdout)}\"" : "timedatectl timesync-status printed more than one Offset line: it is not read");
     }
+
+    private static List<string> Field(IReadOnlyList<(string Key, string Value)> fields, string key) =>
+        [.. fields.Where(f => f.Key == key).Select(f => f.Value)];
+
+    private static Reading<TimesyncSample> OffsetSample(string offset, IReadOnlyList<string> servers, string stdout) =>
+        SystemdTimespan.Seconds(offset) is Reading<double>.Available { Value: var seconds }
+            ? Reading.Of(new TimesyncSample(servers.Count == 1 ? servers[0] : string.Empty, seconds))
+            : Reading.Missing<TimesyncSample>($"timedatectl timesync-status printed an Offset that is not a time span: \"{Cut(stdout)}\"");
 
     /// <summary>The monotonic stamps (seconds since boot) of <c>journalctl --output=short-monotonic</c> lines:
     /// <c>[ 6057.123456] host systemd-journald[62]: Time jumped backwards, rotating.</c> A line without one is skipped.</summary>
@@ -76,22 +86,28 @@ public static class SystemdTimespan
         ("month", 2_629_800), ("min", 60), ("ms", 1e-3), ("us", 1e-6), ("μs", 1e-6), ("y", 31_557_600), ("w", 604_800), ("d", 86_400), ("h", 3_600), ("s", 1),
     ];
 
-    /// <summary>The span in seconds, or <c>null</c> when <paramref name="text"/> is not one.</summary>
-    public static double? Seconds(string text)
+    /// <summary>The span in seconds, or why <paramref name="text"/> is not one.</summary>
+    public static Reading<double> Seconds(string text)
     {
         var value = text.Trim();
-        var sign = value.StartsWith('-') ? -1 : 1;
         var words = value.TrimStart('+', '-').Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var parts = words.Select(Word).ToList();
-        return words.Length > 0 && parts.All(p => p is not null) ? sign * parts.Sum(p => p!.Value) : null;
+        var parts = words.SelectMany(Word).ToList();
+        return words.Length > 0 && parts.Count == words.Length
+            ? Reading.Of(Sign(value) * parts.Sum())
+            : Reading.Missing<double>($"\"{value}\" is not a systemd time span");
     }
 
-    private static double? Word(string word)
+    private static int Sign(string value) => value.StartsWith('-') ? -1 : 1;
+
+    /// <summary>One <c>&lt;number&gt;&lt;unit&gt;</c> word in seconds; nothing when it is not one.</summary>
+    private static IEnumerable<double> Word(string word)
     {
-        var digits = word.TakeWhile(c => char.IsAsciiDigit(c) || c == '.').Count();
-        var unit = Units.FirstOrDefault(u => u.Unit == word[digits..]);
-        return digits > 0 && unit.Unit is not null && double.TryParse(word[..digits], NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var n)
-            ? n * unit.Seconds
-            : null;
+        var digits = word.TakeWhile(IsNumberChar).Count();
+        return Units.Where(u => u.Unit == word[digits..]).Take(1).SelectMany(u => Number(word[..digits]).Select(n => n * u.Seconds));
     }
+
+    private static bool IsNumberChar(char c) => char.IsAsciiDigit(c) || c == '.';
+
+    private static IEnumerable<double> Number(string digits) =>
+        double.TryParse(digits, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var n) ? [n] : [];
 }

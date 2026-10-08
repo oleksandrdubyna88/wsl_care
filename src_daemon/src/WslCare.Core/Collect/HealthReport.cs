@@ -101,7 +101,7 @@ public static class HealthReports
 
     private static ClockReferenceReport Reference(HealthSample h)
     {
-        var judgement = ClockStandings.Judge(h.WindowsClock, h.ClockReference, ClockReferences.ToleranceSeconds);
+        var judgement = h.ClockJudgement;
         return h.ClockReference is Reading<ClockReference>.Available { Value: var r }
             ? new(true, null, r.Source, Math.Round(r.ReferenceMinusWslSeconds, 3), judgement.Standing, judgement.Reason)
             : new(false, h.ClockReference.ReasonOrEmpty, null, null, judgement.Standing, judgement.Reason);

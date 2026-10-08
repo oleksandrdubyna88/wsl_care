@@ -170,7 +170,7 @@ Admin actions are marked with a shield and run through the elevated task.
 - **The first Windows action, and where its boundary is** (2026-10-08): *Start Windows Time* — a button that runs ONE
   elevated PowerShell from an interactive UAC prompt, the shape this section left open — and the single-purpose SYSTEM
   task that would restart `w32time` by itself (its story 2) are built and planned in
-  [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md) (boundary table §4 there). The generic elevated channel above
+  [PLAN_windows_time_guard.md](../research/PLAN_windows_time_guard.md) (boundary table §4 there). The generic elevated channel above
   (requests, the one-time token, the elevated task `collect-elevated`) stays THIS plan's; the time guard must not grow into it.
 
 ## 9. Definition of Done

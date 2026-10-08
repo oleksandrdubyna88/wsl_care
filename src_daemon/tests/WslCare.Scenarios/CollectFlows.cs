@@ -12,6 +12,7 @@ using WslCare.Core.Json;
 using WslCare.Core.Records;
 using WslCare.Core.Status;
 using WslCare.Core.Systemd;
+using WslCare.Core.Thresholds;
 using WslCare.FakeTool;
 using WslCare.TestSupport;
 
@@ -50,6 +51,41 @@ public sealed class CollectFlows
 
     private static CollectReport Report(ChildResult result) =>
         JsonSerializer.Deserialize(result.Stdout, WslCareJsonContext.Default.CollectReport) ?? throw new InvalidOperationException($"collect printed no report: {result.Stderr}");
+
+    /// <summary>
+    /// PLAN_windows_time_guard.md D1–D4 end to end (own code review #6): the built CLI over the answers captured on
+    /// 2026-10-08 — the tagged probe (Running, Manual), timesyncd synchronised with a −60.9 ms last offset, journald's 28
+    /// backward jumps — with the fake curl answering nothing, so the reference is timesyncd. The probe's instants are days
+    /// before this run's clock, so Windows reads as the wrong clock: the incident's shape. The three verdicts are in the run's
+    /// detail and carried by <c>status</c>; no scenario reaches the network.
+    /// </summary>
+    [Fact]
+    public async Task Collect_judges_the_windows_time_service_which_clock_is_wrong_and_the_clock_fight()
+    {
+        using var home = Captured("collect-time-guard", first: h =>
+        {
+            h.Script("powershell", HealthCommands.WindowsClock.Arguments, 0, $"health/{TimeGuardFixture.Name}/powershell-clock.out");
+            h.Script(SystemdCommands.Timedatectl, SystemdCommands.TimesyncStatus.Arguments, 0, $"health/{TimeGuardFixture.Name}/timedatectl-timesync-status.out");
+            h.Script(SystemdCommands.Journalctl, SystemdCommands.TimeJumpsBackThisBoot.Arguments, 0, $"health/{TimeGuardFixture.Name}/journalctl-time-jumps.out");
+        });
+
+        var result = await home.RunAsync("collect", "--json");
+
+        result.Exit.Should().Be((int)ExitCode.Ok, result.Stderr);
+        var thresholds = Report(result).Detail!.Thresholds;
+        thresholds.Select(t => t.Id).Should().Contain([ClockVerdicts.TimeServiceId, ClockVerdicts.ReferenceId, ClockVerdicts.FightId]);
+        home.Calls.Should().OnlyContain(c => IsReadCommand(c));
+        if (home.Paths.Side == Core.Hosting.HostSide.Wsl)
+        {
+            thresholds.Single(t => t.Id == ClockVerdicts.TimeServiceId).Should().Match<Verdict>(v => v.Level == Level.Warn && v.Value == "Running, StartType Manual");
+            thresholds.Single(t => t.Id == ClockVerdicts.ReferenceId).Should().Match<Verdict>(v => v.Level == Level.Critical && v.Reason.Contains("timesyncd (185.125.190.57 (ntp.ubuntu.com)"));
+            home.Calls.Should().Contain(c => c.Tool == HealthCommands.Curl, "the HTTP reference is asked first — and its fake answers nothing");
+        }
+
+        var status = await home.RunAsync("status", "--json");
+        var verdicts = JsonSerializer.Deserialize(status.Stdout, WslCareJsonContext.Default.StatusReport)!.Verdicts ?? [];
+        verdicts.Select(v => v.Id).Should().Contain([ClockVerdicts.TimeServiceId, ClockVerdicts.ReferenceId, ClockVerdicts.FightId], "status carries the full run's verdicts");
+    }
 
     [Fact]
     public async Task Collect_records_detail_then_history_and_status_shows_its_slow_parts_with_their_age()
