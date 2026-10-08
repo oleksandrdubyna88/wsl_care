@@ -142,6 +142,15 @@ public abstract record SlotKind
         public override string Describe => $"<plain text, at most {MaxLength}>";
     }
 
+    /// <summary>An HTTPS address under <see cref="HttpsUrls.Pattern"/> — the clock reference's <c>curl --url</c>, and the same
+    /// rule its configuration key holds (one road in).</summary>
+    public sealed record HttpsUrl : SlotKind
+    {
+        public override bool Accepts(string value) => HttpsUrls.IsAddress(value);
+
+        public override string Describe => "<https-url>";
+    }
+
     /// <summary>One of a fixed set of values, compared exactly.</summary>
     public sealed record OneOf(IReadOnlyList<string> Values) : SlotKind
     {

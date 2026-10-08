@@ -44,6 +44,28 @@ public static class ReadCommandTemplates
         ],
         ConfigKeys.Systemd.SearchTimeoutSeconds);
 
+    /// <summary>
+    /// The clock reference's HEAD (<see cref="HealthCommands.ClockReference"/>, PLAN_windows_time_guard.md D2) — PARAMETERISED,
+    /// not <see cref="CommandTemplate.Fixed(Func{ToolCommand})"/>: that freezes the argv at its first call, and the address
+    /// and the timeout are configuration. The address slot holds the key's own rule (<see cref="HttpsUrls"/>); the
+    /// timeout slot the key's range. Declared BEFORE <see cref="All"/>, and by A16.
+    /// </summary>
+    public static CommandTemplate ClockReference { get; } = Machine(
+        "curl-head-date",
+        HealthCommands.Curl,
+        [
+            L("--disable"), L("--silent"), L("--show-error"), L("--head"), L("--max-redirs"), L("0"), L("--proto"), L("=https"), L("--proto-redir"), L("=https"),
+            L("--max-time"), S("seconds", new SlotKind.Number(ConfigKeys.Clock.ReferenceTimeoutSeconds.Min, ConfigKeys.Clock.ReferenceTimeoutSeconds.Max)),
+            L("--header"), L("Cache-Control: no-cache"), L("--url"), S("url", new SlotKind.HttpsUrl()),
+        ],
+        ConfigKeys.Clock.ReferenceTimeoutSeconds);
+
+    /// <summary><c>timedatectl timesync-status</c> — also declared by A16.</summary>
+    public static CommandTemplate TimesyncStatus { get; } = CommandTemplate.Fixed(() => SystemdCommands.TimesyncStatus);
+
+    /// <summary>journald's backward jumps of this boot, monotonic stamps (<see cref="SystemdCommands.TimeJumpsBackThisBoot"/>).</summary>
+    public static CommandTemplate TimeJumpsBack { get; } = CommandTemplate.Fixed(() => SystemdCommands.TimeJumpsBackThisBoot);
+
     public static IReadOnlyList<CommandTemplate> All { get; } =
     [
         .. new Func<ToolCommand>[]
@@ -53,6 +75,9 @@ public static class ReadCommandTemplates
             () => SystemdCommands.JournalDiskUsage, () => SystemdCommands.ListBoots, () => SystemdCommands.FailedUnits, () => SystemdCommands.Version,
             () => SystemdCommands.TimeSync, () => HealthCommands.WindowsClock, () => HealthCommands.SnapList,
         }.Select(CommandTemplate.Fixed),
+        ClockReference,
+        TimesyncStatus,
+        TimeJumpsBack,
         ContainerInspect,
         Machine(
             "events",

@@ -5,6 +5,7 @@ using WslCare.Core.Files;
 using WslCare.Core.Health;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
+using WslCare.Core.Processes.Policy;
 using WslCare.Core.Systemd;
 using WslCare.TestSupport;
 
@@ -117,7 +118,8 @@ public sealed class HealthTests : IDisposable
         Value(health.WindowsProfile).Should().Be(paths.DistroPath("/mnt/c/Users/user"));
         Value(health.WslConfig).Should().Match<WslConfigAudit>(a => a.Present && a.Settings.Memory == "36GB" && a.Warnings.Count == 1);
         runner.Requests.Select(r => r.Argv).Should().OnlyContain(a =>
-            (a[0] == "systemctl" || a[0] == "journalctl" || a[0] == "timedatectl") ? SystemdCommands.IsReadVerb(a.Skip(1).ToList()) : a.SequenceEqual(HealthCommands.WindowsClock.Argv));
+            (a[0] == "systemctl" || a[0] == "journalctl" || a[0] == "timedatectl") ? SystemdCommands.IsReadVerb(a.Skip(1).ToList())
+            : a[0] == HealthCommands.Curl ? ReadCommandTemplates.ClockReference.Matches(a.Skip(1).ToList()) : a.SequenceEqual(HealthCommands.WindowsClock.Argv));
     }
 
     /// <summary>

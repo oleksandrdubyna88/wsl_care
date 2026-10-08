@@ -68,6 +68,9 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
         checks.Add(linux is null ? new("unitConfig", NotChecked, "a unit of the WSL distro: wsl-care inside it checks it") : UnitConfig(linux));
         checks.AddRange(linux is null ? [new("collector.sysstat", NotChecked, "Linux side"), new("collector.atop", NotChecked, "Linux side")] : Collectors(linux, now));
         checks.Add(Follower(now));
+        checks.AddRange(linux is null
+            ? [new(ClockChecks.WindowsTimeId, NotChecked, "judged by the distro's full run"), new(ClockChecks.ClockReferenceId, NotChecked, "judged by the distro's full run")]
+            : ClockChecks.From(FullRunVerdicts.Read(paths, files, RunHistory.Read(paths, files)), now));
         checks.Add(new("root", NotChecked, "root reachability (wsl.exe -u root -- true) is checked by the extension's root boundary (E6)"));
         var versions = new List<VersionReport> { new("wsl-care", true, version, null) };
         versions.AddRange(await DockerVersionsAsync(cancellationToken).ConfigureAwait(false));

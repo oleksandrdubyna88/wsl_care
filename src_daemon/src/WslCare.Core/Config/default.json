@@ -80,6 +80,7 @@
     "rootUsedWarnPercent": 80,
     "journalHistoryWarnDays": 7,
     "clockJumpsWarnPer4h": 100,
+    "timeJumpsBackWarnPer4h": 10,
     "collectorFreshMinutes": 30,
     "wslMemoryCriticalPercent": 90
   },
@@ -100,7 +101,11 @@
     "maxDriftSeconds": 5,
     "minimumGapMinutes": 60,
     "driftObservationsApartMinutes": 5,
-    "stepTimeoutSeconds": 30
+    "stepTimeoutSeconds": 30,
+    "referenceUrl": "https://www.microsoft.com",
+    "referenceToleranceSeconds": 30,
+    "referenceTimeoutSeconds": 10,
+    "manualStartWarns": true
   },
   "logging": {
     "minimumLevel": "Information",

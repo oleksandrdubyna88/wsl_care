@@ -45,6 +45,12 @@ public sealed record HealthSample(
     Reading<string> WindowsProfile,
     Reading<WslConfigAudit> WslConfig)
 {
+    /// <summary>The independent clock reference (PLAN_windows_time_guard.md D2), measured right after the Windows clock.</summary>
+    public Reading<ClockReference> ClockReference { get; init; } = Reading.Missing<ClockReference>("not read");
+
+    /// <summary>journald's "Time jumped backwards" in the last 4 h of this boot, counted on the monotonic clock (D4).</summary>
+    public Reading<int> TimeJumpsBack { get; init; } = Reading.Missing<int>("not read");
+
     /// <summary>The whole sample unavailable for one reason — the Windows binary, which has no systemd to ask.</summary>
     public static HealthSample Unavailable(DateTimeOffset since, string reason, WindowsClockSample clock, Reading<string> profile, Reading<WslConfigAudit> wslConfig) =>
         new(

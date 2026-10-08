@@ -25,6 +25,17 @@ public sealed record WindowsClockSample(DateTimeOffset SampledAt, double OffsetS
     [System.Text.Json.Serialization.JsonIgnore]
     public string Profile => WindowsProfile ?? string.Empty;
 
+    /// <summary>The Windows Time service the probe printed (PLAN_windows_time_guard.md D1); absent when it printed none, on an
+    /// unmeasured observation, and on every line written before it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Health.WindowsTimeService? TimeService { get; init; }
+
+    /// <summary>The service as a reading: the reason when there is none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Collectors.Reading<Health.WindowsTimeService> TimeServiceReading =>
+        TimeService is { } service ? Collectors.Reading.Of(service)
+        : Collectors.Reading.Missing<Health.WindowsTimeService>(Measured ? "the Windows clock probe printed no w32time line" : $"the Windows clock was not observed: {Unavailable}");
+
     /// <summary>Whether this is a measured observation (and not the reason there is none).</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool Measured => string.IsNullOrEmpty(Unavailable);

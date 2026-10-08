@@ -19,6 +19,8 @@ public sealed partial class NumbersArchitectureTests
     private static readonly IReadOnlyDictionary<string, string> Formats = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["WslCare.Cli/Commands/ActCommand.cs: BytesPerGigabyte"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
+        ["WslCare.Core/Health/ClockReferences.cs: DateTruncation"] = "a format: the HTTP Date header is cut to the second (RFC 1123), so the instant it names is half a second later on average",
+        ["WslCare.Core/Health/ClockReferences.cs: FightWindow"] = "a unit: the 4 h of thresholds.timeJumpsBackWarnPer4h, which the key names (PLAN_windows_time_guard.md D4)",
         ["WslCare.Cli/Commands/LogsCommand.cs: BytesPerGigabyte"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Cli/Commands/PreviewCommand.cs: BytesPerGigabyte"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Cli/Commands/StatusCommand.cs: BytesPerGibibyte"] = "a unit: bytes in a GiB / GB / MiB, never a choice",

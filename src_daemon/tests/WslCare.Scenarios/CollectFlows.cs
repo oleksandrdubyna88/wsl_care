@@ -150,6 +150,7 @@ public sealed class CollectFlows
         SystemdCommands.Systemctl or SystemdCommands.Journalctl or SystemdCommands.Timedatectl => SystemdCommands.IsReadVerb(call.Argv),
         "powershell" => call.Argv.SequenceEqual(HealthCommands.WindowsClock.Arguments),
         HealthCommands.Snap => call.Argv.SequenceEqual(HealthCommands.SnapList.Arguments),
+        HealthCommands.Curl => Core.Processes.Policy.ReadCommandTemplates.ClockReference.Matches(call.Argv),
         _ => false,
     };
 }

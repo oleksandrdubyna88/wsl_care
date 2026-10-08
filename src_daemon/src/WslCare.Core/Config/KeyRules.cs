@@ -64,6 +64,16 @@ public abstract record TextRule
 
         private static bool HasParentSegment(string value) => value.Split('/', '\\').Contains("..", StringComparer.Ordinal);
     }
+
+    /// <summary>Empty, or an HTTPS address under the ONE rule the command slot holds too
+    /// (<see cref="Processes.Policy.HttpsUrls"/>, PLAN_windows_time_guard.md D2) — <c>clock.referenceUrl</c>. Its own record
+    /// rather than <see cref="Matching"/>: a pattern key is read by no daemon code, and this one is the argv of root's curl.</summary>
+    public sealed record HttpsUrlOrEmpty : TextRule
+    {
+        public override string Describe => Processes.Policy.HttpsUrls.Description;
+
+        public override string Problem(string value) => value.Length == 0 || Processes.Policy.HttpsUrls.IsAddress(value) ? string.Empty : $"not {Describe}";
+    }
 }
 
 /// <summary>Which direction of change of a key is the SAFE one for a root run (plan §15q R1.2): the value a user layer may

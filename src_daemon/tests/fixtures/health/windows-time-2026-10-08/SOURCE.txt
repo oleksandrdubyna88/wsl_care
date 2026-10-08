@@ -1,0 +1,27 @@
+timedatectl / journalctl / curl / powershell.exe answers for the Windows Time guard - CAPTURED, not synthetic.
+
+Source:   WSL distro "Ubuntu" (24.04, systemd 255) on the owner's machine, as the unprivileged user, and the Windows
+          host's own Windows PowerShell 5.1 (unelevated), on 2026-10-08 between 08:58:11Z and 08:58:31Z, about an hour
+          after the w32time incident (research/2026-10-08_windows_time_stopped.md) - w32time running again, StartType
+          still Manual. Read-only commands only, run by an agent from one script file
+          (`wsl.exe -d Ubuntu -- /bin/sh <absolute path>`), each the exact argv the product builds
+          (WslCare.Core.Systemd.SystemdCommands.TimesyncStatus / TimeJumpsBackThisBoot,
+          WslCare.Core.Health.HealthCommands.ClockReference("https://www.microsoft.com", 10)); the probe's script
+          (HealthCommands.ClockScript) was run on the Windows side from a .ps1 file holding the same text.
+
+Files:
+  timedatectl-timesync-status.out  timedatectl timesync-status   (Offset -60.856ms, poll interval still the 32 s minimum)
+  journalctl-time-jumps.out        journalctl --boot --no-pager --quiet --output=short-monotonic --unit=systemd-journald
+                                   --grep=Time jumped backwards  (28 lines, monotonic 34.98 s .. 869.19 s - the fight of
+                                   this boot, about 33 s apart, until w32time synced; one line carries journald's own
+                                   "(Dropped 1 similar message(s))")
+  curl-head-microsoft.out          curl --disable ... --head ... --url https://www.microsoft.com   (HTTP/2 200, Date
+                                   08:58:11 GMT against the distro's 08:58:12.03Z taken right after)
+  powershell-clock.out             powershell.exe -NoProfile -NonInteractive -Command <ClockScript>  (Running, Manual)
+  proc-uptime.txt                  /proc/uptime at the capture (4270.67 s)
+  captured-at.txt                  the distro's clock at the capture
+
+Redacted, by hand, and nothing else changed:
+  - journalctl-time-jumps.out: the host name -> "host"
+  - powershell-clock.out: the Windows user name in the profile path -> C:\Users\user
+  - every file: CR removed (curl prints CRLF header lines; the parsers trim each line)

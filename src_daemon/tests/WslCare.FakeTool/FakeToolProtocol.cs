@@ -29,8 +29,9 @@ public static class FakeToolProtocol
 
     /// <summary>The names the harness installs the fake under (plan §15 #14, §16 E1.S3). <c>powershell</c>
     /// joined in E2.S1: the Windows clock is a slow process (plan §15b #5), and <c>status</c> must be seen
-    /// NOT to start it. <c>timedatectl</c> and <c>snap</c> joined in E2.S3: the health collectors and A9 read them.</summary>
-    public static readonly IReadOnlyList<string> Tools = ["docker", "systemctl", "journalctl", "powershell", "timedatectl", "snap"];
+    /// NOT to start it. <c>timedatectl</c> and <c>snap</c> joined in E2.S3: the health collectors and A9 read them. <c>curl</c> joined with the Windows Time guard
+    /// (PLAN_windows_time_guard.md D2): the clock reference's HEAD, so no scenario reaches the network.</summary>
+    public static readonly IReadOnlyList<string> Tools = ["docker", "systemctl", "journalctl", "powershell", "timedatectl", "snap", "curl"];
 
     /// <summary>The file name a tool is installed under: <c>.exe</c> on Windows; on Linux the bare name,
     /// except PowerShell, which a WSL distro reaches through interop as <c>powershell.exe</c>. The fake

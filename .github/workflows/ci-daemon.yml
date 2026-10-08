@@ -125,6 +125,24 @@ jobs:
         run: |
           "./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios$EXE"
 
+      # The golden contracts are the LINUX binary's answers (GoldenContractTests skips elsewhere), so a contract change made
+      # on a Windows workstation cannot be written there. When the scenarios failed on the linux-x64 leg, this writes the
+      # goldens as THIS build answers them and uploads them, to be READ as a contract diff and taken into the branch by hand.
+      # Nothing is committed from here, and the step cannot turn the job green: it runs only after a failure.
+      - name: Write the goldens this build answers (linux-x64, after a failure)
+        if: failure() && matrix.rid == 'linux-x64'
+        run: |
+          WSL_CARE_WRITE_GOLDENS=1 "./src_daemon/tests/WslCare.Scenarios/bin/Release/net10.0/WslCare.Scenarios$EXE" --filter-class "*GoldenContractTests" || true
+          git diff --stat -- contracts/golden
+
+      - name: Upload the written goldens (linux-x64, after a failure)
+        if: failure() && matrix.rid == 'linux-x64'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: goldens-linux-x64
+          path: contracts/golden/head
+          retention-days: 7
+
       # The units install.sh ships (src_daemon/systemd), read by systemd's own parser: EVERY file in the folder (never a
       # list typed here — until daemon 0.1.1 this step named three units and the detached-run template was never read, so
       # its misplaced CollectMode= shipped), each template through an instance name, each with the drop-in this build's
