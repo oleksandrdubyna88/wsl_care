@@ -2679,10 +2679,10 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-07 — E9.S0, E9.S1, E9.S2a, E9.S2b and E9.S3 built, the S0 and S1 review rounds, the S2a gate round, the S2a and S2b own review rounds fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-08 — E9.S0, E9.S1, E9.S2a, E9.S2b and E9.S3 built, the S0 and S1 review rounds, the S2a gate round, the S2a, S2b and S3 own review rounds and the S2b/S3 gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
 > as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built*, *Risk consult
-> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round* and *E9.S3 as built*); E9.S4–E9.S5 and the E9 live gate open (the coai code round over S2b/S3 owed). Originally: plan only,
+> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round*, *E9.S3 as built*, *E9.S3 own review round* and *E9.S2b/S3 gate round*); E9.S4–E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3693,7 +3693,7 @@ list (E9.S3)*; the design is in `research/module_archive.md`.
   - A19, the engine's button-only restore, which is E9.S4's.
   - The drvfs-like temp base round trip: the seam is the same on any folder; the 9p base is the E9 live gate's.
 - **Not RED first:** the restore was written before its tests. Every guarantee is proved by a break-it check instead (12, red on
-  Windows; the Linux checks are OWED — WSL was halted while they started, own review round docs finding).
+  Windows; red on Linux too, run 2026-10-08 after WSL was free again — `research/module_tests.md` § *E9.S3*).
 
 #### E9.S3 own review round (2026-10-07) — a security and a correctness review of the restore
 
@@ -3712,9 +3712,9 @@ Two own reviews of `94c5ed5` / `b91549c` (E9.S3), each finding ACCEPTED unless t
 | C-5 | an event-only re-archive was counted again in `summary.json`, under the restore month | **Fixed:** `CopyOutcome.Archived.EventOnly` is not counted, and a counted copy uses its entry's month. Red first | `Archive/ArchiveMove.cs`, `Archive/ArchiveRun.cs` |
 | C-6 | an unreadable `restored.json` read as empty and was overwritten; the file grew for ever | **Fixed:** a closed read (missing / read / unreadable); a file that does not read is never written over. Entries leave after `archive.restoredKeepDays` (180). Red first | `Archive/ArchiveState.cs`, the key |
 | C-7 | "marker\|sentence" strings split by `IndexOf('\|')` | **Fixed:** `EarlyStop(Outcome, Why)`, shared by the run, the restore and the list (a refactor, no test of its own) | `Archive/ArchiveRun.cs`, `Archive/ArchiveList.cs` |
-| C-8 | tests that stayed green when wrong | (a) **OWED:** `archive-restore.json` from a scene with a restored and an already-there session; a golden can only be written on Linux, and WSL is halted. (b) **Done:** the conflict on the COMPANION refuses the session before the transcript is written. (c) **Done:** the fault tests at `restore-chunk`: a changed copy, a failure on the second file | the tests |
+| C-8 | tests that stayed green when wrong | (a) **Done 2026-10-08** (was owed while WSL was halted): `archive-restore.json` from a scene with a restored and an already-there session; a golden can only be written on Linux, and WSL is halted. (b) **Done:** the conflict on the COMPANION refuses the session before the transcript is written. (c) **Done:** the fault tests at `restore-chunk`: a changed copy, a failure on the second file | the tests |
 | C-9 | an elevated Windows user was told "not as uid 0 … run it as that user" | **Fixed:** on Windows the refusal says to run it from a terminal that is not elevated. Red first. **Recorded gap:** on the elevated windows CI runner no CLI flow of run, restore or list runs (they skip); the Windows leg covers them in-process only | `Cli/Commands/ArchiveRunCommand.cs` |
-| docs | §15r "E9.S3 as built" claimed the break-it checks were red on Linux too | **Corrected:** the Linux checks are owed until WSL is free | this plan |
+| docs | §15r "E9.S3 as built" claimed the break-it checks were red on Linux too | **Corrected:** the Linux checks were owed until WSL was free; run 2026-10-08, all red | this plan |
 
 #### E9.S2b own review round (2026-10-07) — a correctness and a security review of the protocol
 
@@ -3722,7 +3722,7 @@ Two own reviews of `34891b5` (E9.S2b, rebased on `7e65e16`), read against the fi
 otherwise, fixed in ONE `fix(daemon): E9.S2b own review round` commit, each with its red run or its break-it check
 (`research/module_tests.md` § *The E9.S2b own review round*). Each row OVERRIDES the text it names. Correctness findings are `C-`,
 security findings `S-`. The security review found no path that removes a source without a MAC-valid index line AND an archived copy
-that hashes equal at removal time. The coai gate was not reachable this session (MCP connect timeout): its code round is OWED.
+that hashes equal at removal time. The coai gate was not reachable this session (MCP connect timeout); its code round ran on 2026-10-08 (*E9.S2b/S3 gate round*).
 
 | # | Finding | Resolution | Where |
 |---|---|---|---|

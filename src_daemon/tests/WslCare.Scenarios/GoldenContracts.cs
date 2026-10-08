@@ -116,6 +116,7 @@ internal static partial class GoldenContracts
         new("lastRun.startedUtc", "archive status: the last run started now (E9.S2b)", _ => FixedInstant),
         new("lastRun.endedUtc", "archive status: the last run ended now (E9.S2b)", _ => FixedInstant),
         new("entries[*].entryId", "archive list: an entry id hashes this machine's side name (E9.S3)", _ => "0123456789abcdef"),
+        new("restore.sessions[*].entryId", "archive restore: an entry id hashes this machine's side name (E9.S3 own review round C-8a)", _ => "0123456789abcdef"),
         new("entries[*].archivedAtUtc", "archive list: the entry was archived by the run just before (E9.S3)", _ => FixedInstant),
         new("run.endedAt", "runs show: the confirmed act ended now (E6.S0)", _ => FixedInstant),
     ];
@@ -295,9 +296,25 @@ internal static partial class GoldenContracts
             files.Add(Answered("archive-run.json", archive, run with { Stdout = run.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
             files.Add(Answered("archive-status.json", archive, await archive.RunAsync("archive", "status", "--json"), matched));
 
-            // E9.S3: the list of that side's index, and a restore of its month (nothing there was removed yet: nothing to restore).
+            // E9.S3: the list of that side's index.
             files.Add(Answered("archive-list.json", archive, await archive.RunAsync("archive", "list", "--json"), matched));
-            files.Add(Answered("archive-restore.json", archive, await archive.RunAsync("archive", "restore", "--agent", "claude-code", "--month", "2000-01", "--json"), matched));
+
+            // E9.S3 own review round C-8a: a restore answering one session restored and one already there — a second session
+            // archived, both removed by later runs, the first put back by its path, then both asked for by id.
+            var second = paths.DistroPath("/home/me/.claude/projects/p/s2.jsonl");
+            File.WriteAllText(second, new string('y', 50));
+            File.SetLastWriteTimeUtc(second, new DateTime(2000, 1, 15, 12, 0, 0, DateTimeKind.Utc));
+            foreach (var _ in new[] { 1, 2 })
+            {
+                ArchiveRunFlows.ADayLater(archive);
+                (await archive.RunAsync("archive", "run", "--agent", "claude-code", "--json")).Exit.Should().Be((int)ExitCode.Ok);
+            }
+
+            File.Exists(second).Should().BeFalse("the second session was removed before the restore");
+            (await archive.RunAsync("archive", "restore", "--agent", "claude-code", "--session", "projects/p/s1.jsonl", "--json")).Exit.Should().Be((int)ExitCode.Ok);
+            var ids = JsonNode.Parse((await archive.RunAsync("archive", "list", "--json")).Stdout)!["entries"]!.AsArray().Select(e => (string)e!["entryId"]!);
+            var restore = await archive.RunAsync("archive", "restore", "--entry", string.Join(',', ids), "--json");
+            files.Add(Answered("archive-restore.json", archive, restore with { Stdout = restore.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
         }
 
         using var day = new ScenarioHome("golden-local-day");

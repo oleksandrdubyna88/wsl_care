@@ -33,10 +33,31 @@
     "notes": []
   },
   "restore": {
-    "restored": 0,
-    "alreadyThere": 0,
+    "restored": 1,
+    "alreadyThere": 1,
     "refused": 0,
-    "sessions": []
+    "sessions": [
+      {
+        "entryId": "0123456789abcdef",
+        "agent": "claude-code",
+        "key": "projects/p/s1.jsonl",
+        "month": "2000/01",
+        "outcome": "already-there",
+        "files": 2,
+        "bytes": 0,
+        "note": "every file is already there with its archived bytes"
+      },
+      {
+        "entryId": "0123456789abcdef",
+        "agent": "claude-code",
+        "key": "projects/p/s2.jsonl",
+        "month": "2000/01",
+        "outcome": "restored",
+        "files": 1,
+        "bytes": 50,
+        "note": "1 file(s) created"
+      }
+    ]
   },
   "stopKind": ""
 }

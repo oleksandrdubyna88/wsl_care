@@ -59,7 +59,8 @@ public sealed class ArchiveRunFlows
     }
 
     /// <summary>The removal is due: every in-flight entry's <c>archivedAtUtc</c> moved two days back (a run a day later, without waiting).</summary>
-    private static void ADayLater(ScenarioHome home)
+    /// <summary>Every archived in-flight entry dated two days back, so the next run may remove it (shared with the golden scene).</summary>
+    internal static void ADayLater(ScenarioHome home)
     {
         var inflight = Path.Combine(new ArchiveState(home.Paths, new Core.Files.PhysicalFileSystem(home.Paths)).Folder, "inflight.json");
         if (!File.Exists(inflight))

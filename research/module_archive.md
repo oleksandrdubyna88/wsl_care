@@ -115,7 +115,7 @@ C-M4 / S-M2).
 | `archive run [--agent <id>] [--budget-seconds <n>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-run.json`; `--json` streams one-line JSON objects, the answer last | built (E9.S2b) |
 | `archive status [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-status.json` | built (E9.S2b) |
 | `archive reconcile --scan [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | the run's answer with its `scan` counts | built (E9.S2b) |
-| `archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveRestore.cs` | the run's answer with its `restore` block (`contracts/golden/head/archive-restore.json`); exit 1 when a session was refused | built (E9.S3) |
+| `archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveRestore.cs` | the run's answer with its `restore` block (`contracts/golden/head/archive-restore.json`); `--json` streams one-line JSON progress objects, the answer last (the gate round); exit 1 when a session was refused | built (E9.S3) |
 | `archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveList.cs` | `contracts/golden/head/archive-list.json`; read-only (no lock, no lease, no key made) | built (E9.S3) |
 | A13 / A19 | — | — | E9.S4 |
 

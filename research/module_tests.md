@@ -2589,9 +2589,11 @@ Linux (in the existing `/tmp` copy, `nice 19`, nothing deleted): all 20 checks w
 Six of these first failed to BUILD because another process held the DLLs (a user-mapped section). They were run again, and those
 are the results above.
 
-**Teeth, Linux:** NOT RUN. They were stopped before their first result: the coordinator halted all WSL builds and tests while
-the machine was overloaded. They are owed. The WSL suites themselves had run green just before, goldens included. CI's Linux legs
-run the suites.
+**Teeth, Linux** (run 2026-10-08 in WSL, `nice -n 19`, after the coai code round; they were owed since the coordinator halted WSL
+while the machine was overloaded): 13 checks, all red, each source restored byte for byte.
+- the twelve above, red with the same tests as on Windows, and "the list silent on a changed mount" (added with the mount note): 1;
+- `restored.json` never written: its line had changed under the own review round (the restore time and the keep-days bound), so
+  the check was re-anchored on the current call and run again, red (3 tests) on both systems.
 
 **Not break-it checked:**
 - The restore's read-back after the create: no test can make the disk return other bytes.
@@ -2651,10 +2653,13 @@ Two checks were GREEN at first:
 
 Both checks are now red.
 
-**Teeth, Linux: OWED** (WSL halted).
+**Teeth, Linux** (run 2026-10-08 in WSL, `nice -n 19`): 12 checks, all red, each source restored byte for byte. "An unknown id
+silent" was re-anchored on the line the coai code round widened (`stopped` counts as refused too) and is red on both systems
+(2 tests). "Written under the real name" is red with 18 tests on Linux.
 
-**Owed:** `archive-restore.json` from a scene with a restored and an already-there session (C-8a). A golden can only be written on
-Linux.
+**C-8a, done 2026-10-08:** `archive-restore.json` now comes from a scene with one session restored and one already there (the
+golden scene archives a second session, both are removed by later runs, the first is put back by its path, then both are asked
+for by id). The answer is the LAST line of `--json`: since the coai code round a restore streams its progress first.
 
 ### The E9.S2b/S3 gate round (2026-10-08, plan §15r *E9.S2b/S3 gate round*)
 
@@ -2686,7 +2691,8 @@ The progress tests and the per-file progress row were written with their fix; th
 - a line after the answer: 2;
 - no heartbeat: 1.
 
-**Teeth, Linux:** run with the S3 checks in WSL (below, when recorded).
+**Teeth, Linux** (WSL, `nice -n 19`): the same 9 checks, all red with the same tests. The Linux suites ran green before them: Core
+1981 passed / 13 skipped, Cli 316 / 1, Scenarios 479 / 3.
 
 ## The extension (`src_vs_code/`)
 
