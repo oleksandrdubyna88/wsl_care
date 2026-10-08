@@ -269,7 +269,23 @@ target; the history's sample de-duplicated by pid. Its warning stands as a resid
 in flight (a server waiting on a REMOTE call spends nothing either) — the owner's accepted cost, said in every item.
 **Deviations from S2a's text:** the selection gained the child, start-ticks and account checks above; the owner's Q-M2 (users
 may add their own programs to the watched list) is NOT in this slice — it is a configuration-contract change of its own, next.
-Nothing else differs.
+Nothing else differs, except item 5's wording: a server the JUDGEMENT keeps (terminal, child, snapshot, CPU) is counted with
+its reason in the preview's basis, not listed as an item; `notRemoved` holds the targets the signal-time re-checks refused.
+**coai code round (session `f60fbbf6`):** verdict **proceed**, **8 of 8** reviewers, 15 findings: 7 accepted, 8 rejected with
+reasons. Accepted and built RED-first with teeth: the child guard repeated on a fresh process table just before the signal
+(RED: *signals.Asked … found at least one item*), the held-memory fact of a narrowed button preview (RED: *7000000 … found
+12000000*), the CPU history sampling the WATCHED list rather than the whole catalogue (so Q-M2's user programs are recorded),
+the judgement as a switch expression with a pid → sample map, the cheap filters first, and a scenario flow over the built CLI
+(`McpServerStopFlows`, Linux). Rejected: the grace "hard-coded" (it is `processes.termGraceSeconds` through `Tuning`), the
+contract order (generated; the extension compares sorted), the CLI message (`ActionId.ToString()` is its text), a rename of
+`BUTTON_ONLY_IDS` (the extension story's), a collection-expression nit.
+**Own code review (Opus):** no wrong-process path found. Taken: an orphan window never longer than the idle one (RED: *found
+0*). Recorded, not built here: **an existing install whose `dryRun` is already off and whose first-week window has passed gets
+NO dry period for A19** — the window is global, stamped at the first timer run ever — so the owner switching to a release with
+A19 starts stopping idle servers at the second timer run after the upgrade (owner question below, Q11); `mcpServers.watched`
+still a display key although it now steers A19 (the Q-M2 story re-classifies it with the open list); a server answering only
+short requests may spend under one 10 ms tick in an hour (a residual beside "a remote call in flight"); an engine-level A19
+dry-run test (the dry-run gate is the engine's, held for every auto action by `TimerPassTests` and the A1/A2/A10 tests).
 
 ### S3 — the build-server reaper (widens A3)
 
@@ -420,6 +436,10 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
 - **Q8 — the soak's pass numbers** X (PSI cpu avg300), Y (swap free), Z (idle MCP cores).
 - **Q9 — `status` writes one file now** (`$XDG_STATE_HOME/wsl-care/mcp-cpu.json`, only when an MCP server runs). The
   alternative without any write is a lifetime average, which the parent plan rejected (E7.S2d Decided 5). Accept?
+- **Q11 — A19 on an install already past its dry week (own code review, 2026-10-08):** the daemon's dry-run window is
+  global, so an install whose `dryRun` is off and whose first week has passed starts stopping idle MCP servers at the second
+  timer run after the upgrade, with no dry observation of A19. Keep that (the owner's "default ON"), or give a NEW action its
+  own first-week dry window (an engine change, its own story)?
 - **Q10 — S1's defaults:** 120 s minimum interval, 20 min maximum (two activity windows — a longer average stops
   describing now, so the 4-hour timer measures over the window until Q1b's sampler exists).
 

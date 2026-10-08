@@ -95,8 +95,9 @@ terminal (the shared signal path keeps one with a terminal), has no child proces
 `coai-mcp`'s reviewers are child CLIs — spends no CPU of its own), is the process the snapshot saw (start ticks and account
 re-read), and used **no CPU for `mcpWatchdog.idleMinutes`** (60) — or `mcpWatchdog.orphanIdleMinutes` (10) when it was
 re-parented to INIT (a `systemd --user` child gets the ordinary window: its client may live). Idleness is measured by
-`AgentCpuHistory` — the timer's per-identity CPU history, which since S2a records the catalogued MCP servers beside the AI
-agents — so missing history is "not idle" and on the 4-hour timer the 60 minutes are a floor. Signals through
+`AgentCpuHistory` — the timer's per-identity CPU history, which since S2a records the WATCHED MCP servers beside the AI
+agents — so missing history is "not idle" and on the 4-hour timer the 60 minutes are a floor. Just before the signal the child check runs again on a fresh process table (a server that started
+work since the preview is kept). Signals through
 `SuspectSignals.EndAllAsync`: SIGTERM, SIGKILL after `processes.termGraceSeconds`, by pid AND start, each re-read (a server
 that used CPU since the preview is kept). Every item says the agent's session may need `/mcp` to reconnect: what an agent
 does with an ended stdio server is not measured yet (plan S2). The busy-without-activity half (interval evidence, a watch

@@ -200,6 +200,52 @@ public sealed class McpServerStopTests : IDisposable
     }
 
     [Fact]
+    public async Task A_server_that_started_a_child_after_the_preview_is_not_signalled()
+    {
+        // coai code round 2026-10-08, finding 2: the child guard ran at the preview only; a server that started work since then
+        // (a child it waits on, spending no CPU of its own) passed every re-check of the signal path.
+        Stat(200, cpuTicks: 9000, parent: 100, name: "claude");
+        Stat(300, cpuTicks: 500);
+        var processes = new[] { Agent(), Server() };
+        var preview = await IdleFor(TimeSpan.FromHours(2), processes);
+        var signals = new RecordingSignals();
+        var action = new McpServerStop();
+        var now = Context([.. processes, UserWorld.Process(311, "/usr/bin/codex exec", ageHours: 0.01) with { ParentPid = 300 }], signals);
+
+        var run = await action.RunAsync(now, preview, new ActionCommands(action, new RecordingCommandRunner(), now.TargetUser, []), CancellationToken.None);
+
+        preview.Count.Should().Be(1, "it was idle and childless at the preview");
+        signals.Asked.Should().BeEmpty("a child appeared since: it may be waiting on that work");
+        run.NotRemoved.Should().ContainSingle().Which.Note.Should().Contain(McpServerStop.HasChild);
+    }
+
+    [Fact]
+    public async Task An_orphan_window_longer_than_the_idle_window_never_delays_an_orphan()
+    {
+        // Own code review, finding 6: nothing kept orphanIdleMinutes at or under idleMinutes.
+        _sandbox.Write("/etc/wsl-care/config.json", "{ \"mcpWatchdog\": { \"idleMinutes\": 60, \"orphanIdleMinutes\": 120 } }");
+        Stat(300, cpuTicks: 500, parent: 1);
+
+        var preview = await IdleFor(TimeSpan.FromMinutes(61), [Server(300, parent: 1, orphaned: true)]);
+
+        preview.Count.Should().Be(1, "an orphan never waits longer than a server whose agent lives");
+    }
+
+    [Fact]
+    public async Task A_narrowed_button_preview_counts_the_memory_of_what_it_kept()
+    {
+        // coai code round 2026-10-08, finding 13: the held-memory fact stayed the whole preview's after the narrowing.
+        Stat(200, cpuTicks: 9000, parent: 100, name: "claude");
+        Stat(300, cpuTicks: 500);
+        Stat(310, cpuTicks: 500);
+        var processes = new[] { Agent(), Server(300) with { RssAnonBytes = 5_000_000 }, Server(310) with { RssAnonBytes = 7_000_000 } };
+        await IdleFor(TimeSpan.FromHours(2), processes);
+
+        var bound = await Preview(processes, RunTrigger.Manual, new ShownList(Given: true, new HashSet<string>(["310:4000"], StringComparer.Ordinal)));
+
+        bound.Facts[SuspectTermination.HeldMemoryFact].Should().Be(7_000_000);
+    }
+    [Fact]
     public void The_timer_records_mcp_servers_in_the_cpu_history_once_each()
     {
         Stat(200, cpuTicks: 9000, parent: 100, name: "claude");

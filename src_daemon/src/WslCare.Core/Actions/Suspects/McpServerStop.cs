@@ -61,9 +61,9 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
 
     public Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
-        var windows = new IdleWindows(
-            TimeSpan.FromMinutes(context.Config.Int(ConfigKeys.McpWatchdog.IdleMinutes)),
-            TimeSpan.FromMinutes(context.Config.Int(ConfigKeys.McpWatchdog.OrphanIdleMinutes)));
+        var idle = TimeSpan.FromMinutes(context.Config.Int(ConfigKeys.McpWatchdog.IdleMinutes));
+        // Own code review, finding 6: an orphan never waits longer than a server whose agent lives.
+        var windows = new IdleWindows(idle, TimeSpan.FromMinutes(Math.Min(context.Config.Int(ConfigKeys.McpWatchdog.OrphanIdleMinutes), context.Config.Int(ConfigKeys.McpWatchdog.IdleMinutes))));
         var what = string.Create(CultureInfo.InvariantCulture, $"the target user's MCP servers with no CPU for {windows.Idle.TotalMinutes:0} min ({windows.Orphan.TotalMinutes:0} min when their agent died), measured - SIGTERM, then SIGKILL after {SuspectTermination.Grace.TotalSeconds:0} s; {Reconnect}");
         return Task.FromResult(Bound(Preview(context, what, windows, cancellationToken), context));
     }
@@ -78,7 +78,9 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
         {
             var kept = preview.Targets.Where(t => context.ShownProcesses.Names.Contains(SuspectSignals.Shown(t.Key))).ToList();
             var what = string.Create(CultureInfo.InvariantCulture, $"{preview.What}; of the {context.ShownProcesses.Names.Count} process(es) the panel showed, the {kept.Count} still eligible");
-            return RowPreviews.Narrowed(preview, kept, what, preview.Facts);
+            // coai code round 2026-10-08, finding 13: the held memory of what is KEPT, not of the whole preview.
+            var facts = new Dictionary<string, long>(preview.Facts, StringComparer.Ordinal) { [SuspectTermination.HeldMemoryFact] = kept.Sum(i => i.Bytes ?? 0) };
+            return RowPreviews.Narrowed(preview, kept, what, facts);
         }
 
         return context.Trigger == RunTrigger.Manual && preview.Available
@@ -105,10 +107,11 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
         }
 
         var at = SampleTime.Of(context.Clock);
-        var samples = AgentCpuHistory.Sample(linux, context.Files, snapshot.All);
+        var watched = McpSettings.From(context.Config).Watched;
+        var samples = AgentCpuHistory.Sample(linux, context.Files, snapshot.All, watched);
         // A preview writes no state: the history is the timer runs' (merged with now in memory, never written here).
         var history = AgentCpuHistory.Next(AgentCpuHistory.Read(linux, context.Files), boot, samples, at);
-        var judged = Judge(new Judging(user, snapshot.All, McpSettings.From(context.Config).Watched, samples, s => AgentCpuHistory.IdleFor(history, boot, s, at), windows));
+        var judged = Judge(new Judging(user, snapshot.All, watched, samples, s => AgentCpuHistory.IdleFor(history, boot, s, at), windows));
         var items = judged.Where(j => j.Eligible).Select(Item).ToList();
         var basis = $"MCP servers read from /proc; idle by the CPU history the timer's full runs record ({AgentCpuHistory.File(linux)}); {judged.Count - items.Count} MCP server(s) of {user.Name} kept: {Kept(judged)}";
         var facts = new Dictionary<string, long>(StringComparer.Ordinal) { [SuspectTermination.HeldMemoryFact] = items.Sum(i => i.Bytes ?? 0) };
@@ -122,22 +125,28 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
     /// <summary>Every instance of a watched MCP server owned by the target user, each judged (plan E14 S2a item 2).</summary>
     public static IReadOnlyList<McpStopJudgement> Judge(Judging judging)
     {
-        var parents = judging.Processes.Select(p => p.ParentPid).ToHashSet();
+        var parents = Parents(judging.Processes);
+        var samples = judging.Samples.ToDictionary(s => s.Pid);
         return [.. McpInstances.Find(judging.Processes, judging.Watched).Instances
             .Where(f => string.Equals(f.Process.User, judging.User.Name, StringComparison.Ordinal) && f.Process.User != "root")
             .Where(f => f.Process.Pid > InitPid && f.Process.Pid != System.Environment.ProcessId && f.Process.State != 'Z')
-            .Select(f => JudgeOne(judging, f, parents.Contains(f.Process.Pid)))];
+            .Select(f => JudgeOne(judging, f, parents.Contains(f.Process.Pid), samples.GetValueOrDefault(f.Process.Pid)))];
     }
 
-    private static McpStopJudgement JudgeOne(Judging judging, McpFound instance, bool hasChild)
+    /// <summary>Every pid that is some process's parent in <paramref name="processes"/>.</summary>
+    private static HashSet<int> Parents(IReadOnlyList<ProcessEntry> processes) => [.. processes.Select(p => p.ParentPid)];
+
+    private static McpStopJudgement JudgeOne(Judging judging, McpFound instance, bool hasChild, PidSample? sample)
     {
-        var sample = judging.Samples.FirstOrDefault(s => s.Pid == instance.Process.Pid);
         var idle = sample is null ? TimeSpan.Zero : judging.IdleFor(sample);
-        var kept = instance.Process.HasTty ? HasTerminal
-            : hasChild ? HasChild
-            : !SameProcess(instance.Process, sample, judging.User) ? NotTheSnapshot
-            : idle < WindowOf(instance, judging.Windows) ? UsedCpu
-            : string.Empty;
+        var kept = (instance.Process.HasTty, hasChild, SameProcess(instance.Process, sample, judging.User), idle >= WindowOf(instance, judging.Windows)) switch
+        {
+            (true, _, _, _) => HasTerminal,
+            (_, true, _, _) => HasChild,
+            (_, _, false, _) => NotTheSnapshot,
+            (_, _, _, false) => UsedCpu,
+            _ => string.Empty,
+        };
         return new McpStopJudgement(instance, sample, idle, kept);
     }
 
@@ -173,6 +182,8 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
     public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config) =>
         new(preview.Count > 0, string.Create(CultureInfo.InvariantCulture, $"{preview.Count} idle MCP server(s); the trigger is any"));
 
+    private static int SignalPid(ActionItem target) => int.Parse(target.Key.Split(':')[0], CultureInfo.InvariantCulture);
+
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
         if (preview.Targets.Count == 0 || context.Paths is not LinuxHostPaths linux)
@@ -180,12 +191,17 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
             return ActionRun.Nothing(commands.Ran, "no MCP server is idle");
         }
 
-        var judged = await SuspectSignals.EndAllAsync(context, linux, preview.Targets, SuspectTermination.Grace, cancellationToken).ConfigureAwait(false);
+        // coai code round 2026-10-08, finding 2: the child guard again, on the process table as it is NOW — a server that
+        // started work since the preview may be waiting on it (the signal path re-checks identity, CPU, terminal and owner only).
+        var parents = context.Processes(cancellationToken) is Reading<ProcessSnapshot>.Available { Value: var table } ? Parents(table.All) : null;
+        var withChild = preview.Targets.Where(t => parents is null || parents.Contains(SignalPid(t))).ToList();
+        var judged = await SuspectSignals.EndAllAsync(context, linux, [.. preview.Targets.Except(withChild)], SuspectTermination.Grace, cancellationToken).ConfigureAwait(false);
         var verdicts = judged.Select(j => SuspectSignals.Verdict(j.Item, j.Outcome)).ToList();
+        var keptForChild = withChild.Select(t => t with { Note = parents is null ? "not signalled: the process table could not be read again just before the signal" : $"kept: {HasChild}" });
         var ended = verdicts.Where(v => v.Ended).Select(v => v.Item).ToList();
         return new ActionRun(ended.Count, null, "A19 frees memory, not disk: each stopped server's item carries what it held", null, null, ended, commands.Ran, string.Join("; ", verdicts.Where(v => v.Failure.Length > 0).Select(v => v.Failure).Take(5)))
         {
-            NotRemoved = [.. verdicts.Where(v => !v.Ended).Select(v => v.Item)],
+            NotRemoved = [.. verdicts.Where(v => !v.Ended).Select(v => v.Item), .. keptForChild],
         };
     }
 }
