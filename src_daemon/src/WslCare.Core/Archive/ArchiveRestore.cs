@@ -322,7 +322,7 @@ public static class ArchiveRestore
             : Session(entry, RestoreOutcomes.Partial, bytes, $"{missing.Count} file(s) created; kept as the agent changed them: {string.Join(", ", plan.Kept.Select(f => f.Original))}{unwritten}{unrecorded}");
     }
 
-    private static DeletionScope RestoreScope(string under) => new(under, "A19", DeletionPermit.RestoreIntoAgentFolder);
+    private static DeletionScope RestoreScope(string under) => new(under, "A20", DeletionPermit.RestoreIntoAgentFolder);
 
     /// <summary>One file created under its original name (never replacing, through no link), streamed from its archived copy,
     /// flushed, its last write the restore time, read back equal. Empty when restored.</summary>

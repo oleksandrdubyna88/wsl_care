@@ -667,7 +667,7 @@ public static partial class ConfigKeys
         /// <summary>The archive child prints a line at least this often, mid-file too — the progress watchdog counts it (§15r D8). Default 60.</summary>
         public static readonly ConfigKey.IntKey ProgressSilenceSeconds = new("archive.progressSilenceSeconds", 10, 600) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
-        /// <summary>A19's restore child's ceiling — a button, never in a timer run; within the least maximum a request accepts
+        /// <summary>A20's restore child's ceiling (the restore button; A19 is the idle MCP servers' since E14 S2a) — a button, never in a timer run; within the least maximum a request accepts
         /// (<c>commands.maxTimeoutHours</c>' minimum, 1 h) WITH the 60 s a command's ceiling keeps — so at most 59 (E9.S0 review
         /// round C5). Default 59.</summary>
         public static readonly ConfigKey.IntKey RestoreLimitMinutes = new("archive.restoreLimitMinutes", 1, 59) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
