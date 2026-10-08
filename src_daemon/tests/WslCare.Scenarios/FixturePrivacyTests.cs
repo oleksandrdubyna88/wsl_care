@@ -82,21 +82,40 @@ public sealed class FixturePrivacyTests
             "notes.txt:3 holds the user name #1 of the machine running this test (not printed)");
     }
 
-    /// <summary>The service accounts and the name floor are the .vsix check's knowledge, mirrored: every CI account
-    /// <c>vsixCheck.test.ts</c> names is a service account here, and <c>machineUserNames</c> drops what is shorter than
-    /// <see cref="FixturePrivacy.MinimumNameLength"/> as this scan does.</summary>
+    /// <summary>The service accounts and the name floor are the .vsix check's knowledge too, and one decision: the
+    /// <c>SERVICE_ACCOUNTS</c> list of <c>src_vs_code/src/test/support/vsixCheck.ts</c> is EQUAL to
+    /// <see cref="FixturePrivacy.ServiceAccounts"/> — read out of the TypeScript source, never retyped (PR #47, run
+    /// 37751902435: the .vsix check had kept <c>runner</c> as a person and failed on the CHANGELOG's prose) — and
+    /// <c>machineUserNameSplit</c> drops what is shorter than <see cref="FixturePrivacy.MinimumNameLength"/> as this scan
+    /// does.</summary>
     [Fact]
     public void The_service_accounts_and_the_name_floor_are_the_vsix_checks_own()
     {
-        var vsixTest = File.ReadAllText(Path.Combine(ReleaseFiles.Root, "src_vs_code", "src", "test", "vsixCheck.test.ts"));
         var vsixCheck = File.ReadAllText(Path.Combine(ReleaseFiles.Root, "src_vs_code", "src", "test", "support", "vsixCheck.ts"));
 
-        var ciAccounts = System.Text.RegularExpressions.Regex.Matches(vsixTest, @"deniedWords: \[(?<words>'[a-z]+'(?:, '[a-z]+')*)\]")
-            .SelectMany(m => m.Groups["words"].Value.Split(", ").Select(w => w.Trim('\'')))
-            .ToList();
-        ciAccounts.Should().NotBeEmpty("vsixCheck.test.ts names the CI accounts its check meets").And.OnlyContain(a => FixturePrivacy.ServiceAccounts.Contains(a));
+        VsixServiceAccounts(vsixCheck).Should().NotBeEmpty("vsixCheck.ts declares SERVICE_ACCOUNTS (the read still finds the list)")
+            .And.BeEquivalentTo(FixturePrivacy.ServiceAccounts, "one list of service accounts for both machine-name checks");
         System.Text.RegularExpressions.Regex.Match(vsixCheck, @"c\.length >= (?<floor>\d+)").Groups["floor"].Value
             .Should().Be(FixturePrivacy.MinimumNameLength.ToString(System.Globalization.CultureInfo.InvariantCulture), "one floor for a machine name in both checks");
+    }
+
+    /// <summary>The quoted names of the <c>SERVICE_ACCOUNTS</c> array literal in <paramref name="source"/>, its
+    /// <c>//</c> comments dropped first (a reason may hold an apostrophe). Empty when the declaration is not found.</summary>
+    private static List<string> VsixServiceAccounts(string source)
+    {
+        var body = System.Text.RegularExpressions.Regex.Match(source, @"export const SERVICE_ACCOUNTS[^=]*=\s*\[(?<body>[^\]]*)\]").Groups["body"].Value;
+        var code = string.Join('\n', body.Split('\n').Select(line => line.Split("//")[0]));
+
+        return [.. System.Text.RegularExpressions.Regex.Matches(code, @"'(?<name>[^']+)'").Select(m => m.Groups["name"].Value)];
+    }
+
+    [Fact]
+    public void The_service_account_read_finds_each_quoted_name_and_ignores_the_comments()
+    {
+        const string source = "export const SERVICE_ACCOUNTS: readonly string[] = [\n  'runner', // it's the image's\n  'root', // a 'quoted' word\n];\nconst other = ['x'];";
+
+        VsixServiceAccounts(source).Should().Equal("runner", "root");
+        VsixServiceAccounts("const nothing = ['runner'];").Should().BeEmpty();
     }
 
     private static string ByFileAndRule(IEnumerable<string> findings) =>

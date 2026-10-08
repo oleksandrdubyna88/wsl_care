@@ -2087,8 +2087,13 @@ sequenceDiagram
   `zipFile.ts`) opens the built `.vsix`: the entry list equals the allowlist under `extension/` (vsce's renames
   `readme.md`, `changelog.md`, `LICENSE.txt`) plus vsce's two own files; no drive path (`X:\` / `X:/`), `/home/`, `/mnt/`,
   `\\wsl`; no user name of the machine running the check (derived then — `os.userInfo()`, `USERNAME`, `USER`, the home
-  folder — never stored) nor a word of `vsix-denylist.txt` (the bundle's string LITERALS only: an identifier named
-  `runner` is code, and `runner` is a CI account); no e-mail address; no source map; exactly one build stamp, equal to the
+  folder — never stored) nor a word of `vsix-denylist.txt`, as whole words in every entry (the bundle's string LITERALS
+  only: an identifier named `runner` is code). A machine name that is a SERVICE account (`SERVICE_ACCOUNTS`: `runner` /
+  `runneradmin` — the GitHub-hosted images —, `root`, `vscode`, `codespace`, `user`; the same list as
+  `FixturePrivacy.ServiceAccounts`, held equal by `FixturePrivacyTests`) is no person and is left out, and the success line
+  names what was left out: release-please's 0.2.0 CHANGELOG said "the runner seam", and under the runner's own account
+  `runner` both CI legs of PR #47 were red (run 37751902435). The narrowing is stated, not hidden: a person whose login is
+  one of those six is not looked for by name; a `/home/…` or `X:\…` path is still refused whatever the name. No e-mail address; no source map; exactly one build stamp, equal to the
   `.vsix`'s version; with `--release`, a real publisher; the minimum daemon equal in the compiled constant, the emitted
   `dist/min-daemon.json` and the checked-in `min-daemon.json` — and, with `--min-daemon <x.y.z>` (the release guard's
   output), the minimum the guard found published and verified. A denied word is reported by its index, never printed.
@@ -2499,8 +2504,10 @@ Claude scratchpad path. Since the code round:
   admitting besides `user` only the commented list of invented test accounts (`FixturePrivacy.SyntheticNames`: `me`,
   `ann`, `sam`, `alice`, …) and, for e-mail, `noreply@anthropic.com` and the RFC 2606 / 6761 example domains. The
   machine-name rule leaves out a service account (`FixturePrivacy.ServiceAccounts`: `runner` and `runneradmin` — the
-  GitHub-hosted runners' accounts, which `vsixCheck.test.ts` names too and a test holds in step —, `root`, `vscode`,
-  `codespace`, `user`), a synthetic name and a name shorter than 3 characters (check-vsix's floor), and matches the rest
+  GitHub-hosted runners' accounts —, `root`, `vscode`,
+  `codespace`, `user`; check-vsix's `SERVICE_ACCOUNTS` is the same list, and
+  `FixturePrivacyTests.The_service_accounts_and_the_name_floor_are_the_vsix_checks_own` reads it out of `vsixCheck.ts` and
+  holds the two EQUAL), a synthetic name and a name shorter than 3 characters (check-vsix's floor), and matches the rest
   as a whole word: `runner` is an ordinary word here, and CI run 37202261532 reported 541 findings per Linux leg. The research notes,
   the cleanup scripts and two test sources were anonymised by it (2026-10-04).
 - **Not undone by this**: the data before the code round remains in git history (main and the pull-request branches);

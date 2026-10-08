@@ -5,7 +5,7 @@ import { test } from 'node:test';
 
 import { iconPng } from './support/iconPng';
 import { BUNDLE, EXTENSION_ROOT } from './support/paths';
-import { listLines, machineUserNames, minDaemonFindings, PUBLISHER_PLACEHOLDER, VSIX_OWN_FILES, vsixEntryName, vsixFindings, type VsixCheckOptions } from './support/vsixCheck';
+import { listLines, machineUserNames, machineUserNameSplit, minDaemonFindings, PUBLISHER_PLACEHOLDER, SERVICE_ACCOUNTS, VSIX_OWN_FILES, vsixEntryName, vsixFindings, type VsixCheckOptions } from './support/vsixCheck';
 import { readZip, writeZip } from './support/zipFile';
 
 /**
@@ -109,10 +109,39 @@ test('a user name of the build machine or a denylist word is found as a whole wo
   assert.deepEqual(vsixFindings(inBundle('someowners and theowner'), OPTIONS), [], 'a longer word is not the name');
 });
 
-test('in the bundle only string LITERALS are read for names: a CI account called "runner" does not trip on the code that names a runner', () => {
+test('in the bundle only string LITERALS are read for a denied word: the code that names a runner does not trip, the word in a string does', () => {
   const options = { ...OPTIONS, deniedWords: ['runner', 'runneradmin'] };
-  assert.deepEqual(vsixFindings(cleanEntries(), options), [], 'the real bundle carries the identifier, not the word in a string');
-  assert.equal(vsixFindings(inBundle('the runner said'), options).length, 1, 'the same word in a string IS found');
+  assert.match(fs.readFileSync(BUNDLE, 'utf8'), /(?<![A-Za-z0-9])runner(?![A-Za-z0-9])/, 'the real bundle names a runner in its code (the subject is present)');
+  const inTheBundle = (entries: Map<string, Buffer>): string[] => vsixFindings(entries, options).filter((f) => f.startsWith(BUNDLE_ENTRY));
+  assert.deepEqual(inTheBundle(cleanEntries()), [], 'the real bundle carries the identifier, not the word in a string');
+  assert.equal(inTheBundle(inBundle('the runner said')).length, 1, 'the same word in a string IS found');
+});
+
+/** The names `scripts/check-vsix.mjs` denies for a machine whose account reads as `candidates`, plus the denylist. */
+function machineOptions(candidates: readonly (string | undefined)[]): VsixCheckOptions {
+  return { ...OPTIONS, deniedWords: [...machineUserNames(candidates), ...DENYLIST] };
+}
+
+test('a GitHub-hosted runner\'s own account (runner, runneradmin) is no person: a CHANGELOG that says "the win-x64 runner" passes (PR #47, run 37751902435)', () => {
+  const prose = planted('extension/changelog.md', '* the runner seam takes stdin; the win-x64 runner signs it; runneradmin is its Windows account');
+  assert.deepEqual(vsixFindings(prose, machineOptions(['runner', 'RUNNER', undefined])), [], 'the Linux and macOS images');
+  assert.deepEqual(vsixFindings(prose, machineOptions(['runneradmin', 'RUNNERADMIN'])), [], 'the Windows image');
+});
+
+test('the narrowed guarantee, pinned: a service-account name is not looked for even as "built by runner" — but a home path is still a path leak whatever the name', () => {
+  const options = machineOptions(['runner']);
+  assert.deepEqual(vsixFindings(planted('extension/readme.md', 'built by runner'), options), [], 'a service account identifies nobody (SERVICE_ACCOUNTS)');
+  assert.deepEqual(vsixFindings(planted('extension/readme.md', 'see /home/x/work'), options).map((f) => f.replace(/:\d+/, '')), ['extension/readme.md holds a /home/ path']);
+});
+
+test('a PERSON\'s account is still refused in prose — as a path segment and as a word — even beside a service account', () => {
+  const options = machineOptions(['jdoe', 'JDoe', 'runner']);
+  const asPath = vsixFindings(planted('extension/changelog.md', `notes in C:${BACKSLASH}Users${BACKSLASH}jdoe${BACKSLASH}notes, the runner said`), options);
+  assert.deepEqual(asPath.map((f) => f.replace(/:\d+/, '')), ['extension/changelog.md holds a drive path', 'extension/changelog.md holds denied word #1 (a user name or a denylist entry; not printed)']);
+  const asWord = vsixFindings(planted('extension/readme.md', 'thanks jdoe for the runner'), options);
+  assert.deepEqual(asWord, ['extension/readme.md holds denied word #1 (a user name or a denylist entry; not printed)']);
+  assert.equal(asWord.join(' ').toLowerCase().includes('jdoe'), false, 'the name itself is never printed');
+  assert.equal(vsixFindings(inBundle('built by jdoe'), options).length, 1, 'and in a string literal of the bundle');
 });
 
 test('a source map entry is a finding', () => {
@@ -152,8 +181,12 @@ test('a RELEASE refuses the placeholder publisher; an ordinary package does not'
   assert.deepEqual(vsixFindings(entries, { ...OPTIONS, release: true }), [], 'a real publisher passes the release check');
 });
 
-test('the build machine\'s user names are derived, deduplicated, case-folded, and too-short ones dropped', () => {
-  assert.deepEqual(machineUserNames(['Alice', 'alice', undefined, ' ab ', 'runner']), ['alice', 'runner']);
+test('the build machine\'s user names are derived, deduplicated, case-folded, too-short ones dropped, and a service account left out', () => {
+  assert.deepEqual(machineUserNames(['Alice', 'alice', undefined, ' ab ', 'runner']), ['alice']);
+  assert.deepEqual(machineUserNameSplit(['RunnerAdmin', 'jdoe', 'runneradmin', 'ROOT']), { personal: ['jdoe'], serviceAccounts: ['runneradmin', 'root'] });
+  for (const account of SERVICE_ACCOUNTS) {
+    assert.deepEqual(machineUserNameSplit([account.toUpperCase()]), { personal: [], serviceAccounts: [account] }, account);
+  }
 });
 
 test('the ZIP reader reads what the writer wrote — stored names, inflated bytes, directories skipped', () => {
