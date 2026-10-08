@@ -52,9 +52,10 @@ internal static partial class FixturePrivacy
     /// <summary>
     /// Accounts a machine runs a test under that are a SERVICE, never a person, so the machine-name rule leaves them out.
     /// CI run 37202261532 (2026-10-04) is why: <c>runner</c> is an ordinary word of this repository (a test runner, the
-    /// command runner) and the Linux legs reported 541 findings, the Windows leg 1 (<c>runneradmin</c>). The CI accounts
-    /// are the ones <c>src_vs_code/src/test/vsixCheck.test.ts</c> names for the .vsix check — which keeps them and reads
-    /// only the bundle's string literals instead —, and <c>FixturePrivacyTests</c> holds the two in step.
+    /// command runner) and the Linux legs reported 541 findings, the Windows leg 1 (<c>runneradmin</c>). The .vsix leak
+    /// check takes the same decision: <c>SERVICE_ACCOUNTS</c> in <c>src_vs_code/src/test/support/vsixCheck.ts</c> (it had
+    /// kept <c>runner</c> as a person and failed on the 0.2.0 CHANGELOG's prose — PR #47, run 37751902435), and
+    /// <c>FixturePrivacyTests</c> holds the two lists EQUAL.
     /// </summary>
     internal static readonly IReadOnlySet<string> ServiceAccounts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {

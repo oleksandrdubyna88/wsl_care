@@ -82,21 +82,85 @@ public sealed class FixturePrivacyTests
             "notes.txt:3 holds the user name #1 of the machine running this test (not printed)");
     }
 
-    /// <summary>The service accounts and the name floor are the .vsix check's knowledge, mirrored: every CI account
-    /// <c>vsixCheck.test.ts</c> names is a service account here, and <c>machineUserNames</c> drops what is shorter than
-    /// <see cref="FixturePrivacy.MinimumNameLength"/> as this scan does.</summary>
+    /// <summary>The service accounts and the name floor are the .vsix check's knowledge too, and one decision: the
+    /// <c>SERVICE_ACCOUNTS</c> list of <c>src_vs_code/src/test/support/vsixCheck.ts</c> is EQUAL to
+    /// <see cref="FixturePrivacy.ServiceAccounts"/> — read out of the TypeScript source, never retyped (PR #47, run
+    /// 37751902435: the .vsix check had kept <c>runner</c> as a person and failed on the CHANGELOG's prose) — and
+    /// <c>machineUserNameSplit</c> drops what is shorter than <see cref="FixturePrivacy.MinimumNameLength"/> as this scan
+    /// does.</summary>
     [Fact]
     public void The_service_accounts_and_the_name_floor_are_the_vsix_checks_own()
     {
-        var vsixTest = File.ReadAllText(Path.Combine(ReleaseFiles.Root, "src_vs_code", "src", "test", "vsixCheck.test.ts"));
         var vsixCheck = File.ReadAllText(Path.Combine(ReleaseFiles.Root, "src_vs_code", "src", "test", "support", "vsixCheck.ts"));
 
-        var ciAccounts = System.Text.RegularExpressions.Regex.Matches(vsixTest, @"deniedWords: \[(?<words>'[a-z]+'(?:, '[a-z]+')*)\]")
-            .SelectMany(m => m.Groups["words"].Value.Split(", ").Select(w => w.Trim('\'')))
-            .ToList();
-        ciAccounts.Should().NotBeEmpty("vsixCheck.test.ts names the CI accounts its check meets").And.OnlyContain(a => FixturePrivacy.ServiceAccounts.Contains(a));
+        VsixServiceAccounts(vsixCheck).Should().NotBeEmpty("vsixCheck.ts declares SERVICE_ACCOUNTS (the read still finds the list)")
+            .And.BeEquivalentTo(FixturePrivacy.ServiceAccounts, "one list of service accounts for both machine-name checks");
         System.Text.RegularExpressions.Regex.Match(vsixCheck, @"c\.length >= (?<floor>\d+)").Groups["floor"].Value
             .Should().Be(FixturePrivacy.MinimumNameLength.ToString(System.Globalization.CultureInfo.InvariantCulture), "one floor for a machine name in both checks");
+    }
+
+    /// <summary>The quoted names of the ONE live <c>SERVICE_ACCOUNTS</c> array literal in <paramref name="source"/>,
+    /// every <c>//</c> comment of the source dropped first (a reason may hold an apostrophe or a <c>]</c>, and a
+    /// commented-out copy is not the list). Empty when the declaration is not found; an
+    /// <see cref="InvalidDataException"/> for two live declarations, or when the body holds anything but those names,
+    /// commas and whitespace — an entry this read cannot see would otherwise leave the parity green while the lists
+    /// differ.</summary>
+    private static List<string> VsixServiceAccounts(string source)
+    {
+        var code = string.Join('\n', source.Split('\n').Select(line => line.Split("//")[0]));
+        var declarations = System.Text.RegularExpressions.Regex.Matches(code, @"export const SERVICE_ACCOUNTS[^=]*=\s*\[(?<body>[^\]]*)\]");
+        if (declarations.Count > 1)
+        {
+            throw new InvalidDataException($"vsixCheck.ts holds {declarations.Count} declarations of SERVICE_ACCOUNTS — the parity cannot tell which is the list");
+        }
+        var body = declarations.Count == 0 ? string.Empty : declarations[0].Groups["body"].Value;
+        const string QuotedName = @"'(?<name>[^']+)'";
+        var rest = System.Text.RegularExpressions.Regex.Replace(body, QuotedName, string.Empty);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(rest, @"^[\s,]*$"))
+        {
+            throw new InvalidDataException($"SERVICE_ACCOUNTS holds something other than single-quoted names: '{rest.Trim()}'");
+        }
+
+        return [.. System.Text.RegularExpressions.Regex.Matches(body, QuotedName).Select(m => m.Groups["name"].Value)];
+    }
+
+    [Fact]
+    public void The_service_account_read_finds_each_quoted_name_and_ignores_the_comments()
+    {
+        const string source = "export const SERVICE_ACCOUNTS: readonly string[] = [\n  'runner', // it's the image's\n  'root', // a 'quoted' word\n];\nconst other = ['x'];";
+
+        VsixServiceAccounts(source).Should().Equal("runner", "root");
+        VsixServiceAccounts("const nothing = ['runner'];").Should().BeEmpty();
+    }
+
+    /// <summary>An entry the read cannot see — double-quoted, a template literal, a spread, a block comment — would
+    /// let the TypeScript list grow while the parity test stays green (own review of this change, 2026-10-08), so the
+    /// read refuses any array body that is not single-quoted names, commas, whitespace and line comments.</summary>
+    [Theory]
+    [InlineData("'runner',\n  \"builder\",")]
+    [InlineData("'runner',\n  `builder`,")]
+    [InlineData("'runner',\n  ...EXTRA,")]
+    [InlineData("'runner', /* 'x' */")]
+    public void The_service_account_read_refuses_an_entry_it_cannot_see(string body)
+    {
+        var source = $"export const SERVICE_ACCOUNTS: readonly string[] = [\n  {body}\n];";
+
+        FluentActions.Invoking(() => VsixServiceAccounts(source)).Should().Throw<InvalidDataException>();
+    }
+
+    /// <summary>Comments are dropped before the declaration is looked for (coai code rounds, 2026-10-08): a
+    /// commented-out copy above the live one is never read in its place, a <c>]</c> inside a line comment never ends the
+    /// list early, and two LIVE declarations are refused.</summary>
+    [Fact]
+    public void The_service_account_read_sees_only_the_live_declaration_whole()
+    {
+        const string commentedCopy = "// export const SERVICE_ACCOUNTS = ['runner'];\nexport const SERVICE_ACCOUNTS: readonly string[] = [\n  'runner',\n  'root',\n];";
+        const string bracketInComment = "export const SERVICE_ACCOUNTS: readonly string[] = [\n  'runner', // the image's [Linux] account ]\n  'root',\n];";
+        const string twoLive = "export const SERVICE_ACCOUNTS = ['runner'];\nexport const SERVICE_ACCOUNTS = ['root'];";
+
+        VsixServiceAccounts(commentedCopy).Should().Equal("runner", "root");
+        VsixServiceAccounts(bracketInComment).Should().Equal("runner", "root");
+        FluentActions.Invoking(() => VsixServiceAccounts(twoLive)).Should().Throw<InvalidDataException>().WithMessage("*2 declarations*");
     }
 
     private static string ByFileAndRule(IEnumerable<string> findings) =>

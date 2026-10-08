@@ -12,8 +12,10 @@ import { stringLiteralsOf } from './sourceScan';
  *    extra.
  * 2. **No machine path** — a drive path (`X:\` or `X:/`), `/home/`, `/mnt/`, a `\\wsl` share.
  * 3. **No user name** — the build machine's user name (derived when the check runs, never written into the repository)
- *    and every entry of `vsix-denylist.txt`, as whole words. In `extension.js` only its STRING LITERALS are read (an
- *    identifier is code, not a leak — the bundle legitimately names a `runner`, which is a CI account's name).
+ *    and every entry of `vsix-denylist.txt`, as whole words, in every entry. A machine name that is one of the
+ *    {@link SERVICE_ACCOUNTS} is no person and is left out (a GitHub-hosted runner runs as `runner`, an ordinary word of
+ *    the CHANGELOG — PR #47, run 37751902435). In `extension.js` only its STRING LITERALS are read (an identifier is
+ *    code, not a leak — the bundle legitimately names a `runner`).
  * 4. **No e-mail address.**
  * 5. **No source map** — no `.map` entry, no `sourceMappingURL=`, no `sourcesContent`.
  * 6. **The build stamp is the package version** — `extension.js` carries exactly one `wsl-care-build <version>` literal
@@ -188,14 +190,45 @@ export function listLines(text: string): string[] {
 }
 
 /**
- * The build machine's user name, as many ways as it can be read — `os.userInfo()`, `USERNAME`, `USER`, the home
- * folder's last segment — deduplicated, each at least three characters (a shorter one matches too much to mean
- * anything). Derived when the check runs, so no name is ever written into the repository.
+ * Accounts a machine runs the check under that are a SERVICE, never a person — so a machine name equal to one of them is
+ * not looked for. The same list, with the same reasons, as `FixturePrivacy.ServiceAccounts`
+ * (`src_daemon/tests/WslCare.Scenarios/FixturePrivacy.cs`), and `FixturePrivacyTests` holds the two EQUAL. Why it exists:
+ * a GitHub-hosted runner's account is `runner`, an ordinary word of this repository's prose, and release-please's
+ * 0.2.0 CHANGELOG section ("the runner seam takes stdin") turned both CI legs red (PR #47, run 37751902435). The
+ * narrowed guarantee, stated: a person whose login is literally one of these is not looked for by name — their name
+ * identifies nobody; the path rules still refuse `/home/…` and `X:\…` whatever the name.
  */
-export function machineUserNames(candidates: readonly (string | undefined)[]): string[] {
-  const names = candidates.map((c) => (c ?? '').trim()).filter((c) => c.length >= 3);
+export const SERVICE_ACCOUNTS: readonly string[] = [
+  'runner', // GitHub-hosted runners, the Linux and macOS images
+  'runneradmin', // GitHub-hosted runners, the Windows image
+  'root', // a container, or the distro's superuser
+  'vscode', // the default account of a VS Code dev container
+  'codespace', // GitHub Codespaces
+  'user', // the anonymised data's own placeholder account
+];
 
-  return [...new Set(names.map((n) => n.toLowerCase()))];
+/** The build machine's names, split into the ones that could be a person's and the service accounts left out. */
+export interface MachineUserNameSplit {
+  readonly personal: readonly string[];
+  readonly serviceAccounts: readonly string[];
+}
+
+/**
+ * The build machine's user name, as many ways as it can be read — `os.userInfo()`, `USERNAME`, `USER`, the home
+ * folder's last segment — deduplicated, case-folded, each at least three characters (a shorter one matches too much to
+ * mean anything), and split: a {@link SERVICE_ACCOUNTS} name is no person. Derived when the check runs, so no name is
+ * ever written into the repository.
+ */
+export function machineUserNameSplit(candidates: readonly (string | undefined)[]): MachineUserNameSplit {
+  const names = [...new Set(candidates.map((c) => (c ?? '').trim()).filter((c) => c.length >= 3).map((n) => n.toLowerCase()))];
+  const service = new Set(SERVICE_ACCOUNTS);
+
+  return { personal: names.filter((n) => !service.has(n)), serviceAccounts: names.filter((n) => service.has(n)) };
+}
+
+/** The names the leak check denies for this machine: the personal half of {@link machineUserNameSplit}. */
+export function machineUserNames(candidates: readonly (string | undefined)[]): string[] {
+  return [...machineUserNameSplit(candidates).personal];
 }
 
 /** The minimum daemon as each place that holds it says it (E5 code round #2/#5). */

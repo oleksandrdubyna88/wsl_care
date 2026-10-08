@@ -4,7 +4,8 @@
  *
  *   1. `vsce ls --no-dependencies` lists EXACTLY vsix-files.txt (what .vscodeignore's allowlist lets in);
  *   2. the .vsix itself is unzipped and its entries are checked by src/test/support/vsixCheck.ts — exactly the allowlist,
- *      no drive / home / mnt / wsl-share path, no user name of THIS machine (derived now, never stored) or word of
+ *      no drive / home / mnt / wsl-share path, no user name of THIS machine (derived now, never stored; a service account
+ *      such as a GitHub-hosted runner's `runner` is no person and is left out) or word of
  *      vsix-denylist.txt, no e-mail address, no source map, and a build stamp equal to the package version;
  *   3. with --release, the placeholder publisher is refused;
  *   4. the minimum daemon agrees everywhere it is held (E5 code round #2/#5): MIN_DAEMON_FOR_RENDER of the compiled
@@ -41,7 +42,7 @@ function fail(message, code) {
 if (!existsSync(join(SUPPORT, 'vsixCheck.js'))) {
   fail('out/test/support/vsixCheck.js is missing — run `npm run compile` (or npm test) first', 2);
 }
-const { listLines, machineUserNames, minDaemonFindings, vsixFindings } = require(join(SUPPORT, 'vsixCheck.js'));
+const { listLines, machineUserNameSplit, minDaemonFindings, vsixFindings } = require(join(SUPPORT, 'vsixCheck.js'));
 const { INSTALL_DAEMON, MIN_DAEMON_FOR_ACTIONS, MIN_DAEMON_FOR_RENDER } = require(join(ROOT, 'out', 'client', 'handshake.js'));
 const { readZip } = require(join(SUPPORT, 'zipFile.js'));
 
@@ -96,7 +97,8 @@ function jsonOrUndefined(file) {
   }
 }
 
-const names = machineUserNames([userInfo().username, process.env.USERNAME, process.env.USER, basename(homedir())]);
+// A service account (a GitHub-hosted runner's `runner` / `runneradmin`, …) is no person and is left out — SERVICE_ACCOUNTS.
+const { personal: names, serviceAccounts } = machineUserNameSplit([userInfo().username, process.env.USERNAME, process.env.USER, basename(homedir())]);
 const emitted = jsonOrUndefined(join(ROOT, 'dist', 'min-daemon.json'));
 const checkedIn = jsonOrUndefined(join(ROOT, 'min-daemon.json'));
 const minDaemon = [
@@ -117,4 +119,4 @@ if (findings.length > 0) {
   }
   process.exit(1);
 }
-console.log(`check-vsix: ${basename(vsix)} — ${expected.length} allowlisted files, no leak, build stamp ${version}${release ? ', publisher set' : ''}, minimum daemon ${MIN_DAEMON_FOR_RENDER} (actions ${MIN_DAEMON_FOR_ACTIONS}), installs ${INSTALL_DAEMON}${released === undefined ? '' : ' (the guard verified them)'}${rootAllowed === undefined ? '' : `, root module ${rootAllowed ? 'allowed' : 'refused'} by the tags`}; ${names.length} machine user name(s) and ${denylist.length} denylist word(s) checked`);
+console.log(`check-vsix: ${basename(vsix)} — ${expected.length} allowlisted files, no leak, build stamp ${version}${release ? ', publisher set' : ''}, minimum daemon ${MIN_DAEMON_FOR_RENDER} (actions ${MIN_DAEMON_FOR_ACTIONS}), installs ${INSTALL_DAEMON}${released === undefined ? '' : ' (the guard verified them)'}${rootAllowed === undefined ? '' : `, root module ${rootAllowed ? 'allowed' : 'refused'} by the tags`}; ${names.length} machine user name(s) and ${denylist.length} denylist word(s) checked${serviceAccounts.length === 0 ? '' : ` (left out as service account(s), no person: ${serviceAccounts.join(', ')})`}`);
