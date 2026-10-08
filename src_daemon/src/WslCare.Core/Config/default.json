@@ -52,7 +52,8 @@
   },
   "buildServers": {
     "idleHours": 4,
-    "shutdownTimeoutSeconds": 120
+    "shutdownTimeoutSeconds": 120,
+    "idleMinutes": 60
   },
   "processes": {
     "idleOlderThanHours": 8,

@@ -31,12 +31,22 @@ public static partial class ProcessFamilies
     /// <summary>The family name of the AI agents' CLIs — never choosable for A11 (§15q Q13: their processes are the owner's work).</summary>
     public const string AiAgents = "ai-agents";
 
+    /// <summary>The C# language server (E14 S3) — a family of its own, before <c>vscode-server</c>, so A11 can name it without
+    /// naming the VS Code server itself (daemonised, parent 1, no terminal: an A11 suspect at an idle desk — coai plan round
+    /// 2026-10-08, finding 5).</summary>
+    public const string LanguageServers = "language-servers";
+
+    /// <summary>The .NET build servers (A3's family; the CPU history records them since E14 S3) — named here, in the catalogue,
+    /// so the history does not depend on the action that reads it (coai code round 2026-10-08, finding 1).</summary>
+    public const string DotnetBuildServers = "dotnet-build-servers";
+
     public static readonly IReadOnlyList<ProcessFamily> Catalogue =
     [
-        new("dotnet-build-servers", BuildServers(), HeadOnly: false),
+        new(DotnetBuildServers, BuildServers(), HeadOnly: false),
         new("testhost", TestHost(), HeadOnly: false),
         new(AiAgents, AiAgentCli(), HeadOnly: true),
         new("docker-desktop-proxy", DockerDesktopProxy(), HeadOnly: true),
+        new(LanguageServers, LanguageServer(), HeadOnly: false),
         new("vscode-server", VsCodeServer(), HeadOnly: false),
         new("node", Node(), HeadOnly: true),
     ];
@@ -65,7 +75,16 @@ public static partial class ProcessFamilies
     [GeneratedRegex(@"docker-desktop-user-distro|docker-desktop-proxy", RegexOptions.CultureInvariant)]
     private static partial Regex DockerDesktopProxy();
 
-    /// <summary>Everything VS Code runs in the distro: the server, extension hosts, ServiceHub, the C# language server.</summary>
+    /// <summary>The Roslyn language server C# Dev Kit runs (measured in the captured 2026-10-02 tree): the PROGRAM itself, or the
+    /// assembly <c>dotnet</c> runs — <c>dotnet [exec] [--option value]… …/Microsoft.CodeAnalysis.LanguageServer.dll</c> (coai code
+    /// round 2026-10-08, findings 3, 6, 7: <c>exec</c> and its options put the assembly past the first two words). Anchored at
+    /// the program, so a process that only names the server among its arguments is not one.</summary>
+    [GeneratedRegex(@"^(?:\S*/)?(?:Microsoft\.CodeAnalysis\.LanguageServer(?:\.exe)?|dotnet(?:\.exe)?\s+(?:exec\s+)?(?:-\S*\s+\S+\s+)*\S*Microsoft\.CodeAnalysis\.LanguageServer\.dll)(?:\s|$)", RegexOptions.CultureInvariant)]
+    private static partial Regex LanguageServer();
+
+    /// <summary>Everything else VS Code runs in the distro: the server, extension hosts, ServiceHub (the C# language server is
+    /// matched first, as <see cref="LanguageServers"/>; a launch form that rule does not know still lands here by name — the
+    /// family it had before E14 S3).</summary>
     [GeneratedRegex(@"/\.vscode-server/|\bServiceHub\b|Microsoft\.CodeAnalysis\.LanguageServer|Microsoft\.VisualStudio\.Code\.", RegexOptions.CultureInvariant)]
     private static partial Regex VsCodeServer();
 

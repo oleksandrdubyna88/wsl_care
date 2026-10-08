@@ -73,7 +73,7 @@ public sealed class ProcessCollectorTests
 
         all.Single(p => p.Pid == 7203).Family.Should().Be("ai-agents", "Claude Code inside a VS Code extension is an agent first");
         all.Single(p => p.Pid == 5814).Family.Should().Be("ai-agents", "agy, Antigravity");
-        all.Single(p => p.Pid == 6612).Family.Should().Be("vscode-server", "Microsoft.CodeAnalysis.LanguageServer");
+        all.Single(p => p.Pid == 6612).Family.Should().Be("language-servers", "Microsoft.CodeAnalysis.LanguageServer: a family of its own since E14 S3, so A11 can name it without the VS Code server");
         all.Single(p => p.Pid == 4137).Family.Should().Be("docker-desktop-proxy");
         all.Single(p => p.Pid == 7472).Family.Should().Be("node");
         all.Single(p => p.Pid == 1).Family.Should().Be(ProcessFamilies.Other);

@@ -330,7 +330,7 @@
             "value": "/home/user/git/project-p"
           },
           "commandLine": "/home/user/.vscode-server/extensions/vendor.extension-e-1.0.0-linux-x64/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information --sourceGeneratorExecutionPreference Balanced --devKitDepen",
-          "family": "vscode-server",
+          "family": "language-servers",
           "orphaned": false,
           "hasTty": false,
           "underMnt": false
@@ -933,8 +933,8 @@
       "families": [
         {
           "name": "vscode-server",
-          "count": 22,
-          "heldBytes": 8352935936
+          "count": 21,
+          "heldBytes": 8212705280
         },
         {
           "name": "ai-agents",
@@ -950,6 +950,11 @@
           "name": "other",
           "count": 22,
           "heldBytes": 178163712
+        },
+        {
+          "name": "language-servers",
+          "count": 1,
+          "heldBytes": 140230656
         },
         {
           "name": "docker-desktop-proxy",

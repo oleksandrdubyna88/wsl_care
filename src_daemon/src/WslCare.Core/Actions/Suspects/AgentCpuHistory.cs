@@ -25,7 +25,8 @@ public sealed record AgentCpuFile(int SchemaVersion, string BootId, IReadOnlyLis
 
 /// <summary>
 /// "No CPU for N hours", MEASURED (plan §15q E7.S2b item 3): every root run records, for each AI-agent process of a non-root
-/// account, its cumulative CPU ticks by identity — <c>(pid, boot_id, start ticks)</c>, <c>/proc/&lt;pid&gt;/stat</c> fields 22
+/// account — and, since E14, each watched MCP server (A19) and each .NET build server (A3's timer) — its cumulative CPU ticks
+/// by identity — <c>(pid, boot_id, start ticks)</c>, <c>/proc/&lt;pid&gt;/stat</c> fields 22
 /// and 14 + 15. A process has been idle since the OLDEST sample of the same identity whose ticks equal now's; a different boot,
 /// a different start (a reused pid) or no history at all is "no history" — never idle, so the first runs end nothing.
 /// </summary>
@@ -67,7 +68,7 @@ public static class AgentCpuHistory
         }
     }
 
-    /// <summary>The next history: <paramref name="samples"/> (the live AI-agent processes now) merged into <paramref name="before"/> —
+    /// <summary>The next history: <paramref name="samples"/> (the live recorded processes now) merged into <paramref name="before"/> —
     /// an identity whose ticks did not move keeps its "unchanged since" and adds the gap since its last sighting, one that moved
     /// starts again now, a new one starts now; identities not alive now are dropped; another boot starts afresh.</summary>
     public static AgentCpuFile Next(AgentCpuFile before, string bootId, IReadOnlyList<PidSample> samples, SampleTime at)
@@ -96,6 +97,23 @@ public static class AgentCpuHistory
             ? Shorter(at.Wall - entry.UnchangedSince, TimeSpan.FromMilliseconds(at.MonotonicMs - entry.UnchangedSinceMs))
             : TimeSpan.Zero;
 
+    /// <summary>How long each of <paramref name="pids"/> has used no CPU NOW — each read from /proc, merged with the recorded
+    /// history in memory only (a preview writes no state) — one value per pid that is readable and not root's; EMPTY when the
+    /// boot id cannot be read, so no process's idle time can be told (E14 S3; coai code round 2026-10-08, finding 5: the one
+    /// query a caller makes instead of sampling, merging and judging by itself).</summary>
+    public static IReadOnlyList<TimeSpan> IdleNow(LinuxHostPaths paths, IFileSystem files, IReadOnlyList<int> pids, SampleTime at)
+    {
+        var boot = BootIdentity.Read(paths, files);
+        if (boot.Length == 0)
+        {
+            return [];
+        }
+
+        var samples = pids.Distinct().Select(pid => SuspectTermination.Sample(files, paths, pid)).OfType<PidSample>().Where(s => s.Uid != 0).ToList();
+        var history = Next(Read(paths, files), boot, samples, at);
+        return [.. samples.Select(s => IdleFor(history, boot, s, at))];
+    }
+
     private static bool Dense(AgentCpuEntry entry, SampleTime at)
     {
         var maxGapMs = (long)MaxGap.TotalMilliseconds;
@@ -122,15 +140,20 @@ public static class AgentCpuHistory
     /// <summary>The AI-agent processes AND the processes of the WATCHED MCP servers (plan E14 S2a: A19's evidence — one history,
     /// one sampler; coai code round 2026-10-08: the watched list, never the whole catalogue, so a server A19 may judge is one the
     /// history records) of non-root accounts in <paramref name="processes"/>, sampled from <c>/proc</c> now, each pid once (the merge
-    /// keys by identity and would refuse a duplicate — the risk consultation of 2026-10-08).</summary>
+    /// keys by identity and would refuse a duplicate — the risk consultation of 2026-10-08) — and, since E14 S3, the .NET build
+    /// servers (A3's timer runs its shutdown only when every one is measured idle).</summary>
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, IReadOnlyList<Mcp.McpServerEntry> watched) =>
         [.. processes
-            .Where(p => p.Pid > 1 && p.User != "root" && (p.Family == ProcessFamilies.AiAgents || Mcp.McpInstances.ServerOf(p, watched) is not null))
+            .Where(p => p.Pid > 1 && p.User != "root" && IsRecorded(p, watched))
             .Select(p => p.Pid)
             .Distinct()
             .Select(pid => SuspectTermination.Sample(files, paths, pid))
             .OfType<PidSample>()
             .Where(s => s.Uid != 0)];
+
+    /// <summary>An AI agent's process (A18), a watched MCP server's (A19) or a .NET build server (A3's timer, E14 S3).</summary>
+    private static bool IsRecorded(ProcessEntry process, IReadOnlyList<Mcp.McpServerEntry> watched) =>
+        process.Family is ProcessFamilies.AiAgents or ProcessFamilies.DotnetBuildServers || Mcp.McpInstances.ServerOf(process, watched) is not null;
 
     /// <summary>The same over every catalogued MCP server (A18's judgement, which reads the agents only).</summary>
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>

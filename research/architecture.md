@@ -1081,7 +1081,9 @@ target user's bin folders before anything runs.
 
 Candidates (`SuspectTermination.Candidates`, pure): orphaned (parent pid 1 or a `systemd --user`), in
 `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not a zombie, not root's, not this process.
-Each candidate's `/proc/[pid]/stat` and `status` are read, then again after a 5 s window: only a process whose CPU ticks
+Since E14 S3 the C# language server is a family of its own, `language-servers` (matched before `vscode-server`): listing it
+lets A11 end a language server whose VS Code window closed (it is re-parented) without naming the VS Code server, which is
+daemonised and therefore "orphaned" by this rule — `vscode-server` must not be listed for A11. Each candidate's `/proc/[pid]/stat` and `status` are read, then again after a 5 s window: only a process whose CPU ticks
 did not move AT ALL, with the same start and still no terminal and not uid 0, is a suspect. Just before its signal the
 run reads it a THIRD time and keeps it if it used any CPU since, gained a terminal or is another process now. The signal
 goes through the new seam `Processes/ProcessSignals.cs`:
@@ -1184,7 +1186,7 @@ empty by default — the engine's idle gate is skipped for it, every other gate 
 |---|---|---|---|---|---|
 | `Memory/CacheDrop` | A1 | `sync`, then `sysctl -w vm.drop_caches=1` (two argv, the value a LITERAL; `sync` failing stops before the drop) | `MemAvailable` < `thresholds.memAvailableActPercent`, or page cache > 12 GiB with < 30 % available (plan §4.1) | timer only | page cache and `MemAvailable` before / after (`/proc/meminfo`); memory, so `freedBytes` unknown |
 | `Memory/Compaction` | A2 | `sysctl -w vm.compact_memory=1` | A1 ran in this run, or the EVENT: no free order-7 block in zone Normal, or a `page allocation failure` in the kernel log since the last run (`journalctl --dmesg --grep`) | timer only — the EVENT is `Urgent` and runs at once | free order-7 blocks before / after (`/proc/buddyinfo`) |
-| `BuildServers/BuildServerShutdown` | A3 | `runuser -u <user> -- dotnet build-server shutdown` | one of the target user's `dotnet-build-servers` processes alive ≥ `buildServers.idleHours` | never | the servers gone after (each with the memory it held); the rest `notRemoved` |
+| `BuildServers/BuildServerShutdown` | A3 | `runuser -u <user> -- dotnet build-server shutdown` | one of the target user's `dotnet-build-servers` processes alive ≥ `buildServers.idleHours` AND none used CPU for `buildServers.idleMinutes` by the timer's CPU history (`AgentCpuHistory`, which records the build servers since E14 S3) | never | the servers gone after (each with the memory it held); the rest `notRemoved` |
 | `Disk/FilesystemTrim` | A15 | `fstrim -av` | weekly (the history's newest A15 `ran`), only without `discard` on `/` and with `fstrim.timer` not enabled (`systemctl show`) | always | fstrim's own per-filesystem report; trimmed blocks go to the VHDX, `freedBytes` unknown; exit 64 a success with a note |
 | `Clock/ClockFix` | A16 | `chronyc makestep` when `chronyd` runs, else `hwclock -s` | a drift on two observations ≥ 5 min apart (the last full run's and a LIVE probe; `ThresholdRules.IsDrift`, the one rule the health report shares) not yet corrected; since 2026-10-08 only when an independent reference shows the step brings the distro closer ([module_daemon.md](module_daemon.md) § *The Windows Time guard*) | never | the offset before / after (a second probe) |
 
@@ -2380,7 +2382,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    timer["timer full run<br/>ActionEngine.RecordAgentCpu"] -- "ai-agents processes of non-root accounts:<br/>pid · start ticks · CPU ticks (ProcText)" --> history["/var/lib/wsl-care/agent-cpu.json<br/>AgentCpuHistory (root state, 128 KiB, 512 ids)"]
+    timer["timer full run<br/>ActionEngine.RecordAgentCpu"] -- "ai-agents, watched MCP servers (E14 S2a)<br/>and dotnet-build-servers (E14 S3) of non-root accounts:<br/>pid · start ticks · CPU ticks (ProcText)" --> history["/var/lib/wsl-care/agent-cpu.json<br/>AgentCpuHistory (root state, 128 KiB, 512 ids)"]
     button["act A18 --preview / --confirm<br/>(a button only)"] --> a18["AgentOrphans"]
     history -- "ReadStateFile" --> a18
     a18 -- "SessionGlob over the agent's confirmed layout" --> sessions["no session written in N h"]
@@ -2390,7 +2392,7 @@ flowchart LR
 
 - **Button only, by structure:** `ActionId.Timer` is `Auto(key)` or `ButtonOnly(why)`; A18 has no `auto.*` key, the timer pass
   selects only `Auto` ids, and the engine's timer gate skips a button-only id asked directly; its trigger never fires.
-- **Idle is measured:** every TIMER full run records each `ai-agents` process of a non-root account by identity — pid, the boot
+- **Idle is measured:** every TIMER full run records each `ai-agents` process of a non-root account (since E14 also each watched MCP server, for A19, and each `dotnet-build-servers` process, for A3's timer) by identity — pid, the boot
   id, start ticks (stat field 22) — with its CPU ticks and since when they have not changed (`AgentCpuHistory.Next`: a new
   identity, a moved tick, another start or another boot starts the clock now; dead identities are pruned). A process is
   eligible only when `now − unchanged since ≥ processes.aiAgentsIdleHours` (default 4, 1–168, safe higher). A preview writes

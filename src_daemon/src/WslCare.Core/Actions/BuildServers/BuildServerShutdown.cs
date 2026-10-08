@@ -1,6 +1,7 @@
 using System.Globalization;
 
 using WslCare.Core.Collectors;
+using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Config;
 using WslCare.Core.Hosting;
 using WslCare.Core.Processes;
@@ -12,7 +13,9 @@ namespace WslCare.Core.Actions.BuildServers;
 /// A3 (plan §5): <c>dotnet build-server shutdown</c> as the OWNING user (the target user, plan §15c #2, through
 /// <c>runuser</c>) — the official command; the next build starts them again. It stops the target user's .NET build servers
 /// (MSBuild nodes, the Roslyn compiler server, the Razor server: the <c>dotnet-build-servers</c> family of plan §4.2).
-/// Auto trigger: one of them has been alive for <c>buildServers.idleHours</c> or longer. REFUSED — for a button too — while
+/// Auto trigger: one of them has been alive for <c>buildServers.idleHours</c> or longer AND (E14 S3) none used CPU for
+/// <c>buildServers.idleMinutes</c>, measured by identity over the timer's CPU history — the command stops every server at
+/// once, so one that works (an IDE compile that is no <c>dotnet build</c>) holds the timer. REFUSED — for a button too — while
 /// any <c>dotnet build</c> / <c>test</c> / <c>run</c> (or <c>publish</c>, <c>pack</c>, <c>msbuild</c>, <c>watch</c>) is alive:
 /// stopping the servers under a build fails it.
 /// </summary>
@@ -27,7 +30,11 @@ public sealed class BuildServerShutdown : ICleanupAction
 {
     public const string IdleServersFact = "idleServers";
 
-    public const string Family = "dotnet-build-servers";
+    /// <summary>E14 S3: how many of the servers used CPU within <c>buildServers.idleMinutes</c> — or cannot be judged yet (no
+    /// history, no boot id) — by the timer's CPU history. Any one holds the timer.</summary>
+    public const string BusyServersFact = "busyServers";
+
+    public const string Family = ProcessFamilies.DotnetBuildServers;
 
     public static readonly CommandTemplate Shutdown = new(
         "dotnet-build-server-shutdown",
@@ -56,7 +63,8 @@ public sealed class BuildServerShutdown : ICleanupAction
     public Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
         var hours = context.Config.Int(ConfigKeys.BuildServers.IdleHours);
-        var what = string.Create(CultureInfo.InvariantCulture, $"dotnet build-server shutdown as the target user: its MSBuild nodes, compiler and Razor servers (the timer: one alive for {hours} h or more)");
+        var minutes = context.Config.Int(ConfigKeys.BuildServers.IdleMinutes);
+        var what = string.Create(CultureInfo.InvariantCulture, $"dotnet build-server shutdown as the target user: its MSBuild nodes, compiler and Razor servers (the timer: one alive for {hours} h or more, and none used CPU for {minutes} min, measured)");
         if (context.TargetUser is not TargetUserResult.Found found)
         {
             return Task.FromResult(ActionPreview.Unavailable(what, context.TargetUser.Refusal));
@@ -69,20 +77,34 @@ public sealed class BuildServerShutdown : ICleanupAction
 
         var servers = Servers(snapshot.All, found.User.Name);
         var builds = Builds(snapshot.All);
-        var facts = new Dictionary<string, long>(StringComparer.Ordinal) { [IdleServersFact] = AliveFor(servers, TimeSpan.FromHours(hours)) };
+        var facts = new Dictionary<string, long>(StringComparer.Ordinal)
+        {
+            [IdleServersFact] = AliveFor(servers, TimeSpan.FromHours(hours)),
+            [BusyServersFact] = Busy(context, servers, TimeSpan.FromMinutes(minutes)),
+        };
         var refusal = BuildRefusal(builds);
         var preview = ActionPreview.Of(what, servers.Count, null, "the process table now; each item carries the memory its server holds (RssAnon + RssShmem) - memory, not disk, so no bytes are counted", facts, refusal, [.. servers.Select(Item)]);
         return Task.FromResult(Skip(preview, servers.Count, commands));
     }
 
-    /// <summary>Plan §5 A3: a build server alive for <c>buildServers.idleHours</c> or longer.</summary>
+    /// <summary>Plan §5 A3: a build server alive for <c>buildServers.idleHours</c> or longer — and (E14 S3) NONE used CPU for
+    /// <c>buildServers.idleMinutes</c> by the timer's CPU history, because the command stops every server at once.</summary>
     public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config)
     {
         var hours = config.Int(ConfigKeys.BuildServers.IdleHours);
-        return preview.Facts.TryGetValue(IdleServersFact, out var idle)
-            ? new TriggerDecision(idle > 0, string.Create(CultureInfo.InvariantCulture, $"{idle} of {preview.Count} build server(s) alive for {hours} h or more (buildServers.idleHours); the trigger is any"))
+        var minutes = config.Int(ConfigKeys.BuildServers.IdleMinutes);
+        return preview.Facts.TryGetValue(IdleServersFact, out var old) && preview.Facts.TryGetValue(BusyServersFact, out var busy)
+            ? new TriggerDecision(old > 0 && busy == 0, string.Create(CultureInfo.InvariantCulture, $"{old} of {preview.Count} build server(s) alive for {hours} h or more (buildServers.idleHours), {busy} used CPU within {minutes} min or are not measured yet (buildServers.idleMinutes); the trigger is an old one while none works"))
             : new TriggerDecision(false, "the build servers were not read");
     }
+
+    /// <summary>How many of <paramref name="servers"/> are NOT measured idle for <paramref name="window"/> by the timer's CPU
+    /// history (E14 S3): a server that used CPU within it, one the history does not hold yet, one gone or another process —
+    /// and every one when the boot id cannot be read. The history is merged with now in memory only: a preview writes no state.</summary>
+    private static int Busy(ActionContext context, IReadOnlyList<ProcessEntry> servers, TimeSpan window) =>
+        servers.Count == 0 || context.Paths is not LinuxHostPaths linux
+            ? servers.Count
+            : servers.Count - Suspects.AgentCpuHistory.IdleNow(linux, context.Files, [.. servers.Select(s => s.Pid)], SampleTime.Of(context.Clock)).Count(idle => idle >= window);
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
