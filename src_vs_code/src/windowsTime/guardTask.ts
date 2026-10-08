@@ -68,8 +68,13 @@ export const STOP_QUERY = `<QueryList><Query Id="0" Path="${TIME_SERVICE_CHANNEL
 
 const TICKS_PER_MINUTE = 600_000_000;
 
-/** PowerShell's modules from `$PSHOME` only — written without a double quote, so the line survives the command line. */
-const MODULES = "$env:PSModulePath = Join-Path $PSHOME 'Modules'";
+/**
+ * The FIRST statement of every guard script: PowerShell's modules from `$PSHOME` only. It calls NO command — a cmdlet
+ * looked up before this line (`Join-Path`, autoloaded on first use) would be searched for in the user's own, writable
+ * `Documents\WindowsPowerShell\Modules` first, inside an elevated or SYSTEM PowerShell (own code review k2). No double
+ * quote either, so the task's one-line action survives the command line.
+ */
+export const MODULES = "$env:PSModulePath = $PSHOME + '\\Modules'";
 
 /** The rate limit's decision as a function of its own, so a test can extract it from the script and run it ALONE. */
 export const START_ALLOWED_FUNCTION = 'function Test-WslCareStartAllowed([long]$Now, [long]$Last, [long]$Window) { $since = $Now - $Last; -not (($since -ge 0) -and ($since -lt $Window)) }';

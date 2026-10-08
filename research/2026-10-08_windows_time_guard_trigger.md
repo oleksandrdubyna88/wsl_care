@@ -99,5 +99,10 @@ rather than near the measured edge.
 
 **What changed because of it:** the guard keeps the owner's action (resync, no restart of a running service) — T18–T19
 say an explicit resync is what put the clock right; the registered task carries an explicit read ACE for Authenticated
-Users (T21), requested in the XML and in the registration call, and whether Task Scheduler applies it is a fact about
-the receiver — the panel's own read-back after install is that observation (`POST_DEPLOY.md`).
+Users (T21), requested in the XML's `RegistrationInfo/SecurityDescriptor` only (the folder keeps the inherited descriptor,
+which T21 shows the unelevated reader can open), and whether Task Scheduler applies it is a fact about the receiver — the
+panel's own read-back after install is that observation (`POST_DEPLOY.md`).
+
+| # | Read (added in the code round, same day) | Value |
+|---|---|---|
+| T23 | `GetFolder('\wsl-care-absent-probe')` and `GetTask('wsl-care-absent-probe')` through `Schedule.Service`, in **Windows PowerShell 5.1.26100** (the product's PowerShell, not pwsh 7) | `$_.Exception` is `System.IO.FileNotFoundException`, `HResult` **0x80070002** for both — the COM error itself, not a wrapper; the status query's "not installed" branch reads it, and the Windows-leg test now runs the real query unelevated (it answered `guard=absent` here) |

@@ -128,6 +128,10 @@ function told(deps: GuardFlowDeps, op: GuardOp, outcome: GuardOutcome): GuardOut
 /** The pending run is kept past a TIMEOUT (the elevated child may still run), and cleared on every other answer. */
 async function launched(deps: GuardFlowDeps, op: GuardOp, request: Exclude<ReturnType<typeof elevatedRequest>, string>): Promise<GuardOutcome> {
   const startedAtUtcMs = deps.nowUtcMs();
+  // Again, AFTER the modal: another window may have confirmed its own run while this modal was open (own code review k3).
+  if (readPending(deps.durable, startedAtUtcMs) !== undefined) {
+    return { kind: 'busy' };
+  }
   await writePending(deps.durable, { op, startedAtUtcMs, deadlineUtcMs: startedAtUtcMs + 2 * request.timeoutMs });
   let outcome: GuardOutcome = { kind: 'failed', sentence: 'the launcher did not answer' };
   try {

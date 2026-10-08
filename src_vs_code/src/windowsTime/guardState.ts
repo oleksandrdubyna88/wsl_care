@@ -28,7 +28,7 @@ export type GuardState =
     readonly channel: Channel;
   };
 
-export const NOT_ASKED: GuardState = { kind: 'unknown', reason: 'not asked yet' };
+export const NOT_ASKED: GuardState = { kind: 'unknown', reason: 'checking…' };
 
 interface Tagged {
   readonly tags: ReadonlyMap<string, string>;
@@ -192,10 +192,14 @@ function lastRunLevel(state: Extract<GuardState, { kind: 'present' }>): GuardLev
   return state.lastRunUtc !== 'never' && lastResultFailed(state.lastResult) ? 'warn' : 'ok';
 }
 
+function unknownLine(state: Extract<GuardState, { kind: 'unknown' }>): string {
+  return state === NOT_ASKED ? 'checking…' : `unknown — ${state.reason}`;
+}
+
 function settledView(state: GuardState, options: GuardOptions, formatInstant: (iso: string) => string): Omit<GuardView, 'buttons'> & { readonly ids: readonly GuardAction[] } {
   switch (state.kind) {
     case 'unknown':
-      return { line: `unknown — ${state.reason}`, level: 'unknown', ids: [] };
+      return { line: unknownLine(state), level: 'unknown', ids: [] };
     case 'absent':
       return { line: `not installed — it would start the Windows Time service by itself whenever it stops${channelNote(state.channel)}`, level: 'none', ids: ['installWindowsTimeGuard'] };
     case 'unreadable':
@@ -203,6 +207,11 @@ function settledView(state: GuardState, options: GuardOptions, formatInstant: (i
     default:
       return presentView(state, options, formatInstant);
   }
+}
+
+/** Whether Task Scheduler already shows the end a pending run was for: installed as these settings, or gone. */
+export function finishedBy(state: GuardState, pending: PendingGuardOp, options: GuardOptions): boolean {
+  return pending.op === 'install' ? state.kind === 'present' && sameSummary(state.summary, guardSummary(options)) : state.kind === 'absent';
 }
 
 const WAITING: { readonly [K in PendingGuardOp['op']]: string } = {
@@ -214,11 +223,16 @@ const WAITING: { readonly [K in PendingGuardOp['op']]: string } = {
  * The guard's line and buttons (D5, D8). While an elevated run this window persisted stands, the line says so and both
  * buttons are disabled; otherwise the state decides. `formatInstant` is the presentation edge's local-time formatter.
  */
-export function guardView(state: GuardState, options: GuardOptions, pending: PendingGuardOp | undefined, formatInstant: (iso: string) => string): GuardView {
+export function guardView(state: GuardState, options: GuardOptions, pending: PendingGuardOp | undefined, formatInstant: (iso: string) => string, checking = false): GuardView {
   const settled = settledView(state, options, formatInstant);
   if (pending !== undefined) {
     return { line: noticeText(PREFIX + WAITING[pending.op]), level: 'none', buttons: buttons(['installWindowsTimeGuard', 'removeWindowsTimeGuard'], false) };
   }
 
-  return { line: noticeText(PREFIX + settled.line), level: settled.level, buttons: buttons(settled.ids, true) };
+  return { line: noticeText(PREFIX + settled.line + checkingNote(state, checking)), level: settled.level, buttons: buttons(settled.ids, true) };
+}
+
+/** While Task Scheduler is asked again, an answer already shown says so (codex: a stale line must not look current). */
+function checkingNote(state: GuardState, checking: boolean): string {
+  return checking && state !== NOT_ASKED ? ' (checking again…)' : '';
 }

@@ -135,3 +135,8 @@ test('the pending run is durable, bounded by its deadline, and a malformed or ex
   await clearPending(store);
   assert.equal(store.get(PENDING_KEY), undefined);
 });
+
+test('codex: while Task Scheduler is asked again, a line already shown says so — and the first read is just "checking…"', () => {
+  assert.match(guardView({ kind: 'absent', channel: 'enabled' }, OPTIONS, undefined, LOCAL, true).line, /not installed.*\(checking again…\)$/);
+  assert.doesNotMatch(guardView({ kind: 'absent', channel: 'enabled' }, OPTIONS, undefined, LOCAL, false).line, /checking/);
+});

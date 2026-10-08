@@ -130,6 +130,14 @@ test('codex c4: a TIMED-OUT run keeps holding the buttons until its deadline —
   assert.deepEqual(await runGuardOp('remove', later.deps), { kind: 'done' }, 'past its deadline it holds nothing');
 });
 
+test('own code review k3: a run another window confirmed while this modal was open makes this one busy — nothing runs', async () => {
+  const h = harness(true, exited(0));
+  const deps: GuardFlowDeps = { ...h.deps, confirm: async (prompt) => { await h.store.update(PENDING_KEY, { op: 'remove', startedAtUtcMs: 999_000, deadlineUtcMs: 2_000_000 }); return h.deps.confirm(prompt); } };
+  assert.deepEqual(await runGuardOp('install', deps), { kind: 'busy' });
+  assert.deepEqual(h.requests, []);
+  assert.deepEqual(readPending(h.store, 1_000_000)?.op, 'remove', 'the other window\'s record is left as it was');
+});
+
 test('no SystemRoot, or a launcher that cannot start: told, nothing shown', async () => {
   const none = harness(true, exited(0), {});
   assert.equal((await runGuardOp('install', none.deps)).kind, 'notStarted');
@@ -149,17 +157,19 @@ function host(recorder: GuardRecorder, store = new MapStore()): WindowsTimeGuard
   });
 }
 
-test('the host reads Task Scheduler with the fixed query, shares a query in flight, and tells the panel', async () => {
+test('the host reads Task Scheduler with the fixed query, at most one more while one is in flight, and tells the panel', async () => {
   const recorder = newGuardRecorder();
   const guard = host(recorder);
   let changes = 0;
   guard.onChange(() => { changes += 1; });
-  assert.match(guard.view().line, /unknown — not asked yet/);
-  await Promise.all([guard.refresh(), guard.refresh()]);
-  assert.equal(recorder.queries.length, 1, 'two refreshes at once ask once');
+  assert.equal(guard.view().line, 'Windows Time guard: checking…');
+  assert.deepEqual(guard.view().buttons, []);
+  await Promise.all([guard.refresh(), guard.refresh(), guard.refresh()]);
+  assert.equal(recorder.queries.length, 2, 'three refreshes at once: the flight and ONE more, never three');
   assert.equal(recorder.queries[0]?.args[3], QUERY_SCRIPT);
-  assert.equal(changes, 1);
+  assert.ok(changes >= 2, 'the panel is told when the query starts and when it answers');
   assert.match(guard.view().line, /not installed/);
+  assert.doesNotMatch(guard.view().line, /checking/);
 });
 
 test('the host runs one flow at a time, greys the buttons while the elevated run is pending, and re-reads afterwards', async () => {
@@ -185,10 +195,70 @@ test('the host runs one flow at a time, greys the buttons while the elevated run
   assert.match(slow.view().line, /installed — not run yet/);
 });
 
+function presentStdout(): string {
+  return `guard=present\r\nenabled=True\r\nlastRunUtc=never\r\nlastResult=267011\r\n${guardSummary(OPTIONS).map((l) => `summary:${l}`).join('\r\n')}\r\nchannel=enabled\r\n`;
+}
+
+test('own code review k4: a refresh asked during a query in flight is answered by one MORE query, not by the stale one', async () => {
+  const recorder = newGuardRecorder();
+  const answers = [exited(0, 'guard=absent\r\nchannel=enabled\r\n'), exited(0, presentStdout())];
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const guard = new WindowsTimeGuardHost({
+    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
+    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: async (r) => { recorder.queries.push(r); const answer = answers.shift() ?? exited(1); if (recorder.queries.length === 1) { await gate; } return answer; }, report: () => undefined },
+    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+  });
+  const first = guard.refresh();
+  assert.match(guard.view().line, /checking…/);
+  const second = guard.refresh();
+  release();
+  await Promise.all([first, second]);
+  assert.equal(recorder.queries.length, 2);
+  assert.match(guard.view().line, /installed — not run yet$/, 'the newer answer is the one shown');
+});
+
+test('gemini: a pending run Task Scheduler already shows finished is cleared on the next read — a reload does not wait out the deadline', async () => {
+  const store = new MapStore();
+  await store.update(PENDING_KEY, { op: 'install', startedAtUtcMs: 500, deadlineUtcMs: 400_000 });
+  const guard = new WindowsTimeGuardHost({
+    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
+    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
+    durable: store, nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+  });
+  assert.match(guard.view().line, /Waiting for the elevated PowerShell/);
+  await guard.refresh();
+  assert.equal(store.get(PENDING_KEY), undefined);
+  assert.match(guard.view().line, /installed — not run yet$/);
+  const still = new MapStore();
+  await still.update(PENDING_KEY, { op: 'remove', startedAtUtcMs: 500, deadlineUtcMs: 400_000 });
+  const removing = new WindowsTimeGuardHost({
+    env: ENV, options: () => OPTIONS, opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
+    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
+    durable: still, nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+  });
+  await removing.refresh();
+  assert.notEqual(still.get(PENDING_KEY), undefined, 'a removal is not finished while the task is still there');
+});
+
+test('gemini: a changed guard setting re-derives the line at once — no query needed', () => {
+  let everyHours = 4;
+  let changes = 0;
+  const guard = new WindowsTimeGuardHost({
+    env: ENV, options: () => ({ ...OPTIONS, everyHours }), opTimeoutMs: () => 180_000, queryTimeoutMs: () => 30_000,
+    ui: { show: () => Promise.resolve(), confirm: () => Promise.resolve(false), run: () => Promise.resolve(exited(0)), query: () => Promise.resolve(exited(0, presentStdout())), report: () => undefined },
+    durable: new MapStore(), nowUtcMs: () => 1_000, formatInstant: (iso) => iso,
+  });
+  guard.onChange(() => { changes += 1; });
+  everyHours = 5;
+  guard.settingsChanged();
+  assert.equal(changes, 1);
+});
+
 // ---- the panel and the page's message set ----
 
 test('the panel view carries the guard\'s line, and the page may ask for the two flows only as BARE messages', () => {
-  const snapshot = { status: undefined, preview: undefined, doctor: undefined, checking: false } as Snapshot;
+  const snapshot: Snapshot = { status: undefined, preview: undefined, doctor: undefined, checking: false };
   const view = buildPanelView(snapshot, undefined, { line: 'Windows Time guard: not installed', level: 'none', buttons: [{ id: 'installWindowsTimeGuard', label: 'Install the Windows Time guard', enabled: true }] });
   assert.equal(view.windowsTimeGuard.line, 'Windows Time guard: not installed');
   assert.match(buildPanelView(snapshot).windowsTimeGuard.line, /checking…/);

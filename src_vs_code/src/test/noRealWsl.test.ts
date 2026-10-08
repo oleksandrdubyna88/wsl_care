@@ -4,7 +4,7 @@ import { test } from 'node:test';
 
 import { spawnRunner } from '../process/runner';
 import { wslExecutable } from '../wsl/wslExecutable';
-import { isMachineChange, isWslLauncher, MUTATING, revealed, TASK_TRIPWIRE_MESSAGE, TRIPWIRE_MESSAGE } from './support/noRealWsl';
+import { commandWords, isMachineChange, isWslLauncher, MUTATING, refusalOf, revealed, TASK_TRIPWIRE_MESSAGE, TRIPWIRE_MESSAGE } from './support/noRealWsl';
 
 /**
  * Plan §16 E5.S1 acceptance: "no test can reach the real wsl.exe (asserted)". The tripwire is loaded by the runner
@@ -80,4 +80,17 @@ test('a READ stays allowed: Task Scheduler\'s in-memory parse, a task read, Powe
   assert.equal(isMachineChange(process.execPath, ['-e', 'Start-Service']), false, 'node is not a PowerShell');
   assert.equal(MUTATING.test('Get-Service w32time'), false);
   assert.equal(MUTATING.test('NewItemProperty'), false, 'matched as words, not substrings');
+});
+
+test('own code review k6: a quoted program, cmd /c and shell: true are judged by the program they really run', () => {
+  assert.deepEqual(commandWords('"C:\\Program Files\\x\\powershell.exe" -Command a'), ['C:\\Program Files\\x\\powershell.exe', '-Command', 'a']);
+  assert.throws(() => childProcess.execSync(`"${POWERSHELL}" -Command Start-Service w32time`), new RegExp(TASK_TRIPWIRE_MESSAGE));
+  assert.throws(() => childProcess.spawnSync('cmd.exe', ['/c', 'schtasks', '/Delete', '/TN', 'x']), new RegExp(TASK_TRIPWIRE_MESSAGE));
+  assert.throws(() => childProcess.spawnSync('cmd.exe', ['/c', 'wsl.exe', '--list']), new RegExp(TRIPWIRE_MESSAGE));
+  assert.throws(() => childProcess.spawnSync('schtasks /Query', { shell: true }), new RegExp(TASK_TRIPWIRE_MESSAGE));
+  assert.throws(() => childProcess.spawnSync('wsl.exe', ['--list'], { shell: true }), new RegExp(TRIPWIRE_MESSAGE));
+  assert.equal(refusalOf('cmd.exe', ['/c', 'echo', 'hello']), undefined, 'cmd running something harmless is not refused');
+  for (const words of ['New-ItemProperty -Path HKLM:\\x -Name a', 'Remove-ItemProperty -Path HKLM:\\x -Name a', 'sc.exe stop w32time', 'net start w32time']) {
+    assert.equal(MUTATING.test(words), true, words);
+  }
 });

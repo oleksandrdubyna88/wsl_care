@@ -1,5 +1,5 @@
 import type { ProcessRequest } from '../process/runner';
-import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
+import { GUARD_FOLDER, GUARD_NAME, guardTaskXml, MODULES, STAMP_KEY, STAMP_PARENT, SUMMARY_FUNCTION, TIME_SERVICE_CHANNEL, type GuardOptions } from './guardTask';
 import { elevatedRequest, powerShellOf } from './windowsTimeFix';
 
 /**
@@ -12,8 +12,6 @@ import { elevatedRequest, powerShellOf } from './windowsTimeFix';
 
 /** The install / remove scripts' own exit codes (the launcher's 13 and 1223, and PowerShell's 1, are read beside them). */
 export const OP_EXIT = { registerFailed: 30, unregisterFailed: 31, cleanupFailed: 32 } as const;
-
-const MODULES = "$env:PSModulePath = Join-Path $PSHOME 'Modules'";
 
 /** `0x80070002` as PowerShell prints an `HResult` — "the system cannot find the file specified": no such folder or task. */
 export const NOT_FOUND_HRESULT = -2147024894;

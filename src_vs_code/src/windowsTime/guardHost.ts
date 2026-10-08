@@ -2,9 +2,9 @@ import type { DurableStore } from '../cleanup/journal';
 import type { Runner } from '../process/runner';
 import type { FixPrompt } from './windowsTimeFix';
 import { runGuardOp, type GuardOp, type GuardOutcome } from './guardFlow';
-import { readPending } from './guardPending';
+import { clearPending, readPending } from './guardPending';
 import { queryRequest } from './guardScripts';
-import { guardStateOf, guardView, NOT_ASKED, type GuardState, type GuardView } from './guardState';
+import { finishedBy, guardStateOf, guardView, NOT_ASKED, type GuardState, type GuardView } from './guardState';
 import type { GuardOptions } from './guardTask';
 
 /**
@@ -40,6 +40,8 @@ export interface GuardHostDeps {
 export class WindowsTimeGuardHost {
   private state: GuardState = NOT_ASKED;
   private querying: Promise<void> | undefined;
+  /** A refresh asked while a query was in flight: that query may predate what the caller just did, so one more runs. */
+  private again = false;
   private opRunning = false;
   private readonly listeners = new Set<() => void>();
   private readonly durable: DurableStore;
@@ -50,7 +52,12 @@ export class WindowsTimeGuardHost {
   }
 
   view(): GuardView {
-    return guardView(this.state, this.deps.options(), readPending(this.deps.durable, this.deps.nowUtcMs()), this.deps.formatInstant);
+    return guardView(this.state, this.deps.options(), readPending(this.deps.durable, this.deps.nowUtcMs()), this.deps.formatInstant, this.querying !== undefined);
+  }
+
+  /** A setting changed: the comparison with what the current settings would install is re-derived at once (gemini). */
+  settingsChanged(): void {
+    this.changed();
   }
 
   current(): GuardState {
@@ -62,10 +69,25 @@ export class WindowsTimeGuardHost {
     return () => { this.listeners.delete(listener); };
   }
 
-  /** Reads Task Scheduler again; a call while one is in flight shares it. */
+  /**
+   * Reads Task Scheduler again. A call while one is in flight is answered by ONE more query after it (never by the flight
+   * itself, which may have started before the caller's change — own code review k4); further calls share that one.
+   */
   refresh(): Promise<void> {
-    this.querying ??= this.query().finally(() => { this.querying = undefined; });
+    if (this.querying !== undefined) {
+      this.again = true;
+      return this.querying;
+    }
+    this.querying = this.queries().finally(() => { this.querying = undefined; this.changed(); });
+    this.changed();
     return this.querying;
+  }
+
+  private async queries(): Promise<void> {
+    do {
+      this.again = false;
+      await this.query();
+    } while (this.again);
   }
 
   /** One install / remove at a time in this window; a second press while one runs starts nothing. */
@@ -95,7 +117,16 @@ export class WindowsTimeGuardHost {
   private async query(): Promise<void> {
     const request = queryRequest(this.deps.env, this.deps.queryTimeoutMs());
     this.state = typeof request === 'string' ? { kind: 'unknown', reason: request } : guardStateOf(await this.deps.ui.query(request));
+    await this.settlePending();
     this.changed();
+  }
+
+  /** A pending run whose end Task Scheduler already shows (after a reload, say) is cleared, not waited out. */
+  private async settlePending(): Promise<void> {
+    const pending = readPending(this.deps.durable, this.deps.nowUtcMs());
+    if (pending !== undefined && !this.opRunning && finishedBy(this.state, pending, this.deps.options())) {
+      await clearPending(this.deps.durable);
+    }
   }
 
   private changed(): void {

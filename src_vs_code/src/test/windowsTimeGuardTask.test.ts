@@ -7,7 +7,8 @@ import { test } from 'node:test';
 
 import type { ProcessRequest } from '../process/runner';
 import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installRequest, installScript, NOT_FOUND_HRESULT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT, removeRequest } from '../windowsTime/guardScripts';
-import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, START_ALLOWED_FUNCTION, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, type GuardOptions } from '../windowsTime/guardTask';
+import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, type GuardOptions } from '../windowsTime/guardTask';
+import { guardStateOf } from '../windowsTime/guardState';
 import { BODY, SET_AUTOMATIC } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING } from './support/noRealWsl';
 import { at, parseXml, type XmlElement } from './support/xmlTree';
@@ -48,7 +49,7 @@ test('the action is ONE line that survives the command line byte for byte: no do
 test('the action does only what the owner listed, in the order that makes it safe', () => {
   const script = guardScript(DEFAULTS);
   const order = [
-    "$env:PSModulePath = Join-Path $PSHOME 'Modules'",
+    MODULES,
     'if ($null -eq $service) { exit 22 }',
     SET_AUTOMATIC,
     "if ($service.Status -ne 'Running') {",
@@ -58,7 +59,7 @@ test('the action does only what the owner listed, in the order that makes it saf
   assert.ok(order.every((i) => i >= 0), `every part present: ${JSON.stringify(order)}`);
   assert.deepEqual([...order].sort((a, b) => a - b), order, 'modules → the service exists → start type FIRST (a Disabled service is set Automatic even when rate-limited) → the rate limit → the stamp written BEFORE the start → story 1\'s start and resync');
   assert.ok(script.endsWith(BODY.join('; ')), 'story 1\'s lines verbatim, last');
-  assert.ok(script.startsWith("$env:PSModulePath = Join-Path $PSHOME 'Modules'"));
+  assert.ok(script.startsWith(`${MODULES}; `));
   assert.ok(script.includes(`$key = '${STAMP_KEY}'`) && STAMP_KEY.startsWith('HKLM:\\SOFTWARE\\'), 'the stamp under HKLM\\SOFTWARE — only administrators and SYSTEM write there');
 });
 
@@ -68,6 +69,13 @@ test('the start-type line is there only while wslCare.windowsTime.setAutomaticSt
   assert.ok(guardScript(DEFAULTS).includes('Test-WslCareStartAllowed $now $last 6000000000)'), '10 min = 6 000 000 000 ticks');
   assert.ok(guardScript(OTHER).includes('Test-WslCareStartAllowed $now $last 1800000000)'), '3 min');
   assert.ok(guardScript(DEFAULTS).includes(START_ALLOWED_FUNCTION));
+});
+
+test('own code review k2: every guard script FIRST pins the module path, with no command — nothing is looked up in a user-writable module folder before it', () => {
+  assert.equal(MODULES, "$env:PSModulePath = $PSHOME + '\\Modules'", 'an assignment of two values: no cmdlet to autoload');
+  for (const script of [guardScript(DEFAULTS), installScript(DEFAULTS), REMOVE_SCRIPT, QUERY_SCRIPT]) {
+    assert.ok(script.startsWith(MODULES), script.slice(0, 60));
+  }
 });
 
 // ---- D1: the definition, read back parsed ----
@@ -191,10 +199,10 @@ test('PowerShell\'s parser reads the action, install, remove and query scripts w
   const files = { 'guard.ps1': guardScript(DEFAULTS), 'install.ps1': installScript(DEFAULTS), 'remove.ps1': REMOVE_SCRIPT, 'query.ps1': QUERY_SCRIPT };
   const out = withFiles(files, (dir) => check("$e=$null; $t=$null; foreach ($f in 'guard.ps1','install.ps1','remove.ps1','query.ps1') { $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] $f), [ref]$t, [ref]$e); if ($e.Count -gt 0) { Write-Output ($f + ': ' + $e[0].Message); exit 1 }; $names = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ } | Select-Object -Unique; Write-Output ($f + '=' + ($names -join ',')) }; exit 0", dir));
   const names = Object.fromEntries(out.trim().split(/\r?\n/).map((l) => l.split('=') as [string, string]));
-  assert.equal(names['guard.ps1'], 'Join-Path,Get-Service,Set-Service,Get-ItemPropertyValue,Test-WslCareStartAllowed,Test-Path,New-Item,Out-Null,Set-ItemProperty,Start-Service,Start-Sleep', 'the action runs these and nothing else (w32tm by absolute path through &)');
-  assert.equal(names['install.ps1'], 'Join-Path,New-Object,Register-ScheduledTask,Out-Null');
-  assert.equal(names['remove.ps1'], 'Join-Path,New-Object,Test-Path,Remove-Item,Get-ChildItem,Get-Item');
-  assert.equal(names['query.ps1'], 'Join-Path,New-Object,Get-WinEvent,Get-WslCareSummary,ForEach-Object');
+  assert.equal(names['guard.ps1'], 'Get-Service,Set-Service,Get-ItemPropertyValue,Test-WslCareStartAllowed,Test-Path,New-Item,Out-Null,Set-ItemProperty,Start-Service,Join-Path,Start-Sleep', 'the action runs these and nothing else (w32tm by absolute path through &), and no command before the module path is pinned');
+  assert.equal(names['install.ps1'], 'New-Object,Register-ScheduledTask,Out-Null');
+  assert.equal(names['remove.ps1'], 'New-Object,Test-Path,Remove-Item,Get-ChildItem,Get-Item');
+  assert.equal(names['query.ps1'], 'New-Object,Get-WinEvent,Get-WslCareSummary,ForEach-Object');
 });
 
 test('Task Scheduler\'s own parser reads the definition IN MEMORY (nothing registered), and its read-back is exactly the expected summary', WINDOWS_ONLY, () => {
@@ -223,4 +231,14 @@ test('the rate limit\'s decision, extracted from the action\'s syntax tree and r
   const calls = cases.map(([, last]) => `Test-WslCareStartAllowed ${now} ${last} ${window}`).join('; ');
   const out = withFiles({ 'guard.ps1': guardScript(DEFAULTS) }, (dir) => check(`$t=$null; $e=$null; $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] 'guard.ps1'), [ref]$t, [ref]$e); $fn = $ast.Find({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $args[0].Name -eq 'Test-WslCareStartAllowed' }, $true); if ($null -eq $fn) { exit 3 }; . ([ScriptBlock]::Create($fn.Extent.Text)); ${calls}`, dir));
   assert.deepEqual(out.trim().split(/\r?\n/), cases.map(([, , allowed]) => (allowed ? 'True' : 'False')), cases.map(([name]) => name).join(' | '));
+});
+
+test('the status query really RUNS on the Windows leg — unelevated, read-only — and answers a closed state, never "unknown" (own code review k1: the HResult a missing folder throws, measured in Windows PowerShell 5.1)', WINDOWS_ONLY, () => {
+  const query = queryRequest(ENV, 30_000) as ProcessRequest;
+  assert.equal(MUTATING.test(QUERY_SCRIPT), false, 'it may run here only because it changes nothing');
+  const result = childProcess.spawnSync(query.file, [...query.args], { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+  const state = guardStateOf({ kind: 'exited', code: 0, stdout: Buffer.from(result.stdout), stderr: Buffer.alloc(0) });
+  assert.notEqual(state.kind, 'unknown', result.stdout);
+  assert.match(result.stdout, /^channel=(enabled|disabled|unknown)$/m);
 });

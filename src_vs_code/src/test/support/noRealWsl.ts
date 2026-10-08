@@ -56,7 +56,7 @@ const MACHINE_TOOLS: ReadonlySet<string> = new Set(['schtasks', 'schtasks.exe', 
  * start / stop / reconfigure a service, write the registry, resync the clock (D8 o4). Matched as WORDS of the decoded text,
  * so a read — `NewTask(0).XmlText`, `GetTask`, PowerShell's parser — stays allowed, and the guard's own status query too.
  */
-export const MUTATING = /\b(?:Register-ScheduledTask|Unregister-ScheduledTask|(?:Start|Stop|Enable|Disable|Set)-ScheduledTask|RegisterTask(?:Definition)?|DeleteTask|DeleteFolder|CreateFolder|(?:Start|Stop|Restart|Set|Suspend|Resume)-Service|Set-ItemProperty|New-Item|Remove-Item|w32tm|schtasks)\b/i;
+export const MUTATING = /\b(?:Register-ScheduledTask|Unregister-ScheduledTask|(?:Start|Stop|Enable|Disable|Set)-ScheduledTask|RegisterTask(?:Definition)?|DeleteTask|DeleteFolder|CreateFolder|(?:Start|Stop|Restart|Set|Suspend|Resume)-Service|(?:Set|New|Remove|Rename|Clear)-ItemProperty|New-Item|Remove-Item|w32tm|schtasks|sc(?:\.exe)?\s+(?:start|stop|config|delete|create|failure|sdset)|net(?:\.exe)?\s+(?:start|stop))\b/i;
 
 /** `-EncodedCommand`, and every prefix PowerShell accepts for it (`-e`, `-ec`, `-enc`, …). */
 const ENCODED_SWITCH = /^-(?:ec|e(?:n(?:c(?:o(?:d(?:e(?:d(?:c(?:o(?:m(?:m(?:a(?:n(?:d)?)?)?)?)?)?)?)?)?)?)?)?)?)$/i;
@@ -96,18 +96,61 @@ export function isMachineChange(file: unknown, rest: unknown): boolean {
 
 type Launcher = (...args: unknown[]) => unknown;
 
+/** A command line's words, the program's surrounding quotes taken off (`"C:\Program Files\x.exe" -a`). */
+export function commandWords(line: string): string[] {
+  const quoted = /^\s*"([^"]*)"\s*(.*)$/s.exec(line);
+  const rest = (quoted?.[2] ?? line).trim();
+
+  return quoted === null ? rest.split(/\s+/) : [quoted[1] ?? '', ...(rest === '' ? [] : rest.split(/\s+/))];
+}
+
+const COMMAND_SHELLS: ReadonlySet<string> = new Set(['cmd', 'cmd.exe']);
+
+/** What `cmd /c <line>` (or `/k`) runs: the words after the switch, as a command line of their own. */
+function shellCommand(program: unknown, rest: readonly string[]): string[] | undefined {
+  const at = rest.findIndex((w) => /^\/[ck]$/i.test(w));
+
+  return COMMAND_SHELLS.has(baseName(program)) && at >= 0 ? commandWords(rest.slice(at + 1).join(' ')) : undefined;
+}
+
+/** The refusal a start earns, or `undefined` — the program judged, then (through `cmd /c`) the program it runs. */
+export function refusalOf(program: unknown, rest: readonly string[] | unknown, depth = 0): string | undefined {
+  if (isWslLauncher(program)) {
+    return TRIPWIRE_MESSAGE;
+  }
+  if (isElevatedPowerShell(program, rest)) {
+    return ELEVATION_TRIPWIRE_MESSAGE;
+  }
+  if (isMachineChange(program, rest)) {
+    return TASK_TRIPWIRE_MESSAGE;
+  }
+  const inner = Array.isArray(rest) && depth < 3 ? shellCommand(program, rest.map(String)) : undefined;
+
+  return inner === undefined ? undefined : refusalOf(inner[0], inner.slice(1), depth + 1);
+}
+
+function shellOption(options: unknown): boolean {
+  return typeof options === 'object' && options !== null && !Array.isArray(options) && Boolean((options as { shell?: unknown }).shell);
+}
+
+/** A launcher's arguments as (program, rest): a command line for exec / `shell: true`, else the file and its argv. */
+function startOf(args: readonly unknown[], firstIsCommandLine: boolean): { readonly program: unknown; readonly rest: unknown } {
+  const argv = Array.isArray(args[1]) ? args[1].map(String) : [];
+  const viaShell = firstIsCommandLine || shellOption(Array.isArray(args[1]) ? args[2] : args[1]);
+  if (!viaShell) {
+    return { program: args[0], rest: args[1] };
+  }
+  const words = commandWords([String(args[0]), ...argv].join(' '));
+
+  return { program: words[0], rest: words.slice(1) };
+}
+
 function guard(original: Launcher, firstIsCommandLine: boolean): Launcher {
   return function guarded(this: unknown, ...args: unknown[]): unknown {
-    const words = firstIsCommandLine ? String(args[0]).trim().split(/\s+/) : [];
-    const program = firstIsCommandLine ? words[0] : args[0];
-    if (isWslLauncher(program)) {
-      throw new Error(`${TRIPWIRE_MESSAGE}: ${String(args[0])}`);
-    }
-    if (isElevatedPowerShell(program, firstIsCommandLine ? words.slice(1) : args[1])) {
-      throw new Error(`${ELEVATION_TRIPWIRE_MESSAGE}: ${String(args[0])}`);
-    }
-    if (isMachineChange(program, firstIsCommandLine ? words.slice(1) : args[1])) {
-      throw new Error(`${TASK_TRIPWIRE_MESSAGE}: ${String(args[0])}`);
+    const { program, rest } = startOf(args, firstIsCommandLine);
+    const refusal = refusalOf(program, rest);
+    if (refusal !== undefined) {
+      throw new Error(`${refusal}: ${String(args[0])}`);
     }
 
     return original.apply(this, args);

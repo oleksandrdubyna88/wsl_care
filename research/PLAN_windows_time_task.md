@@ -194,7 +194,7 @@ findings — 11 accepted, 1 rejected). Every rejection measured, research record
 | c4, o11 | codex, own | a timed-out elevated run can overlap a retry; a reload offers Install again while UAC is open | accepted → the flow persists `{ op, startedAtUtc, deadlineUtc }` in `globalState` BEFORE the launch; while it stands (until the flow's own answer, or `deadline = start + 2 × windowsTimeGuardSeconds` after a timeout or a reload) both buttons are disabled with *Waiting for the elevated PowerShell (install)…*; a reload reads it back; a past deadline is swept at activation |
 | c6 | codex | release checks never run the task for real | accepted → `POST_DEPLOY.md`'s Windows Time item gains a manual, owner-run step: install, *Run* the task once in Task Scheduler, read its last result 0 and `w32time` Running, read the panel's line — and Defender's ASR events 1121/1122 none (o6) |
 | o1 | own, Blocking | a running service is only resynced, and the boot fault happened while it ran | rejected — T18: every correction followed an EXPLICIT resync (event 266 reason 0) 40 ms before the step, while two reason-2 notifications did not correct; T19: `MaxPos/NegPhaseCorrection` 54 000 s admit the 7 200 s step. The owner fixed the action list (start type, start, resync); a restart is not in it. Recorded as a residual: resync on a long-running service is inferred, not observed — the post-deploy boot check observes it |
-| o3 | own | an elevated registration's default descriptor may hide the task from the unelevated reader | accepted, and MEASURED (T21): SYSTEM tasks under the default root descriptor are not even listed to an unelevated reader — the panel would say *not installed*. → `RegistrationInfo/SecurityDescriptor` `D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;AU)` in the XML and the same string to `CreateFolder` / `RegisterTask`; `0x80070005` has its own row (*installed but not readable from this account*) |
+| o3 | own | an elevated registration's default descriptor may hide the task from the unelevated reader | accepted, and MEASURED (T21): SYSTEM tasks under the default root descriptor are not even listed to an unelevated reader — the panel would say *not installed*. → `RegistrationInfo/SecurityDescriptor` `D:(A;;FA;;;SY)(A;;FA;;;BA)(A;;FR;;;AU)` in the XML; `0x80070005` has its own row (*installed but not readable from this account*). **As built:** the descriptor travels in the XML only — the folder keeps its inherited descriptor, which the unelevated reader can open (T21), and `Register-ScheduledTask -Xml` registers the definition's own descriptor (code round k5, gemini/codex g9) |
 | o4 | own | the tripwire matches nouns in plain text, blind to `-EncodedCommand`, and would refuse the plan's own in-memory parse | accepted → the tripwire DECODES `-EncodedCommand` / `-enc` / `-ec` / `-e` before matching, and matches MUTATING words — `Register-ScheduledTask`, `Unregister-ScheduledTask`, `RegisterTask`, `RegisterTaskDefinition`, `DeleteTask`, `DeleteFolder`, `CreateFolder`, `Start-Service`, `Stop-Service`, `Restart-Service`, `Set-Service`, `Set-ItemProperty`, `New-Item`, `Remove-Item`, `w32tm`, and `schtasks` as a program — so `NewTask(0)` reads and the query stay allowed; tests with encoded input |
 | o5 | own | the panel has no place for a non-daemon line | accepted → `PanelView.windowsTimeGuard: { line, level, buttons: ('installWindowsTimeGuard' \| 'removeWindowsTimeGuard')[], busy }`, built by a pure `guardView(state, pending)`; the page renders it as an extra of the *Health* section (beside the cleanup extras); two new BARE messages; the host holds the guard state (not the daemon `OutcomeStore`) |
 | o6, o8 | own | `-EncodedCommand` in a SYSTEM task reads as an obfuscation indicator, and nests a second base64 | accepted → the task's action is `-Command <the script as ONE line>`: no double quote, no run of two spaces, no newline, so `CommandLineToArgvW` + PowerShell's join return it byte for byte (a test simulates that round trip; the Windows leg parses it). `&` is XML-escaped in the XML. The install launch keeps story 1's `-EncodedCommand` (one layer only) |
@@ -271,6 +271,8 @@ findings — 11 accepted, 1 rejected). Every rejection measured, research record
 
 ## 9. As built — the tests and the break-it checks (2026-10-08)
 
+*Counts as of the first commit; the code round below adds to them.*
+
 - **Suites:** `npm test` 830 tests, 829 pass, 1 skipped (the pre-existing non-Windows skip), 0 fail; `npm run lint` and a
   clean `tsc` green. New: `windowsTimeGuardTask.test.ts`, `windowsTimeGuardState.test.ts`, `windowsTimeGuardFlow.test.ts`,
   `xmlTree.test.ts` (the strict XML reader's own tests), three page tests in `panelPage.test.ts`, three tripwire tests in
@@ -289,3 +291,33 @@ findings — 11 accepted, 1 rejected). Every rejection measured, research record
   signed; a changed setting not reading as "install again"; a timeout clearing the pending run; the modal skipped; the
   document not shown; the guard messages taking a payload; the page dropping the line; the host querying twice at once.
   Restored: green.
+
+## 10. Code round (2026-10-08)
+
+coai session `c04e5adc`, `review_code` over `28c123e`: **all 8 reviewers answered** (codex and gemini, four roles each),
+verdict `proceed`, 12 findings — 5 accepted, 7 rejected with reasons; and an own code review (Opus, feature-dev
+code-reviewer, 7 findings — 5 accepted, 1 rejected, 1 a record correction).
+
+| # | Source | Finding | Decision → change |
+|---|---|---|---|
+| k2 | own, Major | `Join-Path` in the first line is looked up before the module path is pinned — a user-writable module folder is searched first, inside an elevated or SYSTEM PowerShell | accepted → `MODULES = $env:PSModulePath = $PSHOME + '\Modules'`: no command; every guard script starts with it (test); the parser's command lists no longer begin with `Join-Path` |
+| k3 | own, Minor | the busy check runs only before the modal — two windows' modals can both launch | accepted → re-read right before the pending record is written; `busy`, nothing run |
+| k4 | own, Minor | a refresh during a query in flight joined a query that predates the caller's change | accepted → one MORE query after the flight, never more than one |
+| c3 | gemini, Major | a reload holds both buttons until the deadline although Task Scheduler already shows the end | accepted → a query that shows the pending run's end (installed as these settings / gone) clears it |
+| c1, c5 | gemini | a changed guard setting does not re-derive the line | accepted → `onDidChangeConfiguration('wslCare.windowsTime')` re-derives it at once |
+| c11 | codex, Minor | a refresh shows the previous line as current | accepted → *(checking again…)* while asked; the first read is *checking…* |
+| c7, k7 | codex, own | an `as Snapshot` cast in a fixture | accepted → typed literal |
+| k6 | own, Minor | the tripwire judged only the program handed to it: a quoted path, `cmd /c`, `shell: true`, and words like `New-ItemProperty`, `sc stop`, `net start` got through | accepted → the tripwire STRENGTHENED (never weakened): quotes stripped, `cmd /c` and `shell: true` judged by the program they run, the word list widened; tests for each |
+| k1 | own, Major | the "not installed" check may read a PowerShell wrapper's HResult, not the COM error | rejected — measured in Windows PowerShell 5.1 (T23): `FileNotFoundException`, `0x80070002`; and the Windows-leg test now RUNS the real, read-only query unelevated and asserts a closed answer (`guard=absent` here) |
+| k5 | own, Minor | the folder's descriptor did not match the plan's text | record corrected (o3 above, research §5) — the code was right by T21 |
+| c0 | gemini, Major | the guard line vanishes when the daemon is down | rejected — `viewModel.ts` `sections()` maps every section whatever the status; the health section always exists |
+| c4 | gemini, Major | opening the panel never queries | rejected — `resolveWebviewView` and visibility call `refresh`, which `extension.ts` wires to `guard.refresh()` first |
+| c2 | gemini, Minor | the runner inside the UI seam | rejected — story 1's shape: the progress wraps the run, and Test mode replaces it at the same seam |
+| c6 | codex, Blocking | the recorder mutates its arrays | rejected — the Test-mode recorders are append-only logs held through the test API (the house pattern of `installUi.ts`, `windowsTimeUi.ts`, `cleanRecorder.ts`) |
+| c8 | codex, Minor | `DurableStore` imported from the cleanup module | rejected here — `logsPage/logsController.ts` already does the same; moving it is a neighbouring refactor, proposed in the pull request |
+| c9 | codex, Major | the new folder lacks read permission | rejected — T21: the unelevated reader opens a folder under the same inherited descriptor; only tasks hide, which the task's ACE fixes |
+| c10 | codex, Major | a UAC prompt answered after the deadline can overlap a later run | rejected as a residual: the late answer runs exactly what its prompt showed; install converges, removal is "if present"; the panel re-reads Task Scheduler |
+
+**Break-it for the round's fixes (product code only):** the module path through `Join-Path`; no busy check after the
+modal; a refresh in flight sharing the stale query; a finished pending run not cleared; a changed setting telling nobody;
+no checking note — six mutations, each RED with its test, restored green.

@@ -269,6 +269,8 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     vscode.window.registerWebviewPanelSerializer(LogsPanel.viewType, { deserializeWebviewPanel: (restored) => { logs.restore(restored); return Promise.resolve(); } }),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
     vscode.workspace.onDidChangeConfiguration((event) => configurationChanged(event, parts, panel)),
+    // A guard setting re-derives the guard's line at once: "install it again to update it" follows the setting (gemini).
+    vscode.workspace.onDidChangeConfiguration((event) => { if (event.affectsConfiguration('wslCare.windowsTime')) { parts.guard.settingsChanged(); } }),
   );
 
   return { bar, panel, logs };
