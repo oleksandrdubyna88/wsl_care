@@ -24,6 +24,10 @@
 | O7 | the owner's account of the cause | AMD driver software stops `w32time` | owner (not measured here) |
 | O8 | after the owner's manual `Start-Service` | the clocks agree; StartType is still **Manual** | owner |
 
+> **Later reading of O8** ([2026-10-08_who_stops_windows_time.md](2026-10-08_who_stops_windows_time.md) §2): the event log
+> for that minute shows the Windows Settings app's *Sync now* (start type → disabled → demand start, start, explicit resync),
+> not a plain `Start-Service`, which writes no 7040. The row above is kept as it was reported.
+
 ## 2. Read-only measurements by this task, after the restart (2026-10-08, 08:16–08:18Z)
 
 | # | Measured | Value | How |
