@@ -68,19 +68,24 @@ case "$tag" in
 esac
 [[ "$version" =~ $EXTENSION_VERSION_PATTERN ]] || refuse "the tag '$tag' does not carry an x.y.z version"
 
-# One top-level `"key": "value"` of package.json (npm writes it two-space indented, one key per line); exactly one.
+# manifest_field <key> <var>: the one top-level `"key": "value"` of package.json (npm writes it two-space indented, one key
+# per line), assigned into <var>; refused when there is none or more than one. Called as a plain command, NEVER inside
+# `$(…)`: there refuse's ::error:: line would become the value and be thrown away, and the guard would exit 1 with nothing
+# in the log (it did until 2026-10-08 — ReleaseExtensionManifestFlows).
 manifest_field() {
   local found
   found="$(sed -n "s/^  \"$1\": \"\\([^\"]*\\)\",\\{0,1\\}\$/\\1/p" "$MANIFEST")"
   [ -n "$found" ] && [ "$(printf '%s\n' "$found" | wc -l)" -eq 1 ] || refuse "$MANIFEST carries no single top-level \"$1\""
-  printf '%s\n' "$found"
+  printf -v "$2" '%s' "$found"
 }
 
 [ -f "$MANIFEST" ] || refuse "$MANIFEST is missing at this checkout"
-recorded="$(manifest_field version)"
+recorded=''
+manifest_field version recorded
 [ "$recorded" = "$version" ] || refuse "the tag says $version but $MANIFEST at the tag says '$recorded' — tag the commit release-please bumped, never move a tag"
 
-publisher="$(manifest_field publisher)"
+publisher=''
+manifest_field publisher publisher
 [ "$publisher" != "$PUBLISHER_PLACEHOLDER" ] || refuse "$MANIFEST still carries the placeholder publisher '$PUBLISHER_PLACEHOLDER' — the owner creates the Marketplace publisher first (E5 live gate, step 1)"
 [[ "$publisher" =~ $PUBLISHER_PATTERN ]] || refuse "the publisher '$publisher' is not a Marketplace id (lower-case letters, digits, dashes)"
 

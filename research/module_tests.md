@@ -805,6 +805,7 @@ that only runs during a release has never run"). All of it is C# in `WslCare.Sce
 | `ReleaseExtensionWorkflowTests` (E5.S3) | `release-extension.yml`'s structure: the tag-only trigger, each job's exact permissions, the `marketplace` Environment on one job and `VSCE_PAT` named by that job alone (across every workflow), the order github-draft → publish-marketplace → github-public (§15h #0), the idempotent skip and the attested file published, one package checked with `--release` then attested, the guard's inputs, the `MIN_DAEMON_FOR_RENDER` line the guard parses, `tags-extension.json` equal to `tags-daemon.json` but for name and pattern | every OS |
 | `ReleaseExtensionScriptFlows` (E5.S3) | `release-extension-guard.sh` by exit code with a fake `gh` on `PATH`: tag shape, `package.json` version, the placeholder publisher, off-`main`, the minimum daemon not published / a draft / another tag, POST_DEPLOY's stamp without a date / without a daemon / older than the minimum, a newer one (and `0.10.0` compared as a number); `verify-extension-assets.sh` whole and broken six ways (since 2026-10-06 also a `.sha256` naming another package; every name is read from `package.json` through `ReleaseFiles.ExtensionVsix`) | Linux legs |
 | `ReleaseExtensionStampSourceFlows` (2026-10-08) | WHERE the guard reads POST_DEPLOY's stamp, run as the workflow runs it (`<tag> main`) over a throwaway git repository — the tag's commit, main one commit further, the tree checked out back at the tag: a tag cut before its stamp landed is admitted once main carries it, and a main stamp newer than every pin too; main without a dated stamp (the tag tree has one), main's stamp below the TAG's install pin, and main without `POST_DEPLOY.md` are refused, each naming `POST_DEPLOY.md on main`. The git runs go through `ReleaseExtensionCheckout.GitEnv` / `GitAsync` (identity in the child's environment, no configuration written) | Linux legs |
+| `ReleaseExtensionManifestFlows` (2026-10-08) | the guard's package.json refusal reaches the log: no top-level `version`, no `publisher`, two `publisher` lines — each exit 1 AND `::error::extension release guard: src_vs_code/package.json carries no single top-level "<key>"` on stdout, before GitHub is asked | Linux legs |
 
 On the owner's machine (2026-10-03): the structure tests on Windows; the whole Scenarios suite in WSL `Ubuntu` from a copy
 of the worktree under `/tmp`, built there, with a downloaded 7-Zip 23.01 (`7zz`, linked as `7z`) on a scratch `PATH`
@@ -2430,6 +2431,18 @@ the source it read.
 |---|---|---|
 | a tag whose tree predates its stamp is admitted once main carries one (and a main stamp newer than every pin); main without a dated stamp, below the tag's install pin, or without `POST_DEPLOY.md` is refused naming main | `ReleaseExtensionStampSourceFlows` (5 flows; Linux) | the tests committed BEFORE the fix, `ci · daemon` dispatched on that commit (run 37753606004, linux-x64 and linux-arm64): exactly these 5 red, 408 green — the two admit flows *Expected result.Exit to be 0 because ::error::extension release guard: POST_DEPLOY.md's 'Last verified:' line names no date …* (the production refusal), the three refuse flows *Expected result.Exit to be 1 because version=0.1.0 … install_daemon=… , but found 0*. By hand under Git Bash, the five cases against main's guard and the fixed one: the same split |
 | the install pin the guard checks and reports is the TAG's, not main's — in the two pinned flows main's commit lowers min-daemon.json's pin to 0.1.0 | `ReleaseExtensionStampSourceFlows.A_stamp_on_main_naming_a_daemon_newer…`, `…A_stamp_on_main_below_the_tags_install_pin…` | by hand under Git Bash, a mutant guard that reads min-daemon.json from main: the below-pin case ADMITTED (`install_daemon=0.1.0`) and the newer case reports `install_daemon=0.1.0`; the real guard refuses *older than 0.1.2* and reports `install_daemon=0.1.2` |
+
+### The package.json refusal is printed (2026-10-08)
+
+`manifest_field` refused inside a command substitution (`recorded="$(manifest_field version)"`), so its `::error::` line became
+the variable's value and was thrown away: a package.json with no single top-level `version` or `publisher` stopped the guard
+with exit 1 and an empty log. It now assigns into a named variable (`printf -v`) and is called as a plain command, so the
+refusal runs in the main shell. A sweep of every function in `.github/scripts/*.sh`, `lib/*.sh` and `install.sh` called inside
+`$(…)` found no other one that refuses or exits there.
+
+| Guarantee | Test | Observed red |
+|---|---|---|
+| no top-level `version`, no `publisher`, or two `publisher` lines → exit 1 with the named refusal on stdout | `ReleaseExtensionManifestFlows` (3 cases; Linux) | the tests committed BEFORE the fix, `ci · daemon` dispatched on that commit (run 37759533273, linux-x64 and linux-arm64): exactly these 3 red, 413 green, each *Expected result.Stdout "" to contain "::error::extension release guard: src_vs_code/package.json carries no single top-level …" … (stderr: '')* — exit 1 held, the message did not exist. By hand under Git Bash: main's guard `exit=1 stdout=[]` for all three, the fixed one prints the refusal; a good package.json passes with both |
 
 ### What each E6.S2 guarantee rests on
 
