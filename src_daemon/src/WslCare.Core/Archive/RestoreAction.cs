@@ -93,7 +93,7 @@ public sealed class RestoreAction : ICleanupAction, IBoundToShownList
         var offered = list.Entries.Where(e => e.Verified && Restorable.Contains(e.Status)).ToList();
         var unverified = list.Entries.Count(e => !e.Verified && Restorable.Contains(e.Status));
         IReadOnlyList<ActionItem> targets = [.. offered.Select(e => new ActionItem("archived session", e.EntryId, e.Bytes, $"{e.Agent} {e.Month}, {e.Files} file(s)") { Key = e.EntryId })];
-        var what = string.Create(CultureInfo.InvariantCulture, $"restore archived AI-agent sessions as {ArchiveGates.UserOf(context)}: {offered.Count} removed at their source and verified{(unverified > 0 ? $"; {unverified} unverified, not offered (restore one in a terminal with --accept-unverified)" : string.Empty)}");
+        var what = string.Create(CultureInfo.InvariantCulture, $"restore archived AI-agent sessions as {ArchiveGates.UserOf(context)}: {offered.Count} removed at their source and verified{(list.Omitted > 0 ? $" ({list.Omitted} more not shown: {ConfigKeys.Archive.MaxRestoreEntries.Name})" : string.Empty)}{(unverified > 0 ? $"; {unverified} unverified, not offered (restore one in a terminal with --accept-unverified)" : string.Empty)}");
         return ActionPreview.Of(what, offered.Count, offered.Sum(e => e.Bytes), "the archive child's own list (archive list --json), run as the target user; entry ids only", new Dictionary<string, long>(StringComparer.Ordinal) { ["unverified"] = unverified }, string.Empty, targets);
     }
 

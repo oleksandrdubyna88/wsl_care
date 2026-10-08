@@ -66,7 +66,7 @@ internal static class ActCommand
 
         if (request.Detach)
         {
-            return DetachedRuns.Detach(request, Trigger(request), shown.List, ShownProcesses(request), host, stdout, stderr, log);
+            return DetachedRuns.Detach(request, Trigger(request), shown.List, ShownProcesses(request), ShownEntries(request), host, stdout, stderr, log);
         }
 
         var engine = new ActionEngine(new EngineContext(host.Paths, host.Files, host.Commands, host.Clock, host.Probe, loaded, host.Processes, Environment.ProcessId, host.Actions)

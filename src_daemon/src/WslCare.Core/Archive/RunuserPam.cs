@@ -21,20 +21,31 @@ public static class RunuserPam
     private const string Module = "pam_systemd";
 
     /// <summary>Why the archive's children may not start through <c>runuser</c> here; empty when nothing says so.</summary>
-    public static string Problem(LinuxHostPaths paths, IFileSystem files)
-    {
-        var lines = Lines(paths, files, Stack);
-        var included = lines.Select(Included).Where(name => name.Length > 0).Distinct(StringComparer.Ordinal).ToList();
-        var named = lines.Any(NamesTheModule) ? Stack
-            : included.FirstOrDefault(name => Lines(paths, files, $"{Folder}/{name}").Any(NamesTheModule)) is { } file ? $"{Folder}/{file} (which {Stack} includes)"
-            : string.Empty;
-        return named.Length == 0 ? string.Empty : $"{named} names {Module}: a child started through runuser would get a login session root does not bound, so the archive does not start one here (risk consult 9/9.4 #2)";
-    }
+    /// <remarks>The S4 code round, finding 3: every file the stack pulls in is followed — an include of an include too, each file once
+    /// (so a loop of includes ends) — and an included file that cannot be read refuses, since it could name the module for all root
+    /// knows. The stack file itself unread is not judged: <c>runuser</c> then fails on its own, as it does for A8 and A17.</remarks>
+    public static string Problem(LinuxHostPaths paths, IFileSystem files) =>
+        Read(paths, files, Stack) is { Readable: true } top ? Judged(paths, files, Stack, top.Lines, new HashSet<string>(StringComparer.Ordinal) { Stack }) : string.Empty;
 
-    private static IReadOnlyList<string> Lines(LinuxHostPaths paths, IFileSystem files, string path) =>
+    /// <summary>One PAM file as read: its significant lines, or that it could not be read.</summary>
+    private sealed record StackFile(bool Readable, IReadOnlyList<string> Lines);
+
+    /// <summary><paramref name="path"/> names the module, or one of the files it pulls in (not yet seen) does; empty when none does.</summary>
+    private static string Judged(LinuxHostPaths paths, IFileSystem files, string path, IReadOnlyList<string> lines, HashSet<string> seen) =>
+        lines.Any(NamesTheModule)
+            ? $"{path} names {Module}: a child started through runuser would get a login session root does not bound, so the archive does not start one here (risk consult 9/9.4 #2)"
+            : lines.Select(Included).Where(name => name.Length > 0).Select(name => $"{Folder}/{name}").Where(seen.Add)
+                .Select(included => IncludedProblem(paths, files, included, seen)).FirstOrDefault(problem => problem.Length > 0, string.Empty);
+
+    private static string IncludedProblem(LinuxHostPaths paths, IFileSystem files, string path, HashSet<string> seen) =>
+        Read(paths, files, path) is { Readable: true } file
+            ? Judged(paths, files, path, file.Lines, seen)
+            : $"{path} could not be checked (missing, or not a regular file only root may write) — it could name {Module}, so the archive does not start a child here (risk consult 9/9.4 #2)";
+
+    private static StackFile Read(LinuxHostPaths paths, IFileSystem files, string path) =>
         files.ReadStateFile(paths.DistroPath(path), Tuning.Current.Int(ConfigKeys.Records.MaxStateFileBytes)) is FileReadResult.Content content
-            ? [.. Encoding.UTF8.GetString(content.Bytes).Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && l[0] != '#')]
-            : [];
+            ? new StackFile(true, [.. Encoding.UTF8.GetString(content.Bytes).Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0 && l[0] != '#')])
+            : new StackFile(false, []);
 
     private static bool NamesTheModule(string line) =>
         line.Split((char[])[' ', '\t'], StringSplitOptions.RemoveEmptyEntries).Any(word => word is Module or $"{Module}.so" || word.EndsWith($"/{Module}.so", StringComparison.Ordinal));

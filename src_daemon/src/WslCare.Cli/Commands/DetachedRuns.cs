@@ -35,8 +35,8 @@ internal static class DetachedRuns
 
     // ---------- --detach ----------
 
-    public static int Detach(Request.Act request, RunTrigger trigger, ShownList shown, ShownList processes, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
-        Accept(new Asked("act", [.. request.Ids.Select(i => i.Text)], trigger, [.. shown.Names.Order(StringComparer.Ordinal)], request.Json) { ShownProcesses = [.. processes.Names.Order(StringComparer.Ordinal)], ShownEntries = [.. request.Entries.Order(StringComparer.Ordinal)] }, host, stdout, stderr, log);
+    public static int Detach(Request.Act request, RunTrigger trigger, ShownList shown, ShownList processes, ShownList entries, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
+        Accept(new Asked("act", [.. request.Ids.Select(i => i.Text)], trigger, [.. shown.Names.Order(StringComparer.Ordinal)], request.Json) { ShownProcesses = [.. processes.Names.Order(StringComparer.Ordinal)], ShownEntries = [.. entries.Names.Order(StringComparer.Ordinal)] }, host, stdout, stderr, log);
 
     public static int CollectDetach(Request.Collect request, CliHost host, TextWriter stdout, TextWriter stderr, ILogger log) =>
         ActCommand.NotRoot(host) is { } refused

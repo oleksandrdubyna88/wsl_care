@@ -87,7 +87,11 @@ internal abstract record Request
 
     /// <summary><c>archive list [--agent &lt;id&gt;] [--month &lt;yyyy-MM&gt;] [--run &lt;runId&gt;] [--json]</c> (plan §15r E9.S3): this
     /// side's archived entries from its month indexes — read-only.</summary>
-    internal sealed record ArchiveList(string Agent, string Month, string RunId, bool Json) : Request;
+    internal sealed record ArchiveList(string Agent, string Month, string RunId, bool Json) : Request
+    {
+        /// <summary><c>--restorable</c> (plan §15r E9.S4): only what the restore button may offer, bounded.</summary>
+        public bool Restorable { get; init; }
+    }
 
     /// <summary><c>units dropin &lt;unit&gt;</c> (E7.S2c): the drop-in install.sh writes for one unit, from the machine
     /// configuration — the timer's period, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec.</summary>
@@ -269,7 +273,7 @@ internal static class CommandLine
         new([["archive", "reach"]], "archive reach [--json]", "as this user: take this side's archive lock and see whether the base answers within archive.reachabilitySeconds, nothing else — the short check root runs before the archive's long run, so a share that hangs holds a short child, never the run", ["archive", "reach", "--json"], rest => JsonOnly("archive reach", rest, json => new Request.ArchiveReach(json))),
         new([["archive", "status"]], "archive status [--json]", "the archive of this side now, as this user: whether a run holds its lock (and whether that run is stuck in the kernel on a share), the sessions on their way, the last run (local state only: the base is never read)", ["archive", "status", "--json"], rest => JsonOnly("archive status", rest, json => new Request.ArchiveStatus(json))),
         new([["archive", "restore"]], "archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]", "as this user: archived sessions created back in their agent's folder under their original names - never replacing a file, never through a link, never what never moves - each copy hashed first and read back after, given the restore time as its last write; a session whose lines are not all this side's needs --accept-unverified; the archived copies stay", ["archive", "restore", "--agent", "claude-code", "--month", "2026-09", "--json"], ParseArchiveRestore),
-        new([["archive", "list"]], "archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]", "as this user, read-only: this side's archived entries from its month indexes (only the months asked are read) - each with its status, whether every line of it is this side's, its files and bytes; a torn or hostile line is skipped and counted", ["archive", "list", "--json"], ParseArchiveList),
+        new([["archive", "list"]], "archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable] [--json]", "as this user, read-only: this side's archived entries from its month indexes (only the months asked are read) - each with its status, whether every line of it is this side's, its files and bytes; a torn or hostile line is skipped and counted; --restorable: only the verified entries removed at their source, newest first, at most archive.maxRestoreEntries (what the restore button offers)", ["archive", "list", "--json"], ParseArchiveList),
         new([["archive", "reconcile"]], "archive reconcile --scan [--json]", "as this user: walk this side's folders of the base and re-index, as recovered, every archived file no index line names (a copy an interrupted run left); nothing at the source is touched", ["archive", "reconcile", "--scan", "--json"], ParseArchiveReconcile),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
@@ -561,7 +565,7 @@ internal static class CommandLine
         _ when !ids.Any(id => id.Text == "A20") => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} names the archived entries A20's preview showed; it needs A20 among the actions."),
         _ when entries.FirstOrDefault(e => !Core.Archive.ArchiveIndex.IsEntryId(e)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} \"{Printable(bad)}\" is not an archived entry's id (16 lowercase hex digits)."),
         _ when entries.Distinct(StringComparer.Ordinal).Count() != entries.Count => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} names an entry twice."),
-        _ when entries.Count > MaxShownVolumes => new Request.Failed($"\"{BinaryName} act\" takes at most {MaxShownVolumes} entries."),
+        _ when entries.Count > Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max => new Request.Failed($"\"{BinaryName} act\" takes at most {Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max} entries (the ceiling of {Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Name})."),
         _ => null,
     };
 
@@ -621,6 +625,7 @@ internal static class CommandLine
 
     private const string BudgetFlag = "--budget-seconds";
     private const string RunIdFlag = "--run-id";
+    private const string RestorableFlag = "--restorable";
     private const string ScanFlag = "--scan";
 
     /// <summary>Optionally <c>--agent &lt;id&gt;</c> (as <c>archive preview</c>), <c>--budget-seconds &lt;n&gt;</c> (1 to the most
@@ -705,13 +710,13 @@ internal static class CommandLine
 
     /// <summary>Optionally <c>--agent &lt;id&gt;</c>, <c>--month &lt;yyyy-MM&gt;</c>, <c>--run &lt;runId&gt;</c>, <c>--json</c>.</summary>
     private static Request ParseArchiveList(IReadOnlyList<string> rest) =>
-        ReadOptions("archive list", rest, [AgentFlag, MonthFlag, RunFlag], [JsonFlag]) switch
+        ReadOptions("archive list", rest, [AgentFlag, MonthFlag, RunFlag], [JsonFlag, RestorableFlag]) switch
         {
             (_, { } failure) => failure,
             var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
             var (options, _) when options.Values.TryGetValue(MonthFlag, out var month) && MonthProblem(month) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
             var (options, _) when options.Values.TryGetValue(RunFlag, out var run) && Core.Records.RunId.TryParse(run) is null => new Request.Failed($"\"{BinaryName} archive list\" {RunFlag} takes a run id; got \"{Printable(run)}\"."),
-            var (options, _) => new Request.ArchiveList(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.GetValueOrDefault(MonthFlag, string.Empty), options.Values.GetValueOrDefault(RunFlag, string.Empty), options.Flags.Contains(JsonFlag)),
+            var (options, _) => new Request.ArchiveList(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.GetValueOrDefault(MonthFlag, string.Empty), options.Values.GetValueOrDefault(RunFlag, string.Empty), options.Flags.Contains(JsonFlag)) { Restorable = options.Flags.Contains(RestorableFlag) },
         };
 
     private static Request ParseArchiveReconcile(IReadOnlyList<string> rest) => rest switch

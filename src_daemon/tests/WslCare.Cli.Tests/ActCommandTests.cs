@@ -287,6 +287,18 @@ public sealed class ActCommandTests : IDisposable
         CommandLine.Parse(["act", "A20", "--confirm", "--entry"]).Should().BeOfType<Request.Failed>();
     }
 
+    /// <summary>The S4 code round, finding 7: the CLI bounds the entries by archive.maxRestoreEntries' ceiling, not A4's volume list.</summary>
+    [Fact]
+    public void More_entries_than_any_restore_takes_are_refused_at_the_command_line()
+    {
+        var most = Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max;
+        IEnumerable<string> Entries(int count) => Enumerable.Range(1, count).SelectMany(i => new[] { "--entry", i.ToString("x16", System.Globalization.CultureInfo.InvariantCulture) });
+
+        CommandLine.Parse(["act", "A20", "--confirm", "--manual", .. Entries(most)]).Should().BeOfType<Request.Act>();
+        CommandLine.Parse(["act", "A20", "--confirm", "--manual", .. Entries(most + 1)]).Should().BeOfType<Request.Failed>()
+            .Which.Message.Should().Contain(most.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     [Fact]
     public void A_shown_process_list_parses_beside_a4_s_volumes()
     {

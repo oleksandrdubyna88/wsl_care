@@ -5,7 +5,12 @@ using WslCare.Core.Records;
 namespace WslCare.Core.Archive;
 
 /// <summary>What <c>archive list</c> was asked for: optionally one agent, one month (<c>yyyy-MM</c>), the entries one run touched.</summary>
-public sealed record ArchiveListRequest(string Agent, string Month, string RunId);
+public sealed record ArchiveListRequest(string Agent, string Month, string RunId)
+{
+    /// <summary><c>--restorable</c> (plan §15r E9.S4, the code round's finding 4): only the VERIFIED entries removed at their source,
+    /// newest first, at most <c>archive.maxRestoreEntries</c> — what A20 offers, inside the child's answer cap.</summary>
+    public bool Restorable { get; init; }
+}
 
 /// <summary>One archived entry as the index of this side says it: its status, whether every line of it is this side's, its size.</summary>
 public sealed record ArchiveListEntry(string EntryId, string Agent, string Key, string Month, string Status, bool Verified, int Files, long Bytes, DateTimeOffset ArchivedAtUtc);
@@ -13,7 +18,11 @@ public sealed record ArchiveListEntry(string EntryId, string Agent, string Key, 
 /// <summary>The answer of <c>archive list --json</c>.</summary>
 /// <param name="SkippedLines">Index lines the reader skipped (torn, malformed, hostile).</param>
 /// <param name="Notes">The months whose index could not be read, by name — never read as empty.</param>
-public sealed record ArchiveListReport(int SchemaVersion, string Side, string SideFolder, string BaseFolder, string Outcome, string Note, IReadOnlyList<ArchiveListEntry> Entries, int SkippedLines, IReadOnlyList<string> Notes);
+public sealed record ArchiveListReport(int SchemaVersion, string Side, string SideFolder, string BaseFolder, string Outcome, string Note, IReadOnlyList<ArchiveListEntry> Entries, int SkippedLines, IReadOnlyList<string> Notes)
+{
+    /// <summary>The restorable entries a <c>--restorable</c> list left out past <c>archive.maxRestoreEntries</c>; 0 otherwise.</summary>
+    public int Omitted { get; init; }
+}
 
 /// <summary>One month index of one agent on this side, as it was read.</summary>
 public sealed record MonthEntries(ArchiveTarget Target, string Month, MonthRead Read);
@@ -40,7 +49,19 @@ public static class ArchiveList
         var entries = months.SelectMany(m => Listed(m, request.RunId)).OrderBy(e => e.Agent, StringComparer.Ordinal).ThenBy(e => e.Month, StringComparer.Ordinal).ThenBy(e => e.Key, StringComparer.Ordinal).ToList();
         var skipped = months.Sum(m => m.Read is MonthRead.Read read ? read.Index.Skipped : 0);
         var notes = months.Where(m => m.Read is MonthRead.Unreadable).Select(m => $"{m.Target.Entry.Id} {m.Month}: its index could not be read ({((MonthRead.Unreadable)m.Read).Why})").ToList();
-        return Report(input, RunOutcomes.Done, string.Empty, entries, skipped, [.. MountNote(input, state), .. notes]);
+        var kept = request.Restorable ? RestorableOf(entries, input.Config.Int(ConfigKeys.Archive.MaxRestoreEntries)) : new KeptEntries(entries, 0);
+        return Report(input, RunOutcomes.Done, string.Empty, kept.Entries, skipped, [.. MountNote(input, state), .. notes]) with { Omitted = kept.Omitted };
+    }
+
+    /// <summary>What a list answers, and how many restorable entries it left out.</summary>
+    private sealed record KeptEntries(IReadOnlyList<ArchiveListEntry> Entries, int Omitted);
+
+    /// <summary>The VERIFIED entries removed at their source (<c>sourceRemoved</c>, <c>split</c>), newest first, at most
+    /// <paramref name="most"/> — what A20 offers (the S4 code round, finding 4).</summary>
+    private static KeptEntries RestorableOf(IReadOnlyList<ArchiveListEntry> entries, int most)
+    {
+        var restorable = entries.Where(e => e.Verified && e.Status is ArchiveIndex.Events.SourceRemoved or ArchiveIndex.Events.Split).OrderByDescending(e => e.ArchivedAtUtc).ToList();
+        return new KeptEntries([.. restorable.Take(most)], Math.Max(0, restorable.Count - most));
     }
 
     /// <summary>Owner decision 2026-10-07: the list reads only, so a changed mount does not refuse it (a run would be) — the answer says

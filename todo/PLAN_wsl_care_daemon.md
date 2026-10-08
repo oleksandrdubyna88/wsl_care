@@ -2679,10 +2679,10 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-08 — E9.S0, E9.S1, E9.S2a, E9.S2b, E9.S3 and E9.S4 built (S4: the plan round folded in, its code round and its own reviews owed), the S0 and S1 review rounds, the S2a gate round, the S2a, S2b and S3 own review rounds and the S2b/S3 gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-08 — E9.S0, E9.S1, E9.S2a, E9.S2b, E9.S3 and E9.S4 built (S4: its plan round and code round folded in, the coordinator's own reviews owed), the S0 and S1 review rounds, the S2a gate round, the S2a, S2b and S3 own review rounds and the S2b/S3 gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
 > as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built*, *Risk consult
-> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round*, *E9.S3 as built*, *E9.S3 own review round*, *E9.S2b/S3 gate round*, *E9.S4 plan round* and *E9.S4 as built*); E9.S5 and the E9 live gate open. Originally: plan only,
+> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round*, *E9.S3 as built*, *E9.S3 own review round*, *E9.S2b/S3 gate round*, *E9.S4 plan round*, *E9.S4 as built* and *E9.S4 code round*); E9.S5 and the E9 live gate open. Originally: plan only,
 > nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
 > this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
 > Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
@@ -3851,6 +3851,27 @@ A13 and A20 are in the engine. Root decides WHEN; the target user's own process 
 - The live gate's blackholed-share step, and a real `runuser` from the service: both need the owner's machine.
 - E10 is owed: the panel's A20 button and *Archive now*.
 - The owner's open questions of S2b/S3 stand.
+
+#### E9.S4 code round (2026-10-08) — the coai code round over E9.S4
+
+The code round over `d02588b..515cbac` (session `f3cd22a3`; codex and gemini, 8 reviewers): verdict *proceed*, nine findings. Six
+were ACCEPTED and fixed RED first in one `fix(daemon): the coai code round over E9.S4` commit; three were rejected with reasons.
+Each row OVERRIDES the text it names.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0 | `ArchiveChildStream` mutates its state per line | **Rejected:** it is a stateful reader. Lines arrive one by one through the runner's callback while the child runs, and CLAUDE.md §3 keeps a class for a stateful service. Its state is private and locked; what it yields (the answer) is an immutable string. The runner's `OutputCapture` has the same shape |
+| 1 | no scenario test for the A13 / A20 flows | **Accepted:** `ArchiveActFlows` over the built CLI, root claimed. A13 and A20 refuse the test build's binary (it is this account's, not root's) and start no `runuser`; without a base A13 skips; `--entry` without A20 is a usage error |
+| 2 | the child record's schema version was a literal | **Accepted:** `SchemaVersion.Current` |
+| 3 | a `pam_systemd` two includes down was missed | **Accepted:** every file the stack pulls in is followed, each once (a loop of includes ends), and an included file that cannot be read refuses. Red first: the nested row and the missing-include row both answered no refusal |
+| 4 | A20's `archive list` of a large archive would pass the answer cap | **Accepted:** `archive list --restorable` answers only the verified entries removed at their source, newest first, at most `archive.maxRestoreEntries`, and counts the rest in `omitted`. A20 asks for exactly that and says how many it left out. Red first: the list answered all four entries; A20 asked without `--restorable` |
+| 5 | archive progress is not shown while it runs | **Rejected for S4:** the run reads live already (every line is a run step, so `running.json`'s progress advances). Showing the counts is a new status contract for the panel, which is E10's |
+| 6 | a detached A20 read the raw `--entry` values instead of the shown list | **Accepted:** `DetachedRuns.Detach` takes the `ShownList` of entries, as it does the volumes and the processes |
+| 7 | the CLI bounded `--entry` by A4's volume cap (10 000) | **Accepted:** bounded by `archive.maxRestoreEntries`' ceiling (5 000). Red first: 5 001 entries parsed |
+| 8 | the self locator sits on `ActionCommands` | **Rejected:** `ActionCommands` already carries the resolution context of one action (the runner, the target user, the bin folders) and owns `Locate`. `TargetUserCommands` takes the locator as a parameter and stays a pure builder; a static seam would be a mutable static for tests |
+
+The complexity split done before the round (the gates, the answers, the stream, A20's run) is in the S4 commit. The finding 4 change
+adds `omitted` to `archive-list.json` (additive).
 
 #### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
 

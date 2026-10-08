@@ -23,7 +23,7 @@ public sealed record ArchiveChildIdentity(string Role, string Template, int Pid,
 /// emptied once its children are gone — never a growing list (the S4 plan round's finding 2).</summary>
 public sealed record ArchiveChildFile(int SchemaVersion, string BootId, IReadOnlyList<ArchiveChildIdentity> Children)
 {
-    public static ArchiveChildFile Empty { get; } = new(1, string.Empty, []);
+    public static ArchiveChildFile Empty { get; } = new(Core.SchemaVersion.Current, string.Empty, []);
 }
 
 /// <summary>
@@ -56,8 +56,9 @@ public static class ArchiveChildren
         new CommandLimits.Budgeted(ConfigKeys.Archive.RunBudgetMinutes, ConfigKeys.Archive.FinishGraceMinutes, ConfigKeys.Archive.ChildOutputCapBytes)) with
     { Streamed = true };
 
-    /// <summary><c>archive list --json</c>: what A20 may restore.</summary>
-    public static readonly CommandTemplate List = Self("archive-list", [Literal("archive"), Literal("list"), Literal("--json")], new CommandLimits.Keyed(ConfigKeys.Archive.PreviewTimeoutSeconds, ConfigKeys.Archive.ChildOutputCapBytes));
+    /// <summary><c>archive list --restorable --json</c>: what A20 may restore, bounded by <c>archive.maxRestoreEntries</c> (the code
+    /// round's finding 4: the answer stays inside the cap however large the archive grows).</summary>
+    public static readonly CommandTemplate List = Self("archive-list", [Literal("archive"), Literal("list"), Literal("--restorable"), Literal("--json")], new CommandLimits.Keyed(ConfigKeys.Archive.PreviewTimeoutSeconds, ConfigKeys.Archive.ChildOutputCapBytes));
 
     /// <summary><c>archive restore --entry &lt;id&gt;[,&lt;id&gt;…] --json</c>: button-only and STREAMED (the S4 plan round's amendment 2).</summary>
     public static readonly CommandTemplate Restore = Self(
@@ -160,7 +161,7 @@ public static class ArchiveChildren
     /// <summary>The launcher root just started, recorded at once (before any line arrives): the record is replaced, never grown.</summary>
     public static string Launched(ActionContext context, string template, int pid, CancellationToken cancellationToken) =>
         context.Paths is LinuxHostPaths linux
-            ? Write(context.Paths, context.Files, new ArchiveChildFile(1, BootIdentity.Read(linux, context.Files), Identities(context, template, [pid], Launcher, cancellationToken)))
+            ? Write(context.Paths, context.Files, new ArchiveChildFile(SchemaVersion.Current, BootIdentity.Read(linux, context.Files), Identities(context, template, [pid], Launcher, cancellationToken)))
             : string.Empty;
 
     /// <summary>The worker under the launcher (the product binary <c>runuser</c> started), added once it shows in the table.</summary>

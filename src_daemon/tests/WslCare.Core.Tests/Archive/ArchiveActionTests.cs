@@ -397,7 +397,7 @@ public sealed partial class ArchiveActionTests : IDisposable
 
     [Theory]
     [InlineData("session optional pam_systemd.so\n", "", "/etc/pam.d/runuser names pam_systemd")]
-    [InlineData("@include common-session\n", "session optional pam_systemd.so\n", "/etc/pam.d/common-session (which /etc/pam.d/runuser includes)")]
+    [InlineData("@include common-session\n", "session optional pam_systemd.so\n", "/etc/pam.d/common-session names pam_systemd")]
     public async Task A13_refuses_where_runusers_pam_stack_would_make_a_login_session(string runuser, string included, string reason)
     {
         _sandbox.Write("/etc/pam.d/runuser", runuser);
@@ -411,6 +411,30 @@ public sealed partial class ArchiveActionTests : IDisposable
 
         preview.Refusal.Should().Contain(reason);
         runner.Requests.Should().BeEmpty();
+    }
+
+    /// <summary>The S4 code round, finding 3: an include of an include is followed (each file once, so a loop ends), and a file the stack
+    /// pulls in that cannot be read refuses — it could name pam_systemd for all root knows.</summary>
+    [Theory]
+    [InlineData("nested", "/etc/pam.d/common-inner")]
+    [InlineData("missing", "/etc/pam.d/common-missing could not be checked")]
+    [InlineData("loop", "")]
+    public async Task A13_follows_every_file_the_pam_stack_pulls_in(string shape, string reason)
+    {
+        _sandbox.Write("/etc/pam.d/runuser", shape == "missing" ? "@include common-missing\n" : "@include common-outer\n");
+        _sandbox.Write("/etc/pam.d/common-outer", "session required pam_unix.so\n@include common-inner\n");
+        _sandbox.Write("/etc/pam.d/common-inner", shape == "loop" ? "session include common-outer\n" : "session optional pam_systemd.so\n");
+
+        var preview = await Previewed();
+
+        if (reason.Length == 0)
+        {
+            preview.Refusal.Should().BeEmpty("a loop of includes naming no pam_systemd ends and refuses nothing");
+        }
+        else
+        {
+            preview.Refusal.Should().Contain(reason);
+        }
     }
 
     [Fact]

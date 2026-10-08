@@ -109,6 +109,22 @@ public sealed class RestoreActionTests : IDisposable
         JsonSerializer.Serialize(preview, WslCareJsonContext.Default.ActionPreview).Should().NotContain("projects/p/", "root's records name no session");
     }
 
+    /// <summary>The S4 code round, finding 4: A20 asks the child for the restorable entries only (bounded by archive.maxRestoreEntries),
+    /// so its answer stays inside the cap however large the archive grows — and says how many it left out.</summary>
+    [Fact]
+    public async Task A20_asks_only_for_the_restorable_entries_and_says_how_many_were_left_out()
+    {
+        var list = JsonSerializer.Serialize(
+            new ArchiveListReport(SchemaVersion.Current, "wsl", "wsl-host-distro", Base, RunOutcomes.Done, string.Empty, [Entry(Removed1, ArchiveIndex.Events.SourceRemoved)], 0, []) { Omitted = 7 },
+            WslCareJsonContext.Compact.ArchiveListReport);
+        var runner = Children(list: list);
+
+        var (preview, _, _) = await PreviewAndRun(Context(ShownList.Of([Removed1])), runner);
+
+        runner.Requests.First().Argv.Skip(5).Should().Equal("archive", "list", "--restorable", "--json");
+        preview.What.Should().Contain("7 more");
+    }
+
     [Fact]
     public async Task A20_restores_only_the_entries_its_modal_showed()
     {

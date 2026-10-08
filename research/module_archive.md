@@ -117,7 +117,7 @@ C-M4 / S-M2).
 | `archive status [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-status.json` | built (E9.S2b) |
 | `archive reconcile --scan [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | the run's answer with its `scan` counts | built (E9.S2b) |
 | `archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveRestore.cs` | the run's answer with its `restore` block (`contracts/golden/head/archive-restore.json`); `--json` streams one-line JSON progress objects, the answer last (the gate round); exit 1 when a session was refused | built (E9.S3) |
-| `archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveList.cs` | `contracts/golden/head/archive-list.json`; read-only (no lock, no lease, no key made) | built (E9.S3) |
+| `archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveList.cs` | `contracts/golden/head/archive-list.json`; read-only (no lock, no lease, no key made) | built (E9.S3) |
 | `act A13 (--preview or --confirm) [--manual or --timer]` (as root; the timer's pass) | `Archive/ArchiveAction.cs` | the engine's run record — agents and counts, never a session; capability `archive.run` | built (E9.S4) |
 | `act A20 (--preview or --confirm) --manual --entry <id>...` (as root; a button only — A19 is the idle MCP servers' stop, E14 S2a) | `Archive/RestoreAction.cs` | the engine's run record — entry ids, never a key; capability `archive.restore` | built (E9.S4) |
 
@@ -260,6 +260,9 @@ flowchart TD
 - **`archive preview`** now carries `removalsDue` (the archived entries past `archive.removeAfterHours`, from the local in-flight
   file): A13's trigger fires on a session due OR a removal due, from ONE child.
 - **Doctor** adds the `archive.runuser` check: a problem only where an archive is configured.
+- **After the S4 code round:** the PAM check follows every file the stack pulls in (each once) and refuses an included file it
+  cannot read; A20 lists with `archive list --restorable` — the verified entries removed at their source, newest first, at most
+  `archive.maxRestoreEntries`, the rest counted in `omitted` — so its answer stays inside the cap however large the archive grows.
 
 ## External dependencies
 
