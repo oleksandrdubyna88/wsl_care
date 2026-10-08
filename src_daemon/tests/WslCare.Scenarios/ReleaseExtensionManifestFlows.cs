@@ -29,6 +29,21 @@ public sealed class ReleaseExtensionManifestFlows
         _ => throw new ArgumentOutOfRangeException(nameof(shape), shape, "known shapes: no-version, no-publisher, two-publishers"),
     };
 
+    /// <summary>The positive beside the refusals, on the same fixture: a well-formed package.json is read, and both values
+    /// reach the outputs — so a refusal below is about the broken key, never about the fixture.</summary>
+    [Fact]
+    public async Task A_well_formed_package_json_is_read_and_both_values_reach_the_outputs()
+    {
+        Linux();
+        using var root = new TempRoot("ext-guard-manifest-ok");
+        var checkout = Make(root, version: "0.1.0", publisher: "wsl-care-dev");
+
+        var result = await ReleaseScripts.RunAsync("release-extension-guard.sh", ["extension-v0.1.0"], checkout.Dir, checkout.Env);
+
+        result.Exit.Should().Be(0, result.Stdout + result.Stderr);
+        result.StdoutLines.Should().Contain("version=0.1.0").And.Contain("publisher=wsl-care-dev");
+    }
+
     [Theory]
     [InlineData("no-version")]
     [InlineData("no-publisher")]

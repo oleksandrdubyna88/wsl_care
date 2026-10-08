@@ -71,12 +71,13 @@ esac
 # manifest_field <key> <var>: the one top-level `"key": "value"` of package.json (npm writes it two-space indented, one key
 # per line), assigned into <var>; refused when there is none or more than one. Called as a plain command, NEVER inside
 # `$(…)`: there refuse's ::error:: line would become the value and be thrown away, and the guard would exit 1 with nothing
-# in the log (it did until 2026-10-08 — ReleaseExtensionManifestFlows).
+# in the log (it did until 2026-10-08 — ReleaseExtensionManifestFlows; ShellRefusalScanTests keeps every script free of the
+# shape). <var> must not be `manifest_found`, the function's own local.
 manifest_field() {
-  local found
-  found="$(sed -n "s/^  \"$1\": \"\\([^\"]*\\)\",\\{0,1\\}\$/\\1/p" "$MANIFEST")"
-  [ -n "$found" ] && [ "$(printf '%s\n' "$found" | wc -l)" -eq 1 ] || refuse "$MANIFEST carries no single top-level \"$1\""
-  printf -v "$2" '%s' "$found"
+  local manifest_found
+  manifest_found="$(sed -n "s/^  \"$1\": \"\\([^\"]*\\)\",\\{0,1\\}\$/\\1/p" "$MANIFEST")"
+  [ -n "$manifest_found" ] && [ "$(printf '%s\n' "$manifest_found" | wc -l)" -eq 1 ] || refuse "$MANIFEST carries no single top-level \"$1\""
+  printf -v "$2" '%s' "$manifest_found"
 }
 
 [ -f "$MANIFEST" ] || refuse "$MANIFEST is missing at this checkout"
