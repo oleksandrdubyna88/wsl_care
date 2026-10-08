@@ -136,6 +136,6 @@ public sealed class McpProgramsKeyTests
     public void A_closed_list_keeps_refusing_what_its_catalogue_does_not_hold()
     {
         ConfigValidation.Parse(ConfigKeys.McpServers.Watched, "creds-mcp").Should().BeOfType<ValueCheck.Invalid>()
-            .Which.Message.Should().Be("mcpServers.watched must be a list of: coai-mcp (comma-separated on the command line); got \"creds-mcp\"");
+            .Which.Message.Should().Be("mcpServers.watched must be a list of: coai-mcp, playwright-mcp (comma-separated on the command line); got \"creds-mcp\"");
     }
 }

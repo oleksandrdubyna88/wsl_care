@@ -111,6 +111,30 @@ public sealed class McpServerStopTests : IDisposable
             .Which.Logs.Should().BeOfType<McpLogLayout.None>("its log layout is unknown: starts are the live-younger lower bound");
     }
 
+    /// <summary>E14 S2d (coai plan round 2026-10-08, finding 4): the catalogued interpreter-run server reaches A19 like any —
+    /// an idle <c>node …/.bin/playwright-mcp</c> under its agent through <c>npm exec</c> is a target by pid and start; one that
+    /// holds a browser child (Playwright at work) is kept.</summary>
+    [Fact]
+    public async Task An_idle_npx_started_playwright_mcp_is_a_target_and_one_with_a_browser_child_is_kept()
+    {
+        const string Playwright = "node /home/me/.npm/_npx/abc/node_modules/.bin/playwright-mcp";
+        Stat(200, cpuTicks: 9000, parent: 100, name: "claude");
+        Stat(330, cpuTicks: 500, parent: 250, name: "node");
+        Stat(340, cpuTicks: 500, parent: 260, name: "node");
+        var npm = UserWorld.Process(250, "npm exec @playwright/mcp@latest", ageHours: 6) with { ParentPid = 200 };
+        var npm2 = UserWorld.Process(260, "npm exec @playwright/mcp@latest", ageHours: 6) with { ParentPid = 200 };
+        var idle = UserWorld.Process(330, Playwright, ageHours: 6) with { ParentPid = 250, StartTicks = Reading.Of(Start) };
+        var working = UserWorld.Process(340, Playwright, ageHours: 6) with { ParentPid = 260, StartTicks = Reading.Of(Start) };
+        var browser = UserWorld.Process(341, "/home/me/.cache/ms-playwright/chromium-1200/chrome-linux/chrome --headless", ageHours: 1) with { ParentPid = 340 };
+
+        var preview = await IdleFor(TimeSpan.FromHours(2), [Agent(), npm, npm2, idle, working, browser]);
+
+        var target = preview.Targets.Should().ContainSingle().Subject;
+        target.Key.Should().Be("330:4000:500:1000");
+        target.Note.Should().Contain("playwright-mcp").And.Contain("Claude Code");
+        preview.Basis.Should().Contain(McpServerStop.HasChild);
+    }
+
     [Fact]
     public async Task Another_users_process_of_a_user_program_is_never_stopped()
     {

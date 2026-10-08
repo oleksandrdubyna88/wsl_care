@@ -34,7 +34,18 @@ public enum McpServerOrigin
 /// <param name="Programs">The PROGRAM file names (argv[0], <c>.exe</c> stripped) that are this server — never an argument of
 /// another program (plan §15q E7.S2d C-2: <c>printf coai-mcp</c> is not a server).</param>
 /// <param name="Origin">The catalogue's, or the user's own (plan E14 S2c).</param>
-public sealed record McpServerEntry(string Name, IReadOnlyList<string> Programs, McpLogLayout Logs, McpServerOrigin Origin = McpServerOrigin.Catalogue);
+public sealed record McpServerEntry(string Name, IReadOnlyList<string> Programs, McpLogLayout Logs, McpServerOrigin Origin = McpServerOrigin.Catalogue)
+{
+    /// <summary>The interpreter-run forms of this server (E14 S2d): a process whose program is one of the interpreters and whose
+    /// SCRIPT is one of the scripts, under one of the folders. Empty for a server that is its own program.</summary>
+    public IReadOnlyList<McpScriptMatch> RunAs { get; init; } = [];
+}
+
+/// <summary>One interpreter-run form of a server (E14 S2d): <paramref name="Interpreters"/> — program file names, as
+/// <see cref="Collectors.ProcessEntry.Programs"/> compares them — running a script whose file name is one of
+/// <paramref name="Scripts"/> and whose path holds one of <paramref name="Under"/> (an installed package's folder), so a script
+/// of that name elsewhere is not the server.</summary>
+public sealed record McpScriptMatch(IReadOnlyList<string> Interpreters, IReadOnlyList<string> Scripts, IReadOnlyList<string> Under);
 
 /// <summary>
 /// The MCP servers of AI agents the daemon watches (plan §15q E7.S2d) — embedded, a closed list; which of them are watched is
@@ -46,7 +57,15 @@ public static class McpServerCatalogue
     /// extension's native <c>claude</c> binary, logging per the family contract under <c>~/.local/share/coai-mcp/logs</c>.</summary>
     public static readonly McpServerEntry CoaiMcp = new("coai-mcp", ["coai-mcp"], new McpLogLayout.FamilyRunLogs(".local/share/coai-mcp/logs", "coai-mcp"));
 
-    public static IReadOnlyList<McpServerEntry> Servers { get; } = [CoaiMcp];
+    /// <summary>The Playwright MCP server, as <c>npx @playwright/mcp</c> starts it (E14 S2d, the captured 2026-10-02 tree twice):
+    /// <c>npm exec</c> → a shell → <c>node …/node_modules/.bin/playwright-mcp</c> — the node process is the server, its launchers
+    /// are not. A script run through its shebang is <c>node</c> too, so the server is never its own program here. No log layout.</summary>
+    public static readonly McpServerEntry PlaywrightMcp = new("playwright-mcp", [], new McpLogLayout.None())
+    {
+        RunAs = [new McpScriptMatch(["node", "nodejs"], ["playwright-mcp"], ["/node_modules/"])],
+    };
+
+    public static IReadOnlyList<McpServerEntry> Servers { get; } = [CoaiMcp, PlaywrightMcp];
 
     /// <summary>Every name, in catalogue order — the allowed set of <c>mcpServers.watched</c>.</summary>
     public static IReadOnlyList<string> Names { get; } = [.. Servers.Select(s => s.Name)];

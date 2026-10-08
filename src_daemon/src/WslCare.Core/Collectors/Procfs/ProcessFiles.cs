@@ -110,6 +110,15 @@ public static class CommandLineText
 
     private static string StripExe(string name) => name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? name[..^4] : name;
 
+    /// <summary>The script an interpreter runs: the first word after the program that does not start with <c>-</c>
+    /// (<c>node --no-warnings /x/.bin/playwright-mcp</c> → <c>/x/.bin/playwright-mcp</c>), its path as written; empty when there is
+    /// none (E14 S2d). An option that takes a separate value (<c>node -r mod script</c>) yields the value — a word no catalogued
+    /// script is named after, so it misses rather than matches.</summary>
+    public static string ScriptOf(IEnumerable<string> argv) => argv.Skip(1).FirstOrDefault(word => word.Length > 0 && !word.StartsWith('-')) ?? string.Empty;
+
+    /// <summary>The file name a path names, <c>.exe</c> stripped — the comparison <see cref="ProgramNames"/> makes.</summary>
+    public static string FileNameOf(string path) => StripExe(Path.GetFileName(path.Replace('\\', '/')));
+
     public static IReadOnlyList<string> Arguments(ReadOnlySpan<byte> cmdline) =>
         Encoding.UTF8.GetString(cmdline).Split('\0').SkipLast(cmdline.Length > 0 && cmdline[^1] == 0 ? 1 : 0).ToList();
 

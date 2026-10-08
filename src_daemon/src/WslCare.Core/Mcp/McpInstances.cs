@@ -30,12 +30,20 @@ public static class McpInstances
             matched.Count(m => m.Owner is null));
     }
 
-    /// <summary>The watched server whose program the process runs; <c>null</c> for none. The PROGRAM only — a server's name as an
-    /// argument of another program is not that server (consultation C-2).</summary>
+    /// <summary>The watched server whose program the process runs — or, for an interpreter-run server (E14 S2d), whose SCRIPT its
+    /// interpreter runs; <c>null</c> for none. The program or the script only — a server's name as a later argument of another
+    /// program is not that server (consultation C-2).</summary>
     public static McpServerEntry? ServerOf(ProcessEntry process, IReadOnlyList<McpServerEntry> watched) =>
         process.Programs.FirstOrDefault() is { Length: > 0 } program
-            ? watched.FirstOrDefault(s => s.Programs.Contains(program, StringComparer.Ordinal))
+            ? watched.FirstOrDefault(s => s.Programs.Contains(program, StringComparer.Ordinal) || s.RunAs.Any(form => Runs(form, program, process.Script)))
             : null;
+
+    /// <summary>The program is one of the form's interpreters and runs one of its scripts from under one of its folders.</summary>
+    private static bool Runs(McpScriptMatch form, string program, string script) =>
+        script.Length > 0
+        && form.Interpreters.Contains(program, StringComparer.Ordinal)
+        && form.Scripts.Contains(Collectors.Procfs.CommandLineText.FileNameOf(script), StringComparer.Ordinal)
+        && form.Under.Any(folder => script.Replace('\\', '/').Contains(folder, StringComparison.Ordinal));
 
     /// <summary>The first ancestor that is a catalogue agent; <see cref="McpOwner.Orphaned"/> when there is none and the process was
     /// re-parented (the product's own orphan rule, <see cref="ProcessEntry.Orphaned"/>); <c>null</c> when it runs under a live

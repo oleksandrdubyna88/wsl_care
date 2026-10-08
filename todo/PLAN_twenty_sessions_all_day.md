@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S3 built (A3's timer waits for idle build servers; language servers for A11); S2b and S4–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S2b and S4–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -413,6 +413,17 @@ interpreter-run MCP server. The shell between `npm exec` and `node` (ppids 7471,
 `Node_running_another_script_is_not_playwright_mcp_and_a_mention_after_the_script_is_not_either`,
 `Playwright_mcp_started_directly_by_its_shebang_is_the_server`, `The_wrapper_npm_exec_is_never_the_server`,
 `Playwright_mcp_is_watched_by_default_and_refused_as_a_user_program`, and the golden update.
+
+**S2d as built (2026-10-08, branch `feat/wc-mcp-interpreter-servers`).** Plan round (coai session `bf45d6ae`): `proceed`, 2 of
+2 reviewers, 5 findings.
+
+- **Accepted:**
+  - (1) an option before the script: `ProcessEntry.Script` is the first word after the program that is no option.
+  - (2) a shebang script runs as the interpreter, never as itself: the entry names NO program, only the interpreter-run form, and the test uses the real shebang shape.
+  - (3) a script of the same name elsewhere: the form requires the script under `/node_modules/`.
+  - (4) A19 is shown to target an idle one and keep one with a browser child.
+- **Rejected:** (0) bridging a missing parent. On a live system a parent that exits re-parents its child at once. The capture omits processes (the interop relay's parent 559 is missing too), so the golden reports the capture as it is.
+- **Built:** `McpServerEntry.RunAs` (`McpScriptMatch`: interpreters, scripts, folders) and `CommandLineText.ScriptOf` / `FileNameOf`. Tests that assumed one watched server now name `coai-mcp`.
 
 ### S3 — the build-server reaper (widens A3)
 

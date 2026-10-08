@@ -280,7 +280,8 @@
   },
   "mcpServers": {
     "watched": [
-      "coai-mcp"
+      "coai-mcp",
+      "playwright-mcp"
     ],
     "programs": [],
     "cpuWindowMilliseconds": 1000,
