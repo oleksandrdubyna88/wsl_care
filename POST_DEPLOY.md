@@ -10,8 +10,13 @@ VSCE_PAT expires: none yet — recorded at the E5 live gate, step 2, as `VSCE_PA
 decision of 2026-10-06: no stored token, the attested `.vsix` uploaded by hand), `VSCE_PAT expires: <YYYY-MM-DD>` (a global
 Azure DevOps PAT, so never later than 2026-12-01), or `VSCE_PAT expires: none — OIDC` when the Marketplace publish uses
 `--azure-credential` (docs/repo-settings.md, step 9).
-Last verified: never, as of 2026-10-04 — nothing released yet (`install.sh` exists since E4.S1, the daemon's release
-pipeline since E4.S2, the extension's since E5.S3). The first daemon release and its live install are the **E4 live
+Last verified: 2026-10-08 · the owner's installation (WSL Ubuntu) · daemon 0.2.0
+— items 1, 2, 5, 7, 11 against the attested `daemon-v0.2.0` install of 2026-10-07 19:39Z (11: its first timer run,
+2026-10-08 07:52Z, `Consumed 2min 23.8s CPU time, 831.3M memory peak` — 81 % of the 1 GiB `MemoryMax`, no
+oom-kill/memory.max/snap-confine), item 4 24/24 built from the tag (a first run failed only on the Windows clock probe:
+the Windows Time service was stopped and Windows ran 2 h slow; 24/24 after the owner restarted it), items 8–10 on the
+release (assets + `.sha256`, `gh attestation verify` ×3 with the wrong-identity control failing, `install.sh --dry-run`
+in a disposable systemd container). Items 3, 6 and 12 belong to the E5 live gate (the extension). The first daemon release and its live install were the **E4 live
 gate** (plan §16): settings with refused probes → item 4 → the release-please cut and the observed `release.yml` run →
 the live install → items 1–5, 7–11, then THIS line stamped `Last verified: <YYYY-MM-DD> · <target> · daemon <x.y.z>`.
 `release-extension.yml`'s guard READS that stamp: it refuses to release the extension until the line names a date and
