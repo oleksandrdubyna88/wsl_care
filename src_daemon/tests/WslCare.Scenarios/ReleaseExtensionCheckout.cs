@@ -1,5 +1,7 @@
 using System.Runtime.Versioning;
 
+using FluentAssertions;
+
 using WslCare.TestSupport;
 
 namespace WslCare.Scenarios;
@@ -41,7 +43,7 @@ internal static class ReleaseExtensionCheckout
             root.File("checkout/src_vs_code/src/root/rootCall.ts", "export const ROOT_OPS = ['preview', 'confirm', 'stop', 'fullCheck', 'rootCheck'] as const;\n");
         }
 
-        root.File("checkout/POST_DEPLOY.md", $"# Post-deploy checks\n\nTarget: x\n{stamp}\n\n| # | a | b | c |\n");
+        root.File("checkout/POST_DEPLOY.md", PostDeploy(stamp));
         var log = root.Under("gh.log");
         // The extension's first release is answered apart (E6.S2 review S1: root is allowed only once it is published).
         var gh = root.File("bin/gh", "#!/bin/sh\necho \"$@\" >> \"$FAKE_GH_LOG\"\n[ -n \"$FAKE_GH_FAIL\" ] && { echo 'HTTP 404: Not Found' >&2; exit 1; }\ncase \"$*\" in *releases/tags/extension-v*) printf '%s\\n' \"$FAKE_GH_EXT_ANSWER\"; exit 0 ;; esac\n" +
@@ -62,5 +64,28 @@ internal static class ReleaseExtensionCheckout
             ["GITHUB_OUTPUT"] = null,
         };
         return new Checkout(dir, env, log);
+    }
+
+    /// <summary>A POST_DEPLOY.md as the guard reads it: its `Last verified:` line is <paramref name="stamp"/>.</summary>
+    internal static string PostDeploy(string stamp) => $"# Post-deploy checks\n\nTarget: x\n{stamp}\n\n| # | a | b | c |\n";
+
+    /// <summary>The checkout's environment plus a git identity from <c>GIT_AUTHOR_*</c> / <c>GIT_COMMITTER_*</c> and no
+    /// configuration read or written, for a flow that makes the checkout a throwaway git repository.</summary>
+    internal static Dictionary<string, string?> GitEnv(Checkout checkout) => new(checkout.Env)
+    {
+        ["GIT_AUTHOR_NAME"] = "test",
+        ["GIT_AUTHOR_EMAIL"] = "test@example.invalid",
+        ["GIT_COMMITTER_NAME"] = "test",
+        ["GIT_COMMITTER_EMAIL"] = "test@example.invalid",
+        ["GIT_CONFIG_GLOBAL"] = "/dev/null",
+        ["GIT_CONFIG_NOSYSTEM"] = "1",
+    };
+
+    /// <summary>One git command in the checkout, which must succeed; its standard output, trimmed.</summary>
+    internal static async Task<string> GitAsync(Checkout checkout, IReadOnlyDictionary<string, string?> env, params string[] args)
+    {
+        var git = await ChildProcess.RunAsync("git", args, env, checkout.Dir);
+        git.Exit.Should().Be(0, $"git {string.Join(' ', args)}: {git.Stderr}");
+        return git.Stdout.Trim();
     }
 }
