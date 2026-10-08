@@ -295,7 +295,7 @@
           "minimum": 1,
           "maximum": 168,
           "scope": "application",
-          "markdownDescription": "The Windows Time guard runs every this many hours (besides at startup, at logon and when the Windows Time service logs that it is stopping). Applies when the guard is installed (again)."
+          "markdownDescription": "The Windows Time guard runs every this many hours (besides at startup, at logon, when the Windows Time service logs that it is stopping and when its start type is changed). Applies when the guard is installed (again)."
         },
         "wslCare.windowsTime.guard.minMinutesBetweenStarts": {
           "type": "integer",
@@ -311,7 +311,7 @@
           "minimum": 0,
           "maximum": 3600,
           "scope": "application",
-          "markdownDescription": "How long after startup, a logon, or the service's stop event the Windows Time guard waits before it runs, in seconds (0 = at once). Applies when the guard is installed (again)."
+          "markdownDescription": "How long after startup, a logon, the service's stop event or a change of its start type the Windows Time guard waits before it runs, in seconds (0 = at once). Applies when the guard is installed (again)."
         },
         "wslCare.windowsTime.guard.timeLimitMinutes": {
           "type": "integer",
