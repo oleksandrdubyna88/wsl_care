@@ -40,7 +40,7 @@ export interface ViewSection {
 }
 
 /** The buttons the page may show; each posts its own id back, and the host accepts only these (`messages.ts`). */
-export type PageAction = 'refresh' | 'openSettings' | 'startWsl' | 'installDaemon';
+export type PageAction = 'refresh' | 'openSettings' | 'startWsl' | 'installDaemon' | 'startWindowsTime';
 
 /** One cleanup row's button (E6.S3): the row id of the closed enum, its label, and why it is greyed when it is. */
 export interface CleanRow {

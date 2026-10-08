@@ -93,6 +93,11 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.startWindowsTime",
+        "title": "Start Windows Time (elevated, one UAC prompt)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.openLogs",
         "title": "Logs",
         "category": "AI OS Care",
@@ -195,6 +200,20 @@
           "maximum": 3600,
           "scope": "application",
           "markdownDescription": "How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds."
+        },
+        "wslCare.timeouts.windowsTimeFixSeconds": {
+          "type": "integer",
+          "default": 180,
+          "minimum": 30,
+          "maximum": 3600,
+          "scope": "application",
+          "markdownDescription": "How long *Start Windows Time* may take, in seconds — it waits for YOU at the UAC prompt, then starts the Windows Time service and resyncs (up to three tries)."
+        },
+        "wslCare.windowsTime.setAutomaticStart": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "markdownDescription": "Whether *Start Windows Time* also sets the Windows Time service to start **Automatic** (`Set-Service w32time -StartupType Automatic`). Windows' own default is Manual (trigger start), which other software was seen stopping (2026-10-08). Automatic does not restart the service if something stops it again."
         },
         "wslCare.cleanup.followPollSeconds": {
           "type": "integer",

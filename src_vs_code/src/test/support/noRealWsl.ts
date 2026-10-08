@@ -25,13 +25,32 @@ export function isWslLauncher(file: unknown): boolean {
   return name === 'wsl' || name === 'wsl.exe';
 }
 
+export const ELEVATION_TRIPWIRE_MESSAGE = 'noRealWsl: a test tried to start an ELEVATED PowerShell (RunAs)';
+
+/**
+ * Whether a start would ask Windows for elevation (PLAN_windows_time_guard.md D7): PowerShell with `RunAs` anywhere in what
+ * it is handed. *Start Windows Time* records instead in Test mode; a test that reached the real launcher would put a UAC
+ * prompt on the machine running the tests — and, answered, change its services. A PowerShell WITHOUT RunAs (the parse
+ * check of the fix's script) is allowed.
+ */
+export function isElevatedPowerShell(file: unknown, rest: unknown): boolean {
+  const name = path.win32.basename(String(file)).toLowerCase();
+  const text = Array.isArray(rest) ? rest.map(String).join(' ') : String(rest ?? '');
+
+  return (name === 'powershell' || name === 'powershell.exe' || name === 'pwsh' || name === 'pwsh.exe') && /runas/i.test(text);
+}
+
 type Launcher = (...args: unknown[]) => unknown;
 
 function guard(original: Launcher, firstIsCommandLine: boolean): Launcher {
   return function guarded(this: unknown, ...args: unknown[]): unknown {
-    const program = firstIsCommandLine ? String(args[0]).trim().split(/\s+/)[0] : args[0];
+    const words = firstIsCommandLine ? String(args[0]).trim().split(/\s+/) : [];
+    const program = firstIsCommandLine ? words[0] : args[0];
     if (isWslLauncher(program)) {
       throw new Error(`${TRIPWIRE_MESSAGE}: ${String(args[0])}`);
+    }
+    if (isElevatedPowerShell(program, firstIsCommandLine ? words.slice(1) : args[1])) {
+      throw new Error(`${ELEVATION_TRIPWIRE_MESSAGE}: ${String(args[0])}`);
     }
 
     return original.apply(this, args);

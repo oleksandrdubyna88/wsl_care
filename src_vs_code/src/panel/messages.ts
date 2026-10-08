@@ -24,13 +24,14 @@ export type PageMessage =
   | { readonly type: 'openSettings' }
   | { readonly type: 'startWsl' }
   | { readonly type: 'installDaemon' }
+  | { readonly type: 'startWindowsTime' }
   | { readonly type: 'openRunLogs' }
   | { readonly type: 'clean'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'cleanSelected'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'runFullCheck' }
   | { readonly type: 'stop'; readonly index: number };
 
-const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'runFullCheck', 'openRunLogs']);
+const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'runFullCheck', 'openRunLogs']);
 
 /** The host holds at most this many stoppable runs plus one (the daemon has ONE running state; the list is a list for shape only). */
 export const MAX_STOP_INDEX = 3;

@@ -33,6 +33,7 @@ const TIMEOUTS = {
   detachSeconds: { key: 'timeouts.detachSeconds', default: 690, minimum: above(WORST_CASE_S.detach), maximum: 7200, description: 'How long a cleanup\'s confirm or *Run full check now* may take to hand the run to its unit, in seconds — at least the daemon\'s worst case: the shown list, one `systemctl show` per queued request (up to 32), the start and one more `systemctl show`. A detach that outruns it is followed as "outcome unknown", never reported as failed.' },
   wslListSeconds: { key: 'timeouts.wslListSeconds', default: 15, minimum: WSL_LIST_MINIMUM_S, maximum: 300, description: 'How long each of the three `wsl.exe --list` questions asked before a daemon call may take, in seconds (measured: about 50 ms each, warm).' },
   stopSeconds: { key: 'timeouts.stopSeconds', default: 150, minimum: above(WORST_CASE_S.stop), maximum: 3600, description: 'How long *Stop* (`act --stop`, one `systemctl stop`) may take, in seconds.' },
+  windowsTimeFixSeconds: { key: 'timeouts.windowsTimeFixSeconds', default: 180, minimum: 30, maximum: 3600, description: 'How long *Start Windows Time* may take, in seconds — it waits for YOU at the UAC prompt, then starts the Windows Time service and resyncs (up to three tries).' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
 const CLEANUP = {
