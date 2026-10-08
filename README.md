@@ -234,7 +234,8 @@ first). `status` stays read-only and needs no root for any of it. The text form 
 block): every process of a watched MCP server (`mcpServers.watched`, closed over the built-in catalogue — `coai-mcp`
 today — plus the user's own programs, `mcpServers.programs`: program file names such as `["creds-mcp"]`, at most 32,
 default empty, each refused when it names an AI agent's program, an interpreter, shell or launcher such as `node`,
-`python3` or `npx` (every script they run has that argv[0]), `wsl-care` or a catalogue server; such a server has no known
+`python3` or `npx` (every script they run has that argv[0]), `wsl-care` or a catalogue server — a name only a later
+build refuses is left out of the layer with a notice, never an error; such a server has no known
 log layout, so its starts are the `liveYounger` lower bound) whose parent chain reaches an AI-agent session, or that was
 left behind when its agent died (`orphaned`). Per
 instance: pid, owner (the agent session's pid, name and redacted command line), user, state, age, **CPU % of one core

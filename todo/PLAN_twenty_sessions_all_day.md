@@ -356,6 +356,29 @@ scenario flow `A_user_program_from_the_config_is_reported_and_recorded_by_the_ti
   Windows server through interop (`/init …/creds-mcp.exe`, argv[0] `init`) cannot be added this way. A name a user adds
   may match an unrelated program of the same name that runs UNDER an agent (an agent's own helper with that name): the
   idle, child, terminal and identity guards still apply, and the user chose the name.
+- **Gates:** plan round (coai session `563a1e95`): `proceed`, 1 of 2 providers answered, both findings accepted (items 5 and
+  6). Code round (same session, 4 of 8 reviewers — gemini rate-limited): `proceed`, 4 findings — ACCEPTED: (1) a closed
+  list given a member rule must still hold every member to its allowed set (`ConfigValidation.MemberProblem`), (2)
+  `python3.13t` / `python3.12d` / `node-22` passed the launcher refusal (a version-suffix pattern now allows a separator and
+  a build tag of up to two letters; `go2mcp`, `nodemcp` stay accepted); each RED first, green after, red again with the fix
+  broken. REJECTED: a typed program-name value (the whole MCP and agent model compares file-name strings; re-typing it is
+  its own refactor — proposed to the owner), and "the published pattern accepts a final newline in JavaScript" (it does
+  not: JavaScript's `$` without the `m` flag matches only at the end of the input).
+- **Own code review** (one reviewer, `feature-dev:code-reviewer` on Opus, read-only, run beside the coai round): it confirmed
+  the trust reasoning (root reads only the target user's layer, owner-checked; A19 filters on the same user and re-reads
+  the uid) and found, all accepted and each RED first, green after, red again with the fix broken: (2) `bunx`, `pnpx`,
+  `pwsh`, `tcsh`, `csh`, `ash`, `mksh`, `lua`, `luajit`, `Rscript`, `julia`, `erl`, `elixir`, `mise`, `asdf`, `corepack`,
+  `tini`, `dumb-init` are launchers too; (3) a name a LATER release refuses (a new agent, launcher or catalogue server) made a
+  layer written for an older build a configuration error, so every run went observe-only — the loader now leaves such a
+  member out with a notice (`TextRule.Outdated`, `ConfigValidation.CheckLayer`); a malformed member is still an error and
+  `config set` still refuses the name; (4) the contract could not express two rules — the `.exe` refusal is now in
+  `memberPattern` (a JavaScript-compatible negative lookahead) and the launchers are published with
+  `launcherVersionSuffix`; its finding 1 was the coai round's two, already fixed in the working tree it read. Its finding 5
+  — the contract says `rootEffective: false` for a key root's A19 reads — is kept as decided (item 3): `RootEffective` keys
+  the extension's loosening modal on a SAFE DIRECTION, and this key has none that would still let a user add a program
+  (`Subset` would let a user layer only narrow the machine layer's list, which defeats Q-M2); the key's register entry and
+  this plan say plainly that root reads it. Below its threshold: user-program processes of every non-root account enter the
+  CPU history and can push older agent entries past `agentCpu.maxEntries` (fails safe: missing history keeps a process).
 
 ### S3 — the build-server reaper (widens A3)
 

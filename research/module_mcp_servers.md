@@ -116,7 +116,10 @@ own.
 
 `mcpServers.watched` (closed over the catalogue), `.programs` (E14 S2c: open, rule-bound, at most 32, default empty — an
 ordinary user key although root's A19 reads it: A19 stops only the target user's own processes with every guard, and no
-orphan of a user program), `.cpuWindowMilliseconds` (200–5000, 1000, machine-only),
+orphan of a user program; so the contract says `rootEffective: false` although root reads it; a member a LATER build
+refuses — a new agent, launcher or catalogue server — is left out of the layer with a notice, never an error that makes the
+run observe-only; the contract publishes `memberPattern`, `maxMembers`, `refused`, `launchers`, `launcherVersionSuffix`),
+`.cpuWindowMilliseconds` (200–5000, 1000, machine-only),
 `.idleCpuPercent` (2), `.idleMinAgeMinutes` (10), `.activityWindowMinutes` (10), `.startsWindowMinutes` (10, at most a day),
 `.warnInstances` (12), `.warnCpuPercent` (100 = one core), `.warnStarts` (10), `.maxInstances` (256, machine-only),
 `.maxLogEntries` (20000, machine-only), `.logListMilliseconds` (1000, machine-only), `.maxStartsListed` (50),
