@@ -338,6 +338,49 @@ public sealed class McpServerCollectorTests : IDisposable
     }
 
     [Fact]
+    public void Without_the_kernels_tick_rate_no_window_is_waited()
+    {
+        // coai code round 2026-10-08, finding 7: a first sighting waited the window although no rate could come of it.
+        Session(200, 300, TimeSpan.FromHours(1));
+        File.Delete(_tree.Paths.DistroPath("/proc/self/auxv"));
+        var waited = false;
+
+        var instance = Sample(wait: (_, _) =>
+        {
+            waited = true;
+            return Task.CompletedTask;
+        }).Instances.Single();
+
+        waited.Should().BeFalse("without the tick rate the window cannot produce a figure");
+        instance.CpuBasis.Should().Be(McpCpuBasis.None);
+        instance.CpuPercent.ReasonOrEmpty.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void A_temp_file_that_cannot_be_swept_does_not_stop_the_ledger_being_written()
+    {
+        // coai code round 2026-10-08, finding 2: the sweep is housekeeping; an error removing one orphan aborted the write.
+        Session(200, 300, TimeSpan.FromHours(1));
+        var folder = Path.GetDirectoryName(LedgerFile)!;
+        Directory.CreateDirectory(folder);
+        var orphan = Path.Combine(folder, $"{McpCpuLedger.FileName}.{new string('d', 32)}.tmp");
+        File.WriteAllText(orphan, "{");
+        File.SetLastWriteTimeUtc(orphan, (Now - TimeSpan.FromHours(1)).UtcDateTime);
+
+        var sample = Sample(wait: Burn(300), files: new FailingDeletes(_tree.Files));
+
+        sample.Baseline.Recorded.Should().BeTrue(sample.Baseline.Reason);
+        File.Exists(LedgerFile).Should().BeTrue();
+    }
+
+    /// <summary>Every delete throws, as a file held open by another process does on Windows.</summary>
+    private sealed class FailingDeletes(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public override Core.Files.Deletion.DeletionVerdict DeleteFile(string path, Core.Files.Deletion.DeletionScope scope) =>
+            throw new IOException($"{path} is in use");
+    }
+
+    [Fact]
     public void A_full_ledger_stays_inside_its_read_cap_and_keeps_the_newest_processes()
     {
         // Own code review, finding 3: a ledger larger than records.maxStateFileBytes reads as empty for ever — every sample a window.

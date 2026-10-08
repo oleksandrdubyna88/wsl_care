@@ -63,8 +63,9 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
         var started = clock.GetTimestamp();
         var first = FirstReads(listed, SampleTime.Of(clock));
         var fromLedger = first.ToDictionary(m => m.Pid, m => FromLedger(m, before, boot, kernel, settings.Bounds));
-        var windowed = await WindowAsync([.. first.Where(m => m.Read is not null && fromLedger[m.Pid] is null)], settings.Window, started, kernel, cancellationToken).ConfigureAwait(false);
-        var measured = first.Select(m => Combine(m, fromLedger[m.Pid], windowed)).ToList();
+        // coai code round 2026-10-08, finding 7: without the kernel's tick rate the window cannot produce a figure — no wait.
+        var windowed = await WindowAsync([.. first.Where(m => kernel.IsAvailable && m.Read is not null && fromLedger[m.Pid] is null)], settings.Window, started, kernel, cancellationToken).ConfigureAwait(false);
+        var measured = first.Select(m => Combine(m, fromLedger[m.Pid], windowed, kernel)).ToList();
         return (measured.ToDictionary(m => m.Pid, m => m.Cpu), RecordAll(boot, before, measured, settings));
     }
 
@@ -85,10 +86,10 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
 
     /// <summary>The interval answer when there was one (its reading is the first read), else the window's (its second read),
     /// else unmeasured with why.</summary>
-    private static Measured Combine(Measuring m, McpCpu? fromLedger, IReadOnlyDictionary<int, (McpCpu Cpu, McpCpuReading? Read)> windowed) =>
+    private static Measured Combine(Measuring m, McpCpu? fromLedger, IReadOnlyDictionary<int, (McpCpu Cpu, McpCpuReading? Read)> windowed, Reading<KernelFacts> kernel) =>
         fromLedger is { } interval ? new(m.Pid, interval, m.Read)
         : windowed.TryGetValue(m.Pid, out var w) ? new(m.Pid, w.Cpu, w.Read)
-        : new(m.Pid, McpCpu.Unmeasured(m.Sample.ReasonOrEmpty), null);
+        : new(m.Pid, McpCpu.Unmeasured(m.Sample.IsAvailable ? kernel.ReasonOrEmpty : m.Sample.ReasonOrEmpty), null);
 
     /// <summary>This sample's readings into the caller's ledger, by the two-point rule, capped to what its read cap holds.</summary>
     private McpCpuBaseline RecordAll(string boot, McpCpuFile before, IReadOnlyList<Measured> measured, McpSettings settings) =>

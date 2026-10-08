@@ -187,10 +187,10 @@ tools? (Q-M1 of the parent plan said "restarts on its next tool call" without a 
 process itself, never root's, never a process that is not the snapshot's instance) that are:
 `busyWithoutActivity` over an `interval` basis for at least `mcpWatchdog.busyMinutes` (the S1 ledger gains a per-identity
 `busyWithoutActivitySince`, kept across samples), **or** `orphaned` (owner gone, parent plan Decided 1) and idle for at least
-`mcpWatchdog.orphanIdleMinutes`. A button by default (`ActionId.ButtonOnlyIds`, as A18). **Owner question Q1:** may it run
-automatically? The coordinator's recommendation: automatic, behind a switch that is OFF by default until the owner says yes.
-A watchdog on the 4-hour timer is too slow to matter; if Q1 is yes, a second, short timer (`wsl-care-watch.timer`,
-`mcpWatchdog.periodMinutes`, default 5) runs only `act A19` — a decision for the owner as well (Q1b).
+`mcpWatchdog.orphanIdleMinutes`. A button AND automatic — **owner decision 2026-10-08 (Q1, the parent plan's Q-M1): the automatic switch is a setting,
+default ON; "idle" is idle for more than a setting's minutes, default 60.** A watchdog on the 4-hour timer is too slow to
+matter, so a second, short timer (`wsl-care-watch.timer`, `mcpWatchdog.periodMinutes`, default 5) samples and runs only
+A19, under the daemon's dry-run rules (the first-week dry run and `dryRun`), with an action record per stop.
 
 **Two things the design must settle before its code round (own plan review, findings 5, 6, 10, 11):**
 
@@ -344,8 +344,12 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
 
 ## 11. Owner questions
 
-- **Q1 — A19 automatic?** May the MCP watchdog run without a click? Recommended by the coordinator: yes, behind an `auto`
-  switch OFF by default until the owner says yes. **Q1b:** if yes, a second 5-minute timer for it, or the 4-hour timer only?
+- **Q1 — A19 automatic: DECIDED (owner, 2026-10-08).** A STOP button for idle MCP servers AND automatic stopping, its
+  `auto` switch a setting **default ON**; "idle" is a setting, idle for more than **60 minutes** by default. **Q1b** follows:
+  automatic stopping needs a root sampler shorter than `mcpServers.cpuIntervalMaxMinutes` (the coai plan round's finding 0),
+  so S2 builds one. Also decided the same day (the parent plan's Q-M2–Q-M5): users may add their own programs to the
+  watched list (validated); an MCP server whose agent died stays counted and is a stop candidate; the E7.S2d defaults stay,
+  all settings; `status` keeps its extra CPU wait.
 - **Q2 — what "restart" means** once S2's measurement says what Claude Code does with an ended server.
 - **Q3 — cgroup delegation:** may `install.sh` write `user@.service.d/50-wsl-care-delegate.conf` (a system setting)?
 - **Q4 — `wsl-care low`:** a verb, or documentation of the `systemd-run` line only?
@@ -371,6 +375,14 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
   them. 3 (orphaned temp files until S2): accepted, built in S1. 4 (the 4 h timer falls back to the window): rejected —
   deliberate (design 2, own review finding 3); the live metric is the extension's 120 s `status`. 6 (X/Y/Z unresolved):
   accepted, S8 waits for Q8. 7 (soak retention): accepted, two runs ≈ 0.6 MB kept.
+- **coai code round (session `010a086d`, 2026-10-08):** verdict **proceed**, **8 of 8** reviewers (gemini, codex), 8
+  findings: 2 accepted and fixed RED-first, 6 rejected with reasons. Accepted: a temp file that cannot be swept no longer
+  stops the ledger being written (RED: *recorded False … is in use*); no window is waited when the kernel's tick rate is
+  unreadable (RED: *waited … found True*) — each with teeth. Rejected: "the sweep throws on a missing folder" (false —
+  `ListFiles` answers empty, a test writes into a fresh folder), a linked state FOLDER (same-account only, outside the shared
+  writer's stated threat model; the read refuses it), the text-line basis count (inaccurate), re-serialising `before` (a few
+  KB), list defaults on positional records (the module's own shape; the deserializer does not run defaults), a ledger
+  schema of its own (the same as A18's, a self-healing miss).
 - **Cadence consultation (coai, codex, 2026-10-08, closed solved):** two real defects, both fixed: a ledger that is a link
   was written through (the atomic writer replaced the sibling it pointed at) — now refused; a negative monotonic point
   overflowed the age — every point must be non-negative. Its third idea (a separate 4-hour historical CPU figure beside the

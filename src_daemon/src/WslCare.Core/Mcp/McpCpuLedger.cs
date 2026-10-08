@@ -235,8 +235,22 @@ public static partial class McpCpuLedger
         {
             if (files.FileSize(temp) is FileSizeResult.Measured { ModifiedAt: var at } && sweep.Now - at >= sweep.OrphanAfter)
             {
-                files.DeleteFile(temp, new DeletionScope(directory, Action));
+                TryDelete(files, temp, directory);
             }
+        }
+    }
+
+    /// <summary>One orphan removed, or left for the next write: the sweep is housekeeping, and a file held open elsewhere must not
+    /// stop the ledger being written (coai code round 2026-10-08, finding 2).</summary>
+    private static void TryDelete(IFileSystem files, string temp, string directory)
+    {
+        try
+        {
+            files.DeleteFile(temp, new DeletionScope(directory, Action));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Left in place; the next write tries again. Nothing else depends on it being gone.
         }
     }
 
