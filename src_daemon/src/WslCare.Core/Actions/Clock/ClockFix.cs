@@ -223,7 +223,11 @@ public sealed class ClockFix : ICleanupAction
     private static string SynchronisedSkip(WindowsClockSample now, ClockJudgement judgement) =>
         judgement.Standing == ClockStanding.WslWrong || judgement.DistroAlsoOff
             ? $"timesyncd/chrony reports the distro's clock synchronised, so it is not stepped (plan 15 #10) — yet {judgement.Reason}"
-            : Invariant($"the Windows clock is wrong, not WSL's: timesyncd/chrony reports the distro's clock synchronised to NTP and Windows is {now.OffsetSeconds:+0.00;-0.00} s off it — {ClockStandings.WindowsFix}");
+            : Invariant($"the Windows clock is wrong, not WSL's: timesyncd/chrony reports the distro's clock synchronised to NTP and Windows is {now.OffsetSeconds:+0.00;-0.00} s off it{Unconfirmed(judgement)} — {ClockStandings.WindowsFix}");
+
+    /// <summary>Final code round (coai): with no reference answering, the diagnosis rests on timesyncd alone — and says so.</summary>
+    private static string Unconfirmed(ClockJudgement judgement) =>
+        judgement.Standing == ClockStanding.Unknown ? $" (no other reference could confirm it: {judgement.Reason})" : string.Empty;
 
     private static string ReferenceSkip(ClockJudgement judgement, int max) => judgement switch
     {

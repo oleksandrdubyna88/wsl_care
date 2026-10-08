@@ -222,7 +222,8 @@ public sealed class ClockFixTests : IDisposable
         Synchronized(true);
         WindowsAhead(-7200.42);
 
-        (await PreviewAsync()).Preview.Skip.Should().Contain("the Windows clock is wrong, not WSL's");
+        (await PreviewAsync()).Preview.Skip.Should().Contain("the Windows clock is wrong, not WSL's")
+            .And.Contain("no other reference could confirm it", "final code round (coai): with no reference answering, the diagnosis rests on timesyncd alone and says so");
     }
 
     [Fact]

@@ -428,3 +428,10 @@ on the owner's machine (the fix did NOT run) — [2026-10-08_windows_time_stoppe
 §4. **Residuals as shipped:** the offline-resume recovery A16 gave up (D6 gate 3); the journald count is `--unit`, not
 `--identifier`; `CLOCK_MONOTONIC` against `/proc/uptime`'s `CLOCK_BOOTTIME`; the elevated run itself is exercised only
 by PowerShell's parser, never executed by a test; the live contract's new checks run only at the release checklist.
+
+**Final code round** (`review_code` again over `859a3cb`): all 8 reviewers answered, `proceed`, 4 findings — 1 accepted
+(the synchronised skip, with NO reference answering, now says the diagnosis rests on timesyncd alone: *"no other
+reference could confirm it"*; RED first), 3 rejected with reasons (an unknown standing already is its own state and its
+zero offsets are never read; the service names are Windows' own display strings read through one predicate each; a
+stale timesyncd sample cannot blame Windows, because Hyper-V moves the distro TO the host's time and timesyncd re-polls at
+once after any clock change).
