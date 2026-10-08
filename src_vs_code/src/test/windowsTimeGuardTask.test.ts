@@ -7,7 +7,7 @@ import { test } from 'node:test';
 
 import type { ProcessRequest } from '../process/runner';
 import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installRequest, installScript, NOT_FOUND_HRESULT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT, removeRequest } from '../windowsTime/guardScripts';
-import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, START_TYPE_QUERY, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, type GuardOptions } from '../windowsTime/guardTask';
+import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, START_TYPE_QUERY, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, xmlText, type GuardOptions } from '../windowsTime/guardTask';
 import { guardStateOf } from '../windowsTime/guardState';
 import { BODY, SET_AUTOMATIC } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING } from './support/noRealWsl';
@@ -73,6 +73,8 @@ test('the start-type line runs only when the start type is not already Automatic
 test('the start-type line is there only while wslCare.windowsTime.setAutomaticStart is on, and the window is the setting in ticks', () => {
   assert.ok(guardScript(DEFAULTS).includes(SET_AUTOMATIC));
   assert.ok(!guardScript(OTHER).includes('Set-Service'));
+  assert.ok(!guardScript(OTHER).includes('StartType'), 'switch off: no start-type line at all, not even its condition');
+  assert.ok(guardTaskXml(OTHER).includes(xmlText(START_TYPE_QUERY)), 'the 7040 trigger stays: a change still runs the start and the resync (a Disabled service then fails to start, exit 11, until the owner changes it)');
   assert.ok(guardScript(DEFAULTS).includes('Test-WslCareStartAllowed $now $last 6000000000)'), '10 min = 6 000 000 000 ticks');
   assert.ok(guardScript(OTHER).includes('Test-WslCareStartAllowed $now $last 1800000000)'), '3 min');
   assert.ok(guardScript(DEFAULTS).includes(START_ALLOWED_FUNCTION));

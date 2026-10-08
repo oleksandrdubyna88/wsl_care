@@ -348,8 +348,9 @@ Owner Q4 answered *yes*, Q1 *keep the defaults*. What shipped (`guardTask.ts`, `
   ([2026-10-08_who_stops_windows_time.md](2026-10-08_who_stops_windows_time.md) §1), which `IgnoreNew` turns into one run.
 - **The summary** gains the trigger's line in definition order, so an install from before reads *installed, but not as the
   current settings would install it — install it again* through the existing comparison; no new state.
-- **The disabled-channel note** now reads *"…so a stop is caught by the timed runs only"* — a start-type change is still
-  caught.
+- **The disabled-channel note** now reads *"…so a stop is caught by the timed, boot and logon runs only"* — a start-type
+  change is still caught.
+- **The install modal** names the fifth trigger and says the start type is set Automatic only when it is not already.
 - **The event trigger firing is still not exercised by any test** (that needs a registered task and a changed service):
   `POST_DEPLOY.md` item 9 now has the owner's one-time check — set Manual elevated while the service runs (a 7040 and no
   258), then read Automatic again and the task's last run after the change (plan-round finding, accepted).

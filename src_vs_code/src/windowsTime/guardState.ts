@@ -160,7 +160,7 @@ export interface PendingGuardOp {
 
 const PREFIX = 'Windows Time guard: ';
 
-const NO_EVENT = ' — the service\'s stop event is not logged on this machine, so a stop is caught by the timed runs only';
+const NO_EVENT = ' — the service\'s stop event is not logged on this machine, so a stop is caught by the timed, boot and logon runs only';
 
 function channelNote(channel: Channel): string {
   return channel === 'disabled' ? NO_EVENT : '';

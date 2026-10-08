@@ -105,7 +105,7 @@ test('a guard installed by the previous version — four triggers, no start-type
 });
 
 test('a disabled stop-event channel is named on the line (gemini g3: reported, never changed) — a start-type change is still caught', () => {
-  assert.match(viewOf(parseGuardAnswer(presentAnswer({ channel: 'disabled' }))).line, /stop event is not logged on this machine, so a stop is caught by the timed runs only$/);
+  assert.match(viewOf(parseGuardAnswer(presentAnswer({ channel: 'disabled' }))).line, /stop event is not logged on this machine, so a stop is caught by the timed, boot and logon runs only$/);
   assert.doesNotMatch(viewOf(parseGuardAnswer(presentAnswer())).line, /not logged/);
 });
 

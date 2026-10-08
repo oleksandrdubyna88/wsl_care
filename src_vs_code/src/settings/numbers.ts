@@ -60,9 +60,9 @@ const CLEANUP = {
  * makes the panel say "install it again to update it".
  */
 const GUARD = {
-  guardEveryHours: { key: 'windowsTime.guard.everyHours', default: 4, minimum: 1, maximum: 168, description: 'The Windows Time guard runs every this many hours (besides at startup, at logon and when the Windows Time service logs that it is stopping). Applies when the guard is installed (again).' },
+  guardEveryHours: { key: 'windowsTime.guard.everyHours', default: 4, minimum: 1, maximum: 168, description: 'The Windows Time guard runs every this many hours (besides at startup, at logon, when the Windows Time service logs that it is stopping and when its start type is changed). Applies when the guard is installed (again).' },
   guardMinMinutesBetweenStarts: { key: 'windowsTime.guard.minMinutesBetweenStarts', default: 10, minimum: 1, maximum: 1440, description: 'The Windows Time guard starts the service at most once in this many minutes, so it never loops against software that stops it again. Applies when the guard is installed (again).' },
-  guardDelaySeconds: { key: 'windowsTime.guard.delaySeconds', default: 60, minimum: 0, maximum: 3600, description: 'How long after startup, a logon, or the service\'s stop event the Windows Time guard waits before it runs, in seconds (0 = at once). Applies when the guard is installed (again).' },
+  guardDelaySeconds: { key: 'windowsTime.guard.delaySeconds', default: 60, minimum: 0, maximum: 3600, description: 'How long after startup, a logon, the service\'s stop event or a change of its start type the Windows Time guard waits before it runs, in seconds (0 = at once). Applies when the guard is installed (again).' },
   guardTimeLimitMinutes: { key: 'windowsTime.guard.timeLimitMinutes', default: 5, minimum: 1, maximum: 60, description: 'How long one run of the Windows Time guard may take before Task Scheduler stops it, in minutes. Applies when the guard is installed (again).' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 
