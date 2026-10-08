@@ -150,6 +150,21 @@ public static partial class ConfigKeys
     public static partial class Clock
     {
         public static readonly ConfigKey.IntKey MaxDriftSeconds = new("clock.maxDriftSeconds", 1, 3600) { Trust = KeyTrust.Higher };
+
+        /// <summary>The HTTPS address whose <c>Date</c> header is the independent clock reference (PLAN_windows_time_guard.md D2);
+        /// empty turns the HTTP reference off. Root sends the request, so only the MACHINE layer may set it.</summary>
+        public static readonly ConfigKey.TextKey ReferenceUrl = new("clock.referenceUrl", new TextRule.HttpsUrlOrEmpty())
+        {
+            Trust = new(SafeDirection.None, MachineOnly: true),
+        };
+
+        /// <summary>How far a clock may stand from the reference and still agree with it (D3). A smaller tolerance makes A16
+        /// skip more, so lower is safer.</summary>
+        public static readonly ConfigKey.IntKey ReferenceToleranceSeconds = new("clock.referenceToleranceSeconds", 5, 3600) { Trust = KeyTrust.Lower };
+
+        /// <summary>Whether a Windows Time service that starts Manual is a warning (D4) — what the report SAYS; the extension's
+        /// fix has its own switch for what it DOES.</summary>
+        public static readonly ConfigKey.BoolKey ManualStartWarns = new("clock.manualStartWarns") { Trust = KeyTrust.Display };
     }
 
     public static class Logging
@@ -185,6 +200,7 @@ public static partial class ConfigKeys
         McpServers.Watched,
         Archive.OlderThanDays, Archive.BaseFolder,
         Idle.CpuPercent, Idle.Minutes,
+        Clock.ReferenceUrl, Clock.ReferenceToleranceSeconds, Clock.ManualStartWarns,
         Clock.MaxDriftSeconds,
         Logging.MinimumLevel, Logging.RetentionDays,
         .. NumberKeys(),

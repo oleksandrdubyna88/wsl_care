@@ -54,7 +54,7 @@ public sealed class FullRunCommandTests
         report.Detail.Docker.Rows.Should().Contain(r => r.Id == "A4" && r.Available);
         report.Detail.Thresholds.Should().Contain(v => v.Id == "memory.available");
         File.Exists(RunDetailStore.Absolute(sandbox.Paths, report.DetailFile!)).Should().BeTrue();
-        runner.Requests.Select(r => r.Argv[0]).Should().Contain("docker").And.OnlyContain(e => e == "docker" || e == "systemctl" || e == "journalctl" || e == "timedatectl" || e == "powershell.exe" || e == "snap");
+        runner.Requests.Select(r => r.Argv[0]).Should().Contain("docker").And.OnlyContain(e => e == "docker" || e == "systemctl" || e == "journalctl" || e == "timedatectl" || e == "powershell.exe" || e == "snap" || e == "curl");
 
         var later = Host(sandbox, sandbox.Files, new RecordingCommandRunner(), DockerFixture.CapturedAt.AddMinutes(30));
         var (statusExit, statusOut, _) = CliRun.Over(later, "status", "--json");

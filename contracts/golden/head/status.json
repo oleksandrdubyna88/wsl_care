@@ -2086,6 +2086,45 @@
       }
     },
     {
+      "id": "clock.timeService",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn: not running, or StartType Manual (clock.manualStartWarns); critical: not running while clock.reference names Windows",
+      "reason": "the Windows clock probe printed no w32time line",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "clock.reference",
+      "level": "unknown",
+      "value": "",
+      "limit": "critical: Windows more than 30 s off the reference; warn: the distro (clock.referenceToleranceSeconds)",
+      "reason": "no independent clock reference: curl --head https://www.microsoft.com (the clock reference) exited 98: fake curl: no scripted answer for: curl --disable --silent --show-error --head --max-redirs 0 --proto =https --proto-redir =https --max-time 10 --header Cache-Control: no-cache --url https://www.microsoft.com; timesyncd: timedatectl timesync-status exited 98: fake timedatectl: no scripted answer for: timedatectl timesync-status",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "clock.fight",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 10 in the last 4 h of this boot (thresholds.timeJumpsBackWarnPer4h)",
+      "reason": "journalctl --boot --no-pager --quiet --output=short-monotonic --unit=systemd-journald --grep=Time jumped backwards exited 98: fake journalctl: no scripted answer for: journalctl --boot --no-pager --quiet --output=short-monotonic --unit=systemd-journald --grep=Time jumped backwards",
+      "basis": {
+        "source": "fullRun",
+        "runId": "20000101T000000Z-1",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "systemd.failedUnits",
       "level": "warn",
       "value": "1",

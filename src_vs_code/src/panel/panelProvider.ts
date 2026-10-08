@@ -22,6 +22,8 @@ export interface PanelActions {
   readonly refresh: (options?: RunOptions) => Promise<void>;
   readonly openSettings: () => void;
   readonly installDaemon: () => void;
+  /** PLAN_windows_time_guard.md D7: *Start Windows Time* — the host's modal, then ONE elevated PowerShell. */
+  readonly startWindowsTime: () => void;
   /** E6.S3: a row's *Clean* (`selected` false) or *Clean selected* — the host's transaction from here on. */
   readonly clean: (rowIds: readonly RowId[], selected: boolean) => void;
   readonly runFullCheck: () => void;
@@ -88,6 +90,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       startWsl: () => { void this.actions.refresh({ startIfStopped: true }); },
       openSettings: () => this.actions.openSettings(),
       installDaemon: () => this.actions.installDaemon(),
+      startWindowsTime: () => this.actions.startWindowsTime(),
       clean: (m) => this.actions.clean(m.rowIds, false),
       cleanSelected: (m) => this.actions.clean(m.rowIds, true),
       runFullCheck: () => this.actions.runFullCheck(),

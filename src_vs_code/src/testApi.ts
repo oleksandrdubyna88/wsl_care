@@ -1,6 +1,7 @@
 import type { CleanupHost } from './cleanup/cleanupHost';
 import type { CleanRecorder } from './cleanup/cleanRecorder';
 import type { InstallRecorder } from './install/installUi';
+import type { WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import type { LogsPanel } from './logsPage/logsPanel';
 import type { ProcessRequest, Runner } from './process/runner';
 import type { RunnerChoice } from './process/runnerSelection';
@@ -29,6 +30,8 @@ export interface WslCareTestApi {
   lastRendered(): number | undefined;
   /** *Install daemon*'s recorded modal prompts, terminals and reports — and the answer the recorded modal gives. */
   install(): InstallRecorder;
+  /** *Start Windows Time*'s recorded modal prompts, requests and reports — and the answers they give (no PowerShell runs). */
+  windowsTime(): WindowsTimeRecorder;
   /** The host-side cleanup controller (E6.S2) — the API E6.S3's buttons will call; in Test mode the host suite reaches it here. */
   cleanup(): CleanupController;
   /** E6.S3: the cleanup buttons' host side — its journal, follower and transaction — as the panel's messages reach it. */

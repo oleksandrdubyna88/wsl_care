@@ -67,6 +67,9 @@ public static partial class ConfigKeys
 
         /// <summary>hwclock -s / chronyc makestep. Default 30.</summary>
         public static readonly ConfigKey.IntKey StepTimeoutSeconds = new("clock.stepTimeoutSeconds", 1, 30) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The clock reference's HEAD (curl's <c>--max-time</c> and its kill ceiling). Default 10.</summary>
+        public static readonly ConfigKey.IntKey ReferenceTimeoutSeconds = new("clock.referenceTimeoutSeconds", 1, 30) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
     public static partial class Trim
@@ -187,6 +190,10 @@ public static partial class ConfigKeys
 
         /// <summary>Clock jumps warn above this many in 4 hours. Default 100.</summary>
         public static readonly ConfigKey.IntKey ClockJumpsWarnPer4h = new("thresholds.clockJumpsWarnPer4h", 0, 1000000) { Trust = KeyTrust.Display };
+
+        /// <summary>journald's "Time jumped backwards" warn above this many in the last 4 hours of this boot (the clock fight,
+        /// PLAN_windows_time_guard.md D4; ≈ 436 per 4 h in the incident of 2026-10-08, none on a quiet day). Default 10.</summary>
+        public static readonly ConfigKey.IntKey TimeJumpsBackWarnPer4h = new("thresholds.timeJumpsBackWarnPer4h", 0, 1000000) { Trust = KeyTrust.Display };
 
         /// <summary>A sysstat or atop sample older than this means the collector stopped. Default 30.</summary>
         public static readonly ConfigKey.IntKey CollectorFreshMinutes = new("thresholds.collectorFreshMinutes", 1, 1440) { Trust = KeyTrust.Display };
@@ -583,6 +590,7 @@ public static partial class ConfigKeys
         Journal.MaxGb,
         Thresholds.JournalHistoryWarnDays,
         Thresholds.ClockJumpsWarnPer4h,
+        Thresholds.TimeJumpsBackWarnPer4h,
         Thresholds.CollectorFreshMinutes,
         WslConfig.RecommendedMemoryGb,
         Thresholds.WslMemoryCriticalPercent,
@@ -644,6 +652,7 @@ public static partial class ConfigKeys
         ToolCaches.WhereTimeoutSeconds,
         ToolCaches.WhereOutputCapBytes,
         Clock.StepTimeoutSeconds,
+        Clock.ReferenceTimeoutSeconds,
         Health.WindowsClockTimeoutSeconds,
         Health.SnapTimeoutSeconds,
         Health.OutputCapBytes,

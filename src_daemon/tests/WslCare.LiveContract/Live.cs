@@ -37,6 +37,9 @@ internal static class Live
 
     public static bool Required => Environment.GetEnvironmentVariable(RequireVariable) is "1" or "true";
 
+    /// <summary>The product's own runner, for a product function that runs several commands itself (the clock reference).</summary>
+    public static ICommandRunner Commands => Runner;
+
     /// <summary>Runs <paramref name="command"/> for real (30 s ceiling), skipping first under CI.</summary>
     public static async Task<CommandOutcome> RunAsync(ToolCommand command)
     {

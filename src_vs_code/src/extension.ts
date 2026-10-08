@@ -20,6 +20,8 @@ import { OutcomeStore } from './state/outcomeStore';
 import { daemonLimitsOf, type DaemonLimits } from './shared/daemonLimits';
 import { StatusBar } from './statusBar/statusBar';
 import { clientRunner, type WslCareTestApi } from './testApi';
+import { startWindowsTime } from './windowsTime/windowsTimeFix';
+import { newWindowsTimeRecorder, windowsTimeUiFor, type WindowsTimeRecorder } from './windowsTime/windowsTimeUi';
 import { distroSettingText } from './wsl/distros';
 
 /**
@@ -88,6 +90,7 @@ interface Parts {
   readonly client: WslCareClient;
   readonly cleanup: CleanupController;
   readonly install: InstallRecorder;
+  readonly windowsTime: WindowsTimeRecorder;
   readonly cleanRecorder: CleanRecorder;
   readonly host: CleanupHost;
   readonly choice: RunnerChoice;
@@ -134,7 +137,7 @@ function build(context: vscode.ExtensionContext): Parts {
     ui: cleanUiFor(testMode, cleanRecorder), timers: ONE_SHOT, now: () => performance.now(), wallNow: () => Date.now(), log: (line) => log.error(line), numbers,
   });
 
-  return { testMode, client, cleanup, install: newInstallRecorder(), cleanRecorder, host, choice, calls, store, poller, focus, log };
+  return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), cleanRecorder, host, choice, calls, store, poller, focus, log };
 }
 
 /** *Install daemon*: the client resolves the distribution, the modal and the terminal are real — or recorded in Test mode. */
@@ -142,6 +145,31 @@ function installer(parts: Parts): () => void {
   const ui = installUiFor(parts.testMode, parts.install);
 
   return () => { void installDaemon({ target: () => parts.client.terminalTarget(), ...ui }); };
+}
+
+/**
+ * *Start Windows Time* (PLAN_windows_time_guard.md D7): the modal shows the exact commands, ONE elevated PowerShell runs
+ * them through the real runner (never the fake wsl.exe, never in Test mode — a recorder there), and a finished fix starts
+ * *Run full check now* so the daemon's persisted verdicts show the result. One fix at a time: a second click while one runs
+ * starts nothing (the progress notification says what is running).
+ */
+function windowsTimeFixer(parts: Parts): () => void {
+  const ui = windowsTimeUiFor(parts.testMode, parts.windowsTime, runnerFor({ kind: 'real' }));
+  let running = false;
+
+  return () => {
+    if (running) {
+      return;
+    }
+    running = true;
+    void startWindowsTime({
+      env: process.env,
+      setAutomaticStart: () => settings().get<boolean>('windowsTime.setAutomaticStart', true) !== false,
+      timeoutMs: () => numbers().windowsTimeFixSeconds * 1000,
+      afterDone: () => { void parts.host.runFullCheck(); },
+      ...ui,
+    }).catch((e: unknown) => { parts.log.error(`Start Windows Time failed: ${String(e)}`); }).finally(() => { running = false; });
+  };
 }
 
 function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
@@ -155,12 +183,14 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
 function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar; panel: PanelProvider; logs: LogsPanel } {
   const { poller, store, focus, host } = parts;
   const install = installer(parts);
+  const windowsTime = windowsTimeFixer(parts);
   const logs = logsPanel(context, parts);
   const bar = new StatusBar(store, OPEN_PANEL);
   const panel = new PanelProvider(context.extensionUri, store, {
     refresh: (options) => poller.refreshPanel(options),
     openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'wslCare'); },
     installDaemon: install,
+    startWindowsTime: windowsTime,
     clean: (rowIds, selected) => { void host.clean(rowIds, selected); },
     runFullCheck: () => { void host.runFullCheck(); },
     stop: (index) => { void host.stop(index); },
@@ -178,6 +208,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     vscode.commands.registerCommand('wslCare.refresh', () => poller.refreshPanel()),
     vscode.commands.registerCommand('wslCare.startWsl', () => poller.refreshPanel({ startIfStopped: true })),
     vscode.commands.registerCommand('wslCare.installDaemon', install),
+    vscode.commands.registerCommand('wslCare.startWindowsTime', windowsTime),
     logs,
     vscode.commands.registerCommand('wslCare.openLogs', () => logs.show()),
     { dispose: store.onChange(() => logs.statusChanged()) },
@@ -213,6 +244,7 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     settled: () => poller.settled(),
     lastRendered: () => panel.lastRendered(),
     install: () => parts.install,
+    windowsTime: () => parts.windowsTime,
     cleanup: () => parts.cleanup,
     cleanupHost: () => parts.host,
     cleanRecorder: () => parts.cleanRecorder,

@@ -43,6 +43,15 @@ public sealed class ClockFixTests : IDisposable
     private void Synchronized(bool synchronized) =>
         _runner.Script(Systemd.SystemdCommands.TimeSync.Argv, 0, $"NTP=yes\nNTPSynchronized={(synchronized ? "yes" : "no")}\n");
 
+    /// <summary>The HTTP reference answers a <c>Date</c> <paramref name="referenceMinusWslSeconds"/> (whole seconds; the product
+    /// adds the half second the header truncates) after the distro's clock — read back from the product's own command for the
+    /// default <c>clock.referenceUrl</c>, never retyped.</summary>
+    private void ReferenceAhead(int referenceMinusWslSeconds) =>
+        _runner.Script(
+            HealthCommands.ClockReference(Tuning.Default.Config.Text(ConfigKeys.Clock.ReferenceUrl), Tuning.Default.Int(ConfigKeys.Clock.ReferenceTimeoutSeconds)).Argv,
+            0,
+            $"HTTP/2 200\r\ndate: {_now.AddSeconds(referenceMinusWslSeconds).UtcDateTime.ToString("r", CultureInfo.InvariantCulture)}\r\n\r\n");
+
     /// <summary>A full run recorded at <paramref name="at"/> that observed <paramref name="offsetSeconds"/>.</summary>
     private void FullRunObserved(DateTimeOffset at, double offsetSeconds) =>
         new RunRecordWriter(_sandbox.Paths, _sandbox.Files).Append(new RunRecord(1, RunId.New(at, 9), RunTrigger.Timer, at, at, RunOutcome.Completed, [], RunKind.Collect)
@@ -74,6 +83,7 @@ public sealed class ClockFixTests : IDisposable
     {
         Synchronized(false);
         WindowsAhead(12);
+        ReferenceAhead(12);
 
         var single = await PreviewAsync();
         single.Preview.Skip.Should().BeEmpty();
@@ -105,9 +115,12 @@ public sealed class ClockFixTests : IDisposable
         FullRunObserved(Now.AddHours(-4), 11);
         Synchronized(false);
         WindowsAhead(12);
+        ReferenceAhead(12);
         var (context, commands) = For();
 
-        var run = await _action.RunAsync(context, await _action.PreviewAsync(context, commands, CancellationToken.None), commands, CancellationToken.None);
+        var preview = await _action.PreviewAsync(context, commands, CancellationToken.None);
+        preview.Skip.Should().BeEmpty("the reference agrees with Windows: the distro is the one 12 s behind, so the engine would run it");
+        var run = await _action.RunAsync(context, preview, commands, CancellationToken.None);
 
         run.Succeeded.Should().BeTrue();
         _runner.Commands.Should().Contain("hwclock -s").And.NotContain(c => c.StartsWith("chronyc", StringComparison.Ordinal));
@@ -118,12 +131,99 @@ public sealed class ClockFixTests : IDisposable
         _now = Now.AddHours(2);
         FullRunObserved(Now.AddHours(1), 12);
         WindowsAhead(12);
+        ReferenceAhead(12);
         (await PreviewAsync()).Decision.Should().Match<TriggerDecision>(d => !d.Fired && d.Reason.Contains("already corrected once"));
 
         // A full run that saw the clock agree closes the event: a NEW drift is corrected again.
         FullRunObserved(Now.AddHours(1.5), 1);
         FullRunObserved(Now.AddHours(1.9), 13);
-        (await PreviewAsync()).Decision.Fired.Should().BeTrue();
+        var again = await PreviewAsync();
+        again.Preview.Skip.Should().BeEmpty();
+        again.Decision.Fired.Should().BeTrue();
+    }
+
+    /// <summary>Code round (coai #12): a preview whose clocks agree asks no reference — no HEAD to the network for nothing.</summary>
+    [Fact]
+    public async Task Clocks_that_agree_ask_no_reference()
+    {
+        Synchronized(false);
+        WindowsAhead(3);
+
+        (await PreviewAsync()).Preview.Skip.Should().Contain("agrees with Windows'");
+        _runner.Commands.Should().NotContain(c => c.StartsWith("curl", StringComparison.Ordinal)).And.NotContain(c => c.Contains("timesync-status", StringComparison.Ordinal));
+    }
+
+    /// <summary>Own code review #5 / coai #7: timesyncd synchronised while the REFERENCE says the distro is off — the skip
+    /// keeps plan §15 #10 (a synchronised clock is not stepped) but never claims "not WSL's".</summary>
+    [Fact]
+    public async Task A_synchronised_skip_never_says_not_wsls_when_the_reference_says_the_distro_is_off()
+    {
+        FullRunObserved(Now.AddHours(-4), 600);
+        Synchronized(true);
+        WindowsAhead(600);
+        ReferenceAhead(600);
+
+        var skip = (await PreviewAsync()).Preview.Skip;
+
+        skip.Should().Contain("synchronised").And.NotContain("not WSL's");
+        skip.Should().Contain("the distro's clock is -600.5 s off");
+    }
+
+    /// <summary>The incident of 2026-10-08 (research/2026-10-08_windows_time_stopped.md): Windows 7 200 s slow on two
+    /// observations, timesyncd NOT synchronised at the instant of the preview (the fight), and no independent reference
+    /// answering. Stepping the distro to the host's clock would set it 2 h wrong, so A16 must not step — for a button too.</summary>
+    [Fact]
+    public async Task The_incident_shape_never_steps_the_distro_to_a_host_two_hours_slow_when_no_reference_answers()
+    {
+        FullRunObserved(Now.AddHours(-4), -7200.42);
+        Synchronized(false);
+        WindowsAhead(-7200.42);
+
+        var (preview, decision) = await PreviewAsync();
+
+        decision.Fired.Should().BeTrue("the drift is real on two observations — only the skip stands between it and hwclock -s");
+        preview.Skip.Should().Contain("no independent reference", "an unverified host clock is never stepped to");
+    }
+
+    /// <summary>The same incident, timesyncd unsynchronised at the instant, but the HTTP reference answering and agreeing with
+    /// the distro: the skip names WINDOWS as the wrong clock, slow by 2 h, and says what stepping would do.</summary>
+    [Fact]
+    public async Task The_incident_shape_with_a_reference_agreeing_with_the_distro_skips_naming_windows_as_two_hours_slow()
+    {
+        FullRunObserved(Now.AddHours(-4), -7200.42);
+        Synchronized(false);
+        WindowsAhead(-7200.42);
+        ReferenceAhead(0);
+
+        var (preview, decision) = await PreviewAsync();
+
+        decision.Fired.Should().BeTrue();
+        preview.Skip.Should().Contain("the Windows clock is 7200.9 s slow against https://www.microsoft.com (HTTP Date)")
+            .And.Contain("stepping the distro to the host's clock would set it wrong").And.Contain("Start-Service w32time");
+    }
+
+    /// <summary>The consultant's case (plan round 1): Windows 12 s ahead, the distro EXACTLY on the reference — D3 reads
+    /// <c>agree</c> at a 30 s tolerance, and a step would move the distro AWAY from true time. It must not step.</summary>
+    [Fact]
+    public async Task A_distro_on_the_reference_is_not_stepped_to_a_windows_twelve_seconds_ahead()
+    {
+        FullRunObserved(Now.AddHours(-4), 12);
+        Synchronized(false);
+        WindowsAhead(12);
+        ReferenceAhead(0);
+
+        (await PreviewAsync()).Preview.Skip.Should().Contain("would not bring the distro closer");
+    }
+
+    [Fact]
+    public async Task With_timesyncd_synchronised_the_skip_names_the_windows_clock_as_the_wrong_one()
+    {
+        FullRunObserved(Now.AddHours(-4), -7200.42);
+        Synchronized(true);
+        WindowsAhead(-7200.42);
+
+        (await PreviewAsync()).Preview.Skip.Should().Contain("the Windows clock is wrong, not WSL's")
+            .And.Contain("no other reference could confirm it", "final code round (coai): with no reference answering, the diagnosis rests on timesyncd alone and says so");
     }
 
     [Fact]
@@ -147,9 +247,11 @@ public sealed class ClockFixTests : IDisposable
         FullRunObserved(Now.AddHours(-4), 11);
         Synchronized(false);
         WindowsAhead(-15);
+        ReferenceAhead(-15);
         var (context, commands) = For();
 
         var preview = await _action.PreviewAsync(context, commands, CancellationToken.None);
+        preview.Skip.Should().BeEmpty("the reference agrees with Windows: the distro is the one behind");
         await _action.RunAsync(context, preview, commands, CancellationToken.None);
 
         preview.What.Should().StartWith("chronyc makestep");

@@ -271,7 +271,7 @@ that record, with its age limits as defaults.
 | A13 | AI-session archive — move, never delete ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) | daily, sessions older than N days | `archive.olderThanDays` (14) | on once a base folder is set | copy → verify hash → delete source; restorable | — |
 | A14 | Old VS Code Server builds (and Cursor/Windsurf servers) not used by any running process; keep the newest 2; `.obsolete` extensions | > 2 builds | — | on | re-downloaded on demand by the editor | — |
 | A15 | `fstrim -av` | weekly, when `discard` is not mounted | — | on | returns freed blocks so compaction can shrink the VHDX | — |
-| A16 | Clock fix: `hwclock -s` / `chronyc makestep` **once, on detected drift** (never from cron) | §4.5 drift | `clock.maxDriftSeconds` (5) | on | one correction per event | — |
+| A16 | Clock fix: `hwclock -s` / `chronyc makestep` **once, on detected drift** (never from cron) | §4.5 drift | `clock.maxDriftSeconds` (5) | on | one correction per event — and, since 2026-10-08, only when an independent reference shows the step helps ([PLAN_windows_time_guard.md](../research/PLAN_windows_time_guard.md) D6) | — |
 | A17 | Package-manager-native cache trims: `pnpm store prune`, `uv cache prune`, `pip cache purge`, `cargo sweep --time 30`, Gradle retention | per tool threshold | per tool | **off** (button, or opt-in) | each tool's own safe command | — |
 
 **Volume age.** `docker volume prune` has no `until` filter, so the daemon records the first time it sees
@@ -2862,7 +2862,10 @@ pull request's statement; §17 is the plan record).
   ceiling is lowered for the test), let it time out, and confirm on Windows that no `powershell.exe` FROM THAT LAUNCH
   remains — identified by its own PID and command line, never by image name. *Not run yet.*
 - **H** — from the real service context: `act A16 --preview` (records the live offset and the gates), then, on the owner's
-  word, `act A16 --confirm` once; record the outcome and the offset after. *Not run yet.*
+  word, `act A16 --confirm` once; record the outcome and the offset after. *Not run yet.* **Since 2026-10-08 A16 steps only
+  when an independent reference shows the step brings the distro closer, and the clock gates of item H read differently —
+  [PLAN_windows_time_guard.md](../research/PLAN_windows_time_guard.md) D6 owns that brake (boundary table §4 there); the incident that
+  made it is [2026-10-08_windows_time_stopped.md](../research/2026-10-08_windows_time_stopped.md).**
 - **I** — after the merge: rebuild the local archive, reinstall, `systemctl start wsl-care.service`, and read the run
   record: `clock.drift` measured, A16 not refused for a missing `powershell.exe`. *Not run yet — stamped by the coordinator.*
 

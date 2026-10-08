@@ -30,7 +30,16 @@ public sealed record UnitReport(bool Available, string? Reason, string? Unit, st
 public sealed record FreshnessReport(bool Available, string? Reason, string? File, DateTimeOffset? LastWrite);
 
 /// <param name="OffsetSeconds">Windows' clock minus the distro's, the probe's launch latency subtracted.</param>
-public sealed record ClockReport(bool Available, string? Reason, DateTimeOffset? SampledAt, double? OffsetSeconds, double? LaunchLatencySeconds);
+public sealed record ClockReport(bool Available, string? Reason, DateTimeOffset? SampledAt, double? OffsetSeconds, double? LaunchLatencySeconds)
+{
+    /// <summary>The Windows Time service the probe printed (PLAN_windows_time_guard.md D1); absent when it printed none.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public WindowsTimeService? TimeService { get; init; }
+}
+
+/// <summary>The independent clock reference (D2) and the judgement of which clock is wrong (D3).</summary>
+/// <param name="ReferenceMinusWslSeconds">The reference minus the distro's clock; absent when there is none.</param>
+public sealed record ClockReferenceReport(bool Available, string? Reason, string? Source, double? ReferenceMinusWslSeconds, ClockStanding Standing, string Judgement);
 
 /// <param name="RecommendedMemory">The owner's recommendation, SHOWN and never written: <c>memory=36GB</c>.</param>
 public sealed record WslConfigReport(bool Available, string? Reason, string? File, bool? Present, string? Memory, string? Swap, string? AutoMemoryReclaim, string? SparseVhd, IReadOnlyList<string>? Warnings, string RecommendedMemory);
@@ -53,7 +62,9 @@ public sealed record HealthReport(
     FlagFigure OomDaemon,
     ClockReport WindowsClock,
     TextFigure WindowsProfile,
-    WslConfigReport WslConfig);
+    WslConfigReport WslConfig,
+    ClockReferenceReport ClockReference,
+    CountFigure TimeJumpsBack);
 
 /// <summary>The domain health sample turned into its wire shape — the one place it becomes available + value or reason.</summary>
 public static class HealthReports
@@ -76,10 +87,25 @@ public static class HealthReports
             Flag(h.OomDaemon),
             Clock(h.WindowsClock),
             h.WindowsProfile is Reading<string>.Available { Value: var p } ? new(true, p, null) : new(false, null, h.WindowsProfile.ReasonOrEmpty),
-            WslConfig(h.WslConfig));
+            WslConfig(h.WslConfig),
+            Reference(h),
+            h.TimeJumpsBack is Reading<int>.Available { Value: var back } ? new(true, back, null) : new(false, null, h.TimeJumpsBack.ReasonOrEmpty));
 
-    public static ClockReport Clock(WindowsClockSample c) =>
-        c.Measured ? new(true, null, c.SampledAt, Math.Round(c.OffsetSeconds, 3), Math.Round(c.LaunchLatencySeconds, 3)) : new(false, c.Unavailable, c.SampledAt, null, null);
+    public static ClockReport Clock(WindowsClockSample c)
+    {
+        var report = c.Measured
+            ? new ClockReport(true, null, c.SampledAt, Math.Round(c.OffsetSeconds, 3), Math.Round(c.LaunchLatencySeconds, 3))
+            : new ClockReport(false, c.Unavailable, c.SampledAt, null, null);
+        return report with { TimeService = c.TimeService };
+    }
+
+    private static ClockReferenceReport Reference(HealthSample h)
+    {
+        var judgement = h.ClockJudgement;
+        return h.ClockReference is Reading<ClockReference>.Available { Value: var r }
+            ? new(true, null, r.Source, Math.Round(r.ReferenceMinusWslSeconds, 3), judgement.Standing, judgement.Reason)
+            : new(false, h.ClockReference.ReasonOrEmpty, null, null, judgement.Standing, judgement.Reason);
+    }
 
     private static UnitReport Unit(Reading<SystemdUnit> unit) => unit switch
     {

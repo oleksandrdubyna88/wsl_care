@@ -6,6 +6,7 @@ import { at, unavailableAncestor } from './jsonPath';
 import { isUnavailable, unavailableText } from './read';
 import { RENDERERS, type Rendered } from './rowRenderers';
 import type { CleanupControls, PanelView, ViewLevel, ViewRow, ViewSection } from './view';
+import { windowsTimeNeedsFix } from '../windowsTime/windowsTimeNeed';
 
 /**
  * The panel's view, a pure function of the store's snapshot and `FIELD_MAP` — so what the page shows is exactly what
@@ -92,10 +93,21 @@ const FIRST_ACTION: Partial<Record<VerbOutcome['kind'], PanelView['actions'][num
   notInstalled: { id: 'installDaemon', label: 'Install daemon' },
 };
 
+/** PLAN_windows_time_guard.md D7: offered while the newest status carries the daemon's verdict that Windows' clock needs it. */
+const WINDOWS_TIME: PanelView['actions'][number] = { id: 'startWindowsTime', label: 'Start Windows Time' };
+
+function statusBody(status: VerbOutcome | undefined): unknown {
+  return status?.kind === 'answered' && 'body' in status.answer ? status.answer.body : undefined;
+}
+
+function windowsTimeAction(snapshot: Snapshot): PanelView['actions'] {
+  return windowsTimeNeedsFix(statusBody(snapshot.status)) ? [WINDOWS_TIME] : [];
+}
+
 function actions(snapshot: Snapshot): PanelView['actions'] {
   const first = snapshot.status === undefined ? undefined : FIRST_ACTION[snapshot.status.kind];
 
-  return [...(first === undefined ? [] : [first]), { id: 'refresh', label: 'Refresh' }, { id: 'openSettings', label: 'Settings' }];
+  return [...(first === undefined ? [] : [first]), ...windowsTimeAction(snapshot), { id: 'refresh', label: 'Refresh' }, { id: 'openSettings', label: 'Settings' }];
 }
 
 /** The controls before the host has derived any (the page greys every cleanup button). */

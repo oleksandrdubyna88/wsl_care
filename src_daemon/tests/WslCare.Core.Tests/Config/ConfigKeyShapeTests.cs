@@ -31,6 +31,8 @@ public sealed class ConfigKeyShapeTests
 
         texts.Where(k => k.Rule is TextRule.AbsolutePathOrEmpty).Should().OnlyContain(k => k.Trust.MachineOnly)
             .And.Contain(ConfigKeys.Archive.BaseFolder);
+        texts.Where(k => k.Rule is TextRule.HttpsUrlOrEmpty).Should().OnlyContain(k => k.Trust.MachineOnly, "root sends the request (PLAN_windows_time_guard.md D2)")
+            .And.Contain(ConfigKeys.Clock.ReferenceUrl);
         texts.Where(k => k.Rule is TextRule.Matching).Should().OnlyContain(k => k.Trust.DaemonUnused)
             .And.Contain(ConfigKeys.Distro);
     }
@@ -44,6 +46,7 @@ public sealed class ConfigKeyShapeTests
         var fromKeys = new Dictionary<(string Template, string Slot), (ConfigKey.IntKey Key, long Factor)>
         {
             [("journalctl-vacuum-time", "keep")] = (ConfigKeys.Journal.KeepDays, 1),
+            [("curl-head-date", "seconds")] = (ConfigKeys.Clock.ReferenceTimeoutSeconds, 1),
             [("docker-image-prune-unused", "until")] = (ConfigKeys.Images.UnusedOlderThanDays, 24),
         };
         var notConfig = new HashSet<(string, string)>

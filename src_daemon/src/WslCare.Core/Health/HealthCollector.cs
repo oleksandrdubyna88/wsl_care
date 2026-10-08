@@ -38,7 +38,11 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             return HealthSample.Unavailable(since, WindowsSide, ClockUnavailable(WindowsIsTheReference), home, Reading.Of(AuditWslConfig(file)));
         }
 
+        var mark = ClockMark.Now(clock);
         var (clockSample, profile) = await WindowsClockAsync(linux, cancellationToken).ConfigureAwait(false);
+        var reference = await ClockReferences.MeasureAsync(commands, clock, mark, cancellationToken).ConfigureAwait(false);
+        var uptime = ProcText.Read(files, $"{linux.ProcRoot}/uptime").Bind(HealthParsers.Uptime);
+        var jumpsBack = await TimeJumpsBackAsync(uptime, cancellationToken).ConfigureAwait(false);
         return new HealthSample(
             since,
             (await RunAsync(SystemdCommands.FailedUnits, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.FailedUnits),
@@ -50,13 +54,18 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
             await UnitAsync("wsl-pro.service", cancellationToken).ConfigureAwait(false),
             await UnitAsync("fstrim.timer", cancellationToken).ConfigureAwait(false),
             ProcText.Read(files, $"{linux.ProcRoot}/mounts").Bind(HealthParsers.RootHasDiscard),
-            ProcText.Read(files, $"{linux.ProcRoot}/uptime").Bind(HealthParsers.Uptime),
+            uptime,
             Freshness(linux.SysstatDirectory, "sysstat"),
             Freshness(linux.AtopDirectory, "atop"),
             await OomDaemonAsync(cancellationToken).ConfigureAwait(false),
             clockSample,
             profile,
-            profile.Map(p => AuditWslConfig(paths.Rules.Join(p, ".wslconfig"))));
+            profile.Map(p => AuditWslConfig(paths.Rules.Join(p, ".wslconfig"))))
+        {
+            ClockReference = reference,
+            ClockJudgement = ClockStandings.Judge(clockSample, reference, ClockReferences.ToleranceSeconds),
+            TimeJumpsBack = jumpsBack,
+        };
     }
 
     /// <summary>A Windows path (<c>C:\Users\me</c>) as the distro sees it (<c>/mnt/c/Users/me</c>), under the
@@ -120,6 +129,15 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         return HealthParsers.SearchMatches(command, await commands.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false));
     }
 
+    /// <summary>The clock fight (PLAN_windows_time_guard.md D4): journald's backward jumps of this boot in the last 4 h,
+    /// windowed on the monotonic clock because the lines carry the wall time AFTER the jump.</summary>
+    private async Task<Reading<int>> TimeJumpsBackAsync(Reading<TimeSpan> uptime, CancellationToken cancellationToken)
+    {
+        var command = SystemdCommands.TimeJumpsBackThisBoot;
+        var lines = HealthParsers.SearchMatches(command, await commands.RunAsync(command.ToRequest(), cancellationToken).ConfigureAwait(false));
+        return Reading.Combine(lines, uptime, ClockReferences.JumpsInWindow);
+    }
+
     private async Task<Reading<SystemdUnit>> UnitAsync(string unit, CancellationToken cancellationToken) =>
         (await RunAsync(SystemdCommands.ShowUnit(unit), cancellationToken).ConfigureAwait(false)).Bind(SystemdUnit.Parse);
 
@@ -173,7 +191,11 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
         var launched = outcome.StartedAt.ValueOr(called);
         var answer = ToolAnswers.Read(HealthCommands.WindowsClock, outcome).Bind(HealthParsers.WindowsClock);
         return answer is Reading<WindowsClockAnswer>.Available { Value: var probe }
-            ? new WindowsClockSample(launched, (probe.ProcessStartedAt - launched).TotalSeconds, (probe.PrintedAt - probe.ProcessStartedAt).TotalSeconds, string.Empty) { WindowsProfile = probe.Profile }
+            ? new WindowsClockSample(launched, (probe.ProcessStartedAt - launched).TotalSeconds, (probe.PrintedAt - probe.ProcessStartedAt).TotalSeconds, string.Empty)
+            {
+                WindowsProfile = probe.Profile,
+                TimeService = probe.TimeService is Reading<WindowsTimeService>.Available { Value: var service } ? service : null,
+            }
             : new WindowsClockSample(clock.GetUtcNow(), 0, 0, answer.ReasonOrEmpty);
     }
 

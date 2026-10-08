@@ -68,6 +68,7 @@ flowchart TB
 | `CommandTemplate`, `CommandPolicy` | `Core/Processes/Policy` | the only argv shapes that may run; everything else is refused |
 | `DeletionPolicy`, `ProtectedRoots` | `Core/Files/Deletion` | the one judge of every delete and move: agent folders, `~/git`, Claude's temp folder, memory, and their ancestors |
 | `RunningFile`, `FirstTimerRun` | `Core/Actions/Engine` | `running.json` (pid + start + heartbeat) and the start of the timer's 7-day dry run |
+| `WindowsTimeService`, `ClockReference`, `ClockStanding` / `ClockJudgement` | `Core/Health` | the Windows Time guard (section below): the service the probe printed, the independent reference, which clock is wrong |
 
 ## Entry points
 
@@ -78,7 +79,8 @@ The CLI verbs, as `CommandLine.Commands` spells them — the derived verb regist
 ## External dependencies
 
 Read: `/proc`, cgroup v2, `/etc/passwd`, `/etc/wsl.conf`, `docker` (read verbs, each with a ceiling), `systemctl show`,
-`journalctl`, `timedatectl`, `powershell.exe` (the Windows clock, one literal argv). Act: `docker` prunes and removals,
+`journalctl`, `timedatectl` (`show`, `timesync-status`), `powershell.exe` (the Windows clock and the Windows Time service,
+one literal argv), `curl` (one HEAD for the clock reference's `Date`, a slotted template; since 2026-10-08). Act: `docker` prunes and removals,
 `sysctl -w` (two literal keys), `runuser -u <user> --` for user-scoped tools, `npm` / `pnpm` / `uv` / `pip` / `dotnet
 nuget`, `snap`, `fstrim`, `chronyc` / `hwclock`, pidfd signals (A11, A18). Packages: Serilog only (CLI); `WslCare.Core`
 has none.
@@ -99,3 +101,57 @@ has none.
 | configuration trust, AI agents, A18, numbers | *The configuration trust (E7.S0, 2026-10-05, plan §15q R1)*, *The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)* with its *Manual agents and `agents probe` (E7.S2, 2026-10-05, plan §15q D4, R2)*, *A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)*, *Numbers are configuration (standing convention, owner rule 2026-10-05)* |
 | the MCP server instances of the AI agents (`Core/Mcp/`, `status --json` `mcpServers`) | [module_mcp_servers.md](module_mcp_servers.md) (E7.S2d, 2026-10-06/07); architecture.md *MCP server instances of the AI agents* points there |
 | tests and the harness | [module_tests.md](module_tests.md), architecture.md *The scenario harness (E1.S3)* |
+| the Windows Time guard (2026-10-08) | the section below; the plan [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), the incident [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) |
+
+## The Windows Time guard (PLAN_windows_time_guard.md, 2026-10-08)
+
+Built after the incident of 2026-10-08: the Windows Time service stopped, Windows 7 200 s slow, and inside WSL
+Hyper-V's time sync (the host's clock) and systemd-timesyncd (NTP's) set the clock against each other every ≈ 33 s.
+
+```mermaid
+flowchart TB
+    mark["ClockMark: wall + monotonic, before the probe"]
+    probe["powershell.exe probe<br/>2 instants · profile · w32time.status= · w32time.startType="]
+    ref["ClockReferences.MeasureAsync"]
+    http["curl --disable --head … --url clock.referenceUrl<br/>Date + 0.5 s vs the request midpoint"]
+    ts["timedatectl show + timesync-status<br/>synchronised AND last offset ≤ T → the distro is the reference"]
+    jump{"wall moved ≠ monotonic by > T?"}
+    judge["ClockStandings.Judge (pure)<br/>windowsSlow · windowsFast · wslWrong · agree · unknown"]
+    jumps["journalctl --boot --output=short-monotonic<br/>--unit=systemd-journald --grep=Time jumped backwards"]
+    verdicts["ClockVerdicts: clock.timeService · clock.reference · clock.fight"]
+    doctor["doctor: windowsTime · clockReference<br/>(from the newest full run's verdicts)"]
+    a16["A16 (ClockFix.SkipReason)"]
+
+    mark --> probe --> ref
+    ref --> http
+    http -->|"no answer"| ts
+    ref --> jump -->|"yes → unknown"| judge
+    jump -->|"no"| judge
+    judge --> verdicts
+    jumps --> verdicts
+    verdicts --> doctor
+    judge --> a16
+```
+
+- **Detection.** The probe's two TAGGED lines carry the service state (read after both instants, so the launch latency is
+  unchanged; parsed by tag, never by position). The reference is the HTTP `Date` of `clock.referenceUrl` (machine layer
+  only; default `https://www.microsoft.com` — github.com's measured up to 6.5 s stale), else timesyncd when it is
+  synchronised and its last NTP sample is within `clock.referenceToleranceSeconds` (30). The standing judges Windows
+  FIRST, so a distro Hyper-V dragged to the wrong host time still names Windows (and says the distro is off too).
+- **Verdicts.** `clock.timeService` is critical only while `clock.reference` names Windows — a stopped service is a
+  warning while the clock agrees (Windows trigger-starts it on a workgroup PC); a Manual start warns while
+  `clock.manualStartWarns`. `clock.reference` is critical for Windows, a warning for the distro. `clock.fight` counts
+  journald's backward jumps in the last 4 h of THIS boot on the monotonic clock (the lines carry the wall time after the
+  jump, which `--since` would miss) against `thresholds.timeJumpsBackWarnPer4h` (10). `doctor` reads two of them from the
+  newest full run — no probe, so its worst case (the extension's `worstCases.ts`) does not move; only a wrong Windows
+  clock makes it unhealthy.
+- **A16 steps only with proof.** Skips, in order: timesyncd synchronised (and, when Windows is off, *"the Windows clock is
+  wrong, not WSL's"*); the clock agrees; the reference names Windows; NO reference (*"no independent reference can say
+  which is wrong"* — this gives up stepping a lagging distro on an offline machine, deliberately); a step that would not
+  bring the distro closer to the reference. Then the old gates. The reference is asked only when the clocks disagree past
+  `clock.maxDriftSeconds` — a preview whose clocks agree sends nothing to the network — and a full run judges the clocks
+  ONCE (`HealthSample.ClockJudgement`), which the detail and the verdicts only project.
+- **The live contract** fails a probe a minute off with `ClockStandings.Diagnosis`: which clock, the service as printed,
+  and the fix.
+- **The fix is the extension's** (*Start Windows Time*, [module_vs_code.md](module_vs_code.md)); the SYSTEM scheduled task
+  that would restart the service by itself is the plan's story 2, not built.

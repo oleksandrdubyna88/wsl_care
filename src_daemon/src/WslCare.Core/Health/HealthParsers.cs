@@ -19,7 +19,11 @@ public sealed record TimeSync(bool Ntp, bool Synchronized);
 /// <param name="ProcessStartedAt">Windows' clock when the PowerShell process started, UTC — the same clock, so
 /// <c>PrintedAt − ProcessStartedAt</c> is the launch latency, measured without any skew in it.</param>
 /// <param name="Profile">The Windows user profile (<c>C:\Users\…</c>).</param>
-public sealed record WindowsClockAnswer(DateTimeOffset PrintedAt, DateTimeOffset ProcessStartedAt, string Profile);
+public sealed record WindowsClockAnswer(DateTimeOffset PrintedAt, DateTimeOffset ProcessStartedAt, string Profile)
+{
+    /// <summary>The Windows Time service from the probe's tagged lines (PLAN_windows_time_guard.md D1), or why not.</summary>
+    public Reading<WindowsTimeService> TimeService { get; init; } = Reading.Missing<WindowsTimeService>("the Windows clock probe printed no w32time line");
+}
 
 /// <summary>A snap revision <c>snap list --all</c> marks <c>disabled</c>: superseded, kept by snapd, what A9 removes.</summary>
 public sealed record SnapRevision(string Name, string Revision);
@@ -98,14 +102,20 @@ public static class HealthParsers
         return new(Either("memory"), Either("swap"), Either("automemoryreclaim"), Either("sparsevhd"));
     }
 
-    /// <summary>The clock probe's three lines; unavailable when any is missing or not an instant.</summary>
+    /// <summary>The clock probe's three positional lines — unavailable when any is missing or not an instant — and, since
+    /// PLAN_windows_time_guard.md D1, its TAGGED lines, read by tag and never counted as a position (an empty profile must not
+    /// read a tag as the profile).</summary>
     public static Reading<WindowsClockAnswer> WindowsClock(string stdout)
     {
-        var lines = ProcText.Lines(stdout).Select(l => l.Trim()).ToList();
+        var all = ProcText.Lines(stdout).Select(l => l.Trim()).ToList();
+        var lines = all.Where(l => !IsTagged(l)).ToList();
         return lines.Count >= 3 && Instant(lines[0]) is { } printed && Instant(lines[1]) is { } started
-            ? Reading.Of(new WindowsClockAnswer(printed, started, lines[2]))
+            ? Reading.Of(new WindowsClockAnswer(printed, started, lines[2]) { TimeService = ClockParsers.TimeService(all) })
             : Reading.Missing<WindowsClockAnswer>($"the Windows clock probe did not print two instants and a profile: \"{stdout.Trim()}\"");
     }
+
+    private static bool IsTagged(string line) =>
+        line.StartsWith(HealthCommands.TimeServiceStatusTag, StringComparison.Ordinal) || line.StartsWith(HealthCommands.TimeServiceStartTypeTag, StringComparison.Ordinal);
 
     /// <summary><c>snap list --all</c>: the rows whose Notes column holds <c>disabled</c> (Name Version Rev Tracking Publisher Notes).</summary>
     public static IReadOnlyList<SnapRevision> DisabledSnapRevisions(string stdout) =>

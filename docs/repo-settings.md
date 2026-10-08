@@ -283,7 +283,7 @@ pull request merged to `main` and CI green there:
    and a DRAFT release, and the tag starts `release.yml`: `gh run list -R "$REPO" --workflow release.yml --limit 3`.
 5. `release.yml`: the guard → three build legs (tests, AOT publish, the smoke, the archive, its attestation) → publish
    (completeness checked before upload and again from the draft, then the draft goes public).
-6. `POST_DEPLOY.md` items 8–10 against the published release; then install it here
+6. `POST_DEPLOY.md` items 8 and 10 against the published release; then install it here
    (`curl -fsSL https://raw.githubusercontent.com/oleksandrdubyna88/wsl_care/main/install.sh | sudo sh` — gh 2.56.0 or
    newer from GitHub's apt repository, no gh login needed).
 7. `POST_DEPLOY.md` items 1–2, 4–5 and 7–11 against the installation (inside WSL: `node .agents/conventions/tools/post-deploy-check.mjs

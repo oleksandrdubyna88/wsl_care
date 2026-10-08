@@ -19,7 +19,10 @@ and three unprivileged run reads (`runs show`, `runs`, `logs`) via `wsl.exe` wit
 only through ONE module, `root/rootCall.ts` — a closed union of five root calls (`ROOT_OPS`: preview, confirm,
 stop, full check, root check), built from validated ids only and held by one host-side controller. It never starts a
 stopped WSL distribution unless the person presses *Start WSL and check*, never starts one for a root call, and
-*Install daemon* only TYPES the pinned install command into a terminal (the person presses Enter).
+*Install daemon* only TYPES the pinned install command into a terminal (the person presses Enter). Since
+2026-10-08 (PLAN_windows_time_guard.md D7) it changes ONE thing on Windows itself, and only after a modal that shows the
+exact commands: *Start Windows Time* runs one elevated Windows PowerShell (`Process.Start` with the `runas` verb) that sets the
+Windows Time service to start Automatic (while `wslCare.windowsTime.setAutomaticStart` is on), starts it and resyncs.
 It runs on the Windows side (`extensionKind: ["ui"]`), on VS Code 1.85.0 or newer.
 
 ## Diagram
@@ -64,6 +67,9 @@ flowchart LR
     rootCall -->|"-u root, stdin only for --only -"| runner
     cleanupHost -->|"read: runs show, runs"| client
     logs -->|"read: logs, runs, runs show"| client
+    panel -->|"startWindowsTime (bare)"| wtime["windowsTime/<br/>(modal, then ONE run)"]
+    wtime -->|"powershell.exe -Command (absolute)"| runner
+    runner -->|"Process.Start(runas) -EncodedCommand"| w32["elevated PowerShell<br/>Set-Service · Start-Service · w32tm /resync"]
 ```
 
 ## Core entities
@@ -80,6 +86,7 @@ flowchart LR
 | Root boundary | `src/root/` | `rootCall.ts` — the closed `ROOT_OPS` union and the only argv with `-u root`; `cleanupController.ts` — the one holder: ids = the compiled registry ∩ `status.actions`, acting only on advertised `status.capabilities`, A4's volume names only from a held, frozen preview, one root call in flight per distribution, an unknown detach followed through `status.running`; `rootIds.ts` validates action ids, run ids and 64-hex names. The bundle scan keeps every root word inside this region (E6.S2). |
 | Cleanup buttons | `src/cleanup/` | `cleanupHost.ts` — the host transaction behind *Clean*, *Clean selected*, *Run full check now* and *Stop*: sanitised modals, the `globalState` journal of run ids until a terminal answer, the durable poll through `runs show` (E6.S3); `cleanupView.ts` derives the controls; *Last cleanup* from `status.lastCleanup`. |
 | Logs page | `src/logsPage/` | A `WebviewPanel` under the panel's shell and CSP: periods (This run, Today, Yesterday, a day, a range) become argv in `period.ts` alone, over the UTC instants of local midnights; a closed message set (`logsMessages.ts`); the selection persisted in `globalState`; nothing computed in the page (E6.S4). |
+| *Start Windows Time* | `src/windowsTime/` | PLAN_windows_time_guard.md D7: `windowsTimeFix.ts` — the elevated script as module constants (modules from `$PSHOME`, `w32tm.exe` by absolute path, one exit code per failure because an elevated child's streams cannot be read), the outer launcher that catches the UAC refusal as 1223, the request, the closed outcome, the flow (modal → one run → *Run full check now* on success); `windowsTimeNeed.ts` — the panel offers it only on the daemon's verdicts (`clock.timeService` warn/critical, `clock.reference` critical); `windowsTimeUi.ts` — the real modal, a progress notification while it runs, or a recorder in Test mode. |
 | Number settings | `src/settings/numbers.ts` | Every E6 number — the host ceilings (each above the daemon's own worst case for its call), the cleanup and Logs limits — as an `application`-scope setting, held equal to `package.json`. |
 
 ## Entry points
@@ -87,14 +94,16 @@ flowchart LR
 - **Activation** — `onStartupFinished`; `activate()` in `src/extension.ts` wires the client, the poller, the store, the
   bar, the panel and the commands, and asks `status` once if the window is focused.
 - **Commands** — `wslCare.openPanel`, `wslCare.refresh`, `wslCare.startWsl`, `wslCare.installDaemon`, and since E6.S4
-  `wslCare.openLogs` (also in the panel's title bar). No cleanup is a command: cleanups start only from the panel's
+  `wslCare.openLogs` (also in the panel's title bar), and since 2026-10-08 `wslCare.startWindowsTime` (also a panel
+  button while the daemon's verdicts ask for it). No cleanup is a command: cleanups start only from the panel's
   buttons, through the host's modals.
 - **Webview panel** — `wslCare.logs` (the Logs page), restored after a reload by its serializer
   (`onWebviewPanel:wslCare.logs`).
 - **View** — the activity-bar container `wslCare` with the webview view `wslCare.panel`.
 - **Settings** — `wslCare.distro` (empty = WSL's default distribution), `wslCare.refreshSeconds` (30 to 86 400,
   default 120) and, since E6, the number table of `settings/numbers.ts` (`wslCare.timeouts.*`, `wslCare.cleanup.*`,
-  `wslCare.logs.*`) — every one `application` scope, so a workspace cannot steer them.
+  `wslCare.logs.*`) — every one `application` scope, so a workspace cannot steer them; since 2026-10-08
+  `wslCare.windowsTime.setAutomaticStart` (default on) and `wslCare.timeouts.windowsTimeFixSeconds` (default 180).
 - **Test mode** — `activate()` returns a test API only in `ExtensionMode.Test`; the extension-host tier drives it.
 
 ## External dependencies
@@ -103,6 +112,7 @@ flowchart LR
 |---|---|
 | VS Code API `^1.85.0` (`@types/vscode` pinned to it) | the host; the Node of VS Code 1.85 is 18, so the bundle targets node18 |
 | `wsl.exe` (absolute, System32) | the only way the extension reaches the distribution — facts measured in [2026-10-03_wsl_exe_facts.md](2026-10-03_wsl_exe_facts.md) |
+| Windows PowerShell 5.1 (absolute, `System32\WindowsPowerShell\v1.0`) and UAC | *Start Windows Time* only; the UAC prompt is Windows' own and its policy is the machine's (`ConsentPromptBehaviorAdmin`) — the extension's modal is the confirmation it controls ([2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) §4) |
 | the `wsl-care` daemon ≥ `minDaemonForRender` of `src_vs_code/min-daemon.json` (*Install daemon* installs its `installDaemon`) | `status --json`, `preview --all --json`, `doctor --json`, `--version`, the run reads, and the root calls of `ROOT_OPS`; their shapes are the golden contracts in `contracts/golden/` and `contracts/*.json` (actions, exit codes, status limits). Acting needs `minDaemonForActions` and, as the authority, the capabilities `status` advertises |
 | esbuild (`scripts/bundle.mjs`), `@vscode/vsce`, `@vscode/test-electron`, TypeScript, typescript-eslint | build, package, extension-host tests, lint — dev only; the `.vsix` ships no runtime dependency |
 | `release-extension.yml` + `.github/scripts/release-extension-guard.sh` | the release pipeline: guard → build → attest → github-draft → publish-marketplace → github-public; the guard and `check-vsix --root-allowed` keep a root-capable bundle out of `extension-v0.1.0` and earlier (plan §15j B3, §15k #7) |

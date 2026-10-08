@@ -60,13 +60,29 @@ public static class SystemdCommands
     /// the clock is synchronised (plan §15 #10: a synchronised clock is not corrected).</summary>
     public static ToolCommand TimeSync => new(Timedatectl, "timedatectl-show", ["show", "--property=NTP", "--property=NTPSynchronized"], Ceiling, Cap);
 
+    /// <summary><c>timedatectl timesync-status</c>: timesyncd's server and its LAST NTP sample's <c>Offset:</c> — whether the
+    /// distro's own clock may stand as the clock reference (PLAN_windows_time_guard.md D2, measured 2026-10-08:
+    /// <c>Offset: -18.401ms</c>).</summary>
+    public static ToolCommand TimesyncStatus => new(Timedatectl, "timedatectl-timesync-status", ["timesync-status"], Ceiling, Cap);
+
+    /// <summary>journald's own words when the wall clock went back (it rotates its file at each one).</summary>
+    public const string TimeJumpedBackwards = "Time jumped backwards";
+
+    /// <summary>
+    /// journald's "Time jumped backwards" lines of THIS boot with their MONOTONIC stamps (<c>[ seconds since boot ]</c>) —
+    /// PLAN_windows_time_guard.md D4: the lines carry the wall time AFTER the jump back, so a <c>--since</c> window misses
+    /// exactly the jumps it counts; the monotonic clock does not jump.
+    /// </summary>
+    public static ToolCommand TimeJumpsBackThisBoot =>
+        new(Journalctl, "journalctl-boot-time-jumps", ["--boot", "--no-pager", "--quiet", "--output=short-monotonic", "--unit=systemd-journald", "--grep=" + TimeJumpedBackwards], SearchCeiling, SearchCap);
+
     /// <summary>
     /// The leading words of every command built here. Each one only READS; a test holds every command to this
     /// list, and the scenarios hold every argv the fakes saw to it.
     /// </summary>
     public static IReadOnlyList<IReadOnlyList<string>> ReadVerbs { get; } =
     [
-        ["--disk-usage"], ["--list-boots"], ["list-units"], ["--version"], ["show"], ["--since"],
+        ["--disk-usage"], ["--list-boots"], ["list-units"], ["--version"], ["show"], ["--since"], ["timesync-status"], ["--boot"],
     ];
 
     /// <summary>One unit's state, timestamps as <c>@unix-seconds</c> so they parse without a time zone.</summary>

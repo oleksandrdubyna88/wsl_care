@@ -98,6 +98,7 @@ public sealed class HealthContractTests
             Live.Unavailable("the clock probe is the distro's (WSL interop to powershell.exe); this binary runs on Windows");
         }
 
+        var mark = ClockMark.Now(TimeProvider.System);
         var launched = DateTimeOffset.UtcNow;
         var outcome = await Live.RunAsync(HealthCommands.WindowsClock);
         if (outcome is CommandOutcome.FailedToStart failed)
@@ -109,7 +110,55 @@ public sealed class HealthContractTests
 
         probe.Profile.Should().MatchRegex(@"^[A-Za-z]:\\");
         (probe.PrintedAt - probe.ProcessStartedAt).Should().BePositive("the launch latency is measured on one clock");
-        Math.Abs((probe.ProcessStartedAt - launched).TotalSeconds).Should().BeLessThan(60, "a skew of a minute would be a broken clock, not this probe");
+        Available(probe.TimeService).Status.Should().NotBeEmpty("the probe prints the Windows Time service's state (PLAN_windows_time_guard.md D1)");
+        var skew = (probe.ProcessStartedAt - launched).TotalSeconds;
+        if (Math.Abs(skew) >= 60)
+        {
+            // PLAN_windows_time_guard.md D8: a broken clock is REPORTED with its likely cause, in the product's own sentence.
+            var sample = new Core.Records.WindowsClockSample(launched, skew, 0, string.Empty) { TimeService = Available(probe.TimeService) };
+            var reference = await ClockReferences.MeasureAsync(Live.Commands, TimeProvider.System, mark, TestContext.Current.CancellationToken);
+            Assert.Fail(ClockStandings.Diagnosis(sample, ClockStandings.Judge(sample, reference, ClockReferences.ToleranceSeconds)));
+        }
+    }
+
+    [Fact]
+    public async Task Timesyncd_status_answers_a_last_ntp_offset_the_parser_reads()
+    {
+        await Live.SystemdAsync(SystemdCommands.JournalDiskUsage);
+        var answer = ToolAnswers.Read(SystemdCommands.TimesyncStatus, await Live.RunAsync(SystemdCommands.TimesyncStatus));
+        if (answer is not Reading<string>.Available)
+        {
+            Live.Unavailable($"timesyncd does not answer here: {answer.ReasonOrEmpty}");
+        }
+
+        Available(answer.Bind(ClockParsers.Timesync)).Server.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task The_backward_jump_search_of_this_boot_carries_monotonic_stamps()
+    {
+        await Live.SystemdAsync(SystemdCommands.JournalDiskUsage);
+        var command = SystemdCommands.TimeJumpsBackThisBoot;
+
+        var lines = Available(HealthParsers.SearchMatches(command, await Live.RunAsync(command)));
+
+        ClockParsers.MonotonicStamps(lines).Should().HaveCount(lines.Count, "every line journalctl --output=short-monotonic prints starts with its [ seconds ]");
+    }
+
+    [Fact]
+    public async Task The_clock_reference_head_answers_one_date_near_this_clock()
+    {
+        var url = Core.Config.Tuning.Current.Config.Text(Core.Config.ConfigKeys.Clock.ReferenceUrl);
+        var command = HealthCommands.ClockReference(url, HealthCommands.ReferenceSeconds);
+        var outcome = await Live.RunAsync(command);
+        if (outcome is CommandOutcome.FailedToStart failed)
+        {
+            Live.Unavailable($"curl is not installed here: {failed.Reason}");
+        }
+
+        var date = Available(ToolAnswers.Read(command, outcome).Bind(ClockParsers.HttpDate));
+
+        Math.Abs((date - DateTimeOffset.UtcNow).TotalSeconds).Should().BeLessThan(ClockReferences.ToleranceSeconds, "{0}'s Date agrees with this clock within the tolerance — if not, one of them is wrong", url);
     }
 
     [Fact]

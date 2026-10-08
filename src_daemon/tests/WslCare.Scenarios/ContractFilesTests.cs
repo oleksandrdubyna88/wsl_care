@@ -114,6 +114,7 @@ public sealed class ContractFilesTests
         ConfigKey.TextKey { Rule: TextRule.OneOf one } => [("shape", "text"), ("oneOf", new JsonArray([.. one.Values.Select(v => (JsonNode)v)]))],
         ConfigKey.TextKey { Rule: TextRule.Matching matching } => [("shape", "text"), ("pattern", matching.Expression)],
         ConfigKey.TextKey { Rule: TextRule.AbsolutePathOrEmpty } => [("shape", "path"), ("maxLength", TextRule.AbsolutePathOrEmpty.MaxLength)],
+        ConfigKey.TextKey { Rule: TextRule.HttpsUrlOrEmpty } => [("shape", "httpsUrl"), ("pattern", WslCare.Core.Processes.Policy.HttpsUrls.KeyPattern)],
         ConfigKey.TextListKey list => [("shape", "textList"), ("allowed", new JsonArray([.. list.Allowed.Select(v => (JsonNode)v)]))],
         ConfigKey.AgentListKey => [("shape", "agentList"), ("maxEntries", ExtraAgentShape.MaxEntries), ("maxFolders", ExtraAgentShape.MaxFolders), ("maxPathLength", ExtraAgentShape.MaxPathLength), ("maxGlobLength", ExtraAgentShape.MaxGlobLength), ("maxNameLength", ExtraAgentShape.MaxNameLength), ("sides", new JsonArray(ExtraAgentShape.Wsl, ExtraAgentShape.Windows))],
         _ => throw new InvalidOperationException($"{key.Name}: a key shape the contract does not describe"),

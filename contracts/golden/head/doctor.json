@@ -67,6 +67,16 @@
       "detail": "the events follower has recorded nothing (wsl-care-events.service)"
     },
     {
+      "id": "windowsTime",
+      "state": "unknown",
+      "detail": "the Windows clock probe printed no w32time line (full run 20000101T000000Z-1, 0.0 h ago)"
+    },
+    {
+      "id": "clockReference",
+      "state": "unknown",
+      "detail": "no independent clock reference: curl --head https://www.microsoft.com (the clock reference) exited 98: fake curl: no scripted answer for: curl --disable --silent --show-error --head --max-redirs 0 --proto =https --proto-redir =https --max-time 10 --header Cache-Control: no-cache --url https://www.microsoft.com; timesyncd: timedatectl timesync-status exited 98: fake timedatectl: no scripted answer for: timedatectl timesync-status (full run 20000101T000000Z-1, 0.0 h ago)"
+    },
+    {
       "id": "root",
       "state": "notChecked",
       "detail": "root reachability (wsl.exe -u root -- true) is checked by the extension's root boundary (E6)"

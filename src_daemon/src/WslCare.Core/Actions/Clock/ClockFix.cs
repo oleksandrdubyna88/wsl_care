@@ -69,7 +69,8 @@ public sealed class ClockFix : ICleanupAction
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];
 
-    public IReadOnlyList<CommandTemplate> Commands { get; } = [WindowsClock, TimeSync, Hwclock, ChronyMakestep];
+    public IReadOnlyList<CommandTemplate> Commands { get; } =
+        [WindowsClock, TimeSync, Hwclock, ChronyMakestep, ReadCommandTemplates.ClockReference, ReadCommandTemplates.TimesyncStatus];
 
     public static string File(IHostPaths paths) => paths.Rules.Join(paths.StateDirectory, FileName);
 
@@ -78,18 +79,34 @@ public sealed class ClockFix : ICleanupAction
         var max = context.Config.Int(ConfigKeys.Clock.MaxDriftSeconds);
         var chrony = ChronydRuns(context, cancellationToken);
         var what = string.Create(CultureInfo.InvariantCulture, $"{Tool(chrony).Name}: step the distro's clock to the host's, once per drift of more than {max} s (clock.maxDriftSeconds)");
+        var mark = ClockMark.Now(context.Clock);
         var now = await HealthCollector.MeasureWindowsClockAsync(commands.AsRunner(), context.Clock, cancellationToken).ConfigureAwait(false);
         if (!now.Measured)
         {
             return ActionPreview.Unavailable(what, $"the Windows clock could not be observed: {now.Unavailable}");
         }
 
+        var judgement = await JudgeAsync(context, commands, mark, now, max, cancellationToken).ConfigureAwait(false);
+
         var previous = LastFullRun.Read(context.Paths, context.Files, context.Clock).WindowsClock.Map(a => a.Value);
         var last = Read(context.Paths, context.Files);
         var facts = Facts(now, ThresholdRules.IsDrift(now, previous, max), Corrected(context, last, max), chrony);
         var item = new ActionItem("clock", "the distro's clock", null, string.Create(CultureInfo.InvariantCulture, $"{now.OffsetSeconds:+0.00;-0.00} s off Windows' (launch latency {now.LaunchLatencySeconds:0.00} s subtracted)"));
         var preview = ActionPreview.Of(what, 1, null, "a live observation of the Windows clock, and the last full run's", facts, Refusal(context, last), [item]);
-        return await SkipAsync(preview, now, max, commands, cancellationToken).ConfigureAwait(false);
+        return await SkipAsync(preview, now, judgement, max, commands, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Which clock is wrong — asked only when the clocks disagree beyond <c>clock.maxDriftSeconds</c>: a preview whose
+    /// clocks agree sends no request to the network (code round, coai #12).</summary>
+    private static async Task<ClockJudgement> JudgeAsync(ActionContext context, ActionCommands commands, ClockMark mark, WindowsClockSample now, int max, CancellationToken cancellationToken)
+    {
+        if (Math.Abs(now.OffsetSeconds) <= max)
+        {
+            return ClockStandings.Unmeasured("the clocks agree: no reference was asked");
+        }
+
+        var reference = await ClockReferences.MeasureAsync(commands.AsRunner(), context.Clock, mark, cancellationToken).ConfigureAwait(false);
+        return ClockStandings.Judge(now, reference, context.Config.Int(ConfigKeys.Clock.ReferenceToleranceSeconds));
     }
 
     /// <summary>The timer: a drift on two observations that has not been corrected yet.</summary>
@@ -179,19 +196,53 @@ public sealed class ClockFix : ICleanupAction
             ? string.Create(CultureInfo.InvariantCulture, $"the clock was corrected at {fix.CorrectedAt.UtcDateTime:yyyy-MM-dd HH:mm:ss}Z by {fix.Tool}, less than {MinimumGap.TotalMinutes:0} minutes ago: at most one correction per {MinimumGap.TotalMinutes:0} minutes (plan 15 #10)")
             : string.Empty;
 
-    /// <summary>Synchronised by timesyncd/chrony, or within the limit now: nothing to fix.</summary>
-    private static async Task<ActionPreview> SkipAsync(ActionPreview preview, WindowsClockSample now, int max, ActionCommands commands, CancellationToken cancellationToken)
+    /// <summary>
+    /// The skips, in order (PLAN_windows_time_guard.md D6): timesyncd keeps the distro on NTP (and, when Windows is off, the
+    /// Windows clock is the wrong one); the clock agrees with Windows' (nothing to fix); then the step goes toward the host
+    /// only when an independent reference shows it brings the distro CLOSER to true time — a wrong Windows clock, no reference
+    /// at all, or a step that would not help are each a skip. The reference is a brake, never a trigger.
+    /// </summary>
+    private static async Task<ActionPreview> SkipAsync(ActionPreview preview, WindowsClockSample now, ClockJudgement judgement, int max, ActionCommands commands, CancellationToken cancellationToken)
     {
         var sync = (await ToolAnswers.RunAsync(commands.AsRunner(), SystemdCommands.TimeSync, cancellationToken).ConfigureAwait(false)).Bind(HealthParsers.TimeSync);
-        if (sync is Reading<Health.TimeSync>.Available { Value.Synchronized: true })
-        {
-            return preview with { Skip = "timesyncd/chrony reports the clock synchronised: it is not stepped (plan 15 #10)" };
-        }
-
-        return Math.Abs(now.OffsetSeconds) <= max
-            ? preview with { Skip = string.Create(CultureInfo.InvariantCulture, $"the clock agrees with Windows' ({now.OffsetSeconds:+0.00;-0.00} s, the limit is {max} s)") }
-            : preview;
+        var skip = SkipReason(now, judgement, max, sync is Reading<Health.TimeSync>.Available { Value.Synchronized: true });
+        return skip.Length > 0 ? preview with { Skip = skip } : preview;
     }
+
+    /// <summary>Why A16 does not step now; empty when it may.</summary>
+    public static string SkipReason(WindowsClockSample now, ClockJudgement judgement, int max, bool synchronized) => (synchronized, Math.Abs(now.OffsetSeconds) <= max) switch
+    {
+        (true, true) => "timesyncd/chrony reports the clock synchronised: it is not stepped (plan 15 #10)",
+        (true, false) => SynchronisedSkip(now, judgement),
+        (false, true) => Invariant($"the clock agrees with Windows' ({now.OffsetSeconds:+0.00;-0.00} s, the limit is {max} s)"),
+        _ => ReferenceSkip(judgement, max),
+    };
+
+    /// <summary>timesyncd keeps the distro on NTP, so it is not stepped (plan §15 #10) — and the sentence follows the reference:
+    /// it says "not WSL's" only when the reference does not say the distro is off too (code round coai #7, own review #5).</summary>
+    private static string SynchronisedSkip(WindowsClockSample now, ClockJudgement judgement) =>
+        judgement.Standing == ClockStanding.WslWrong || judgement.DistroAlsoOff
+            ? $"timesyncd/chrony reports the distro's clock synchronised, so it is not stepped (plan 15 #10) — yet {judgement.Reason}"
+            : Invariant($"the Windows clock is wrong, not WSL's: timesyncd/chrony reports the distro's clock synchronised to NTP and Windows is {now.OffsetSeconds:+0.00;-0.00} s off it{Unconfirmed(judgement)} — {ClockStandings.WindowsFix}");
+
+    /// <summary>Final code round (coai): with no reference answering, the diagnosis rests on timesyncd alone — and says so.</summary>
+    private static string Unconfirmed(ClockJudgement judgement) =>
+        judgement.Standing == ClockStanding.Unknown ? $" (no other reference could confirm it: {judgement.Reason})" : string.Empty;
+
+    private static string ReferenceSkip(ClockJudgement judgement, int max) => judgement switch
+    {
+        { WindowsIsWrong: true } => $"{judgement.Reason}; stepping the distro to the host's clock would set it wrong",
+        { Standing: ClockStanding.Unknown } => $"the clocks disagree and no independent reference can say which is wrong ({judgement.Reason}); A16 steps only when a reference shows the distro is the wrong one",
+        _ when !StepHelps(judgement, max) => Invariant($"the distro is {judgement.WslMinusReferenceSeconds:+0.00;-0.00} s off {judgement.Source} and Windows {judgement.WindowsMinusReferenceSeconds:+0.00;-0.00} s: stepping to Windows' clock would not bring the distro closer"),
+        _ => string.Empty,
+    };
+
+    /// <summary>After a step the distro stands where Windows does (W − R off the reference); before it, −R. The step helps
+    /// only when that is closer AND the distro is off by more than <c>clock.maxDriftSeconds</c>.</summary>
+    private static bool StepHelps(ClockJudgement judgement, int max) =>
+        Math.Abs(judgement.WindowsMinusReferenceSeconds) < Math.Abs(judgement.WslMinusReferenceSeconds) && Math.Abs(judgement.WslMinusReferenceSeconds) > max;
+
+    private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 
     private static bool ChronydRuns(ActionContext context, CancellationToken cancellationToken) =>
         context.Processes(cancellationToken) is Reading<ProcessSnapshot>.Available { Value: var snapshot } && snapshot.All.Any(p => p.Name == "chronyd");

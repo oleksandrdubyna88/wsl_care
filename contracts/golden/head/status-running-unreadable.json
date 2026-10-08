@@ -224,6 +224,36 @@
       }
     },
     {
+      "id": "clock.timeService",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn: not running, or StartType Manual (clock.manualStartWarns); critical: not running while clock.reference names Windows",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "clock.reference",
+      "level": "unknown",
+      "value": "",
+      "limit": "critical: Windows more than 30 s off the reference; warn: the distro (clock.referenceToleranceSeconds)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
+      "id": "clock.fight",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 10 in the last 4 h of this boot (thresholds.timeJumpsBackWarnPer4h)",
+      "reason": "no full run has been recorded yet; \"wsl-care collect\" (run as root, or by the timer) records one",
+      "basis": {
+        "source": "fullRun"
+      }
+    },
+    {
       "id": "systemd.failedUnits",
       "level": "unknown",
       "value": "",
