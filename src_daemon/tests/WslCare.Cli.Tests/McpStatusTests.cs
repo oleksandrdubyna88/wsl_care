@@ -53,7 +53,7 @@ public sealed class McpStatusTests
         instance.CpuPercent.Value.Should().Be(0, "the fixture's ticks do not move across the window");
         instance.Kind.Should().Be("starting", "no CPU, and the capture was taken about 95 s after boot — younger than the 10-minute idle minimum");
         instance.Activity.Available.Should().BeFalse("the sandbox home holds no coai-mcp log");
-        mcp.Servers!.Single().Should().Match<McpServerReport>(s => s.Name == "coai-mcp" && s.StartsBasis == "logNames" && s.Starts.Value == 0);
+        mcp.Servers!.Single(s => s.Name == "coai-mcp").Should().Match<McpServerReport>(s => s.Name == "coai-mcp" && s.StartsBasis == "logNames" && s.Starts.Value == 0);
         waited.Should().Be(TimeSpan.FromMilliseconds(1000), "status waited the default CPU window because an instance has no baseline");
         instance.CpuBasis.Should().Be("window", "a first sighting is measured across the window (plan E14 S1)");
         mcp.CpuBaseline!.Recorded.Should().BeFalse("the captured tree has no boot id — and that is what keeps status from writing a ledger into the checked-in fixture");

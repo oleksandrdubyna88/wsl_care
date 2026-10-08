@@ -116,7 +116,7 @@ public sealed class McpServerCollectorTests : IDisposable
         Session(200, 300, TimeSpan.FromHours(1));
 
         Sample(config: Configured(("mcpServers", "{\"watched\": []}"))).Count.Should().Be(0, "mcpServers.watched lists no server");
-        Defaults().TextList(ConfigKeys.McpServers.Watched).Should().ContainSingle().Which.Should().Be("coai-mcp", "every catalogued server is watched by default");
+        Defaults().TextList(ConfigKeys.McpServers.Watched).Should().Equal(McpServerCatalogue.Names, "every catalogued server is watched by default");
         Sample().Count.Should().Be(1);
     }
 
@@ -609,7 +609,7 @@ public sealed class McpServerCollectorTests : IDisposable
         Log(3000, new DateTimeOffset(Now.Date, TimeSpan.Zero), Now - TimeSpan.FromMinutes(1));
 
         var sample = Sample();
-        var starts = sample.Servers.Single().Starts;
+        var starts = sample.Servers.Single(s => s.Name == "coai-mcp").Starts;
 
         starts.Count.Should().Be(Reading.Of(34));
         starts.Basis.Should().Be(McpStartsBasis.LogNames);
@@ -626,7 +626,7 @@ public sealed class McpServerCollectorTests : IDisposable
         Log(1001, Now - TimeSpan.FromMinutes(6), Now - TimeSpan.FromMinutes(6) + TimeSpan.FromSeconds(30));
         Log(1002, Now - TimeSpan.FromMinutes(20), Now - TimeSpan.FromMinutes(19));
 
-        var starts = Sample().Servers.Single().Starts;
+        var starts = Sample().Servers.Single(s => s.Name == "coai-mcp").Starts;
 
         starts.Recent.Select(s => (s.At, s.Pid, s.LastWrite, s.Running)).Should().Equal(
             [
@@ -644,7 +644,7 @@ public sealed class McpServerCollectorTests : IDisposable
             Log(1000 + i, Now - TimeSpan.FromMinutes(1 + i), Now);
         }
 
-        var starts = Sample(config: Configured(("mcpServers", "{\"maxStartsListed\": 2}"))).Servers.Single().Starts;
+        var starts = Sample(config: Configured(("mcpServers", "{\"maxStartsListed\": 2}"))).Servers.Single(s => s.Name == "coai-mcp").Starts;
 
         starts.Count.Should().Be(Reading.Of(5));
         starts.Recent.Select(s => s.Pid).Should().Equal(1000, 1001);
@@ -659,7 +659,7 @@ public sealed class McpServerCollectorTests : IDisposable
         Log(300, Now.Date.AddHours(-5), Now.Date.AddHours(-4));
         Log(300, new DateTimeOffset(Now.Date, TimeSpan.Zero), Now);
 
-        Sample().Servers.Single().Starts.Count.Should().Be(Reading.Of(1));
+        Sample().Servers.Single(s => s.Name == "coai-mcp").Starts.Count.Should().Be(Reading.Of(1));
     }
 
     [Fact]
@@ -669,7 +669,7 @@ public sealed class McpServerCollectorTests : IDisposable
         Log(300, Now.Date.AddHours(-5), Now.Date.AddSeconds(-1));
         Log(300, new DateTimeOffset(Now.Date, TimeSpan.Zero), Now);
 
-        Sample().Servers.Single().Starts.Count.Should().Be(Reading.Of(0));
+        Sample().Servers.Single(s => s.Name == "coai-mcp").Starts.Count.Should().Be(Reading.Of(0));
     }
 
     [Fact]
@@ -680,7 +680,7 @@ public sealed class McpServerCollectorTests : IDisposable
             Log(1000 + i, Now - TimeSpan.FromSeconds(i), Now);
         }
 
-        var starts = Sample(config: Configured(("mcpServers", "{\"maxLogEntries\": 100}"))).Servers.Single().Starts;
+        var starts = Sample(config: Configured(("mcpServers", "{\"maxLogEntries\": 100}"))).Servers.Single(s => s.Name == "coai-mcp").Starts;
 
         starts.Count.IsAvailable.Should().BeFalse("a listing cut at its cap is no count");
         starts.Count.ReasonOrEmpty.Should().Contain("incomplete");
@@ -717,7 +717,7 @@ public sealed class McpServerCollectorTests : IDisposable
 
         var files = new Untraversable(_tree.Files, _tree.Paths.DistroPath("/home/me/.local/share/coai-mcp"));
 
-        var starts = Sample(files: files).Servers.Single().Starts;
+        var starts = Sample(files: files).Servers.Single(s => s.Name == "coai-mcp").Starts;
 
         starts.Count.IsAvailable.Should().BeFalse("a log root that could not be reached is no count — not zero starts");
         starts.Count.ReasonOrEmpty.Should().Contain("permission denied");
@@ -773,7 +773,7 @@ public sealed class McpServerCollectorTests : IDisposable
         Log(300, Now.Date.AddMinutes(-3), Now.Date.AddSeconds(-1));
         Log(300, new DateTimeOffset(Now.Date, TimeSpan.Zero), Now - TimeSpan.FromMinutes(2));
 
-        Sample().Servers.Single().Starts.Count.Should().Be(Reading.Of(1), "the run that began before midnight started once; its midnight segment is not a second start");
+        Sample().Servers.Single(s => s.Name == "coai-mcp").Starts.Count.Should().Be(Reading.Of(1), "the run that began before midnight started once; its midnight segment is not a second start");
     }
 
     [Fact]
@@ -784,7 +784,7 @@ public sealed class McpServerCollectorTests : IDisposable
         Directory.CreateDirectory(_tree.Paths.DistroPath("/home/me/.local/share/coai-mcp"));
         Directory.CreateSymbolicLink(_tree.Paths.DistroPath(Logs), _tree.Paths.DistroPath("/data/elsewhere"));
 
-        var starts = Sample().Servers.Single().Starts;
+        var starts = Sample().Servers.Single(s => s.Name == "coai-mcp").Starts;
 
         starts.Count.IsAvailable.Should().BeFalse("a log root reached through a link is not where it seems");
     }

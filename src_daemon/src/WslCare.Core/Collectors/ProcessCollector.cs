@@ -50,6 +50,16 @@ public sealed record ProcessEntry(
         get => _programs ?? CommandLineText.ProgramNames(CommandLine.Split(' ', StringSplitOptions.RemoveEmptyEntries));
         init => _programs = value;
     }
+
+    private readonly string? _script;
+
+    /// <summary>The script an interpreter runs: the first word after the program that is no option (<see cref="CommandLineText.ScriptOf"/>,
+    /// E14 S2d) — set by the collector from the RAW argv; an entry built without it (a test's) derives it from <see cref="CommandLine"/>.</summary>
+    public string Script
+    {
+        get => _script ?? CommandLineText.ScriptOf(CommandLine.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        init => _script = value;
+    }
 }
 
 /// <summary>A family's total (plan §4.2): how many processes, how much they hold.</summary>
@@ -146,6 +156,7 @@ public sealed class ProcessCollector(IFileSystem files, LinuxHostPaths paths, Ti
             IsUnderMnt(raw))
         {
             Programs = CommandLineText.ProgramNames(raw.Argv.Count > 0 ? raw.Argv : [raw.Status.Name]),
+            Script = CommandLineText.ScriptOf(raw.Argv),
             StartTicks = raw.Stat.Map(s => s.StartTicks),
         };
 

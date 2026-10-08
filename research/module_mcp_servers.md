@@ -42,7 +42,7 @@ flowchart LR
 
 | Type | What it is |
 |---|---|
-| `McpServerCatalogue`, `McpServerEntry`, `McpLogLayout` (`None` \| `FamilyRunLogs`) | the servers the daemon recognises — `coai-mcp` today — by PROGRAM name (argv[0]), each with an optional log layout; a new layout is a new case, never an `if` on a name |
+| `McpServerCatalogue`, `McpServerEntry` (+ `RunAs`: `McpScriptMatch` — interpreters, script file names, the folder the script must be under; E14 S2d), `McpLogLayout` (`None` \| `FamilyRunLogs`) | the servers the daemon recognises — `coai-mcp` by its program and `playwright-mcp` (E14 S2d) as the SCRIPT `node`/`nodejs` runs from its bin link `/node_modules/.bin/` or its package `/node_modules/@playwright/mcp/` (never a same-named file of another package) (`npx @playwright/mcp`: `npm exec` → a shell → `node …/.bin/playwright-mcp`; the launchers are not the server; `ProcessEntry.Script` = the first word after the program that is no option) — by PROGRAM name (argv[0]), each with an optional log layout; a new layout is a new case, never an `if` on a name |
 | `McpUserPrograms`, `McpServerOrigin` (`Catalogue` \| `UserProgram`), `TextRule.McpProgramName` (E14 S2c) | the user's own servers, `mcpServers.programs`: an OPEN list of program file names (`^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$`, at most 32), each refused when it names an AI agent's program, an interpreter, shell or launcher (a version suffix included: `python3.12`), `wsl-care`, a catalogue server, or ends in `.exe`; each becomes an `McpServerEntry` with no log layout and origin `UserProgram`; `McpSettings.Watched` = the watched catalogue servers + these |
 | `McpInstances` (`Find`, `ServerOf`, `OwnerOf`) | instances in the snapshot; owner = the first ancestor of the `ai-agents` family that `AgentProcesses.AgentOf` attributes to one catalogue agent, else `Orphaned` when re-parented; under a live non-agent host = not an instance (`notUnderAgent`) |
 | `McpRunLogs`, `McpLogs`, `McpLogFile` | the run logs of today and yesterday (UTC), names and stat only; `Present` walks down from the home with the bounded listing so an unreadable or cut folder is "cannot tell", never "no logs" |
@@ -151,7 +151,9 @@ signal sender: read-only towards the servers by construction. Its one write is t
 - **Windows:** `coai-mcp.exe` (VS Code's `globalStorage`, `remsoftdev.connect-other-ais`) is not counted — the Windows binary
   has no process collector yet; the next step is E11 (the same catalogue, a Toolhelp snapshot for parents, `GetProcessTimes`
   twice).
-- Servers not in the catalogue (`creds-mcp`, `playwright-mcp` are in the captured 2026-10-02 tree) are counted only when the
-  user lists their program in `mcpServers.programs` (E14 S2c). An interpreter-run server (`playwright-mcp` runs as
-  `node …/playwright-mcp`) cannot be listed that way — argv[0] is `node` — and needs a catalogue entry naming its script.
+- Servers not in the catalogue (`creds-mcp` is in the captured 2026-10-02 tree) are counted only when the user lists their
+  program in `mcpServers.programs` (E14 S2c). An interpreter-run server cannot be listed that way — argv[0] is the
+  interpreter — and needs a catalogue entry naming its script, as `playwright-mcp` has since E14 S2d. A `node` started with an
+  option that takes a separate value before the script (`node -r mod …/playwright-mcp`) yields the value as its script and is
+  missed (never mistaken), as are a global install (`~/.nvm/…/bin/playwright-mcp`), a relative script path and `node …/@playwright/mcp/cli.js` run by another name. A leaked tree — the agent gone, `npm exec` and the shell re-parented to init, `node` still alive — has a live non-agent parent, so it counts as not under an agent and is never an orphan target (the owner walk stops at the first live parent; whether `playwright-mcp` outlives its closed stdin is not measured).
   A Windows server reached through interop (`/init …/creds-mcp.exe`) has argv[0] `init` and is not matched.

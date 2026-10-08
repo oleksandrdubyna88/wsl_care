@@ -551,10 +551,12 @@
       "name": "mcpServers.watched",
       "shape": "textList",
       "allowed": [
-        "coai-mcp"
+        "coai-mcp",
+        "playwright-mcp"
       ],
       "default": [
-        "coai-mcp"
+        "coai-mcp",
+        "playwright-mcp"
       ],
       "safeDirection": "none",
       "rootEffective": false,
@@ -657,7 +659,8 @@
         "tini",
         "dumb-init",
         "wsl-care",
-        "coai-mcp"
+        "coai-mcp",
+        "playwright-mcp"
       ],
       "launchers": [
         "node",

@@ -2273,7 +2273,7 @@
     {
       "id": "mcp.starts",
       "level": "ok",
-      "value": "coai-mcp 0 in 10 min",
+      "value": "coai-mcp 0 in 10 min; playwright-mcp 0 in 10 min (live instances only, a lower bound)",
       "limit": "warn when a server started more than 10 times in the starts window (mcpServers.warnStarts)",
       "reason": "how often each watched MCP server was started lately",
       "basis": {
@@ -2344,7 +2344,7 @@
     "listed": 2,
     "idleCount": 2,
     "busyWithoutActivityCount": 0,
-    "notUnderAgent": 0,
+    "notUnderAgent": 2,
     "cpuCores": {
       "available": true,
       "value": 0
@@ -2361,6 +2361,17 @@
         },
         "startsWindowMinutes": 10,
         "startsBasis": "logNames",
+        "startTimes": []
+      },
+      {
+        "name": "playwright-mcp",
+        "count": 0,
+        "starts": {
+          "available": true,
+          "value": 0
+        },
+        "startsWindowMinutes": 10,
+        "startsBasis": "liveYounger",
         "startTimes": []
       }
     ],
