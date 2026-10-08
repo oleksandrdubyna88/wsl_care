@@ -7,7 +7,7 @@ import { test } from 'node:test';
 
 import type { ProcessRequest } from '../process/runner';
 import { commandLineLength, ELEVATED_COMMAND_LINE_MAX, HERE_END, installRequest, installScript, NOT_FOUND_HRESULT, queryRequest, QUERY_SCRIPT, REMOVE_SCRIPT, removeRequest } from '../windowsTime/guardScripts';
-import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, type GuardOptions } from '../windowsTime/guardTask';
+import { commandAfterArgv, GUARD_SDDL, guardArguments, guardScript, guardSummary, guardTaskXml, MODULES, START_ALLOWED_FUNCTION, START_TYPE_QUERY, STAMP_KEY, STOP_QUERY, SUMMARY_FUNCTION, TASK_POWERSHELL, xmlText, type GuardOptions } from '../windowsTime/guardTask';
 import { guardStateOf } from '../windowsTime/guardState';
 import { BODY, SET_AUTOMATIC } from '../windowsTime/windowsTimeFix';
 import { isElevatedPowerShell, isMachineChange, MUTATING } from './support/noRealWsl';
@@ -63,9 +63,18 @@ test('the action does only what the owner listed, in the order that makes it saf
   assert.ok(script.includes(`$key = '${STAMP_KEY}'`) && STAMP_KEY.startsWith('HKLM:\\SOFTWARE\\'), 'the stamp under HKLM\\SOFTWARE — only administrators and SYSTEM write there');
 });
 
+test('the start-type line runs only when the start type is not already Automatic — so the guard\'s own change cannot re-fire its 7040 trigger', () => {
+  const script = guardScript(DEFAULTS);
+  const guarded = `if ($service.StartType -ne 'Automatic') { ${SET_AUTOMATIC} }`;
+  assert.ok(script.includes(guarded), 'a Set-Service on every run could write a 7040 every run and re-trigger the task every delaySeconds');
+  assert.equal(script.split(SET_AUTOMATIC).length - 1, 1, 'SET_AUTOMATIC appears once, and only inside the condition');
+});
+
 test('the start-type line is there only while wslCare.windowsTime.setAutomaticStart is on, and the window is the setting in ticks', () => {
   assert.ok(guardScript(DEFAULTS).includes(SET_AUTOMATIC));
   assert.ok(!guardScript(OTHER).includes('Set-Service'));
+  assert.ok(!guardScript(OTHER).includes('StartType'), 'switch off: no start-type line at all, not even its condition');
+  assert.ok(guardTaskXml(OTHER).includes(xmlText(START_TYPE_QUERY)), 'the 7040 trigger stays: a change still runs the start and the resync (a Disabled service then fails to start, exit 11, until the owner changes it)');
   assert.ok(guardScript(DEFAULTS).includes('Test-WslCareStartAllowed $now $last 6000000000)'), '10 min = 6 000 000 000 ticks');
   assert.ok(guardScript(OTHER).includes('Test-WslCareStartAllowed $now $last 1800000000)'), '3 min');
   assert.ok(guardScript(DEFAULTS).includes(START_ALLOWED_FUNCTION));
@@ -80,21 +89,32 @@ test('own code review k2: every guard script FIRST pins the module path, with no
 
 // ---- D1: the definition, read back parsed ----
 
-test('the definition: SYSTEM, its descriptor, four triggers, one at a time, and the fixed action — read back PARSED', () => {
+/** The triggers that carry `delaySeconds` — every one but the periodic one — in document order. */
+function delayedTriggers(root: XmlElement): readonly XmlElement[] {
+  return at(root, 'Triggers').children.filter((t) => t.name !== 'TimeTrigger');
+}
+
+function eventSubscriptions(root: XmlElement): readonly string[] {
+  return at(root, 'Triggers').children.filter((t) => t.name === 'EventTrigger').map((t) => at(t, 'Subscription').text);
+}
+
+test('the definition: SYSTEM, its descriptor, five triggers, one at a time, and the fixed action — read back PARSED', () => {
   const root = task(DEFAULTS);
   assert.equal(root.name, 'Task');
   assert.equal(root.attributes.xmlns, 'http://schemas.microsoft.com/windows/2004/02/mit/task');
   assert.equal(at(root, 'Principals', 'Principal', 'UserId').text, 'S-1-5-18');
   assert.equal(at(root, 'Principals', 'Principal', 'RunLevel').text, 'HighestAvailable');
   assert.equal(at(root, 'RegistrationInfo', 'SecurityDescriptor').text, GUARD_SDDL);
-  assert.deepEqual(at(root, 'Triggers').children.map((t) => t.name), ['BootTrigger', 'LogonTrigger', 'TimeTrigger', 'EventTrigger']);
-  for (const name of ['BootTrigger', 'LogonTrigger', 'EventTrigger']) {
-    assert.equal(at(root, 'Triggers', name, 'Delay').text, 'PT60S', name);
-    assert.equal(at(root, 'Triggers', name, 'Enabled').text, 'true', name);
+  assert.deepEqual(at(root, 'Triggers').children.map((t) => t.name), ['BootTrigger', 'LogonTrigger', 'TimeTrigger', 'EventTrigger', 'EventTrigger']);
+  assert.equal(delayedTriggers(root).length, 4);
+  for (const trigger of delayedTriggers(root)) {
+    assert.equal(at(trigger, 'Delay').text, 'PT60S', trigger.name);
+    assert.equal(at(trigger, 'Enabled').text, 'true', trigger.name);
   }
   assert.equal(at(root, 'Triggers', 'TimeTrigger', 'Repetition', 'Interval').text, 'PT4H');
-  assert.equal(at(root, 'Triggers', 'EventTrigger', 'Subscription').text, STOP_QUERY);
+  assert.deepEqual(eventSubscriptions(root), [STOP_QUERY, START_TYPE_QUERY], 'the stop event first, the start-type change second');
   assert.match(STOP_QUERY, /Path="Microsoft-Windows-Time-Service\/Operational".*Provider\[@Name='Microsoft-Windows-Time-Service'\] and EventID=258\]/, 'research T8: the measured QueryList — event 258, not 7036');
+  assert.equal(START_TYPE_QUERY, `<QueryList><Query Id="0" Path="System"><Select Path="System">*[System[Provider[@Name='Service Control Manager'] and EventID=7040] and EventData[Data[@Name='param4']='W32Time']]</Select></Query></QueryList>`, 'the QueryList measured against the System log: the four W32Time 7040s and nothing else, keyed by the service KEY name, which is not localised');
   assert.equal(at(root, 'Settings', 'MultipleInstancesPolicy').text, 'IgnoreNew');
   assert.equal(at(root, 'Settings', 'ExecutionTimeLimit').text, 'PT5M');
   assert.equal(at(root, 'Settings', 'DisallowStartIfOnBatteries').text, 'false');
@@ -114,10 +134,17 @@ test('every setting reaches its element — and a zero delay leaves the delays o
   const root = task(OTHER);
   assert.equal(at(root, 'Triggers', 'TimeTrigger', 'Repetition', 'Interval').text, 'PT7H');
   assert.equal(at(root, 'Settings', 'ExecutionTimeLimit').text, 'PT9M');
-  for (const name of ['BootTrigger', 'LogonTrigger', 'EventTrigger']) {
-    assert.deepEqual(at(root, 'Triggers', name).children.filter((c) => c.name === 'Delay'), [], name);
+  assert.equal(delayedTriggers(root).length, 4);
+  for (const trigger of delayedTriggers(root)) {
+    assert.deepEqual(trigger.children.filter((c) => c.name === 'Delay'), [], trigger.name);
   }
   assert.equal(at(root, 'Actions', 'Exec', 'Arguments').text, guardArguments(OTHER));
+});
+
+test('the expected summary carries both event triggers in definition order — the start-type change after the stop event', () => {
+  const events = guardSummary(DEFAULTS).filter((l) => l.startsWith('trigger=event '));
+  assert.deepEqual(events, [`trigger=event enabled=True delay=PT60S subscription=${STOP_QUERY}`, `trigger=event enabled=True delay=PT60S subscription=${START_TYPE_QUERY}`]);
+  assert.deepEqual(guardSummary(OTHER).filter((l) => l.startsWith('trigger=event ')).map((l) => l.split(' subscription=')[0]), ['trigger=event enabled=True delay=', 'trigger=event enabled=True delay=']);
 });
 
 test('the expected summary names every baked-in setting, so a change to any of them reads as "install again"', () => {
@@ -211,6 +238,16 @@ test('Task Scheduler\'s own parser reads the definition IN MEMORY (nothing regis
     const lines = out.trim().split(/\r?\n/);
     assert.deepEqual(lines.slice(0, -1), [...guardSummary(options)], JSON.stringify(options));
     assert.equal(lines.at(-1), `sddl=${GUARD_SDDL}`);
+  }
+});
+
+test('both event subscriptions are queries the event log ACCEPTS — read-only, a match or no match, never an invalid query', WINDOWS_ONLY, () => {
+  const files = { 'stop.xml': STOP_QUERY, 'startType.xml': START_TYPE_QUERY };
+  const out = withFiles(files, (dir) => check("foreach ($f in 'stop.xml','startType.xml') { $q = [xml][System.IO.File]::ReadAllText((Join-Path $args[0] $f)); try { $n = @(Get-WinEvent -FilterXml $q -MaxEvents 1 -ErrorAction Stop).Count; Write-Output ($f + '=matched ' + $n) } catch { if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') { Write-Output ($f + '=no match') } else { Write-Output ($f + '=refused ' + $_.FullyQualifiedErrorId + ' ' + $_.Exception.Message) } } }", dir));
+  const lines = out.trim().split(/\r?\n/);
+  assert.equal(lines.length, 2, out);
+  for (const line of lines) {
+    assert.match(line, /^(stop|startType)\.xml=(matched 1|no match)$/, line);
   }
 });
 

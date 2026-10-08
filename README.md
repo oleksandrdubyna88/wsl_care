@@ -622,9 +622,12 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   else on Windows is changed, and nothing restarts the service if other software stops it again — that is the guard below.
 - **The Windows Time guard (2026-10-08).** *AI OS Care: Install the Windows Time guard…* (also a button on the panel's
   *Health* section) registers ONE scheduled task, `\wsl-care\windows-time-guard`, that runs as SYSTEM at startup, at logon,
-  every `wslCare.windowsTime.guard.everyHours` (4) hours and when the Windows Time service logs that it is stopping (its own
+  every `wslCare.windowsTime.guard.everyHours` (4) hours, when the Windows Time service logs that it is stopping (its own
   event 258 — the Service Control Manager's 7036 is not logged on Windows 11 at all, measured in
-  [research/2026-10-08_windows_time_guard_trigger.md](research/2026-10-08_windows_time_guard_trigger.md)). Each run only sets
+  [research/2026-10-08_windows_time_guard_trigger.md](research/2026-10-08_windows_time_guard_trigger.md)) and when its
+  start type is changed (the Service Control Manager's 7040 for `W32Time`, so — while `wslCare.windowsTime.setAutomaticStart`
+  is on — a *disabled* is undone about `…guard.delaySeconds` (60) seconds later; with it off the run cannot start a
+  disabled service and its last result says so). A guard installed before that fifth trigger reads *install it again*. Each run only sets
   the start type to Automatic (while `wslCare.windowsTime.setAutomaticStart` is on), starts the service — at most once per
   `…guard.minMinutesBetweenStarts` (10) minutes, so it never loops against software that stops it again — and runs
   `w32tm /resync /force`. Before anything runs, the exact elevated script (the task's XML inside it) opens in a read-only

@@ -75,6 +75,8 @@ test('install: the elevated script is SHOWN, then the modal; only its confirm pe
   assert.equal(decoded(h.requests[0]), h.shown[0], 'what was shown is byte for byte what runs elevated (own review o7)');
   assert.match(h.prompts[0] ?? '', new RegExp(`${INSTALL_CONFIRM.replace(/[()]/g, '\\$&')}$`));
   assert.ok((h.prompts[0] ?? '').includes(guardScript(OPTIONS)), 'the modal names the action verbatim');
+  assert.match(h.prompts[0] ?? '', /at startup, at logon, when the Windows Time service logs that it is stopping, when its start type is changed \(each 60 s after the event\), and every 4 h/, 'the modal names all five triggers — the start-type change too');
+  assert.match(h.prompts[0] ?? '', /sets the service to start Automatic when it does not already/, 'the start-type line is conditional, and the modal says so');
   assert.equal(h.store.get(PENDING_KEY), undefined, 'an answered run clears the pending record');
   assert.equal(h.reports[0]?.failed, false);
 });

@@ -95,8 +95,17 @@ test('disabled, unreadable, unknown and a failing last run each say so', () => {
   assert.equal(viewOf(parseGuardAnswer(presentAnswer({ lastResult: '20' }))).level, 'ok', 'rate-limited is the guard working, not failing');
 });
 
-test('a disabled stop-event channel is named on the line (gemini g3: reported, never changed)', () => {
-  assert.match(viewOf(parseGuardAnswer(presentAnswer({ channel: 'disabled' }))).line, /stop event is not logged on this machine, so only the timed runs act$/);
+test('a guard installed by the previous version — four triggers, no start-type one — reads as "install it again", never as current', () => {
+  const fourTriggers = guardSummary(OPTIONS).filter((l) => !l.includes('EventID=7040'));
+  assert.equal(fourTriggers.length, guardSummary(OPTIONS).length - 1, 'the current summary carries exactly one start-type trigger line');
+  const view = viewOf(parseGuardAnswer(presentAnswer({ summary: fourTriggers })));
+  assert.match(view.line, /installed, but not as the current settings would install it .* install it again to update it$/);
+  assert.equal(view.level, 'warn');
+  assert.deepEqual(view.buttons.map((b) => b.id), ['installWindowsTimeGuard', 'removeWindowsTimeGuard']);
+});
+
+test('a disabled stop-event channel is named on the line (gemini g3: reported, never changed) — a start-type change is still caught', () => {
+  assert.match(viewOf(parseGuardAnswer(presentAnswer({ channel: 'disabled' }))).line, /stop event is not logged on this machine, so a stop is caught by the timed, boot and logon runs only$/);
   assert.doesNotMatch(viewOf(parseGuardAnswer(presentAnswer())).line, /not logged/);
 });
 
