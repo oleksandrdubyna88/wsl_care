@@ -203,7 +203,10 @@ Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='Microsoft-Window
 Get-WinEvent -FilterHashtable @{LogName='System'; ProviderName='EventLog','User32','Microsoft-Windows-WER-SystemErrorReporting'}
 Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Time-Service/Operational'; Id=257,258,261,266}
 Get-WinEvent -LogName 'Microsoft-Windows-Application-Experience/Program-Telemetry'                   # 500/505 per process start
+# FilterHashtable bounds are LOCAL DateTimes: give the window in UTC (as stamped) and convert
+$f = [DateTime]::Parse('2026-10-08T05:57:00Z').ToLocalTime(); $t = [DateTime]::Parse('2026-10-08T06:01:00Z').ToLocalTime()
 Get-WinEvent -FilterHashtable @{LogName='Windows PowerShell'; StartTime=$f; EndTime=$t}               # 400 HostApplication
+# the second window was 2026-10-08T09:47:00Z .. 09:51:30Z; it also holds the first boot's events at those true times
 Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-Kernel-Boot/Operational'; Id=85}           # one per boot
 Get-CimInstance Win32_ReliabilityRecords                                                              # 6008 / 1001 history
 Get-ItemProperty HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation
