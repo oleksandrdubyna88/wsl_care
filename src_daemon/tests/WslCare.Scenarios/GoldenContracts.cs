@@ -86,6 +86,7 @@ internal static partial class GoldenContracts
         new("**.sampleMilliseconds", "how long the fast sample took", _ => 0),
         new("**.ageSeconds", "the age of a slow part, the folder sample or a carried verdict at the time of the answer", AgeSeconds),
         new("**.ageSeconds.value", "a process's age is now minus its start", _ => 0),
+        new("**.cpuIntervalSeconds.value", "an MCP server's CPU window is the LONGER of the configured second and the real wait (plan E14 S1), which a loaded runner stretches", _ => 1),
         new("**.evaluatedAt", "when a verdict was evaluated (this sample, or the end of the full run)", _ => FixedInstant),
         new("**.runId", "a run's id is its start instant and the CLI's pid", _ => FixedRunId),
         new("checkedAt", "the instant doctor answered", _ => FixedInstant),

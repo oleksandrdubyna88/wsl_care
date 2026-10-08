@@ -377,7 +377,8 @@ public static class CollectRun
         var since = newestFirst.FirstOrDefault()?.StartedAt ?? started - DefaultWindow;
         var last = LastFullRun.FromRecords(newestFirst, started);
         var sample = c.Probe.Sample(cancellationToken);
-        var mcp = await Mcp.McpSampling.SampleAsync(c.Paths, c.Files, c.Clock, c.Wait, sample, c.Loaded.Config, cancellationToken).ConfigureAwait(false);
+        var ledger = Mcp.McpCpuLedgerPlace.ForCollect(c.Paths, mayRecord, $"{ReadOnlyNote}: the MCP servers' CPU is measured across the window");
+        var mcp = await Mcp.McpSampling.SampleAsync(c.Paths, c.Files, c.Clock, c.Wait, ledger, sample, c.Loaded.Config, cancellationToken).ConfigureAwait(false);
         var health = await new HealthCollector(c.Commands, c.Files, c.Paths, c.Clock).CollectAsync(since, cancellationToken).ConfigureAwait(false);
         var folders = c.Paths is LinuxHostPaths linux && FolderSizes.Due(last.Folders, started)
             ? await new FolderSizes(c.Files, c.Commands, c.Clock).MeasureAsync(linux, cancellationToken).ConfigureAwait(false)

@@ -23,13 +23,6 @@ public sealed record AgentCpuFile(int SchemaVersion, string BootId, IReadOnlyLis
     public static readonly AgentCpuFile Empty = new(Core.SchemaVersion.Current, string.Empty, []);
 }
 
-/// <summary>An instant on both clocks: the wall clock a person reads, and the system's monotonic clock that no step moves.</summary>
-public readonly record struct SampleTime(DateTimeOffset Wall, long MonotonicMs)
-{
-    /// <summary>Now, on <paramref name="clock"/>: its wall clock and its timestamp (the system's monotonic clock on Linux).</summary>
-    public static SampleTime Of(TimeProvider clock) => new(clock.GetUtcNow(), (long)clock.GetElapsedTime(0, clock.GetTimestamp()).TotalMilliseconds);
-}
-
 /// <summary>
 /// "No CPU for N hours", MEASURED (plan §15q E7.S2b item 3): every root run records, for each AI-agent process of a non-root
 /// account, its cumulative CPU ticks by identity — <c>(pid, boot_id, start ticks)</c>, <c>/proc/&lt;pid&gt;/stat</c> fields 22
@@ -126,10 +119,6 @@ public static class AgentCpuHistory
         }
     }
 
-    /// <summary>This boot's id (<c>/proc/sys/kernel/random/boot_id</c>, under the layout's <c>/proc</c>); empty when unknown.</summary>
-    public static string BootId(LinuxHostPaths paths, IFileSystem files) =>
-        ProcText.Read(files, $"{paths.ProcRoot}/sys/kernel/random/boot_id").ValueOr(string.Empty).Trim();
-
     /// <summary>The AI-agent processes of non-root accounts in <paramref name="processes"/>, sampled from <c>/proc</c> now.</summary>
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
         [.. processes
@@ -141,7 +130,7 @@ public static class AgentCpuHistory
     /// <summary>One root run's record (the timer's full run): sample, merge, write. Empty when written.</summary>
     public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at)
     {
-        var boot = BootId(paths, files);
+        var boot = BootIdentity.Read(paths, files);
         return boot.Length == 0
             ? "the boot id cannot be read; the AI-agent CPU history is not recorded"
             : Write(paths, files, Next(Read(paths, files), boot, Sample(paths, files, processes), at));

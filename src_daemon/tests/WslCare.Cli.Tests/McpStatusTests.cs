@@ -54,7 +54,10 @@ public sealed class McpStatusTests
         instance.Kind.Should().Be("starting", "no CPU, and the capture was taken about 95 s after boot — younger than the 10-minute idle minimum");
         instance.Activity.Available.Should().BeFalse("the sandbox home holds no coai-mcp log");
         mcp.Servers!.Single().Should().Match<McpServerReport>(s => s.Name == "coai-mcp" && s.StartsBasis == "logNames" && s.Starts.Value == 0);
-        waited.Should().Be(TimeSpan.FromMilliseconds(1000), "status waited the default CPU window because an instance runs");
+        waited.Should().Be(TimeSpan.FromMilliseconds(1000), "status waited the default CPU window because an instance has no baseline");
+        instance.CpuBasis.Should().Be("window", "a first sighting is measured across the window (plan E14 S1)");
+        mcp.CpuBaseline!.Recorded.Should().BeFalse("the captured tree has no boot id — and that is what keeps status from writing a ledger into the checked-in fixture");
+        mcp.CpuBaseline.Reason.Should().Contain("boot id");
         report.Verdicts!.Where(v => v.Id.StartsWith("mcp.", StringComparison.Ordinal)).Select(v => (v.Id, v.Level, v.Basis!.Source))
             .Should().Equal((McpVerdicts.Instances, Level.Ok, VerdictSource.Sample), (McpVerdicts.Cpu, Level.Ok, VerdictSource.Sample), (McpVerdicts.Starts, Level.Ok, VerdictSource.Sample));
         report.Capabilities.Should().Contain(Capabilities.StatusMcpServers);
@@ -78,7 +81,7 @@ public sealed class McpStatusTests
         var sample = new Core.Collectors.ProbeSample(Core.Hosting.HostSide.Windows, ProcfsFixture.CapturedAt, TimeSpan.Zero, Core.Collectors.Reading.Missing<Core.Collectors.VmSample>("windows"), Core.Collectors.Reading.Missing<Core.Collectors.HostSample>("test"));
         var defaults = Core.Config.ConfigLoader.Load([(Core.Config.ConfigLoader.DefaultsFile, new Core.Files.FileReadResult.Content(Core.Config.ConfigLoader.EmbeddedDefaults()))]).Config;
 
-        var result = await McpSampling.SampleAsync(paths, new Core.Files.PhysicalFileSystem(paths), new FixedTimeProvider(), (_, _) => Task.CompletedTask, sample, defaults, CancellationToken.None);
+        var result = await McpSampling.SampleAsync(paths, new Core.Files.PhysicalFileSystem(paths), new FixedTimeProvider(), (_, _) => Task.CompletedTask, McpCpuLedgerPlace.ForStatus(paths, root: false), sample, defaults, CancellationToken.None);
 
         McpServersReport.From(result).Should().Be(McpServersReport.From(Core.Collectors.Reading.Missing<McpSample>(McpServerCollector.WindowsNotYet)));
         result.ReasonOrEmpty.Should().Contain("E11");

@@ -2409,9 +2409,11 @@ flowchart LR
 
 ## MCP server instances of the AI agents (E7.S2d, 2026-10-06, owner request)
 
-A read-only collector over the one process snapshot and the `status --json` `mcpServers` block (also in every run detail),
-three verdicts (`mcp.instances`, `mcp.cpu`, `mcp.starts`) and the `mcpServers.*` keys; the Windows binary answers it
-unavailable (E11). The module, its diagram, entities, flows and residuals: [module_mcp_servers.md](module_mcp_servers.md).
+A collector over the one process snapshot — read-only towards the servers — and the `status --json` `mcpServers` block (also
+in every run detail), three verdicts (`mcp.instances`, `mcp.cpu`, `mcp.starts`) and the `mcpServers.*` keys; the Windows
+binary answers it unavailable (E11). Since E14 S1 (2026-10-07) an instance's CPU is measured over the interval since its
+previous sample from a per-caller ledger (`mcp-cpu.json`: root's under `/var/lib/wsl-care`, an unprivileged `status`'s under
+`$XDG_STATE_HOME/wsl-care`), the 1 s window only a fallback. The module, its diagram, entities, flows and residuals: [module_mcp_servers.md](module_mcp_servers.md).
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -2868,7 +2870,7 @@ flowchart LR
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)); the Windows Time guard — which clock is wrong, A16 never stepping to a wrong host (2026-10-08, [module_daemon.md](module_daemon.md) § *The Windows Time guard*) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)), their CPU over the interval since the previous sample (E14 S1, [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)); the Windows Time guard — which clock is wrong, A16 never stepping to a wrong host (2026-10-08, [module_daemon.md](module_daemon.md) § *The Windows Time guard*) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3); the status verdicts and the golden contracts' writer and drift test (E5.S0) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |

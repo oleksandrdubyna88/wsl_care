@@ -23,8 +23,11 @@ internal static class StatusCommand
     public static int Run(Request.Status request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, CancellationToken cancellationToken)
     {
         var sample = host.Probe.Sample(cancellationToken);
-        // A console program has no synchronisation context; the MCP servers' CPU window is the one wait status has (plan §15q E7.S2d).
-        var mcp = McpSampling.SampleAsync(host.Paths, host.Files, host.Clock, host.Wait, sample, loaded.Config, cancellationToken).GetAwaiter().GetResult();
+        // A console program has no synchronisation context; the MCP servers' CPU window is the one wait status has (plan §15q E7.S2d),
+        // and only for an instance its own CPU ledger has no baseline of (plan E14 S1) — the one file status writes, in this account's
+        // own state folder; as root it writes nothing (review finding 1).
+        var ledger = McpCpuLedgerPlace.ForStatus(host.Paths, host.Privilege.IsRoot);
+        var mcp = McpSampling.SampleAsync(host.Paths, host.Files, host.Clock, host.Wait, ledger, sample, loaded.Config, cancellationToken).GetAwaiter().GetResult();
         var now = host.Clock.GetUtcNow();
         var history = RunHistory.Read(host.Paths, host.Files);
         var last = LastFullRun.From(history, now);
@@ -83,9 +86,19 @@ internal static class StatusText
     private static string McpServers(McpServersReport? mcp) => mcp switch
     {
         null => "mcp servers: not read",
-        { Available: true } => Invariant($"mcp servers: {mcp.Count} ({(mcp.Listed < mcp.Count ? Invariant($"of the {mcp.Listed} listed: ") : string.Empty)}{mcp.IdleCount} idle, {mcp.BusyWithoutActivityCount} busy without a log write), {Number(mcp.CpuCores!)} cores, {mcp.HeldBytes / BytesPerGibibyte:0.00} GiB; starts ") + string.Join(", ", mcp.Servers!.Select(s => Invariant($"{s.Name} {(s.Starts.Available ? Invariant($"{s.Starts.Value:0}") : "?")} in {s.StartsWindowMinutes} min"))),
+        { Available: true } => Invariant($"mcp servers: {mcp.Count} ({(mcp.Listed < mcp.Count ? Invariant($"of the {mcp.Listed} listed: ") : string.Empty)}{mcp.IdleCount} idle, {mcp.BusyWithoutActivityCount} busy without a log write), {Number(mcp.CpuCores!)} cores{CpuBases(mcp)}, {mcp.HeldBytes / BytesPerGibibyte:0.00} GiB; starts ") + string.Join(", ", mcp.Servers!.Select(s => Invariant($"{s.Name} {(s.Starts.Available ? Invariant($"{s.Starts.Value:0}") : "?")} in {s.StartsWindowMinutes} min"))),
         _ => $"mcp servers: unavailable ({mcp.Reason})",
     };
+
+    /// <summary>What the CPU figures were measured over (plan E14 S1): <c> (3 over their last interval, 1 over a 1000 ms window)</c>;
+    /// empty when nothing was measured.</summary>
+    private static string CpuBases(McpServersReport mcp)
+    {
+        var instances = mcp.Instances ?? [];
+        var interval = instances.Count(i => i.CpuBasis == McpInstanceReport.BasisName(McpCpuBasis.Interval));
+        var window = instances.Count(i => i.CpuBasis == McpInstanceReport.BasisName(McpCpuBasis.Window));
+        return interval + window == 0 ? string.Empty : Invariant($" ({interval} over their last interval, {window} over a {mcp.WindowMilliseconds} ms window)");
+    }
 
     /// <summary><c>running: none</c>, or the state and what it means (<c>running: wedged - run … is wedged: …</c>).</summary>
     private static string Running(RunningReport? running) => running switch

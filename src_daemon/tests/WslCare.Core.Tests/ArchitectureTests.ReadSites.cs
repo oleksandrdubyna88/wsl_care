@@ -61,7 +61,7 @@ public sealed partial class ArchitectureTests
         [ReadClass.WindowsProfile] = ["ReadNoFollowFile"],
         [ReadClass.Named] = ["ReadRegularFile"],
         [ReadClass.TargetHomeMetadata] = ["MeasureTree", "WalkTree", "ListDirectories", "ListFiles", "ListEntries"],
-        [ReadClass.OwnUnprivileged] = ["ReadRegularFile"],
+        [ReadClass.OwnUnprivileged] = ["ReadRegularFile", "ReadUserFile"],
     };
 
     /// <summary>Every read site of the product: file (relative to the source root) → call → (how many, whose file).</summary>
@@ -91,6 +91,12 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Collectors/ContainerCgroups.cs"] = new() { ["ListDirectories"] = (2, ReadClass.System), ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/Mcp/McpServerCollector.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Mcp/McpRunLogs.cs"] = new() { ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
+        // Plan E14 S1: the MCP CPU ledger — root's, read as root's state; an unprivileged status's own, owner-checked with no link
+        // (review finding 2: ReadStateFile trusts root's files only).
+        // The orphan sweep (coai plan round finding 3) lists the ledger's own folder — names only, nothing opened, in either
+        // place (root's state folder or this account's), so the stricter metadata class holds for both.
+        ["WslCare.Core/Mcp/McpCpuLedger.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState), ["ReadUserFile"] = (1, ReadClass.OwnUnprivileged), ["ListFiles"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Collectors/Procfs/SampleTime.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/ProcessCollector.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ProcText.Read"] = (5, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/Procfs/ProcText.cs"] = new() { ["ReadFile"] = (1, ReadClass.System) },
         ["WslCare.Core/Config/ConfigLoader.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.ConfigLayer), ["ReadUserFile"] = (1, ReadClass.ConfigLayer) },
@@ -119,7 +125,7 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Actions/Memory/MemoryNow.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/Procfs/PidSamples.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/Actions/Suspects/AgentOrphans.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
-        ["WslCare.Core/Actions/Suspects/AgentCpuHistory.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState), ["ProcText.Read"] = (1, ReadClass.System) },
+        ["WslCare.Core/Actions/Suspects/AgentCpuHistory.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         ["WslCare.Core/Collectors/LinuxProbe.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/MemoryCollector.cs"] = new() { ["ProcText.Read"] = (3, ReadClass.System) },
         ["WslCare.Core/Config/UserLayerTrusts.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },

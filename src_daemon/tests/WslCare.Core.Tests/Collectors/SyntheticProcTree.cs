@@ -28,6 +28,17 @@ internal sealed class SyntheticProcTree : IDisposable
         _root.File("proc/stat", $"cpu  1 2 3 4\nbtime {BootUnixSeconds}\n");
         _root.File("etc/passwd", "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\n");
         Directory.CreateDirectory(_root.Under("sys/fs/cgroup"));
+        BootId(FirstBootId);
+    }
+
+    /// <summary>The boot id every tree starts in (a pid names one process only within one boot — plan E14 S1).</summary>
+    public const string FirstBootId = "6d1c1c5e-0000-4000-8000-000000000001";
+
+    /// <summary>Rewrites <c>/proc/sys/kernel/random/boot_id</c> — the machine rebooted.</summary>
+    public SyntheticProcTree BootId(string id)
+    {
+        _root.File("proc/sys/kernel/random/boot_id", id + "\n");
+        return this;
     }
 
     public LinuxHostPaths Paths { get; }

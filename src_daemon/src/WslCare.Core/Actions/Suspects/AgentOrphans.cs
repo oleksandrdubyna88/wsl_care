@@ -106,7 +106,7 @@ public sealed class AgentOrphans : ICleanupAction, IBoundToShownList
             return ActionPreview.Unavailable(what, "the process table could not be read");
         }
 
-        var boot = AgentCpuHistory.BootId(linux, context.Files);
+        var boot = BootIdentity.Read(linux, context.Files);
         if (boot.Length == 0)
         {
             return ActionPreview.Unavailable(what, "the boot id cannot be read, so no process's idle time can be told");

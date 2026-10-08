@@ -2383,6 +2383,11 @@
         "activity": {
           "available": false,
           "reason": "no log file of pid 4242 in /golden-root/home/user/.local/share/coai-mcp/logs"
+        },
+        "cpuBasis": "window",
+        "cpuIntervalSeconds": {
+          "available": true,
+          "value": 1
         }
       },
       {
@@ -2409,8 +2414,18 @@
         "activity": {
           "available": false,
           "reason": "no log file of pid 4242 in /golden-root/home/user/.local/share/coai-mcp/logs"
+        },
+        "cpuBasis": "window",
+        "cpuIntervalSeconds": {
+          "available": true,
+          "value": 1
         }
       }
-    ]
+    ],
+    "cpuBaseline": {
+      "file": "/golden-root/home/user/.local/state/wsl-care/mcp-cpu.json",
+      "recorded": false,
+      "reason": "the boot id cannot be read, so no reading can name its process across samples"
+    }
   }
 }

@@ -2297,19 +2297,18 @@ across the window; the block answers unavailable on Windows until then.
       section; this subsection's deviations recorded when built.
 - [ ] Daemon suites green on Windows and WSL (normal user, `nice -n 19`, one at a time); `dotnet format --verify-no-changes`.
 
-##### Open questions for the owner
+##### Owner decisions (2026-10-08, replacing the open questions Q-M1–Q-M5)
 
-- **Q-M1 — a stop action.** Should wsl-care offer a button (never the timer) that SIGTERMs MCP servers that are
-  `busyWithoutActivity` or `idle` and orphaned, by pid AND start as A11/A18 do? Not built; the agent restarts a killed server
-  on its next tool call, so the value is unclear.
-- **Q-M2 — open server names.** `mcpServers.watched` is closed over the catalogue (the E7.S0 B1 rule). Should a user be able
-  to name ANY program as an MCP server (a new list-with-a-shape key kind, a contract change)?
-- **Q-M3 — the orphan rule.** An MCP server whose agent died is counted (`orphaned: true`) — keep, or leave it out as the
-  literal "parent chain reaches an agent" reads?
-- **Q-M4 — the defaults** above (2 %, 10 min, 12 instances, 1 core, 10 starts / 10 min).
-- **Q-M5 — the status budget** (added at build): with an MCP server running, `status` takes 2 s + the CPU window (1 s by default,
-  machine-only, 200–5 000 ms). Keep, lower the default window (500 ms halves the resolution to 2 % per tick — at the idle
-  line), or measure the CPU only in the full run (a 4-hour-old figure, which misses a 10-minute storm)?
+- **Q-M1 — a stop action: YES, and automatic.** A STOP button for idle MCP servers AND a setting that does it
+  automatically; "idle" is a setting (idle for more than N minutes, default **60**, configurable); the automatic switch is a
+  setting, **default ON**. Built as [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S2 (A19).
+- **Q-M2 — open server names: YES.** A user may add their own programs to the watched list (a configuration list,
+  validated) — S2's companion change of `mcpServers.watched` beyond the catalogue.
+- **Q-M3 — the orphan rule: keep.** An MCP server whose agent died stays counted (`orphaned: true`) — and is a stop
+  candidate for A19.
+- **Q-M4 — the defaults are right** (2 %, 10 min, 12 instances, 1 core, 10 starts / 10 min), and every one stays a setting.
+- **Q-M5 — the status budget: keep** the extra CPU wait in `status` (since E14 S1 it is paid only for an instance with no
+  baseline).
 
 ##### Plan round (coai session `7f843e99`, 2026-10-06)
 
@@ -2437,6 +2436,15 @@ broken and seen red again (`research/module_tests.md` § *MCP server instances*)
 | 5 (codex, Minor) | a new log layout would fall back to the live count silently | **Fixed** — an exhaustive match on `McpLogLayout` in the summary and the log reader (refactor, no behaviour) |
 | 6 (codex, Major) | a pid reused between the snapshot and the FIRST CPU read reports another process's CPU | **Fixed** — the snapshot keeps each process's start ticks (`ProcessEntry.StartTicks`) and the first read must match them. RED: *Expected instance.CpuPercent.IsAvailable to be False … but found True*; teeth: the arm removed, red again |
 | 7 (codex, Minor) | a stderr progress line | **Rejected** a third time — the earlier reason stands |
+
+##### Continued by plan E14 (2026-10-07)
+
+Measured on the evening of 2026-10-07 ([2026-10-07_evening_overload.md](../research/2026-10-07_evening_overload.md) M1–M3):
+Decided 5's one window cannot see a server that bursts about once a minute — daemon 0.2.0 reported eight burning servers
+`idle` at 0 %. [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S1 measures each instance over the interval
+since its previous sample (a per-caller CPU ledger), the window only as the fallback — which amends Decided 8's "status
+writes no state": an unprivileged `status` now keeps that one ledger in its own `$XDG_STATE_HOME/wsl-care`, never the root
+state directory. Q-M1 (a stop action) is that plan's S2 (A19); the Windows half of the Residuals is its S7, inside E11/E12.
 
 #### Stories
 
