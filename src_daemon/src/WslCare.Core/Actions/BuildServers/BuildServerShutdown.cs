@@ -34,7 +34,7 @@ public sealed class BuildServerShutdown : ICleanupAction
     /// history, no boot id) — by the timer's CPU history. Any one holds the timer.</summary>
     public const string BusyServersFact = "busyServers";
 
-    public const string Family = "dotnet-build-servers";
+    public const string Family = ProcessFamilies.DotnetBuildServers;
 
     public static readonly CommandTemplate Shutdown = new(
         "dotnet-build-server-shutdown",
@@ -101,18 +101,10 @@ public sealed class BuildServerShutdown : ICleanupAction
     /// <summary>How many of <paramref name="servers"/> are NOT measured idle for <paramref name="window"/> by the timer's CPU
     /// history (E14 S3): a server that used CPU within it, one the history does not hold yet, one gone or another process —
     /// and every one when the boot id cannot be read. The history is merged with now in memory only: a preview writes no state.</summary>
-    private static int Busy(ActionContext context, IReadOnlyList<ProcessEntry> servers, TimeSpan window)
-    {
-        if (context.Paths is not LinuxHostPaths linux || BootIdentity.Read(linux, context.Files) is not { Length: > 0 } boot)
-        {
-            return servers.Count;
-        }
-
-        var at = SampleTime.Of(context.Clock);
-        var samples = servers.Select(s => PidSamples.Read(context.Files, linux, s.Pid)).OfType<PidSample>().Where(s => s.Uid != 0).ToList();
-        var history = Suspects.AgentCpuHistory.Next(Suspects.AgentCpuHistory.Read(linux, context.Files), boot, samples, at);
-        return servers.Count - samples.Count(s => Suspects.AgentCpuHistory.IdleFor(history, boot, s, at) >= window);
-    }
+    private static int Busy(ActionContext context, IReadOnlyList<ProcessEntry> servers, TimeSpan window) =>
+        servers.Count == 0 || context.Paths is not LinuxHostPaths linux
+            ? servers.Count
+            : servers.Count - Suspects.AgentCpuHistory.IdleNow(linux, context.Files, [.. servers.Select(s => s.Pid)], SampleTime.Of(context.Clock)).Count(idle => idle >= window);
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {

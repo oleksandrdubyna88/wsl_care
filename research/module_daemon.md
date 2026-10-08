@@ -95,13 +95,31 @@ has none.
 | the full run, `doctor`, `events follow` | *The full run, `doctor` and the events follower (E2.S3)* |
 | the engine, the command policy, `act` | *The action engine, the command policy and `act` (E3.S1)* |
 | the irreversible deletions | *The irreversible deletions (E3.S2)* |
-| memory / build-server / trim / clock actions, the timer pass, `logs` / `runs` | *The memory, build-server, trim and clock actions, the timer pass, `logs` / `runs` (E3.S3)*, *E3 review fixes (2026-10-03)* |
+| memory / build-server / trim / clock actions, the timer pass, `logs` / `runs` | *The memory, build-server, trim and clock actions, the timer pass, `logs` / `runs` (E3.S3)*, *E3 review fixes (2026-10-03)*; since E14 S3 (2026-10-08) A3's TIMER also waits until every build server is measured idle for `buildServers.idleMinutes` (the section below), and the C# language server is a process family of its own (`language-servers`, for A11) — architecture.md's A3 row and *A11 — suspects* |
 | installer and units; release | *The installer and the units (E4.S1)*, *The release pipeline (E4.S2)* |
 | the read contract, detached runs | *The verdicts in `status`, `productVersion` and the golden contracts (E5.S0)*; *The daemon read contract (E6.S0)* and *Detached runs, the request, the stop (E6.S1)* now in [architecture-daemon-e6.md](architecture-daemon-e6.md) |
 | configuration trust, AI agents, A18, numbers | *The configuration trust (E7.S0, 2026-10-05, plan §15q R1)*, *The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)* with its *Manual agents and `agents probe` (E7.S2, 2026-10-05, plan §15q D4, R2)*, *A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)*, *Numbers are configuration (standing convention, owner rule 2026-10-05)* |
 | the MCP server instances of the AI agents (`Core/Mcp/`, `status --json` `mcpServers`) | [module_mcp_servers.md](module_mcp_servers.md) (E7.S2d, 2026-10-06/07); architecture.md *MCP server instances of the AI agents* points there |
 | tests and the harness | [module_tests.md](module_tests.md), architecture.md *The scenario harness (E1.S3)* |
 | the Windows Time guard (2026-10-08) | the section below; the plan [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), the incident [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) |
+
+## A3's idle gate (E14 S3, 2026-10-08)
+
+```mermaid
+flowchart LR
+    record["timer full run<br/>ActionEngine.RecordAgentCpu"] -- "dotnet-build-servers by identity<br/>(beside ai-agents and MCP servers)" --> history[("agent-cpu.json<br/>AgentCpuHistory")]
+    history -- "AgentCpuHistory.IdleNow<br/>(merged with now, in memory)" --> a3["A3 BuildServerShutdown<br/>busyServers fact"]
+    a3 -- "an old server (buildServers.idleHours)<br/>AND busyServers = 0 (buildServers.idleMinutes)" --> trigger["the timer's trigger"]
+    trigger --> cmd["runuser … dotnet build-server shutdown<br/>(stops every server at once)"]
+    button["act A3 (a button)"] -- "held only by a running dotnet build" --> cmd
+```
+
+`dotnet build-server shutdown` has no per-server choice, so idleness decides only WHEN the timer runs it. A server that worked
+within `buildServers.idleMinutes` (default 60, higher is safer), or that the history does not hold yet (one sighting, another
+boot, a reused pid), or every server when the boot id cannot be read, holds the timer. On the 4-hour timer the window is a
+floor: a burst anywhere in the interval waits for the next pass. Per-process reaping of idle ORPHANED build servers is A11's
+(its default families include `dotnet-build-servers`; A11 is off by default — owner question Q15 of the E14 plan). The C#
+language server is its own family, `language-servers`, so A11 can name it without the daemonised VS Code server.
 
 ## The Windows Time guard (PLAN_windows_time_guard.md, 2026-10-08)
 

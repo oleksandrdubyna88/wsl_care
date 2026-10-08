@@ -101,6 +101,17 @@ public sealed class SuspectTerminationTests : IDisposable
         preview.Targets.Select(t => t.Name).Should().Equal("30 p30");
     }
 
+    /// <summary>coai code round 2026-10-08 (session b0d57159), findings 3, 6, 7: the language server run by <c>dotnet</c> —
+    /// <c>dotnet exec</c> with its options before the assembly — is the same family; a process that only NAMES the server among
+    /// later arguments is not.</summary>
+    [Theory]
+    [InlineData("/home/me/.vscode-server/extensions/x/.roslyn/Microsoft.CodeAnalysis.LanguageServer --logLevel Information", "language-servers")]
+    [InlineData("/usr/share/dotnet/dotnet /home/me/.vscode-server/extensions/x/.roslyn/Microsoft.CodeAnalysis.LanguageServer.dll --logLevel Information", "language-servers")]
+    [InlineData("dotnet exec --runtimeconfig /x/a.runtimeconfig.json --depsfile /x/a.deps.json /home/me/.vscode-server/extensions/x/.roslyn/Microsoft.CodeAnalysis.LanguageServer.dll --stdio", "language-servers")]
+    [InlineData("/home/me/.vscode-server/bin/abc/node /home/me/.vscode-server/extensions/x/dist/extension.js --server /home/me/.vscode-server/extensions/x/.roslyn/Microsoft.CodeAnalysis.LanguageServer", "vscode-server")]
+    public void The_language_server_family_is_the_program_or_the_assembly_dotnet_runs_never_a_mention(string commandLine, string family) =>
+        ProcessFamilies.Of(commandLine.Split(' '), "x").Should().Be(family);
+
     [Fact]
     public async Task A_process_that_used_cpu_in_the_window_is_not_a_suspect_and_one_that_stayed_idle_is_signalled_by_pid_and_start()
     {

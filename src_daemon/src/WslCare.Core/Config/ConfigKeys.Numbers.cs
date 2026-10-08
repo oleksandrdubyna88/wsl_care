@@ -513,10 +513,10 @@ public static partial class ConfigKeys
 
     public static partial class AgentCpu
     {
-        /// <summary>A18's CPU history: the most process identities kept. Default 512.</summary>
+        /// <summary>The timer's CPU history (A18, A19, A3's timer): the most process identities kept. Default 512.</summary>
         public static readonly ConfigKey.IntKey MaxEntries = new("agentCpu.maxEntries", 16, 512) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
-        /// <summary>A18's CPU history: the most bytes read (a full 512-entry history with both clocks is ~157 KiB, review A-M4). Default 262144.</summary>
+        /// <summary>The timer's CPU history (A18, A19, A3's timer): the most bytes read (a full 512-entry history with both clocks is ~157 KiB, review A-M4). Default 262144.</summary>
         public static readonly ConfigKey.IntKey MaxBytes = new("agentCpu.maxBytes", 16384, 262144) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 

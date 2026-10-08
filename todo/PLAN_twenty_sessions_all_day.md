@@ -413,7 +413,8 @@ Reading the code first changed two things.
    `processes.families` that are older than `processes.idleOlderThanHours` and used no CPU in a measured window, by pid AND
    start, never one with a terminal (`Actions/Suspects/SuspectTermination.cs`). `vscode-server` — which matches
    `Microsoft.CodeAnalysis.LanguageServer` (`Collectors/ProcessFamilies.cs:69`) — is a choosable family. A language server
-   whose VS Code server went is re-parented, so it is an A11 suspect once the user lists `vscode-server`. Reuse first: no
+   whose VS Code server went is re-parented, so it is an A11 suspect once the user lists its family (as built: its OWN family
+   `language-servers`, never `vscode-server` — plan-round finding 5 below). Reuse first: no
    second signal path; S3 adds a test that A11 picks such a language server and leaves one whose server lives, and the
    default (A11 off, `vscode-server` not listed) stays the owner's choice (Q14).
 3. **Measure first is owed, not done:** the machine-load rule of 2026-10-07 forbids WSL commands in this session, so the
@@ -424,7 +425,7 @@ Reading the code first changed two things.
 **RED (S3):** `The_timer_does_not_shut_build_servers_down_while_one_used_cpu_within_the_idle_window`,
 `The_timer_shuts_them_down_when_every_server_is_idle_for_the_window_and_one_is_old_enough`,
 `A_server_with_no_history_holds_the_timer`, `A_button_run_is_not_held_by_idleness_only_by_a_build`,
-`The_timer_records_build_servers_in_the_cpu_history`, `A11_ends_an_orphaned_idle_language_server_when_vscode_server_is_listed`,
+`The_timer_records_build_servers_in_the_cpu_history`, `A11_ends_an_orphaned_idle_language_server_when_language_servers_is_listed_and_never_the_vscode_server`,
 and the config/contract tests for `buildServers.idleMinutes`.
 
 #### S3 as built (2026-10-08)
@@ -446,6 +447,24 @@ and the config/contract tests for `buildServers.idleMinutes`.
   - `ProcessFamilies` gained `language-servers`, which is choosable for A11 (`processes.families` closed list, contract regenerated). The captured tree's pid 6612 moves to it: status golden hand-edited (family count and held bytes, the Linux CI legs verify it).
   - A3's button run is unchanged.
 - **Not done:** the day-long measurement (S8). L7's busy servers are S4's.
+- **Code round** (same coai session, 8 of 8 reviewers): `proceed`, 10 findings.
+  - **Accepted:**
+    - (0) `module_daemon.md` describes A3's idle gate, with a diagram.
+    - (1) the build-server family name lives in `ProcessFamilies.DotnetBuildServers`, so the history no longer depends on the A3 action. This also ends the namespace cycle of finding 4.
+    - (3, 6, 7) the language server run as `dotnet exec [--option value]… …LanguageServer.dll` was missed, because only the first two words were matched. The rule now reads the whole argv, anchored at the program, so a process that only NAMES the server is still not one. RED first: *Expected … to be the same string, but they differ at index 0*. Green after; red again with the old head-only match.
+    - (5) one query, `AgentCpuHistory.IdleNow`, replaces A3's own sampling and merging.
+    - (8) no history read when no server runs. This is performance only, with nothing observable, so it has no test.
+  - **Rejected, with reasons:**
+    - (2) the cap at 10 times the stated load: it is a setting, and it fails safe (held).
+    - (4) moving the history class out of `Actions.Suspects`: the cycle is gone with finding 1, and a move is its own refactor.
+    - (9) renaming the `idleServers` fact: it is a wire name in every A3 run record since E3.S3.
+- **Own review** (one reviewer on Opus, read-only): nothing serious. It confirmed:
+  - the `Busy` logic, the trigger direction and the recording order (before the pass);
+  - that A18 and A19 are unaffected;
+  - the golden arithmetic (counts 51, held bytes 9 449 013 248);
+  - that nothing depended on the language server being `vscode-server`.
+  
+  Its minor items are done: the RED list's test name, item 2's pointer to finding 5, the history descriptions widened (architecture's A18 diagram and text, `AgentCpuHistory`, the `agentCpu.*` keys), and two pinned cases: the `.dll` launch form, and an unreadable boot id holding the timer.
 
 ### S4 — CPU fairness that works inside WSL
 

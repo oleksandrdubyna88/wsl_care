@@ -2382,7 +2382,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    timer["timer full run<br/>ActionEngine.RecordAgentCpu"] -- "ai-agents processes of non-root accounts:<br/>pid · start ticks · CPU ticks (ProcText)" --> history["/var/lib/wsl-care/agent-cpu.json<br/>AgentCpuHistory (root state, 128 KiB, 512 ids)"]
+    timer["timer full run<br/>ActionEngine.RecordAgentCpu"] -- "ai-agents, watched MCP servers (E14 S2a)<br/>and dotnet-build-servers (E14 S3) of non-root accounts:<br/>pid · start ticks · CPU ticks (ProcText)" --> history["/var/lib/wsl-care/agent-cpu.json<br/>AgentCpuHistory (root state, 128 KiB, 512 ids)"]
     button["act A18 --preview / --confirm<br/>(a button only)"] --> a18["AgentOrphans"]
     history -- "ReadStateFile" --> a18
     a18 -- "SessionGlob over the agent's confirmed layout" --> sessions["no session written in N h"]
@@ -2392,7 +2392,7 @@ flowchart LR
 
 - **Button only, by structure:** `ActionId.Timer` is `Auto(key)` or `ButtonOnly(why)`; A18 has no `auto.*` key, the timer pass
   selects only `Auto` ids, and the engine's timer gate skips a button-only id asked directly; its trigger never fires.
-- **Idle is measured:** every TIMER full run records each `ai-agents` process of a non-root account by identity — pid, the boot
+- **Idle is measured:** every TIMER full run records each `ai-agents` process of a non-root account (since E14 also each watched MCP server, for A19, and each `dotnet-build-servers` process, for A3's timer) by identity — pid, the boot
   id, start ticks (stat field 22) — with its CPU ticks and since when they have not changed (`AgentCpuHistory.Next`: a new
   identity, a moved tick, another start or another boot starts the clock now; dead identities are pruned). A process is
   eligible only when `now − unchanged since ≥ processes.aiAgentsIdleHours` (default 4, 1–168, safe higher). A preview writes

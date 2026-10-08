@@ -144,6 +144,22 @@ public sealed class BuildServerIdleTests : IDisposable
         ConfigKeys.BuildServers.IdleMinutes.Trust.Safe.Should().Be(SafeDirection.Higher, "a longer window stops less");
     }
 
+    /// <summary>Own code review 2026-10-08: without a boot id no process's idle time can be told, so every server is busy.</summary>
+    [Fact]
+    public async Task An_unreadable_boot_id_holds_the_timer_every_server_counting_as_busy()
+    {
+        Stat(10, cpuTicks: 500);
+        Record([Server(10)]);
+        _clock.Advance(TimeSpan.FromHours(2));
+        Record([Server(10)]);
+        File.Delete(_world.Sandbox.Paths.DistroPath("/proc/sys/kernel/random/boot_id"));
+
+        var (preview, trigger) = await Timer([Server(10)]);
+
+        preview.Facts[BuildServerShutdown.BusyServersFact].Should().Be(1);
+        trigger.Fired.Should().BeFalse();
+    }
+
     [Fact]
     public async Task A_button_run_is_not_held_by_idleness_only_by_a_build()
     {
