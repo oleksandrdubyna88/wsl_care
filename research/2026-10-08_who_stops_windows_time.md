@@ -48,23 +48,28 @@ how the process was found.
 | S5 | `C:\Windows\System32\SettingsHandlers_ForceSync.dll` — version resource and UTF-16 strings | *"System Settings Sync Time Handler Implementation"* (10.0.26100.8117); strings `ForceTimeSync %d`, `StartW32Time`, `SyncW32Time`, the `W32Time\Parameters` and `W32Time\Config` keys |
 | S6 | `C:\Windows\System32\SystemSettingsAdminFlows.exe` — its manifest and strings | `requestedExecutionLevel level="requireAdministrator"`, **`<autoElevate>true</autoElevate>`**; strings `ForceTimeSync`, `StartW32Time`, `SyncW32Time`, `w32time`, and the import **`ChangeServiceConfigW`** |
 | S7 | UAC policy (`HKLM\…\Policies\System`) | `EnableLUA 1`, `ConsentPromptBehaviorAdmin 5`, `PromptOnSecureDesktop 1` — an auto-elevating Windows binary is elevated **without a prompt** for an administrator |
-| S8 | PowerShell in the same seconds (`Windows PowerShell` 400/403 with `HostApplication`, `Microsoft-Windows-PowerShell/Operational` 40961) | engines start every ≈ 30 s (the agents' own probes: `[DateTime]::UtcNow …`, a `RealTimeIsUniversal` read, `Get-AppxPackage`, `Get-WinUserLanguageList`); **none** starts between 06:00:18.29 and 06:00:22, or between 09:50:26.6 and 09:50:42. No PowerShell 7 log exists. So the flips were not a `Set-Service` |
+| S8 | PowerShell in the same seconds (`Windows PowerShell` 400/403 with `HostApplication`, `Microsoft-Windows-PowerShell/Operational` 40961) | engines start every ≈ 30 s (the agents' own probes: `[DateTime]::UtcNow …`, a `RealTimeIsUniversal` read, `Get-AppxPackage`, `Get-WinUserLanguageList`); **none** starts between 06:00:18.29 and 06:00:22, or between 09:50:26.6 and 09:50:42. No PowerShell 7 log exists. So no NEW PowerShell ran a `Set-Service`; an elevated console already open, `sc.exe`, the Services console or another native program would leave no trace here |
 | S9 | what could not be read | the Security log (`UnauthorizedAccessException` — no process-creation 4688 to read); `Microsoft-Windows-TaskScheduler/Operational` is **disabled** (`IsEnabled False`), so task runs are not logged at all; no Sysmon. Tasks visible to the unelevated reader: none ran in those minutes (`Get-ScheduledTaskInfo` last-run times), with the trigger record's caveat that SYSTEM tasks in their own folders are not visible (its T21) |
 
-**Verdict on WHO changed the start type:** the Windows Settings app's **Sync now** (Time & language → Date & time) in the
-owner's session. The Settings handler for that button hands the work to `SystemSettingsAdminFlows.exe` (S5–S6), which
-elevates without a prompt on this UAC policy (S7), holds the only API that writes a 7040 (`ChangeServiceConfigW`), and runs
-exactly the observed sequence: start type → disabled (which stops a running service, W6), → demand start, start the service,
-an explicit resync (reason 0), and the +7 200 s step. **That flip is the REPAIR, not the fault** — every 2 h correction in the
-log record (W5, W6, S2; S3 consistent) is one, and each came AFTER the clock was already wrong.
+**Verdict on WHO changed the start type — strongly consistent with the Windows Settings app's Sync now** (Time & language →
+Date & time) in the owner's session, and not proven. The Settings handler for that button hands its work to
+`SystemSettingsAdminFlows.exe` (S5–S6), which elevates without a prompt on this UAC policy (S7) and carries the API that writes
+a 7040 (`ChangeServiceConfigW`) and the strings `StartW32Time`/`SyncW32Time`; a Settings start came 9–15 s before each of the
+three attributable corrections (S1, S2); and the observed sequence — start type → disabled, a stop of the running service (W6;
+a start-type change alone stops nothing, so the stop is a separate request), → demand start, a start, an explicit resync
+(reason 0), the +7 200 s step, all in under 2 s — is a repair flow. Whoever ran it, **that flip is the REPAIR, not the fault**:
+every 2 h correction in the log record (W5, W6, S2; S3 consistent) is one, and each came AFTER the clock was already wrong.
 
-**What this does not settle:** whether a person pressed the button or something opened that page and pressed it — nothing an
-unelevated reader can see records a UI click; the 06:00Z pair falls in the minute the incident record calls the owner's
-manual restart (its O8), and a plain `Start-Service` writes no 7040, so that minute was Sync now. The internal call order is
-inferred from the binaries' strings and imports plus the event sequence, not traced.
+**What this does not settle:** the binaries' strings and imports show what the Settings flow CAN do, not that it ran; no
+trace was taken (reproducing one Sync now under a process trace would show whether its sequence matches W3–W6 — capability,
+still not attribution). Not excluded by anything readable here: an elevated console already open, `sc.exe`/`net`/`w32tm` from
+a script, the Services console, another native tool in the owner's account (S8, S9). Whether a person or something else drove
+it is not recorded anywhere an unelevated reader can see. The 06:00Z pair falls in the minute the incident record calls the
+owner's manual restart (its O8); a plain `Start-Service` writes no 7040, so that minute was not only a `Start-Service`.
 
-**H1 (AMD) for the flips — ruled out.** The two AMD services run as `LocalSystem` (§6), so a change by them is logged as
-`S-1-5-18`, as W2's 24 are; the four W32Time changes carry the owner's SID and match S1–S6.
+**H1 (AMD) for the flips — not supported.** The two AMD services run as `LocalSystem` (§6), so a change by them is logged as
+`S-1-5-18`, as W2's 24 are; the four W32Time changes carry the owner's SID. An AMD program running elevated in the owner's
+session is not excluded by the log, but nothing in §6 points at one.
 
 ## 3. The evening stops are the service stopping itself
 
@@ -92,7 +97,7 @@ since 09-27, RecordId order:
 - A run started by a Sync now (09-29 13:44, 10-05 06:03), or one that a shutdown ends before the interval passes (10-01 21:15),
   shows no evening stop.
 - **H1 (AMD) for the stops — ruled out**: the stops are the service's own. "Stopped" after a boot is the state it stopped itself
-  into the evening before; the 10-08 05:43Z boot had it stopped until the Sync now at 06:00:21 (no 257 in between).
+  into the evening before; the 10-08 05:43Z boot had it stopped until the repair flow at 06:00:21 (no 257 in between).
 
 ## 4. The firmware clock: the RTC held UTC at both measured slow boots
 
@@ -110,20 +115,24 @@ the message says):
 |---|---|---|---|---|---|
 | 10-06 07:20:04.5Z | 09:20:02 | 07:20:04.5 (never corrected) | **local** (UTC + 2 h) | clean: User32 1074 *power off* from the Start menu 10-05 21:57:41Z, Kernel-General 13 at 21:58:00; Kernel-Boot 20 *"last shutdown's success status was true"* | no |
 | 10-07 07:33:45.5Z | 09:33:43 | 07:33:45.5 | **local** | clean: 1074 at 10-06 21:49:36Z, 13 at 21:49:55 | no |
-| 10-08 05:43:02.5Z | 07:43:01 | 07:43:03.1 (+7 200.59 s) | **UTC** | **unexpected**: EventLog 6008 *"previous system shutdown at 10:29:10 PM on 10/7/2026"* (local = 20:29:10Z); WER 1001 **bugcheck 0x154**; Kernel-Boot 20 *"…was false"*; no Kernel-General 13 | +7 200.59 s, by Sync now |
-| 10-08 09:43:02.5Z | 11:43:00 | 11:43:02.1 (+7 199.61 s) | **UTC** | **unexpected**: 6008 *"1:28:25 PM on 10/8/2026"* (= 11:28:25Z, 15 min earlier); WER 1001 **bugcheck 0x19C**; no 13 | +7 199.61 s, by Sync now |
+| 10-08 05:43:02.5Z | 07:43:01 | 07:43:03.1 (+7 200.59 s) | **UTC** | **unexpected**: EventLog 6008 *"previous system shutdown at 10:29:10 PM on 10/7/2026"* (local = 20:29:10Z); WER 1001 **bugcheck 0x154**; Kernel-Boot 20 *"…was false"*; no Kernel-General 13 | +7 200.59 s, by the repair flow (§2) |
+| 10-08 09:43:02.5Z | 11:43:00 | 11:43:02.1 (+7 199.61 s) | **UTC** | **unexpected**: 6008 *"1:28:25 PM on 10/8/2026"* (= 11:28:25Z, 15 min earlier); WER 1001 **bugcheck 0x19C**; no 13 | +7 199.61 s, by the repair flow (§2) |
 
 **Verdict on the firmware clock — H2 confirmed for the two boots the log still holds.** At each slow boot the RTC held UTC
 (within 1–3 s), Windows read it as local time (F1, F2), and the 2 h offset is exactly the CEST offset — the 7 200.42 s of the
-incident record. After the clean shutdowns the RTC held local time, as Windows itself had written it (F2). So **something other
-than this Windows wrote UTC into the RTC** between Windows' last write and those boots. Windows' boot manager logged
+incident record. After the clean shutdowns the RTC held local time, as Windows itself had written it (F2). Every RTC write
+Windows LOGGED is local (F2), so the UTC value came from a write that is **not in Windows' time-change log** — another operating
+system, the firmware, or a Windows path that does not log (the log is not an exhaustive inventory of RTC writes). The
+interpretation of event 238 rests on UEFI's rule that time zone 2047 means the fields are local wall time; that Windows
+serialises the unmodified RTC read into it is assumed, not proven — a controlled boot with the firmware setup clock read
+against a UTC reference would confirm it. Windows' boot manager logged
 `There are 0x1 boot options` and `bootmgr spent 0 ms waiting for user input` at every boot.
 
-**Who wrote UTC — not settled; the candidates, in the order the evidence supports them:**
+**Who wrote UTC — not settled; candidates to investigate, none proven:**
 
 | Candidate | For | Against / unknown |
 |---|---|---|
-| **A native Linux installation on the system disk.** `Get-Partition` on disk 0 lists, besides the EFI, MSR, Windows, Recovery and two data partitions, **two Linux-filesystem partitions** (`0fc63daf-8483-4772-8e79-3d69d8477de4`, ≈ 150 GB and ≈ 552 GB) and **a Linux swap partition** (`0657fd6d-a4ab-43c4-84e5-0933c84b4f4f`, ≈ 32 GB) | Linux keeps the RTC in UTC by default and writes it — the textbook dual-boot 2 h; explains all four slow boots if Linux ran before each; the 15 min between the 11:28Z crash and the 11:43Z boot and the night before leave room for it | whether Linux actually booted is not visible to an unelevated Windows reader (the firmware boot entries need `bcdedit /enum firmware`, elevated); Windows' own boot manager has a single entry, so Linux would be chosen in the firmware boot menu or by its own loader |
+| **A native Linux installation on the system disk.** `Get-Partition` on disk 0 lists, besides the EFI, MSR, Windows, Recovery and two data partitions, **two Linux-filesystem partitions** (`0fc63daf-8483-4772-8e79-3d69d8477de4`, ≈ 150 GB and ≈ 552 GB) and **a Linux swap partition** (`0657fd6d-a4ab-43c4-84e5-0933c84b4f4f`, ≈ 32 GB) | Linux keeps the RTC in UTC by default and writes it — the textbook dual-boot 2 h; explains all four slow boots if Linux ran before each; the 15 min between the 11:28Z crash and the 11:43Z boot and the night before leave room for it | partition types prove Linux STORAGE, not a bootable installation, its RTC policy, or that it ran; that is read from the installation itself — its `/etc/adjtime` (`UTC` or `LOCAL` on the third line) and `journalctl --list-boots` (a boot in the gap before each slow Windows boot). Firmware boot entries (`bcdedit /enum firmware`, elevated) would show it is bootable, not that it ran; Windows' own boot manager has a single entry |
 | **The firmware on the reset after a bugcheck** | both UTC boots followed a bugcheck, both local boots a clean power-off | the 09-29 and 10-05 slow boots have **no** unexpected-shutdown record (Reliability Monitor, span 2026-09-18 … now, holds both 10-08 6008s and nothing else), so a bugcheck is not needed for a slow boot; and firmware has no source of UTC to write |
 | **The WSL guest** | its timesyncd syncs to UTC (`RTC in local TZ: no`) | its `/dev/rtc0` (`rtc_cmos`) is the utility VM's emulated device — a write reaches the VM's virtual RTC, not the board's. This is an architecture claim, not measured here |
 
@@ -157,18 +166,20 @@ which a minidump analysis would answer.
 1. **Make every writer of the RTC agree on UTC** (the 2 h itself). If the Linux installation on this disk is booted, even
    occasionally, this is the fix:
    - In Windows (elevated), tell Windows the RTC holds UTC:
-     `reg add HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`, then a
-     restart and a resync. The value type is the one point sources disagree on (REG_DWORD is the type usually given; the Arch
-     Linux wiki recommends REG_QWORD on 64-bit Windows), so **verify rather than trust it**: after the next sync the
-     Kernel-General 1 event must read `RealTimeIsUniversal=true` and `CmosTime` must equal `NewTime` (F2's fields). If it still
-     reads `false`, use `/t REG_QWORD` instead. The firmware setup screen will then show UTC.
+     `reg add HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation /v RealTimeIsUniversal /t REG_DWORD /d 1 /f`
+     (REG_DWORD, the commonly documented type). **Accept it only on these checks**, in order: the value reads back as REG_DWORD 1;
+     after a FULL restart and a resync, a NEW Kernel-General 1 event reads `RealTimeIsUniversal=true` with `CmosTime` equal to
+     `NewTime` (F2's fields); and the boot after that is right BEFORE any resync (Kernel-Boot 238's firmware time equals the true
+     UTC of the boot, and no +7 200 s step follows). A missing event is inconclusive; `false` means diagnose before trying
+     anything else — another value type is an experiment needing its own restart and the same checks. The firmware setup screen
+     will then show UTC.
    - The alternative is the Linux side: `timedatectl set-local-rtc 1` in the native installation (systemd discourages it — DST
      changes while Linux runs are not handled).
    - **Setting the BIOS clock to local time once does not hold**: the next UTC write puts the 2 h back.
    If the owner does NOT boot that Linux: do not change `RealTimeIsUniversal` yet; at the next slow boot compare Kernel-Boot 238
-   with the shutdown before it (§4's columns) — that names the writer — and check the firmware setup and a newer firmware than
+   with the shutdown before it (§4's columns) — that narrows the candidates, it does not name a writer — and check the firmware setup and a newer firmware than
    1.06 for anything that sets the clock.
-2. **Nothing to fix about the disable/re-enable pairs.** They are Settings' Sync now repairing the clock (§2). The Windows Time
+2. **Nothing to fix about the disable/re-enable pairs.** They are a repair of the clock — by the evidence, Settings' Sync now (§2). The Windows Time
    guard's planned 7040 trigger will therefore fire twice on every Sync now; the guard's action is idempotent, so that is
    expected, not a fault.
 3. **Keep the guard's at-startup and at-logon resync.** Every correction on record followed an explicit resync (X4); a service
@@ -179,7 +190,7 @@ which a minidump analysis would answer.
 5. **So the next "who" is a read, not an inference:** enable `Microsoft-Windows-TaskScheduler/Operational` (every task run
    logged) and process-creation auditing with command lines (Security 4688). Both are owner decisions, made elevated.
 
-The incident record's O8 ("the owner's manual `Start-Service`") is corrected by §2: the log for that minute is a Sync now.
+The incident record's O8 ("the owner's manual `Start-Service`") is refined by §2: the log for that minute shows the disable/re-enable repair flow, which a plain `Start-Service` does not write.
 
 ## Appendix — the reads, so they can be repeated
 
