@@ -99,6 +99,8 @@ public sealed class InUseWindowsTests : IDisposable
 
         first.Should().Contain("did not answer within archive.inUseScanSeconds");
         second.Should().Be(first);
+        SpinWait.SpinUntil(() => stalled.Asked > 0, TimeSpan.FromSeconds(10)).Should().BeTrue("the first question did start (a slow runner may start it late)");
+        Thread.Sleep(TimeSpan.FromMilliseconds(300));
         stalled.Asked.Should().Be(1, "a stalled Restart Manager is not asked again");
         watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30));
     }
@@ -239,6 +241,8 @@ public sealed class InUseWindowsTests : IDisposable
         later.HeldBy(["C:\\b"]).Should().Contain("did not answer");
         release.Set();
 
+        SpinWait.SpinUntil(() => stalled.Asked > 0, TimeSpan.FromSeconds(10)).Should().BeTrue("the first question did start (a slow runner may start it late)");
+        Thread.Sleep(TimeSpan.FromMilliseconds(300));
         stalled.Asked.Should().Be(1);
     }
 
