@@ -1,6 +1,7 @@
 using WslCare.Core.Actions;
 using WslCare.Core.Actions.Engine;
 using WslCare.Core.Agents;
+using WslCare.Core.Archive;
 using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
@@ -33,6 +34,11 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// <summary>The Windows process table the Windows binary's <c>status</c> counts its MCP servers in (E14 S7a, read-only). Reads nothing
     /// unless <see cref="ForThisMachine"/> wires the real one on Windows, so a test's answer never depends on this machine's processes.</summary>
     public IWindowsProcessTable WindowsProcesses { get; init; } = new UnreadWindowsProcessTable("a host built by a test reads no Windows process table");
+
+    /// <summary>What the archive's open-file check asks on the Windows side (plan §15r E9.S5): the Restart Manager and
+    /// <see cref="WindowsProcesses"/> in the Windows binary; a check that did not run in the distro's.</summary>
+    public IWindowsSide ArchiveWindows() =>
+        Paths is WindowsHostPaths && OperatingSystem.IsWindows() ? new RealWindowsSide(WindowsProcesses) : UncheckedWindowsSide.NotWindows;
 
     /// <summary>How a verb waits a measuring window (the MCP servers' CPU window, plan §15q E7.S2d). A test hands one that returns
     /// at once and changes what the second read sees.</summary>

@@ -17,7 +17,7 @@ public enum InUseState
     /// <summary>The scan stopped at its ceiling (or the listing's time): what it did not reach may be open.</summary>
     Cut,
 
-    /// <summary>The check did not run on this side (Windows until E9.S5).</summary>
+    /// <summary>The check did not run.</summary>
     NotChecked,
 }
 
@@ -29,6 +29,14 @@ public enum InUseState
 /// <param name="Note">What the check could not see, or why it did not run; empty when complete.</param>
 public sealed record InUseView(IReadOnlySet<string> OpenFiles, IReadOnlySet<string> ClaudeProjects, InUseState State, string Note)
 {
+    /// <summary>The per-unit question (E9.S5): the unit's files, as full paths on this side's disk → why one of them is held, or empty.
+    /// The distro's view answers from its <c>/proc</c> scan alone (nothing here); the Windows view asks the Restart Manager.</summary>
+    public Func<IReadOnlyList<string>, string> HeldBy { get; init; } = static _ => string.Empty;
+
+    /// <summary>Why no Claude Code session may move on this side now (E9.S5: a live Claude Code on Windows, whose working folder cannot
+    /// be read, or a process table that cannot be read); empty when nothing says so.</summary>
+    public string ClaudeRunning { get; init; } = string.Empty;
+
     public static InUseView Complete(IReadOnlySet<string> openFiles, IReadOnlySet<string> claudeProjects) => new(openFiles, claudeProjects, InUseState.Complete, string.Empty);
 
     public static InUseView Cut(IReadOnlySet<string> openFiles, IReadOnlySet<string> claudeProjects, string note) => new(openFiles, claudeProjects, InUseState.Cut, note);
@@ -50,18 +58,16 @@ public static class InUse
 {
     private const string ClaudeCode = "claude-code";
 
-    /// <summary>The Windows side asks the Restart Manager (E9.S5); until then it says so.</summary>
-    public const string NotOnWindowsYet = "which files are open is not checked on Windows yet (the Restart Manager query is E9.S5); every due session stays where it is until it is";
-
     public static TimeSpan Ceiling => Tuning.Current.Seconds(ConfigKeys.Archive.InUseScanSeconds);
 
     /// <summary>The scan within <see cref="Ceiling"/>.</summary>
-    public static InUseView Scan(IHostPaths paths, IFileSystem files, CancellationToken cancellationToken) =>
-        Scan(paths, files, Ceiling, cancellationToken);
+    public static InUseView Scan(IHostPaths paths, IFileSystem files, CancellationToken cancellationToken, IWindowsSide windows) =>
+        Scan(paths, files, Ceiling, cancellationToken, windows);
 
-    /// <summary>The scan within <paramref name="ceiling"/> (the caller's time left, never above <see cref="Ceiling"/>).</summary>
-    public static InUseView Scan(IHostPaths paths, IFileSystem files, TimeSpan ceiling, CancellationToken cancellationToken) =>
-        paths is LinuxHostPaths linux ? ScanProc(linux, files, ceiling < Ceiling ? ceiling : Ceiling, cancellationToken) : InUseView.NotChecked(NotOnWindowsYet);
+    /// <summary>The scan within <paramref name="ceiling"/> (the caller's time left, never above <see cref="Ceiling"/>): the distro's
+    /// <c>/proc</c>, or on Windows the view that asks the Restart Manager per unit (E9.S5), each question within <see cref="Ceiling"/>.</summary>
+    public static InUseView Scan(IHostPaths paths, IFileSystem files, TimeSpan ceiling, CancellationToken cancellationToken, IWindowsSide windows) =>
+        paths is LinuxHostPaths linux ? ScanProc(linux, files, ceiling < Ceiling ? ceiling : Ceiling, cancellationToken) : windows.View(Ceiling);
 
     private static InUseView ScanProc(LinuxHostPaths paths, IFileSystem files, TimeSpan ceiling, CancellationToken cancellationToken)
     {

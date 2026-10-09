@@ -42,7 +42,7 @@ public sealed class InUseTests : IDisposable
         Process(42, "claude\0--resume\0", "/home/me/git/x", "/home/me/.claude/projects/p/s1.jsonl", "socket:[123]");
         Process(43, "bash\0", "/home/me/git/y", "/home/me/notes.txt");
 
-        var seen = InUse.Scan(_sandbox.Paths, _sandbox.Files, CancellationToken.None);
+        var seen = InUse.Scan(_sandbox.Paths, _sandbox.Files, CancellationToken.None, UncheckedWindowsSide.NotWindows);
 
         seen.State.Should().Be(InUseState.Complete);
         seen.OpenFiles.Should().Contain(["/home/me/.claude/projects/p/s1.jsonl", "/home/me/notes.txt"]);
@@ -50,12 +50,22 @@ public sealed class InUseTests : IDisposable
         seen.Note.Should().BeEmpty();
     }
 
+    /// <summary>E9.S5: on the Windows side the scan is the Windows side's view — the Restart Manager asked per unit — never a set read
+    /// from /proc.</summary>
     [Fact]
-    public void On_windows_the_scan_says_it_is_not_built_yet()
+    public void On_windows_the_scan_is_the_windows_sides_view()
     {
         var paths = new WslCare.Core.Hosting.WindowsHostPaths(new WslCare.Core.Hosting.WindowsEnvironment(@"C:\Users\me", @"C:\Users\me\AppData\Roaming", @"C:\Users\me\AppData\Local", @"C:\ProgramData", @"C:\Users\me\AppData\Local\Temp"));
+        var asked = InUseView.Complete(new HashSet<string>(StringComparer.Ordinal), new HashSet<string>(StringComparer.OrdinalIgnoreCase)) with { HeldBy = _ => "held" };
 
-        InUse.Scan(paths, _sandbox.Files, CancellationToken.None).Should().Match<InUseView>(v => v.State == InUseState.NotChecked && v.Note.Contains("E9.S5"));
+        var seen = InUse.Scan(paths, _sandbox.Files, CancellationToken.None, new GivenSide(asked));
+
+        seen.Should().BeSameAs(asked);
+    }
+
+    private sealed class GivenSide(InUseView view) : IWindowsSide
+    {
+        public InUseView View(TimeSpan ceiling) => view;
     }
 
     /// <summary>Plan §15q H3 carried to the archive: the selection lists names and stats entries — not one session file is opened,

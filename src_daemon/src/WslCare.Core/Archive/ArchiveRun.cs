@@ -118,7 +118,15 @@ public sealed record ArchiveRunInput(
     public Func<string, TimeSpan, bool> Reachable { get; init; } = static (folder, ceiling) => Task.Run(() => Directory.Exists(folder)).Wait(ceiling);
 
     /// <summary>The open-file check (D2.2) — the real scan; a test hands its own view.</summary>
-    public Func<ArchiveRunInput, InUseView> InUseScan { get; init; } = static i => InUse.Scan(i.Paths, i.Files, i.Token);
+    public Func<ArchiveRunInput, InUseView> InUseScan { get; init; } = static i => InUse.Scan(i.Paths, i.Files, i.Token, i.Windows);
+
+    /// <summary>The side's folder name when a test plays several hosts over one base (E9.S5's disjoint-sides test); empty — always, from
+    /// the command line — means this process's own (<see cref="SideName.OfThisProcess"/>).</summary>
+    public string SideFolder { get; init; } = string.Empty;
+
+    /// <summary>What the Windows side's open-file check asks (E9.S5): the Restart Manager and the process table in the Windows binary;
+    /// a check that did not run anywhere else.</summary>
+    public IWindowsSide Windows { get; init; } = UncheckedWindowsSide.NotWindows;
 
     /// <summary>This process as the lease names it.</summary>
     public LeaseRecord Me { get; init; } = new(1, System.Environment.MachineName, string.Empty, System.Environment.ProcessId, 0, DateTimeOffset.UnixEpoch, string.Empty, DateTimeOffset.UnixEpoch);
@@ -137,6 +145,9 @@ public static class ArchiveRun
         var state = new ArchiveState(input.Paths, input.Files);
         return NoBase(input) is { Stopped: true } none ? Stopped(new BaseWithin(input, none), started) : Locked(input, state, started);
     }
+
+    /// <summary>This run's side: the one a test named, or this process's own.</summary>
+    internal static string SideOf(ArchiveRunInput input) => input.SideFolder.Length > 0 ? input.SideFolder : SideName.OfThisProcess(input.Paths.Side);
 
     private static ArchiveRunReport Stopped(BaseWithin within, DateTimeOffset started) =>
         Answer(within.Input, started, within.Stop.Outcome, within.Stop.Why, ArchiveReconcileReport.Empty, NotChecked, []);
@@ -252,7 +263,7 @@ public static class ArchiveRun
 
     private static ArchiveRunReport Leased(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key)
     {
-        var side = SideName.OfThisProcess(input.Paths.Side);
+        var side = SideOf(input);
         var taken = SideLease.Take(input.Archive, input.JudgedBase.Folder, side, input.Me with { RunId = input.RunId, SinceUtc = started }, input.Processes);
         if (taken is not LeaseTaken.Held held)
         {
@@ -303,7 +314,7 @@ public static class ArchiveRun
 
     /// <summary>The context every verb of a side's archive acts in: the seam, the base, the side, the run, the key, the book.</summary>
     internal static MoveContext ContextOf(ArchiveRunInput input, ArchiveState state, byte[] key, InUseView inUse, Action<long, bool> progress) =>
-        new(input.Archive, input.JudgedBase.Folder, SideName.OfThisProcess(input.Paths.Side), input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, progress)
+        new(input.Archive, input.JudgedBase.Folder, SideOf(input), input.RunId, key, input.Clock, input.Zone, new InflightBook(state), input.Step, progress)
         {
             Stats = input.Files,
             Home = input.Paths.Home,
@@ -433,7 +444,7 @@ public static class ArchiveRun
         new(
             SchemaVersion.Current,
             input.Paths.Side == HostSide.Wsl ? "wsl" : "windows",
-            SideName.OfThisProcess(input.Paths.Side),
+            SideOf(input),
             input.RunId,
             started,
             input.Clock.GetUtcNow(),

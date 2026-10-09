@@ -300,19 +300,14 @@ public static class Selection
         Liveness.ScanProblem(view) is { Length: > 0 } why ? new RuleVerdict.Refuses(SkipRule.InUse, why) : RuleVerdict.Holds;
 
     private static RuleVerdict InUse(SelectionInput input, string under, IReadOnlyList<UnitFile> files) =>
-        Liveness.OpenFile(input.InUse, p => Distro(input.Paths, p), under, files.Select(f => f.Relative)) is { Length: > 0 } open
-            ? new RuleVerdict.Refuses(SkipRule.InUse, $"{open} is open in a process")
+        Liveness.Held(input.InUse, p => Distro(input.Paths, p), under, [.. files.Select(f => f.Relative)]) is { Length: > 0 } held
+            ? new RuleVerdict.Refuses(SkipRule.InUse, held)
             : RuleVerdict.Holds;
 
-    /// <summary>A live Claude Code process whose working directory is this session's project (§15r D2.2).</summary>
-    private static RuleVerdict AgentHere(SelectionInput input, AgentEntry entry, string key)
-    {
-        var project = Liveness.ProjectOf(entry.Id, key);
-        return RuleVerdict.When(
-            project.Length > 0 && input.InUse.ClaudeProjects.Contains(project),
-            SkipRule.AgentWorkingHere,
-            () => $"Claude Code is working in the project {project}");
-    }
+    /// <summary>A live Claude Code process whose working directory is this session's project (§15r D2.2) — or, on Windows, any live
+    /// Claude Code, whose working folder cannot be read (E9.S5).</summary>
+    private static RuleVerdict AgentHere(SelectionInput input, AgentEntry entry, string key) =>
+        Liveness.AgentWorking(input.InUse, entry.Id, key) is { Length: > 0 } working ? new RuleVerdict.Refuses(SkipRule.AgentWorkingHere, working) : RuleVerdict.Holds;
 
     private static string Distro(IHostPaths paths, string onDisk) => paths is LinuxHostPaths linux ? linux.ToDistro(onDisk) : onDisk;
 }

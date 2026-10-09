@@ -47,7 +47,7 @@ internal static class ArchiveCommand
 
         var started = host.Clock.GetTimestamp();
         TimeSpan Left() => ArchivePreview.ListingBudget(loaded.Config) - host.Clock.GetElapsedTime(started);
-        var input = new SelectionInput(host.Paths, host.Files, loaded.Config, host.Clock.GetUtcNow(), TimeZoneInfo.Local, InUse.Scan(host.Paths, host.Files, Left(), cancellationToken), Environment.GetEnvironmentVariable)
+        var input = new SelectionInput(host.Paths, host.Files, loaded.Config, host.Clock.GetUtcNow(), TimeZoneInfo.Local, InUse.Scan(host.Paths, host.Files, Left(), cancellationToken, host.ArchiveWindows()), Environment.GetEnvironmentVariable)
         {
             OnlyAgent = request.Agent,
             TimeLeft = Left,

@@ -3,7 +3,7 @@
 > Built so far: **E9.S0** (catalogue blocks, keys, base folder rules, `archive check-base`), **E9.S1** (the selection and
 > `archive preview`, read-only), **E9.S2a** (the file seam `IArchiveFiles`, with its gate round and own review round), **E9.S2b**
 > (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`, with its own review round), **E9.S3** (`archive restore`, `archive list`), **E9.S4** (A13 and A20 in the engine — the root → user boundary,
-> `archive reach`). Not built yet: the Windows open-file check (E9.S5). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
+> `archive reach`), **E9.S5** (the Windows side's open-file check: the Restart Manager, and a live Claude Code on Windows). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
 > red runs and their break-it checks: [module_tests.md](module_tests.md), the E9 sections (from *The AI-session archive:
 > catalogue blocks, keys, base folder* to *The E9.S2a gate round*). The longer history of each
 > story: *Story history* below.
@@ -431,8 +431,11 @@ flowchart TD
   (`TreeFile(Path, Length, LastWriteUtc)` in `TreeMeasure.Measured.Listed`); every other caller's answer is unchanged.
 - **`Archive/InUse.cs`** reads `/proc` as the user (only this account's `fd` folders open — and the agents are this account's);
   the Claude Code attribution reuses `AgentProcesses.AgentOfPrograms` over the raw argv (main's one attribution, shared with A18
-  and the MCP servers since the rebase of 2026-10-07). On Windows it answers
-  "not checked" with `NotOnWindowsYet` — the Restart Manager query is E9.S5.
+  and the MCP servers since the rebase of 2026-10-07). On Windows (E9.S5) the view is `InUseWindows`'s: each unit's files are
+  ASKED of the Restart Manager (`Archive/RestartManager.cs`, extended-length paths; a path past `MAX_PATH` asked of the file
+  system's own list of users, its attributes opened only) — never an open of a session file; a holder, an error or a stalled
+  question keeps the unit, and once a question stalls every later one is kept without asking. Claude Code's working folder cannot
+  be read on Windows, so a live Claude Code there (`claude.exe`, or `node.exe` running its package) keeps every Claude Code session.
 - **`Archive/ArchiveNames.cs`**: the name rules (`Problem`, `CaseCollision`), Claude's project-folder encoding
   (`ClaudeProjectOf`), the quarantine mark, and the side folder (`SideName`: `windows-<host>`, `wsl-<host>-<distro>`, §15r D4).
 - **`Archive/AgentRetentionReader.cs`** reads one key through the bounded user-file reader (`userFiles.maxJsonBytes`).
@@ -442,8 +445,8 @@ flowchart TD
   The capability is `archive.preview`. Its listing budget is DERIVED from the ceiling it runs under — three quarters of
   `archive.previewTimeoutSeconds` — and the open-file scan, the layouts and every companion walk share it (E9.S1 review round
   m1; the first build coupled it to `agents.measureBudgetSeconds` by a rule that made the bottom of its own range invalid).
-  Only a COMPLETE open-file scan lets a due unit move (`inUse.state`: `complete` / `cut` / `not-checked` — on Windows every
-  due unit stays until E9.S5); an agent asked for by `--agent` that `archive.agents` does not hold is previewed with
+  Only a COMPLETE open-file scan lets a due unit move (`inUse.state`: `complete` / `cut` / `not-checked`; on Windows the
+  Restart Manager answers per unit, E9.S5); an agent asked for by `--agent` that `archive.agents` does not hold is previewed with
   `enabled: false`; Claude Code is not listed while `CLAUDE_CONFIG_DIR` names another folder than `~/.claude`; a session whose
   id is empty or a dot name is refused (its companions would name the folder around it); the agents' own retention is a closed
   `Known(days)` / `Unknown(why)`, unknown warned (E9.S1 review round, plan §15r).

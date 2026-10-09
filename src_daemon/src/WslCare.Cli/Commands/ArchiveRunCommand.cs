@@ -164,6 +164,7 @@ internal static class ArchiveRunCommand
         return new ArchiveRunInput(host.Paths, host.Files, host.ArchiveFiles(), loaded.Config, host.Clock, host.Processes, TimeZoneInfo.Local, judging.Late ? BaseFolderRules.NotYetJudged : BaseFolderRules.Unconfigured, RunId.New(now, Environment.ProcessId).Text, budget, Environment.GetEnvironmentVariable, cancellationToken)
         {
             Judging = judging,
+            Windows = host.ArchiveWindows(),
             OnlyAgent = agent,
             Me = me,
             Step = host.ArchiveFault,

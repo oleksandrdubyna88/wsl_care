@@ -2833,6 +2833,31 @@ once under the full suite's load; it passed alone and in the next full run (main
 `ArchiveBoundedBaseTests` builds its host as THIS user (`ProcessPrivilege(false, …)`): CI's Windows runner is elevated, and a host
 left to the process's own privilege refused every archive verb there (the first CI run of this round, 37938186260).
 
+### The Windows side's open-file check (E9.S5, 2026-10-09, plan §15r *E9.S5 plan round and as built*)
+
+| Guarantee | Tests |
+|---|---|
+| a file a process holds is named held — by that process — and never opened by the product (the test holds it with NO sharing); a free file is free | `InUseWindowsTests.The_restart_manager_names_the_process_that_holds_a_file_and_never_opens_it` (Windows) |
+| a file under a 300-character path is asked like any other (the file system's list of users past `MAX_PATH`) | `InUseWindowsTests.A_file_under_a_300_character_path_is_asked_like_any_other` (Windows) |
+| a drive path takes `\\?\`, a share `\\?\UNC\` | `InUseWindowsTests.A_path_is_handed_over_in_its_extended_length_form` (4 rows, every OS) |
+| a holder, an error, a thrown question keeps the unit naming why; a stalled question keeps it and every later one without asking again | `InUseWindowsTests.A_held_file_an_error_or_a_thrown_question_keeps_the_unit_naming_why`, `…A_stalled_restart_manager_keeps_this_unit_and_every_later_one_without_asking_again` |
+| a live Claude Code on Windows (`claude.exe`, or `node.exe` running its package) or an unreadable process table keeps every Claude Code session; another agent's unit is not held back by it | `InUseWindowsTests.A_live_claude_code_on_windows_keeps_every_claude_code_session` (4 rows), `…A_process_table_that_cannot_be_read_keeps_every_claude_code_session`, `…The_liveness_check_asks_the_windows_view` |
+| on Windows the scan is the Windows side's view | `InUseTests.On_windows_the_scan_is_the_windows_sides_view` |
+| through the command line on Windows: preview lists a due session; held it stays `in-use` naming this process; the run copies it; phase 2 keeps it while held; a later run removes it; restore puts it back | `Cli.Tests/ArchiveWindowsFlowTests.A_due_session_moves_on_windows_only_while_no_process_holds_it_and_comes_back` (Windows) |
+| the Windows user layer takes `archive.baseFolder` and leaves a machine-only `archive.*` key to the machine layer | `Cli.Tests/ArchiveWindowsFlowTests.The_windows_user_layer_takes_the_base_folder_and_leaves_a_machine_only_archive_key` (Windows) |
+| two sides and two hosts write disjoint folders and indexes under one base | `ArchiveSidesTests.Two_sides_and_two_hosts_write_disjoint_folders_and_indexes_under_one_base` |
+
+**Red first, as far as it went:** the 300-character row was red against the first build (`RmRegisterResources answered error 29`),
+which is how the Restart Manager's `MAX_PATH` limit was found. The rest were written against a skeleton of the new types; the
+Windows-user-layer and the disjoint-sides tests were green against the code as it was (they pin what earlier stories built — the
+plan round's finding 4 was answered by that green). Their teeth are the checks below.
+
+**Teeth** (`S5-01`–`S5-11`, product code only, each restored byte for byte), on Windows — the legs the Restart Manager runs on: all
+11 red — the per-unit question not asked; a live Claude Code ignored; the Restart Manager naming no holder; a long path handed to it;
+an error letting the unit go; a stall not remembered; a share given the drive form; the Windows view not used; an unreadable process
+table letting Claude go; Claude under node not seen; one folder for every side. On Linux the Windows-only tests skip, so these checks
+were not repeated there; the Linux suites are green (Core 2255 / 16 skipped, Cli 344 / 4, Scenarios 497 / 3, goldens 14 / 0).
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

@@ -11,7 +11,8 @@ namespace WslCare.Core.Mcp;
 /// The real Windows process table (E14 S7a) — READ-ONLY by construction: <c>CreateToolhelp32Snapshot</c> names every process (pid,
 /// parent pid, exe name) in one kernel snapshot, starting nothing; <see cref="Details"/> opens ONE process with
 /// <c>PROCESS_QUERY_LIMITED_INFORMATION</c> — the query right only, never terminate, write or read memory — reads its times and
-/// memory counters and closes the handle. This type imports no call that stops, suspends or changes a process.
+/// memory counters (and, for the archive's E9.S5, its command line) and closes the handle. This type imports no call that stops,
+/// suspends or changes a process.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed partial class Win32ProcessTable : IWindowsProcessTable
@@ -21,6 +22,7 @@ public sealed partial class Win32ProcessTable : IWindowsProcessTable
     private const int AccessDenied = 5;
     private const int InvalidParameter = 87;
     private const int NoMoreFiles = 18;
+    private const int ProcessCommandLineInformation = 60;
     private static readonly nint InvalidHandle = -1;
 
     public Reading<IReadOnlyList<WindowsProcessEntry>> List()
@@ -77,6 +79,55 @@ public sealed partial class Win32ProcessTable : IWindowsProcessTable
             : Reading.Missing<IReadOnlyList<WindowsProcessEntry>>(Failed("Process32NextW", error));
     }
 
+    /// <summary>E9.S5: the command line of ONE process — <c>NtQueryInformationProcess(ProcessCommandLineInformation)</c> through the
+    /// same query-only handle (<c>PROCESS_QUERY_LIMITED_INFORMATION</c>); never its memory.</summary>
+    public Reading<string> CommandLine(int pid)
+    {
+        var handle = OpenProcess(QueryLimitedInformation, false, (uint)pid);
+        if (handle == 0)
+        {
+            return Reading.Missing<string>(Unopenable(pid, Marshal.GetLastPInvokeError()));
+        }
+
+        try
+        {
+            return CommandLineOf(handle);
+        }
+        finally
+        {
+            CloseHandle(handle);
+        }
+    }
+
+    /// <summary>Asked once for its size, then into a buffer of it: a <c>UNICODE_STRING</c> whose characters follow it.</summary>
+    private static Reading<string> CommandLineOf(nint handle)
+    {
+        _ = NtQueryInformationProcess(handle, ProcessCommandLineInformation, 0, 0, out var needed);
+        if (needed <= 0)
+        {
+            return Reading.Missing<string>(Invariant($"NtQueryInformationProcess named no size ({needed})"));
+        }
+
+        var buffer = Marshal.AllocHGlobal(needed);
+        try
+        {
+            var status = NtQueryInformationProcess(handle, ProcessCommandLineInformation, buffer, needed, out _);
+            return status == 0 ? Reading.Of(UnicodeString(buffer)) : Reading.Missing<string>(Invariant($"NtQueryInformationProcess failed with status {status}"));
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
+
+    /// <summary><c>UNICODE_STRING</c>: its length in BYTES, then (aligned) the pointer to its characters.</summary>
+    private static string UnicodeString(nint buffer)
+    {
+        var bytes = Marshal.ReadInt16(buffer);
+        var characters = Marshal.ReadIntPtr(buffer, nint.Size);
+        return Marshal.PtrToStringUni(characters, (ushort)bytes / sizeof(char));
+    }
+
     private static (Reading<DateTimeOffset> Created, Reading<TimeSpan> Cpu) Times(nint handle)
     {
         if (!GetProcessTimes(handle, out var creation, out _, out var kernel, out var user))
@@ -114,6 +165,9 @@ public sealed partial class Win32ProcessTable : IWindowsProcessTable
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     private static partial nint CreateToolhelp32Snapshot(uint flags, uint processId);
+
+    [LibraryImport("ntdll.dll")]
+    private static partial int NtQueryInformationProcess(nint process, int informationClass, nint information, int length, out int returned);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

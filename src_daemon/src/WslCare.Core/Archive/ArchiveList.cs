@@ -102,5 +102,5 @@ public static class ArchiveList
         ArchiveRun.BaseProblem(input) is { Stopped: true } early ? early : BaseWindow.Reachability(input);
 
     private static ArchiveListReport Report(ArchiveRunInput input, string outcome, string note, IReadOnlyList<ArchiveListEntry> entries, int skipped, IReadOnlyList<string> notes) =>
-        new(SchemaVersion.Current, input.Paths.Side == Hosting.HostSide.Wsl ? "wsl" : "windows", SideName.OfThisProcess(input.Paths.Side), input.JudgedBase.Folder, outcome, note, entries, skipped, notes);
+        new(SchemaVersion.Current, input.Paths.Side == Hosting.HostSide.Wsl ? "wsl" : "windows", ArchiveRun.SideOf(input), input.JudgedBase.Folder, outcome, note, entries, skipped, notes);
 }

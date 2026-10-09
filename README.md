@@ -725,8 +725,10 @@ said in a warning). A due session stays where it is, counted with its reason, wh
 Code is working in its project, its database may be open (a `-wal` beside it), it names what never moves (a session called
 `memory.jsonl` is refused whole), one of its names cannot exist on a Windows drive (`< > : " \ | ? *`, a reserved device name
 such as `con`, a trailing dot or space, invalid UTF-8, two names differing only by case), or not all of it could be seen. Only a
-COMPLETE open-file scan lets a session move: a scan cut by its time keeps every due session, and on Windows, where the check
-arrives with E9.S5, every due session stays (the preview says so). Claude Code is not archived while `CLAUDE_CONFIG_DIR` points
+COMPLETE open-file scan lets a session move: a scan cut by its time keeps every due session. On Windows the Restart Manager is
+asked who holds each session's files (nothing is opened); a holder, an error or a question past `archive.inUseScanSeconds` keeps
+the session, and because Claude Code's working folder cannot be read there, a running Claude Code on Windows keeps every Claude
+Code session in place. Claude Code is not archived while `CLAUDE_CONFIG_DIR` points
 elsewhere than `~/.claude`; `--agent` previews an agent `archive.agents` does not hold, marked `enabled: false`. As root it
 refuses with exit **81**.
 

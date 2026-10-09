@@ -2679,7 +2679,7 @@ names; the text above was updated to match.
 
 ### 15r. E9 split and design — the AI-session archive, daemon, both sides
 
-> Status: **in progress, 2026-10-09 — E9.S0, E9.S1, E9.S2a, E9.S2b, E9.S3 and E9.S4 built (S4: its plan round, code round and own review round folded in), the S0 and S1 review rounds, the S2a gate round, the S2a, S2b and S3 own review rounds and the S2b/S3 gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
+> Status: **in progress, 2026-10-09 — E9.S0, E9.S1, E9.S2a, E9.S2b, E9.S3, E9.S4 and E9.S5 built (S4: its plan round, code round and own review round folded in; S5: its plan round folded in), the S0 and S1 review rounds, the S2a gate round, the S2a, S2b and S3 own review rounds and the S2b/S3 gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
 > keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
 > as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built*, *Risk consult
 > 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round*, *E9.S3 as built*, *E9.S3 own review round*, *E9.S2b/S3 gate round*, *E9.S4 plan round*, *E9.S4 as built*, *E9.S4 code round* and *E9.S4 own review round*); E9.S5 and the E9 live gate open. Originally: plan only,
@@ -3418,6 +3418,9 @@ the owner's Q7 decision.
 6. A crash drill: the child killed by its own pid and start time (never by image name) mid-copy and mid-removal, then the
    reconcile.
 7. The preview on this machine against the one-time run's layout counts (re-measured, not remembered).
+8. **The Windows side** (E9.S5 plan round, finding 2): a base on a mapped NETWORK drive and on a UNC share accepted by
+   `archive check-base` and used by a run; a session under it asked of the Restart Manager (`\\?\UNC\…`) while a process holds
+   it — kept — and after; a live Claude Code on Windows keeps every Claude Code session in place.
 8. The older `~/.gemini/antigravity` (and `%USERPROFILE%\.gemini\antigravity`): whether it holds sessions, in which layout —
    until confirmed it is protected and walked but never selected (E9.S0 review round C6).
 
@@ -3968,6 +3971,36 @@ test → docs (this section's as-built, `module_archive.md`, `module_tests.md`, 
 **Definition of Done:** every test above red first then green on the Windows legs (and the Linux suites untouched and green); a
 break-it check per guarantee, product code only; the gate's code round over the commit; an own review (Opus) of the Windows file
 semantics and the Restart Manager use, in parallel with it.
+
+#### E9.S5 plan round and as built (2026-10-09)
+
+**The plan round** (session `c6895ab0` on `feat/wc-e9-s5`; codex and gemini): verdict *good_enough*, seven findings — six ACCEPTED,
+one rejected. Each row OVERRIDES the text it names.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0, 3 (Blocking) | dropping the working-folder guard on Windows lets a live Claude Code's session move between appends | **Accepted:** a live Claude Code on Windows — `claude.exe`, or `node.exe` with the `claude-code` package on its command line (read through a query-only handle, `Win32ProcessTable.CommandLine`) — keeps EVERY Claude Code session in place; a process table that cannot be read does too |
+| 1 | the Windows archive grows without retention or crash recovery | **Rejected:** the bytes go to the user's base (D7), kept forever by design; `%LOCALAPPDATA%` holds only state files bounded by `archive.maxStateFileBytes`; the reconcile of D3 is the same code on both sides |
+| 2 | UNC and network-drive acceptance with no check that sees them work | **Accepted:** the E9 live gate gains step 8 (below) |
+| 4 | the Windows layer's `archive.*` widening was claimed done but not built | **Accepted as a test:** `The_windows_user_layer_takes_the_base_folder_and_leaves_a_machine_only_archive_key` — green against the code as it was: the Windows user layer is the same `ConfigLoader` and key trust, so nothing needed widening |
+| 5 | phase 2's re-check has no ceiling of its own | **Accepted:** every Restart Manager question is bounded by `archive.inUseScanSeconds` on its own; one that stalls keeps its unit AND every later one (the stalled Restart Manager is not asked again) — the selection's and phase 2's alike |
+| 6 | a UNC path needs `\\?\UNC\`, not `\\?\\\` | **Accepted:** `ExtendedPath.Of`, with its rows |
+
+**As built** — what the plan above says, with these deviations:
+1. **`Archive/RestartManager.cs`** asks the Restart Manager for paths that fit its buffers and, MEASURED by the 300-character test,
+   cannot ask it for a longer one: `RmRegisterResources` answers error 29 past `MAX_PATH`, `\\?\` or not. A longer path is asked
+   of the file system instead (`FileUsers`: `NtQueryInformationFile(FileProcessIdsUsingFileInformation)` on a handle opened for its
+   ATTRIBUTES only, every sharing allowed, no link followed — an open that asks for no data access conflicts with no one's sharing).
+2. **One deadline per selection became one ceiling per question** (finding 5), with the stall rule above.
+3. **`Archive/WindowsSide.cs`**: `IWindowsSide` — the real one (`RealWindowsSide`: the Restart Manager and the host's process
+   table) in the Windows binary's host (`CliHost.ArchiveWindows`), `UncheckedWindowsSide` elsewhere; `ArchiveRunInput.Windows` carries
+   it to the run.
+4. **`ArchiveRunInput.SideFolder`** lets a test play several hosts over one base (the disjoint-sides test); the command line never
+   sets it.
+5. **`InUseView`** gained `HeldBy` (the per-unit question) and `ClaudeRunning`; `Liveness.Held` / `Liveness.AgentWorking` are
+   what the selection and phase 2 ask. `InUse.NotOnWindowsYet` is gone: on Windows `archive run` moves.
+
+**Owed:** the E9 live gate's Windows steps (8), and the release carrying E9.
 
 #### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
 

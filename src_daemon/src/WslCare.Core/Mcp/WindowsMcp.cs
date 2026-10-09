@@ -20,6 +20,10 @@ public interface IWindowsProcessTable
     Reading<IReadOnlyList<WindowsProcessEntry>> List();
 
     WindowsProcessDetails Details(int pid);
+
+    /// <summary>The process's command line, read through a query-only handle (E9.S5: whether a <c>node.exe</c> runs Claude Code); not
+    /// read by a table that reads nothing.</summary>
+    Reading<string> CommandLine(int pid) => Reading.Missing<string>("this process table reads no command line");
 }
 
 /// <summary>A process table that reads nothing — what a host built by a test, and every host off Windows, holds: the real table is
