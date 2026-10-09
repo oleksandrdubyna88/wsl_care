@@ -55,6 +55,18 @@ public sealed record ActionContext(
     /// judged again); <see cref="ShownList.None"/> for a terminal, which acts on its own fresh preview.</summary>
     public ShownList ShownProcesses { get; init; } = ShownList.None;
 
+    /// <summary>The archived entries a button SHOWED and the person confirmed, by entry id (plan §15r E9.S4: A20 restores only those,
+    /// judged again); <see cref="ShownList.None"/> otherwise — A20 then refuses.</summary>
+    public ShownList ShownEntries { get; init; } = ShownList.None;
+
+    /// <summary>The run this action is part of — what the archive's child carries as its own run id (plan §15r D8); empty for a
+    /// preview, which starts no run.</summary>
+    public string RunId { get; init; } = string.Empty;
+
+    /// <summary>When this run started — what a timer run's remaining time is measured from (plan §15r D8: A13 takes the run limit's
+    /// slack). The safe default is the distant past: a context built without it leaves A13 no time.</summary>
+    public DateTimeOffset RunStarted { get; init; } = DateTimeOffset.MinValue;
+
     /// <summary>A wait the action may take (A11's CPU window). Real time by default; a test passes its own.</summary>
     public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
 

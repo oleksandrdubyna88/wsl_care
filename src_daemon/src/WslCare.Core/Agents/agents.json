@@ -11,6 +11,7 @@
       "neverEnter": ["memory"],
       "neverEnterPrefixes": [],
       "sessions": { "linuxUnder": "~/.claude", "windowsUnder": "%USERPROFILE%\\.claude", "glob": "projects/*/*.jsonl", "source": "archive plan §3, confirmed 2026-10-02", "companions": ["{dir}/{id}", "file-history/{id}"] },
+      "archive": { "units": [{ "kind": "session" }], "neverMove": ["memory", "settings*.json", "plugins", "skills", "security"], "retention": { "source": "claude-settings", "defaultDays": 30, "checked": "Claude Code's cleanupPeriodDays, 30 days by default (archive plan §2; its own sweep observed three times on 2026-10-02)" } },
       "versionInLinkTarget": "/versions/(?<v>[0-9][0-9A-Za-z.+-]*)$",
       "confirmed": true
     },
@@ -24,6 +25,7 @@
       "neverEnter": ["memory"],
       "neverEnterPrefixes": [],
       "sessions": { "linuxUnder": "~/.codex", "windowsUnder": "%USERPROFILE%\\.codex", "glob": "sessions/*/*/*/rollout-*.jsonl", "source": "archive plan §3, confirmed 2026-10-02" },
+      "archive": { "units": [{ "kind": "session" }], "neverMove": ["*.sqlite", "*.sqlite-*", "config.toml", "auth.json", "session_index.jsonl", "history.jsonl"], "retention": { "source": "none", "defaultDays": 0, "checked": "no deletion of its own seen on 2026-10-02; its documentation NOT read" } },
       "versionInLinkTarget": "",
       "confirmed": true
     },
@@ -37,6 +39,7 @@
       "neverEnter": ["memory"],
       "neverEnterPrefixes": ["antigravity"],
       "sessions": { "linuxUnder": "~/.gemini", "windowsUnder": "%USERPROFILE%\\.gemini", "glob": "tmp/*/chats/session-*.jsonl", "source": "archive plan §3, confirmed 2026-10-02" },
+      "archive": { "units": [{ "kind": "session" }], "neverMove": ["logs.json", "history", "settings.json", "oauth_creds.json", "antigravity*", "bin"], "retention": { "source": "none", "defaultDays": 0, "checked": "nothing; its documentation NOT read (plan §15r D10)" } },
       "versionInLinkTarget": "",
       "confirmed": true
     },
@@ -46,10 +49,11 @@
       "binaries": ["agy", "antigravity"],
       "npmPackages": [],
       "linux": ["~/.gemini/antigravity-cli", "~/.gemini/antigravity", "~/.cache/antigravity"],
-      "windows": ["%APPDATA%\\Antigravity", "%LOCALAPPDATA%\\agy"],
+      "windows": ["%USERPROFILE%\\.gemini\\antigravity-cli", "%USERPROFILE%\\.gemini\\antigravity", "%APPDATA%\\Antigravity", "%LOCALAPPDATA%\\agy"],
       "neverEnter": ["memory"],
       "neverEnterPrefixes": [],
-      "sessions": { "linuxUnder": "~/.gemini/antigravity-cli", "windowsUnder": "", "glob": "conversations/*.db", "source": "archive plan §3, confirmed 2026-10-02 (Linux)", "companions": ["brain/{id}", "annotations/{id}.pbtxt"] },
+      "sessions": { "linuxUnder": "~/.gemini/antigravity-cli", "windowsUnder": "%USERPROFILE%\\.gemini\\antigravity-cli", "glob": "conversations/*.db", "source": "archive plan §3, confirmed 2026-10-02 (Linux and Windows, the one-time run)", "companions": ["brain/{id}", "annotations/{id}.pbtxt", "{dir}/{id}.db-wal", "{dir}/{id}.db-shm", "{dir}/{id}.db-journal"] },
+      "archive": { "units": [{ "kind": "session", "skipWhilePresent": ["{dir}/{id}.db-wal"] }, { "kind": "file", "glob": "log/cli-*.log" }], "neverMove": ["presence", "conversation_summaries.db*", "implicit", "bin", "builtin"], "retention": { "source": "none", "defaultDays": 0, "checked": "it removed conversations during the 2026-10-02 run by no rule found; a retention setting NOT found, its documentation NOT read" } },
       "versionInLinkTarget": "",
       "confirmed": true
     },

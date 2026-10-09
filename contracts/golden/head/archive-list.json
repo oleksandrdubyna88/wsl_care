@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "sideFolder": "wsl-host-distro",
+  "baseFolder": "/golden-root/mnt/v/ai-archive",
+  "outcome": "done",
+  "note": "",
+  "entries": [
+    {
+      "entryId": "0123456789abcdef",
+      "agent": "claude-code",
+      "key": "projects/p/s1.jsonl",
+      "month": "2000/01",
+      "status": "archived",
+      "verified": true,
+      "files": 2,
+      "bytes": 200,
+      "archivedAtUtc": "2000-01-01T00:00:00+00:00"
+    }
+  ],
+  "skippedLines": 0,
+  "notes": [],
+  "omitted": 0
+}

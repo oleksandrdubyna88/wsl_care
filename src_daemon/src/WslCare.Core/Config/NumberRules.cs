@@ -96,7 +96,46 @@ public static class NumberRules
         new([ConfigKeys.Running.NoProgressMinutes, .. RunBudget.Keys],
             c => TimeSpan.FromMinutes(I(c, ConfigKeys.Running.NoProgressMinutes)) >= RunBudget.LongestStep(c),
             c => $"{ConfigKeys.Running.NoProgressMinutes.Name} ({I(c, ConfigKeys.Running.NoProgressMinutes)}) must be at least the longest single command ({Math.Ceiling(RunBudget.LongestStep(c).TotalMinutes)} min with its drains and {CeilingMarginSeconds} s more): a command still inside its ceiling is progress"),
+        .. ArchiveRules,
     ];
+
+    /// <summary>An ESTIMATE of the bytes one session takes in the archive's in-flight file: its entry id, agent, folder, key, month,
+    /// state, run ids and file count; its files' hashes and archived paths live in the index only (E9.S0 review round C3). It is no
+    /// guarantee: a file that would pass <c>archive.maxStateFileBytes</c> is never written — the run stops with <c>state-write</c>
+    /// before it touches the next session (E9.S2b own review round m2), so a long key costs a stop, never lost state.</summary>
+    public const int BytesPerInflightSession = 600;
+
+    /// <summary>Plan §15r E9.S0: the archive's coupled limits — ahead of the agents' own deletion, within the watchdog and the
+    /// longest wait a request accepts, and an in-flight file its own reader can hold.</summary>
+    private static IReadOnlyList<Rule> ArchiveRules =>
+    [
+        new([ConfigKeys.Archive.OlderThanDays, ConfigKeys.Archive.RemoveAfterHours, ConfigKeys.Archive.MarginDays, ConfigKeys.Archive.AgentRetentionDays],
+            c => RemovalDays(c) + I(c, ConfigKeys.Archive.OlderThanDays) + I(c, ConfigKeys.Archive.MarginDays) <= I(c, ConfigKeys.Archive.AgentRetentionDays),
+            c => $"{ConfigKeys.Archive.OlderThanDays.Name} ({I(c, ConfigKeys.Archive.OlderThanDays)}) + {ConfigKeys.Archive.RemoveAfterHours.Name} in whole days ({RemovalDays(c)}) + {ConfigKeys.Archive.MarginDays.Name} ({I(c, ConfigKeys.Archive.MarginDays)}) must be at most {ConfigKeys.Archive.AgentRetentionDays.Name} ({I(c, ConfigKeys.Archive.AgentRetentionDays)}): a session is copied and removed with a margin BEFORE the agent's own deletion (Claude Code deletes after 30 days unless its cleanupPeriodDays says otherwise)"),
+        new([ConfigKeys.Archive.UrgentWithinDays, ConfigKeys.Archive.MarginDays],
+            c => I(c, ConfigKeys.Archive.UrgentWithinDays) <= I(c, ConfigKeys.Archive.MarginDays),
+            c => $"{ConfigKeys.Archive.UrgentWithinDays.Name} ({I(c, ConfigKeys.Archive.UrgentWithinDays)}) must be at most {ConfigKeys.Archive.MarginDays.Name} ({I(c, ConfigKeys.Archive.MarginDays)}): urgency starts after a session is due"),
+        new([ConfigKeys.Archive.ProgressSilenceSeconds, ConfigKeys.Running.NoProgressMinutes],
+            c => (I(c, ConfigKeys.Running.NoProgressMinutes) * SecondsPerMinute) >= I(c, ConfigKeys.Archive.ProgressSilenceSeconds) + CeilingMarginSeconds,
+            c => $"{ConfigKeys.Archive.ProgressSilenceSeconds.Name} ({I(c, ConfigKeys.Archive.ProgressSilenceSeconds)}) with {CeilingMarginSeconds} s must fit inside {ConfigKeys.Running.NoProgressMinutes.Name} ({I(c, ConfigKeys.Running.NoProgressMinutes)}): an archive child that reports at that interval is progress"),
+        new([ConfigKeys.Archive.RunBudgetMinutes, ConfigKeys.Archive.FinishGraceMinutes, ConfigKeys.Commands.MaxTimeoutHours],
+            c => ((I(c, ConfigKeys.Archive.RunBudgetMinutes) + I(c, ConfigKeys.Archive.FinishGraceMinutes)) * SecondsPerMinute) + CeilingMarginSeconds <= I(c, ConfigKeys.Commands.MaxTimeoutHours) * SecondsPerHour,
+            c => $"{ConfigKeys.Archive.RunBudgetMinutes.Name} ({I(c, ConfigKeys.Archive.RunBudgetMinutes)}) + {ConfigKeys.Archive.FinishGraceMinutes.Name} ({I(c, ConfigKeys.Archive.FinishGraceMinutes)}) with {CeilingMarginSeconds} s must fit under {ConfigKeys.Commands.MaxTimeoutHours.Name} ({I(c, ConfigKeys.Commands.MaxTimeoutHours)}): the archive child's ceiling is a command's"),
+        new([ConfigKeys.Archive.MaxStateFileBytes, ConfigKeys.Archive.MaxSessionsPerRun, ConfigKeys.Archive.RemoveAfterHours, ConfigKeys.Timer.PeriodHours],
+            c => I(c, ConfigKeys.Archive.MaxStateFileBytes) >= (long)BytesPerInflightSession * I(c, ConfigKeys.Archive.MaxSessionsPerRun) * WaitingRuns(c),
+            c => $"{ConfigKeys.Archive.MaxStateFileBytes.Name} ({I(c, ConfigKeys.Archive.MaxStateFileBytes)}) must hold {ConfigKeys.Archive.MaxSessionsPerRun.Name} ({I(c, ConfigKeys.Archive.MaxSessionsPerRun)}) in-flight sessions of {BytesPerInflightSession} bytes for each of the {WaitingRuns(c)} runs whose sessions may wait for their removal ({ConfigKeys.Archive.RemoveAfterHours.Name} over {ConfigKeys.Timer.PeriodHours.Name}, and the run itself): an in-flight file past its read cap would be lost state"),
+        new([ConfigKeys.Archive.MinRunMinutes, ConfigKeys.Archive.RunBudgetMinutes],
+            c => I(c, ConfigKeys.Archive.MinRunMinutes) <= I(c, ConfigKeys.Archive.RunBudgetMinutes),
+            c => $"{ConfigKeys.Archive.MinRunMinutes.Name} ({I(c, ConfigKeys.Archive.MinRunMinutes)}) must be at most {ConfigKeys.Archive.RunBudgetMinutes.Name} ({I(c, ConfigKeys.Archive.RunBudgetMinutes)}): a run that needs more time than its budget never starts"),
+    ];
+
+    /// <summary>The runs whose sessions may sit in the in-flight file at once: those of the last ⌈removeAfterHours / timer.periodHours⌉
+    /// runs (copied, waiting for a LATER run to remove their source) and the run itself.</summary>
+    private static long WaitingRuns(EffectiveConfig c) =>
+        ((I(c, ConfigKeys.Archive.RemoveAfterHours) + I(c, ConfigKeys.Timer.PeriodHours) - 1) / I(c, ConfigKeys.Timer.PeriodHours)) + 1;
+
+    /// <summary><c>archive.removeAfterHours</c> in whole days, rounded up.</summary>
+    private static long RemovalDays(EffectiveConfig c) => (I(c, ConfigKeys.Archive.RemoveAfterHours) + HoursPerDay - 1) / HoursPerDay;
 
     /// <summary>Every rule <paramref name="config"/> breaks.</summary>
     public static IReadOnlyList<Rule> Broken(EffectiveConfig config) => [.. Rules.Where(r => !r.Holds(config))];

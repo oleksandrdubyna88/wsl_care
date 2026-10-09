@@ -72,6 +72,7 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
             ? [new(ClockChecks.WindowsTimeId, NotChecked, "judged by the distro's full run"), new(ClockChecks.ClockReferenceId, NotChecked, "judged by the distro's full run")]
             : ClockChecks.From(FullRunVerdicts.Read(paths, files, RunHistory.Read(paths, files)), now));
         checks.Add(new("root", NotChecked, "root reachability (wsl.exe -u root -- true) is checked by the extension's root boundary (E6)"));
+        checks.Add(linux is null ? new(ArchiveRunuserId, NotChecked, "the archive's children start through runuser inside the WSL distro") : ArchiveRunuser(linux, loaded));
         var versions = new List<VersionReport> { new("wsl-care", true, version, null) };
         versions.AddRange(await DockerVersionsAsync(cancellationToken).ConfigureAwait(false));
         if (linux is not null)
@@ -93,6 +94,17 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
             ConfigNotices = ConfigNoticeReport.Of(loaded),
         };
     }
+
+    public const string ArchiveRunuserId = "archive.runuser";
+
+    /// <summary>Plan §15r risk consult 9/9.4 #2: the archive's children start through <c>runuser</c>; a PAM stack that names
+    /// <c>pam_systemd</c> would give them a login session root does not bound — a problem only where an archive is configured.</summary>
+    private DoctorCheck ArchiveRunuser(LinuxHostPaths linux, ConfigLoadResult loaded) => Archive.RunuserPam.Problem(linux, files) switch
+    {
+        { Length: 0 } => new(ArchiveRunuserId, Ok, "runuser's PAM stack names no pam_systemd: the archive's children stay in the service's cgroup"),
+        var problem when loaded.Config.Text(ConfigKeys.Archive.BaseFolder).Length == 0 => new(ArchiveRunuserId, Ok, $"no archive is configured, so nothing starts through runuser for it; were one configured: {problem}"),
+        var problem => new(ArchiveRunuserId, Problem, problem),
+    };
 
     private static DoctorCheck Config(ConfigLoadResult loaded) =>
         loaded.IsObserveOnly

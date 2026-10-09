@@ -27,17 +27,38 @@ public sealed class ConfigKeyShapeTests
     }
 
     [Fact]
-    public void A_path_key_is_machine_only_and_a_pattern_key_is_read_by_no_daemon_code()
+    public void A_path_key_steers_no_root_write_and_a_pattern_key_is_read_by_no_daemon_code()
     {
         var texts = ConfigKeys.All.OfType<ConfigKey.TextKey>().ToList();
 
-        texts.Where(k => k.Rule is TextRule.AbsolutePathOrEmpty).Should().OnlyContain(k => k.Trust.MachineOnly)
-            .And.Contain(ConfigKeys.Archive.BaseFolder);
+        // Plan §15r D1: the base folder is written by the TARGET USER's process, never by root, so it is an ordinary key — its
+        // rules (D7) are judged by that process. Every OTHER path key is machine-only (§15q R1.3; E9.S0 review round C1).
+        PathKeyProblems(texts).Should().BeEmpty();
+        texts.Should().Contain(ConfigKeys.Archive.BaseFolder);
         texts.Where(k => k.Rule is TextRule.HttpsUrlOrEmpty).Should().OnlyContain(k => k.Trust.MachineOnly, "root sends the request (PLAN_windows_time_guard.md D2)")
             .And.Contain(ConfigKeys.Clock.ReferenceUrl);
         texts.Where(k => k.Rule is TextRule.Matching).Should().OnlyContain(k => k.Trust.DaemonUnused)
             .And.Contain(ConfigKeys.Distro);
     }
+
+    /// <summary>E9.S0 review round C1: "steers no root write" was asked as "not root-effective", which a NEW path key marked as a
+    /// display figure passes — while root might write into it. The base folder is exempt BY NAME; any other path key must be
+    /// machine-only.</summary>
+    [Fact]
+    public void A_new_path_key_that_is_not_machine_only_is_named()
+    {
+        var planted = new ConfigKey.TextKey("cache.folder", new TextRule.AbsolutePathOrEmpty()) { Trust = KeyTrust.Display };
+        var machineOnly = planted with { Name = "cache.machineFolder", Trust = new KeyTrust(SafeDirection.None, MachineOnly: true) };
+
+        PathKeyProblems([planted, machineOnly, ConfigKeys.Archive.BaseFolder]).Should().Equal("cache.folder");
+        PathKeyProblems([ConfigKeys.Archive.BaseFolder with { Trust = new KeyTrust(SafeDirection.Lower) }]).Should().Equal("archive.baseFolder");
+    }
+
+    /// <summary>The path keys that break the rule: the base folder when it steers root, any other one when it is not machine-only.</summary>
+    private static IEnumerable<string> PathKeyProblems(IEnumerable<ConfigKey.TextKey> keys) =>
+        keys.Where(k => k.Rule is TextRule.AbsolutePathOrEmpty)
+            .Where(k => k.Name == ConfigKeys.Archive.BaseFolder.Name ? k.Trust.RootEffective : !k.Trust.MachineOnly)
+            .Select(k => k.Name);
 
     /// <summary>Every number slot of every template the product policy holds is either filled from ONE key — and then accepts
     /// exactly that key's range (times the unit the action converts to) — or is named here as not a configuration value. A new
@@ -50,6 +71,8 @@ public sealed class ConfigKeyShapeTests
             [("journalctl-vacuum-time", "keep")] = (ConfigKeys.Journal.KeepDays, 1),
             [("curl-head-date", "seconds")] = (ConfigKeys.Clock.ReferenceTimeoutSeconds, 1),
             [("docker-image-prune-unused", "until")] = (ConfigKeys.Images.UnusedOlderThanDays, 24),
+            // E9.S4: A13 passes its budget in seconds — at most archive.runBudgetMinutes, at least archive.minRunMinutes (≥ 1 min).
+            [("archive-run", "budget")] = (ConfigKeys.Archive.RunBudgetMinutes, 60),
         };
         var notConfig = new HashSet<(string, string)>
         {

@@ -98,7 +98,7 @@ public sealed class ProcessCommandRunner : ICommandRunner
         }
         catch (OperationCanceledException)
         {
-            await KillAndReapAsync(process, reads).ConfigureAwait(false);
+            await KillAndReapAsync(process, reads, request).ConfigureAwait(false);
             Actions.Engine.RunProgress.Mark();
             cancellationToken.ThrowIfCancellationRequested();
             return new CommandOutcome.TimedOut(stdout.Snapshot(), stderr.Snapshot(), request.Timeout) { StartedFrom = launch.StartedFrom, StartedAt = launch.StartedAt };
@@ -125,10 +125,13 @@ public sealed class ProcessCommandRunner : ICommandRunner
             return launch.NotStarted;
         }
 
+        // A started stream is a step of the run, and so is every line it prints (plan §15r D8: a long archive child that
+        // reports reads live, one that falls silent reads wedged); each end, below, is another.
+        Actions.Engine.RunProgress.Mark();
         var stderr = new OutputCapture(request.OutputCapChars);
         var errors = stderr.DrainAsync(process.StandardError);
         Observe(errors);
-        var lines = PumpLinesAsync(process.StandardOutput, onStdoutLine, request.OutputCapChars);
+        var lines = PumpLinesAsync(process.StandardOutput, line => Stepped(line, onStdoutLine), request.OutputCapChars);
         Observe(lines);
 
         using var ceiling = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -151,10 +154,11 @@ public sealed class ProcessCommandRunner : ICommandRunner
             // #1/#5) — kills the whole tree and waits for the child to be gone before anything propagates.
             if (!ended)
             {
-                await KillAndReapAsync(process, Task.WhenAll(errors, lines)).ConfigureAwait(false);
+                await KillAndReapAsync(process, Task.WhenAll(errors, lines), request).ConfigureAwait(false);
             }
         }
 
+        Actions.Engine.RunProgress.Mark();
         if (!ended)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -163,6 +167,13 @@ public sealed class ProcessCommandRunner : ICommandRunner
 
         await DrainAsync(errors).ConfigureAwait(false);
         return new CommandOutcome.Exited(process.ExitCode, CapturedText.Empty, stderr.Snapshot(), started.Elapsed) { StartedFrom = launch.StartedFrom, StartedAt = launch.StartedAt };
+    }
+
+    /// <summary>One streamed line: a step of the run, then the caller's.</summary>
+    private static void Stepped(string line, Action<string> onStdoutLine)
+    {
+        Actions.Engine.RunProgress.Mark();
+        onStdoutLine(line);
     }
 
     private CommandOutcome.Refused? Refusal(CommandRequest request) =>
@@ -184,7 +195,25 @@ public sealed class ProcessCommandRunner : ICommandRunner
     {
         process.StartInfo = StartInfo(request, found.Path);
         var startedAt = _clock.GetUtcNow();
-        return new Launch(StartAt(process, found.Path), found.OnTheSystemDrive ? found.Path : string.Empty, Collectors.Reading.Of(startedAt));
+        var notStarted = StartAt(process, found.Path);
+        if (notStarted is null)
+        {
+            Started(process, request);
+        }
+
+        return new Launch(notStarted, found.OnTheSystemDrive ? found.Path : string.Empty, Collectors.Reading.Of(startedAt));
+    }
+
+    /// <summary>A started child: its stdin closed when the request says so (it reads end-of-file, plan §15r risk consult 9/9.4 #2),
+    /// and its id told to whoever asked (the archive records its children, #1).</summary>
+    private static void Started(Process process, CommandRequest request)
+    {
+        if (request.StdinClosed)
+        {
+            process.StandardInput.Close();
+        }
+
+        request.OnStarted(process.Id);
     }
 
     private static readonly Collectors.Reading<DateTimeOffset> NotLaunched = Collectors.Reading.Missing<DateTimeOffset>("nothing was started");
@@ -213,7 +242,7 @@ public sealed class ProcessCommandRunner : ICommandRunner
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            RedirectStandardInput = false,
+            RedirectStandardInput = request.StdinClosed,
             CreateNoWindow = true,
             WorkingDirectory = request.WorkingDirectory,
         };
@@ -249,15 +278,41 @@ public sealed class ProcessCommandRunner : ICommandRunner
         }
     }
 
-    /// <summary>The tree killed, the child waited for (never past the grace), then the readers drained: when this returns the
-    /// child is gone, not merely signalled.</summary>
-    private static async Task KillAndReapAsync(Process process, Task reads)
+    /// <summary>The tree killed, the child waited for (never past the grace), then the readers drained. When this returns the
+    /// child has normally gone — but NOT always: a child in uninterruptible sleep (state <c>D</c>, a read the host stopped
+    /// serving) cannot die until the kernel releases it, and the wait ends at the grace either way (plan §15r risk consult 9/9.4
+    /// #1, which corrected the claim this said before). The archive therefore records the identities of its children and
+    /// launches no second one while one of them lives (<c>Archive/ArchiveChildren.cs</c>).</summary>
+    private static async Task KillAndReapAsync(Process process, Task reads, CommandRequest request)
     {
-        Kill(process);
+        try
+        {
+            Told(process, request);
+        }
+        finally
+        {
+            // Whatever the one told does, the tree is killed.
+            Kill(process);
+        }
+
         // CancellationToken.None on purpose: the caller may already have cancelled, and this wait is what makes the kill
         // observable; DrainGrace is its ceiling.
         await Task.WhenAny(process.WaitForExitAsync(CancellationToken.None), Task.Delay(DrainGrace)).ConfigureAwait(false);
         await DrainAsync(reads).ConfigureAwait(false);
+    }
+
+    /// <summary>The kill told to whoever asked while the tree is still whole (plan §15r E9.S4 own review round S-M1: the archive
+    /// looks up the worker under its launcher then, since a worker stuck in the kernel outlives the kill).</summary>
+    private static void Told(Process process, CommandRequest request)
+    {
+        try
+        {
+            request.OnKilling(process.Id);
+        }
+        catch (InvalidOperationException)
+        {
+            // No process is associated any more: it is gone, and nothing is left to record.
+        }
     }
 
     /// <summary>Wait for the readers, but never past the grace: a pipe a survivor holds open must not hold us.</summary>

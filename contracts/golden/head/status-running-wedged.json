@@ -448,6 +448,8 @@
     "A11",
     "A18",
     "A19",
+    "A13",
+    "A20",
     "A1",
     "A2"
   ],
@@ -463,7 +465,12 @@
     "agents.list",
     "agents.probe",
     "config.agentsExtra",
-    "status.mcpServers"
+    "status.mcpServers",
+    "archive.checkBase",
+    "archive.preview",
+    "archive.run",
+    "archive.restore",
+    "archive.list"
   ],
   "running": {
     "state": "wedged",

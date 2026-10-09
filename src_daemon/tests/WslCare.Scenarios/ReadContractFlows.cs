@@ -68,7 +68,7 @@ public sealed class ReadContractFlows
         }
         else
         {
-            report.Actions.Should().Contain("A4").And.NotContain("A13", "A13 is not built");
+            report.Actions.Should().Contain("A4").And.Contain(new[] { "A13", "A20" }, "since E9.S4 the archive and its restore are this side's actions too");
         }
     }
 

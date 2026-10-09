@@ -18,6 +18,14 @@ internal static class Output
         return (int)ExitCode.Ok;
     }
 
+    /// <summary>A line of a STREAMED answer that is not its end — <c>archive run --json</c>'s progress and heartbeat lines (E9.S2b),
+    /// one JSON object each, flushed so a reader sees it at once.</summary>
+    public static void Progress(TextWriter stdout, string line)
+    {
+        stdout.WriteLine(line);
+        stdout.Flush();
+    }
+
     /// <summary>ONE line on stderr, prefixed with the binary's name, and the usage code.</summary>
     public static int Refuse(TextWriter stderr, string message)
     {

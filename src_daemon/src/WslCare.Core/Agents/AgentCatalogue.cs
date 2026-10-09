@@ -35,7 +35,11 @@ public sealed record AgentEntry(
     IReadOnlyList<string> NeverEnterPrefixes,
     AgentSessionLayout? Sessions,
     string VersionInLinkTarget,
-    bool Confirmed);
+    bool Confirmed)
+{
+    /// <summary>What the archive moves of this agent (plan §15r, E9.S0); <c>null</c> = never archived.</summary>
+    public AgentArchiveBlock? Archive { get; init; }
+}
 
 /// <summary>The embedded <c>agents.json</c>.</summary>
 public sealed record AgentCatalogueFile(int SchemaVersion, IReadOnlyList<AgentEntry> Agents);
@@ -119,5 +123,19 @@ public static class AgentCatalogue
         NeverEnterPrefixes = entry.NeverEnterPrefixes ?? [],
         VersionInLinkTarget = entry.VersionInLinkTarget ?? string.Empty,
         Sessions = entry.Sessions is { } layout ? layout with { Companions = layout.Companions ?? [] } : null,
+        Archive = entry.Archive is { } archive ? Normalised(archive) : null,
     };
+
+    private static AgentArchiveBlock Normalised(AgentArchiveBlock archive) => archive with
+    {
+        Units = [.. (archive.Units ?? []).Select(u => u with { Glob = u.Glob ?? string.Empty, Kind = u.Kind ?? string.Empty, SkipWhilePresent = u.SkipWhilePresent ?? [] })],
+        NeverMove = archive.NeverMove ?? [],
+        Retention = archive.Retention is { } retention
+            ? retention with { Source = retention.Source ?? string.Empty, Checked = retention.Checked ?? string.Empty }
+            : new AgentRetention(RetentionSources.None, 0, string.Empty),
+    };
+
+    /// <summary>The ids of the agents the archive may move (plan §15r, <c>archive.agents</c>' allowed values): every entry with an
+    /// <c>archive</c> block, in catalogue order.</summary>
+    public static IReadOnlyList<string> ArchivableIds => [.. Agents.Where(a => a.Archive is not null).Select(a => a.Id)];
 }

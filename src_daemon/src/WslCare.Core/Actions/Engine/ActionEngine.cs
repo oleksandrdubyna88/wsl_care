@@ -32,6 +32,10 @@ public sealed record EngineContext(
     /// which it does only outside a sandbox, on Linux.</summary>
     public IProcessSignals Signals { get; init; } = RefusingProcessSignals.NotWired;
 
+    /// <summary>Where the product's own binary is, for the archive's self-invocations (plan §15r D1); checked again at every
+    /// request. A test passes its own.</summary>
+    public Func<SelfBinaryResult> Self { get; init; } = SelfBinary.Product;
+
     /// <summary>The wait an action may take (A11's CPU window); real time unless a test passes its own.</summary>
     public Func<TimeSpan, CancellationToken, Task> Wait { get; init; } = static (delay, token) => Task.Delay(delay, token);
 
@@ -202,12 +206,12 @@ public sealed class ActionEngine(EngineContext c)
 
         request.OnRunningWritten();
         var outcomes = new List<ActionOutcome>();
-        var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes)) { IdleSource = SampleIdle };
+        var run = new RunState(request.Trigger, target, dry, Context(request, target, outcomes) with { RunId = runId.Text, RunStarted = started }) { IdleSource = SampleIdle };
         var outcome = await ActAllAsync(request, run, running, notes, outcomes, cancellationToken).ConfigureAwait(false);
         return new Pass(target, dry, outcomes, outcome, RunningWritten: true);
     }
 
-    /// <summary>The idle check of plan §5, read once per run and only when an action needs it.</summary>
+    /// <summary>The idle check of plan §5, read once per run and only when an action needs it — again after a budgeted action (C-6).</summary>
     private IdleVerdict SampleIdle()
     {
         if (c.Paths is not LinuxHostPaths linux)
@@ -305,7 +309,9 @@ public sealed class ActionEngine(EngineContext c)
             return held;
         }
 
-        return Ran(action, preview, await action.RunAsync(run.Context, preview, commands, cancellationToken).ConfigureAwait(false));
+        var done = await action.RunAsync(run.Context, preview, commands, cancellationToken).ConfigureAwait(false);
+        run.Acted(action);
+        return Ran(action, preview, done);
     }
 
     private ActionOutcome Ran(ICleanupAction action, ActionPreview preview, ActionRun done) => done switch
@@ -374,7 +380,7 @@ public sealed class ActionEngine(EngineContext c)
 
     private static Stop? RefusalStop(ActionPreview preview) => preview.Refusal.Length > 0 ? new Stop(ActionStatus.Refused, preview.Refusal) : null;
 
-    /// <summary>The idle gate: asked only when it applies and the preview is no urgent event; the sample is read once per run.</summary>
+    /// <summary>The idle gate: asked only when it applies and the preview is no urgent event; the sample is read once per run, and again after a budgeted action (C-6).</summary>
     private static Stop? IdleStop(ICleanupAction action, ActionPreview preview, RunState run) =>
         IdleGate.Applies(action.Idle, run.Trigger) && preview.Urgent.Length == 0 && run.Idle() is { Idle: false } busy ? new Stop(ActionStatus.Deferred, busy.Reason) : null;
 
@@ -552,7 +558,7 @@ public sealed class ActionEngine(EngineContext c)
             : new TargetUserResult.None("the Windows binary has no target user (its actions are E12's)");
 
     private ActionCommands Commands(ICleanupAction action, TargetUserResult target) =>
-        new(action, c.Commands, target, action.Scope == CommandScope.User && target is TargetUserResult.Found found && c.Paths is LinuxHostPaths linux ? TargetUserCommands.BinFolders(found.User, linux, c.Files) : []);
+        new(action, c.Commands, target, action.Scope == CommandScope.User && target is TargetUserResult.Found found && c.Paths is LinuxHostPaths linux ? TargetUserCommands.BinFolders(found.User, linux, c.Files) : []) { Self = c.Self };
 
     /// <param name="soFar">The outcomes of this run so far — what <see cref="ActionContext.RanEarlier"/> answers from.</param>
     private ActionContext Context(ActRequest request, TargetUserResult target, IReadOnlyList<ActionOutcome> soFar) =>
@@ -562,6 +568,7 @@ public sealed class ActionEngine(EngineContext c)
             Signals = c.Signals,
             ShownVolumes = request.ShownVolumes,
             ShownProcesses = request.ShownProcesses,
+            ShownEntries = request.ShownEntries,
             Wait = c.Wait,
             RanEarlier = id => soFar.Any(o => o.Id == id.Text && o.Status == ActionStatus.Ran),
         };
@@ -574,7 +581,8 @@ public sealed class ActionEngine(EngineContext c)
     private DateTimeOffset OwnStart() =>
         c.Processes.Lookup(c.ProcessId) is ProcessLookup.Alive alive ? alive.StartUtc : DateTimeOffset.MinValue;
 
-    /// <summary>One execution's fixed facts and the idle sample, read at most once and only when an action needs it.</summary>
+    /// <summary>One execution's fixed facts and the idle sample, read once and only when an action needs it — again after a budgeted
+    /// action ran (C-6).</summary>
     private sealed class RunState(RunTrigger trigger, TargetUserResult target, DryRunDecision dry, ActionContext context)
     {
         private IdleVerdict? _idle;
@@ -590,5 +598,15 @@ public sealed class ActionEngine(EngineContext c)
         public Func<IdleVerdict> IdleSource { get; init; } = static () => new IdleVerdict(false, "deferred: no idle sample");
 
         public IdleVerdict Idle() => _idle ??= IdleSource();
+
+        /// <summary>After a BUDGETED action ran (A13: it may take most of the run limit), the sample read before it is stale — the next
+        /// action that waits for idle reads a fresh one (plan §15r E9.S4 own review round C-6). Any other action leaves it as it was.</summary>
+        public void Acted(ICleanupAction action)
+        {
+            if (action.Commands.Any(template => template.Limits is CommandLimits.Budgeted))
+            {
+                _idle = null;
+            }
+        }
     }
 }

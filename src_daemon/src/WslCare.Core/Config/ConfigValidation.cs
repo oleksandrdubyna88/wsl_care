@@ -131,9 +131,15 @@ public static class ConfigValidation
         };
 
     /// <summary>A closed list's member must be one of its allowed values AND pass its member rule — a rule narrows a catalogue,
-    /// it never replaces it (coai code round 2026-10-08, finding 1).</summary>
+    /// it never replaces it (coai code round 2026-10-08, finding 1). A manual agent's id passes a list that takes one (E9.S0).</summary>
     private static string MemberProblem(ConfigKey.TextListKey key, string member) =>
+        key.ManualAgents && IsManualAgentId(member) ? string.Empty : AllowedProblem(key, member);
+
+    private static string AllowedProblem(ConfigKey.TextListKey key, string member) =>
         key.Allowed.Count > 0 && !key.Allowed.Contains(member, StringComparer.Ordinal) ? "not one of the allowed values" : key.Member.Problem(member);
+
+    private static bool IsManualAgentId(string member) =>
+        member.StartsWith(Agents.ExtraAgent.IdPrefix, StringComparison.Ordinal) && Agents.ExtraAgentShape.IsName(member[Agents.ExtraAgent.IdPrefix.Length..]);
 
     private static ValueCheck ParseBool(ConfigKey key, string text) => text.ToLowerInvariant() switch
     {

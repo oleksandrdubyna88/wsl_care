@@ -75,15 +75,69 @@ public static class SessionGlob
     }
 
     /// <summary>Whether <paramref name="name"/> matches <paramref name="pattern"/>: <c>*</c> any run of characters, <c>?</c> one.</summary>
-    public static bool Matches(string pattern, string name) => Matches(pattern.AsSpan(), name.AsSpan());
+    /// <remarks>E9.S1 review round P1: a user-layer pattern is matched by ROOT's walk against every name it lists, so the matcher is
+    /// never exponential — two cursors and the last star's mark, backtracking only to that mark, at most pattern × name steps (the
+    /// recursive form was exponential: forty stars against a 200-character name never answered).</remarks>
+    public static bool Matches(string pattern, string name)
+    {
+        var cursor = new MatchCursor();
+        while (cursor.Name < name.Length)
+        {
+            if (!Step(pattern, name, ref cursor))
+            {
+                return false;
+            }
+        }
 
-    private static bool Matches(ReadOnlySpan<char> pattern, ReadOnlySpan<char> name) =>
-        pattern.Length == 0 ? name.Length == 0
-        : pattern[0] == '*' ? Star(pattern, name)
-        : name.Length > 0 && OneMatches(pattern[0], name[0]) && Matches(pattern[1..], name[1..]);
+        return pattern.AsSpan(cursor.Pattern).IndexOfAnyExcept('*') < 0;
+    }
 
-    private static bool Star(ReadOnlySpan<char> pattern, ReadOnlySpan<char> name) =>
-        Matches(pattern[1..], name) || (name.Length > 0 && Matches(pattern, name[1..]));
+    /// <summary>Where the match stands: the pattern and name positions, and the last star with the name position it was tried at.</summary>
+    private struct MatchCursor
+    {
+        public int Pattern;
+        public int Name;
+        public int Star;
+        public int StarName;
+
+        public MatchCursor()
+        {
+            Star = -1;
+        }
+    }
+
+    /// <summary>One step: consume a matching character, mark a star, or back up to the last star with one more character taken by
+    /// it; <c>false</c> when there is no star to back up to.</summary>
+    private static bool Step(string pattern, string name, ref MatchCursor at) =>
+        at.Pattern >= pattern.Length ? BackToStar(ref at)
+        : pattern[at.Pattern] == '*' ? MarkStar(ref at)
+        : OneMatches(pattern[at.Pattern], name[at.Name]) ? Advance(ref at)
+        : BackToStar(ref at);
+
+    private static bool Advance(ref MatchCursor at)
+    {
+        (at.Pattern, at.Name) = (at.Pattern + 1, at.Name + 1);
+        return true;
+    }
+
+    private static bool MarkStar(ref MatchCursor at)
+    {
+        (at.Star, at.StarName, at.Pattern) = (at.Pattern, at.Name, at.Pattern + 1);
+        return true;
+    }
+
+    /// <summary>The last star takes one more character; <c>false</c> when no star was seen.</summary>
+    private static bool BackToStar(ref MatchCursor at)
+    {
+        if (at.Star < 0)
+        {
+            return false;
+        }
+
+        (at.Pattern, at.StarName) = (at.Star + 1, at.StarName + 1);
+        at.Name = at.StarName;
+        return true;
+    }
 
     private static bool OneMatches(char pattern, char name) => pattern == '?' || pattern == name;
 

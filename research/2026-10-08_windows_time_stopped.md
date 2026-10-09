@@ -81,3 +81,11 @@ it cannot name by pid and start). A tripwire's break-it check must replace the l
 the real one through. And the
 modal in the extension is the confirmation the PRODUCT controls: whether Windows also shows a UAC prompt is the machine's
 UAC policy (U4), not the extension's.
+
+## 5. Found stopped again, and the crash dumps behind the slow boots (2026-10-09)
+
+- **2026-10-09 15:26Z:** `w32time` found **Stopped / Manual** again, with a CORRECT clock (the coordinator, on the owner's
+  machine); set **Automatic + running** elevated at 15:27Z. The same minute `RealTimeIsUniversal=1` was set (owner approved).
+- What the owner's minidumps say about the 2 h slow boots — three `0x19C` display-driver hangs at monitor power changes, one
+  `0x154` compressed-memory read failure, the BSOD → Linux on the disk → RTC in UTC chain:
+  [2026-10-09_crash_dumps.md](2026-10-09_crash_dumps.md).

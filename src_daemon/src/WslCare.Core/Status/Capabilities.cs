@@ -49,6 +49,25 @@ public static class Capabilities
     /// <summary><c>status --json</c> carries the <c>mcpServers</c> block and the three <c>mcp.*</c> verdicts (plan §15q E7.S2d).</summary>
     public const string StatusMcpServers = "status.mcpServers";
 
+    /// <summary><c>archive check-base &lt;path&gt; --json</c> judges where the AI-session archive may live, as the user, and
+    /// <c>config set archive.baseFolder</c> takes the user layer behind the same rules (plan §15r D1, D7, E9.S0).</summary>
+    public const string ArchiveCheckBase = "archive.checkBase";
+
+    /// <summary><c>archive preview [--agent &lt;id&gt;] --json</c> answers what the archive would move on this side now, as the user
+    /// (plan §15r E9.S1).</summary>
+    public const string ArchivePreview = "archive.preview";
+
+    /// <summary><c>act A13</c> archives aged AI-agent sessions as the target user through the product's own binary — the timer's and
+    /// the button's (<c>archive run / status / reach --json</c> as the user) (plan §15r D1, D8, E9.S4).</summary>
+    public const string ArchiveRun = "archive.run";
+
+    /// <summary><c>act A20 --entry &lt;id&gt;…</c> restores the archived entries its preview showed, a button only (<c>archive restore</c> as
+    /// the user) (plan §15r D6, E9.S4).</summary>
+    public const string ArchiveRestore = "archive.restore";
+
+    /// <summary><c>archive list [--agent] [--month] [--run] --json</c> answers this side's archived entries, as the user (plan §15r E9.S3).</summary>
+    public const string ArchiveList = "archive.list";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase, ArchivePreview, ArchiveRun, ArchiveRestore, ArchiveList];
 }

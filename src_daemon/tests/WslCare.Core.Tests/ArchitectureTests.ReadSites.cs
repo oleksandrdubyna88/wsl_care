@@ -53,7 +53,7 @@ public sealed partial class ArchitectureTests
     /// <summary>The calls each class may use — the hardened readers for every class someone else controls.</summary>
     private static readonly Dictionary<ReadClass, string[]> AllowedCalls = new()
     {
-        [ReadClass.System] = ["ReadFile", "ReadAllText", "ListDirectories", "ListFiles", "ProcText.Read", "ProcText.Bytes", "ReadText", "RegularFiles.ReadHead"],
+        [ReadClass.System] = ["ReadFile", "ReadAllText", "ListDirectories", "ListFiles", "ListEntries", "ProcText.Read", "ProcText.Bytes", "ReadText", "RegularFiles.ReadHead"],
         [ReadClass.RootState] = ["ReadFile", "ListDirectories", "ListFiles", "new FileStream"],
         [ReadClass.TrustedState] = ["ReadStateFile"],
         [ReadClass.ConfigLayer] = ["ReadStateFile", "ReadUserFile"],
@@ -110,6 +110,16 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Health/HealthCollector.cs"] = new() { ["ListFiles"] = (1, ReadClass.System), ["ReadNoFollowFile"] = (1, ReadClass.WindowsProfile), ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/History/RunLogs.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/History/RunShow.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
+        ["WslCare.Core/Archive/AgentRetentionReader.cs"] = new() { ["ReadRegularFile"] = (1, ReadClass.OwnUnprivileged) },
+        ["WslCare.Core/Archive/InUse.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ListEntries"] = (1, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
+        ["WslCare.Core/Archive/Selection.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Archive/GitTrees.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Archive/ArchiveReconcile.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Archive/ArchiveScan.cs"] = new() { ["ListDirectories"] = (2, ReadClass.TargetHomeMetadata), ["WalkTree"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Archive/ArchiveState.cs"] = new() { ["ReadRegularFile"] = (4, ReadClass.OwnUnprivileged) },
+        ["WslCare.Core/Archive/ArchiveStatus.cs"] = new() { ["ReadFile"] = (1, ReadClass.System) },
+        ["WslCare.Core/Archive/QuarantineCount.cs"] = new() { ["WalkTree"] = (1, ReadClass.TargetHomeMetadata), ["ListEntries"] = (1, ReadClass.TargetHomeMetadata) },
+        ["WslCare.Core/Archive/BaseFolderPlacement.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Processes/WindowsSystemDrive.cs"] = new() { ["ReadAllText"] = (1, ReadClass.System), ["ReadText"] = (3, ReadClass.System) },
         ["WslCare.Core/Records/RunDetailStore.cs"] = new() { ["ListDirectories"] = (1, ReadClass.RootState), ["ListFiles"] = (1, ReadClass.RootState), ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/Records/RunHistory.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
@@ -130,6 +140,8 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Actions/Suspects/AgentCpuHistory.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         // Plan E14 S2b: the watch's tries — root's state, read back as such.
         ["WslCare.Core/Watch/WatchRun.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
+        ["WslCare.Core/Archive/ArchiveChildren.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
+        ["WslCare.Core/Archive/RunuserPam.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         ["WslCare.Core/Collectors/LinuxProbe.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/MemoryCollector.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
         // E14 S6: /proc/pressure/{memory,io,cpu} — moved out of the memory collector so `wsl-care busy` reads it alone.
@@ -143,7 +155,7 @@ public sealed partial class ArchitectureTests
 
     /// <summary>The file system's own implementation files — the readers themselves, not their callers.</summary>
     private static readonly string[] ReaderImplementations =
-        ["WslCare.Core/Files/PhysicalFileSystem.cs", "WslCare.Core/Files/IFileSystem.cs", "WslCare.Core/Files/RegularFiles.cs", "WslCare.Core/Files/TreeWalk.cs", "WslCare.Core/Files/BeneathFiles.cs"];
+        ["WslCare.Core/Files/PhysicalFileSystem.cs", "WslCare.Core/Files/IFileSystem.cs", "WslCare.Core/Files/RegularFiles.cs", "WslCare.Core/Files/TreeWalk.cs", "WslCare.Core/Files/BeneathFiles.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.Windows.cs", "WslCare.Core/Files/PhysicalFileSystem.Archive.Records.cs", "WslCare.Core/Files/BeneathWrites.cs"];
 
     /// <summary>Every read call in <paramref name="source"/>, normalised (<c>File.ReadAllText</c> → <c>ReadAllText</c>).</summary>
     internal static IReadOnlyList<string> ReadCalls(string source) =>

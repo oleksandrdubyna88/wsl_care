@@ -58,6 +58,30 @@ public abstract record SlotKind
         public override string Describe => "<yyyy-MM-ddTHH:mm:ssZ>";
     }
 
+    /// <summary>One to <paramref name="MaxCount"/> values of <paramref name="Length"/> lowercase hex digits, joined by commas, none
+    /// twice — the archive's entry ids after <c>archive restore --entry</c> (plan §15r E9.S4; its count bounded so the one argument
+    /// stays far below the kernel's per-argument limit, the S4 plan round's finding 0).</summary>
+    public sealed record HexList(int Length, int MaxCount) : SlotKind
+    {
+        private static readonly char[] Comma = [','];
+
+        public override bool Accepts(string value)
+        {
+            var parts = value.Split(Comma);
+            return parts.Length <= MaxCount && parts.All(new Hex(Length).Accepts) && parts.Distinct(StringComparer.Ordinal).Count() == parts.Length;
+        }
+
+        public override string Describe => $"<hex{Length}>[,<hex{Length}>...]{{1..{MaxCount}}}";
+    }
+
+    /// <summary>A run id in its canonical spelling (<see cref="Records.RunId"/>) — what <c>archive run --run-id</c> carries.</summary>
+    public sealed record RunIdText : SlotKind
+    {
+        public override bool Accepts(string value) => Records.RunId.TryParse(value) is { } parsed && parsed.Text == value;
+
+        public override string Describe => "<runId>";
+    }
+
     /// <summary>Exactly <paramref name="Length"/> lowercase hex digits — a full Docker object id, an anonymous volume's name.</summary>
     public sealed record Hex(int Length) : SlotKind
     {

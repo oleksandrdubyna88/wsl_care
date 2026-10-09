@@ -78,17 +78,28 @@ public static class ExtraAgentRules
     public static bool Overlaps(string a, string b) => Rules.IsSameOrUnder(a, b) || Rules.IsStrictlyUnder(b, a);
 
     private static IEnumerable<ForbiddenFolder> Forbidden(LinuxHostPaths paths, IReadOnlyList<ForbiddenFolder> cleanupRoots) =>
+        ProtectedPlaces(paths, AgentCatalogue.Agents.SelectMany(a => a.Linux.Select(f => new ForbiddenFolder(AgentCatalogue.LinuxFolder(f, paths.Home), $"{a.Name}'s folder {f} (already tracked)"))), cleanupRoots);
+
+    /// <summary>The places a user-named folder may neither be, sit inside, nor contain — shared by a manual agent's data folder
+    /// (here) and the archive's base folder (<c>Archive.BaseFolderRules</c>, plan §15r D7): the repositories folder, Claude's
+    /// temporary folders, <paramref name="agentFolders"/>, the folders a cleanup cleans, and the product's own folders.</summary>
+    public static IReadOnlyList<ForbiddenFolder> ProtectedPlaces(IHostPaths paths, IEnumerable<ForbiddenFolder> agentFolders, IReadOnlyList<ForbiddenFolder> cleanupRoots) =>
     [
         .. paths.GitRoots.Select(g => new ForbiddenFolder(g, "~/git, under which nothing is ever touched")),
         .. paths.ClaudeTempRoots.Select(t => new ForbiddenFolder(t, "Claude's temporary folder")),
-        .. AgentCatalogue.Agents.SelectMany(a => a.Linux.Select(f => new ForbiddenFolder(AgentCatalogue.LinuxFolder(f, paths.Home), $"{a.Name}'s folder {f} (already tracked)"))),
+        .. agentFolders,
         .. cleanupRoots,
         .. ProductFolders(paths).Select(p => new ForbiddenFolder(p, $"wsl-care's own folder {p}")),
     ];
 
     /// <summary>The product's own configuration, state and log folders (review M9: an extra there would lock <c>config set</c>).</summary>
     public static IReadOnlyList<string> ProductFolders(IHostPaths paths) =>
-        [Path.GetDirectoryName(paths.UserConfigFile) ?? paths.UserConfigFile, paths.StateDirectory, paths.LogDirectory, paths.UserLogDirectory];
+        [FolderOf(paths, paths.UserConfigFile), paths.StateDirectory, paths.LogDirectory, paths.UserLogDirectory];
+
+    /// <summary>The folder holding <paramref name="file"/>: the host's own reading, or — for the other side's paths, which the host
+    /// reads as one name (a Windows path inside the distribution, E9.S0 review round S1) — by those paths' own rules.</summary>
+    private static string FolderOf(IHostPaths paths, string file) =>
+        Path.GetDirectoryName(file) is { Length: > 0 } folder ? folder : paths.Rules.Parent(file);
 
     private static string RealOrFull(IFileSystem files, string path) =>
         files.ResolvePath(path) is RealPathResult.Resolved r ? r.Path : Path.GetFullPath(path);

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "given": "V:\\ai-archive",
+  "accepted": true,
+  "folder": "/mnt/v/ai-archive",
+  "rule": "",
+  "refusal": "",
+  "mount": {
+    "mountPoint": "/mnt/v",
+    "type": "9p",
+    "source": "V:",
+    "known": true
+  },
+  "warnings": [
+    "the Windows profile is unknown (no full run has found it yet): V:\\ai-archive was judged against the places every profile has, not against your profile's own — run a full check (wsl-care collect, or wait for the timer), then check the base again"
+  ],
+  "notes": [
+    "a drvfs mount: its modes are what the mount reports — Windows decides who may read it"
+  ]
+}

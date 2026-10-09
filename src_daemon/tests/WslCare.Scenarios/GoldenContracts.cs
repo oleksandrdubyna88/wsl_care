@@ -90,7 +90,9 @@ internal static partial class GoldenContracts
         new("**.evaluatedAt", "when a verdict was evaluated (this sample, or the end of the full run)", _ => FixedInstant),
         new("**.runId", "a run's id is its start instant and the CLI's pid", _ => FixedRunId),
         new("checkedAt", "the instant doctor answered", _ => FixedInstant),
-        new("answeredAt", "the instant agents list answered (E7.S1)", _ => FixedInstant),
+        new("answeredAt", "the instant agents list and archive preview answered (E7.S1, E9.S1)", _ => FixedInstant),
+        new("sideFolder", "the archive's side folder names this machine and its distribution (plan §15r D4)", _ => "wsl-host-distro"),
+        new("zone", "the archive preview's months are in this machine's time zone", _ => "UTC"),
         new("productVersion", "the commit after +, and the release number, which every release-please bump moves (a golden pinned to it would turn the release pull request red)", _ => FixedVersion),
         new("vm.disk.path", "df / is the sandbox's filesystem", _ => FixedRoot),
         new("vm.disk.totalBytes", "df / is the runner's own disk", _ => 100_000_000_000L),
@@ -106,6 +108,16 @@ internal static partial class GoldenContracts
         new("running.heartbeatAt", "a live or wedged run's heartbeat is staged relative to now — it is judged against the clock (E6.S0)", _ => FixedInstant),
         new("running.heartbeatAgeSeconds", "now minus the staged heartbeat: fresh for live (0), ten minutes for wedged (600)", age => age.GetValue<double>() >= 30 ? 600 : 0),
         new("run.startedAt", "runs show: the confirmed act started now (E6.S0)", _ => FixedInstant),
+        new("startedUtc", "archive run: the run started now (E9.S2b)", _ => FixedInstant),
+        new("endedUtc", "archive run: the run ended now (E9.S2b)", _ => FixedInstant),
+        new("filesPerSecond", "archive run: the rate this machine measured (E9.S2b)", _ => 0),
+        new("megabytesPerSecond", "archive run: the rate this machine measured (E9.S2b)", _ => 0),
+        new("inflight[*].archivedAtUtc", "archive status: the entry was archived by the run just before (E9.S2b)", _ => FixedInstant),
+        new("lastRun.startedUtc", "archive status: the last run started now (E9.S2b)", _ => FixedInstant),
+        new("lastRun.endedUtc", "archive status: the last run ended now (E9.S2b)", _ => FixedInstant),
+        new("entries[*].entryId", "archive list: an entry id hashes this machine's side name (E9.S3)", _ => "0123456789abcdef"),
+        new("restore.sessions[*].entryId", "archive restore: an entry id hashes this machine's side name (E9.S3 own review round C-8a)", _ => "0123456789abcdef"),
+        new("entries[*].archivedAtUtc", "archive list: the entry was archived by the run just before (E9.S3)", _ => FixedInstant),
         new("run.endedAt", "runs show: the confirmed act ended now (E6.S0)", _ => FixedInstant),
     ];
 
@@ -251,6 +263,59 @@ internal static partial class GoldenContracts
         files.Add(Answered("runs-show-done.json", journal, await journal.RunAsync("runs", "show", runId, "--json"), matched));
         files.Add(Answered("runs-show-interrupted.json", journal, await journal.RunAsync("runs", "show", ReadContractScenes.Dead().RunId.Text, "--json"), matched));
         files.Add(Answered("runs-show-unknown.json", journal, await journal.RunAsync("runs", "show", ReadContractScenes.StrangerRunId, "--json"), matched));
+
+        // E9.S0: where the archive may live — a Windows drive path placed at its drvfs mount (the owner's network drive, observed).
+        using (var archive = new ScenarioHome("golden-archive-check-base"))
+        {
+            var paths = (LinuxHostPaths)archive.Paths;
+            var mountInfo = paths.DistroPath("/proc/self/mountinfo");
+            Directory.CreateDirectory(Path.GetDirectoryName(mountInfo)!);
+            File.WriteAllText(mountInfo, "523 504 8:96 / / rw,relatime - ext4 /dev/sdg rw\n479 523 0:154 / /mnt/v rw,relatime - 9p V: rw,aname=drvfs;path=V:;uid=1000;gid=1000;metadata;symlinkroot=/mnt/\n");
+            Directory.CreateDirectory(paths.DistroPath("/mnt/v/ai-archive"));
+            files.Add(Answered("archive-check-base.json", archive, await archive.RunAsync("archive", "check-base", @"V:\ai-archive", "--json"), matched));
+
+            // E9.S0 review round: a REFUSED folder is an answer too — inside an agent's folder, with its rule and the filesystem it lies on.
+            Directory.CreateDirectory(paths.DistroPath("/home/me/.claude/archive"));
+            files.Add(Answered("archive-check-base-refused.json", archive, await archive.RunAsync("archive", "check-base", "/home/me/.claude/archive", "--json"), matched));
+
+            // E9.S1: what the archive would move — one Claude Code session with a companion, due, at a mid-month noon so no time
+            // zone moves its month.
+            foreach (var file in new[] { "/home/me/.claude/projects/p/s1.jsonl", "/home/me/.claude/projects/p/s1/subagents/a.jsonl" })
+            {
+                var path = paths.DistroPath(file);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, new string('x', 100));
+                File.SetLastWriteTimeUtc(path, new DateTime(2000, 1, 15, 12, 0, 0, DateTimeKind.Utc));
+            }
+
+            files.Add(Answered("archive-preview.json", archive, await archive.RunAsync("archive", "preview", "--json"), matched));
+
+            // E9.S2b: one run over that session (its answer is the LAST line — the lines before it are progress), then the status.
+            (await archive.RunAsync("config", "set", "archive.baseFolder", "/mnt/v/ai-archive")).Exit.Should().Be((int)ExitCode.Ok);
+            var run = await archive.RunAsync("archive", "run", "--agent", "claude-code", "--json");
+            files.Add(Answered("archive-run.json", archive, run with { Stdout = run.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
+            files.Add(Answered("archive-status.json", archive, await archive.RunAsync("archive", "status", "--json"), matched));
+
+            // E9.S3: the list of that side's index.
+            files.Add(Answered("archive-list.json", archive, await archive.RunAsync("archive", "list", "--json"), matched));
+
+            // E9.S3 own review round C-8a: a restore answering one session restored and one already there — a second session
+            // archived, both removed by later runs, the first put back by its path, then both asked for by id.
+            var second = paths.DistroPath("/home/me/.claude/projects/p/s2.jsonl");
+            File.WriteAllText(second, new string('y', 50));
+            File.SetLastWriteTimeUtc(second, new DateTime(2000, 1, 15, 12, 0, 0, DateTimeKind.Utc));
+            foreach (var _ in new[] { 1, 2 })
+            {
+                ArchiveRunFlows.ADayLater(archive);
+                (await archive.RunAsync("archive", "run", "--agent", "claude-code", "--json")).Exit.Should().Be((int)ExitCode.Ok);
+            }
+
+            File.Exists(second).Should().BeFalse("the second session was removed before the restore");
+            (await archive.RunAsync("archive", "restore", "--agent", "claude-code", "--session", "projects/p/s1.jsonl", "--json")).Exit.Should().Be((int)ExitCode.Ok);
+            var ids = JsonNode.Parse((await archive.RunAsync("archive", "list", "--json")).Stdout)!["entries"]!.AsArray().Select(e => (string)e!["entryId"]!);
+            var restore = await archive.RunAsync("archive", "restore", "--entry", string.Join(',', ids), "--json");
+            files.Add(Answered("archive-restore.json", archive, restore with { Stdout = restore.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries)[^1] }, matched));
+        }
 
         using var day = new ScenarioHome("golden-local-day");
         ReadContractScenes.LocalDayHistory(day);

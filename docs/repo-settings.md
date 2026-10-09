@@ -175,7 +175,15 @@ Manage**. Azure DevOps retires global PATs: the creation block once planned for 
 global PAT stops working on 2026-12-01** (Azure DevOps blog, *Retirement of Global Personal Access Tokens*), and
 organisation-scoped PATs for the Marketplace are an open request (microsoft/vsmarketplace#2121). So:
 
-- **Decided 2026-10-06 (owner): the manual upload — no stored credential at all.** No `VSCE_PAT` secret and no Entra
+- **Now (2026-10-09): `VSCE_PAT` is set.** The owner stored it in the `marketplace` Environment at 15:51Z with the ONE line
+  `gh secret set VSCE_PAT --env marketplace -R oleksandrdubyna88/wsl_care` (it prompts for the value). The Environment still
+  has its protection: **required reviewer `oleksandrdubyna88`** and the `extension-v*` tag policy — so
+  `publish-marketplace` publishes on its own only after that approval; the approval gate is unchanged. The token is a
+  **GLOBAL PAT**, and Azure DevOps stops honouring global PATs on **2026-12-01**: the publish breaks then unless it has moved
+  to Entra by OIDC first — [todo/PLAN_marketplace_entra_publish.md](../todo/PLAN_marketplace_entra_publish.md). Record the
+  token's own expiry in `POST_DEPLOY.md` (`VSCE_PAT expires: <YYYY-MM-DD>`, never later than 2026-12-01; item 12 fails 30
+  days before it).
+- **Decided 2026-10-06 (owner), superseded 2026-10-09: the manual upload — no stored credential at all.** No `VSCE_PAT` secret and no Entra
   identity; the owner uploads the attested `.vsix` to the Marketplace by hand, and the workflow is unchanged. Record
   `VSCE_PAT expires: none — manual upload` in `POST_DEPLOY.md` (item 12 then passes: there is no credential to expire).
   Per release, after `release-extension.yml` started on the tag:

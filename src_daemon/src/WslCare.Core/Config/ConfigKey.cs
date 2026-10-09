@@ -36,19 +36,22 @@ public abstract record ConfigKey(string Name)
 
     /// <summary>A list whose every member passes <paramref name="Member"/>, at most <paramref name="MaxMembers"/> of them: CLOSED —
     /// every member one of <paramref name="Allowed"/> — or OPEN (<paramref name="Allowed"/> empty), every member a declared shape
-    /// (plan E14 S2c: <c>mcpServers.programs</c>). Never free text either way.</summary>
-    public sealed record TextListKey(string Name, IReadOnlyList<string> Allowed, TextRule Member, int MaxMembers)
-        : ConfigKey(Name, ListKind(Allowed, Member, MaxMembers))
+    /// (plan E14 S2c: <c>mcpServers.programs</c>). Never free text either way. A closed list with <paramref name="ManualAgents"/>
+    /// also takes a manual agent's id (<c>manual:&lt;name&gt;</c> in the manual agent's name shape; E9.S0 review round decision (b),
+    /// <c>archive.agents</c>).</summary>
+    public sealed record TextListKey(string Name, IReadOnlyList<string> Allowed, TextRule Member, int MaxMembers, bool ManualAgents = false)
+        : ConfigKey(Name, ListKind(Allowed, Member, MaxMembers, ManualAgents))
     {
-        /// <summary>A CLOSED list: every member one of <paramref name="allowed"/>, any number of them.</summary>
-        public TextListKey(string name, IReadOnlyList<string> allowed)
-            : this(name, allowed, new TextRule.OneOf(allowed), int.MaxValue)
+        /// <summary>A CLOSED list: every member one of <paramref name="allowed"/> (or, with <paramref name="manualAgents"/>, a manual
+        /// agent's id), any number of them.</summary>
+        public TextListKey(string name, IReadOnlyList<string> allowed, bool manualAgents = false)
+            : this(name, allowed, new TextRule.OneOf(allowed), int.MaxValue, manualAgents)
         {
         }
 
-        private static string ListKind(IReadOnlyList<string> allowed, TextRule member, int maxMembers) =>
+        private static string ListKind(IReadOnlyList<string> allowed, TextRule member, int maxMembers, bool manualAgents) =>
             allowed.Count > 0
-                ? $"a list of: {string.Join(", ", allowed)} (comma-separated on the command line)"
+                ? $"a list of: {string.Join(", ", allowed)}{(manualAgents ? $", {Agents.ExtraAgent.IdPrefix}<name> (a manual agent of aiAgents.extra)" : string.Empty)} (comma-separated on the command line)"
                 : $"a list of at most {maxMembers.ToString(CultureInfo.InvariantCulture)} members, each {member.Describe} (comma-separated on the command line)";
     }
 

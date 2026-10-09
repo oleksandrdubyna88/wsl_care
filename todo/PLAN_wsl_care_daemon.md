@@ -2677,6 +2677,1383 @@ names; the text above was updated to match.
 | m-o | a user-layer digest in `status` so an outside change is noticed | **Accepted** — added to E7.S0 | R1.7, E7.S0 |
 | Q1–Q12 | the proposed defaults | **Accepted as working assumptions**, still listed for the owner | open questions |
 
+### 15r. E9 split and design — the AI-session archive, daemon, both sides
+
+> Status: **in progress, 2026-10-09 — E9.S0, E9.S1, E9.S2a, E9.S2b, E9.S3, E9.S4 and E9.S5 built (S4: its plan round, code round and own review round folded in; S5: its plan round folded in), the S0 and S1 review rounds, the S2a gate round, the S2a, S2b and S3 own review rounds and the S2b/S3 gate round fixed, risk consults 9/9.2 and 9/9.4 folded in** (the catalogue's archive blocks, the
+> keys and their rules, the base folder rules and `archive check-base`; the selection and `archive preview`; deviations in *E9.S0
+> as built*, *E9.S1 as built*, *E9.S0 review round*, *E9.S1 review round*, *Risk consult 9/9.2*, *E9.S2a as built*, *Risk consult
+> 9/9.4*, *E9.S2a gate round*, *E9.S2a own review round*, *E9.S2b as built*, *E9.S2b own review round*, *E9.S3 as built*, *E9.S3 own review round*, *E9.S2b/S3 gate round*, *E9.S4 plan round*, *E9.S4 as built*, *E9.S4 code round* and *E9.S4 own review round*); E9.S5 and the E9 live gate open. Originally: plan only,
+> nothing implemented yet, 2026-10-06 — **the review round folded in** (*§15r review round* at the end of
+> this section: the coai plan round, verdict proceed, 7 findings; an own plan review, verdict "revise before you build", 3
+> Blocking, 12 Major, the minors — every finding ACCEPTED; where a row of that table and the text disagree, the row wins).
+> Scope: epic E9 — the `archive` capability of the daemon on both sides (`wsl-care` in the distro, `wsl-care.exe` on Windows):
+> the catalogue's `archive` blocks, the `archive.*` keys, the selection, the two-phase move, the index, the reconcile, restore,
+> `archive preview | run | restore | list | status | check-base | reconcile --scan`, A13 in the timer and a restore button
+> (A20). Branch `feat/wc-e9-archive-daemon` — this plan AND the daemon code. The extension half (settings with a folder
+> picker, the Archive page, *Archive now*, the Logs rows) is E10; the Windows scheduled run is E11
+> ([PLAN_windows_care.md](PLAN_windows_care.md) W-A15). This section OVERRIDES
+> [PLAN_ai_session_archive.md](PLAN_ai_session_archive.md) §4, §5, §7 and §8 where they say otherwise (that plan's §8c
+> points here), and the E9 rows of §16, which now point here. **Model:** the coai gate asked for Fable on the split and the
+> risky stories; Fable's monthly limit is spent (since 2026-10-02), so the split and every story are **Opus**, recorded
+> (§15j M10's rule), with the own reviews each story names.
+
+**Goal (the owner's ask, 2026-10-02).** AI-agent sessions are not deleted; sessions older than N days MOVE into a folder the
+owner chooses, as `<base>/<agent>/<yyyy>/<MM>/…`, verified by hash, indexed, restorable. **Why it is urgent:** Claude Code
+deletes its own transcripts after `cleanupPeriodDays`, 30 days by default and not set on this machine
+([archive plan §2](PLAN_ai_session_archive.md); the one-time run saw Claude's own sweep run three times in under two hours,
+[research/2026-10-02_ai_session_archive_run.md](../research/2026-10-02_ai_session_archive_run.md) Finding 1). Every day without
+the archive loses the sessions that turn 30 that day. (The coordinator has told the owner, 2026-10-06, to raise
+`cleanupPeriodDays` by hand on both sides meanwhile — the owner's own edit, Q7.)
+
+**The owner's hard constraints — never violated, each held by a test named below.**
+
+| # | Constraint | Held by |
+|---|---|---|
+| H1 | Nothing inside an AI agent's folder is deleted — EXCEPT the archive's verified move: copy → verify the hash → index → only then the source is removed | **What each story holds** (corrected by the *E9.S2a own review round*, C-M4 / S-M2). **E9.S2a (the seam):** under an agent folder the policy allows a file removal only of a name carrying the quarantine mark, with an archived copy NAMED outside every protected place; the seam then opens that archived copy along its real path through no link and hashes it (Windows past the cache), and removes the source only when the copy exists AND both the copy and the quarantined bytes hash to the expected hash — `A_quarantined_file_whose_archived_copy_is_missing_or_changed_is_never_removed`. **E9.S2b holds the rest:** the expected hash is the INDEX's, the copy was written in an EARLIER run (the in-flight entry's `archived` time ≥ `archive.removeAfterHours` before), and every resumed `removing` entry is re-verified; held by `The_source_is_removed_only_by_a_later_run_after_its_copy_is_re_hashed` and the whole-protocol property `Every_removed_inode_equals_an_archived_copy_the_index_recorded` |
+| H2 | `projects/*/memory/` of any agent is never touched — not read, not moved, not entered | E9.S1: selection never enters a `memory` folder (any agent, any case — E7's rule) and refuses a session WHOLE whose companion would be one (a session named `memory.jsonl` has the companion `projects/<p>/memory`); `DeletionPolicy` refuses it for every operation (exists, `Files/Deletion/DeletionPolicy.cs:111-121`); restore refuses it as a destination |
+| H3 | `%TEMP%\claude\` (and `/tmp/claude`) is never cleaned, never selected, never a base folder | E9.S0 (base rules), E9.S1 (selection reads only the catalogue's layouts) |
+| H4 | Every behavioural number is a configuration key (the owner's rule, 2026-10-05: group A user, group B machine-layer-only, group C formats — §15q *E7.S2c*, `research/architecture.md` § *Numbers are configuration*) | every story: *Configuration* below; `ArchitectureTests.Numbers` fails on a new literal; `NumbersAreConfigurationTests.The_defaults_hold_every_coupled_rule` (`src_daemon/tests/WslCare.Core.Tests/Config/NumbersAreConfigurationTests.cs:236`) stays green |
+
+**What exists today — verified on `origin/main` `e5ba38d`** (paths under `src_daemon/src/WslCare.Core/` unless they start
+with `Cli/` — `src_daemon/src/WslCare.Cli/` — or `src_daemon/tests/`, `src_daemon/systemd/`, `contracts/`, `research/`).
+
+- **The policy already knows the archive's move, and only the move.** `DeletionPermit.MoveOutOfAgentFolder`
+  (`Files/Deletion/DeletionScope.cs:4-11`); `DeletionPolicy.JudgeAgentSource` allows a source under an agent root only for a
+  `Move` with that permit (`DeletionPolicy.cs:74-77`); `JudgeDestination` refuses ANY destination under an agent root, `~/git` or
+  Claude's temp folder (`:85-98`) — so a RESTORE into an agent folder is refused today, by design; `IsAgentMemory` refuses
+  `…/projects/<x>/memory` for source and destination (`:111-121`).
+- **The seam has no copy and no verified move.** `IFileSystem` offers `MoveFile` / `MoveDirectory` (`Files/IFileSystem.cs:345-347`);
+  `PhysicalFileSystem.MoveFile` is `File.Move` (`Files/PhysicalFileSystem.cs:516-517`), which across filesystems copies and deletes
+  inside .NET with no hash check and no index between — exactly what archive plan §4.3 struck. `DeleteDirectory` is recursive
+  (`:513-514`). The exclusive create through `link(2)` exists (`CreateFileExclusively` `:372`, `LinkNew` `:398`).
+  `ProbeWriteAccess` CREATES a missing folder and opens its probe file with `FileOptions.DeleteOnClose` (`:188-205`).
+  **The architecture scan** (`src_daemon/tests/WslCare.Core.Tests/ArchitectureTests.cs:19`) forbids `File.Delete` / `File.Move` /
+  `Directory.Delete` / `Directory.Move`, `.Delete(` / `.MoveTo(` and `Process.Start` outside the seams — NOT `File.Copy`,
+  `File.Replace`, `FileOptions.DeleteOnClose`, `SetFileInformationByHandle` or a P/Invoke of `rename` / `unlink`.
+- **The no-link readers read WHOLE files.** `BeneathFiles.Read` (`Files/BeneathFiles.cs:28`) opens through an `openat` chain with
+  no link on any component below `beneath` (Linux; Windows asks each component for a reparse point first) and returns the
+  bytes under a cap — a copy of a 1 GiB transcript needs a STREAMING opener on the same chain, and a destination needs the same
+  chain from the base.
+- **A13 is an id without an action.** `auto.A13` (`Config/ConfigKeys.cs:50`, default `true` at `Config/default.json:20`), its
+  place in `ActionId.ExecutionOrder` after A10 (`Actions/ActionId.cs:59-63`), `contracts/actions.json` lists it; the registry
+  holds every action but A13 (`Actions/ActionRegistry.cs:10`, `:25-46`). `archive.olderThanDays` (1–3650, default 14,
+  `KeyTrust.Higher`) and `archive.baseFolder` (an absolute path or empty, MACHINE layer only "until E9 adds R2-style
+  validation") exist (`ConfigKeys.cs:128-135`; `Config/KeyRules.cs:52`, `:97`; `default.json:91-94`).
+- **The catalogue knows one session** (E7, §15q D2): `AgentSessionLayout` (`Agents/AgentCatalogue.cs:16`) with a glob and its
+  `companions`; Claude `projects/*/*.jsonl` + `{dir}/{id}` + `file-history/{id}`, Codex `sessions/*/*/*/rollout-*.jsonl`, Gemini
+  CLI `tmp/*/chats/session-*.jsonl`, Antigravity `conversations/*.db` + `brain/{id}` + `annotations/{id}.pbtxt`
+  (`Agents/agents.json:13`, `:26`, `:39`, `:52`). **Gaps against the confirmed layouts** (archive plan §3, the one-time run):
+  Antigravity's `windowsUnder` is EMPTY although the run archived 2 889 Windows Antigravity conversations from the Windows
+  home's `.gemini/antigravity-cli` (protected today only because it lies under Gemini CLI's `%USERPROFILE%\.gemini`, whose walk
+  skips the `antigravity*` prefix); its `log/cli-<timestamp>.log` — each log its own unit — is not in the catalogue; and its
+  `conversations/<id>.db` is probably SQLite, whose `-wal` / `-shm` / `-journal` siblings are no companion (review M8). Manual
+  agents carry their own glob (`Agents/ExtraAgents.cs:45`).
+- **Listing a session without opening it** is `SessionGlob.Find` (`Agents/SessionGlob.cs:39`: names and stats, links never
+  followed, `memory` never entered, the device kept `:142`); where a walk may start is `AgentWalk.PlaceProblem`
+  (`Agents/AgentWalk.cs:69`); companions are sized by `AgentWalk.Companions` (`:193`) — sizes only: no companion's LAST WRITE is
+  known today, and the archive's "one session, one month" needs the newest of them.
+- **The engine.** The timer pass selects every registered non-button id (`Actions/Engine/ActionEngine.cs:150`) and asks each
+  action, in order: side, observe-only, the `auto` switch (`:321-337`), the live preview, the trigger, the target user, the
+  refusal, the idle gate unless the preview is urgent, the dry-run week (`:340-352`, `:370-373`). A user-scoped command runs as
+  the target user through `runuser -u <user> -- <full path>` with a clean environment, the executable resolved in the user's
+  FIXED bin folders (`Actions/TargetUserCommands.cs:45`). **Actions cannot stream:** `ICommandRunner.StreamAsync` exists
+  (`Processes/ICommandRunner.cs:31`, used by the events follower) but the runner an action gets REFUSES it — "an action does not
+  stream" (`Actions/ActionCommands.cs:82-83`); and `ProcessCommandRunner.StreamAsync` (`Processes/ProcessCommandRunner.cs:104-159`)
+  marks no `RunProgress` step, while `RunAsync` marks a step at a command's start and end (`:80`, `:95`, `:101`;
+  `Actions/Engine/RunProgress.cs:26`). A button-only id exists (A18, `ActionId.cs:41-44`); an action bound to its shown list
+  implements `IBoundToShownList` (`Actions/ICleanupAction.cs:242`).
+- **The timer's budget** is a coupled rule: `timer.runLimitMinutes` (default 240, `Config/ConfigKeys.Numbers.cs:268`,
+  `default.json:181`, the unit's `TimeoutStartSec=240min`, `src_daemon/systemd/wsl-care.service:69`) ≥ the derived worst case of a
+  timer run — EVERY command template of the catalogue once at its ceiling with its drains, the two walks, 10 min
+  (`Config/NumberRules.cs:86-88`, `Config/RunBudget.cs:21-33`, `:44`: 220 min with the defaults) — and `running.noProgressMinutes`
+  (default 20) ≥ the longest single template ceiling (`NumberRules.cs:89-91`, `RunBudget.cs:35-42`). **A template of 35 min
+  would break both rules at once** (review B3).
+- **The folder rules of a user-named path** exist for manual agents: `ExtraAgentRules.FolderRefusal` / `Forbidden` /
+  `ProductFolders` (`Agents/ExtraAgentRules.cs:57`, `:80`, `:90`: not `~/git`, not Claude's temp, not an agent's folder, not a
+  cleanup action's folder, not the product's own) — written for a folder INSIDE the home on the home's device; an archive base
+  is usually neither.
+- **A drive's mount inside the distro** is found from `mountinfo` for `C:` only (`Processes/WindowsSystemDrive.cs:84`); interop's
+  presence is `InteropRefusal` (`:106`). The agent of a process is `AgentOrphans.AgentOf` (`Actions/Suspects/AgentOrphans.cs:243`).
+
+#### Decisions taken in this plan
+
+**D1 — Who moves: the USER, never root (the confused-deputy question, decided; Q1).** Root's timer decides WHEN; a process of
+the TARGET USER does every byte of the work. A13 and A20 are user-scoped actions whose preview and run are each ONE child:
+`runuser -u <target user> -- <the installed wsl-care> archive preview|run|restore … --json`, through user-scoped templates (one
+per verb, each with its own ceiling — D8) whose executable is the product's OWN installed binary — its path from the running
+process, accepted only when it and every folder above it are root-owned and not group/other-writable (the `SystemDriveFiles`
+shape, `Processes/SystemDriveFiles.cs`) — never a name resolved in the user's bin folders, never a user-writable file. Root never
+opens, hashes, copies, writes or removes a session file and never touches the base folder. *Why:*
+
+- **The destination.** A root mover would write wherever `archive.baseFolder` names — a user-chosen path, possibly through a
+  link the user plants under it, possibly `/etc`. As the user, the child writes only where the user may.
+- **The source.** A root mover hashing and copying "session files" would follow a link the user plants as a session
+  (`projects/p/x.jsonl → /etc/shadow`) and COPY a root-only file into a user-readable archive — a disclosure. The user reads
+  only what the user may (and the child still refuses links, FIFOs and multi-linked files — D2).
+- **The files stay the user's** — no `chown`, and on drvfs / a network drive the identity is the Windows user's either way.
+- **A network share can block a reader in the kernel** (the one-time run: a `find` over `/mnt/v` did not return in 2 minutes).
+  In a child, a blocked read hangs the CHILD: the parent's ceiling kills its tree and the run goes on; the root run never sits
+  in 9p. A child in uninterruptible sleep is reaped only when the kernel releases it, and it keeps the side's lock and the
+  unit's cgroup busy meanwhile: so a SHORT reachability child (one `stat` of the base, `archive.reachabilitySeconds`) runs before
+  the long one, and `archive status` names a lock holder stuck in state `D` (pid, start time) — A13 then skips "the archive's
+  last child is stuck in the kernel" (review M11).
+- **The same code serves Windows**, where there is no root: `wsl-care.exe archive …` runs as the user (E9.S5).
+
+So `archive.baseFolder` stops steering root: it becomes an ordinary key the user layer may set, with the base rules of D7
+checked at `config set`, by `archive check-base`, and again by the child at the start of every run (never trusted because it
+validated once). Rejected: a root mover (the bullets above); the extension as the mover (no timer, dies with the window — the
+durable-status rule); a `systemd --user` timer (a user manager is not guaranteed to be running in a WSL distribution with
+nobody logged in — not measured here, and the root timer already exists).
+
+**D2 — The move: exactly once, crash-safe, per SESSION, in TWO PHASES (review M2).** One session = the layout's unit with its
+companions (E7's D2), moved as ONE unit under the month of its NEWEST file (archive plan §8a). **A run copies, verifies and
+indexes; the source is removed only by a LATER run, at least `archive.removeAfterHours` after the `archived` event, once the
+archived copy has been opened again and re-hashed** — so a copy a share acknowledged but did not keep (a cache, a write-back
+NAS, a lost `fsync`) is caught before anything is removed. Each step is durable before the next.
+
+*Phase 1 — copy (run N):*
+
+1. **Select** (E9.S1): the session's files by listing and stat only; the newest last write over ALL its files (companions
+   walked by the same rules); eligible when that is older than the agent's EFFECTIVE age (D10); oldest first. A name the base
+   cannot hold — NTFS-illegal characters, a case-only collision inside one session folder, invalid UTF-8 — refuses the session
+   with the reason in the preview; names compared ordinally and stored exactly.
+2. **In use?** Linux: no `/proc/<pid>/fd` of the user's processes points at a file of the session (bounded,
+   `archive.inUseScanSeconds`), and for Claude Code no live agent process (`AgentOrphans.AgentOf`) has the project's folder as its
+   working directory. Windows: the Restart Manager is ASKED (paths with `\\?\`, the session always ended with `RmEndSession`) —
+   never an exclusive open, which would make the agent's own write fail at that instant (deviation from archive plan §4.2).
+   **Said honestly (review M9):** Claude Code keeps no transcript open between appends, so the descriptor scan rarely sees it;
+   the real guards are the age, the working-directory check and the no-replace renames of phase 2 (B1). Codex probably keeps
+   its rollout open while it runs — the scan sees that. Another account or a container writing through a bind mount is not
+   seen (residual).
+3. **Intent:** `inflight.json` (D5) gets the session as `copying`, each file with its planned archived path — atomically
+   replaced, its folder flushed, before any byte reaches the base.
+4. **Destination tree** (coai G4): `<agent>/<yyyy>/<MM>/<side>/<relative folders>` created level by level from an open
+   descriptor of the base (`openat` + `mkdirat`, no link followed on any component, 0700 — review M6), under the side's lock;
+   a level that is a link, or a failure → the session is skipped "destination unreachable".
+5. **Copy and verify, per file.** The source opened by a STREAMING opener on the `BeneathFiles` chain — no link on any component
+   below the layout root, nonblocking, a regular file owned by this user with ONE link. The destination created from the
+   destination folder's descriptor with `O_CREAT | O_EXCL | O_NOFOLLOW`, 0600 (coai G2, review M1: on drvfs `O_EXCL` becomes
+   9p `Tlcreate` → `CREATE_NEW`, atomic on NTFS and SMB; no `.part` and no rename — a final without an index line is harmless
+   and the reconcile removes it). `EEXIST` → the existing file is hashed: equal → reused; different → `~2`, `~3` … (archive plan
+   §4.4). The SHA-256 is computed from the bytes READ; the file flushed (Windows: written with `FILE_FLAG_WRITE_THROUGH`); on a
+   local Linux base the folder flushed too; then read back (Windows: `FILE_FLAG_NO_BUFFERING`) and hashed again. **A mismatch**
+   (coai G1): the new file is removed (it is ours, created this run), the copy retried ONCE after a flush; a second mismatch →
+   the session skipped "verification failed" AND THE RUN STOPS — a base that lies must not keep being written. Nothing at the
+   source is touched in phase 1. Equal → the source's last write set on the copy.
+6. **Index:** ONE line for the session appended to the side's month index (D4) — event `archived`, every file with its ORIGINAL
+   PATH RELATIVE TO THE LAYOUT ROOT, its archived path, size, SHA-256 and last write, the line's MAC (D4) — then flushed; then
+   the in-flight entry moves to `archived`, each file's hash and archived path kept.
+
+*Phase 2 — removal (a later run, at least `archive.removeAfterHours` after `archived`):*
+
+7. **Re-verify:** the base reachable (the short child of D1); every archived file opened again and hashed against the index — a
+   mismatch → event `damaged`, the source kept, a warning in `status`.
+8. **Quarantine, check, commit.** Every still-present source file of the session is renamed, in its own folder, to the fixed,
+   self-describing name `<name>.wsl-care-q-<runId>` with `renameat2(RENAME_NOREPLACE)` (Windows: `MoveFileEx` without
+   `MOVEFILE_REPLACE_EXISTING`, and the rename comes BEFORE the deny-write handle is opened); then checked for an open descriptor
+   and hashed. ALL equal to the archived copies → `inflight.json` moves to `removing` — the COMMIT POINT; ANY one changed or
+   opened → every quarantined file is renamed BACK with the same no-replace rename, nothing is removed, the archived copies stay
+   as a snapshot and an event `superseded` is appended. **Renaming back never replaces** (review B1): when the original name
+   exists again (the agent re-created it meanwhile), the agent's file is KEPT, the quarantined one is unlinked only when it
+   equals its archived copy (else it stays under its quarantine name and is reported), and the event is `split`.
+9. **Remove — per UNIT, never per file** (consult 26b4a958 C-3, E9.S2b): after the commit point the session's OWN file (its key,
+   the transcript) is removed first; if it changed since the commit (the seam keeps it), NOT ONE file of the session is removed —
+   every quarantined file is renamed back and the entry is `superseded` (a transcript never stays at the source without its
+   companions). Once the transcript is gone, a companion that changed after the commit is renamed back under its own name (it holds
+   what the agent wrote since its copy) and the entry is `split`; every other companion is unlinked.
+   Linux: by name, after the hash. Windows (review B2): ONE handle, opened with `DELETE | READ` and `FileShare.Read`, hashed, and
+   only after equality `SetFileInformationByHandle(FileDispositionInfoEx, DELETE | POSIX_SEMANTICS)` — never
+   `FileOptions.DeleteOnClose`, which deletes on ANY close (a mismatch, an exception, a kill mid-hash). Then an EMPTY companion or
+   session folder the move left is removed (non-recursive, never the layout's fixed root, never the agent's root, never `memory`).
+   A file the agent already removed counts as `goneAtSource`, never a failure.
+10. **Close:** `sourceRemoved` (or `split`) appended to the entry's own month/side index, the in-flight entry dropped.
+
+A crash anywhere leaves the session whole at the source, or whole in the archive with its index line, or both — never half in
+each, except the stated `split` where the agent itself wrote a new file at the old name. **Readers MERGE per `entryId`** (coai
+G3): `entryId` = the first 16 hex of the SHA-256 over side, agent, the session's original relative path and its files' hashes;
+the `archived` event carries the file list, every later event (`superseded`, `damaged`, `sourceRemoved`, `split`, `restored`,
+`recovered`) carries its status only; the entry's state is the latest status over the `archived` event's files; a repeated line
+is the same fact, a torn last line is skipped. Every status event goes to the ENTRY's own `<agent>/<yyyy>/<MM>/<side>/` index —
+and only the owning side writes it or restores from it.
+
+**Clocks and coarse times (coai G6).** Ages assume a forward-moving clock; a jump is caught by the in-use checks and by phase
+2's hash-and-no-replace (B1), never by a time comparison alone. A base on FAT / exFAT is accepted with its 2-s time granularity
+STATED in `check-base`: the index's recorded last write is authoritative, the archived file's own time is not compared.
+
+**D3 — The reconcile and "the agent deleted it mid-run" (c).** At the start of every `archive run`, `archive restore` AND
+`archive preview` (preview only reports), under the side's lock, BEFORE selecting — and only when the base is reachable (an
+unreachable base defers it: nothing is removed):
+
+- **From the in-flight file:** `copying` → the entry's index is read: indexed → it moves to `archived`; not indexed → the
+  finals THIS entry created (not the ones it reused) are removed (inside the base, judged with the base as the declared root)
+  and the entry dropped — the source was never touched. `archived` → phase 2 waits for `removeAfterHours`. `removing` → resumed
+  from step 9 with the file hashes the entry stores.
+- **Without it** (review M3: a lost or stale local state): every run and preview finds quarantine names
+  (`*.wsl-care-q-<runId>`) in the layouts and resolves each from the index — its archived copy hash-equal → it is unlinked;
+  otherwise it is renamed back with no replace (B1's rule) and reported. Final copies without an index line are left to
+  `archive reconcile --scan` (explicit, bounded, a button in E10), which re-indexes them as `recovered` — unverified (D4) —
+  and touches nothing at the source.
+- **Never** a removal on a mismatch (archive plan §8a); never on an entry whose latest status is `restored`
+  (`A_restored_session_is_never_deleted_by_the_reconcile`).
+
+The agents' own deletions during a run are a normal outcome (the one-time run, Finding 1): a source missing at copy time → the
+session is `goneAtSource` before copy (skipped, reported "removed by the agent before it could be archived"; its remaining
+companions are the agent's business and stay); missing in phase 2 → `goneAtSource` (the archive holds it). On Linux a file the
+agent unlinks while our descriptor reads it is read whole (the inode lives while open).
+
+**D4 — The layout and the index, per SIDE and HOST; the index authenticated.** `<base>/<agent id>/<yyyy>/<MM>/<side>/<path
+relative to the layout root>` with `<side>` = `windows-<host>` or `wsl-<host>-<distribution>` (lowercased, `[a-z0-9._-]`;
+review M1, coai G7: two PCs on one share must never share a side) and the index at
+`<base>/<agent>/<yyyy>/<MM>/<side>/index.jsonl` (deviation from archive plan §4.5, which had ONE index per month): **one writer
+per file**, held by a LEASE file per side on the base (`<base>/.wsl-care/sides/<side>.lease`: host, boot id, pid, process start)
+checked at every run start — a lease held by another live identity refuses the run naming it, a dead one is taken over and
+said. The month is the newest file's last write in the side's local time zone; the index records the UTC instant and the zone id
+(§8a). **The index is UNTRUSTED input** (it lives on a shared drive): every reader validates each line's shape and caps it; and
+every line carries a MAC — HMAC-SHA-256 under a per-side key kept in local state (0600, D5) — so a line written by anything but
+this side reads `unverified` (review M5: a planted line restored into `claude --resume` is prompt injection; Claude's
+`file-history` feeds rewind into repositories). Restoring an unverified line — a `recovered` one included — needs an explicit
+`--accept-unverified`; E10 marks such entries. A lost key makes every line unverified, never invalid.
+
+**D5 — Local state, per side, owned by the user.** `$XDG_STATE_HOME/wsl-care/archive/` in the distro,
+`%LOCALAPPDATA%\wsl-care\archive\` on Windows, folders 0700: `archive.lock` (an exclusive open, released by the OS when its holder
+dies — the existing `TryLockExclusive`), `inflight.json` (atomic replace, its folder flushed after), `summary.json` (per agent
+and month: sessions, files, bytes, the newest archived session — what E10's AI-agents columns show without reading a network
+share), `index.key` (D4, 0600), `base.json` (the base's mount recorded by `check-base`, D7) and `restored.json` (review M10: the
+entry → archived-path map of every entry whose latest status is `restored`, rebuilt by `--scan`). Root's state directory holds
+nothing of the archive; root's run detail holds A13's aggregates (D8).
+
+**D6 — Restore (d).** `archive restore --entry <id>… | --month <agent> <yyyy-MM> | --session <agent> <path>` as the user; on the
+distro the BUTTON is a button-only engine action **A20** "restore archived AI sessions" (detached, durable like every confirm;
+Q11), bound to the entry ids its modal showed (`IBoundToShownList`, 16-hex ids, validated). Only the side that owns an entry
+restores it. Per session, with the same per-session decision as D2:
+
+- **The target** (review M4) = the CURRENT layout root joined with the index's original RELATIVE path (never the archived path,
+  which may carry `~2`, and never an absolute path from the line — the home or the user may have changed); it must lie inside the
+  agent's session layout (its glob or a companion) — never `memory`, never anywhere else; **the archived source** must lie inside
+  the entry's own `<agent>/<yyyy>/<MM>/<side>/` folder (`An_index_line_pointing_outside_the_agents_layout_is_never_restored`);
+- the line's MAC is checked (D4) and the archived copy hashed first — a damaged copy is never restored;
+- **never overwrite:** a target that exists with the same hash is already restored; with another hash the session is refused
+  ("a live session of that name exists") — every file of it;
+- created with the same `O_EXCL | O_NOFOLLOW` opener from the target folder's descriptor, verified by read-back; a new permit
+  `RestoreIntoAgentFolder` in `DeletionPolicy`: CREATE only, inside an agent root, never replacing, never `memory`; every other
+  operation under an agent root stays refused;
+- **the restored files get the restore time as their last write** (the original stays in the index; Q3): a restored session that
+  kept its 2-month-old time would be deleted by Claude's own 30-day sweep at its next start, before it can be resumed
+  (deviation from archive plan §8: the BYTES are identical, the time is not);
+- the archived copy STAYS, with a `restored` event (Q2); the entry joins `restored.json`.
+
+**Re-archiving a restored session (coai G5, review M10).** It becomes eligible again like any session once its newest file is
+older than the effective age — Claude would otherwise delete it. Its restore-time last write puts it in a NEW month, so the hash
+dedupe of D2.5 alone would copy it again: instead, a session whose `entryId` is in `restored.json` with IDENTICAL hashes writes
+only an `archived` event pointing at the existing copy — no bytes — and leaves `restored.json`; then phase 2 as usual.
+
+**D7 — The base folder rules (both sides), the R2-style validation §15q R1.3 asked for.** At `config set`, `archive
+check-base <path> --json` and the start of every run: absolute; resolved with no link on any component; an EXISTING folder this
+user may write — asked by a probe that never creates the folder (`ProbeWriteAccess` creates a missing one, so a sibling verb
+refuses a missing folder instead); **not** a filesystem root, a drive root or the home itself; **not** equal to, inside or
+containing an agent's folder (catalogue and manual, spelt and real), `~/git`, Claude's temp folders, a folder a cleanup action
+cleans (`ICleanupAction.HomeRoots` — an archive under `~/.cache` would be deleted by A17), or the product's own folders —
+`ExtraAgentRules.Forbidden` WIDENED by a placement argument (an agent folder must lie inside the home on its device; a base may
+lie anywhere else), not copied; **not** on a filesystem that does not survive a shutdown (`tmpfs`, `ramfs`, `proc`, `sysfs`,
+`devtmpfs`, `overlay` — read from `mountinfo`). **The base's mount is recorded** (filesystem type and source, in `base.json`) and
+verified on every run: an unmounted `/mnt/v` is a plain folder on the distro's own disk and must never be written — a different
+mount refuses the run "the base is not mounted as when it was checked". A base on the distro's own virtual disk is accepted
+with a warning (the archive would live and die with the distro). In the distro a Windows path (`V:\ai-archive`) is accepted by
+`check-base` and answered with the Linux path it is mounted at, from `mountinfo` — `WindowsSystemDrive.Mount` widened from `C:`
+to any drive letter, not copied — and a drvfs mount of a UNC share is accepted. On Windows: a local or a network drive letter, or
+a UNC path; no reparse point on any component below the volume root; not under `%TEMP%`; paths of 300 characters and more work
+on both sides. **Who else can read it (review M6):** `check-base` reports the mode bits of the base and its parents (Linux) or
+the ACL entries for Everyone / Users / Authenticated Users (Windows) and WARNS — archived sessions hold secrets; the archive's
+folders are created 0700 and its files 0600 (on drvfs the modes are what the mount reports, recorded). Per run: a session is
+started only when the base's available bytes exceed its size by `archive.minFreeGb`; below it the run stops before copying.
+
+**D8 — A13 in the timer, its budget, its streaming and its dry run (g; review B3).** A13 is AUTOMATIC (`auto.A13`, default on as
+today) and acts only when `archive.baseFolder` is set (empty = "no archive configured", a skip with that reason) and the `dryRun`
+week has passed — the timer's dry run records the preview (what WOULD move, and what WOULD be removed in phase 2). Its trigger
+fires when any session is eligible or due for phase 2. **Idle:** it waits for idle on the TIMER only (`IdleRule.TimerOnly`) —
+the copy loads the share and the disk — except that the preview is URGENT (the existing `ActionPreview.Urgent`) when the oldest
+eligible session is within `archive.urgentWithinDays` (default 7 = the margin) of the agent's retention.
+
+**Its place in the order:** A13 moves to after A16 (the clock is fixed first: the ages read it), A3, A11 and A18, and BEFORE A1 /
+A2 (so the cache drop and the compaction clean up after the archive's reads): `… A10, A15, A16, A3, A11, A18, A13, A1, A2`.
+
+**The budget — decided: the archive run is NOT a term of the run-limit sum; it takes the slack.** One template per verb, each
+with its own ceiling: the preview (`archive.previewTimeoutSeconds`, 120 s) is an ordinary template and counted in
+`RunBudget.TimerRunWorstCase` (220 + 2 = 222 min < 240 — `The_defaults_hold_every_coupled_rule` stays green); the run template
+is a BUDGETED one whose ceiling A13 sets per request: min(`archive.runBudgetMinutes`, the time left until `timer.runLimitMinutes`
+minus the derived worst case of the actions after A13 — A1, A2 — minus the run margin) + `archive.finishGraceMinutes`; below
+`archive.minRunMinutes` A13 skips "no time left in this run". The restore template belongs to a button-only action and is never
+part of a timer run. So `RunBudget` excludes budgeted and button-only templates from the sum (a `CommandLimits` member says which)
+and gains `WorstCaseOf(actions)`. *Why not raise `timer.runLimitMinutes`:* a limit above the 4-hour period lets one run overlap
+the next slot, and the unit, its drop-in and `ShippedFilesTests` would all move for a figure that is a backstop against a hang,
+not a plan of a busy run; the 220 min worst case is every template at its ceiling, so in a real run most of the limit is slack the
+archive can use — oldest first, the rest next run. *Why not exclude the archive and leave it unbounded:* a run killed by
+`TimeoutStartSec` writes no history line.
+
+**Streaming:** `ActionCommands` lets an action stream a template it declared as STREAMED (today it refuses every stream), and
+`ProcessCommandRunner.StreamAsync` marks a `RunProgress` step per line. The child prints a progress line per file and a HEARTBEAT
+line at least every `archive.progressSilenceSeconds` (60 s), mid-file too — a 1 GiB file at 0.5–2 MB/s takes 8–34 min — and for
+a streamed template `RunBudget.LongestStep` counts that silence, not its total ceiling; so a long archive reads `live`, and a
+child stuck in 9p reads `wedged` after `running.noProgressMinutes`. Progress lines carry no names and are capped in size.
+Before each session the child estimates its time (bytes ÷ the rate measured so far this run) against the budget left and stops
+when it would not fit.
+
+**The answer:** the child's final JSON (bounded by `archive.childOutputCapBytes`, validated, every number range-checked — it is
+the user's process, its words are data) becomes A13's measured result: per agent sessions copied, sessions removed (phase 2),
+files, bytes, skipped by reason (in use, changed, gone at source, budget spent, base refused, verification failed, stuck), the
+measured rate (files/s, MB/s) and the index files written. **The run detail names no session** (root's detail is world-readable;
+§15q R9's rule): the sessions are in the owner's own index, and `archive list --run <runId>` gives them to E10's Logs page.
+"Freed" for A13 is the bytes phase 2 removed from the source side, basis "moved to the archive". The button is `act A13 --preview`
+/ `--confirm --manual --detach` — not bound to a shown list: archiving is reversible by restore, and the run re-selects live under
+the same rules (as A5).
+
+**D9 — Both sides (e).** The engine is `WslCare.Core`, one code for both RIDs. The distro: verbs + A13 + A20 under the root timer
+and buttons. Windows: the same verbs, run as the user by the extension (E10) or by E11's scheduled task (W-A15); E9 adds no
+Windows scheduler. Until E11, **Windows sessions are archived only when someone presses the button** — and Windows holds the
+bulk (477 Claude project folders on 2026-10-02): Q7. The WSL→Windows `tar` hand-off of archive plan §4 is NOT built in E9: the
+WSL child writes through drvfs within the budget, oldest first, and the backlog drains over runs; the rate is MEASURED on every
+run (D8) instead of probed with 100 scratch files (a probe that at the measured ≈ 2 files/s costs minutes of its own; deviation
+from archive plan §4). If the live gate shows the steady daily volume does not fit the budget, the hand-off becomes a story after
+E11 — it needs a Windows binary at a fixed installed path, which only E11 provides (*Boundaries*).
+
+**D10 — The agent's own retention, coupled, and EFFECTIVE (f; review M7).** Claude Code deletes at `cleanupPeriodDays` (default
+30). A coupled rule in `NumberRules`, checked at load and at `config set`: **⌈`archive.removeAfterHours` / 24⌉ +
+`archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays`** — with the defaults 1 + 14 + 7 ≤ 30: a session is
+copied from day 14, removed from day 15, and 15 days remain for missed runs (a PC off for two weeks), the dry-run week and a
+backlog that drains over several runs. Plus `archive.urgentWithinDays` ≤ `archive.marginDays`. **The measured retention CHANGES
+the age, it does not only warn:** per agent, the effective age = min(`archive.olderThanDays`, measured retention −
+`archive.marginDays` − ⌈`archive.removeAfterHours` / 24⌉), at least 1 day, reported in the preview (a derived value, not a new
+key); urgency is judged against the measured value. Claude Code's retention is read by the USER child through the bounded no-follow
+reader, that one key only (Q4): the managed settings first (`/etc/claude-code/managed-settings.json`; on Windows
+`C:\Program Files\ClaudeCode\managed-settings.json`), then `settings.json` under `CLAUDE_CONFIG_DIR` when the child's environment
+names it, else `~/.claude/settings.json`; absent → the catalogue's documented default (30); a value of 0 → a LOUD warning
+(Claude would keep nothing). Project-level settings are a stated residual (not read). A user who raised `cleanupPeriodDays`
+raises `archive.agentRetentionDays` with it. **The product never writes into an agent's settings** (the archive plan's "raise it"
+button becomes a shown instruction — Q4). The catalogue's `retention` block names, per agent, where its own retention lives:
+Claude Code as above; Gemini CLI — checked: nothing; its documentation NOT read — "none known", so only the archive's own age
+applies; Codex and Antigravity "none known" likewise.
+
+**D11 — Index growth and budget (h).** See *Growth and budget*: the archive is kept forever by the owner's decision ("move,
+never delete"); every index file is per side per month, read with a cap; root's records grow by aggregates only.
+
+**Claude Code's other per-session files (decided, review minor).** `todos/<id>-*`, `session-env/<id>` and `debug/<id>.txt` are
+NOT moved in E9: the one-time run neither moved nor examined them, nobody checked what Claude does when they are missing, and
+they are small; the E9 live gate lists them (step 4) and a later catalogue change may add them as companions. `file-history/<id>`
+moves with its session (archive plan §3; Q10).
+
+#### The two risky items — where being wrong is expensive
+
+**R1 — The move protocol on irreplaceable data (E9.S2a, E9.S2b, E9.S3).** A wrong step loses a session that exists nowhere else,
+or deletes a live one. Decided: D2 (phase 1 copies with an exclusive no-link create, read-back hash, a stop on a second mismatch,
+the index; phase 2, a later run, re-hashes the archived copy, quarantines with no-replace renames both ways, commits, removes —
+Windows through one handle whose delete disposition is set only after equality), D3 (reconcile from the in-flight file AND from
+the self-describing quarantine names; never a removal on a mismatch or after `restored`), D6 (restore create-only, from the
+current layout root and the relative path, the archived copy and its MAC verified first). Held by the built child killed at each
+of the 14 points of the *Test plan*, each repeated with the base unreachable during the reconcile and with an agent append, a new
+file at the original name and a delete at that point; and by the never-move property extended from selection to the WHOLE
+protocol: over random interleavings of agent writes, every removed inode's content equals an archived copy the index recorded.
+*Residuals, stated:* the read-back on a network mount may be answered from a cache — phase 2's re-hash a day later is the answer
+to that, and the live gate records the mount's cache mode and whether drvfs honours `fsync`; a writer of another account or a
+container is not seen by the in-use checks.
+
+**R2 — The privilege boundary and a user-chosen, possibly remote destination (E9.S0, E9.S4).** Decided: D1 (root never touches a
+session or the base — user-scoped templates of the product's own root-owned binary, a clean environment, a bounded and validated
+answer, a reachability child first), D7 (the base rules and the recorded mount, checked again at every run), D4 (the index
+untrusted and MAC'd, a lease per side). Held by a recording runner (the ONLY commands A13 and A20 ever start are the user
+children — `The_timer_never_moves_a_session_as_root`), the template property test (the self-invocations are user-scoped, their
+verbs closed, their slots typed), and the planted-link / FIFO / two-link scenarios
+(`A_link_fifo_or_multi_linked_file_in_a_session_is_never_copied`). *What would be expensive if wrong:* `runuser` from the service
+(it already runs A8 / A17), and whether `/mnt/<drive>` of a NETWORK drive exists for a process the timer starts with nobody
+logged in — a live-gate observation; when it does not, the recorded mount differs and the run refuses with that reason.
+
+#### E9.S0 as built (2026-10-06)
+
+Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The AI-session archive: catalogue blocks, keys, base folder (E9.S0)*, the design `research/architecture.md` § *The AI-session
+archive*. **Deviations from the text above:**
+
+- **The catalogue's block** is `archive: { units, neverMove, retention }` with `retention: { source, defaultDays, checked }`
+  (`Agents/AgentArchive.cs`): a session unit carries no glob of its own (one session stays the layout's, §15q D2), a file unit
+  does. `AgentArchiveRules.Problems` holds every block to the shape and to "no literal unit name matches a never-move name";
+  `AgentArchiveRules.IsNeverMoved` is the per-path check E9.S1 applies. Antigravity's older `%USERPROFILE%\.gemini\antigravity`
+  joined its Windows folders beside `antigravity-cli`. Codex's and Antigravity's retention are `none` with what was checked
+  (no deletion of their own seen on 2026-10-02 — Antigravity's removals that day followed no rule found; documentation NOT read).
+- **Two key ranges are narrower than the table** so no machine value can break a request's own maximum: `archive.runBudgetMinutes`
+  1–55 (with a fifth coupled rule: budget + grace + 60 s ≤ `commands.maxTimeoutHours`), `archive.restoreLimitMinutes` 1–60 (the
+  least `commands.maxTimeoutHours`) — **since the review round 1–59, default 59** (C5: with the 60 s a ceiling keeps, 60 did not
+  fit), and `archive.finishGraceMinutes` 1–30 (the table said 1–60; recorded, m1). `archive.agentRetentionDays` starts at 3 (the least sum the first rule allows). The B keys
+  have no reader yet beyond their rules — E9.S1–S4 read them.
+- **`check-base` REPORTS the mount; it does not record it.** `base.json` and the "not mounted as when it was checked" refusal are
+  E9.S2b's (the first run that writes records it) — a read-only verb writes no state.
+- **A refused folder is an answer** (exit 0, `accepted: false`, its `rule`), as `agents probe`'s unusable path is; `config set`
+  of a refused base exits 2 naming the rule. As root both refuse with 81 (`NotAsRoot`).
+- **A missing or unreadable mount table, or one naming no filesystem holding the folder, refuses** (`mount-unreadable`): what the
+  base lies on is the one fact D7 needs before anything else.
+- **The temporary folder is forbidden on the distro too** (D7 named only Windows' `%TEMP%`): `/tmp` is the distro's.
+- **Who may read it is built on BOTH sides in S0** (D7's Windows ACL report was S5's): mode bits of the folder and every parent on
+  Linux (skipped on drvfs, whose modes are the mount's report — a note says so), the folder's access rules for Everyone / Users /
+  Authenticated Users on Windows (`Archive/WindowsAccess.cs`).
+- **Extracted, not copied:** the mountinfo parser moved from `WindowsSystemDrive` to `Files/MountTable.cs`
+  (`WindowsSystemDriveTests` unchanged and green); the list of places a user-named folder stays clear of became
+  `ExtraAgentRules.ProtectedPlaces`, shared by a manual agent's folder and the base. `IFileSystem.ProbeExistingWriteAccess`
+  beside `ProbeWriteAccess` (which creates a missing folder).
+- **The shape widened**: `TextRule.AbsolutePathOrEmpty` takes `\\server\share\…` (never `\\?\`, `\\.\`); on the distro a share is
+  refused naming its mount instead.
+- **Additions:** the capability `archive.checkBase`; the golden `contracts/golden/head/archive-check-base.json`; the tests that
+  used `archive.baseFolder` as THE machine-only example now use `walk.maxEntries` (the behaviour they hold is unchanged).
+
+#### E9.S1 as built (2026-10-06)
+
+Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *Selection and archive preview (E9.S1)*, the design `research/module_archive.md` § *Selection and `archive preview`*.
+**Deviations from the text above:**
+
+- **The effective age subtracts the removal's whole days too:** max(1, min(`olderThanDays`, retention − `marginDays` −
+  ⌈`removeAfterHours` / 24⌉)), as D10 writes it (the go message gave it without the removal days). With the defaults and
+  Claude's 30 days that is min(14, 22) = 14 — the same answer; it differs only once a retention is lowered.
+- **`Archive/Retention.cs` became `Archive/AgentRetentionReader.cs`**, and it is the ONE file the selection reads (through the
+  bounded user-file reader, `userFiles.maxJsonBytes`). Project-level Claude settings are not read — a residual. A value that is
+  not a whole number of days, or a file that is not JSON, is warned and the next file (finally the documented default) applies.
+- **The open-file check is not run on Windows yet** (`InUse.NotOnWindowsYet`, the Restart Manager query is E9.S5); the preview
+  says so in `inUse.note`, and the run (E9.S2b on Windows only after S5) must check before it moves anything. On Linux the scan
+  sees only this account's processes — which are the agents' — and a cut scan says so.
+- **The preview's listing budget was `agents.measureBudgetSeconds`** with a coupled rule `archive.previewTimeoutSeconds` ≥
+  `agents.measureBudgetSeconds` + 60 s — **superseded by the E9.S1 review round (cm1):** the rule is gone, the budget is three
+  quarters of `archive.previewTimeoutSeconds`, shared by the scan, the layouts and every companion walk.
+- **Quarantined files are counted only** (`quarantined` per agent; review M3): resolving them is E9.S2b's reconcile.
+- **A link inside a companion folder is skipped silently** by the walk's rules (never followed), so a session whose `subagents/`
+  holds a link moves without it — a residual for E9.S2a's copy, which refuses links on its own (R1).
+- **The name rules are wider than the text:** besides the NTFS characters, case-only twins and invalid UTF-8 (U+FFFD or a lone
+  surrogate in the decoded name), a control character, a trailing dot or space and the reserved device names (`CON`, `PRN`,
+  `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`, with or without an extension) refuse a unit with the reason.
+- **Extracted, not copied:** `AgentOrphans.AgentOfCommandLine` (from `AgentOf`) attributed a `/proc` cmdline to Claude Code — since the
+  rebase of 2026-10-07 main's `AgentProcesses.AgentOfPrograms` over the raw argv does, the space-split copy gone;
+  `AgentDiscovery.SessionsUnderOf` exposes the layout's folder on this side; `TreeRules.ListFiles` widens the walk.
+- **Additions:** the side folder (`ArchiveNames.SideName`, §15r D4) is in the answer already; the capability `archive.preview`;
+  the golden `contracts/golden/head/archive-preview.json`; the `phase-2 candidates` of the story text are not listed yet —
+  nothing has been copied, so there is no phase 2 to propose (E9.S2b adds them to the answer).
+
+#### Risk consult 9/9.2 (2026-10-06) — the move protocol, before the move is built
+
+The coai cadence named 9/9.2 (the move on irreplaceable data) a risk to consult. A first consultation ran from the main checkout
+and could not read §15r; its four points were verified here and a second consultation (`47e283b3…`, codex gpt-6-astra, three
+turns, closed **solved**) was run from this worktree over §15r and the uncommitted E9.S2a seam. What survived verification, and
+what did not:
+
+| # | Point | Verification | Decision | Where |
+|---|---|---|---|---|
+| 1 | a writer the open-file scan never saw appends to the quarantined file after its final hash | **Real, and destructive in the seam as first written:** a child that inherited the descriptor by fork AFTER the scan's pid snapshot (its parent closed its own), or a writable `MAP_SHARED` mapping whose descriptor was closed, is invisible to a `/proc/*/fd` scan; a test holding a writer descriptor and appending at `RemovalHashed` got `Removed` on Linux (red, WSL 2) | **Fixed in E9.S2a:** the removal takes an `fcntl` WRITE LEASE on the opened quarantined file — the kernel grants it only when no OTHER open file description of the inode exists (a fork-inherited descriptor and a mapping keep theirs); refused → kept. Breaks are routed to SIGURG (ignored by default — SIGIO would end the process); after the hash the lease must still be whole, then the inode re-check, then `unlinkat`. Tests: a pre-opened writer, another process, a forked child only, a mapping only — all kept. Windows: the one handle shares READ only, so an open writer refuses it. **Residual, stated:** a NEW opener of the quarantine name (no agent knows it) after the final lease check, with the remover stalled for `fs.lease-break-time` (45 s) at exactly that point. The claim is narrowed to "no writer that existed, or opened before the final check, loses a byte" | E9.S2a |
+| 1b | the scan reads a listing or link failure as absent, so "complete" does not prove every descriptor was seen | Real (`ListEntries` answers an empty list on an error) | **Recorded as a selection residual:** removal no longer depends on the scan (the lease decides); a descriptor missed at COPY time only means a session copied while in use — a snapshot whose removal is lease-guarded later | E9.S1 residual |
+| 2 | the quarantine inside the agent folder is unsafe; move it to a product-owned folder; a durable manifest for the separate companions | The name `<name>.wsl-care-q-<runId>` matches no agent's session glob; an agent deleting it does no harm (its archived copy was re-hashed in phase 2 before any rename); an agent recreating the ORIGINAL name is kept by the no-replace rename (split); moving agent data out of its folder BEFORE verification needs a path map in every recovery and revokes no descriptor (the consultant agreed) | **Relocation rejected.** **Accepted:** D3's "without the in-flight file" branch must RENAME BACK (no-replace; the original present → keep both, report) every quarantined file unless an in-flight `removing` entry says the commit point passed — it must never unlink before the commit (a half-removed session). Kill after each rename: kill points 8 and 9 | E9.S2b (D3) |
+| 3 | a reconcile whose archived copy fails re-verification | Consistent with D2/D3 | **Accepted as E9.S2b requirements:** a re-verification failure is `damaged`, never expired; a `recovery-required` state blocks removal of the WHOLE session; nothing is overwritten; restore create-only (D6); repair into a new destination. RED test: one archived companion corrupted or missing, one original recreated, the run restarted twice — every byte survives | E9.S2b |
+| 4 | durability before the source's names are removed | The seam discarded `fsync` errors and never synced a new level's entry into its parent (real) | **Fixed in E9.S2a:** `FlushFolder` answers `Done` / `Failed` (the errno); every NEW destination level's entry is synced in its parent (the levels below the base are opened `O_RDONLY \| O_DIRECTORY \| O_NOFOLLOW` so they can be). **E9.S2b:** every created file, its directory, the index file and its directory flushed before the commit point; an archived file without an index line never authorises a removal (D3 already). **Rejected:** a monotonic quarantine age (monotonic time restarts at boot; the guard against an early removal is phase 2's re-hash a day later) and a local copy as standard (the ack-then-lose share is the stated residual the re-hash answers). An injected `EIO` is not built (no fault point inside `fsync`) | E9.S2a, E9.S2b |
+| 5 | keep the deletion policy's boundary — a narrow verified operation, not an exemption | Holds: the permits rename only to or from the mark in the same folder, and remove only a mark-named file whose archived copy lies outside every protected place, which the seam hashes before it acts | — | E9.S2a |
+
+#### E9.S2a as built (2026-10-06)
+
+Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The archive's seam (E9.S2a)*, the design `research/module_archive.md` § *The archive's seam*. **Deviations from the text above:**
+
+- **The seam is its own interface, `IArchiveFiles`**, implemented by `PhysicalFileSystem` in a partial file
+  (`Files/PhysicalFileSystem.Archive.cs`), with the natives in `Files/BeneathWrites.cs` — not new members of `IFileSystem` (no
+  test double has to delegate them; E9.S2b's mover takes `IArchiveFiles`). `BeneathFiles.OpenStream` became
+  `IArchiveFiles.OpenSource`; `QuarantineRename` / `RenameBack` share one no-replace rename; `RemoveOwnCopy` (a copy that failed
+  its verification) and `FlushFolder` were added.
+- **The removal takes a write lease** (risk consult 9/9.2) — beyond the plan's "hash then unlink".
+- **The policy's permits:** `ArchiveQuarantine` (a rename to or from `<name>.wsl-care-q-<runId>` in the same folder),
+  `ArchiveRemoval` (a mark-named file with its archived copy named outside every protected place, or an empty folder strictly
+  inside an agent's — never the agent's folder itself), `RestoreIntoAgentFolder` (a create); `FileOperation.Create`; the
+  rule `ArchiveShape`. A plain delete under an agent's folder stays refused by every permit; memory by all of them. The old
+  `MoveOutOfAgentFolder` permit stays (unused by the protocol, which copies and removes).
+- **The scan** forbids, outside the seam's files (five since the gate round: `PhysicalFileSystem.cs`, its archive halves `PhysicalFileSystem.Archive.cs` and `.Archive.Windows.cs`, `BeneathWrites.cs`, `RegularFiles.cs`), `File.Copy` / `File.Replace`, a `FileInfo`'s `CopyTo` / `Replace` (chained
+  or on a name declared as one), `FileOptions.DeleteOnClose`, `SetFileInformationByHandle`, `FileDisposition*`, and the native
+  entry points `rename`, `renameat(2)`, `unlink(at)`, `link(at)`, `rmdir`, `MoveFileEx`, `DeleteFile`, `RemoveDirectory`,
+  `CopyFile(2)`, `ReplaceFile`; the first scan's seam is the same files.
+- **The fault seam** is an `Action<ArchiveFileStep, string>` asked between the primitive steps (`SourceOpened`,
+  `FolderLevelReady`, `FolderLevelSynced`, `ExclusiveCreated`, `ReadBackChunk`, `OwnCopyRemoved`, `FolderFlushed`, `Renamed`,
+  `RemovalOpened`, `RemovalHashChunk`, `RemovalHashed`, `Removed`, `FolderRemoved`); it throws in-process here — the BUILT child
+  killed at the 14 points is E9.S2b's.
+- **Windows residuals (as first built — closed by *E9.S2a gate round* rows 3 and 4):** a reparse point made between a level's
+  check and the next level's create was not seen; `FlushFolder` was a no-op on Windows. The gate round holds every level by a
+  handle that refuses its rename, flushes through it, and checks every opened file's real location.
+- **Read-back on Windows** reads past the cache (`FILE_FLAG_NO_BUFFERING`) into a sector-aligned pinned buffer; on Linux it reads
+  through the page cache (no `O_DIRECT`) — the stated residual phase 2's re-hash a day later answers.
+
+#### Risk consult 9/9.4 (2026-10-06) — the root → user boundary, before E9.S4 is built
+
+Consultation `e7a972b4…` (codex gpt-6-astra, two turns, closed **solved**) over D1, D7, R2 and the E9.S4 row. It found no
+privilege escalation in the split (root never touches a session or the base); what it found is process CONTAINMENT. Verified and
+folded in as E9.S4 requirements:
+
+| # | Point | Verification | Decision |
+|---|---|---|---|
+| 1 | a child stuck in uninterruptible sleep outlives its ceiling; runs could pile up survivors | **Confirmed by reading** `ProcessCommandRunner.KillAndReapAsync`: it waits for "exit or the grace" and never checks which came first — its comment "the child is gone" is false for a child in state `D` (E6 code, reached by E9.S4) | **E9.S4:** root records each archive child's identity — pid, start time, boot id — in ROOT-owned state at launch, AND the worker's under it (the consultant's second turn: the launched pid is `runuser`, the worker its child — killing the wrapper can leave the worker in `D`); a later run that finds a recorded identity alive skips "the last archive child is stuck in the kernel" and never launches a second; the reachability child takes the side's local lock before it touches the base; the comment is corrected. The blackholed-share check (during the probe and during a copy, two invocations) is a live-gate step — it needs a share |
+| 2 | is `runuser` from a service clean (PAM session, environment, cgroup)? | **Read** `/etc/pam.d/runuser` on Ubuntu 24.04 (WSL): `pam_rootok`; session `pam_keyinit` (revoke), `pam_limits`, `pam_unix` — **no `pam_systemd`** (only `runuser-l` has it, and `-l` is never used): no session scope is created, the child stays in the service's cgroup, its environment is the one passed plus HOME/SHELL/USER/LOGNAME | **Kept `runuser`** (A8 / A17 already launch through it — one launcher). **E9.S4:** `doctor` and the A13 / A20 preview refuse when the distribution's `runuser` stack names `pam_systemd`; stdin is `/dev/null` for A13 and a bounded, cancelled pipe for A20; no PTY. `setpriv` (explicit credentials, cleared capabilities, `no_new_privs`) recorded as the alternative |
+| 3 | user-controlled metadata (a lease file, the child's answer) naming another pid or cgroup could become root's signal target | Not yet a defect (nothing acts on it) | **Rule for E9.S4:** root signals ONLY identities its own launcher recorded; the child's JSON and every file on the base are data. RED test: another process's valid pid and start time, a foreign cgroup and root-only paths in the child's answer and in lease metadata → zero root opens, writes or signals |
+| 4 | a streamed child bounds each line, not the count | **Confirmed by reading** `PumpLinesAsync` | **E9.S4:** `archive.childOutputCapBytes` bounds the TOTAL (past it the stream stops and the child is killed); a cut or truncated line is rejected as a record, never parsed as a prefix; A20's stdin writer is cancelled with the ceiling. RED: a flood of tiny lines, an oversized line with a valid-looking prefix, a child that stops reading its stdin |
+
+#### E9.S2b as built (2026-10-07)
+
+Built on `feat/wc-e9-archive-daemon`; the record of every guarantee, its red and its teeth is `research/module_tests.md`
+§ *The archive's protocol (E9.S2b)*, the design `research/module_archive.md`. **Deviations from the text above:**
+
+- **The files:** phase 1 `Archive/ArchiveMove.cs` (`ArchiveCopy`, the `InflightBook`), phase 2 `Archive/ArchiveRemove.cs`, the
+  reconcile `Archive/ArchiveReconcile.cs` (with `MonthIndex`), `Archive/ArchiveIndex.cs`, `Archive/ArchiveState.cs` (the local
+  state: in-flight file, `base.json`, `holder.json`, `last-run.json`, `summary.json`, `index.key`; `restored.json` read only — E9.S3
+  writes it), `Archive/SideLease.cs`, `Archive/ArchiveRun.cs`, `Archive/ArchiveScan.cs`, `Archive/ArchiveStatus.cs`, and
+  `Cli/Commands/ArchiveRunCommand.cs` — not the planned `Mover.cs` / `Inflight.cs` / `Reconcile.cs`. The seam gained four verbs:
+  `OpenExistingFolderBeneath` (a reader never creates a level), `AppendDurably` (an index line counts once it is flushed),
+  `ReadCapped` (the untrusted base read under a cap) and `RemoveIfUnchanged` (a dead run's lease taken over).
+- **Removal is per UNIT** (consult 26b4a958, C-3; D2 step 9 corrected above): the transcript first; when it changed after the commit
+  point no file of the session is removed. Red first: the removal answered `Removed` and the companion was gone.
+- **A `copying` entry the index does not hold is dropped and its copies are LEFT** (D3 said they are removed): a copy without an index
+  line authorises nothing, the next copy reuses an equal one by its hash, and `archive reconcile --scan` re-indexes the rest — the
+  reconcile never deletes in the base on a guess.
+- **A quarantined file no `removing` entry covers is renamed back** (risk consult 9/9.2 row 2); when the agent wrote a new file at the
+  original name, the quarantined one is removed only when it equals an archived copy of a verified index line of this side (B1's
+  split), else both stay and are reported.
+- **`base.json` is written by the first RUN**, not by `check-base` (which stays read-only, E9.S1's rule) — every later run compares it.
+- **The reachability check is in-process** here (a task abandoned after `archive.reachabilitySeconds`); the SHORT CHILD root starts
+  first is E9.S4's (D1).
+- **`archive run --json` is a stream of one-line JSON objects**: `{"progress":"file",…}` per file done, `{"progress":"heartbeat",…}`
+  at least every `archive.progressSilenceSeconds`, the answer LAST and compact; no line names a session.
+- **`archive status`** reads local state only and takes the side's lock for an instant when it is free (a run starting in that
+  instant answers `busy` once); a holder in state `D` reads `stuck-in-kernel`.
+- **On Windows `archive run` moves nothing yet**: the open-file check is E9.S5's, so every due unit is kept (`in-use`, not checked);
+  the reconcile and phase 2 of entries already archived would run.
+- **The 14 kill points** run twice: in process (`ArchiveProtocolTests`, the fault seam throwing, each point × the agent doing nothing,
+  appending, writing a new file at the old name, deleting — 56 rows) and against the BUILT child killed by its own pid
+  (`ArchiveRunFlows`, Linux legs, each point × the base gone for the next run — 28 rows). The whole-protocol property is that
+  in-process theory: after every row the agent's last content is at the source or in an indexed archived copy.
+- **An EMPTY side lease is a dead run's** (found by the built-child kill rows in WSL, point `ExclusiveCreated`): a run killed between
+  the lease's exclusive create and its write left an empty lease that refused every later run "by hand". The lease is now read again
+  after `archive.leaseSettleMilliseconds` (2 000, machine-only, higher is safer) and, still empty, taken over through
+  `RemoveIfUnchanged`; a lease written during the wait is judged by what it says; bytes that do not parse still wait for a person.
+- **Nothing inside a git working tree is ever selected** (owner rule 2026-10-07; `Archive/GitTrees.cs`): an agent folder with a
+  `.git` entry in it or in any folder above it up to the root selects nothing (a note names the entry); a unit with a file under a
+  `.git` name, or a folder on its way holding a `.git` entry (a folder, a worktree's `.git` FILE, a link), is kept whole under the
+  new skip rule `git-tree`. Red first: every row was `Due` before the rule. **Phase 2 checks again** (`GitTrees.InUnit`; the
+  coordinator's safe default until the owner decides): a repository that appeared after the copy keeps the whole session at the
+  source — before the quarantine, and in a resumed removal past the commit point (every file renamed back) — and the entry is
+  superseded; one more bounded walk per unit.
+- **`archive.maxStateFileBytes` defaults to 16 MiB** (was 8 MiB): main's `TimerCalendarTests` showed the hourly timer refused under
+  the defaults by the in-flight rule (25 waiting runs × 1 000 × 600 B), which made a machine layer asking for it observe-only.
+- **Not built:** the 1 GiB sparse session (its cost on CI; the streaming copy is the same code a 120-file session exercises); the
+  root-side child, its budget and its streaming are E9.S4's.
+
+#### Stories
+
+| # | Story | Files (verified above; new ones marked) | Acceptance | Model, reviews |
+|---|---|---|---|---|
+| **E9.S0** | **The catalogue's `archive` blocks, the keys, the base rules (daemon, both RIDs).** `agents.json` gains per entry an `archive` block: `units` (each a glob, its companions, its kind — Antigravity's `log/cli-*.log` as its own unit, aged on its own last write; Antigravity's `{id}.db-wal` / `-shm` / `-journal` as companions of a conversation, and a unit skipped while its `-wal` exists until the live gate says otherwise — review M8), `neverMove` (archive plan §3's column, a second net behind the glob), `retention` (D10); Antigravity's Windows folder and `windowsUnder` (`%USERPROFILE%\.gemini\antigravity-cli`) and the older `~/.gemini/antigravity`; the keys of *Configuration* with their coupled rules; `archive.agents` a closed list; `archive.baseFolder` from machine-only to an ordinary key behind D7; `archive check-base <path> --json` (unprivileged, both RIDs; a Windows path answered with its mount; the mount recorded; the readers of the base reported); `config set` judges the base by D7; the contract regenerated | `Agents/agents.json`, `Agents/AgentCatalogue.cs`, `Agents/ExtraAgentRules.cs` (widened), `Processes/WindowsSystemDrive.cs` (widened: any drive letter, UNC drvfs), `Files/IFileSystem.cs` + `Files/PhysicalFileSystem.cs` (a write probe that never creates), `Config/ConfigKeys.cs`, `Config/ConfigKeys.Numbers.cs`, `Config/NumberRules.cs`, `Config/KeyRules.cs`, `Config/default.json`, `Archive/BaseFolder.cs` (new), `Cli/Commands/ArchiveCommand.cs` (new), `contracts/config-keys.json`, goldens | every D7 refusal names its rule (an agent folder, its parent, `~/git`, `/tmp/claude`, `~/.cache/x`, `/`, `/mnt/v`, a tmpfs, a link on the way, a missing folder — never created); `/mnt/v/ai-archive` accepted on a drvfs fixture and refused when the recorded mount is gone; `V:\ai-archive` answered with its mount; a world-readable base warned; 1 + 25 + 7 > 30 refused naming the keys; Antigravity counted on Windows; the catalogue's unit globs never match a `neverMove` name | **Opus**; two own reviews: path validation / confused deputy; the data model |
+| **E9.S1** | **Selection and `archive preview` (read-only).** Sessions per enabled agent from the layout + companions, each with its newest last write (a companion walk that reports times — `TreeWalk` widened, not copied); the effective age (D10, the retention read); eligibility, oldest first; the name checks (NTFS-illegal, case-only, invalid UTF-8); a session whose companion is a `memory` folder refused whole; the in-use checks of D2.2 on Linux; the month and the archive path; phase-2 candidates; `archive preview [--agent a] --json` answers per agent: eligible sessions / files / bytes, due for removal, skipped by reason, the oldest eligible's age against the measured retention | `Archive/Selection.cs`, `Archive/InUse.cs`, `Archive/Retention.cs` (new), `Files/TreeWalk.cs`, `Files/IFileSystem.cs`, the file-system fakes, `Agents/SessionGlob.cs` (reuse), `Actions/Suspects/AgentOrphans.cs` (reuse `AgentOf`), `Json/WslCareJsonContext.cs` | the never-move property test (selection); one session = one unit = one month; a companion newer than the limit keeps the whole session; an open descriptor keeps it; preview opens no session file (the inotify proof of E7.S1) and writes nothing | **Opus**; two own reviews: agent-folder safety (H1–H3); correctness of selection |
+| **E9.S2a** | **The seam (review M12): verbs, policy, the widened scan, the fault seam — Linux AND Windows semantics.** `IFileSystem` / `PhysicalFileSystem` only: `BeneathFiles.OpenStream` (the streaming no-link opener), `CreateDirectoryBeneath` (level by level from the base descriptor, 0700), `CreateExclusiveBeneath` (`O_CREAT \| O_EXCL \| O_NOFOLLOW` from the folder's descriptor, 0600; Windows `CREATE_NEW` with write-through), `ReadBack` (Windows no-buffering), `QuarantineRename` / `RenameBack` (`renameat2(RENAME_NOREPLACE)`; Windows `MoveFileEx` without replace), `RemoveVerified` (Linux: hash then unlink; Windows: ONE `DELETE \| READ` handle, `FileShare.Read`, hash, then `FileDispositionInfoEx` `DELETE \| POSIX_SEMANTICS`), `RemoveEmptyFolder` (non-recursive); the policy: a removal under an agent root only as `RemoveVerified` of a quarantined source with its archived copy named, the `RestoreIntoAgentFolder` create-only permit; the architecture scan widened to `File.Copy`, `File.Replace`, `FileInfo.CopyTo` / `Replace`, `FileOptions.DeleteOnClose`, `SetFileInformationByHandle`, `FileDispositionInfo*` and the `rename` / `renameat2` / `unlink` / `unlinkat` / `linkat` / `rmdir` P/Invoke names outside the seam, each with a planted companion; a fault seam that throws or kills between any two primitive steps | `Files/IFileSystem.cs`, `Files/PhysicalFileSystem.cs`, `Files/BeneathFiles.cs`, `Files/Deletion/DeletionPolicy.cs`, `Files/Deletion/DeletionScope.cs`, `Files/Deletion/DeletionVerdict.cs`, `src_daemon/tests/WslCare.Core.Tests/ArchitectureTests.cs`, the file-system fakes | `An_agent_file_created_at_the_original_name_during_removal_is_never_replaced`; `A_kill_mid_hash_on_windows_leaves_the_source_present`; `A_link_on_any_destination_component_is_never_followed`; the scan red on each planted call | **Opus** (Fable spent, recorded); two own reviews: data safety (both OS semantics); reads and links (disclosure) |
+| **E9.S2b** | **The protocol: `archive run`, the index, the in-flight file, the reconcile (R1).** D2's two phases per session within `--budget-seconds`; G1's stop on a second mismatch; the side's lock and LEASE; `inflight.json` (`copying` / `archived` / `removing`, each file's hash and archived path), `summary.json`, `index.key`, `restored.json`; the index events and the merge per `entryId`, the MAC; D3's reconcile (in-flight and quarantine names); the reachability child; `archive run --json` streaming progress and heartbeat lines; `archive status --json` (lock and lease holders by pid and start, a holder in state `D`, in-flight entries, the last run's summary); `archive reconcile --scan` | `Archive/Mover.cs`, `Archive/ArchiveIndex.cs`, `Archive/Inflight.cs`, `Archive/Reconcile.cs`, `Archive/SideLease.cs` (new), `Cli/Commands/ArchiveCommand.cs` | the RED tests below; the 14 kill points × the three variations; the whole-protocol never-move property; a full or read-only base stops before any copy; a 0-byte, a 1 GiB (synthetic, sparse) and a many-small-files session; a run cut by its budget leaves only whole sessions | **Opus** (Fable spent, recorded); two own reviews: data safety / crash recovery; the untrusted base (lease, MAC, index lines) |
+| **E9.S3** | **Restore and list.** `archive restore` (D6: the relative-path target, the entry's own folder, the MAC and `--accept-unverified`, the archived copy verified first, create-only, the restore-time last write, `restored.json`), the re-archive of a restored entry without bytes; `archive list [--agent] [--month] [--run <runId>] --json` reading only the months asked, under `archive.maxIndexBytes`, a torn line skipped, unverified lines marked | `Archive/Restore.cs`, `Archive/ArchiveList.cs` (new), `Archive/ArchiveIndex.cs`, `Files/Deletion/DeletionPolicy.cs` (the permit, built in S2a) | a round trip byte-identical (content) on a fixture home and on a drvfs-like temp base; D6's refusals; a restored session is not removed by the reconcile, becomes eligible again after the effective age, and is re-archived as an event only | **Opus** (Fable spent, recorded); two own reviews: data safety; the untrusted index |
+| **E9.S4** | **A13 and A20 in the engine — the root → user boundary (R2, review B3).** The self-invocation templates (user-scoped, the product's own binary by path with D1's ownership checks, closed verbs: `archive preview` — an ordinary ceiling; `archive run` — STREAMED and BUDGETED; `archive restore` — button-only; typed slots: run id, budget seconds, entry ids through `--only -`); `ActionCommands` streaming for a declared streamed template; `ProcessCommandRunner.StreamAsync` marking a step per line; `CommandLimits` gaining the per-request budgeted ceiling and the streamed silence; `RunBudget` excluding budgeted and button-only templates and gaining `WorstCaseOf(actions)`, `LongestStep` counting `archive.progressSilenceSeconds` for a streamed template; `Archive/ArchiveAction.cs` (A13: preview, trigger, urgent, `IdleRule.TimerOnly`, the dynamic budget, the reachability child, the validated answer, the aggregate run detail), `Archive/RestoreAction.cs` (A20: button only, `IBoundToShownList` over entry ids); `ActionRegistry`, `ActionId` (A13 moved before A1 / A2, A20 a button only); capabilities `archive.run`, `archive.restore`, `archive.list`; `contracts/actions.json` | `Actions/ActionRegistry.cs`, `Actions/ActionId.cs`, `Actions/ActionCommands.cs`, `Actions/TargetUserCommands.cs` (widened: the product's own binary), `Processes/ProcessCommandRunner.cs`, `Processes/Policy/CommandCatalogue.cs`, `Processes/Policy/CommandPolicy.cs`, `Processes/Policy/CommandLimits.cs`, `Processes/Policy/TargetUserArgv.cs`, `Config/RunBudget.cs`, `Config/NumberRules.cs`, `Config/default.json`, `Status/Capabilities.cs:50`, `contracts/actions.json`, `src_daemon/systemd/*.service` (read: no change — `timer.runLimitMinutes` stays 240, `ShippedFilesTests` unchanged), `research/module_tests.md` flows | the RED tests below; with `baseFolder` empty A13 skips "no archive configured"; in the dry-run week it records the would-move; a child that hangs is killed at its ceiling and the run goes on; `runs show` of a confirm names the agents and counts, no session; `The_defaults_hold_every_coupled_rule` green | **Opus**; two own reviews: confused deputy (argv, the self-invocation, the child's answer as data); durable state (detach, streaming, wedged, stop) |
+| **E9.S5** | **The Windows side.** The verbs in `wsl-care.exe` (no A13 / A20 — no engine run on Windows before E11); the Restart Manager in-use query (P/Invoke, AOT-checked, `\\?\` paths, `RmEndSession` always — or `FileProcessIdsUsingFileInformation`); the Windows base rules (D7, the ACL report); the Windows layer (`%APPDATA%\wsl-care\config.json`, E7.S5b's "aiAgents.* only") widened to `archive.*`; side `windows-<host>`; Windows state under `%LOCALAPPDATA%\wsl-care\archive\`. The Windows file semantics (one-handle delete, no-replace rename, write-through) are E9.S2a's — no overlap | `Archive/InUseWindows.cs` (new), `Hosting/WindowsHostPaths.cs`, `Config/ConfigLoader.cs` (the Windows layer's keys) | a session held by a process (a fixture process holding a handle) is skipped WITHOUT the product taking an exclusive open; a network drive and a UNC base accepted, a junction on the way refused; a 300-character path; the two sides and two hosts write disjoint folders and indexes | **Opus**; one own review: Windows file semantics |
+| — | *(gate)* the E9 live gate below; then E10 | | | |
+| *(E9.S6, conditional)* | **A minimal per-user Windows archive task** — only if the owner decides it (Q7): built only when E11 is more than about two weeks after E9's live gate | Task Scheduler registration of `wsl-care.exe archive run` as the user; E11 takes it over | — | **Opus** |
+
+**Every story** follows the red-green-red order of `research/module_tests.md` (the RED test seen failing for the real symptom,
+the fix, green, the load-bearing line reverted and seen red again), whole suites on Windows and WSL (normal user, a `/tmp` copy
+removed after), `dotnet format --verify-no-changes`, the family checks, and the docs: `research/architecture.md` (a new *The
+AI-session archive* section with the two phases' sequence diagram and the index's event states, the seam's new verbs, the module
+map), `research/module_tests.md` (every new verb a flow — a missing row is red), `README.md` (*AI-session archive*), and this
+section's *as built* deviations.
+
+**RED tests, named for the guarantee.**
+
+- S0 `A_base_folder_inside_or_holding_an_agent_folder_git_claude_temp_a_cleanup_folder_or_the_products_own_is_refused`;
+  `A_missing_base_folder_is_refused_and_never_created`; `A_base_whose_recorded_mount_is_gone_is_never_written`;
+  `A_base_folder_set_in_the_user_layer_is_accepted_once_root_never_writes_it` (today: a machine-only notice);
+  `Archiving_later_than_the_agents_own_retention_breaks_the_coupled_rule`; `Antigravity_on_windows_has_its_confirmed_layout`
+  (today `windowsUnder` is empty); `A_unit_glob_never_matches_a_never_move_name`.
+- S1 `Nothing_outside_a_sessions_definition_is_ever_selected` (property: random trees holding `memory/`, `Memory/`, `MEMORY/`,
+  a session named `memory.jsonl`, settings, auth, `*.sqlite`, `presence/*.lock`, `conversation_summaries.db`, links, FIFOs —
+  under every agent's layout); `Memory_is_never_selected_at_any_depth`;
+  `A_session_moves_as_one_unit_under_the_month_of_its_newest_file`; `A_companion_younger_than_the_limit_keeps_the_whole_session`;
+  `A_file_held_open_keeps_its_whole_session_at_the_source`; `The_measured_retention_shortens_the_effective_age`;
+  `A_name_the_base_cannot_hold_refuses_its_session_in_the_preview`; `The_preview_opens_no_session_file_and_writes_nothing`.
+- S2a `An_agent_file_created_at_the_original_name_during_removal_is_never_replaced` (review B1);
+  `A_kill_mid_hash_on_windows_leaves_the_source_present` (review B2); `A_link_on_any_destination_component_is_never_followed`
+  (coai G2); `Copying_into_the_archive_never_replaces_a_file`; `A_link_fifo_or_multi_linked_file_in_a_session_is_never_copied`;
+  `The_architecture_scan_finds_a_planted_copy_replace_delete_on_close_and_rename` (today each passes outside the seam).
+- S2b `The_source_is_removed_only_by_a_later_run_after_its_copy_is_re_hashed`;
+  `A_second_read_back_mismatch_skips_the_session_and_stops_the_run` (coai G1);
+  `A_crash_at_each_of_the_fourteen_points_leaves_the_session_whole_and_the_reconcile_finishes_it`;
+  `A_quarantined_file_without_its_in_flight_entry_is_resolved_from_the_index` (review M3);
+  `A_session_changed_during_removal_stays_whole_at_the_source_and_its_copy_is_marked_superseded` (archive plan §8b: its
+  `<id>/subagents/` files stay too); `A_source_the_agent_removed_mid_run_is_counted_not_failed`;
+  `Readers_merge_an_entrys_events_and_keep_its_files` (coai G3); `The_reconcile_never_removes_a_source_on_a_mismatch`;
+  `A_lease_held_by_another_host_refuses_the_run` (review M1); `A_full_or_read_only_base_stops_the_run_before_any_copy`;
+  `Every_removed_inode_equals_an_archived_copy_the_index_recorded` (the whole-protocol property).
+- S3 `Restore_puts_the_bytes_back_and_never_overwrites_a_live_file`;
+  `An_index_line_pointing_outside_the_agents_layout_is_never_restored`; `A_line_without_a_valid_mac_needs_accept_unverified`
+  (review M5); `A_damaged_archive_copy_is_never_restored`; `A_restored_session_is_never_deleted_by_the_reconcile`;
+  `A_restored_session_is_archived_again_as_an_event_without_bytes` (coai G5, review M10);
+  `List_reads_only_the_months_asked_and_skips_a_torn_line`.
+- S4 `The_timer_never_moves_a_session_as_root` (a recording runner: A13's only commands are the user children; root opens no
+  session file); `The_archive_child_is_the_installed_root_owned_binary_never_a_user_writable_one`;
+  `An_action_streams_only_a_template_it_declared_streamed`; `A_streamed_line_is_a_run_step`;
+  `A_long_archive_run_reads_live_while_it_reports_progress`; `A_silent_archive_child_reads_wedged_after_no_progress_minutes`;
+  `A_hung_archive_child_is_killed_at_its_ceiling_and_the_run_goes_on`; `The_archive_budget_never_passes_the_run_limit`;
+  `A13_acts_only_with_a_base_folder_and_after_the_dry_run_week`; `An_urgent_backlog_does_not_wait_for_idle`;
+  `The_run_detail_names_no_session`; `A20_restores_only_the_entries_its_modal_showed`;
+  `A_malformed_child_answer_fails_A13_and_records_nothing_from_it`; `A_lock_holder_stuck_in_the_kernel_makes_A13_skip`.
+- S5 `On_windows_a_session_held_by_a_process_is_skipped_without_locking_it`;
+  `A_windows_base_on_a_network_drive_is_accepted_and_a_reparse_point_on_the_way_is_refused`;
+  `Two_hosts_and_two_sides_never_write_the_same_index`.
+- Teeth for each: remove the read-back, the second phase's re-hash, the quarantine re-check, the no-replace rename, the one-handle
+  disposition, the `restored` guard, the MAC check, the user scope of the template, a coupled rule — and watch the test go red.
+
+#### Configuration (the owner's rule: every number is a key)
+
+| Key | Group | Range | Default | Safe direction | Meaning |
+|---|---|---|---|---|---|
+| `archive.olderThanDays` (exists) | A | 1–3650 | 14 | higher | a session is copied when its newest file is older (capped by the effective age, D10) |
+| `archive.removeAfterHours` | A | 1–720 | 24 | higher | phase 2 removes the source only this long after `archived` |
+| `archive.marginDays` | A | 1–365 | 7 | higher | kept between removal and the agent's own deletion |
+| `archive.agentRetentionDays` | A | 3–3650 | 30 | lower | the shortest own-retention of an archived agent (Claude's default) |
+| `archive.urgentWithinDays` | A | 0–365 | 7 | higher | within this of the retention the timer does not wait for idle |
+| `archive.agents` | A (closed list) | ⊆ entries with an archive block | the four confirmed | subset | which agents are archived (manual agents off — Q6) |
+| `archive.baseFolder` (exists) | A from E9 (was machine-only) | D7 | empty | none | the base, as THIS side sees it |
+| `archive.minFreeGb` | A | 0–100 000 | 5 | higher | the base keeps this free |
+| `archive.copyBufferKib` | A | 64–16 384 | 1 024 | none | the copy's read size |
+| `archive.runBudgetMinutes` | B | 1–240 | 30 | lower | the most the child takes in one timer run (taken from the run limit's slack, D8) |
+| `archive.finishGraceMinutes` | B | 1–30 (as built; review round m1) | 5 | lower | the session in flight may finish past the budget |
+| `archive.minRunMinutes` | B | 1–60 | 2 | higher | below this much slack A13 skips the run |
+| `archive.previewTimeoutSeconds` | B | 10–600 | 120 | lower | the preview child's ceiling (counted in the run's worst case) |
+| `archive.reachabilitySeconds` | B | 1–60 | 10 | lower | the base `stat` child before the long one |
+| `archive.progressSilenceSeconds` | B | 10–600 | 60 | lower | the child prints a line at least this often |
+| `archive.restoreLimitMinutes` (built under this name; planned as `restoreTimeoutMinutes`, 1–1440, 240) | B | 1–59 | 59 | lower | A20's child ceiling (a button, never in a timer run), and since the coai code round over S2b/S3 the budget `archive restore` itself keeps between sessions — under the least `commands.maxTimeoutHours` with the 60 s a ceiling keeps (review round C5) |
+| `archive.maxSessionsPerRun` | B | 1–100 000 | 1 000 (review round C3; was 5 000) | lower | bounds one run, its in-flight file and its answer |
+| `archive.maxRestoreEntries` (E9.S4 plan round, finding 0) | B | 1–5 000 | 1 000 | lower | the most entries one A20 press restores — its ids are ONE argument of the child |
+| `archive.maxIndexBytes` | B | 1 MiB–256 MiB | 64 MiB | lower | one month index read |
+| `archive.maxStateFileBytes` | B | 64 KiB–64 MiB | 16 MiB (rebase onto main 2026-10-07: the hourly timer must stay valid; review round C3 had 8 MiB; was 4 MiB) | lower | `inflight.json`, `summary.json`, `restored.json` |
+| `archive.childOutputCapBytes` | B | 64 KiB–16 MiB | 1 MiB | lower | the child's answer root reads |
+| `archive.progressLineMaxBytes` | B | 64–4 096 | 256 | lower | one progress line root reads |
+| `archive.inUseScanSeconds` | B | 1–120 | 20 | lower | the `/proc/*/fd` scan / the Restart Manager query |
+| `archive.leaseSettleMilliseconds` | B | 100–30000 | 2000 | higher | an EMPTY side lease read again after it (E9.S2b: a run killed between the lease's create and its write) |
+| `archive.restoredKeepDays` | A | 1–3650 | 180 | — | a restored entry leaves `restored.json` this long after its restore (E9.S3 own review round C-6) |
+| `archive.keptEntryDays` | A | 1–365 | 14 | — | an in-flight entry phase 2 keeps waiting this long after it was archived is let go (E9.S2b own review round, C-M5) |
+
+Coupled rules (`NumberRules`, a violation refuses the layer naming the keys, held per layer as today):
+⌈`archive.removeAfterHours` / 24⌉ + `archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays`;
+`archive.urgentWithinDays` ≤ `archive.marginDays`; `running.noProgressMinutes` × 60 ≥ `archive.progressSilenceSeconds` + the
+ceiling margin (60 s); `timer.runLimitMinutes` ≥ the timer run's worst case (unchanged in shape: the preview template counted, the
+budgeted run and the button-only restore not — D8); `archive.maxStateFileBytes` ≥ 600 B × `archive.maxSessionsPerRun` ×
+(⌈`archive.removeAfterHours` / `timer.periodHours`⌉ + 1) — the sessions of every run still waiting for its removal, each entry
+fixed-size, its files' hashes and archived paths in the index only (review round C3); `archive.minRunMinutes` ≤
+`archive.runBudgetMinutes` (C4); (`runBudgetMinutes` + `finishGraceMinutes`) × 60 + 60 s ≤ `commands.maxTimeoutHours` × 3600;
+and no rule on `archive.previewTimeoutSeconds` (E9.S1's was dropped by its review round, cm1: the preview's listing budget is
+derived from it).
+Group C (constants, with their reason in the allowlist): SHA-256 and HMAC-SHA-256 (the index's format), the index's schema version
+and event names, the `~2` collision suffix, the quarantine name shape, the side-name shape, the 16-hex `entryId`. Any further
+number the build finds becomes a key under the standing convention; `ArchitectureTests.Numbers` catches a literal.
+
+#### The release interplay (i)
+
+- **The daemon parts (E9.S0–E9.S5) merge to `main` at any time**, CI green, and ride the next daemon minor. **Merging changes
+  nothing on any machine**: `archive.baseFolder` is empty by default (A13 skips "no archive configured") and the timer's
+  `dryRun` stays on until the owner turns it off. The extension acts on the CAPABILITIES (`archive.run`, `archive.restore`,
+  `archive.list`), never on a version (§15j M5); `status.actions` gains A13 and A20 — additive, and an older extension ignores
+  ids outside its compiled registry (E6.S2's intersection).
+- **The extension half is E10** (`feat/wc-e10-archive-ui`): settings with a folder picker (calling `archive check-base`), the
+  Archive page (`archive list`, unverified entries marked), *Archive now* (`act A13`), restore (`act A20`, and the Windows verbs),
+  the Logs rows, the retention badge — after the extension releases E10 follows in §16's order (`extension-v0.5.0`).
+
+#### Boundaries with the neighbouring plans
+
+| Item | Built by | The other side's part |
+|---|---|---|
+| the catalogue, the session layouts, `sessionGlob`, the protected roots | E7 (§15q) | E9.S0 adds each entry's `archive` block and corrects the layouts the one-time run confirmed (Antigravity on Windows, its CLI logs, its SQLite siblings); it never redefines "one session" |
+| the archive verbs, A13, A20, the index, the reconcile | E9 (this section) | E10 renders them ([archive plan](PLAN_ai_session_archive.md) §6); E10 owns how a WINDOWS button run survives a reload — E9 gives it `archive status` (lock and lease holders, in-flight entries) |
+| the Windows scheduled archive | E11 ([PLAN_windows_care.md](PLAN_windows_care.md) W-A15, the user's task) — or E9.S6 first if the owner decides Q7 | E9.S5 gives the verbs, the lock, the reconcile; E11 runs `wsl-care.exe archive run` on its schedule |
+| a WSL→Windows `tar` hand-off for a slow share (archive plan §4) | not planned; a story after E11 if the live gate measures the need | needs E11's installed Windows binary at a fixed path |
+| `%TEMP%\claude\` and every TEMP cleanup | E12 (W-A2's guard) | E9 never selects it and refuses it as a base |
+| an agent process's attribution | E7.S2b (`AgentOrphans.AgentOf`) | E9.S1 reuses it for the in-use check |
+
+The archive plan and the Windows plan carry the same boundary (their §8c and W-A15 row). Disjoint otherwise.
+
+#### Growth and budget
+
+| Surface | Projected size | Who retires it | Interrupted |
+|---|---|---|---|
+| the archive itself (`<base>/…`) | the one-time run moved ≈ 2.18 GB / 13 312 files for every session older than 7 days (both sides, 2026-10-02); steady state ≈ 2–4 GB a month → ≈ 25–50 GB a year (to be re-measured from the run records' bytes) | **kept forever, a decision** (the owner: move, never delete), on the owner's share (5.5 TB on 2026-10-02) | the reconcile (D3) |
+| superseded and `split` snapshots | one per session resumed after it was archived; rare | kept with the archive (Q5) | — |
+| the month indexes (per side) | ≈ 300 B a session (with its MAC) + 180 B a file: the one-time backlog would be ≈ 4.7 MB; ≈ 2–3 MB a month for both sides → ≈ 30–35 MB a year | kept with the archive; one file per side per month, read under `archive.maxIndexBytes` | a torn last line skipped |
+| the side leases on the base | one small file per side | replaced at every run start | a dead holder's lease taken over |
+| `inflight.json` | ≤ `archive.maxSessionsPerRun` × (⌈`removeAfterHours` / `timer.periodHours`⌉ + 1) × 600 B (review round C3), typically a few KB | emptied as sessions close; the reconcile ends the rest | atomic replace; the reconcile |
+| `restored.json` | one entry (~150 B) per restored session not yet archived again | an entry leaves when the session is archived again | atomic replace; `--scan` rebuilds it |
+| `summary.json` | ≈ 100 B per agent per month → ≈ 10 KB a year | kept (it IS the archive's table of contents); `archive reconcile --scan` rebuilds it | atomic replace |
+| finals without an index line (a crash in phase 1) | at most the files of the sessions in flight | the reconcile removes the ones its in-flight entry created; `--scan` re-indexes the rest | — |
+| A13's run detail (root) | per agent aggregates, ≈ 1 KB a run | the run details' 90-day retention | the run record's own write order |
+| the child's run logs (the user's) | one file per child run | the existing unprivileged log retention | — |
+
+The run's TIME is bounded by D8's dynamic budget inside the timer and measured (files/s, MB/s) on every run; the one-time run
+measured ≈ 2 files/s from WSL to the share through drvfs, so a 4 696-file backlog takes several runs — and drains oldest first.
+
+#### Build order
+
+1. E9.S0 (the keys and the base rules everything later reads) → 2. E9.S1 → 3. E9.S2a (the seam) → 4. E9.S2b → 5. E9.S3 → 6. E9.S4
+→ 7. E9.S5 (after S2a / S2b, may run beside S3 / S4) → the daemon release carrying them → 8. the E9 live gate → E10. E9.S6 only on
+the owner's Q7 decision.
+
+#### The E9 live gate (owner; each step observed, stamped with date, build and outcome)
+
+1. `runuser` from `wsl-care.service`: the children run as the target user and their copies are the user's.
+2. The base on the owner's share: whether `/mnt/<drive>` of the network drive exists for a process the timer starts with
+   nobody logged in; the mount's cache mode and whether drvfs honours `fsync`, `O_EXCL` and `renameat2(RENAME_NOREPLACE)`; the
+   measured rate against the one-time run's ≈ 2 files/s; the share unreachable → the reachability child refuses, a stuck long
+   child is killed at its ceiling, the run is not wedged forever; the recorded mount refused after an unmount.
+3. A round trip on this machine: one month of WSL Codex sessions to a temp base, phase 2 a day later, and back, byte-identical;
+   then one Claude session.
+4. The agents while a session is away and after restore: `claude --resume`; `codex resume`, its `session_index.jsonl` and
+   `state_5.sqlite`; Antigravity's `conversation_summaries.db` and whether a conversation `.db` has `-wal` / `-shm` siblings
+   (archive plan §8b's open item, review M8); what Claude does with `todos/<id>-*`, `session-env/<id>`, `debug/<id>.txt` of an
+   archived session.
+5. Claude's retention read on both sides (managed settings, `CLAUDE_CONFIG_DIR`, `settings.json`) and the effective age it
+   gives; the warning for 0.
+6. A crash drill: the child killed by its own pid and start time (never by image name) mid-copy and mid-removal, then the
+   reconcile.
+7. The preview on this machine against the one-time run's layout counts (re-measured, not remembered).
+8. **The Windows side** (E9.S5 plan round, finding 2): a base on a mapped NETWORK drive and on a UNC share accepted by
+   `archive check-base` and used by a run; a session under it asked of the Restart Manager (`\\?\UNC\…`) while a process holds
+   it — kept — and after; a live Claude Code on Windows keeps every Claude Code session in place.
+8. The older `~/.gemini/antigravity` (and `%USERPROFILE%\.gemini\antigravity`): whether it holds sessions, in which layout —
+   until confirmed it is protected and walked but never selected (E9.S0 review round C6).
+
+#### Test plan (beyond the RED tests)
+
+- **The 14 kill points** (review, fault injection) — the BUILT child killed: (1) after the intent; (2) during a copy; (3) after a
+  final's flush; (4) after the exclusive create, before its verification (the reviewer's "after link/create before `.part`
+  unlink" — no `.part` remains in this design); (5) between files; (6) after the index append, before its flush; (7) after the
+  index flush, before the in-flight change; (8) before the first quarantine rename; (9) between quarantine renames; (10) after a
+  hash, before its unlink; (11) between unlinks; (12) before the empty-folder removal; (13) before the close line; (14) after the
+  close line, before the entry is dropped — each repeated with the base unreachable during the reconcile, and with an agent
+  append, a new file at the original name and a delete at that point. After each: the session whole in one place or both, no
+  removed inode without an equal archived copy, the reconcile idempotent when run twice.
+- **The whole-protocol property:** random interleavings of agent writes, creates and deletes with both phases and the reconcile —
+  every removed inode's content equals an archived copy the index recorded.
+- **Daemon:** the never-move property over random trees for every agent's units and every `neverMove` name; the month across a
+  month and a year boundary and a zone change; the index readers over duplicated, torn, unverified and hostile lines; D7's every
+  rule at its edge; the coupled rules; goldens `archive-preview.json`, `archive-run.json`, `archive-status.json`,
+  `archive-list.json`, `archive-check-base.json` (names from `FixtureIdentity`, `FixturePrivacyTests`); `module_tests.md` flows
+  for every new verb.
+- **Windows:** the Restart Manager over a fixture process holding a handle; the one-handle disposition (and a kill mid-hash); the
+  no-replace rename; the base rules over a drive, a UNC path, a junction and a 300-character path.
+- **Live:** the E9 live gate.
+
+#### Definition of Done
+
+- [ ] H1–H4 each held by a named test, seen red with its guard removed.
+- [ ] Root never opens, copies, writes or removes a session file or touches the base (recording runner + scenario); the only
+      archive commands root starts are the user-scoped children of the product's own root-owned binary.
+- [ ] One session moves as one unit under one month; nothing outside its definition moves (property test over selection AND
+      the whole protocol); `memory` never.
+- [ ] Phase 1: exclusive no-link create → flush → read-back hash (one retry, then the run stops) → index. Phase 2, a later run:
+      re-hash → no-replace quarantine → re-check → commit → removal (Windows: one handle, disposition after equality); every
+      kill point fault-injected; the reconcile finishes a crash from the in-flight file or the quarantine names and never removes
+      on a mismatch or after `restored`.
+- [ ] Restore is create-only from the current layout root and the relative path, verifies the MAC and the archived copy first,
+      never overwrites; the archived copy stays; a restored session is archived again as an event only.
+- [ ] `archive preview | run | restore | list | status | check-base | reconcile --scan` on both RIDs; A13 in the timer behind
+      `baseFolder`, the dry-run week, the trigger, the idle gate with its urgent exception, the dynamic budget, streamed; A20 a
+      button only, bound to its shown entries.
+- [ ] The coupled rules, the EFFECTIVE age from the measured retention; every new number a key; the contract regenerated;
+      `The_defaults_hold_every_coupled_rule` green.
+- [ ] The run detail names no session; the index MAC'd and per side and host, the lease held; the local state bounded as
+      *Growth and budget* says.
+- [ ] Docs (`research/architecture.md`, `research/module_tests.md`, `README.md`), goldens, this section's *as built*
+      deviations; the archive plan's and the Windows plan's boundary rows; the E9 live gate stamped.
+
+#### Open questions for the owner
+
+The review round turned the proposals into this plan's WORKING ASSUMPTIONS (the code is built to them); each is still the
+owner's to overturn.
+
+- **Q1** the target user's process moves, started by root's timer (D1).
+- **Q2** restore keeps the archived copy; a re-archive of identical bytes is an event only (D6, review M10).
+- **Q3** a restored session's last write becomes the restore time; the original is kept in the index.
+- **Q4** the archive reads Claude's `cleanupPeriodDays` (managed settings, `CLAUDE_CONFIG_DIR`, `settings.json`) and never writes
+  an agent's settings — "raise it" is an instruction in E10.
+- **Q5** superseded and `split` snapshots are kept forever with the archive.
+- **Q6** manual agents are off by default, archived only when added to `archive.agents` one by one.
+- **Q7 — still the owner's, open:** the coordinator has told the owner to raise `cleanupPeriodDays` by hand now on both sides;
+  pull a minimal Windows archive task forward (E9.S6) only if E11 comes more than about two weeks after E9's live gate?
+- **Q8** accept the drvfs path within a budget; the live gate measures whether a hand-off is needed.
+- **Q9** side names carry the host: `windows-<host>`, `wsl-<host>-<distribution>` (review M1).
+- **Q10** Claude's `file-history/<id>` moves with its session; `todos/`, `session-env/`, `debug/` do not (yet).
+- **Q11** restore is the button-only engine action A20.
+- **Q12** `urgentWithinDays` 7, `removeAfterHours` 24, `marginDays` 7, `runBudgetMinutes` 30 (from the run limit's slack, D8),
+  `minFreeGb` 5 — starting values to re-measure, not measurements.
+
+#### §15r review round (2026-10-06) — the coai plan round and an own plan review
+
+**The coai plan round:** verdict **proceed**, 7 findings, all ACCEPTED. **The own plan review:** verdict "revise before you
+build" — 3 Blocking, 12 Major and the minors below, all ACCEPTED (the coordinator, 2026-10-06). Each row OVERRIDES the text it
+names; the text above was updated to match.
+
+| # | Finding | Disposition | Lands in |
+|---|---|---|---|
+| G1 (Blocking, coai) | a read-back mismatch had no defined action | **Accepted.** The new file removed, one retry after a flush; a second mismatch skips the session "verification failed" and STOPS the run; nothing removed | D2.5, E9.S2b |
+| G2 (Blocking, coai) | the destination below the base lacked the source's no-link guarantee | **Accepted.** Every destination folder and file created from the parent's descriptor with no link followed (`openat` chain from the base) | D2.4–5, E9.S2a |
+| G3 (Major, coai) | "last event wins" dropped the file paths | **Accepted — merge chosen.** Readers merge per `entryId`: the `archived` event carries the files, later events the status | D2, E9.S2b |
+| G4 (Major, coai) | no step created the destination tree | **Accepted.** Level by level from the base descriptor, 0700, under the side's lock; a failure skips "destination unreachable" | D2.4, E9.S2a |
+| G5 (Major, coai) | a restored session could never be archived again | **Accepted.** It is eligible again after the effective age (its last write is the restore time); the re-archive is an event only (M10) | D6, E9.S3 |
+| G6 (Minor, coai) | clock jumps, coarse filesystem times | **Accepted.** A forward clock assumed and stated; the in-use checks and B1 are the guard; FAT / exFAT accepted with its 2-s granularity stated | D2, D7 |
+| G7 (Minor, coai) | two hosts with one side name collide | **Accepted** — M1 | D4 |
+| ref (own) | wrong references: actions cannot stream (`ActionCommands.cs:82`), `StreamAsync` (`ProcessCommandRunner.cs:104-159`) marks no progress, the scan does not forbid `FileOptions.DeleteOnClose` (used by `ProbeWriteAccess`, `PhysicalFileSystem.cs:199`), `BeneathFiles.Read` reads whole files | **Accepted, corrected** in *What exists today*; each is now work of S2a / S4 | What exists, S2a, S4 |
+| B1 (Blocking, own) | renaming a quarantined file back REPLACES an agent file re-created at the name | **Accepted.** `renameat2(RENAME_NOREPLACE)` both ways (Windows `MoveFileEx` without replace); an existing original kept, the quarantined unlinked only when equal to its copy, event `split` | D2.8, E9.S2a |
+| B2 (Blocking, own) | Windows delete-on-close deletes on ANY close | **Accepted.** One `DELETE \| READ` handle, `FileShare.Read`, hash, then `FileDispositionInfoEx` `DELETE \| POSIX_SEMANTICS` only after equality; `DeleteOnClose` / `FileDispositionInfo*` / `SetFileInformationByHandle` banned outside the seam; a kill mid-hash leaves the source | D2.9, E9.S2a |
+| B3 (Blocking, own) | the defaults broke the run-limit and no-progress rules; actions cannot stream | **Accepted — decided:** one template per verb; the run template budgeted from the run limit's SLACK and left out of the sum (the run limit stays 240, the unit and `ShippedFilesTests` unchanged — why in D8); `LongestStep` counts `archive.progressSilenceSeconds` for a streamed template; `ActionCommands` streams a declared streamed template, `StreamAsync` marks a step per line; S4's files widened | D8, Configuration, E9.S4 |
+| M1 (own) | one writer per file is false with two PCs on one share | **Accepted.** Side names with the host; a lease per side on the base; finals created `O_EXCL` (no `.part` + existence check) | D4, D2.5, E9.S2a/b |
+| M2 (own, strongest fix) | a removal right after a copy trusts a share's acknowledgement | **Accepted.** TWO-PHASE removal after `archive.removeAfterHours` and a re-hash of the reopened copy; coupled into the retention rule; Windows write-through and no-buffering read-back; the folder flushed on a local Linux base; drvfs `fsync` a live-gate measurement | D2, D10, live gate 2 |
+| M3 (own) | lost or stale local state | **Accepted.** Self-describing quarantine names found and resolved by every run AND preview; `removing` as the commit point; per-file hash and archived path in `inflight.json`; its folder flushed | D2.8, D3, E9.S2b |
+| M4 (own) | the restore target from an archived (`~2`) or absolute path | **Accepted.** The original path relative to the layout root stored apart; target = current root + it; the archived source inside the entry's own folder | D2.6, D6, E9.S3 |
+| M5 (own) | the index is unauthenticated on a shared base | **Accepted.** A per-side HMAC key (0600), a MAC per line; an unverified line restored only with `--accept-unverified`; E10 marks them | D4, D6, E9.S2b/S3 |
+| M6 (own) | archived sessions hold secrets | **Accepted.** `check-base` reports who may read the base and warns; folders 0700, files 0600; local base folders 0700 | D7, D2.4 |
+| M7 (own) | the measured retention only warned | **Accepted.** The effective age per agent derived from it; urgency against it; managed settings and `CLAUDE_CONFIG_DIR` read; 0 a loud warning; project settings a residual | D10, E9.S1 |
+| M8 (own) | Antigravity's `.db` is probably SQLite | **Accepted.** `-wal` / `-shm` / `-journal` companions, a unit skipped while its `-wal` exists; a live-gate check | E9.S0, live gate 4 |
+| M9 (own) | the descriptor scan overclaimed | **Accepted.** Stated honestly: Claude keeps no transcript open; the guards are age, the working-directory check and B1; other accounts and containers a residual | D2.2 |
+| M10 (own) | the restore-time mtime breaks the dedupe | **Accepted.** `restored.json` (entry → archived path), rebuilt by `--scan`; an identical re-archive writes only an `archived` event | D5, D6, E9.S3 |
+| M11 (own) | a share that stops answering leaves the child in `D` holding the lock | **Accepted.** A short reachability child first; `archive status` names a holder in state `D`; A13 skips "stuck in the kernel" | D1, E9.S2b, E9.S4 |
+| M12 (own) | S2 too large; S5 overlapped it | **Accepted.** S2a (the seam, both OS semantics, the scan, the fault seam) and S2b (the protocol); S5 keeps the Windows verbs only; B3's files added to S4 | Stories |
+| m-a | A13's place in the order | **Decided:** after A16, A3, A11, A18, before A1 / A2 (the clock first; the cache drop after the archive's reads) | D8, E9.S4 |
+| m-b | Windows: rename aside before the deny-write handle | **Accepted** | D2.8 |
+| m-c | D7 must never create the base; record and verify the mount; warn on the distro's own disk; accept a UNC drvfs mount | **Accepted** | D7, E9.S0 |
+| m-d | NTFS-illegal names, case-only collisions, invalid UTF-8 | **Accepted.** A preview refusal with the reason; ordinal compare; exact names stored | D2.1, E9.S1 |
+| m-e | long paths; `\\?\` to the Restart Manager; always `RmEndSession` (or `FileProcessIdsUsingFileInformation`) | **Accepted** | D2.2, D7, E9.S5 |
+| m-f | a session named `memory.jsonl` (its companion is `projects/<p>/memory`) | **Accepted.** Refused whole; in the property test with `Memory` / `MEMORY` | H2, E9.S1 |
+| m-g | progress lines root reads | **Accepted.** No names, capped (`archive.progressLineMaxBytes`) | D8 |
+| m-h | which index file gets `superseded` / `restored` / `split` | **Accepted.** The entry's own month / side; only the owning side restores | D2, D6 |
+| m-i | estimate a session's time before starting it | **Accepted.** Bytes ÷ the rate measured this run, against the budget left | D8 |
+| m-j | `archive.urgentWithinDays` default | **Accepted:** 7 (= the margin); the idle gate kept, with the urgent exception, because the copy loads the share and the disk | D8, Configuration |
+| m-k | Claude's other per-session files; Gemini CLI's retention | **Decided:** `todos/`, `session-env/`, `debug/` not moved in E9 (a live-gate check); Gemini CLI "none known" — checked: nothing, its documentation not read | D10, live gate 4 |
+| m-l | local Linux base folders 0700 | **Accepted** | D7 |
+| F (own) | fault injection at the 14 points, with three variations; the never-move property over the whole protocol | **Accepted** | Test plan, R1, E9.S2b |
+| model | the coai gate asked for Fable on the split and the risky stories | **Recorded:** Fable's monthly limit is spent (since 2026-10-02) → Opus, with the own reviews each story names | Status, Stories |
+
+#### E9.S0 review round (2026-10-06) — two own reviews of the built E9.S0
+
+Two own reviews of E9.S0 (path validation / confused deputy; the data model) — every finding ACCEPTED by the coordinator,
+fixed on `feat/wc-e9-archive-daemon` in one `fix(daemon): E9.S0 review round …` commit after E9.S1, each with its red run and its
+teeth (`research/module_tests.md` § *The E9.S0 review round*). Each row OVERRIDES the text it names.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| S1 (Important) | in the distro a drvfs base was never judged against the WINDOWS side's protected places — `/mnt/c/Users/me/.claude/x` passed | **Fixed.** A base on a drvfs mount is spelt as Windows spells it (the mount's `path=` or source + the rest) and judged against the Windows profile's places — the catalogue's Windows agent folders, `%TEMP%`, `%TEMP%\claude`, `%USERPROFILE%\git`, wsl-care's own — from the profile the last full run found (`LastFullRun` → the clock probe's profile), case-blind (`PathRules.Windows`); and, known profile or not, any `X:\Users\<anyone>\AppData\…`, `…\Users\<anyone>\.<agent>` (the catalogue's `%USERPROFILE%\` folder names), a profile and `X:\Users` itself are refused. No Windows cleanup action exists yet, so no Windows cleanup root joins (Windows care adds them) | `Archive/WindowsProfilePlaces.cs` (new), `Archive/BaseFolderRules.cs`, `Cli/Commands/ArchiveCommand.cs` |
+| S2 (Important) | `config set archive.baseFolder` as root judged the folder with root's reach and wrote root's user layer | **Fixed.** Refused with 81 (`NotAsRoot`) before the shape, the mount or any folder is looked at | `Cli/Commands/ConfigCommand.cs` |
+| S3 (Medium) | Windows aliases bypassed the overlap check: `\\wsl$`, `\\wsl.localhost`, loopback names, this machine's name, admin shares, 8.3 names | **Fixed.** Those shares are refused by name (`shape`): `\\wsl$` and `\\wsl.localhost`; `localhost`, `127.*`, `::1`, `[::1]`, `0--1.ipv6-literal.net`, `.`, this machine's name (bare or with a domain); `X$`, `ADMIN$`, `IPC$`. On Windows the overlap rule compares the file system's IDENTITY too (volume serial + file index of the base and every folder above it, against each protected place's — `subst` drives, second spellings of a volume). **Measured:** 8.3 names were already expanded — .NET's `Path.GetFullPath` calls `GetLongPathName` for a path holding `~`; the short-name test was green against the unfixed code and stays as a regression test. Residual: other names that reach this machine (its IP addresses, DNS aliases) are caught only by the identity comparison, which an SMB server may answer with its own ids | `Archive/BaseFolderPlacement.cs` (`WindowsShares`), `Archive/WindowsIdentity.cs` (new) |
+| S4 (Low) | "the distro's own disk" was the mount point `/`; a mount with root ≠ `/` (a bind mount) was judged by its spelling | **Fixed, wider than asked.** A device's folders are judged under its CANONICAL mount — its whole mount (root `/`), the distribution's `/` when it is that disk, else the shortest mount point: a bind mount of `~/.claude` at `/mnt/bound` is judged as `~/.claude/…`, and a second mount of the root disk (`/data`) as the folder it is (`/data/home/me/.claude` refused). A device mounted whole nowhere is refused (`link-on-the-way`); a bind of a bind is refused rather than followed. The distribution's own disk is the root mount's device (or its `/dev/` source) | `Archive/BaseFolderPlacement.cs` |
+| S5 (Low) | a folder on the way owned by another account was not said | **Fixed.** A warning names every folder of the chain (the base and each folder above it) owned by a uid other than 0 and this process's (`RegularFiles.StatNoFollow`); not on drvfs (the owner is the mount's report) | `Archive/BaseFolderRules.cs` |
+| S-probe | the write probe `.wsl-care-write-probe-<hex>` can survive a SIGKILL inside the base | **Noted for E9.S2b:** the reconcile and every listing of the base ignore that name, and the reconcile removes one older than a run | §15r D3, E9.S2b |
+| S-bind | what binds a run to the base | **Recorded:** the run's binding is E9.S2a's `openat` no-follow chain from the base's descriptor, with the recorded mount compared on the OPENED descriptor — never `Judge`'s verdict, which is advice at the moment it is given (`BaseFolderRules` says so) | E9.S2a, E9.S2b |
+| C1 | `ConfigKeyShapeTests` asked "not root-effective", which a new display-only path key passes | **Fixed.** `archive.baseFolder` is exempt BY NAME; every other `AbsolutePathOrEmpty` key must be machine-only; a planted display-only path key is named | `tests/…/ConfigKeyShapeTests.cs` |
+| C2 | = S1 | — | — |
+| C3 | the in-flight size rule undercounted ~10× (sessions waiting for a later run's removal; each file's path and hash) | **Decided: per-file data in the index only.** An in-flight entry is fixed-size (entry id, agent, key, month, state, file count — a key that does not fit is refused by the run); its files' hashes and archived paths live in the index line flushed before the entry leaves `copying` (D2 step 3's "each file with its planned archived path" is derived from the key and the month, not stored). The rule bounds the WAITING entries: `maxStateFileBytes` ≥ 600 B × `maxSessionsPerRun` × (⌈`removeAfterHours` / `timer.periodHours`⌉ + 1). New defaults: `archive.maxSessionsPerRun` 5 000 → **1 000**, `archive.maxStateFileBytes` 4 MiB → **8 MiB** (600 × 1 000 × 7 = 4.2 MB); the owner's Windows backlog (~4.5 k sessions / 8.6 k files) drains in five runs, oldest first | `Config/NumberRules.cs`, `Config/default.json`, E9.S2b |
+| C4 | no rule held `archive.minRunMinutes` ≤ `archive.runBudgetMinutes` | **Fixed.** The coupled rule, with a test row | `Config/NumberRules.cs` |
+| C5 | `archive.restoreLimitMinutes` 60 + the 60 s a ceiling keeps passes the least `commands.maxTimeoutHours` (1 h); the composed-ceiling test filtered on "Timeout" | **Fixed by the range:** 1–**59**, default **59**. (A coupled rule was built first and dropped: it made a lone, legitimate `commands.maxTimeoutHours: 1` an observe-only error.) A new test holds every `archive.*LimitMinutes` / `*BudgetMinutes` ceiling under the least maximum by its range or by a coupled rule naming `commands.maxTimeoutHours`. **As built, renamed:** the plan's `restoreTimeoutMinutes` (1–1440, 240) is `restoreLimitMinutes` (1–59, 59) — a restore longer than an hour is a second button press | `Config/ConfigKeys.Numbers.cs`, `Config/default.json`, `tests/…/NumbersAreConfigurationTests.cs` |
+| C6 | the older `~/.gemini/antigravity` is never selected | **Recorded as a residual and a live-gate item (8):** its layout is not confirmed — the one-time run saw sessions only under `antigravity-cli` — and a layout nobody confirmed is never archived (§15q D2). It stays protected and walked as an agent folder; the live gate looks at it, and a confirmed layout becomes a second layout root then | live gate 8 |
+| C7 | complexity > 4 in `MountTable.IsDriveName` / `NamesDrive`, `KeyRules.IsAbsolutePath` / `IsSharePath` | **Fixed.** The per-mount-type helpers restored (`NinePNamesDrive`, `VirtiofsNamesDrive`), `StartsWithDrive` / `EndsAtTheRoot`, `IsBounded` / `HasAbsoluteRoot`, `IsShareName` — behaviour unchanged, the existing tests green | `Files/MountTable.cs`, `Config/KeyRules.cs` |
+| S1-found | (found while fixing S1, on the Linux legs) the Windows profile's product folders were taken with `Path.GetDirectoryName`, which reads a Windows path inside the distro as one name and answers empty — an empty protected place | **Fixed:** `PathRules.Parent` (by the paths' own rules), used when the host's reading answers empty | `Hosting/PathRules.cs`, `Agents/ExtraAgentRules.cs` |
+| m1 | `archive.finishGraceMinutes` 1–30 against the table's 1–60 | **Recorded, kept at 1–30:** a grace past half an hour is a second run, and the fifth coupled rule holds budget + grace under the commands maximum | the table below |
+| m2 | `KeyTrust`'s doc comment still named `archive.baseFolder` as machine-only | **Fixed** | `Config/KeyRules.cs` |
+| m3 | `WindowsBaseFolderTests`' `antigravity-cli` row proved nothing (`~/.gemini` is Gemini CLI's too) | **Fixed:** the row is `%APPDATA%\Antigravity`, which only Antigravity's entry covers (teeth: that folder dropped from the catalogue, the row red) | `tests/…/WindowsBaseFolderTests.cs` |
+| m4 | the rules returned `(string Rule, string Why)?`, and `BaseFolderReport.Mount` was `null` for "not established" | **Fixed:** a closed `RuleVerdict` (`Holds` / `Refuses`) for every rule — the base rules AND the selection's keepers (E9.S1 had copied the shape) — and `BaseMountReport.Unknown` (every field empty, `Known` false) instead of null; the JSON answers an empty mount | `Archive/RuleVerdict.cs` (new), `Archive/BaseFolderRules.cs`, `Archive/Selection.cs` |
+| m5 | no golden of a REFUSED `check-base` | **Added:** `contracts/golden/head/archive-check-base-refused.json` (a folder inside `~/.claude`, `overlap`) | goldens |
+| (a) | `config set` keeps the spelling given | **Decided:** the spelling is kept; E9.S2b records the resolved mount in `base.json` and refuses a run whose mapping changed | E9.S2b |
+| (b) | manual agents can never be archived | **Built:** `archive.agents` also takes `manual:<name>` (the manual agent's name shape), off by default; a named manual agent with a `sessionGlob` is judged by its folder rules (`ExtraAgentRules`) at every selection and archived by its own glob under its first data folder, one file per session, `memory` never, its own deletion unknown; one without a glob, refused by its rules, of the other side or missing from `aiAgents.extra` is answered with the reason and never listed. `archive preview --agent manual:<name>` | `Archive/ArchiveTargets.cs` (new), `Config/ConfigKey.cs`, `Config/ConfigValidation.cs`, `Cli/CommandLine.cs` |
+| (c) | a session larger than one run's budget would be skipped silently forever | **Recorded for E9.S2b:** the run reports it (its size, the budget it needs) instead of skipping it again unseen | E9.S2b |
+| (d) | an invalid user-layer `archive.baseFolder` put root observe-only | **Fixed:** a notice — the value is not taken, the rest of the layer stands; E9.S2b treats a base its rules refuse at run time the same way (the run answers it, the configuration stands) | `Config/ConfigLoader.cs` |
+
+#### E9.S1 review round (2026-10-06) — a security and a correctness review of E9.S1 and the E9.S0 round
+
+Two own reviews of `d4dc524` (E9.S1) and `ca87883` (the E9.S0 review round): a security review and a correctness review, both read
+against the current files; every finding ACCEPTED (the coordinator), fixed in one `fix(daemon): E9.S1 review round — security +
+correctness` commit, each with its red run and its teeth (`research/module_tests.md` § *The E9.S1 review round*). Each row
+OVERRIDES the text it names.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| B1 (Blocking, security) | a spelling with an empty or `.` segment (`//mnt/c/…/.claude`, `/mnt/./c/…`, `/mnt//c`, `//dev/shm/x`, `//<bind mount>`) passed the shape and was placed by its raw spelling, while the link rule normalised it — the mount and Windows-place checks judged another folder than the kernel would | **Fixed, both halves.** One segment rule (`Hosting/PathSpelling`) shared by every path key and a manual agent's folder: no empty, `.` or `..` segment after the root, one trailing separator allowed. And the placement is made on the REAL path (links resolved), reported as `folder`; the link rule still resolves the spelling and refuses a link on the way. Said honestly: with the segment rule and the link rule, an accepted base's real path IS its spelling — the second half is defence in depth no test can tell apart | `Hosting/PathSpelling.cs` (new), `Config/KeyRules.cs`, `Agents/ExtraAgent.cs`, `Archive/BaseFolderPlacement.cs` |
+| M1 (security) | a session file named `.jsonl` / `..jsonl` / `...jsonl` has the id `""` / `.` / `..`: `{dir}/{id}` and `file-history/{id}` expand to the project folder, all of file-history, or `~/.claude` itself — one unit holding credentials (Antigravity's `brain/{id}` likewise) | **Fixed.** A unit whose id is empty or a dot name, or one of whose expanded companions leaves its template's own folder or holds such a segment, is refused by name with only its main file named | `Archive/Selection.cs` |
+| M2 (security) | on drvfs an 8.3 short name (`CLAUDE~1`) resolves to the long name, while the distro's real path keeps the short spelling — the Windows places were compared by a spelling they do not have | **Fixed, the simple refusal:** on drvfs a segment holding `~` followed by a digit refuses (`shape`). Judging by the Windows side's identity would need the Windows binary; recorded as the alternative | `Archive/BaseFolderRules.cs` |
+| M3 (security) | the distro never judged a base against the WINDOWS side's manual agents (`aiAgents.extra`, side `windows`) | **Fixed.** Their data folders join the Windows places (`BaseFolderContext.WindowsAgentFolders`, from the configuration), case-blind | `Archive/WindowsProfilePlaces.cs`, `Cli/Commands/ArchiveCommand.cs` |
+| m1 (security) | with the profile unknown (normal at install) `<drive>:\ProgramData\wsl-care` and `Users\*\git` went unprotected, silently | **Fixed:** both are protected by pattern whatever the profile (and `ProgramData` itself, which holds the first); an accepted drvfs base with the profile unknown is **warned**, not refused — the patterns cover every profile's AppData, agent folders, repositories and wsl-care's own folder, and a person setting up before the first run must not be stopped by a fact a run supplies | `Archive/WindowsProfilePlaces.cs`, `Archive/BaseFolderRules.cs` |
+| m2 (security) | share parsing split only on `\` (`\\host\C$/Users\me` not an admin share); `localhost.`, `0-0-0-0-0-0-0-1.ipv6-literal.net`, the DNS host name, this machine's addresses not seen; a drvfs mount of a loopback UNC never asked | **Fixed:** a `/` is read as `\` before every share parse; the trailing dot trimmed; any literal address and every `ipv6-literal.net` form parsed and compared with loopback and THIS machine's interface addresses (read from the interfaces, never looked up); the NetBIOS and the DNS host name, bare or qualified; in the distro a drvfs mount whose `path=` is such a share is refused. **Residual:** a DNS alias of this machine (a CNAME, a hosts entry) is not resolved | `Archive/WindowsShares.cs` (moved out, widened), `Archive/BaseFolderPlacement.cs` |
+| P1 (Major, security, pre-existing) | the recursive `*` matcher was exponential: a user-layer `sessionGlob` of many stars against a long name stalled ROOT's walk (user → root denial of service) | **Fixed:** two cursors and the last star's mark — at most pattern × name steps, never exponential; the red: forty stars against 200 characters did not answer within 2 s. Star counts are not capped (the matcher no longer needs it) | `Agents/SessionGlob.cs` |
+| cM1 (correctness) | a cut `/proc` scan only added a note — the selection never read it, so unseen units were listed due | **Fixed:** a closed `InUseState` (`Complete` / `Cut` / `NotChecked`); anything but complete keeps EVERY due unit (`in-use`, with the reason) — on Windows too, until E9.S5's Restart Manager query | `Archive/InUse.cs`, `Archive/Selection.cs`, `Archive/ArchivePreview.cs` (`inUse.state`) |
+| cM2 (correctness) | the retention was read from `CLAUDE_CONFIG_DIR`, the sessions listed under the catalogue's `~/.claude` | **Fixed by refusing:** while `CLAUDE_CONFIG_DIR` names another folder, Claude Code is answered with that reason and nothing of it is listed. Deriving the layout from the variable was rejected: the protected roots, the walk rules and the deletion policy all name `~/.claude` | `Archive/ArchiveTargets.cs` |
+| cm1 (correctness) | the coupled rule `previewTimeoutSeconds` ≥ `measureBudgetSeconds` + 60 s made 10–64 of its own range (and anything ≤ 119 under the defaults) observe-only — and the preview was not bounded anyway (companion walks got a fresh budget, the scan its own ceiling) | **Fixed:** the rule is GONE; the listing budget is DERIVED — three quarters of `archive.previewTimeoutSeconds` (a group-C share, like the 60 s a ceiling keeps) — and the open-file scan, the layouts and every companion walk share it (the scan capped by the time left, each companion walked with the time left) | `Archive/ArchivePreview.cs`, `Archive/Selection.cs`, `Archive/InUse.cs`, `Cli/Commands/ArchiveCommand.cs`, `Config/NumberRules.cs` |
+| cm2 | a companion FILE whose size could not be read was "absent" — the unit moved without it | **Fixed:** not whole | `Archive/Selection.cs` |
+| cm3 | a session whose main file is quarantined no longer matches its glob, so its companions' quarantined files were never counted | **Fixed:** found through the id of the quarantined name; every file counted once however it is reached | `Archive/QuarantineCount.cs` (new, moved out of `Selection`) |
+| cm4 | `archive preview --agent X` for an agent `archive.agents` does not hold answered `agents: []` with no reason | **Fixed — previewed:** the agent is answered with what it WOULD move, `enabled: false` and a warning that the archive does not move it until `archive.agents` holds it (more useful than a refusal when deciding to enable it); a missing manual agent answered with its reason; CLI tests for `manual:<name>` enabled / not enabled / missing | `Archive/ArchiveTargets.cs`, `Archive/ArchivePreview.cs` |
+| cm5 | the memory-never test could not fail (memory outside the glob) | **Fixed:** a property test with a manual agent whose glob `**` REACHES memory, over random trees | `tests/…/SelectionS1ReviewTests.cs` |
+| cm6 | the mount point of a second whole mount of the root disk gave the real path `""` | **Fixed:** `/` (too broad) | `Archive/BaseFolderPlacement.cs` |
+| cm7 | a btrfs subvolume (root `/@srv`) was refused as "a bind mount mounted whole nowhere" — a false reason; so was any bind mount whose filesystem nothing else shows | **Fixed:** a mount is judged under the mount of its device whose root is an ancestor of its own (the most whole one); a mount no other visible mount covers is judged as it is — nothing visible aliases it, and a protected place on its filesystem would show as another mount of it. The E9.S0 round's "orphan bind refused" test now asserts that | `Archive/BaseFolderPlacement.cs` |
+| cm8 | `RetentionFound.Days` null mixed "none" and "unknown" | **Fixed, partly as asked:** a closed `Known(days)` / `Unknown(why)`; unknown is warned. **No `None` case:** no catalogue entry documents an agent that keeps sessions forever — every `none` source says "documentation NOT read", which is unknown, not none; a `None` would be dead code | `Archive/AgentRetentionReader.cs`, `Archive/ArchivePreview.cs` (`retention.known`) |
+| cm9 | complexity > 4: `RenderPreview`, `WindowsSpelling`, `ArchiveTargets.Judged` | **Fixed:** extracted (`BaseOf`, `AppendAgent`; `DrvfsRoot`, `JoinWindows`; `FromJudgement`) | as named |
+| nit | `ParseArchivePreview`'s doc comment was check-base's | **Fixed** | `Cli/CommandLine.cs` |
+
+#### E9.S2a gate round (2026-10-06) — the coai code round over E9.S2a
+
+The coai `review_code` round over `0c89c3f..9f59df4` (epic 9/13, reviewer codex): verdict *proceed*, six findings, every one
+ACCEPTED and fixed in one `fix(daemon): E9.S2a gate round …` commit, each with its red run or its break-it check
+(`research/module_tests.md` § *The E9.S2a gate round*). Each row OVERRIDES the text it names — the *Windows residuals* bullet of
+*E9.S2a as built* is replaced by rows 3 and 4.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| 0 (Major, convention) | `JudgedSource` over complexity 4 | **Fixed:** the source rules are a pure `ArchiveSourceRules` (`LinuxProblem`, `WindowsProblem`), each part ≤ 4, tested without a disk | `Files/ArchiveSourceRules.cs` |
+| 1 (Blocking, knowledge base) | no `research/module_[name].md` for the archive | **Fixed:** `research/module_archive.md` (purpose, two Mermaid diagrams, entities, entry points, dependencies) for E9.S0–S2a, linked from `architecture.md` and `research/README.md` | `research/module_archive.md` |
+| 2 (Major, architecture) | `BeneathFolder` had an internal constructor — `IArchiveFiles` could not be implemented outside Core | **Fixed:** `BeneathFolder` is abstract with a protected constructor; `PhysicalFileSystem` subclasses it (`OpenedFolder`: the Linux descriptor or the Windows held handle) and REFUSES a folder it did not open | `Files/IArchiveFiles.cs`, `Files/PhysicalFileSystem.Archive.cs` |
+| 3 (Blocking, security) | Windows checked the way for reparse points, then opened BY PATH — a folder swapped for a junction in between led the removal to an equal-bytes file outside the tree | **Fixed, and widened to every Windows verb:** the source, the removal, the rename and the empty-folder removal ask the OPEN handle where it really is (`GetFinalPathNameByHandleW`) against the root's final path + the relative parts, and act only when equal; the rename (`FileRenameInfo`, no replace) and the folder removal (the delete disposition, refused on a non-empty folder) now go through that checked handle instead of `MoveFileExW` / `Directory.Delete` by path. The destination's folders are HELD (finding 4), so they cannot be swapped at all. Red observed before the fix: the removal answered `Removed` and deleted the file behind the junction; the source answered with the other file's bytes | `Files/PhysicalFileSystem.Archive.cs`, `Files/BeneathWrites.cs` |
+| 4 (Major, reliability) | Windows `FlushFolder` answered Done without flushing; new levels were never flushed | **Fixed:** every destination level is opened as a HELD handle (`FILE_ADD_FILE`, sharing read + write, never delete, the reparse point itself), a new level's entry is flushed with `FlushFileBuffers` on its held parent, and `FlushFolder` flushes the held destination handle. Measured on NTFS first: a folder handle flushes only with `FILE_ADD_FILE` (or more) — read-only or attributes-only handles answer error 5 — and while a folder is held without delete sharing neither it nor its parent can be renamed | `Files/PhysicalFileSystem.Archive.cs`, `Files/BeneathWrites.cs` |
+| 5 (Major, security) | a Windows source's owner was never checked (Linux checks the uid) | **Fixed:** the owner SID read through the open handle's security descriptor must equal this account's SID; an unreadable owner refuses. Files an elevated process created may be owned by `Administrators` — they stay (the safe direction) | `Files/ArchiveSourceRules.cs`, `Files/PhysicalFileSystem.Archive.cs` |
+
+**Residuals after the round.** Windows: between the final-path check and the act nothing can move the file (the removal's handle
+shares read only; the rename's and folder's handles are the act) — but the open itself is by path, so a swap makes the act
+REFUSE (`Kept` / `Refused`), it never redirects it. *(Corrected by the own review round, security m1: "Linux had no such window" was true
+for the last component only — the chain's root and its ancestors were opened by path. Both systems now act along the REAL path
+the policy judged: Linux from the file system's root with `O_NOFOLLOW` at every level, Windows compared with it.)*
+
+**Owner questions from the round (asked 2026-10-06, open — the coordinator's interim rulings stand until the owner answers).**
+
+- **A base on a Windows network share: the folder flush is UNMEASURED.** Whether `FlushFileBuffers` on an SMB folder handle
+  succeeds was not measured — nothing is written to the owner's share until the owner answers. Until then the behaviour is the
+  one built: a level whose new entry cannot be flushed REFUSES (`FolderBeneath.Refused`), so nothing is moved there.
+- **A Windows session file owned by `Administrators`** (an elevated process may create one) is refused as a source and stays
+  where it is — the safe direction — until the owner decides whether such a file may be archived when this account is a member.
+  *Said plainly (own review round, security note):* "it stays" means Claude Code's own `cleanupPeriodDays` sweep deletes it — such
+  a session is LOST, not kept, until the owner decides.
+
+**Live-gate items (unmeasured here, recorded by the own review round; before E9.S5):** `FlushFileBuffers` on a folder handle
+over SMB; `fsync` of a folder on a real drvfs mount; an unaligned last read with `FILE_FLAG_NO_BUFFERING` over SMB.
+
+#### E9.S2a own review round (2026-10-06) — a correctness and a security review of the seam
+
+Two own reviews of `9f59df4` (E9.S2a) and `a31f966` (its gate round), read against the files: every finding ACCEPTED except where
+the row says otherwise, fixed in ONE `fix(daemon): E9.S2a own review round` commit, each with its red run or its break-it check
+(`research/module_tests.md` § *The E9.S2a own review round*). Each row OVERRIDES the text it names. Correctness findings are `C-`,
+security findings `S-`.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| C-M1 + S-m4 (Major) | Windows verbs threw where Linux answers: an uncreatable level (a FILE of its name, a denied create) threw and left the held parent open; the own-copy removal used `File.Exists` + `File.Delete` by path (a sharing violation threw; a file gone in between answered Removed); `ReparseOnTheWay`'s `GetAttributes` threw `FileNotFoundException` when the agent deleted the file | **Fixed:** every native open answers a closed `NativeOpen` (`Opened` / `Failed`); an uncreatable level is `Refused`, the parent disposed in `finally`; the own copy is removed through ONE `DELETE` handle; `ReparseOnTheWay` is gone — the open's real location is checked instead (S-m1); a vanished file is `Gone` on both systems | `Files/PhysicalFileSystem.Archive.Windows.cs`, `Files/BeneathWrites.cs` |
+| C-M2 (Major) | `RemoveOwnCopy` removed ANY name in the held folder | **Fixed:** `ExclusiveFile.Created` carries the file's `FileIdentity` (Linux device + inode + birth time, Windows volume serial + file index — measured in WSL: a file removed and another created at once got the SAME inode on ext4, so device + inode alone was red; the birth time tells them apart); `RemoveOwnCopy` takes it and keeps any other file at that name. `FileIdentity` is the ONE record — the E9.S0 `Archive.FileIdentity` moved to `Files` and widened, not copied. Residual (Linux): a rename onto the name between the check and the unlink, inside the base the side's lease gives one writer | `Files/IArchiveFiles.cs`, both halves |
+| C-M3 (Major) | the native-call scan matched only `EntryPoint = "…"` | **Fixed:** the declaration idiom `extern`/`partial` + the function's own name is matched too, planted in both forms | `tests/…/ArchitectureTests.ArchiveSeam.cs` |
+| C-M4 = S-M2 (Major) | H1's "held by" overclaimed; `RemoveVerified` never read the archived copy | **Fixed in the seam (the security review's fix, chosen over rewording only):** `RemoveVerified` opens the archived copy along its real path through no link, hashes it (Windows past the cache) BEFORE the source, and keeps the source when the copy is missing, unreadable or not equal to the expected hash. *Cost accepted:* phase 2 re-reads every archived file once more than D2.7's re-verify — on a slow share that doubles the reads of a removal, and data safety wins (a `removing` entry resumed after a crash is re-verified by this read even if S2b forgot to). H1 reworded to what each story holds | `Files/PhysicalFileSystem.Archive.cs`; H1 above |
+| C-M5 (Major, docs) | `module_archive.md`'s sequence diagram showed the rejected one-run protocol | **Fixed:** redrawn — two runs, the in-flight file, the index, the commit point | `research/module_archive.md` |
+| C-M6 (Major, tests) | the swap tests passed when the swap never happened | **Fixed:** `SwapAtTheCheck` answers whether it fired and every test asserts it, and the answer's type | `tests/…/ArchiveFilesTests.GateRound.cs` |
+| S-M1 (Major) | a disposed `OpenedFolder` was still accepted; its descriptor number could be reused | **Fixed:** the folder's handle (both systems) is a `SafeFileHandle`; every verb runs inside `OpenedFolder.With`, which holds a reference for the call — a closed folder is refused, its number never reused under a verb | `Files/PhysicalFileSystem.Archive.cs` |
+| S-m1 | the chain's root (and on Linux its ancestors) were opened by path, not along the judged path | **Fixed:** every act locates its target on its REAL path (`Located`): Linux opens the chain from the file system's root with `O_NOFOLLOW` at every level; Windows opens the real path and compares the open handle's final path WITH IT (not with the root's current final path). The destination base is held by its real path and checked in place too. Residual: a short (8.3) spelling refuses | both halves |
+| S-m2 | Linux quarantined a folder or a link | **Fixed:** only a regular file is renamed (`statx` no-follow before), and the new name must hold the same device + inode after | `Files/PhysicalFileSystem.Archive.cs` |
+| S-m3 | Windows accepted `:` (an alternate stream of ANOTHER file), device names, a trailing dot or space | **Fixed:** on Windows every name and every part below the root must pass `ArchiveNames.Problem` (the selection's rules, reused) | `Files/PhysicalFileSystem.Archive.cs` |
+| C-m1 | Linux-only tests without a Windows counterpart | **Fixed:** a junction at the final name (Windows); a writable mapping with its stream disposed (Windows) | the test files |
+| C-m2 | the classic disposition fallback left the name delete-pending yet answered Removed | **Fixed:** under an agent's folder (the verified removal, the empty-folder removal) only the POSIX disposition is accepted — without it the file stays, `Kept`; the classic one is kept for the archive's OWN copy in the base (a share may have no POSIX deletes) | `Files/BeneathWrites.cs` |
+| C-m3 | complexity > 4 in `OpenFolderBeneath`, `Rename`, `VerifyThenUnlink`, `HashThenUnlink` | **Fixed:** extracted (`FolderProblem`, `RenameProblem`, `LeasedThenUnlink`, the pure `ArchiveSourceRules.LinuxRemovalProblem`) | as named |
+| C-m4 | ad-hoc outcome tuples in the natives | **Fixed:** `NativeOpen` (shared), `BeneathWrites.Chain`, `LinuxStatus.Known`, `WindowsFileInfo`, `HeldLevel` | `Files/BeneathWrites.cs`, the Windows half |
+| C-m5 | stale texts (`MoveFileEx`, "four files", the owner questions) | **Fixed** (the owner questions were already added in `31f101e`) | the docs and test comments |
+
+#### E9.S3 as built (2026-10-07)
+
+Built on `feat/wc-e9-archive-daemon`. The guarantees, red runs and teeth are in `research/module_tests.md` § *The restore and the
+list (E9.S3)*; the design is in `research/module_archive.md`.
+
+**Deviations from the text above:**
+
+- **The files:**
+  - `Archive/ArchiveRestore.cs` (not `Restore.cs`) and `Archive/ArchiveList.cs`.
+  - The restore runs inside `ArchiveRun`'s own pipeline: the base judged, its mount compared, the lock, the reach, the key, the
+    lease, the reconcile. It answers the run's report with a `restore` block. `ArchiveRunInput.Restore` carries the request.
+  - `ArchiveRun.ContextOf` builds the one context every verb shares.
+- **The selection of what is restored** (CLI): `--entry <id>[,<id>…] | --agent <id> --month <yyyy-MM> | --agent <id> --session <path>`.
+  D6's `--month <agent> <yyyy-MM>` and `--session <agent> <path>` take the agent through `--agent`, because the option reader
+  takes one value per option. A month restores the entries of that month whose source was removed (`sourceRemoved`, `split`).
+- **The target and the source:** D6 as written.
+  - The current layout root joined with the original relative path. The key must match the unit's glob, and every other file must
+    lie inside a companion of it (`ArchiveRestore.LayoutProblem`, its own glob matcher with `**`). Nothing that never moves.
+  - The archived source is the entry's own `<agent>/<yyyy>/<MM>/<side>/` folder joined with a plain relative path. The index reader
+    already refuses anything else.
+  - The copy is hashed first. An existing target with the archived bytes is "already there"; with other bytes the WHOLE session is
+    refused. All of this is decided before anything is written.
+- **An entry on its way** (in the in-flight file) is refused: the run must finish it first.
+- **A write that fails midway** leaves the files already restored (they hold the archived bytes). The session answers `refused`,
+  naming the failure. The permit allows a create only, so nothing restored is ever removed.
+- **`restored.json`** is `RestoredEntry(entryId, agent, key, month)`, not a path map: the archived paths stay in the index (the
+  entry's latest `archived` event). **Deviation:** a restored session that changed before it was due again is copied as any
+  session AND leaves `restored.json` too (D6 says only an identical one leaves); keeping the old entry would only grow the file.
+- **The re-archive** of an identical restored session writes only an `archived` event in the entry's ORIGINAL month, naming the
+  existing copies. Phase 2 then removes against those copies.
+- **`archive list`** is read-only: no lock, no lease, and no key is made (`ArchiveState.ExistingIndexKey`; without one every line
+  reads unverified). A base mounted differently than at its first run does not refuse it (it writes nothing): the answer carries a
+  note naming the recorded mount and today's (owner decision 2026-10-07; red first: the note was missing).
+- **Exit codes:**
+  - `archive restore`: 0 when every session was restored or already there, 1 when one was refused, 81 as root.
+  - `archive list`: 0, or 1 for a refused or unreachable base.
+- **Not built:**
+  - A20, the engine's button-only restore, which is E9.S4's.
+  - The drvfs-like temp base round trip: the seam is the same on any folder; the 9p base is the E9 live gate's.
+- **Not RED first:** the restore was written before its tests. Every guarantee is proved by a break-it check instead (12, red on
+  Windows; red on Linux too, run 2026-10-08 after WSL was free again — `research/module_tests.md` § *E9.S3*).
+
+#### E9.S3 own review round (2026-10-07) — a security and a correctness review of the restore
+
+Two own reviews of `94c5ed5` / `b91549c` (E9.S3), each finding ACCEPTED unless the row says otherwise, folded into ONE
+`fix(daemon): E9.S3 own review round` commit. Each fix has its red run or its break-it check (`research/module_tests.md`
+§ *The E9.S3 own review round*). Each row OVERRIDES the text it names. Security findings are `S-`, correctness findings `C-`.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| S-B1 (owner rule) | the restore never checked a git tree or a link on the way: a folder stowed into a dotfiles repository received the session; an accepted unverified line naming `.git/config` created a repository | **Fixed:** the session is refused before any write when `AgentWalk.PlaceProblem` refuses the agent folder, or `GitTrees.InUnit` finds a `.git` (around the key's folder on the spelled and the real path, on the way to a file, below a companion, or named by a file). Red first: both answered `restored` | `Archive/ArchiveRestore.cs` (`PlaceProblem`) |
+| S-B2 = C-1 | a copy changed after its check was written whole, unbounded, under the session's name; any failure after the create left a corrupt file there, refusing every later restore | **Fixed:** each file is streamed into a TEMPORARY name (`<name>.wsl-care-r-<runId>`). The stream stops past the indexed length; the hash, the length and the read-back are checked; then the file is renamed to its name without replacing (`IArchiveFiles.PromoteRestored`). On any failure that temporary file is removed by the identity its create gave it. The permit allows exactly this: the promotion in the same folder, and the removal of a temporary name. Red first: the changed copy landed, and a failure left two files | `Archive/ArchiveRestore.cs`, `Files/IArchiveFiles.cs`, `Files/Deletion/DeletionPolicy.cs` |
+| S-M1 | `--accept-unverified` covered every candidate; a planted entry could take a session's name first; one id could match in two months; no free-space check | **Fixed:** the flag is accepted only with `--entry` (a usage error otherwise). Only entries whose agent and month are their folder's own are taken. A session or a month takes its newest VERIFIED entry and says which. An id found in two months restores nothing and names them. The agent folder's disk must hold the declared bytes. Red first: the planted entry was a second candidate; the doubled id restored | `Archive/ArchiveRestore.cs` (`Select`), `Cli/CommandLine.cs` |
+| C-2 | `--session` restored every entry of that key in listing order — the old snapshot first | **Fixed** with S-M1: the newest entry whose source is gone. Red first: the old content came back | the same |
+| C-3 | unreadable months and unknown ids were silent, and the restore exited 0 | **Fixed:** each unreadable month is a row `unreadable`, each id or session not found a row `not-found`. Both count as refused (exit 1). Red first | the same |
+| C-4 | a `split` entry was always refused | **The safe default, owner decision pending:** the MISSING files are restored and an existing (changed) file is never touched. The answer is `partial`, naming the files kept. Red first | `Archive/ArchiveRestore.cs` (`Planned`) |
+| C-5 | an event-only re-archive was counted again in `summary.json`, under the restore month | **Fixed:** `CopyOutcome.Archived.EventOnly` is not counted, and a counted copy uses its entry's month. Red first | `Archive/ArchiveMove.cs`, `Archive/ArchiveRun.cs` |
+| C-6 | an unreadable `restored.json` read as empty and was overwritten; the file grew for ever | **Fixed:** a closed read (missing / read / unreadable); a file that does not read is never written over. Entries leave after `archive.restoredKeepDays` (180). Red first | `Archive/ArchiveState.cs`, the key |
+| C-7 | "marker\|sentence" strings split by `IndexOf('\|')` | **Fixed:** `EarlyStop(Outcome, Why)`, shared by the run, the restore and the list (a refactor, no test of its own) | `Archive/ArchiveRun.cs`, `Archive/ArchiveList.cs` |
+| C-8 | tests that stayed green when wrong | (a) **Done 2026-10-08** (was owed while WSL was halted): `archive-restore.json` from a scene with a restored and an already-there session; a golden can only be written on Linux, and WSL is halted. (b) **Done:** the conflict on the COMPANION refuses the session before the transcript is written. (c) **Done:** the fault tests at `restore-chunk`: a changed copy, a failure on the second file | the tests |
+| C-9 | an elevated Windows user was told "not as uid 0 … run it as that user" | **Fixed:** on Windows the refusal says to run it from a terminal that is not elevated. Red first. **Recorded gap:** on the elevated windows CI runner no CLI flow of run, restore or list runs (they skip); the Windows leg covers them in-process only | `Cli/Commands/ArchiveRunCommand.cs` |
+| docs | §15r "E9.S3 as built" claimed the break-it checks were red on Linux too | **Corrected:** the Linux checks were owed until WSL was free; run 2026-10-08, all red | this plan |
+
+#### E9.S2b own review round (2026-10-07) — a correctness and a security review of the protocol
+
+Two own reviews of `34891b5` (E9.S2b, rebased on `7e65e16`), read against the files: every finding ACCEPTED except where the row says
+otherwise, fixed in ONE `fix(daemon): E9.S2b own review round` commit, each with its red run or its break-it check
+(`research/module_tests.md` § *The E9.S2b own review round*). Each row OVERRIDES the text it names. Correctness findings are `C-`,
+security findings `S-`. The security review found no path that removes a source without a MAC-valid index line AND an archived copy
+that hashes equal at removal time. The coai gate was not reachable this session (MCP connect timeout); its code round ran on 2026-10-08 (*E9.S2b/S3 gate round*).
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| S-M-1 (owner rule) | phase 2's git check walked the SPELLED path while the act follows the real one — `~/.claude` stowed into a dotfiles repo was removed | **Fixed:** phase 2 never acts where the selection would not walk (`AgentWalk.PlaceProblem` on the entry's folder: a link on the way, another filesystem — `Kept`), and `GitTrees.Around` checks the spelled AND the real path (the selection's too). Red first: the stow test answered `Removed` | `Archive/ArchiveRemove.cs` (`PlaceKept`), `Archive/GitTrees.cs` |
+| C-M3 = S-m-1 | an append after a torn index line was glued onto it and lost | **Fixed (reused):** the history's rule — the last byte read through a handle (`PhysicalFileSystem.EndsTorn(SafeFileHandle)`, now shared), a newline first when it is not one; Linux opens the index `O_RDWR`. Red first: the close line was lost | `Files/PhysicalFileSystem.Archive.Records.cs`, `Files/PhysicalFileSystem.cs` |
+| S-m-2 | a newly created index was not durable in its folder | **Fixed:** an append that CREATED the file flushes its folder; a failed flush is `Failed` | the same |
+| C-M2 | an index line or a lease with a field missing crashed every reader | **Fixed:** a null `mac`/`agent`/`side`/`key`/`month`/`zone`/`runId`/`files` or a null file is malformed (skipped and counted), the key must be a plain relative path; a lease without `host`/`bootId`/`runId` reads unparseable (left for a person). **Not taken:** `RespectNullableAnnotations` / `RespectRequiredConstructorParameters` — no rule of this repository asks for them, and turning them on changes every reader of the daemon; the archive's untrusted readers check explicitly instead. Red first: 9 rows (2 crashing) + 3 lease rows (1 crashing, 1 taken over) | `Archive/ArchiveIndex.cs`, `Archive/SideLease.cs` |
+| C-M5 (A) | one unverified line with an entry's id changed it for good | **Fixed:** when an entry has a verified `archived` event only its verified events count (a planted or edited line changes nothing); otherwise every event counts and the entry is unverified. Red first | `Archive/ArchiveIndex.cs` (`Merged`) |
+| C-M1 | a damaged entry copied again was merged with its FIRST `archived` event — damaged every run | **Fixed:** the files of the LATEST `archived` event; the two-restart test (`A_damaged_copy_is_repaired_into_a_new_name_and_the_next_run_removes_against_it`) added. Red first (the merge) | the same |
+| C-M7 = S-M-3 | `reconcile --scan`'s `recovered` lines carried this side's MAC, so a file planted on a shared base became a verified entry | **Fixed:** a `recovered` line is unverified whoever signed it (D4), and stays so after later events. Partial copies a kill leaves stay (no run can remove what it never learnt of); the scan indexes them as unverified. Red first | `Archive/ArchiveIndex.cs` (`Signed`) |
+| C-M5 (B) | an entry kept waiting (index unreadable, a line unverified, its folder behind a link) stayed in the in-flight file for ever — a `removing` one with its files under quarantine names | **Fixed:** `archive.keptEntryDays` (14): past it the entry is let go — dropped, its source where it is; a `removing` one first returns every file still under ITS quarantine name (one bounded walk, `memory` never entered) | `Archive/ArchiveRemove.cs` (`LetGo`), `Archive/ArchiveReconcile.cs` (`ReturnAside`), the key |
+| S-M-2 | phase 2 did not ask whether an agent was working on the session; a file written at an original name while aside closed `sourceRemoved` | **Fixed:** the open-file scan is taken BEFORE the reconcile and phase 2 asks it (`Archive/Liveness.cs`, the selection's rules, one copy): before the quarantine → `Kept`, nothing touched; past the commit point → every file back, the entry `archived` again. A file back at an original name after the removal closes `split` | `Archive/Liveness.cs`, `Archive/ArchiveRemove.cs`, `Archive/ArchiveRun.cs`, `Archive/Selection.cs` |
+| C-M4 | phase 2 had no budget | **Fixed:** before each removal the meter asks whether its copies and source (2 × its bytes) fit the budget; a stop of kind `budget` | `Archive/ArchiveRun.cs` (`RemoveOne`) |
+| C-m2 | entries of an agent no longer in `archive.agents` were stranded; the in-flight size comment claimed a check that does not exist | **Fixed:** such an `archived` entry is let go with a note (its source stays; a `--agent` run of another agent leaves it waiting); the comment says the 600 B is an estimate and that a file past its cap is never written (the run stops with `state-write`) | `Archive/ArchiveRun.cs`, `Config/NumberRules.cs` |
+| C-M9 | a fault stop exited 0 and was told by its text | **Fixed:** `StopKinds` (budget, session-cap, free-space, cancelled — limits, exit 0; verification-failed, state-write, index-write, base-failed — faults, exit 1); `archive run --json` carries `stopKind` | `Archive/RunStops.cs`, `Cli/Commands/ArchiveRunCommand.cs` |
+| C-M8 | an I/O failure of the base mid-copy (or of the lease's write) escaped as an exception | **Fixed:** the copy's target writes are caught — our partial copy removed (identity-checked), a stop of kind `base-failed`; a SOURCE read failure is the source's (`Skipped`); the lease written that failed is removed again | `Archive/ArchiveMove.cs`, `Archive/SideLease.cs` |
+| C-M6 | `reconcile --scan` read an unreadable index as empty and re-indexed the whole month | **Fixed:** `MonthIndex.Open` answers `Missing` / `Read` / `Unreadable`; the scan skips an unreadable month with a note | `Archive/ArchiveReconcile.cs` (`MonthRead`), `Archive/ArchiveScan.cs` |
+| S-m-3 | a companion left aside after its transcript was removed was never found again | **Fixed:** the selection's quarantine count walks the whole layout once (bounded, names only), so a stranded file is found and the reconcile renames it back (or reports it kept). **Deviation:** no "stranded" list in local state — the walk finds the files themselves | `Archive/QuarantineCount.cs` |
+| C-m1 | a heartbeat could follow the answer | **Fixed:** the answer sets `answered` under the line gate; a late callback writes nothing; the flows assert the answer is the LAST line | `Cli/Commands/ArchiveRunCommand.cs`, `ArchiveRunFlows` |
+| C-m4 | a changed base mount had no way out; an unparseable `base.json` was recorded over | **Fixed:** an existing record that does not read is a refusal naming the file; the mount refusal names the recovery (mount it as before, or remove `base.json` by hand once the base is the same storage) | `Archive/ArchiveRun.cs`, `Archive/ArchiveState.cs` |
+| C-m5 | the first Mermaid diagram of `module_archive.md` was broken; the file linked itself | **Fixed** | `research/module_archive.md` |
+| C-m6 | the crash theory checked the main file only; the planned removed-equals-archived test and a read-only row were missing | **Fixed:** the companion is checked in every crash row; `Every_removed_file_equals_an_archived_copy_the_index_recorded`; `A_read_only_base_stops_the_run_before_any_copy` (Linux) | the test files |
+
+#### The restore button is A20, not A19 (2026-10-08, as-built deviation)
+
+Main's E14 S2a (PR #55, [PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md) S2) took **A19** for "stop idle MCP
+servers" — a button and the timer, bound to the processes its modal showed — before E9.S4 was built. The coordinator decided
+(2026-10-08) that the archive's button-only restore is **A20**: a button only, bound to the entry ids its modal showed. Every
+mention of the restore's A19 in this section, in §16's E9 rows and in the archive's code and docs now says A20; every A19 that
+means the MCP servers is unchanged. Nothing about the restore's design changes with the id.
+
+#### E9.S4 plan round (2026-10-08) — the coai plan round over the S4 row
+
+A plan round over the E9.S4 row, D1, D8, D9, R2 and the risk consult 9/9.4 requirements, on the story branch `feat/wc-e9-s4`
+(gate session `f3cd22a3`; the epic's session had closed with its last code round). Reviewer codex (gemini was out of quota):
+verdict *proceed*, three findings, every one ACCEPTED. The round also carried three amendments of my own (the as-built rows below
+record them). Each row OVERRIDES the text it names.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0 (Major) | A20 joined up to 100 000 ids into ONE `--entry` argument: past a few thousand, `execve` fails on the kernel's per-argument limit (128 KiB) | **Accepted:** a new key `archive.maxRestoreEntries` (group B, 1–5 000, default 1 000) bounds one press; 5 000 ids of 16 hex and a comma are 85 000 bytes. A press over it is refused before anything starts |
+| 1 (Major) | the total output cap could kill a valid run that copies many files, one progress line each | **Accepted:** progress lines are validated (shape, `archive.progressLineMaxBytes`), counted as a step and DROPPED — never kept. `archive.childOutputCapBytes` bounds the ANSWER only (the lines that are not progress) |
+| 2 (Minor) | no retirement for the recorded child identities | **Accepted:** ONE file (`archive-children.json` in root's state), replaced at every launch, emptied once its children are gone (checked at the next preview too) — never a growing list |
+
+#### E9.S4 as built (2026-10-08)
+
+A13 and A20 are in the engine. Root decides WHEN; the target user's own process does every byte. Nothing below changes D1's split.
+
+- **The self-invocation templates** (`Archive/ArchiveChildren.cs`): `archive preview --json`, `archive reach --json`, `archive run
+  --budget-seconds <n> --run-id <runId> --json` (STREAMED, BUDGETED), `archive list --json`, `archive restore --entry <ids> --json`
+  (STREAMED, button-only). They are user-scoped and marked `SelfInvocation`, with closed verbs and typed slots (`SlotKind.RunIdText`,
+  `SlotKind.HexList`; the budget slot is `archive.runBudgetMinutes` × 60).
+- **The product's own binary** (`Processes/SelfBinary.cs`): `Environment.ProcessPath` (`/opt/wsl-care/bin/wsl-care` when
+  installed), accepted only as a regular, root-owned, executable file named `wsl-care` that neither group nor others may write,
+  with every folder above it root's alone. That last check is `Processes/RootOwnedPaths.cs`, extracted from `SystemDriveFiles`
+  (reuse-first, step 2: the shared half now serves both). The path is checked again at every build of a request AND every policy
+  review.
+  - `TargetUserCommands` starts a self-invocation only at that path, never a name looked up in the user's bin folders.
+  - `CommandPolicy` allows a self-invocation template ONLY with that path, and that path ONLY for such a template: a `wsl-care` in
+    `~/.local/bin` matches the name and is still refused.
+- **The launcher** (`ProcessCommandRunner`):
+  - a self-invocation's stdin is a pipe closed at once (`CommandRequest.StdinClosed`), so it reads end-of-file;
+  - the started pid is told to the caller (`OnStarted`);
+  - every streamed line is a `RunProgress` step;
+  - the comment that claimed a killed child is always gone is corrected (9/9.4 #1).
+- **Streaming and budgets**:
+  - `ActionCommands.StreamAsync` streams only a template declared `Streamed`, under a ceiling the action chose that never passes the
+    template's own.
+  - `CommandLimits.Budgeted` / `ButtonOnly` say they are no term of a timer run's worst case.
+  - `RunBudget` leaves them out, and the templates only button-only actions declare (A20's list). It gains `WorstCaseOf(actions)`,
+    and `LongestStep` counts `archive.progressSilenceSeconds` for a streamed template. `timer.runLimitMinutes` stays 240 and the
+    units are unchanged.
+- **The child's stream and answer**:
+  - `Archive/ArchiveChildStream.cs` applies finding 1. A line as long as the runner's cut is refused, never parsed as a prefix. A
+    second answer, anything after the answer, or a malformed progress line ends the child.
+  - `Archive/ArchiveChildAnswers.cs` judges the answer: the schema version, the closed sets, every count within the run's own
+    bounds, an agent id `archive.agents` could hold. Root takes COUNTS only, never a key, a note or a first-skipped name.
+- **A13** (`Archive/ArchiveAction.cs`):
+  - It skips with the reason when `archive.baseFolder` is empty, when a recorded child is still alive, or when a timer run has
+    less slack than `archive.minRunMinutes`.
+  - It refuses where `runuser`'s PAM stack names `pam_systemd` (`Archive/RunuserPam.cs`, one include level) or the binary is not
+    root's.
+  - Its preview is the child's, in aggregates per agent. The trigger is a session due or a removal due. It is urgent within
+    `archive.urgentWithinDays` of the agent's own deletion.
+  - Its run: the reach child, then the run child, under min(`archive.runBudgetMinutes`, the slack after the actions behind it at
+    their worst and the run margin) + `archive.finishGraceMinutes`.
+  - A fault stop, a refusal, `no-base` or `unreachable` fails it; `busy` and a limit stop do not. "Freed" is what the removals
+    took, basis "moved to the archive".
+- **A20** (`Archive/RestoreAction.cs`):
+  - A button only, `IBoundToShownList` over entry ids.
+  - Its preview offers the VERIFIED entries removed at their source (`sourceRemoved`, `split`); an unverified one is never offered
+    (`--accept-unverified` stays a terminal decision).
+  - A run without the shown entries refuses. A refused session fails the run, naming the entry ids only.
+- **The child identities** (`ArchiveChildren.Launched / WorkerSeen / Ended / Survivor`):
+  - the launcher at its start;
+  - the worker (the process whose parent is the launcher) at the first line;
+  - the record is emptied when both are gone.
+  - A live identity of this boot (pid and start ticks) keeps A13 and A20 from starting another.
+  - Root signals nothing from this record. It is read only to decide NOT to launch (9/9.4 #3).
+- **Doctor** has a new check, `archive.runuser`: a problem only when an archive is configured.
+- **Capabilities**: `archive.run`, `archive.restore`, `archive.list`.
+- **The extension's compiled id list** knows A20 (a button-only id, as A18 and A19), so its contract test holds
+  `contracts/actions.json`.
+
+**Deviations from the text above:**
+
+1. **The restore button is A20** (the note above).
+2. **The order** is `… A10, A15, A16, A3, A11, A18, A19, A13, A20, A1, A2`: A13 comes after main's A19, and A20 right after A13.
+3. **A13's preview is ONE child.** `archive preview --json` now counts the archived sessions due to be removed (`removalsDue`, from
+   the local in-flight file only). A second, `archive status` child under the preview's ceiling pushed the worst case past 240 min
+   at the top of `archive.previewTimeoutSeconds`' range (`ArchiveKeysTests` caught it).
+4. **The shown entries reach `act` as `--entry <id>`** (repeatable, as A18 / A19's `--process`), and the detached request carries
+   them (`shownEntries`). `--only` stays A4's volume list. The child receives the ids as one typed argument; its stdin is empty.
+5. **`archive reach` is a new verb**, and `archive run` takes `--run-id`, so `archive list --run <act's runId>` finds what A13 did.
+6. **The plan's RED names as built:**
+   - "a long run reads live" / "a silent child reads wedged" are held by `A_streamed_line_is_a_run_step` (the launcher) and
+     `A_streamed_templates_step_is_its_line_silence_not_its_ceiling` (the budget), on the existing wedged machinery. No
+     engine-level timing test was written.
+   - The rest carry the plan's names or close ones (`research/module_tests.md` § *E9.S4*).
+7. **Not RED first:** the boundary part was built before its tests. A13 and A20 were RED first against a skeleton ("not built").
+   Every guarantee has its break-it check (module_tests).
+
+**Owed / open:**
+
+- The live gate's blackholed-share step, and a real `runuser` from the service: both need the owner's machine.
+- E10 is owed: the panel's A20 button and *Archive now*.
+- The owner's open questions of S2b/S3 stand.
+
+#### E9.S4 code round (2026-10-08) — the coai code round over E9.S4
+
+The code round over `d02588b..515cbac` (session `f3cd22a3`; codex and gemini, 8 reviewers): verdict *proceed*, nine findings. Six
+were ACCEPTED and fixed RED first in one `fix(daemon): the coai code round over E9.S4` commit; three were rejected with reasons.
+Each row OVERRIDES the text it names.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0 | `ArchiveChildStream` mutates its state per line | **Rejected:** it is a stateful reader. Lines arrive one by one through the runner's callback while the child runs, and CLAUDE.md §3 keeps a class for a stateful service. Its state is private and locked; what it yields (the answer) is an immutable string. The runner's `OutputCapture` has the same shape |
+| 1 | no scenario test for the A13 / A20 flows | **Accepted:** `ArchiveActFlows` over the built CLI, root claimed. A13 and A20 refuse the test build's binary (it is this account's, not root's) and start no `runuser`; without a base A13 skips; `--entry` without A20 is a usage error |
+| 2 | the child record's schema version was a literal | **Accepted:** `SchemaVersion.Current` |
+| 3 | a `pam_systemd` two includes down was missed | **Accepted:** every file the stack pulls in is followed, each once (a loop of includes ends), and an included file that cannot be read refuses. Red first: the nested row and the missing-include row both answered no refusal |
+| 4 | A20's `archive list` of a large archive would pass the answer cap | **Accepted:** `archive list --restorable` answers only the verified entries removed at their source, newest first, at most `archive.maxRestoreEntries`, and counts the rest in `omitted`. A20 asks for exactly that and says how many it left out. Red first: the list answered all four entries; A20 asked without `--restorable` |
+| 5 | archive progress is not shown while it runs | **Rejected for S4:** the run reads live already (every line is a run step, so `running.json`'s progress advances). Showing the counts is a new status contract for the panel, which is E10's |
+| 6 | a detached A20 read the raw `--entry` values instead of the shown list | **Accepted:** `DetachedRuns.Detach` takes the `ShownList` of entries, as it does the volumes and the processes |
+| 7 | the CLI bounded `--entry` by A4's volume cap (10 000) | **Accepted:** bounded by `archive.maxRestoreEntries`' ceiling (5 000). Red first: 5 001 entries parsed |
+| 8 | the self locator sits on `ActionCommands` | **Rejected:** `ActionCommands` already carries the resolution context of one action (the runner, the target user, the bin folders) and owns `Locate`. `TargetUserCommands` takes the locator as a parameter and stays a pure builder; a static seam would be a mutable static for tests |
+
+The complexity split done before the round (the gates, the answers, the stream, A20's run) is in the S4 commit. The finding 4 change
+adds `omitted` to `archive-list.json` (additive).
+
+#### E9.S4 own review round (2026-10-09) — the coordinator's security and correctness reviews of S4
+
+Two read-only reviews of `e2a0d7f` (a security one, `S-`; a correctness one, `C-`). Every finding was ACCEPTED; one more defect
+was found while building C-8's round trip. They are fixed in ONE `fix(daemon): E9.S4 own review round` commit, each RED first or
+with its break-it check (`research/module_tests.md` § *The E9.S4 own review round*). Each row OVERRIDES the text it names — in
+*E9.S4 as built* above, the A13 bullets on the reach, on `busy` and on the PAM stack, and the child-identities bullet.
+
+| # | Finding | Resolution |
+|---|---|---|
+| S-M1 / C-4 (Major) | Only the STREAMED children were recorded. The preview, the reach and A20's list ran unrecorded, and the reach and the list judged the base (`BaseFolderRules.Judge`: `DirectoryExists`, `ResolvePath`, the write probe) synchronously and unbounded BEFORE the side's lock — a blackholed share left a reach stuck in D before the lock, killed but not reaped, unrecorded; every timer run and every A20 preview added another | **Root side:** every child is recorded (`ArchiveGates.ChildTextAsync` runs through the same `ChildWatch` as a stream). The launcher at its start; the worker at a streamed child's first line AND right before ANY kill — `CommandRequest.OnKilling`, told by `ProcessCommandRunner` while the tree is still whole (no polling, so no new number); the record retired at the end. **Child side:** the command line judges the base LATE (`BaseJudging.Within`): inside ONE task bounded by `archive.reachabilitySeconds` (`Archive/BaseWindow.cs`), together with the checks that read it. `archive reach` takes the side's lock FIRST, then judges, compares the mount and reaches the base inside the window, so a stuck reach holds the lock and the next answers `busy` at once. `archive list` (no lock, read-only by the owner's decision) judges and reaches inside the window. RED: the reach and the list hung past 30 s on a base that blocks (`ArchiveBoundedBaseTests`); the preview and reach launchers were never in the record; a killed reach left its stuck worker unrecorded |
+| S-M2 (Major) | The runuser PAM gate failed OPEN: an unreadable `/etc/pam.d/runuser` (a link, not root's) or a missing one was "not judged"; an include by a path was ignored. PAM falls back to the vendor folder and to `other` (Ubuntu's names `pam_systemd` through `common-session`) | **Fails closed** (`Archive/RunuserPam.cs`): the stack is looked up as PAM does — `/etc/pam.d/runuser`, else `/usr/lib/pam.d/runuser`, else the stack of `other` in both; an included file the same way. No stack found, a file that exists but cannot be read as root's own, an include by a path or a dot name: each REFUSES. A control word `include`/`substack` is found after a bracketed control too. Consequence: NixOS-WSL (a linked `/etc/pam.d`) refuses A13/A20 — said by the refusal. The doctor's `archive.runuser` check names the same reason (a note without an archive) |
+| S-m3 (Minor) | Child strings reached root's records unjudged: a skip rule, the run id (into the failure text and the journal), a restored session's agent, month and outcome, a listed entry's month | **Judged** (`ArchiveChildAnswers`): a skip rule is one of `SkipRule.InRuns` (the selection's rules and the run's `removal-waits` / `dropped`, now constants); the run child's answer must carry ROOT's run id, a reach's or a restore's must carry a run id at all; a restored session's agent is one `archive.agents` could hold, its month `yyyy/MM` (`ArchiveIndex.IsMonth`), its outcome one of `RestoreOutcomes.All`; a listed entry's month and status likewise. A13's failure names ROOT's run id, never the child's. Reasons are root's own sentences per outcome (`ArchiveGates.OutcomeWords`) |
+| C-1 (Major) | `busy` could never count: the CLI exits 75 for busy and root accepted 0/1 only ("archive-reach exited 75 without an answer"); the Busy branch of `Fault` was dead, and a busy run would have read "ran, 0" | **One exit contract** (`Archive/ArchiveExits.cs`: 0, 1, 75 and `Answering`): root reads an answer with any of them. The CLI's `ExitCode` keeps its literals (the extension parses that file) and a test pins the three equal. A busy reach or a busy run child is NOTHING DONE with the reason (`ArchiveGates.BusyWords`), never a failure nor a "ran". A20's busy restore fails (a button that did nothing must say so). Tests use the CLI's real exits, and the round trips run the built CLI |
+| C-2 (Major) | A20 succeeded when the restore never ran: `Restored` read `report.Restore` only, so an early stop (unreachable, refused, busy; `Restore` empty, exit 1) read "succeeded, 0" | A20 fails unless the child's outcome is `done`, naming the outcome in root's words |
+| C-3 (Minor) | A13 replaced the reach's own outcome with "did not answer, or the lock is held" — D7's changed-mount refusal and its recovery text never reached the run detail | The failure is built from the reach's outcome — one root sentence per outcome; `refused` names the base's rules, D7's changed mount with how to recover, and the lease |
+| C-5 (Major) | The run child's CEILING (budget + `archive.finishGraceMinutes`) could pass `timer.runLimitMinutes`: the budget was bounded by the slack, the grace (1–30) was not, so systemd could stop the run in A1/A2 | The timer's slack subtracts the grace too: ceiling + the actions behind A13 at their worst + the margin ≤ the run limit's end. RED: 12 min of slack gave a ceiling 5 min past it |
+| C-6 (Minor) | A1/A2 were judged on a stale idle sample: the run's sample is read once, and A13 (before A1/A2, possibly most of the run limit long) left it from before its own I/O | `RunState.Acted`: after a BUDGETED action ran, the next action that waits for idle reads a fresh sample; any other action leaves the run's one sample |
+| C-7 (Minor) | Write failures of the child record were swallowed (`_ = …`) at launch, at the worker, at the end and at the retirement | Every failure is kept in words: the run's notes always; a LIVE child left out of the record fails the run (and refuses a preview: no further child starts); a record that cannot be retired REFUSES the next child (`ChildGate`, a skip only for a survivor) |
+| C-8 (Minor) | Tests green for the wrong reason: the flood test passed because the second line was refused; `ArchiveActFlows` covered only refusals | The flood test is renamed for what it holds and asserts the reason. **Round trips** (`ArchiveRoundTripFlows`, Linux legs): A13 and A20 driven by root's side in-process, every child the BUILT CLI as this account. They found a defect no scripted test could: **`archive preview --json` and `archive list --json` answered INDENTED**, and root reads a child's last line — a lone `}`: A13's preview and A20's list could never be believed on a machine. Both now answer on one line (`Compact`), held for every verb root starts by `Every_verb_root_starts_answers_on_one_line` |
+| C-9 (Nit) | `CommandLine.cs` was 854 lines (E9 took it past 800 at the S3 own review round); `contracts/actions.json` named only A18 as button-only without a switch; §15r and `module_archive` claimed reach/busy behaviour C-1 and S-M1 refuted | The archive verbs moved out of `CommandLine.cs` — first as a partial, then (the gate round, finding 0) as the named unit `ArchiveArguments.cs` (730 + 135 lines); the contract says A18 and A20; the claims are corrected here and in `module_archive` |
+
+**Not RED first:** C-7's fixes landed with S-M1's watch, before their tests; their teeth are break-it checks OR24/OR25. The doctor
+golden changed with S-M2 (the sandbox has no PAM stack: the check now says why it cannot judge one).
+
+**The gate round over it** (`review_code` again on session `f3cd22a3`, `6b224cb..65d8ece`; codex and gemini, 7 of 8 reviewers —
+gemini's security reviewer timed out): verdict *proceed*, nine findings, six ACCEPTED and folded into the same commit, three
+rejected with reasons.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0 | `CommandLine.Archive.cs` was a `partial` of `CommandLine` — the conventions forbid a partial to duck the file limit | **Accepted:** the archive verbs are a named unit, `WslCare.Cli/ArchiveArguments.cs`; `CommandLine` keeps the register and shares `ReadOptions` / `Options` / two flags. (The test classes added to by this round keep the repository's existing `.OwnReview.cs` / `.Helpers.cs` test partials; the PAM gate's rows became their own class, `RunuserPamTests`.) |
+| 1, 3 | the late-judged input carried `BaseFolderRules.Unconfigured` as a placeholder — a reader before the window would see "no base" | **Accepted:** the placeholder is `BaseFolderRules.NotYetJudged`, refused under its own rule `not-judged`; every verb's input still passes through `BaseWindow.Judged` (the run, the restore, the scan, the reach, the list) |
+| 2 | a base check that timed out outlived the side's lock, so a second reach could take it and touch the same dead base | **Accepted:** an `unreachable` answer means a check was left behind; the lock is then KEPT for the life of the process (the operating system releases it when the process is gone) — the next verb answers busy without touching the base |
+| 4 | `archive run` judged the base before taking the lock | **Accepted:** every verb takes the side's lock first (`ArchiveRun.Locked`), then judges, compares the mount and reaches the base in the window |
+| 5 | the idle sample is dropped after a budgeted action even when its child never ran | **Rejected:** a fresh sample is never less true; keying on the commands that ran would couple the engine to `ActionCommands`' records for one cheap read |
+| 6 (Blocking) | a run's waiting / removed / gone / superseded / damaged / skipped counts were bounded by `archive.maxSessionsPerRun`, though they accumulate over runs — a large history made every answer "not believable" | **Accepted:** only the COPIES are bounded by the cap; the rest are only not negative |
+| 7 | an unrecorded reach child would fail A13 with an empty reason | **Rejected with proof:** `Failed(commands, "")` is a run whose failure is empty, i.e. SUCCEEDED, so `Contained` sets the containment reason; `A_reach_child_root_cannot_record_fails_A13_saying_why` holds it. The call passes the reason directly now, for clarity |
+| 8 | `archive check-base --json <path>` is refused | **Rejected:** E9.S0's documented order (`<path> [--json]`), outside this round |
+
+#### E9.S5 plan (2026-10-09) — the Windows side, as it will be built
+
+The S5 row above, checked against the code on `feat/wc-e9-archive-daemon` before any line is written. Much of the row is ALREADY
+built by earlier stories; S5 builds the one missing piece — the open-file check — and the tests the row names.
+
+**Already there (verified, with the file that holds it):**
+- the verbs in `wsl-care.exe` — one command line for both sides (`WslCare.Cli`), the win-x64 CI leg builds and tests it; on Windows
+  a privileged (elevated) process is refused (`ArchiveRunCommand.ElevatedRefusal`, E9.S3 own review round C-9);
+- the side `windows-<host>` (`ArchiveNames.cs`, `SideName.Of`) and the state under `%LOCALAPPDATA%\wsl-care\archive\`
+  (`ArchiveState.Folder`, from `WindowsHostPaths.UserLogDirectory`'s parent);
+- the Windows base rules of D7 — a drive folder with its kind and format, shares, the loopback and administrative shares refused,
+  the short names, the file-system identity chain, the junction refused, the ACL report (`WindowsAccess.Warnings`) — E9.S0 and
+  its review round (`BaseFolderPlacement.cs`, `WindowsBaseFolderTests`);
+- the Windows file semantics (one-handle delete, no-replace rename, write-through) — E9.S2a;
+- the Windows user layer `%APPDATA%\wsl-care\config.json` takes the `archive.*` keys a user may set (the same `ConfigLoader` and
+  key trust as the distro's user layer; `config set archive.baseFolder V:\…` works there today — a test pins it).
+
+**What S5 builds:**
+1. **`Archive/InUseWindows.cs` — the Restart Manager, ASKED per unit** (D2.2): `RmStartSession` → `RmRegisterResources` with
+   the unit's files as full `\\?\` paths (long paths, no `MAX_PATH`) → `RmGetList` (the buffer grown on `ERROR_MORE_DATA`, a
+   bounded number of times) → `RmEndSession` in a `finally`, ALWAYS. `LibraryImport`, blittable structs (fixed buffers), so the
+   AOT analyzers check it. It never opens a session file — the agent's own write never fails because of it.
+   - A file a process holds → the unit is KEPT (`in-use`), naming the holder's application name and pid.
+   - Any Restart Manager error (start, register, list) → the unit is KEPT, naming the error: the check fails CLOSED.
+   - ONE deadline over a selection: `archive.inUseScanSeconds` (no new key); past it every unit not yet asked is kept as cut.
+2. **`InUseView` gains a per-unit question** (`HeldBy`: the unit's files → the reason one is held, or empty): the distro's view
+   answers from its `/proc` set as today, the Windows view asks the Restart Manager. `Liveness` asks it — so the selection AND
+   phase 2's re-check before it touches anything (`ArchiveRemove`) both ask it.
+3. **`InUse.NotOnWindowsYet` goes**: on Windows the view is a real one, and `archive run` moves.
+4. **Said honestly — what the Windows side does not see:** Claude Code's working directory (no supported API reads another
+   process's current directory short of its PEB), so the "agent working here" guard is the distro's only; on Windows the guards are
+   the effective age, the Restart Manager and phase 2's hash compare with its no-replace renames (B1). The preview's `inUse.note`
+   says so.
+
+**Tests (RED first):**
+- a session one process holds open is kept `in-use` — the holder named — and the product took NO open of it (the test holds it
+  with `FileShare.None`, so any open by the product would fail); the same for a file under a 300-character path;
+- a Restart Manager error keeps the unit (a seam over the native calls), and `RmEndSession` runs after every start, the error
+  paths included;
+- past the deadline the remaining units are kept as cut;
+- on Windows, `archive preview` lists a due session, `archive run` moves it and `archive restore` puts it back (the Windows legs of
+  the built CLI), and phase 2 keeps a session held between the runs;
+- two sides and two hosts write disjoint folders and indexes under one base (`<agent>/<yyyy>/<MM>/<side>/…`, an index per side):
+  one base, runs as `wsl-<host>-<distro>` and `windows-<host>` and `windows-<other>`, each index naming only its own;
+- the Windows user layer accepts `archive.baseFolder` and refuses a machine-only `archive.*` key there.
+
+**Not testable here (to the E9 live gate):** a mapped NETWORK drive and a real UNC share accepted as a base — CI has no share, and a
+fake one would still send the identity chain to the network. The junction refusal and the share-shape refusals are E9.S0's tests.
+
+**Build order:** InUseView's question and `Liveness` (behaviour unchanged on Linux, all suites green) → `InUseWindows` with its
+seam and unit tests (Windows legs) → wire it into `InUse.Scan` and drop `NotOnWindowsYet` → the Windows CLI flows → the disjoint-sides
+test → docs (this section's as-built, `module_archive.md`, `module_tests.md`, README).
+
+**Definition of Done:** every test above red first then green on the Windows legs (and the Linux suites untouched and green); a
+break-it check per guarantee, product code only; the gate's code round over the commit; an own review (Opus) of the Windows file
+semantics and the Restart Manager use, in parallel with it.
+
+#### E9.S5 plan round and as built (2026-10-09)
+
+**The plan round** (session `c6895ab0` on `feat/wc-e9-s5`; codex and gemini): verdict *good_enough*, seven findings — six ACCEPTED,
+one rejected. Each row OVERRIDES the text it names.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0, 3 (Blocking) | dropping the working-folder guard on Windows lets a live Claude Code's session move between appends | **Accepted:** a live Claude Code on Windows — `claude.exe`, or `node.exe` with the `claude-code` package on its command line (read through a query-only handle, `Win32ProcessTable.CommandLine`) — keeps EVERY Claude Code session in place; a process table that cannot be read does too |
+| 1 | the Windows archive grows without retention or crash recovery | **Rejected:** the bytes go to the user's base (D7), kept forever by design; `%LOCALAPPDATA%` holds only state files bounded by `archive.maxStateFileBytes`; the reconcile of D3 is the same code on both sides |
+| 2 | UNC and network-drive acceptance with no check that sees them work | **Accepted:** the E9 live gate gains step 8 (below) |
+| 4 | the Windows layer's `archive.*` widening was claimed done but not built | **Accepted as a test:** `The_windows_user_layer_takes_the_base_folder_and_leaves_a_machine_only_archive_key` — green against the code as it was: the Windows user layer is the same `ConfigLoader` and key trust, so nothing needed widening |
+| 5 | phase 2's re-check has no ceiling of its own | **Accepted:** every Restart Manager question is bounded by `archive.inUseScanSeconds` on its own; one that stalls keeps its unit AND every later one (the stalled Restart Manager is not asked again) — the selection's and phase 2's alike |
+| 6 | a UNC path needs `\\?\UNC\`, not `\\?\\\` | **Accepted:** `ExtendedPath.Of`, with its rows |
+
+**As built** — what the plan above says, with these deviations:
+1. **`Archive/RestartManager.cs`** asks the Restart Manager for paths that fit its buffers and, MEASURED by the 300-character test,
+   cannot ask it for a longer one: `RmRegisterResources` answers error 29 past `MAX_PATH`, `\\?\` or not. A longer path is asked
+   of the file system instead (`FileUsers`: `NtQueryInformationFile(FileProcessIdsUsingFileInformation)` on a handle opened for its
+   ATTRIBUTES only, every sharing allowed, no link followed — an open that asks for no data access conflicts with no one's sharing).
+2. **One deadline per selection became one ceiling per question** (finding 5), with the stall rule above.
+3. **`Archive/WindowsSide.cs`**: `IWindowsSide` — the real one (`RealWindowsSide`: the Restart Manager and the host's process
+   table) in the Windows binary's host (`CliHost.ArchiveWindows`), `UncheckedWindowsSide` elsewhere; `ArchiveRunInput.Windows` carries
+   it to the run.
+4. **`ArchiveRunInput.SideFolder`** lets a test play several hosts over one base (the disjoint-sides test); the command line never
+   sets it.
+5. **`InUseView`** gained `HeldBy` (the per-unit question) and `ClaudeRunning`; `Liveness.Held` / `Liveness.AgentWorking` are
+   what the selection and phase 2 ask. `InUse.NotOnWindowsYet` is gone: on Windows `archive run` moves.
+
+**The code round** (`review_code` on session `c6895ab0`, `8029bd1..17212dc`; codex and gemini, 8 of 8 reviewers): verdict
+*proceed*, sixteen findings — twelve ACCEPTED, four rejected with reasons; and **an own review (Opus)** in parallel, nine findings.
+Folded into ONE `fix(daemon): the coai code round and the own review over E9.S5` commit. Each row OVERRIDES the text above.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0 | `architecture.md` not updated for the archive → Windows process table interaction | **Accepted:** its archive section names both and draws them |
+| 1 | the test seam `SideFolder` is public | **Accepted:** `internal` (the tests see it, the command line cannot) |
+| 2 | a stalled native worker cannot be stopped, and every later view asked again | **Accepted:** `StallLatch` — the process's own, shared by every real view; once a question stalls, no later view of the process asks |
+| 3 | the long-path fallback cannot see a `FileShare.None` holder | **Rejected, measured:** an attributes-only open asks for no data access, so no sharing applies to it; the 300-character test holds with `FileShare.None` and is answered held |
+| 4, 11, 15 | the Windows scan ignored the caller's budget and its cancellation | **Accepted:** `WindowsAsk(Ceiling, Budget, Token)`: each question within `archive.inUseScanSeconds` and what is left of the caller's time (the preview's listing budget, the run's budget); spent or cancelled, every later unit stays without a question |
+| 5, 10 | `Marshal.PtrToStringUni` may answer null | **Accepted:** an empty or null command line reads as empty |
+| 6 (Blocking) = own 1 | `ClaudeRunning` was computed once — a Claude Code started during the run would not stop phase 2 | **Accepted:** `InUseView.ClaudeRunning` is a question (`Func<string>`), asked at every unit, the selection's and phase 2's |
+| 7 | `CliHost.ArchiveWindows` takes no stub Restart Manager | **Rejected:** the CLI flow test uses the REAL Restart Manager on purpose (the win-x64 leg); every fail-closed path is held at the Core seam |
+| 8 | the archive borrowed the MCP catalogue's `ProgramOf` | **Accepted in part:** `CommandLineText.FileNameOf` (the shared program-name rule); `IWindowsProcessTable` stays where E14 put it |
+| 9 | the file system's list of users would name the product's own handle | **Accepted, then refuted by measurement:** `Past_max_path_the_product_does_not_count_its_own_look_and_names_another_holder` — a free long-path file reads free, one a child holds reads held by the child; no filter was needed |
+| 12 | the Restart Manager was asked before the Claude Code check | **Accepted:** `Liveness.Problem` and the selection ask whether an agent works there first |
+| 13 | one Restart Manager session per unit | **Rejected:** `RmGetList` names the holders of ANY registered file, so a batch would keep every unit of it for one held file; the budget bounds the total |
+| 14 | opaque error codes | **Accepted:** Win32 errors and NTSTATUS in hex named as such (no session path — the reason lands in the records) |
+| own 2 | a resumed entry (past its commit point) was asked under its ORIGINAL names | **Accepted:** `ArchiveRemove.ResumeNames` — the quarantine names too, which a holder through the rename holds |
+| own 3 | an unreadable `node.exe` command line counted as "not Claude" | **Accepted:** one of THIS session (or of an unknown one) keeps every Claude Code session; another session's does not |
+| own 4 | the process-table walk was unbounded | **Accepted:** asked through the same bounded asker — a stall fails closed |
+| own 5 | the Restart Manager's application name is often a window title, and it reached the records | **Accepted:** a holder is named by its pid only |
+| own 6 | the Restart Manager leaves out processes it may not query | **Accepted:** said in the view's note |
+| own 7–9 | `ExtendedPath` edge inputs; the per-question task; CA1416 | **Noted:** the inputs are full paths of judged folders and fail closed otherwise; the abandoned worker is the stall latch's case; the one constructor of `RealWindowsSide` is behind `OperatingSystem.IsWindows()` |
+
+**Owed:** the E9 live gate's Windows steps (8), and the release carrying E9.
+
+#### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
+
+The coai `review_code` round that the S2b and S3 rounds recorded as OWED, over `0f6d68c..9da05f2` (rebased on `1b5d652`; reviewers
+codex and gemini, 8 in all): verdict *good_enough*, 19 findings. They were resolved before the fixes, and the accepted ones were folded
+into ONE `fix(daemon): the coai code round over E9.S2b/S3` commit. Each fix has its red run or its break-it check
+(`research/module_tests.md` § *The E9.S2b/S3 gate round*). Each row OVERRIDES the text it names. No finding changed the design, so no
+consult was owed.
+
+| # | Finding | Resolution | Where |
+|---|---|---|---|
+| 0 | `archive run --agent` repeated its own agent check instead of the restore's | **Fixed:** both verbs ask `AgentValueProblem` (one rule: a known archivable id or `extra:<name>`, never a list) | `Cli/CommandLine.cs` |
+| 1 | `architecture.md` still said restore and list were not built | **Fixed:** the module-map row names E9.S3 as built | `research/architecture.md` |
+| 2, 9 | the heartbeat was a `System.Threading.Timer`, and an `IOException` while writing a line (a closed pipe) escaped and crashed the process | **Fixed:** one `ArchiveProgress` writer for run and restore. Its heartbeat comes from a `PeriodicTimer` on the host clock. A failed write ENDS the progress and never the run, and the answer is still written. Nothing is written after the answer (review m1 kept) | `Cli/Commands/ArchiveProgress.cs` |
+| 3, 14 | `RestoreShapeProblem` was over complexity 4 | **Fixed:** `ModeProblem` (one way of naming, `--accept-unverified` only with `--entry`), the agent check, `NamedProblem`, `SessionProblem` — each ≤ 4 | `Cli/CommandLine.cs` |
+| 8 | `--agent` given with `--entry` was not validated (`--agent ../outside` exited 0) | **Fixed:** an agent given is always checked, whatever names the entries. Red first: exit 0 against 2 | the same |
+| 10 | a restore had no budget and reported no progress | **Fixed:** `archive.restoreLimitMinutes` (59; a machine-only ceiling) is the restore's budget. Between sessions, the run meter asks whether the next session's declared bytes fit; the sessions not started are rows `stopped` (counted as refused, exit 1). Each file put back is one `file` progress line. Red first: past a zero budget the restore restored 1 | `Archive/ArchiveRestore.cs`, `Archive/ArchiveRun.cs`, `Cli/Commands/ArchiveRunCommand.cs` |
+| 11, 17 | without `--json` the verbs said nothing until the answer | **Fixed:** a short human line on STDERR per event (counts, MiB and seconds, never a name); stdout keeps only the answer | `Cli/Commands/ArchiveProgress.cs` |
+| 13 | the human `archive status` gave only the count of entries on their way | **Fixed:** one line per in-flight entry (state, agent, key, files, month), printable-escaped. Red first: the key was missing | `Cli/Commands/ArchiveRunCommand.cs` (`RenderStatus`) |
+| 16 | `IsPlainRelative` accepted control characters (a NUL inside a key) | **Fixed:** any `char.IsControl` refuses. An index line carrying one is malformed (skipped and counted), and `--session` refuses it. Red first: the NUL row was read | `Archive/ArchiveIndex.cs` |
+| 4 | `archive list` should not need a writable base | **Rejected:** list only reads, but it reads through the same recorded base and mount check as the run. A base that changed under it carries a note naming the change (the S3 mount note); it is never written to | — |
+| 5 | split the restore out of the run pipeline | **Rejected:** the restore needs the run's lease, its reconcile of in-flight entries and its state writes. A second pipeline would be a second copy of the protocol, which `reuse-first` forbids | — |
+| 6 | the judging belongs in Core, not the CLI | **Rejected:** the CLI only parses and renders; every judgement is in `ArchiveRestore` / `ArchiveRun`. E9.S4 runs the verbs as a CLI child, so the CLI's argument checks are the boundary that has to hold | — |
+| 7 | a restore's temporary name might lack the run id | **Rejected, false:** `Leased` sets the RunId before any write; the name is `<name>.wsl-care-r-<runId>`, and the permit matches that shape only | — |
+| 12, 18 | `archive list` should stream and bound its memory | **Rejected for now:** one month's index is bounded by `archive.maxStateFileBytes`, and the list reads months one at a time. Streaming the answer would change its JSON contract (the golden); recorded for E9.S5 should a real base reach that size | — |
+| 15 | `InflightBook` should be a record | **Rejected:** it is a stateful service over the in-flight file (load, change, write under the lease) — the convention keeps those as classes | — |
+
 ## 16. Epics and stories (split 2026-10-02, on Fable, as the gate's operator commands require)
 
 Every epic is its own branch from the previous epic's final commit, one review-gate code round over its
@@ -2696,7 +4073,7 @@ week's REVIEW instead, which needs Phase 0.1's `.wslconfig` cap in place for its
 | E6 | Daemon contract, detach, cleanup buttons, root boundary, Last cleanup, Logs page (re-split by §15j) | daemon parts `feat/wc-e6-daemon`; extension parts `feat/wc-e6-cleanup-logs` | **daemon (E6.S0, E6.S1):** merged with CI green at any time — riding `daemon-v0.1.0` if merged before the owner cuts it, else the next daemon minor (§15j B3); then the **E6 daemon live gate**. **extension (E6.S2–E6.S4):** merged only after `extension-v0.1.0` is tagged (§15j B3): preview → host confirm → detached run → result for every A#, durable across a reload; root only through the ONE argv module (§15f #2, §15j M1); Logs page = §7.4 as §15f #7 and §15j M3 / M7 amend it; then the **E6 live gate** — per §15f #1–#3, #7, #9–#11 and §15j. E6.S0 / E6.S1 may start before the E4 live gate's stamp (§15j m10); releases and live measurements wait for it |
 | E7 | AI-agent discovery, settings ↔ config, Add CLI path (re-split by §15q into E7.S0–E7.S5) | `feat/wc-e7-agents-settings` | `agents list` matches §4.6 on both sides; *Add CLI path…* end to end; settings mirrored with the one-time conflict notice; the daemon parts merged at any time, the extension parts only after `extension-v0.1.0` and E6's extension half (§15q *The release interplay*); then the **E7 live gate** (§15q); `extension-v0.3.0` |
 | E8 | Help in 5 languages, zoom, tone — via the kit | `feat/wc-e8-help-kit` | the kit imported, no copied coai modules; articles in en/ru/uk/de/es with fallback + stale notes; zoom/tone on every page; `extension-v0.4.0` |
-| E9 | AI-session archive — daemon, both sides | `feat/wc-e9-archive-daemon` | `archive preview\|run\|restore\|list` on both sides; never-move property tests; index-before-delete + reconcile; live round trip byte-identical; A13 in the timer |
+| E9 | AI-session archive — daemon, both sides (re-split by §15r into E9.S0, S1, S2a, S2b, S3, S4, S5, and S6 only on the owner's word) | `feat/wc-e9-archive-daemon` | `archive preview\|run\|restore\|list\|status\|check-base\|reconcile --scan` on both sides, the move done by the TARGET USER's process (§15r D1); never-move property tests over selection and the whole protocol; copy → read-back hash → index, the source removed only by a LATER run after a re-hash + reconcile (§15r D2, D3); live round trip byte-identical; A13 in the timer and the restore button A20; then the **E9 live gate** (§15r) |
 | E10 | Archive in the extension | `feat/wc-e10-archive-ui` | settings with folder picker; Archive page with restore; Logs show A13; `extension-v0.5.0` |
 | E11 | Windows collectors, `install` (task + logman) | `feat/wc-e11-windows-collectors` | `status`/`collect`/`doctor`/`install` on Windows; the task and perf log running here; pool tags with fallback |
 | E12 | Windows actions, elevated channel, advisors with undo | `feat/wc-e12-windows-actions` | W-A1…W-A14 with preview; elevated request → result round trip; advisors/undo round-trip exactly; Windows never-list property test |
@@ -2802,9 +4179,14 @@ tagged (B3). Then, after the E6 daemon live gate's stamp:
 | E7.S4 | AI-agents section, Add CLI path (extension, WSL side) | Opus + two own reviews |
 | E7.S5 | bundling `wsl-care.exe`, a `--target win32-x64` `.vsix` (moved here from E5 by §15f #5, #13), Windows numbers in Memory/Disk, the Windows agents | Opus + one own review |
 | E8.S1–S3 | help via the kit, zoom + tone everywhere, ru/uk/de/es + stale stamps | Opus |
-| E9.S1 | archive engine (one session one month, never-move list, in-use skip, copy→fsync→hash→index→delete) | **Fable** — irreplaceable data |
-| E9.S2 | restore, reconcile, list | **Fable** — reverse move and crash recovery |
-| E9.S3 | both sides, `wslpath`, base-path validation, retention warning | Opus |
+| E9.S0 | the catalogue's `archive` blocks, the `archive.*` keys and coupled rules, the base rules, `archive check-base` — §15r (re-split 2026-10-06: the three rows planned on 2026-10-02 became S0–S5, S2 split by the §15r review round). **Built 2026-10-06** — deviations in §15r *E9.S0 as built*; **the review round fixed 2026-10-06** (§15r *E9.S0 review round*) | Opus + two own reviews |
+| E9.S1 | selection, the effective age, in-use checks, `archive preview` (read-only) — §15r. **Built 2026-10-06** — deviations in §15r *E9.S1 as built* | Opus + two own reviews |
+| E9.S2a | the seam: no-link streaming copy and exclusive create, no-replace renames, the verified removal (Linux and Windows semantics), the policy, the widened scan, the fault seam — §15r R1. **Built 2026-10-06** — deviations in §15r *E9.S2a as built* (the removal takes a write lease: risk consult 9/9.2) | Opus (Fable asked for by the gate; its monthly limit is spent — recorded) + two own reviews — irreplaceable data |
+| E9.S2b | the two-phase protocol, the index (merged, MAC'd), the in-flight file, the lease, the reconcile, `archive run` / `status` / `reconcile --scan` — §15r R1. **Built 2026-10-07** — deviations in §15r *E9.S2b as built* | Opus (Fable spent, recorded) + two own reviews |
+| E9.S3 | restore (create-only), `archive list` — §15r R1. **Built 2026-10-07** — deviations in §15r *E9.S3 as built* | Opus (Fable spent, recorded) + two own reviews — the reverse move |
+| E9.S4 | A13 and A20 in the engine, the root → user child boundary, streaming, the budget — §15r R2 | Opus + two own reviews |
+| E9.S5 | the Windows side of the verbs — §15r | Opus + one own review |
+| E9.S6 | a minimal per-user Windows archive task — only on the owner's Q7 decision (§15r) | Opus |
 | E10.S1–S2 | archive settings and Archive now; Archive page and Logs | Opus |
 | E11.S1–S3 | Windows collectors I and II; Windows install/doctor/perf log | Opus |
 | E12.S1 | unelevated Windows cleanups incl. W-A2 with the `%TEMP%\claude\` guard | **Fable** — bulk deletion in a 155 k-entry tree |
@@ -2819,8 +4201,8 @@ root call path in the package at all (§15f #5): the root boundary gets its own 
 the daemon contract of E6.S0, before any button reaches the public. Each later extension epic ends with its release.
 
 **Risk list for the gate** (cadence groups {E1–E3}, {E4–E6}, {E7–E9}, {E10–E12}, {E13}): E3.S1+S2 (the
-only thing between the timer and irreversible Docker deletion), E9.S1+S2 (moving the owner's AI
-sessions), E6.S1 (a detached root run started from a request file, §15j B2), E6.S2 (root through an argv allowlist), E12.S2 (a user-writable request folder read by a
+only thing between the timer and irreversible Docker deletion), E9.S2a+S2b+S3 and E9.S4 (moving the owner's AI
+sessions, and root starting the user's mover — §15r R1, R2), E6.S1 (a detached root run started from a request file, §15j B2), E6.S2 (root through an argv allowlist), E12.S2 (a user-writable request folder read by a
 highest-privilege task), E12.S1 (bulk TEMP deletion), E4.S1+S2 (`curl | sh` as root, attestations,
 credentials).
 

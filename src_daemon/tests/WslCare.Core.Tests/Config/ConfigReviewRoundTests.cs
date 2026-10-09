@@ -34,10 +34,10 @@ public sealed class ConfigReviewRoundTests : IDisposable
     [Fact]
     public void An_invalid_machine_only_value_in_the_user_layer_is_a_notice_not_an_error()
     {
-        var result = ConfigLoader.Load([Defaults(), (Machine, new FileReadResult.Missing()), Layer(User, """{ "archive": { "baseFolder": "relative/folder" } }""")]);
+        var result = ConfigLoader.Load([Defaults(), (Machine, new FileReadResult.Missing()), Layer(User, """{ "walk": { "maxEntries": "lots" } }""")]);
 
         result.IsObserveOnly.Should().BeFalse();
-        result.Notices.Should().ContainSingle().Which.Key.Should().Be("archive.baseFolder");
+        result.Notices.Should().ContainSingle().Which.Key.Should().Be("walk.maxEntries");
     }
 
     /// <summary>S6: a linked <c>~/.config/wsl-care</c> must not lead root's read anywhere — no link anywhere below the home, and

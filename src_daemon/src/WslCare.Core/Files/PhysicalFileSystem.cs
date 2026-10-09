@@ -21,7 +21,7 @@ namespace WslCare.Core.Files;
 /// <para>The atomic write also ACTS on the real paths it judged and checks them again just before the
 /// rename; see <see cref="WriteFileAtomically"/> for the window that remains.</para>
 /// </remarks>
-public sealed class PhysicalFileSystem : IFileSystem
+public sealed partial class PhysicalFileSystem : IFileSystem, IArchiveFiles
 {
     private static readonly RealPathResult NoDestination = new RealPathResult.Resolved(string.Empty);
 
@@ -29,6 +29,7 @@ public sealed class PhysicalFileSystem : IFileSystem
     private readonly DeletionPolicy _policy;
     private readonly Func<string, string?> _readLinkTarget;
     private readonly Action<AtomicWriteStep, string> _onAtomicWriteStep;
+    private readonly Action<ArchiveFileStep, string> _onArchiveStep;
 
     public PhysicalFileSystem(IHostPaths paths)
         : this(paths, ReadLinkTarget, static (_, _) => { })
@@ -40,9 +41,17 @@ public sealed class PhysicalFileSystem : IFileSystem
     /// inspect), and <paramref name="onAtomicWriteStep"/> runs between the steps of
     /// <see cref="WriteFileAtomically"/>, so a test can swap a link in at the exact moment a race would.</summary>
     internal PhysicalFileSystem(IHostPaths paths, Func<string, string?> readLinkTarget, Action<AtomicWriteStep, string> onAtomicWriteStep)
+        : this(paths, readLinkTarget, onAtomicWriteStep, static (_, _) => { })
+    {
+    }
+
+    /// <summary>The same seams and the archive's fault seam (plan §15r E9.S2a): <paramref name="onArchiveStep"/> runs between the
+    /// primitive steps of every <see cref="IArchiveFiles"/> verb, so a test can throw — or kill — at each of them.</summary>
+    internal PhysicalFileSystem(IHostPaths paths, Func<string, string?> readLinkTarget, Action<AtomicWriteStep, string> onAtomicWriteStep, Action<ArchiveFileStep, string> onArchiveStep)
     {
         _readLinkTarget = readLinkTarget;
         _onAtomicWriteStep = onAtomicWriteStep;
+        _onArchiveStep = onArchiveStep;
         _policy = new DeletionPolicy(ProtectedRoots.From(paths, RealOrSpelled), _rules);
     }
 
@@ -248,19 +257,40 @@ public sealed class PhysicalFileSystem : IFileSystem
         try
         {
             CreateDirectory(directory);
-            using var probe = new FileStream(
-                Path.Combine(directory, $".wsl-care-write-probe-{Guid.NewGuid():N}"),
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 1,
-                FileOptions.DeleteOnClose);
-            return new WriteAccess.Writable();
+            return ProbeFolder(directory);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return new WriteAccess.NotWritable($"{directory} is not writable by this process ({e.Message})");
         }
+    }
+
+    /// <summary>Plan §15r D7: the archive's base is never created — a missing folder (or one removed between a check and this
+    /// probe) is not writable, because the probe file is created INSIDE the folder and nothing above it is made.</summary>
+    public WriteAccess ProbeExistingWriteAccess(string directory)
+    {
+        try
+        {
+            return ProbeFolder(directory);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return new WriteAccess.NotWritable(e is DirectoryNotFoundException ? $"{directory} does not exist; it is never created" : $"{directory} is not writable by this process ({e.Message})");
+        }
+    }
+
+    /// <summary>A temporary file created in <paramref name="directory"/> with delete-on-close and closed at once — throws when it
+    /// cannot be created there.</summary>
+    private static WriteAccess.Writable ProbeFolder(string directory)
+    {
+        using var probe = new FileStream(
+            Path.Combine(directory, $".wsl-care-write-probe-{Guid.NewGuid():N}"),
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 1,
+            FileOptions.DeleteOnClose);
+        return new WriteAccess.Writable();
     }
 
     public ExclusiveLock TryLockExclusive(string lockPath)
@@ -559,13 +589,16 @@ public sealed class PhysicalFileSystem : IFileSystem
         }
 
         using var stream = OpenForReading(path);
-        if (stream.Length == 0)
-        {
-            return false;
-        }
+        return EndsTorn(stream.SafeFileHandle);
+    }
 
-        stream.Seek(-1, SeekOrigin.End);
-        return stream.ReadByte() != '\n';
+    /// <summary>Whether the file behind <paramref name="readable"/> is non-empty and its last byte is not a newline — the one test the
+    /// history and the archive's month index share (review M3).</summary>
+    internal static bool EndsTorn(Microsoft.Win32.SafeHandles.SafeFileHandle readable)
+    {
+        var length = RandomAccess.GetLength(readable);
+        Span<byte> last = stackalloc byte[1];
+        return length > 0 && RandomAccess.Read(readable, last, length - 1) == 1 && last[0] != (byte)'\n';
     }
 
     public DeletionVerdict DeleteFile(string path, DeletionScope scope) =>

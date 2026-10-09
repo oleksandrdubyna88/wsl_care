@@ -96,6 +96,8 @@ public sealed class HostileInputs(int seed)
         SlotKind.UnixSeconds => "@" + _random.NextInt64(0, 99_999_999_999).ToString(CultureInfo.InvariantCulture),
         SlotKind.Rfc3339Utc => new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddSeconds(_random.NextInt64(0, 2_000_000_000)).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
         SlotKind.Hex h => new string([.. Enumerable.Range(0, h.Length).Select(_ => "0123456789abcdef"[_random.Next(16)])]),
+        SlotKind.HexList l => string.Join(',', Enumerable.Range(0, 1 + _random.Next(Math.Min(l.MaxCount, 8))).Select(i => i.ToString("x" + l.Length.ToString(CultureInfo.InvariantCulture), CultureInfo.InvariantCulture))),
+        SlotKind.RunIdText => WslCare.Core.Records.RunId.New(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(_random.NextInt64(0, 2_000_000_000)), _random.Next(0, int.MaxValue)).Text,
         SlotKind.ActUnit => SlotKind.ActUnit.Of(WslCare.Core.Records.RunId.New(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(_random.NextInt64(0, 2_000_000_000)), _random.Next(0, int.MaxValue))),
         SlotKind.UnitName u => Pick<string>(u.TypeRequired ? ["wsl-pro.service", "fstrim.timer", "a@b.service", "systemd-oomd.service", "x-y_z.socket"] : ["systemd-resolved", "wsl-pro.service", "kernel-x"]),
         SlotKind.UserName => Pick<string>(["me", "user", "_svc", "a-b", "u1000"]),

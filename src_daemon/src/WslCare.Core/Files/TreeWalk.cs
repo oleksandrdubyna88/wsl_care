@@ -18,6 +18,10 @@ public sealed record TreeRules(IReadOnlySet<string> CountOnlyUnder, IReadOnlySet
     /// <summary>A folder on another device than the root's is not entered, and named.</summary>
     public bool StayOnDevice { get; init; }
 
+    /// <summary>The walk also LISTS every file it counts — its full path, length and last write, from the directory entry alone
+    /// (plan §15r E9.S1: one session moves under the month of its NEWEST file, companions included). No file is opened.</summary>
+    public bool ListFiles { get; init; }
+
     private static readonly IReadOnlySet<string> NoNames = new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>Everything counted, everything entered.</summary>
@@ -105,9 +109,9 @@ internal static class TreeWalk
             AttributesToSkip = FileAttributes.ReparsePoint,
             ReturnSpecialDirectories = false,
         };
-        var entries = new FileSystemEnumerable<(long Length, bool Counted)>(
+        var entries = new FileSystemEnumerable<(long Length, bool Counted, TreeFile? File)>(
             root,
-            (ref FileSystemEntry e) => (e.Length, rules.CountOnlyUnder.Count == 0 || IsUnderNamed(root, e.Directory.ToString(), rules.CountOnlyUnder)),
+            (ref FileSystemEntry e) => (e.Length, rules.CountOnlyUnder.Count == 0 || IsUnderNamed(root, e.Directory.ToString(), rules.CountOnlyUnder), rules.ListFiles ? new TreeFile(e.ToFullPath(), e.Length, e.LastWriteTimeUtc) : null),
             options)
         {
             ShouldIncludePredicate = (ref FileSystemEntry e) => !e.IsDirectory,
@@ -117,13 +121,15 @@ internal static class TreeWalk
         long bytes = 0;
         long files = 0;
         long visited = 0;
-        foreach (var (length, counted) in entries)
+        var listed = new List<TreeFile>();
+        foreach (var (length, counted, file) in entries)
         {
             visited++;
             if (counted)
             {
                 bytes += length;
                 files++;
+                Keep(listed, file);
             }
 
             if (visited % CancellationStride == 0)
@@ -136,11 +142,19 @@ internal static class TreeWalk
             if (state.Exhausted(visited) is { Length: > 0 } why)
             {
                 state.Stopped = true;
-                return new TreeMeasure.Measured(bytes, files, false, why) { Excluded = excluded.Named };
+                return new TreeMeasure.Measured(bytes, files, false, why) { Excluded = excluded.Named, Listed = rules.ListFiles ? listed : Array.Empty<TreeFile>() };
             }
         }
 
-        return new TreeMeasure.Measured(bytes, files, true, string.Empty) { Excluded = excluded.Named };
+        return new TreeMeasure.Measured(bytes, files, true, string.Empty) { Excluded = excluded.Named, Listed = rules.ListFiles ? listed : Array.Empty<TreeFile>() };
+    }
+
+    private static void Keep(List<TreeFile> listed, TreeFile? file)
+    {
+        if (file is not null)
+        {
+            listed.Add(file);
+        }
     }
 
     /// <summary>Whether a file in <paramref name="directory"/> lies below a folder of one of <paramref name="names"/>, counted from <paramref name="root"/>.</summary>

@@ -2179,6 +2179,692 @@ Final (Debug, on main `05ec294` plus this change): Windows — Core 1419 passed 
 test was changed); WSL (normal user, `nice -n 19`, load 4–6) — Core 1475 / 3, Cli 275 / 1, Scenarios 406 / 2, none failed.
 `dotnet format --verify-no-changes` and `plan-lifecycle.mjs` clean.
 
+### The AI-session archive: catalogue blocks, keys, base folder (E9.S0, 2026-10-06, plan §15r)
+
+What the catalogue lets the archive move, the archive's keys and their coupled rules, and the base folder rules with
+`archive check-base` (`research/module_archive.md`). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| the four confirmed agents carry an `archive` block and no other; Antigravity's Windows layout and folders; its CLI logs a unit of their own; its SQLite sidecars companions and a `-wal` keeps the unit in place; every block sound and no unit names what never moves, with the planted companion (a unit naming `presence`, an unknown kind, an unknown retention source — all three found); `memory` never moved at any depth or case; the archive plan's "never moved" column in the catalogue (11 cases) and a session file not never-moved (the positive); Claude Code's own retention and the others' "what was checked" | `Agents/AgentArchiveCatalogueTests` (22) |
+| the defaults (14 / 24 h / 7 / 30 / 7); each archive rule a machine layer breaks refuses the layer naming it (7 cases); a user value that would archive after Claude's sweep is a notice and the default stays; a raised retention lets a later age stand; `archive.agents` closed over the archivable ids (subset); the base folder accepted from the user layer; a Linux path, a drive path and a share accepted, a device path or a share without a folder refused | `Config/ArchiveKeysTests` (19); every new key in group A or B: `Config/NumbersAreConfigurationTests` |
+| the moved examples: a path key steers no root write (`ConfigKeyShapeTests`); the machine-only notice, the invalid machine-only value as a notice and the run detail's provenance now use `walk.maxEntries` (`UserLayerTrustTests`, `ConfigReviewRoundTests`, `ConfigProvenanceTests`) | as named |
+| the distro's rules over a sandbox (every leg): a folder on the network drive accepted with its 9p mount and the drvfs note; `V:\ai-archive` placed at `/mnt/v/ai-archive`; an unmounted drive refused; a missing folder refused AND not created; a file refused; `/mnt/v`, `V:\` and `/` too broad, the home too broad; inside or holding `~/.claude`, `~/.gemini`, `/home`, `~/git`, `/tmp/claude`, `/tmp`, A12's Playwright folder, `~/.config/wsl-care`, `/var/lib/wsl-care` an overlap; a tmpfs refused; a FAT stick accepted with its 2-second note; the distro's own disk a warning; a link on the way refused; no mount table refused; a share or a relative path refused; a 0755 folder warned and a 0700 one not (Linux); a 0500 folder not writable (Linux, not root) | `Archive/BaseFolderRulesTests` (28) |
+| the Windows rules (Windows legs): a drive folder accepted with its drive's kind; a Linux path and a drive root refused; inside `.claude`, `.gemini\antigravity-cli` or the temporary folder an overlap; a junction on the way refused | `Archive/WindowsBaseFolderTests` (6) |
+| the verb in-process: JSON of an accepted drive path; a refused folder an answer that creates nothing; root refused (81); an argument that is no path refused before anything is looked at; `config set archive.baseFolder` writes an accepted folder, refuses one inside `~/.claude` naming the rule and writes nothing, clears with an empty value | `Cli.Tests/ArchiveCommandTests` (8) |
+| the built CLI: the drive path placed and accepted, `config set` refusing then writing (Linux legs); root refused on every OS; the Windows binary's own rules (Windows legs) | `Scenarios/ArchiveFlows` (4) |
+| the contracts: `config-keys.json` gains the archive keys and `archive.agents`, `archive.baseFolder` no longer machine-only; `status` gains `archive.checkBase`; the golden `archive-check-base.json` | `ContractFilesTests`, `GoldenContractTests` |
+| the scans: the base rules' mount table read classified (System); the share format's `Take(2)` and the in-flight factor listed as formats; the mountinfo field count moved with the parser to `MountTable.cs` | `ArchitectureTests` (read sites), `NumbersArchitectureTests` |
+
+**Red first:** the catalogue tests (21 red before the blocks — `windowsUnder` empty, no archivable id, no companions), the
+key tests (28 red before the keys and rules — absent keys, the base folder still a machine-only notice, a share refused), the
+verb register (red until the catalogue row), the read-site and number scans (red on the two new sites until classified).
+**Teeth** (each line broken, the guarding tests run, the file restored byte-identical — `sha256` compared): Antigravity's
+`windowsUnder` emptied — 1 red; the archive rules dropped — 8; the base folder machine-only again — 1; the share shape
+dropped — 1; the overlap rule dropped — 9; the existence rule dropped — 2; the link rule dropped — 1 (Windows); the root rule
+dropped — 3; the volatile rule dropped — 1; a drive path not placed — 2; the distro-disk warning dropped — 1; `config set` of
+the base not judged — 1; `check-base` as root not refused — 1.
+
+### Selection and archive preview (E9.S1, 2026-10-06, plan §15r D2.1–D2.2, D10)
+
+What the archive would move and why the rest stays (`research/module_archive.md` § *Selection and `archive preview`*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| one session = one unit = one month: the session file with its `subagents/` folder and its `file-history` companion, under the month of the NEWEST of them, in the side's zone (23:30 UTC on 31 August is filed under 2026/09 at +02:00, under 2026/08 in UTC); a companion younger than the limit keeps the whole session; due units oldest first | `Archive/SelectionTests` (the first four facts) |
+| the never-move property: over five seeded random trees (`memory` in three cases, settings, credentials, databases, index files — under the layouts, above and beside them) nothing outside a session's definition is ever selected, nothing under `memory` at any depth; a session named `memory.jsonl` refused whole | `SelectionTests.Nothing_outside_a_sessions_definition_is_ever_selected` (5 seeds), `…memory_is_refused_whole…` |
+| the keepers, each with its rule and sentence: a companion folder holding a folder the walk never enters → `not-whole`; an open descriptor → `in-use`; Claude Code working in the project → `agent-working-here`; Antigravity's `-wal` → `may-be-open` (and its sidecars move with the conversation, its CLI log a unit of its own); case-only twins, a colon (Linux), invalid UTF-8, a reserved device name, a trailing dot, a pipe → `name`; a surrogate PAIR held, a lone surrogate refused | `SelectionTests` (9 facts + a 4-row theory) |
+| the effective age: a retention of 10 days archives from day 2 (10 − 7 − 1), never from 14; the managed settings win over the user's and `CLAUDE_CONFIG_DIR` moves the user's file; a retention of 0 warned and the age its least (1); an unreadable setting said and the documented default applied | `SelectionTests` (4 facts) |
+| quarantined files counted; only the agents of `archive.agents`; the selection writes nothing (every file's time and the folder listing unchanged) | `SelectionTests` (3 facts) |
+| the `/proc` scan over a sandbox (Linux): the open files of every process read as links (targets that do not exist), a Claude Code process's `cwd` named as its project; on Windows "not checked", naming E9.S5; **the selection opens no file of an agent** (inotify over `~/.claude`: no event but `settings.json`) | `Archive/InUseTests` (3) |
+| the verb in-process: JSON per agent (due 1, younger 1, the effective age 14, the four archivable agents in catalogue order, a `wsl-` side folder); `--agent codex` answers codex alone and an unknown id is refused (2) naming the archivable ones; root refused (81) | `Cli.Tests/ArchiveCommandTests` (3 new) |
+| the built CLI: a 20-day-old session with its companion due and a 1-day-old one younger, every file's last write unchanged (Linux legs); root refused on every OS | `Scenarios/ArchiveFlows` (2 new) |
+| (superseded by the E9.S1 review round, m1: the rule is gone — every value of `archive.previewTimeoutSeconds` is valid and the listing takes three quarters of it) the coupled rule `archive.previewTimeoutSeconds` ≥ `agents.measureBudgetSeconds` + 60 s refused a machine layer that broke it | `Config/ArchiveKeysTests` (a row of the rule theory) |
+| the contracts: the capability `archive.preview`; the golden `archive-preview.json`; the scans: the new reads classified (the retention file a user read; `/proc` System reads; `ListEntries` allowed) | `ContractFilesTests`, `GoldenContractTests`, `ArchitectureTests` (read sites) |
+
+**Red first:** the selection, the scan and the verb were written with their tests; their teeth is the break-it run below.
+Red observed on the way: the read-site scan on the new `/proc` listing until classified; `FolderSizesTests` when the widened
+walk returned a fresh empty list (record equality — fixed with one shared empty array); the property test when its generator
+planted a file where it had planted a folder; and the surrogate-pair test — `"notes-😀.md" is not valid UTF-8` — against the
+first name rule, which refused every surrogate (fixed: only a lone one, read as the replacement rune).
+**Teeth** (each line broken, the guarding tests run, the file restored byte-identical — `sha256` compared): the never-moved
+keeper dropped — 1 red; the in-use keeper — 1; the agent-here keeper — 1; the may-be-open keeper — 1; the not-whole keeper —
+1; the retention ignored — 2; the newest taken over the main file only — 2; the month in UTC whatever the zone — 1; newest
+first instead of oldest — 1; `archive.agents` ignored — 1; the quarantine not counted — 1; the companion files not listed by
+the walk — 5; the user's settings read before the managed ones — 1; a zero retention not warned — 1; the preview as root not
+refused — 1; the preview-timeout rule dropped — 1; every surrogate refused again — 2.
+
+### The E9.S0 review round (2026-10-06, plan §15r *E9.S0 review round*)
+
+Two own reviews of the built E9.S0; every finding fixed in one commit after E9.S1 (`research/architecture.md` § *The AI-session
+archive*, the review-round paragraph). The tests:
+
+| Finding | Guarantee | Tests |
+|---|---|---|
+| S1 | a base on C: inside the Windows profile's `.claude`, any-case `.Claude`, `AppData\Local\Temp`, `Temp\claude`, `AppData\Roaming\Antigravity`, `git` (also `Git` spelt in another case), or the profile itself is refused once the profile is known; without it any profile's `AppData` and agent folder, a profile and `C:\Users` are refused; `Documents\ai-archive` accepted either way | `Archive/BaseFolderReviewRoundTests` (8 + 4 + 2 rows) |
+| S2 | `config set archive.baseFolder` as root: exit 81, "not as uid 0", nothing written | `Cli.Tests/ArchiveCommandTests.Config_set_of_the_base_folder_as_root_is_refused_and_nothing_is_looked_at` |
+| S3 | `\\wsl$`, `\\wsl.localhost`, `\\localhost`, `\\127.0.0.1`, `\\0--1.ipv6-literal.net`, `\\nas\C$`, `\\nas\ADMIN$` and this machine's name refused (`shape`, every leg — no disk is read); an 8.3 short name of a folder inside `.claude` refused; a folder and its short name have one identity; the identity overlap over two chains (inside, holding, equal, a sibling, an unopened base) | `Archive/WindowsBaseFolderTests` (7 rows + 4 facts) |
+| S4 | a bind mount of `~/.claude` judged as `~/.claude/…` (overlap); a bind mount whose device is mounted whole nowhere refused (`link-on-the-way`); a second mount of the root disk judged as the folder it is (`/data/archive` → `/archive`, warned as the distribution's own disk; `/data/home/me/.claude/archive` refused); a subvolume of the root disk (own device number, same source) warned | `Archive/BaseFolderReviewRoundTests` (4 facts) |
+| S5 | a folder on the way owned by another uid named with its uid; root's and this account's not | `BaseFolderReviewRoundTests.A_folder_on_the_way_owned_by_another_account_is_said` |
+| m4 | a refusal before any mount answers `BaseMountReport.Unknown`, never null | `BaseFolderReviewRoundTests.A_refusal_answers_an_empty_mount_never_null` |
+| m5 | the refused `check-base` golden | `GoldenContractTests` (`archive-check-base-refused.json`) |
+| m3 | a base inside `%APPDATA%\Antigravity` refused — a place only Antigravity's entry covers | `WindowsBaseFolderTests` (a row) |
+| C1 | every path key but `archive.baseFolder` machine-only; a planted display-only path key named; the base folder named once it would steer root | `Config/ConfigKeyShapeTests` (2) |
+| C3 | the in-flight rule counts the waiting runs (a 1-hour timer refused by the default sizes); the defaults hold 600 B × 1 000 × 7 under 8 MiB and drain a 4 500-session backlog in five runs | `Config/ArchiveKeysTests` (a rule row + a fact) |
+| C4 | `minRunMinutes` above `runBudgetMinutes` refused naming the key | `ArchiveKeysTests` (a rule row) |
+| C5 | every minute ceiling fits under the least commands maximum by its range or a coupled rule; the defaults keep every rule | `Config/NumbersAreConfigurationTests.Every_minute_ceiling_fits_…` |
+| (b) | `archive.agents` takes `manual:<name>` in the manual agent's name shape (6 rows), never by default; a named manual agent with a glob archived by its own glob (`memory` never), absent unless named; one without a glob, one its folder rules refuse and one missing from `aiAgents.extra` answered with the reason, nothing listed | `ArchiveKeysTests` (6 rows), `Archive/SelectionTests` (2 facts) |
+| (d) | an invalid user-layer base folder is a notice, the rest of the layer in force | `ArchiveKeysTests.A_user_layer_base_folder_of_the_wrong_shape_…` |
+| C7 | the extracted helpers change no answer | the existing `MountTable` / `WindowsSystemDrive` / `KeyRules` tests, green |
+
+**Red first** (each test run against the unfixed code, failing with the real symptom): S2 — `Expected set.Exit to be 81, but
+found 0`; C1 — the planted display-only key was not named (`{"cache.machineFolder"} differs at index 0` under the old rule);
+C3 — `Expected sessions to be 1000, but found 5000`, and the 1-hour timer `IsObserveOnly … found False`; C4 — the same, for
+`minRunMinutes`; C5 — the minute-ceiling test red on `restoreLimitMinutes` (60 + 60 s past one hour); (d) — `IsObserveOnly …
+found True` (`archive.baseFolder must be empty, or an absolute path …`); S1 — all 11 Windows-place rows `found … BaseFolderReport`
+(accepted); S3 — the seven shares answered `missing` instead of `shape`; S4 — the bind mount accepted (`"" … "overlap"`), the
+orphan bind accepted, the second mount of the root disk not warned; S5 — the owner warning empty; m4 — the mount `null`; (b) —
+`manual:mycli` refused by the key, and no manual agent selected. **Green against the unfixed code, kept as regression tests:**
+the 8.3 short name (`Path.GetFullPath` already expands a path holding `~` with `GetLongPathName` — measured) and the Antigravity
+`%APPDATA%` row (its teeth below). A first C5 fix (a coupled rule) turned an existing test red —
+`Every_composed_command_ceiling_stays_under_the_commands_maximum`: a lone `commands.maxTimeoutHours: 1` became observe-only —
+and was replaced by the 59-minute range. **Found by the Linux legs:** the profile-known S1 rows threw `IndexOutOfRangeException` in the distro — `ExtraAgentRules.ProductFolders` took a Windows path's folder with `Path.GetDirectoryName`, which reads it on Linux as one name and answers empty; fixed by `PathRules.Parent` (the paths' own rules, `PathRulesTests.Parent_is_the_folder_…`). And `FixturePrivacyTests` refused a test profile named `someone` — the fixtures use `user`.
+**Teeth** (each line broken, the guarding tests run, the file restored byte-identical — `sha256` compared): `config set` as root
+not refused — 1 red; the `minRunMinutes` rule dropped — 1; the waiting runs not counted — 1; the restore limit back to 60 — 1; an
+invalid user base an error again — 1; the base folder steering root — 2; the Windows-places step dropped — 11; the profile
+mapping dropped — 1; the any-profile pattern dropped — 4; a case-sensitive compare — 1 (green until the `Git` row was added);
+bind and second mounts not followed — 1; the distribution's disk by mount point — 1 (green until the subvolume row was added);
+the owner warnings dropped — 1; the share aliases allowed — 8; the identity overlap one-sided — 1; manual ids refused by the key
+— 2; manual agents never targeted — 2; Antigravity's `%APPDATA%` folder dropped from the catalogue — 1. **No end-to-end red** for
+the identity leg of the overlap rule on this machine: every alias it catches beyond 8.3 needs a `subst` drive or a second path to a
+volume, which a test would have to create machine-wide; its two halves (the chain, the overlap) are tested.
+
+### The E9.S1 review round (2026-10-06, plan §15r *E9.S1 review round*)
+
+A security and a correctness review of E9.S1 and the E9.S0 round; every finding fixed in one commit. The tests:
+
+| Finding | Guarantee | Tests |
+|---|---|---|
+| B1 | `//mnt/c/Users/me/.claude`, `/mnt/./c/…/Temp`, `/mnt/c/Users/me/./.claude`, `/mnt//c`, `//mnt/bound/archive`, `//dev/shm/x` refused by the shape before any mount is looked at; the shape refuses an empty or `.` segment in every path family and takes one trailing separator — a manual agent's folder by the same rule | `Archive/BaseFolderS1ReviewTests` (6 + 8 rows) |
+| M1 | sessions named `.jsonl`, `..jsonl`, `...jsonl` (and Antigravity's `.db`) refused by name with their main file only; `.credentials.json` and the folder around them never listed as theirs | `Archive/SelectionS1ReviewTests.A_session_whose_id_is_empty_or_a_dot_name_…` |
+| M2 | `CLAUDE~1`, `PROGRA~1` on drvfs refused | `BaseFolderS1ReviewTests` (2 rows) |
+| M3 | a Windows-side manual agent's folder, inside, holding, spelt in another case — refused | `BaseFolderS1ReviewTests` (3 rows) |
+| m1 | `C:\ProgramData\wsl-care\…` and `C:\Users\user\git\…` refused without the profile; an accepted drvfs base warned "the Windows profile is unknown", not once the profile is known | `BaseFolderS1ReviewTests` (2 rows + a fact) |
+| m2 | `\\nas\C$/Users\…`, `\\localhost.\…`, `\\0-0-0-0-0-0-0-1.ipv6-literal.net\…`, `\\127.0.0.2\…` refused; the DNS host name, bare and qualified; a drvfs mount of `\\localhost\C$` refused in the distro | `Archive/WindowsBaseFolderTests` (4 rows + a fact), `BaseFolderS1ReviewTests` |
+| P1 | forty stars against a 200-character name answer within 2 s; the matcher answers as a shell does (8 rows) | `Agents/AgentCatalogueTests` |
+| cM1 | a cut scan and one that never ran keep every due unit, with the reason | `SelectionS1ReviewTests` (2 rows) |
+| cM2 | `CLAUDE_CONFIG_DIR` naming another folder: Claude Code answered with the reason, nothing listed; naming `~/.claude`: listed | `SelectionS1ReviewTests` |
+| cm1 | every value of `archive.previewTimeoutSeconds` (10, 60, 600) valid, the listing three quarters of it; a companion walk with only the time left is not whole | `Config/ArchiveKeysTests` (3 rows), `SelectionS1ReviewTests` |
+| cm2 | a companion file whose size cannot be read keeps its unit as not whole | `SelectionS1ReviewTests` (a file system whose one answer is "unreadable") |
+| cm3 | a whole session under its quarantine names counts 3 | `SelectionS1ReviewTests` |
+| cm4 | `--agent manual:mycli` enabled → due 1; `--agent codex` not enabled → previewed, `enabled: false`, warned; `manual:mycli` not enabled → previewed; `manual:gone` → its reason | `Cli.Tests/ArchiveCommandTests` |
+| cm5 | a manual agent whose `**` glob reaches memory never selects it, over three seeded trees | `SelectionS1ReviewTests` (3 rows) |
+| cm6 | `/data` (a second mount of the root disk) is `/`, too broad | `BaseFolderS1ReviewTests` |
+| cm7 | a btrfs subvolume judged as it is; the E9.S0 round's orphan bind now judged as it is too | `BaseFolderS1ReviewTests`, `BaseFolderReviewRoundTests` |
+| cm8 | Claude Code's retention `Known(30)`; Antigravity's `Unknown` with why and a warning | `SelectionS1ReviewTests` |
+
+**Red first** (against the unfixed code, 37 of 110 in the touched classes, and the CLI's): the six spellings answered `""` (accepted) instead of
+`shape`; the shape accepted `/mnt/a//b`, `/mnt/a/./b`, `C:\a\.\b`, `C:\a\\b`, `\\nas\share\.\x`; the dot-named sessions were DUE
+(`Expected claude.Due to be empty, but found at least one item`); `CLAUDE~1` accepted; the Windows manual agent's folder
+accepted (3); ProgramData and `git` accepted; no unknown-profile warning; `\\nas\C$/Users`, `localhost.` and the
+`0-0-0-0-0-0-0-1` literal answered `missing`; the loopback drvfs mount accepted; the matcher did not answer within 2 s; a cut
+scan and an unrun one left the unit due; `CLAUDE_CONFIG_DIR` elsewhere left it due; `previewTimeoutSeconds` 10 and 60 put the
+machine layer observe-only and 600 gave 1 min, not 7 min 30 s; the companion walk with no time left and the unreadable companion
+file left the unit due; the quarantined session counted 1, not 3; the CLI answered `agents: []`; `/data` answered an `overlap` of
+"~/git" (its real path was `""`); the btrfs subvolume refused as "mounted whole nowhere"; no unknown-retention warning. **Green
+against the unfixed code, kept:** the DNS host name (it equals the machine name here) and `127.0.0.2` (the `127.` prefix), and the
+memory property (cm5 asked for a test that CAN fail; its teeth are the walk's never-enter rule, unchanged). **A fix that turned an
+old test red:** `BaseFolderRulesTests.A_folder_on_the_network_drive_…` expected no warning at all — it now names the
+unknown-profile one only.
+**Teeth** (each line broken, the guarding tests run, the file restored byte-identical — `sha256` compared): the segment rule
+dropped from the path shape — 11 red; from the manual agent's shape — 4; the companion check — 1; short names allowed — 2; the
+Windows manual agents not protected — 3; the product-folder pattern — 1; any profile's `git` — 1; the unknown-profile warning —
+1; `/` not read as a separator — 1; the trailing dot kept — 1; addresses not parsed — 4; the distro's loopback share allowed —
+1; the root spelt empty — 1; only a whole root a base mount — 1; an incomplete scan letting units move — 2; `CLAUDE_CONFIG_DIR`
+ignored — 1; the listing budget not derived — 3; companions walked with a fresh budget — 1; an unreadable companion file absent
+— 1; a quarantined session's companions not counted — 1; every asked agent called enabled — 1; an unknown retention not warned
+— 1. **Not break-it checked:** P1's matcher (its red against the old matcher is its check); B1's placement on the real path
+(defence in depth — the link rule refuses every spelling whose real path differs, so no test can tell it apart).
+
+### The archive's seam (E9.S2a, 2026-10-06, plan §15r R1, review M12, risk consult 9/9.2)
+
+The only way the archive touches a file (`research/module_archive.md` § *The archive's seam*). The tests:
+
+| Guarantee | Tests |
+|---|---|
+| the policy as a table: a session file renamed to its quarantine name in its own folder and back; to any other name, folder, an empty run id, or into the base — `ArchiveShape`; a quarantined file with its archived copy named removed; without the mark, without a copy, with a copy in an agent's folder, in the repositories or relative — `ArchiveShape`; an empty folder strictly inside removed, the agent's folder itself never (even with a wider root); a plain delete refused by every permit; a restore creates, nothing else does; memory refused by every permit; a create in the base judged inside its root | `Files/ArchivePermitTests` (20) |
+| copying never replaces: a second create of the same name and a create over an already archived file answer `Exists`, both contents untouched; the read-back hash is the bytes written | `Files/ArchiveFilesTests.Copying_into_the_archive_never_replaces_a_file` |
+| no link on the way to a destination (a junction or symlink at a level → refused naming the level, nothing created through it); a link at the final name never written through (Linux) | `ArchiveFilesTests` (2) |
+| a source is a regular file of this account with ONE link, reached through no link: a plain file opened and read; a hard-linked one refused; a missing one `Gone`; a FIFO and a file symlink refused (Linux); a folder link on the way refused | `ArchiveFilesTests` (3) |
+| review B1: renaming back never replaces the file the agent wrote at the original name meanwhile (`NameTaken`, both kept); a quarantine rename never replaces an earlier run's quarantined file; renaming back to a free name works | `ArchiveFilesTests` (2) |
+| the verified removal: a hash that differs keeps the file; an equal one removes it; a second removal finds it `Gone` | `ArchiveFilesTests` |
+| review B2: a removal stopped mid-hash (the fault seam throws at `RemovalHashChunk`) leaves the file whole | `ArchiveFilesTests.A_kill_mid_hash_on_windows_leaves_the_source_present` |
+| risk consult 9/9.2: a writer descriptor opened before the removal (appending at `RemovalHashed`), another process holding it, a forked CHILD only holding it, a writable shared MAPPING only holding it — kept every time | `ArchiveFilesTests` (2 facts + a 2-row theory; the process, child and mapping rows on the Linux legs) |
+| a refused removal or rename touches nothing (an unquarantined file, a rename under memory, a removal without the permit); only an EMPTY folder is removed, never the agent's folder | `ArchiveFilesTests` (2) |
+| durability: each new destination level's entry synced into its parent (Linux), the destination's flush answering `Done`; the fault seam asked between the primitive steps of a removal in order | `ArchiveFilesTests` (2) |
+| the scan: a planted `File.Copy`, `File.Replace` across lines, a chained and a named `FileInfo` copy/replace, `DeleteOnClose`, a delete disposition and five native entry points all found; a string `Replace`, a stream `CopyTo` and the word "rename" not; no file outside the seam's files (five since the gate round) holds one; the seam's own natives still found | `ArchitectureTests` (4 new; the first scan now takes the same seam files) |
+
+**Red first:** the policy tests against the permits with no logic behind them (every allowing row refused by `AgentFolder`, every shape row answering `AgentFolder` instead of `ArchiveShape` — the quarantine
+rename, the removal of a quarantined file, the empty folder, the restore's create); the seam tests against stubs that answered
+`E9.S2a: not built yet` (every verb refused); the scan's planted companion (`found empty collection`). **Against the built seam
+(risk consult 9/9.2):** the pre-opened writer appending at `RemovalHashed` and another process holding the file got `Removed`
+on Linux — before the write lease; the per-level sync test found no `FolderLevelSynced` step before the parent syncs. **Fixed
+on the way:** a symlink at the final name pointing OUTSIDE the base was refused by the policy (its real path is outside the
+root) — the test now points inside the base so the exclusive create itself is what refuses; `mklink /H` needed Windows
+separators.
+**Teeth** (each line broken, the guarding class run, the file restored byte-identical — `sha256` compared). Linux (in a `/tmp`
+copy of the worktree, `nice 19`): the rename without `RENAME_NOREPLACE` — 2 red; the lease removed entirely — 4 (the writer,
+the other process, the child, the mapping); the create without `O_EXCL` — 2; the hash not compared — 1; folders followed through
+links — 2; hard links copied — 1; non-regular files copied — 1; new levels not synced — 1. Windows: the rename with
+`MOVEFILE_REPLACE_EXISTING` — 2; the create with `FileMode.Create` — 1; `FILE_FLAG_DELETE_ON_CLOSE` on the removal handle — 2;
+the hash not compared — 1; the removal handle sharing writes — 1; a junction level followed — 1; hard links copied — 1. The policy:
+any rename in an agent's folder — 3; any file removed — 1; a copy anywhere — 4; the agent's folder itself removed — 1; a create
+with any permit — 1. The scan: a missed copy pattern — 1; missed natives — 2. **Not break-it checked:** the lease's re-check
+after the hash (no test can open the quarantine name between the lease and the check without a race of its own — the stated
+residual).
+
+**A flake seen once, not reproduced (2026-10-08).** CI run 37793320799 (head e1b7f74, the linux-arm64 leg; the job passed on
+its rerun) failed `ArchiveFilesTests.A_quarantined_file_is_removed_only_when_it_hashes_equal_to_its_archived_copy`: the equal
+removal answered `Kept`, not `Removed`. Kept is the safe direction (the file stays; the next run tries again), but the test
+printed only the type, not the reason. The suspected cause: the write lease was refused or broken by an opener outside the test
+(EAGAIN on `F_SETLEASE`, or an open during the hash). This symptom is already reproduced on purpose by
+`A_quarantined_file_another_open_descriptor_holds_is_never_removed` and the two other-process rows. **The attempt to reproduce
+the flake itself:** the Files namespace run 60 times and the whole Core suite 8 times in WSL (x64, under load), with no failure.
+No earlier failed `ci-daemon` run (the last 20) shows this test. **Changed:** the assertion now prints the answer, so a next
+occurrence names its reason (lease refused, lease broken, or bytes). The product is unchanged: a retry inside the run would add a
+wait for a cause that is not shown; this is to be decided if the named reason comes back.
+
+### The E9.S2a gate round (2026-10-06, plan §15r *E9.S2a gate round*)
+
+The coai code round's six findings over the seam. The swap tests use a new fault-seam step, `PathChecked` — asked after the way
+was checked and before the open — at which the test renames the folder holding the file away and puts a directory link (a
+junction on Windows) to another folder at its name; that folder holds a file of the same name and, for the removal, the same
+bytes. They run on both systems: on Linux the act goes through descriptors and reaches the moved folder, never the link.
+
+| Guarantee | Tests |
+|---|---|
+| finding 3: after the swap the removal never removes the file behind the link, the source never hands out its bytes, the quarantine rename never renames it, the empty-folder removal never removes the folder behind it | `Files/ArchiveFilesTests.GateRound.cs` — `A_folder_swapped_for_a_link_after_its_check_never_*` (4) |
+| findings 3 and 4: a destination folder held by the seam cannot be renamed (Windows), and a create in it never lands behind a link put at its old name | `A_destination_folder_swapped_for_a_link_while_held_never_receives_a_file_through_the_link` |
+| finding 4: every new destination level's entry flushed in its parent on Windows too, and the destination's flush reports its result | `ArchiveFilesTests.Every_new_destination_level_is_synced_into_its_parent_and_a_flush_says_whether_it_held` (the Linux-only guard removed) |
+| finding 5: a Windows source of another SID, or of an owner that could not be read, is refused; links ≠ 1, a reparse point or folder, unreadable information refused | `A_windows_session_file_another_account_owns_is_never_copied` (pure rules) |
+| finding 0: the Linux rules unchanged by the extraction (another uid, links, not regular, unreadable status) | `A_linux_session_file_is_copied_only_when_regular_of_one_link_and_this_accounts` |
+| finding 2: a `BeneathFolder` made outside Core (a test subclass) compiles, and the seam refuses it for create, read-back, removal and flush, creating nothing | `A_folder_handle_this_seam_did_not_open_is_refused_never_trusted` |
+
+**Red first** (Windows, against the code before each fix): the removal answered `Removed` and the file behind the junction was
+gone (`Expected File.Exists(elsewhere) to be True … (the removal answered Removed { }), but found False`); the source handed out
+`"not the agent's"` where `"the agent's"` was expected; the rename answered `Renamed { }` and the file behind the link was
+renamed; the empty-folder removal answered `Removed { }` and removed the folder behind the link; the level-sync test found 0
+`FolderLevelSynced` steps on Windows where 3 were expected. Finding 2's test could not be written before the fix: the subclass
+does not compile against an internal constructor. **Measured before building** (NTFS, a throwaway folder): `FlushFileBuffers` on
+a folder handle works with `FILE_ADD_FILE` (or more) and answers error 5 with a read-only or an attributes-only handle; a folder
+held without delete sharing refuses the rename of itself AND of its parent; `FILE_RENAME_INFO` with a bare name is taken
+relative to the CURRENT folder and with a root handle answers error 87 — so the rename holds the folder and passes the full path.
+**Teeth** (Windows, each line broken, the guarding class run, the file restored byte-identical): the final path never compared —
+4 red (all four swaps); the held folder sharing delete — 1; a new level not flushed in its parent — 1; a held
+level following a junction — 1; the owner never compared — 1; an unreadable owner accepted — 1; a foreign folder flushed as
+done — 1; the Linux owner rule dropped — 1; the rename not checked where it is — 1; the rename replacing (`ReplaceIfExists`
+set) — 2; the folder removal not checked where it is — 1. The S2a teeth row *the rename with `MOVEFILE_REPLACE_EXISTING`* is
+replaced by *the rename replacing*: `MoveFileExW` is no longer used. **Not break-it checked:** that `FlushFileBuffers` really
+reached the disk (no test can see durability; only the call and its answer are checked).
+
+### The E9.S2a own review round (2026-10-06, plan §15r *E9.S2a own review round*)
+
+Two own reviews of the seam (correctness `C-`, security `S-`). The swap tests now assert that their swap HAPPENED (C-M6), and the
+step they swap at, `PathChecked`, is asked after the policy judged the path and BEFORE anything is opened along it — on Linux
+too, so a swap there meets the descriptor chain from the file system's root and refuses (the gate round's Linux rows, which acted
+through an already-open chain, now expect a refusal on both systems).
+
+| Guarantee | Tests (`Files/ArchiveFilesTests.OwnReview.cs` unless named) |
+|---|---|
+| C-M1: a level a FILE names, and a level whose create is DENIED (an ACL deny on Windows, mode 0500 on Linux), are refused — never thrown | `A_destination_level_that_cannot_be_created_is_refused_never_thrown`, `A_destination_level_whose_create_is_denied_is_refused_never_thrown` |
+| C-M1 + C-M2: the archive's own copy is removed; while the create's stream is open it is KEPT on Windows (removed on Linux, which allows it); a second removal is `Gone` | `The_archives_own_copy_is_removed_and_an_open_one_never_throws` |
+| C-M2: a file that replaced the copy at its name is kept — on Linux even when it got the freed inode number (seen red in WSL with device + inode alone: ext4 reused the inode; the birth time is part of the identity since) | `The_archives_own_copy_is_removed_only_while_its_name_names_that_file` |
+| S-m4: the agent deletes the file between the check and the act — the source, the rename, the verified removal and the folder removal answer `Gone` | `A_file_the_agent_deletes_after_the_check_is_gone_never_thrown` |
+| S-M2: the archived copy missing, or changed, keeps the quarantined file; equal removes it, the copy hashed BEFORE the source is opened | `A_quarantined_file_whose_archived_copy_is_missing_or_changed_is_never_removed` |
+| S-M1: a closed folder handle is refused by every verb; a folder opened after it (the reused descriptor number on Linux) is never touched | `A_closed_destination_folder_is_refused_and_its_descriptor_is_never_reused` |
+| S-m1: the HOME holding the layout root swapped for a link after the check — the file behind it stays | `A_layout_root_swapped_for_a_link_after_its_check_never_removes_the_file_the_link_leads_to` |
+| S-m2: a folder (both) and a symbolic link (Linux) are never quarantined | `A_quarantine_rename_never_renames_a_folder_or_a_link` |
+| S-m3: on Windows `s.jsonl:x`, `CON`, a trailing dot or space are refused as a create, and a "quarantined" stream is never removed | `On_windows_a_name_naming_an_alternate_stream_or_a_device_is_refused` |
+| C-m1: a junction at the final name (Windows) and a writable mapping with its stream disposed (Windows) | `ArchiveFilesTests.A_link_at_the_final_name_is_never_written_through` (both systems now), `On_windows_a_quarantined_file_a_shared_mapping_holds_is_never_removed` |
+| C-M3: the declaration idiom (`extern int rename(`, `partial int unlinkat(`, `extern bool MoveFileExW(`) found by the scan | `ArchitectureTests.The_architecture_scan_finds_a_planted_copy_replace_delete_on_close_and_rename` (three planted lines more) |
+
+**Red first — by revert.** The fixes and the tests were written together (the tests need the fixed API: `FileIdentity`, the
+new fault step), so each guarantee was proved by REVERTING its fix in place and watching its test go red, the file restored
+byte-identical after (sha256 compared). **Teeth, Windows:** an uncreatable level throws again (the catch removed) — 1 red; the
+own copy removed by name alone — 1; the scan without the declaration idiom — 1; the archived copy never hashed — 1; a closed folder
+still used (no reference held) — 1; the open never checked in place — 5 (the four swap rows and the root row); NTFS names not
+refused — 1; a vanished folder not answered `Gone` — 1; the check emitted after the open — 3. **Teeth, Linux** (a `/tmp` copy,
+`nice 19`): the S2a rows re-pointed at the refactored lines — the rename replacing 2 red, the lease taken away 3, the create
+without `O_EXCL` 2, folders followed through links 6 (the four swap rows, the root row, a destination link), hard links copied 2,
+non-regular files copied 2, new levels not synced 1; the own round — the own copy removed by device + inode alone (the birth time
+dropped) 1, a closed folder still used 1, the archived copy never hashed 1, the chain started at the spelled root 1, a folder or
+link renamed 1. **Found on the way:** the S2a row *the source hash not compared* went GREEN once the seam hashed the archived copy
+first (every existing test made the copy differ too, so the copy check shadowed the source check) — a test where ONLY the source
+differs was added, and the mutation is red on both systems (1 each). The Linux identity test was red at first with device +
+inode alone: ext4 gave a file created right after a removal the SAME inode number — the birth time joined the identity. **Not break-it checked:** the POSIX-only delete under an agent folder (C-m2 — no file system here lacks
+POSIX deletes; the call and its answer only), and the Windows mapping row (the operating system keeps the mapped file whichever
+sharing the removal asks for — the row documents the behaviour, it guards no line of ours).
+
+### The archive's protocol (E9.S2b, 2026-10-07, plan §15r D2/D3, consult 26b4a958 C-3)
+
+The two-phase move, the index, the in-flight file, the side lease and the reconcile (`research/module_archive.md` § *The
+two-phase protocol*), and the verbs `archive run`, `archive status`, `archive reconcile --scan`. The protocol tests drive the
+real seam in a sandbox (a home with an agent layout, a base folder, the local state) with a hand clock; the fault seam is the
+kill point.
+
+| Guarantee | Tests |
+|---|---|
+| D2: a source is removed only by a LATER run (`removeAfterHours`), after every archived copy is opened again and hashed equal to its index row; a changed copy keeps the source and the entry is `damaged` | `Archive/ArchiveProtocolTests` — `The_source_is_removed_only_by_a_later_run_after_its_copy_is_re_hashed`, `An_archived_copy_that_changed_before_the_removal_keeps_the_source_and_marks_the_entry_damaged` |
+| D2 step 3: a read-back mismatch is retried once; the second skips the session AND stops the run | `A_second_read_back_mismatch_skips_the_session_and_stops_the_run` |
+| D2 step 8 (B1): a file changed while aside — the transcript or a COMPANION — sends every file back under its name before the commit point; the copies stay a snapshot (`superseded`) | `A_session_changed_during_removal_stays_whole_at_the_source_and_its_copy_is_marked_superseded`, `A_companion_changed_while_aside_keeps_the_whole_session_before_the_commit_point` |
+| **C-3, removal per UNIT:** after the commit point the transcript is removed first; when IT changed, not one file of the session is removed and all go back | `A_transcript_that_changed_after_the_commit_point_keeps_every_file_of_its_session` |
+| the agent removed the source mid-run: counted, never a failure | `A_source_the_agent_removed_mid_run_is_counted_not_failed` |
+| D3 reconcile: `copying` + indexed → `archived`, not indexed → dropped (the finals stay); an orphaned quarantine name (no entry) renamed back, never removed; a mismatch never removes a source | `A_copying_entry_the_index_holds_becomes_archived_and_one_it_does_not_is_dropped`, `A_quarantined_file_without_its_in_flight_entry_is_renamed_back_never_removed`, `The_reconcile_never_removes_a_source_on_a_mismatch` |
+| **the 14 kill points × what the agent does meanwhile** (nothing, append, delete, a new file): the session whole after the crash, and the next runs finish it — the latest content the agent wrote is at the source or in the archive, never lost | `A_crash_at_each_of_the_fourteen_points_leaves_the_session_whole_and_the_reconcile_finishes_it` (56 rows, `ArchiveProtocolTests.Crashes.cs`) |
+| an earlier run's copy with the same bytes is reused; other bytes get a new name (never replaced) | `A_copy_an_earlier_run_left_with_the_same_bytes_is_reused_and_other_bytes_get_a_new_name` |
+| shapes: a 0-byte transcript, 121 files in one session; a `restored` entry never removed; a line this side did not sign never acted on | `ArchiveProtocolTests.Shapes.cs` (4) |
+| the index: an entry's events merged with its files; a torn, malformed or hostile line skipped and counted; an unsigned line reads unverified; the entry id is 16 hex of side, agent, key and hashes | `Archive/ArchiveIndexTests` (4) |
+| the side lease: taken and released; another host's refuses; a live run of this host refuses; a dead run of this host and boot, or an earlier boot, taken over; an EMPTY lease (a run killed between its create and its write) read again after `archive.leaseSettleMilliseconds` and taken over, one its live creator wrote meanwhile judged by what it says; bytes that do not parse left for a person | `Archive/SideLeaseTests` (7) |
+| owner rule 2026-10-07 — **nothing inside a git working tree is selected**: a session with a `.git` folder, a `.git` file (a worktree) or a `.GIT` folder among its files; a session whose project folder holds a `.git` folder or file (its neighbour still due); an agent folder below a `.git` entry (in the home, or at the root) selects nothing and says which | `Archive/SelectionTests.GitTrees.cs` (8 rows) |
+| the same in phase 2 (coordinator's safe default, 2026-10-07): a repository that APPEARED after the copy — in a companion folder, or the project folder made a worktree — keeps the whole session at the source and supersedes the entry; past the commit point the resumed removal sends every quarantined file back | `ArchiveProtocolTests.Shapes.cs` — `A_git_tree_that_appeared_after_the_copy_keeps_the_whole_session_at_the_source` (2 rows), `A_git_tree_that_appeared_after_the_commit_point_sends_the_whole_session_back` |
+| the run: no base → `no-base`, nothing touched; a refused base stops before any copy; a base whose recorded mount is gone is never written; a locked side → `busy`; an unreachable base stops and defers the reconcile; a full or read-only base stops; one run copies, a run a day later removes; a run cut by its budget leaves only whole sessions | `Archive/ArchiveRunTests` (8) |
+| the built child: root refused with its own exit code; `no-base` and a free `status`; a full cycle; **a run killed (`WSL_CARE_TEST_ARCHIVE_KILL`, honoured only under `WSL_CARE_ROOT`) at each point, the base present or gone, is finished by the next runs and loses nothing**; the scan re-indexes a copy no line names and touches nothing at the source | `WslCare.Scenarios/ArchiveRunFlows` (5; the kill theory 28 rows; Linux only — a Windows home has no WSL side) |
+| the answers' shapes | goldens `archive-run.json`, `archive-status.json` (`GoldenContracts`) |
+
+**Red first.** C-3 (consult 26b4a958) was real in the code as first written: removal went file by file, the changed transcript
+was kept and its companion removed — `Expected type to be RemoveOutcome+Superseded, but found RemoveOutcome+Removed`; the
+transcript-first per-unit `Finish` turned it green. **Found red while building:** the kill theory with an `append` after the
+copy expected the pre-crash bytes at the source — the invariant is now *the latest content the agent wrote* (an append
+supersedes the archived prefix; a delete releases it); an orphaned quarantine name whose original was taken again stayed aside
+forever (now removed only when equal to an indexed copy — `SplitRemoved`); a resumed removal with a damaged copy closed as
+`split` (`Resume` now re-hashes the copies first and renames back). The rest of the protocol tests were written alongside the
+code; the teeth below are what proves each guards its line. **The empty lease** was found by the built-child kill rows in WSL
+(point `ExclusiveCreated`, base present and gone): `Expected finishing.Exit to be 0 … "outcome":"refused","stop":"the side's
+lease exists and could not be parsed; remove it by hand…"` — red again in-process before the settle wait (`Expected type to be
+…LeaseTaken+Held, but found …LeaseTaken+Refused`, and the live-creator row naming *could not be parsed*). **The git-tree rule**:
+all 8 rows red before it (`Expected claude.Due to be empty …, but found at least one item`; the project row `… contains 1 item(s)
+too many`) — the guarantee did NOT already hold. **Phase 2's re-check**: both rows red first (`Expected type to be
+RemoveOutcome+Superseded, but found RemoveOutcome+Removed`); the resumed-removal test was written with the fix and proved by its
+teeth. Windows teeth: phase 2 never re-checks — 2 red; a resumed removal never re-checks — 1; never walks below the companion
+folders — 2.
+**Teeth, Windows** (each line broken, the archive namespace run, the file restored byte-identical — sha256 compared — and a
+rebuild at the end): the read-back never compared — 1 red; phase 2 never re-hashes the copies — 1; the quarantine check skipped
+— 1 (GREEN at first: the post-commit per-file check shadowed it, since every test changed the TRANSCRIPT; the companion test
+was added); a restored entry removed — 1; an unverified line trusted — 1; C-3 per file again — 1; another host leased over —
+1; a changed mount accepted — 1; orphans never renamed back — 5 (the orphan test and kill rows); an unindexed copying entry
+kept — 6; the budget never stops a run — 1; a working tree on the way ignored — 2; a working tree above the agent folder
+ignored — 3; a `.git` FILE not seen — 2; an empty lease never read again — 2; a `.git` name among the files ignored — GREEN on
+Windows (NTFS finds `.GIT` when asked for `.git`, so the folder check shadows it; its row has teeth on Linux only). **Teeth,
+Linux** (a NEW `/tmp` copy, `nice 19`, nothing deleted — the 2026-10-07 incident rules): all 16 red — the same counts as
+Windows for the eleven protocol rows (the quarantine check 1, with the companion test), the `.git` name 1 (the `.GIT` row: ext4
+does not fold case), a working tree on the way 2, above the agent folder 3, a `.git` FILE 2, the empty lease 2.
+**Not break-it checked:** the heartbeat timer of `archive run` (a liveness line, no protocol state rests on it) and the
+network-share flush (owner interim ruling: nothing is written to the real share — unmeasured, the refuse-to-create stays).
+
+**The rebase onto main (2026-10-07)** met main's tests red twice. `Config/TimerCalendarTests.The_accepted_periods_are_the_divisors_of_a_day_and_include_the_whole_day`
+(main, PR #34): `Expected … {1, 2, 3, 4, 6, 8, 12, 24} …, but {2, 3, 4, 6, 8, 12, 24} contains 1 item(s) less` — the archive's
+in-flight rule (E9.S0 review C3) refused an hourly timer under the defaults (25 waiting runs × 1 000 × 600 B > 8 MiB), so a
+machine layer asking for it fell to observe-only; `archive.maxStateFileBytes` defaults to 16 MiB now and
+`Config/ArchiveKeysTests`' row names 8 MiB explicitly. `Archive/BaseFolderS1ReviewTests` (6 rows): its mount table escaped the
+super options, which main's parser (PR #10 retro O3: the kernel prints them raw) no longer decodes — `Expected Judge(…).Rule to
+be "overlap" … but "" has a length of 0`; the table now holds what the kernel prints. `MountTable` took main's parser change
+(`WindowsSystemDrive`'s parser had been extracted into it by E9.S0), and the in-use check names an agent through main's
+`AgentProcesses` over the raw argv (`AgentOfPrograms`) instead of a second space-split copy.
+
+### The E9.S2b own review round (2026-10-07, plan §15r *E9.S2b own review round*)
+
+A correctness (`C-`) and a security (`S-`) review of `34891b5`. The new tests live in the `*.OwnReview.cs` parts of
+`ArchiveProtocolTests`, `ArchiveIndexTests` and `ArchiveRunTests`, plus rows in `SideLeaseTests`, `SelectionTests` and
+`ArchiveRunFlows`.
+
+| Guarantee | Tests |
+|---|---|
+| S-M-1: phase 2 never acts behind a link on the way to the agent folder (not even the quarantine starts); a folder stowed into a dotfiles repository, or a home whose REAL path lies in a working tree, is never removed; the selection checks the real path too | `A_session_whose_agent_folder_was_stowed_into_a_git_tree_is_never_removed`, `A_session_whose_agent_folder_became_a_link_is_never_touched`, `A_session_whose_home_really_lies_in_a_git_tree_is_never_removed`, `SelectionTests.An_agent_folder_whose_real_path_lies_in_a_git_working_tree_selects_nothing` |
+| C-M3 / S-m-1, S-m-2: the append after a torn index line starts on its own line; an index the append created is flushed into its folder | `The_append_after_a_torn_index_line_starts_on_a_line_of_its_own`, `An_index_the_append_created_is_flushed_into_its_folder` |
+| C-M2: a line with a field missing (9 shapes) is skipped and counted, never thrown; a lease with a field missing is left for a person | `ArchiveIndexTests.A_line_with_a_missing_field_is_skipped_never_thrown` (9 rows), `SideLeaseTests.A_lease_with_a_missing_field_is_left_for_a_person_never_thrown` (3 rows) |
+| C-M1: an entry archived again after damage names its latest files; the repaired copy is what the next run removes against | `ArchiveIndexTests.An_entry_archived_again_after_damage_names_the_files_of_its_latest_archived_event`, `A_damaged_copy_is_repaired_into_a_new_name_and_the_next_run_removes_against_it` |
+| C-M5 (A), C-M7 / S-M-3: an unverified line never changes a verified entry; a `recovered` entry is unverified even signed by this side | `An_unverified_line_never_changes_a_verified_entry`, `A_recovered_entry_is_unverified_even_signed_by_this_side` |
+| C-M5 (B): an entry kept past `archive.keptEntryDays` is let go, its source where it is; a `removing` entry whose index became unreadable returns every quarantined file | `An_entry_kept_past_its_days_is_let_go_and_its_source_stays`, `A_removing_entry_whose_index_became_unreadable_returns_its_files_when_let_go` |
+| S-M-2: phase 2 never touches a session whose project Claude Code works in; a file written at an original name while aside closes the entry `split` | `Phase_2_never_touches_a_session_whose_project_claude_code_works_in`, `A_file_written_at_the_original_name_while_aside_closes_the_entry_split` |
+| C-M4, C-m2, C-M9: phase 2 stops at the budget; an archived session of an agent no longer archived is let go; an index that cannot be written stops the run as a FAULT | `ArchiveRunTests.Phase_2_stops_at_the_budget_and_removes_nothing_past_it`, `…An_archived_session_of_an_agent_no_longer_archived_is_let_go_and_its_source_stays`, `…A_run_stopped_by_an_index_it_cannot_write_says_it_was_a_fault` |
+| C-M8: a base failing mid-copy stops the run (`base-failed`) and leaves no partial copy | `A_base_that_fails_mid_copy_stops_the_run_and_leaves_no_partial_copy` |
+| C-M6: the scan skips a month whose index cannot be read (Linux: a mode bit) | `The_scan_skips_a_month_whose_index_cannot_be_read` |
+| C-m4: a recorded mount that does not read refuses the run and names the way out | `ArchiveRunTests.A_recorded_mount_that_does_not_read_refuses_the_run_and_names_the_way_out` |
+| S-m-3: a companion stranded without its session is still found | `SelectionTests.A_companion_stranded_without_its_session_is_still_found` |
+| C-m1: the answer is the LAST line of `archive run --json` | `ArchiveRunFlows.Answer` (every flow) |
+| C-m6: every file of the unit (the companion too) survives each of the 56 crash rows; every removed file equals an archived copy the index recorded, re-hashed from the disk; a read-only base stops the run before any copy (Linux) | `A_crash_at_each_of_the_fourteen_points…` (the companion assertion), `Every_removed_file_equals_an_archived_copy_the_index_recorded`, `ArchiveRunTests.A_read_only_base_stops_the_run_before_any_copy` |
+
+**Red first (observed before the fix):**
+- S-M-1, the stow test: `Expected type not to be …RemoveOutcome+Removed …, but it is` — files inside a git working tree were removed.
+- C-M3: the close line was lost (`Status to be "sourceRemoved" … they differ`).
+- C-M2: 12 rows red, among them `System.ArgumentNullException : Value cannot be null. (Parameter 's')` (no `mac`), a
+  `NullReferenceException` (`"files":[null]`), and a lease without `runId` that was TAKEN OVER (`found …LeaseTaken+Held`).
+- C-M1: `{"projects/p/s.jsonl", …} contains 1 item(s) too many`.
+- C-M5 (A): `Expected entry.Verified to be True, but found False`.
+- C-M7: `Expected … Verified to be False, but found True`.
+
+The rest were written with their fix. Each one is proved by its break-it check below.
+
+**Teeth.** Each check broke one line, rebuilt, ran the archive namespace, then restored the file (sha256 compared) and rebuilt
+again at the end.
+
+Windows: every check was red except one.
+- M3: 1 red. m-2: 1. M-1 place: 1. M-1 real path: 2. M2 index: 7. M2 lease: 3. M1: 2. M5 (A): 1. M7: 1. M4: 1. m2: 1. M9: 1.
+  M5 let go: 2. M5 return aside: 1. M-2 scan: 1. M-2 split: 1. M8: 1. m4: 1. m-3: 1.
+- M6 (Linux only) is green on Windows, as expected: its test skips there.
+- Found on the way: the place check (M-1) was GREEN at first. The stow test was also caught by the real-path git check, so the
+  link test (the quarantine must not even start) was added, and that check is now red.
+
+Linux (in the existing `/tmp` copy, `nice 19`, nothing deleted): all 20 checks were red.
+- The same counts as Windows.
+- M6 (an unreadable index scanned as empty) was red too: 1.
+
+**Not break-it checked:**
+- C-m1: the heartbeat race has no deterministic test. The flows assert the outcome (the last line).
+- M8 for the lease's write: no test can make a `FileStream` write fail on an open lease file.
+
+### The restore and the list (E9.S3, 2026-10-07, plan §15r D6, *E9.S3 as built*)
+
+| Guarantee | Tests |
+|---|---|
+| a removed session is restored byte-identical (content), with the restore time as its last write; its copies stay; the entry is `restored` and in `restored.json` | `Archive/ArchiveProtocolTests.Restore.cs` — `A_removed_session_is_restored_byte_identical_with_the_restore_time_and_its_copies_stay` |
+| D4/D6: an unverified entry is restored only with `--accept-unverified` | `An_unverified_entry_is_restored_only_when_accepted` |
+| never overwrite: a live file of that name with other bytes refuses the WHOLE session (its companion is not created) | `A_live_file_of_that_name_with_other_bytes_refuses_the_whole_session` |
+| a damaged copy is never restored, nor anything of its session | `A_damaged_copy_is_never_restored_nor_anything_of_its_session` |
+| review M4: an index line naming a file beside the unit, another session, or under `memory` is never restored | `An_index_line_pointing_outside_the_agents_layout_is_never_restored` (3 rows) |
+| an entry on its way (in-flight) is not restored; a session already there is answered so, no event | `An_entry_on_its_way_is_not_restored`, `A_session_already_there_is_answered_so_and_nothing_is_written` |
+| coai G5 / review M10: a restored session due again is archived as an EVENT only (0 bytes, no copy added), leaves `restored.json`, and the next run removes it against the same copies; a changed one is copied as any session | `A_restored_session_archived_again_writes_only_an_event_and_is_removed_against_the_same_copies`, `A_restored_session_that_changed_is_copied_again_as_any_session` |
+| the layout glob: one pattern per segment, `**` any depth | `A_layout_glob_matches_one_pattern_per_segment` (5 rows) |
+| the run's pipeline: restored by its month, its session path or its entry id under the lock and the lease (released after); the restored session is young again, so the next run leaves it alone | `Archive/ArchiveRunTests.Restore.cs` — `A_removed_session_is_restored_by_its_month_its_path_or_its_entry_id` (3 rows), `A_restored_session_is_left_alone_by_the_next_run` |
+| the list: only the months asked, the status of each entry, `--run` filters by the run's lines; a torn line skipped and counted, an edited archived line marks its entry unverified; without a base, `no-base`; a changed mount is NOT refused but noted, naming both mounts (owner decision; red first: `Expected listed.Notes {empty} to have an item matching …`, break-it 1 red) | `The_list_reads_only_the_months_asked_and_says_each_entrys_status`, `The_list_skips_a_torn_line_and_marks_an_unverified_entry`, `Without_a_base_the_list_answers_no_base_and_reads_nothing`, `The_list_over_a_changed_mount_answers_with_a_note_naming_the_change` |
+| the command line: 13 wrong namings are usage errors naming the rule; root refused (81); `no-base` answers exit 0 | `Cli.Tests/ArchiveRestoreCommandTests` |
+| the built CLI: listed, restored, listed `restored`, already there by id; a file planted on the share and re-indexed is listed unverified, refused without `--accept-unverified` (exit 1), never reaches the agent folder; root refused | `ArchiveRunFlows.A_removed_session_is_listed_restored_and_listed_restored_through_the_built_cli`, `…Run_status_and_scan_as_root_are_refused_with_their_own_exit_code` |
+| the answers' shapes | goldens `archive-list.json`, `archive-restore.json` |
+
+**Not RED first:** the restore and the list were written before their tests. Each guarantee is proved by its break-it check.
+
+**Teeth, Windows:** 12 checks, all red.
+- An unverified entry restored without being asked: 1 red.
+- An entry on its way restored: 1.
+- A file outside the unit restored: 1.
+- What never moves restored: 1.
+- A damaged copy restored: 1.
+- A live file with other bytes taken as restored: 1.
+- The original last write kept: 2.
+- No restored event: 5.
+- `restored.json` never written: 2.
+- A restored session copied again byte for byte: 1.
+- The list reads every month: 1.
+- The list ignores `--run`: 1.
+
+Six of these first failed to BUILD because another process held the DLLs (a user-mapped section). They were run again, and those
+are the results above.
+
+**Teeth, Linux** (run 2026-10-08 in WSL, `nice -n 19`, after the coai code round; they were owed since the coordinator halted WSL
+while the machine was overloaded): 13 checks, all red, each source restored byte for byte.
+- the twelve above, red with the same tests as on Windows, and "the list silent on a changed mount" (added with the mount note): 1;
+- `restored.json` never written: its line had changed under the own review round (the restore time and the keep-days bound), so
+  the check was re-anchored on the current call and run again, red (3 tests) on both systems.
+
+**Not break-it checked:**
+- The restore's read-back after the create: no test can make the disk return other bytes.
+- A write failing midway: that path leaves the files restored so far and is answered `refused`.
+
+### The E9.S3 own review round (2026-10-07, plan §15r *E9.S3 own review round*)
+
+| Guarantee | Tests |
+|---|---|
+| S-B1: nothing is restored into a folder stowed into a git tree, nor a file naming `.git` (even accepted unverified) | `ArchiveProtocolTests.RestoreReview.cs` — `A_restore_into_an_agent_folder_stowed_into_a_git_tree_writes_nothing`, `An_accepted_unverified_entry_naming_a_git_folder_is_never_restored` |
+| S-B2 / C-1: a copy changed after its check never lands under the session's name, and its stream stops at the indexed length; a failure on the second file leaves the first promoted whole, no partial file and no temporary file, and the next restore finishes it | `A_copy_that_changes_after_its_check_never_lands_under_the_sessions_name`, `A_failure_mid_restore_leaves_no_partial_file_under_its_name` |
+| the permit: the temporary copy promoted to its own name in its own folder, and removed — nothing else (no reverse rename, no other folder or name, no session file removed, never `memory`) | `Files/ArchivePermitTests.A_restore_may_promote_and_remove_only_its_own_temporary_copy` |
+| C-8b: decide-before-write — a conflict on the companion refuses the session before the transcript is written | `A_conflict_on_a_companion_refuses_the_session_before_the_transcript_is_written` |
+| C-4: a split entry restores only its missing files (`partial`, the kept file named) | `A_split_entry_restores_only_the_missing_files_and_answers_partial` |
+| S-M1: a session restore takes the verified entry, never one planted beside it; an id in two months restores nothing and names them; `--accept-unverified` only with `--entry` | `ArchiveRunTests.RestoreReview.cs` — `A_session_restore_takes_the_verified_entry_never_one_planted_beside_it`, `An_entry_id_found_in_two_months_restores_nothing_and_names_them`; `Cli.Tests/ArchiveRestoreCommandTests` (2 rows more) |
+| C-2: the newest entry of a session (after a restore, resume and re-archive; and of two removed entries of one name) | `A_session_restore_takes_the_newest_entry_of_that_session`, `Of_two_removed_entries_of_a_session_the_restore_takes_the_newest` |
+| C-3: an unknown id and an unreadable month are rows that fail the restore | `An_entry_id_not_found_is_named_and_the_restore_does_not_succeed`, `A_month_whose_index_cannot_be_read_is_named_and_the_restore_does_not_succeed` |
+| C-5, C-6: an event-only re-archive is not counted again; an unreadable `restored.json` is never written over, and old entries leave it | `An_event_only_re_archive_is_not_counted_again_in_the_summary`, `An_unreadable_restored_json_is_never_overwritten_and_old_entries_leave_it` |
+| C-9: the refusal of a privileged process speaks its side's words | `Cli.Tests/ArchiveRestoreCommandTests.The_root_refusal_speaks_the_words_of_its_side` |
+
+**Red first** (each run against the unfixed code):
+- S-B1: both rows answered `restored`.
+- S-B2: the changed copy stood under the session's name (`Expected File.Exists(…) to be False … but found True`).
+- C-1: the failure left both files (`… but found {"projects/p/s73.jsonl", "projects/p/s73/subagents/a.jsonl"}`).
+- S-M1:
+  - the planted entry was a second candidate (`Expected report.Restore.Sessions to contain a single item`);
+  - the doubled id restored (`Expected … Restored to be 0, but found 1`);
+  - the CLI accepted the flag with `--month` / `--session` (exit 0, not 2).
+- C-2: the old snapshot came back (`"the transcript" … differs near "t"`).
+- C-3: `Refused to be 1, but found 0`, and `… greater than 0, but found 0`.
+- C-4: `refused`, not `partial`.
+- C-5: `Sessions to be 1, but found 2`.
+- C-6: the torn file was written over.
+- C-9: the Windows text named `uid 0`.
+
+The C-8b row passed at once: decide-before-write already held, and the row now pins it. C-7 is a refactor with no test of its own.
+
+**Teeth, Windows:** 12 checks, all red.
+- the place and git checks skipped: 2;
+- the stream not capped: 1;
+- written under the real name: 16;
+- a failed temporary copy left: 2;
+- an id in two months taken: 1;
+- every entry of a session taken: 1;
+- the oldest entry chosen: 1;
+- an unknown id silent: 2;
+- a split entry refused whole: 1;
+- an event-only re-archive counted: 1;
+- an unreadable `restored.json` written over: 1;
+- old entries kept: 1.
+
+Two checks were GREEN at first:
+- The stream cap was shadowed by the hash and length check after the stream. The changed-copy test now also asserts that the
+  stream stopped at its first chunk past the indexed length.
+- "The oldest entry chosen" had no test with two removed entries of one name. The test
+  `Of_two_removed_entries_of_a_session_the_restore_takes_the_newest` was added.
+
+Both checks are now red.
+
+**Teeth, Linux** (run 2026-10-08 in WSL, `nice -n 19`): 12 checks, all red, each source restored byte for byte. "An unknown id
+silent" was re-anchored on the line the coai code round widened (`stopped` counts as refused too) and is red on both systems
+(2 tests). "Written under the real name" is red with 18 tests on Linux.
+
+**C-8a, done 2026-10-08:** `archive-restore.json` now comes from a scene with one session restored and one already there (the
+golden scene archives a second session, both are removed by later runs, the first is put back by its path, then both are asked
+for by id). The answer is the LAST line of `--json`: since the coai code round a restore streams its progress first.
+
+### The E9.S2b/S3 gate round (2026-10-08, plan §15r *E9.S2b/S3 gate round*)
+
+| Guarantee | Tests |
+|---|---|
+| 8: an agent given with `--entry` is validated (exit 2) | `Cli.Tests/ArchiveRestoreCommandTests` (the `--entry … --agent ../outside` usage row) |
+| 0: `archive run --agent` refuses through the same rule as the restore | `Cli.Tests/ArchiveCommandTests` (the existing unknown-agent rows) |
+| 10: a restore past its budget starts no further session (a `stopped` row that fails it), and reports one `file` progress line per file | `ArchiveRunTests.RestoreReview.cs` — `A_restore_past_its_budget_starts_no_further_session`, `A_restore_reports_a_progress_line_per_file` |
+| 13: the human `archive status` names each session on its way | `Cli.Tests/ArchiveRestoreCommandTests.The_human_status_names_each_session_on_its_way` |
+| 16: an index line whose key carries a control character is malformed | `ArchiveIndexTests.OwnReview.cs` (the NUL row of `A_line_with_a_missing_field_is_skipped_never_thrown`) |
+| 2, 9, 11, 17, m1: one progress writer — human lines on stderr without `--json`, JSON lines on stdout with it, a heartbeat when the silence runs out, nothing after the answer, a broken pipe ends the progress and never the run | `Cli.Tests/ArchiveProgressTests` (5 facts) |
+
+**Red first** (each run against the unfixed code):
+- 13: the line `…lock free; 1 on the way` did not name the key.
+- 8: `--entry 0123456789abcdef --agent ../outside` exited 0, not 2.
+- 10: `Expected report.Restore.Restored to be 0, but found 1`.
+- 16: the NUL row was read (`Expected read.Records to be empty`).
+
+The progress tests and the per-file progress row were written with their fix; their teeth are the break-it checks below.
+
+**Teeth, Windows:** 9 checks, all red, each source restored byte for byte.
+- control characters let through: 1;
+- the agent not checked with `--entry`: 2;
+- the status lists no session: 1;
+- the restore budget ignored: 1;
+- a restore reports no file progress: 1;
+- a broken pipe thrown: 1;
+- human progress not written: 2;
+- a line after the answer: 2;
+- no heartbeat: 1.
+
+**Teeth, Linux** (WSL, `nice -n 19`): the same 9 checks, all red with the same tests. The Linux suites ran green before them: Core
+1981 passed / 13 skipped, Cli 316 / 1, Scenarios 479 / 3.
+
+### A13 and A20 in the engine — the root → user boundary (E9.S4, 2026-10-08, plan §15r *E9.S4 as built*)
+
+| Guarantee | Tests |
+|---|---|
+| D1: the archive child is the installed, root-owned binary — a user-owned or group/other-writable folder on the way, a link, a binary of another owner, a writable or non-executable one, a path that is not full and plain is refused | `Processes/Policy/SelfInvocationTests.cs` — `The_installed_root_owned_binary_is_accepted`, `The_archive_child_is_the_installed_root_owned_binary_never_a_user_writable_one` (7 rows), `A_path_that_is_not_a_full_plain_path_of_the_binary_is_refused` (3 rows) |
+| D1: a self-invocation starts the checked binary, never a `wsl-care` in the user's bin folders; a clean environment, stdin at end-of-file; refused when the binary is not root's | `A_self_invocation_starts_the_checked_binary_never_one_in_the_users_bin_folders`, `A_self_invocation_is_refused_when_the_binary_is_not_roots_alone` |
+| the policy: a self-invocation only with the product's own path; that path only for a self-invocation; nothing when the binary is not root's | `The_policy_allows_a_self_invocation_only_with_the_products_own_binary`, `The_products_own_binary_is_allowed_only_for_a_self_invocation_template`, `The_policy_refuses_every_self_invocation_when_the_binary_is_not_roots_alone` |
+| the launcher: a streamed line is a run step; a closed stdin reads EOF; the started pid is told (Linux rows) | `Processes/ProcessCommandRunnerTests.Streamed.cs` — `A_streamed_line_is_a_run_step`, `A_child_whose_stdin_is_closed_reads_end_of_file_at_once`, `The_started_childs_pid_is_told_to_whoever_asked` |
+| an action streams only a template it declared streamed, under a ceiling within the template's, recorded | `Actions/ActionStreamingTests.cs` (3 facts / rows) |
+| D8: the budgeted run and the button-only restore are no term of the timer run's worst case; a streamed step is its line silence; what A13 keeps free counts no button-only action | `Config/RunBudgetArchiveTests.cs` (3 facts); `NumbersAreConfigurationTests.The_defaults_hold_every_coupled_rule`; `ArchiveKeysTests` (the preview ceiling's whole range) |
+| R2: the only commands A13 starts are the user children; root opens nothing under the agent's folder or the base | `Archive/ArchiveActionTests.cs` — `The_timer_never_moves_a_session_as_root` |
+| no base: a skip, no child; the binary not root's: a refusal, no child; a PAM stack naming `pam_systemd` (directly or included): a refusal, no child; one without it: runs | `Without_a_base_folder_A13_skips_no_archive_configured_and_starts_nothing`, `A13_refuses_when_the_products_binary_is_not_roots_alone`, `A13_refuses_where_runusers_pam_stack_would_make_a_login_session` (2 rows), `A_pam_stack_without_pam_systemd_lets_A13_run` |
+| the preview is the child's, per agent, naming no session; the trigger fires on a session due or a removal due; urgent within `archive.urgentWithinDays` of the agent's deletion | `The_preview_is_the_childs_counted_per_agent_and_names_no_session`, `The_trigger_fires_on_a_session_due_or_a_removal_due` (3 rows), `An_urgent_backlog_does_not_wait_for_idle` (3 rows); `ArchiveRunTests.Reach.cs` — `The_preview_counts_the_archived_sessions_due_to_be_removed` |
+| D8: the budget never passes the slack after the actions behind A13; below `archive.minRunMinutes` a skip | `The_archive_budget_never_passes_the_run_limit`, `A_timer_run_with_less_slack_than_its_minimum_skips_no_time_left` |
+| the child's answer is data: the run detail names no session nor the child's free text; a malformed answer (not JSON, another schema, a negative count, a count past the cap, an unknown agent, an unknown outcome, a negative rate) fails A13 with nothing taken from it | `The_run_detail_names_no_session`, `A_malformed_child_answer_fails_A13_and_records_nothing_from_it` (7 rows) |
+| 9/9.4 #4 + plan round finding 1: progress lines are dropped (a flood of 20 000 is harmless); a flood of other lines passes the answer's cap and ends the child; a line as long as the cut is never parsed | `A_flood_of_progress_lines_is_harmless_and_a_flood_of_anything_else_stops_the_child`, `An_oversized_line_with_a_valid_looking_start_is_never_parsed` |
+| containment: a hung child killed at its ceiling fails A13 and the run goes on (engine); the short reach first; a live recorded child of this boot (pid AND start) skips A13, another boot or another start is no survivor; the launcher and worker recorded while they run and retired when gone | `A_hung_archive_child_is_killed_at_its_ceiling_and_A13_fails_with_that_reason`, `ArchiveEngineTests.A_hung_archive_child_is_killed_at_its_ceiling_and_the_run_goes_on`, `A_base_the_short_child_cannot_reach_stops_A13_before_the_long_run`, `A_lock_holder_stuck_in_the_kernel_makes_A13_skip`, `A_recorded_identity_of_another_boot_or_another_process_is_not_a_survivor`, `The_children_are_recorded_while_they_run_and_retired_when_gone` |
+| 9/9.4 #3: whatever the child says, root signals nothing and opens nothing for it | `Foreign_identities_in_the_childs_answer_are_never_signalled_nor_opened` |
+| D8 through the engine: no base, the timer skips; the dry-run week records what WOULD move and starts no run | `ArchiveEngineTests.A13_acts_only_with_a_base_folder_and_after_the_dry_run_week` |
+| `archive reach`: the lock, then the base, nothing else (no key, no lease); unreachable; a held lock answers busy without asking the base | `ArchiveRunTests.Reach.cs` (3 facts) |
+| A20: a button only (A19 is main's timer action); offers only verified entries removed at their source, naming none; restores only the entries its modal showed; without them refuses; none still restorable restores nothing; past `archive.maxRestoreEntries` refused before anything starts; a refused session fails it naming how many; a malformed answer records nothing | `Archive/RestoreActionTests.cs` (8 facts) |
+| `act --entry`: A20's alone, 16-hex ids, none twice; a detached A20 carries its entries into the request; a request with a hostile entry is refused | `Cli.Tests/ActCommandTests.The_entry_flag_belongs_to_A20_and_takes_only_entry_ids`, `Cli.Tests/DetachedRunsTests.A_detached_a20_run_carries_its_shown_entries_into_the_request`, `RunRequestsTests` (the `shown entry` row) |
+| doctor: `archive.runuser` is a problem with `pam_systemd` where an archive is configured, a note without one | `Doctor/DoctorTests.The_archive_runuser_check_flags_pam_systemd_where_an_archive_is_configured` (3 rows) |
+| the action property drives A13 and A20 with hostile answers: every argv allowed, declared, never a never-command; every template run | `CommandPolicyPropertyTests.Every_argv_a_registered_action_asks_for_under_any_config_and_any_journal_is_allowed_declared_and_never_a_never_command` |
+
+**Red first.** A13 and A20 were written as skeletons first ("not built"). Their tests ran red against them: A13 20 of 26, A20 5
+of 8. The rest passed at once on the skeleton: the gates the skeleton already answered by refusing everything, and the
+`A19 is not a button` row. The boundary part (the self binary, the policy, streaming, the budget) was built before its tests:
+each guarantee is held by its break-it check below.
+
+**Teeth** (`teeth-s4`: product code only, every source restored byte for byte, a rebuild from the restored sources at the end): 37
+checks, all red on Windows and on Linux (WSL, `nice -n 19`). Among them:
+- the chain above the binary unchecked: 3;
+- a self-invocation looked up in the bin folders: 23;
+- the budgeted run counted in the worst case: 14;
+- a streamed step counted as its ceiling: 14;
+- progress kept as the answer: 8;
+- the others: 1 or 2 each.
+
+Five checks did not show red at first:
+- "the runner leaves stdin open" is held by a Linux-only test: skipped on Windows, red on Linux.
+- "any template streamed" first ended in a HANG, not a red: the wrongly streamed template took the test's only scripted stream, and
+  the right one waited for ever. The test now scripts two streams and goes red cleanly.
+- Three mutations first failed to BUILD (a pattern that can never match). They were rewritten with non-constant conditions, and are red.
+- "a negative count believed" was GREEN: the negative-count row was also caught by the file-count check. The row
+  `a negative removal count alone` was added, and the check is red.
+
+After the complexity split of the gates, the answers, the stream and A20's run, the ten checks whose lines moved were re-anchored
+and run again: all red, on Windows and on Linux. The Linux suites after the split: Core 2097 passed / 13 skipped, Cli 325 / 1,
+Scenarios 482 / 3, goldens 13 / 0.
+
+### The E9.S4 code round (2026-10-08, plan §15r *E9.S4 code round*)
+
+| Guarantee | Tests |
+|---|---|
+| finding 1: A13 and A20 through the built CLI refuse a binary that is not root's and start no `runuser`; without a base A13 skips; `--entry` belongs to A20 | `Scenarios/ArchiveActFlows.cs` (3 facts) |
+| finding 3: an include of an include is followed, a loop of includes ends, an included file that cannot be read refuses | `RunuserPamTests.Every_file_the_stack_pulls_in_is_followed` (3 rows; moved from `ArchiveActionTests` by the own review round) |
+| finding 4: `archive list --restorable` answers only the verified entries removed at their source, at most `archive.maxRestoreEntries`, the rest counted; A20 asks for exactly that and says how many it left out | `ArchiveRunTests.Restorable.cs`, `RestoreActionTests.A20_asks_only_for_the_restorable_entries_and_says_how_many_were_left_out` |
+| finding 6: a detached A20 carries the shown entries through the `ShownList` | `Cli.Tests/DetachedRunsTests.A_detached_a20_run_carries_its_shown_entries_into_the_request` |
+| finding 7: the CLI bounds `--entry` by `archive.maxRestoreEntries`' ceiling | `Cli.Tests/ActCommandTests.More_entries_than_any_restore_takes_are_refused_at_the_command_line` |
+
+**Red first:**
+- finding 3: the nested row and the missing-include row both answered no refusal (`Expected preview.Refusal "" to contain …`);
+- finding 4: the list answered all four entries (`Expected listed.Entries to contain 2 item(s), but found 4`), and A20 asked without
+  `--restorable`;
+- finding 7: 5 001 entries parsed (`Expected type to be …Request+Failed, but found …Request+Act`).
+
+Finding 1's flows and finding 6's detach test were written with or after their change. Their teeth are the checks below.
+
+**Teeth** (`CR1`–`CR7`): 7 checks, all red on Windows:
+- an include of an include not followed;
+- an unreadable include not refused;
+- the restorable list not filtered;
+- the restorable list not bounded;
+- A20 asking for every entry;
+- the CLI cap of the volume list;
+- a detached A20 dropping its entries.
+
+Linux (WSL, `nice -n 19`): the same 7, all red; the Linux suites green — Core 2102 / 13 skipped, Cli 326 / 1, Scenarios 485 / 3
+(`ArchiveActFlows` included), goldens 13 / 0 (`archive-list.json` gains `omitted`).
+
+### The E9.S4 own review round (2026-10-09, plan §15r *E9.S4 own review round*)
+
+| Guarantee | Tests |
+|---|---|
+| S-M1: every child root starts is recorded — the whole ones too; a child killed at its ceiling leaves its stuck worker in the record (told before the kill, while the tree is whole), so no second child starts | `ArchiveActionTests.Every_archive_child_is_recorded_while_it_runs_the_whole_ones_too`, `…A_whole_child_killed_at_its_ceiling_leaves_its_stuck_worker_recorded_and_no_second_child_starts`; `ProcessCommandRunnerTests.A_child_killed_at_its_ceiling_is_told_before_the_kill_while_it_still_lives` (2 rows, Linux) |
+| S-M1: in the child, a base that stops answering holds `archive reach` and `archive list --restorable` only for `archive.reachabilitySeconds`; the reach takes the side's lock before any base I/O | `Cli.Tests/ArchiveBoundedBaseTests` (`A_base_that_stops_answering_holds_the_child_only_for_the_reachability_window` ×2, `The_reach_takes_the_sides_lock_before_it_touches_the_base`, `A_base_that_answers_is_reached_and_listed`) |
+| S-M2: the runuser gate judges the stack PAM would read and fails closed | `RunuserPamTests.The_gate_judges_every_stack_PAM_would_read_and_fails_closed` (7 rows: the vendor copy, `other`, no stack, an include only in the vendor folder, an include by a path, a dot name, a bracketed control), `…A_stack_that_cannot_be_read_as_roots_own_refuses`, `…A_vendor_stack_without_pam_systemd_passes` (A13 refusing on it: `ArchiveActionTests.A13_refuses_where_runusers_pam_stack_would_make_a_login_session`) |
+| the gate round over it: every verb takes the lock before the base; a check that timed out keeps the lock; only copies are bounded by the session cap; the late placeholder reads as not judged; an unrecorded reach child fails with its reason | `Cli.Tests/ArchiveBoundedBaseTests.A_run_beside_a_held_lock_answers_busy_without_touching_the_base`, `…A_reach_that_timed_out_keeps_the_sides_lock_so_the_next_answers_busy_without_touching_the_base`; `ArchiveActionTests.Counts_past_the_session_cap_that_the_cap_does_not_bound_are_believed`, `…A_reach_child_root_cannot_record_fails_A13_saying_why`; `ArchiveRunTests.A_base_read_before_its_window_is_not_judged_never_no_base` |
+| S-m3: no child string reaches root's records unjudged | `ArchiveActionTests.A_run_answer_carrying_a_string_root_does_not_know_is_not_believed` (3 rows), `RestoreActionTests.A_restore_answer_carrying_a_string_root_does_not_know_is_not_believed` (4 rows), `…A_listed_entry_of_another_shape_is_not_believed` (3 rows) |
+| C-1: busy, with the CLI's own exit 75, is nothing done for A13 — at the reach and at the run child — and the CLI's exits are the contract's | `ArchiveActionTests.A_busy_side_at_the_reach_makes_A13_do_nothing_and_say_so`, `…A_busy_answer_of_the_run_child_is_nothing_done_not_a_failure_nor_a_ran`; `Cli.Tests/ArchiveBoundedBaseTests.A_held_side_answers_busy_with_the_exit_root_reads_by_the_same_name`; `Scenarios/ArchiveRoundTripFlows.A13_archives_through_the_built_cli_and_does_nothing_on_a_busy_side` |
+| C-2: an A20 press whose child stopped before it restored fails, naming why | `RestoreActionTests.A_restore_that_never_ran_fails_naming_why` (unreachable, refused, busy) |
+| C-3: the reach's own outcome is A13's reason, in root's words | `ArchiveActionTests.The_reachs_own_outcome_is_the_reason_A13_fails` (refused, unreachable) |
+| C-5: the run child's ceiling and the actions behind it fit the run limit | `ArchiveActionTests.The_run_childs_ceiling_and_the_actions_behind_it_fit_the_run_limit` (12, 40, 500 min left), `…The_archive_budget_never_passes_the_run_limit` (its arithmetic now holds the grace) |
+| C-6: after a budgeted action the idle gate reads a fresh sample; after any other, the run's one | `ActionEngineTests.After_a_budgeted_action_ran_the_idle_gate_reads_a_fresh_sample`, `…After_an_ordinary_action_the_idle_sample_is_the_runs_one` |
+| C-7: a child record root cannot write refuses the run; a record it cannot retire refuses the next child | `ArchiveActionTests.A_child_root_cannot_record_refuses_the_run_and_says_why`, `…A_record_that_cannot_be_retired_refuses_the_next_child` |
+| C-8: the flood test says what stops the child; A13 and A20 round-trip over the BUILT CLI; every verb root starts answers on one line | `ArchiveActionTests.A_flood_of_progress_lines_is_harmless_and_a_second_line_that_is_not_progress_stops_the_child`; `Scenarios/ArchiveRoundTripFlows` (2 facts, Linux); `Cli.Tests/ArchiveBoundedBaseTests.Every_verb_root_starts_answers_on_one_line` (3 rows) |
+
+**Red first** (each against the unfixed code, with the real symptom):
+- S-M1: `archive reach` / `archive list --restorable` over a base that blocks did not answer in 30 s (`Expected (Answered(run)) to be True … but found False`, ×3); the preview and reach launchers were not in the record (`but {{empty}, {empty}} do(es) not match`); the killed reach's stuck worker was not recorded (`Children {empty} to have an item matching …4243`);
+- S-M2: all 7 rows and the unreadable row answered no refusal (`Expected preview.Refusal "" to contain …`), the vendor-only include refused for the wrong file;
+- S-m3: all 10 rows were believed (`Expected run.Succeeded to be False … but found True`, `preview.Available … True`);
+- C-1: `the base could not be checked: archive-reach exited 75 without an answer`, `archive-run exited 75 without an answer`;
+- C-2: `Expected run.Succeeded to be False because unreachable / refused, but found True`; busy: `archive-restore exited 75 without an answer`;
+- C-3: `"the base did not answer within archive.reachabilitySeconds, or the side's archive lock is held…" to contain "mount it as before"`;
+- C-5: 12 min of slack gave a ceiling ending 12:32:16 against a limit of 12:27:16;
+- C-6: `{"A13:ran", "A1:ran"} differs at index 1`;
+- C-8: the A13 round trip — `the archive child's preview could not be believed: it is not valid JSON ('}' is an invalid start of a value…)` — and the A20 round trip (`Expected shown to contain a single item, but the collection is empty`): the indented answers, a defect no scripted answer showed.
+
+C-7's fixes landed with S-M1's watch, before their tests: their teeth are OR24 and OR25. Fixtures adjusted, not weakened: the A13 /
+A20 / engine / property sandboxes and `ArchiveActFlows` now hold Ubuntu's runuser stack (the gate fails closed); the existing
+recording test starts its fake processes after the preview (the preview child is recorded now too); the recording runner tells a
+start for every started command and a kill for a timed-out one, as the real runner does.
+
+**Red first for the gate round:** `A_run_beside_a_held_lock…` and `A_reach_that_timed_out_keeps…` answered `unreachable` (exit 1, the base
+touched) where busy was due; `Counts_past_the_session_cap…` was refused (`claude-code: a session count is outside 0..1000`).
+`A_reach_child_root_cannot_record_fails_A13_saying_why` was green against the unchanged logic — the proof finding 7 was rejected with.
+
+**Teeth** (`OR01`–`OR28` without OR05, which GR2 superseded when every verb came to take the lock first, and `GR1`–`GR4`; product code
+only, each restored byte for byte): 31 checks; on Windows all red but OR03 (the runner not telling the kill), green as expected — its
+test is Linux-only. Linux (WSL, `nice -n 19`, a fresh copy): all 31 red, OR03 included. The suites
+green — Windows: Core 2210 / 77 skipped, Cli 337 / 2, Scenarios 493 / 254, the extension 843 / 1; Linux: Core 2210 / 13, Cli
+337 / 1, Scenarios 493 / 3 (`ArchiveRoundTripFlows` included), goldens 14 / 0 (`doctor.json`: the PAM check's new reason). One
+Linux run saw `PostDeployCommandFlows.Item_9_passes_when_the_windows_time_service_runs_as_configured_and_the_clocks_agree` fail
+once under the full suite's load; it passed alone and in the next full run (main's E14 test, not touched here).
+`ArchiveBoundedBaseTests` builds its host as THIS user (`ProcessPrivilege(false, …)`): CI's Windows runner is elevated, and a host
+left to the process's own privilege refused every archive verb there (the first CI run of this round, 37938186260).
+
+### The Windows side's open-file check (E9.S5, 2026-10-09, plan §15r *E9.S5 plan round and as built*)
+
+| Guarantee | Tests |
+|---|---|
+| a file a process holds is named held — by that process — and never opened by the product (the test holds it with NO sharing); a free file is free | `InUseWindowsTests.The_restart_manager_names_the_process_that_holds_a_file_and_never_opens_it` (Windows) |
+| a file under a 300-character path is asked like any other (the file system's list of users past `MAX_PATH`) | `InUseWindowsTests.A_file_under_a_300_character_path_is_asked_like_any_other` (Windows) |
+| a drive path takes `\\?\`, a share `\\?\UNC\` | `InUseWindowsTests.A_path_is_handed_over_in_its_extended_length_form` (4 rows, every OS) |
+| a holder, an error, a thrown question keeps the unit naming why; a stalled question keeps it and every later one without asking again | `InUseWindowsTests.A_held_file_an_error_or_a_thrown_question_keeps_the_unit_naming_why`, `…A_stalled_restart_manager_keeps_this_unit_and_every_later_one_without_asking_again` |
+| a live Claude Code on Windows (`claude.exe`, or `node.exe` running its package) or an unreadable process table keeps every Claude Code session; another agent's unit is not held back by it | `InUseWindowsTests.A_live_claude_code_on_windows_keeps_every_claude_code_session` (4 rows), `…A_process_table_that_cannot_be_read_keeps_every_claude_code_session`, `…The_liveness_check_asks_the_windows_view` |
+| on Windows the scan is the Windows side's view | `InUseTests.On_windows_the_scan_is_the_windows_sides_view` |
+| through the command line on Windows: preview lists a due session; held it stays `in-use` naming this process; the run copies it; phase 2 keeps it while held; a later run removes it; restore puts it back | `Cli.Tests/ArchiveWindowsFlowTests.A_due_session_moves_on_windows_only_while_no_process_holds_it_and_comes_back` (Windows) |
+| the Windows user layer takes `archive.baseFolder` and leaves a machine-only `archive.*` key to the machine layer | `Cli.Tests/ArchiveWindowsFlowTests.The_windows_user_layer_takes_the_base_folder_and_leaves_a_machine_only_archive_key` (Windows) |
+| two sides and two hosts write disjoint folders and indexes under one base | `ArchiveSidesTests.Two_sides_and_two_hosts_write_disjoint_folders_and_indexes_under_one_base` |
+| the code round and the own review: a Claude Code started after the view was built is seen; with it running the Restart Manager is not asked; past `MAX_PATH` the product does not count its own look and names a CHILD holder; a holder by its pid only; a spent budget or a cancellation asks nothing more; a stall is remembered by every later view; an unreadable `node.exe` of this session keeps the Claude Code sessions; a resumed entry is asked under its quarantine names | `InUseWindowsTests.A_claude_code_started_after_the_view_was_built_is_seen_by_the_next_question`, `…With_claude_code_running_its_units_are_not_asked_of_the_restart_manager`, `…Past_max_path_the_product_does_not_count_its_own_look_and_names_another_holder`, `…A_holder_is_named_by_its_pid_only`, `…A_spent_budget_or_a_cancellation_keeps_every_later_unit_without_asking`, `…A_stall_is_remembered_by_every_later_view_of_the_process`, `…An_unreadable_node_of_this_session_keeps_every_claude_code_session` (2 rows); `ArchiveRemoveNamesTests`; the holder fixture is `TestSupport/HoldingChild` (a Windows PowerShell child holding the file with no sharing, killed by its own process object) |
+
+**Red first, as far as it went:** the 300-character row was red against the first build (`RmRegisterResources answered error 29`),
+which is how the Restart Manager's `MAX_PATH` limit was found. The rest were written against a skeleton of the new types; the
+Windows-user-layer and the disjoint-sides tests were green against the code as it was (they pin what earlier stories built — the
+plan round's finding 4 was answered by that green). Their teeth are the checks below.
+
+**Red first for the code round:** the late Claude Code (`Expected after "" to contain "Claude Code runs on Windows"`), the order
+(`Expected counting.Asked to be 0, but found 1`) and the pid-only holder (`{"Windows PowerShell (pid 7864)"} differs`) were red
+against the S5 commit; the own-handle row was GREEN against it — the measurement that refuted the gate's finding 9.
+
+**Teeth** (`S5-01`–`S5-19` without S5-12 and S5-18, product code only, each restored byte for byte), on Windows — the legs the
+Restart Manager runs on: all 17 red — the six of the code round added: the Restart Manager asked before the Claude check, the
+budget ignored, a cancellation ignored, a stall never latched, an unreadable node of this session ignored, a resumed entry asked
+under its old names only; and the first 11: the per-unit question not asked; a live Claude Code ignored; the Restart Manager naming no holder; a long path handed to it;
+an error letting the unit go; a stall not remembered; a share given the drive form; the Windows view not used; an unreadable process
+table letting Claude go; Claude under node not seen; one folder for every side. On Linux the Windows-only tests skip, so these checks
+were not repeated there; the Linux suites are green (Core 2255 / 16 skipped, Cli 344 / 4, Scenarios 497 / 3, goldens 14 / 0).
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
@@ -2830,20 +3516,22 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care events follow [--once]` over an idle engine that did not restart (the last marker's bridge, an EMPTY buffer): exit 0, `0 start(s), 0 gap marker(s)`, no gap marker, the new `covered` marker carries the engine, `docker network inspect bridge` among the read verbs, `starts-summary.json` written | covered | `EventsFlows.Once_over_an_idle_engine_that_did_not_restart_writes_no_gap_and_records_the_engine_on_its_marker`; rules: `CoverageTests` |
 | `wsl-care events follow [--once]` with the daemon down: exit 0, the reason printed, no gap marker (a gap is known only once Docker answers), only the version probe run | covered | `EventsFlows.Once_with_the_daemon_down_exits_zero_names_why_and_writes_no_gap` |
 | `wsl-care events follow [--once]` followed live (Linux): the socket down then up waited for IN-PROCESS (one 5 s wait), ONE gap marker, a live start in the day file while the stream is open, SIGTERM → exit 0 with the stop marker carrying how far coverage reached | covered (Linux legs; skipped on Windows with the reason) | `EventsFlows.Followed_live_it_waits_for_the_socket_in_process_records_a_start_and_stops_clean_on_SIGTERM`; on every OS in-process: `EventsFollowerTests` (the 5 → 10 → 20 s backoff on a moved clock), `FullRunCommandTests.Events_follow_stopped_by_a_signal_exits_zero_with_its_stop_marker` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` unprivileged: exit 77, ONE `needs root` message, empty stdout, no running.json / history line / dry-run stamp / run detail / lock file, no tool started | covered (skipped for a root or elevated account, with the reason) | `ActFlows.An_unprivileged_act_is_refused_whole_and_leaves_no_state_no_lock_and_no_command_behind`; in-process: `ActCommandTests.An_unprivileged_act_is_refused_whole_before_the_lock_or_any_state_is_touched` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--preview` with root claimed in the sandbox: previewed from the fake journalctl's `--disk-usage`, nothing written; on the Windows binary exit 2 naming the distro side | covered | `ActFlows.With_root_claimed_a_preview_reads_the_journal_s_size_and_writes_nothing`; in-process: `ActCommandTests`; AOT binary (`win-x64`): smoke by hand 2026-10-02 |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--confirm` with root claimed: A10 runs through the fake (`--disk-usage`, then `--vacuum-time=30d`), detail then history line, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.With_root_claimed_a_confirmed_act_runs_a10_through_the_fake_and_records_detail_then_history`; on every OS in-process: `ActCommandTests.A_confirmed_act_runs_records_and_answers_with_the_measured_result`, `JournalVacuumTests`, `ActionEngineTests` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--confirm --timer` with root claimed, two login accounts and no `[user] default=`, the dry-run week 30 days past: A10 `skipped` naming the unread user layer and `[user] default=`, no `--vacuum-time` started (retro gate over PR #7) | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.With_no_single_target_user_the_timers_act_runs_nothing_and_names_the_remedy`; in-process: `ActionEngineTests.While_the_user_layer_is_not_read_the_timer_runs_no_action_and_a_button_still_does` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` while the run lock is held: `act` 75, `collect` 75, nothing recorded — ONE lock for both | covered (`collect` on both families, `act` on the Linux legs) | `ActFlows.One_lock_for_collect_and_act_the_second_one_refuses_with_75_and_waits_for_nothing`; in-process: `ActionEngineTests.A_full_run_started_while_an_act_holds_the_lock_is_busy_one_lock_for_both`, `ActCommandTests` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` meeting a wedged run (76), an action that fails (3), an invalid layer (78), an unbuilt or other-side action (2), the timer's gates and dry run | covered (in-process) | `ActCommandTests`, `ActionEngineTests`; not staged against the built binary: a live wedged process and the systemd timer cannot be made on cue there |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--preview` of EVERY action this build holds (derived from the registry) over the CAPTURED Docker, root claimed, a target user with no tool installed: exit 0, every id answered, A4 previews the three captured volumes, A8 is a skip naming npm, every docker call a read verb, no state written; the Windows binary exits 2 | covered (Linux legs; Windows: the exit-2 half) | `ActFlows.A_preview_of_every_action_this_build_holds_answers_each_from_live_state_and_starts_only_read_commands`; AOT binary: CI act smoke (every RID) |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `A4 --confirm --manual --volume <one>` over the captured Docker: exit 0, the fake saw exactly `docker volume rm <that one>`, freed = its captured `df -v` size, the key never serialised, the history line's trigger `manual` | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.A_button_run_of_a4_removes_only_the_volume_the_panel_showed_records_the_manual_trigger_and_freed_from_the_confirmed_one`; in-process: `DockerCleanupTests`, `ActCommandTests` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `A4 --preview` over 387 SYNTHETIC anonymous volumes (`SyntheticDocker`), root claimed: exit 0, count 387, 20 `items`, `shown` = all 387 names (each 64-hex), no state written | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.A4s_preview_over_387_volumes_carries_all_387_names_it_selected_and_writes_nothing`; in-process: `DockerCleanupTests.A4s_preview_outcome_carries_every_selected_name_as_shown_and_no_other_actions_outcome_carries_one`, `…A4s_shown_list_is_every_target_key_in_order_capped_at_the_most_a_shown_list_carries` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--confirm` cut off by SIGHUP while its vacuum runs (a fake `journalctl` that waits 60 s): exit 130, ONE history line `interrupted` whose reason names SIGHUP, its detail written, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.A_confirm_cut_off_by_SIGHUP_records_itself_interrupted_with_a_detail_naming_the_signal` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` with `--manual` AND `--timer`: exit 2, ONE message saying "not both", no tool started, no state | covered | `ReadContractFlows.Manual_and_timer_together_are_refused_before_anything_is_touched`; in-process: `ActCommandTests.Manual_and_timer_together_are_refused_naming_both`; `productVersion` on every act answer: `ActCommandTests.Every_act_answer_names_the_product_version_exactly_as_version_prints_it` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `A10 --confirm --manual --detach --json` with root claimed and a fake `systemctl`: exit 0, `accepted` with the run id and `wsl-care-act@<runId>.service`, the fake saw exactly `systemctl start --no-block <that unit>`, ONE request file named for the run — then `act --request <runId>` (as systemd would start it) records ONE `completed` line under THAT run id, trigger `manual`, the request gone, no running.json | covered (Linux legs; skipped on Windows with the reason) | `DetachFlows.An_accepted_detach_starts_its_unit_and_the_unit_s_request_run_records_under_the_answered_run_id`; in-process: `DetachedRunsTests.A_confirmed_detach_writes_the_request_starts_its_unit_and_answers_accepted_at_once` |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `--detach` refusals: no systemd (`/run/systemd/system` absent) exit 69 and nothing written, never a synchronous run; a run queued within its grace (75), wedged (76), an unreadable `running.json` (79), another run holding the lock (75 / 76); an orphaned request past its grace or an unusable one swept first and the detach accepted; a timed-out start asking the unit (accepted / 71 / `unknown`); the request folder at its budget of 32 (73); a unit that will not start: the request removed, exit 71; unprivileged (77); `--detach` with `--preview` or `--timer` (2) | covered | `DetachFlows.Without_systemd_a_detach_is_refused_with_69_and_nothing_is_written_or_started` (every OS); in-process: `DetachedRunsTests` (`Without_systemd_…`, `A_detach_while_a_run_is_queued_…`, `A_detach_meeting_a_wedged_run_…`, `A_detach_meeting_an_unreadable_running_json_…`, `A_detach_records_an_unusable_request_refused_…`, `A_detach_sweeps_an_orphaned_request_…`, `A_detach_while_another_run_holds_the_lock_…`, `A_timed_out_start_asks_the_unit_…`, `A_full_request_folder_…`, `A_unit_that_will_not_start_…`, `An_unprivileged_detach_…`, the parse theory) |
-| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]` `A4 --confirm --detach --only -`: 10 000 names on stdin reach the request's `shown`; 10 001 names, 1 MiB + 1 bytes, a bad line (refused by its NUMBER, never echoed) and a stdin with no end within the ceiling (10 s; 0.3 s in the test) all exit 2 with nothing written | covered (in-process) | `DetachedRunsTests.Ten_thousand_names_on_stdin_…`, `Stdin_past_the_count_or_the_byte_cap_…`, `A_bad_line_on_stdin_…`, `Stdin_with_no_end_within_the_ceiling_…`; the relay through `wsl.exe` measured, not tested: facts note row 20 |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` unprivileged: exit 77, ONE `needs root` message, empty stdout, no running.json / history line / dry-run stamp / run detail / lock file, no tool started | covered (skipped for a root or elevated account, with the reason) | `ActFlows.An_unprivileged_act_is_refused_whole_and_leaves_no_state_no_lock_and_no_command_behind`; in-process: `ActCommandTests.An_unprivileged_act_is_refused_whole_before_the_lock_or_any_state_is_touched` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `--preview` with root claimed in the sandbox: previewed from the fake journalctl's `--disk-usage`, nothing written; on the Windows binary exit 2 naming the distro side | covered | `ActFlows.With_root_claimed_a_preview_reads_the_journal_s_size_and_writes_nothing`; in-process: `ActCommandTests`; AOT binary (`win-x64`): smoke by hand 2026-10-02 |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `--confirm` with root claimed: A10 runs through the fake (`--disk-usage`, then `--vacuum-time=30d`), detail then history line, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.With_root_claimed_a_confirmed_act_runs_a10_through_the_fake_and_records_detail_then_history`; on every OS in-process: `ActCommandTests.A_confirmed_act_runs_records_and_answers_with_the_measured_result`, `JournalVacuumTests`, `ActionEngineTests` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `--confirm --timer` with root claimed, two login accounts and no `[user] default=`, the dry-run week 30 days past: A10 `skipped` naming the unread user layer and `[user] default=`, no `--vacuum-time` started (retro gate over PR #7) | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.With_no_single_target_user_the_timers_act_runs_nothing_and_names_the_remedy`; in-process: `ActionEngineTests.While_the_user_layer_is_not_read_the_timer_runs_no_action_and_a_button_still_does` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` while the run lock is held: `act` 75, `collect` 75, nothing recorded — ONE lock for both | covered (`collect` on both families, `act` on the Linux legs) | `ActFlows.One_lock_for_collect_and_act_the_second_one_refuses_with_75_and_waits_for_nothing`; in-process: `ActionEngineTests.A_full_run_started_while_an_act_holds_the_lock_is_busy_one_lock_for_both`, `ActCommandTests` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` meeting a wedged run (76), an action that fails (3), an invalid layer (78), an unbuilt or other-side action (2), the timer's gates and dry run | covered (in-process) | `ActCommandTests`, `ActionEngineTests`; not staged against the built binary: a live wedged process and the systemd timer cannot be made on cue there |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `--preview` of EVERY action this build holds (derived from the registry) over the CAPTURED Docker, root claimed, a target user with no tool installed: exit 0, every id answered, A4 previews the three captured volumes, A8 is a skip naming npm, every docker call a read verb, no state written; the Windows binary exits 2 | covered (Linux legs; Windows: the exit-2 half) | `ActFlows.A_preview_of_every_action_this_build_holds_answers_each_from_live_state_and_starts_only_read_commands`; AOT binary: CI act smoke (every RID) |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `A4 --confirm --manual --volume <one>` over the captured Docker: exit 0, the fake saw exactly `docker volume rm <that one>`, freed = its captured `df -v` size, the key never serialised, the history line's trigger `manual` | covered (Linux legs; skipped on Windows with the reason) | `ActFlows.A_button_run_of_a4_removes_only_the_volume_the_panel_showed_records_the_manual_trigger_and_freed_from_the_confirmed_one`; in-process: `DockerCleanupTests`, `ActCommandTests` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `A4 --preview` over 387 SYNTHETIC anonymous volumes (`SyntheticDocker`), root claimed: exit 0, count 387, 20 `items`, `shown` = all 387 names (each 64-hex), no state written | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.A4s_preview_over_387_volumes_carries_all_387_names_it_selected_and_writes_nothing`; in-process: `DockerCleanupTests.A4s_preview_outcome_carries_every_selected_name_as_shown_and_no_other_actions_outcome_carries_one`, `…A4s_shown_list_is_every_target_key_in_order_capped_at_the_most_a_shown_list_carries` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `--confirm` cut off by SIGHUP while its vacuum runs (a fake `journalctl` that waits 60 s): exit 130, ONE history line `interrupted` whose reason names SIGHUP, its detail written, `running.json` gone | covered (Linux legs; skipped on Windows with the reason) | `ReadContractFlows.A_confirm_cut_off_by_SIGHUP_records_itself_interrupted_with_a_detail_naming_the_signal` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` with `--manual` AND `--timer`: exit 2, ONE message saying "not both", no tool started, no state | covered | `ReadContractFlows.Manual_and_timer_together_are_refused_before_anything_is_touched`; in-process: `ActCommandTests.Manual_and_timer_together_are_refused_naming_both`; `productVersion` on every act answer: `ActCommandTests.Every_act_answer_names_the_product_version_exactly_as_version_prints_it` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `A10 --confirm --manual --detach --json` with root claimed and a fake `systemctl`: exit 0, `accepted` with the run id and `wsl-care-act@<runId>.service`, the fake saw exactly `systemctl start --no-block <that unit>`, ONE request file named for the run — then `act --request <runId>` (as systemd would start it) records ONE `completed` line under THAT run id, trigger `manual`, the request gone, no running.json | covered (Linux legs; skipped on Windows with the reason) | `DetachFlows.An_accepted_detach_starts_its_unit_and_the_unit_s_request_run_records_under_the_answered_run_id`; in-process: `DetachedRunsTests.A_confirmed_detach_writes_the_request_starts_its_unit_and_answers_accepted_at_once` |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `--detach` refusals: no systemd (`/run/systemd/system` absent) exit 69 and nothing written, never a synchronous run; a run queued within its grace (75), wedged (76), an unreadable `running.json` (79), another run holding the lock (75 / 76); an orphaned request past its grace or an unusable one swept first and the detach accepted; a timed-out start asking the unit (accepted / 71 / `unknown`); the request folder at its budget of 32 (73); a unit that will not start: the request removed, exit 71; unprivileged (77); `--detach` with `--preview` or `--timer` (2) | covered | `DetachFlows.Without_systemd_a_detach_is_refused_with_69_and_nothing_is_written_or_started` (every OS); in-process: `DetachedRunsTests` (`Without_systemd_…`, `A_detach_while_a_run_is_queued_…`, `A_detach_meeting_a_wedged_run_…`, `A_detach_meeting_an_unreadable_running_json_…`, `A_detach_records_an_unusable_request_refused_…`, `A_detach_sweeps_an_orphaned_request_…`, `A_detach_while_another_run_holds_the_lock_…`, `A_timed_out_start_asks_the_unit_…`, `A_full_request_folder_…`, `A_unit_that_will_not_start_…`, `An_unprivileged_detach_…`, the parse theory) |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `A4 --confirm --detach --only -`: 10 000 names on stdin reach the request's `shown`; 10 001 names, 1 MiB + 1 bytes, a bad line (refused by its NUMBER, never echoed) and a stdin with no end within the ceiling (10 s; 0.3 s in the test) all exit 2 with nothing written | covered (in-process) | `DetachedRunsTests.Ten_thousand_names_on_stdin_…`, `Stdin_past_the_count_or_the_byte_cap_…`, `A_bad_line_on_stdin_…`, `Stdin_with_no_end_within_the_ceiling_…`; the relay through `wsl.exe` measured, not tested: facts note row 20 |
+| `wsl-care act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]` `A13 --preview` and `A20 --confirm --manual --entry <id>` with root claimed (E9.S4): the scenario's binary is the test build's, owned by this account, so both refuse naming the root-owned binary and NO `runuser` is started; without a base A13 skips `no archive configured`; `--entry` without A20 is a usage error (exit 2) | covered (the refusals on the Linux legs; the usage on every OS) | `ArchiveActFlows` (3 facts) |
+| A13 and A20 ROUND TRIPS (E9.S4 own review round C-8): root's side in-process, every child the BUILT CLI as this account — A13's preview, reach and run move a due session; with the side's lock held the reach answers busy with exit 75 and A13 does nothing, saying so; A20's preview offers the removed entry, the press with `--entry` restores it | covered (the Linux legs) | `ArchiveRoundTripFlows` (2 facts) |
 | `wsl-care act --request <runId>` meeting the run lock (the timer holds it): exit 75, ONE `refused` history line under the run id naming `busy:`, the request removed — never a silent busy; under an invalid layer: a `refused` line, exit 78 | covered (Linux legs for the built binary) | `DetachFlows.A_request_whose_unit_meets_the_timer_s_lock_records_refused_and_removes_itself`; in-process: `DetachedRunsTests.A_request_that_meets_the_lock_is_recorded_refused_…`, `A_request_under_an_invalid_configuration_…` |
 | `wsl-care act --request <runId>` with no request: exit 80, a named no-op, no history line; with a request whose content root never writes, or one planted group-writable (Linux): exit 2 through the hardened reader, nothing run; a request of kind `collect`: a full run recorded under its id; while its run acts, running.json stands and the request is already gone; it sweeps another stale request whose unit is gone before it runs | covered (in-process) | `DetachedRunsTests.A_missing_request_is_a_named_no_op_…`, `A_request_whose_run_already_recorded_itself_…`, `A_request_whose_content_is_not_what_root_writes_…`, `A_planted_group_writable_request_…`, `A_collect_request_records_…`, `While_a_request_s_run_acts_…`, `A_request_sweeps_another_stale_request_…`; Core: `DetachedRunTests` |
 | `wsl-care act --request <runId>` whose child never exits (a fake `journalctl --disk-usage` that sleeps 10 min): the step ends at its OWN 15 s ceiling (tree kill), the run still records ONE line under its id, the request goes, the lock is released (plan §15k #0) | covered (Linux legs) | `DetachFlows.A_child_that_never_exits_is_ended_by_its_own_ceiling_and_the_detached_run_still_records_and_releases_the_lock` |
@@ -2860,8 +3548,15 @@ One row per flow. A row for a registered verb starts with `` `wsl-care <usage>` 
 | `wsl-care runs log <runId>` | not covered | CUT by plan §15j M3: `runs show` answers the commands a run ran and their exits |
 | `wsl-care agents list [--measure] [--json]` with `--measure` over a planted Claude Code folder and a fake `claude` on PATH: exit 0, `schemaVersion` 1, `sizes.source` `now`, the agent detected by binary and folder, 100 bytes (its `memory/` never entered, named in `excluded`), one session counted and named, the version "not asked", and the fake never started; the text form; an unknown option refused (2); before a full run `none` with how to measure, after a `collect` the run's totals with no session name, no recorded file naming a session | covered (the full-run flow on the Linux legs; skipped on Windows with the reason) | `AgentsFlows` (4); in-process: `Agents/AgentCatalogueTests`, `AgentDiscoveryTests`, `AgentWalkTests`, `AgentNoOpenTests` (Linux); golden `agents-list.json` |
 | `wsl-care agents probe <path> [--json]` as root: exit 81 (`NotAsRoot`), nothing on stdout, the refusal naming uid 0 and the default-user fix; of a CLI (the fake tool at `~/.local/bin/mycli` with an execute bit): exit 0, usable, the suggested entry with `~/.mycli`, and the CLI never started; a path of the wrong shape refused (2) | covered (the CLI probe on the Linux legs; the root refusal on every OS) | `AgentsExtraFlows` (2 facts); in-process: `AgentsCommandTests` (root, shape, JSON), `Agents/AgentProbeTests` (incl. the inotify no-open proof, Linux) |
+| `wsl-care archive check-base <path> [--json]` of a Windows drive path on the distro: exit 0, accepted, answered with the folder it is mounted at (`V:ai-archive` → `/mnt/v/ai-archive`, a 9p mount at `/mnt/v` from the sandbox's mount table); as root: exit 81, nothing on stdout; `config set archive.baseFolder` writes an accepted folder and refuses one inside `~/.claude` naming the rule (2), writing nothing; on Windows a drive folder accepted and a Linux path refused (`shape`); `config set archive.baseFolder` as root: exit 81, nothing written (E9.S0 review round, in-process) | covered (the drive path and config set on the Linux legs; the Windows rules on the Windows legs; the root refusal on every OS) | `ArchiveFlows` (4 facts); in-process: `Cli.Tests/ArchiveCommandTests`, `Archive/BaseFolderRulesTests`, `Archive/WindowsBaseFolderTests` |
+| `wsl-care archive preview [--agent <id>] [--json]` over a home with a 20-day-old Claude Code session and its `subagents/` companion and a 1-day-old one: exit 0, the old one due with 2 files, the young one counted younger, every file's last write unchanged; as root: exit 81, nothing on stdout | covered (the preview on the Linux legs; the root refusal on every OS) | `ArchiveFlows` (2 facts); in-process: `Cli.Tests/ArchiveCommandTests` (JSON, `--agent`, root), `Archive/SelectionTests`, `Archive/InUseTests` (incl. the inotify no-open proof, Linux) |
 | `wsl-care units dropin <unit>` (E7.S2c): the drop-in `install.sh` writes for one of the four units, from the machine layer — the timer's `OnCalendar` from `timer.periodHours`, the services' Nice / MemoryMax / TimeoutStopSec, the follower's RestartSec; another unit refused (2) naming the four | covered (in-process, every OS; the installer's use on the Linux legs) | `Cli.Tests/UnitsCommandTests` (2); `ShippedFilesTests.The_drop_in_of_the_defaults_…`, `…A_drop_in_carries_the_configured_values`; `InstallFlows` (the render before any unit is enabled, its failure) |
-| `wsl-care archive preview / run / restore / list` | not covered | not built yet (E9) |
+| `wsl-care archive run [--agent <id>] [--budget-seconds <n>] [--run-id <runId>] [--json]` over a home whose base is the network drive's folder and a 20-day-old Claude Code session with a companion: the first run copies it (exit 0, one copied, a `{"progress":"file"…}` line naming nothing, the source untouched, `archive status` naming the entry `archived`); a run a day later removes it (the source gone, its copy in the base); as root: exit 81, nothing on stdout; without a base: `no-base`, exit 0; the run KILLED by its own pid at each of the 14 points, and again with the base gone for the next run (refused, nothing removed): the next runs finish it — no quarantine name left, both files in the base, nothing on its way | covered (the moves on the Linux legs; the root refusal and `no-base` on every OS) | `ArchiveRunFlows` (5 facts, the kill theory 28 rows); in-process `Core.Tests/Archive/ArchiveRunTests`, `ArchiveProtocolTests` (the 14 points × 4 agent actions) |
+| `wsl-care archive reach [--json]` (E9.S4): the side's archive lock taken and the base reached within `archive.reachabilitySeconds`, nothing else — the short child A13 starts first; without a base `no-base` (exit 0); as root: exit 81 | covered (the CLI register on every OS; A13's use of it in-process) | `VerbRegisterTests` (the example), `Cli.Tests/ArchiveRestoreCommandTests` (root), `ArchiveActionTests.A_base_the_short_child_cannot_reach_stops_A13_before_the_long_run` |
+| `wsl-care archive status [--json]`: the side's lock `free` / `running` / `stuck-in-kernel`, the entries on their way, the last run — local state only | covered | `ArchiveRunFlows.Without_a_base_the_run_answers_no_base_and_status_answers_free`, `…A_due_session_is_copied_by_one_run_and_removed_by_a_later_one` |
+| `wsl-care archive reconcile --scan [--json]` over a base holding a copy no index line names: exit 0, one `recovered` line in the month index, the source untouched | covered (Linux legs) | `ArchiveRunFlows.The_scan_reindexes_a_copy_no_index_line_names_and_touches_nothing_at_the_source` |
+| `wsl-care archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]` over a session archived and removed: by its session path exit 0, both files back with the archived bytes, listed `restored`; again by its entry id: `already-there`; a file planted on the share and re-indexed by a scan: refused without `--accept-unverified` (exit 1), nothing planted reaches the agent folder; as root: exit 81; without a base: `no-base`, exit 0; a usage error for every wrong naming (13 rows) | covered (the restore on the Linux legs; usage, root and `no-base` on every OS) | `ArchiveRunFlows.A_removed_session_is_listed_restored_and_listed_restored_through_the_built_cli`, `…Run_status_and_scan_as_root_are_refused_with_their_own_exit_code`; `Cli.Tests/ArchiveRestoreCommandTests`; in-process `ArchiveProtocolTests.Restore.cs`, `ArchiveRunTests.Restore.cs` |
+| `wsl-care archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable] [--json]` over the same base: one entry `sourceRemoved`, then `restored`; the planted copy listed unverified; only the month asked is read, `--run` lists what that run touched, a torn line skipped and counted; `--restorable` (E9.S4 code round): only the verified entries removed at their source, newest first, at most `archive.maxRestoreEntries`, the rest counted in `omitted`; as root: exit 81 | covered | the same flows; `ArchiveRunTests.A_restorable_list_answers_only_removed_verified_entries_at_most_the_restore_cap_and_counts_the_rest`; `ArchiveRunTests.The_list_reads_only_the_months_asked_and_says_each_entrys_status`, `…The_list_skips_a_torn_line_and_marks_an_unverified_entry` |
 | `install.sh`: a fresh install — binary 0755 at `/opt/wsl-care/bin/wsl-care`, the link to that ABSOLUTE path, every unit byte for byte 0644, the machine layer when absent, the state folders; `systemctl` daemon-reload → enable --now timer + follower → enable --now sysstat + atop → is-active ×2; the binary started by its absolute path for `collect` then `doctor --json`; no sudo; the temporary folder gone | covered (Linux legs; the Windows leg skips with the reason) | `InstallFlows.A_fresh_install_places_the_binary_link_units_and_machine_layer_enables_both_units_and_verifies_through_the_absolute_path` |
 | `install.sh`: the newest `daemon-v*` release (the list's first entry is the extension's), archive then `.sha256`, gh verifying THAT archive before any `systemctl`; every curl call asks for https-only, redirects included, under `--max-time` | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_downloaded_never_the_extensions_and_verified_before_any_write` |
 | `install.sh`: the newest daemon release from a COMPACT releases list (one line, `"tag_name":"…"` with and without a space): by version number (0.10.0 over 0.9.1), a pre-release (`-rc.1`) and the extension never chosen | covered (Linux legs) | `InstallFlows.The_newest_daemon_release_is_chosen_by_version_number_from_a_compact_releases_list` |

@@ -36,11 +36,12 @@ public sealed record ActionId
     /// <summary>A button only: no <c>auto</c> key, never selected by the timer, never run by it.</summary>
     public bool ButtonOnly => Timer is TimerSwitch.ButtonOnly;
 
-    /// <summary>The ids that are a button only (plan §15q E7.S2b): A18 ends the target user's orphaned AI-agent processes, and an
-    /// owner decision keeps it off the timer whatever any setting says.</summary>
+    /// <summary>The ids that are a button only (plan §15q E7.S2b; §15r E9.S4): A18 ends the target user's orphaned AI-agent
+    /// processes and A20 restores archived sessions; an owner decision keeps each off the timer whatever any setting says.</summary>
     private static readonly IReadOnlyList<ActionId> ButtonOnlyIds =
     [
         new("A18", new TimerSwitch.ButtonOnly("A18 is a button only (plan §15q E7.S2b): the timer never ends an AI agent's process")),
+        new("A20", new TimerSwitch.ButtonOnly("A20 is a button only (plan §15r E9.S4): the timer never restores an archived session")),
     ];
 
     /// <summary>Every id: the <c>auto</c> switches' in the order of <see cref="ConfigKeys.All"/>, then the button-only ones.</summary>
@@ -52,13 +53,14 @@ public sealed record ActionId
 
     /// <summary>
     /// The order a run takes actions in, whatever order they were asked for (plan §7.3: containers first frees their
-    /// volumes and images — A5 → A4 → A6 → A7 → A8 → A9, the order of the 2026-10-02 run). Then the other caches,
-    /// the journal and the archive; then trim and the clock; the memory actions last — build servers and suspects first,
-    /// so A1 drops a cache the cleanups no longer refill, and A2 runs after A1 (plan §5).
+    /// volumes and images — A5 → A4 → A6 → A7 → A8 → A9, the order of the 2026-10-02 run). Then the other caches and the
+    /// journal; then trim and the clock; build servers and suspects; then the archive and its restore (plan §15r D8: after the
+    /// clock is fixed, since the ages read it, and before A1 / A2, so the cache drop and the compaction clean up after its reads);
+    /// the memory actions last, so A1 drops a cache the cleanups no longer refill, and A2 runs after A1 (plan §5).
     /// </summary>
     public static IReadOnlyList<ActionId> ExecutionOrder { get; } =
     [
-        .. new[] { "A5Testcontainers", "A5", "A4", "A6", "A6Unused", "A7", "A8", "A9", "A12", "A14", "A17", "A10", "A13", "A15", "A16", "A3", "A11", "A18", "A19", "A1", "A2" }
+        .. new[] { "A5Testcontainers", "A5", "A4", "A6", "A6Unused", "A7", "A8", "A9", "A12", "A14", "A17", "A10", "A15", "A16", "A3", "A11", "A18", "A19", "A13", "A20", "A1", "A2" }
             .Select(text => All.Single(id => id.Text == text)),
     ];
 
