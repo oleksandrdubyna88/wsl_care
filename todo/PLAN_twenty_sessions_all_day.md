@@ -579,7 +579,7 @@ with a bounded backoff.
    machine shows as a warning there with no extension change.
 3. **The verb `wsl-care busy [--json]`:**
    - It reads only `/proc/pressure/{cpu,io,memory}` and `/proc/loadavg` (the load is shown, never judged) and the
-     configuration. There is no process walk, no MCP window, no history and no write; it runs as any user.
+     configuration. There is no process walk, no MCP window, no history and no write but its own run log (as every verb); it runs as any user.
    - Exit codes: `0` for calm or unknown, a new code `83 machineBusy` for busy. JSON:
      `{ state: calm|busy|unknown, reasons: [{ resource, window, value, limit, key }], pressure: {cpu, io, memory},
      load: {…}, evaluatedAt }`. The text form is one line.
@@ -628,6 +628,22 @@ with a bounded backoff.
   - `BusyCommandTests` (3).
   - `BusyFlows` over the built binary (busy on Linux, unknown on Windows).
   - The tests were written first. The first run was against the finished code, so the teeth were shown by breaking product code: unknown-by-absence off, the verdict level fixed at ok, the exit code fixed at 0 — 6 red, restored green.
+- **Code round** (same session, 8 of 8 reviewers): `proceed`, 10 findings.
+  - **Accepted:**
+    - (0, 7) one comparison, `MachineBusy.IsOver`, used by the verb and the verdicts.
+    - (1) the PSI reader moved to `PressureFile.ReadSet`.
+    - (3) the verdict reason describes the metric ("above the key …").
+    - (4, 8, 9) the README loop is bash, says what it waits for, and clamps every pause to the 600 s budget.
+    - (6) the report's lists are never null. RED first: *Expected report.Reasons not to be &lt;null&gt;* — the source generator sets an init property it does not find to null. The getters answer `field ?? []`.
+  - **Rejected, with reasons:**
+    - (2) taking 83 out of the extension's root kinds: its distinct-kind guard needs every code.
+    - (5) a live extension check: the extension never runs `busy`; `BusyFlows` checks the built binary.
+- **Own review** (Opus, read-only): the rule, the texts, the goldens and the wiring are correct. Four doc and loop items, all fixed:
+  - The extension's status bar did NOT take `pressure.*`. Its prefixes now include it, with a test: RED first (*'none' !== 'warn'*), then green.
+  - The README loop over-ran its 10-minute bound. It is clamped now, and checked with a stubbed `wsl-care` in Git Bash (not WSL): 600 s exactly, two waits and then go, and a broken signal says so and goes.
+  - The loop broke under `set -e`; `|| rc=$?` fixes it.
+  - "writes nothing" is now "writes nothing but its own run log".
+  - The text form with nothing read now says "PSI not read".
 
 ### S7 — the Windows side (inside E11/E12's scope)
 

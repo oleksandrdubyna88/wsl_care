@@ -13,6 +13,18 @@ public sealed record Pressure(PressureLine Some, Reading<PressureLine> Full);
 /// <summary><c>/proc/pressure/*</c> (plan §4.1: the primary "VM struggles" signal).</summary>
 public static class PressureFile
 {
+    /// <summary>The three files <c>/proc/pressure/{memory,io,cpu}</c> under <paramref name="paths"/>' procfs root — what the memory
+    /// sample carries and <c>wsl-care busy</c> reads alone (E14 S6; coai code round 2026-10-09, finding 1: a procfs reader, not the
+    /// memory collector's).</summary>
+    public static PressureSet ReadSet(Files.IFileSystem files, Hosting.LinuxHostPaths paths) =>
+        new(Read(files, paths, "memory"), Read(files, paths, "io"), Read(files, paths, "cpu"));
+
+    private static Reading<Pressure> Read(Files.IFileSystem files, Hosting.LinuxHostPaths paths, string resource)
+    {
+        var path = $"{paths.ProcRoot}/pressure/{resource}";
+        return ProcText.Read(files, path).Bind(text => Parse(text, path));
+    }
+
     public static Reading<Pressure> Parse(string text, string path)
     {
         var lines = ProcText.Lines(text).ToDictionary(l => l.Split(' ')[0], ParseLine, StringComparer.Ordinal);

@@ -2423,7 +2423,7 @@ is not closed over a catalogue; `ConfigKey.TextListKey` carries a member rule an
 
 ```mermaid
 flowchart LR
-    psi["/proc/pressure/{cpu,io,memory}<br/>MemoryCollector.ReadPressures"] --> rule["Thresholds/MachineBusy.Judge<br/>some avg60 vs thresholds.cpu/io/memoryPressure*"]
+    psi["/proc/pressure/{cpu,io,memory}<br/>PressureFile.ReadSet (the memory sample reads it too)"] --> rule["Thresholds/MachineBusy.Judge<br/>some avg60 vs thresholds.cpu/io/memoryPressure*"]
     load["/proc/loadavg<br/>LoadAverageFile (shown, not judged)"] --> busy
     rule --> busy["wsl-care busy [--json]<br/>BusyReport · exit 0 calm/unknown · 83 busy"]
     sample["status / collect sample<br/>MemorySnapshot.Pressure"] --> verdicts["MachineBusy.Verdicts<br/>pressure.cpu · pressure.io"]
@@ -2433,7 +2433,7 @@ flowchart LR
 
 One pure rule (`MachineBusy.Judge`) answers whether heavy work may START now: busy when a read pressure is above its key, calm
 only when all three were read, unknown otherwise (never calm by absence). The verb reads two kernel files and the
-configuration and nothing else (no process walk, no write, any user); `status` judges the same comparison as two verdicts
+configuration and nothing else (no process walk, no write but its own run log, any user); `status` judges the same comparison as two verdicts
 after `memory.pressure`, from the sample's own PSI. The agent-side contract (exit 0 go, 83 wait with a jittered bounded
 backoff, any other code a broken signal: say so and go) is in the README's *Busy* section. Advice only: nothing is started or
 stopped because of it.

@@ -9,21 +9,21 @@ namespace WslCare.Core.Status;
 
 /// <summary>The answer: <c>calm</c>, <c>busy</c> or <c>unknown</c>; every crossing; the three PSI files; the load (shown, never
 /// judged); the pressures that could not be read; when.</summary>
-public sealed record BusyReport(
-    string State,
-    IReadOnlyList<BusyReasonReport> Reasons,
-    IReadOnlyList<string> Unread,
-    PressureReport Pressure,
-    LoadReport Load,
-    DateTimeOffset EvaluatedAt)
+public sealed record BusyReport(string State, PressureReport Pressure, LoadReport Load, DateTimeOffset EvaluatedAt)
 {
-    public static BusyReport From(BusyJudgement judgement, PressureSet pressure, Reading<LoadAverages> load, DateTimeOffset at) => new(
-        StateName(judgement.State),
-        [.. judgement.Reasons.Select(r => new BusyReasonReport(r.Resource, r.Window, r.Value, r.Limit, r.Key))],
-        judgement.Unread,
-        StatusReports.Pressure(pressure),
-        LoadReport.From(load),
-        at);
+    /// <summary>Every pressure over its key; empty when none (coai code round 2026-10-09, finding 6: never null).</summary>
+    /// <remarks>The source generator sets an init property it did not find to null, so the getter answers empty for it.</remarks>
+    public IReadOnlyList<BusyReasonReport> Reasons { get => field ?? []; init; } = [];
+
+    /// <summary>Every pressure not read, as <c>resource: why</c>; empty when all three were.</summary>
+    public IReadOnlyList<string> Unread { get => field ?? []; init; } = [];
+
+    public static BusyReport From(BusyJudgement judgement, PressureSet pressure, Reading<LoadAverages> load, DateTimeOffset at) =>
+        new(StateName(judgement.State), StatusReports.Pressure(pressure), LoadReport.From(load), at)
+        {
+            Reasons = [.. judgement.Reasons.Select(r => new BusyReasonReport(r.Resource, r.Window, r.Value, r.Limit, r.Key))],
+            Unread = judgement.Unread,
+        };
 
     /// <summary>The wire names — the contract agents compare against.</summary>
     public static string StateName(BusyState state) => state switch

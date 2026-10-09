@@ -70,6 +70,17 @@ public sealed class BusyCommandTests : IDisposable
         text.Should().StartWith("calm").And.Contain("cpu 4.18").And.NotContain("\n\n");
     }
 
+    /// <summary>coai code round 2026-10-09 (session 79b51f53), finding 6: the report's lists are never null — a reader that
+    /// meets an answer without them (an older or a partial one) reads empty lists.</summary>
+    [Fact]
+    public void A_report_without_its_lists_reads_them_empty_never_null()
+    {
+        var report = JsonSerializer.Deserialize("""{ "state": "calm" }""", WslCareJsonContext.Default.BusyReport)!;
+
+        report.Reasons.Should().NotBeNull().And.BeEmpty();
+        report.Unread.Should().NotBeNull().And.BeEmpty();
+    }
+
     [Fact]
     public void An_unreadable_pressure_is_unknown_and_exits_0()
     {

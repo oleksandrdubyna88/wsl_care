@@ -19,7 +19,8 @@ export interface BarView {
   readonly level: BarLevel;
 }
 
-export const RELEVANT_VERDICT_PREFIXES: readonly string[] = ['memory.', 'kernel.'];
+/** E14 S6: `pressure.` (cpu / io PSI, the daemon's "machine busy" rule) colours the bar too — a busy machine is what it shows. */
+export const RELEVANT_VERDICT_PREFIXES: readonly string[] = ['memory.', 'kernel.', 'pressure.'];
 
 const CLICK = 'Click to open the AI OS Care panel.';
 

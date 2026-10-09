@@ -64,8 +64,8 @@ public static class MachineBusy
         var limits = BusyLimits.From(config);
         return
         [
-            Verdict("pressure.cpu", memory, m => m.Pressure.Cpu, limits.Cpu, ConfigKeys.Thresholds.CpuPressureWarnPercent.Name, "cpu pressure (PSI): tasks waiting for a CPU — the machine is too busy to start heavy work (wsl-care busy)"),
-            Verdict("pressure.io", memory, m => m.Pressure.Io, limits.Io, ConfigKeys.Thresholds.IoPressureWarnPercent.Name, "io pressure (PSI): tasks waiting for the disk — the machine is too busy to start heavy work (wsl-care busy)"),
+            Verdict("pressure.cpu", memory, m => m.Pressure.Cpu, limits.Cpu, ConfigKeys.Thresholds.CpuPressureWarnPercent.Name, "cpu pressure (PSI): the share of time tasks waited for a CPU; above the key the machine is too busy to start heavy work (wsl-care busy)"),
+            Verdict("pressure.io", memory, m => m.Pressure.Io, limits.Io, ConfigKeys.Thresholds.IoPressureWarnPercent.Name, "io pressure (PSI): the share of time tasks waited for the disk; above the key the machine is too busy to start heavy work (wsl-care busy)"),
         ];
     }
 
@@ -82,7 +82,7 @@ public static class MachineBusy
 
     private static Verdict FromPressure(string id, Reading<Pressure> pressure, double limit, string limitText, string reason) => pressure switch
     {
-        Reading<Pressure>.Available { Value.Some: var s } => new(id, s.Avg60 > limit ? Level.Warn : Level.Ok, Invariant($"some avg10 {s.Avg10:0.##}, avg60 {s.Avg60:0.##}"), limitText, reason),
+        Reading<Pressure>.Available { Value.Some: var s } => new(id, IsOver(s, limit) ? Level.Warn : Level.Ok, Invariant($"some avg10 {s.Avg10:0.##}, avg60 {s.Avg60:0.##}"), limitText, reason),
         var unread => new(id, Level.Unknown, string.Empty, limitText, unread.ReasonOrEmpty),
     };
 
@@ -95,9 +95,13 @@ public static class MachineBusy
 
     private static IEnumerable<BusyReason> Crossing(Resource resource) => resource.Reading switch
     {
-        Reading<Pressure>.Available { Value.Some.Avg60: var avg60 } when avg60 > resource.Limit => [new BusyReason(resource.Name, Window, avg60, resource.Limit, resource.Key)],
+        Reading<Pressure>.Available { Value.Some: var some } when IsOver(some, resource.Limit) => [new BusyReason(resource.Name, Window, some.Avg60, resource.Limit, resource.Key)],
         _ => [],
     };
+
+    /// <summary>THE comparison (coai code round 2026-10-09, findings 0 and 7): the window above the key — what both the verb and
+    /// the verdicts ask, so the two cannot disagree.</summary>
+    private static bool IsOver(PressureLine some, double limit) => some.Avg60 > limit;
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }

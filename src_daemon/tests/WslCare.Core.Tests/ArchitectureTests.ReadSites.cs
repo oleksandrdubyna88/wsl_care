@@ -129,7 +129,9 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Actions/Suspects/AgentOrphans.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Actions/Suspects/AgentCpuHistory.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         ["WslCare.Core/Collectors/LinuxProbe.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
-        ["WslCare.Core/Collectors/MemoryCollector.cs"] = new() { ["ProcText.Read"] = (3, ReadClass.System) },
+        ["WslCare.Core/Collectors/MemoryCollector.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
+        // E14 S6: /proc/pressure/{memory,io,cpu} — moved out of the memory collector so `wsl-care busy` reads it alone.
+        ["WslCare.Core/Collectors/Procfs/Pressure.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Config/UserLayerTrusts.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Doctor/DoctorRun.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System), ["ReadFile"] = (1, ReadClass.System) },
         ["WslCare.Core/Health/WindowsProfiles.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },

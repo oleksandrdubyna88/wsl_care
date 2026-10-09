@@ -43,6 +43,13 @@ test('a memory warning colours the bar warn, a critical memory or kernel verdict
   assert.equal(barView(answered('status', both)).level, 'critical');
 });
 
+test('a busy machine (E14 S6: pressure.cpu or pressure.io warn) colours the bar warn and names the pressure', () => {
+  const view = barView(answered('status', verdict(headBody('status'), 'pressure.cpu', 'warn')));
+  assert.equal(view.level, 'warn');
+  assert.match(view.tooltip, /pressure\.cpu: warn/);
+  assert.equal(barView(answered('status', verdict(headBody('status'), 'pressure.io', 'warn'))).level, 'warn');
+});
+
 test('the tooltip names each relevant verdict that is not ok, with its figure', () => {
   const view = barView(answered('status', verdict(headBody('status'), 'memory.swap', 'warn')));
   assert.match(view.tooltip, /memory\.swap: warn — 0\.00 GiB/);
