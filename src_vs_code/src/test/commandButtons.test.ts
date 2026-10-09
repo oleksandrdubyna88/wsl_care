@@ -6,7 +6,13 @@ import { test } from 'node:test';
 import { COMMAND_BUTTONS } from '../panel/commandButtons';
 import { PAGE_MESSAGE_TYPES } from '../panel/messages';
 import { PAGE_ACTIONS } from '../panel/view';
-import { GUARD_LABELS } from '../windowsTime/guardState';
+import { buildPanelView } from '../panel/viewModel';
+import type { Snapshot } from '../state/outcomeStore';
+import { GUARD_LABELS, guardView } from '../windowsTime/guardState';
+import { guardSummary, type GuardOptions } from '../windowsTime/guardTask';
+import { failed, goldenOutcomes } from './support/outcomes';
+import { Element, runPageScript } from './support/pageHarness';
+import { PAGE_SCRIPT } from './support/paths';
 
 /**
  * The owner's standing rule (2026-10-09): every extension action is reachable by a BUTTON in the panel UI — a
@@ -34,13 +40,48 @@ test('every contributed command has a button in the panel UI — the palette is 
   assert.deepEqual(stale, [], `buttons declared for commands the manifest no longer contributes: ${stale.join(', ')}`);
 });
 
+/** What the page's buttons post when pressed, over states that between them show every button the host can ask for: the
+ * REAL view model and guard view build each view, `media/panel.js` renders it in the strict harness, every button is
+ * clicked (coai code round: an allowed action is no proof that a button is rendered). */
+function postedByPageButtons(): Set<string> {
+  const failedWith = (kind: string): Snapshot => ({ status: failed('status', { kind, distro: 'Ubuntu' } as never), preview: undefined, doctor: undefined, checking: false });
+  const verdicts = { status: { kind: 'answered', distro: 'Ubuntu', answer: { verb: 'status', body: { verdicts: [{ id: 'clock.timeService', level: 'critical' }] } } }, preview: undefined, doctor: undefined, checking: false } as unknown as Snapshot;
+  const local = (iso: string): string => iso;
+  const guards = [
+    guardView({ kind: 'absent', channel: 'enabled' }, GUARD_OPTIONS, undefined, local),
+    guardView({ kind: 'present', enabled: true, lastRunUtc: 'never', lastResult: 0, summary: guardSummary(GUARD_OPTIONS), channel: 'enabled' }, GUARD_OPTIONS, undefined, local),
+  ];
+  const views = [
+    buildPanelView(failedWith('stopped')),
+    buildPanelView(failedWith('notInstalled')),
+    buildPanelView(verdicts),
+    ...guards.map((guard) => buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, guard)),
+  ];
+  const posted = new Set<string>();
+  for (const view of views) {
+    const root = new Element('MAIN');
+    const page = runPageScript(fs.readFileSync(PAGE_SCRIPT, 'utf8'), { panel: root });
+    page.message({ type: 'view', view: structuredClone(view) });
+    for (const button of [...root.all('button[data-action]'), ...root.all('button[data-guard-action]')]) {
+      page.click(button);
+    }
+    for (const message of page.posted) {
+      posted.add((message as { type: string }).type);
+    }
+  }
+  return posted;
+}
+
+const GUARD_OPTIONS: GuardOptions = { setAutomaticStart: true, everyHours: 4, minMinutesBetweenStarts: 10, delaySeconds: 60, timeLimitMinutes: 5 };
+
 test('a page button is one the page renders, the host accepts, and that runs the command\'s own operation', () => {
-  const rendered = new Set<string>([...PAGE_ACTIONS, ...Object.keys(GUARD_LABELS)]);
+  const rendered = postedByPageButtons();
   for (const [command, button] of Object.entries(COMMAND_BUTTONS)) {
     if (button.where !== 'page') {
       continue;
     }
-    assert.ok(rendered.has(button.action), `${command}: '${button.action}' is no button the page renders`);
+    assert.ok(rendered.has(button.action), `${command}: no rendered page button posts '${button.action}' (pressed: ${[...rendered].sort().join(', ')})`);
+    assert.ok((PAGE_ACTIONS as readonly string[]).includes(button.action) || button.action in GUARD_LABELS, `${command}: '${button.action}' is no page action`);
     assert.ok((PAGE_MESSAGE_TYPES as readonly string[]).includes(button.action), `${command}: the host does not accept '${button.action}'`);
     assert.equal(command, `wslCare.${button.action}`, `${command}: its button posts '${button.action}', another operation`);
   }

@@ -341,14 +341,15 @@ public sealed partial class ReleaseExtensionWorkflowTests
     /// <summary>2026-10-09: VSCE_PAT is a GLOBAL PAT whose own expiry is 2027-10-08. POST_DEPLOY item 12's command reads the FIRST
     /// date on the <c>VSCE_PAT expires:</c> line and fails 30 days before it, so a line that records a global PAT must record
     /// the date it really stops working — never the token's later expiry, or item 12 passes while every publish fails. Scoped
-    /// to a line that says it is a global PAT (coai plan round 85cfa858): another credential records its own expiry.</summary>
+    /// to a line that says it is global — any "global", not only the words "global PAT" (coai plan and code rounds 85cfa858):
+    /// another credential records its own expiry.</summary>
     [Fact]
     public void A_recorded_global_pat_date_is_never_after_global_pat_retirement()
     {
         var line = File.ReadAllLines(Path.Combine(ReleaseFiles.Root, "POST_DEPLOY.md")).Single(l => l.StartsWith("VSCE_PAT expires:", StringComparison.Ordinal));
         var date = RecordedPatDate().Match(line);
 
-        if (!date.Success || !line.Contains("global PAT", StringComparison.OrdinalIgnoreCase))
+        if (!date.Success || !GlobalCredential().IsMatch(line))
         {
             return;
         }
@@ -359,6 +360,9 @@ public sealed partial class ReleaseExtensionWorkflowTests
 
     [GeneratedRegex(@"^VSCE_PAT expires: (\d{4}-\d{2}-\d{2})", RegexOptions.CultureInvariant)]
     private static partial Regex RecordedPatDate();
+
+    [GeneratedRegex(@"\bglobal\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex GlobalCredential();
 
     [Fact]
     public void The_extension_tag_ruleset_protects_exactly_the_extension_tags_and_lets_only_the_release_App_through()
