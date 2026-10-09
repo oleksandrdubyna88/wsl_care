@@ -118,13 +118,13 @@ public sealed class UserLayerTrustTests
     [Fact]
     public void A_machine_only_key_is_taken_from_the_machine_layer_and_ignored_with_a_notice_from_the_user_layer()
     {
-        var fromUser = ConfigLoader.Load([Defaults(), (Machine, new FileReadResult.Missing()), Layer(User, """{ "archive": { "baseFolder": "/srv/archive" } }""")]);
-        var fromMachine = ConfigLoader.Load([Defaults(), Layer(Machine, """{ "archive": { "baseFolder": "/srv/archive" } }"""), (User, new FileReadResult.Missing())]);
+        var fromUser = ConfigLoader.Load([Defaults(), (Machine, new FileReadResult.Missing()), Layer(User, """{ "walk": { "maxEntries": 1000 } }""")]);
+        var fromMachine = ConfigLoader.Load([Defaults(), Layer(Machine, """{ "walk": { "maxEntries": 1000 } }"""), (User, new FileReadResult.Missing())]);
 
-        fromUser.Config.Text(ConfigKeys.Archive.BaseFolder).Should().BeEmpty();
+        fromUser.Config.Int(ConfigKeys.Walk.MaxEntries).Should().Be(2000000);
         fromUser.IsObserveOnly.Should().BeFalse();
         fromUser.Notices.Should().ContainSingle().Which.Message.Should().Contain("only in the machine layer");
-        fromMachine.Config.Text(ConfigKeys.Archive.BaseFolder).Should().Be("/srv/archive");
+        fromMachine.Config.Int(ConfigKeys.Walk.MaxEntries).Should().Be(1000);
         fromMachine.Notices.Should().BeEmpty();
     }
 

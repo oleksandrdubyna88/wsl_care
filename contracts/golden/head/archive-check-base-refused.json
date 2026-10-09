@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "given": "/home/user/.claude/archive",
+  "accepted": false,
+  "folder": "/home/user/.claude/archive",
+  "rule": "overlap",
+  "refusal": "/home/user/.claude/archive is, holds or lies inside the AI agent folder /golden-root/home/user/.claude — the archive must never mix with what it moves or what a cleanup removes",
+  "mount": {
+    "mountPoint": "/",
+    "type": "ext4",
+    "source": "/dev/sdg",
+    "known": true
+  },
+  "warnings": [],
+  "notes": []
+}

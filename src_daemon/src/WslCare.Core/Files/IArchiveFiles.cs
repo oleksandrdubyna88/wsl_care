@@ -1,0 +1,233 @@
+using WslCare.Core.Files.Deletion;
+
+namespace WslCare.Core.Files;
+
+/// <summary>What names ONE file whatever its name: Linux the device, the inode and the birth time (<paramref name="Born"/>, 0 where
+/// unknown), Windows the volume serial and the file index (whose sequence number already tells a reused one apart)
+/// (plan §15r E9.S2a own review round M2) — what a removal of the archive's own copy checks the name still names, and what the
+/// Windows base rules compare two spellings of a folder by (E9.S0 review round S3; moved here from <c>Archive</c>, widened).</summary>
+public readonly record struct FileIdentity(ulong Volume, ulong Index, long Born = 0);
+
+/// <summary>A session file opened for copying (<see cref="IArchiveFiles.OpenSource"/>) — a closed set.</summary>
+public abstract record SourceOpen
+{
+    private SourceOpen()
+    {
+    }
+
+    /// <summary>A regular file of this account with ONE link, reached through no link; the caller disposes the stream.</summary>
+    public sealed record Opened(Stream Stream, long Length, DateTimeOffset LastWriteUtc) : SourceOpen;
+
+    /// <summary>Nothing there (the agent removed it) — a normal outcome, never a failure.</summary>
+    public sealed record Gone : SourceOpen;
+
+    /// <summary>Not copied, and why: a link on the way or at the name, not a regular file, another owner, more than one link.</summary>
+    public sealed record Refused(string Why) : SourceOpen;
+}
+
+/// <summary>A destination folder opened level by level from the base (<see cref="IArchiveFiles.OpenFolderBeneath"/>).</summary>
+public abstract record FolderBeneath
+{
+    private FolderBeneath()
+    {
+    }
+
+    public sealed record Ready(BeneathFolder Folder) : FolderBeneath;
+
+    /// <summary>A level is not there — answered only by <see cref="IArchiveFiles.OpenExistingFolderBeneath"/> (a month never archived).</summary>
+    public sealed record Missing : FolderBeneath;
+
+    public sealed record Refused(string Why) : FolderBeneath;
+}
+
+/// <summary>A durable append to a file of the base (<see cref="IArchiveFiles.AppendDurably"/>, E9.S2b: the month index).</summary>
+public abstract record DurableAppend
+{
+    private DurableAppend()
+    {
+    }
+
+    /// <summary>Written whole and flushed to the disk.</summary>
+    public sealed record Appended : DurableAppend;
+
+    /// <summary>Nothing written: the name is a link, a folder or a file of more than one link, or the policy refused it.</summary>
+    public sealed record Refused(string Why) : DurableAppend;
+
+    /// <summary>The write or its flush failed: what was written may not survive a crash — never counted as durable.</summary>
+    public sealed record Failed(string Why) : DurableAppend;
+}
+
+/// <summary>An exclusive create of an archived file (<see cref="IArchiveFiles.CreateExclusive"/>).</summary>
+public abstract record ExclusiveFile
+{
+    private ExclusiveFile()
+    {
+    }
+
+    /// <summary>A new, empty file (0600) open for writing; the caller writes, flushes and disposes it. <paramref name="Identity"/>
+    /// is what <see cref="IArchiveFiles.RemoveOwnCopy"/> needs to remove THIS file and no other.</summary>
+    public sealed record Created(FileStream Stream, FileIdentity Identity) : ExclusiveFile;
+
+    /// <summary>Something already has that name; nothing was changed — never replaced.</summary>
+    public sealed record Exists : ExclusiveFile;
+
+    public sealed record Refused(string Why) : ExclusiveFile;
+}
+
+/// <summary>A file's SHA-256 as read from the disk, or why it could not be read.</summary>
+public abstract record FileHash
+{
+    private FileHash()
+    {
+    }
+
+    /// <summary>The lowercase hex SHA-256 of the bytes read, and how many there were.</summary>
+    public sealed record Hashed(string Sha256, long Length) : FileHash;
+
+    public sealed record Gone : FileHash;
+
+    public sealed record Unreadable(string Why) : FileHash;
+}
+
+/// <summary>A rename that never replaces (<see cref="IArchiveFiles.QuarantineRename"/>, <see cref="IArchiveFiles.RenameBack"/>).</summary>
+public abstract record NoReplaceRename
+{
+    private NoReplaceRename()
+    {
+    }
+
+    public sealed record Renamed : NoReplaceRename;
+
+    /// <summary>The new name exists — the file there (an agent's, re-created meanwhile) was kept, nothing renamed.</summary>
+    public sealed record NameTaken : NoReplaceRename;
+
+    /// <summary>The file to rename is not there.</summary>
+    public sealed record Gone : NoReplaceRename;
+
+    public sealed record Refused(string Why) : NoReplaceRename;
+}
+
+/// <summary>Whether a folder flush held (a new name in it survives a crash only when it did).</summary>
+public abstract record FolderFlush
+{
+    private FolderFlush()
+    {
+    }
+
+    public sealed record Done : FolderFlush;
+
+    public sealed record Failed(string Why) : FolderFlush;
+}
+
+/// <summary>A verified removal (<see cref="IArchiveFiles.RemoveVerified"/>, <see cref="IArchiveFiles.RemoveEmptyFolder"/>).</summary>
+public abstract record VerifiedRemoval
+{
+    private VerifiedRemoval()
+    {
+    }
+
+    public sealed record Removed : VerifiedRemoval;
+
+    /// <summary>Not removed, and why — its bytes differ from the archived copy, it is not a plain file, a folder is not empty.</summary>
+    public sealed record Kept(string Why) : VerifiedRemoval;
+
+    /// <summary>Nothing there — the agent removed it first; never a failure.</summary>
+    public sealed record Gone : VerifiedRemoval;
+
+    public sealed record Refused(string Why) : VerifiedRemoval;
+}
+
+/// <summary>
+/// A destination folder held open for the archive's creates, made only by the <see cref="IArchiveFiles"/> that opened it — each
+/// implementation subclasses it with what it holds (<see cref="PhysicalFileSystem"/>: on Linux the folder's descriptor, every create
+/// and read-back going through it; on Windows a handle that refuses the folder's — and its parents' — rename while held). An
+/// implementation refuses a folder it did not open (gate round finding 2: the seam is implementable outside this assembly).
+/// </summary>
+public abstract class BeneathFolder : IDisposable
+{
+    protected BeneathFolder(string path) => Path = path;
+
+    /// <summary>The folder as this process spells it.</summary>
+    public string Path { get; }
+
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>Releases what the implementation holds; called once per <see cref="Dispose()"/>.</summary>
+    protected abstract void Dispose(bool disposing);
+}
+
+/// <summary>
+/// Plan §15r E9.S2a — the archive's ONLY way to touch a file (review M12: the seam): a streaming no-link source opener, a
+/// destination tree created level by level from the base's descriptor, an exclusive no-follow create, a read-back hash, renames
+/// that never replace, a removal that hashes before it unlinks (Windows: one handle whose delete disposition is set only after
+/// equality), a non-recursive empty-folder removal. Every write and removal is judged by the deletion policy first: under an AI
+/// agent's folder only a quarantine rename, a verified removal of a quarantined file whose archived copy is named, an empty-
+/// folder removal and a restore's create are ever allowed — and never anything under <c>memory</c>.
+/// </summary>
+public interface IArchiveFiles
+{
+    /// <summary>Opens <paramref name="path"/> for reading from <paramref name="layoutRoot"/> through no link: a regular file of this
+    /// account with one link (<c>O_NOFOLLOW | O_NONBLOCK</c> on Linux — a FIFO is never waited on).</summary>
+    SourceOpen OpenSource(string layoutRoot, string path);
+
+    /// <summary>Opens (creating each missing level, 0700) <paramref name="levels"/> below <paramref name="baseFolder"/>, each level from
+    /// the previous level's descriptor — a level that is a link, or not a folder, refuses.</summary>
+    FolderBeneath OpenFolderBeneath(string baseFolder, IReadOnlyList<string> levels, DeletionScope scope);
+
+    /// <summary>Opens the EXISTING <paramref name="levels"/> below <paramref name="baseFolder"/> as <see cref="OpenFolderBeneath"/> does,
+    /// creating none (E9.S2b: the base's readers) — <see cref="FolderBeneath.Missing"/> when a level is not there.</summary>
+    FolderBeneath OpenExistingFolderBeneath(string baseFolder, IReadOnlyList<string> levels);
+
+    /// <summary>Appends <paramref name="bytes"/> to <paramref name="name"/> in <paramref name="folder"/> — created 0600 when missing,
+    /// never through a link, refused when it is not a plain file of one link — and flushes the file before answering (E9.S2b: an
+    /// index line counts only once it is on the disk).</summary>
+    DurableAppend AppendDurably(BeneathFolder folder, string name, ReadOnlySpan<byte> bytes, DeletionScope scope);
+
+    /// <summary>Reads <paramref name="name"/> in <paramref name="folder"/> whole, never through a link, a plain file of one link only,
+    /// refused past <paramref name="maxBytes"/> (E9.S2b: the base is untrusted input).</summary>
+    FileReadResult ReadCapped(BeneathFolder folder, string name, int maxBytes);
+
+    /// <summary>Removes <paramref name="name"/> in <paramref name="folder"/> only while its bytes still hash to
+    /// <paramref name="expectedSha256"/> — the bytes the caller read and judged (E9.S2b: a dead run's lease taken over); anything
+    /// else at the name is kept.</summary>
+    VerifiedRemoval RemoveIfUnchanged(BeneathFolder folder, string name, string expectedSha256, DeletionScope scope);
+
+    /// <summary>Creates <paramref name="name"/> in <paramref name="folder"/> ONLY when nothing has that name (<c>O_CREAT | O_EXCL |
+    /// O_NOFOLLOW</c>, 0600; Windows <c>CREATE_NEW</c> written through).</summary>
+    ExclusiveFile CreateExclusive(BeneathFolder folder, string name, DeletionScope scope);
+
+    /// <summary>Reads <paramref name="name"/> in <paramref name="folder"/> back and hashes it (Windows: unbuffered, from the disk).</summary>
+    FileHash ReadBack(BeneathFolder folder, string name);
+
+    /// <summary>Removes a file THIS run created in <paramref name="folder"/> (a copy that failed its verification) — only while
+    /// <paramref name="name"/> still names the file <see cref="ExclusiveFile.Created"/> answered (<paramref name="created"/>); any
+    /// other file at that name is kept (own review round M2: after phase 2 an archived copy is the only copy).</summary>
+    VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, FileIdentity created, DeletionScope scope);
+
+    /// <summary>Flushes <paramref name="folder"/> itself (Linux: <c>fsync</c> of the directory, so a new name survives a crash).</summary>
+    FolderFlush FlushFolder(BeneathFolder folder);
+
+    /// <summary>Renames <paramref name="path"/> in its own folder to <paramref name="quarantinedName"/>, never replacing.</summary>
+    NoReplaceRename QuarantineRename(string layoutRoot, string path, string quarantinedName, DeletionScope scope);
+
+    /// <summary>Renames a quarantined file back to <paramref name="originalName"/>, never replacing what the agent wrote there since.</summary>
+    NoReplaceRename RenameBack(string layoutRoot, string quarantinedPath, string originalName, DeletionScope scope);
+
+    /// <summary>E9.S3 own review round S-B2: renames a restore's verified TEMPORARY copy (<c>&lt;name&gt;.wsl-care-r-&lt;runId&gt;</c>) to
+    /// <paramref name="finalName"/> in its own folder, never replacing — under the <c>RestoreIntoAgentFolder</c> permit, which allows
+    /// exactly this rename.</summary>
+    NoReplaceRename PromoteRestored(string layoutRoot, string temporaryPath, string finalName, DeletionScope scope);
+
+    /// <summary>Removes the quarantined <paramref name="path"/> only when the archived copy <paramref name="archivedCopy"/> — opened
+    /// through no link and hashed first (Windows: past the cache) — AND the quarantined bytes, read from the same open file the
+    /// removal acts on, both hash to <paramref name="expectedSha256"/> (own review round, security M2): a missing or changed copy
+    /// keeps the source.</summary>
+    VerifiedRemoval RemoveVerified(string layoutRoot, string path, string expectedSha256, string archivedCopy, DeletionScope scope);
+
+    /// <summary>Removes <paramref name="folder"/> only when it is empty (never recursive).</summary>
+    VerifiedRemoval RemoveEmptyFolder(string layoutRoot, string folder, DeletionScope scope);
+}

@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "sideFolder": "wsl-host-distro",
+  "baseFolder": "/mnt/v/ai-archive",
+  "lock": {
+    "state": "free",
+    "pid": 0,
+    "startTicks": 0,
+    "runId": "20000101T000000Z-1"
+  },
+  "inflight": [
+    {
+      "agent": "claude-code",
+      "key": "projects/p/s1.jsonl",
+      "month": "2000/01",
+      "state": "archived",
+      "files": 2,
+      "archivedAtUtc": "2000-01-01T00:00:00+00:00"
+    }
+  ],
+  "lastRun": {
+    "v": 1,
+    "runId": "20000101T000000Z-1",
+    "startedUtc": "2000-01-01T00:00:00+00:00",
+    "endedUtc": "2000-01-01T00:00:00+00:00",
+    "outcome": "done",
+    "stop": "",
+    "copied": 1,
+    "removed": 0,
+    "bytes": 200
+  }
+}

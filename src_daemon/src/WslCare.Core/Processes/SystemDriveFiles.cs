@@ -32,8 +32,6 @@ public static class SystemDriveFiles
 {
     private const string NotLinux = "the Windows system drive is inspected only inside a Linux distro";
 
-    private const int GroupOrOtherWrite = 0x12; // 0o022
-
     private const int AnyExecute = 0x49; // 0o111
 
     /// <summary>Why the ancestors of <paramref name="mountPoint"/> could let somebody but root change what is under it; empty
@@ -47,36 +45,11 @@ public static class SystemDriveFiles
         OperatingSystem.IsLinux() ? FileProblem(mount, [.. folder.Split('/'), name]) : NotLinux;
 
     /// <summary><c>/</c>, then each folder above <paramref name="mountPoint"/> — never the mount point itself, which is the
-    /// drive's own root and carries the drive's own mode.</summary>
-    private static IEnumerable<string> Ancestors(string mountPoint)
-    {
-        var parts = mountPoint.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        return [.. Enumerable.Range(0, parts.Length).Select(n => "/" + string.Join('/', parts[..n]))];
-    }
-
+    /// drive's own root and carries the drive's own mode — each root's alone (<see cref="RootOwnedPaths"/>, shared with the
+    /// product's own binary, plan §15r E9.S4).</summary>
     [SupportedOSPlatform("linux")]
-    private static string AncestorsProblem(string mountPoint)
-    {
-        foreach (var ancestor in Ancestors(mountPoint))
-        {
-            var problem = AncestorProblem(ancestor);
-            if (problem.Length > 0)
-            {
-                return problem;
-            }
-        }
-
-        return string.Empty;
-    }
-
-    [SupportedOSPlatform("linux")]
-    private static string AncestorProblem(string path) => RegularFiles.StatNoFollow(path) switch
-    {
-        Reading<FileStatus>.Available { Value.IsDirectory: false } => $"{path}, above the drive's mount point, is not a directory (a link or a file)",
-        Reading<FileStatus>.Available { Value.OwnerUid: not 0 and var uid } => string.Create(CultureInfo.InvariantCulture, $"{path}, above the drive's mount point, is owned by uid {uid}, not root"),
-        Reading<FileStatus>.Available { Value.Permissions: var mode } when (mode & GroupOrOtherWrite) != 0 => $"{path}, above the drive's mount point, is writable by its group or by others (mode {Convert.ToString(mode, 8)})",
-        var reading => reading.ReasonOrEmpty,
-    };
+    private static string AncestorsProblem(string mountPoint) =>
+        RootOwnedPaths.ChainProblem(RootOwnedPaths.Above(mountPoint), "above the drive's mount point", RegularFiles.StatNoFollow);
 
     [SupportedOSPlatform("linux")]
     private static string FileProblem(SystemDriveMount mount, IReadOnlyList<string> components)

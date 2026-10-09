@@ -95,6 +95,14 @@ public sealed record PathRules(char Separator, char AltSeparator, StringComparis
     /// <summary>Segments only — the drive or root prefix dropped.</summary>
     public IReadOnlyList<string> Segments(string absolutePath) => Split(absolutePath).Segments;
 
+    /// <summary>The folder holding <paramref name="absolutePath"/> by THESE rules — not the host's (<c>Path.GetDirectoryName</c> reads a
+    /// Windows path on Linux as one name, E9.S0 review round); a root is its own parent.</summary>
+    public string Parent(string absolutePath)
+    {
+        var (prefix, segments) = Split(absolutePath);
+        return segments.Count == 0 ? prefix : Join(prefix, [.. segments.Take(segments.Count - 1)]);
+    }
+
     private string TrimTrailingSeparators(string text)
     {
         var end = text.Length;

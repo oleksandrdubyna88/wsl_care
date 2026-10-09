@@ -37,10 +37,10 @@ public sealed class ConfigTrustFlows
     {
         using var home = new ScenarioHome("cfg-machine-only");
 
-        var refused = await home.RunAsync("config", "set", "archive.baseFolder", "/srv/archive");
+        var refused = await home.RunAsync("config", "set", "walk.maxEntries", "1000");
 
         refused.Exit.Should().Be((int)ExitCode.Usage);
-        CliStderr.Of(refused).Messages.Should().ContainSingle().Which.Should().Contain("archive.baseFolder").And.Contain("machine layer");
+        CliStderr.Of(refused).Messages.Should().ContainSingle().Which.Should().Contain("walk.maxEntries").And.Contain("machine layer");
         File.Exists(home.Paths.UserConfigFile).Should().BeFalse();
     }
 

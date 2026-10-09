@@ -241,11 +241,18 @@ public static class ConfigLoader
             case ValueCheck.Ok ok:
                 Take(file, key, ok.Value, entry.Line, state);
                 break;
+            case ValueCheck.Invalid invalid when file.Layer == ConfigLayer.User && UserOwned.Contains(key):
+                state.Notices.Add(new ConfigNotice(file, entry.Line, key.Name, $"{invalid.Message} — not taken; the rest of this layer stands"));
+                break;
             case ValueCheck.Invalid invalid:
                 state.Errors.Add(new ConfigError(file, entry.Line, invalid.Message));
                 break;
         }
     }
+
+    /// <summary>E9.S0 review round decision (d): keys only the USER's own process acts on — the archive's base folder (plan §15r
+    /// D1) — whose invalid user value is a notice: the value is not taken, and root is never put observe-only by it.</summary>
+    private static readonly ConfigKey[] UserOwned = [ConfigKeys.Archive.BaseFolder];
 
     /// <summary>A valid value enters the merge — unless it is a user value the trust does not take (plan §15q R1.2, R1.3, R1.6),
     /// which is a notice instead.</summary>

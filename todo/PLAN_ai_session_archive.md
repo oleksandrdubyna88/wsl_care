@@ -1,6 +1,8 @@
 # PLAN — move old AI-agent sessions into a dated archive instead of losing them
 
-> Status: **plan only, nothing implemented yet (2026-10-02).** Scope: a new `archive` capability of the
+> Status: **in progress, 2026-10-09 — E9.S0, E9.S1, E9.S2a (the archive's file seam), E9.S2b (the two-phase move, `archive run`), E9.S3 (`archive restore`, `archive list`), E9.S4 (A13 and A20 in the timer's engine, the user's own process doing every byte) and E9.S5 (the Windows side's open-file check) built, the review rounds fixed; the E9 live gate and the release carrying it are owed** (the catalogue's archive blocks, the archive's keys, the base folder
+> rules and `archive check-base`; the selection and `archive preview`, read-only; the parent plan's §15r *E9.S0 as built* and
+> *E9.S1 as built*, *E9.S2b as built*); sessions move on both sides by `archive run`, and in the distro's timer by A13 (E9.S4); the Windows side asks the Restart Manager (E9.S5). Planned 2026-10-02. Scope: a new `archive` capability of the
 > `wsl-care` daemon on **both** sides (WSL and Windows), its settings, its page in the VS Code extension.
 >
 > Parent plan: [PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) (§4.6 AI-agent monitoring).
@@ -161,7 +163,10 @@ from the side that reads it fast (Windows, for a Windows path).
 - **The index is written before the source goes** (finding 7): copy → fsync → verify hash → append the
   index line → fsync the index → delete the source. At startup a reconcile finishes the delete for an
   index entry whose source still exists with the same hash, re-indexes an archive file that has no
-  entry, and REPORTS any mismatch — it never deletes on a mismatch.
+  entry, and REPORTS any mismatch — it never deletes on a mismatch. *(Read with §8b, never alone: the
+  delete — and its resume — is decided per SESSION, not per file; a session one of whose files changed
+  keeps EVERY file. §15r D2 step 9 of the parent plan says how a removal stopped half way is finished:
+  the transcript first, and when it changed nothing of the session goes — consult 26b4a958, C-3.)*
 - **Whose month** (finding 16): the machine's local time zone at archive time; the index records the UTC
   instant and the zone id, so the placement can be reproduced.
 
@@ -191,6 +196,23 @@ changes here:
 - **Not checked yet, and a test-plan item now:** how Codex (`session_index.jsonl`, `state_5.sqlite`,
   `codex resume`) and Antigravity (`conversation_summaries.db`) behave while a session is in the archive,
   and that restore makes it visible again.
+
+## 8c. The E9 split and design — amendments (2026-10-06)
+
+The parent plan's §15r ([PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) §15r, plan only) splits this plan's daemon half
+into E9.S0–E9.S5 (S2 as S2a / S2b; E9.S6 only on the owner's word), with its review round folded in, and OVERRIDES the
+sections below where they differ; the extension half (§6) stays E10, the Windows schedule is the Windows plan's E11 (W-A15).
+
+| Here | §15r decides |
+|---|---|
+| §4 (who moves) | the TARGET USER's process moves; root's timer only starts it (`runuser`) and records its counts — root never opens a session file or writes the base (D1) |
+| §4.2 (in use) | Linux: the user's open descriptors, plus a live Claude Code process in the project's folder (said honestly: Claude keeps no transcript open, so age and no-replace renames are the real guards); Windows: the Restart Manager is asked — never an exclusive open (D2) |
+| §4.3–§4.6, §8a, §8b | TWO phases: a run copies (an exclusive create through no link, read-back hash, one retry, then the run stops) and indexes; the source is removed only by a LATER run after `archive.removeAfterHours` and a re-hash of the archived copy, through no-replace quarantine renames and a per-session check; a local in-flight file and self-describing quarantine names drive the reconcile (D2, D3) |
+| §4.5 (one index per month) | one index per month PER SIDE AND HOST (`…/<MM>/<side>/index.jsonl`, side `windows-<host>` / `wsl-<host>-<distro>`), a lease per side, every line MAC'd — one writer per file on a shared drive, the index untrusted (D4) |
+| §4 (the write-path probe, the `tar` hand-off) | no probe and no hand-off in E9: the rate is measured on every run, the WSL side writes through drvfs within a time budget taken from the timer run's slack, oldest first (D8, D9) |
+| §4 restore, §8 test plan ("with its mtime") | restore is create-only from the current layout root and the stored RELATIVE path, never overwrites, keeps the archived copy, and gives the restored files the restore time; a restored session is archived again later as an event only (D6) |
+| §5 (`basePath`, `linuxBasePath`) | `archive.baseFolder` per side, as that side sees it, an ordinary key behind the base rules — an existing folder never created, its mount recorded and verified every run, its readers reported (D7) |
+| §2 (the "raise it" button) | the product never writes into an agent's settings; a coupled rule keeps ⌈`archive.removeAfterHours` / 24⌉ + `archive.olderThanDays` + `archive.marginDays` ≤ `archive.agentRetentionDays` (1 + 14 + 7 ≤ 30), and the measured `cleanupPeriodDays` (managed settings first) SHORTENS the effective age (D10) |
 
 ## 9. Definition of Done
 

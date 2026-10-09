@@ -74,4 +74,31 @@ public sealed class AgentCatalogueTests
     [InlineData("?.db", "ab.db", false)]
     public void A_glob_name_pattern_matches_star_and_question_mark_only(string pattern, string name, bool matches) =>
         SessionGlob.Matches(pattern, name).Should().Be(matches);
+
+    [Theory]
+    [InlineData("a*b*c", "aXbYc", true)]
+    [InlineData("*a*", "bab", true)]
+    [InlineData("**x", "yyx", true)]
+    [InlineData("a*?", "a", false)]
+    [InlineData("*?*?*", "ab", true)]
+    [InlineData("*.jsonl", ".jsonl", true)]
+    [InlineData("x*y", "xyyy", true)]
+    [InlineData("x*y", "xyyz", false)]
+    public void Star_backtracking_matches_as_a_shell_does(string pattern, string name, bool matches) =>
+        SessionGlob.Matches(pattern, name).Should().Be(matches);
+
+    /// <summary>E9.S1 review round P1: a user-layer sessionGlob is matched by ROOT's walk against every name it lists — a pattern of
+    /// forty stars against a 200-character name that does not match must answer at once, not after exponential backtracking.</summary>
+    [Fact]
+    public async Task A_pattern_of_many_stars_answers_in_linear_time()
+    {
+        var pattern = string.Concat(Enumerable.Repeat("*a", 40)) + "b";
+        var name = new string('a', 200);
+
+        var matching = Task.Run(() => SessionGlob.Matches(pattern, name));
+        var first = await Task.WhenAny(matching, Task.Delay(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+
+        first.Should().BeSameAs(matching, "the matcher must not backtrack exponentially (user → root denial of service)");
+        (await matching).Should().BeFalse();
+    }
 }

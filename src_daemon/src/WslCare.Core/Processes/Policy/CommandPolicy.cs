@@ -21,19 +21,26 @@ namespace WslCare.Core.Processes.Policy;
 /// </remarks>
 public sealed class CommandPolicy
 {
-    private CommandPolicy(CommandCatalogue catalogue)
+    private readonly Func<SelfBinaryResult> _self;
+
+    private CommandPolicy(CommandCatalogue catalogue, Func<SelfBinaryResult> self)
     {
         Catalogue = catalogue;
+        _self = self;
     }
 
     /// <summary>The product's policy: the never-list over <see cref="CommandCatalogue.Product"/>.</summary>
     public static CommandPolicy Product => ProductPolicy.Value;
 
     /// <summary>The never-list over a catalogue of the caller's — what a test declares for the tool it starts.</summary>
-    public static CommandPolicy Over(CommandCatalogue catalogue)
+    public static CommandPolicy Over(CommandCatalogue catalogue) => Over(catalogue, SelfBinary.Product);
+
+    /// <summary>As above, with where the product's own binary is (<see cref="SelfBinary"/>) — a test's own.</summary>
+    public static CommandPolicy Over(CommandCatalogue catalogue, Func<SelfBinaryResult> self)
     {
         ArgumentNullException.ThrowIfNull(catalogue);
-        return new CommandPolicy(catalogue);
+        ArgumentNullException.ThrowIfNull(self);
+        return new CommandPolicy(catalogue, self);
     }
 
     public CommandCatalogue Catalogue { get; }
@@ -54,20 +61,39 @@ public sealed class CommandPolicy
     private CommandVerdict ReviewWrapped(CommandRequest request)
     {
         var wrapped = TargetUserArgv.Parse(request.Argv)!;
-        return WrappedRefusal(request, wrapped) ?? (Catalogue.MatchUser(wrapped) is not null ? CommandVerdict.Allowed : NoTemplate(request.Argv));
+        var self = IsSelf(wrapped.ExecutablePath);
+        return WrappedRefusal(request, wrapped, self) ?? Matched(request.Argv, wrapped, self);
     }
 
+    /// <summary>Whether <paramref name="path"/> is the product's own binary, checked now (<see cref="SelfBinary"/>).</summary>
+    private bool IsSelf(string path) => _self() is SelfBinaryResult.Found found && string.Equals(found.Path, path, StringComparison.Ordinal);
+
     /// <summary>Why a <c>runuser</c> command is refused before any template is asked — an inherited environment, a never-rule
-    /// broken by the WRAPPED command, a file outside the user's bin folders — or <c>null</c> when none of these holds.</summary>
-    private static CommandVerdict? WrappedRefusal(CommandRequest request, WrappedCommand wrapped) => request switch
+    /// broken by the WRAPPED command, a file that is neither in the user's bin folders nor the product's own binary — or
+    /// <c>null</c> when none of these holds.</summary>
+    private static CommandVerdict? WrappedRefusal(CommandRequest request, WrappedCommand wrapped, bool self) => request switch
     {
         { Environment: not CommandEnvironment.Clean } =>
             CommandVerdict.Refuse($"refused: a command run as {wrapped.User} must start with a clean environment, never this process's: {Shown(request.Argv)}"),
         _ when NeverList.FirstBroken(wrapped.Argv) is { } broken => Never(broken, request.Argv),
-        _ when !TargetUserArgv.IsInABinFolder(wrapped.ExecutablePath) =>
-            CommandVerdict.Refuse($"refused: {Shown([wrapped.ExecutablePath])} is not a file in one of the target user's bin folders ({string.Join(", ", TargetUserArgv.BinFolderSuffixes)}, nvm's node bin)"),
+        _ when !self && !TargetUserArgv.IsInABinFolder(wrapped.ExecutablePath) => NotInABinFolder(wrapped),
         _ => null,
     };
+
+    /// <summary>The user template it is an instance of, and its file the right one: a SELF-INVOCATION only with the product's own
+    /// checked binary — never a <c>wsl-care</c> of the user's bin folders — and every other template only with a file of those
+    /// folders (plan §15r D1, E9.S4).</summary>
+    private CommandVerdict Matched(IReadOnlyList<string> argv, WrappedCommand wrapped, bool self) => Catalogue.MatchUser(wrapped) switch
+    {
+        null => NoTemplate(argv),
+        { SelfInvocation: true } template when !self =>
+            CommandVerdict.Refuse($"refused: {template.Name} starts only the product's own root-owned binary, never {Shown([wrapped.ExecutablePath])}"),
+        { SelfInvocation: false } when !TargetUserArgv.IsInABinFolder(wrapped.ExecutablePath) => NotInABinFolder(wrapped),
+        _ => CommandVerdict.Allowed,
+    };
+
+    private static CommandVerdict NotInABinFolder(WrappedCommand wrapped) =>
+        CommandVerdict.Refuse($"refused: {Shown([wrapped.ExecutablePath])} is not a file in one of the target user's bin folders ({string.Join(", ", TargetUserArgv.BinFolderSuffixes)}, nvm's node bin)");
 
     private static CommandVerdict Never(NeverRule rule, IReadOnlyList<string> argv) =>
         CommandVerdict.Refuse($"refused by the never-list ({rule.Id}: {rule.Description}): {Shown(argv)}");
@@ -79,5 +105,5 @@ public sealed class CommandPolicy
     private static string Shown(IReadOnlyList<string> argv) =>
         string.Join(' ', argv.Select(a => new string([.. (a.Length > 120 ? a[..120] + "..." : a).Select(c => char.IsControl(c) ? '?' : c)])));
 
-    private static readonly Lazy<CommandPolicy> ProductPolicy = new(() => new CommandPolicy(CommandCatalogue.Product));
+    private static readonly Lazy<CommandPolicy> ProductPolicy = new(() => new CommandPolicy(CommandCatalogue.Product, SelfBinary.Product));
 }

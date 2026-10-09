@@ -13,6 +13,9 @@ public sealed record ActRequest(IReadOnlyList<ActionId> Ids, RunTrigger Trigger,
     /// <summary>The processes the panel SHOWED for A18 (<c>--process pid:start</c>, E7.S2b review A-H1).</summary>
     public ShownList ShownProcesses { get; init; } = ShownList.None;
 
+    /// <summary>The archived entries the panel SHOWED for A20 (<c>--entry &lt;id&gt;</c>, plan §15r E9.S4).</summary>
+    public ShownList ShownEntries { get; init; } = ShownList.None;
+
     /// <summary>The run id <c>--detach</c> allocated and wrote into the request (E6.S1): the run records itself under it, so the
     /// panel can follow it from the moment it was accepted. <c>null</c>: a new id from this run's start and pid.</summary>
     public RunId? RunId { get; init; }

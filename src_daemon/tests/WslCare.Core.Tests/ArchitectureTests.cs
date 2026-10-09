@@ -26,7 +26,7 @@ public sealed partial class ArchitectureTests
     [Fact]
     public void No_file_outside_the_two_seams_deletes_moves_or_starts_a_process()
     {
-        var seams = new[] { Metadata("WslCare.FileSystemSeam"), Metadata("WslCare.ProcessSeam") };
+        var seams = new[] { Metadata("WslCare.ProcessSeam") }.Concat(FileSystemSeamFiles()).ToList();
         var offenders = SourceFiles()
             .Where(file => !seams.Contains(file, StringComparer.OrdinalIgnoreCase))
             .SelectMany(file => Scan(File.ReadAllText(file)).Select(hit => $"{file}:{hit.Line}: {hit.Text}"))

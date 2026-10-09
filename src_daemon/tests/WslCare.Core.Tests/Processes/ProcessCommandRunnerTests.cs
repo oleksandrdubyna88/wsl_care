@@ -14,7 +14,7 @@ namespace WslCare.Core.Tests.Processes;
 /// (<see cref="WallClock"/>), each wide enough for a loaded machine (2026-10-03).
 /// </summary>
 [Collection(WallClock.Name)]
-public sealed class ProcessCommandRunnerTests
+public sealed partial class ProcessCommandRunnerTests
 {
     // The subject's children are shells, which the product's never-list refuses: the runner's own tests take its one unguarded seam.
     private static readonly ICommandRunner Runner = ProcessCommandRunner.UnguardedForItsOwnTests(_ => CommandVerdict.Allowed);

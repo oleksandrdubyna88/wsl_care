@@ -64,7 +64,7 @@ internal sealed class ScenarioHome : IDisposable
 
     /// <summary>The environment every run gets, on top of this process's (which keeps
     /// <c>DOTNET_ROOT</c>, so the framework-dependent apphosts still find the runtime).</summary>
-    public IReadOnlyDictionary<string, string?> Environment => new Dictionary<string, string?>(StringComparer.Ordinal)
+    public IReadOnlyDictionary<string, string?> Environment => WithExtra(new Dictionary<string, string?>(StringComparer.Ordinal)
     {
         [HostPaths.SandboxRootVariable] = SandboxRoot,
         // "PATH" on both families: ProcessStartInfo.Environment is case-insensitive on Windows, so
@@ -82,7 +82,20 @@ internal sealed class ScenarioHome : IDisposable
         // Server started as a user service. It is therefore ALWAYS set here, so every scenario proves the CLI ignores it: the
         // timer says so with --timer in its unit's ExecStart (CI run 37129452377: four act tests took a runner job for the timer).
         ["INVOCATION_ID"] = "inherited-from-a-systemd-unit",
-    };
+    });
+
+    /// <summary>Variables one scenario adds for its next runs (E9.S2b: the archive's kill point, <c>WSL_CARE_TEST_ARCHIVE_KILL</c>).</summary>
+    public Dictionary<string, string?> Extra { get; } = new(StringComparer.Ordinal);
+
+    private Dictionary<string, string?> WithExtra(Dictionary<string, string?> environment)
+    {
+        foreach (var (name, value) in Extra)
+        {
+            environment[name] = value;
+        }
+
+        return environment;
+    }
 
     /// <summary>Whether the CLI answers "am I root" with yes inside this sandbox (<see cref="ProcessPrivilege.SandboxVariable"/>) —
     /// what lets a scenario drive <c>act</c> over fake tools without being root. Off by default: then the operating system decides.</summary>

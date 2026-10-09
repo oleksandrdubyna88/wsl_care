@@ -25,13 +25,13 @@ public sealed class ConfigProvenanceTests : IDisposable
     [Fact]
     public async Task An_act_run_detail_names_every_setting_a_layer_above_the_defaults_set_and_its_layer()
     {
-        _sandbox.Write("/home/me/.config/wsl-care/config.json", """{ "containers": { "stoppedOlderThanDays": 3 }, "archive": { "baseFolder": "/srv/archive" } }""");
+        _sandbox.Write("/home/me/.config/wsl-care/config.json", """{ "containers": { "stoppedOlderThanDays": 3 }, "walk": { "maxEntries": 1000 } }""");
 
         var detail = await RunA10(ConfigLoader.Load(_sandbox.Paths, _sandbox.Files));
 
         detail.Config.Should().ContainSingle().Which.Should().Match<ConfigValueReport>(v =>
             v.Key == "containers.stoppedOlderThanDays" && v.Value.GetInt32() == 3 && v.Layer == ConfigLayer.User);
-        detail.ConfigNotices.Should().ContainSingle().Which.Key.Should().Be("archive.baseFolder");
+        detail.ConfigNotices.Should().ContainSingle().Which.Key.Should().Be("walk.maxEntries");
         var written = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(detail, WslCareJsonContext.Default.ActRunDetail))!;
         written["config"]!.AsArray().Should().ContainSingle();
         written["configNotices"]!.AsArray().Should().ContainSingle();

@@ -376,6 +376,17 @@ public sealed class DetachedRunsTests : IDisposable
         Requests().Should().ContainSingle().Which.Should().BeOfType<RunRequestRead.Parsed>().Which.File.ShownProcesses.Should().Equal("10:4000");
     }
 
+    /// <summary>Plan §15r E9.S4: a detached A20 button run carries the entries its modal showed into the request, read back by the
+    /// template unit's run.</summary>
+    [Fact]
+    public void A_detached_a20_run_carries_its_shown_entries_into_the_request()
+    {
+        var (exit, _, stderr) = CliRun.Over(Host(), "act", "A20", "--confirm", "--manual", "--detach", "--entry", "0123456789abcdef", "--entry", "00000000000000aa");
+
+        exit.Should().Be((int)ExitCode.Ok, stderr);
+        Requests().Should().ContainSingle().Which.Should().BeOfType<RunRequestRead.Parsed>().Which.File.ShownEntries.Should().Equal("00000000000000aa", "0123456789abcdef");
+    }
+
     // ---------- --only - (stdin) ----------
 
     [Fact]

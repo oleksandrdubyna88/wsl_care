@@ -140,8 +140,9 @@ you typed, a key read from the file, a path — are shown as `?`.
 **What a setting can and cannot do** (plan §15q R1). No setting is free text: `processes.families` takes only the named
 families (`dotnet-build-servers`, `testhost`, `docker-desktop-proxy`, `language-servers` — the C# language server, an A11 suspect once its VS Code window closed —, `vscode-server` — which
 also matches the VS Code server itself, daemonised and so "orphaned": do not list it for A11 —, `node` — never `other`, the
-catch-all, and never `ai-agents`), `distro` a distribution name, `archive.baseFolder` an absolute path — and that one only
-in the MACHINE file (`config set` refuses it; a user-file value is ignored). No setting changes what may run or be
+catch-all, and never `ai-agents`), `distro` a distribution name, `archive.baseFolder` an absolute path (or a Windows share)
+that `config set` writes only when the archive's folder rules accept it (*AI-session archive* below), `archive.agents` only
+agents whose session layout was confirmed. No setting changes what may run or be
 deleted — only when a declared cleanup runs and with which bounded number. `contracts/config-keys.json` lists every key
 with its range, its default and what it means to a root run.
 
@@ -502,6 +503,8 @@ counts an object already gone as *already gone* (not a failure), and MEASURES wh
 | `A11` | `SIGTERM`, `SIGKILL` after 10 s — by pid AND start time (a `pidfd`), never by name | memory, not disk (not counted) | off by default; only suspects: orphaned, in `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not root's — and only the TARGET user's processes (no single target user: no suspects) — no CPU in a 5 s window and none since |
 | `A18` | the same signals, of the target user's ORPHANED AI-agent processes (claude, codex, gemini, …) — a **button only**: the timer never selects it, whatever any setting says (it has no `auto` switch); a button run ends only the processes its preview SHOWED (`--process <pid:start>`, each still eligible) | memory, not disk (not counted) | only when ALL hold: the `ai-agents` family, the target user's, re-parented to init (never a `systemd --user` service), no terminal, no child process, attributable to one catalogue agent whose session layout is confirmed and whose program resolves into that agent's own install, **no CPU for `processes.aiAgentsIdleHours` (default 4 h) measured** — the timer's full runs record each such process's CPU by pid + boot + start time, on the wall AND the monotonic clock, in `/var/lib/wsl-care/agent-cpu.json` (0600), so the first runs end nothing and a gap or a clock jump restarts the wait — an environment that moves no agent home, and sessions of that agent found, none written in the same window; each re-read just before its signal |
 | `A19` | the same signals, of the target user's IDLE or BUSY-WITHOUT-ACTIVITY MCP servers (`coai-mcp` and `playwright-mcp`, the watched catalogue, and the user's own `mcpServers.programs`; Playwright at work keeps a browser child, which keeps it) — a button AND the timer: `auto.A19` is **on by default** (the owner's decision of 2026-10-08), and the daemon's dry-run rules (`dryRun`, the first week) still decide whether the timer stops anything or only records what it would; a button run stops only the processes its preview SHOWED (`--process <pid:start>`) | memory, not disk (not counted) | only when ALL hold: an instance of a watched MCP server (the PROGRAM is the server — an agent is never one), the target user's, never root's, no terminal, no child process, the process the snapshot saw, and **no CPU for `mcpWatchdog.idleMinutes` (default 60 min) measured** by identity over the same CPU history A18 uses (which now records the MCP servers too) — `mcpWatchdog.orphanIdleMinutes` (default 10) for a server re-parented to init (its agent died) — but never an orphan of a user-listed program, whose name may then be another program's; on the 4-hour timer that is a floor (a server is stopped at the first run that sees it unchanged since the previous one); the agent's session may need `/mcp` to reconnect a stopped server. **Busy half (E14 S2b):** with the same guards, a server busy without a log write for `mcpWatchdog.busyMinutes` (default 30) — an unbroken chain of interval readings in ROOT's CPU ledger, each no further apart than `mcpServers.cpuIntervalMaxMinutes` (20), the newest no older than that; never a user's ledger — is a target too; its signal keeps the identity, account and terminal re-checks and drops only the CPU one (a busy server moves its CPU by definition). The watch (*Watch*, above) makes both halves act within minutes |
+| `A13` | `runuser -u <you> -- /opt/wsl-care/bin/wsl-care archive preview / reach / run --budget-seconds <n> --run-id <runId> --json` — the product's OWN root-owned binary, run as YOU; root never opens a session file nor the archive | the bytes the removals took from the agents' folders after their copies were verified again — **moved**, not deleted | acts only with `archive.baseFolder` set; the timer waits for idle unless a session is close to its agent's own deletion; its run takes the run limit's slack (at most `archive.runBudgetMinutes`); the run detail names agents and counts, never a session — `archive list --run <runId>` (as you) names them |
+| `A20` | `runuser -u <you> -- /opt/wsl-care/bin/wsl-care archive restore --entry <id>,… --json` | nothing (a restore frees nothing) | a **button only**: restores only the entries its preview SHOWED (`--entry <id>`, each judged again), verified ones removed at their source; at most `archive.maxRestoreEntries` per press |
 | `A12` | deletes the Playwright browsers no project's `browsers.json` references; `dotnet nuget locals http-cache --clear` as the user | each folder before, counted when gone | a button only; refuses the Playwright part when what is referenced cannot be told |
 | `A14` | deletes VS Code / Cursor / Windsurf server builds no process uses, keeping the newest 2, and `.obsolete` extensions | each folder before, counted when gone | every delete judged by the deletion policy |
 | `A17` | `pnpm store prune`, `uv cache prune`, `pip cache purge` as the target user | each cache before/after | `cargo sweep` is not run (it would delete under `~/git`); Gradle prunes its own caches |
@@ -674,6 +677,81 @@ is never searched. A version is read along the binary's own links — a native i
 the binary runs. A walk or a listing never starts in a folder reached through a link below the home, nor on another
 filesystem than the home's; a session's size holds its companion files (Claude Code's session folder and file history,
 Antigravity's `brain/` and annotations).
+
+## AI-session archive — where it may live (E9.S0; the move E9.S2, the restore E9.S3, the timer E9.S4)
+
+```bash
+wsl-care archive check-base 'V:\ai-archive' --json             # as YOU, never as root: may the archive live there?
+wsl-care config set archive.baseFolder /mnt/v/ai-archive       # written only when the same rules accept the folder
+```
+
+The archive MOVES old AI sessions into `<base>/<agent>/<yyyy>/<MM>/…` — and the process that moves them is YOURS, never root's
+(plan §15r D1), so the folder is judged as you: it must already exist (it is never created), be reached through no link, be no
+drive, share or filesystem root and not your home, not be, hold or sit inside an AI agent's folder, `~/git`, Claude's temporary
+folder, the temporary folder, a folder a cleanup removes or wsl-care's own folders, lie on a filesystem that survives a
+shutdown (never `tmpfs`), and be writable by you. Inside the distribution a Windows path is answered with the folder it is
+mounted at (`V:\ai-archive` → `/mnt/v/ai-archive`, from the mount table); a drive the distribution has not mounted is refused.
+An accepted folder may come with warnings — other accounts may read it (archived sessions hold what the agents saw:
+`chmod 700` it; on Windows, the folder's Everyone / Users / Authenticated Users permissions), or it lies on the distribution's
+own disk — and notes (a FAT drive's 2-second times, a drvfs mount's reported modes). A refused folder is an answer (exit 0,
+`accepted: false` and its `rule`); as root the verb — and `config set archive.baseFolder` — refuses with exit **81**. A folder on a
+Windows drive is judged as the Windows folder it is too: never inside your Windows profile's agent folders, its `AppData`, its
+temporary folder or `git`, nor any profile's (`C:\Users\<anyone>\AppData`, `…\.claude`); a folder reached through a bind mount
+is judged where it really lies; on Windows a share back to this machine (`\\wsl$`, `\\localhost`, this machine's name, `C$`) is
+refused — name the folder by its drive. A folder on the way that another account owns is warned about. A path is taken as it
+reads: an empty or `.` segment (`//mnt/c`, `/mnt/./c`) is refused, and on a Windows drive so is an 8.3 short name
+(`CLAUDE~1`); before the first full run has found your Windows profile, a folder on a Windows drive is accepted with a warning.
+
+Which agents are archived is `archive.agents` (Claude Code, Codex, Gemini CLI, Antigravity — the layouts confirmed on
+2026-10-02); a manual agent of `aiAgents.extra` that names its `sessionGlob` may be added as `manual:<name>` (never by default). The ages are settings with a rule between them: a session is copied when its newest file is older than
+`archive.olderThanDays` (14), removed from your side `archive.removeAfterHours` (24) later, and both stay
+`archive.marginDays` (7) ahead of the agent's own deletion, `archive.agentRetentionDays` (30, Claude Code's default
+`cleanupPeriodDays` — raise it with that setting). A value that breaks the rule is not taken.
+
+### What it would move — `archive preview` (E9.S1)
+
+```bash
+wsl-care archive preview                      # as YOU: per agent, what is due now, what is kept and why
+wsl-care archive preview --agent claude-code --json
+```
+
+Read-only: it lists the agents' folders and looks at file times — it opens no session file and writes nothing (the one file it
+reads is Claude Code's own `cleanupPeriodDays`: the managed settings first, then `settings.json` under `CLAUDE_CONFIG_DIR` or
+`~/.claude`). One session is moved as ONE unit with its companions (Claude Code's `<session>/` folder and `file-history`,
+Antigravity's SQLite sidecars …), aged and filed by the NEWEST write of any of its files, under the month of that write in
+this side's time zone. A session becomes due at `archive.olderThanDays` — or earlier when the agent deletes its own sessions
+sooner than that leaves room for (Claude Code's retention − `archive.marginDays` − the removal delay; never below 1 day, and
+said in a warning). A due session stays where it is, counted with its reason, when one of its files is open in a process, Claude
+Code is working in its project, its database may be open (a `-wal` beside it), it names what never moves (a session called
+`memory.jsonl` is refused whole), one of its names cannot exist on a Windows drive (`< > : " \ | ? *`, a reserved device name
+such as `con`, a trailing dot or space, invalid UTF-8, two names differing only by case), or not all of it could be seen. Only a
+COMPLETE open-file scan lets a session move: a scan cut by its time keeps every due session. On Windows the Restart Manager is
+asked who holds each session's files (nothing is opened); a holder, an error or a question past `archive.inUseScanSeconds` keeps
+the session, and because Claude Code's working folder cannot be read there, a running Claude Code on Windows keeps every Claude
+Code session in place. Claude Code is not archived while `CLAUDE_CONFIG_DIR` points
+elsewhere than `~/.claude`; `--agent` previews an agent `archive.agents` does not hold, marked `enabled: false`. As root it
+refuses with exit **81**.
+
+### The timer and the buttons — A13 and A20 (E9.S4)
+
+The timer (and the *Archive now* button) runs **A13**; restoring from the panel is **A20** (A19 is the idle MCP servers' stop).
+Both are root's actions that do nothing themselves: each starts the product's OWN installed binary as you —
+`runuser -u <you> -- /opt/wsl-care/bin/wsl-care archive …` — and only when that binary and every folder above it belong to root
+and nobody else may write them (never a `wsl-care` found in your `~/.local/bin`). The child gets a clean environment and an
+empty stdin. A13 first runs `archive preview`, then a short `archive reach` (the side's lock FIRST, then the base judged and
+reached within `archive.reachabilitySeconds` — a share that stopped answering holds that short child and the lock, never the run;
+a second reach beside it answers `busy` at once), then the streamed `archive run`. When the side's lock is another run's — your own
+`archive run` in a terminal, most likely — A13 does nothing this time and says so. A timer run gives it what is left of
+`timer.runLimitMinutes` after the actions behind it and `archive.finishGraceMinutes`, at most `archive.runBudgetMinutes`; below
+`archive.minRunMinutes` it skips. A20 fails, naming why, when its child stopped before it restored anything. Every line the child prints is progress, so a long run reads
+live and a silent one reads wedged. Root records every child it starts (and the binary under it, also right before a kill) and
+starts no second one while one of them is still alive — a process stuck in the kernel on a share; a record it cannot write stops
+the archive's actions, saying why. Root reads only COUNTS from the child's answer (judged
+first: its schema, its closed sets, every number in range, root's own run id): the run detail names agents, never a session. Both
+refuse where the `runuser` PAM stack PAM would read — `/etc/pam.d/runuser`, else `/usr/lib/pam.d/runuser`, else the stack of
+`other` — or a file it includes names `pam_systemd` (the child would get a login session root does not bound), and where that
+stack cannot be checked at all: none found, a file that is a link or not root's alone, an include by a path. `doctor` says so
+(`archive.runuser`).
 
 ## Extension (preview)
 

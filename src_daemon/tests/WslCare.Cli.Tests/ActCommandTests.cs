@@ -186,10 +186,13 @@ public sealed class ActCommandTests : IDisposable
     [Fact]
     public void An_action_this_build_does_not_hold_is_refused_by_name()
     {
-        var (exit, _, stderr) = CliRun.Over(Host(Root), "act", "A13", "--preview");
+        // Since E9.S4 the product holds every action: a build that lacks one is a registry of its own.
+        var partial = new ActionRegistry([.. ActionRegistry.Product.Actions.Where(a => a.Id.Text != "A13")]);
+
+        var (exit, _, stderr) = CliRun.Over(Host(Root) with { Actions = partial }, "act", "A13", "--preview");
 
         exit.Should().Be((int)ExitCode.Usage);
-        stderr.Should().Contain("A13 is not built in this release; act holds: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
+        stderr.Should().Contain("A13 is not built in this release; act holds: " + string.Join(", ", partial.Actions.Select(a => a.Id.Text)));
     }
 
     [Fact]
@@ -220,7 +223,7 @@ public sealed class ActCommandTests : IDisposable
     [Fact]
     public void The_help_names_the_act_verb_and_the_actions_this_build_holds()
     {
-        CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]")
+        CommandLine.HelpText.Should().Contain("act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--entry <id>]... [--json]")
             .And.Contain("act --request <runId>").And.Contain("act --stop <runId> [--json]").And.Contain("collect [--timer or --detach] [--json]")
             .And.Contain("\"act\" holds these actions: " + string.Join(", ", ActionRegistry.Product.Actions.Select(a => a.Id.Text)));
     }
@@ -269,6 +272,31 @@ public sealed class ActCommandTests : IDisposable
             .Which.Processes.Should().Equal("300:4000");
         CommandLine.Parse(["act", "A10", "--confirm", "--process", "300:4000"]).Should().BeOfType<Request.Failed>()
             .Which.Message.Should().Contain("A18").And.Contain("A19");
+    }
+
+    /// <summary>Plan §15r E9.S4: A20's button run is bound to the archived entries its modal showed — each a 16-hex entry id, none
+    /// twice, and only with A20 among the actions.</summary>
+    [Fact]
+    public void The_entry_flag_belongs_to_A20_and_takes_only_entry_ids()
+    {
+        CommandLine.Parse(["act", "A20", "--confirm", "--manual", "--entry", "0123456789abcdef", "--entry", "00000000000000aa"]).Should().BeOfType<Request.Act>()
+            .Which.Entries.Should().Equal("0123456789abcdef", "00000000000000aa");
+        CommandLine.Parse(["act", "A13", "--confirm", "--entry", "0123456789abcdef"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("A20");
+        CommandLine.Parse(["act", "A20", "--confirm", "--entry", "NOT-AN-ID"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("16 lowercase hex");
+        CommandLine.Parse(["act", "A20", "--confirm", "--entry", "0123456789abcdef", "--entry", "0123456789abcdef"]).Should().BeOfType<Request.Failed>().Which.Message.Should().Contain("twice");
+        CommandLine.Parse(["act", "A20", "--confirm", "--entry"]).Should().BeOfType<Request.Failed>();
+    }
+
+    /// <summary>The S4 code round, finding 7: the CLI bounds the entries by archive.maxRestoreEntries' ceiling, not A4's volume list.</summary>
+    [Fact]
+    public void More_entries_than_any_restore_takes_are_refused_at_the_command_line()
+    {
+        var most = Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max;
+        IEnumerable<string> Entries(int count) => Enumerable.Range(1, count).SelectMany(i => new[] { "--entry", i.ToString("x16", System.Globalization.CultureInfo.InvariantCulture) });
+
+        CommandLine.Parse(["act", "A20", "--confirm", "--manual", .. Entries(most)]).Should().BeOfType<Request.Act>();
+        CommandLine.Parse(["act", "A20", "--confirm", "--manual", .. Entries(most + 1)]).Should().BeOfType<Request.Failed>()
+            .Which.Message.Should().Contain(most.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Fact]

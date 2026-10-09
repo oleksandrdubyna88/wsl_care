@@ -7,7 +7,7 @@ namespace WslCare.Core.Actions;
 /// </summary>
 /// <remarks>E3.S1 registered A10 (the journal vacuum), the reference that proved the engine end to end; E3.S2 the
 /// irreversible deletions A4–A9, A11, A12, A14, A17 (with A5Testcontainers and A6Unused, the second switches of A5 and A6);
-/// E3.S3 A1, A2, A3, A15, A16 — so every action but A13 (the archive, E9's) is built.</remarks>
+/// E3.S3 A1, A2, A3, A15, A16; E7.S2b A18; E14 S2a A19; E9.S4 A13 (the archive) and A20 (its restore button) — every action.</remarks>
 
 public sealed class ActionRegistry
 {
@@ -44,6 +44,8 @@ public sealed class ActionRegistry
         new BuildServers.BuildServerShutdown(),
         new Disk.FilesystemTrim(),
         new Clock.ClockFix(),
+        new Archive.ArchiveAction(),
+        new Archive.RestoreAction(),
     ]);
 
     public IReadOnlyList<ICleanupAction> Actions { get; }

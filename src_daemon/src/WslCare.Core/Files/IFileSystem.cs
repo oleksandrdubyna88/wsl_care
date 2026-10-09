@@ -153,6 +153,9 @@ public abstract record EntryListing
     /// <summary>Why a listing stopped at its deadline.</summary>
     public static string OutOfTime(string path) => $"stopped at the time budget while listing {path}";
 }
+/// <summary>One file a walk listed — its full path as this process sees it, its length and its last write, UTC, from the directory
+/// entry alone (never opened).</summary>
+public sealed record TreeFile(string Path, long Length, DateTimeOffset LastWriteUtc);
 
 /// <summary>The ceiling on one walk of a tree (reliability rule: every wait has a ceiling): how many entries it
 /// may visit and how long it may take. A walk that reaches either stops and says so.</summary>
@@ -175,6 +178,9 @@ public abstract record TreeMeasure
         /// <summary>What the walk declined to enter, each named once (plan §15q R2.3): <c>memory (never entered)</c>, a prefix,
         /// <c>&lt;folder&gt; (different filesystem)</c>. Empty for a walk under no such rule.</summary>
         public IReadOnlyList<string> Excluded { get; init; } = [];
+
+        /// <summary>Every file counted, when the rules asked to list them (<see cref="TreeRules.ListFiles"/>); empty otherwise.</summary>
+        public IReadOnlyList<TreeFile> Listed { get; init; } = [];
     }
 
     public sealed record Missing : TreeMeasure;
@@ -320,6 +326,11 @@ public interface IFileSystem
     /// and for a process that may NOT write there, nothing was ever created.
     /// </summary>
     WriteAccess ProbeWriteAccess(string directory);
+
+    /// <summary>The same probe of a folder that must ALREADY exist — nothing is ever created but the probe file (plan §15r D7: the
+    /// archive's base is never created). A test's own file system without its own checks existence first.</summary>
+    WriteAccess ProbeExistingWriteAccess(string directory) =>
+        DirectoryExists(directory) ? ProbeWriteAccess(directory) : new WriteAccess.NotWritable($"{directory} does not exist; it is never created");
 
     /// <summary>
     /// Takes an exclusive lock file and holds it until the handle is disposed. The atomic operation it rests on

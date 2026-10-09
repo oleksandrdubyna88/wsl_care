@@ -1,8 +1,6 @@
 using WslCare.Core.Config;
-using System.Globalization;
-using System.Text.RegularExpressions;
-
 using WslCare.Core.Collectors;
+using WslCare.Core.Files;
 using WslCare.Core.Health;
 
 namespace WslCare.Core.Processes;
@@ -49,7 +47,7 @@ public sealed record SystemDriveMount(string MountPoint, uint DeviceMajor, uint 
 /// the handler must be registered and <c>enabled</c> (observed 2026-10-04: <c>WSLInterop</c>, interpreter <c>/init</c>,
 /// magic <c>4d5a</c> = <c>MZ</c>) — under ANY of its names: one enabled entry is enough (PR #10 retro round, gate C1).</para>
 /// </remarks>
-public static partial class WindowsSystemDrive
+public static class WindowsSystemDrive
 {
     /// <summary>The drive Windows is installed on — assumed, not derived (see the remarks).</summary>
     public const string Drive = @"C:\";
@@ -79,18 +77,19 @@ public static partial class WindowsSystemDrive
         [HealthCommands.PowerShell] = "Windows/System32/WindowsPowerShell/v1.0",
     };
 
-    private static readonly string[] DriveNames = [Drive, Drive.TrimEnd('\\')];
+    /// <summary>The system drive's letter — <see cref="Drive"/>'s first character.</summary>
+    private static readonly char DriveLetter = Drive[0];
 
     /// <summary>The system drive's mount per <paramref name="mountInfo"/> (the text of <see cref="MountInfo"/>), or why
     /// not — none (naming what IS at <paramref name="automountRoot"/><c>c</c>), or several different mount points (named).</summary>
     public static Reading<SystemDriveMount> Mount(string mountInfo, string automountRoot)
     {
-        var lines = mountInfo.Split('\n').SelectMany(MountInfoLine.Parse).ToList();
-        var drive = lines.Where(IsTheDrive).ToList();
+        var lines = MountTable.Parse(mountInfo);
+        var drive = lines.Where(l => MountTable.IsWholeDrive(l, DriveLetter)).ToList();
         var points = drive.Select(l => l.MountPoint).Distinct(StringComparer.Ordinal).ToList();
         return points.Count switch
         {
-            1 => Reading.Of(drive.Last().ToMount()),
+            1 => Reading.Of(new SystemDriveMount(drive.Last().MountPoint, drive.Last().Major, drive.Last().Minor)),
             0 => Reading.Missing<SystemDriveMount>(NoDrive(lines, automountRoot)),
             _ => Reading.Missing<SystemDriveMount>($"{MountInfo} mounts {Drive} at {points.Count} different places ({string.Join(", ", points)}); which one is the drive is not guessed"),
         };
@@ -125,31 +124,8 @@ public static partial class WindowsSystemDrive
 
     private static string FirstLine(string text) => text.Split('\n')[0].Trim();
 
-    private static bool IsTheDrive(MountInfoLine line) => IsAWholeDriveAtAnAbsolutePoint(line) && IsADrvfsMountOfTheDrive(line);
-
-    /// <summary>The whole drive (root <c>/</c>, not a bound folder of it), mounted at an absolute path.</summary>
-    private static bool IsAWholeDriveAtAnAbsolutePoint(MountInfoLine line) => line.Root == "/" && IsAbsolute(line.MountPoint);
-
-    private static bool IsADrvfsMountOfTheDrive(MountInfoLine line) => IsWsl2Drvfs(line) || IsWsl1Drvfs(line) || IsVirtiofs(line);
-
-    /// <summary>WSL 2: <c>9p</c> with <c>aname=drvfs</c>, judged by its <c>path=</c> option — never by the source label.</summary>
-    private static bool IsWsl2Drvfs(MountInfoLine line) =>
-        line.Type == "9p" && line.Options.Contains("aname=drvfs", StringComparer.Ordinal) && NamesTheDrive(PathOption(line));
-
-    /// <summary>WSL 1: type <c>drvfs</c>, judged by its source.</summary>
-    private static bool IsWsl1Drvfs(MountInfoLine line) => line.Type == "drvfs" && NamesTheDrive(line.Source);
-
-    /// <summary>virtiofs, only when the source or a <c>path=</c> option names the drive (WSL's tag-mounted share never does).</summary>
-    private static bool IsVirtiofs(MountInfoLine line) =>
-        line.Type == "virtiofs" && (NamesTheDrive(line.Source) || NamesTheDrive(PathOption(line)));
-
-    private static bool NamesTheDrive(string name) => DriveNames.Contains(name, StringComparer.OrdinalIgnoreCase);
-
-    private static string PathOption(MountInfoLine line) =>
-        line.Options.Where(o => o.StartsWith("path=", StringComparison.Ordinal)).Select(o => o["path=".Length..]).FirstOrDefault() ?? string.Empty;
-
     /// <summary>Why no line is the drive — and what is at the automount folder instead, when something is.</summary>
-    private static string NoDrive(IReadOnlyList<MountInfoLine> lines, string automountRoot)
+    private static string NoDrive(IReadOnlyList<MountEntry> lines, string automountRoot)
     {
         var folder = automountRoot.TrimEnd('/') + "/c";
         var there = lines.LastOrDefault(l => l.MountPoint == folder);
@@ -158,13 +134,6 @@ public static partial class WindowsSystemDrive
             : $"{folder} is a {there.Type} mount of {there.Source} (root {there.Root}), which this rule does not identify as {Drive}";
         return $"{MountInfo} has no drvfs mount of {Drive} as a whole drive at an absolute path; {found}";
     }
-
-    /// <summary>The kernel's mount points start at <c>/</c>; the rest of the clause is this host's own rule, the same on Linux
-    /// and what lets the Windows test leg point a table at its temporary folder.</summary>
-    private static bool IsAbsolute(string mountPoint) => mountPoint.StartsWith('/') || Path.IsPathFullyQualified(mountPoint);
-
-    private static string Unescaped(string field) =>
-        OctalEscape().Replace(field, m => ((char)Convert.ToInt32(m.Groups[1].Value, 8)).ToString());
 
     private static Reading<string> ReadText(string path)
     {
@@ -175,43 +144,6 @@ public static partial class WindowsSystemDrive
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Reading.Missing<string>(e is FileNotFoundException or DirectoryNotFoundException ? $"{path} does not exist" : $"{path} could not be read: {e.Message}");
-        }
-    }
-
-    [GeneratedRegex(@"\\([0-7]{3})")]
-    private static partial Regex OctalEscape();
-
-    /// <summary>One mountinfo line: <c>id parent major:minor root mount-point options [optional…] - type source super-options</c>.</summary>
-    private sealed record MountInfoLine(string Root, string MountPoint, uint Major, uint Minor, string Type, string Source, IReadOnlyList<string> Options)
-    {
-        /// <summary>The line, or nothing when it is not one (empty, or short of its fields). The kernel escapes the root, the
-        /// mount point and the source (decoded here); the SUPER OPTIONS it prints raw — live, Docker's line carries
-        /// <c>path=C:\Program Files\…</c> — so they are never decoded: a folder named <c>C:\134</c> must not read as <c>C:\</c>.</summary>
-        public static IEnumerable<MountInfoLine> Parse(string line)
-        {
-            var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var dash = Separator(f);
-            return dash > 0 && Device(f[2]) is [var major, var minor]
-                ? [new(Unescaped(f[3]), Unescaped(f[4]), major, minor, f[dash + 1], Unescaped(f[dash + 2]), f[dash + 3].Split([',', ';']))]
-                : [];
-        }
-
-        /// <summary>Where the <c>-</c> that ends the optional fields is, when the line holds every field around it; -1 otherwise.</summary>
-        private static int Separator(string[] f)
-        {
-            var dash = f.Length >= 10 ? Array.IndexOf(f, "-", 6) : -1;
-            return dash > 0 && dash + 3 < f.Length ? dash : -1;
-        }
-
-        public SystemDriveMount ToMount() => new(MountPoint, Major, Minor);
-
-        /// <summary><c>major:minor</c> as two numbers; empty when it is not that.</summary>
-        private static uint[] Device(string field)
-        {
-            var parts = field.Split(':');
-            return parts.Length == 2 && uint.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var major) && uint.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var minor)
-                ? [major, minor]
-                : [];
         }
     }
 }

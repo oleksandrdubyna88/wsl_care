@@ -76,7 +76,7 @@ over Memory (Available MBytes, Committed Bytes, Pool Nonpaged/Paged Bytes, Stand
 | W-A12 | Docker/WSL VHDX compaction: `wsl --shutdown` → `Optimize-VHD` / diskpart | free inside > 10 GB | button | **yes** | stops WSL — confirmation names what is running |
 | W-A13 | ProBalance-style temporary de-prioritisation of background CPU hogs (never the foreground app, never protected processes), auto-revert | CPU > 85 % for 30 s | **off** (opt-in) | no | temporary |
 | W-A14 | .NET: `dotnet workload clean`; set `DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1` (user env) | inventory shows leakage | button | no | stops the temp-folder leak |
-| W-A15 | AI-session archive (Windows side) | per the archive plan | per plan | no | move, never delete |
+| W-A15 | AI-session archive (Windows side) — the verbs, the lock and the reconcile are E9.S5's ([PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) §15r); this plan's E11 task runs `wsl-care.exe archive run` as the user on its schedule | per the archive plan | per plan | no | move, never delete |
 
 **Configuration advisors** (report + one-click apply with undo, never silent):
 `OLLAMA_KEEP_ALIVE` (W1), `.wslconfig` `memory=` cap (W2), Fast Startup off (W3), Search scope

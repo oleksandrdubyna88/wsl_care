@@ -20,15 +20,16 @@ public static class RunBudget
     /// <summary>The keys the budgets read — a layer that sets one of them can break the rules that hold the budgets.</summary>
     public static IReadOnlyList<ConfigKey.IntKey> Keys { get; } =
         [.. ConfigKeys.All.OfType<ConfigKey.IntKey>().Where(k => k.Name.Contains("TimeoutSeconds", StringComparison.OrdinalIgnoreCase)),
-            ConfigKeys.Commands.DrainGraceMilliseconds, ConfigKeys.Walk.MaxSeconds, ConfigKeys.Agents.WalkBudgetSeconds];
+            ConfigKeys.Commands.DrainGraceMilliseconds, ConfigKeys.Walk.MaxSeconds, ConfigKeys.Agents.WalkBudgetSeconds, ConfigKeys.Archive.ProgressSilenceSeconds];
 
+    /// <summary>Every template once at its ceiling with its drains — but a BUDGETED or button-only one (plan §15r D8: the archive
+    /// run takes the slack, the restore is never in a timer run) — the two walks, the margin.</summary>
     public static TimeSpan TimerRunWorstCase(EffectiveConfig config)
     {
         using (Tuning.Use(config))
         {
-            var drains = Tuning.Current.Milliseconds(ConfigKeys.Commands.DrainGraceMilliseconds) * 2;
-            var commands = Templates().Aggregate(TimeSpan.Zero, (sum, t) => sum + t.Ceiling + drains);
-            return commands + Tuning.Current.Seconds(ConfigKeys.Walk.MaxSeconds) + Tuning.Current.Seconds(ConfigKeys.Agents.WalkBudgetSeconds) + Margin;
+            var buttons = OnButtonsOnly();
+            return Sum(Templates().Where(t => !buttons.Contains(t))) + Tuning.Current.Seconds(ConfigKeys.Walk.MaxSeconds) + Tuning.Current.Seconds(ConfigKeys.Agents.WalkBudgetSeconds) + Margin;
         }
     }
 
@@ -51,13 +52,42 @@ public static class RunBudget
         }
     }
 
+    /// <summary>The worst case of <paramref name="actions"/> alone — their templates once each at its ceiling with its drains, the
+    /// budgeted and button-only ones left out: what A13 keeps free for the actions after it (plan §15r D8).</summary>
+    public static TimeSpan WorstCaseOf(IEnumerable<Actions.ICleanupAction> actions, EffectiveConfig config)
+    {
+        using (Tuning.Use(config))
+        {
+            return Sum(actions.Where(a => !a.Id.ButtonOnly).SelectMany(a => a.Commands).Distinct(ReferenceEqualityComparer.Instance).Cast<CommandTemplate>());
+        }
+    }
+
+    /// <summary>The longest single step: a template's ceiling — a STREAMED one's line silence (<c>archive.progressSilenceSeconds</c>),
+    /// since each line it prints is progress (plan §15r D8) — with its drains and the margin a ceiling keeps.</summary>
     public static TimeSpan LongestStep(EffectiveConfig config)
     {
         using (Tuning.Use(config))
         {
             var drains = Tuning.Current.Milliseconds(ConfigKeys.Commands.DrainGraceMilliseconds) * 2;
-            return Templates().Max(t => t.Ceiling) + drains + TimeSpan.FromSeconds(NumberRules.CeilingMarginSeconds);
+            return Templates().Max(Step) + drains + TimeSpan.FromSeconds(NumberRules.CeilingMarginSeconds);
         }
+    }
+
+    private static TimeSpan Step(CommandTemplate template) =>
+        template.Streamed ? Tuning.Current.Seconds(ConfigKeys.Archive.ProgressSilenceSeconds) : template.Ceiling;
+
+    private static TimeSpan Sum(IEnumerable<CommandTemplate> templates)
+    {
+        var drains = Tuning.Current.Milliseconds(ConfigKeys.Commands.DrainGraceMilliseconds) * 2;
+        return templates.Where(t => t.Limits.CountsInTimerRun).Aggregate(TimeSpan.Zero, (sum, t) => sum + t.Ceiling + drains);
+    }
+
+    /// <summary>The templates only button-only actions declare (A20's list): never part of a timer run (plan §15r D8).</summary>
+    private static IReadOnlySet<CommandTemplate> OnButtonsOnly()
+    {
+        var actions = Actions.ActionRegistry.Product.Actions;
+        var timer = actions.Where(a => !a.Id.ButtonOnly).SelectMany(a => a.Commands).ToHashSet(ReferenceEqualityComparer.Instance);
+        return actions.Where(a => a.Id.ButtonOnly).SelectMany(a => a.Commands).Where(c => !timer.Contains(c)).ToHashSet();
     }
 
     private static IEnumerable<CommandTemplate> Templates() => CommandCatalogue.Product.Templates.Distinct(ReferenceEqualityComparer.Instance).Cast<CommandTemplate>();

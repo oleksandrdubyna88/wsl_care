@@ -53,8 +53,26 @@ internal sealed class GeneratedWorld(HostileInputs inputs)
             .Script(HealthCommands.WindowsClock.Argv, 0, Clock())
             .Script(Systemd.SystemdCommands.TimeSync.Argv, 0, $"NTP=yes\nNTPSynchronized={inputs.Pick<string>(["yes", "no", "no"])}\n")
             .Script(Systemd.SystemdCommands.ShowUnit("fstrim.timer").Argv, 0, $"Id=fstrim.timer\nLoadState=loaded\nUnitFileState={inputs.Pick<string>(["enabled", "disabled"])}\n")
-            .Script(argv => argv is ["fstrim", "-av"], RecordingCommandRunner.Exited(inputs.Pick<int>([0, 64, 1]), $"/: 1 GiB ({inputs.Next(1 << 30)} bytes) trimmed on /dev/sdc\n{Name()}: x\n"));
+            .Script(argv => argv is ["fstrim", "-av"], RecordingCommandRunner.Exited(inputs.Pick<int>([0, 64, 1]), $"/: 1 GiB ({inputs.Next(1 << 30)} bytes) trimmed on /dev/sdc\n{Name()}: x\n"))
+            // E9.S4: the archive's children — the product's own binary as the user — answer plausibly or with hostile text.
+            .Script(argv => ArchiveVerb(argv) == "preview", RecordingCommandRunner.Exited(0, inputs.Pick<string>([Tests.Archive.ArchiveActionTests.PreviewJson(due: inputs.Next(4)), Name(), "{}"])))
+            .Script(argv => ArchiveVerb(argv) == "reach", RecordingCommandRunner.Exited(inputs.Pick<int>([0, 0, 1]), inputs.Pick<string>([Tests.Archive.ArchiveActionTests.RunJson(Tests.Archive.ArchiveActionTests.RunReport(copied: 0)), Name()])))
+            .Script(argv => ArchiveVerb(argv) == "list", RecordingCommandRunner.Exited(0, inputs.Pick<string>([ListJson(), Name()])))
+            .Stream(new StreamScript(["{\"progress\":\"file\",\"files\":1,\"bytes\":1,\"seconds\":1}", inputs.Pick<string>([Tests.Archive.ArchiveActionTests.RunJson(), Name()])], RecordingCommandRunner.Exited(0)));
     }
+
+    /// <summary>The entries the archive's list answers — what a generated A20 button may show.</summary>
+    public static IReadOnlyList<string> ListedEntries { get; } = ["0000000000000001", "0000000000000002"];
+
+    private static string ListJson() =>
+        System.Text.Json.JsonSerializer.Serialize(
+            new Core.Archive.ArchiveListReport(Core.SchemaVersion.Current, "wsl", "wsl-host-distro", "/mnt/v/ai-archive", Core.Archive.RunOutcomes.Done, string.Empty,
+                [.. ListedEntries.Select(id => new Core.Archive.ArchiveListEntry(id, "claude-code", "projects/p/s.jsonl", "2026/09", Core.Archive.ArchiveIndex.Events.SourceRemoved, true, 1, 10, FixedTimeProvider.DefaultNow))], 0, []),
+            Core.Json.WslCareJsonContext.Compact.ArchiveListReport);
+
+    /// <summary>The archive verb a wrapped self-invocation asks for (<c>archive preview</c> → <c>preview</c>); empty otherwise.</summary>
+    private static string ArchiveVerb(IReadOnlyList<string> argv) =>
+        Core.Processes.Policy.TargetUserArgv.Parse(argv) is { Arguments: ["archive", var verb, ..] } ? verb : string.Empty;
 
     /// <summary>The E3.S3 actions' process table (A3's servers and builds, A16's chronyd), hostile command lines around them.</summary>
     public WslCare.Core.Collectors.Reading<WslCare.Core.Collectors.ProcessSnapshot> Processes() =>

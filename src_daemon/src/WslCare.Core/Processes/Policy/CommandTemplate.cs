@@ -67,6 +67,16 @@ public sealed record CommandTemplate(string Name, CommandScope Scope, string Exe
     {
     }
 
+    /// <summary>Its executable is the product's OWN installed binary (plan §15r D1, E9.S4): started by the path
+    /// <see cref="SelfBinary"/> checked, never a name looked up in the target user's bin folders; the policy allows such a
+    /// template ONLY with that path, and that path ONLY for such a template. User-scoped, named <see cref="SelfBinary.Name"/>.</summary>
+    public bool SelfInvocation { get; init; }
+
+    /// <summary>An action may STREAM it (<c>ActionCommands.StreamAsync</c>): each line is a step of the run, and the longest step
+    /// a run may take counts <c>archive.progressSilenceSeconds</c> for it rather than its ceiling (plan §15r D8). Every other
+    /// template runs to its end and is read whole.</summary>
+    public bool Streamed { get; init; }
+
     /// <summary>How long it may run before its tree is killed.</summary>
     public TimeSpan Ceiling => Limits.Ceiling;
 

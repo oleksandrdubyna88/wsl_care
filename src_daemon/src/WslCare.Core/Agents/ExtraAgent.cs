@@ -20,8 +20,11 @@ public sealed record ExtraAgent(string Cli, string Side, string Name, IReadOnlyL
 
     public override int GetHashCode() => HashCode.Combine(Cli, Side, Name, SessionGlob, DataFolders.Count);
 
-    /// <summary>The id this entry answers under in <c>agents list</c> — never a catalogue id.</summary>
-    public string Id => $"manual:{Name}";
+    /// <summary>The prefix of every manual agent's id.</summary>
+    public const string IdPrefix = "manual:";
+
+    /// <summary>The id this entry answers under in <c>agents list</c> and <c>archive.agents</c> — never a catalogue id.</summary>
+    public string Id => $"{IdPrefix}{Name}";
 }
 
 /// <summary>A list of manual agents read from JSON, or why not (the first problem, named).</summary>
@@ -57,6 +60,9 @@ public static partial class ExtraAgentShape
     public const int MaxPathLength = 1024;
     public const int MaxGlobLength = 128;
     public const int MaxNameLength = 64;
+
+    /// <summary>Whether <paramref name="name"/> has a manual agent's name shape (what <c>archive.agents</c>' <c>manual:</c> takes).</summary>
+    public static bool IsName(string name) => Matches(name, NameExpression);
 
     public const string Describe = "a list of at most 16 AI agents, each {\"cli\", \"side\": \"wsl\" or \"windows\", \"name\", \"dataFolders\": 1 to 8 absolute paths, \"sessionGlob\"} (config set aiAgents.extra - reads it from stdin)";
 
@@ -126,7 +132,7 @@ public static partial class ExtraAgentShape
         new((p, _) => p.Any(char.IsControl), _ => "holds a control character"),
         new((p, _) => p.StartsWith('-'), _ => "starts with '-'"),
         new((p, side) => !(side == Windows ? IsDrivePath(p) : p.StartsWith('/')), side => side == Windows ? "must be an absolute path X:\\…" : "must be an absolute path /…"),
-        new((p, _) => p.Split('/', '\\').Any(s => s is ".." or "."), _ => "holds a . or .. segment"),
+        new((p, _) => Hosting.PathSpelling.HasBadSegment(p), _ => Hosting.PathSpelling.Says),
     ];
 
     /// <summary>Why <paramref name="path"/> is not an absolute path of <paramref name="side"/>; empty when it is.</summary>

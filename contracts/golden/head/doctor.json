@@ -85,6 +85,11 @@
       "id": "root",
       "state": "notChecked",
       "detail": "root reachability (wsl.exe -u root -- true) is checked by the extension's root boundary (E6)"
+    },
+    {
+      "id": "archive.runuser",
+      "state": "ok",
+      "detail": "no archive is configured, so nothing starts through runuser for it; were one configured: no PAM stack for runuser nor for other was found in /etc/pam.d or /usr/lib/pam.d, so what a child started through runuser would get cannot be judged; the archive does not start one here (risk consult 9/9.4 #2)"
     }
   ],
   "versions": [

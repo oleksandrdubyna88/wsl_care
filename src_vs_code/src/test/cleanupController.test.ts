@@ -102,8 +102,9 @@ test('a preview of A4 checks root once, then runs exactly act A4 --preview --jso
 });
 
 test('ids are the compiled registry ∩ status.actions: an id the daemon does not report is refused before any root call', async () => {
-  const w = world();
-  assert.ok(!(headBody('status').actions as string[]).includes('A13'), 'the head golden reports no A13 (a Windows-side action)');
+  // Since daemon E9.S4 the head golden reports A13: the gate is shown with an OLDER daemon's status that does not.
+  const head = headBody('status');
+  const w = world({ status: { ...head, actions: (head.actions as string[]).filter((id) => id !== 'A13') } });
   const outcome = await w.controller.preview(['A4', 'A13']);
   assert.equal(outcome.kind, 'idsRefused');
   assert.ok(outcome.kind === 'idsRefused');

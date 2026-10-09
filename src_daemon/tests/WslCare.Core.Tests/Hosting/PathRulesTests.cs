@@ -82,4 +82,15 @@ public sealed class PathRulesTests
         PathRules.Windows.IsRoot(@"\\server\share").Should().BeTrue();
         PathRules.Windows.IsRoot(@"C:\Users").Should().BeFalse();
     }
+
+    /// <summary>E9.S0 review round: a Windows path's folder taken inside the distribution, where <c>Path.GetDirectoryName</c> reads
+    /// it as one name and answers empty.</summary>
+    [Fact]
+    public void Parent_is_the_folder_by_each_familys_own_rules_on_any_host()
+    {
+        PathRules.Windows.Parent(@"C:\Users\me\AppData\Roaming\wsl-care\config.json").Should().Be(@"C:\Users\me\AppData\Roaming\wsl-care");
+        PathRules.Windows.Parent(@"C:\").Should().Be(@"C:\");
+        PathRules.Linux.Parent("/home/me/.config/wsl-care/config.json").Should().Be("/home/me/.config/wsl-care");
+        PathRules.Linux.Parent("/").Should().Be("/");
+    }
 }

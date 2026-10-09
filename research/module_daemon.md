@@ -28,7 +28,7 @@ flowchart TB
         collectors["Collectors/ · Docker/ · Health/ · Folders/ · Agents/<br/>read-only, every figure a Reading&lt;T&gt;"]
         collect["Collect/ · Records/<br/>full run · run detail → history line · reconcile · retention"]
         engine["Actions/Engine<br/>ActionEngine · lock · running.json · dry-run week · gates"]
-        actions["Actions/*<br/>A1–A19 (ICleanupAction)"]
+        actions["Actions/*, Archive/*<br/>A1–A20 (ICleanupAction)"]
         policy["Processes/Policy<br/>CommandPolicy: declared templates only, never-list"]
         runner["Processes<br/>ProcessCommandRunner: argv, ceiling, tree kill"]
         files["Files/<br/>IFileSystem → DeletionPolicy → disk"]

@@ -2236,7 +2236,7 @@ flowchart LR
   `Matching` (the unused `distro`), `AbsolutePathOrEmpty` (`archive.baseFolder`) — and a `TextListKey` its allowed set.
   `processes.families` ⊆ `ProcessFamilies.ChoosableForA11` = the catalogue without `other` (the catch-all: root's A11 would
   have ended every account's idle orphans) and `ai-agents`. A path key is machine-only (`config set` refuses it, a user value
-  is a notice) until its reader validates the filesystem (E9). Tests: `ConfigKeyClosureTests`, `ConfigKeyShapeTests` (every
+  is a notice). None exists today: `archive.baseFolder` was one until E9.S0, when the archive's mover became the target user's own process (plan §15r D1) and its folder rules a judgement of that process (*The AI-session archive* below). Tests: `ConfigKeyClosureTests`, `ConfigKeyShapeTests` (every
   number slot a key fills accepts exactly that key's range), `ArchitectureTests.No_policy_or_protected_roots_type_reads_the_configuration`.
 - **`KeyTrust` per key**: the `SafeDirection` (`higher` / `lower` / `on` / `off` / `subset` / `none`), `TightenOnlyForRoot`
   (`logging.*`: root's audit log is not the user's to steer), `MachineOnly`, `DaemonUnused` (`distro`, `refreshSeconds`),
@@ -2456,6 +2456,33 @@ configuration and nothing else (no process walk, no write but its own run log, a
 after `memory.pressure`, from the sample's own PSI. The agent-side contract (exit 0 go, 83 wait with a jittered bounded
 backoff, any other code a broken signal: say so and go) is in the README's *Busy* section. Advice only: nothing is started or
 stopped because of it.
+
+## The AI-session archive (E9.S0, 2026-10-06, plan §15r)
+
+The archive moves AI-agent sessions older than a configured age into a base folder the user chose, as that user, in two
+runs (copy, verify, index; then a later run re-hashes and removes the source). Built: E9.S0 (catalogue blocks, keys, base
+rules, `archive check-base`), E9.S1 (selection, `archive preview`), E9.S2a (the file seam `IArchiveFiles`), E9.S2b (`archive run` /
+`status` / `reconcile --scan`: the two phases, the MAC'd month index, the lease, the reconcile), E9.S3 (`archive restore` / `list`),
+E9.S4 (A13 and A20 in root's engine, the user's own process doing every byte), E9.S5 (the Windows side's open-file check).
+Everything about it — purpose, diagrams, entities, verbs, the seam's guarantees and each story's history — is in
+[module_archive.md](module_archive.md) (moved there 2026-10-07 to keep this file under the conventions' size cap).
+
+**Across modules on the Windows side (E9.S5).** The archive's open-file check reads two things outside `Archive/`: the Windows
+Restart Manager (`rstrtmgr.dll`, asked per unit — never an open of a session file — with the file system's own list of users for a
+path past `MAX_PATH`), and the Windows process table of the MCP servers' status (E14 S7a, `Mcp/Win32ProcessTable.cs`, now also
+reading ONE process's command line through its query-only handle) to tell whether Claude Code runs. The host wires them in the
+Windows binary only (`CliHost.ArchiveWindows` → `RealWindowsSide`); the distro's binary and every test host get a check that
+did not run, or the test's own.
+
+```mermaid
+flowchart LR
+    cli["wsl-care.exe archive preview / run"] --> side["CliHost.ArchiveWindows<br/>RealWindowsSide"]
+    side --> view["InUseWindows.View<br/>(per question: archive.inUseScanSeconds;<br/>the caller's budget; a process-wide stall latch)"]
+    view --> rm["RestartManager<br/>RmStartSession · RmRegisterResources · RmGetList · RmEndSession"]
+    view --> users["FileUsers (past MAX_PATH)<br/>NtQueryInformationFile, attributes-only handle"]
+    view --> table["Win32ProcessTable (E14 S7a)<br/>snapshot · query-only handle · command line"]
+    view --> liveness["Liveness: the selection and phase 2"]
+```
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -2916,11 +2943,12 @@ flowchart LR
 
 | Part | Where | Role | State |
 |---|---|---|---|
-| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)), their CPU over the interval since the previous sample (E14 S1, [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) and A19 stopping the idle ones (E14 S2a); the Windows Time guard — which clock is wrong, A16 never stepping to a wrong host (2026-10-08, [module_daemon.md](module_daemon.md) § *The Windows Time guard*) |
+| daemon / CLI | `src_daemon/` | C# Native AOT, `linux-x64`, `linux-arm64`, `win-x64`: collectors, rules, actions, run records | skeleton + seams + `config` verbs (E1.S1–S2); collectors + `status` (E2.S1); Docker collectors + `preview` (E2.S2); `collect`, `doctor`, `events follow` (E2.S3); the action engine, the command policy, `act` and A10 (E3.S1); A4–A9, A11, A12, A14, A17 (E3.S2); A1–A3, A15, A16, the timer pass, `logs` / `runs` (E3.S3); the review fixes (2026-10-03); `verdicts` + `productVersion` in `status --json` (E5.S0); the AI agents, A18 and every number a key (E7.S0–S2c); the MCP server instances of the AI agents in `status` and the run detail (E7.S2d, `Core/Mcp/`, [module_mcp_servers.md](module_mcp_servers.md)), their CPU over the interval since the previous sample (E14 S1, [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) and A19 stopping the idle ones (E14 S2a); the Windows Time guard — which clock is wrong, A16 never stepping to a wrong host (2026-10-08, [module_daemon.md](module_daemon.md) § *The Windows Time guard*); the archive's catalogue blocks, keys and base folder rules, `archive check-base` (E9.S0); the archive in the engine — A13 and the restore button A20, the product's own binary run as the target user (E9.S4, [module_archive.md](module_archive.md)) |
 | scenario harness | `src_daemon/tests/WslCare.Scenarios` (+ `WslCare.FakeTool`) | drives the built CLI end to end over a temp home with fake tools on `PATH`; the derived verb register | built (E1.S3): help, version, refusal, the config verbs, `status` (E2.S1), `preview` replaying captured Docker answers (E2.S2), `collect` / `doctor` / `events follow` over captured Docker and health answers, a live follower stopped by SIGTERM on Linux (E2.S3); the status verdicts and the golden contracts' writer and drift test (E5.S0) |
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
+| AI-session archive | `src_daemon/src/WslCare.Core/Archive/`, `Files/IArchiveFiles.cs` (+ `PhysicalFileSystem.Archive.cs`, `BeneathWrites.cs`, `ArchiveSourceRules.cs`), `WslCare.Cli/Commands/ArchiveCommand.cs`, `ArchiveRunCommand.cs` | moves aged AI-agent sessions to a base folder the user chose, as the user, verified before anything is removed — [module_archive.md](module_archive.md) | E9.S0 (blocks, keys, `archive check-base`), E9.S1 (`archive preview`), E9.S2a (the file seam), E9.S2b (`archive run`, `status`, `reconcile --scan`), E9.S3 (`archive restore`, `archive list`), E9.S4 (A13 and A20 in the engine — the product's own binary run as the target user, `archive reach`; A19 is the MCP servers' since E14 S2a), E9.S5 (the Windows side's open-file check: the Restart Manager, the Windows process table) built |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); anonymised through the identity list and held by `FixturePrivacyTests` (2026-10-04); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate; the root boundary (E6.S2), the cleanup buttons and *Last cleanup* (E6.S3) and the Logs page (E6.S4) on `feat/wc-e6-cleanup-logs` ([architecture-extension-e6.md](architecture-extension-e6.md)), merging only after `extension-v0.1.0` is tagged. *Start Windows Time*, one elevated PowerShell (2026-10-08); the Windows Time guard, one SYSTEM scheduled task (2026-10-08, [PLAN_windows_time_task.md](PLAN_windows_time_task.md)). Module overview: [module_vs_code.md](module_vs_code.md) |
 | daemon module overview | [module_daemon.md](module_daemon.md) | the map from the daemon's purpose, entities, entry points and dependencies into this file's epic sections | added by the retro review of PR #7 (2026-10-06) |

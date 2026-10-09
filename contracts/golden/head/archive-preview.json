@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "sideFolder": "wsl-host-distro",
+  "answeredAt": "2000-01-01T00:00:00+00:00",
+  "zone": "UTC",
+  "baseFolder": "",
+  "inUse": {
+    "state": "complete",
+    "openFiles": 0,
+    "claudeProjects": 0,
+    "note": ""
+  },
+  "agents": [
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "enabled": true,
+      "under": "/golden-root/home/user/.claude",
+      "retention": {
+        "source": "claude-settings",
+        "known": true,
+        "days": 30,
+        "from": "the documented default (30 days): cleanupPeriodDays is set in none of /golden-root/etc/claude-code/managed-settings.json, /golden-root/home/user/.claude/settings.json",
+        "warnings": []
+      },
+      "effectiveAgeDays": 14,
+      "dueUnits": 1,
+      "dueFiles": 2,
+      "dueBytes": 200,
+      "oldestDueWriteUtc": "2000-01-15T12:00:00+00:00",
+      "younger": 0,
+      "skipped": [],
+      "quarantined": 0,
+      "note": "",
+      "warnings": [],
+      "units": [
+        {
+          "kind": "session",
+          "key": "projects/p/s1.jsonl",
+          "files": 2,
+          "bytes": 200,
+          "newestWriteUtc": "2000-01-15T12:00:00+00:00",
+          "month": "2000/01"
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "enabled": true,
+      "under": "/golden-root/home/user/.codex",
+      "retention": {
+        "source": "none",
+        "known": false,
+        "days": 0,
+        "from": "none known: no deletion of its own seen on 2026-10-02; its documentation NOT read",
+        "warnings": [
+          "Codex: whether and when it deletes its own sessions is not known (none known: no deletion of its own seen on 2026-10-02; its documentation NOT read) — the archive takes them at archive.olderThanDays"
+        ]
+      },
+      "effectiveAgeDays": 14,
+      "dueUnits": 0,
+      "dueFiles": 0,
+      "dueBytes": 0,
+      "younger": 0,
+      "skipped": [],
+      "quarantined": 0,
+      "note": "/golden-root/home/user/.codex does not exist",
+      "warnings": [
+        "Codex: whether and when it deletes its own sessions is not known (none known: no deletion of its own seen on 2026-10-02; its documentation NOT read) — the archive takes them at archive.olderThanDays"
+      ],
+      "units": []
+    },
+    {
+      "id": "gemini-cli",
+      "name": "Gemini CLI",
+      "enabled": true,
+      "under": "/golden-root/home/user/.gemini",
+      "retention": {
+        "source": "none",
+        "known": false,
+        "days": 0,
+        "from": "none known: nothing; its documentation NOT read (plan §15r D10)",
+        "warnings": [
+          "Gemini CLI: whether and when it deletes its own sessions is not known (none known: nothing; its documentation NOT read (plan §15r D10)) — the archive takes them at archive.olderThanDays"
+        ]
+      },
+      "effectiveAgeDays": 14,
+      "dueUnits": 0,
+      "dueFiles": 0,
+      "dueBytes": 0,
+      "younger": 0,
+      "skipped": [],
+      "quarantined": 0,
+      "note": "/golden-root/home/user/.gemini does not exist",
+      "warnings": [
+        "Gemini CLI: whether and when it deletes its own sessions is not known (none known: nothing; its documentation NOT read (plan §15r D10)) — the archive takes them at archive.olderThanDays"
+      ],
+      "units": []
+    },
+    {
+      "id": "antigravity",
+      "name": "Antigravity",
+      "enabled": true,
+      "under": "/golden-root/home/user/.gemini/antigravity-cli",
+      "retention": {
+        "source": "none",
+        "known": false,
+        "days": 0,
+        "from": "none known: it removed conversations during the 2026-10-02 run by no rule found; a retention setting NOT found, its documentation NOT read",
+        "warnings": [
+          "Antigravity: whether and when it deletes its own sessions is not known (none known: it removed conversations during the 2026-10-02 run by no rule found; a retention setting NOT found, its documentation NOT read) — the archive takes them at archive.olderThanDays"
+        ]
+      },
+      "effectiveAgeDays": 14,
+      "dueUnits": 0,
+      "dueFiles": 0,
+      "dueBytes": 0,
+      "younger": 0,
+      "skipped": [],
+      "quarantined": 0,
+      "note": "/golden-root/home/user/.gemini/antigravity-cli does not exist",
+      "warnings": [
+        "Antigravity: whether and when it deletes its own sessions is not known (none known: it removed conversations during the 2026-10-02 run by no rule found; a retention setting NOT found, its documentation NOT read) — the archive takes them at archive.olderThanDays"
+      ],
+      "units": []
+    }
+  ],
+  "removalsDue": 0
+}

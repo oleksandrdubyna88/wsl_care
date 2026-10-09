@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "side": "wsl",
+  "sideFolder": "wsl-host-distro",
+  "runId": "20000101T000000Z-1",
+  "startedUtc": "2000-01-01T00:00:00+00:00",
+  "endedUtc": "2000-01-01T00:00:00+00:00",
+  "baseFolder": "/golden-root/mnt/v/ai-archive",
+  "outcome": "done",
+  "stop": "",
+  "reconcile": {
+    "indexed": 0,
+    "dropped": 0,
+    "resumed": 0,
+    "renamedBack": 0,
+    "keptAside": 0,
+    "notes": []
+  },
+  "inUse": {
+    "state": "not-checked",
+    "openFiles": 0,
+    "claudeProjects": 0,
+    "note": ""
+  },
+  "agents": [],
+  "filesPerSecond": 0,
+  "megabytesPerSecond": 0,
+  "notes": [],
+  "scan": {
+    "sideFolders": 0,
+    "files": 0,
+    "recovered": 0,
+    "notes": []
+  },
+  "restore": {
+    "restored": 1,
+    "alreadyThere": 1,
+    "refused": 0,
+    "sessions": [
+      {
+        "entryId": "0123456789abcdef",
+        "agent": "claude-code",
+        "key": "projects/p/s1.jsonl",
+        "month": "2000/01",
+        "outcome": "already-there",
+        "files": 2,
+        "bytes": 0,
+        "note": "every file is already there with its archived bytes"
+      },
+      {
+        "entryId": "0123456789abcdef",
+        "agent": "claude-code",
+        "key": "projects/p/s2.jsonl",
+        "month": "2000/01",
+        "outcome": "restored",
+        "files": 1,
+        "bytes": 50,
+        "note": "1 file(s) created"
+      }
+    ]
+  },
+  "stopKind": ""
+}
