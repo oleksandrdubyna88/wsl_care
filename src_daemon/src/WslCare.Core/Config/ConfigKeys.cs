@@ -45,6 +45,8 @@ public static partial class ConfigKeys
         public static readonly ConfigKey.BoolKey A8 = new("auto.A8") { Trust = KeyTrust.Off };
         public static readonly ConfigKey.BoolKey A9 = new("auto.A9") { Trust = KeyTrust.Off };
         public static readonly ConfigKey.BoolKey A10 = new("auto.A10") { Trust = KeyTrust.Off };
+        /// <summary>A11, the suspects (plan §5): ON by default since E14 S3b — the owner's answer to Q15 of 2026-10-09; the
+        /// daemon's dry-run rules (<c>dryRun</c>, the first week) still govern what the timer actually does.</summary>
         public static readonly ConfigKey.BoolKey A11 = new("auto.A11") { Trust = KeyTrust.Off };
         public static readonly ConfigKey.BoolKey A12 = new("auto.A12") { Trust = KeyTrust.Off };
         public static readonly ConfigKey.BoolKey A13 = new("auto.A13") { Trust = KeyTrust.Off };

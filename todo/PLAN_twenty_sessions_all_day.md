@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4, S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S3b built (A11 on by default with `language-servers`, the owner's Q14/Q15 of 2026-10-09); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4, S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -704,6 +704,53 @@ and the config/contract tests for `buildServers.idleMinutes`.
   
   Its minor items are done: the RED list's test name, item 2's pointer to finding 5, the history descriptions widened (architecture's A18 diagram and text, `AgentCpuHistory`, the `agentCpu.*` keys), and two pinned cases: the `.dll` launch form, and an unreadable boot id holding the timer.
 
+#### S3b — A11 on by default, with `language-servers` (the owner's answer to Q14 and Q15, 2026-10-09; branch `feat/wc-a11-default-on`)
+
+**Decided (owner, 2026-10-09):** `auto.A11` is ON by default, and `language-servers` joins A11's default families;
+`vscode-server` stays OUT of the defaults and stays choosable with its warning (Q16 unchanged).
+
+**What changes: defaults only, no code path.** `default.json`: `auto.A11` `false` → `true`; `processes.families`
+`["dotnet-build-servers", "testhost"]` → `["dotnet-build-servers", "testhost", "language-servers"]`. A11's rule is unchanged
+(`SuspectTermination.Candidates`: orphaned, in the listed families, older than `processes.idleOlderThanHours` = 8 h, no
+terminal, not root's, the TARGET user's only, no CPU in the 5 s window and none since, signalled by pid AND start through
+`SuspectSignals`). Both keys keep their trust (`auto.A11` safe direction `off`; `processes.families` safe direction
+`subset`), so a user layer can still turn A11 off or drop a family, and never widen either.
+
+**What the timer does after the upgrade (the dry-run question, cf. Q11).** A11 has no dry window of its own; the daemon's
+`DryRunWindow.Decide` is global for every timer action (a button never dry-runs — it previews and runs on confirmation):
+
+1. **`dryRun` still at its default (`true`):** the timer previews A11 and records `dryRun` with what it would have ended;
+   nothing is signalled. This holds whatever the week, until someone sets `dryRun false`.
+2. **`dryRun` off, inside the first `timer.firstDryWindowDays` (7) days since the first timer run:** dry, the same.
+3. **`dryRun` off and the week passed:** A11 ENDS suspects at the first full timer run after the upgrade, with no dry
+   observation of A11 first. This is the answer Q11 gave A19 (coordinator default: no per-action dry window); an install
+   that wants to watch A11 first keeps `auto.A11 false` or `dryRun true` for a while.
+
+On the owner's machine (read 2026-10-09T19:15Z, daemon 0.3.0): the machine layer is empty and there is no user layer, so
+`dryRun` is the default `true` and case 1 applies: A11 will only record. The first timer run was 2026-10-04T14:02Z, so the
+week ends 2026-10-11T14:02Z; that alone changes nothing while `dryRun` stays on.
+
+**Docs:** the README's A11 row and *families* paragraph, `research/architecture.md` (the A11 row and *A11 — suspects*),
+`research/module_daemon.md` (the A3/A11 paragraph), `SuspectTermination`'s and `ConfigKeys.Auto.A11`'s doc comments, the
+contract file (`contracts/config-keys.json`, regenerated through the built binary — `ContractFilesTests` holds it), and
+Q14/Q15/Q16 below marked answered.
+
+**RED (S3b):** `The_plan_defaults_are_the_shipped_defaults` changed first to expect `auto.A11` on and the three families,
+seen red against today's `default.json`, then green; `UserLayerTrustTests` (which reads the default families back) follows
+the new default; `ContractFilesTests` red until the contract is regenerated. **Teeth:** each default reverted in
+`default.json` → red again.
+
+#### S3b as built (2026-10-09)
+
+- **Plan round** (coai session `b8980f5a`): `proceed`, 1 of 2 reviewers (codex; gemini rate-limited), 0 findings.
+- **Code:** exactly the two defaults; `contracts/config-keys.json` changed in those two values only; doc comments on
+  `ConfigKeys.Auto.A11` and `SuspectTermination`. No deviation from the plan.
+- **Tests:** RED *Expected config.Bool(ConfigKeys.Auto.A11) to be True … but found False*; the stale contract red at its
+  line 176; green after. `UserLayerTrustTests` gained a user layer's `auto.A11 false` being taken (a user can still switch
+  A11 off once it is on). Teeth: the families default reverted → 2 red (*… contains 1 item(s) less*); restored, green.
+- **Code round** (same session): `proceed`, 4 of 8 reviewers (codex; gemini rate-limited), 1 Minor finding, accepted: the
+  expected family list is a collection expression (the C# doctrine's newest syntax).
+
 ### S4 — CPU fairness that works inside WSL
 
 **Problem.** Agents' builds and tests (L7) compete with the sessions they serve on equal terms. `nice` is believed to have
@@ -1132,15 +1179,15 @@ WSL builds or test runs by agents until the owner lifts that). Goldens regenerat
   (`playwright-mcp` runs as `node …/playwright-mcp`). **Coordinator default (2026-10-08), owner may change: YES** — add
   catalogue entries for the interpreter-run MCP servers measured on this machine (`playwright-mcp` and any other measured
   one), in a small separate PR after S3.
-- **Q14 — orphaned VS Code language servers (S3):** A11 already ends orphaned, idle, old processes of the families in
+- **Q14 — ANSWERED (owner, 2026-10-09): YES, `language-servers` is one of A11's default families (built in S3b).** Orphaned VS Code language servers (S3): A11 already ends orphaned, idle, old processes of the families in
   `processes.families`, by pid and start; `vscode-server` is choosable but not in the default list, and A11 is off by default.
   Revised after the S3 plan round: `vscode-server` must NOT be listed (it matches the daemonised VS Code server itself);
   the C# language server is now its own family, `language-servers`. Add `language-servers` to the default families? (Asked,
   not done: S3 rule (b) stays a choice of the owner, as Q1 said.)
-- **Q15 — A11 on by default? (S3 plan round, finding 3):** A11 already reaps idle ORPHANED build servers one by one (its
+- **Q15 — ANSWERED (owner, 2026-10-09): YES, `auto.A11` is on by default (built in S3b; the timer stays under the global dry-run rules, S3b's three cases).** A11 on by default? (S3 plan round, finding 3): A11 already reaps idle ORPHANED build servers one by one (its
   default families are `dotnet-build-servers` and `testhost`), which A3's whole-user shutdown cannot do while any server
   works; but A11 is off by default. Switch `auto.A11` on?
-- **Q16 — `vscode-server` stays choosable for A11:** narrowing the closed list would make an existing layer that names it
+- **Q16 — ANSWERED (owner, 2026-10-09): keep it choosable with the warning, never a default.** `vscode-server` stays choosable for A11: narrowing the closed list would make an existing layer that names it
   invalid (observe-only). Keep it choosable with the warning, or remove it (and accept the layer error)?
 
 ## 12. Review rounds

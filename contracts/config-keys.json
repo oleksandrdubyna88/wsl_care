@@ -173,7 +173,7 @@
     {
       "name": "auto.A11",
       "shape": "bool",
-      "default": false,
+      "default": true,
       "safeDirection": "off",
       "rootEffective": true,
       "tightenOnlyForRoot": false,
@@ -440,7 +440,8 @@
       ],
       "default": [
         "dotnet-build-servers",
-        "testhost"
+        "testhost",
+        "language-servers"
       ],
       "safeDirection": "subset",
       "rootEffective": true,

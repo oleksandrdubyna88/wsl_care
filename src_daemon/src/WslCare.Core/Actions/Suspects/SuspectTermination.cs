@@ -13,7 +13,8 @@ namespace WslCare.Core.Actions.Suspects;
 /// <summary>
 /// A11 (plan §5, §4.2): end the SUSPECT processes — reparented to init or to a user's <c>systemd --user</c>, in one of the
 /// families of <c>processes.families</c>, older than <c>processes.idleOlderThanHours</c> — with <c>SIGTERM</c>, then
-/// <c>SIGKILL</c> after <see cref="Grace"/>. OFF by default. Never a process with a terminal, never one that used CPU,
+/// <c>SIGKILL</c> after <see cref="Grace"/>. ON by default since E14 S3b (the owner, 2026-10-09; off before), with
+/// <c>language-servers</c> among the default families; the timer stays under the daemon's dry-run rules. Never a process with a terminal, never one that used CPU,
 /// never root's, never this process; always by PID AND START TIME through <see cref="IProcessSignals"/> (a pid alone can be
 /// reused), never by name.
 /// </summary>

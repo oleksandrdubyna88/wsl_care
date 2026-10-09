@@ -33,7 +33,7 @@ public sealed class UserLayerTrustTests
         """;
 
     private const string Tightening = """
-        { "auto": { "A1": false }, "containers": { "stoppedOlderThanDays": 30 }, "processes": { "families": ["testhost"] },
+        { "auto": { "A1": false, "A11": false }, "containers": { "stoppedOlderThanDays": 30 }, "processes": { "families": ["testhost"] },
           "thresholds": { "memAvailableActPercent": 5 }, "aiAgents": { "warnGb": 1 } }
         """;
 
@@ -46,7 +46,7 @@ public sealed class UserLayerTrustTests
         result.Config.Bool(ConfigKeys.DryRun).Should().BeTrue();
         result.Config.Bool(ConfigKeys.Auto.A5).Should().BeFalse();
         result.Config.Int(ConfigKeys.Containers.StoppedOlderThanDays).Should().Be(7);
-        result.Config.TextList(ConfigKeys.Processes.Families).Should().Equal("dotnet-build-servers", "testhost");
+        result.Config.TextList(ConfigKeys.Processes.Families).Should().Equal("dotnet-build-servers", "testhost", "language-servers");
         result.Config.Int(ConfigKeys.Thresholds.MemAvailableActPercent).Should().Be(15);
         result.Notices.Select(n => n.Key).Should().BeEquivalentTo(
             ["", "dryRun", "auto.A5", "containers.stoppedOlderThanDays", "processes.families", "thresholds.memAvailableActPercent"]);
@@ -62,6 +62,7 @@ public sealed class UserLayerTrustTests
 
         result.Notices.Should().BeEmpty();
         result.Config.Bool(ConfigKeys.Auto.A1).Should().BeFalse();
+        result.Config.Bool(ConfigKeys.Auto.A11).Should().BeFalse("A11 is on by default since E14 S3b, and a user can still switch it off");
         result.Config.Int(ConfigKeys.Containers.StoppedOlderThanDays).Should().Be(30);
         result.Config.TextList(ConfigKeys.Processes.Families).Should().Equal("testhost");
         result.Config.Int(ConfigKeys.Thresholds.MemAvailableActPercent).Should().Be(5);
