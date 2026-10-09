@@ -260,11 +260,29 @@ first, at most `mcpServers.maxStartsListed`, 50) — the restart storm of 2026-1
 at 16:50Z, before the update it was first blamed on, which only the start times show. Three verdicts judge them now:
 `mcp.instances` (warn above `mcpServers.warnInstances`, 12), `mcp.cpu` (warn above `mcpServers.warnCpuPercent`, 100 % of
 one core in total), `mcp.starts` (warn when a server started more than `mcpServers.warnStarts`, 10, times in the window).
-Read-only towards the servers: nothing is stopped. The Windows binary answers the block unavailable — `coai-mcp.exe` on Windows arrives with
-the Windows collectors (E11). Capability `status.mcpServers`; `limits` publishes `mcpCpuWindowMilliseconds` and
+Read-only towards the servers: nothing is stopped. The Windows binary answers this block unavailable and counts its own side
+in `windowsMcpServers` (below). Capability `status.mcpServers`; `limits` publishes `mcpCpuWindowMilliseconds` and
 `mcpLogListMilliseconds`, the two waits a client's `status` ceiling must allow for. The text form adds one line:
 `mcp servers: 7 (0 idle, 7 busy without a log write), 2.6 cores (7 over their last interval, 0 over a 1000 ms window),
 0.40 GiB; starts coai-mcp 34 in 10 min`.
+
+**The Windows side's MCP servers (E14 S7a, `wsl-care.exe status --json` only).** The 2026-10-07 evening counted 85
+`creds-mcp.exe` on Windows, 66 with a parent that no longer existed, 1.32 GB together; on 2026-10-09, 35 of them ran under
+ONE VS Code WSL connection (`wsl.exe`). The Windows binary now counts `coai-mcp.exe` (when `mcpServers.watched` holds it),
+`creds-mcp.exe` and the programs in `mcpServers.programs`, matched by exe name without case, into a `windowsMcpServers`
+block: `count`, `idleCount`, `orphanedCount`, `memoryRead`, `held` (Σ private bytes) and `workingSet` over the instances whose memory was read (unavailable when none was — never 0), `cpuCores`, per server
+`servers[]{name, count, idle, orphaned, workingSet}`, per owner `owners[]{kind, parent, count}` (the "35 under one
+`wsl.exe`" line), and up to `mcpServers.maxInstances` `instances[]` (largest private bytes first) with pid, owner
+(`agent` — a catalogue agent such as `claude.exe` above it; `interop` — a `wsl.exe` parent, whose caller in the distro
+Windows cannot see; `orphaned` — the parent is gone, or its pid now belongs to a process created after the child; `other`),
+creation time, CPU % of one core across `mcpServers.cpuWindowMilliseconds`, working set, private bytes, session id and
+idle. A process that cannot be opened has those figures unavailable with the reason, never 0. It is READ-ONLY: one
+Toolhelp snapshot and query-only handles, nothing started, signalled or stopped — stopping on Windows is a separate story
+that waits for the owner. The `host` block gains `vmmemAdvice` when `vmmemWSL` holds more than `wslConfig.vmmemAdviceGb`
+(24): the reclaim setting `[experimental] autoMemoryReclaim=dropcache` when `.wslconfig` does not already set it (shown,
+never written), and `wsl --shutdown` as the last resort that ends every WSL session. The distro's binary carries neither.
+The text form adds `windows mcp servers: 42 (42 idle, 0 orphaned), 0.0 cores, 0.7 GiB private (42 read); 36 under wsl.exe
+(pid 38052), 2 under claude.exe (pid 27852)` and, when there is advice, `vmmem advice: …`.
 
 **Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts`,
 `productVersion`, `actions`, `capabilities`, `running` and `lastCleanup`) never bumps it, so a reader ignores keys it does

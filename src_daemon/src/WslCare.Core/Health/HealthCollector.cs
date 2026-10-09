@@ -90,7 +90,11 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     /// <summary>What a file at <paramref name="file"/> says; an absent file is WSL's defaults, not an error.</summary>
     /// <remarks>The Windows profile, read through drvfs (plan §15q R1.1, review M2): never through a link, never waited on,
     /// capped — and no owner or mode check, because drvfs shows every file as the mount's uid, 0777.</remarks>
-    public WslConfigAudit AuditWslConfig(string file) => files.ReadNoFollowFile(file, MaxWslConfigBytes) switch
+    public WslConfigAudit AuditWslConfig(string file) => AuditWslConfig(files, file);
+
+    /// <summary>The same audit over any file system — what the Windows binary's <c>status</c> reads for its vmmem advice (E14 S7a)
+    /// without a command runner.</summary>
+    public static WslConfigAudit AuditWslConfig(IFileSystem files, string file) => files.ReadNoFollowFile(file, MaxWslConfigBytes) switch
     {
         FileReadResult.Content content => Audit(file, HealthParsers.WslConfig(System.Text.Encoding.UTF8.GetString(content.Bytes))),
         FileReadResult.Unreadable u => new WslConfigAudit(file, true, new WslConfigSettings(string.Empty, string.Empty, string.Empty, string.Empty), [$"{file} could not be read: {u.Reason}"]) { Read = false },

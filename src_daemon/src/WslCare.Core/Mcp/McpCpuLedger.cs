@@ -59,7 +59,7 @@ public abstract record McpCpuLedgerPlace
     {
         LinuxHostPaths linux when root => new RootState(linux.StateDirectory, linux.Rules.Join(linux.StateDirectory, McpCpuLedger.FileName), Writes: false),
         LinuxHostPaths linux => new OwnState(linux.UserStateDirectory, linux.Rules.Join(linux.UserStateDirectory, McpCpuLedger.FileName)),
-        _ => new None(McpServerCollector.WindowsNotYet),
+        _ => new None(McpServerCollector.WindowsReadsItsOwn),
     };
 
     /// <summary><c>collect</c>'s place: root's ledger when the run may record; none for a read-only run (<paramref name="readOnly"/>
@@ -68,7 +68,7 @@ public abstract record McpCpuLedgerPlace
     {
         LinuxHostPaths linux when mayRecord => new RootState(linux.StateDirectory, linux.Rules.Join(linux.StateDirectory, McpCpuLedger.FileName), Writes: true),
         LinuxHostPaths => new None(readOnly),
-        _ => new None(McpServerCollector.WindowsNotYet),
+        _ => new None(McpServerCollector.WindowsReadsItsOwn),
     };
 }
 

@@ -1385,6 +1385,19 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "wslConfig.vmmemAdviceGb",
+      "shape": "int",
+      "min": 1,
+      "max": 1024,
+      "default": 24,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "thresholds.wslMemoryCriticalPercent",
       "shape": "int",
       "min": 0,

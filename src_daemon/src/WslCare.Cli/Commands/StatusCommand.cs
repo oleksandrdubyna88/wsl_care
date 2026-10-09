@@ -3,8 +3,11 @@ using System.Text;
 using System.Text.Json;
 
 using WslCare.Core.Collect;
+using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Events;
+using WslCare.Core.Health;
+using WslCare.Core.Hosting;
 using WslCare.Core.Json;
 using WslCare.Core.Mcp;
 using WslCare.Core.Records;
@@ -46,7 +49,28 @@ internal static class StatusCommand
             Limits = StatusLimits.From(loaded.Config),
             McpServers = McpServersReport.From(mcp),
         };
+        report = WithWindowsSide(report, host, sample, loaded.Config, cancellationToken);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
+    }
+
+    /// <summary>E14 S7a, the Windows binary only: its own side's MCP servers (read-only — a Toolhelp snapshot and query-only handles,
+    /// across the same CPU window) and, when vmmemWSL holds more than <c>wslConfig.vmmemAdviceGb</c>, the reclaim advice (text, never
+    /// acted on). The distro's binary carries neither.</summary>
+    private static StatusReport WithWindowsSide(StatusReport report, CliHost host, ProbeSample sample, EffectiveConfig config, CancellationToken cancellationToken)
+    {
+        if (host.Paths is not WindowsHostPaths windows)
+        {
+            return report;
+        }
+
+        var mcp = new WindowsMcpCollector(host.WindowsProcesses, host.Clock, host.Wait).SampleAsync(config, cancellationToken).GetAwaiter().GetResult();
+        var wslConfig = Reading.Of(HealthCollector.AuditWslConfig(host.Files, windows.WslConfigFile));
+        var advice = VmmemAdvice.For(sample.Host.Bind(h => h.VmmemWorkingSetBytes), sample.Host.Bind(h => h.Memory), wslConfig, config.Int(ConfigKeys.WslConfig.VmmemAdviceGb));
+        return report with
+        {
+            WindowsMcpServers = WindowsMcpServersReport.From(mcp),
+            Host = advice.Length == 0 ? report.Host : report.Host with { VmmemAdvice = advice },
+        };
     }
 
     /// <summary>The ids this binary's registry holds for its own side, in the order a run takes them (plan §15f #3).</summary>
@@ -74,6 +98,11 @@ internal static class StatusText
         text.AppendLine($"docker stats: {Slow(report.Slow.ContainerStats)}");
         text.AppendLine($"windows clock: {Slow(report.Slow.WindowsClock)}");
         text.AppendLine(McpServers(report.McpServers));
+        if (report.WindowsMcpServers is { } windows)
+        {
+            text.AppendLine(WindowsMcpServers(windows));
+        }
+
         text.AppendLine(Verdicts(report.Verdicts ?? []));
         text.AppendLine(Running(report.Running));
         text.AppendLine(LastCleanup(report.LastCleanup));
@@ -88,6 +117,15 @@ internal static class StatusText
         null => "mcp servers: not read",
         { Available: true } => Invariant($"mcp servers: {mcp.Count} ({(mcp.Listed < mcp.Count ? Invariant($"of the {mcp.Listed} listed: ") : string.Empty)}{mcp.IdleCount} idle, {mcp.BusyWithoutActivityCount} busy without a log write), {Number(mcp.CpuCores!)} cores{CpuBases(mcp)}, {mcp.HeldBytes / BytesPerGibibyte:0.00} GiB; starts ") + string.Join(", ", mcp.Servers!.Select(s => Invariant($"{s.Name} {(s.Starts.Available ? Invariant($"{s.Starts.Value:0}") : "?")} in {s.StartsWindowMinutes} min"))),
         _ => $"mcp servers: unavailable ({mcp.Reason})",
+    };
+
+    /// <summary>One line (E14 S7a, the Windows binary): <c>windows mcp servers: 42 (42 idle, 0 orphaned), 0.0 cores, 0.7 GiB private
+    /// (42 read); 36 under wsl.exe (pid 38052), 2 under claude.exe (pid 27852)</c>.</summary>
+    private static string WindowsMcpServers(WindowsMcpServersReport mcp) => mcp switch
+    {
+        { Available: true } => Invariant($"windows mcp servers: {mcp.Count} ({mcp.IdleCount} idle, {mcp.OrphanedCount} orphaned), {Number(mcp.CpuCores!)} cores, {Gib(mcp.Held!)} private ({mcp.MemoryRead} read)")
+            + string.Concat((mcp.Owners ?? []).Take(TopShown).Select((o, i) => Invariant($"{(i == 0 ? "; " : ", ")}{o.Count} under {o.Parent}"))),
+        _ => $"windows mcp servers: unavailable ({mcp.Reason})",
     };
 
     /// <summary>What the CPU figures were measured over (plan E14 S1): <c> (3 over their last interval, 1 over a 1000 ms window)</c>;
@@ -162,6 +200,10 @@ internal static class StatusText
         text.AppendLine($"host memory: {HostMemory(host.Memory!)}");
         text.AppendLine($"host system drive: {Volume(host.SystemDrive!)}");
         text.AppendLine($"vmmemWSL working set: {Gib(host.VmmemWorkingSet!)}");
+        if (host.VmmemAdvice is { Length: > 0 } advice)
+        {
+            text.AppendLine($"vmmem advice: {advice}");
+        }
     }
 
     private static string Memory(MemoryReport m) =>
