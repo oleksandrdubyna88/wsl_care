@@ -116,6 +116,25 @@ public sealed class ReleaseExtensionScriptFlows
         result.Stdout.Should().Contain("attempt 1/2: vsce show exited 124").And.Contain("attempt 2/2: vsce show exited 124").And.Contain("::error::");
     }
 
+    /// <summary>coai code round 2026-10-09: <c>timeout 0</c> is no bound at all and zero attempts never ask, so both are refused
+    /// (exit 2) before vsce is asked anything — as are a missing or non-numeric argument.</summary>
+    [Theory]
+    [InlineData("0", "0", "20")]
+    [InlineData("90", "30", "0")]
+    [InlineData("90", "", "20")]
+    [InlineData("9x", "30", "20")]
+    public async Task The_marketplace_wait_refuses_a_wait_that_never_asks_or_is_never_bounded(string attempts, string interval, string perAttempt)
+    {
+        Linux();
+        using var root = new TempRoot("ext-wait-args");
+        var vsce = FakeVsce(root, servedFrom: 1);
+
+        var result = await ReleaseScripts.RunAsync("wait-marketplace-served.sh", ["pub.ai-os-care", "0.2.0", attempts, interval, perAttempt], root.Path, new Dictionary<string, string?> { ["VSCE_BIN"] = vsce });
+
+        result.Exit.Should().Be(2, result.Stdout + result.Stderr);
+        File.Exists(vsce + ".count").Should().BeFalse("the refusal comes before vsce is asked anything");
+    }
+
     [Fact]
     public async Task The_guard_refuses_the_placeholder_publisher()
     {
@@ -387,7 +406,7 @@ public sealed class ReleaseExtensionScriptFlows
         var steps = WorkflowShape.Steps(WorkflowShape.Jobs(WorkflowYaml.Load(ReleaseFiles.Workflow("release-extension.yml")))["publish-marketplace"].Map);
         var servedScript = WorkflowShape.Run(steps.Single(s => s.Find("id")?.Text == "served"));
         var publishScript = WorkflowShape.Run(steps.Single(s => WorkflowShape.Run(s).Contains("vsce/vsce publish", StringComparison.Ordinal)));
-        var waitScript = WorkflowShape.Run(steps.Single(s => WorkflowShape.Run(s).Contains("vsce show", StringComparison.Ordinal) && WorkflowShape.Run(s).Contains("seq", StringComparison.Ordinal)));
+        var waitScript = WorkflowShape.Run(steps.Single(s => WorkflowShape.Run(s).Contains("wait-marketplace-served.sh", StringComparison.Ordinal)));
         const string id = "remsoftdev.ai-os-care";
 
         async Task<(ChildResult Result, string Output, string[] Calls, string[] Sleeps)> RunStep(string script, string answer, string? pat = null)
@@ -399,6 +418,12 @@ public sealed class ReleaseExtensionScriptFlows
                 "fs.appendFileSync(process.env.FAKE_VSCE_LOG, args.join(' ') + '\\n');\n" +
                 "if (args.length !== 3 || args[0] !== 'show' || args[1] !== process.env.EXTENSION_ID || args[2] !== '--json') { console.error('fake vsce: unexpected ' + args.join(' ')); process.exit(97); }\n" +
                 "process.stdout.write(process.env.FAKE_VSCE_ANSWER + '\\n');\n");
+            // The steps call the repository's scripts by their checkout path, as the job does.
+            foreach (var shipped in new[] { "wait-marketplace-served.sh", "marketplace-served.cjs" })
+            {
+                root.File($"work/.github/scripts/{shipped}", File.ReadAllText(ReleaseFiles.Script(shipped)));
+            }
+
             var sleep = root.File("bin/sleep", "#!/bin/sh\necho \"$@\" >> \"$FAKE_SLEEP_LOG\"\nexit 99\n");
             File.SetUnixFileMode(sleep, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             var output = root.File("github-output", string.Empty);
@@ -435,7 +460,7 @@ public sealed class ReleaseExtensionScriptFlows
 
         var wait = await RunStep(waitScript, uploaded);
         wait.Result.Exit.Should().Be(0, $"the served version ends the wait: {wait.Result.Stdout}{wait.Result.Stderr}");
-        wait.Result.Stdout.Should().Contain("(attempt 1)");
+        wait.Result.Stdout.Should().Contain("attempt 1/").And.Contain($"the Marketplace serves {id} 0.1.0");
         wait.Calls.Should().HaveCount(1, "one query");
         wait.Sleeps.Should().BeEmpty("no sleep when the version is already served");
 

@@ -156,12 +156,33 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var (attempts, interval, perAttempt) = (Number(call, 1), Number(call, 2), Number(call, 3));
         TimeSpan.FromSeconds(attempts * interval).Should().BeGreaterThanOrEqualTo(TimeSpan.FromMinutes(45), "the propagation to what vsce show reads exceeded 20 minutes on 2026-10-09");
         perAttempt.Should().BePositive("coai plan round 2026-10-09: one hung vsce show must not eat the job — each attempt is bounded");
+        var grace = KillGrace().Match(File.ReadAllText(ReleaseFiles.Script(WaitScript)));
+        grace.Success.Should().BeTrue($"{WaitScript} names its kill grace as kill_grace=<seconds> and passes it to timeout -k");
+        // coai code round 2026-10-09: a vsce show that ignores TERM lives the kill grace past its bound, so that counts too.
         TimeSpan.FromMinutes(Number(job["timeout-minutes"].Text))
-            .Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(attempts * (interval + perAttempt)) + TimeSpan.FromMinutes(10), "the job outlasts even a wait whose every attempt hangs to its bound, so the wait's error with its log ends it, not the timeout");
+            .Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(attempts * (interval + perAttempt + Number(grace, 1))) + TimeSpan.FromMinutes(10), "the job outlasts even a wait whose every attempt hangs to its bound and its kill grace, so the wait's error with its log ends it, not the timeout");
     }
+
+    /// <summary>coai code round 2026-10-09: the skip step and the wait decide "served" from <c>vsce show --json</c> with ONE
+    /// reader — two copies could disagree, and a skip that misses what the wait calls served publishes again.</summary>
+    [Fact]
+    public void The_skip_and_the_wait_decide_served_with_one_reader()
+    {
+        var served = Run(Steps(Job("publish-marketplace")).Single(s => s.Find("id")?.Text == "served"));
+        var wait = File.ReadAllText(ReleaseFiles.Script(WaitScript));
+
+        File.Exists(ReleaseFiles.Script(ServedReader)).Should().BeTrue($".github/scripts/{ServedReader} is the one reader");
+        served.Should().Contain($".github/scripts/{ServedReader}").And.NotContain("JSON.parse", "the skip step parses nothing itself");
+        wait.Should().Contain(ServedReader).And.NotContain("JSON.parse", "the wait parses nothing itself");
+    }
+
+    private const string ServedReader = "marketplace-served.cjs";
 
     [GeneratedRegex("""wait-marketplace-served\.sh "\$EXTENSION_ID" "\$VERSION" (\d+) (\d+) (\d+)""", RegexOptions.CultureInvariant)]
     private static partial Regex WaitCall();
+
+    [GeneratedRegex("""(?m)^kill_grace=(\d+)\r?$""", RegexOptions.CultureInvariant)]
+    private static partial Regex KillGrace();
 
     private static int Number(Match match, int group) => Number(match.Groups[group].Value);
 
