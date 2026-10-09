@@ -51,7 +51,17 @@ child after it starts.
 
 ## 4. What the design takes from this (S7b)
 
-- The interop proof pairs relays and Windows children by ORDER per program path, only when the counts are equal and a tie
-  (relays started within a configurable number of seconds) agrees on the client's state; anything else keeps every child.
-- The distro is named by the `wsl.exe` parent's command line; a stopped distro is never started to ask.
-- Not measured, and never assumed: whether ending a client-gone relay ends its Windows child too (owner question Q-S7b-3).
+A first draft paired relays and Windows children by ORDER. The plan round (coai `1bc694ea` and the own Opus review)
+refuted it, and the refutation is part of this record:
+- **Order is not identity.**
+  - A slow launch can invert two children outside any tie window: Defender scanning the `.exe`, or a cold interop server.
+  - The Windows creation time is itself a steppable wall clock.
+  - The Windows snapshot and the distro read are seconds apart, so one child exiting and another starting shifts every pair.
+- **"Re-parented to the session init" is not "client gone" in every case:**
+  - a relay run as `wsl.exe`'s top-level command is born there while its Windows-side caller lives;
+  - a daemonising caller re-parents it while still holding its pipe;
+  - any process can name itself `init`.
+
+So S7b stops no interop child at all. The 10 client-gone relays above remain a measured fact, not a proof per Windows
+process. The exact route — ending the client-gone relay itself in the distro, by pid and start ticks — needs one fact first,
+which is not measured and never assumed: whether ending a relay ends its Windows child too (owner question Q-S7b-3).
