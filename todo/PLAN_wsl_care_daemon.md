@@ -4141,6 +4141,10 @@ question already; today the extension asks none of them.
   cases hold the label: no Windows binary, and a Windows binary present without E13's UI.
 - **D10 — one-liner carried (the owner's open question 4, the coordinator's instruction):** `archive check-base --json <path>` is
   accepted in either order (`ArchiveArguments.cs` `ParseArchiveCheckBase`, one arm).
+- **D11 — every action is a panel button (owner rule 2026-10-09, standing).** *Choose the archive folder…* (with its check-base
+  verdict), *Stop archiving*, *Archive now* and *Restore* each ship as a BUTTON in the panel (the archive section, the Archive
+  page); a command-palette entry may duplicate one, never be its only way. A test pinning "every contributed command has a panel
+  button" is landing from another story — E10.S1 rebases onto it and its commands pass it.
 
 #### Stories and build order
 
