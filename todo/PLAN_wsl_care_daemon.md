@@ -4114,11 +4114,18 @@ question already; today the extension asks none of them.
   files, bytes, status, verified). Restore takes a selection (entries, or a whole month): only VERIFIED entries removed at their
   source are selectable; an unverified one is marked and says "restore it in a terminal with `--accept-unverified`" (§15r D6).
   Restore is A20 through the root path: preview `act A20 --preview --entry - --json` and confirm `act A20 --confirm --manual
-  --detach --entry - --json`, the ids on STDIN (D7), the journal and the follower as any button.
+  --detach --entry - --json`, the ids on STDIN (D7), the journal and the follower as any button. **The ceiling (plan round,
+  finding 1):** the list answer carries `restoreCeiling` — the effective `archive.maxRestoreEntries` (E10.S0); the page counts the
+  selection and past the ceiling disables *Restore* and says "N selected — one restore takes at most M, pick fewer"; a whole month
+  above the ceiling selects its newest M and says so. The daemon's own refusal stays the backstop.
 - **D7 — entry ids on stdin (E10.S0, daemon).** `act … --entry -` reads the ids from stdin, one per line, under the same checks
   as the flag (16 hex, no duplicate, at most `archive.maxRestoreEntries`' ceiling, A20 among the actions) — the A4 precedent
   (`--only -`, `CommandLine.cs:517`). Reason: a Windows command line holds 32 767 characters; `--entry <id>` costs 25 each, so a
   month of sessions would not fit. A new capability `act.entryStdin` gates it; the extension never sends `--entry <id>` argv.
+  **One request, both sides (plan round, finding 0):** `contracts/requests/act-a20-entry-stdin.json` holds the exact argv and the
+  exact stdin bytes; the daemon's Cli test parses exactly those and asserts the ids, the extension's test asserts `rootCall` emits
+  exactly those from a selection, and the fake `wsl.exe` compares against it — neither half can drift alone. The live run through
+  the real daemon needs `wsl -u root`, which agents do not run: it is a named step of the owner's live gate.
 - **D8 — the Logs page names the archive.** A13 rows read "AI sessions archived", A20 rows "archived sessions restored"; the run
   detail's per-agent table (the run's `removed` items are agents with counts and bytes) gets its own headings. Goldens gain A13
   and A20 runs.
@@ -4131,7 +4138,7 @@ question already; today the extension asks none of them.
 
 | Story | What | Files | RED first |
 |---|---|---|---|
-| **E10.S0** (daemon) | D7 `--entry -` on stdin + `act.entryStdin`; D10 the flag order | `WslCare.Cli/CommandLine.cs`, `ArchiveArguments.cs`, `StdinList.cs`, `Core/Status/Capabilities.cs`, contracts | stdin ids accepted and bounded and checked like the flag; a duplicate / a bad id / no A20 refused; `--json` first accepted |
+| **E10.S0** (daemon) | D7 `--entry -` on stdin + `act.entryStdin` + the shared request fixture; `restoreCeiling` on the list answer; D10 the flag order | `WslCare.Cli/CommandLine.cs`, `ArchiveArguments.cs`, `StdinList.cs`, `Core/Status/Capabilities.cs`, `Core/Archive/ArchiveList.cs`, contracts | stdin ids accepted and bounded and checked like the flag; a duplicate / a bad id / no A20 refused; the fixture's bytes parse to its ids; the list carries the effective ceiling; `--json` first accepted |
 | **E10.S1** (extension) | the read verbs `archive status --json`, `archive preview --json`, `archive check-base <path> --json` (as the user, allowlisted, the fake taught); D2 the writer; D3 the picker; D4 the panel section with the badge; D5 *Archive now* | `src/client/verbs.ts`, `src/settings/userLayer.ts` (new), `src/archive/*` (new), `src/panel/*`, `src/root/*`, `package.json`, `media/panel.js`, tests | the client refuses any other archive argv; the writer refuses a key not listed, a value not judged, `-u root`; a refused folder is never written; *Archive now* survives a reload and never sticks; the badge shows exactly when retention < effective age |
 | **E10.S2** (extension) | D6 the Archive page with restore; D8 the Logs words | `src/archivePage/*` (new), `media/archive.js` (new), `src/root/*`, `src/logsPage/*`, goldens | an unverified entry is never sent; ids reach the daemon on stdin only; a restore survives a reload; the Logs rows say what A13 / A20 did |
 
@@ -4147,10 +4154,16 @@ parallel for the root and the writing paths (D2, D5, D6, D7), break-it checks on
   shapes `act A13 …` and `act A20 … --entry -` with stdin checked.
 - **Flows** (`src/test/scenarios`): choose a folder → check-base → write → status shows it; a refused folder → nothing written;
   *Archive now* preview → confirm → follow → done, across a reload; restore of a month → stdin ids = the month's verified
-  entries; an unverified entry not selectable.
+  entries; an unverified entry not selectable; a selection past `restoreCeiling` cannot be confirmed and says so.
 - **Daemon (E10.S0)**: `ActCommandTests` rows for `--entry -` (bounded, checked, A20 required); `ArchiveRestoreCommandTests` for
   the flag order; the capability in `status.json`'s golden.
 - **Catalogue**: `research/module_tests.md` rows for every new verb, op, message and command (`catalogue.test.ts`).
+
+#### The plan round (coai session 82e14bdf, 2026-10-09)
+
+`proceed`, 2 gating of threshold 6, one of two reviewers (the other was out of quota). Both accepted and written into D6 / D7
+above: **0** — the stdin request is tested on both halves against ONE fixture, the live run is the owner's (root); **1** — a
+selection past `archive.maxRestoreEntries` is counted and refused in the page, from the ceiling the list answer carries.
 
 #### Definition of Done
 
