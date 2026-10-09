@@ -166,6 +166,11 @@ Admin actions are marked with a shield and run through the elevated task.
   this user can also run the preview, so the protection is against a confirm with no preview behind it and
   against changed targets. E12's plan round decides whether that is enough for each elevated action, or
   whether an action stays a button that runs elevated only from an interactive UAC prompt.
+  **Open for E12's plan round (the E10–E12 cadence consultation, 2026-10-09):** as written, W-A12's re-check
+  ("nothing named in the preview is running") refuses the very case it serves — a distribution running through
+  preview and confirm, which the action's own `wsl --shutdown` would stop. E12 must separate three steps: the
+  confirm checks that the running set equals the one the preview showed, the authorised shutdown runs, then
+  quiescence is verified before compaction — or W-A12 requires the person to shut WSL down first.
 - **Pool tags without admin** (finding 3, rejected): measured to work unelevated; a failing call falls
   back to totals with the reason.
 - **The first Windows action, and where its boundary is** (2026-10-08): *Start Windows Time* — a button that runs ONE

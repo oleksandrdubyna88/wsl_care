@@ -4090,17 +4090,23 @@ question already; today the extension asks none of them.
   §15r D7) is the only truth: the extension READS it (`archive status --json`, `archive preview --json`) and WRITES it through the
   one user-layer writer (D2). The archive plan's `wslCare.archive.*` settings (§5) are dropped: `enabled` is "a base is set",
   `olderThanDays` / `agents` stay daemon keys a person sets with `wsl-care config set` until E7.S3's settings mirror carries them.
-- **D2 — the ONE user-layer writer arrives with E10, scoped to the archive's base.** `src/settings/userLayer.ts` is the only module
+- **D2 — the ONE user-layer writer arrives with E10, scoped to the archive's base.** `src/config/configCall.ts` is the only module
   that spells `config set` / `config reset`; it runs as the user (no `-u`), takes keys from a closed list (here
   `archive.baseFolder` only) and values only from the extension host (a picker's answer, judged first by `archive check-base`),
   never from a webview. It is built to §15q D5's rules (items 5 and 7) so that E7.S3 WIDENS it — adds keys and the mirror — rather
   than writing a second one (reuse-first, step 2.1). The structural bans move from "no `config`" to "`config` only in
-  `userLayer.ts`, `set`/`reset` only, never with `-u root`".
+  `configCall.ts`, `set`/`reset` only, never with `-u root`". The module's name is the one E7.S3's row already gives it, so
+  E7.S3 widens the same file (the cadence consultation, 2026-10-09).
 - **D3 — the folder picker.** *AI OS Care: Choose the archive folder…* opens `showOpenDialog` (folders only, one), sends the
   Windows path to `archive check-base <path> --json` as the user — the daemon places a drive path at its drvfs mount — shows the
   verdict (accepted with its warnings, or refused with its rule) in a modal, and on *Use this folder* writes the JUDGED folder
-  (the report's `folder`, the distro's spelling) with `config set archive.baseFolder <folder>`; *Stop archiving* resets the key.
-  A refused folder is never written.
+  (the report's `folder`, the distro's spelling) with `config set archive.baseFolder <folder>`. A refused folder is never
+  written. *Stop archiving* writes an EXPLICIT EMPTY value (`config set archive.baseFolder ""` — empty means "no archive",
+  `TextRule.AbsolutePathOrEmpty`), never a reset: a reset only removes the user's override, and a machine-layer base would then
+  apply again and the next timer would still archive (the cadence consultation, 2026-10-09, verified against
+  `UserConfigWriter.Reset` and `ConfigKeys.Archive.BaseFolder`). Acceptance: *Stop* with an inherited machine base → `archive
+  status` says none is configured. Whether an empty argument survives `wsl.exe`'s argv is measured in E10.S1 before it is relied
+  on; if it does not, E10.S1 stops and the shape is decided then.
 - **D4 — the archive section of the panel.** From `archive preview --json` and `archive status --json` (both as the user, both
   capability-gated: `archive.preview`, `archive.run`): the base folder and its warnings; per agent the due sessions, files and
   bytes, the effective age, the agent's own retention and a **retention badge** when the agent would delete before the archive
@@ -4130,7 +4136,9 @@ question already; today the extension asks none of them.
   detail's per-agent table (the run's `removed` items are agents with counts and bytes) gets its own headings. Goldens gain A13
   and A20 runs.
 - **D9 — the Windows side waits for its binary.** The extension runs no `wsl-care.exe` until E7.S3 bundles it; the Windows
-  archive (its preview, run, restore) is shown as "arrives with the bundled Windows binary" — E13's Windows group renders it.
+  archive (its preview, run, restore) is not shown by E10; the section and the page say "this distribution's archive only — the
+  Windows archive is shown by a later version" (bundling the binary does not render it; E13's Windows group does). Two rendering
+  cases hold the label: no Windows binary, and a Windows binary present without E13's UI.
 - **D10 — one-liner carried (the owner's open question 4, the coordinator's instruction):** `archive check-base --json <path>` is
   accepted in either order (`ArchiveArguments.cs` `ParseArchiveCheckBase`, one arm).
 
@@ -4139,7 +4147,7 @@ question already; today the extension asks none of them.
 | Story | What | Files | RED first |
 |---|---|---|---|
 | **E10.S0** (daemon) | D7 `--entry -` on stdin + `act.entryStdin` + the shared request fixture; `restoreCeiling` on the list answer; D10 the flag order | `WslCare.Cli/CommandLine.cs`, `ArchiveArguments.cs`, `StdinList.cs`, `Core/Status/Capabilities.cs`, `Core/Archive/ArchiveList.cs`, contracts | stdin ids accepted and bounded and checked like the flag; a duplicate / a bad id / no A20 refused; the fixture's bytes parse to its ids; the list carries the effective ceiling; `--json` first accepted |
-| **E10.S1** (extension) | the read verbs `archive status --json`, `archive preview --json`, `archive check-base <path> --json` (as the user, allowlisted, the fake taught); D2 the writer; D3 the picker; D4 the panel section with the badge; D5 *Archive now* | `src/client/verbs.ts`, `src/settings/userLayer.ts` (new), `src/archive/*` (new), `src/panel/*`, `src/root/*`, `package.json`, `media/panel.js`, tests | the client refuses any other archive argv; the writer refuses a key not listed, a value not judged, `-u root`; a refused folder is never written; *Archive now* survives a reload and never sticks; the badge shows exactly when retention < effective age |
+| **E10.S1** (extension) | the read verbs `archive status --json`, `archive preview --json`, `archive check-base <path> --json` (as the user, allowlisted, the fake taught); D2 the writer; D3 the picker; D4 the panel section with the badge; D5 *Archive now* | `src/client/verbs.ts`, `src/config/configCall.ts` (new), `src/archive/*` (new), `src/panel/*`, `src/root/*`, `package.json`, `media/panel.js`, tests | the client refuses any other archive argv; the writer refuses a key not listed, a value not judged, `-u root`; a refused folder is never written; *Stop* writes an explicit empty value and an inherited machine base no longer applies; *Archive now* survives a reload and never sticks; the badge shows exactly when retention < effective age |
 | **E10.S2** (extension) | D6 the Archive page with restore; D8 the Logs words | `src/archivePage/*` (new), `media/archive.js` (new), `src/root/*`, `src/logsPage/*`, goldens | an unverified entry is never sent; ids reach the daemon on stdin only; a restore survives a reload; the Logs rows say what A13 / A20 did |
 
 Each story: its own commit series and PR, a plan-gated scope (this section), the code gate on its diff, an own Opus review in
@@ -4148,7 +4156,7 @@ parallel for the root and the writing paths (D2, D5, D6, D7), break-it checks on
 #### Test plan
 
 - **Structural** (`structure.test.ts`, `bundleScan.test.ts`, `fakeWsl.ts`): the new verbs are the only archive argv the client
-  sends; `config` appears only in `userLayer.ts`, never next to `-u root`; `--entry` appears only as `--entry -` in `rootCall.ts`;
+  sends; `config` appears only in `configCall.ts`, never next to `-u root`; `--entry` appears only as `--entry -` in `rootCall.ts`;
   every new page message is closed and indexed (never an id or a path from a webview).
 - **The fake `wsl.exe`** answers the new verbs from `contracts/golden/head/archive-*.json` and refuses any other shape; root
   shapes `act A13 …` and `act A20 … --entry -` with stdin checked.
@@ -4164,6 +4172,12 @@ parallel for the root and the writing paths (D2, D5, D6, D7), break-it checks on
 `proceed`, 2 gating of threshold 6, one of two reviewers (the other was out of quota). Both accepted and written into D6 / D7
 above: **0** — the stdin request is tested on both halves against ONE fixture, the live run is the owner's (root); **1** — a
 selection past `archive.maxRestoreEntries` is counted and refused in the page, from the ceiling the list answer carries.
+
+**The cadence consultation for E10–E12** (consultation 4bbc392d, codex): keep E10 → E11 → E12. Three points, each verified and
+taken: *Stop archiving* is an explicit empty value, not a reset (D3 — a reset lets a machine-layer base apply again); the writer is
+named `src/config/configCall.ts`, the module E7.S3 already names (D2); D9's label says "this distribution's archive only", since
+the bundled binary does not render the Windows archive. A fourth — W-A12's confirm re-check contradicts the shutdown it confirms —
+is E12's and is written into [PLAN_windows_care.md](PLAN_windows_care.md) for its plan round.
 
 #### Definition of Done
 
