@@ -141,6 +141,8 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Systemd/SystemdParsers.cs: 1L << 40"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Systemd/SystemdParsers.cs: 1L << 50"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
         ["WslCare.Core/Thresholds/ThresholdRules.cs: Gib"] = "a unit: bytes in a GiB / GB / MiB, never a choice",
+        ["WslCare.Core/Thresholds/SwapAndCommit.cs: Gib"] = "a unit: bytes in a GiB, never a choice (E14 S5)",
+        ["WslCare.Core/Actions/Memory/MemoryPressureShadow.cs: Hundredths"] = "a format: a whole-number fact holds avg60 to two decimals (E14 S5)",
         ["WslCare.Core/Actions/Engine/RequestSweep.cs: [..16]"] = "a run id's timestamp part (yyyyMMddTHHmmssZ, 16 characters) — the id's format",
         ["WslCare.Core/Actions/UserCaches/EditorServerCleanup.cs: <= 255"] = "the kernel's longest file name (NAME_MAX)",
         ["WslCare.Core/Actions/UserCaches/EditorServerCleanup.cs: <= 64"] = "a commit id's length (7 to 64 hex digits) — git's format",

@@ -50,7 +50,10 @@ public sealed class StatusVerdictsTests : IDisposable
             Reading.Of(12 * Gib),
             Reading.Of(0L),
             Reading.Of(new Fragmentation("Normal", order4, order7, order4 * 65536, order7 * 524288)),
-            new PressureSet(Reading.Of(new Pressure(new PressureLine(0, 0, 0, 0), Reading.Missing<PressureLine>("none"))), Reading.Of(new Pressure(new PressureLine(0.06, ioAvg60, 2.02, 0), Reading.Missing<PressureLine>("none"))), Reading.Of(new Pressure(new PressureLine(0.10, cpuAvg60, 2.74, 0), Reading.Missing<PressureLine>("none")))));
+            new PressureSet(Reading.Of(new Pressure(new PressureLine(0, 0, 0, 0), Reading.Missing<PressureLine>("none"))), Reading.Of(new Pressure(new PressureLine(0.06, ioAvg60, 2.02, 0), Reading.Missing<PressureLine>("none"))), Reading.Of(new Pressure(new PressureLine(0.10, cpuAvg60, 2.74, 0), Reading.Missing<PressureLine>("none")))))
+        {
+            Committed = Reading.Of(20 * Gib),
+        };
 
     private static ProbeSample Sample(MemorySnapshot memory) =>
         new(
@@ -87,7 +90,7 @@ public sealed class StatusVerdictsTests : IDisposable
     {
         var verdicts = StatusVerdicts.From(Sample(Memory(97)), NoFullRun, Config(), Now);
 
-        verdicts.Where(v => v.Basis!.Source == VerdictSource.Sample).Should().HaveCount(10).And.OnlyContain(v => v.Level == Level.Ok);
+        verdicts.Where(v => v.Basis!.Source == VerdictSource.Sample).Should().HaveCount(12).And.OnlyContain(v => v.Level == Level.Ok);
     }
 
     /// <summary>E14 S6: cpu and io PSI are judged NOW (some avg60) against their keys, by the rule the <c>busy</c> verb uses.</summary>
@@ -135,7 +138,7 @@ public sealed class StatusVerdictsTests : IDisposable
         var verdicts = StatusVerdicts.From(Sample(Memory(60)), NoFullRun, Config(), Now);
 
         var sample = verdicts.Where(v => v.Basis!.Source == VerdictSource.Sample).ToList();
-        sample.Select(v => v.Id).Should().Equal("memory.available", "memory.pageCache", "memory.inactiveAnon", "memory.swap", "memory.fragmentation", "memory.pressure", "pressure.cpu", "pressure.io", "wslconfig.memory", "disk.root");
+        sample.Select(v => v.Id).Should().Equal("memory.available", "memory.pageCache", "memory.inactiveAnon", "memory.swap", "memory.swapFree", "memory.committed", "memory.fragmentation", "memory.pressure", "pressure.cpu", "pressure.io", "wslconfig.memory", "disk.root");
         sample.Should().OnlyContain(v => v.Basis == new VerdictBasis(VerdictSource.Sample, null, Now, 0));
         Find(verdicts, "wslconfig.memory").Value.Should().Contain(StatusVerdicts.WslConfigReadByFullRun, "the audit is a full run's; the level is the memory's");
     }

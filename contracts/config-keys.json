@@ -1255,6 +1255,32 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "thresholds.swapFreeWarnGb",
+      "shape": "int",
+      "min": 0,
+      "max": 100000,
+      "default": 4,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "thresholds.committedWarnPercent",
+      "shape": "int",
+      "min": 1,
+      "max": 1000,
+      "default": 80,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "thresholds.rootUsedWarnPercent",
       "shape": "int",
       "min": 0,
@@ -1338,6 +1364,19 @@
       "min": 1,
       "max": 1024,
       "default": 36,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "wslConfig.recommendedSwapGb",
+      "shape": "int",
+      "min": 0,
+      "max": 1024,
+      "default": 16,
       "safeDirection": "none",
       "rootEffective": false,
       "tightenOnlyForRoot": false,

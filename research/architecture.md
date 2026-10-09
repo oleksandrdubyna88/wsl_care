@@ -570,7 +570,14 @@ are named constants (page cache / inactive anon 15 GiB, order-7 blocks < 32 warn
 journal > 1 GiB or < 7 days, > 100 clock jumps per 4 h). An unread figure is `unknown` with its reason, never `ok`.
 **`.wslconfig`**: the VM's ceiling (inside the VM `MemTotal` IS the ceiling) is red above 90 % used; the row SHOWS
 the owner's recommendation `memory=36GB` and the file's own settings (`sparseVhd=true` and `autoMemoryReclaim=gradual`
-warn) — nothing ever writes the file.
+warn) — nothing ever writes the file. Since E14 S5 (2026-10-09) the full run's `wslConfig.advice` lists, per setting the file
+does not already say, the line to add, its section (`[wsl2]` `memory=` / `swap=`, `[experimental]`
+`autoMemoryReclaim=dropcache`), what the file says now and the measurement it rests on (`Health/WslConfigAdvice`); an
+architecture test holds that no product file naming `.wslconfig` contains a write. Two report verdicts after `memory.swap`
+(`Thresholds/SwapAndCommit`): `memory.swapFree` (swap LEFT under `thresholds.swapFreeWarnGb`, 4; a smaller swap is judged by
+`memory.swap` only) and `memory.committed` (`Committed_AS` above `thresholds.committedWarnPercent`, 80, of `MemTotal` — a
+warning of promises). A1 and A2 record memory PSI as a fact and their trigger reason says whether the S6 pressure rule
+WOULD fire — a shadow, their firing unchanged, until the S8 soak measures it.
 
 **The daily folder walk** (`FolderSizes`, plan §4.4 and the A8 / A9 rows). `IFileSystem.MeasureTree`: one
 `FileSystemEnumerable` pass, a stat per entry and no read, links (symlinks, junctions — `ReparsePoint`) neither counted

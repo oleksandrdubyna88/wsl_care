@@ -93,7 +93,7 @@ public sealed class HealthCollector(ICommandRunner commands, IFileSystem files, 
     public WslConfigAudit AuditWslConfig(string file) => files.ReadNoFollowFile(file, MaxWslConfigBytes) switch
     {
         FileReadResult.Content content => Audit(file, HealthParsers.WslConfig(System.Text.Encoding.UTF8.GetString(content.Bytes))),
-        FileReadResult.Unreadable u => new WslConfigAudit(file, true, new WslConfigSettings(string.Empty, string.Empty, string.Empty, string.Empty), [$"{file} could not be read: {u.Reason}"]),
+        FileReadResult.Unreadable u => new WslConfigAudit(file, true, new WslConfigSettings(string.Empty, string.Empty, string.Empty, string.Empty), [$"{file} could not be read: {u.Reason}"]) { Read = false },
         _ => new WslConfigAudit(file, false, new WslConfigSettings(string.Empty, string.Empty, string.Empty, string.Empty), []),
     };
 

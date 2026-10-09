@@ -81,6 +81,8 @@
     "memoryPressureWarn": 10,
     "cpuPressureWarnPercent": 20,
     "ioPressureWarnPercent": 10,
+    "swapFreeWarnGb": 4,
+    "committedWarnPercent": 80,
     "rootUsedWarnPercent": 80,
     "journalHistoryWarnDays": 7,
     "clockJumpsWarnPer4h": 100,
@@ -164,7 +166,8 @@
     "earlyEndSeconds": 2
   },
   "wslConfig": {
-    "recommendedMemoryGb": 36
+    "recommendedMemoryGb": 36,
+    "recommendedSwapGb": 16
   },
   "requests": {
     "maxRead": 64,

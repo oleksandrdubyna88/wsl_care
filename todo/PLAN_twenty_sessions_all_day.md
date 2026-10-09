@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`); S2b, S4, S5, S7, S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S5 built (memory and swap before the evening: a report); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S2b, S4, S7, S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -549,6 +549,88 @@ rules) then say: heavy builds and test runs go through it.
 A1/A2's triggers may also take memory PSI (`thresholds.memoryPressureWarn` exists) — measured against the 2026-10-02
 baseline first. `.wslconfig` advice (memory cap, swap size, `autoMemoryReclaim`) extends the existing `WslConfigReport`
 (`HealthReport.cs:36`): **shown, never written** by the product (Q5).
+
+#### S5 — as to be built (2026-10-09, branch `feat/wc-memory-before-evening`): a REPORT, nothing acts differently
+
+1. **`memory.swapFree`** (a fast-sample verdict, after `memory.swap`):
+   - warn when swap is configured and `SwapFree` < `thresholds.swapFreeWarnGb` (new key, 0–GbCeiling, default 4);
+   - ok with "no swap configured" when `SwapTotal` is 0;
+   - the value is "X GiB free of Y GiB".
+   
+   The evening (L3) had 2.4 GB left, so it warns; the captured calm tree has 12 of 12 free.
+2. **`memory.committed`** (after it): warn when `Committed_AS` > `thresholds.committedWarnPercent` (new key, 1–1000, default 80)
+   of `MemTotal`. The value is "P % of MemTotal (C of T GiB committed)".
+   - Linux over-commits, so this is a warning of what is PROMISED, never of what is used.
+   - The evening read 104 %; the calm tree reads 46 %.
+   - `MemorySnapshot` gains `Committed` as an init property (default "not read"), so the many positional constructions in
+     tests stay valid.
+   - The status wire's memory block does not change: the figures are in the verdicts.
+3. **A1/A2 and memory pressure, SHADOW only.** The plan says to measure against the baseline first, and this session cannot
+   measure (no WSL commands). So A1's and A2's previews gain the fact `memoryPressureAvg60Hundredths`, and their trigger REASON says whether the pressure rule
+   (memory PSI some avg60 above `thresholds.memoryPressureWarn`, the S6 rule) WOULD have fired. Whether they fire does not
+   change. Every timer run then records the evidence in its run record, so the S8 soak can decide with numbers whether to
+   make it a real trigger.
+4. **`.wslconfig` advice** (the full run's `WslConfigReport`, additive): `advice`, the lines a person could put under
+   `[wsl2]`, each only where the file differs from the recommendation, each with what it says now:
+   - `memory=` (`wslConfig.recommendedMemoryGb`, existing, 36);
+   - `swap=` (`wslConfig.recommendedSwapGb`, new, 0–1024, default 16 — the evening used 9.9 of 12);
+   - `autoMemoryReclaim=dropCache` (the value the existing warning already names as the one that works with systemd and
+     Docker).
+   
+   It is SHOWN, NEVER WRITTEN: no code path writes `.wslconfig`, and an architecture check asserts that no product file
+   contains a write to it. Q5 (which settings to advise) stays the owner's; these defaults are the coordinator's
+   stated scope.
+5. **Wire and goldens:** additive. The seven `status*.json` goldens gain the two verdicts: fixture values, or the
+   "meminfo does not exist" reason in the `status-running-*` ones. `config-keys.json` gains three keys.
+
+**RED (S5), written BEFORE the product code:**
+- `Swap_left_below_its_key_warns_and_no_swap_is_ok`
+- `Committed_above_its_share_of_MemTotal_warns_and_the_calm_tree_is_ok`
+- `Status_answers_swapFree_and_committed_after_memory_swap`
+- `A1_and_A2_say_whether_memory_pressure_would_have_fired_and_fire_as_before`
+- `The_wslconfig_advice_names_only_what_differs_with_what_it_says_now`
+- `No_product_code_writes_wslconfig`
+- the contract and golden updates.
+
+#### S5 as built (2026-10-09)
+
+- **Plan round** (coai session `42b21ed8`): `proceed`, 2 of 2 reviewers, 6 findings.
+  - **Accepted:**
+    - (0) `autoMemoryReclaim` is advised under `[experimental]`, lowercase `dropcache`.
+    - (1) a swap smaller than the key is judged by `memory.swap` only, not "low".
+    - (4) every advised line names its measurement.
+    - (5) a companion test proves the no-write scan still finds a write.
+  - **Rejected, with reasons:**
+    - (2) `thresholds.memoryPressureWarn` already exists.
+    - (3) no status golden holds A1's or A2's preview.
+- **Built:**
+  - `Thresholds/SwapAndCommit`: `memory.swapFree` and `memory.committed`, after `memory.swap`.
+  - `MemorySnapshot.Committed`, read from `Committed_AS`.
+  - `Actions/Memory/MemoryPressureShadow`: A1's and A2's fact and reason sentence, using `MachineBusy.Crosses`, the one S6 comparison.
+  - `Health/WslConfigAdvice` and `WslConfigReport.Advice`.
+  - The keys `thresholds.swapFreeWarnGb` (4), `thresholds.committedWarnPercent` (80) and `wslConfig.recommendedSwapGb` (16).
+  - The seven status goldens gained the two verdicts.
+  - `ArchitectureTests.WslConfig`.
+- **RED-first, as the coordinator asked after S6:** every test was written BEFORE the product code and seen red against stubs; teeth were then shown on two rules.
+- **Code round** (same coai session, 7 of 8 reviewers; gemini security timed out): `proceed`, 6 findings.
+  - **Accepted:**
+    - (1) `module_daemon.md` gains the section, with a diagram.
+    - (2) scenario flows over the built binary: the captured tree's `memory.swapFree` and `memory.committed`; the fresh-boot variant now carries `Committed_AS`, and its all-ok count moved to 9.
+    - (3) the no-write scan asserts the extension's source exists.
+    - (4) a swap KNOWN to be 0 is "no swap" even with its free figure unread.
+  - **Rejected, with reasons:**
+    - (0) threading the config through `HealthReports.From`: the same key goes through the same per-verb `Tuning` scope.
+    - (5) unit-aware comparison: a residual, below.
+- **Own review** (Opus, read-only): nothing serious, and the goldens and the A1/A2 firing were confirmed. Fixed:
+  - An UNREADABLE `.wslconfig` was advised as "not set". `WslConfigAudit.Read` is false then, and no advice is given.
+  - The scan now counts `MoveFile` / `DeleteFile` as writes, and a text builder's one-argument `AppendLine` is not one.
+  - The status bar would have turned yellow on `memory.committed` (a promise). It is left out of the bar now; the panel still lists it.
+  
+  Each of these was RED first, then green, then red again with the fix broken.
+- **Residuals:**
+  - The advice compares setting texts (`36gb` = `36GB`), but not units (`36864MB` reads as different).
+  - Whether memory pressure should really trigger A1 or A2 is S8's measurement.
+  - Q5 (which settings to advise) stays the owner's.
 
 ### S6 — a "machine busy" signal agents can poll
 

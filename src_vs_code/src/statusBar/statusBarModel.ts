@@ -22,13 +22,16 @@ export interface BarView {
 /** E14 S6: `pressure.` (cpu / io PSI, the daemon's "machine busy" rule) colours the bar too — a busy machine is what it shows. */
 export const RELEVANT_VERDICT_PREFIXES: readonly string[] = ['memory.', 'kernel.', 'pressure.'];
 
+/** E14 S5: `memory.committed` warns of what the kernel PROMISED, not of a state the bar shows — the panel lists it, the bar does not. */
+export const BAR_EXCLUDED_VERDICT_IDS: readonly string[] = ['memory.committed'];
+
 const CLICK = 'Click to open the AI OS Care panel.';
 
 const RANK: Readonly<Record<Verdict['level'], number>> = { ok: 0, unknown: 0, warn: 1, critical: 2 };
 const LEVEL_OF_RANK: readonly BarLevel[] = ['none', 'warn', 'critical'];
 
 function isRelevant(verdict: Verdict): boolean {
-  return RELEVANT_VERDICT_PREFIXES.some((prefix) => verdict.id.startsWith(prefix));
+  return RELEVANT_VERDICT_PREFIXES.some((prefix) => verdict.id.startsWith(prefix)) && !BAR_EXCLUDED_VERDICT_IDS.includes(verdict.id);
 }
 
 /** The worst relevant level; `unknown` colours nothing. */

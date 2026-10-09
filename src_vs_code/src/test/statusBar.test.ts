@@ -50,6 +50,13 @@ test('a busy machine (E14 S6: pressure.cpu or pressure.io warn) colours the bar 
   assert.equal(barView(answered('status', verdict(headBody('status'), 'pressure.io', 'warn'))).level, 'warn');
 });
 
+test('swap running out (E14 S5: memory.swapFree) colours the bar; promised memory (memory.committed) does not — it is a promise, not a state the bar shows', () => {
+  assert.equal(barView(answered('status', verdict(headBody('status'), 'memory.swapFree', 'warn'))).level, 'warn');
+  const promised = barView(answered('status', verdict(headBody('status'), 'memory.committed', 'warn')));
+  assert.equal(promised.level, 'none');
+  assert.doesNotMatch(promised.tooltip, /memory\.committed/);
+});
+
 test('the tooltip names each relevant verdict that is not ok, with its figure', () => {
   const view = barView(answered('status', verdict(headBody('status'), 'memory.swap', 'warn')));
   assert.match(view.tooltip, /memory\.swap: warn — 0\.00 GiB/);

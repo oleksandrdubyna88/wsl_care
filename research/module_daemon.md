@@ -97,12 +97,32 @@ has none.
 | the irreversible deletions | *The irreversible deletions (E3.S2)* |
 | memory / build-server / trim / clock actions, the timer pass, `logs` / `runs` | *The memory, build-server, trim and clock actions, the timer pass, `logs` / `runs` (E3.S3)*, *E3 review fixes (2026-10-03)*; since E14 S3 (2026-10-08) A3's TIMER also waits until every build server is measured idle for `buildServers.idleMinutes` (the section below), and the C# language server is a process family of its own (`language-servers`, for A11) — architecture.md's A3 row and *A11 — suspects* |
 | the "machine busy" signal (`wsl-care busy`, `pressure.cpu` / `pressure.io`) | architecture.md *The "machine busy" signal (E14 S6, 2026-10-09)*; the agent-side contract in the README's *Busy* section |
+| memory and swap before the evening (E14 S5, a report) | the section below; architecture.md's *`.wslconfig`* paragraph |
 | installer and units; release | *The installer and the units (E4.S1)*, *The release pipeline (E4.S2)* |
 | the read contract, detached runs | *The verdicts in `status`, `productVersion` and the golden contracts (E5.S0)*; *The daemon read contract (E6.S0)* and *Detached runs, the request, the stop (E6.S1)* now in [architecture-daemon-e6.md](architecture-daemon-e6.md) |
 | configuration trust, AI agents, A18, numbers | *The configuration trust (E7.S0, 2026-10-05, plan §15q R1)*, *The AI agents: catalogue, discovery, the walk (E7.S1, 2026-10-05, plan §15q D1–D3, R2)* with its *Manual agents and `agents probe` (E7.S2, 2026-10-05, plan §15q D4, R2)*, *A18 — orphaned AI-agent processes (E7.S2b, 2026-10-05, owner decision)*, *Numbers are configuration (standing convention, owner rule 2026-10-05)* |
 | the MCP server instances of the AI agents (`Core/Mcp/`, `status --json` `mcpServers`) | [module_mcp_servers.md](module_mcp_servers.md) (E7.S2d, 2026-10-06/07); architecture.md *MCP server instances of the AI agents* points there |
 | tests and the harness | [module_tests.md](module_tests.md), architecture.md *The scenario harness (E1.S3)* |
 | the Windows Time guard (2026-10-08) | the section below; the plan [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md), the incident [2026-10-08_windows_time_stopped.md](2026-10-08_windows_time_stopped.md) |
+
+## Memory and swap before the evening (E14 S5, 2026-10-09) — a report
+
+```mermaid
+flowchart LR
+    meminfo["/proc/meminfo<br/>SwapTotal · SwapFree · Committed_AS · MemTotal"] --> snapshot["MemorySnapshot<br/>(+ Committed)"]
+    snapshot --> verdicts["Thresholds/SwapAndCommit<br/>memory.swapFree · memory.committed"]
+    psi["/proc/pressure/memory"] --> shadow["Actions/Memory/MemoryPressureShadow<br/>A1 / A2: fact + 'WOULD fire' (firing unchanged)"]
+    audit["HealthCollector .wslconfig audit<br/>(Read = false when unreadable)"] --> advice["Health/WslConfigAdvice<br/>health.wslConfig.advice — shown, NEVER written"]
+```
+
+- `memory.swapFree` warns when the swap LEFT is under `thresholds.swapFreeWarnGb` (4). A zero swap is "no swap
+  configured"; a swap smaller than the key is judged by `memory.swap` only.
+- `memory.committed` warns when `Committed_AS` is above `thresholds.committedWarnPercent` (80) of `MemTotal`. It warns of
+  promises, so the extension's status bar leaves it out (`BAR_EXCLUDED_VERDICT_IDS`); the panel lists it.
+- A1 and A2 record memory PSI and say whether the S6 rule would have fired them. Their firing is unchanged until S8 measures.
+- The `.wslconfig` advice lists only what the file does not already say: `[wsl2]` `memory=` / `swap=`, `[experimental]`
+  `autoMemoryReclaim=dropcache`. Each line names its measurement. There is no advice for a file that could not be read.
+- `ArchitectureTests.WslConfig` holds that no product file naming `.wslconfig` holds a write.
 
 ## A3's idle gate (E14 S3, 2026-10-08)
 

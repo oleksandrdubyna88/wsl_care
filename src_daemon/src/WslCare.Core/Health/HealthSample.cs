@@ -13,7 +13,12 @@ public sealed record CollectorFreshness(string File, DateTimeOffset LastWrite);
 
 /// <summary>The <c>.wslconfig</c> audit of plan §4.5: where the file is, what it sets, and what is wrong with it.</summary>
 /// <param name="Present">Whether the file exists — absent means WSL's defaults (memory = half the host's RAM).</param>
-public sealed record WslConfigAudit(string File, bool Present, WslConfigSettings Settings, IReadOnlyList<string> Warnings);
+public sealed record WslConfigAudit(string File, bool Present, WslConfigSettings Settings, IReadOnlyList<string> Warnings)
+{
+    /// <summary>Whether the settings were READ — false for a file that exists but could not be read (E14 S5, own code review):
+    /// its empty settings mean "unknown", never "not set".</summary>
+    public bool Read { get; init; } = true;
+}
 
 /// <summary>
 /// One full run's look at the distro's health (plan §4.5) — every part a <see cref="Reading{T}"/>, so a part a tool
