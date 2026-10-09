@@ -737,6 +737,52 @@ parent created AFTER the child — a reused pid), CPU through `GetProcessTimes` 
 E12 button (W-A, by pid AND creation time). `vmmemWSL` reclaim advice (`autoMemoryReclaim`) in the S5 report. **Defender
 exclusions** for build and tool folders are a security trade-off: Q6, never automatic, at most advice.
 
+#### S7a — as to be built (2026-10-09, branch `feat/wc-windows-mcp`): the Windows side's MCP servers, READ-ONLY
+
+**Measured first (Windows, read-only, `Get-CimInstance Win32_Process`, 2026-10-09 ~12:20Z):**
+- 41 MCP processes: 3 `coai-mcp.exe` (317 MB working set) and 38 `creds-mcp.exe` (544 MB).
+- Parents: 3 `coai-mcp.exe` under `claude.exe`, 3 `creds-mcp.exe` under `claude.exe`.
+- 35 `creds-mcp.exe` under ONE `wsl.exe`: VS Code's WSL connection (`wsl.exe -d Ubuntu sh -c "$VSCODE_WSL_EXT_LOCATION/scripts/…"`). They are the Windows halves the distro's `creds-mcp` starts through interop. They stay alive while that connection lives, long after their Linux caller ended — the W9 accumulation.
+- No parent was gone at that moment. W9 (2026-10-07) counted 66 orphaned of 85.
+
+**Design (no action — a STOP on Windows is a separate story for the owner):**
+1. **A seam, `IWindowsProcessTable`:** one snapshot of `{pid, parent pid, exe name, created, CPU time, working set, private bytes, session id}`.
+   - The real `Win32ProcessTable` (win-x64 only) reads it through `CreateToolhelp32Snapshot` (pid, parent, name: one kernel snapshot, nothing started).
+   - For a matched process and its parent only, it opens `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` and reads `GetProcessTimes`, `K32GetProcessMemoryInfo` and `ProcessIdToSessionId`. Read rights only, every handle closed.
+   - A process that cannot be opened is listed with its unread figures unavailable, never 0.
+2. **The servers watched on Windows** (`Mcp/WindowsMcpCatalogue`):
+   - `coai-mcp` (the catalogue's), when `mcpServers.watched` holds it;
+   - `creds-mcp`, Windows-catalogued because W9 measured its leak there. On the distro it stays a user-program choice (S2c);
+   - the user's `mcpServers.programs`.
+   
+   A name matches the exe name with `.exe` stripped, compared without case (Windows file names).
+3. **Owner per instance:**
+   - `agent` (the first ancestor that is a catalogue agent binary, `claude.exe` …);
+   - `interop` (the parent is `wsl.exe`: a WSL connection's interop child);
+   - `orphaned` (the parent is gone, OR the live parent was created AFTER the child: a reused pid);
+   - `other` (any other live parent, named).
+4. **CPU over an interval:** two snapshots, `mcpServers.cpuWindowMilliseconds` apart (the existing key). Per instance: CPU % of one core over the measured interval. Idle = under `mcpServers.idleCpuPercent` and older than `mcpServers.idleMinAgeMinutes` (existing keys). The S1 ledger (an interval since the previous sample) is a follow-up on Windows: the window is what this first read-only step measures.
+5. **Wire:** additive, the Windows binary's `status --json` only.
+   - A new `windowsMcpServers` block: `available`/`reason`, `windowMilliseconds`, `count`, `idleCount`, `orphanedCount`, `heldBytes` (Σ private bytes), `workingSetBytes`, `cpuCores`.
+   - `servers[]{name, count, idle, orphaned, workingSetBytes}`.
+   - `owners[]{kind, parent, count}`: the 35-under-one-`wsl.exe` shape in one line.
+   - `instances[]` (at most `mcpServers.maxInstances`): `pid`, `server`, `parentPid`, `parentName`, `owner`, `created`, `cpuPercent`, `workingSetBytes`, `privateBytes`, `sessionId`.
+   - The distro's binary answers it unavailable ("the distro's binary reads the distro's servers: mcpServers"). The Windows binary's `mcpServers` reason now points at the new block.
+   - No Linux golden changes: the block is omitted when null, and the Linux answer's `windowsMcpServers` is omitted. **To verify:** whether the distro's binary should carry an unavailable block or none. Additive either way.
+6. **vmmem advice:** the Windows binary's `host` block gains `vmmemAdvice` when `vmmemWSL` was read:
+   - *"vmmemWSL holds X GiB of the host's Y GiB. WSL returns page cache to Windows only with `[experimental] autoMemoryReclaim=dropcache` in `.wslconfig` (the S5 advice; shown, never written); `wsl --shutdown` returns all of it and ends every WSL session."*
+   - Text only, never acted on.
+7. **Verdicts:** none in this step. The block is a report; a Windows verdict and the stop button come with the owner's decision.
+
+**RED (S7a), written BEFORE the product code:**
+- `The_windows_mcp_instances_are_counted_by_exe_name_without_case`
+- `An_instance_whose_parent_is_gone_or_was_created_after_it_is_orphaned`
+- `Owners_are_agent_interop_orphaned_or_other`
+- `Cpu_over_the_window_decides_idle_and_an_unopenable_process_is_unavailable_never_0`
+- `The_distro_binary_answers_the_windows_block_unavailable`
+- `The_real_process_table_lists_this_test_process_with_its_parent` (Windows only, read-only)
+- `Vmmem_advice_names_the_reclaim_setting_and_wsl_shutdown`
+
 ### S8 — the 24 h × 20 sessions soak campaign
 
 **What is sampled, every `soak.periodMinutes` (10):** `wsl-care status --json` (the S1 MCP block, S5/S6 verdicts, memory,
