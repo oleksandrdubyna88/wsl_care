@@ -561,6 +561,47 @@ baseline first. `.wslconfig` advice (memory cap, swap size, `autoMemoryReclaim`)
 (`contracts/exit-codes.json`), naming which pressure crossed which key. Agent tooling polls it before a heavy step and waits
 with a bounded backoff.
 
+#### S6 — as to be built (2026-10-09, branch `feat/wc-machine-busy`)
+
+1. **One rule, one place:** `Thresholds/MachineBusy.Judge(PressureSet, limits)`, a pure function. The machine is BUSY when
+   any of these crosses its key:
+   - cpu `some avg60` > `thresholds.cpuPressureWarnPercent` (new key, 0–100, default 20);
+   - io `some avg60` > `thresholds.ioPressureWarnPercent` (new key, 0–100, default 10);
+   - memory `some avg60` > `thresholds.memoryPressureWarn` (existing, 10).
+   
+   It is CALM when every pressure that was read is under its key, and UNKNOWN when none was read: a kernel without PSI, or the
+   Windows binary. The defaults follow L2: the evening's cpu `some avg10` was 31 %; the captured calm 2026-10-02 tree reads
+   cpu avg60 4.18 and io 1.69. avg60 is a stable window to decide "start now or wait" on (avg10 would flap). The keys are
+   display keys (no action reads them).
+2. **Status:** two verdicts after `memory.pressure` — `pressure.cpu` and `pressure.io` (warn above the key; value
+   `some avg10 X, avg60 Y`). They come from the sample's existing `PressureSet` (read by `MemoryCollector`), so `status`
+   and the full run judge them with the same records. The extension's status bar takes every verdict's level, so a busy
+   machine shows as a warning there with no extension change.
+3. **The verb `wsl-care busy [--json]`:**
+   - It reads only `/proc/pressure/{cpu,io,memory}` and `/proc/loadavg` (the load is shown, never judged) and the
+     configuration. There is no process walk, no MCP window, no history and no write; it runs as any user.
+   - Exit codes: `0` for calm or unknown, a new code `83 machineBusy` for busy. JSON:
+     `{ state: calm|busy|unknown, reasons: [{ resource, window, value, limit, key }], pressure: {cpu, io, memory},
+     load: {…}, evaluatedAt }`. The text form is one line.
+   - An unknown answer is "go": an agent never waits on a kernel that cannot answer.
+4. **The agent-side contract** (README, a new section): poll before a heavy step (a build, a test suite, an install).
+   - On `83`, wait with a bounded backoff (30 s, 60 s, 120 s, at most 10 minutes in total), then go anyway and say so.
+   - On `0`, or any other code, go.
+   - It is never a lock and never a queue. It is advice only; the daemon starts and stops nothing because of it.
+   - A shell snippet shows the loop.
+5. **Wire:** additive. `contracts/exit-codes.json` gains `machineBusy` (regenerated). The 7 `status*.json` goldens gain
+   the two verdicts: values from the fixture's PSI, or the "meminfo does not exist" reason in the six `status-running-*`
+   goldens. They are hand-edited (Windows only; the Linux CI legs verify them).
+
+**RED (S6):**
+- `A_cpu_io_or_memory_pressure_above_its_key_makes_the_machine_busy_naming_the_key`
+- `Every_read_pressure_under_its_key_is_calm_and_none_read_is_unknown`
+- `Status_judges_cpu_and_io_pressure_after_memory_pressure`
+- `Busy_answers_83_with_its_reasons_and_calm_answers_0`
+- `Busy_reads_no_process_and_writes_nothing`
+- `An_unreadable_pressure_is_unknown_and_exits_0`
+- the contract and golden updates.
+
 ### S7 — the Windows side (inside E11/E12's scope)
 
 **Problem.** W9: 85 `creds-mcp.exe`, 66 orphaned, 1.32 GB; the Windows binary has no process collector, so `coai-mcp.exe`
