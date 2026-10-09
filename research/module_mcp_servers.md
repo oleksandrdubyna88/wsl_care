@@ -172,15 +172,15 @@ flowchart LR
   = `agent`; `wsl.exe` = `interop`; otherwise the walk goes up looking for an agent, stopping at a gone ancestor, at one
   created after the process below it (a reused pid owns nothing) and at a loop; none = `other`. An unreadable creation time
   cannot prove a reuse and is not taken as one. `Groups` counts instances per owner, largest first.
-- **`WindowsMcpCollector`** — one `Details` per pid in the sample (cached for the walk), the wait paid only when an instance
+- **`WindowsMcpCollector`** — a pid the snapshot names twice is one instance (coai code round, finding 9); one `Details` per pid in the sample (cached for the walk), the wait paid only when an instance
   can be measured, the second read compared only when its creation time equals the first's (a recreated pid is "taken by
   another process during the window"), CPU % = 100 × ΔCPU ÷ max(window, elapsed). Idle = under `mcpServers.idleCpuPercent`
   and at least `mcpServers.idleMinAgeMinutes` old. Instances sorted by private bytes (unread last), then pid; `Listed` = the
   first `mcpServers.maxInstances`.
 - **`WindowsMcpServersReport`** — `available`/`reason`, `windowMilliseconds`, `count`, `listed`, `idleCount`,
-  `orphanedCount`, `heldBytes` (Σ private bytes), `workingSetBytes`, `cpuCores`, `servers[]`, `owners[]`, `instances[]`
-  (`pid`, `server`, `owner{kind, parentPid, parentName, detail}`, `created`, `cpuPercent`, `workingSet`, `privateBytes`,
-  `sessionId`, `idle`). No verdict reads it yet.
+  `orphanedCount`, `memoryRead`, `held` (Σ private bytes) and `workingSet` over the instances read — unavailable when instances exist and none was read, never a 0 (coai code round, findings 2/3/6) — `cpuCores`, `servers[]`, `owners[]`, `instances[]`
+  (`pid`, `server`, `owner{kind, parentPid, parentName, detail}` — the kind a typed `WindowsMcpOwnerKind` inside, words only on the wire, `created`, `cpuPercent`, `workingSet`, `privateBytes`,
+  `sessionId`, `idle`). No verdict reads it yet. The text form prints one `windows mcp servers:` line and, with advice, a `vmmem advice:` line.
 - **`VmmemAdvice`** — PURE text when `vmmemWSL` holds more than `wslConfig.vmmemAdviceGb` (24): the GiB held of the host's,
   `[experimental] autoMemoryReclaim=dropcache` advised only when `.wslconfig` was read without it ("already set" when it is,
   "not known" when the file could not be read), and `wsl --shutdown` named as the last resort that ends every WSL session.

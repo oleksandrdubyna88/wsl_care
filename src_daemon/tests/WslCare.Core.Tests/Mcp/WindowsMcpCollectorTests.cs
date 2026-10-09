@@ -92,9 +92,9 @@ public sealed class WindowsMcpCollectorTests
 
         var sample = await Sample(table);
 
-        Owner(sample, 300).Should().Match<WindowsMcpOwner>(o => o.Kind == WindowsMcpOwner.Orphaned && o.Detail.Contains("gone"));
-        Owner(sample, 301).Should().Match<WindowsMcpOwner>(o => o.Kind == WindowsMcpOwner.Orphaned && o.Detail.Contains("created after"), "pid 400 is a NEWER process than its child: the parent's pid was reused");
-        Owner(sample, 302).Kind.Should().Be(WindowsMcpOwner.Agent);
+        Owner(sample, 300).Should().Match<WindowsMcpOwner>(o => o.Kind == WindowsMcpOwnerKind.Orphaned && o.Detail.Contains("gone"));
+        Owner(sample, 301).Should().Match<WindowsMcpOwner>(o => o.Kind == WindowsMcpOwnerKind.Orphaned && o.Detail.Contains("created after"), "pid 400 is a NEWER process than its child: the parent's pid was reused");
+        Owner(sample, 302).Kind.Should().Be(WindowsMcpOwnerKind.Agent);
         sample.OrphanedCount.Should().Be(2);
     }
 
@@ -118,11 +118,11 @@ public sealed class WindowsMcpCollectorTests
 
         var sample = await Sample(table);
 
-        Owner(sample, 200).Should().Be(new WindowsMcpOwner(WindowsMcpOwner.Agent, 110, "cmd.exe", "claude.exe (pid 100)"), "the first ancestor that is an agent, through cmd.exe");
-        Owner(sample, 700).Kind.Should().Be(WindowsMcpOwner.Interop, "a WSL connection's interop child; its caller is in the distro and cannot be seen from here");
-        Owner(sample, 610).Should().Match<WindowsMcpOwner>(o => o.Kind == WindowsMcpOwner.Other && o.ParentName == "Code.exe");
-        Owner(sample, 210).Kind.Should().Be(WindowsMcpOwner.Other, "claude.exe pid 120 is NEWER than the cmd.exe below it: a reused ancestor pid owns nothing (coai plan round 2026-10-09, finding 6)");
-        sample.Owners.Should().ContainSingle(o => o.Kind == WindowsMcpOwner.Interop).Which.Should().Be(new WindowsMcpOwnerGroup(WindowsMcpOwner.Interop, "wsl.exe (pid 500)", 35));
+        Owner(sample, 200).Should().Be(new WindowsMcpOwner(WindowsMcpOwnerKind.Agent, 110, "cmd.exe", "claude.exe (pid 100)"), "the first ancestor that is an agent, through cmd.exe");
+        Owner(sample, 700).Kind.Should().Be(WindowsMcpOwnerKind.Interop, "a WSL connection's interop child; its caller is in the distro and cannot be seen from here");
+        Owner(sample, 610).Should().Match<WindowsMcpOwner>(o => o.Kind == WindowsMcpOwnerKind.Other && o.ParentName == "Code.exe");
+        Owner(sample, 210).Kind.Should().Be(WindowsMcpOwnerKind.Other, "claude.exe pid 120 is NEWER than the cmd.exe below it: a reused ancestor pid owns nothing (coai plan round 2026-10-09, finding 6)");
+        sample.Owners.Should().ContainSingle(o => o.Kind == WindowsMcpOwnerKind.Interop).Which.Should().Be(new WindowsMcpOwnerGroup(WindowsMcpOwnerKind.Interop, "wsl.exe (pid 500)", 35));
     }
 
     [Fact]
@@ -169,6 +169,32 @@ public sealed class WindowsMcpCollectorTests
         sample.Count.Should().Be(6);
         sample.Listed.Select(i => i.Pid).Should().Equal(204, 203, 202);
         sample.Instances.Should().Contain(i => i.Server == "my-server");
+    }
+
+    [Fact]
+    public async Task A_pid_the_snapshot_names_twice_is_one_instance_never_a_crash()
+    {
+        // coai code round 2026-10-09, finding 9: a torn snapshot may list a pid twice; the sample must still answer.
+        var table = new FakeTable()
+            .Process(100, 1, "claude.exe")
+            .Process(200, 100, "creds-mcp.exe")
+            .Process(200, 100, "creds-mcp.exe");
+
+        var sample = await Sample(table);
+
+        sample.Instances.Should().ContainSingle(i => i.Pid == 200);
+    }
+
+    [Fact]
+    public async Task A_parent_that_cannot_be_opened_cannot_prove_a_reuse_so_the_instance_is_not_orphaned()
+    {
+        var table = new FakeTable()
+            .Process(400, 1, "Code.exe", unopenable: true)
+            .Process(200, 400, "creds-mcp.exe", ageMinutes: 600);
+
+        var sample = await Sample(table);
+
+        Owner(sample, 200).Should().Be(new WindowsMcpOwner(WindowsMcpOwnerKind.Other, 400, "Code.exe", "Code.exe (pid 400)"), "an unreadable creation time is not taken as a reuse (own code review 2026-10-09)");
     }
 
     private static WindowsMcpOwner Owner(WindowsMcpSample sample, int pid) => sample.Instances.Single(i => i.Pid == pid).Owner;

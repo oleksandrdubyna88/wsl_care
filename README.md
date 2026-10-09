@@ -270,8 +270,8 @@ in `windowsMcpServers` (below). Capability `status.mcpServers`; `limits` publish
 `creds-mcp.exe` on Windows, 66 with a parent that no longer existed, 1.32 GB together; on 2026-10-09, 35 of them ran under
 ONE VS Code WSL connection (`wsl.exe`). The Windows binary now counts `coai-mcp.exe` (when `mcpServers.watched` holds it),
 `creds-mcp.exe` and the programs in `mcpServers.programs`, matched by exe name without case, into a `windowsMcpServers`
-block: `count`, `idleCount`, `orphanedCount`, `heldBytes` (private bytes), `workingSetBytes`, `cpuCores`, per server
-`servers[]{name, count, idle, orphaned, workingSetBytes}`, per owner `owners[]{kind, parent, count}` (the "35 under one
+block: `count`, `idleCount`, `orphanedCount`, `memoryRead`, `held` (Σ private bytes) and `workingSet` over the instances whose memory was read (unavailable when none was — never 0), `cpuCores`, per server
+`servers[]{name, count, idle, orphaned, workingSet}`, per owner `owners[]{kind, parent, count}` (the "35 under one
 `wsl.exe`" line), and up to `mcpServers.maxInstances` `instances[]` (largest private bytes first) with pid, owner
 (`agent` — a catalogue agent such as `claude.exe` above it; `interop` — a `wsl.exe` parent, whose caller in the distro
 Windows cannot see; `orphaned` — the parent is gone, or its pid now belongs to a process created after the child; `other`),
@@ -281,6 +281,8 @@ Toolhelp snapshot and query-only handles, nothing started, signalled or stopped 
 that waits for the owner. The `host` block gains `vmmemAdvice` when `vmmemWSL` holds more than `wslConfig.vmmemAdviceGb`
 (24): the reclaim setting `[experimental] autoMemoryReclaim=dropcache` when `.wslconfig` does not already set it (shown,
 never written), and `wsl --shutdown` as the last resort that ends every WSL session. The distro's binary carries neither.
+The text form adds `windows mcp servers: 42 (42 idle, 0 orphaned), 0.0 cores, 0.7 GiB private (42 read); 36 under wsl.exe
+(pid 38052), 2 under claude.exe (pid 27852)` and, when there is advice, `vmmem advice: …`.
 
 **Compatibility.** `schemaVersion` changes only on a breaking change; a field added later (like `verdicts`,
 `productVersion`, `actions`, `capabilities`, `running` and `lastCleanup`) never bumps it, so a reader ignores keys it does

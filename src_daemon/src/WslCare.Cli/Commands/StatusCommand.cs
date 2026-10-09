@@ -98,6 +98,11 @@ internal static class StatusText
         text.AppendLine($"docker stats: {Slow(report.Slow.ContainerStats)}");
         text.AppendLine($"windows clock: {Slow(report.Slow.WindowsClock)}");
         text.AppendLine(McpServers(report.McpServers));
+        if (report.WindowsMcpServers is { } windows)
+        {
+            text.AppendLine(WindowsMcpServers(windows));
+        }
+
         text.AppendLine(Verdicts(report.Verdicts ?? []));
         text.AppendLine(Running(report.Running));
         text.AppendLine(LastCleanup(report.LastCleanup));
@@ -112,6 +117,15 @@ internal static class StatusText
         null => "mcp servers: not read",
         { Available: true } => Invariant($"mcp servers: {mcp.Count} ({(mcp.Listed < mcp.Count ? Invariant($"of the {mcp.Listed} listed: ") : string.Empty)}{mcp.IdleCount} idle, {mcp.BusyWithoutActivityCount} busy without a log write), {Number(mcp.CpuCores!)} cores{CpuBases(mcp)}, {mcp.HeldBytes / BytesPerGibibyte:0.00} GiB; starts ") + string.Join(", ", mcp.Servers!.Select(s => Invariant($"{s.Name} {(s.Starts.Available ? Invariant($"{s.Starts.Value:0}") : "?")} in {s.StartsWindowMinutes} min"))),
         _ => $"mcp servers: unavailable ({mcp.Reason})",
+    };
+
+    /// <summary>One line (E14 S7a, the Windows binary): <c>windows mcp servers: 42 (42 idle, 0 orphaned), 0.0 cores, 0.7 GiB private
+    /// (42 read); 36 under wsl.exe (pid 38052), 2 under claude.exe (pid 27852)</c>.</summary>
+    private static string WindowsMcpServers(WindowsMcpServersReport mcp) => mcp switch
+    {
+        { Available: true } => Invariant($"windows mcp servers: {mcp.Count} ({mcp.IdleCount} idle, {mcp.OrphanedCount} orphaned), {Number(mcp.CpuCores!)} cores, {Gib(mcp.Held!)} private ({mcp.MemoryRead} read)")
+            + string.Concat((mcp.Owners ?? []).Take(TopShown).Select((o, i) => Invariant($"{(i == 0 ? "; " : ", ")}{o.Count} under {o.Parent}"))),
+        _ => $"windows mcp servers: unavailable ({mcp.Reason})",
     };
 
     /// <summary>What the CPU figures were measured over (plan E14 S1): <c> (3 over their last interval, 1 over a 1000 ms window)</c>;
@@ -186,6 +200,10 @@ internal static class StatusText
         text.AppendLine($"host memory: {HostMemory(host.Memory!)}");
         text.AppendLine($"host system drive: {Volume(host.SystemDrive!)}");
         text.AppendLine($"vmmemWSL working set: {Gib(host.VmmemWorkingSet!)}");
+        if (host.VmmemAdvice is { Length: > 0 } advice)
+        {
+            text.AppendLine($"vmmem advice: {advice}");
+        }
     }
 
     private static string Memory(MemoryReport m) =>

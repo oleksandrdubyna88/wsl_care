@@ -27,7 +27,9 @@ public sealed class WindowsMcpCollector(IWindowsProcessTable table, TimeProvider
         var byPid = entries.GroupBy(e => e.Pid).ToDictionary(g => g.Key, g => g.First());
         var first = new Dictionary<int, WindowsProcessDetails>();
         Reading<DateTimeOffset> Created(int pid) => FirstRead(first, pid).Created;
+        // coai code round 2026-10-09, finding 9: a torn snapshot may name a pid twice — one instance, never a duplicate key.
         var matched = entries
+            .DistinctBy(e => e.Pid)
             .Select(e => (Entry: e, Server: WindowsMcpCatalogue.ServerOf(e.ExeName, servers)))
             .Where(m => m.Server is not null)
             .Select(m => new Matched(m.Entry, m.Server!, FirstRead(first, m.Entry.Pid)))

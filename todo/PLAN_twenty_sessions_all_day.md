@@ -812,7 +812,8 @@ exclusions** for build and tool folders are a security trade-off: Q6, never auto
   - The distro's binary carries NO `windowsMcpServers` block (item 5 said "unavailable"): absent is additive and leaves the
     Linux goldens unchanged. The RED test `The_distro_binary_answers_the_windows_block_unavailable` became the Linux half of
     `WindowsMcpFlows`.
-  - The instance's `parentPid` and `parentName` live inside `owner` (`owner{kind, parentPid, parentName, detail}`).
+  - The instance's `parentPid` and `parentName` live inside `owner` (`owner{kind, parentPid, parentName, detail}`); the
+    memory totals are `held` / `workingSet` byte figures with `memoryRead` (the code round), not `heldBytes` / `workingSetBytes`.
   - `listed` is in the block (how many of `count` are in `instances[]`), as in `mcpServers`.
   - Measured on this machine through the built binary (sandboxed, read-only): 42 instances (3 `coai-mcp`, 39 `creds-mcp`),
     36 under one `wsl.exe`, 6 under three `claude.exe`, all idle, 0 orphaned, 0.74 GB private; `vmmemWSL` 28.9 of 91.6 GiB, so
@@ -821,7 +822,31 @@ exclusions** for build and tool folders are a security trade-off: Q6, never auto
   product code — each restored, green after: the reuse check off → 2 red; the same-process check off → 1 red; exe names
   compared with case → 1 red; the file's `dropcache` ignored → 1 red; sorted by pid → 1 red. The Win32 constants and the GiB
   unit are listed as formats in `NumbersArchitectureTests`.
-- **Residuals:** counted in `status` only (`collect`'s run detail is unchanged); CPU across the window only; an interop
+- **Code round** (coai session `38bcfc7f`, epic 14/14): `proceed`, 8 reviewers, 13 findings; plus an own reviewer.
+  - **Accepted:**
+    - (0) the owner kind is a typed `WindowsMcpOwnerKind` inside; the wire names it in words (`WindowsMcpOwnerReport`,
+      `WindowsMcpOwnerGroupReport`).
+    - (2, 3, 6, and the own review) unread memory was summed as 0: `held` (was `heldBytes`) and `workingSet` (was
+      `workingSetBytes`) are byte figures over the instances read, `memoryRead` says how many, and they are unavailable when
+      instances exist and none was read; the per-server working set too.
+    - (9) a pid the snapshot names twice crashed the sample (`ToDictionary`): one instance now.
+    - (10) the text form paid the CPU window and printed nothing of it: it prints a `windows mcp servers:` line and a
+      `vmmem advice:` line.
+    - Own review: `AgentAbove` had a complexity of 5 — split into a `Walk` record of three expressions; an unopenable parent
+      is tested not to read as a reuse.
+  - **Rejected, with reasons:**
+    - (1) nullable lists at the JSON edge are the convention of every status block (`available: false` + reason); empty lists
+      would read as "measured, none".
+    - (4) no sampling indicator: the distro's `status` pays the same window silently, and scripts read the text.
+    - (5) moving the collector into the probe pipeline for `collect`: out of scope (status only; the Windows binary runs no
+      scheduled `collect`; no verdict or stop yet); the collector is in Core behind a seam for when they come.
+    - (7) `AutoMemoryReclaim` is never null — the parser returns `string.Empty` for an absent key.
+    - (8) `mcpServers.cpuWindowMilliseconds` is 200..5000; 0 is refused by the loader.
+    - (11) sync-over-async in a one-shot console verb, the same as the distro's sampling in the same command.
+    - (12) the second pass's extra counters: the whole sample of 42 took 51 ms.
+  - **RED → GREEN → RED again** (each fix reverted after the green): unread memory summed as 0 → "found True"; the duplicate
+    pid → `ArgumentException … Key: 200`; the text line removed → the line missing; an unreadable parent taken as a reuse →
+    the owner differs.- **Residuals:** counted in `status` only (`collect`'s run detail is unchanged); CPU across the window only; an interop
   child's caller is invisible from Windows, so the W9 accumulation shows as one big `owners[]` group, not as orphans;
   `playwright-mcp` is not matched on Windows (no command line read); no Windows verdict and no stop (the owner's decision).
 

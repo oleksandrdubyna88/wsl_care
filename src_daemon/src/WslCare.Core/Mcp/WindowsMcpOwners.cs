@@ -15,18 +15,18 @@ namespace WslCare.Core.Mcp;
 public static class WindowsMcpOwners
 {
     /// <summary>What an orphaned instance's group is named after.</summary>
-    public const string NoParent = "no live parent";
+    public const string NoParent = "a parent that is gone";
 
     public static WindowsMcpOwner Of(WindowsProcessEntry child, Reading<DateTimeOffset> childCreated, IReadOnlyDictionary<int, WindowsProcessEntry> byPid, Func<int, Reading<DateTimeOffset>> created)
     {
         if (!byPid.TryGetValue(child.ParentPid, out var parent) || parent.Pid == child.Pid)
         {
-            return new(WindowsMcpOwner.Orphaned, child.ParentPid, string.Empty, Invariant($"its parent (pid {child.ParentPid}) is gone"));
+            return new(WindowsMcpOwnerKind.Orphaned, child.ParentPid, string.Empty, Invariant($"its parent (pid {child.ParentPid}) is gone"));
         }
 
         var parentCreated = created(parent.Pid);
         return Newer(parentCreated, childCreated)
-            ? new(WindowsMcpOwner.Orphaned, parent.Pid, parent.ExeName, Invariant($"its parent (pid {parent.Pid}) is gone: that pid now belongs to {parent.ExeName}, created after it"))
+            ? new(WindowsMcpOwnerKind.Orphaned, parent.Pid, parent.ExeName, Invariant($"its parent (pid {parent.Pid}) is gone: that pid now belongs to {parent.ExeName}, created after it"))
             : Live(parent, parentCreated, byPid, created);
     }
 
@@ -37,40 +37,33 @@ public static class WindowsMcpOwners
             .GroupBy(i => (i.Owner.Kind, Parent: GroupName(i.Owner)))
             .Select(g => new WindowsMcpOwnerGroup(g.Key.Kind, g.Key.Parent, g.Count()))
             .OrderByDescending(g => g.Count)
-            .ThenBy(g => g.Kind, StringComparer.Ordinal)
+            .ThenBy(g => g.Kind)
             .ThenBy(g => g.Parent, StringComparer.Ordinal),
     ];
 
     /// <summary>A live parent: an agent, a WSL connection, an agent further up, or another program.</summary>
     private static WindowsMcpOwner Live(WindowsProcessEntry parent, Reading<DateTimeOffset> parentCreated, IReadOnlyDictionary<int, WindowsProcessEntry> byPid, Func<int, Reading<DateTimeOffset>> created) =>
-        WindowsMcpCatalogue.IsAgent(parent.ExeName) ? new(WindowsMcpOwner.Agent, parent.Pid, parent.ExeName, Label(parent))
-        : WindowsMcpCatalogue.IsWsl(parent.ExeName) ? new(WindowsMcpOwner.Interop, parent.Pid, parent.ExeName, $"{Label(parent)}: a WSL interop child; its caller in the distro is not visible from Windows")
-        : AgentAbove(parent, parentCreated, byPid, created) is { } agent ? new(WindowsMcpOwner.Agent, parent.Pid, parent.ExeName, Label(agent))
-        : new(WindowsMcpOwner.Other, parent.Pid, parent.ExeName, Label(parent));
+        WindowsMcpCatalogue.IsAgent(parent.ExeName) ? new(WindowsMcpOwnerKind.Agent, parent.Pid, parent.ExeName, Label(parent))
+        : WindowsMcpCatalogue.IsWsl(parent.ExeName) ? new(WindowsMcpOwnerKind.Interop, parent.Pid, parent.ExeName, $"{Label(parent)}: a WSL interop child; its caller in the distro is not visible from Windows")
+        : new Walk(byPid, created, [parent.Pid]).AgentAbove(parent, parentCreated) is { } agent ? new(WindowsMcpOwnerKind.Agent, parent.Pid, parent.ExeName, Label(agent))
+        : new(WindowsMcpOwnerKind.Other, parent.Pid, parent.ExeName, Label(parent));
 
-    /// <summary>The first agent above <paramref name="from"/>; the walk ends at a gone ancestor, at one created after the process below
-    /// it (a reused pid owns nothing), and at a loop a torn snapshot could hold.</summary>
-    private static WindowsProcessEntry? AgentAbove(WindowsProcessEntry from, Reading<DateTimeOffset> fromCreated, IReadOnlyDictionary<int, WindowsProcessEntry> byPid, Func<int, Reading<DateTimeOffset>> created)
+    /// <summary>One walk up from a live parent: the snapshot, the creation times, and the pids already passed (a loop a torn snapshot
+    /// could hold ends the walk).</summary>
+    private sealed record Walk(IReadOnlyDictionary<int, WindowsProcessEntry> ByPid, Func<int, Reading<DateTimeOffset>> Created, HashSet<int> Visited)
     {
-        var visited = new HashSet<int> { from.Pid };
-        var (below, belowCreated) = (from, fromCreated);
-        while (byPid.TryGetValue(below.ParentPid, out var up) && visited.Add(up.Pid))
-        {
-            var upCreated = created(up.Pid);
-            if (Newer(upCreated, belowCreated))
-            {
-                return null;
-            }
+        /// <summary>The first agent above <paramref name="below"/>; the walk ends at a gone ancestor, at one created after the process
+        /// below it (a reused pid owns nothing), and at a pid already passed.</summary>
+        public WindowsProcessEntry? AgentAbove(WindowsProcessEntry below, Reading<DateTimeOffset> belowCreated) =>
+            Up(below) is { } up ? Step(up, Created(up.Pid), belowCreated) : null;
 
-            if (WindowsMcpCatalogue.IsAgent(up.ExeName))
-            {
-                return up;
-            }
+        private WindowsProcessEntry? Step(WindowsProcessEntry up, Reading<DateTimeOffset> upCreated, Reading<DateTimeOffset> belowCreated) =>
+            Newer(upCreated, belowCreated) ? null
+            : WindowsMcpCatalogue.IsAgent(up.ExeName) ? up
+            : AgentAbove(up, upCreated);
 
-            (below, belowCreated) = (up, upCreated);
-        }
-
-        return null;
+        private WindowsProcessEntry? Up(WindowsProcessEntry below) =>
+            ByPid.TryGetValue(below.ParentPid, out var up) && Visited.Add(up.Pid) ? up : null;
     }
 
     /// <summary>Proven newer: both creation times read and the first after the second.</summary>
@@ -79,8 +72,8 @@ public static class WindowsMcpOwners
 
     private static string GroupName(WindowsMcpOwner owner) => owner.Kind switch
     {
-        WindowsMcpOwner.Orphaned => NoParent,
-        WindowsMcpOwner.Agent => owner.Detail,
+        WindowsMcpOwnerKind.Orphaned => NoParent,
+        WindowsMcpOwnerKind.Agent => owner.Detail,
         _ => Label(owner.ParentName, owner.ParentPid),
     };
 

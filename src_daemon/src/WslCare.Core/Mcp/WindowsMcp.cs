@@ -32,23 +32,33 @@ public sealed class UnreadWindowsProcessTable(string why) : IWindowsProcessTable
 }
 
 /// <summary>Who holds a Windows MCP instance.</summary>
-/// <param name="Kind"><see cref="Agent"/>, <see cref="Interop"/>, <see cref="Orphaned"/> or <see cref="Other"/>.</param>
+/// <param name="Kind">Which of the four owners (a closed set; the wire names it in words, <see cref="Status.WindowsMcpOwnerReport"/>).</param>
 /// <param name="ParentPid">The direct parent's pid (as the snapshot names it).</param>
 /// <param name="ParentName">The direct parent's exe name; empty when it is gone.</param>
 /// <param name="Detail">The agent and its pid, the connection, or why it is orphaned.</param>
-public sealed record WindowsMcpOwner(string Kind, int ParentPid, string ParentName, string Detail)
+public sealed record WindowsMcpOwner(WindowsMcpOwnerKind Kind, int ParentPid, string ParentName, string Detail);
+
+/// <summary>Who holds a Windows MCP instance (coai code round 2026-10-09, finding 0: a closed set travels typed, as words only on the wire).</summary>
+public enum WindowsMcpOwnerKind
 {
-    public const string Agent = "agent";
-    public const string Interop = "interop";
-    public const string Orphaned = "orphaned";
-    public const string Other = "other";
+    /// <summary>A catalogue agent (<c>claude.exe</c> …) above it, every ancestor on the way created before the process below it.</summary>
+    Agent,
+
+    /// <summary>Its parent is <c>wsl.exe</c>: a WSL connection's interop child, whose caller in the distro Windows cannot see.</summary>
+    Interop,
+
+    /// <summary>Its parent is gone, or the pid it names now belongs to a process created after it.</summary>
+    Orphaned,
+
+    /// <summary>Any other live parent.</summary>
+    Other,
 }
 
 /// <summary>One Windows MCP server instance.</summary>
 public sealed record WindowsMcpInstance(int Pid, string Server, WindowsMcpOwner Owner, Reading<DateTimeOffset> Created, Reading<double> CpuPercent, Reading<long> WorkingSet, Reading<long> PrivateBytes, Reading<int> SessionId, bool Idle);
 
 /// <summary>How many instances one owner holds — the "35 under one wsl.exe" line.</summary>
-public sealed record WindowsMcpOwnerGroup(string Kind, string Parent, int Count);
+public sealed record WindowsMcpOwnerGroup(WindowsMcpOwnerKind Kind, string Parent, int Count);
 
 /// <summary>The Windows side's MCP servers in one sample.</summary>
 public sealed record WindowsMcpSample(int WindowMilliseconds, IReadOnlyList<WindowsMcpInstance> Instances, IReadOnlyList<WindowsMcpInstance> Listed, IReadOnlyList<WindowsMcpOwnerGroup> Owners)
@@ -57,5 +67,5 @@ public sealed record WindowsMcpSample(int WindowMilliseconds, IReadOnlyList<Wind
 
     public int IdleCount => Instances.Count(i => i.Idle);
 
-    public int OrphanedCount => Instances.Count(i => i.Owner.Kind == WindowsMcpOwner.Orphaned);
+    public int OrphanedCount => Instances.Count(i => i.Owner.Kind == WindowsMcpOwnerKind.Orphaned);
 }

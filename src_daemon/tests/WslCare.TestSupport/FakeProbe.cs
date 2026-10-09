@@ -13,9 +13,12 @@ public sealed class FakeProbe(HostSide side, TimeProvider clock) : IHostProbe
 
     public int Samples { get; private set; }
 
+    /// <summary>The host part it answers — unavailable unless a test hands one (E14 S7a: the Windows side's vmmem advice).</summary>
+    public Reading<HostSample> Host { get; init; } = Reading.Missing<HostSample>(Reason);
+
     public ProbeSample Sample(CancellationToken cancellationToken)
     {
         Samples++;
-        return new ProbeSample(side, clock.GetUtcNow(), TimeSpan.Zero, Reading.Missing<VmSample>(Reason), Reading.Missing<HostSample>(Reason));
+        return new ProbeSample(side, clock.GetUtcNow(), TimeSpan.Zero, Reading.Missing<VmSample>(Reason), Host);
     }
 }
