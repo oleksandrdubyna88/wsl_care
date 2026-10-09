@@ -48,6 +48,16 @@ public sealed class WslConfigAdviceTests
             .Should().BeEmpty("no advice about a file that was not read");
     }
 
+    /// <summary>Own code review 2026-10-09: a file that EXISTS but could not be read is not "not set" — it may say all three. No
+    /// advice is given about what was not read.</summary>
+    [Fact]
+    public void An_unreadable_wslconfig_gets_no_advice()
+    {
+        var unreadable = new WslConfigAudit("/mnt/c/Users/user/.wslconfig", true, new WslConfigSettings("", "", "", ""), ["/mnt/c/Users/user/.wslconfig could not be read: I/O error"]) { Read = false };
+
+        WslConfigAdvice.For(unreadable, Recommended).Should().BeEmpty();
+    }
+
     [Fact]
     public void A_swap_recommendation_of_0_advises_no_swap_line()
     {

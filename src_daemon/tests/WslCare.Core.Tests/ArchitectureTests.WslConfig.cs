@@ -10,7 +10,7 @@ namespace WslCare.Core.Tests;
 /// 2026-10-09, finding 5).</summary>
 public sealed partial class ArchitectureTests
 {
-    [GeneratedRegex(@"\b(?:WriteFileAtomically|WritePrivateFileAtomically|CreateFileExclusively|ReplaceLinkWithFile|RewriteLines|AppendLine|StreamWriter|FileStream)\b|\bFile\s*\.\s*(?:Write\w*|Create\w*|Append\w*|Open)\s*\(|\b(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream)\s*\(", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\b(?:WriteFileAtomically|WritePrivateFileAtomically|CreateFileExclusively|ReplaceLinkWithFile|RewriteLines|MoveFile|MoveDirectory|DeleteFile|StreamWriter|FileStream)\b|\bAppendLine\s*\([^()]*,|\bFile\s*\.\s*(?:Write\w*|Create\w*|Append\w*|Open)\s*\(|\b(?:writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream)\s*\(", RegexOptions.CultureInvariant)]
     private static partial Regex FileWrite();
 
     [GeneratedRegex(@"\.wslconfig|wslconfig", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
@@ -26,9 +26,9 @@ public sealed partial class ArchitectureTests
         var root = Metadata("WslCare.SourceRoot");
         var extension = Path.GetFullPath(Path.Combine(root, "..", "..", "src_vs_code", "src"));
         var daemonFiles = SourceFiles();
-        var extensionFiles = Directory.Exists(extension)
-            ? Directory.EnumerateFiles(extension, "*.ts", SearchOption.AllDirectories).Where(f => !f.Contains($"{Path.DirectorySeparatorChar}test{Path.DirectorySeparatorChar}"))
-            : [];
+        // coai code round 2026-10-09, finding 3: the extension half never skips silently.
+        Directory.Exists(extension).Should().BeTrue($"the extension's source is scanned too; {extension} should exist");
+        var extensionFiles = Directory.EnumerateFiles(extension, "*.ts", SearchOption.AllDirectories).Where(f => !f.Contains($"{Path.DirectorySeparatorChar}test{Path.DirectorySeparatorChar}"));
 
         var naming = daemonFiles.Concat(extensionFiles).Where(f => NamesWslConfig().IsMatch(File.ReadAllText(f))).ToList();
         var offenders = naming.SelectMany(f => Writes(File.ReadAllText(f)).Select(w => $"{f}:{w}")).ToList();
@@ -43,5 +43,8 @@ public sealed partial class ArchitectureTests
         Writes("var path = profile + \"/.wslconfig\";\nfiles.WriteFileAtomically(path, bytes, scope);").Should().ContainSingle();
         Writes("await writeFile(join(home, '.wslconfig'), text);").Should().ContainSingle();
         Writes("File.WriteAllText(wslconfig, text);").Should().ContainSingle();
+        // Own code review 2026-10-09: a rename over the file is a write; a text builder's AppendLine is not.
+        Writes("files.MoveFile(temp, wslconfigPath, scope);").Should().ContainSingle();
+        Writes("text.AppendLine(\"[wsl2]\");").Should().BeEmpty();
     }
 }

@@ -29,6 +29,12 @@ public static class WslConfigAdvice
     /// <summary>Every advised line the file does not already say, in the order WSL documents them.</summary>
     public static IReadOnlyList<WslConfigAdviceLine> For(WslConfigAudit audit, WslConfigRecommendation recommended)
     {
+        if (!audit.Read)
+        {
+            // Own code review 2026-10-09: a file that exists but was not read may say all three — no advice about what was not read.
+            return [];
+        }
+
         var settings = audit.Present ? audit.Settings : new WslConfigSettings(string.Empty, string.Empty, string.Empty, string.Empty);
         IEnumerable<(string Section, string Key, string Value, string Now, string Basis)> wanted =
         [

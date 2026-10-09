@@ -57,6 +57,16 @@ public sealed class MemoryEveningVerdictsTests
         small.Should().Match<Verdict>(v => v.Level == Level.Ok && v.Value.Contains("smaller than the key"));
     }
 
+    /// <summary>coai code round 2026-10-09 (session 42b21ed8), finding 4: a swap known to be 0 is "no swap" even when the free
+    /// figure could not be read.</summary>
+    [Fact]
+    public void A_zero_swap_is_no_swap_even_when_its_free_figure_is_unread()
+    {
+        var verdict = Judge(Memory(swapTotalGib: 0) with { SwapUsed = Reading.Missing<long>("SwapFree is not in meminfo") }, "memory.swapFree");
+
+        verdict.Should().Match<Verdict>(v => v.Level == Level.Ok && v.Value.Contains("no swap configured"));
+    }
+
     [Fact]
     public void Committed_above_its_share_of_MemTotal_warns_and_the_calm_tree_is_ok()
     {

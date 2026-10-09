@@ -168,6 +168,23 @@ public sealed class StatusFlows
         home.Calls.Should().BeEmpty("the verdicts start no process");
     }
 
+    /// <summary>E14 S5 over the BUILT CLI (coai code round 2026-10-09, finding 2): the captured calm tree answers the swap LEFT
+    /// and what the kernel PROMISED, after <c>memory.swap</c>.</summary>
+    [Fact]
+    public async Task Status_json_over_the_captured_tree_answers_the_swap_left_and_the_memory_promised()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "the Linux binary reads the procfs tree");
+        using var home = new ScenarioHome("status-swap-commit");
+        ProcfsFixture.CopyTo(home.SandboxRoot);
+
+        var report = Report(await home.RunAsync("status", "--json"));
+
+        VerdictOf(report, "memory.swapFree").Should().Match<Verdict>(v => v.Level == Level.Ok && v.Value == "12.0 GiB free of 12.0 GiB");
+        VerdictOf(report, "memory.committed").Should().Match<Verdict>(v => v.Level == Level.Ok && v.Value.StartsWith("46.2 % of MemTotal", StringComparison.Ordinal));
+        report.Verdicts!.Select(v => v.Id).SkipWhile(id => id != "memory.swap").Take(3).Should().Equal("memory.swap", "memory.swapFree", "memory.committed");
+        home.Calls.Should().BeEmpty("the verdicts start no process");
+    }
+
     [Fact]
     public async Task Status_json_over_a_fresh_boot_is_ok_on_every_memory_verdict()
     {
@@ -178,7 +195,7 @@ public sealed class StatusFlows
 
         (report.Verdicts ?? throw new InvalidOperationException("status --json carried no verdicts"))
             .Where(v => v.Id.StartsWith("memory.", StringComparison.Ordinal) || v.Id == "wslconfig.memory")
-            .Should().HaveCount(7).And.OnlyContain(v => v.Level == Level.Ok);
+            .Should().HaveCount(9, "E14 S5 added memory.swapFree and memory.committed").And.OnlyContain(v => v.Level == Level.Ok);
     }
 
     [Fact]

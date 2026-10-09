@@ -54,7 +54,8 @@ public static class ProcfsVariants
             ("SwapTotal", SwapTotalKib),
             ("SwapFree", SwapTotalKib),
             ("AnonPages", 400_000),
-            ("Shmem", 20_000)));
+            ("Shmem", 20_000),
+            ("Committed_AS", 1_200_000)));
         Write(root, "proc/buddyinfo", "Node 0, zone   Normal     40     30     25     20     18     15     12     10      8      6  10900 \n");
         foreach (var resource in new[] { "memory", "io", "cpu" })
         {

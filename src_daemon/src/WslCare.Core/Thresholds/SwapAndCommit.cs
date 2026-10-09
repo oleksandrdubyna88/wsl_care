@@ -23,9 +23,14 @@ public static class SwapAndCommit
     {
         var limit = Invariant($"warn < {warnGb} GiB of swap left (thresholds.swapFreeWarnGb)");
         const string Reason = "swap LEFT: when it runs out the kernel kills processes (the 2026-10-07 evening had 2.4 GB of 12)";
+        // coai code round 2026-10-09, finding 4: a swap KNOWN to be 0 is "no swap" whatever the free figure.
+        if (memory.Bind(m => m.SwapTotal) is Reading<long>.Available { Value: 0 })
+        {
+            return new("memory.swapFree", Level.Ok, "no swap configured", limit, Reason);
+        }
+
         return Reading.Combine(memory.Bind(m => m.SwapTotal), memory.Bind(m => m.SwapUsed), (total, used) => (total, free: total - used)) switch
         {
-            Reading<(long Total, long Free)>.Available { Value.Total: 0 } => new("memory.swapFree", Level.Ok, "no swap configured", limit, Reason),
             Reading<(long Total, long Free)>.Available { Value: var s } when s.Total < warnGb * Gib =>
                 new("memory.swapFree", Level.Ok, Invariant($"{s.Free / Gib:0.0} GiB free of {s.Total / Gib:0.0} GiB: a swap smaller than the key is judged by memory.swap only"), limit, Reason),
             Reading<(long Total, long Free)>.Available { Value: var s } =>

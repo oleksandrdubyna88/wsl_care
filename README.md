@@ -323,7 +323,8 @@ you to copy, never applied. Every command is a read; each has its ceiling.
 - `memory.swapFree` warns when the swap LEFT is under `thresholds.swapFreeWarnGb` (4). The 2026-10-07 evening had 2.4 GB of
   12 GB left. A swap smaller than the key is judged by `memory.swap` only.
 - `memory.committed` warns when what the kernel PROMISED (`Committed_AS`) is above `thresholds.committedWarnPercent` (80) of
-  `MemTotal`. The evening was at 104 %, a calm machine at about 46 %. Linux over-commits, so this warns of promises, not of use.
+  `MemTotal`. The evening was at 104 %, a calm machine at about 46 %. Linux over-commits, so this warns of promises, not of use;
+  the extension's status bar therefore leaves it out (the panel lists it), while `memory.swapFree` colours the bar.
 - A1's and A2's trigger reason also says whether memory pressure (PSI some avg60 above `thresholds.memoryPressureWarn`, the
   `wsl-care busy` rule) WOULD have fired them. Whether they fire does not change: the run records collect the evidence
   first.

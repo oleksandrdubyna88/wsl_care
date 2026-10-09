@@ -612,6 +612,21 @@ baseline first. `.wslconfig` advice (memory cap, swap size, `autoMemoryReclaim`)
   - The seven status goldens gained the two verdicts.
   - `ArchitectureTests.WslConfig`.
 - **RED-first, as the coordinator asked after S6:** every test was written BEFORE the product code and seen red against stubs; teeth were then shown on two rules.
+- **Code round** (same coai session, 7 of 8 reviewers; gemini security timed out): `proceed`, 6 findings.
+  - **Accepted:**
+    - (1) `module_daemon.md` gains the section, with a diagram.
+    - (2) scenario flows over the built binary: the captured tree's `memory.swapFree` and `memory.committed`; the fresh-boot variant now carries `Committed_AS`, and its all-ok count moved to 9.
+    - (3) the no-write scan asserts the extension's source exists.
+    - (4) a swap KNOWN to be 0 is "no swap" even with its free figure unread.
+  - **Rejected, with reasons:**
+    - (0) threading the config through `HealthReports.From`: the same key goes through the same per-verb `Tuning` scope.
+    - (5) unit-aware comparison: a residual, below.
+- **Own review** (Opus, read-only): nothing serious, and the goldens and the A1/A2 firing were confirmed. Fixed:
+  - An UNREADABLE `.wslconfig` was advised as "not set". `WslConfigAudit.Read` is false then, and no advice is given.
+  - The scan now counts `MoveFile` / `DeleteFile` as writes, and a text builder's one-argument `AppendLine` is not one.
+  - The status bar would have turned yellow on `memory.committed` (a promise). It is left out of the bar now; the panel still lists it.
+  
+  Each of these was RED first, then green, then red again with the fix broken.
 - **Residuals:**
   - The advice compares setting texts (`36gb` = `36GB`), but not units (`36864MB` reads as different).
   - Whether memory pressure should really trigger A1 or A2 is S8's measurement.
