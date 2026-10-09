@@ -126,6 +126,17 @@ flowchart LR
   `autoMemoryReclaim=dropcache`. Each line names its measurement. There is no advice for a file that could not be read.
 - `ArchitectureTests.WslConfig` holds that no product file naming `.wslconfig` holds a write.
 
+## CPU fairness (E14 S4, 2026-10-09) — measured, nothing built
+
+The plan proposed a `user@.service` delegation drop-in from `install.sh` and a `wsl-care low` verb running a command in a
+`systemd-run --user --scope` with a low `CPUWeight`. The measurement
+([2026-10-09_cpu_fairness.md](2026-10-09_cpu_fairness.md)) withdrew both: `cpu` is already delegated to the user manager,
+and every session and build runs in `/init.scope` with no autogroup, so `nice 19` works against the sessions (68 : 1); the
+scope moved the job to `user.slice`, where it got ≈ 9× MORE CPU than a session's process. The answer is documentation: the
+README's *Busy* section (`nice -n 19`, plus `--disable-build-servers` for `dotnet` builds). No code, unit, key or
+`install.sh` line changed. One fact about the daemon itself, recorded and not acted on: the units' `Nice=19` orders a root
+run only among `system.slice`'s services, not against the sessions in `/init.scope` (a sibling at the root).
+
 ## A3's idle gate (E14 S3, 2026-10-08)
 
 ```mermaid
