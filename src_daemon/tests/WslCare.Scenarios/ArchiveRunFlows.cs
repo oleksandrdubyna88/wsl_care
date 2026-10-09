@@ -29,7 +29,7 @@ public sealed class ArchiveRunFlows
     private const string Companion = "/home/me/.claude/projects/p/s1/subagents/a.jsonl";
 
     /// <summary>A home whose base is the network drive's folder (placed by the sandbox's mount table) and a due Claude Code session.</summary>
-    private static async Task<ScenarioHome> Archived(string purpose)
+    internal static async Task<ScenarioHome> Archived(string purpose)
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), LinuxOnly);
         var home = new ScenarioHome(purpose);

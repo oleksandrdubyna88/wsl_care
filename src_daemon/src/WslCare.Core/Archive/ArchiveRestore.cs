@@ -20,6 +20,9 @@ public sealed record RestoreRequest(IReadOnlyList<string> EntryIds, string Agent
 /// <summary>Where a restored session stands — a closed set.</summary>
 public static class RestoreOutcomes
 {
+    /// <summary>Every outcome a restore answers (the S4 own review round S-m3: root believes no other).</summary>
+    public static IReadOnlySet<string> All { get; } = new HashSet<string>([Restored, AlreadyThere, Refused, Partial, NotFound, Unreadable, Stopped], StringComparer.Ordinal);
+
     public const string Restored = "restored";
 
     /// <summary>Every file of it is already in the agent folder with the archived bytes.</summary>

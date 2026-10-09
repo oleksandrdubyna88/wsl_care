@@ -736,15 +736,20 @@ The timer (and the *Archive now* button) runs **A13**; restoring from the panel 
 Both are root's actions that do nothing themselves: each starts the product's OWN installed binary as you —
 `runuser -u <you> -- /opt/wsl-care/bin/wsl-care archive …` — and only when that binary and every folder above it belong to root
 and nobody else may write them (never a `wsl-care` found in your `~/.local/bin`). The child gets a clean environment and an
-empty stdin. A13 first runs `archive preview`, then a short `archive reach` (the side's lock and the base within
-`archive.reachabilitySeconds` — a share that stopped answering holds that short child, never the run), then the streamed
-`archive run`. A timer run gives it what is left of `timer.runLimitMinutes` after the actions behind it, at most
-`archive.runBudgetMinutes`; below `archive.minRunMinutes` it skips. Every line the child prints is progress, so a long run reads
-live and a silent one reads wedged. Root records the child it started (and the binary under it) and starts no second one while
-one of them is still alive — a process stuck in the kernel on a share. Root reads only COUNTS from the child's answer (judged
-first: its schema, its closed sets, every number in range): the run detail names agents, never a session. Both refuse where
-`/etc/pam.d/runuser` (or a file it includes) names `pam_systemd` — the child would get a login session root does not bound —
-and `doctor` says so (`archive.runuser`).
+empty stdin. A13 first runs `archive preview`, then a short `archive reach` (the side's lock FIRST, then the base judged and
+reached within `archive.reachabilitySeconds` — a share that stopped answering holds that short child and the lock, never the run;
+a second reach beside it answers `busy` at once), then the streamed `archive run`. When the side's lock is another run's — your own
+`archive run` in a terminal, most likely — A13 does nothing this time and says so. A timer run gives it what is left of
+`timer.runLimitMinutes` after the actions behind it and `archive.finishGraceMinutes`, at most `archive.runBudgetMinutes`; below
+`archive.minRunMinutes` it skips. A20 fails, naming why, when its child stopped before it restored anything. Every line the child prints is progress, so a long run reads
+live and a silent one reads wedged. Root records every child it starts (and the binary under it, also right before a kill) and
+starts no second one while one of them is still alive — a process stuck in the kernel on a share; a record it cannot write stops
+the archive's actions, saying why. Root reads only COUNTS from the child's answer (judged
+first: its schema, its closed sets, every number in range, root's own run id): the run detail names agents, never a session. Both
+refuse where the `runuser` PAM stack PAM would read — `/etc/pam.d/runuser`, else `/usr/lib/pam.d/runuser`, else the stack of
+`other` — or a file it includes names `pam_systemd` (the child would get a login session root does not bound), and where that
+stack cannot be checked at all: none found, a file that is a link or not root's alone, an include by a path. `doctor` says so
+(`archive.runuser`).
 
 ## Extension (preview)
 

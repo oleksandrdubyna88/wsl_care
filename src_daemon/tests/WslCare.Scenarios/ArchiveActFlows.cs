@@ -23,6 +23,8 @@ public sealed class ArchiveActFlows
         if (home.Paths.Side == HostSide.Wsl)
         {
             Write(home.Paths.DistroPath("/etc/passwd"), "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\n");
+            // The S4 own review round S-M2: the runuser gate fails closed — Ubuntu 24.04's stack, no pam_systemd.
+            Write(home.Paths.DistroPath("/etc/pam.d/runuser"), "auth sufficient pam_rootok.so\nsession required pam_unix.so\n");
         }
 
         Write(home.Paths.UserConfigFile, withBase ? """{ "archive": { "baseFolder": "/mnt/v/ai-archive" } }""" : "{}");

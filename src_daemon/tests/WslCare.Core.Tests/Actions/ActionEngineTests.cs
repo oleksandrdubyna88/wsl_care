@@ -13,6 +13,7 @@ using WslCare.Core.Json;
 using WslCare.Core.Processes.Policy;
 using WslCare.Core.Records;
 using WslCare.TestSupport;
+using WslCare.Core.Archive;
 
 namespace WslCare.Core.Tests.Actions;
 
@@ -652,5 +653,55 @@ public sealed class ActionEngineTests : IDisposable
         Done(timer).Detail.Actions.Should().OnlyContain(a => a.Reason.Contains("user layer is not read"));
         timerJournal.Should().BeEmpty("the timer neither previewed nor ran any action");
         Statuses(button).Should().Equal("A10:ran");
+    }
+
+    // ---- the E9.S4 own review round --------------------------------------------------------------------------------------
+
+    /// <summary>C-6: A13 sits before A1/A2 and may run for most of the run limit. The idle sample read for an action before it is
+    /// stale after it — perhaps an hour old, taken before A13's own I/O — so after a BUDGETED action ran, the next action that waits
+    /// for idle is judged on a fresh sample.</summary>
+    [Fact]
+    public async Task After_a_budgeted_action_ran_the_idle_gate_reads_a_fresh_sample()
+    {
+        UserConfig("""{ "dryRun": false }""");
+        _sandbox.Write("/var/lib/wsl-care/first-timer-run.json", "{\"schemaVersion\":1,\"at\":\"2026-09-01T00:00:00+00:00\"}");
+        var archive = new ScriptedAction("A13", _journal)
+        {
+            Idle = IdleRule.TimerOnly,
+            Commands = [ArchiveChildren.Run],
+            OnRun = _ =>
+            {
+                _sandbox.Load(3.9, 3.9, 3.9, cpus: 4);
+                return Task.FromResult(new Core.Actions.ActionRun(1, 100, "scripted", 200, 100, [], [], string.Empty));
+            },
+        };
+        var memory = new ScriptedAction("A1", _journal) { Idle = IdleRule.TimerOnly };
+
+        var result = await Engine(archive, memory).ExecuteAsync(Run(RunTrigger.Timer, "A13", "A1"), CancellationToken.None);
+
+        Statuses(result).Should().Equal("A13:ran", "A1:deferred");
+        Done(result).Detail.Actions[1].Reason.Should().Contain("is not below idle.cpuPercent");
+    }
+
+    /// <summary>C-6: an action that is not budgeted leaves the sample as it was — one read per run, as before.</summary>
+    [Fact]
+    public async Task After_an_ordinary_action_the_idle_sample_is_the_runs_one()
+    {
+        UserConfig("""{ "dryRun": false }""");
+        _sandbox.Write("/var/lib/wsl-care/first-timer-run.json", "{\"schemaVersion\":1,\"at\":\"2026-09-01T00:00:00+00:00\"}");
+        var trim = new ScriptedAction("A15", _journal)
+        {
+            Idle = IdleRule.TimerOnly,
+            OnRun = _ =>
+            {
+                _sandbox.Load(3.9, 3.9, 3.9, cpus: 4);
+                return Task.FromResult(new Core.Actions.ActionRun(1, 100, "scripted", 200, 100, [], [], string.Empty));
+            },
+        };
+        var memory = new ScriptedAction("A1", _journal) { Idle = IdleRule.TimerOnly };
+
+        var result = await Engine(trim, memory).ExecuteAsync(Run(RunTrigger.Timer, "A15", "A1"), CancellationToken.None);
+
+        Statuses(result).Should().Equal("A15:ran", "A1:ran");
     }
 }

@@ -34,14 +34,15 @@ public sealed record MonthEntries(ArchiveTarget Target, string Month, MonthRead 
 /// </summary>
 public static class ArchiveList
 {
-    public static ArchiveListReport List(ArchiveRunInput input, ArchiveListRequest request)
+    public static ArchiveListReport List(ArchiveRunInput asked, ArchiveListRequest request)
     {
-        var problem = Unlistable(input);
-        if (problem.Stopped)
+        var within = BaseWindow.Judged(asked, Unlistable);
+        if (within.Stop.Stopped)
         {
-            return Report(input, problem.Outcome, problem.Why, [], 0, []);
+            return Report(within.Input, within.Stop.Outcome, within.Stop.Why, [], 0, []);
         }
 
+        var input = within.Input;
         var state = new ArchiveState(input.Paths, input.Files);
         var context = ArchiveRun.ContextOf(input, state, state.ExistingIndexKey(), InUseView.NotChecked("a list asks no scan"), static (_, _) => { });
         var targets = ArchiveTargets.Of(input.Paths, input.Files, input.Config, request.Agent, input.Environment);
@@ -95,11 +96,10 @@ public static class ArchiveList
             .Select(e => new ArchiveListEntry(e.EntryId, e.Agent, e.Key, e.Month, e.Status, e.Verified, e.Files.Count, e.Files.Sum(f => f.Bytes), e.ArchivedAtUtc));
     }
 
-    /// <summary>Why nothing is listed; <see cref="EarlyStop.None"/> when the base may be read.</summary>
+    /// <summary>Why nothing is listed; <see cref="EarlyStop.None"/> when the base may be read — asked inside the bounded window, the
+    /// base judged there too (the S4 own review round S-M1).</summary>
     private static EarlyStop Unlistable(ArchiveRunInput input) =>
-        ArchiveRun.BaseProblem(input) is { Stopped: true } early ? early
-        : !input.Reachable(input.JudgedBase.Folder, TimeSpan.FromSeconds(input.Config.Int(ConfigKeys.Archive.ReachabilitySeconds))) ? new EarlyStop(RunOutcomes.Unreachable, $"the base did not answer within {ConfigKeys.Archive.ReachabilitySeconds.Name}")
-        : EarlyStop.None;
+        ArchiveRun.BaseProblem(input) is { Stopped: true } early ? early : BaseWindow.Reachability(input);
 
     private static ArchiveListReport Report(ArchiveRunInput input, string outcome, string note, IReadOnlyList<ArchiveListEntry> entries, int skipped, IReadOnlyList<string> notes) =>
         new(SchemaVersion.Current, input.Paths.Side == Hosting.HostSide.Wsl ? "wsl" : "windows", SideName.OfThisProcess(input.Paths.Side), input.JudgedBase.Folder, outcome, note, entries, skipped, notes);

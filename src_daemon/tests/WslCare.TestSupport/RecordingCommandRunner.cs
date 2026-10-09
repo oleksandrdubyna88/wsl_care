@@ -91,6 +91,7 @@ public sealed class RecordingCommandRunner : ICommandRunner
     public Task<CommandOutcome> RunAsync(CommandRequest request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        Func<CommandRequest, CommandOutcome>? effect;
         lock (_gate)
         {
             _requests.Add(request);
@@ -99,9 +100,45 @@ public sealed class RecordingCommandRunner : ICommandRunner
                 return Task.FromResult<CommandOutcome>(new CommandOutcome.Refused(refused.Reason));
             }
 
-            var effect = _effects.FirstOrDefault(e => e.Match(request.Argv)).Effect;
-            return Task.FromResult(effect is null ? Answer(request.Argv) : effect(request));
+            effect = _effects.FirstOrDefault(e => e.Match(request.Argv)).Effect;
         }
+
+        return Task.FromResult(Killed(request, effect is null ? Answered(request) : Played(request, effect)));
+    }
+
+    /// <summary>An effect plays a child that started: the start is told first, as the real runner tells it right after the start.</summary>
+    private CommandOutcome Played(CommandRequest request, Func<CommandRequest, CommandOutcome> effect)
+    {
+        request.OnStarted(StartedPid);
+        return effect(request);
+    }
+
+    /// <summary>A scripted answer: the start is told unless the outcome says nothing was started.</summary>
+    private CommandOutcome Answered(CommandRequest request)
+    {
+        CommandOutcome outcome;
+        lock (_gate)
+        {
+            outcome = Answer(request.Argv);
+        }
+
+        if (outcome is not (CommandOutcome.FailedToStart or CommandOutcome.Refused))
+        {
+            request.OnStarted(StartedPid);
+        }
+
+        return outcome;
+    }
+
+    /// <summary>A child that ran past its ceiling: the kill is told first, as the real runner tells it while the tree is whole.</summary>
+    private CommandOutcome Killed(CommandRequest request, CommandOutcome outcome)
+    {
+        if (outcome is CommandOutcome.TimedOut)
+        {
+            request.OnKilling(StartedPid);
+        }
+
+        return outcome;
     }
 
     public async Task<CommandOutcome> StreamAsync(CommandRequest request, Action<string> onStdoutLine, CancellationToken cancellationToken)
@@ -123,7 +160,15 @@ public sealed class RecordingCommandRunner : ICommandRunner
 
         if (script is null)
         {
-            await Task.Delay(Timeout.Infinite, cancellationToken);
+            try
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            finally
+            {
+                request.OnKilling(StartedPid);
+            }
+
             throw new OperationCanceledException(cancellationToken);
         }
 
@@ -134,7 +179,7 @@ public sealed class RecordingCommandRunner : ICommandRunner
 
         script.Then();
         cancellationToken.ThrowIfCancellationRequested();
-        return script.Outcome;
+        return Killed(request, script.Outcome);
     }
 
     private CommandOutcome Answer(IReadOnlyList<string> argv)

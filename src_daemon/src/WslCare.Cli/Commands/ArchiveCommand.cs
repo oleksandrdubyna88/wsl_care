@@ -35,7 +35,8 @@ internal static class ArchiveCommand
 
     /// <summary><c>archive preview [--agent &lt;id&gt;] [--json]</c> (plan §15r E9.S1): the selection over this side now, as this user,
     /// within the listing budget derived from <c>archive.previewTimeoutSeconds</c> — the open-file scan, the layouts and every
-    /// companion walk share it (E9.S1 review round m1) — read-only.</summary>
+    /// companion walk share it (E9.S1 review round m1) — read-only. Its <c>--json</c> answer is ONE line (the S4 own review round C-8:
+    /// root reads a child's answer as its last line, and an indented answer's last line is a lone brace).</summary>
     public static int Preview(Request.ArchivePreview request, CliHost host, Core.Config.ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
     {
         if (host.Privilege.IsRoot)
@@ -53,7 +54,7 @@ internal static class ArchiveCommand
             Token = cancellationToken,
         };
         var report = ArchivePreview.From(input, Selection.Select(input), SideName.OfThisProcess(host.Paths.Side));
-        return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.ArchivePreviewReport) : RenderPreview(report));
+        return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchivePreviewReport) : RenderPreview(report));
     }
 
     private static string RenderPreview(ArchivePreviewReport report)

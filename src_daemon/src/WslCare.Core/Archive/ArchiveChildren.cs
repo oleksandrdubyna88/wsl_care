@@ -19,6 +19,15 @@ namespace WslCare.Core.Archive;
 /// <param name="StartTicks"><c>/proc/[pid]/stat</c> field 22: the identity within one boot.</param>
 public sealed record ArchiveChildIdentity(string Role, string Template, int Pid, long StartTicks, DateTimeOffset LaunchedUtc);
 
+/// <summary>Whether an archive child may start: <see cref="Free"/>, or why not — a recorded child still alive (a skip: it waits for
+/// it) or a record root cannot keep (a refusal: containment is broken, the S4 own review round C-7).</summary>
+public sealed record ChildGate(string Why, bool Refuses)
+{
+    public static ChildGate Free { get; } = new(string.Empty, false);
+
+    public bool Blocks => Why.Length > 0;
+}
+
 /// <summary>Root's record of the archive's children (plan §15r risk consult 9/9.4 #1): ONE file, replaced at every launch and
 /// emptied once its children are gone — never a growing list (the S4 plan round's finding 2).</summary>
 public sealed record ArchiveChildFile(int SchemaVersion, string BootId, IReadOnlyList<ArchiveChildIdentity> Children)
@@ -127,33 +136,39 @@ public static class ArchiveChildren
 
     /// <summary>Why no archive child may start now — a recorded one is still alive (9/9.4 #1) — or empty. A record whose children
     /// are all gone is retired here (written empty), so the file never holds the dead (the S4 plan round's finding 2).</summary>
-    public static string Survivor(ActionContext context, CancellationToken cancellationToken)
+    public static ChildGate Survivor(ActionContext context, CancellationToken cancellationToken)
     {
         if (context.Paths is not LinuxHostPaths linux)
         {
-            return string.Empty;
+            return ChildGate.Free;
         }
 
         var record = Read(context.Paths, context.Files);
         if (record.Children.Count == 0)
         {
-            return string.Empty;
+            return ChildGate.Free;
         }
 
         return context.Processes(cancellationToken) is Reading<ProcessSnapshot>.Available { Value: var snapshot }
             ? Judged(context, record, Alive(record, BootIdentity.Read(linux, context.Files), snapshot.All))
-            : "the process table could not be read, so whether the archive's last child is still alive is not known; no second one starts";
+            : new ChildGate("the process table could not be read, so whether the archive's last child is still alive is not known; no second one starts", Refuses: false);
     }
 
-    private static string Judged(ActionContext context, ArchiveChildFile record, IReadOnlyList<ProcessEntry> alive)
+    private static ChildGate Judged(ActionContext context, ArchiveChildFile record, IReadOnlyList<ProcessEntry> alive)
     {
         if (alive.Count == 0)
         {
-            _ = Write(context.Paths, context.Files, ArchiveChildFile.Empty);
-            return string.Empty;
+            // The S4 own review round C-7: a record that cannot be retired cannot take the next launch either — said, never dropped.
+            return Write(context.Paths, context.Files, ArchiveChildFile.Empty) is { Length: > 0 } unwritten
+                ? new ChildGate($"the record of the archive's children ({FileName}) could not be retired ({unwritten}); no child starts while root cannot record one", Refuses: true)
+                : ChildGate.Free;
         }
 
-        var first = alive[0];
+        return new ChildGate(StillAlive(record, alive[0]), Refuses: false);
+    }
+
+    private static string StillAlive(ArchiveChildFile record, ProcessEntry first)
+    {
         var child = record.Children.First(c => c.Pid == first.Pid);
         return string.Create(CultureInfo.InvariantCulture, $"the archive's last child ({child.Template}, pid {first.Pid}, state {first.State}, started {child.LaunchedUtc:yyyy-MM-dd HH:mm} UTC) is still alive{(first.State == 'D' ? " — stuck in the kernel, on the base most likely" : string.Empty)}; no second one starts until it is gone");
     }

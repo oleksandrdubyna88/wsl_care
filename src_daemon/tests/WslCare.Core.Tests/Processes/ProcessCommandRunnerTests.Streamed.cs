@@ -50,4 +50,32 @@ public sealed partial class ProcessCommandRunnerTests
         told.Should().BePositive();
         outcome.Should().BeOfType<CommandOutcome.Exited>().Which.Stdout.Text.Trim().Should().Be(told.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
+
+    /// <summary>Plan §15r E9.S4 own review round S-M1: a child killed at its ceiling is told to whoever asked BEFORE its tree is
+    /// killed — it still lives then, so the archive can look up the worker under its launcher while the tree is whole.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task A_child_killed_at_its_ceiling_is_told_before_the_kill_while_it_still_lives(bool streamed)
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "a shell that sleeps, and /proc: the Linux legs");
+        var told = 0;
+        var alive = false;
+        var request = new CommandRequest(Shell("sleep 30"), TimeSpan.FromMilliseconds(300))
+        {
+            OnKilling = pid =>
+            {
+                told = pid;
+                alive = Directory.Exists($"/proc/{pid}");
+            },
+        };
+
+        var outcome = streamed
+            ? await Runner.StreamAsync(request, _ => { }, TestContext.Current.CancellationToken)
+            : await Runner.RunAsync(request, TestContext.Current.CancellationToken);
+
+        outcome.Should().BeOfType<CommandOutcome.TimedOut>();
+        told.Should().BePositive("the kill is told");
+        alive.Should().BeTrue("it is told while the child still lives");
+    }
 }

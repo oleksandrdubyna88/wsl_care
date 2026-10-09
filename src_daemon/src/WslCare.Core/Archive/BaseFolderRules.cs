@@ -69,7 +69,10 @@ public static class BaseFolderRule
     public const string Volatile = "volatile-filesystem";
     public const string NotWritable = "not-writable";
 
-    public static IReadOnlyList<string> All { get; } = [Shape, DriveNotMounted, MountUnreadable, Missing, NotAFolder, LinkOnTheWay, TooBroad, Overlap, Volatile, NotWritable];
+    /// <summary>The base not judged YET: a run's input before its bounded window judged it (the S4 gate round, findings 1 and 3).</summary>
+    public const string NotJudged = "not-judged";
+
+    public static IReadOnlyList<string> All { get; } = [Shape, DriveNotMounted, MountUnreadable, Missing, NotAFolder, LinkOnTheWay, TooBroad, Overlap, Volatile, NotWritable, NotJudged];
 }
 
 /// <summary>
@@ -102,6 +105,12 @@ public static partial class BaseFolderRules
     /// <summary>Judges <paramref name="given"/> as the base of this side's archive, the Windows profile unknown.</summary>
     /// <param name="cleanupRoots">The folders the registry's actions clean (<see cref="ExtraAgentRules.CleanupRoots"/>).</param>
     /// <summary>The answer for "no base configured" — never judged, never accepted (E9.S2b: the run answers <c>no-base</c>).</summary>
+    /// <summary>What a run's input holds until its base is judged inside the bounded window (<see cref="BaseWindow"/>; the S4 gate round,
+    /// findings 1 and 3): refused under its own rule, so whatever reads it before the window says "not judged yet" — never "no base",
+    /// never a base it may use.</summary>
+    public static BaseFolderReport NotYetJudged { get; } =
+        new(SchemaVersion.Current, string.Empty, string.Empty, false, string.Empty, BaseFolderRule.NotJudged, "the base is judged inside the bounded window of the run, not before it", BaseMountReport.Unknown, [], []);
+
     public static BaseFolderReport Unconfigured { get; } = new(SchemaVersion.Current, string.Empty, string.Empty, false, string.Empty, string.Empty, "no archive.baseFolder is set", BaseMountReport.Unknown, [], []);
 
     public static BaseFolderReport Judge(IHostPaths paths, IFileSystem files, IReadOnlyList<ForbiddenFolder> cleanupRoots, string given) =>

@@ -248,15 +248,38 @@ flowchart TD
   does every byte. Its executable is checked as root's alone every time (`Processes/SelfBinary.cs`, `Processes/RootOwnedPaths.cs`
   — the latter shared with the Windows system drive's check), and the policy allows that path only for the self-invocation
   templates (`Archive/ArchiveChildren.cs`).
-- **What root reads of a child:** the last line, judged by `Archive/ArchiveChildAnswers.cs`, and counts only. The child's notes,
-  keys and first-skipped names never reach root's world-readable run detail. Progress lines are dropped after their check
-  (`Archive/ArchiveChildStream.cs`).
+- **What root reads of a child:** the last line — every verb root starts answers on ONE line (the S4 own review round C-8:
+  `archive preview` and `archive list` answered indented, so their last line was a lone brace) — judged by
+  `Archive/ArchiveChildAnswers.cs`, and counts only. Every string root writes is judged against a closed set or a shape: the outcome
+  and stop kind, a skip rule (`SkipRule.InRuns`), ROOT's own run id for the run child, a restored session's agent / month / outcome,
+  a listed entry's month / status (S-m3). The reasons are root's own sentences per outcome (`ArchiveGates.OutcomeWords`), never the
+  child's text. The child's notes, keys and first-skipped names never reach root's world-readable run detail. Progress lines are
+  dropped after their check (`Archive/ArchiveChildStream.cs`).
+- **What bounds a run's answer:** only the sessions it COPIED are bounded by `archive.maxSessionsPerRun`; the waiting, removed,
+  gone, superseded, damaged and skipped counts accumulate over runs and are only not negative (the S4 gate round, finding 6).
+- **The exits** (C-1): `Archive/ArchiveExits.cs` — 0, 1, 75 — is the contract the CLI's `ExitCode` is pinned to by a test. An answer
+  with any of them is read; `busy` is NOTHING DONE with its reason for A13 (the reach or the run child), a failure for an A20 press. A20
+  fails unless its child answered `done` (C-2); A13's reach failure is the reach's own outcome in root's words (C-3).
 - **The budget** (D8): the run child is budgeted from the run limit's slack (`RunBudget.WorstCaseOf` the actions behind A13 —
   A20, A1, A2 — and the margin) and is no term of the timer run's worst case. The restore is a button only, never in a timer run.
-  Both are streamed, so a long run is progress line by line.
-- **Containment** (risk consult 9/9.4): a recorded child of this boot still alive (pid and start ticks) — stuck in the kernel on a
-  share, most likely — keeps A13 and A20 from starting a second one. The reach child takes the side's lock before it touches the
-  base, so a stuck reach holds the lock and a run beside it answers `busy`. Root signals nothing a child or the base names.
+  Both are streamed, so a long run is progress line by line. In a timer run the slack subtracts `archive.finishGraceMinutes` too:
+  the child's CEILING, not only its budget, fits the run limit with the actions behind it (C-5). After a budgeted action ran, the
+  engine reads a fresh idle sample for the next action that waits for idle (C-6).
+- **Containment** (risk consult 9/9.4; the S4 own review round S-M1, C-7): EVERY child root starts is recorded — the preview, the
+  reach and the list as well as the streamed ones: the launcher at its start, the worker at a stream's first line and right before
+  any kill (`CommandRequest.OnKilling`, told while the tree is whole), the record retired at the end. A recorded child of this boot
+  still alive (pid and start ticks) — stuck in the kernel on a share, most likely — keeps A13 and A20 from starting a second one. A
+  record write that fails is said: a live child left out of the record fails the run or refuses the preview, a record that cannot be
+  retired refuses the next child. In the child, every verb takes the side's lock FIRST, then judges the base LATE
+  (`Archive/BaseWindow.cs`): inside one task bounded by `archive.reachabilitySeconds`, with the checks that read it (until then its
+  input holds `BaseFolderRules.NotYetJudged`, refused as `not-judged`). A check that timed out is left behind, blocked in the kernel,
+  and its process KEEPS the side's lock while it lives — the next verb answers `busy` at once without touching the base (the S4 gate
+  round). `archive list` takes no lock (read-only) but judges and reaches inside the same window. (Before this round the reach and the list judged the
+  base before the lock, unbounded and unrecorded — what this bullet used to claim was not so.) Root signals nothing a child or the
+  base names.
+- **The runuser gate fails closed** (S-M2, `Archive/RunuserPam.cs`): the stack PAM would read — `/etc/pam.d`, then
+  `/usr/lib/pam.d`, then the service `other` — and every file it pulls in, looked up the same way. No stack, a file that cannot be
+  read as root's own, or an include by a path refuses.
 - **`archive preview`** now carries `removalsDue` (the archived entries past `archive.removeAfterHours`, from the local in-flight
   file): A13's trigger fires on a session due OR a removal due, from ONE child.
 - **Doctor** adds the `archive.runuser` check: a problem only where an archive is configured.

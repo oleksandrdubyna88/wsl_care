@@ -89,7 +89,8 @@ internal static class ArchiveRunCommand
         return exit == (int)ExitCode.Ok && report.Restore.Refused > 0 ? (int)ExitCode.RunFailed : exit;
     }
 
-    /// <summary><c>archive list</c> (plan §15r E9.S3): read-only — no lock, no lease, no key made.</summary>
+    /// <summary><c>archive list</c> (plan §15r E9.S3): read-only — no lock, no lease, no key made; its <c>--json</c> answer ONE line, as
+    /// every archive child's (the S4 own review round C-8).</summary>
     public static int List(Request.ArchiveList request, CliHost host, ConfigLoadResult loaded, TextWriter stdout, TextWriter stderr, CancellationToken cancellationToken)
     {
         if (host.Privilege.IsRoot)
@@ -99,7 +100,7 @@ internal static class ArchiveRunCommand
         }
 
         var report = ArchiveList.List(Input(host, loaded, request.Agent, TimeSpan.MaxValue, cancellationToken), new ArchiveListRequest(request.Agent, request.Month, request.RunId) { Restorable = request.Restorable });
-        _ = Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.ArchiveListReport) : RenderList(report));
+        _ = Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Compact.ArchiveListReport) : RenderList(report));
         return report.Outcome is RunOutcomes.Done or RunOutcomes.NoBase ? (int)ExitCode.Ok : (int)ExitCode.RunFailed;
     }
 
@@ -151,15 +152,18 @@ internal static class ArchiveRunCommand
 
     private static ArchiveRunInput Input(CliHost host, ConfigLoadResult loaded, string agent, TimeSpan budget, CancellationToken cancellationToken)
     {
+        // The S4 own review round S-M1: the base is judged LATE — inside the bounded window, after the side's lock for a reach — never
+        // here, before it: a share that stops answering would hold this child in the kernel, unbounded and before its lock.
         var configured = loaded.Config.Text(ConfigKeys.Archive.BaseFolder);
-        var judged = OnDisk(host, configured.Length == 0 ? BaseFolderRules.Unconfigured : ArchiveCommand.Judge(host, configured));
+        var judging = configured.Length == 0 ? BaseJudging.Already : BaseJudging.Within(() => OnDisk(host, ArchiveCommand.Judge(host, configured)));
         var now = host.Clock.GetUtcNow();
         var boot = host.Processes.Boot();
         var me = host.Processes.Lookup(Environment.ProcessId) is Core.Actions.Engine.ProcessLookup.Alive alive
             ? new LeaseRecord(1, Environment.MachineName, boot.BootId, Environment.ProcessId, alive.StartTicks ?? 0, alive.StartUtc, string.Empty, now)
             : new LeaseRecord(1, Environment.MachineName, boot.BootId, Environment.ProcessId, 0, now, string.Empty, now);
-        return new ArchiveRunInput(host.Paths, host.Files, host.ArchiveFiles(), loaded.Config, host.Clock, host.Processes, TimeZoneInfo.Local, judged, RunId.New(now, Environment.ProcessId).Text, budget, Environment.GetEnvironmentVariable, cancellationToken)
+        return new ArchiveRunInput(host.Paths, host.Files, host.ArchiveFiles(), loaded.Config, host.Clock, host.Processes, TimeZoneInfo.Local, judging.Late ? BaseFolderRules.NotYetJudged : BaseFolderRules.Unconfigured, RunId.New(now, Environment.ProcessId).Text, budget, Environment.GetEnvironmentVariable, cancellationToken)
         {
+            Judging = judging,
             OnlyAgent = agent,
             Me = me,
             Step = host.ArchiveFault,

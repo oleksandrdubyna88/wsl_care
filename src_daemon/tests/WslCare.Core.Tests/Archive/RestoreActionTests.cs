@@ -34,7 +34,11 @@ public sealed class RestoreActionTests : IDisposable
     private readonly LinuxSandbox _sandbox = new("a20");
     private readonly ManualTimeProvider _clock = new(Now);
 
-    public RestoreActionTests() => _sandbox.Write("/proc/sys/kernel/random/boot_id", Boot + "\n");
+    public RestoreActionTests()
+    {
+        _sandbox.Write("/proc/sys/kernel/random/boot_id", Boot + "\n");
+        _sandbox.Write("/etc/pam.d/runuser", ArchiveActionTests.SafeRunuserStack);
+    }
 
     public void Dispose() => _sandbox.Dispose();
 
@@ -194,4 +198,61 @@ public sealed class RestoreActionTests : IDisposable
         run.Count.Should().Be(0);
         run.Removed.Should().BeEmpty();
     }
+
+    // ---- the E9.S4 own review round --------------------------------------------------------------------------------------
+
+    /// <summary>C-2 (and C-1 for busy): a restore that never ran — the child stopped before it, its restore part empty — FAILS, naming
+    /// the child's outcome in root's words; it is never a success that restored nothing.</summary>
+    [Theory]
+    [InlineData(RunOutcomes.Unreachable, ArchiveExits.RunFailed, "did not answer within archive.reachabilitySeconds")]
+    [InlineData(RunOutcomes.Refused, ArchiveExits.RunFailed, "refused")]
+    [InlineData(RunOutcomes.Busy, ArchiveExits.Busy, "holds its lock")]
+    public async Task A_restore_that_never_ran_fails_naming_why(string outcome, int exit, string reason)
+    {
+        var answer = System.Text.Json.JsonSerializer.Serialize(
+            ArchiveActionTests.RunReport(copied: 0, removedBytes: 0, outcome: outcome) with { Agents = [], Stop = "a child's own words, never copied" },
+            Json.WslCareJsonContext.Compact.ArchiveRunReport);
+
+        var (_, run, _) = await PreviewAndRun(Context(ShownList.Of([Removed1])), Children(restore: answer, restoreOutcome: RecordingCommandRunner.Exited(exit)));
+
+        run.Succeeded.Should().BeFalse(outcome);
+        run.Failure.Should().Contain(reason).And.NotContain("never copied");
+        run.Count.Should().Be(0);
+    }
+
+    /// <summary>S-m3: a restore's answer names each session by entry id, agent, month and outcome — each judged before root writes it:
+    /// an outcome the archive answers, a month <c>yyyy/MM</c>, an agent the archive moves, a run id that is one.</summary>
+    public static TheoryData<string, string> ForeignRestores => new()
+    {
+        { "an outcome the archive does not answer", Restore(new RestoredSession(Removed1, "claude-code", "projects/p/x.jsonl", "2026/09", "restored /etc/shadow", 2, 200, "n")) },
+        { "a month of another shape", Restore(new RestoredSession(Removed1, "claude-code", "projects/p/x.jsonl", "../../etc", RestoreOutcomes.Restored, 2, 200, "n")) },
+        { "an agent the archive does not move", Restore(new RestoredSession(Removed1, "../evil", "projects/p/x.jsonl", "2026/09", RestoreOutcomes.Restored, 2, 200, "n")) },
+        { "a run id that is no run id", Restore(new RestoredSession(Removed1, "claude-code", "projects/p/x.jsonl", "2026/09", RestoreOutcomes.Restored, 2, 200, "n")).Replace("20261006T120000Z-42", "not a run", StringComparison.Ordinal) },
+    };
+
+    [Theory]
+    [MemberData(nameof(ForeignRestores))]
+    public async Task A_restore_answer_carrying_a_string_root_does_not_know_is_not_believed(string why, string answer)
+    {
+        var (_, run, _) = await PreviewAndRun(Context(ShownList.Of([Removed1])), Children(restore: answer));
+
+        run.Succeeded.Should().BeFalse(why);
+        run.Removed.Should().BeEmpty(why);
+    }
+
+    /// <summary>S-m3: a listed entry's month and status are judged too — the preview names them in root's records.</summary>
+    [Theory]
+    [InlineData("2026/09 /etc/shadow", ArchiveIndex.Events.SourceRemoved)]
+    [InlineData("2026/13", ArchiveIndex.Events.SourceRemoved)]
+    [InlineData("2026/09", "sourceRemoved\n/etc/shadow")]
+    public async Task A_listed_entry_of_another_shape_is_not_believed(string month, string status)
+    {
+        var list = ListJson(Entry(Removed1, ArchiveIndex.Events.SourceRemoved) with { Month = month, Status = status });
+
+        var (preview, _, _) = await PreviewAndRun(Context(ShownList.Of([Removed1])), Children(list: list));
+
+        preview.Available.Should().BeFalse(month + " " + status);
+    }
+
+    private static string Restore(RestoredSession session) => RestoreJson(session);
 }

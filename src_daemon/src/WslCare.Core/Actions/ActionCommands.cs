@@ -50,9 +50,14 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
             Environment = request.Environment,
             StdinClosed = request.StdinClosed,
             OnStarted = stream.OnStarted,
+            OnKilling = stream.OnKilling,
         };
 
-    public async Task<CommandOutcome> RunAsync(CommandTemplate template, IReadOnlyList<string> values, CancellationToken cancellationToken)
+    public Task<CommandOutcome> RunAsync(CommandTemplate template, IReadOnlyList<string> values, CancellationToken cancellationToken) =>
+        RunAsync(template, values, ProcessHooks.None, cancellationToken);
+
+    /// <summary>A whole command whose start and kill <paramref name="hooks"/> hear (the archive's children, S-M1).</summary>
+    public async Task<CommandOutcome> RunAsync(CommandTemplate template, IReadOnlyList<string> values, ProcessHooks hooks, CancellationToken cancellationToken)
     {
         var request = Request(template, values);
         if (request is UserCommand.Refused refused)
@@ -60,7 +65,7 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
             return Record(template, $"{template.Shape} ({string.Join(' ', values)})", new CommandOutcome.Refused(refused.Reason));
         }
 
-        var ready = ((UserCommand.Ready)request!).Request;
+        var ready = ((UserCommand.Ready)request!).Request with { OnStarted = hooks.OnStarted, OnKilling = hooks.OnKilling };
         return Record(template, ready.Display, await runner.RunAsync(ready, cancellationToken).ConfigureAwait(false));
     }
 
@@ -173,4 +178,14 @@ public sealed class ActionCommands(ICleanupAction action, ICommandRunner runner,
 public sealed record StreamRequest(TimeSpan Ceiling, Action<string> OnLine)
 {
     public Action<int> OnStarted { get; init; } = static _ => { };
+
+    /// <summary>Who hears the child's id right before its tree is killed (<see cref="CommandRequest.OnKilling"/>).</summary>
+    public Action<int> OnKilling { get; init; } = static _ => { };
+}
+
+/// <summary>Who hears a WHOLE command's start and, when it runs past its ceiling, its kill (plan §15r E9.S4 own review round S-M1:
+/// the archive records every child it starts, not only the streamed ones).</summary>
+public sealed record ProcessHooks(Action<int> OnStarted, Action<int> OnKilling)
+{
+    public static ProcessHooks None { get; } = new(static _ => { }, static _ => { });
 }

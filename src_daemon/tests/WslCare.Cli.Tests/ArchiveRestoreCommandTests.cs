@@ -73,7 +73,7 @@ public sealed class ArchiveRestoreCommandTests : IDisposable
         restore.Exit.Should().Be((int)ExitCode.Ok, restore.Stderr);
         restore.Stdout.Should().Contain("\"outcome\":\"no-base\"");
         list.Exit.Should().Be((int)ExitCode.Ok, list.Stderr);
-        list.Stdout.Should().Contain("\"outcome\": \"no-base\"");
+        list.Stdout.Should().Contain("\"outcome\":\"no-base\"", "a child's answer is one line (the S4 own review round C-8)");
     }
 
     /// <summary>E9.S3 own review round C-9: an elevated Windows user IS the user whose sessions move — the refusal tells them to run it

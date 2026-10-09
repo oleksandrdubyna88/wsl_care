@@ -98,7 +98,7 @@ public sealed class ProcessCommandRunner : ICommandRunner
         }
         catch (OperationCanceledException)
         {
-            await KillAndReapAsync(process, reads).ConfigureAwait(false);
+            await KillAndReapAsync(process, reads, request).ConfigureAwait(false);
             Actions.Engine.RunProgress.Mark();
             cancellationToken.ThrowIfCancellationRequested();
             return new CommandOutcome.TimedOut(stdout.Snapshot(), stderr.Snapshot(), request.Timeout) { StartedFrom = launch.StartedFrom, StartedAt = launch.StartedAt };
@@ -154,7 +154,7 @@ public sealed class ProcessCommandRunner : ICommandRunner
             // #1/#5) — kills the whole tree and waits for the child to be gone before anything propagates.
             if (!ended)
             {
-                await KillAndReapAsync(process, Task.WhenAll(errors, lines)).ConfigureAwait(false);
+                await KillAndReapAsync(process, Task.WhenAll(errors, lines), request).ConfigureAwait(false);
             }
         }
 
@@ -283,13 +283,36 @@ public sealed class ProcessCommandRunner : ICommandRunner
     /// serving) cannot die until the kernel releases it, and the wait ends at the grace either way (plan §15r risk consult 9/9.4
     /// #1, which corrected the claim this said before). The archive therefore records the identities of its children and
     /// launches no second one while one of them lives (<c>Archive/ArchiveChildren.cs</c>).</summary>
-    private static async Task KillAndReapAsync(Process process, Task reads)
+    private static async Task KillAndReapAsync(Process process, Task reads, CommandRequest request)
     {
-        Kill(process);
+        try
+        {
+            Told(process, request);
+        }
+        finally
+        {
+            // Whatever the one told does, the tree is killed.
+            Kill(process);
+        }
+
         // CancellationToken.None on purpose: the caller may already have cancelled, and this wait is what makes the kill
         // observable; DrainGrace is its ceiling.
         await Task.WhenAny(process.WaitForExitAsync(CancellationToken.None), Task.Delay(DrainGrace)).ConfigureAwait(false);
         await DrainAsync(reads).ConfigureAwait(false);
+    }
+
+    /// <summary>The kill told to whoever asked while the tree is still whole (plan §15r E9.S4 own review round S-M1: the archive
+    /// looks up the worker under its launcher then, since a worker stuck in the kernel outlives the kill).</summary>
+    private static void Told(Process process, CommandRequest request)
+    {
+        try
+        {
+            request.OnKilling(process.Id);
+        }
+        catch (InvalidOperationException)
+        {
+            // No process is associated any more: it is gone, and nothing is left to record.
+        }
     }
 
     /// <summary>Wait for the readers, but never past the grace: a pipe a survivor holds open must not hold us.</summary>

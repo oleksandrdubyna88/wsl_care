@@ -29,7 +29,7 @@ public sealed class ContractFilesTests
     internal static string ActionsText() => Indented(new JsonObject
     {
         ["schemaVersion"] = 1,
-        ["description"] = "Every action id the daemon knows (its auto.* switch names; A5Testcontainers and A6Unused are ids; A18 is a button only, with no auto switch) and the order a run takes them in. Generated from ActionId.All / ActionId.ExecutionOrder by ContractFilesTests.",
+        ["description"] = "Every action id the daemon knows (its auto.* switch names; A5Testcontainers and A6Unused are ids; A18 and A20 are buttons only, with no auto switch) and the order a run takes them in. Generated from ActionId.All / ActionId.ExecutionOrder by ContractFilesTests.",
         ["ids"] = new JsonArray([.. ActionId.All.Select(id => (JsonNode)id.Text)]),
         ["executionOrder"] = new JsonArray([.. ActionId.ExecutionOrder.Select(id => (JsonNode)id.Text)]),
     });

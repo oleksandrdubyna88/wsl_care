@@ -34,7 +34,15 @@ public sealed partial class ArchiveActionTests : IDisposable
     private readonly ManualTimeProvider _clock = new(Now);
     private readonly List<ProcessEntry> _processes = [];
 
-    public ArchiveActionTests() => _sandbox.Write("/proc/sys/kernel/random/boot_id", Boot + "\n");
+    /// <summary>Ubuntu 24.04's runuser stack — no pam_systemd, no include: what the archive's children start under. The S4 own review
+    /// round S-M2: the gate fails closed, so every sandbox that lets a child start holds one.</summary>
+    internal const string SafeRunuserStack = "auth sufficient pam_rootok.so\nsession optional pam_keyinit.so revoke\nsession required pam_limits.so\nsession required pam_unix.so\n";
+
+    public ArchiveActionTests()
+    {
+        _sandbox.Write("/proc/sys/kernel/random/boot_id", Boot + "\n");
+        _sandbox.Write("/etc/pam.d/runuser", SafeRunuserStack);
+    }
 
     public void Dispose() => _sandbox.Dispose();
 
@@ -200,7 +208,8 @@ public sealed partial class ArchiveActionTests : IDisposable
     // ---- the budget -----------------------------------------------------------------------------------------------------------
 
     /// <summary>D8: a timer run takes the run limit's SLACK — never more than is left until <c>timer.runLimitMinutes</c> after the
-    /// actions behind it, never more than <c>archive.runBudgetMinutes</c>; below <c>archive.minRunMinutes</c> it does not start.</summary>
+    /// actions behind it and the finish grace its ceiling adds (C-5), never more than <c>archive.runBudgetMinutes</c>; below
+    /// <c>archive.minRunMinutes</c> it does not start.</summary>
     [Fact]
     public async Task The_archive_budget_never_passes_the_run_limit()
     {
@@ -208,7 +217,8 @@ public sealed partial class ArchiveActionTests : IDisposable
         var after = RunBudget.WorstCaseOf(ActionRegistry.Product.InExecutionOrder([.. ActionId.ExecutionOrder.SkipWhile(id => id.Text != "A13").Skip(1)]), config);
         var limit = TimeSpan.FromMinutes(config.Int(ConfigKeys.Timer.RunLimitMinutes));
         var leftMinutes = 12;
-        var started = Now - limit + after + RunBudget.Margin + TimeSpan.FromMinutes(leftMinutes);
+        var grace = TimeSpan.FromMinutes(config.Int(ConfigKeys.Archive.FinishGraceMinutes));
+        var started = Now - limit + after + RunBudget.Margin + grace + TimeSpan.FromMinutes(leftMinutes);
         var context = Context(config, RunTrigger.Timer) with { RunStarted = started };
 
         var (preview, run, runner) = await PreviewAndRun(context: context);
@@ -272,10 +282,11 @@ public sealed partial class ArchiveActionTests : IDisposable
         run.Removed.Should().BeEmpty();
     }
 
-    /// <summary>9/9.4 #4: progress lines are counted and dropped, so a flood of them is no answer; a flood of OTHER lines passes the
-    /// answer's cap and ends the child; a line as long as the runner's cut is never read as the start of a record.</summary>
+    /// <summary>9/9.4 #4: progress lines are counted and dropped, so a flood of them is no answer; ANY second line that is not progress
+    /// ends the child at once — the answer is ONE line, the last (the S4 own review round C-8: this test used to claim a flood passed
+    /// the answer's cap, while what stopped the child was its second line; it now says so, and checks the reason).</summary>
     [Fact]
-    public async Task A_flood_of_progress_lines_is_harmless_and_a_flood_of_anything_else_stops_the_child()
+    public async Task A_flood_of_progress_lines_is_harmless_and_a_second_line_that_is_not_progress_stops_the_child()
     {
         var progress = Enumerable.Range(1, 20_000).Select(Progress).Append(RunJson()).ToList();
         var (_, harmless, _) = await PreviewAndRun(Children(runLines: progress));
@@ -285,6 +296,7 @@ public sealed partial class ArchiveActionTests : IDisposable
 
         harmless.Succeeded.Should().BeTrue(harmless.Failure);
         flooded.Succeeded.Should().BeFalse();
+        flooded.Failure.Should().Contain("wrote on after its answer", "the second line that is not progress is what ends the child");
         flooded.Count.Should().Be(0);
     }
 
@@ -361,12 +373,12 @@ public sealed partial class ArchiveActionTests : IDisposable
     {
         var seen = new List<IReadOnlyList<ArchiveChildIdentity>>();
         var runner = Children(runLines: [Progress(1), Progress(2), RunJson()]);
-        _processes.Add(UserWorldProcess(4242, 9000, 'S'));
-        _processes.Add(UserWorldProcess(4243, 9001, 'S') with { ParentPid = 4242 });
         var context = Context();
         var action = new ArchiveAction();
         var commands = Commands(action, runner, context);
         var preview = await action.PreviewAsync(context, commands, CancellationToken.None);
+        _processes.Add(UserWorldProcess(4242, 9000, 'S'));
+        _processes.Add(UserWorldProcess(4243, 9001, 'S') with { ParentPid = 4242 });
         _ = ArchiveChildren.Read(_sandbox.Paths, _sandbox.Files);
         var observing = new ObservingStreams(runner, () => seen.Add(ArchiveChildren.Read(_sandbox.Paths, _sandbox.Files).Children), () => _processes.Clear());
 
@@ -413,40 +425,260 @@ public sealed partial class ArchiveActionTests : IDisposable
         runner.Requests.Should().BeEmpty();
     }
 
-    /// <summary>The S4 code round, finding 3: an include of an include is followed (each file once, so a loop ends), and a file the stack
-    /// pulls in that cannot be read refuses — it could name pam_systemd for all root knows.</summary>
-    [Theory]
-    [InlineData("nested", "/etc/pam.d/common-inner")]
-    [InlineData("missing", "/etc/pam.d/common-missing could not be checked")]
-    [InlineData("loop", "")]
-    public async Task A13_follows_every_file_the_pam_stack_pulls_in(string shape, string reason)
-    {
-        _sandbox.Write("/etc/pam.d/runuser", shape == "missing" ? "@include common-missing\n" : "@include common-outer\n");
-        _sandbox.Write("/etc/pam.d/common-outer", "session required pam_unix.so\n@include common-inner\n");
-        _sandbox.Write("/etc/pam.d/common-inner", shape == "loop" ? "session include common-outer\n" : "session optional pam_systemd.so\n");
-
-        var preview = await Previewed();
-
-        if (reason.Length == 0)
-        {
-            preview.Refusal.Should().BeEmpty("a loop of includes naming no pam_systemd ends and refuses nothing");
-        }
-        else
-        {
-            preview.Refusal.Should().Contain(reason);
-        }
-    }
-
-    [Fact]
-    public async Task A_pam_stack_without_pam_systemd_lets_A13_run()
-    {
-        _sandbox.Write("/etc/pam.d/runuser", "auth sufficient pam_rootok.so\nsession optional pam_keyinit.so revoke\nsession required pam_limits.so\nsession required pam_unix.so\n");
-
-        var preview = await Previewed();
-
-        preview.Refusal.Should().BeEmpty();
-    }
-
     private static ProcessEntry UserWorldProcess(int pid, long start, char state) =>
         new(pid, 1, "me", "wsl-care", state, 0, 0, Reading.Of(TimeSpan.FromHours(1)), Reading.Of(0.1), Reading.Of("/"), "wsl-care archive run", "other", false, false, false) { StartTicks = Reading.Of(start) };
+
+    // ---- the E9.S4 own review round (plan §15r *E9.S4 own review round*; the PAM gate's rows are RunuserPamTests) -------------
+
+    // ---- S-M1 / C-4: every child root starts is recorded, the whole ones too -------------------------------------------------
+
+    /// <summary>S-M1: the preview and the reach are children like the run — their launcher is in root's record while they live, and
+    /// the record is retired once they are gone.</summary>
+    [Fact]
+    public async Task Every_archive_child_is_recorded_while_it_runs_the_whole_ones_too()
+    {
+        var seen = new Dictionary<string, IReadOnlyList<ArchiveChildIdentity>>(StringComparer.Ordinal);
+        var runner = Children()
+            .ScriptEffect(argv => Is(argv, "preview"), _ => Seen(seen, "preview", RecordingCommandRunner.Exited(0, PreviewJson())))
+            .ScriptEffect(argv => Is(argv, "reach"), _ => Seen(seen, "reach", RecordingCommandRunner.Exited(0, RunJson(RunReport(copied: 0)))));
+
+        var (_, run) = await Over(new LiveChildren(runner, _processes));
+
+        run.Succeeded.Should().BeTrue(run.Failure);
+        Recorded().Should().BeEmpty("the record is retired once the children are gone");
+        seen.Keys.Should().BeEquivalentTo(["preview", "reach"]);
+        seen.Values.Should().OnlyContain(children => children.Any(c => c.Role == ArchiveChildren.Launcher && c.Pid == 4242 && c.StartTicks == 9000));
+    }
+
+    /// <summary>S-M1: a whole child killed at its ceiling — its worker stuck in the kernel on the base — leaves that worker in root's
+    /// record (looked up while the tree is still whole, right before the kill), so no second child starts beside it.</summary>
+    [Fact]
+    public async Task A_whole_child_killed_at_its_ceiling_leaves_its_stuck_worker_recorded_and_no_second_child_starts()
+    {
+        var runner = new RecordingCommandRunner()
+            .Script(argv => Is(argv, "preview"), RecordingCommandRunner.Exited(0, PreviewJson()))
+            .Script(argv => Is(argv, "reach"), new CommandOutcome.TimedOut(CapturedText.Empty, CapturedText.Empty, TimeSpan.FromSeconds(10)));
+
+        var (_, run) = await Over(new LiveChildren(runner, _processes) { StuckVerb = "reach" });
+        var next = await Previewed(new RecordingCommandRunner());
+
+        run.Succeeded.Should().BeFalse();
+        ArchiveChildren.Read(_sandbox.Paths, _sandbox.Files).Children.Should().Contain(c => c.Role == ArchiveChildren.Worker && c.Pid == 4243 && c.StartTicks == 9001);
+        next.Skip.Should().Contain("stuck in the kernel");
+    }
+
+    // ---- C-1: busy is the CLI's own exit 75, with its answer; C-3: the reach's own outcome, in root's words ---------------------
+
+    /// <summary>C-1: the side's lock held by another run (the user's own, most likely) — the reach child answers busy with the exit the
+    /// command line gives it (<see cref="ArchiveExits.Busy"/>): A13 does nothing this time and says so; it is no failure.</summary>
+    [Fact]
+    public async Task A_busy_side_at_the_reach_makes_A13_do_nothing_and_say_so()
+    {
+        var runner = new RecordingCommandRunner()
+            .Script(argv => Is(argv, "preview"), RecordingCommandRunner.Exited(ArchiveExits.Ok, PreviewJson()))
+            .Script(argv => Is(argv, "reach"), RecordingCommandRunner.Exited(ArchiveExits.Busy, RunJson(RunReport(copied: 0, outcome: RunOutcomes.Busy) with { Agents = [] })));
+
+        var (_, run, recorded) = await PreviewAndRun(runner);
+
+        run.Succeeded.Should().BeTrue(run.Failure);
+        run.Count.Should().Be(0);
+        run.FreedBasis.Should().Contain("holds its lock");
+        recorded.Requests.Should().NotContain(r => Is(r.Argv, "run"), "the long run is not started beside a busy side");
+    }
+
+    /// <summary>C-1: the side taken between the reach and the run — the run child answers busy (exit 75): nothing done, said so.</summary>
+    [Fact]
+    public async Task A_busy_answer_of_the_run_child_is_nothing_done_not_a_failure_nor_a_ran()
+    {
+        var busy = RunJson(RunReport(copied: 0, outcome: RunOutcomes.Busy) with { Agents = [] });
+
+        var (_, run, _) = await PreviewAndRun(Children(runLines: [busy], runOutcome: RecordingCommandRunner.Exited(ArchiveExits.Busy)));
+
+        run.Succeeded.Should().BeTrue(run.Failure);
+        run.Count.Should().Be(0);
+        run.FreedBasis.Should().Contain("holds its lock");
+    }
+
+    /// <summary>C-3: the reach's OWN outcome reaches the run detail — in root's words, one sentence per outcome (never the child's
+    /// text): a refusal names the base's rules and D7's changed mount with how to recover; an unreachable base says so.</summary>
+    [Theory]
+    [InlineData(RunOutcomes.Refused, "mount it as before")]
+    [InlineData(RunOutcomes.Unreachable, "did not answer within archive.reachabilitySeconds")]
+    public async Task The_reachs_own_outcome_is_the_reason_A13_fails(string outcome, string reason)
+    {
+        var report = RunReport(copied: 0, outcome: outcome) with { Agents = [], Stop = "a child's own words, never copied" };
+        var runner = new RecordingCommandRunner()
+            .Script(argv => Is(argv, "preview"), RecordingCommandRunner.Exited(ArchiveExits.Ok, PreviewJson()))
+            .Script(argv => Is(argv, "reach"), RecordingCommandRunner.Exited(ArchiveExits.RunFailed, RunJson(report)));
+
+        var (_, run, _) = await PreviewAndRun(runner);
+
+        run.Succeeded.Should().BeFalse();
+        run.Failure.Should().Contain(reason).And.NotContain("never copied");
+    }
+
+    // ---- S-m3: no child string reaches root's records unjudged ------------------------------------------------------------------
+
+    /// <summary>S-m3: what root writes from a run's answer is closed — a skip rule is one the archive counts by, the run is ROOT's own
+    /// run id; an answer that says otherwise is not believed and nothing of it is recorded.</summary>
+    public static TheoryData<string, string> ForeignStrings => new()
+    {
+        { "a skip rule the archive does not count by", RunJson(RunReport() with { Agents = [RunReport().Agents[0] with { Skipped = [new SkipCount("evil\nrule /etc/shadow", 1, string.Empty, string.Empty)] }] }) },
+        { "another run's id", RunJson(RunReport() with { RunId = "20261006T120000Z-99" }) },
+        { "a run id that is no run id", RunJson(RunReport() with { RunId = "x\" -- /etc/shadow" }) },
+    };
+
+    [Theory]
+    [MemberData(nameof(ForeignStrings))]
+    public async Task A_run_answer_carrying_a_string_root_does_not_know_is_not_believed(string why, string answer)
+    {
+        var (_, run, _) = await PreviewAndRun(Children(runLines: [Progress(1), answer]));
+
+        run.Succeeded.Should().BeFalse(why);
+        run.Removed.Should().BeEmpty(why);
+        run.Count.Should().Be(0, why);
+    }
+
+    // ---- C-5: the run child's CEILING — not only its budget — fits the run limit -------------------------------------------------
+
+    /// <summary>C-5: the child may run to budget + archive.finishGraceMinutes before it is killed, so it is the CEILING that must leave
+    /// the actions behind A13 their worst case and the margin before timer.runLimitMinutes — or systemd stops the run in A1/A2.</summary>
+    [Theory]
+    [InlineData(12)]
+    [InlineData(40)]
+    [InlineData(500)]
+    public async Task The_run_childs_ceiling_and_the_actions_behind_it_fit_the_run_limit(int leftMinutes)
+    {
+        var config = Config();
+        var after = RunBudget.WorstCaseOf(ActionRegistry.Product.InExecutionOrder([.. ActionId.ExecutionOrder.SkipWhile(id => id.Text != "A13").Skip(1)]), config);
+        var limit = TimeSpan.FromMinutes(config.Int(ConfigKeys.Timer.RunLimitMinutes));
+        var started = Now - limit + after + RunBudget.Margin + TimeSpan.FromMinutes(leftMinutes);
+        var end = started + limit;
+
+        var (preview, run, runner) = await PreviewAndRun(context: Context(config, RunTrigger.Timer) with { RunStarted = started });
+
+        run.Succeeded.Should().BeTrue(run.Failure + preview.Skip);
+        var stream = runner.Requests.Single(r => Is(r.Argv, "run"));
+        (Now + stream.Timeout + after + RunBudget.Margin).Should().BeOnOrBefore(end, "the child's ceiling, then the actions behind it at their worst and the margin, end before the run limit");
+    }
+
+    // ---- C-7: a containment record that cannot be written is said — and no further child starts -------------------------------
+
+    /// <summary>C-7: root's record of the child it started could not be written — a stuck child would not be seen — so the preview
+    /// REFUSES (no run child starts) and says why; the write's failure is never dropped.</summary>
+    [Fact]
+    public async Task A_child_root_cannot_record_refuses_the_run_and_says_why()
+    {
+        var runner = Children();
+
+        var preview = await Previewed(runner, Context(files: new UnwritableChildren(_sandbox.Files)));
+
+        preview.Refusal.Should().Contain("could not record the archive child").And.Contain("disk full");
+        runner.Requests.Should().ContainSingle("the preview child ran; nothing after it");
+    }
+
+    /// <summary>C-7: a record whose children are gone but which cannot be retired cannot take the next launch either — a refusal.</summary>
+    [Fact]
+    public async Task A_record_that_cannot_be_retired_refuses_the_next_child()
+    {
+        ArchiveChildren.Write(_sandbox.Paths, _sandbox.Files, new ArchiveChildFile(1, Boot, [new ArchiveChildIdentity(ArchiveChildren.Worker, "archive-run", 777, 5000, Now.AddHours(-5))])).Should().BeEmpty();
+        var runner = Children();
+
+        var preview = await Previewed(runner, Context(files: new UnwritableChildren(_sandbox.Files)));
+
+        preview.Refusal.Should().Contain("could not be retired").And.Contain("disk full");
+        runner.Requests.Should().BeEmpty();
+    }
+
+    /// <summary>The S4 gate round, finding 7 (rejected with this proof): the REACH child root cannot record fails A13 with the
+    /// containment reason, never a blank one.</summary>
+    [Fact]
+    public async Task A_reach_child_root_cannot_record_fails_A13_saying_why()
+    {
+        var context = Context(files: new UnwritableChildren(_sandbox.Files));
+        var action = new ArchiveAction();
+        var commands = Commands(action, Children(), context);
+
+        var run = await action.RunAsync(context, ActionPreview.Of("archive", 1, 0, "an earlier preview", new Dictionary<string, long>(), string.Empty, []), commands, CancellationToken.None);
+
+        run.Succeeded.Should().BeFalse();
+        run.Failure.Should().Contain("could not record the archive child").And.Contain("disk full");
+    }
+
+    /// <summary>The S4 gate round, finding 6: only the sessions a run COPIES are bounded by archive.maxSessionsPerRun — those waiting
+    /// for their removal, removed, gone, superseded, damaged and skipped accumulate over runs and are only not negative.</summary>
+    [Fact]
+    public async Task Counts_past_the_session_cap_that_the_cap_does_not_bound_are_believed()
+    {
+        var cap = Config().Int(ConfigKeys.Archive.MaxSessionsPerRun);
+        var agent = RunReport().Agents[0] with { Waiting = cap + 7, Removed = cap + 3, GoneAtSource = cap + 1, Skipped = [new SkipCount(SkipRule.InUse, cap + 9, string.Empty, string.Empty)] };
+
+        var (_, run, _) = await PreviewAndRun(Children(runLines: [Progress(1), RunJson(RunReport() with { Agents = [agent] })]));
+
+        run.Succeeded.Should().BeTrue(run.Failure);
+    }
+
+    /// <summary>The sandbox's disk, except that root's record of the archive's children cannot be written.</summary>
+    private sealed class UnwritableChildren(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        public override Core.Files.Deletion.DeletionVerdict WritePrivateFileAtomically(string path, ReadOnlySpan<byte> content, Core.Files.Deletion.DeletionScope scope) =>
+            path.EndsWith(ArchiveChildren.FileName, StringComparison.Ordinal)
+                ? Core.Files.Deletion.DeletionVerdict.Refuse(Core.Files.Deletion.DeletionRule.OutsideDeclaredRoot, "disk full")
+                : base.WritePrivateFileAtomically(path, content, scope);
+    }
+
+    /// <summary>The recorder's children as LIVE processes of the table: from its start until the call returns, the launcher (the pid
+    /// the recorder announces, start 9000) and the product binary under it (the next pid, start 9001). A child of the stuck verb
+    /// keeps its worker after the call — in state D, as a reader the share stopped serving is left after the kill.</summary>
+    private sealed class LiveChildren(RecordingCommandRunner inner, List<ProcessEntry> table) : ICommandRunner
+    {
+        public string StuckVerb { get; init; } = string.Empty;
+
+        public async Task<CommandOutcome> RunAsync(CommandRequest request, CancellationToken cancellationToken)
+        {
+            var outcome = await inner.RunAsync(Live(request), cancellationToken);
+            Gone(request);
+            return outcome;
+        }
+
+        public async Task<CommandOutcome> StreamAsync(CommandRequest request, Action<string> onStdoutLine, CancellationToken cancellationToken)
+        {
+            var outcome = await inner.StreamAsync(Live(request), onStdoutLine, cancellationToken);
+            Gone(request);
+            return outcome;
+        }
+
+        private CommandRequest Live(CommandRequest request) => request with
+        {
+            OnStarted = pid =>
+            {
+                table.Add(UserWorldProcess(pid, 9000, 'S'));
+                table.Add(UserWorldProcess(pid + 1, 9001, Stuck(request) ? 'D' : 'S') with { ParentPid = pid });
+                request.OnStarted(pid);
+            },
+        };
+
+        private void Gone(CommandRequest request) =>
+            table.RemoveAll(p => p.Pid == inner.StartedPid || (p.Pid == inner.StartedPid + 1 && !Stuck(request)));
+
+        private bool Stuck(CommandRequest request) => StuckVerb.Length > 0 && Is(request.Argv, StuckVerb);
+    }
+
+    /// <summary>A13 previewed and run over <paramref name="runner"/> — any runner, a wrapped recorder too.</summary>
+    private async Task<(ActionPreview Preview, ActionRun Run)> Over(ICommandRunner runner, ActionContext? context = null)
+    {
+        var action = new ArchiveAction();
+        var ctx = context ?? Context();
+        var commands = Commands(action, runner, ctx);
+        var preview = await action.PreviewAsync(ctx, commands, CancellationToken.None);
+        return (preview, await action.RunAsync(ctx, preview, commands, CancellationToken.None));
+    }
+
+    private IReadOnlyList<ArchiveChildIdentity> Recorded() => ArchiveChildren.Read(_sandbox.Paths, _sandbox.Files).Children;
+
+    private CommandOutcome Seen(Dictionary<string, IReadOnlyList<ArchiveChildIdentity>> seen, string verb, CommandOutcome outcome)
+    {
+        seen[verb] = Recorded();
+        return outcome;
+    }
 }

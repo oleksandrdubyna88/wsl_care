@@ -218,7 +218,7 @@ internal static class CommandLine
 {
     internal const string BinaryName = "wsl-care";
 
-    private const string JsonFlag = "--json";
+    internal const string JsonFlag = "--json";
     private const string AllFlag = "--all";
     private const string OnceFlag = "--once";
     private const string PreviewFlag = "--preview";
@@ -238,7 +238,7 @@ internal static class CommandLine
     private const string StopFlag = "--stop";
     private const string StdinMarker = "-";
     private const string MeasureFlag = "--measure";
-    private const string AgentFlag = "--agent";
+    internal const string AgentFlag = "--agent";
 
     /// <summary>The most names one <c>act</c> may carry through <c>--volume</c> and <c>--only</c> together (plan §15j B1) — the
     /// COMPILE-TIME ceiling: the parser runs before any configuration is read, so it holds the range maximum of
@@ -267,14 +267,14 @@ internal static class CommandLine
         new([["runs"]], "runs [--period <today, yesterday, yyyy-MM-dd or from..to> or --from <instant> --to <instant>] [--json]", "every run of a period: trigger, outcome, dry run, actions, freed (read-only; UTC days, or two RFC 3339 instants with their offsets)", ["runs", "--period", "yesterday", "--json"], ParseRuns),
         new([["agents", "list"]], "agents list [--measure] [--json]", "the AI agents found here (by binary, npm package or folder), their version read from disk, their folders' sizes and sessions from the newest full run — or measured now with --measure (read-only: nothing inside an agent's folder is opened, nothing is run)", ["agents", "list", "--json"], ParseAgentsList),
         new([["agents", "probe"]], "agents probe <path> [--json]", "what the CLI at <path> is, as this user and never as root: a file it may start (looked at, never run, never read), a name from its file name, and its conventional data folders with their sizes and whether they could be a manual agent's (read-only)", ["agents", "probe", "/home/me/.local/bin/mycli", "--json"], ParseAgentsProbe),
-        new([["archive", "check-base"]], "archive check-base <path> [--json]", "whether the AI-session archive may live at <path>, as this user (never as root): an existing folder (never created), no link on the way, no root, nothing it moves or a cleanup removes, a filesystem that survives a shutdown, writable — a Windows drive path answered with the folder it is mounted at; who else may read it (read-only)", ["archive", "check-base", "/mnt/v/ai-archive", "--json"], ParseArchiveCheckBase),
-        new([["archive", "preview"]], "archive preview [--agent <id>] [--json]", "what the AI-session archive would move on this side now, as this user (never as root): per agent the due sessions oldest first, their newest write and month, what is kept in place and why (open, an agent working there, a name NTFS refuses, what never moves), the age they are due at and the agent's own retention (read-only: no session file is opened, nothing is written)", ["archive", "preview", "--json"], ParseArchivePreview),
-        new([["archive", "run"]], "archive run [--agent <id>] [--budget-seconds <n>] [--run-id <runId>] [--json]", "one run of this side's AI-session archive, as this user (never as root): the reconcile of what an interrupted run left, the removal of sessions archived at least archive.removeAfterHours ago once their copies hash equal again, then the due sessions copied, verified and indexed, oldest first, within the budget; --json streams a progress line per file and a heartbeat, no line names a session", ["archive", "run", "--json"], ParseArchiveRun),
+        new([["archive", "check-base"]], "archive check-base <path> [--json]", "whether the AI-session archive may live at <path>, as this user (never as root): an existing folder (never created), no link on the way, no root, nothing it moves or a cleanup removes, a filesystem that survives a shutdown, writable — a Windows drive path answered with the folder it is mounted at; who else may read it (read-only)", ["archive", "check-base", "/mnt/v/ai-archive", "--json"], ArchiveArguments.ParseArchiveCheckBase),
+        new([["archive", "preview"]], "archive preview [--agent <id>] [--json]", "what the AI-session archive would move on this side now, as this user (never as root): per agent the due sessions oldest first, their newest write and month, what is kept in place and why (open, an agent working there, a name NTFS refuses, what never moves), the age they are due at and the agent's own retention (read-only: no session file is opened, nothing is written)", ["archive", "preview", "--json"], ArchiveArguments.ParseArchivePreview),
+        new([["archive", "run"]], "archive run [--agent <id>] [--budget-seconds <n>] [--run-id <runId>] [--json]", "one run of this side's AI-session archive, as this user (never as root): the reconcile of what an interrupted run left, the removal of sessions archived at least archive.removeAfterHours ago once their copies hash equal again, then the due sessions copied, verified and indexed, oldest first, within the budget; --json streams a progress line per file and a heartbeat, no line names a session", ["archive", "run", "--json"], ArchiveArguments.ParseArchiveRun),
         new([["archive", "reach"]], "archive reach [--json]", "as this user: take this side's archive lock and see whether the base answers within archive.reachabilitySeconds, nothing else — the short check root runs before the archive's long run, so a share that hangs holds a short child, never the run", ["archive", "reach", "--json"], rest => JsonOnly("archive reach", rest, json => new Request.ArchiveReach(json))),
         new([["archive", "status"]], "archive status [--json]", "the archive of this side now, as this user: whether a run holds its lock (and whether that run is stuck in the kernel on a share), the sessions on their way, the last run (local state only: the base is never read)", ["archive", "status", "--json"], rest => JsonOnly("archive status", rest, json => new Request.ArchiveStatus(json))),
-        new([["archive", "restore"]], "archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]", "as this user: archived sessions created back in their agent's folder under their original names - never replacing a file, never through a link, never what never moves - each copy hashed first and read back after, given the restore time as its last write; a session whose lines are not all this side's needs --accept-unverified; the archived copies stay", ["archive", "restore", "--agent", "claude-code", "--month", "2026-09", "--json"], ParseArchiveRestore),
-        new([["archive", "list"]], "archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable] [--json]", "as this user, read-only: this side's archived entries from its month indexes (only the months asked are read) - each with its status, whether every line of it is this side's, its files and bytes; a torn or hostile line is skipped and counted; --restorable: only the verified entries removed at their source, newest first, at most archive.maxRestoreEntries (what the restore button offers)", ["archive", "list", "--json"], ParseArchiveList),
-        new([["archive", "reconcile"]], "archive reconcile --scan [--json]", "as this user: walk this side's folders of the base and re-index, as recovered, every archived file no index line names (a copy an interrupted run left); nothing at the source is touched", ["archive", "reconcile", "--scan", "--json"], ParseArchiveReconcile),
+        new([["archive", "restore"]], "archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]", "as this user: archived sessions created back in their agent's folder under their original names - never replacing a file, never through a link, never what never moves - each copy hashed first and read back after, given the restore time as its last write; a session whose lines are not all this side's needs --accept-unverified; the archived copies stay", ["archive", "restore", "--agent", "claude-code", "--month", "2026-09", "--json"], ArchiveArguments.ParseArchiveRestore),
+        new([["archive", "list"]], "archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable] [--json]", "as this user, read-only: this side's archived entries from its month indexes (only the months asked are read) - each with its status, whether every line of it is this side's, its files and bytes; a torn or hostile line is skipped and counted; --restorable: only the verified entries removed at their source, newest first, at most archive.maxRestoreEntries (what the restore button offers)", ["archive", "list", "--json"], ArchiveArguments.ParseArchiveList),
+        new([["archive", "reconcile"]], "archive reconcile --scan [--json]", "as this user: walk this side's folders of the base and re-index, as recovered, every archived file no index line names (a copy an interrupted run left); nothing at the source is touched", ["archive", "reconcile", "--scan", "--json"], ArchiveArguments.ParseArchiveReconcile),
         new([["units", "dropin"]], "units dropin <unit>", "the systemd drop-in install.sh writes for one of wsl-care's units, from the machine configuration (the timer's period, the services' Nice, MemoryMax and TimeoutStopSec, the follower's RestartSec); doctor names an installed drop-in that no longer matches (read-only)", ["units", "dropin", "wsl-care.timer"], ParseUnitsDropIn),
         new([["runs", "show"]], "runs show <runId> [--json]", "one run: queued, running, done with every object it removed and did not remove and the commands it ran with their exits, refused, interrupted or unknown (read-only)", ["runs", "show", "20261002T120000Z-123", "--json"], ParseRunsShow),
     ];
@@ -475,7 +475,7 @@ internal static class CommandLine
     /// per-flag dispatch apart); how many arguments it used.</summary>
     private static int TakeOption(IReadOnlyList<string> rest, int i, ref ActSplit split)
     {
-        if (rest[i] is not (VolumeFlag or OnlyFlag or ProcessFlag or EntryFlag))
+        if (rest[i] is not (VolumeFlag or OnlyFlag or ProcessFlag or ArchiveArguments.EntryFlag))
         {
             split = split with { Flags = split.Flags.Add(rest[i]) };
             return 1;
@@ -489,7 +489,7 @@ internal static class CommandLine
     private static ActSplit WithValue(ActSplit split, string flag, string value) => flag switch
     {
         ProcessFlag => split with { Processes = split.Processes.Add(value) },
-        EntryFlag => split with { Entries = split.Entries.Add(value) },
+        ArchiveArguments.EntryFlag => split with { Entries = split.Entries.Add(value) },
         OnlyFlag => split with { Only = value },
         _ => split with { Volumes = split.Volumes.Add(value) },
     };
@@ -504,7 +504,7 @@ internal static class CommandLine
     {
         VolumeFlag => "a 64-hex anonymous volume name",
         ProcessFlag => "a process A18's or A19's preview showed, as <pid>:<start ticks>",
-        EntryFlag => "an archived entry A20's preview showed, as its 16-hex id",
+        ArchiveArguments.EntryFlag => "an archived entry A20's preview showed, as its 16-hex id",
         _ => "a file of 64-hex names, one per line",
     };
 
@@ -524,7 +524,7 @@ internal static class CommandLine
 
     private static Request.Failed? UnknownActFlag(IReadOnlyList<string> flags) =>
         flags.Any(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag or DetachFlag)) || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count
-            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name>, {OnlyFlag} <file or ->, {ProcessFlag} <pid:start> and {EntryFlag} <id>; got \"{Printable(string.Join(' ', flags))}\".")
+            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name>, {OnlyFlag} <file or ->, {ProcessFlag} <pid:start> and {ArchiveArguments.EntryFlag} <id>; got \"{Printable(string.Join(' ', flags))}\".")
             : null;
 
     private static Request.Failed? ActMode(IReadOnlyList<string> flags) =>
@@ -562,9 +562,9 @@ internal static class CommandLine
     private static Request.Failed? ShownEntriesFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> entries) => entries switch
     {
         { Count: 0 } => null,
-        _ when !ids.Any(id => id.Text == "A20") => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} names the archived entries A20's preview showed; it needs A20 among the actions."),
-        _ when entries.FirstOrDefault(e => !Core.Archive.ArchiveIndex.IsEntryId(e)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} \"{Printable(bad)}\" is not an archived entry's id (16 lowercase hex digits)."),
-        _ when entries.Distinct(StringComparer.Ordinal).Count() != entries.Count => new Request.Failed($"\"{BinaryName} act\": {EntryFlag} names an entry twice."),
+        _ when !ids.Any(id => id.Text == "A20") => new Request.Failed($"\"{BinaryName} act\": {ArchiveArguments.EntryFlag} names the archived entries A20's preview showed; it needs A20 among the actions."),
+        _ when entries.FirstOrDefault(e => !Core.Archive.ArchiveIndex.IsEntryId(e)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {ArchiveArguments.EntryFlag} \"{Printable(bad)}\" is not an archived entry's id (16 lowercase hex digits)."),
+        _ when entries.Distinct(StringComparer.Ordinal).Count() != entries.Count => new Request.Failed($"\"{BinaryName} act\": {ArchiveArguments.EntryFlag} names an entry twice."),
         _ when entries.Count > Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max => new Request.Failed($"\"{BinaryName} act\" takes at most {Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max} entries (the ceiling of {Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Name})."),
         _ => null,
     };
@@ -611,129 +611,6 @@ internal static class CommandLine
             (_, { } failure) => failure,
             var (options, _) => new Request.AgentsList(options.Flags.Contains(MeasureFlag), options.Flags.Contains(JsonFlag)),
         };
-
-    /// <summary>Optionally <c>--agent &lt;id&gt;</c> — one value <c>archive.agents</c> could hold: an archivable catalogue id or
-    /// <c>manual:&lt;name&gt;</c> — and <c>--json</c>.</summary>
-    private static Request ParseArchivePreview(IReadOnlyList<string> rest) =>
-        ReadOptions("archive preview", rest, [AgentFlag], [JsonFlag]) switch
-        {
-            (_, { } failure) => failure,
-            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && (agent.Contains(',', StringComparison.Ordinal) || Core.Config.ConfigValidation.Parse(Core.Config.ConfigKeys.Archive.Agents, agent) is not Core.Config.ValueCheck.Ok) =>
-                new Request.Failed($"\"{BinaryName} archive preview --agent\" takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)} or {Core.Agents.ExtraAgent.IdPrefix}<name>; got \"{Printable(agent)}\"."),
-            var (options, _) => new Request.ArchivePreview(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Flags.Contains(JsonFlag)),
-        };
-
-    private const string BudgetFlag = "--budget-seconds";
-    private const string RunIdFlag = "--run-id";
-    private const string RestorableFlag = "--restorable";
-    private const string ScanFlag = "--scan";
-
-    /// <summary>Optionally <c>--agent &lt;id&gt;</c> (as <c>archive preview</c>), <c>--budget-seconds &lt;n&gt;</c> (1 to the most
-    /// <c>archive.runBudgetMinutes</c> allows) and <c>--json</c>.</summary>
-    private static Request ParseArchiveRun(IReadOnlyList<string> rest) =>
-        ReadOptions("archive run", rest, [AgentFlag, BudgetFlag, RunIdFlag], [JsonFlag]) switch
-        {
-            (_, { } failure) => failure,
-            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive run\" {bad}."),
-            var (options, _) when options.Values.TryGetValue(BudgetFlag, out var budget) && !ValidBudget(budget) =>
-                new Request.Failed($"\"{BinaryName} archive run {BudgetFlag}\" takes a whole number of seconds from 1 to {Core.Config.ConfigKeys.Archive.RunBudgetMinutes.Max * 60}; got \"{Printable(options.Values[BudgetFlag])}\"."),
-            var (options, _) when options.Values.TryGetValue(RunIdFlag, out var runId) && Core.Records.RunId.TryParse(runId) is null =>
-                new Request.Failed($"\"{BinaryName} archive run {RunIdFlag}\" takes a run id as act names it (yyyyMMddTHHmmssZ-<pid>); got \"{Printable(runId)}\"."),
-            var (options, _) => new Request.ArchiveRun(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.TryGetValue(BudgetFlag, out var b) ? int.Parse(b, System.Globalization.CultureInfo.InvariantCulture) : 0, options.Flags.Contains(JsonFlag))
-            {
-                RunId = options.Values.GetValueOrDefault(RunIdFlag, string.Empty),
-            },
-        };
-
-    private static bool ValidBudget(string text) =>
-        int.TryParse(text, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var seconds) && seconds >= 1 && seconds <= Core.Config.ConfigKeys.Archive.RunBudgetMinutes.Max * 60;
-
-    private const string EntryFlag = "--entry";
-    private const string MonthFlag = "--month";
-    private const string SessionFlag = "--session";
-    private const string RunFlag = "--run";
-    private const string AcceptUnverifiedFlag = "--accept-unverified";
-
-    /// <summary>Exactly one of: <c>--entry</c> ids (16 hex each, comma-separated), <c>--agent</c> with <c>--month</c>, <c>--agent</c> with
-    /// <c>--session</c> (a plain relative path); then optionally <c>--accept-unverified</c> and <c>--json</c>.</summary>
-    private static Request ParseArchiveRestore(IReadOnlyList<string> rest) =>
-        ReadOptions("archive restore", rest, [EntryFlag, AgentFlag, MonthFlag, SessionFlag], [AcceptUnverifiedFlag, JsonFlag]) switch
-        {
-            (_, { } failure) => failure,
-            var (options, _) when RestoreShapeProblem(options) is { Length: > 0 } problem => new Request.Failed($"\"{BinaryName} archive restore\" {problem}."),
-            var (options, _) => new Request.ArchiveRestore(
-                options.Values.TryGetValue(EntryFlag, out var ids) ? ids.Split(',') : [],
-                options.Values.GetValueOrDefault(AgentFlag, string.Empty),
-                options.Values.GetValueOrDefault(MonthFlag, string.Empty),
-                options.Values.GetValueOrDefault(SessionFlag, string.Empty),
-                options.Flags.Contains(AcceptUnverifiedFlag),
-                options.Flags.Contains(JsonFlag)),
-        };
-
-    /// <summary>The restore's options, each rule its own check (complexity ≤ 4, the coai code round): one way to name what is restored,
-    /// --accept-unverified with --entry only, an agent always validated when given, then the named way's own value.</summary>
-    private static string RestoreShapeProblem(Options options) =>
-        ModeProblem(options) is { Length: > 0 } mode ? mode
-        : options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } badAgent ? badAgent
-        : NamedProblem(options.Values);
-
-    private static string ModeProblem(Options options)
-    {
-        var v = options.Values;
-        var modes = new[] { EntryFlag, MonthFlag, SessionFlag }.Count(v.ContainsKey);
-        return modes != 1 ? $"takes exactly one of {EntryFlag} <id>[,<id>...], {AgentFlag} <id> {MonthFlag} <yyyy-MM>, {AgentFlag} <id> {SessionFlag} <path>"
-            : options.Flags.Contains(AcceptUnverifiedFlag) && !v.ContainsKey(EntryFlag) ? $"takes {AcceptUnverifiedFlag} only with {EntryFlag} <id>[,<id>...]: name each unverified entry archive list showed — a month or a session could take an entry planted on the share"
-            : string.Empty;
-    }
-
-    private static string NamedProblem(IReadOnlyDictionary<string, string> v) =>
-        v.TryGetValue(EntryFlag, out var ids) ? EntryProblem(ids)
-        : !v.ContainsKey(AgentFlag) ? $"needs {AgentFlag} <id> with {(v.ContainsKey(MonthFlag) ? MonthFlag : SessionFlag)}"
-        : v.TryGetValue(MonthFlag, out var month) ? MonthProblem(month)
-        : SessionProblem(v[SessionFlag]);
-
-    private static string SessionProblem(string session) =>
-        Core.Archive.ArchiveIndex.IsPlainRelative(session) ? string.Empty : $"{SessionFlag} takes the session's path relative to the agent's folder (plain names joined by /); got \"{Printable(session)}\"";
-
-    private static string EntryProblem(string ids) =>
-        ids.Split(',').FirstOrDefault(id => !Core.Archive.ArchiveIndex.IsEntryId(id)) is { } bad ? $"{EntryFlag} takes entry ids of 16 hex, comma-separated; got \"{Printable(bad)}\"" : string.Empty;
-
-    private static string AgentValueProblem(string agent) =>
-        agent.Contains(',', StringComparison.Ordinal) || Core.Config.ConfigValidation.Parse(Core.Config.ConfigKeys.Archive.Agents, agent) is not Core.Config.ValueCheck.Ok
-            ? $"{AgentFlag} takes one of {string.Join(", ", Core.Agents.AgentCatalogue.ArchivableIds)} or {Core.Agents.ExtraAgent.IdPrefix}<name>; got \"{Printable(agent)}\""
-            : string.Empty;
-
-    private static string MonthProblem(string month) =>
-        DateTime.TryParseExact(month, "yyyy-MM", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _)
-            ? string.Empty
-            : $"{MonthFlag} takes a month as yyyy-MM; got \"{Printable(month)}\"";
-
-    /// <summary>Optionally <c>--agent &lt;id&gt;</c>, <c>--month &lt;yyyy-MM&gt;</c>, <c>--run &lt;runId&gt;</c>, <c>--json</c>.</summary>
-    private static Request ParseArchiveList(IReadOnlyList<string> rest) =>
-        ReadOptions("archive list", rest, [AgentFlag, MonthFlag, RunFlag], [JsonFlag, RestorableFlag]) switch
-        {
-            (_, { } failure) => failure,
-            var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
-            var (options, _) when options.Values.TryGetValue(MonthFlag, out var month) && MonthProblem(month) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
-            var (options, _) when options.Values.TryGetValue(RunFlag, out var run) && Core.Records.RunId.TryParse(run) is null => new Request.Failed($"\"{BinaryName} archive list\" {RunFlag} takes a run id; got \"{Printable(run)}\"."),
-            var (options, _) => new Request.ArchiveList(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.GetValueOrDefault(MonthFlag, string.Empty), options.Values.GetValueOrDefault(RunFlag, string.Empty), options.Flags.Contains(JsonFlag)) { Restorable = options.Flags.Contains(RestorableFlag) },
-        };
-
-    private static Request ParseArchiveReconcile(IReadOnlyList<string> rest) => rest switch
-    {
-        [ScanFlag] => new Request.ArchiveReconcileScan(false),
-        [ScanFlag, JsonFlag] or [JsonFlag, ScanFlag] => new Request.ArchiveReconcileScan(true),
-        _ => new Request.Failed($"\"{BinaryName} archive reconcile\" needs {ScanFlag} (the reconcile itself runs at the start of every archive run) and optionally {JsonFlag}."),
-    };
-
-    private static Request ParseArchiveCheckBase(IReadOnlyList<string> rest) => rest switch
-    {
-        [var path] when IsPathArgument(path) => new Request.ArchiveCheckBase(path, false),
-        [var path, JsonFlag] when IsPathArgument(path) => new Request.ArchiveCheckBase(path, true),
-        _ => new Request.Failed($"\"{BinaryName} archive check-base\" needs exactly one <path> (not starting with -, no control character) and optionally {JsonFlag}: {BinaryName} archive check-base <path> [{JsonFlag}]."),
-    };
-
-    private static bool IsPathArgument(string path) => path.Length > 0 && !path.StartsWith('-') && !path.Any(char.IsControl);
 
     private static Request ParseAgentsProbe(IReadOnlyList<string> rest) => rest switch
     {
@@ -785,11 +662,11 @@ internal static class CommandLine
         RunIdVerb("runs show", rest, takesJson: true, (runId, json) => new Request.RunsShow(runId, json));
 
     /// <summary>The options a verb was given: each valued one with its value, each switch present.</summary>
-    private sealed record Options(IReadOnlyDictionary<string, string> Values, IReadOnlySet<string> Flags);
+    internal sealed record Options(IReadOnlyDictionary<string, string> Values, IReadOnlySet<string> Flags);
 
     /// <summary>Each of <paramref name="valued"/> with its value and each of <paramref name="switches"/>, each at most once;
     /// nothing else.</summary>
-    private static (Options Options, Request.Failed? Failure) ReadOptions(string verb, IReadOnlyList<string> rest, IReadOnlyList<string> valued, IReadOnlyList<string> switches)
+    internal static (Options Options, Request.Failed? Failure) ReadOptions(string verb, IReadOnlyList<string> rest, IReadOnlyList<string> valued, IReadOnlyList<string> switches)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var flags = new HashSet<string>(StringComparer.Ordinal);

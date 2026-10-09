@@ -89,6 +89,8 @@ public sealed class CommandPolicyPropertyTests
 
         sandbox.Sized("/home/me/.local/share/NuGet/http-cache/x/y.nupkg", 10, FixedTimeProvider.DefaultNow);
         sandbox.Write("/proc/mounts", "/dev/sdc / ext4 rw,relatime 0 0\n");
+        // The S4 own review round S-M2: the runuser gate fails closed — a world whose archive children may start holds a stack.
+        sandbox.Write("/etc/pam.d/runuser", Archive.ArchiveActionTests.SafeRunuserStack);
         var violations = new List<string>();
         var covered = new HashSet<string>(StringComparer.Ordinal);
         var commands = 0;

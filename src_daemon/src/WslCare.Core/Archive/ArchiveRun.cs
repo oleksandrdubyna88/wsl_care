@@ -103,6 +103,10 @@ public sealed record ArchiveRunInput(
     /// the side's lock, never the run.</summary>
     public bool ReachOnly { get; init; }
 
+    /// <summary>How <see cref="JudgedBase"/> is judged (the S4 own review round S-M1): already, or late — inside the bounded window, after
+    /// the side's lock for a reach. The command line judges late; a test hands its judged base.</summary>
+    public BaseJudging Judging { get; init; } = BaseJudging.Already;
+
     /// <summary>The fault seam (<see cref="MoveSteps"/>); does nothing in a real run.</summary>
     public Action<string> Step { get; init; } = static _ => { };
 
@@ -131,9 +135,16 @@ public static class ArchiveRun
     {
         var started = input.Clock.GetUtcNow();
         var state = new ArchiveState(input.Paths, input.Files);
-        var early = Early(input, state);
-        return early.Stopped ? Answer(input, started, early.Outcome, early.Why, ArchiveReconcileReport.Empty, NotChecked, []) : Locked(input, state, started);
+        return NoBase(input) is { Stopped: true } none ? Stopped(new BaseWithin(input, none), started) : Locked(input, state, started);
     }
+
+    private static ArchiveRunReport Stopped(BaseWithin within, DateTimeOffset started) =>
+        Answer(within.Input, started, within.Stop.Outcome, within.Stop.Why, ArchiveReconcileReport.Empty, NotChecked, []);
+
+    private const string BusyWhy = "another archive run of this side holds its lock";
+
+    private static void Holding(ArchiveRunInput input, ArchiveState state, DateTimeOffset started) =>
+        _ = state.WriteHolder(new LockHolderRecord(ArchiveState.Version, input.Me.Pid, input.Me.StartTicks, input.Me.BootId, started, input.RunId));
 
     private static readonly InUseReport NotChecked = new("not-checked", 0, 0, string.Empty);
 
@@ -143,9 +154,13 @@ public static class ArchiveRun
 
     /// <summary>No base, or a base its rules refuse — what stops a run, a restore and a list alike.</summary>
     internal static EarlyStop BaseProblem(ArchiveRunInput input) =>
-        input.Config.Text(ConfigKeys.Archive.BaseFolder).Length == 0 ? new EarlyStop(RunOutcomes.NoBase, $"no {ConfigKeys.Archive.BaseFolder.Name} is set; the archive is not configured")
+        NoBase(input) is { Stopped: true } none ? none
         : !input.JudgedBase.Accepted ? new EarlyStop(RunOutcomes.Refused, $"the base is refused by its rules ({input.JudgedBase.Rule}: {input.JudgedBase.Refusal})")
         : EarlyStop.None;
+
+    /// <summary>No base configured: nothing to judge, nothing to reach.</summary>
+    private static EarlyStop NoBase(ArchiveRunInput input) =>
+        input.Config.Text(ConfigKeys.Archive.BaseFolder).Length == 0 ? new EarlyStop(RunOutcomes.NoBase, $"no {ConfigKeys.Archive.BaseFolder.Name} is set; the archive is not configured") : EarlyStop.None;
 
     /// <summary>D7: the base's mount recorded at its first run and compared at every later one — an unmounted share leaves a plain folder
     /// on the distribution's own disk, which must never be written.</summary>
@@ -172,33 +187,63 @@ public static class ArchiveRun
     private static EarlyStop Recorded(ArchiveState state, BaseRecord now) =>
         state.WriteBase(now) is { Length: > 0 } unwritten ? new EarlyStop(RunOutcomes.Refused, $"the base's mount could not be recorded ({unwritten})") : EarlyStop.None;
 
+    /// <summary>The side's LOCK first — for every verb (the S4 own review round S-M1 for the reach, its gate round's finding 4 for the
+    /// rest): a side another run holds answers <c>busy</c> before any base I/O. Then the base — judged, its mount compared, reached —
+    /// inside the bounded window. A base check that timed out is left behind, blocked in the kernel; the lock is then KEPT for as long
+    /// as this process lives (finding 2), so the next verb answers busy and stuck checks never pile up on one side.</summary>
     private static ArchiveRunReport Locked(ArchiveRunInput input, ArchiveState state, DateTimeOffset started)
     {
         if (input.Files.TryLockExclusive(state.LockFile) is not ExclusiveLock.Held held)
         {
-            return Answer(input, started, RunOutcomes.Busy, "another archive run of this side holds its lock", ArchiveReconcileReport.Empty, NotChecked, []);
+            return Answer(input, started, RunOutcomes.Busy, BusyWhy, ArchiveReconcileReport.Empty, NotChecked, []);
         }
 
-        using (held.Handle)
+        var abandoned = false;
+        try
         {
-            _ = state.WriteHolder(new LockHolderRecord(ArchiveState.Version, input.Me.Pid, input.Me.StartTicks, input.Me.BootId, started, input.RunId));
-            return Reached(input, state, started);
+            Holding(input, state, started);
+            var report = Judged(input, state, started);
+            abandoned = report.Outcome == RunOutcomes.Unreachable;
+            return report;
+        }
+        finally
+        {
+            Released(held.Handle, abandoned);
         }
     }
 
-    private static ArchiveRunReport Reached(ArchiveRunInput input, ArchiveState state, DateTimeOffset started)
+    /// <summary>Under the lock: the base judged and reached in the window, then — for a reach — done; for every other verb its work.</summary>
+    private static ArchiveRunReport Judged(ArchiveRunInput input, ArchiveState state, DateTimeOffset started)
     {
-        var baseFolder = input.JudgedBase.Folder;
-        if (!input.Reachable(baseFolder, TimeSpan.FromSeconds(input.Config.Int(ConfigKeys.Archive.ReachabilitySeconds))))
+        var within = BaseWindow.Judged(input, judged => Early(judged, state) is { Stopped: true } early ? early : BaseWindow.Reachability(judged));
+        return within.Stop.Stopped ? Stopped(within, started)
+            : input.ReachOnly ? Answer(within.Input, started, RunOutcomes.Done, string.Empty, ArchiveReconcileReport.Empty, NotChecked, [])
+            : Keyed(within.Input, state, started);
+    }
+
+    /// <summary>The locks whose base check was left behind (finding 2): held for the life of the process, never collected.</summary>
+    private static readonly List<IDisposable> KeptLocks = [];
+
+    private static readonly Lock KeptGate = new();
+
+    /// <summary>The side's lock released — unless a base check was left behind, blocked in the kernel: then it is kept, so the side
+    /// stays held while the check does, and the operating system releases it only when this process is gone.</summary>
+    private static void Released(IDisposable handle, bool abandoned)
+    {
+        if (!abandoned)
         {
-            return Answer(input, started, RunOutcomes.Unreachable, $"the base did not answer within {ConfigKeys.Archive.ReachabilitySeconds.Name}; nothing was touched (the reconcile waits too)", ArchiveReconcileReport.Empty, NotChecked, []);
+            handle.Dispose();
+            return;
         }
 
-        if (input.ReachOnly)
+        lock (KeptGate)
         {
-            return Answer(input, started, RunOutcomes.Done, string.Empty, ArchiveReconcileReport.Empty, NotChecked, []);
+            KeptLocks.Add(handle);
         }
+    }
 
+    private static ArchiveRunReport Keyed(ArchiveRunInput input, ArchiveState state, DateTimeOffset started)
+    {
         var key = state.IndexKey();
         return key.Length == 0
             ? Answer(input, started, RunOutcomes.Refused, "the side's index key could not be read or made; nothing is written without it", ArchiveReconcileReport.Empty, NotChecked, [])
@@ -433,8 +478,8 @@ internal sealed class RunTally(IEnumerable<string> agents)
             RemoveOutcome.Removed removed => a with { Removed = a.Removed + 1, RemovedBytes = a.RemovedBytes + removed.Bytes },
             RemoveOutcome.Superseded => a with { Superseded = a.Superseded + 1 },
             RemoveOutcome.Damaged => a with { Damaged = a.Damaged + 1 },
-            RemoveOutcome.Kept kept => a with { Skipped = Added(a.Skipped, "removal-waits", kept.Why) },
-            RemoveOutcome.Dropped dropped => a with { Skipped = Added(a.Skipped, "dropped", dropped.Why) },
+            RemoveOutcome.Kept kept => a with { Skipped = Added(a.Skipped, SkipRule.RemovalWaits, kept.Why) },
+            RemoveOutcome.Dropped dropped => a with { Skipped = Added(a.Skipped, SkipRule.Dropped, dropped.Why) },
             _ => a,
         };
     }

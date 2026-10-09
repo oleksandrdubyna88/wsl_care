@@ -5,7 +5,9 @@ namespace WslCare.Cli;
 /// </summary>
 /// <remarks>
 /// The extension and the systemd unit read these, so a number never appears at a call site: a
-/// caller that compares against a literal is the one still wrong after the code changes here.
+/// caller that compares against a literal is the one still wrong after the code changes here. The three an archive child answers with — Ok,
+/// RunFailed, Busy — are also <see cref="Core.Archive.ArchiveExits"/>, the names root reads them by (plan §15r E9.S4 own review round
+/// C-1); they stay literals here because the extension reads this file, and a test pins the two equal.
 /// </remarks>
 internal enum ExitCode
 {

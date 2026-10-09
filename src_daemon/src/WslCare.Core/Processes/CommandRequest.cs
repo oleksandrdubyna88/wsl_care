@@ -62,6 +62,12 @@ public sealed record CommandRequest
     /// nothing by default. Never told for a command that did not start.</summary>
     public Action<int> OnStarted { get; init; } = static _ => { };
 
+    /// <summary>Told the started process's id right BEFORE the runner kills its tree (a ceiling, a cancellation, a callback that
+    /// threw), while the tree is still whole: the archive records the worker under its launcher then, since a worker stuck in the
+    /// kernel outlives the kill (plan §15r E9.S4 own review round S-M1). Nothing by default; never told for a child that ended on
+    /// its own.</summary>
+    public Action<int> OnKilling { get; init; } = static _ => { };
+
     /// <summary>The command as a person would read it in a log — for messages only, never executed.</summary>
     public string Display => string.Join(' ', Argv);
 }

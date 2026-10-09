@@ -97,4 +97,15 @@ public sealed partial class ArchiveRunTests
         report.StopKind.Should().Be(StopKinds.IndexWrite);
         StopKinds.IsFault(report.StopKind).Should().BeTrue();
     }
+
+    /// <summary>The S4 gate round, findings 1 and 3: an input whose base is judged late reads, before its bounded window, as NOT JUDGED —
+    /// refused under its own rule — never as "no base" nor as a base to use.</summary>
+    [Fact]
+    public void A_base_read_before_its_window_is_not_judged_never_no_base()
+    {
+        var early = ArchiveRun.BaseProblem(Input(Config()) with { JudgedBase = BaseFolderRules.NotYetJudged });
+
+        early.Outcome.Should().Be(RunOutcomes.Refused);
+        early.Why.Should().Contain(BaseFolderRule.NotJudged).And.NotContain("no archive.baseFolder");
+    }
 }

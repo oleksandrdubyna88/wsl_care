@@ -48,9 +48,9 @@ public sealed class RestoreAction : ICleanupAction, IBoundToShownList
             return gated;
         }
 
-        var list = await ArchiveGates.ChildTextAsync(commands, ArchiveChildren.List, [0], cancellationToken).ConfigureAwait(false);
+        var list = await ArchiveGates.ChildTextAsync(context, commands, ArchiveChildren.List, [0], cancellationToken).ConfigureAwait(false);
         var preview = list.Failure.Length > 0 ? ActionPreview.Unavailable("restore", list.Failure) : Listed(context, ArchiveChildAnswers.List(list.Text, context.Config));
-        return Bound(preview, context);
+        return Bound(ArchiveGates.Contained(preview, list), context);
     }
 
     /// <summary>A button only: the timer never gets here (its auto gate refuses a button-only id first).</summary>
@@ -70,7 +70,7 @@ public sealed class RestoreAction : ICleanupAction, IBoundToShownList
         }
 
         var answer = await ArchiveGates.StreamedAsync(context, commands, ArchiveChildren.Restore, [string.Join(',', ids)], ArchiveChildren.Restore.Ceiling, cancellationToken).ConfigureAwait(false);
-        return answer.Failure.Length > 0 ? ArchiveGates.Failed(commands, answer.Failure) : Restored(commands, ArchiveChildAnswers.Run(answer.Text, context.Config));
+        return ArchiveGates.Contained(answer.Failure.Length > 0 ? ArchiveGates.Failed(commands, answer.Failure) : Restored(commands, ArchiveChildAnswers.Run(answer.Text, context.Config, string.Empty)), answer);
     }
 
     /// <summary>Why this run restores nothing at all: no shown list, or more entries than one restore takes (the S4 plan round's
@@ -118,13 +118,18 @@ public sealed class RestoreAction : ICleanupAction, IBoundToShownList
     private static bool Settled(ActionPreview preview) => !preview.Available || preview.Skip.Length > 0 || preview.Refusal.Length > 0;
 
     /// <summary>The restore's judged answer: each session by entry id and agent — never its key — and a refusal fails the run.</summary>
-    private static ActionRun Restored(ActionCommands commands, ChildAnswer<ArchiveRunReport> answer)
+    private static ActionRun Restored(ActionCommands commands, ChildAnswer<ArchiveRunReport> answer) => answer switch
     {
-        if (answer is not ChildAnswer<ArchiveRunReport>.Valid { Value.Restore: var restore })
-        {
-            return ArchiveGates.Failed(commands, $"the archive child's answer could not be believed: {((ChildAnswer<ArchiveRunReport>.Invalid)answer).Why}");
-        }
+        ChildAnswer<ArchiveRunReport>.Invalid bad => ArchiveGates.Failed(commands, $"the archive child's answer could not be believed: {bad.Why}"),
+        ChildAnswer<ArchiveRunReport>.Valid { Value.Outcome: RunOutcomes.Done } valid => Counted(commands, valid.Value.Restore),
 
+        // The S4 own review round C-2: a restore that stopped before it restored — busy, unreachable, refused — never reads as a success.
+        ChildAnswer<ArchiveRunReport>.Valid valid => ArchiveGates.Failed(commands, $"nothing was restored: {ArchiveGates.OutcomeWords(valid.Value)}"),
+        _ => throw new System.Diagnostics.UnreachableException("ChildAnswer is a closed set"),
+    };
+
+    private static ActionRun Counted(ActionCommands commands, RestoreReport restore)
+    {
         IReadOnlyList<ActionItem> sessions = [.. restore.Sessions.Where(s => s.Outcome is RestoreOutcomes.Restored or RestoreOutcomes.Partial).Select(s => new ActionItem("archived session", s.EntryId, s.Bytes, $"{s.Agent} {s.Month}: {s.Outcome}, {s.Files} file(s)"))];
         var refused = restore.Refused > 0
             ? string.Create(CultureInfo.InvariantCulture, $"{restore.Refused} session(s) were refused ({string.Join(", ", restore.Sessions.Where(s => s.Outcome is not (RestoreOutcomes.Restored or RestoreOutcomes.Partial or RestoreOutcomes.AlreadyThere)).Select(s => $"{s.EntryId}: {s.Outcome}"))}); \"wsl-care archive restore --entry <id>\", run as the user, says why")

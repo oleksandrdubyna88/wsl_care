@@ -25,6 +25,15 @@ public static class SkipRule
     public const string GitTree = "git-tree";
 
     public static IReadOnlyList<string> All { get; } = [InUse, AgentWorkingHere, MayBeOpen, Name, NeverMoved, NotWhole, GitTree];
+
+    /// <summary>A removal of phase 2 that waits (its source changed, an agent works there) — counted by a run, never by a preview.</summary>
+    public const string RemovalWaits = "removal-waits";
+
+    /// <summary>An in-flight entry phase 2 let go (its agent is no longer archived) — counted by a run.</summary>
+    public const string Dropped = "dropped";
+
+    /// <summary>Every rule a RUN's answer counts by (the S4 own review round S-m3: root believes no other).</summary>
+    public static IReadOnlySet<string> InRuns { get; } = new HashSet<string>([.. All, RemovalWaits, Dropped], StringComparer.Ordinal);
 }
 
 /// <summary>One unit the archive would move as a whole (plan §15r D2.1): a session with its companions, or a file of its own.</summary>

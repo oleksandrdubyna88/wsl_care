@@ -51,8 +51,8 @@ public sealed class ArchiveAction : ICleanupAction
             return gated;
         }
 
-        var preview = await ArchiveGates.ChildTextAsync(commands, ArchiveChildren.Preview, [0], cancellationToken).ConfigureAwait(false);
-        return preview.Failure.Length > 0 ? ActionPreview.Unavailable("archive", preview.Failure) : Judged(context, ArchiveChildAnswers.Preview(preview.Text, context.Config));
+        var preview = await ArchiveGates.ChildTextAsync(context, commands, ArchiveChildren.Preview, [0], cancellationToken).ConfigureAwait(false);
+        return ArchiveGates.Contained(preview.Failure.Length > 0 ? ActionPreview.Unavailable("archive", preview.Failure) : Judged(context, ArchiveChildAnswers.Preview(preview.Text, context.Config)), preview);
     }
 
     /// <summary>D8: a timer run with less slack than <c>archive.minRunMinutes</c> skips; <c>null</c> otherwise.</summary>
@@ -70,9 +70,10 @@ public sealed class ArchiveAction : ICleanupAction
 
     public async Task<ActionRun> RunAsync(ActionContext context, ActionPreview preview, ActionCommands commands, CancellationToken cancellationToken)
     {
-        if (await BlockedAsync(context, commands, cancellationToken).ConfigureAwait(false) is { Length: > 0 } blocked)
+        var reach = await ReachAsync(context, commands, cancellationToken).ConfigureAwait(false);
+        if (!reach.Go)
         {
-            return ArchiveGates.Failed(commands, blocked);
+            return reach.Instead;
         }
 
         var budget = Budget(context);
@@ -81,25 +82,39 @@ public sealed class ArchiveAction : ICleanupAction
             return ActionRun.Nothing(commands.Ran, $"no time left in this run ({Minutes(budget)} min)");
         }
 
-        var ceiling = budget + TimeSpan.FromMinutes(context.Config.Int(ConfigKeys.Archive.FinishGraceMinutes));
+        var ceiling = budget + Grace(context.Config);
         var answer = await ArchiveGates.StreamedAsync(context, commands, ArchiveChildren.Run, [Seconds(budget), context.RunId], ceiling, cancellationToken).ConfigureAwait(false);
-        return answer.Failure.Length > 0 ? ArchiveGates.Failed(commands, answer.Failure) : Measured(commands, ArchiveChildAnswers.Run(answer.Text, context.Config));
+        return ArchiveGates.Contained(answer.Failure.Length > 0 ? ArchiveGates.Failed(commands, answer.Failure) : Measured(context, commands, ArchiveChildAnswers.Run(answer.Text, context.Config, context.RunId)), answer);
     }
 
-    /// <summary>Why the long child may not start: a recorded child still alive (9/9.4 #1), or a base the short child could not reach (D1).</summary>
-    private static async Task<string> BlockedAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken) =>
-        ArchiveChildren.Survivor(context, cancellationToken) is { Length: > 0 } survivor ? survivor
-        : await UnreachedAsync(context, commands, cancellationToken).ConfigureAwait(false) is { Length: > 0 } unreached ? $"{unreached}; the long run was not started"
-        : string.Empty;
+    /// <summary>What the short child decided (D1): go on to the long one, or the run that ends A13 here instead — a failure, or nothing
+    /// done when the side is busy (the S4 own review round C-1).</summary>
+    private sealed record ReachVerdict(bool Go, ActionRun Instead);
 
-    /// <summary>The short child (D1): empty when the base answered; otherwise why it did not.</summary>
-    private static async Task<string> UnreachedAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
+    /// <summary>The long child may start only when no recorded child is alive (9/9.4 #1) and the short child reached the base.</summary>
+    private static async Task<ReachVerdict> ReachAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
-        var text = await ArchiveGates.ChildTextAsync(commands, ArchiveChildren.Reach, [0, 1], cancellationToken).ConfigureAwait(false);
-        return text.Failure.Length > 0 ? $"the base could not be checked: {text.Failure}"
-            : ArchiveChildAnswers.Run(text.Text, context.Config) is ChildAnswer<ArchiveRunReport>.Valid { Value.Outcome: RunOutcomes.Done } ? string.Empty
-            : $"the base did not answer within {ConfigKeys.Archive.ReachabilitySeconds.Name}, or the side's archive lock is held";
+        if (ArchiveChildren.Survivor(context, cancellationToken) is { Blocks: true } survivor)
+        {
+            return Halt(ArchiveGates.Failed(commands, survivor.Why));
+        }
+
+        var text = await ArchiveGates.ChildTextAsync(context, commands, ArchiveChildren.Reach, ArchiveExits.Answering, cancellationToken).ConfigureAwait(false);
+        var verdict = text.Failure.Length > 0 ? Halt(ArchiveGates.Failed(commands, $"the base could not be checked: {text.Failure}; the long run was not started")) : Reached(context, commands, text.Text);
+        return text.Unrecorded.Length > 0 ? Halt(ArchiveGates.Contained(ArchiveGates.Failed(commands, ArchiveGates.Uncontained(text.Unrecorded)), text)) : verdict;
     }
+
+    /// <summary>The reach child's answer, judged: done goes on; busy is nothing done; any other outcome fails in root's words (C-3).</summary>
+    private static ReachVerdict Reached(ActionContext context, ActionCommands commands, string answer) => ArchiveChildAnswers.Run(answer, context.Config, string.Empty) switch
+    {
+        ChildAnswer<ArchiveRunReport>.Valid { Value.Outcome: RunOutcomes.Done } => new ReachVerdict(true, ActionRun.Nothing(commands.Ran)),
+        ChildAnswer<ArchiveRunReport>.Valid { Value.Outcome: RunOutcomes.Busy } => Halt(ActionRun.Nothing(commands.Ran, ArchiveGates.BusyWords)),
+        ChildAnswer<ArchiveRunReport>.Valid { Value: var report } => Halt(ArchiveGates.Failed(commands, $"{ArchiveGates.OutcomeWords(report)}; the long run was not started")),
+        ChildAnswer<ArchiveRunReport>.Invalid bad => Halt(ArchiveGates.Failed(commands, $"the reach child's answer could not be believed: {bad.Why}; the long run was not started")),
+        _ => throw new System.Diagnostics.UnreachableException("ChildAnswer is a closed set"),
+    };
+
+    private static ReachVerdict Halt(ActionRun instead) => new(false, instead);
 
     private static ActionPreview Judged(ActionContext context, ChildAnswer<ArchivePreviewReport> preview) => preview switch
     {
@@ -134,15 +149,18 @@ public sealed class ArchiveAction : ICleanupAction
 
     /// <summary>The run child's judged answer as A13's measured result: counts per agent, the bytes the removals took — no key, no
     /// note, no first-skipped name of the child's.</summary>
-    private static ActionRun Measured(ActionCommands commands, ChildAnswer<ArchiveRunReport> answer)
+    private static ActionRun Measured(ActionContext context, ActionCommands commands, ChildAnswer<ArchiveRunReport> answer) => answer switch
     {
-        if (answer is not ChildAnswer<ArchiveRunReport>.Valid { Value: var report })
-        {
-            return ArchiveGates.Failed(commands, $"the archive child's answer could not be believed: {((ChildAnswer<ArchiveRunReport>.Invalid)answer).Why}");
-        }
+        ChildAnswer<ArchiveRunReport>.Invalid bad => ArchiveGates.Failed(commands, $"the archive child's answer could not be believed: {bad.Why}"),
+        ChildAnswer<ArchiveRunReport>.Valid { Value.Outcome: RunOutcomes.Busy } => ActionRun.Nothing(commands.Ran, ArchiveGates.BusyWords),
+        ChildAnswer<ArchiveRunReport>.Valid valid => Counted(context, commands, valid.Value),
+        _ => throw new System.Diagnostics.UnreachableException("ChildAnswer is a closed set"),
+    };
 
+    private static ActionRun Counted(ActionContext context, ActionCommands commands, ArchiveRunReport report)
+    {
         IReadOnlyList<ActionItem> agents = [.. report.Agents.Select(a => new ActionItem("agent", a.Id, a.RemovedBytes, AgentLine(a)))];
-        return new ActionRun(report.Agents.Sum(a => a.Copied + a.Removed), report.Agents.Sum(a => a.RemovedBytes), "the bytes the archive removed from the agents' folders once their copies were verified again — moved to the archive, not deleted", null, null, agents, commands.Ran, Fault(report))
+        return new ActionRun(report.Agents.Sum(a => a.Copied + a.Removed), report.Agents.Sum(a => a.RemovedBytes), "the bytes the archive removed from the agents' folders once their copies were verified again — moved to the archive, not deleted", null, null, agents, commands.Ran, Fault(context, report))
         {
             Notes = [string.Create(CultureInfo.InvariantCulture, $"the archive child answered {report.Outcome}{Kind(report)} at {report.FilesPerSecond:0.0} files/s, {report.MegabytesPerSecond:0.00} MB/s")],
         };
@@ -151,13 +169,13 @@ public sealed class ArchiveAction : ICleanupAction
     private static string AgentLine(AgentRunReport a) =>
         string.Create(CultureInfo.InvariantCulture, $"copied {a.Copied} session(s) ({a.CopiedFiles} files, {a.CopiedBytes} bytes), removed {a.Removed}, gone at source {a.GoneAtSource}, superseded {a.Superseded}, damaged {a.Damaged}, waiting {a.Waiting}{string.Concat(a.Skipped.Select(s => $", skipped {s.Count} ({s.Rule})"))}");
 
-    /// <summary>Empty for a run that did its work, stopped at a limit or found the side busy; the reason for a refusal, an
-    /// unreachable base, no base or a fault stop.</summary>
-    private static string Fault(ArchiveRunReport report) => report.Outcome switch
+    /// <summary>Empty for a run that did its work or stopped at a limit; for a refusal, an unreachable base, no base or a fault stop the
+    /// reason in root's words (C-3) — the run named by ROOT's own run id, never one the child printed (S-m3).</summary>
+    private static string Fault(ActionContext context, ArchiveRunReport report) => report.Outcome switch
     {
-        RunOutcomes.Done or RunOutcomes.Busy => string.Empty,
+        RunOutcomes.Done => string.Empty,
         RunOutcomes.Stopped when !StopKinds.IsFault(report.StopKind) => string.Empty,
-        _ => $"the archive child answered {report.Outcome}{Kind(report)}; \"wsl-care archive status\" and \"wsl-care archive list --run {report.RunId}\", run as the user, say more",
+        _ => $"{ArchiveGates.OutcomeWords(report)}; \"wsl-care archive status\" and \"wsl-care archive list --run {context.RunId}\", run as the user, say more",
     };
 
     private static string Kind(ArchiveRunReport report) => report.StopKind.Length > 0 ? $" ({report.StopKind})" : string.Empty;
@@ -170,14 +188,17 @@ public sealed class ArchiveAction : ICleanupAction
         return context.Trigger == RunTrigger.Timer && Slack(context) < budget ? Slack(context) : budget;
     }
 
-    /// <summary>What a timer run has left after the actions behind A13 (A20, A1, A2) at their worst and the run margin; a context
-    /// without its run's start has none.</summary>
+    /// <summary>What a timer run has left for the run child's BUDGET: the run limit's end, less the actions behind A13 (A20, A1, A2) at
+    /// their worst, the run margin — and <c>archive.finishGraceMinutes</c>, since the child's ceiling is its budget plus that grace (the
+    /// S4 own review round C-5: it is the ceiling that must fit). A context without its run's start has none.</summary>
     private static TimeSpan Slack(ActionContext context)
     {
         var behind = ActionRegistry.Product.InExecutionOrder([.. ActionId.ExecutionOrder.SkipWhile(id => id.Text != "A13").Skip(1)]);
         var end = context.RunStarted == DateTimeOffset.MinValue ? context.Clock.GetUtcNow() : context.RunStarted + TimeSpan.FromMinutes(context.Config.Int(ConfigKeys.Timer.RunLimitMinutes));
-        return end - context.Clock.GetUtcNow() - RunBudget.WorstCaseOf(behind, context.Config) - RunBudget.Margin;
+        return end - context.Clock.GetUtcNow() - RunBudget.WorstCaseOf(behind, context.Config) - RunBudget.Margin - Grace(context.Config);
     }
+
+    private static TimeSpan Grace(EffectiveConfig config) => TimeSpan.FromMinutes(config.Int(ConfigKeys.Archive.FinishGraceMinutes));
 
     private static TimeSpan MinRun(EffectiveConfig config) => TimeSpan.FromMinutes(config.Int(ConfigKeys.Archive.MinRunMinutes));
 

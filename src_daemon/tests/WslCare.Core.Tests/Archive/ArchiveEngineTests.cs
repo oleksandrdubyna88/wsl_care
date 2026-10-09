@@ -30,6 +30,7 @@ public sealed class ArchiveEngineTests : IDisposable
     {
         _sandbox.Write("/etc/passwd", "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\n");
         _sandbox.Write("/proc/sys/kernel/random/boot_id", "6d1c1c5e-0000-4000-8000-0000000000a3\n");
+        _sandbox.Write("/etc/pam.d/runuser", ArchiveActionTests.SafeRunuserStack);
         _sandbox.Load(0.1, 0.1, 0.1, cpus: 4);
     }
 

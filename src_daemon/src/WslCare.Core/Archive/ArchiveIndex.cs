@@ -145,6 +145,9 @@ public static partial class ArchiveIndex
     /// <summary>Whether <paramref name="id"/> has an entry id's shape: 16 lower-case hex.</summary>
     public static bool IsEntryId(string id) => EntryIdShape().IsMatch(id);
 
+    /// <summary>Whether <paramref name="month"/> is a month as the base's folders spell it: <c>yyyy/MM</c> (the S4 own review round S-m3).</summary>
+    public static bool IsMonth(string month) => MonthShape().IsMatch(month);
+
     /// <summary>A path of one or more plain names joined by <c>/</c>: not rooted, no empty, <c>.</c> or <c>..</c> segment, no <c>\</c>.</summary>
     public static bool IsPlainRelative(string path) =>
         !string.IsNullOrEmpty(path) && !path.Contains('\\', StringComparison.Ordinal) && !path.StartsWith('/') && !path.Contains(':', StringComparison.Ordinal)
@@ -180,6 +183,9 @@ public static partial class ArchiveIndex
 
     [GeneratedRegex("^[0-9a-f]{16}$")]
     private static partial Regex EntryIdShape();
+
+    [GeneratedRegex("^[0-9]{4}/(0[1-9]|1[0-2])$")]
+    private static partial Regex MonthShape();
 
     [GeneratedRegex("^[0-9a-f]{64}$")]
     private static partial Regex Sha256Shape();
