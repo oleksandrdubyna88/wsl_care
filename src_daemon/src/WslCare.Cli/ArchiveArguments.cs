@@ -146,17 +146,25 @@ internal static class ArchiveArguments
     /// most <c>archive.maxRestoreEntries</c>' ceiling. <c>--entry -</c> (plan §15s D7) is the whole list, on stdin: never beside an
     /// <c>--entry &lt;id&gt;</c>, never beside <c>--only -</c> — stdin carries one list.</summary>
     internal static Request.Failed? ShownEntriesFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> entries, bool onStdin, bool onlyOnStdin) =>
-        entries.Count == 0 && !onStdin ? null
-        : (PlacementProblem(ids, entries, onStdin, onlyOnStdin) is { Length: > 0 } placed ? placed : EntryListProblem(entries)) is { Length: > 0 } problem ? new Request.Failed($"\"{BinaryName} act\": {problem}.")
-        : null;
+        EntriesProblem(ids, entries, onStdin, onlyOnStdin) is { Length: > 0 } problem ? new Request.Failed($"\"{BinaryName} act\": {problem}.") : null;
+
+    /// <summary>What is wrong with an act's entry list — where it stands, then what it holds; empty when none was given or it is right
+    /// (the code round: each check its own method, complexity ≤ 4).</summary>
+    private static string EntriesProblem(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> entries, bool onStdin, bool onlyOnStdin) =>
+        entries.Count == 0 && !onStdin ? string.Empty : FirstProblem(PlacementProblem(ids, entries, onStdin, onlyOnStdin), entries);
+
+    private static string FirstProblem(string placement, IReadOnlyList<string> entries) => placement.Length > 0 ? placement : EntryListProblem(entries);
 
     /// <summary>Where an entry list may stand (the E10.S0 own review, finding 5: apart from what it holds): with A20 among the actions,
     /// either on stdin or as ids — never both — and never beside <c>--only -</c>; empty when it stands right.</summary>
     private static string PlacementProblem(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> entries, bool onStdin, bool onlyOnStdin) =>
-        !ids.Any(id => id.Text == "A20") ? $"{EntryFlag} names the archived entries A20's preview showed; it needs A20 among the actions"
-        : onStdin && entries.Count > 0 ? $"{EntryFlag} - is the whole entry list, on stdin; give {EntryFlag} once, either - or the ids"
-        : onStdin && onlyOnStdin ? $"stdin carries one list — {OnlyFlag} - and {EntryFlag} - cannot both read it"
-        : string.Empty;
+        (ids.Any(id => id.Text == "A20"), onStdin, entries.Count > 0, onlyOnStdin) switch
+        {
+            (false, _, _, _) => $"{EntryFlag} names the archived entries A20's preview showed; it needs A20 among the actions",
+            (true, true, true, _) => $"{EntryFlag} - is the whole entry list, on stdin; give {EntryFlag} once, either - or the ids",
+            (true, true, _, true) => $"stdin carries one list — {OnlyFlag} - and {EntryFlag} - cannot both read it",
+            _ => string.Empty,
+        };
 
     /// <summary>What is wrong with a list of entry ids — the flag's or stdin's — empty when nothing is: not an id (named), twice, past
     /// the ceiling.</summary>

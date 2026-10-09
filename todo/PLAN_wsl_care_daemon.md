@@ -4056,7 +4056,7 @@ consult was owed.
 
 ### 15s. E10 split and design — the AI-session archive in the extension
 
-> Status: **plan only, 2026-10-09 — nothing built.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
+> Status: **in progress, 2026-10-09 — E10.S0 (the daemon half) built; E10.S1 and E10.S2 (the extension) not started.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
 > daemon additions it needs (E10.S0). Branch `feat/wc-e10-archive-ui`. This section OVERRIDES the archive plan's §5 and §6
 > ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) and the §16 E10 row where they differ. Related: §15r (E9, the
 > daemon half, built), §15q (E7 — its extension parts E7.S3–E7.S5 are NOT built), [module_archive.md](../research/module_archive.md),

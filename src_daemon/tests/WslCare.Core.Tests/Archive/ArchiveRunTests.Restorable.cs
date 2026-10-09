@@ -61,7 +61,7 @@ public sealed partial class ArchiveRunTests
         var oldest = all.MinBy(e => e.ArchivedAtUtc)!.EntryId;
 
         var window = ArchiveList.List(Input(RestorableConfig(1)), new ArchiveListRequest(string.Empty, string.Empty, string.Empty) { Restorable = true });
-        var asked = ArchiveList.List(Input(RestorableConfig(1)), new ArchiveListRequest(string.Empty, string.Empty, string.Empty) { Restorable = true, EntryIds = new HashSet<string>(StringComparer.Ordinal) { oldest } });
+        var asked = ArchiveList.List(Input(RestorableConfig(1)), new ArchiveListRequest(string.Empty, string.Empty, string.Empty) { Restorable = true, EntryIds = [oldest] });
 
         window.Entries.Should().NotContain(e => e.EntryId == oldest, "the plain window keeps the newest one only");
         asked.Entries.Should().ContainSingle().Which.EntryId.Should().Be(oldest);

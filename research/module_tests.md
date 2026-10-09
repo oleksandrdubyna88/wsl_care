@@ -2905,6 +2905,12 @@ force dropped, the entries left out of the shown-list cap, `archive list --entry
 | 7 | stale words (`ButtonNeedsShownEntries`, check-base's usage line) | fixed |
 | 8 | untested: stdin untouched by a refused request; the in-process path; ids before the dash; the byte cap and no-end for this list | tests added: `A_refused_request_never_reads_stdin`, `An_in_process_preview_reads_its_entries_from_stdin_under_the_same_checks`, `Ids_before_the_dash_a_list_past_the_byte_cap_and_a_list_with_no_end_are_refused` (green against the code as it was — they pin what the shared readers already did) |
 
+**The coai code round** (session 82e14bdf, `proceed`, 4 gating of threshold 5; one of two vendors answered, the other out of quota): the
+plan's status line still said nothing was built — accepted, it says E10.S0 is built; `ArchiveListRequest.EntryIds` a set on a public
+record — accepted, a list; `ShownEntriesFailure` above complexity 4 — accepted, the placement check is a switch expression of its
+own; `RestoreAction.PastTheCeiling` returning `ActionPreview?` — rejected: it chains with `ArchiveGates.Before`, whose nullable
+"no gate stopped it" is the gate family's shape. The thirteen teeth were run again after the round: all red.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

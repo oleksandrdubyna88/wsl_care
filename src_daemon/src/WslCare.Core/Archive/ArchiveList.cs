@@ -13,7 +13,7 @@ public sealed record ArchiveListRequest(string Agent, string Month, string RunId
 
     /// <summary>With <see cref="Restorable"/>: only these entries (the E10.S0 own review, finding 1) — A20's preview asks for the shown ids,
     /// so an entry older than the newest <c>archive.maxRestoreEntries</c> is never lost to the window; empty = every restorable one.</summary>
-    public IReadOnlySet<string> EntryIds { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+    public IReadOnlyList<string> EntryIds { get; init; } = [];
 }
 
 /// <summary>One archived entry as the index of this side says it: its status, whether every line of it is this side's, its size.</summary>
@@ -63,8 +63,10 @@ public static class ArchiveList
     }
 
     /// <summary>The entries A20's preview asked for (the E10.S0 own review, finding 1) — every entry when it asked for none.</summary>
-    private static IReadOnlyList<ArchiveListEntry> Asked(IReadOnlyList<ArchiveListEntry> entries, IReadOnlySet<string> ids) =>
-        ids.Count == 0 ? entries : [.. entries.Where(e => ids.Contains(e.EntryId))];
+    private static IReadOnlyList<ArchiveListEntry> Asked(IReadOnlyList<ArchiveListEntry> entries, IReadOnlyList<string> ids) =>
+        ids.Count == 0 ? entries : Only(entries, ids.ToHashSet(StringComparer.Ordinal));
+
+    private static IReadOnlyList<ArchiveListEntry> Only(IReadOnlyList<ArchiveListEntry> entries, HashSet<string> ids) => [.. entries.Where(e => ids.Contains(e.EntryId))];
 
     /// <summary>What a list answers, and how many restorable entries it left out.</summary>
     private sealed record KeptEntries(IReadOnlyList<ArchiveListEntry> Entries, int Omitted);
