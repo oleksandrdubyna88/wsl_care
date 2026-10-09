@@ -182,6 +182,14 @@ public static partial class ConfigKeys
         /// <summary>Memory pressure (PSI some avg10) warns above this. Default 10.</summary>
         public static readonly ConfigKey.IntKey MemoryPressureWarn = new("thresholds.memoryPressureWarn", 0, 100) { Trust = KeyTrust.Display };
 
+        /// <summary>E14 S6: cpu pressure (PSI some avg60, %) above this makes the machine BUSY — the <c>pressure.cpu</c> verdict
+        /// and <c>wsl-care busy</c>. Default 20 (the 2026-10-07 evening read 31 % avg10; a calm machine reads about 4).</summary>
+        public static readonly ConfigKey.IntKey CpuPressureWarnPercent = new("thresholds.cpuPressureWarnPercent", 0, 100) { Trust = KeyTrust.Display };
+
+        /// <summary>E14 S6: io pressure (PSI some avg60, %) above this makes the machine BUSY — <c>pressure.io</c> and
+        /// <c>wsl-care busy</c>. Default 10.</summary>
+        public static readonly ConfigKey.IntKey IoPressureWarnPercent = new("thresholds.ioPressureWarnPercent", 0, 100) { Trust = KeyTrust.Display };
+
         /// <summary>The root volume warns above this use. Default 80.</summary>
         public static readonly ConfigKey.IntKey RootUsedWarnPercent = new("thresholds.rootUsedWarnPercent", 0, 100) { Trust = KeyTrust.Display };
 
@@ -613,6 +621,8 @@ public static partial class ConfigKeys
         Thresholds.InactiveAnonWarnGib,
         Thresholds.Order7WarnBlocks,
         Thresholds.MemoryPressureWarn,
+        Thresholds.CpuPressureWarnPercent,
+        Thresholds.IoPressureWarnPercent,
         Thresholds.RootUsedWarnPercent,
         Journal.MaxGb,
         Thresholds.JournalHistoryWarnDays,

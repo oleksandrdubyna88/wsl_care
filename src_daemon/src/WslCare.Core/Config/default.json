@@ -79,6 +79,8 @@
     "inactiveAnonWarnGib": 15,
     "order7WarnBlocks": 32,
     "memoryPressureWarn": 10,
+    "cpuPressureWarnPercent": 20,
+    "ioPressureWarnPercent": 10,
     "rootUsedWarnPercent": 80,
     "journalHistoryWarnDays": 7,
     "clockJumpsWarnPer4h": 100,

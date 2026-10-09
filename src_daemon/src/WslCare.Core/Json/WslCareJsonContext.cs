@@ -38,6 +38,7 @@ namespace WslCare.Core.Json;
 [JsonSerializable(typeof(Events.CoverageLineJson))]
 [JsonSerializable(typeof(Events.StartsSummary))]
 [JsonSerializable(typeof(Doctor.DoctorReport))]
+[JsonSerializable(typeof(Status.BusyReport))]
 [JsonSerializable(typeof(Actions.Engine.ActRunDetail))]
 [JsonSerializable(typeof(Actions.Engine.ActReport))]
 [JsonSerializable(typeof(Actions.Engine.RunningFile))]

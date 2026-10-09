@@ -2419,6 +2419,25 @@ previous sample from a per-caller ledger (`mcp-cpu.json`: root's under `/var/lib
 user may add their own servers by program file name (`mcpServers.programs`, a rule-bound open list — the first list key that
 is not closed over a catalogue; `ConfigKey.TextListKey` carries a member rule and a cap). The module, its diagram, entities, flows and residuals: [module_mcp_servers.md](module_mcp_servers.md).
 
+## The "machine busy" signal (E14 S6, 2026-10-09)
+
+```mermaid
+flowchart LR
+    psi["/proc/pressure/{cpu,io,memory}<br/>PressureFile.ReadSet (the memory sample reads it too)"] --> rule["Thresholds/MachineBusy.Judge<br/>some avg60 vs thresholds.cpu/io/memoryPressure*"]
+    load["/proc/loadavg<br/>LoadAverageFile (shown, not judged)"] --> busy
+    rule --> busy["wsl-care busy [--json]<br/>BusyReport · exit 0 calm/unknown · 83 busy"]
+    sample["status / collect sample<br/>MemorySnapshot.Pressure"] --> verdicts["MachineBusy.Verdicts<br/>pressure.cpu · pressure.io"]
+    rule -. "the same comparison" .- verdicts
+    busy --> agent["an agent before a heavy step<br/>jittered bounded backoff on 83"]
+```
+
+One pure rule (`MachineBusy.Judge`) answers whether heavy work may START now: busy when a read pressure is above its key, calm
+only when all three were read, unknown otherwise (never calm by absence). The verb reads two kernel files and the
+configuration and nothing else (no process walk, no write but its own run log, any user); `status` judges the same comparison as two verdicts
+after `memory.pressure`, from the sample's own PSI. The agent-side contract (exit 0 go, 83 wait with a jittered bounded
+backoff, any other code a broken signal: say so and go) is in the README's *Busy* section. Advice only: nothing is started or
+stopped because of it.
+
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
 "Every number we have must be configurable" (the owner, 2026-10-05). From now on **a new behavioural number is a

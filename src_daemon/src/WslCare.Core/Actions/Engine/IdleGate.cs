@@ -101,15 +101,7 @@ public static class IdleGate
     /// <summary>E7.S0 review C5: busy is the HIGHEST of the averages up to the window — a machine busy a minute ago is busy over
     /// the last 15 minutes too — so a longer <c>idle.minutes</c> is never looser (the safe direction the contract declares).</summary>
     private static Reading<double> HighestLoad(string text, int field) =>
-        Enumerable.Range(0, field + 1).Select(f => LoadAverage(text, f)).Aggregate((a, b) => Reading.Combine(a, b, Math.Max));
-
-    private static Reading<double> LoadAverage(string text, int field)
-    {
-        var fields = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return fields.Length > field && double.TryParse(fields[field], NumberStyles.Float, CultureInfo.InvariantCulture, out var load) && load >= 0
-            ? Reading.Of(load)
-            : Reading.Missing<double>("/proc/loadavg is not \"load1 load5 load15 …\"");
-    }
+        Enumerable.Range(0, field + 1).Select(f => Collectors.Procfs.LoadAverageFile.Field(text, f)).Aggregate((a, b) => Reading.Combine(a, b, Math.Max));
 
     private static Reading<int> CpuCount(string procStat)
     {

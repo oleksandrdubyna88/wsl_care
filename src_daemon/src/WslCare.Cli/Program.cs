@@ -103,6 +103,7 @@ internal static class Program
             Request.Preview preview => PreviewCommand.Run(preview, host, loaded, stdout, cancellationToken),
             Request.Collect collect => CollectCommand.Run(collect, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Doctor doctor => DoctorCommand.Run(doctor, host, loaded, stdout, cancellationToken),
+            Request.Busy busy => BusyCommand.Run(busy, host, loaded, stdout),
             Request.AgentsList agents => AgentsCommand.Run(agents, host, loaded, stdout, stderr, cancellationToken),
             Request.AgentsProbe probe => AgentsCommand.Probe(probe, host, stdout, stderr, cancellationToken),
             Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),

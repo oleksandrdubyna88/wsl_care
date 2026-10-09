@@ -66,6 +66,8 @@ export type RootFailure =
   | { readonly kind: 'requestGone'; readonly messages: readonly string[] }
   /** 82: the run's request could not be used — recorded refused and removed; nothing ran. */
   | { readonly kind: 'requestUnusable'; readonly messages: readonly string[] }
+  /** 83 (E14 S6): the machine is too busy to start heavy work — `busy` only, never a root path's answer. */
+  | { readonly kind: 'machineBusy'; readonly messages: readonly string[] }
   /** 3: an action failed. */
   | { readonly kind: 'actionFailed'; readonly messages: readonly string[] }
   /** 4: the records cannot be read. */

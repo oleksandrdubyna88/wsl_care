@@ -68,11 +68,5 @@ public sealed class MemoryCollector(IFileSystem files, LinuxHostPaths paths)
             .Bind(x => Fragmentation.Of(x.zones, Fragmentation.ThresholdZone, x.k.PageSizeBytes));
     }
 
-    private PressureSet ReadPressures() => new(ReadPressure("memory"), ReadPressure("io"), ReadPressure("cpu"));
-
-    private Reading<Pressure> ReadPressure(string resource)
-    {
-        var path = $"{paths.ProcRoot}/pressure/{resource}";
-        return ProcText.Read(files, path).Bind(text => PressureFile.Parse(text, path));
-    }
+    private PressureSet ReadPressures() => PressureFile.ReadSet(files, paths);
 }

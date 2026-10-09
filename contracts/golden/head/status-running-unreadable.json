@@ -140,6 +140,30 @@
       }
     },
     {
+      "id": "pressure.cpu",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn: some avg60 > 20 (thresholds.cpuPressureWarnPercent)",
+      "reason": "the memory sample was not read (/golden-root/proc/meminfo does not exist), so its PSI was not either",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "pressure.io",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn: some avg60 > 10 (thresholds.ioPressureWarnPercent)",
+      "reason": "the memory sample was not read (/golden-root/proc/meminfo does not exist), so its PSI was not either",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "wslconfig.memory",
       "level": "unknown",
       "value": "",

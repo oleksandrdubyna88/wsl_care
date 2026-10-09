@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S2b and S4–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`); S2b, S4, S5, S7, S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -560,6 +560,90 @@ baseline first. `.wslconfig` advice (memory cap, swap size, `autoMemoryReclaim`)
 `/proc/loadavg` (milliseconds, no MCP window, no history) and exits `0` calm / a new documented exit code for busy
 (`contracts/exit-codes.json`), naming which pressure crossed which key. Agent tooling polls it before a heavy step and waits
 with a bounded backoff.
+
+#### S6 — as to be built (2026-10-09, branch `feat/wc-machine-busy`)
+
+1. **One rule, one place:** `Thresholds/MachineBusy.Judge(PressureSet, limits)`, a pure function. The machine is BUSY when
+   any of these crosses its key:
+   - cpu `some avg60` > `thresholds.cpuPressureWarnPercent` (new key, 0–100, default 20);
+   - io `some avg60` > `thresholds.ioPressureWarnPercent` (new key, 0–100, default 10);
+   - memory `some avg60` > `thresholds.memoryPressureWarn` (existing, 10).
+   
+   It is CALM when every pressure that was read is under its key, and UNKNOWN when none was read: a kernel without PSI, or the
+   Windows binary. The defaults follow L2: the evening's cpu `some avg10` was 31 %; the captured calm 2026-10-02 tree reads
+   cpu avg60 4.18 and io 1.69. avg60 is a stable window to decide "start now or wait" on (avg10 would flap). The keys are
+   display keys (no action reads them).
+2. **Status:** two verdicts after `memory.pressure` — `pressure.cpu` and `pressure.io` (warn above the key; value
+   `some avg10 X, avg60 Y`). They come from the sample's existing `PressureSet` (read by `MemoryCollector`), so `status`
+   and the full run judge them with the same records. The extension's status bar takes every verdict's level, so a busy
+   machine shows as a warning there with no extension change.
+3. **The verb `wsl-care busy [--json]`:**
+   - It reads only `/proc/pressure/{cpu,io,memory}` and `/proc/loadavg` (the load is shown, never judged) and the
+     configuration. There is no process walk, no MCP window, no history and no write but its own run log (as every verb); it runs as any user.
+   - Exit codes: `0` for calm or unknown, a new code `83 machineBusy` for busy. JSON:
+     `{ state: calm|busy|unknown, reasons: [{ resource, window, value, limit, key }], pressure: {cpu, io, memory},
+     load: {…}, evaluatedAt }`. The text form is one line.
+   - An unknown answer is "go": an agent never waits on a kernel that cannot answer.
+4. **The agent-side contract** (README, a new section): poll before a heavy step (a build, a test suite, an install).
+   - On `83`, wait with a bounded backoff (30 s, 60 s, 120 s, at most 10 minutes in total), then go anyway and say so.
+   - On `0`, or any other code, go.
+   - It is never a lock and never a queue. It is advice only; the daemon starts and stops nothing because of it.
+   - A shell snippet shows the loop.
+5. **Wire:** additive. `contracts/exit-codes.json` gains `machineBusy` (regenerated). The 7 `status*.json` goldens gain
+   the two verdicts: values from the fixture's PSI, or the "meminfo does not exist" reason in the six `status-running-*`
+   goldens. They are hand-edited (Windows only; the Linux CI legs verify them).
+
+**RED (S6):**
+- `A_cpu_io_or_memory_pressure_above_its_key_makes_the_machine_busy_naming_the_key`
+- `Every_read_pressure_under_its_key_is_calm_and_none_read_is_unknown`
+- `Status_judges_cpu_and_io_pressure_after_memory_pressure`
+- `Busy_answers_83_with_its_reasons_and_calm_answers_0`
+- `Busy_reads_no_process_and_writes_nothing`
+- `An_unreadable_pressure_is_unknown_and_exits_0`
+- the contract and golden updates.
+
+#### S6 as built (2026-10-09)
+
+- **Plan round** (coai session `79b51f53`): `proceed`, 2 of 2 reviewers, 7 findings.
+  - **Accepted:**
+    - (1) when the sample's memory part was not read, the verdict says the PSI was not read with it. It no longer borrows another file's reason.
+    - (2) one unread pressure makes an otherwise calm machine UNKNOWN, never calm by absence; a crossed one is still busy.
+    - (3) the README loop has jitter (± 25 %), so twenty waiting agents do not wake on the same second.
+    - (5) the contract separates a broken signal (any code other than 0 and 83: say so, then go) from calm.
+    - (6) the keys' 0–100 range is tested.
+  - **Rejected, with reasons:**
+    - (0) running the goldens locally: the Linux binary produces them; the Linux legs verify them.
+    - (4) avg60 vs `memory.pressure`'s avg60-or-avg300: different questions, documented.
+- **Built:**
+  - `Thresholds/MachineBusy` (`Judge`, `Verdicts`, `BusyLimits`, `BusyReason`, `BusyJudgement`).
+  - `Status/BusyReport` (+ `LoadReport`).
+  - `Collectors/Procfs/LoadAverageFile`: the idle gate's parser was moved there and reused.
+  - `MemoryCollector.ReadPressures` (static).
+  - CLI `busy [--json]` (`BusyCommand`), `ExitCode.MachineBusy = 83`. Neither unit can reach it, and both are classified.
+  - The keys `thresholds.cpuPressureWarnPercent` (20) and `thresholds.ioPressureWarnPercent` (10).
+  - The seven status goldens gained the two verdicts.
+- **Tests:**
+  - `MachineBusyTests` (4).
+  - `StatusVerdictsTests.Status_judges_cpu_and_io_pressure_after_memory_pressure`.
+  - `BusyCommandTests` (3).
+  - `BusyFlows` over the built binary (busy on Linux, unknown on Windows).
+  - The tests were written first. The first run was against the finished code, so the teeth were shown by breaking product code: unknown-by-absence off, the verdict level fixed at ok, the exit code fixed at 0 — 6 red, restored green.
+- **Code round** (same session, 8 of 8 reviewers): `proceed`, 10 findings.
+  - **Accepted:**
+    - (0, 7) one comparison, `MachineBusy.IsOver`, used by the verb and the verdicts.
+    - (1) the PSI reader moved to `PressureFile.ReadSet`.
+    - (3) the verdict reason describes the metric ("above the key …").
+    - (4, 8, 9) the README loop is bash, says what it waits for, and clamps every pause to the 600 s budget.
+    - (6) the report's lists are never null. RED first: *Expected report.Reasons not to be &lt;null&gt;* — the source generator sets an init property it does not find to null. The getters answer `field ?? []`.
+  - **Rejected, with reasons:**
+    - (2) taking 83 out of the extension's root kinds: its distinct-kind guard needs every code.
+    - (5) a live extension check: the extension never runs `busy`; `BusyFlows` checks the built binary.
+- **Own review** (Opus, read-only): the rule, the texts, the goldens and the wiring are correct. Four doc and loop items, all fixed:
+  - The extension's status bar did NOT take `pressure.*`. Its prefixes now include it, with a test: RED first (*'none' !== 'warn'*), then green.
+  - The README loop over-ran its 10-minute bound. It is clamped now, and checked with a stubbed `wsl-care` in Git Bash (not WSL): 600 s exactly, two waits and then go, and a broken signal says so and goes.
+  - The loop broke under `set -e`; `|| rc=$?` fixes it.
+  - "writes nothing" is now "writes nothing but its own run log".
+  - The text form with nothing read now says "PSI not read".
 
 ### S7 — the Windows side (inside E11/E12's scope)
 

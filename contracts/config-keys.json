@@ -1229,6 +1229,32 @@
       "zeroIsUnbounded": false
     },
     {
+      "name": "thresholds.cpuPressureWarnPercent",
+      "shape": "int",
+      "min": 0,
+      "max": 100,
+      "default": 20,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
+      "name": "thresholds.ioPressureWarnPercent",
+      "shape": "int",
+      "min": 0,
+      "max": 100,
+      "default": 10,
+      "safeDirection": "none",
+      "rootEffective": false,
+      "tightenOnlyForRoot": false,
+      "machineOnly": false,
+      "daemonUnused": false,
+      "zeroIsUnbounded": false
+    },
+    {
       "name": "thresholds.rootUsedWarnPercent",
       "shape": "int",
       "min": 0,

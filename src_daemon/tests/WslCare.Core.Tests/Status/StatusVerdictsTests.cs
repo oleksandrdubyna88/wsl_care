@@ -37,7 +37,7 @@ public sealed class StatusVerdictsTests : IDisposable
     }
 
     /// <summary>A synthetic snapshot; <paramref name="availablePercent"/> null = <c>MemAvailable</c> not in the file.</summary>
-    private static MemorySnapshot Memory(double? availablePercent, long order7 = 3900, long order4 = 4000, long pageCacheGib = 2, long inactiveAnonGib = 1) =>
+    private static MemorySnapshot Memory(double? availablePercent, long order7 = 3900, long order4 = 4000, long pageCacheGib = 2, long inactiveAnonGib = 1, double cpuAvg60 = 4.18, double ioAvg60 = 1.69) =>
         new(
             Reading.Of(46 * Gib),
             availablePercent is { } a ? Reading.Of((long)(46 * Gib * a / 100)) : Reading.Missing<long>("MemAvailable is not in meminfo"),
@@ -50,7 +50,7 @@ public sealed class StatusVerdictsTests : IDisposable
             Reading.Of(12 * Gib),
             Reading.Of(0L),
             Reading.Of(new Fragmentation("Normal", order4, order7, order4 * 65536, order7 * 524288)),
-            new PressureSet(Reading.Of(new Pressure(new PressureLine(0, 0, 0, 0), Reading.Missing<PressureLine>("none"))), Reading.Missing<Pressure>("n/a"), Reading.Missing<Pressure>("n/a")));
+            new PressureSet(Reading.Of(new Pressure(new PressureLine(0, 0, 0, 0), Reading.Missing<PressureLine>("none"))), Reading.Of(new Pressure(new PressureLine(0.06, ioAvg60, 2.02, 0), Reading.Missing<PressureLine>("none"))), Reading.Of(new Pressure(new PressureLine(0.10, cpuAvg60, 2.74, 0), Reading.Missing<PressureLine>("none")))));
 
     private static ProbeSample Sample(MemorySnapshot memory) =>
         new(
@@ -87,7 +87,20 @@ public sealed class StatusVerdictsTests : IDisposable
     {
         var verdicts = StatusVerdicts.From(Sample(Memory(97)), NoFullRun, Config(), Now);
 
-        verdicts.Where(v => v.Basis!.Source == VerdictSource.Sample).Should().HaveCount(8).And.OnlyContain(v => v.Level == Level.Ok);
+        verdicts.Where(v => v.Basis!.Source == VerdictSource.Sample).Should().HaveCount(10).And.OnlyContain(v => v.Level == Level.Ok);
+    }
+
+    /// <summary>E14 S6: cpu and io PSI are judged NOW (some avg60) against their keys, by the rule the <c>busy</c> verb uses.</summary>
+    [Fact]
+    public void Status_judges_cpu_and_io_pressure_after_memory_pressure()
+    {
+        var evening = StatusVerdicts.From(Sample(Memory(60, cpuAvg60: 31, ioAvg60: 12)), NoFullRun, Config(), Now);
+        var calm = StatusVerdicts.From(Sample(Memory(60)), NoFullRun, Config(), Now);
+
+        Find(evening, "pressure.cpu").Should().Match<Verdict>(v => v.Level == Level.Warn && v.Value == "some avg10 0.1, avg60 31" && v.Limit.Contains("thresholds.cpuPressureWarnPercent"));
+        Find(evening, "pressure.io").Level.Should().Be(Level.Warn);
+        Find(calm, "pressure.cpu").Level.Should().Be(Level.Ok);
+        Find(calm, "pressure.io").Level.Should().Be(Level.Ok);
     }
 
     [Fact]
@@ -122,7 +135,7 @@ public sealed class StatusVerdictsTests : IDisposable
         var verdicts = StatusVerdicts.From(Sample(Memory(60)), NoFullRun, Config(), Now);
 
         var sample = verdicts.Where(v => v.Basis!.Source == VerdictSource.Sample).ToList();
-        sample.Select(v => v.Id).Should().Equal("memory.available", "memory.pageCache", "memory.inactiveAnon", "memory.swap", "memory.fragmentation", "memory.pressure", "wslconfig.memory", "disk.root");
+        sample.Select(v => v.Id).Should().Equal("memory.available", "memory.pageCache", "memory.inactiveAnon", "memory.swap", "memory.fragmentation", "memory.pressure", "pressure.cpu", "pressure.io", "wslconfig.memory", "disk.root");
         sample.Should().OnlyContain(v => v.Basis == new VerdictBasis(VerdictSource.Sample, null, Now, 0));
         Find(verdicts, "wslconfig.memory").Value.Should().Contain(StatusVerdicts.WslConfigReadByFullRun, "the audit is a full run's; the level is the memory's");
     }

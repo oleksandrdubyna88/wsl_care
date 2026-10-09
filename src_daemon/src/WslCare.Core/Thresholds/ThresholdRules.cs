@@ -99,6 +99,7 @@ public static class ThresholdRules
         Above("memory.swap", memory.Bind(m => m.SwapUsed), config.Int(ConfigKeys.Thresholds.SwapWarnGb) * Gib, Gib, "GiB", "swap in use (thresholds.swapWarnGb)"),
         Fragmentation(memory),
         Pressure(memory),
+        .. MachineBusy.Verdicts(memory, config),
         WslConfigMemory(memory, wslConfig),
         RootDisk(root),
     ];

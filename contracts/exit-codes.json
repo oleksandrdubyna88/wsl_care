@@ -71,6 +71,10 @@
       "code": 82
     },
     {
+      "name": "machineBusy",
+      "code": 83
+    },
+    {
       "name": "interrupted",
       "code": 130
     }

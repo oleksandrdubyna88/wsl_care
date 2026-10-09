@@ -89,6 +89,8 @@ public sealed class UnitSuccessExitTests
         [ExitCode.RequestGone] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
         [ExitCode.NotAsRoot] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
         [ExitCode.RequestUnusable] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
+        // E14 S6: only the busy verb returns it, and neither unit runs that verb.
+        [ExitCode.MachineBusy] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
         [ExitCode.Interrupted] = (UnitAnswer.Answer, UnitAnswer.Answer),
     };
 
