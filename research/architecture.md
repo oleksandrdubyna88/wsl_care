@@ -2135,7 +2135,7 @@ flowchart TD
     build["build · contents: read ONLY<br/>npm ci → typecheck → lint → npm test → test:host (xvfb)<br/>→ vsce package ONCE → check-vsix --release --min-daemon → .sha256 → artifact"]
     attest["attest · contents: read + id-token: write + attestations: write<br/>sparse checkout of .github/scripts · NO npm, no node<br/>download artifact → verify the pair → attest-build-provenance(.vsix)"]
     draft["github-draft · contents: write<br/>verify set → upload only what the DRAFT lacks (never replace; nothing if public)<br/>→ download back → verify + cmp (a difference: re-run FAILED jobs only)"]
-    mkt["publish-marketplace · environment: marketplace · contents: read<br/>npm ci --ignore-scripts → verify set → vsce show: served?<br/>not served → vsce publish --packagePath the attested file (VSCE_PAT)<br/>→ wait until served (≤ 15 min)"]
+    mkt["publish-marketplace · environment: marketplace · contents: read<br/>npm ci --ignore-scripts → verify set → vsce show: served? (marketplace-served.cjs)<br/>not served → vsce publish --packagePath the attested file (VSCE_PAT)<br/>→ wait-marketplace-served.sh: 90 × 30 s ≈ 45 min, each vsce show bounded 20 s + 5 s kill,<br/>every attempt logged · job limit 100 min, above the wait's 82.5 min worst case"]
     pub["github-public · contents: write<br/>download the attested artifact → the draft's set + cmp → --draft=false (no-op if public)"]
     stop["red run: the release stays a draft — re-run FAILED jobs, or fix forward;<br/>never re-run all jobs, never move or delete the tag"]
     tag --> guard --> build --> attest --> draft --> mkt --> pub
@@ -2148,6 +2148,12 @@ flowchart TD
 
 - **A file of its own** — `release.yml` is untouched (its triggers are pinned, `install.sh` trusts its identity), and the
   `VSCE_PAT` Environment secret is named by one job of one workflow (`ReleaseExtensionWorkflowTests`).
+- **The Marketplace wait** (2026-10-09): extension 0.2.0 was published at 15:58:44Z and `vsce show` had still not listed it
+  when the old 20-minute job limit cancelled the job at 16:23:28Z, with no log of what it saw. `wait-marketplace-served.sh`
+  now waits up to 45 minutes, prints one line per attempt (the vsce exit, the newest five versions) and ends with its own
+  `::error::` naming the last answer; each `vsce show` is bounded (`timeout -k 5 20`), and the job limit stays above the
+  worst case, so the script — never the job timeout — ends a slow propagation. The skip step and the wait decide "served"
+  with ONE reader, `marketplace-served.cjs`.
 - **The order** puts the rollback source first: the `.vsix` is on the draft before the Marketplace serves anything, and
   the release goes public only after it does — compared once more with the attested build immediately before.
 - **The signing scope** (E5 code round #3): the build runs `npm ci` with dependency install scripts, every test and a

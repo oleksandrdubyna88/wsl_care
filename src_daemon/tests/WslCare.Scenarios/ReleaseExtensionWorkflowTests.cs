@@ -126,7 +126,7 @@ public sealed partial class ReleaseExtensionWorkflowTests
         var steps = Steps(job);
         var served = steps.ToList().FindIndex(s => s.Find("id")?.Text == "served");
         var publish = StepIndex(job, "vsce/vsce publish");
-        var wait = steps.ToList().FindIndex(s => Run(s).Contains("vsce show", StringComparison.Ordinal) && Run(s).Contains("seq", StringComparison.Ordinal));
+        var wait = steps.ToList().FindIndex(s => Run(s).Contains(WaitScript, StringComparison.Ordinal));
 
         new[] { served, publish, wait }.Should().NotContain(-1).And.BeInAscendingOrder("ask, publish only when not served, then wait until served");
         Run(steps[served]).Should().Contain("vsce show").And.Contain("served=", "the skip is decided by what the Marketplace serves");
@@ -138,6 +138,55 @@ public sealed partial class ReleaseExtensionWorkflowTests
             .Should().Be(BuildArtifactName(), "the artifact the build uploaded after attesting it");
         Run(steps[StepIndex(job, "npm ci")]).Should().Contain("--ignore-scripts", "no dependency's install script runs beside the Marketplace secret");
     }
+
+    private const string WaitScript = "wait-marketplace-served.sh";
+
+    /// <summary>2026-10-09, extension 0.2.0: `vsce publish` succeeded at 15:58:44Z, but `vsce show` still did not list 0.2.0 when the
+    /// job's 20-minute timeout cancelled it at 16:23:28Z (the gallery's own query served it at 16:12Z) — and a cancelled job keeps
+    /// no log of what each attempt saw. The wait now lasts at least 45 minutes, inside a job limit at least 10 minutes longer, so
+    /// the wait's own error — naming what every attempt saw — is what ends a slow propagation, never the job's timeout.</summary>
+    [Fact]
+    public void The_marketplace_wait_outlasts_the_propagation_seen_on_2026_10_09_and_the_job_outlasts_the_wait()
+    {
+        var job = Job("publish-marketplace");
+        var wait = Steps(job).Should().ContainSingle(s => Run(s).Contains(WaitScript, StringComparison.Ordinal)).Subject;
+        var call = WaitCall().Match(Run(wait));
+
+        call.Success.Should().BeTrue($"the wait runs {WaitScript} \"$EXTENSION_ID\" \"$VERSION\" <attempts> <interval seconds> <attempt timeout seconds>: {Run(wait)}");
+        var (attempts, interval, perAttempt) = (Number(call, 1), Number(call, 2), Number(call, 3));
+        TimeSpan.FromSeconds(attempts * interval).Should().BeGreaterThanOrEqualTo(TimeSpan.FromMinutes(45), "the propagation to what vsce show reads exceeded 20 minutes on 2026-10-09");
+        perAttempt.Should().BePositive("coai plan round 2026-10-09: one hung vsce show must not eat the job — each attempt is bounded");
+        var grace = KillGrace().Match(File.ReadAllText(ReleaseFiles.Script(WaitScript)));
+        grace.Success.Should().BeTrue($"{WaitScript} names its kill grace as kill_grace=<seconds> and passes it to timeout -k");
+        // coai code round 2026-10-09: a vsce show that ignores TERM lives the kill grace past its bound, so that counts too.
+        TimeSpan.FromMinutes(Number(job["timeout-minutes"].Text))
+            .Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(attempts * (interval + perAttempt + Number(grace, 1))) + TimeSpan.FromMinutes(10), "the job outlasts even a wait whose every attempt hangs to its bound and its kill grace, so the wait's error with its log ends it, not the timeout");
+    }
+
+    /// <summary>coai code round 2026-10-09: the skip step and the wait decide "served" from <c>vsce show --json</c> with ONE
+    /// reader — two copies could disagree, and a skip that misses what the wait calls served publishes again.</summary>
+    [Fact]
+    public void The_skip_and_the_wait_decide_served_with_one_reader()
+    {
+        var served = Run(Steps(Job("publish-marketplace")).Single(s => s.Find("id")?.Text == "served"));
+        var wait = File.ReadAllText(ReleaseFiles.Script(WaitScript));
+
+        File.Exists(ReleaseFiles.Script(ServedReader)).Should().BeTrue($".github/scripts/{ServedReader} is the one reader");
+        served.Should().Contain($".github/scripts/{ServedReader}").And.NotContain("JSON.parse", "the skip step parses nothing itself");
+        wait.Should().Contain(ServedReader).And.NotContain("JSON.parse", "the wait parses nothing itself");
+    }
+
+    private const string ServedReader = "marketplace-served.cjs";
+
+    [GeneratedRegex("""wait-marketplace-served\.sh "\$EXTENSION_ID" "\$VERSION" (\d+) (\d+) (\d+)""", RegexOptions.CultureInvariant)]
+    private static partial Regex WaitCall();
+
+    [GeneratedRegex("""(?m)^kill_grace=(\d+)\r?$""", RegexOptions.CultureInvariant)]
+    private static partial Regex KillGrace();
+
+    private static int Number(Match match, int group) => Number(match.Groups[group].Value);
+
+    private static int Number(string text) => int.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>E5 code round (security #2): a re-run of ALL jobs rebuilds a different .vsix, while the Marketplace may
     /// already serve the first. So an asset on the release is never replaced — not even on a draft — and the release is
