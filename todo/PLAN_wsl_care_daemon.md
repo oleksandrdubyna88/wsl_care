@@ -3912,6 +3912,63 @@ rejected with reasons.
 | 7 | an unrecorded reach child would fail A13 with an empty reason | **Rejected with proof:** `Failed(commands, "")` is a run whose failure is empty, i.e. SUCCEEDED, so `Contained` sets the containment reason; `A_reach_child_root_cannot_record_fails_A13_saying_why` holds it. The call passes the reason directly now, for clarity |
 | 8 | `archive check-base --json <path>` is refused | **Rejected:** E9.S0's documented order (`<path> [--json]`), outside this round |
 
+#### E9.S5 plan (2026-10-09) — the Windows side, as it will be built
+
+The S5 row above, checked against the code on `feat/wc-e9-archive-daemon` before any line is written. Much of the row is ALREADY
+built by earlier stories; S5 builds the one missing piece — the open-file check — and the tests the row names.
+
+**Already there (verified, with the file that holds it):**
+- the verbs in `wsl-care.exe` — one command line for both sides (`WslCare.Cli`), the win-x64 CI leg builds and tests it; on Windows
+  a privileged (elevated) process is refused (`ArchiveRunCommand.ElevatedRefusal`, E9.S3 own review round C-9);
+- the side `windows-<host>` (`ArchiveNames.cs`, `SideName.Of`) and the state under `%LOCALAPPDATA%\wsl-care\archive\`
+  (`ArchiveState.Folder`, from `WindowsHostPaths.UserLogDirectory`'s parent);
+- the Windows base rules of D7 — a drive folder with its kind and format, shares, the loopback and administrative shares refused,
+  the short names, the file-system identity chain, the junction refused, the ACL report (`WindowsAccess.Warnings`) — E9.S0 and
+  its review round (`BaseFolderPlacement.cs`, `WindowsBaseFolderTests`);
+- the Windows file semantics (one-handle delete, no-replace rename, write-through) — E9.S2a;
+- the Windows user layer `%APPDATA%\wsl-care\config.json` takes the `archive.*` keys a user may set (the same `ConfigLoader` and
+  key trust as the distro's user layer; `config set archive.baseFolder V:\…` works there today — a test pins it).
+
+**What S5 builds:**
+1. **`Archive/InUseWindows.cs` — the Restart Manager, ASKED per unit** (D2.2): `RmStartSession` → `RmRegisterResources` with
+   the unit's files as full `\\?\` paths (long paths, no `MAX_PATH`) → `RmGetList` (the buffer grown on `ERROR_MORE_DATA`, a
+   bounded number of times) → `RmEndSession` in a `finally`, ALWAYS. `LibraryImport`, blittable structs (fixed buffers), so the
+   AOT analyzers check it. It never opens a session file — the agent's own write never fails because of it.
+   - A file a process holds → the unit is KEPT (`in-use`), naming the holder's application name and pid.
+   - Any Restart Manager error (start, register, list) → the unit is KEPT, naming the error: the check fails CLOSED.
+   - ONE deadline over a selection: `archive.inUseScanSeconds` (no new key); past it every unit not yet asked is kept as cut.
+2. **`InUseView` gains a per-unit question** (`HeldBy`: the unit's files → the reason one is held, or empty): the distro's view
+   answers from its `/proc` set as today, the Windows view asks the Restart Manager. `Liveness` asks it — so the selection AND
+   phase 2's re-check before it touches anything (`ArchiveRemove`) both ask it.
+3. **`InUse.NotOnWindowsYet` goes**: on Windows the view is a real one, and `archive run` moves.
+4. **Said honestly — what the Windows side does not see:** Claude Code's working directory (no supported API reads another
+   process's current directory short of its PEB), so the "agent working here" guard is the distro's only; on Windows the guards are
+   the effective age, the Restart Manager and phase 2's hash compare with its no-replace renames (B1). The preview's `inUse.note`
+   says so.
+
+**Tests (RED first):**
+- a session one process holds open is kept `in-use` — the holder named — and the product took NO open of it (the test holds it
+  with `FileShare.None`, so any open by the product would fail); the same for a file under a 300-character path;
+- a Restart Manager error keeps the unit (a seam over the native calls), and `RmEndSession` runs after every start, the error
+  paths included;
+- past the deadline the remaining units are kept as cut;
+- on Windows, `archive preview` lists a due session, `archive run` moves it and `archive restore` puts it back (the Windows legs of
+  the built CLI), and phase 2 keeps a session held between the runs;
+- two sides and two hosts write disjoint folders and indexes under one base (`<agent>/<yyyy>/<MM>/<side>/…`, an index per side):
+  one base, runs as `wsl-<host>-<distro>` and `windows-<host>` and `windows-<other>`, each index naming only its own;
+- the Windows user layer accepts `archive.baseFolder` and refuses a machine-only `archive.*` key there.
+
+**Not testable here (to the E9 live gate):** a mapped NETWORK drive and a real UNC share accepted as a base — CI has no share, and a
+fake one would still send the identity chain to the network. The junction refusal and the share-shape refusals are E9.S0's tests.
+
+**Build order:** InUseView's question and `Liveness` (behaviour unchanged on Linux, all suites green) → `InUseWindows` with its
+seam and unit tests (Windows legs) → wire it into `InUse.Scan` and drop `NotOnWindowsYet` → the Windows CLI flows → the disjoint-sides
+test → docs (this section's as-built, `module_archive.md`, `module_tests.md`, README).
+
+**Definition of Done:** every test above red first then green on the Windows legs (and the Linux suites untouched and green); a
+break-it check per guarantee, product code only; the gate's code round over the commit; an own review (Opus) of the Windows file
+semantics and the Restart Manager use, in parallel with it.
+
 #### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
 
 The coai `review_code` round that the S2b and S3 rounds recorded as OWED, over `0f6d68c..9da05f2` (rebased on `1b5d652`; reviewers
