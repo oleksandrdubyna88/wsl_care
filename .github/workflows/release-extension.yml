@@ -278,7 +278,10 @@ jobs:
     name: release · extension · marketplace
     needs: [guard, build, github-draft]
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Above the wait's worst case (below: 90 attempts x (30 s + a 20 s bound on each vsce show) = 75 min) with room for the steps
+    # before it: the wait's own error, with what every attempt saw, must be what ends a slow propagation — a job cancelled by its
+    # timeout keeps no log (2026-10-09, extension 0.2.0).
+    timeout-minutes: 90
     # The protected Environment: a required reviewer approves, and only extension-v* tags may deploy to it. VSCE_PAT is
     # an Environment secret, so no other job — and no daemon job — can read it.
     environment: marketplace
@@ -339,21 +342,12 @@ jobs:
           fi
           node src_vs_code/node_modules/@vscode/vsce/vsce publish --packagePath "from-build/ai-os-care-$VERSION.vsix"
 
-      # Bounded: the Marketplace validates a new version for some minutes before it serves it. A timeout here leaves the
-      # release a draft; re-running this job skips the publish (above) and waits again.
-      - name: Wait until the Marketplace serves it (at most 15 minutes)
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 30); do
-            if node src_vs_code/node_modules/@vscode/vsce/vsce show "$EXTENSION_ID" --json > shown.json 2> /dev/null \
-              && node -e 'const v=JSON.parse(require("fs").readFileSync("shown.json","utf8")).versions||[]; process.exit(v.some(x=>x.version===process.argv[1])?0:1)' "$VERSION"; then
-              echo "the Marketplace serves $EXTENSION_ID $VERSION (attempt $attempt)"
-              exit 0
-            fi
-            sleep 30
-          done
-          echo "::error::the Marketplace did not serve $EXTENSION_ID $VERSION within 15 minutes — re-run this job"
-          exit 1
+      # Bounded: the Marketplace validates a new version before `vsce show` lists it — MORE than 20 minutes for extension 0.2.0
+      # on 2026-10-09 (published 15:58:44Z, the gallery's own query served it at 16:12Z, `vsce show` had not by 16:23Z). So up
+      # to 45 minutes, every attempt logged (the vsce exit, the versions it listed). A timeout here leaves the release a draft;
+      # re-running this job skips the publish (above) and waits again.
+      - name: Wait until the Marketplace serves it (at most 45 minutes)
+        run: bash .github/scripts/wait-marketplace-served.sh "$EXTENSION_ID" "$VERSION" 90 30 20
 
   github-public:
     name: release · extension · github public

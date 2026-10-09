@@ -188,7 +188,8 @@ organisation-scoped PATs for the Marketplace are an open request (microsoft/vsma
   2. **Upload THAT file by hand**: <https://marketplace.visualstudio.com/manage> → publisher `remsoftdev` → *AI OS Care*
      (the first time: *New extension → Visual Studio Code*) → upload `ai-os-care-<x.y.z>.vsix`. Never a local build: only
      the attested file may be served, and `github-public` compares the draft with it.
-  3. **Wait until the Marketplace serves it** — it validates a new version for some minutes:
+  3. **Wait until the Marketplace serves it** — it validates a new version first, and what `vsce show` reads can lag more than
+     20 minutes behind the publish (extension 0.2.0, 2026-10-09; the job now waits up to 45 minutes, logging every attempt):
      `npx --yes @vscode/vsce@4.0.0 show remsoftdev.ai-os-care --json` lists `<x.y.z>` among its `versions`.
   4. **Check that the Marketplace serves THE ATTESTED BUILD — required before approving.** The job's served check
      matches the VERSION only: a wrong `.vsix` uploaded with the same version would be "served", the publish skipped,
