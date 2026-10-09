@@ -174,8 +174,8 @@ public static class WatchRun
         var act = await engine.ExecuteAsync(new ActRequest([A19], RunTrigger.Timer, Execute: true) { ShownProcesses = ShownList.Of(tries.Fresh) }, cancellationToken).ConfigureAwait(false);
         if (act is not ActResult.Done)
         {
-            Write(c, tries.Boot, tries.Before, tries.Processes);
-            return sampledOnly with { Reason = $"A19 did not run: {NotRun(act)}; the watch tries again next time" };
+            // coai code round 2026-10-09, finding 2: a give-back that cannot be written is said — those processes stay "tried".
+            return sampledOnly with { Reason = $"A19 did not run: {NotRun(act)}; {GiveBack(Write(c, tries.Boot, tries.Before, tries.Processes))}" };
         }
 
         return sampledOnly with
@@ -189,6 +189,10 @@ public static class WatchRun
 
     private static string Write(WatchContext c, string boot, IReadOnlyList<string> tried, IReadOnlyList<ProcessEntry> processes) =>
         WatchTries.Write(c.Paths, c.Files, new WatchTriesFile(Core.SchemaVersion.Current, boot, Live(tried, processes, c.Loaded.Config)));
+
+    private static string GiveBack(string unwritten) => unwritten.Length == 0
+        ? "the watch tries again next time"
+        : $"the tries could not be given back ({unwritten}), so the watch does not try those processes again; the full run's pass still may";
 
     private static string NotRun(ActResult act) => act switch
     {

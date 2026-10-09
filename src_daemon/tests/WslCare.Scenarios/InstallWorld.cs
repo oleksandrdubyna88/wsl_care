@@ -318,12 +318,15 @@ internal sealed class InstallWorld : IDisposable
 
     /// <summary>The archive a release would carry (plan §15e #1): the binary, every unit of src_daemon/systemd and the machine layer from
     /// this repository, under one top folder.</summary>
-    public void WriteRealRelease(TarWriter tar, string name)
+    public void WriteRealRelease(TarWriter tar, string name) => WriteRealRelease(tar, name, []);
+
+    /// <summary>The same archive without the units named in <paramref name="without"/> — a release from before they existed.</summary>
+    public void WriteRealRelease(TarWriter tar, string name, IReadOnlyCollection<string> without)
     {
         AddDirectory(tar, $"{name}/");
         AddFile(tar, $"{name}/wsl-care", Encoding.UTF8.GetBytes(StubScript()), Executable);
         AddDirectory(tar, $"{name}/systemd/");
-        foreach (var unit in ShippedFiles.UnitNames)
+        foreach (var unit in ShippedFiles.UnitNames.Except(without))
         {
             AddFile(tar, $"{name}/systemd/{unit}", File.ReadAllBytes(Path.Combine(ShippedFiles.SystemdDirectory, unit)), Regular);
         }

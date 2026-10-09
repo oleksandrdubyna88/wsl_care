@@ -98,18 +98,40 @@ public sealed partial class ShippedFilesTests
         Unit("wsl-care-watch.service").Should().NotContainKey("Install", "started by its timer only, never enabled on its own");
     }
 
-    /// <summary>Plan E14 S2b: a MONOTONIC timer every <c>mcpWatchdog.periodMinutes</c> — after boot and after each run — with no catch-up
-    /// (nothing to catch up after the VM was off), so no <c>Persistent=</c> and no calendar.</summary>
+    /// <summary>Plan E14 S2b: a MONOTONIC timer every <c>mcpWatchdog.periodMinutes</c> — a period after the timer itself starts (at boot,
+    /// or at <c>enable --now</c>) and after each run — with no catch-up (nothing to catch up after the VM was off), so no
+    /// <c>Persistent=</c> and no calendar. Own code review 2026-10-09: <c>OnBootSec=</c> already in the past ELAPSES AT ONCE when the
+    /// timer is started (systemd.timer(5)), so <c>install.sh</c>'s <c>enable --now</c> started a watch that took the run lock from the
+    /// installer's first full run a second later; <c>OnActiveSec=</c> is relative to the timer's own start.</summary>
     [Fact]
-    public void The_watch_timer_fires_every_period_from_boot_and_after_each_run()
+    public void The_watch_timer_fires_a_period_after_it_starts_and_after_each_run()
     {
         var unit = Unit("wsl-care-watch.timer");
 
-        Single(unit, "Timer", "OnBootSec").Should().Be("5min");
+        unit["Timer"].Should().NotContainKey("OnBootSec", "a past OnBootSec fires at enable --now, into the installer's first run");
+        Single(unit, "Timer", "OnActiveSec").Should().Be("5min");
         Single(unit, "Timer", "OnUnitActiveSec").Should().Be("5min", "the default of mcpWatchdog.periodMinutes");
         unit["Timer"].Should().NotContainKey("OnCalendar").And.NotContainKey("Persistent");
         Single(unit, "Timer", "Unit").Should().Be("wsl-care-watch.service");
         Single(unit, "Install", "WantedBy").Should().Be("timers.target");
+    }
+
+    /// <summary>Own code review 2026-10-09: in a <c>[Timer]</c> section an EMPTY assignment of ANY time setting resets EVERY time setting
+    /// before it (systemd.timer(5): "the list of timers is reset (both monotonic timers and OnCalendar= timers)"), so a drop-in that
+    /// cleared its second setting after setting its first lost the first — the watch timer kept only <c>OnUnitActiveSec</c>, which
+    /// never fires for a service that never ran. Every drop-in clears once, before any value.</summary>
+    [Fact]
+    public void No_timer_drop_in_clears_a_time_setting_after_it_set_one()
+    {
+        foreach (var name in Core.Systemd.UnitDropIns.Units.Where(n => n.EndsWith(".timer", StringComparison.Ordinal)))
+        {
+            var lines = Core.Systemd.UnitDropIns.Defaults(name).Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith("On", StringComparison.Ordinal)).ToList();
+            var firstValue = lines.FindIndex(l => !l.EndsWith('='));
+            var lastReset = lines.FindLastIndex(l => l.EndsWith('='));
+
+            firstValue.Should().BeGreaterThanOrEqualTo(0, $"{name}'s drop-in sets a time");
+            lastReset.Should().BeLessThan(firstValue, $"{name}: a reset after a value wipes that value ({string.Join(" | ", lines)})");
+        }
     }
 
     [Fact]
@@ -218,7 +240,7 @@ public sealed partial class ShippedFilesTests
             "KillMode", // systemd.kill(5)
             "MemoryMax", // systemd.resource-control(5)
         ],
-        ["Timer"] = ["OnCalendar", "OnBootSec", "OnUnitActiveSec", "Persistent", "RandomizedDelaySec", "AccuracySec", "Unit"], // systemd.timer(5)
+        ["Timer"] = ["OnCalendar", "OnActiveSec", "OnUnitActiveSec", "Persistent", "RandomizedDelaySec", "AccuracySec", "Unit"], // systemd.timer(5)
         ["Install"] = ["WantedBy"], // systemd.unit(5) [Install]
     };
 
@@ -333,7 +355,7 @@ public sealed partial class ShippedFilesTests
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Should().Equal(("Nice", "10"), ("MemoryMax", "2048M"), ("TimeoutStopSec", "60"), ("TimeoutStartSec", "240min"));
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-act@.service")).Should().Equal([.. DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Where(s => s.Key != "TimeoutStartSec")], "one hardening set; a confirm keeps its infinity");
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-events.service")).Should().Equal(("RestartSec", "45"), ("MemoryMax", "2048M"));
-            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-watch.timer")).Should().Equal(("OnBootSec", "3min"), ("OnUnitActiveSec", "3min"));
+            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-watch.timer")).Should().Equal(("OnActiveSec", "3min"), ("OnUnitActiveSec", "3min"));
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-watch.service")).Should().Equal(("Nice", "10"), ("MemoryMax", "2048M"), ("TimeoutStopSec", "60"), ("TimeoutStartSec", "10min"));
         }
     }

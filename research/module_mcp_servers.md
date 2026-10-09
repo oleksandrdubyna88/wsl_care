@@ -143,9 +143,9 @@ flowchart LR
   `mcpServers.idleCpuPercent`, `activityWindowMinutes`, `cpuIntervalMinSeconds` → `Higher`, `cpuIntervalMaxMinutes` → `Lower`.
   Rules: the period under `cpuIntervalMaxMinutes`; the run limit at least `RunBudget.WatchRunWorstCase` (the CPU window, every
   server's log listing, A19's grace, 60 s).
-- **Units:** `wsl-care-watch.timer` (monotonic: `OnBootSec` = `OnUnitActiveSec` = the period) and `wsl-care-watch.service`
+- **Units:** `wsl-care-watch.timer` (monotonic: `OnActiveSec` = `OnUnitActiveSec` = the period, its drop-in clearing the list ONCE before both — an empty assignment resets every time setting before it) and `wsl-care-watch.service`
   (oneshot, the full run's hardening, `TimeoutStartSec` = the run limit, `SuccessExitStatus=75 130`), with drop-ins, a doctor
-  check, installed by `install.sh` only when the release ships them. The timer's full run now waits
+  check, installed by `install.sh` only when the release ships them — and retired (timer disabled, service stopped, files removed) when an older release is installed over them. The timer's full run now waits
   `requests.lockWaitSeconds` for the lock (the watch holds it for seconds).
 
 ## Entry points

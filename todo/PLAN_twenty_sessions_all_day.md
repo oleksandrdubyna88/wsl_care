@@ -434,6 +434,29 @@ the owner's).
   - Red first for the streak, A19's busy selection, the signal predicate, the watch (against a stub), the coupled rules,
     the units, the doctor check and the timer's lock wait. Each failed for the right reason before the product code.
   - `WatchCommand` was written before its tests. Break-it covers it (below).
+- **Code round** (coai session `2b266dd3`, epic 14/14): `proceed`, 7 of 8 reviewers, 9 findings; plus an own reviewer.
+  - **Accepted (coai):** (2) a give-back of the tries that cannot be written is now said in the answer (RED: the reason
+    lacked "could not be given back"). The try stays used; the 4-hour pass may still act.
+  - **Rejected (coai), with reasons:**
+    - (0) a new post-deploy item: item 5 (doctor healthy) now covers `unit.wsl-care-watch.timer`, and its text says so.
+    - (1) tries filtered by the sample's snapshot: a process absent from the sample has no evidence, so it can never be
+      selected.
+    - (3) a progress line for a manual watch.
+    - (4, 8) `RunLock.AcceptedRunWait` IS `requests.lockWaitSeconds`, read through `Tuning.Current`.
+    - (5) there is no interrupted outcome to map: a stop throws, and `Program` answers 130 (a driven ending).
+    - (6) root's `paths.Home` is the TARGET user's (`CliHost.ForThisMachine` re-homes root runs) — the home the 4-hour run
+      reads logs from.
+    - (7) a user value that breaks a coupled rule is a notice, never observe-only.
+  - **Own reviewer, all accepted, each RED → GREEN → RED again:**
+    - **Critical:** the watch timer's drop-in cleared `OnUnitActiveSec=` AFTER setting `OnBootSec`. In `[Timer]` an empty
+      assignment resets EVERY time setting, so the timer kept only `OnUnitActiveSec` and never fired. The drop-in now
+      clears once, before both values; `No_timer_drop_in_clears_a_time_setting_after_it_set_one` was red with "found 2".
+    - A past `OnBootSec` fires at `enable --now`, so the installer's first `collect` met the watch's lock, exited 75, and
+      doctor's `lastRun` then failed the install. The timer now uses `OnActiveSec`, which counts from its own start.
+    - An older release installed over the watch left units its binary cannot run, failing every 5 minutes. `install.sh`
+      now retires them: the timer is disabled, the service stopped, and the files and drop-ins removed. `UNITS` and
+      `UnitDropIns.Units` list the timer before its service. Tested by
+      `A_release_without_the_watch_retires_an_installed_watch` (Linux legs).
 - **Residuals:**
   - What Claude Code does with an ended stdio server is still not measured.
   - A busy server on a REMOTE request with no log line reads as busy without activity; `busyMinutes` (30) is the margin.

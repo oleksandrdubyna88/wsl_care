@@ -210,6 +210,36 @@ public sealed class WatchRunTests : IDisposable
             ++_takes >= busyFrom ? new ExclusiveLock.Busy("a full run took it (a test)") : base.TryLockExclusive(lockPath);
     }
 
+    /// <summary>The lock lost as above, and the tries file refuses its second write — the give-back.</summary>
+    private sealed class GiveBackRefused(IFileSystem inner) : DelegatingFileSystem(inner)
+    {
+        private int _takes;
+        private int _triesWrites;
+
+        public override ExclusiveLock TryLockExclusive(string lockPath) =>
+            ++_takes >= 2 ? new ExclusiveLock.Busy("a full run took it (a test)") : base.TryLockExclusive(lockPath);
+
+        public override Core.Files.Deletion.DeletionVerdict WritePrivateFileAtomically(string path, ReadOnlySpan<byte> content, Core.Files.Deletion.DeletionScope scope) =>
+            path.EndsWith(WatchTries.FileName, StringComparison.Ordinal) && ++_triesWrites >= 2
+                ? new Core.Files.Deletion.DeletionVerdict.Refused(Core.Files.Deletion.DeletionRule.OutsideDeclaredRoot, "refused by a test")
+                : base.WritePrivateFileAtomically(path, content, scope);
+    }
+
+    [Fact]
+    public async Task A_give_back_that_cannot_be_written_says_so()
+    {
+        // coai code round 2026-10-09, finding 2: the give-back's write was ignored, so a lost race could still use up the try unsaid.
+        Configure("""{ "dryRun": false, "mcpWatchdog": { "busyMinutes": 10 } }""");
+        await Watch(advance: false);
+        await Watch();
+        await Watch();
+
+        var collided = await Watch(through: new GiveBackRefused(Files));
+
+        collided.Outcome.Should().Be(WatchOutcome.Sampled);
+        collided.Reason.Should().Contain("could not be given back").And.Contain("refused by a test");
+    }
+
     [Fact]
     public async Task A_lock_taken_between_the_sample_and_the_act_does_not_use_up_the_try()
     {

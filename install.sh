@@ -78,10 +78,10 @@ readonly BIN_DIR="/opt/wsl-care/bin"
 readonly BIN_PATH="$BIN_DIR/wsl-care"
 readonly LINK_PATH="/usr/local/bin/wsl-care"
 readonly UNIT_DIR="/etc/systemd/system"
-readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service wsl-care-act@.service wsl-care-watch.service wsl-care-watch.timer"
+readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service wsl-care-act@.service wsl-care-watch.timer wsl-care-watch.service"
 # E14 S2b: the watch's two units are installed and enabled only when the release ships them. This installer (main) installs the
 # NEWEST daemon release, and a release from before the watch has none — it must still install.
-readonly OPTIONAL_UNITS="wsl-care-watch.service wsl-care-watch.timer"
+readonly OPTIONAL_UNITS="wsl-care-watch.timer wsl-care-watch.service"
 readonly DROPIN_NAME="50-wsl-care-config.conf"
 readonly CONFIG_DIR="/etc/wsl-care"
 readonly CONFIG_FILE="$CONFIG_DIR/config.json"
@@ -481,6 +481,26 @@ shipped() {
 # The watch timer's name — or $1 when given — when the release ships it; nothing otherwise (E14 S2b).
 watch_timer() {
   if shipped wsl-care-watch.timer; then printf '%s' "${1:-wsl-care-watch.timer}"; fi
+}
+
+# A unit this release does not ship (E14 S2b, own code review): an older release installed over one with the watch — its binary
+# has no `watch` verb, so a watch unit left in place would fail every few minutes. The timer is disabled first (UNITS lists it
+# before its service), then the service stopped; the unit file and its drop-in go. Nothing when the unit is not there.
+retire() {
+  if [ ! -f "$ROOT$UNIT_DIR/$1" ]; then
+    say "this release ships no $1 (a release before the watch, E14 S2b): not installed"
+    return 0
+  fi
+  case "$1" in
+    *.timer) systemctl_job install-units disable --now "$1" ;;
+    *) systemctl_job install-units stop "$1" ;;
+  esac
+  run rm -f -- "$ROOT$UNIT_DIR/$1" || fail install-units "could not remove $UNIT_DIR/$1"
+  if [ -f "$ROOT$UNIT_DIR/$1.d/$DROPIN_NAME" ]; then
+    run rm -f -- "$ROOT$UNIT_DIR/$1.d/$DROPIN_NAME" || fail install-units "could not remove $UNIT_DIR/$1.d/$DROPIN_NAME"
+  fi
+  if [ -d "$ROOT$UNIT_DIR/$1.d" ] && [ -z "$(ls -A "$ROOT$UNIT_DIR/$1.d")" ]; then run rmdir -- "$ROOT$UNIT_DIR/$1.d"; fi
+  say "removed $UNIT_DIR/$1: this release ships no watch, and its binary has no watch verb"
 }
 
 # --- uninstall -----------------------------------------------------------------------------------------
@@ -887,7 +907,7 @@ install_files() {
   run install -d -m 0755 "$ROOT$UNIT_DIR" || fail install-units "could not create $UNIT_DIR"
   for unit in $UNITS; do
     if ! shipped "$unit"; then
-      say "this release ships no $unit (a release before the watch, E14 S2b): not installed"
+      retire "$unit"
       continue
     fi
     run install -m 0644 "$SRC/systemd/$unit" "$ROOT$UNIT_DIR/$unit" || fail install-units "could not install $UNIT_DIR/$unit"

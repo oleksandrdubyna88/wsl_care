@@ -35,6 +35,39 @@ public sealed class InstallUpgradeFlows
             "daemon-reload", "try-restart wsl-care-events.service", string.Join(' ', EnableOurUnits));
     }
 
+    /// <summary>E14 S2b (own code review): installing a release from before the watch over a tree that has the watch — its binary has no
+    /// <c>watch</c> verb, so the watch units must not be left failing every few minutes: the timer disabled, the service stopped, both
+    /// unit files and their drop-ins removed, and the watch timer neither enabled nor verified.</summary>
+    [Fact]
+    public async Task A_release_without_the_watch_retires_an_installed_watch()
+    {
+        Linux();
+        using var world = new InstallWorld("no-watch-release");
+        string[] watch = ["wsl-care-watch.timer", "wsl-care-watch.service"];
+        world.Publish(InstallWorld.NewestDaemon, "linux-x64", (tar, name) => world.WriteRealRelease(tar, name, watch));
+        foreach (var unit in watch)
+        {
+            world.Write($"/etc/systemd/system/{unit}", "[Unit]\n");
+            world.Write($"/etc/systemd/system/{unit}.d/{Core.Systemd.UnitDropIns.FileName}", "[Unit]\n");
+        }
+
+        world.Override("systemctl", ["disable", "--now", "wsl-care-watch.timer"], 0);
+        world.Override("systemctl", ["stop", "wsl-care-watch.service"], 0);
+        world.Override("systemctl", ["enable", "--now", "wsl-care.timer", "wsl-care-events.service"], 0);
+
+        Succeeded(await world.RunAsync());
+
+        foreach (var unit in watch)
+        {
+            File.Exists(world.At($"/etc/systemd/system/{unit}")).Should().BeFalse($"{unit} is retired with the release that has no watch");
+            Directory.Exists(world.At($"/etc/systemd/system/{unit}.d")).Should().BeFalse($"{unit}'s drop-in and its emptied folder go too");
+        }
+
+        var calls = world.CallsOf("systemctl").Select(c => string.Join(' ', c.Argv)).ToList();
+        calls.Should().ContainInOrder("disable --now wsl-care-watch.timer", "stop wsl-care-watch.service", "daemon-reload", "enable --now wsl-care.timer wsl-care-events.service");
+        calls.Should().NotContain("is-active --quiet wsl-care-watch.timer");
+    }
+
     // ---------- E6.S1: never under a run in flight (plan §15k #16) ----------
 
     /// <summary>The installed binary's <c>status --json</c>, as far as the installer reads it: the running block's state.</summary>

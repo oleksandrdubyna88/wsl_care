@@ -28,7 +28,7 @@ public static class UnitDropIns
     public const string WatchTimer = "wsl-care-watch.timer";
 
     /// <summary>Every unit that has a drop-in, in the order <c>install.sh</c> lists its units.</summary>
-    public static IReadOnlyList<string> Units { get; } = [Service, Timer, Events, Act, Watch, WatchTimer];
+    public static IReadOnlyList<string> Units { get; } = [Service, Timer, Events, Act, WatchTimer, Watch];
 
     private const string Header =
         "# Written by install.sh from the machine configuration (wsl-care units dropin {0}). Do not edit: change\n" +
@@ -70,12 +70,12 @@ public static class UnitDropIns
             $"MemoryMax={Text(ConfigKeys.Units.MemoryMaxMb)}M",
             $"TimeoutStopSec={Text(ConfigKeys.Units.StopTimeoutSeconds)}",
             $"TimeoutStartSec={Text(ConfigKeys.McpWatchdog.RunLimitMinutes)}min"),
-        // The two monotonic times are lists too: the empty assignment clears the unit's own first (systemd.timer(5)).
+        // ONE empty assignment, first: in [Timer] an empty assignment of ANY time setting resets EVERY time setting before it
+        // (systemd.timer(5)) — a second reset after OnActiveSec= would wipe it (own code review 2026-10-09).
         WatchTimer => Lines(
             "[Timer]",
-            "OnBootSec=",
-            $"OnBootSec={Text(ConfigKeys.McpWatchdog.PeriodMinutes)}min",
-            "OnUnitActiveSec=",
+            "OnActiveSec=",
+            $"OnActiveSec={Text(ConfigKeys.McpWatchdog.PeriodMinutes)}min",
             $"OnUnitActiveSec={Text(ConfigKeys.McpWatchdog.PeriodMinutes)}min"),
         _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, $"a unit without a drop-in; one of: {string.Join(", ", Units)}"),
     };
