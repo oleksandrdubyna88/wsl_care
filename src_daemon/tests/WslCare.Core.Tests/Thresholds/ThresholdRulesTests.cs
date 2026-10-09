@@ -47,7 +47,11 @@ public sealed class ThresholdRulesTests : IDisposable
             Reading.Of(8 * Gib),
             Reading.Of(swapUsedGib * Gib),
             Reading.Of(new Fragmentation("Normal", order4, order7, order4 * 65536, order7 * 524288)),
-            new PressureSet(Reading.Of(new Pressure(new PressureLine(psi60, psi60, psi60, 0), Reading.Missing<PressureLine>("none"))), Reading.Missing<Pressure>("n/a"), Reading.Missing<Pressure>("n/a")));
+            new PressureSet(Reading.Of(new Pressure(new PressureLine(psi60, psi60, psi60, 0), Reading.Missing<PressureLine>("none"))), Reading.Missing<Pressure>("n/a"), Reading.Missing<Pressure>("n/a")))
+        {
+            // E14 S5: what a calm machine promised (the captured 2026-10-02 tree: 46 % of MemTotal).
+            Committed = Reading.Of(totalGib * Gib * 46 / 100),
+        };
 
     private static HealthSample Health(int allocationFailures = 0, WindowsClockSample? clock = null)
     {

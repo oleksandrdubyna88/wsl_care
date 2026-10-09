@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`); S2b, S4, S5, S7, S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S5 built (memory and swap before the evening: a report); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S2b, S4, S7, S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -591,6 +591,31 @@ baseline first. `.wslconfig` advice (memory cap, swap size, `autoMemoryReclaim`)
 - `The_wslconfig_advice_names_only_what_differs_with_what_it_says_now`
 - `No_product_code_writes_wslconfig`
 - the contract and golden updates.
+
+#### S5 as built (2026-10-09)
+
+- **Plan round** (coai session `42b21ed8`): `proceed`, 2 of 2 reviewers, 6 findings.
+  - **Accepted:**
+    - (0) `autoMemoryReclaim` is advised under `[experimental]`, lowercase `dropcache`.
+    - (1) a swap smaller than the key is judged by `memory.swap` only, not "low".
+    - (4) every advised line names its measurement.
+    - (5) a companion test proves the no-write scan still finds a write.
+  - **Rejected, with reasons:**
+    - (2) `thresholds.memoryPressureWarn` already exists.
+    - (3) no status golden holds A1's or A2's preview.
+- **Built:**
+  - `Thresholds/SwapAndCommit`: `memory.swapFree` and `memory.committed`, after `memory.swap`.
+  - `MemorySnapshot.Committed`, read from `Committed_AS`.
+  - `Actions/Memory/MemoryPressureShadow`: A1's and A2's fact and reason sentence, using `MachineBusy.Crosses`, the one S6 comparison.
+  - `Health/WslConfigAdvice` and `WslConfigReport.Advice`.
+  - The keys `thresholds.swapFreeWarnGb` (4), `thresholds.committedWarnPercent` (80) and `wslConfig.recommendedSwapGb` (16).
+  - The seven status goldens gained the two verdicts.
+  - `ArchitectureTests.WslConfig`.
+- **RED-first, as the coordinator asked after S6:** every test was written BEFORE the product code and seen red against stubs; teeth were then shown on two rules.
+- **Residuals:**
+  - The advice compares setting texts (`36gb` = `36GB`), but not units (`36864MB` reads as different).
+  - Whether memory pressure should really trigger A1 or A2 is S8's measurement.
+  - Q5 (which settings to advise) stays the owner's.
 
 ### S6 — a "machine busy" signal agents can poll
 

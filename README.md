@@ -314,7 +314,19 @@ disabled snap revisions, `~/git/_wt`, `~/.nuget/packages`, `~/.cache`, `~/.vscod
 `~/git` — links never followed, a ceiling per folder), and the container starts of the last 24 h. Every threshold of
 plan §4 is judged over it: `ok`, `warn`, `critical`, or `unknown` when the figure could not be read. The VM's memory
 ceiling is shown against the recommendation `memory=36GB` in `.wslconfig` and is red above 90 % — the recommendation is
-shown, `.wslconfig` is never written. Every command is a read; each has its ceiling.
+shown, `.wslconfig` is never written. The run detail's `health.wslConfig.advice` lists each line the file does not already
+say — `[wsl2]` `memory=36GB` (`wslConfig.recommendedMemoryGb`), `swap=16GB` (`wslConfig.recommendedSwapGb`, 0 = no swap line),
+`[experimental]` `autoMemoryReclaim=dropcache` — with what the file says now and the measurement behind it; it is advice for
+you to copy, never applied. Every command is a read; each has its ceiling.
+
+**Before the evening** (E14 S5, a report: nothing acts on these):
+- `memory.swapFree` warns when the swap LEFT is under `thresholds.swapFreeWarnGb` (4). The 2026-10-07 evening had 2.4 GB of
+  12 GB left. A swap smaller than the key is judged by `memory.swap` only.
+- `memory.committed` warns when what the kernel PROMISED (`Committed_AS`) is above `thresholds.committedWarnPercent` (80) of
+  `MemTotal`. The evening was at 104 %, a calm machine at about 46 %. Linux over-commits, so this warns of promises, not of use.
+- A1's and A2's trigger reason also says whether memory pressure (PSI some avg60 above `thresholds.memoryPressureWarn`, the
+  `wsl-care busy` rule) WOULD have fired them. Whether they fire does not change: the run records collect the evidence
+  first.
 
 Recorded in this order: the run's detail `/var/lib/wsl-care/runs/{yyyy-MM-dd}/{runId}.json` (written whole or not at
 all), then one line in `history.jsonl` that names it, then the run log is closed. Each run first reconciles: a detail

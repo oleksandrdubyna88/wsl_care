@@ -26,7 +26,12 @@ public sealed record MemorySnapshot(
     Reading<long> SwapTotal,
     Reading<long> SwapUsed,
     Reading<Fragmentation> Fragmentation,
-    PressureSet Pressure);
+    PressureSet Pressure)
+{
+    /// <summary><c>Committed_AS</c> (E14 S5): what the kernel has PROMISED — Linux over-commits, so it is a warning of promises,
+    /// never of use. An init property, so a snapshot built without it reads "not read".</summary>
+    public Reading<long> Committed { get; init; } = Reading.Missing<long>("Committed_AS was not read");
+}
 
 /// <summary>Reads <c>/proc/meminfo</c>, <c>/proc/buddyinfo</c> and <c>/proc/pressure/*</c> through <see cref="IFileSystem"/>.</summary>
 public sealed class MemoryCollector(IFileSystem files, LinuxHostPaths paths)
@@ -42,7 +47,7 @@ public sealed class MemoryCollector(IFileSystem files, LinuxHostPaths paths)
         var total = info.Bytes("MemTotal");
         var available = info.Bytes("MemAvailable");
         var swapTotal = info.Bytes("SwapTotal");
-        return new MemorySnapshot(
+        var snapshot = new MemorySnapshot(
             total,
             available,
             Reading.Combine(available, total, (part, whole) => (part, whole)).Bind(x => Percent(x.part, x.whole)),
@@ -55,6 +60,7 @@ public sealed class MemoryCollector(IFileSystem files, LinuxHostPaths paths)
             Reading.Combine(swapTotal, info.Bytes("SwapFree"), (t, f) => t - f),
             fragmentation,
             pressure);
+        return snapshot with { Committed = info.Bytes("Committed_AS") };
     }
 
     /// <summary>A share of a whole, one decimal; a zero whole is an unreadable kernel, not 0 %.</summary>

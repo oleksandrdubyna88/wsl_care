@@ -97,6 +97,7 @@ public static class ThresholdRules
         Above("memory.pageCache", memory.Bind(m => m.PageCache), PageCacheWarnGib * Gib, Gib, "GiB", "page cache WSL does not hand back to Windows (A1 drops it)"),
         Above("memory.inactiveAnon", memory.Bind(m => m.InactiveAnon), InactiveAnonWarnGib * Gib, Gib, "GiB", "anonymous memory nobody touched lately (the top holders name the processes)"),
         Above("memory.swap", memory.Bind(m => m.SwapUsed), config.Int(ConfigKeys.Thresholds.SwapWarnGb) * Gib, Gib, "GiB", "swap in use (thresholds.swapWarnGb)"),
+        .. SwapAndCommit.Verdicts(memory, config),
         Fragmentation(memory),
         Pressure(memory),
         .. MachineBusy.Verdicts(memory, config),

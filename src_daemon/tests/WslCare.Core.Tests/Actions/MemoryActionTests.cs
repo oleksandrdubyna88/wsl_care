@@ -50,6 +50,37 @@ public sealed class MemoryActionTests : IDisposable
         new(new EngineContext(_sandbox.Paths, _sandbox.Files, _runner, new FixedTimeProvider(), new LinuxProbe(_sandbox.Files, _sandbox.Paths, new FixedTimeProvider()),
             ConfigLoader.Load(_sandbox.Paths, _sandbox.Files), new FakeProcessTable().Alive(Pid, FixedTimeProvider.DefaultNow.AddMinutes(-1)), Pid, new ActionRegistry(actions)));
 
+    private void MemoryPressure(double avg60) =>
+        _sandbox.Write("/proc/pressure/memory", FormattableString.Invariant($"some avg10=1.00 avg60={avg60:0.00} avg300=1.00 total=1000\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"));
+
+    /// <summary>E14 S5, SHADOW only: A1 and A2 record the memory pressure and SAY whether the pressure rule (memory PSI some avg60 above
+    /// <c>thresholds.memoryPressureWarn</c>, the S6 rule) would have fired — the evidence the S8 soak needs before it may become a
+    /// trigger — and fire exactly as before.</summary>
+    [Fact]
+    public async Task A1_and_A2_say_whether_memory_pressure_would_have_fired_and_fire_as_before()
+    {
+        var a1 = new CacheDrop();
+        var a2 = new Compaction();
+        _sandbox.Memory(totalKib: 40 * Gib, availableKib: 20 * Gib, cachedKib: 1 * Gib, order7Blocks: 80);
+        var (context1, commands1) = For(a1);
+        var (context2, commands2) = For(a2);
+
+        MemoryPressure(25);
+        var pressed1 = await a1.PreviewAsync(context1, commands1, CancellationToken.None);
+        var pressed2 = await a2.PreviewAsync(context2, commands2, CancellationToken.None);
+        MemoryPressure(1);
+        var calm1 = await a1.PreviewAsync(context1, commands1, CancellationToken.None);
+        _sandbox.Write("/proc/pressure/memory", "garbage\n");
+        var unread1 = await a1.PreviewAsync(context1, commands1, CancellationToken.None);
+
+        pressed1.Facts[MemoryPressureShadow.Fact].Should().Be(2500, "avg60 25.00 in hundredths");
+        a1.Trigger(pressed1, context1.Config).Should().Match<TriggerDecision>(d => !d.Fired && d.Reason.Contains(MemoryPressureShadow.WouldFire), "50 % available and a small cache: A1 does not fire, the pressure rule would have");
+        a2.Trigger(pressed2, context2.Config).Should().Match<TriggerDecision>(d => !d.Fired && d.Reason.Contains(MemoryPressureShadow.WouldFire));
+        a1.Trigger(calm1, context1.Config).Should().Match<TriggerDecision>(d => !d.Fired && d.Reason.Contains(MemoryPressureShadow.WouldNotFire));
+        unread1.Facts.Should().NotContainKey(MemoryPressureShadow.Fact);
+        a1.Trigger(unread1, context1.Config).Reason.Should().Contain(MemoryPressureShadow.NotRead);
+    }
+
     [Fact]
     public async Task A1_previews_the_page_cache_and_fires_below_the_act_threshold_or_on_a_big_cache_with_little_available()
     {

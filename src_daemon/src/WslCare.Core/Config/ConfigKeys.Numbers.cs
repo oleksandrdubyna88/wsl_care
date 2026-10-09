@@ -190,6 +190,14 @@ public static partial class ConfigKeys
         /// <c>wsl-care busy</c>. Default 10.</summary>
         public static readonly ConfigKey.IntKey IoPressureWarnPercent = new("thresholds.ioPressureWarnPercent", 0, 100) { Trust = KeyTrust.Display };
 
+        /// <summary>E14 S5: swap LEFT (<c>SwapFree</c>, GB) under this warns — <c>memory.swapFree</c>; a swap smaller than the key is
+        /// judged by <c>memory.swap</c> only. Default 4 (the 2026-10-07 evening had 2.4 GB of 12 left).</summary>
+        public static readonly ConfigKey.IntKey SwapFreeWarnGb = new("thresholds.swapFreeWarnGb", 0, GbCeiling) { Trust = KeyTrust.Display };
+
+        /// <summary>E14 S5: what the kernel PROMISED (<c>Committed_AS</c>) above this share of <c>MemTotal</c> (%) warns —
+        /// <c>memory.committed</c>. Default 80 (the evening read 104 %, the calm 2026-10-02 tree 46 %).</summary>
+        public static readonly ConfigKey.IntKey CommittedWarnPercent = new("thresholds.committedWarnPercent", 1, 1000) { Trust = KeyTrust.Display };
+
         /// <summary>The root volume warns above this use. Default 80.</summary>
         public static readonly ConfigKey.IntKey RootUsedWarnPercent = new("thresholds.rootUsedWarnPercent", 0, 100) { Trust = KeyTrust.Display };
 
@@ -223,6 +231,10 @@ public static partial class ConfigKeys
     {
         /// <summary>The .wslconfig memory the audit recommends (shown, never applied). Default 36.</summary>
         public static readonly ConfigKey.IntKey RecommendedMemoryGb = new("wslConfig.recommendedMemoryGb", 1, 1024) { Trust = KeyTrust.Display };
+
+        /// <summary>E14 S5: the <c>.wslconfig</c> swap the advice recommends (shown, never written); 0 advises no swap line. Default
+        /// 16 (the 2026-10-07 evening used 9.9 of 12 GB).</summary>
+        public static readonly ConfigKey.IntKey RecommendedSwapGb = new("wslConfig.recommendedSwapGb", 0, 1024) { Trust = KeyTrust.Display };
     }
 
     public static partial class Requests
@@ -623,6 +635,8 @@ public static partial class ConfigKeys
         Thresholds.MemoryPressureWarn,
         Thresholds.CpuPressureWarnPercent,
         Thresholds.IoPressureWarnPercent,
+        Thresholds.SwapFreeWarnGb,
+        Thresholds.CommittedWarnPercent,
         Thresholds.RootUsedWarnPercent,
         Journal.MaxGb,
         Thresholds.JournalHistoryWarnDays,
@@ -630,6 +644,7 @@ public static partial class ConfigKeys
         Thresholds.TimeJumpsBackWarnPer4h,
         Thresholds.CollectorFreshMinutes,
         WslConfig.RecommendedMemoryGb,
+        WslConfig.RecommendedSwapGb,
         Thresholds.WslMemoryCriticalPercent,
         Processes.TopCount,
         Walk.MaxEntries,

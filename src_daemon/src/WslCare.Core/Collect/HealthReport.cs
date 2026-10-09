@@ -42,7 +42,12 @@ public sealed record ClockReport(bool Available, string? Reason, DateTimeOffset?
 public sealed record ClockReferenceReport(bool Available, string? Reason, string? Source, double? ReferenceMinusWslSeconds, ClockStanding Standing, string Judgement);
 
 /// <param name="RecommendedMemory">The owner's recommendation, SHOWN and never written: <c>memory=36GB</c>.</param>
-public sealed record WslConfigReport(bool Available, string? Reason, string? File, bool? Present, string? Memory, string? Swap, string? AutoMemoryReclaim, string? SparseVhd, IReadOnlyList<string>? Warnings, string RecommendedMemory);
+public sealed record WslConfigReport(bool Available, string? Reason, string? File, bool? Present, string? Memory, string? Swap, string? AutoMemoryReclaim, string? SparseVhd, IReadOnlyList<string>? Warnings, string RecommendedMemory)
+{
+    /// <summary>E14 S5: the advice — shown, NEVER written (<see cref="Health.WslConfigAdvice"/>); empty when the file was not read.
+    /// The source generator sets an init property it did not find to null, so the getter answers empty for it.</summary>
+    public IReadOnlyList<Health.WslConfigAdviceLine> Advice { get => field ?? []; init; } = [];
+}
 
 /// <summary>The health of plan §4.5 as one full run read it.</summary>
 public sealed record HealthReport(
@@ -124,6 +129,10 @@ public static class HealthReports
         var recommended = $"memory={Thresholds.ThresholdRules.RecommendedMemoryGb}GB";
         return audit is Reading<WslConfigAudit>.Available { Value: var a }
             ? new(true, null, a.File, a.Present, Text(a.Settings.Memory), Text(a.Settings.Swap), Text(a.Settings.AutoMemoryReclaim), Text(a.Settings.SparseVhd), a.Warnings, recommended)
+            {
+                // E14 S5: shown, NEVER written (Q5) — no product code writes .wslconfig (ArchitectureTests.No_product_code_writes_wslconfig).
+                Advice = Health.WslConfigAdvice.For(a, Health.WslConfigAdvice.Configured),
+            }
             : new(false, audit.ReasonOrEmpty, null, null, null, null, null, null, null, recommended);
     }
 

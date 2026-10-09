@@ -1965,6 +1965,30 @@
       }
     },
     {
+      "id": "memory.swapFree",
+      "level": "ok",
+      "value": "12.0 GiB free of 12.0 GiB",
+      "limit": "warn < 4 GiB of swap left (thresholds.swapFreeWarnGb)",
+      "reason": "swap LEFT: when it runs out the kernel kills processes (the 2026-10-07 evening had 2.4 GB of 12)",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.committed",
+      "level": "ok",
+      "value": "46.2 % of MemTotal (20.7 of 44.9 GiB committed)",
+      "limit": "warn > 80 % of MemTotal promised (thresholds.committedWarnPercent)",
+      "reason": "memory the kernel has PROMISED (Committed_AS) — Linux over-commits, so this warns of promises, never of use (the evening: 104 %)",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "memory.fragmentation",
       "level": "ok",
       "value": "3933 order-7 blocks, 4069 order-4",

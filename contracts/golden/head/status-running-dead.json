@@ -116,6 +116,30 @@
       }
     },
     {
+      "id": "memory.swapFree",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn < 4 GiB of swap left (thresholds.swapFreeWarnGb)",
+      "reason": "/golden-root/proc/meminfo does not exist",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "memory.committed",
+      "level": "unknown",
+      "value": "",
+      "limit": "warn > 80 % of MemTotal promised (thresholds.committedWarnPercent)",
+      "reason": "/golden-root/proc/meminfo does not exist",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "memory.fragmentation",
       "level": "unknown",
       "value": "",

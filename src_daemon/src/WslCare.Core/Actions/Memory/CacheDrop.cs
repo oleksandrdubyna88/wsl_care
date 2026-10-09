@@ -69,7 +69,7 @@ public sealed class CacheDrop : ICleanupAction
             return Task.FromResult(ActionPreview.Unavailable(what, figures.ReasonOrEmpty));
         }
 
-        var facts = new Dictionary<string, long>(StringComparer.Ordinal)
+        var facts = new Dictionary<string, long>(MemoryPressureShadow.Facts(MemoryNow.Read(context)), StringComparer.Ordinal)
         {
             [AvailablePermilleFact] = (long)Math.Round(f.Available * 10),
             [PageCacheBytesFact] = f.Cache,
@@ -89,7 +89,7 @@ public sealed class CacheDrop : ICleanupAction
         var act = config.Int(ConfigKeys.Thresholds.MemAvailableActPercent);
         var available = permille / 10.0;
         var said = string.Create(CultureInfo.InvariantCulture, $"MemAvailable {available:0.0} %, page cache {cache / Gib:0.0} GiB; the trigger is available < {act} % (thresholds.memAvailableActPercent), or a page cache > {ThresholdRules.PageCacheActGib:0} GiB with available < {ThresholdRules.PageCacheActAvailablePercent:0} %");
-        return new TriggerDecision(Fires(available, cache, act), said);
+        return new TriggerDecision(Fires(available, cache, act), said + MemoryPressureShadow.Sentence(preview.Facts, config));
     }
 
     private static bool Fires(double availablePercent, long cacheBytes, int actPercent) =>

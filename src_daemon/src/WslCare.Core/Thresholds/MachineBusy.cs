@@ -101,7 +101,10 @@ public static class MachineBusy
 
     /// <summary>THE comparison (coai code round 2026-10-09, findings 0 and 7): the window above the key — what both the verb and
     /// the verdicts ask, so the two cannot disagree.</summary>
-    private static bool IsOver(PressureLine some, double limit) => some.Avg60 > limit;
+    private static bool IsOver(PressureLine some, double limit) => Crosses(some.Avg60, limit);
+
+    /// <summary>The comparison on the bare avg60 — what A1's and A2's memory-pressure SHADOW asks (E14 S5) from a recorded fact.</summary>
+    public static bool Crosses(double avg60, double limit) => avg60 > limit;
 
     private static string Invariant(FormattableString text) => text.ToString(CultureInfo.InvariantCulture);
 }
