@@ -61,6 +61,11 @@ internal static partial class ReleaseFiles
     public static IReadOnlyList<string> InstallerRequiredMembers =>
         Single(InstallerMembers(), File.ReadAllText(ShippedFiles.InstallScript), "install.sh unpack loop").Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
+    /// <summary>Plan E14 S2b: the units install.sh installs only when a release ships them (its OPTIONAL_UNITS line) — a release built
+    /// from this repository ships them.</summary>
+    public static IReadOnlyList<string> InstallerOptionalMembers =>
+        [.. Single(OptionalUnitsLine(), File.ReadAllText(ShippedFiles.InstallScript), "install.sh OPTIONAL_UNITS").Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(u => "systemd/" + u)];
+
     public static string TrimmedVersion => File.ReadAllText(VersionFile).Trim();
 
     private static string Single(Regex pattern, string text, string what)
@@ -68,6 +73,9 @@ internal static partial class ReleaseFiles
         var matches = pattern.Matches(text);
         return matches.Count == 1 ? matches[0].Groups[1].Value : throw new InvalidOperationException($"expected exactly one {what}, found {matches.Count}");
     }
+
+    [GeneratedRegex("""^readonly OPTIONAL_UNITS="([^"]+)"$""", RegexOptions.Multiline)]
+    private static partial Regex OptionalUnitsLine();
 
     [GeneratedRegex("""^readonly DAEMON_RIDS="([^"]+)"$""", RegexOptions.Multiline)]
     private static partial Regex DaemonRidsLine();
