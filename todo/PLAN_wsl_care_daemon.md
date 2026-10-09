@@ -4028,6 +4028,81 @@ Folded into ONE `fix(daemon): the coai code round and the own review over E9.S5`
 
 **Owed:** the E9 live gate's Windows steps (8), and the release carrying E9.
 
+#### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
+
+> Status: **plan only, 2026-10-09 — nothing built.** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
+> `Archive/Liveness.cs`, `Archive/Selection.cs`, `Archive/ArchiveRemove.cs`, `Archive/ArchiveRun.cs`, a new `Archive/WindowsIdle.cs`,
+> `Config/ConfigKeys.cs` + `default.json` (two keys), the tests, `research/module_archive.md`, `research/module_tests.md`, README.
+> Branch `fix/wc-e9s5-windows-idle`, its own PR, before E10 goes on. It OVERRIDES the E9.S5 text above where they differ.
+
+**The symptom.** E9.S5 kept EVERY Claude Code session on the Windows side while any Claude Code runs there
+(`InUseWindows.ClaudeRunning` → `Liveness.AgentWorking` → `agent-working-here`), because the working folder of a Windows process cannot
+be read. The owner keeps Claude Code open around the clock, so on the owner's machine the Windows archive would move nothing, ever.
+
+**The rule (the owner's words, 2026-10-09).** While Claude Code runs on Windows, a Claude Code session whose files were ALL untouched
+for at least `archive.windowsIdleDays` may still be archived; the open-file check still applies to it (a file the Restart Manager
+names held keeps it); a session touched within the window stays.
+
+**Design.**
+- **D1 — two keys, every number a setting.**
+  - `archive.windowsIdleDays`: default **7**, range **1–365**, safe direction higher.
+    - The floor is one day: a session idle for less than that is likely one open in a window this evening, and the owner's sessions
+      idle overnight.
+    - The ceiling is a year: past it the rule would only restate "nothing moves while Claude runs", which a person can have by not
+      setting a base on Windows.
+  - `archive.clockSkewMinutes`: default **10**, range **0–1440**, safe direction higher. It is the tolerance of "now" against a file's
+    time, since the two clocks may differ: a file on a share is stamped by the NAS, a WSL file by a VM clock that drifts after sleep.
+  - Both are ordinary keys on both layers (Windows user layer included). `NumbersAreConfigurationTests` lists them, and the
+    `contracts/config-keys.json` golden carries them.
+- **D2 — "untouched" is judged from the files' CURRENT times, asked fresh at each question** (the selection's and phase 2's), never the
+  listing's frozen ones: a session resumed between the selection and the removal is seen. It is judged by the newest last-write time
+  over every file of the unit — every name the question is asked for (phase 2's resume asks the quarantine names too). Then:
+  - newest **after now + skew** → **kept**: "a file of it is dated <time>, after this machine's clock (<now>) by more than
+    `archive.clockSkewMinutes`; whether it is idle cannot be told". The archive does not guess which clock is wrong.
+  - newest **after now − idle** (within the window, or in the future by no more than the skew) → **kept**: "a file of it changed within
+    `archive.windowsIdleDays` (N days)".
+  - a file whose time **cannot be read** → **kept**, naming it unreadable. A name that does not exist (an original renamed aside, a
+    quarantine name not yet made) is skipped. A unit with NO readable file is kept: there is nothing to judge.
+  - otherwise **idle** → the agent rule lets it through; the open-file question (`HeldBy`, the Restart Manager) is still asked, so a
+    held file still keeps it.
+- **D3 — where.** `InUseView` gains a per-unit question `ClaudeIdle: Func<IReadOnlyList<string>, string>` (the unit's files as full
+  paths → why it is NOT idle; empty when it is).
+  - Its default FAILS CLOSED ("whether its files are idle was not judged"), so a view that reports Claude running but cannot judge
+    idleness keeps everything, as today.
+  - `Liveness.AgentWorking(view, agent, key, files)` keeps a Claude Code unit only when `ClaudeRunning()` speaks AND `ClaudeIdle(files)`
+    speaks, and joins the two sentences.
+  - The project rule (a live Claude Code in the unit's project, the distro's `/proc` view) is unchanged.
+  - The Windows view takes a `WindowsIdle(TimeProvider Clock, TimeSpan Idle, TimeSpan Skew)` and the side's file system.
+    `IWindowsSide.View` takes them from the run's input (its config and clock).
+- **D4 — the unknown case is the running case.** A process table that cannot be read, or a `node.exe` of this session whose command
+  line cannot be read, means "Claude Code may run". The idle rule applies to it exactly as to a Claude Code known to run: idleness is
+  the safe answer to both. Nothing else in E9.S5 changes, in particular the Restart Manager, the stall latch and the budget.
+- **D5 — what the owner sees.** The skip reason keeps `agent-working-here`, and its sentence now names the window or the clock. The
+  sentence `Runs()` gives drops "no Claude Code session moves while it runs" and says "only a session idle for
+  `archive.windowsIdleDays` moves while it runs".
+- **Measured interplay, said honestly.** A unit is due only past its effective age (`archive.olderThanDays`, 14 by default, shortened by
+  the agent's own retention). So at selection the idle rule bites only when that age is under `archive.windowsIdleDays`. Its main work
+  is phase 2, a day or more later, on fresh times: a session resumed in between is kept.
+
+**RED first.** Each test below is red against today's code: today every Claude Code unit is kept while Claude runs, and phase 2 never
+reads times.
+- an idle unit moves while Claude runs, for a known Claude and for an unknown table alike;
+- a unit touched within the window is kept, naming `archive.windowsIdleDays`;
+- a future-dated file beyond the skew is kept, naming the clock;
+- a future-dated file within the skew counts as touched now;
+- an unreadable time keeps the unit;
+- a held idle unit is still kept by the Restart Manager answer;
+- phase 2 re-reads the times: a file touched after the selection is kept, and its quarantine name counts on a resume;
+- the view's default fails closed;
+- the two keys exist with their ranges and defaults.
+
+**Break-it** on product code only: the idle arm dropped, the future arm dropped, the fresh read replaced by nothing, the default made
+open, the skew ignored.
+
+**DoD.** The plan gate (this section), the code gate, an own Opus review (data safety: what may move while Claude runs), the teeth
+recorded in `module_tests.md`, `module_archive.md` and the README's archive text updated, all suites on Windows and WSL, a PR merged by
+squash.
+
 #### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
 
 The coai `review_code` round that the S2b and S3 rounds recorded as OWED, over `0f6d68c..9da05f2` (rebased on `1b5d652`; reviewers
