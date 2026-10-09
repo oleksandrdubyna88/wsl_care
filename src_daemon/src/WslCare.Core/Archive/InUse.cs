@@ -33,9 +33,10 @@ public sealed record InUseView(IReadOnlySet<string> OpenFiles, IReadOnlySet<stri
     /// The distro's view answers from its <c>/proc</c> scan alone (nothing here); the Windows view asks the Restart Manager.</summary>
     public Func<IReadOnlyList<string>, string> HeldBy { get; init; } = static _ => string.Empty;
 
-    /// <summary>Why no Claude Code session may move on this side now (E9.S5: a live Claude Code on Windows, whose working folder cannot
-    /// be read, or a process table that cannot be read); empty when nothing says so.</summary>
-    public string ClaudeRunning { get; init; } = string.Empty;
+    /// <summary>Why no Claude Code session may move on this side NOW (E9.S5: a live Claude Code on Windows, whose working folder cannot
+    /// be read, or a process table that cannot be read) — asked at every question, since phase 2 asks minutes after the selection (the
+    /// gate round, finding 6); empty when nothing says so.</summary>
+    public Func<string> ClaudeRunning { get; init; } = static () => string.Empty;
 
     public static InUseView Complete(IReadOnlySet<string> openFiles, IReadOnlySet<string> claudeProjects) => new(openFiles, claudeProjects, InUseState.Complete, string.Empty);
 
@@ -67,7 +68,7 @@ public static class InUse
     /// <summary>The scan within <paramref name="ceiling"/> (the caller's time left, never above <see cref="Ceiling"/>): the distro's
     /// <c>/proc</c>, or on Windows the view that asks the Restart Manager per unit (E9.S5), each question within <see cref="Ceiling"/>.</summary>
     public static InUseView Scan(IHostPaths paths, IFileSystem files, TimeSpan ceiling, CancellationToken cancellationToken, IWindowsSide windows) =>
-        paths is LinuxHostPaths linux ? ScanProc(linux, files, ceiling < Ceiling ? ceiling : Ceiling, cancellationToken) : windows.View(Ceiling);
+        paths is LinuxHostPaths linux ? ScanProc(linux, files, ceiling < Ceiling ? ceiling : Ceiling, cancellationToken) : windows.View(ceiling, cancellationToken);
 
     private static InUseView ScanProc(LinuxHostPaths paths, IFileSystem files, TimeSpan ceiling, CancellationToken cancellationToken)
     {

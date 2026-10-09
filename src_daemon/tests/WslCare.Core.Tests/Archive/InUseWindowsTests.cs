@@ -148,6 +148,151 @@ public sealed class InUseWindowsTests : IDisposable
     /// <summary>The real Restart Manager on Windows (the tests that call it skip elsewhere).</summary>
     private static RmAnswer Ask(string file) => OperatingSystem.IsWindows() ? new RestartManager().Holders([file]) : new RmAnswer.Failed(WindowsOnly);
 
+    // ---- the gate round over E9.S5 and the own review ----------------------------------------------------------------------
+
+    /// <summary>Gate finding 6 / own review 1: the view is built once per run, phase 2 asks it minutes later — a Claude Code started
+    /// in between must still keep the Claude Code sessions, so whether it runs is asked at each question, never frozen.</summary>
+    [Fact]
+    public void A_claude_code_started_after_the_view_was_built_is_seen_by_the_next_question()
+    {
+        var table = new ChangingTable();
+        var view = InUseWindows.View(new GivenAnswers(new RmAnswer.Free()), table, TimeSpan.FromSeconds(5));
+
+        var before = Liveness.Problem(view, p => p, "claude-code", "C:\\Users\\me\\.claude", "projects/p/s1.jsonl", ["projects/p/s1.jsonl"]);
+        table.Processes = [new WindowsProcessEntry(40, 4, "claude.exe")];
+        var after = Liveness.Problem(view, p => p, "claude-code", "C:\\Users\\me\\.claude", "projects/p/s1.jsonl", ["projects/p/s1.jsonl"]);
+
+        before.Should().BeEmpty();
+        after.Should().Contain("Claude Code runs on Windows");
+    }
+
+    /// <summary>Gate finding 12: with Claude Code running every Claude Code unit stays anyway — the Restart Manager is not asked for it.</summary>
+    [Fact]
+    public void With_claude_code_running_its_units_are_not_asked_of_the_restart_manager()
+    {
+        var counting = new Counting();
+        var view = InUseWindows.View(counting, new GivenTable([new WindowsProcessEntry(40, 4, "claude.exe")], string.Empty), TimeSpan.FromSeconds(5));
+
+        Liveness.Problem(view, p => p, "claude-code", "C:\\Users\\me\\.claude", "projects/p/s1.jsonl", ["projects/p/s1.jsonl"]).Should().Contain("Claude Code runs");
+
+        counting.Asked.Should().Be(0);
+    }
+
+    /// <summary>Gate finding 9: the file system's list of users names every process with a handle — this one's own attribute handle
+    /// included. A long-path file nobody else holds is free; one a CHILD process holds is held, by that child.</summary>
+    [Fact]
+    public void Past_max_path_the_product_does_not_count_its_own_look_and_names_another_holder()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        var deep = Path.Combine(_root.Path, string.Join('\\', Enumerable.Repeat(new string('e', 50), 6)));
+        Directory.CreateDirectory(ExtendedPath.Of(deep));
+        var free = Path.Combine(deep, "free.jsonl");
+        var held = Path.Combine(deep, "held.jsonl");
+        File.WriteAllText(ExtendedPath.Of(free), "free");
+        File.WriteAllText(ExtendedPath.Of(held), "held");
+        using var holder = HoldingChild.Hold(ExtendedPath.Of(held));
+
+        Ask(free).Should().BeOfType<RmAnswer.Free>();
+        Ask(held).Should().BeOfType<RmAnswer.Held>().Which.Holders.Should().ContainSingle(h => h == $"a process (pid {holder.Pid})");
+    }
+
+    /// <summary>Own review 5: the Restart Manager's application name is often a window title — a document's or a tab's name — and the
+    /// reason lands in the records: a holder is named by its pid only.</summary>
+    [Fact]
+    public void A_holder_is_named_by_its_pid_only()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), WindowsOnly);
+        var held = _root.File("titled.jsonl", "a transcript");
+        using var holder = HoldingChild.Hold(held);
+
+        Ask(held).Should().BeOfType<RmAnswer.Held>().Which.Holders.Should().Equal($"a process (pid {holder.Pid})");
+    }
+
+    /// <summary>Gate finding 4: the questions of a scan share the time the caller has — once it is spent, every later unit stays without
+    /// a question; finding 15: a cancelled scan asks nothing more either.</summary>
+    [Fact]
+    public void A_spent_budget_or_a_cancellation_keeps_every_later_unit_without_asking()
+    {
+        var counting = new Counting();
+        using var cancel = new CancellationTokenSource();
+        var spent = InUseWindows.View(counting, NoClaude(), new WindowsAsk(TimeSpan.FromSeconds(5), TimeSpan.Zero, CancellationToken.None) { Latch = new StallLatch() });
+        var cancelled = InUseWindows.View(counting, NoClaude(), new WindowsAsk(TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(5), cancel.Token) { Latch = new StallLatch() });
+        cancel.Cancel();
+
+        spent.HeldBy(["C:\\x"]).Should().Contain("passed the time it had");
+        cancelled.HeldBy(["C:\\x"]).Should().Contain("was stopped");
+        SpinWait.SpinUntil(() => counting.Asked > 0, TimeSpan.FromMilliseconds(500)).Should().BeFalse("no question is started once the time is spent or the scan stopped");
+    }
+
+    /// <summary>Gate finding 2: a stalled native worker cannot be stopped — a LATER view of the same process (the next preview, the next
+    /// run) does not ask again either: the latch is the process's.</summary>
+    [Fact]
+    public void A_stall_is_remembered_by_every_later_view_of_the_process()
+    {
+        using var release = new ManualResetEventSlim(false);
+        var latch = new StallLatch();
+        var stalled = new Stalled(release);
+        var first = InUseWindows.View(stalled, NoClaude(), new WindowsAsk(TimeSpan.FromMilliseconds(200), TimeSpan.FromMinutes(5), CancellationToken.None) { Latch = latch });
+        var later = InUseWindows.View(stalled, NoClaude(), new WindowsAsk(TimeSpan.FromMilliseconds(200), TimeSpan.FromMinutes(5), CancellationToken.None) { Latch = latch });
+
+        first.HeldBy(["C:\\a"]).Should().Contain("did not answer");
+        later.HeldBy(["C:\\b"]).Should().Contain("did not answer");
+        release.Set();
+
+        stalled.Asked.Should().Be(1);
+    }
+
+    /// <summary>Own review 3: a node.exe of THIS session whose command line cannot be read cannot be told apart from Claude Code — it
+    /// keeps the Claude Code sessions; one of another session (another account) does not.</summary>
+    [Theory]
+    [InlineData(1, "could not be read")]
+    [InlineData(2, "")]
+    public void An_unreadable_node_of_this_session_keeps_every_claude_code_session(int itsSession, string reason)
+    {
+        var running = InUseWindows.ClaudeRunning(new SessionTable(itsSession));
+
+        if (reason.Length == 0)
+        {
+            running.Should().BeEmpty();
+        }
+        else
+        {
+            running.Should().Contain(reason).And.Contain("pid 41");
+        }
+    }
+
+    private sealed class SessionTable(int nodeSession) : IWindowsProcessTable
+    {
+        public Reading<IReadOnlyList<WindowsProcessEntry>> List() => Reading.Of<IReadOnlyList<WindowsProcessEntry>>([new WindowsProcessEntry(41, 4, "node.exe")]);
+
+        public WindowsProcessDetails Details(int pid) =>
+            WindowsProcessDetails.Unopenable("not opened") with { SessionId = Reading.Of(pid == 41 ? nodeSession : 1) };
+
+        public Reading<string> CommandLine(int pid) => Reading.Missing<string>("access denied");
+    }
+
+    private sealed class ChangingTable : IWindowsProcessTable
+    {
+        public IReadOnlyList<WindowsProcessEntry> Processes { get; set; } = [new WindowsProcessEntry(10, 4, "explorer.exe")];
+
+        public Reading<IReadOnlyList<WindowsProcessEntry>> List() => Reading.Of(Processes);
+
+        public WindowsProcessDetails Details(int pid) => WindowsProcessDetails.Unopenable("not asked");
+    }
+
+    private sealed class Counting : IRestartManager
+    {
+        private int _asked;
+
+        public int Asked => Volatile.Read(ref _asked);
+
+        public RmAnswer Holders(IReadOnlyList<string> files)
+        {
+            Interlocked.Increment(ref _asked);
+            return new RmAnswer.Free();
+        }
+    }
+
     private static GivenTable NoClaude() => new([new WindowsProcessEntry(10, 4, "explorer.exe")], string.Empty);
 
     private sealed class GivenAnswers(RmAnswer answer) : IRestartManager

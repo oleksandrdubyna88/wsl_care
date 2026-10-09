@@ -108,11 +108,12 @@ public sealed partial class RestartManager : IRestartManager
         return new ListCall(code, needed, code == Success ? [.. infos.Take((int)count).Select(Holder)] : []);
     }
 
-    private static string Holder(ProcessInfo info) =>
-        string.Create(CultureInfo.InvariantCulture, $"{info.Application()} (pid {info.ProcessId})");
+    /// <summary>A holder by its pid ONLY: the Restart Manager's application name is often a window title — a document's, a tab's — and
+    /// the reason lands in the records (the E9.S5 own review, 5).</summary>
+    private static string Holder(ProcessInfo info) => string.Create(CultureInfo.InvariantCulture, $"a process (pid {info.ProcessId})");
 
     private static RmAnswer.Failed Failure(string call, int code) =>
-        new(string.Create(CultureInfo.InvariantCulture, $"{call} answered error {code}"));
+        new(string.Create(CultureInfo.InvariantCulture, $"{call} answered Win32 error {code}"));
 
     /// <summary><c>RM_PROCESS_INFO</c>: <c>RM_UNIQUE_PROCESS</c> (pid, start <c>FILETIME</c>), the application's and the service's
     /// names, its type, status, terminal-services session and whether it restarts.</summary>
@@ -128,14 +129,6 @@ public sealed partial class RestartManager : IRestartManager
         public uint AppStatus;
         public uint TerminalSession;
         public int Restartable;
-
-        /// <summary>The application's name, up to its NUL.</summary>
-        public readonly string Application()
-        {
-            ReadOnlySpan<char> name = MemoryMarshal.Cast<ushort, char>((ReadOnlySpan<ushort>)AppName);
-            var end = name.IndexOf('\0');
-            return new string(end < 0 ? name : name[..end]);
-        }
     }
 
     /// <summary><c>CCH_RM_MAX_APP_NAME + 1</c> UTF-16 units.</summary>
@@ -199,7 +192,7 @@ internal static partial class FileUsers
         var status = NtQueryInformationFile(handle, out _, buffer, buffer.Length, ProcessIdsUsingFile);
         return status == LengthMismatch && room == FirstRoom ? Users(handle, Needed(buffer, room))
             : status == 0 ? Listed(buffer)
-            : new RmAnswer.Failed(string.Create(CultureInfo.InvariantCulture, $"NtQueryInformationFile answered status {status}"));
+            : new RmAnswer.Failed(string.Create(CultureInfo.InvariantCulture, $"NtQueryInformationFile answered NTSTATUS 0x{status:X8}"));
     }
 
     /// <summary>A room for the count the first answer named (one <c>ULONG_PTR</c> per process after the header).</summary>

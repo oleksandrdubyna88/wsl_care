@@ -32,7 +32,7 @@ public static class Liveness
     /// <summary>Why an agent may be working in the unit: a live Claude Code on a side that cannot read its working folder (E9.S5), or one
     /// working in the unit's project; empty otherwise.</summary>
     public static string AgentWorking(InUseView view, string agent, string key) =>
-        agent == ClaudeCode && view.ClaudeRunning.Length > 0 ? view.ClaudeRunning
+        agent == ClaudeCode && view.ClaudeRunning() is { Length: > 0 } running ? running
         : ProjectOf(agent, key) is { Length: > 0 } project && view.ClaudeProjects.Contains(project) ? $"Claude Code is working in the project {project}"
         : string.Empty;
 
@@ -46,6 +46,6 @@ public static class Liveness
     /// <summary>Why the unit must not be touched now; empty when no agent can be working on it.</summary>
     public static string Problem(InUseView view, Func<string, string> distro, string agent, string under, string key, IEnumerable<string> relatives) =>
         ScanProblem(view) is { Length: > 0 } scan ? scan
-        : Held(view, distro, under, [.. relatives]) is { Length: > 0 } held ? held
-        : AgentWorking(view, agent, key);
+        : AgentWorking(view, agent, key) is { Length: > 0 } working ? working
+        : Held(view, distro, under, [.. relatives]);
 }

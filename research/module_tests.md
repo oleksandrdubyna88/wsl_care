@@ -2846,14 +2846,21 @@ left to the process's own privilege refused every archive verb there (the first 
 | through the command line on Windows: preview lists a due session; held it stays `in-use` naming this process; the run copies it; phase 2 keeps it while held; a later run removes it; restore puts it back | `Cli.Tests/ArchiveWindowsFlowTests.A_due_session_moves_on_windows_only_while_no_process_holds_it_and_comes_back` (Windows) |
 | the Windows user layer takes `archive.baseFolder` and leaves a machine-only `archive.*` key to the machine layer | `Cli.Tests/ArchiveWindowsFlowTests.The_windows_user_layer_takes_the_base_folder_and_leaves_a_machine_only_archive_key` (Windows) |
 | two sides and two hosts write disjoint folders and indexes under one base | `ArchiveSidesTests.Two_sides_and_two_hosts_write_disjoint_folders_and_indexes_under_one_base` |
+| the code round and the own review: a Claude Code started after the view was built is seen; with it running the Restart Manager is not asked; past `MAX_PATH` the product does not count its own look and names a CHILD holder; a holder by its pid only; a spent budget or a cancellation asks nothing more; a stall is remembered by every later view; an unreadable `node.exe` of this session keeps the Claude Code sessions; a resumed entry is asked under its quarantine names | `InUseWindowsTests.A_claude_code_started_after_the_view_was_built_is_seen_by_the_next_question`, `…With_claude_code_running_its_units_are_not_asked_of_the_restart_manager`, `…Past_max_path_the_product_does_not_count_its_own_look_and_names_another_holder`, `…A_holder_is_named_by_its_pid_only`, `…A_spent_budget_or_a_cancellation_keeps_every_later_unit_without_asking`, `…A_stall_is_remembered_by_every_later_view_of_the_process`, `…An_unreadable_node_of_this_session_keeps_every_claude_code_session` (2 rows); `ArchiveRemoveNamesTests`; the holder fixture is `TestSupport/HoldingChild` (a Windows PowerShell child holding the file with no sharing, killed by its own process object) |
 
 **Red first, as far as it went:** the 300-character row was red against the first build (`RmRegisterResources answered error 29`),
 which is how the Restart Manager's `MAX_PATH` limit was found. The rest were written against a skeleton of the new types; the
 Windows-user-layer and the disjoint-sides tests were green against the code as it was (they pin what earlier stories built — the
 plan round's finding 4 was answered by that green). Their teeth are the checks below.
 
-**Teeth** (`S5-01`–`S5-11`, product code only, each restored byte for byte), on Windows — the legs the Restart Manager runs on: all
-11 red — the per-unit question not asked; a live Claude Code ignored; the Restart Manager naming no holder; a long path handed to it;
+**Red first for the code round:** the late Claude Code (`Expected after "" to contain "Claude Code runs on Windows"`), the order
+(`Expected counting.Asked to be 0, but found 1`) and the pid-only holder (`{"Windows PowerShell (pid 7864)"} differs`) were red
+against the S5 commit; the own-handle row was GREEN against it — the measurement that refuted the gate's finding 9.
+
+**Teeth** (`S5-01`–`S5-19` without S5-12 and S5-18, product code only, each restored byte for byte), on Windows — the legs the
+Restart Manager runs on: all 17 red — the six of the code round added: the Restart Manager asked before the Claude check, the
+budget ignored, a cancellation ignored, a stall never latched, an unreadable node of this session ignored, a resumed entry asked
+under its old names only; and the first 11: the per-unit question not asked; a live Claude Code ignored; the Restart Manager naming no holder; a long path handed to it;
 an error letting the unit go; a stall not remembered; a share given the drive form; the Windows view not used; an unreadable process
 table letting Claude go; Claude under node not seen; one folder for every side. On Linux the Windows-only tests skip, so these checks
 were not repeated there; the Linux suites are green (Core 2255 / 16 skipped, Cli 344 / 4, Scenarios 497 / 3, goldens 14 / 0).

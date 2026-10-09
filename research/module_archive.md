@@ -433,9 +433,12 @@ flowchart TD
   the Claude Code attribution reuses `AgentProcesses.AgentOfPrograms` over the raw argv (main's one attribution, shared with A18
   and the MCP servers since the rebase of 2026-10-07). On Windows (E9.S5) the view is `InUseWindows`'s: each unit's files are
   ASKED of the Restart Manager (`Archive/RestartManager.cs`, extended-length paths; a path past `MAX_PATH` asked of the file
-  system's own list of users, its attributes opened only) — never an open of a session file; a holder, an error or a stalled
-  question keeps the unit, and once a question stalls every later one is kept without asking. Claude Code's working folder cannot
-  be read on Windows, so a live Claude Code there (`claude.exe`, or `node.exe` running its package) keeps every Claude Code session.
+  system's own list of users, its attributes opened only) — never an open of a session file; a holder (named by its pid only), an
+  error, a stalled question, a spent budget or a cancellation keeps the unit, and once a question stalls no later view of the
+  process asks (`StallLatch`). Claude Code's working folder cannot be read on Windows, so a live Claude Code there (`claude.exe`, or
+  `node.exe` running its package; an unreadable `node.exe` of this session counts) keeps every Claude Code session — asked again at
+  every unit, the selection's and phase 2's, and before the Restart Manager. Phase 2 resuming past its commit point asks the
+  quarantine names too (`ArchiveRemove.ResumeNames`).
 - **`Archive/ArchiveNames.cs`**: the name rules (`Problem`, `CaseCollision`), Claude's project-folder encoding
   (`ClaudeProjectOf`), the quarantine mark, and the side folder (`SideName`: `windows-<host>`, `wsl-<host>-<distro>`, §15r D4).
 - **`Archive/AgentRetentionReader.cs`** reads one key through the bounded user-file reader (`userFiles.maxJsonBytes`).

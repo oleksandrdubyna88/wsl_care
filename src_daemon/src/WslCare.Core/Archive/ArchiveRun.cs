@@ -118,11 +118,11 @@ public sealed record ArchiveRunInput(
     public Func<string, TimeSpan, bool> Reachable { get; init; } = static (folder, ceiling) => Task.Run(() => Directory.Exists(folder)).Wait(ceiling);
 
     /// <summary>The open-file check (D2.2) — the real scan; a test hands its own view.</summary>
-    public Func<ArchiveRunInput, InUseView> InUseScan { get; init; } = static i => InUse.Scan(i.Paths, i.Files, i.Token, i.Windows);
+    public Func<ArchiveRunInput, InUseView> InUseScan { get; init; } = static i => InUse.Scan(i.Paths, i.Files, i.Budget, i.Token, i.Windows);
 
     /// <summary>The side's folder name when a test plays several hosts over one base (E9.S5's disjoint-sides test); empty — always, from
     /// the command line — means this process's own (<see cref="SideName.OfThisProcess"/>).</summary>
-    public string SideFolder { get; init; } = string.Empty;
+    internal string SideFolder { get; init; } = string.Empty;
 
     /// <summary>What the Windows side's open-file check asks (E9.S5): the Restart Manager and the process table in the Windows binary;
     /// a check that did not run anywhere else.</summary>

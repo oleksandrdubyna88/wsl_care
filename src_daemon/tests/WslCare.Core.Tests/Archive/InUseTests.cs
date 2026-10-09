@@ -65,7 +65,7 @@ public sealed class InUseTests : IDisposable
 
     private sealed class GivenSide(InUseView view) : IWindowsSide
     {
-        public InUseView View(TimeSpan ceiling) => view;
+        public InUseView View(TimeSpan budget, CancellationToken cancellationToken) => view;
     }
 
     /// <summary>Plan §15q H3 carried to the archive: the selection lists names and stats entries — not one session file is opened,

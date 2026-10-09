@@ -4000,6 +4000,32 @@ one rejected. Each row OVERRIDES the text it names.
 5. **`InUseView`** gained `HeldBy` (the per-unit question) and `ClaudeRunning`; `Liveness.Held` / `Liveness.AgentWorking` are
    what the selection and phase 2 ask. `InUse.NotOnWindowsYet` is gone: on Windows `archive run` moves.
 
+**The code round** (`review_code` on session `c6895ab0`, `8029bd1..17212dc`; codex and gemini, 8 of 8 reviewers): verdict
+*proceed*, sixteen findings — twelve ACCEPTED, four rejected with reasons; and **an own review (Opus)** in parallel, nine findings.
+Folded into ONE `fix(daemon): the coai code round and the own review over E9.S5` commit. Each row OVERRIDES the text above.
+
+| # | Finding | Resolution |
+|---|---|---|
+| 0 | `architecture.md` not updated for the archive → Windows process table interaction | **Accepted:** its archive section names both and draws them |
+| 1 | the test seam `SideFolder` is public | **Accepted:** `internal` (the tests see it, the command line cannot) |
+| 2 | a stalled native worker cannot be stopped, and every later view asked again | **Accepted:** `StallLatch` — the process's own, shared by every real view; once a question stalls, no later view of the process asks |
+| 3 | the long-path fallback cannot see a `FileShare.None` holder | **Rejected, measured:** an attributes-only open asks for no data access, so no sharing applies to it; the 300-character test holds with `FileShare.None` and is answered held |
+| 4, 11, 15 | the Windows scan ignored the caller's budget and its cancellation | **Accepted:** `WindowsAsk(Ceiling, Budget, Token)`: each question within `archive.inUseScanSeconds` and what is left of the caller's time (the preview's listing budget, the run's budget); spent or cancelled, every later unit stays without a question |
+| 5, 10 | `Marshal.PtrToStringUni` may answer null | **Accepted:** an empty or null command line reads as empty |
+| 6 (Blocking) = own 1 | `ClaudeRunning` was computed once — a Claude Code started during the run would not stop phase 2 | **Accepted:** `InUseView.ClaudeRunning` is a question (`Func<string>`), asked at every unit, the selection's and phase 2's |
+| 7 | `CliHost.ArchiveWindows` takes no stub Restart Manager | **Rejected:** the CLI flow test uses the REAL Restart Manager on purpose (the win-x64 leg); every fail-closed path is held at the Core seam |
+| 8 | the archive borrowed the MCP catalogue's `ProgramOf` | **Accepted in part:** `CommandLineText.FileNameOf` (the shared program-name rule); `IWindowsProcessTable` stays where E14 put it |
+| 9 | the file system's list of users would name the product's own handle | **Accepted, then refuted by measurement:** `Past_max_path_the_product_does_not_count_its_own_look_and_names_another_holder` — a free long-path file reads free, one a child holds reads held by the child; no filter was needed |
+| 12 | the Restart Manager was asked before the Claude Code check | **Accepted:** `Liveness.Problem` and the selection ask whether an agent works there first |
+| 13 | one Restart Manager session per unit | **Rejected:** `RmGetList` names the holders of ANY registered file, so a batch would keep every unit of it for one held file; the budget bounds the total |
+| 14 | opaque error codes | **Accepted:** Win32 errors and NTSTATUS in hex named as such (no session path — the reason lands in the records) |
+| own 2 | a resumed entry (past its commit point) was asked under its ORIGINAL names | **Accepted:** `ArchiveRemove.ResumeNames` — the quarantine names too, which a holder through the rename holds |
+| own 3 | an unreadable `node.exe` command line counted as "not Claude" | **Accepted:** one of THIS session (or of an unknown one) keeps every Claude Code session; another session's does not |
+| own 4 | the process-table walk was unbounded | **Accepted:** asked through the same bounded asker — a stall fails closed |
+| own 5 | the Restart Manager's application name is often a window title, and it reached the records | **Accepted:** a holder is named by its pid only |
+| own 6 | the Restart Manager leaves out processes it may not query | **Accepted:** said in the view's note |
+| own 7–9 | `ExtendedPath` edge inputs; the per-question task; CA1416 | **Noted:** the inputs are full paths of judged folders and fail closed otherwise; the abandoned worker is the stall latch's case; the one constructor of `RealWindowsSide` is behind `OperatingSystem.IsWindows()` |
+
 **Owed:** the E9 live gate's Windows steps (8), and the release carrying E9.
 
 #### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds

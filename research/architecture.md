@@ -2462,9 +2462,27 @@ stopped because of it.
 The archive moves AI-agent sessions older than a configured age into a base folder the user chose, as that user, in two
 runs (copy, verify, index; then a later run re-hashes and removes the source). Built: E9.S0 (catalogue blocks, keys, base
 rules, `archive check-base`), E9.S1 (selection, `archive preview`), E9.S2a (the file seam `IArchiveFiles`), E9.S2b (`archive run` /
-`status` / `reconcile --scan`: the two phases, the MAC'd month index, the lease, the reconcile). Everything about
-it — purpose, diagrams, entities, verbs, the seam's guarantees and each story's history — is in
+`status` / `reconcile --scan`: the two phases, the MAC'd month index, the lease, the reconcile), E9.S3 (`archive restore` / `list`),
+E9.S4 (A13 and A20 in root's engine, the user's own process doing every byte), E9.S5 (the Windows side's open-file check).
+Everything about it — purpose, diagrams, entities, verbs, the seam's guarantees and each story's history — is in
 [module_archive.md](module_archive.md) (moved there 2026-10-07 to keep this file under the conventions' size cap).
+
+**Across modules on the Windows side (E9.S5).** The archive's open-file check reads two things outside `Archive/`: the Windows
+Restart Manager (`rstrtmgr.dll`, asked per unit — never an open of a session file — with the file system's own list of users for a
+path past `MAX_PATH`), and the Windows process table of the MCP servers' status (E14 S7a, `Mcp/Win32ProcessTable.cs`, now also
+reading ONE process's command line through its query-only handle) to tell whether Claude Code runs. The host wires them in the
+Windows binary only (`CliHost.ArchiveWindows` → `RealWindowsSide`); the distro's binary and every test host get a check that
+did not run, or the test's own.
+
+```mermaid
+flowchart LR
+    cli["wsl-care.exe archive preview / run"] --> side["CliHost.ArchiveWindows<br/>RealWindowsSide"]
+    side --> view["InUseWindows.View<br/>(per question: archive.inUseScanSeconds;<br/>the caller's budget; a process-wide stall latch)"]
+    view --> rm["RestartManager<br/>RmStartSession · RmRegisterResources · RmGetList · RmEndSession"]
+    view --> users["FileUsers (past MAX_PATH)<br/>NtQueryInformationFile, attributes-only handle"]
+    view --> table["Win32ProcessTable (E14 S7a)<br/>snapshot · query-only handle · command line"]
+    view --> liveness["Liveness: the selection and phase 2"]
+```
 
 ## Numbers are configuration (standing convention, owner rule 2026-10-05)
 
@@ -2930,7 +2948,7 @@ flowchart LR
 | live contract | `src_daemon/tests/WslCare.LiveContract` | the real `docker` / `systemctl` / `journalctl` against the product parsers; skip locally, required at release | built (E2.S2); E2.S3 adds the health commands, the Windows clock probe and the event stream |
 | installer + units | `install.sh`, `src_daemon/systemd/`, `src_daemon/config/machine.json` | install / uninstall into the distro with checksum + attestation, the timer, the follower, the machine layer | built (E4.S1), tested over a prefix with fakes; first live install is the E4 live gate (plan §16), after E4 merges |
 | release pipeline | `release-please-config.json`, `.github/workflows/release*.yml`, `.github/scripts/`, `.github/rulesets/`, `sonarcloud.yml`, `.coderabbit.yaml`, `docs/repo-settings.md` | proposes and cuts `daemon-v*`; per-RID tests, AOT, smoke, archive, attestation; completeness-checked publish of a draft | built (E4.S2), structure and scripts tested on every pull request; the owner's settings and the cut of `daemon-v0.1.0` outstanding |
-| AI-session archive | `src_daemon/src/WslCare.Core/Archive/`, `Files/IArchiveFiles.cs` (+ `PhysicalFileSystem.Archive.cs`, `BeneathWrites.cs`, `ArchiveSourceRules.cs`), `WslCare.Cli/Commands/ArchiveCommand.cs`, `ArchiveRunCommand.cs` | moves aged AI-agent sessions to a base folder the user chose, as the user, verified before anything is removed — [module_archive.md](module_archive.md) | E9.S0 (blocks, keys, `archive check-base`), E9.S1 (`archive preview`), E9.S2a (the file seam), E9.S2b (`archive run`, `status`, `reconcile --scan`), E9.S3 (`archive restore`, `archive list`), E9.S4 (A13 and A20 in the engine — the product's own binary run as the target user, `archive reach`; A19 is the MCP servers' since E14 S2a) built; the Windows check E9.S5 |
+| AI-session archive | `src_daemon/src/WslCare.Core/Archive/`, `Files/IArchiveFiles.cs` (+ `PhysicalFileSystem.Archive.cs`, `BeneathWrites.cs`, `ArchiveSourceRules.cs`), `WslCare.Cli/Commands/ArchiveCommand.cs`, `ArchiveRunCommand.cs` | moves aged AI-agent sessions to a base folder the user chose, as the user, verified before anything is removed — [module_archive.md](module_archive.md) | E9.S0 (blocks, keys, `archive check-base`), E9.S1 (`archive preview`), E9.S2a (the file seam), E9.S2b (`archive run`, `status`, `reconcile --scan`), E9.S3 (`archive restore`, `archive list`), E9.S4 (A13 and A20 in the engine — the product's own binary run as the target user, `archive reach`; A19 is the MCP servers' since E14 S2a), E9.S5 (the Windows side's open-file check: the Restart Manager, the Windows process table) built |
 | golden contracts | `contracts/golden/head/` | the read-only verbs' answers the extension's client tests replay | built (E5.S0); anonymised through the identity list and held by `FixturePrivacyTests` (2026-10-04); the set frozen at `daemon-v0.1.0` is an E5 live-gate step |
 | extension | `src_vs_code/` | status bar, panel, cleanup table, logs page, settings, help | skeleton, runner seam, `WslCareClient` over four read-only verbs, strict fake, structural + bundle tests, `ci-extension.yml` (E5.S1); the status bar, the read-only panel from one field map, focused-window polling, the page harness and `@vscode/test-electron` on 1.85.0 + stable (E5.S2); *Install daemon*, the universal `.vsix` with its leak checks, Marketplace metadata, `release-extension.yml` + `tags-extension.json` as files and tests (E5.S3); the code round's fixes, the attest job and `min-daemon.json` (2026-10-04); released at the E5 live gate; the root boundary (E6.S2), the cleanup buttons and *Last cleanup* (E6.S3) and the Logs page (E6.S4) on `feat/wc-e6-cleanup-logs` ([architecture-extension-e6.md](architecture-extension-e6.md)), merging only after `extension-v0.1.0` is tagged. *Start Windows Time*, one elevated PowerShell (2026-10-08); the Windows Time guard, one SYSTEM scheduled task (2026-10-08, [PLAN_windows_time_task.md](PLAN_windows_time_task.md)). Module overview: [module_vs_code.md](module_vs_code.md) |
 | daemon module overview | [module_daemon.md](module_daemon.md) | the map from the daemon's purpose, entities, entry points and dependencies into this file's epic sections | added by the retro review of PR #7 (2026-10-06) |

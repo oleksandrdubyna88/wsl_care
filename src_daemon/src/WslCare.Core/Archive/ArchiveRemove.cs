@@ -65,7 +65,7 @@ public static class ArchiveRemove
         }
 
         IReadOnlyList<Aside> aside = [.. indexed.Files.Select(f => new Aside(f, QuarantinePath(entry.Under, f.Original, entry.QuarantineRun)))];
-        if (LiveProblem(c, entry, indexed) is { Length: > 0 } live)
+        if (Liveness.Problem(c.InUse, c.Distro, entry.Agent, entry.Under, entry.Key, ResumeNames(entry, indexed)) is { Length: > 0 } live)
         {
             return Deferred(c, entry, aside, live);
         }
@@ -91,6 +91,12 @@ public static class ArchiveRemove
     /// Claude Code works in its project. Empty when none can be.</summary>
     private static string LiveProblem(MoveContext c, InflightEntry entry, IndexEntry indexed) =>
         Liveness.Problem(c.InUse, c.Distro, entry.Agent, entry.Under, entry.Key, indexed.Files.Select(f => f.Original));
+
+    /// <summary>The E9.S5 own review, 2: past the commit point the files carry their quarantine names — an agent that held one through the
+    /// rename (a handle opened with delete sharing follows the file) holds it under THAT name, and one that wrote anew uses the old one:
+    /// both are asked.</summary>
+    internal static IReadOnlyList<string> ResumeNames(InflightEntry entry, IndexEntry indexed) =>
+        [.. indexed.Files.Select(f => f.Original), .. indexed.Files.Select(f => f.Original + ArchiveNames.QuarantineMark + entry.QuarantineRun)];
 
     /// <summary>Past the commit point an agent turned out to be working on the unit: every file goes back under its name and the entry
     /// returns to <c>archived</c> — the removal starts again in a later run.</summary>

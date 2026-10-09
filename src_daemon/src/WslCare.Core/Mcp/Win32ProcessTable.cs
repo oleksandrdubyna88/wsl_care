@@ -112,7 +112,7 @@ public sealed partial class Win32ProcessTable : IWindowsProcessTable
         try
         {
             var status = NtQueryInformationProcess(handle, ProcessCommandLineInformation, buffer, needed, out _);
-            return status == 0 ? Reading.Of(UnicodeString(buffer)) : Reading.Missing<string>(Invariant($"NtQueryInformationProcess failed with status {status}"));
+            return status == 0 ? Reading.Of(UnicodeString(buffer)) : Reading.Missing<string>(Invariant($"NtQueryInformationProcess failed with NTSTATUS 0x{status:X8}"));
         }
         finally
         {
@@ -125,7 +125,7 @@ public sealed partial class Win32ProcessTable : IWindowsProcessTable
     {
         var bytes = Marshal.ReadInt16(buffer);
         var characters = Marshal.ReadIntPtr(buffer, nint.Size);
-        return Marshal.PtrToStringUni(characters, (ushort)bytes / sizeof(char));
+        return characters == 0 || bytes <= 0 ? string.Empty : Marshal.PtrToStringUni(characters, (ushort)bytes / sizeof(char)) ?? string.Empty;
     }
 
     private static (Reading<DateTimeOffset> Created, Reading<TimeSpan> Cpu) Times(nint handle)

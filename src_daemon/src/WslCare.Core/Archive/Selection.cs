@@ -256,8 +256,8 @@ public static class Selection
         c => RuleVerdict.When(c.GatherNote.Length > 0, SkipRule.NotWhole, () => $"not every file of it was seen ({c.GatherNote}); a unit moves whole or not at all"),
         c => MayBeOpen(c.Input.Files, c.Under, c.Unit, c.Key),
         c => ScanIncomplete(c.Input.InUse),
-        c => InUse(c.Input, c.Under, c.Files),
         c => AgentHere(c.Input, c.Entry, c.Key),
+        c => InUse(c.Input, c.Under, c.Files),
     ];
 
     /// <summary>The first rule that keeps a due unit where it is; ("", "") when none does.</summary>
