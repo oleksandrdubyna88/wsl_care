@@ -35,6 +35,9 @@ public sealed class WindowsMcpStatusTests
     [Fact]
     public void Status_text_on_windows_prints_the_windows_mcp_servers_and_the_vmmem_advice()
     {
+        // A host over a Windows layout derives its default probe at construction, and off Windows there is none to derive
+        // (CliHost.ProbeFor) — the Windows legs run this; the scripted table and probe keep it independent of the machine there.
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "a CliHost over a Windows layout is built on Windows only");
         using var root = new TempRoot("windows-mcp-text");
         var paths = new WindowsHostPaths(WindowsEnvironment.Sandboxed(root.Path));
         var clock = new FixedTimeProvider(Now);
