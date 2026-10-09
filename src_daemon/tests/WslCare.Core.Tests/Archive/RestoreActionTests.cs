@@ -125,8 +125,33 @@ public sealed class RestoreActionTests : IDisposable
 
         var (preview, _, _) = await PreviewAndRun(Context(ShownList.Of([Removed1])), runner);
 
-        runner.Requests.First().Argv.Skip(5).Should().Equal("archive", "list", "--restorable", "--json");
+        runner.Requests.First().Argv.Skip(5).Should().Equal("archive", "list", "--restorable", "--entry", Removed1, "--json");
         preview.What.Should().Contain("7 more");
+    }
+
+    /// <summary>The E10.S0 own review, finding 1: the preview asks the child for EXACTLY the shown entries (<c>--entry</c>, sorted),
+    /// so an entry older than the newest <c>archive.maxRestoreEntries</c> restorable ones is never lost to the list's window.</summary>
+    [Fact]
+    public async Task A20_asks_the_child_for_exactly_the_shown_entries_so_none_is_lost_to_the_newest_window()
+    {
+        var (_, _, runner) = await PreviewAndRun(Context(ShownList.Of([Removed2, Removed1])));
+
+        runner.Requests.First().Argv.Skip(5).Should().Equal("archive", "list", "--restorable", "--entry", $"{Removed1},{Removed2}", "--json");
+    }
+
+    /// <summary>The E10.S0 own review, findings 1 and 2: more shown entries than the ceiling IN FORCE are refused in the preview,
+    /// before the child is asked — never narrowed to a silent subset.</summary>
+    [Fact]
+    public async Task More_shown_entries_than_the_ceiling_in_force_are_refused_before_the_child_is_asked()
+    {
+        var ids = Enumerable.Range(1, 3).Select(i => i.ToString("x16", System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+        var context = Context(ShownList.Of(ids), Config("""{ "archive": { "maxRestoreEntries": 2 } }"""));
+
+        var (preview, run, runner) = await PreviewAndRun(context);
+
+        preview.Refusal.Should().Contain("archive.maxRestoreEntries").And.Contain("3");
+        run.Succeeded.Should().BeFalse();
+        runner.Requests.Should().NotContain(r => r.Argv.Count > 6 && r.Argv[6] == "list", "nothing is asked of the child for a list it cannot take");
     }
 
     [Fact]

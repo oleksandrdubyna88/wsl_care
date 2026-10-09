@@ -115,6 +115,9 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,
   since E6.S1 `act-detach-accepted.json`,
+  and since E10.S0 `contracts/requests/act-a20-entry-stdin.json` — not an answer but the one REQUEST the extension sends for A20 (the
+  daemon argv and the entry ids on stdin, plan §15s D7): the daemon's `ActEntryStdinTests` parse exactly those bytes, the extension's
+  root-call test emits exactly them, so neither half drifts alone,
   and beside them `contracts/actions.json` / `contracts/exit-codes.json` held equal to `ActionId` / `ExitCode` by
   `ContractFilesTests` (section *The daemon read contract* of [architecture-daemon-e6.md](architecture-daemon-e6.md)), and since plan §15o `contracts/history-reasons.json` (the reason
   prefixes of a kind-less history line that is not a full check, from `HistoryReasons`; section *A full check's history line

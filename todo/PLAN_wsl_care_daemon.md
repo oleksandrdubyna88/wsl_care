@@ -4179,6 +4179,21 @@ named `src/config/configCall.ts`, the module E7.S3 already names (D2); D9's labe
 the bundled binary does not render the Windows archive. A fourth — W-A12's confirm re-check contradicts the shutdown it confirms —
 is E12's and is written into [PLAN_windows_care.md](PLAN_windows_care.md) for its plan round.
 
+#### As built — E10.S0 (2026-10-09)
+
+`act … --entry -` (`ActCommand.EntriesOf`, `ArchiveArguments.StdinEntries`, `ShownEntriesFailure` moved beside the archive's other
+rules — `CommandLine.cs` stays under 800 lines): the ids read with the `--only -` reader (1 MiB, 10 s), one per line, a trailing
+CR tolerated, judged by the SAME `CountProblem` the flag's list takes (none twice, at most the ceiling), a bad line named by number
+and never echoed, an empty list refused. Refused: `--entry -` without A20, beside `--entry <id>`, twice, beside `--only -`.
+`ArchiveListReport.RestoreCeiling` on every answer, the stopped ones included. `archive check-base --json <path>` (a second arm).
+Capability `act.entryStdin` (it names all three). The shared request: `contracts/requests/act-a20-entry-stdin.json`, read by the
+Cli tests through a stamped `WslCare.ContractsDirectory`. **The own review round** changed A20 itself: its preview asked the
+bounded window (`archive list --restorable`, the newest `archive.maxRestoreEntries`) and silently dropped an older shown entry —
+it now asks `archive list --restorable --entry <shown>` (`ArchiveChildren.ListShown`), refuses more shown entries than the ceiling
+IN FORCE before the child is asked, and the act verb holds that ceiling and the shown-list cap on the entries too (a coupled-limit
+rule was tried and dropped: it made every machine with a lowered `act.maxShownNames` observe-only). Tests and teeth: [module_tests.md](../research/module_tests.md), *The
+daemon half of the extension's archive*.
+
 #### Definition of Done
 
 - [ ] E10.S0, E10.S1, E10.S2 merged, each with its gate rounds, an own review and break-it checks recorded in `module_tests.md`.

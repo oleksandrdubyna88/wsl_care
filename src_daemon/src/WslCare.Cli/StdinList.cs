@@ -22,6 +22,16 @@ internal static class StdinList
     /// <summary>The most bytes a list on stdin may hold (plan §15j M2: 1 MiB) — one byte more is a refusal.</summary>
     public static int MaxBytes => Tuning.Current.Int(ConfigKeys.Act.MaxListBytes);
 
+    /// <summary>A list's non-empty lines (a trailing CR tolerated, blanks skipped) and the NUMBER of the first line <paramref name="valid"/>
+    /// refuses — 0 when every one is valid. One scanner for every list on stdin or in a file (the E10.S0 own review, finding 6): a caller
+    /// names the line, never what is on it.</summary>
+    public static (IReadOnlyList<string> Lines, int FirstBad) Lines(string text, Func<string, bool> valid)
+    {
+        var all = text.Split('\n').Select(l => l.TrimEnd('\r').Trim()).ToList();
+        var bad = all.FindIndex(l => l.Length > 0 && !valid(l));
+        return ([.. all.Where(l => l.Length > 0)], bad + 1);
+    }
+
     public static FileReadResult Read(Stream stdin, int maxBytes, TimeSpan ceiling)
     {
         // The reading task is abandoned on the ceiling: the process refuses and ends, which closes the stream under it.

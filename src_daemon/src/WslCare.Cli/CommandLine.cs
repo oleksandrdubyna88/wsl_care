@@ -91,6 +91,10 @@ internal abstract record Request
     {
         /// <summary><c>--restorable</c> (plan §15r E9.S4): only what the restore button may offer, bounded.</summary>
         public bool Restorable { get; init; }
+
+        /// <summary><c>--entry &lt;id&gt;[,&lt;id&gt;…]</c> with <c>--restorable</c> (the E10.S0 own review, finding 1): only these entries — what
+        /// A20's preview asks its child for, so none is lost to the newest window; empty for every other list.</summary>
+        public IReadOnlyList<string> EntryIds { get; init; } = [];
     }
 
     /// <summary><c>units dropin &lt;unit&gt;</c> (E7.S2c): the drop-in install.sh writes for one unit, from the machine
@@ -172,6 +176,10 @@ internal abstract record Request
         /// showed and the person confirmed.</summary>
         public IReadOnlyList<string> Entries { get; init; } = [];
 
+        /// <summary><c>--entry -</c> (plan §15s D7, E10.S0): the entry ids arrive on STDIN, one per line, read by the verb under the
+        /// checks <see cref="Entries"/> has; never beside an <c>--entry &lt;id&gt;</c> or another list on stdin.</summary>
+        public bool EntriesOnStdin { get; init; }
+
         /// <summary>Whether a shown list was passed at all.</summary>
         public bool HasShownList => Volumes.Count > 0 || OnlyFile.Length > 0;
 
@@ -226,7 +234,7 @@ internal static class CommandLine
     private const string ManualFlag = "--manual";
     private const string TimerFlag = "--timer";
     private const string VolumeFlag = "--volume";
-    private const string OnlyFlag = "--only";
+    internal const string OnlyFlag = "--only";
     private const string ProcessFlag = "--process";
     private const string PeriodFlag = "--period";
     private const string ActionFlag = "--action";
@@ -448,8 +456,8 @@ internal static class CommandLine
     {
         ({ Failure: { } failure }) => failure,
         var split when ActFlags(split.Flags) is { } failure => failure,
-        var split when (ShownListFailure(ids, split.Volumes, split.Only) ?? ShownProcessesFailure(ids, split.Processes) ?? ShownEntriesFailure(ids, split.Entries)) is { } failure => failure,
-        var split => new Request.Act(ids, split.Flags.Contains(ConfirmFlag), split.Flags.Contains(JsonFlag)) { Manual = split.Flags.Contains(ManualFlag), Timer = split.Flags.Contains(TimerFlag), Detach = split.Flags.Contains(DetachFlag), Volumes = split.Volumes, OnlyFile = split.Only, Processes = split.Processes, Entries = split.Entries },
+        var split when (ShownListFailure(ids, split.Volumes, split.Only) ?? ShownProcessesFailure(ids, split.Processes) ?? ArchiveArguments.ShownEntriesFailure(ids, split.Entries, split.EntriesOnStdin, split.Only == StdinMarker)) is { } failure => failure,
+        var split => new Request.Act(ids, split.Flags.Contains(ConfirmFlag), split.Flags.Contains(JsonFlag)) { Manual = split.Flags.Contains(ManualFlag), Timer = split.Flags.Contains(TimerFlag), Detach = split.Flags.Contains(DetachFlag), Volumes = split.Volumes, OnlyFile = split.Only, Processes = split.Processes, Entries = split.Entries, EntriesOnStdin = split.EntriesOnStdin },
     };
 
     /// <summary>An act's options apart: its flags, the <c>--volume</c> values, the <c>--only</c> file, the <c>--process</c> keys.</summary>
@@ -458,6 +466,9 @@ internal static class CommandLine
     private sealed record ActSplit(ImmutableList<string> Flags, ImmutableList<string> Volumes, string Only, ImmutableList<string> Processes, Request.Failed? Failure)
     {
         public ImmutableList<string> Entries { get; init; } = [];
+
+        /// <summary><c>--entry -</c> was given (plan §15s D7): the ids are read from stdin by the verb.</summary>
+        public bool EntriesOnStdin { get; init; }
     }
 
     /// <summary>The flags, the <c>--volume</c> values, the <c>--only</c> file and the <c>--process</c> keys, apart — or the first refusal.</summary>
@@ -481,24 +492,35 @@ internal static class CommandLine
             return 1;
         }
 
-        split = ShownValueProblem(rest, i, split.Only) is { } failure ? split with { Failure = failure } : WithValue(split, rest[i], rest[i + 1]);
+        split = ShownValueProblem(rest, i, split) is { } failure ? split with { Failure = failure } : WithValue(split, rest[i], rest[i + 1]);
         return 2;
     }
 
-    /// <summary>A <c>--volume</c>, <c>--only</c> or <c>--process</c> value taken.</summary>
+    /// <summary>A <c>--volume</c>, <c>--only</c>, <c>--process</c> or <c>--entry</c> value taken; <c>--entry -</c> marks the ids as
+    /// arriving on stdin (plan §15s D7).</summary>
     private static ActSplit WithValue(ActSplit split, string flag, string value) => flag switch
     {
         ProcessFlag => split with { Processes = split.Processes.Add(value) },
+        ArchiveArguments.EntryFlag when value == StdinMarker => split with { EntriesOnStdin = true },
         ArchiveArguments.EntryFlag => split with { Entries = split.Entries.Add(value) },
         OnlyFlag => split with { Only = value },
         _ => split with { Volumes = split.Volumes.Add(value) },
     };
 
-    /// <summary>Why <c>--volume</c> / <c>--only</c> at <paramref name="i"/> cannot be taken: no value, or a second <c>--only</c>.</summary>
-    private static Request.Failed? ShownValueProblem(IReadOnlyList<string> rest, int i, string only) =>
-        NeedsValue(rest, i) && !IsStdinOnly(rest, i) ? new Request.Failed($"\"{BinaryName} act\": {rest[i]} needs a value ({ShownValueKind(rest[i])}).")
-        : rest[i] == OnlyFlag && only.Length > 0 ? new Request.Failed($"\"{BinaryName} act\" takes {OnlyFlag} once.")
+    /// <summary>Why the option at <paramref name="i"/> cannot be taken: no value, a second <c>--only</c>, or a second <c>--entry -</c>.</summary>
+    private static Request.Failed? ShownValueProblem(IReadOnlyList<string> rest, int i, ActSplit split) =>
+        NeedsValue(rest, i) && !IsStdinValue(rest, i) ? new Request.Failed($"\"{BinaryName} act\": {rest[i]} needs a value ({ShownValueKind(rest[i])}).")
+        : SecondOnly(rest[i], split) || SecondStdinEntries(rest[i], rest[i + 1], split) ? new Request.Failed($"\"{BinaryName} act\" takes {OnceWords(rest[i])} once.")
         : null;
+
+    /// <summary>A second <c>--only</c>: one file, or one list on stdin.</summary>
+    private static bool SecondOnly(string flag, ActSplit split) => flag == OnlyFlag && split.Only.Length > 0;
+
+    /// <summary>A second <c>--entry -</c>: the entry list arrives on stdin once (plan §15s D7).</summary>
+    private static bool SecondStdinEntries(string flag, string value, ActSplit split) => flag == ArchiveArguments.EntryFlag && value == StdinMarker && split.EntriesOnStdin;
+
+    /// <summary>How a refusal of a repeated list names it: <c>--only</c>, or <c>--entry -</c>.</summary>
+    private static string OnceWords(string flag) => flag == OnlyFlag ? OnlyFlag : $"{flag} {StdinMarker}";
 
     private static string ShownValueKind(string flag) => flag switch
     {
@@ -513,8 +535,8 @@ internal static class CommandLine
 
     private static Request.Failed? ActFlags(IReadOnlyList<string> flags) => UnknownActFlag(flags) ?? ActMode(flags) ?? ActMark(flags) ?? ActDetach(flags);
 
-    /// <summary><c>--only -</c>: the one value of <c>--only</c> that starts with a dash — stdin (E6.S1, §15j M2).</summary>
-    private static bool IsStdinOnly(IReadOnlyList<string> rest, int i) => rest[i] == OnlyFlag && i + 1 < rest.Count && rest[i + 1] == StdinMarker;
+    /// <summary><c>--only -</c> (E6.S1, §15j M2) and <c>--entry -</c> (plan §15s D7): the one value that starts with a dash — stdin.</summary>
+    private static bool IsStdinValue(IReadOnlyList<string> rest, int i) => (rest[i] is OnlyFlag or ArchiveArguments.EntryFlag) && i + 1 < rest.Count && rest[i + 1] == StdinMarker;
 
     /// <summary><c>--detach</c> starts a CONFIRMED run in its unit (§15j B2): never a preview, never the timer's.</summary>
     private static Request.Failed? ActDetach(IReadOnlyList<string> flags) =>
@@ -524,7 +546,7 @@ internal static class CommandLine
 
     private static Request.Failed? UnknownActFlag(IReadOnlyList<string> flags) =>
         flags.Any(f => f is not (PreviewFlag or ConfirmFlag or JsonFlag or ManualFlag or TimerFlag or DetachFlag)) || flags.Distinct(StringComparer.Ordinal).Count() != flags.Count
-            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name>, {OnlyFlag} <file or ->, {ProcessFlag} <pid:start> and {ArchiveArguments.EntryFlag} <id>; got \"{Printable(string.Join(' ', flags))}\".")
+            ? new Request.Failed($"\"{BinaryName} act\" takes {PreviewFlag} or {ConfirmFlag}, and {ManualFlag} or {TimerFlag}, {DetachFlag}, {JsonFlag}, each once, besides {VolumeFlag} <name>, {OnlyFlag} <file or ->, {ProcessFlag} <pid:start> and {ArchiveArguments.EntryFlag} <id or ->; got \"{Printable(string.Join(' ', flags))}\".")
             : null;
 
     private static Request.Failed? ActMode(IReadOnlyList<string> flags) =>
@@ -558,17 +580,6 @@ internal static class CommandLine
         _ => null,
     };
 
-    /// <summary>A shown entry list belongs to A20 (plan §15r E9.S4), and every <c>--entry</c> is an archived entry's 16-hex id, none twice.</summary>
-    private static Request.Failed? ShownEntriesFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> entries) => entries switch
-    {
-        { Count: 0 } => null,
-        _ when !ids.Any(id => id.Text == "A20") => new Request.Failed($"\"{BinaryName} act\": {ArchiveArguments.EntryFlag} names the archived entries A20's preview showed; it needs A20 among the actions."),
-        _ when entries.FirstOrDefault(e => !Core.Archive.ArchiveIndex.IsEntryId(e)) is { } bad => new Request.Failed($"\"{BinaryName} act\": {ArchiveArguments.EntryFlag} \"{Printable(bad)}\" is not an archived entry's id (16 lowercase hex digits)."),
-        _ when entries.Distinct(StringComparer.Ordinal).Count() != entries.Count => new Request.Failed($"\"{BinaryName} act\": {ArchiveArguments.EntryFlag} names an entry twice."),
-        _ when entries.Count > Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max => new Request.Failed($"\"{BinaryName} act\" takes at most {Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max} entries (the ceiling of {Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Name})."),
-        _ => null,
-    };
-
     private static bool ShownWithoutA4(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> volumes, string only) =>
         (volumes.Count > 0 || only.Length > 0) && !ids.Any(id => id.Text == "A4");
 
@@ -576,14 +587,13 @@ internal static class CommandLine
     /// <see cref="MaxShownVolumes"/> — or why not, naming the LINE, never echoing what is on it.</summary>
     internal static (IReadOnlyList<string> Names, string Failure) ShownVolumesFile(string text)
     {
-        var lines = text.Split('\n').Select(l => l.TrimEnd('\r').Trim()).ToList();
-        var bad = lines.Select((line, index) => (line, index)).FirstOrDefault(l => l.line.Length > 0 && !Core.Docker.DockerJson.IsFullId(l.line));
-        if (bad.line is { Length: > 0 })
+        var (lines, bad) = StdinList.Lines(text, Core.Docker.DockerJson.IsFullId);
+        if (bad > 0)
         {
-            return ([], $"line {bad.index + 1} of the {OnlyFlag} file is not an anonymous volume's name (64 lowercase hex digits)");
+            return ([], $"line {bad} of the {OnlyFlag} file is not an anonymous volume's name (64 lowercase hex digits)");
         }
 
-        var names = lines.Where(l => l.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        var names = lines.Distinct(StringComparer.Ordinal).ToList();
         return names.Count > MaxShownVolumes ? ([], $"the {OnlyFlag} file names more than {MaxShownVolumes} volumes") : (names, string.Empty);
     }
 

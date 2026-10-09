@@ -3,7 +3,7 @@
 > Built so far: **E9.S0** (catalogue blocks, keys, base folder rules, `archive check-base`), **E9.S1** (the selection and
 > `archive preview`, read-only), **E9.S2a** (the file seam `IArchiveFiles`, with its gate round and own review round), **E9.S2b**
 > (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`, with its own review round), **E9.S3** (`archive restore`, `archive list`), **E9.S4** (A13 and A20 in the engine — the root → user boundary,
-> `archive reach`), **E9.S5** (the Windows side's open-file check: the Restart Manager, and a live Claude Code on Windows). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
+> `archive reach`), **E9.S5** (the Windows side's open-file check: the Restart Manager, and a live Claude Code on Windows). **E10.S0** (the daemon half of the extension's archive, plan §15s: `act A20 … --entry -` with the ids on stdin, `restoreCeiling` on every list answer, `archive check-base --json <path>`; capability `act.entryStdin`). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
 > red runs and their break-it checks: [module_tests.md](module_tests.md), the E9 sections (from *The AI-session archive:
 > catalogue blocks, keys, base folder* to *The E9.S2a gate round*). The longer history of each
 > story: *Story history* below.
@@ -109,7 +109,7 @@ C-M4 / S-M2).
 
 | Verb | Command file | Contract | State |
 |---|---|---|---|
-| `archive check-base <path> [--json]` | `WslCare.Cli/Commands/ArchiveCommand.cs` | `contracts/golden/head/archive-check-base.json`, capability `archive.checkBase` | built (E9.S0) |
+| `archive check-base <path> [--json]` (or `--json` first, E10.S0 — plan §15s D10) | `WslCare.Cli/Commands/ArchiveCommand.cs` | `contracts/golden/head/archive-check-base.json`, capability `archive.checkBase` | built (E9.S0) |
 | `archive preview [--agent <id>] [--json]` | `WslCare.Cli/Commands/ArchiveCommand.cs` | `contracts/golden/head/archive-preview.json`, capability `archive.preview` | built (E9.S1) |
 | `config set archive.baseFolder` | the config verbs | the base rules, refused as root (81) | built (E9.S0) |
 | `archive run [--agent <id>] [--budget-seconds <n>] [--run-id <runId>] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-run.json`; `--json` streams one-line JSON objects, the answer last; `--run-id` carries root's run id (E9.S4) | built (E9.S2b) |
@@ -117,9 +117,10 @@ C-M4 / S-M2).
 | `archive status [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | `contracts/golden/head/archive-status.json` | built (E9.S2b) |
 | `archive reconcile --scan [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` | the run's answer with its `scan` counts | built (E9.S2b) |
 | `archive restore (--entry <id>[,<id>...] or --agent <id> --month <yyyy-MM> or --agent <id> --session <path>) [--accept-unverified] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveRestore.cs` | the run's answer with its `restore` block (`contracts/golden/head/archive-restore.json`); `--json` streams one-line JSON progress objects, the answer last (the gate round); exit 1 when a session was refused | built (E9.S3) |
-| `archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveList.cs` | `contracts/golden/head/archive-list.json`; read-only (no lock, no lease, no key made) | built (E9.S3) |
+| `archive list [--agent <id>] [--month <yyyy-MM>] [--run <runId>] [--restorable [--entry <id>[,<id>...]]] [--json]` | `WslCare.Cli/Commands/ArchiveRunCommand.cs` → `Archive/ArchiveList.cs` | `contracts/golden/head/archive-list.json`; read-only (no lock, no lease, no key made); every answer carries `restoreCeiling` — the effective `archive.maxRestoreEntries` (E10.S0, plan §15s D6); `--restorable --entry` answers exactly those entries still restorable — what A20's preview asks, so an entry older than the newest window is never lost (the E10.S0 own review, finding 1) | built (E9.S3) |
 | `act A13 (--preview or --confirm) [--manual or --timer]` (as root; the timer's pass) | `Archive/ArchiveAction.cs` | the engine's run record — agents and counts, never a session; capability `archive.run` | built (E9.S4) |
 | `act A20 (--preview or --confirm) --manual --entry <id>...` (as root; a button only — A19 is the idle MCP servers' stop, E14 S2a) | `Archive/RestoreAction.cs` | the engine's run record — entry ids, never a key; capability `archive.restore` | built (E9.S4) |
+| `act A20 (--preview or --confirm) --manual --entry -` — the ids on STDIN, one per line (a trailing CR tolerated), under the flag's checks (16 hex, none twice, at most `archive.maxRestoreEntries`' ceiling, A20 among the actions); never beside `--entry <id>` or `--only -`; a bad line named by its number, never echoed | `WslCare.Cli/Commands/ActCommand.cs` `EntriesOf`, `ArchiveArguments.StdinEntries` (the stdin reader of `--only -`: 1 MiB, 10 s) | the request both halves are tested against: `contracts/requests/act-a20-entry-stdin.json`; capability `act.entryStdin` | built (E10.S0, plan §15s D7) |
 
 Every built verb runs as the user; root is refused with exit 81. The progress of `archive run` and `archive restore` goes through one writer, `WslCare.Cli/Commands/ArchiveProgress.cs`
 (JSON lines on stdout with `--json`, human lines on stderr without it).
@@ -235,7 +236,7 @@ flowchart TD
 flowchart TD
     timer["root: the timer's pass, or a button (act A13 / act A20 --entry …)"] --> gates{"before any child:<br/>archive.baseFolder set? · runuser's PAM stack without pam_systemd? ·<br/>the product binary root's alone? · no recorded child alive? · slack ≥ minRunMinutes (timer)"}
     gates -- no --> skip["skipped / refused, with the reason"]
-    gates -- yes --> preview["runuser -u &lt;user&gt; -- /opt/wsl-care/bin/wsl-care archive preview --json<br/>(A20: archive list --json) — clean env, stdin at EOF"]
+    gates -- yes --> preview["runuser -u &lt;user&gt; -- /opt/wsl-care/bin/wsl-care archive preview --json<br/>(A20: archive list --restorable --entry &lt;shown&gt; --json) — clean env, stdin at EOF"]
     preview --> judged["the answer judged (schema, closed sets, ranges) → COUNTS per agent<br/>(A20: verified entries removed at the source, by id)"]
     judged --> reach["A13: archive reach --json — the side's lock, the base within reachabilitySeconds"]
     reach --> run["archive run --budget-seconds &lt;slack&gt; --run-id &lt;act's run&gt; --json<br/>(A20: archive restore --entry &lt;shown ∩ restorable&gt; --json) — STREAMED"]

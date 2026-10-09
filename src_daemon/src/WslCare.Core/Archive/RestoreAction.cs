@@ -22,7 +22,7 @@ namespace WslCare.Core.Archive;
 public sealed class RestoreAction : ICleanupAction, IBoundToShownList
 {
     public const string ButtonNeedsShownEntries =
-        "a run of A20 must pass the entries its preview SHOWED (--entry <id>): A20 restores only those, judged again (plan §15r E9.S4)";
+        "a run of A20 must pass the entries its preview SHOWED (--entry <id>, or --entry - with the ids on stdin): A20 restores only those, judged again (plan §15r E9.S4)";
 
     private static readonly IReadOnlySet<string> Restorable = new HashSet<string>(StringComparer.Ordinal) { ArchiveIndex.Events.SourceRemoved, ArchiveIndex.Events.Split };
 
@@ -36,22 +36,39 @@ public sealed class RestoreAction : ICleanupAction, IBoundToShownList
 
     public IReadOnlyList<HostSide> Sides { get; } = [HostSide.Wsl];
 
-    public IReadOnlyList<CommandTemplate> Commands { get; } = [ArchiveChildren.List, ArchiveChildren.Restore];
+    public IReadOnlyList<CommandTemplate> Commands { get; } = [ArchiveChildren.List, ArchiveChildren.ListShown, ArchiveChildren.Restore];
 
     /// <summary>Every entry id the preview offers — what the button passes back with <c>--entry</c>.</summary>
     public IReadOnlyList<string> Shown(ActionPreview preview) => [.. preview.Targets.Select(t => t.Key).Take(ShownList.MaxNames)];
 
     public async Task<ActionPreview> PreviewAsync(ActionContext context, ActionCommands commands, CancellationToken cancellationToken)
     {
-        if (ArchiveGates.Before(context, commands, ArchiveChildren.List, cancellationToken) is { } gated)
+        var (template, values) = ListAsked(context);
+        if ((ArchiveGates.Before(context, commands, template, cancellationToken) ?? PastTheCeiling(context)) is { } gated)
         {
             return gated;
         }
 
-        var list = await ArchiveGates.ChildTextAsync(context, commands, ArchiveChildren.List, [0], cancellationToken).ConfigureAwait(false);
+        var list = await ArchiveGates.ChildTextAsync(context, commands, template, values, [0], cancellationToken).ConfigureAwait(false);
         var preview = list.Failure.Length > 0 ? ActionPreview.Unavailable("restore", list.Failure) : Listed(context, ArchiveChildAnswers.List(list.Text, context.Config));
         return Bound(ArchiveGates.Contained(preview, list), context);
     }
+
+    /// <summary>What the preview asks the child: the shown entries only, sorted, as ONE argument — none lost to the newest
+    /// <c>archive.maxRestoreEntries</c> (the E10.S0 own review, finding 1); without a shown list the bounded window, which
+    /// <see cref="Bound"/> then refuses to act on.</summary>
+    private static (CommandTemplate Template, IReadOnlyList<string> Values) ListAsked(ActionContext context) =>
+        context.ShownEntries.Given ? (ArchiveChildren.ListShown, [string.Join(',', context.ShownEntries.Names.Order(StringComparer.Ordinal))]) : (ArchiveChildren.List, []);
+
+    /// <summary>More shown entries than ONE restore takes in force — refused before the child is asked, never narrowed to a silent
+    /// subset (the E10.S0 own review, findings 1 and 2); <c>null</c> otherwise.</summary>
+    private static ActionPreview? PastTheCeiling(ActionContext context) =>
+        context.ShownEntries.Names.Count > context.Config.Int(ConfigKeys.Archive.MaxRestoreEntries)
+            ? ActionPreview.Of("restore", 0, 0, "nothing was asked of the archive child", new Dictionary<string, long>(), string.Empty, []) with { Refusal = TooMany(context.ShownEntries.Names.Count, context.Config.Int(ConfigKeys.Archive.MaxRestoreEntries)) }
+            : null;
+
+    private static string TooMany(int count, int most) =>
+        string.Create(CultureInfo.InvariantCulture, $"{count} entries are more than one restore takes ({ConfigKeys.Archive.MaxRestoreEntries.Name}: {most}); show fewer");
 
     /// <summary>A button only: the timer never gets here (its auto gate refuses a button-only id first).</summary>
     public TriggerDecision Trigger(ActionPreview preview, EffectiveConfig config) => new(false, "A20 is a button only");
@@ -79,7 +96,7 @@ public sealed class RestoreAction : ICleanupAction, IBoundToShownList
     {
         var most = context.Config.Int(ConfigKeys.Archive.MaxRestoreEntries);
         return !context.ShownEntries.Given ? ButtonNeedsShownEntries
-            : count > most ? string.Create(CultureInfo.InvariantCulture, $"{count} entries are more than one restore takes ({ConfigKeys.Archive.MaxRestoreEntries.Name}: {most}); show fewer")
+            : Math.Max(count, context.ShownEntries.Names.Count) > most ? TooMany(Math.Max(count, context.ShownEntries.Names.Count), most)
             : string.Empty;
     }
 

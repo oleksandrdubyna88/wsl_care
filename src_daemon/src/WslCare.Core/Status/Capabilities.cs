@@ -68,6 +68,11 @@ public static class Capabilities
     /// <summary><c>archive list [--agent] [--month] [--run] --json</c> answers this side's archived entries, as the user (plan §15r E9.S3).</summary>
     public const string ArchiveList = "archive.list";
 
+    /// <summary><c>act A20 … --entry -</c>: A20's entry ids on stdin, one per line, under the checks of <c>--entry &lt;id&gt;</c> (a Windows
+    /// command line holds 32 767 characters); <c>archive list --json</c> carries <c>restoreCeiling</c>; <c>archive check-base</c> takes
+    /// <c>--json</c> before its path (plan §15s D6, D7, D10; E10.S0).</summary>
+    public const string ActEntryStdin = "act.entryStdin";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase, ArchivePreview, ArchiveRun, ArchiveRestore, ArchiveList];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase, ArchivePreview, ArchiveRun, ArchiveRestore, ArchiveList, ActEntryStdin];
 }

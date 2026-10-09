@@ -106,16 +106,22 @@ internal static class ArchiveArguments
             ? string.Empty
             : $"{MonthFlag} takes a month as yyyy-MM; got \"{Printable(month)}\"";
 
-    /// <summary>Optionally <c>--agent &lt;id&gt;</c>, <c>--month &lt;yyyy-MM&gt;</c>, <c>--run &lt;runId&gt;</c>, <c>--json</c>.</summary>
+    /// <summary>Optionally <c>--agent &lt;id&gt;</c>, <c>--month &lt;yyyy-MM&gt;</c>, <c>--run &lt;runId&gt;</c>, <c>--restorable</c> (with it, optionally
+    /// <c>--entry &lt;id&gt;[,&lt;id&gt;…]</c> — the E10.S0 own review, finding 1), <c>--json</c>.</summary>
     internal static Request ParseArchiveList(IReadOnlyList<string> rest) =>
-        ReadOptions("archive list", rest, [AgentFlag, MonthFlag, RunFlag], [JsonFlag, RestorableFlag]) switch
+        ReadOptions("archive list", rest, [AgentFlag, MonthFlag, RunFlag, EntryFlag], [JsonFlag, RestorableFlag]) switch
         {
             (_, { } failure) => failure,
+            var (options, _) when options.Values.TryGetValue(EntryFlag, out var ids) && ListEntriesProblem(ids, options.Flags.Contains(RestorableFlag)) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
             var (options, _) when options.Values.TryGetValue(AgentFlag, out var agent) && AgentValueProblem(agent) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
             var (options, _) when options.Values.TryGetValue(MonthFlag, out var month) && MonthProblem(month) is { Length: > 0 } bad => new Request.Failed($"\"{BinaryName} archive list\" {bad}."),
             var (options, _) when options.Values.TryGetValue(RunFlag, out var run) && Core.Records.RunId.TryParse(run) is null => new Request.Failed($"\"{BinaryName} archive list\" {RunFlag} takes a run id; got \"{Printable(run)}\"."),
-            var (options, _) => new Request.ArchiveList(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.GetValueOrDefault(MonthFlag, string.Empty), options.Values.GetValueOrDefault(RunFlag, string.Empty), options.Flags.Contains(JsonFlag)) { Restorable = options.Flags.Contains(RestorableFlag) },
+            var (options, _) => new Request.ArchiveList(options.Values.GetValueOrDefault(AgentFlag, string.Empty), options.Values.GetValueOrDefault(MonthFlag, string.Empty), options.Values.GetValueOrDefault(RunFlag, string.Empty), options.Flags.Contains(JsonFlag)) { Restorable = options.Flags.Contains(RestorableFlag), EntryIds = options.Values.TryGetValue(EntryFlag, out var ids) ? ids.Split(',') : [] },
         };
+
+    /// <summary>A list's <c>--entry</c>: only with <c>--restorable</c> (what A20's preview asks), under the act's entry rules.</summary>
+    private static string ListEntriesProblem(string ids, bool restorable) =>
+        restorable ? EntryListProblem(ids.Split(',')) : $"takes {EntryFlag} only with {RestorableFlag}: it names the entries A20's preview asks for";
 
     internal static Request ParseArchiveReconcile(IReadOnlyList<string> rest) => rest switch
     {
@@ -128,8 +134,49 @@ internal static class ArchiveArguments
     {
         [var path] when IsPathArgument(path) => new Request.ArchiveCheckBase(path, false),
         [var path, JsonFlag] when IsPathArgument(path) => new Request.ArchiveCheckBase(path, true),
-        _ => new Request.Failed($"\"{BinaryName} archive check-base\" needs exactly one <path> (not starting with -, no control character) and optionally {JsonFlag}: {BinaryName} archive check-base <path> [{JsonFlag}]."),
+        [JsonFlag, var path] when IsPathArgument(path) => new Request.ArchiveCheckBase(path, true),
+        _ => new Request.Failed($"\"{BinaryName} archive check-base\" needs exactly one <path> (not starting with -, no control character) and optionally {JsonFlag}, before or after it: {BinaryName} archive check-base [{JsonFlag}] <path> [{JsonFlag}]."),
     };
 
     private static bool IsPathArgument(string path) => path.Length > 0 && !path.StartsWith('-') && !path.Any(char.IsControl);
+
+    private static int MostEntries => Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Max;
+
+    /// <summary>A shown entry list belongs to A20 (plan §15r E9.S4): every <c>--entry</c> an archived entry's 16-hex id, none twice, at
+    /// most <c>archive.maxRestoreEntries</c>' ceiling. <c>--entry -</c> (plan §15s D7) is the whole list, on stdin: never beside an
+    /// <c>--entry &lt;id&gt;</c>, never beside <c>--only -</c> — stdin carries one list.</summary>
+    internal static Request.Failed? ShownEntriesFailure(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> entries, bool onStdin, bool onlyOnStdin) =>
+        entries.Count == 0 && !onStdin ? null
+        : (PlacementProblem(ids, entries, onStdin, onlyOnStdin) is { Length: > 0 } placed ? placed : EntryListProblem(entries)) is { Length: > 0 } problem ? new Request.Failed($"\"{BinaryName} act\": {problem}.")
+        : null;
+
+    /// <summary>Where an entry list may stand (the E10.S0 own review, finding 5: apart from what it holds): with A20 among the actions,
+    /// either on stdin or as ids — never both — and never beside <c>--only -</c>; empty when it stands right.</summary>
+    private static string PlacementProblem(IReadOnlyList<Core.Actions.ActionId> ids, IReadOnlyList<string> entries, bool onStdin, bool onlyOnStdin) =>
+        !ids.Any(id => id.Text == "A20") ? $"{EntryFlag} names the archived entries A20's preview showed; it needs A20 among the actions"
+        : onStdin && entries.Count > 0 ? $"{EntryFlag} - is the whole entry list, on stdin; give {EntryFlag} once, either - or the ids"
+        : onStdin && onlyOnStdin ? $"stdin carries one list — {OnlyFlag} - and {EntryFlag} - cannot both read it"
+        : string.Empty;
+
+    /// <summary>What is wrong with a list of entry ids — the flag's or stdin's — empty when nothing is: not an id (named), twice, past
+    /// the ceiling.</summary>
+    private static string EntryListProblem(IReadOnlyList<string> entries) =>
+        entries.FirstOrDefault(e => !Core.Archive.ArchiveIndex.IsEntryId(e)) is { } bad ? $"{EntryFlag} \"{Printable(bad)}\" is not an archived entry's id (16 lowercase hex digits)"
+        : CountProblem(entries);
+
+    private static string CountProblem(IReadOnlyList<string> entries) =>
+        entries.Distinct(StringComparer.Ordinal).Count() != entries.Count ? $"{EntryFlag} names an entry twice"
+        : entries.Count > MostEntries ? $"{EntryFlag} names more than {MostEntries} entries (the ceiling of {Core.Config.ConfigKeys.Archive.MaxRestoreEntries.Name})"
+        : string.Empty;
+
+    /// <summary>The entry ids of <c>--entry -</c>'s stdin (plan §15s D7): one per non-empty line (a trailing CR tolerated), under the
+    /// flag's checks — or why not, naming the LINE, never echoing what is on it (it is read as root).</summary>
+    internal static (IReadOnlyList<string> Ids, string Failure) StdinEntries(string text)
+    {
+        var (ids, bad) = StdinList.Lines(text, Core.Archive.ArchiveIndex.IsEntryId);
+        var problem = bad > 0 ? $"line {bad} of the entry list on stdin is not an archived entry's id (16 lowercase hex digits)"
+            : ids.Count == 0 ? "the entry list on stdin names no entry"
+            : CountProblem(ids);
+        return problem.Length > 0 ? ([], problem) : (ids, string.Empty);
+    }
 }
