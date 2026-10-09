@@ -74,7 +74,7 @@ public sealed class McpStatusTests
     }
 
     [Fact]
-    public async Task The_windows_binary_answers_no_mcp_servers_with_the_E11_reason()
+    public async Task The_windows_binary_answers_no_distro_mcp_servers_and_points_at_its_own_block()
     {
         using var root = new TempRoot("mcp-windows");
         var paths = new Core.Hosting.WindowsHostPaths(Core.Hosting.WindowsEnvironment.Sandboxed(root.Path));
@@ -83,7 +83,7 @@ public sealed class McpStatusTests
 
         var result = await McpSampling.SampleAsync(paths, new Core.Files.PhysicalFileSystem(paths), new FixedTimeProvider(), (_, _) => Task.CompletedTask, McpCpuLedgerPlace.ForStatus(paths, root: false), sample, defaults, CancellationToken.None);
 
-        McpServersReport.From(result).Should().Be(McpServersReport.From(Core.Collectors.Reading.Missing<McpSample>(McpServerCollector.WindowsNotYet)));
-        result.ReasonOrEmpty.Should().Contain("E11");
+        McpServersReport.From(result).Should().Be(McpServersReport.From(Core.Collectors.Reading.Missing<McpSample>(McpServerCollector.WindowsReadsItsOwn)));
+        result.ReasonOrEmpty.Should().Contain("windowsMcpServers", "E14 S7a: the Windows binary counts its own side's servers");
     }
 }

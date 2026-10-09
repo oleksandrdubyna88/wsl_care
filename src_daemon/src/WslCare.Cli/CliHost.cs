@@ -5,6 +5,7 @@ using WslCare.Core.Collectors;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Hosting;
+using WslCare.Core.Mcp;
 using WslCare.Core.Processes;
 using WslCare.Core.Processes.Policy;
 
@@ -28,6 +29,10 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
 
     /// <summary>The operating system's process table, for the <c>running.json</c> liveness check. A test scripts it.</summary>
     public IProcessTable Processes { get; init; } = new SystemProcessTable();
+
+    /// <summary>The Windows process table the Windows binary's <c>status</c> counts its MCP servers in (E14 S7a, read-only). Reads nothing
+    /// unless <see cref="ForThisMachine"/> wires the real one on Windows, so a test's answer never depends on this machine's processes.</summary>
+    public IWindowsProcessTable WindowsProcesses { get; init; } = new UnreadWindowsProcessTable("a host built by a test reads no Windows process table");
 
     /// <summary>How a verb waits a measuring window (the MCP servers' CPU window, plan §15q E7.S2d). A test hands one that returns
     /// at once and changes what the second read sees.</summary>
@@ -132,6 +137,7 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
             Privilege = privilege,
             HomeOwner = owner,
             Signals = SignalsFor(paths, files),
+            WindowsProcesses = WindowsProcessesFor(paths),
             InteropRefusal = () => paths is LinuxHostPaths linux ? UserLayerTrusts.InteropRefusal(linux, files) : string.Empty,
         };
     }
@@ -156,6 +162,12 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
 
     private static IHostPaths WithLoginHomesProtected(IHostPaths paths) =>
         paths is LinuxHostPaths linux ? linux.WithProtectedHomes(TargetUserDiscovery.ProtectedHomes(new PhysicalFileSystem(linux), linux)) : paths;
+
+    /// <summary>The real Windows process table for the Windows binary; none in the distro (its MCP servers come from <c>/proc</c>).</summary>
+    private static IWindowsProcessTable WindowsProcessesFor(IHostPaths paths) =>
+        paths is WindowsHostPaths && OperatingSystem.IsWindows()
+            ? new Win32ProcessTable()
+            : new UnreadWindowsProcessTable("the distro's binary reads the distro's MCP servers (mcpServers)");
 
     private static IHostProbe ProbeFor(IHostPaths paths, IFileSystem files, TimeProvider clock)
     {

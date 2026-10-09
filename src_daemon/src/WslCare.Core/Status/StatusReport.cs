@@ -82,6 +82,10 @@ public sealed record StatusReport(
     /// <summary>The MCP servers of the AI agents (plan §15q E7.S2d): how many run, which are idle, which burn CPU with no log
     /// write, how often each server started lately. Additive; the run detail's embedded sample carries it too.</summary>
     public McpServersReport? McpServers { get; init; }
+
+    /// <summary>E14 S7a: the WINDOWS side's MCP server processes (<c>coai-mcp.exe</c>, <c>creds-mcp.exe</c>, the user's programs) —
+    /// the Windows binary only; the distro's answer omits it. Additive, read-only.</summary>
+    public WindowsMcpServersReport? WindowsMcpServers { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>
@@ -183,7 +187,11 @@ public sealed record HostReport(
     HostMemoryReport? Memory,
     VolumeReport? SystemDrive,
     ByteFigure? VmmemWorkingSet,
-    ByteFigure? Vhdx);
+    ByteFigure? Vhdx)
+{
+    /// <summary>E14 S7a: when vmmemWSL holds more than <c>wslConfig.vmmemAdviceGb</c>, what to do about it — TEXT, never acted on.</summary>
+    public string? VmmemAdvice { get; init; }
+}
 
 public sealed record HostMemoryReport(bool Available, string? Reason, long? TotalBytes, long? AvailableBytes);
 

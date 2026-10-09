@@ -836,8 +836,8 @@ public sealed class McpServerCollectorTests : IDisposable
         verdicts[0].Limit.Should().Contain("mcpServers.warnInstances");
         verdicts[1].Level.Should().Be(Level.Warn, "13 × 50 % is 6.5 cores, above one");
         verdicts[2].Level.Should().Be(Level.Ok, "no log file was named in the window");
-        McpVerdicts.From(Reading.Missing<McpSample>(McpServerCollector.WindowsNotYet), Defaults())
-            .Should().OnlyContain(v => v.Level == Level.Unknown && v.Reason == McpServerCollector.WindowsNotYet);
+        McpVerdicts.From(Reading.Missing<McpSample>(McpServerCollector.WindowsReadsItsOwn), Defaults())
+            .Should().OnlyContain(v => v.Level == Level.Unknown && v.Reason == McpServerCollector.WindowsReadsItsOwn);
     }
 
     /// <summary>A wait during which each pid uses 50 ticks (half a core over the 1 s window).</summary>

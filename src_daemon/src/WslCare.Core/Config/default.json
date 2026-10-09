@@ -167,7 +167,8 @@
   },
   "wslConfig": {
     "recommendedMemoryGb": 36,
-    "recommendedSwapGb": 16
+    "recommendedSwapGb": 16,
+    "vmmemAdviceGb": 24
   },
   "requests": {
     "maxRead": 64,

@@ -18,8 +18,8 @@ namespace WslCare.Core.Mcp;
 /// window. Called by <c>status</c> and by <c>collect</c> after their probe.</remarks>
 public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait, McpCpuLedgerPlace ledger)
 {
-    /// <summary>Why the Windows binary answers no MCP servers.</summary>
-    public const string WindowsNotYet = "the Windows binary has no process collector yet (E11): coai-mcp.exe is not counted on Windows";
+    /// <summary>Why the Windows binary answers no distro MCP servers: it counts the Windows side's (E14 S7a).</summary>
+    public const string WindowsReadsItsOwn = "the Windows binary counts the Windows side's MCP servers (status --json: windowsMcpServers); the distro's are read by wsl-care inside the distro";
 
     public async Task<Reading<McpSample>> SampleAsync(Reading<ProcessSnapshot> processes, EffectiveConfig config, CancellationToken cancellationToken)
     {
@@ -158,14 +158,14 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
 }
 
 /// <summary>The one road in for <c>status</c> and <c>collect</c>: the distro's MCP servers from the probe's own process table, or
-/// unavailable on the Windows binary (<see cref="McpServerCollector.WindowsNotYet"/>, the E11 next step). <paramref name="ledger"/>
+/// unavailable on the Windows binary (<see cref="McpServerCollector.WindowsReadsItsOwn"/>: it reads its own side, <see cref="WindowsMcpCollector"/>). <paramref name="ledger"/>
 /// is the caller's CPU ledger (<see cref="McpCpuLedgerPlace.ForStatus"/>, <see cref="McpCpuLedgerPlace.ForCollect"/>).</summary>
 public static class McpSampling
 {
     public static Task<Reading<McpSample>> SampleAsync(IHostPaths paths, IFileSystem files, TimeProvider clock, Func<TimeSpan, CancellationToken, Task> wait, McpCpuLedgerPlace ledger, ProbeSample sample, EffectiveConfig config, CancellationToken cancellationToken) =>
         paths is LinuxHostPaths linux
             ? new McpServerCollector(files, linux, clock, wait, ledger).SampleAsync(sample.Vm.Bind(vm => vm.Processes), config, cancellationToken)
-            : Task.FromResult(Reading.Missing<McpSample>(McpServerCollector.WindowsNotYet));
+            : Task.FromResult(Reading.Missing<McpSample>(McpServerCollector.WindowsReadsItsOwn));
 }
 
 /// <summary>The decisions over one sample: an instance's kind and last log write, a server's starts (plan §15q E7.S2d, Decided

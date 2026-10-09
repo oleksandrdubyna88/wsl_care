@@ -98,8 +98,8 @@ public sealed class FullRunCommandTests
         }
         else
         {
-            // The sandbox host of this OS is the WINDOWS layout here: the Windows binary has no process collector yet (E11).
-            detail.Sample.McpServers!.Reason.Should().Be(Core.Mcp.McpServerCollector.WindowsNotYet);
+            // The sandbox host of this OS is the WINDOWS layout here: the Windows binary counts its own side's servers in status only (E14 S7a).
+            detail.Sample.McpServers!.Reason.Should().Be(Core.Mcp.McpServerCollector.WindowsReadsItsOwn);
             detail.Thresholds.Where(v => v.Id.StartsWith("mcp.", StringComparison.Ordinal)).Should().OnlyContain(v => v.Level == Core.Thresholds.Level.Unknown);
             waits.Should().Be(0);
         }

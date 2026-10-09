@@ -288,6 +288,8 @@ flowchart LR
         wp["WindowsProbe.Sample"]
         wc["Win32Counters<br/>GlobalMemoryStatusEx · vmmemWSL working set"]
         sd["VolumeUsage<br/>MeasureVolume(system drive)"]
+        wm["WindowsMcpCollector (E14 S7a)<br/>Win32ProcessTable: Toolhelp snapshot · query-only handles"]
+        va["VmmemAdvice<br/>.wslconfig read · text only"]
     end
     fs["IFileSystem<br/>(roots from LinuxHostPaths: proc, cgroup, filesystem root)"]
     hist["LastFullRun<br/>history.jsonl: newest run carrying each slow part"]
@@ -307,6 +309,8 @@ flowchart LR
     wp --> sd --> fs
     lp --> rep
     wp --> rep
+    wm -->|windowsMcpServers| rep
+    wc --> va -->|host.vmmemAdvice| rep
     hist --> fs
     hist --> rep
     rep --> out
@@ -353,10 +357,14 @@ figure (E2.S3).
 - Families are a built-in catalogue (`ProcessFamilies`, first match wins: build servers, testhost, AI
   agents, Docker Desktop proxy, vscode-server, node, other): regex-per-family settings need the
   object-shaped configuration keys E7 brings.
-- The minimal Windows probe reads host RAM (`GlobalMemoryStatusEx`, the project's one `LibraryImport`,
+- The minimal Windows probe reads host RAM (`GlobalMemoryStatusEx` through `LibraryImport` — since E14 S7a the Win32 process table's imports too —
   hence `AllowUnsafeBlocks` for the generated stub), the system drive and `vmmemWSL`'s working set (the
   process snapshot the OS keeps — nothing is started, no handle opened). Under `WSL_CARE_ROOT` only the
   system drive follows the sandbox; RAM and `vmmemWSL` are the real host's, read-only.
+- **E14 S7a:** the Windows binary's `status` also counts the Windows side's MCP servers (`coai-mcp.exe`, `creds-mcp.exe`,
+  the user's programs) through `Win32ProcessTable` — a Toolhelp snapshot plus `PROCESS_QUERY_LIMITED_INFORMATION` handles,
+  read-only, real even under `WSL_CARE_ROOT` — into `windowsMcpServers`, and adds `host.vmmemAdvice` (text, never acted on)
+  when `vmmemWSL` holds more than `wslConfig.vmmemAdviceGb`. Details: [module_mcp_servers.md](module_mcp_servers.md) § *The Windows side*.
 - `status` without `--json` prints a short ASCII summary; the JSON is what the extension reads.
 
 ## The Docker collectors and `preview` (E2.S2)

@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S5 built (memory and swap before the evening: a report); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S2b, S4, S7, S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice); S2b, S4, S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -782,6 +782,48 @@ exclusions** for build and tool folders are a security trade-off: Q6, never auto
 - `The_distro_binary_answers_the_windows_block_unavailable`
 - `The_real_process_table_lists_this_test_process_with_its_parent` (Windows only, read-only)
 - `Vmmem_advice_names_the_reclaim_setting_and_wsl_shutdown`
+
+#### S7a as built (2026-10-09)
+
+- **Plan round** (coai session `38bcfc7f`): `proceed`, 8 findings.
+  - **Accepted:**
+    - (0) interop ownership cannot see the caller in the distro: the owner says `interop`, and the residuals say orphan
+      detection does not cover the children of a WSL connection that stays alive.
+    - (1) a Windows CLI scenario over the built binary (`Scenarios/WindowsMcpFlows`).
+    - (2) the two CPU reads are compared only while the pid names the same process (the same creation time).
+    - (5) the vmmem advice only above a key (`wslConfig.vmmemAdviceGb`, 24); `dropcache` advised only when `.wslconfig` was
+      read without it; `wsl --shutdown` named as the last resort.
+    - (6) the owner walk checks the ancestors' creation times too: a reused ancestor pid owns nothing.
+    - (7) a deterministic order before the cap: private bytes, largest first, then pid.
+  - **Rejected, with reasons:**
+    - (3) no wait in `status`: the owner's Q-M5 keeps the CPU window wait; a Windows ledger is a follow-up.
+    - (4) reusing the `mcpServers` block: the extension reads neither block yet, and the fields differ (no log activity,
+      no starts; owners, sessions and private bytes instead) — a separate block keeps the distro's contract unchanged.
+- **Built:**
+  - `Mcp/WindowsMcp` (the seam `IWindowsProcessTable`, its records, `UnreadWindowsProcessTable`), `Mcp/Win32ProcessTable`
+    (Toolhelp snapshot, `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)`, `GetProcessTimes`, `K32GetProcessMemoryInfo`,
+    `ProcessIdToSessionId`, `CloseHandle`), `Mcp/WindowsMcpCatalogue`, `Mcp/WindowsMcpOwners`, `Mcp/WindowsMcpCollector`.
+  - `Status/WindowsMcpServersReport` (`windowsMcpServers`), `HostReport.VmmemAdvice`, `Health/VmmemAdvice`;
+    `HealthCollector.AuditWslConfig(files, file)` (static, so `status` reads `.wslconfig` without a command runner).
+  - `CliHost.WindowsProcesses` (reads nothing unless `ForThisMachine` wires the real table on Windows), `StatusCommand`
+    `WithWindowsSide`; `McpServerCollector.WindowsNotYet` → `WindowsReadsItsOwn` (the reason now points at `windowsMcpServers`).
+  - The key `wslConfig.vmmemAdviceGb` (default 24, `contracts/config-keys.json` regenerated).
+- **Deviations from the design:**
+  - The distro's binary carries NO `windowsMcpServers` block (item 5 said "unavailable"): absent is additive and leaves the
+    Linux goldens unchanged. The RED test `The_distro_binary_answers_the_windows_block_unavailable` became the Linux half of
+    `WindowsMcpFlows`.
+  - The instance's `parentPid` and `parentName` live inside `owner` (`owner{kind, parentPid, parentName, detail}`).
+  - `listed` is in the block (how many of `count` are in `instances[]`), as in `mcpServers`.
+  - Measured on this machine through the built binary (sandboxed, read-only): 42 instances (3 `coai-mcp`, 39 `creds-mcp`),
+    36 under one `wsl.exe`, 6 under three `claude.exe`, all idle, 0 orphaned, 0.74 GB private; `vmmemWSL` 28.9 of 91.6 GiB, so
+    the advice showed.
+- **Tests:** red first against stubs (7 core tests and the scenario failed for the right reason), then green; break-it on
+  product code — each restored, green after: the reuse check off → 2 red; the same-process check off → 1 red; exe names
+  compared with case → 1 red; the file's `dropcache` ignored → 1 red; sorted by pid → 1 red. The Win32 constants and the GiB
+  unit are listed as formats in `NumbersArchitectureTests`.
+- **Residuals:** counted in `status` only (`collect`'s run detail is unchanged); CPU across the window only; an interop
+  child's caller is invisible from Windows, so the W9 accumulation shows as one big `owners[]` group, not as orphans;
+  `playwright-mcp` is not matched on Windows (no command line read); no Windows verdict and no stop (the owner's decision).
 
 ### S8 — the 24 h × 20 sessions soak campaign
 
