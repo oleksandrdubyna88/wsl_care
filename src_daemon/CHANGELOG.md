@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.2.0...daemon-v0.3.0) (2026-10-09)
+
+
+### Features
+
+* **daemon:** A19 stops idle MCP servers - a button and the timer, by pid and start (E14 S2a) ([#55](https://github.com/oleksandrdubyna88/wsl_care/issues/55)) ([bd85fd3](https://github.com/oleksandrdubyna88/wsl_care/commit/bd85fd368f91d298f812704028b82231fad07e1c))
+* **daemon:** A3's timer waits until every build server is idle; language servers get their own family (E14 S3) ([#60](https://github.com/oleksandrdubyna88/wsl_care/issues/60)) ([94bbfc5](https://github.com/oleksandrdubyna88/wsl_care/commit/94bbfc50e156acc2573e6328f7479d0d3347c338))
+* **daemon:** memory and swap before the evening - a report (E14 S5) ([#63](https://github.com/oleksandrdubyna88/wsl_care/issues/63)) ([9544809](https://github.com/oleksandrdubyna88/wsl_care/commit/954480969a4840f08c7d70aa456e335dcd5d0459))
+* **daemon:** playwright-mcp, an interpreter-run MCP server, in the catalogue (E14 S2d) ([#61](https://github.com/oleksandrdubyna88/wsl_care/issues/61)) ([0d98c4b](https://github.com/oleksandrdubyna88/wsl_care/commit/0d98c4ba5e9451355e1c10c43eadc185de1f640d))
+* **daemon:** the machine-busy signal - wsl-care busy and the pressure.cpu/io verdicts (E14 S6) ([#62](https://github.com/oleksandrdubyna88/wsl_care/issues/62)) ([513238a](https://github.com/oleksandrdubyna88/wsl_care/commit/513238a6fecfd44981c73ae3792ef2705019183f))
+* **daemon:** the watch timer and A19's busy half (E14 S2b) ([#65](https://github.com/oleksandrdubyna88/wsl_care/issues/65)) ([b313ce8](https://github.com/oleksandrdubyna88/wsl_care/commit/b313ce85d96ee6e8c4d33e383a224bf2508db196))
+* **daemon:** the Windows side's MCP servers, read-only, and the vmmem advice (E14 S7a) ([#64](https://github.com/oleksandrdubyna88/wsl_care/issues/64)) ([583e060](https://github.com/oleksandrdubyna88/wsl_care/commit/583e0603090400893ca65d82a23255daede7c73f))
+* **daemon:** users add their own MCP programs to the watched list (E14 S2c) ([#58](https://github.com/oleksandrdubyna88/wsl_care/issues/58)) ([773522b](https://github.com/oleksandrdubyna88/wsl_care/commit/773522b230d9c0338f414aeb986d07d324fcc296))
+
+
+### Bug Fixes
+
+* **daemon:** MCP server CPU over the interval since the previous sample (E14 S1) + the twenty-sessions plan ([#48](https://github.com/oleksandrdubyna88/wsl_care/issues/48)) ([47e1d98](https://github.com/oleksandrdubyna88/wsl_care/commit/47e1d984cf13568ecb3cd67ea1872493b5546891))
+* **extension:** the .vsix leak check leaves a CI service account out instead of reading it as a person ([#51](https://github.com/oleksandrdubyna88/wsl_care/issues/51)) ([36a34fc](https://github.com/oleksandrdubyna88/wsl_care/commit/36a34fc3fdc9cd36e213c65bc466ae7a4306e0c7))
+* the Windows Time guard — which clock is wrong, A16 never steps to a wrong host, Start Windows Time ([#53](https://github.com/oleksandrdubyna88/wsl_care/issues/53)) ([fc8efff](https://github.com/oleksandrdubyna88/wsl_care/commit/fc8efff814cbf48b7deccc8ff13756f2c30a6d42))
+
 ## [0.2.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.1.2...daemon-v0.2.0) (2026-10-07)
 
 
