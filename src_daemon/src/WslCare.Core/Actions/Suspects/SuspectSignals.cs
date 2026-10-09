@@ -38,9 +38,15 @@ public static class SuspectSignals
     /// <summary>Every target read again — the same process, still no CPU, still no terminal — and the ones that pass signalled
     /// TOGETHER by identity: one <c>SIGTERM</c> each, ONE shared grace, then <c>SIGKILL</c> to the survivors (gate finding #9:
     /// three that ignore <c>SIGTERM</c> take one grace, not three).</summary>
-    public static async Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> EndAllAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, TimeSpan grace, CancellationToken cancellationToken)
+    public static Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> EndAllAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, TimeSpan grace, CancellationToken cancellationToken) =>
+        EndAllAsync(context, linux, targets, grace, static _ => false, cancellationToken);
+
+    /// <summary>The same, with the items whose CPU may have moved since the preview (plan E14 S2b: A19's BUSY targets — a busy
+    /// server moves its CPU by definition): their re-check keeps the identity, the terminal and the account, and drops ONLY the CPU
+    /// one. Every other item — every target of A11 and A18 — still refuses a moved CPU.</summary>
+    public static async Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> EndAllAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, TimeSpan grace, Func<ActionItem, bool> cpuMayMove, CancellationToken cancellationToken)
     {
-        var checkedTargets = targets.Select(t => (Item: t, Identity: Identity(t), Refusal: Recheck(SuspectTermination.Sample(context, linux, Identity(t).Pid), t))).ToList();
+        var checkedTargets = targets.Select(t => (Item: t, Identity: Identity(t), Refusal: Recheck(SuspectTermination.Sample(context, linux, Identity(t).Pid), t, cpuMayMove(t)))).ToList();
         var passing = checkedTargets.Where(c => c.Refusal is null).ToList();
         var outcomes = passing.Count == 0 ? [] : await context.Signals.TerminateAllAsync([.. passing.Select(c => c.Identity)], grace, cancellationToken).ConfigureAwait(false);
         return [.. checkedTargets.Where(c => c.Refusal is not null).Select(c => (c.Item, c.Refusal!)), .. passing.Zip(outcomes, (c, o) => (c.Item, o))];
@@ -55,7 +61,7 @@ public static class SuspectSignals
 
     /// <summary>Why a target is not signalled after all — gone, another process now, or it used CPU / gained a terminal /
     /// became root's since the preview; <c>null</c> when it is still the idle suspect the preview saw.</summary>
-    private static SignalOutcome? Recheck(PidSample? now, ActionItem target)
+    private static SignalOutcome? Recheck(PidSample? now, ActionItem target, bool cpuMayMove)
     {
         var parts = target.Key.Split(':');
         var (identity, cpu, uid) = (Identity(target), long.Parse(parts[2], CultureInfo.InvariantCulture), parts.Length > 3 ? int.Parse(parts[3], CultureInfo.InvariantCulture) : -1);
@@ -63,7 +69,7 @@ public static class SuspectSignals
         {
             null => new SignalOutcome.AlreadyGone(),
             { StartTicks: var start } when start != identity.StartTicks => new SignalOutcome.NotTheSame($"pid {identity.Pid} started at tick {start}, not {identity.StartTicks}: another process now"),
-            { } changed when Changed(changed, cpu, uid) => new SignalOutcome.NotTheSame($"pid {identity.Pid} used CPU, gained a terminal or changed owner since the preview: kept"),
+            { } changed when Changed(changed, cpuMayMove ? changed.CpuTicks : cpu, uid) => new SignalOutcome.NotTheSame($"pid {identity.Pid} used CPU, gained a terminal or changed owner since the preview: kept"),
             _ => null,
         };
     }

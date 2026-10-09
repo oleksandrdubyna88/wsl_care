@@ -15,7 +15,7 @@ internal static class InstallChecks
 {
     internal const string LinuxOnly = "install.sh and its harness (the scripted clock on its PATH) are POSIX sh over GNU coreutils and tar: covered on the Linux legs (and by hand in WSL)";
 
-    internal static readonly string[] EnableOurUnits = ["enable", "--now", "wsl-care.timer", "wsl-care-events.service"];
+    internal static readonly string[] EnableOurUnits = ["enable", "--now", "wsl-care.timer", "wsl-care-watch.timer", "wsl-care-events.service"];
 
     internal static void Linux() => Assert.SkipUnless(OperatingSystem.IsLinux(), LinuxOnly);
 

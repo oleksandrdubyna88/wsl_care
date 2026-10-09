@@ -84,7 +84,10 @@ public sealed class StatusFlows
         var (result, elapsed) = await TimedAsync(home, "status", "--json");
 
         var report = Report(result);
-        elapsed.Should().BeLessThan(Budget);
+        // The CPU window status waits when an MCP server runs (plan §15q E7.S2d, the owner's Q-M5) — on the Windows binary its own
+        // side's servers (E14 S7a), which a developer's machine has and a CI runner has not.
+        var window = report.WindowsMcpServers is { Count: > 0, WindowMilliseconds: { } ms } ? TimeSpan.FromMilliseconds(ms) : TimeSpan.Zero;
+        elapsed.Should().BeLessThan(Budget + window);
         report.SchemaVersion.Should().Be(SchemaVersion.Current);
         if (OperatingSystem.IsWindows())
         {

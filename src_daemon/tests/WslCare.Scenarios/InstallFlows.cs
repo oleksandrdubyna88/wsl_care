@@ -60,6 +60,7 @@ public sealed class InstallFlows
             string.Join(' ', EnableOurUnits),
             "enable --now sysstat.service atop.service",
             "is-active --quiet wsl-care.timer",
+            "is-active --quiet wsl-care-watch.timer",
             "is-active --quiet wsl-care-events.service");
         world.CallsOf("wsl-care").Select(c => string.Join(' ', c.Argv)).Should().Equal(
             [.. Core.Systemd.UnitDropIns.Units.Select(u => $"units dropin {u}"), "collect", "doctor --json"],

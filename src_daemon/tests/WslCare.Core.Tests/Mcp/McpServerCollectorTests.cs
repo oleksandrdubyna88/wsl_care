@@ -386,7 +386,7 @@ public sealed class McpServerCollectorTests : IDisposable
         // Own code review, finding 3: a ledger larger than records.maxStateFileBytes reads as empty for ever — every sample a window.
         var widest = new McpCpuPoint(long.MaxValue, DateTimeOffset.MaxValue, long.MaxValue);
         McpCpuFile Of(int entries) => new(Core.SchemaVersion.Current, SyntheticProcTree.FirstBootId,
-            [.. Enumerable.Range(0, entries).Select(i => new McpCpuEntry(int.MaxValue - i, long.MaxValue - i, [widest, widest]))]);
+            [.. Enumerable.Range(0, entries).Select(i => new McpCpuEntry(int.MaxValue - i, long.MaxValue - i, [widest, widest]) { BusySinceWall = DateTimeOffset.MaxValue, BusySinceMs = long.MaxValue })]);
         var perEntry = McpCpuLedger.Serialise(Of(2)).Length - McpCpuLedger.Serialise(Of(1)).Length;
         var cap = ConfigKeys.Records.MaxStateFileBytes.Min;
         var readings = Enumerable.Range(0, McpCpuLedger.MaxEntries(cap) + 5)
@@ -852,6 +852,94 @@ public sealed class McpServerCollectorTests : IDisposable
 
         return Task.CompletedTask;
     };
+
+    // ---------- E14 S2b: the busy-without-activity streak in ROOT's ledger (A19's busy evidence) ----------
+
+    /// <summary>Root's file system over the tree: state files trusted as this account's (the sandbox's rule).</summary>
+    private PhysicalFileSystem RootFiles => new(_tree.Paths) { TrustedStateOwner = RegularFiles.EffectiveUid(), OwnersAreThisProcess = true };
+
+    /// <summary>One root sample (the timer's or the watch's place, written) of pid 300 at the clock's instant with
+    /// <paramref name="cpuTicks"/>.</summary>
+    private McpInstance RootSampleAt(ManualTimeProvider clock, long cpuTicks)
+    {
+        _tree.Stat(300, 200, "coai-mcp", 0, StartTicksFor(TimeSpan.FromHours(1)), cpuTicks);
+        return Sample(wait: Advancing(clock), clock: clock, snapshot: Snapshot(clock.GetUtcNow()), files: RootFiles, ledger: McpCpuLedgerPlace.ForCollect(_tree.Paths, mayRecord: true, "unused"))
+            .Instances.Single(i => i.Process.Pid == 300);
+    }
+
+    /// <summary>Root's ledger entry of pid 300.</summary>
+    private McpCpuEntry RootEntry() =>
+        McpCpuLedger.Read(RootFiles, McpCpuLedgerPlace.ForStatus(_tree.Paths, root: true), 1 << 20).Entries.Single(e => e.Pid == 300);
+
+    [Fact]
+    public void A_busy_without_activity_streak_over_interval_readings_sets_busy_since_and_any_other_kind_clears_it()
+    {
+        // Half a core every sample, its log last written 15 minutes before the first: busy without activity once an interval
+        // measures it; the first sighting (a window, quiet) is no streak.
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        Log(300, Now - TimeSpan.FromHours(1), Now - TimeSpan.FromMinutes(15));
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+
+        RootSampleAt(clock, 1000);
+        var first = RootEntry();
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var startedAt = clock.GetUtcNow();
+        var second = RootSampleAt(clock, 1000 + (150 * Hz));
+        var streak = RootEntry();
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var third = RootSampleAt(clock, 1000 + (300 * Hz));
+        var still = RootEntry();
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var quiet = RootSampleAt(clock, 1000 + (300 * Hz));
+        var cleared = RootEntry();
+
+        first.BusySinceMs.Should().Be(0, "a first sighting is measured across the window: no streak");
+        (second.Kind, second.CpuBasis).Should().Be((McpKind.BusyWithoutActivity, McpCpuBasis.Interval));
+        streak.BusySinceMs.Should().BeGreaterThan(0, "busy without activity over an interval starts the streak");
+        streak.BusySinceWall.Should().BeCloseTo(startedAt, TimeSpan.FromSeconds(2));
+        third.Kind.Should().Be(McpKind.BusyWithoutActivity);
+        (still.BusySinceWall, still.BusySinceMs).Should().Be((streak.BusySinceWall, streak.BusySinceMs), "the streak keeps its start while every interval stays busy without activity");
+        quiet.Kind.Should().Be(McpKind.Idle);
+        cleared.BusySinceMs.Should().Be(0, "an idle interval ends the streak");
+    }
+
+    [Fact]
+    public void A_window_reading_never_starts_a_busy_streak()
+    {
+        // Busy without activity across the 1 s window of a first sighting: one second is no evidence of a sustained burn.
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        Log(300, Now - TimeSpan.FromHours(1), Now - TimeSpan.FromMinutes(15));
+
+        var instance = Sample(wait: Burn(300), files: RootFiles, ledger: McpCpuLedgerPlace.ForCollect(_tree.Paths, mayRecord: true, "unused")).Instances.Single();
+
+        (instance.Kind, instance.CpuBasis).Should().Be((McpKind.BusyWithoutActivity, McpCpuBasis.Window));
+        RootEntry().BusySinceMs.Should().Be(0, "only an interval reading is a link of the chain");
+    }
+
+    [Fact]
+    public void A_gap_longer_than_the_interval_maximum_restarts_the_busy_streak()
+    {
+        Session(200, 300, TimeSpan.FromHours(1), cpuTicks: 1000);
+        Log(300, Now - TimeSpan.FromHours(1), Now - TimeSpan.FromMinutes(15));
+        var clock = new ManualTimeProvider(Now) { SteppedTimestamps = true };
+        RootSampleAt(clock, 1000);
+        clock.Advance(TimeSpan.FromMinutes(5));
+        RootSampleAt(clock, 1000 + (150 * Hz));
+        var before = RootEntry();
+
+        clock.Advance(TimeSpan.FromMinutes(21));
+        var afterGap = RootSampleAt(clock, 1000 + (800 * Hz));
+        var broken = RootEntry();
+        clock.Advance(TimeSpan.FromMinutes(5));
+        var restartedAt = clock.GetUtcNow();
+        RootSampleAt(clock, 1000 + (950 * Hz));
+        var again = RootEntry();
+
+        before.BusySinceMs.Should().BeGreaterThan(0);
+        afterGap.CpuBasis.Should().Be(McpCpuBasis.Window, "no point lies within the 20-minute maximum");
+        broken.BusySinceMs.Should().Be(0, "a window reading is no link in the chain: one gap clears the streak");
+        again.BusySinceWall.Should().BeCloseTo(restartedAt, TimeSpan.FromSeconds(2), "the streak starts again, never resumes across a gap");
+    }
 
     private static McpKind Kind(McpSample sample, int pid) => sample.Instances.Single(i => i.Process.Pid == pid).Kind;
 

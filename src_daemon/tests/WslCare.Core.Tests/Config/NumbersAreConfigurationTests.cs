@@ -243,6 +243,29 @@ public sealed class NumbersAreConfigurationTests
 
         NumberRules.Broken(defaults).Select(r => r.Says(defaults)).Should().BeEmpty();
         RunBudget.TimerRunWorstCase(defaults).Should().BeLessThan(TimeSpan.FromMinutes(defaults.Int(ConfigKeys.Timer.RunLimitMinutes)));
+        RunBudget.WatchRunWorstCase(defaults).Should().BeLessThan(TimeSpan.FromMinutes(defaults.Int(ConfigKeys.McpWatchdog.RunLimitMinutes)));
+    }
+
+    /// <summary>Plan E14 S2b: a watch period at or past the interval maximum means no watch sample ever finds a baseline, so A19
+    /// could never see a busy server — a machine layer that sets it is an error, never in force.</summary>
+    [Fact]
+    public void The_watch_period_must_stay_under_the_interval_maximum()
+    {
+        var loaded = Load("""{ "mcpWatchdog": { "periodMinutes": 15 }, "mcpServers": { "cpuIntervalMaxMinutes": 15 } }""");
+
+        loaded.IsObserveOnly.Should().BeTrue();
+        loaded.Errors.Should().Contain(e => e.Display.Contains("mcpWatchdog.periodMinutes", StringComparison.Ordinal) && e.Display.Contains("mcpServers.cpuIntervalMaxMinutes", StringComparison.Ordinal));
+    }
+
+    /// <summary>Plan E14 S2b: the watch unit's start limit stays above the derived worst case of a watch run — the CPU window, every
+    /// server's log listing, A19's signal grace and a margin — at every value the ranges allow.</summary>
+    [Fact]
+    public void The_watch_run_limit_stays_above_the_worst_case_of_a_watch_run()
+    {
+        var loaded = Load("""{ "mcpWatchdog": { "runLimitMinutes": 2 }, "mcpServers": { "logListMilliseconds": 5000, "cpuWindowMilliseconds": 5000 }, "processes": { "termGraceSeconds": 120 } }""");
+
+        loaded.IsObserveOnly.Should().BeTrue();
+        loaded.Errors.Should().Contain(e => e.Display.Contains("mcpWatchdog.runLimitMinutes", StringComparison.Ordinal));
     }
 
     /// <summary>E7.S2b/S2c review C-M3: a ceiling COMPOSED of keys — the event stream's segment plus its slack — stays under the

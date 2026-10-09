@@ -354,4 +354,113 @@ public sealed class McpServerStopTests : IDisposable
         action.Trigger(preview, config).Fired.Should().BeTrue();
         action.Trigger(ActionPreview.Of("x", 0, null, "b", new Dictionary<string, long>(), string.Empty, []), config).Fired.Should().BeFalse();
     }
+
+    // ---------- E14 S2b: A19's BUSY half — busy without a log write for mcpWatchdog.busyMinutes, by ROOT's ledger ----------
+
+    /// <summary>A ledger holding pid <paramref name="pid"/>'s busy streak, <paramref name="busyFor"/> long, its newest point
+    /// <paramref name="newest"/> old — written as root's (the state directory) or, with <paramref name="users"/>, as an
+    /// unprivileged status's own.</summary>
+    private void BusyLedger(TimeSpan busyFor, TimeSpan newest, int pid = 300, long start = Start, string boot = Boot, bool users = false)
+    {
+        _clock.Advance(TimeSpan.FromHours(3));
+        var now = SampleTime.Of(_clock);
+        var entry = new McpCpuEntry(pid, start, [new McpCpuPoint(400, now.Wall - newest, now.MonotonicMs - (long)newest.TotalMilliseconds)])
+        {
+            BusySinceWall = now.Wall - busyFor,
+            BusySinceMs = now.MonotonicMs - (long)busyFor.TotalMilliseconds,
+        };
+        var folder = users ? _sandbox.Paths.UserStateDirectory : _sandbox.Paths.StateDirectory;
+        Directory.CreateDirectory(folder);
+        File.WriteAllBytes(_sandbox.Paths.Rules.Join(folder, McpCpuLedger.FileName), McpCpuLedger.Serialise(new McpCpuFile(SchemaVersion.Current, boot, [entry])));
+    }
+
+    [Fact]
+    public async Task A_server_busy_without_activity_for_longer_than_the_key_is_an_A19_target_by_pid_and_start()
+    {
+        Stat(200, cpuTicks: 9000, parent: 100, name: "claude");
+        Stat(300, cpuTicks: 500);
+        Stat(310, cpuTicks: 500);
+        BusyLedger(TimeSpan.FromMinutes(40), newest: TimeSpan.FromMinutes(5));
+        var processes = new[] { Agent(), Server(300), Server(310) };
+
+        var preview = await Preview(processes);
+
+        var target = preview.Targets.Should().ContainSingle("pid 300 has a 40-minute streak; pid 310 has none, and no CPU history says it is idle").Subject;
+        target.Key.Should().Be("300:4000:500:1000", "by pid AND start, as every A19 target");
+        target.Kind.Should().Be(McpServerStop.BusyKind);
+        target.Note.Should().Contain("busy without a log write for 40 min").And.Contain("/mcp");
+    }
+
+    [Theory]
+    [InlineData("shorter than the key")]
+    [InlineData("stale evidence")]
+    [InlineData("another boot")]
+    [InlineData("another process")]
+    [InlineData("a user's own ledger")]
+    public async Task Busy_evidence_older_than_the_interval_maximum_or_from_a_users_ledger_or_another_boot_selects_nothing(string change)
+    {
+        Stat(200, cpuTicks: 9000, parent: 100, name: "claude");
+        Stat(300, cpuTicks: 500);
+        BusyLedger(
+            change == "shorter than the key" ? TimeSpan.FromMinutes(20) : TimeSpan.FromMinutes(40),
+            change == "stale evidence" ? TimeSpan.FromMinutes(25) : TimeSpan.FromMinutes(5),
+            start: change == "another process" ? Start + 1 : Start,
+            boot: change == "another boot" ? "6d1c1c5e-0000-4000-8000-000000000002" : Boot,
+            users: change == "a user's own ledger");
+
+        var preview = await Preview([Agent(), Server()]);
+
+        preview.Targets.Should().BeEmpty($"{change}: no evidence A19 may act on");
+    }
+
+    [Fact]
+    public async Task A_busy_target_is_signalled_although_its_cpu_moved_and_A11_A18_and_idle_targets_still_refuse_a_moved_cpu()
+    {
+        Stat(200, cpuTicks: 9000, parent: 100, name: "claude");
+        Stat(300, cpuTicks: 500);
+        Stat(310, cpuTicks: 500);
+        var processes = new[] { Agent(), Server(300), Server(310) };
+        Record(processes);
+        _clock.Advance(TimeSpan.FromHours(2));
+        Record(processes);
+        BusyLedger(TimeSpan.FromMinutes(40), newest: TimeSpan.FromMinutes(5), pid: 310);
+        // 310 burns: its ticks moved since the history's last sighting, so it is no IDLE target — only the busy evidence selects it.
+        Stat(310, cpuTicks: 600);
+        var preview = await Preview(processes);
+        Stat(300, cpuTicks: 900);
+        Stat(310, cpuTicks: 900);
+        var signals = new RecordingSignals();
+        var action = new McpServerStop();
+        var context = Context(processes, signals);
+
+        var run = await action.RunAsync(context, preview, new ActionCommands(action, new RecordingCommandRunner(), context.TargetUser, []), CancellationToken.None);
+
+        preview.Targets.Select(t => (t.Key, t.Kind)).Should().BeEquivalentTo([("300:4000:500:1000", "process"), ("310:4000:600:1000", McpServerStop.BusyKind)]);
+        signals.Asked.Should().Equal([new ProcessIdentity(310, Start)], "a busy server moves its CPU by definition; the idle one that moved is kept");
+        run.NotRemoved.Should().ContainSingle().Which.Note.Should().Contain("used CPU");
+    }
+
+    [Fact]
+    public async Task The_shared_signal_path_still_refuses_a_moved_cpu_when_no_item_may_move()
+    {
+        Stat(300, cpuTicks: 900);
+        var signals = new RecordingSignals();
+        var context = Context([Server()], signals);
+        var busyLooking = new ActionItem(McpServerStop.BusyKind, "300 coai-mcp", 1) { Key = "300:4000:500:1000" };
+
+        var judged = await SuspectSignals.EndAllAsync(context, _sandbox.Paths, [busyLooking], TimeSpan.FromSeconds(1), CancellationToken.None);
+
+        signals.Asked.Should().BeEmpty("A11 and A18 pass no predicate: their re-check refuses a moved CPU whatever the item says");
+        judged.Single().Outcome.Should().BeOfType<SignalOutcome.NotTheSame>();
+    }
+
+    [Fact]
+    public void McpWatchdog_busyMinutes_is_10_to_10080_default_30_safe_higher()
+    {
+        var key = ConfigKeys.McpWatchdog.BusyMinutes;
+
+        (key.Min, key.Max).Should().Be((10, 10080));
+        key.Trust.Safe.Should().Be(SafeDirection.Higher);
+        ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config.Int(key).Should().Be(30);
+    }
 }

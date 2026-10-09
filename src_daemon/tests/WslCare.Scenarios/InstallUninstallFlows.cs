@@ -51,7 +51,7 @@ public sealed class InstallUninstallFlows
 
         result.Stdout.Should().Contain("kept: /var/lib/wsl-care").And.Contain("--uninstall --purge removes them");
         world.CallsOf("systemctl").Select(c => string.Join(' ', c.Argv)).Should().ContainInOrder(
-            "disable --now wsl-care.timer wsl-care-events.service", "stop wsl-care.service", "stop wsl-care-act@*.service", "daemon-reload", "is-active --quiet wsl-care.timer");
+            "disable --now wsl-care.timer wsl-care-watch.timer wsl-care-events.service", "stop wsl-care.service", "stop wsl-care-watch.service", "stop wsl-care-act@*.service", "daemon-reload", "is-active --quiet wsl-care.timer");
     }
 
     [Fact]
@@ -183,8 +183,9 @@ public sealed class InstallUninstallFlows
     /// <summary>What a world's systemctl answers during an uninstall.</summary>
     private static void ScriptUninstall(InstallWorld world)
     {
-        world.Override("systemctl", ["disable", "--now", "wsl-care.timer", "wsl-care-events.service"], 0);
+        world.Override("systemctl", ["disable", "--now", "wsl-care.timer", "wsl-care-watch.timer", "wsl-care-events.service"], 0);
         world.Override("systemctl", ["stop", "wsl-care.service"], 0);
+        world.Override("systemctl", ["stop", "wsl-care-watch.service"], 0);
         world.Override("systemctl", ["stop", "wsl-care-act@*.service"], 0);
         world.Override("systemctl", ["is-active", "--quiet", "wsl-care.timer"], 3);
     }

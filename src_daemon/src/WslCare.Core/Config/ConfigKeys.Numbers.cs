@@ -550,14 +550,16 @@ public static partial class ConfigKeys
         /// it inside a full run, so machine-only; at 100 ticks/s one tick is 1 % of a core over 1 s. Default 1000.</summary>
         public static readonly ConfigKey.IntKey CpuWindowMilliseconds = new("mcpServers.cpuWindowMilliseconds", 200, 5000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
 
-        /// <summary>Below this CPU % of one core an instance is idle (or starting). Default 2.</summary>
-        public static readonly ConfigKey.IntKey IdleCpuPercent = new("mcpServers.idleCpuPercent", 0, 100) { Trust = KeyTrust.Display };
+        /// <summary>Below this CPU % of one core an instance is idle (or starting). Since E14 S2b it also decides what is BUSY — A19's
+        /// busy evidence — so a user layer may only raise it when root reads it. Default 2.</summary>
+        public static readonly ConfigKey.IntKey IdleCpuPercent = new("mcpServers.idleCpuPercent", 0, 100) { Trust = KeyTrust.Higher };
 
         /// <summary>An instance younger than this is starting, not idle. Default 10.</summary>
         public static readonly ConfigKey.IntKey IdleMinAgeMinutes = new("mcpServers.idleMinAgeMinutes", 0, 1440) { Trust = KeyTrust.Display };
 
-        /// <summary>A busy instance whose newest log write is older than this is busy without activity. Default 10.</summary>
-        public static readonly ConfigKey.IntKey ActivityWindowMinutes = new("mcpServers.activityWindowMinutes", 1, 1440) { Trust = KeyTrust.Display };
+        /// <summary>A busy instance whose newest log write is older than this is busy without activity — A19's busy evidence since E14
+        /// S2b, so a user layer may only lengthen it when root reads it. Default 10.</summary>
+        public static readonly ConfigKey.IntKey ActivityWindowMinutes = new("mcpServers.activityWindowMinutes", 1, 1440) { Trust = KeyTrust.Higher };
 
         /// <summary>The starts of each server are counted over this window (at most a day: today's and yesterday's log folders cover
         /// it). Default 10.</summary>
@@ -586,13 +588,15 @@ public static partial class ConfigKeys
 
         /// <summary>The shortest interval an instance's CPU is measured over from the ledger (plan E14 S1): a recorded point younger
         /// than this is no baseline. Two periods of a burst near a minute (research/2026-10-07_evening_overload.md M1). Its range
-        /// ends where <see cref="CpuIntervalMaxMinutes"/>' begins, so the two cannot contradict. Default 120.</summary>
-        public static readonly ConfigKey.IntKey CpuIntervalMinSeconds = new("mcpServers.cpuIntervalMinSeconds", 10, 600) { Trust = KeyTrust.Display };
+        /// ends where <see cref="CpuIntervalMaxMinutes"/>' begins, so the two cannot contradict. A19's busy evidence since E14 S2b: a user layer
+        /// may only lengthen it when root reads it. Default 120.</summary>
+        public static readonly ConfigKey.IntKey CpuIntervalMinSeconds = new("mcpServers.cpuIntervalMinSeconds", 10, 600) { Trust = KeyTrust.Higher };
 
         /// <summary>The longest interval an instance's CPU is measured over from the ledger: an older point is no baseline and the
         /// window answers — an average over hours would judge the kind on the past (plan E14 S1, review finding 3). Two activity
-        /// windows. Default 20.</summary>
-        public static readonly ConfigKey.IntKey CpuIntervalMaxMinutes = new("mcpServers.cpuIntervalMaxMinutes", 10, 1440) { Trust = KeyTrust.Display };
+        /// windows. A19's busy evidence since E14 S2b (a streak is a chain of readings no further apart): a user layer may only
+        /// shorten it when root reads it. Default 20.</summary>
+        public static readonly ConfigKey.IntKey CpuIntervalMaxMinutes = new("mcpServers.cpuIntervalMaxMinutes", 10, 1440) { Trust = KeyTrust.Lower };
     }
 
     public static partial class McpWatchdog
@@ -605,6 +609,20 @@ public static partial class ConfigKeys
         /// <summary>A19: the same for a server whose agent died (re-parented to init) — nobody can talk to it any more (the owner's
         /// Q-M3). Default 10.</summary>
         public static readonly ConfigKey.IntKey OrphanIdleMinutes = new("mcpWatchdog.orphanIdleMinutes", 1, 10080) { Trust = KeyTrust.Higher };
+
+        /// <summary>A19's busy half (plan E14 S2b): an MCP server busy without a log write for at least this long — a chain of interval
+        /// readings in root's CPU ledger — is stopped. It decides what ends, so a user layer may only lengthen it. Default 30 (an
+        /// assumption, the coordinator's; the owner may change it).</summary>
+        public static readonly ConfigKey.IntKey BusyMinutes = new("mcpWatchdog.busyMinutes", 10, 10080) { Trust = KeyTrust.Higher };
+
+        /// <summary>The watch timer's period (<c>wsl-care-watch.timer</c>, plan E14 S2b): how often root samples the MCP servers into
+        /// its ledger and lets A19 act. It must stay under <c>mcpServers.cpuIntervalMaxMinutes</c>, or no sample finds a baseline.
+        /// Machine-only (it is a unit's value). Default 5.</summary>
+        public static readonly ConfigKey.IntKey PeriodMinutes = new("mcpWatchdog.periodMinutes", 2, 15) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
+
+        /// <summary>The longest one watch run may take (<c>wsl-care-watch.service</c>'s <c>TimeoutStartSec</c>): a sample, the CPU
+        /// window, and A19's signals with their grace. Machine-only. Default 10.</summary>
+        public static readonly ConfigKey.IntKey RunLimitMinutes = new("mcpWatchdog.runLimitMinutes", 2, 60) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
     /// <summary>Every E7.S2c number key, in the order <c>config get</c> lists them (after the older keys).</summary>
@@ -764,5 +782,8 @@ public static partial class ConfigKeys
         McpServers.CpuIntervalMaxMinutes,
         McpWatchdog.IdleMinutes,
         McpWatchdog.OrphanIdleMinutes,
+        McpWatchdog.BusyMinutes,
+        McpWatchdog.PeriodMinutes,
+        McpWatchdog.RunLimitMinutes,
     ];
 }

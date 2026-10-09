@@ -86,6 +86,32 @@ public sealed partial class ShippedFilesTests
 
     /// <summary>The cgroup ceiling covers every child of the run (npm, dotnet, pip, the docker CLIs, the folder walk):
     /// plan §8's 256M would OOM-kill a child mid-cleanup (E4 review, 2026-10-03).</summary>
+    /// <summary>Plan E14 S2b: the watch unit starts <c>watch --timer</c> — the only watch that may let A19 act — as the CLI parses it.</summary>
+    [Fact]
+    public void The_watch_service_runs_watch_with_the_timer_flag_as_the_cli_parses_it()
+    {
+        var request = CommandLine.Parse(ExecArgs("wsl-care-watch.service"));
+
+        request.Should().BeOfType<Request.Watch>().Which.Timer.Should().BeTrue("the watch timer says so with --timer, never the environment");
+        ((Request.Watch)request).Json.Should().BeFalse("the journal gets the text line");
+        Single(Unit("wsl-care-watch.service"), "Service", "Type").Should().Be("oneshot");
+        Unit("wsl-care-watch.service").Should().NotContainKey("Install", "started by its timer only, never enabled on its own");
+    }
+
+    /// <summary>Plan E14 S2b: a MONOTONIC timer every <c>mcpWatchdog.periodMinutes</c> — after boot and after each run — with no catch-up
+    /// (nothing to catch up after the VM was off), so no <c>Persistent=</c> and no calendar.</summary>
+    [Fact]
+    public void The_watch_timer_fires_every_period_from_boot_and_after_each_run()
+    {
+        var unit = Unit("wsl-care-watch.timer");
+
+        Single(unit, "Timer", "OnBootSec").Should().Be("5min");
+        Single(unit, "Timer", "OnUnitActiveSec").Should().Be("5min", "the default of mcpWatchdog.periodMinutes");
+        unit["Timer"].Should().NotContainKey("OnCalendar").And.NotContainKey("Persistent");
+        Single(unit, "Timer", "Unit").Should().Be("wsl-care-watch.service");
+        Single(unit, "Install", "WantedBy").Should().Be("timers.target");
+    }
+
     [Fact]
     public void The_service_memory_ceiling_leaves_room_for_the_tools_the_cleanups_start()
     {
@@ -141,6 +167,7 @@ public sealed partial class ShippedFilesTests
     public void The_timer_s_service_and_the_detached_run_s_template_carry_the_same_hardening()
     {
         Hardening("wsl-care-act@.service").Should().Equal(Hardening("wsl-care.service"), "plan §15k #9: one hardening set for every root run");
+        Hardening("wsl-care-watch.service").Should().Equal(Hardening("wsl-care.service"), "plan E14 S2b: the watch is a root run too");
     }
 
     /// <summary>The companion: the equality above compares what was READ — every hardening key is there, with its value.</summary>
@@ -191,7 +218,7 @@ public sealed partial class ShippedFilesTests
             "KillMode", // systemd.kill(5)
             "MemoryMax", // systemd.resource-control(5)
         ],
-        ["Timer"] = ["OnCalendar", "Persistent", "RandomizedDelaySec", "AccuracySec", "Unit"], // systemd.timer(5)
+        ["Timer"] = ["OnCalendar", "OnBootSec", "OnUnitActiveSec", "Persistent", "RandomizedDelaySec", "AccuracySec", "Unit"], // systemd.timer(5)
         ["Install"] = ["WantedBy"], // systemd.unit(5) [Install]
     };
 
@@ -249,7 +276,6 @@ public sealed partial class ShippedFilesTests
     [Fact]
     public void Every_unit_s_start_limit_is_infinity_or_above_the_worst_case_of_its_run()
     {
-        var worst = Core.Config.RunBudget.TimerRunWorstCase(Core.Config.Tuning.Default.Config);
         foreach (var name in ShippedFiles.UnitNames.Where(n => n.EndsWith(".service", StringComparison.Ordinal)))
         {
             var service = Unit(name)["Service"];
@@ -257,6 +283,8 @@ public sealed partial class ShippedFilesTests
             if (type == "oneshot")
             {
                 var limit = Single(Unit(name), "Service", "TimeoutStartSec");
+                // Plan E14 S2b: each run's OWN derived worst case — the watch's is a sample and A19's signals, not a full run.
+                var worst = name == "wsl-care-watch.service" ? Core.Config.RunBudget.WatchRunWorstCase(Core.Config.Tuning.Default.Config) : Core.Config.RunBudget.TimerRunWorstCase(Core.Config.Tuning.Default.Config);
                 (limit == "infinity" || (limit.EndsWith("min", StringComparison.Ordinal) && TimeSpan.FromMinutes(int.Parse(limit[..^3], System.Globalization.CultureInfo.InvariantCulture)) >= worst))
                     .Should().BeTrue($"{name}: TimeoutStartSec={limit} must be infinity or at least the derived worst case {worst.TotalMinutes:0} min");
             }
@@ -295,7 +323,7 @@ public sealed partial class ShippedFilesTests
         var loaded = ConfigLoader.Load(
         [
             (ConfigLoader.DefaultsFile, new FileReadResult.Content(ConfigLoader.EmbeddedDefaults())),
-            (new ConfigLayerFile(ConfigLayer.Machine, "/etc/wsl-care/config.json"), new FileReadResult.Content(Encoding.UTF8.GetBytes("""{ "timer": { "periodHours": 6 }, "units": { "nice": 10, "memoryMaxMb": 2048, "stopTimeoutSeconds": 60, "eventsRestartSeconds": 45 } }"""))),
+            (new ConfigLayerFile(ConfigLayer.Machine, "/etc/wsl-care/config.json"), new FileReadResult.Content(Encoding.UTF8.GetBytes("""{ "timer": { "periodHours": 6 }, "units": { "nice": 10, "memoryMaxMb": 2048, "stopTimeoutSeconds": 60, "eventsRestartSeconds": 45 }, "mcpWatchdog": { "periodMinutes": 3 } }"""))),
         ]);
         loaded.Errors.Should().BeEmpty();
 
@@ -305,6 +333,8 @@ public sealed partial class ShippedFilesTests
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Should().Equal(("Nice", "10"), ("MemoryMax", "2048M"), ("TimeoutStopSec", "60"), ("TimeoutStartSec", "240min"));
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-act@.service")).Should().Equal([.. DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care.service")).Where(s => s.Key != "TimeoutStartSec")], "one hardening set; a confirm keeps its infinity");
             DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-events.service")).Should().Equal(("RestartSec", "45"), ("MemoryMax", "2048M"));
+            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-watch.timer")).Should().Equal(("OnBootSec", "3min"), ("OnUnitActiveSec", "3min"));
+            DropInSettings(Core.Systemd.UnitDropIns.Render("wsl-care-watch.service")).Should().Equal(("Nice", "10"), ("MemoryMax", "2048M"), ("TimeoutStopSec", "60"), ("TimeoutStartSec", "10min"));
         }
     }
 

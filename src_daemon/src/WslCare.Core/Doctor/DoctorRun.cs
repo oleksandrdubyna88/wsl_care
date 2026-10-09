@@ -57,7 +57,7 @@ public sealed class DoctorRun(IHostPaths paths, IFileSystem files, ICommandRunne
     /// <summary>The timer runs every 4 h (plan §8); a last run older than this means it does not.</summary>
     public static TimeSpan LastRunMaxAge => Tuning.Current.Hours(ConfigKeys.Timer.PeriodHours) + Tuning.Current.Minutes(ConfigKeys.Timer.LateSlackMinutes);
 
-    public static readonly IReadOnlyList<string> Units = ["wsl-care.timer", "wsl-care-events.service", "sysstat.service", "atop.service"];
+    public static readonly IReadOnlyList<string> Units = ["wsl-care.timer", "wsl-care-watch.timer", "wsl-care-events.service", "sysstat.service", "atop.service"];
 
     public async Task<DoctorReport> RunAsync(ConfigLoadResult loaded, string version, CancellationToken cancellationToken)
     {
