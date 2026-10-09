@@ -6,10 +6,10 @@ what the Marketplace serves; `$TARGET` is the DAEMON release version (`0.1.0`), 
 and 10 (item 6 reads the extension's version from the Marketplace and the newest `extension-v*` release itself). Run it
 from the repository root INSIDE WSL `Ubuntu` (`node .agents/conventions/tools/post-deploy-check.mjs --target 0.1.0
 --timeout 180000`): the commands are POSIX sh, and `wsl.exe` reaches the distro through interop.
-VSCE_PAT expires: none yet — recorded at the E5 live gate, step 2, as `VSCE_PAT expires: none — manual upload` (the owner's
-decision of 2026-10-06: no stored token, the attested `.vsix` uploaded by hand), `VSCE_PAT expires: <YYYY-MM-DD>` (a global
-Azure DevOps PAT, so never later than 2026-12-01), or `VSCE_PAT expires: none — OIDC` when the Marketplace publish uses
-`--azure-credential` (docs/repo-settings.md, step 9).
+VSCE_PAT expires: 2026-12-01 — effectively: the token itself expires 2027-10-08, but it is a global PAT and Azure DevOps stops
+honouring global PATs on 2026-12-01 (global PAT retirement — see todo/PLAN_marketplace_entra_publish.md). Item 12 reads the
+first date, so it fails from 2026-11-01: rotate to an organization-scoped PAT, or move to OIDC or the manual upload
+(`VSCE_PAT expires: none — OIDC` / `none — manual upload`; docs/repo-settings.md, step 9).
 Last verified: 2026-10-09 · the owner's installation (WSL Ubuntu) · daemon 0.3.0
 — items 1, 2, 5, 7, 11 against the attested `daemon-v0.3.0` install of 2026-10-09 16:01Z from the tag's `install.sh` (its own
 verify: `sar, atop, wsl-care.timer, wsl-care-watch.timer, wsl-care-events.service, doctor healthy`; first full run

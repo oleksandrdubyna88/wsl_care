@@ -108,7 +108,10 @@ flowchart LR
   `wslCare.openLogs` (also in the panel's title bar), and since 2026-10-08 `wslCare.startWindowsTime` (also a panel
   button while the daemon's verdicts ask for it), `wslCare.installWindowsTimeGuard` and `wslCare.removeWindowsTimeGuard`
   (also the *Health* section's buttons beside the guard's line). No cleanup is a command: cleanups start only from the panel's
-  buttons, through the host's modals.
+  buttons, through the host's modals. **Every command has a button in the panel UI** (the owner's standing rule of
+  2026-10-09; the palette may duplicate a button, never be the only way): `src/panel/commandButtons.ts` declares where each
+  one lives — a page button posting the same operation, the panel view's title bar (`wslCare.openLogs`), or the activity-bar
+  icon for the opener — and `commandButtons.test.ts` holds it to the manifest and to the page's real button sets.
 - **Webview panel** — `wslCare.logs` (the Logs page), restored after a reload by its serializer
   (`onWebviewPanel:wslCare.logs`).
 - **View** — the activity-bar container `wslCare` with the webview view `wslCare.panel`.
