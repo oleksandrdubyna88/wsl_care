@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice); S2b, S4, S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4, S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -286,6 +286,185 @@ A19 starts stopping idle servers at the second timer run after the upgrade (owne
 still a display key although it now steers A19 (the Q-M2 story re-classifies it with the open list); a server answering only
 short requests may spend under one 10 ms tick in an hour (a residual beside "a remote call in flight"); an engine-level A19
 dry-run test (the dry-run gate is the engine's, held for every auto action by `TimerPassTests` and the A1/A2/A10 tests).
+
+#### S2b — as to be built (2026-10-09, branch `feat/wc-mcp-busy-timer`): the watch timer and A19's BUSY half
+
+**The gap.** S2a stops IDLE servers on the 4-hour timer, so "idle > 60 min" means up to ~4 h in practice. The evening of
+2026-10-07 (L7) also had the other kind: eight servers burning 6.9 cores with no log line for 10+ minutes. Nothing stops
+those, because the evidence is missing. Root's ledger (`McpCpuLedger`, S1) holds an interval reading only when root samples
+more often than `mcpServers.cpuIntervalMaxMinutes` (20). The 4-hour timer never does (S2's design, finding 0 of the
+2026-10-08 plan round). S2's design asks for both: a short root timer, and A19's busy selection on top of it.
+
+**Design.**
+
+1. **A watch verb and timer** (`wsl-care watch [--timer] [--json]`, as root, the distro's binary only).
+   - `wsl-care-watch.timer` fires every `mcpWatchdog.periodMinutes` (new, default **5**, range 2–15, machine-only,
+     `SafeDirection.Lower`). It is a monotonic timer: `OnBootSec` and `OnUnitActiveSec` equal the period. That is not a
+     calendar, because the watch has no catch-up to do after the VM was off.
+   - It starts `wsl-care-watch.service`, a oneshot running `watch --timer`. Its hardening and limits equal `wsl-care.service`'s,
+     except `TimeoutStartSec`, which is `mcpWatchdog.runLimitMinutes` (new, default 10, range 2–60, machine-only).
+   - Both units get drop-ins (`UnitDropIns`, `wsl-care units dropin`) and `doctor` checks.
+   - A coupled rule (`NumberRules`): `mcpWatchdog.periodMinutes` < `mcpServers.cpuIntervalMaxMinutes`. Otherwise no watch
+     sample would ever find a baseline, and A19 could never see a busy server.
+2. **What one watch run does** (`Core/Watch/WatchRun.cs`):
+   - **(a)** Take THE run lock without waiting. If it is busy, exit 75: nothing is done, and the full run or `act` holding the
+     lock samples or acts itself.
+   - **(b)** Under the lock, one probe sample. The MCP collector then runs with root's ledger, writes it
+     (`McpCpuLedgerPlace.RootState(Writes: true)`, the place `collect` uses), and records the agents' CPU history
+     (`AgentCpuHistory.Record`, A19's idle evidence, A18's and A3's too). Then the lock is released.
+   - **(c)** Only with `--timer`, and only when every one of these holds:
+     - not observe-only;
+     - `auto.A19` is on;
+     - the daemon's dry-run decision for the TIMER (`DryRunWindow.Decide`, the same two locks as the full run) says real.
+
+     Then A19's live preview runs (`ActionEngine.PreviewAsync`). If it has targets this watch did not already try, they are
+     run through `ActionEngine.ExecuteAsync` as an `act` with trigger `timer`, bound to exactly those targets (`--process`
+     semantics, `ShownProcesses`). That is a normal recorded run: one history line and one detail, an item per stop.
+   - **(d)** The identities tried go into `{state}/mcp-watch.json`: boot id plus `pid:start`, live ones only, capped at
+     `mcpServers.maxInstances`. The watch never tries the same process twice; the 4-hour pass still may. So a target whose
+     signal is refused every time costs one record, not 288 a day.
+   - **What is recorded:** a watch run that stops nothing writes NO history line. Sampling every 5 minutes is not a run anyone
+     needs in `logs` or `runs`; the run log keeps it.
+   - **During a dry run the watch only samples.** The full run's pass keeps recording what A19 WOULD stop every 4 h. A dry
+     watch would record the same "would stop" every 5 minutes.
+3. **The busy evidence in the ledger** (`McpCpuEntry.BusySince`, a wall + monotonic instant, omitted when none).
+   - At each sample that writes a ledger, an instance whose kind is `busyWithoutActivity` over an `interval` basis (S1's
+     interval, already bounded to 120 s–20 min) keeps its entry's `BusySince` if that entry had one, or starts it now.
+   - Any other kind, a `window` basis or an unmeasured CPU clears it.
+   - So "busy without activity since T" is a chain of interval readings, each no more than `cpuIntervalMaxMinutes` apart. One
+     gap clears it.
+   - The collector judges the kinds first and records the ledger after (`McpServerCollector.cs:35-38` reorders; `RecordAll`
+     moves out of `CpuAsync`, `:69`, `:95`).
+   - `BytesPerEntry` (`McpCpuLedger.cs:132`) is raised to fit the new member under the same read cap.
+4. **A19's busy half** (`McpServerStop`, `:143` `JudgeOne`).
+   - A target is also an instance with ALL of S2a's guards:
+     - the target user's, not root's;
+     - no terminal, no child;
+     - the snapshot's identity re-read;
+     - not an orphan of a user-added program.
+   - PLUS: busy without a log write for at least `mcpWatchdog.busyMinutes` (new, default **30**, range 10–10080,
+     `SafeDirection.Higher` like `idleMinutes`). That is read from ROOT's ledger only (`ReadStateFile`, never a user's file):
+     - an entry of this boot and this identity, with `BusySince`;
+     - whose newest point is no older than `mcpServers.cpuIntervalMaxMinutes`, so the evidence is current;
+     - measured as the shorter of the two clocks.
+   - Its item says "busy without a log write for N min" and is marked busy (`ActionItem.Kind` `busy process`).
+   - An idle target is unchanged.
+5. **The signal path for a busy target** (`SuspectSignals.EndAllAsync`, `:41`; `Changed`, `:71`).
+   - `EndAllAsync` gains a per-item "the CPU may have moved" predicate. A busy item keeps the identity, account, terminal and
+     not-root re-checks and drops ONLY the CPU one; a busy server moves its CPU by definition.
+   - A11, A18 and A19's idle items pass none, so they still refuse a moved CPU (RED tests prove it).
+   - One call, so one shared grace for both kinds.
+6. **Keys that became evidence** are re-classified (S2's design): `mcpServers.cpuIntervalMinSeconds` and
+   `mcpServers.idleCpuPercent` → `SafeDirection.Higher`, `mcpServers.cpuIntervalMaxMinutes` → `Lower`,
+   `mcpServers.activityWindowMinutes` → `Higher`. Each now decides what A19 may stop; a user layer may only make A19
+   stricter when root reads it. `contracts/config-keys.json` is regenerated.
+7. **Install and package.**
+   - `install.sh`:
+     - units list (`:79`);
+     - stop before an upgrade or uninstall (`:476`–`:489`);
+     - the release check (`:760`);
+     - `enable --now` (`:991`);
+     - verify active (`:1024`);
+     - drop-ins.
+   - `.github/scripts/package-daemon.sh` ships both files.
+   - `DoctorRun.Units` (`:60`) adds `wsl-care-watch.timer`.
+   - `ShippedFilesTests` hold the new service's hardening equal to `wsl-care.service`'s.
+   - `UnitSuccessExitTests` derive its `SuccessExitStatus`.
+8. **Measurement still owed.** What Claude Code does with an ended stdio server (S2's "measure first") stays owed. The
+   machine is off-limits for it, so every A19 item keeps saying the session may need `/mcp`.
+9. **Defaults as assumptions** (the coordinator's, the owner may change): 5 min period, 30 min busy, 10 min run limit.
+
+**Not in this story:** a Windows-side ledger and `collect`'s Windows MCP block (the next story); a stop on Windows (S7b,
+the owner's).
+
+**RED (S2b), written before the product code:**
+- `A_busy_without_activity_streak_over_interval_readings_sets_busy_since_and_any_other_kind_clears_it`
+- `A_gap_longer_than_the_interval_maximum_restarts_the_busy_streak`
+- `A_server_busy_without_activity_for_longer_than_the_key_is_an_A19_target_by_pid_and_start`
+- `Busy_evidence_older_than_the_interval_maximum_or_from_a_users_ledger_or_another_boot_selects_nothing`
+- `A_busy_target_is_signalled_although_its_cpu_moved_and_A11_A18_and_idle_targets_still_refuse_a_moved_cpu`
+- `The_watch_samples_into_roots_ledger_and_history_under_the_lock_and_records_no_run_when_nothing_is_stopped`
+- `The_watch_acts_only_with_the_timer_flag_auto_on_and_no_dry_run_and_never_tries_one_process_twice`
+- `The_watch_exits_75_when_the_lock_is_held_and_77_when_not_root`
+- `The_watch_period_must_stay_under_the_interval_maximum`
+- `The_watch_units_ship_with_the_full_runs_hardening_and_their_drop_ins_render_the_keys`
+- Scenarios over the built CLI (Linux legs): `watch --timer` over the captured tree with a sandbox ledger whose `coai-mcp`
+  has a 40-minute busy streak, under `dryRun: false` past the window → one recorded act run stopping it (signals refused in a
+  sandbox, recorded as kept); with `dryRun` on → no history line, the ledger written.
+
+#### S2b as built (2026-10-09)
+
+- **Plan round** (coai session `2b266dd3`, epic 14/14): `proceed`. Codex answered with 2 findings; Gemini was rate-limited
+  and gave no review.
+  - **Accepted:** (1) crash-safe tries. The identities are written to `mcp-watch.json` BEFORE the act. A test reads the file
+    at the moment of the signal.
+  - **Rejected:** (0) a scenario that really signals a child process. That would need the real pidfd sender under the
+    scenario sandbox, whose refusing sender is a tripwire. Instead the stop path is driven in-process through the real
+    engine with a recording sender (`WatchRunTests`), and through the whole program (`UnitSuccessExitTests`' *Acted* ending).
+- **Built:**
+  - **The busy streak.** `McpCpuEntry.BusySinceWall` and `BusySinceMs` (omitted when none). `McpCpuLedger.Next(…, busy)`
+    sets, keeps or clears them, and `McpCpuLedger.BusyFor` reads them. `BytesPerEntry` went 320 → 400.
+  - **The collector** judges kinds before it records (`CpuRound`, `Record`).
+  - **A19's busy half.** `McpServerStop` gets `IdleWindows.Busy` and `Judging.BusyFor`, read from root's ledger only. A busy
+    item has `Kind` `busy process`.
+  - **The signal path.** `SuspectSignals.EndAllAsync(…, cpuMayMove, …)`; the old overload is unchanged for A11 and A18.
+  - **The watch.** `Watch/WatchRun.cs` (`WatchContext`, `WatchResult`, `WatchTries`, `WatchReport`), `WatchCommand`, and
+    the `watch [--timer] [--json]` verb.
+  - **Units.** `wsl-care-watch.service` and `wsl-care-watch.timer` with drop-ins; `DoctorRun.Units` gains the timer.
+  - **Install and package.** `install.sh` installs, enables, verifies, disables and stops the watch units — only when the
+    release ships them. The package script's comment lists them.
+  - **Keys.** `mcpWatchdog.busyMinutes`, `periodMinutes` and `runLimitMinutes`; four evidence keys re-classified.
+  - **Coupled rules.** The period stays under the interval maximum; the run limit stays at or above
+    `RunBudget.WatchRunWorstCase`.
+  - `contracts/config-keys.json` was regenerated.
+- **Deviations from the design:**
+  - **The timer's full run now waits for the lock.** `collect --timer` waits up to `requests.lockWaitSeconds` (30). The watch
+    holds the run lock for the seconds of its sample, and a 4-hour run that fired in those seconds was lost to the next
+    slot. A terminal's `collect` still refuses at once (`TimerLockWaitTests`). `UnitSuccessExitTests`' timer *Busy* ending
+    sets the wait to 0.
+  - **A lost race gives the tries back.** When the act never ran (`Busy`, `Wedged`, `StateUnreadable`), the tries are
+    returned, so a lock race uses up nothing.
+  - **The scenario cannot show an act.** The captured `coai-mcp` processes run on a terminal (pts), and A19 never stops
+    those, so `WatchFlows` shows the ledger written and nothing stopped. The acting path is in-process (see the plan round).
+  - **The watch exits 0 when its evidence was not recorded.** A ledger or history write that failed is a warning in the run
+    log and in the answer, as in the full run's pass. Only an act that could not be recorded exits 1.
+  - **Out-of-scope test fix.** The Windows `status` scenario's budget now allows the CPU window when the machine runs MCP
+    servers (S7a). The budget was flaky on a developer machine (2.017 s).
+- **Tests:**
+  - Red first for the streak, A19's busy selection, the signal predicate, the watch (against a stub), the coupled rules,
+    the units, the doctor check and the timer's lock wait. Each failed for the right reason before the product code.
+  - `WatchCommand` was written before its tests. Break-it covers it (below).
+- **Code round** (coai session `2b266dd3`, epic 14/14): `proceed`, 7 of 8 reviewers, 9 findings; plus an own reviewer.
+  - **Accepted (coai):** (2) a give-back of the tries that cannot be written is now said in the answer (RED: the reason
+    lacked "could not be given back"). The try stays used; the 4-hour pass may still act.
+  - **Rejected (coai), with reasons:**
+    - (0) a new post-deploy item: item 5 (doctor healthy) now covers `unit.wsl-care-watch.timer`, and its text says so.
+    - (1) tries filtered by the sample's snapshot: a process absent from the sample has no evidence, so it can never be
+      selected.
+    - (3) a progress line for a manual watch.
+    - (4, 8) `RunLock.AcceptedRunWait` IS `requests.lockWaitSeconds`, read through `Tuning.Current`.
+    - (5) there is no interrupted outcome to map: a stop throws, and `Program` answers 130 (a driven ending).
+    - (6) root's `paths.Home` is the TARGET user's (`CliHost.ForThisMachine` re-homes root runs) — the home the 4-hour run
+      reads logs from.
+    - (7) a user value that breaks a coupled rule is a notice, never observe-only.
+  - **Own reviewer, all accepted, each RED → GREEN → RED again:**
+    - **Critical:** the watch timer's drop-in cleared `OnUnitActiveSec=` AFTER setting `OnBootSec`. In `[Timer]` an empty
+      assignment resets EVERY time setting, so the timer kept only `OnUnitActiveSec` and never fired. The drop-in now
+      clears once, before both values; `No_timer_drop_in_clears_a_time_setting_after_it_set_one` was red with "found 2".
+    - A past `OnBootSec` fires at `enable --now`, so the installer's first `collect` met the watch's lock, exited 75, and
+      doctor's `lastRun` then failed the install. The timer now uses `OnActiveSec`, which counts from its own start.
+    - An older release installed over the watch left units its binary cannot run, failing every 5 minutes. `install.sh`
+      now retires them: the timer is disabled, the service stopped, and the files and drop-ins removed. `UNITS` and
+      `UnitDropIns.Units` list the timer before its service. Tested by
+      `A_release_without_the_watch_retires_an_installed_watch` (Linux legs).
+- **Residuals:**
+  - What Claude Code does with an ended stdio server is still not measured.
+  - A busy server on a REMOTE request with no log line reads as busy without activity; `busyMinutes` (30) is the margin.
+  - `act --stop` does not stop a wedged act the watch started. Its run limit ends it.
+  - A button's direct `act` that meets the watch's seconds is refused ("try again").
+  - POST_DEPLOY item 1 should check `wsl-care-watch.timer` from the release that ships it. Until then the installed 0.2.0
+    has no watch.
+  - Defaults (5 min period, 30 min busy, 10 min run limit) are the coordinator's assumptions; the owner may change them.
 
 #### S2c — users add their own MCP programs (the owner's Q-M2, 2026-10-08)
 

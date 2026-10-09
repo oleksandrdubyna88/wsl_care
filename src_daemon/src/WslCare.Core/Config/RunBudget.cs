@@ -32,6 +32,25 @@ public static class RunBudget
         }
     }
 
+    /// <summary>The keys a watch run's worst case reads (plan E14 S2b).</summary>
+    public static IReadOnlyList<ConfigKey.IntKey> WatchKeys { get; } =
+        [ConfigKeys.McpServers.CpuWindowMilliseconds, ConfigKeys.McpServers.LogListMilliseconds, ConfigKeys.Processes.TermGraceSeconds];
+
+    /// <summary>A watch run's WORST CASE (plan E14 S2b) — what <c>mcpWatchdog.runLimitMinutes</c> (wsl-care-watch.service's
+    /// <c>TimeoutStartSec</c>) must stay above: the CPU window, the log listing of every server the watched list can hold (the catalogue's
+    /// and the user's <c>mcpServers.programs</c> at their cap), A19's one shared signal grace, and a command's margin.</summary>
+    public static TimeSpan WatchRunWorstCase(EffectiveConfig config)
+    {
+        using (Tuning.Use(config))
+        {
+            var servers = Mcp.McpServerCatalogue.Servers.Count + Mcp.McpUserPrograms.MaxMembers;
+            return Tuning.Current.Milliseconds(ConfigKeys.McpServers.CpuWindowMilliseconds)
+                + (Tuning.Current.Milliseconds(ConfigKeys.McpServers.LogListMilliseconds) * servers)
+                + Tuning.Current.Seconds(ConfigKeys.Processes.TermGraceSeconds)
+                + TimeSpan.FromSeconds(NumberRules.CeilingMarginSeconds);
+        }
+    }
+
     public static TimeSpan LongestStep(EffectiveConfig config)
     {
         using (Tuning.Use(config))

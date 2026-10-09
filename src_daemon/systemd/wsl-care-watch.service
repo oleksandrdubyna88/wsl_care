@@ -1,0 +1,30 @@
+# wsl-care — the watch's run (plan E14 S2b). Installed by install.sh to /etc/systemd/system/ and started only by
+# wsl-care-watch.timer; it has no [Install] section of its own.
+#
+# `--timer` is the ONLY thing that lets this run's A19 act (as for wsl-care.service: INVOCATION_ID is inherited by every
+# descendant of every systemd unit, so the CLI never reads it). The run takes THE run lock without waiting — exit 75 when a full
+# run or an act holds it — records root's MCP CPU ledger and the agents' CPU history, then, with auto.A19 on and no dry run, runs
+# A19 as a recorded act on the MCP servers it has not tried before. A watch that stops nothing writes no history line.
+#
+# HARDENING: the same set as wsl-care.service (ShippedFilesTests holds them equal) — it is a root run that signals another
+# account's processes by pidfd (CAP_KILL) and writes /var/lib/wsl-care, so the same directives stay unset for the same reasons
+# (that unit's comment). TimeoutStartSec is the DEFAULT of mcpWatchdog.runLimitMinutes, kept above the derived worst case of a
+# watch run (the CPU window, every server's log listing, A19's signal grace, a margin — RunBudget.WatchRunWorstCase); Nice,
+# MemoryMax and TimeoutStopSec are the defaults of units.nice, units.memoryMaxMb and units.stopTimeoutSeconds. install.sh writes
+# wsl-care-watch.service.d/50-wsl-care-config.conf from the machine configuration. SuccessExitStatus=75 130: another run holds the
+# lock (its designed answer), a stop asked for (UnitSuccessExitTests derives the list from the run's endings).
+[Unit]
+Description=wsl-care: the watch - record the MCP servers' CPU and stop the idle and the busy-without-activity ones (A19)
+Documentation=https://github.com/oleksandrdubyna88/wsl_care
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wsl-care/bin/wsl-care watch --timer
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=1G
+TimeoutStartSec=10min
+SuccessExitStatus=75 130
+NoNewPrivileges=yes
+KillMode=control-group
+TimeoutStopSec=90

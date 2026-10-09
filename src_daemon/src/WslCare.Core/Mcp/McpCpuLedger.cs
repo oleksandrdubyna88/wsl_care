@@ -13,7 +13,21 @@ public sealed record McpCpuPoint(long CpuTicks, DateTimeOffset Wall, long Monoto
 
 /// <summary>One instance as the ledger keeps it: its identity (pid AND start ticks, within the file's boot) and at most two points,
 /// older first.</summary>
-public sealed record McpCpuEntry(int Pid, long StartTicks, IReadOnlyList<McpCpuPoint> Points);
+public sealed record McpCpuEntry(int Pid, long StartTicks, IReadOnlyList<McpCpuPoint> Points)
+{
+    /// <summary>E14 S2b: since when this identity has been busy without a log write over an unbroken chain of interval readings
+    /// (A19's busy evidence) — the wall instant; <c>default</c> when it is not.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public DateTimeOffset BusySinceWall { get; init; }
+
+    /// <summary>The same instant on the monotonic clock (milliseconds since boot); 0 when there is no streak.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public long BusySinceMs { get; init; }
+
+    /// <summary>Whether a streak is recorded.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool Busy => BusySinceMs > 0;
+}
 
 /// <summary><c>mcp-cpu.json</c> (plan E14 S1): one boot's instances.</summary>
 public sealed record McpCpuFile(int SchemaVersion, string BootId, IReadOnlyList<McpCpuEntry> Entries)
@@ -129,7 +143,8 @@ public static partial class McpCpuLedger
 
     /// <summary>A serialised entry with two points at their widest (compact JSON): what bounds how many entries fit under the
     /// read cap (own code review, finding 3 — a ledger past its own cap would read as empty for ever).</summary>
-    public const int BytesPerEntry = 320;
+    // E14 S2b: 400, for the busy streak's two members (an entry at its widest is 369 bytes).
+    public const int BytesPerEntry = 400;
 
     /// <summary>The most entries a ledger read back under <paramref name="maxBytes"/> can hold.</summary>
     public static int MaxEntries(int maxBytes) => maxBytes / BytesPerEntry;
@@ -145,15 +160,45 @@ public static partial class McpCpuLedger
     /// outside the bounds and another boot's file dropped; at most <paramref name="maxEntries"/> — past it the OLDEST processes
     /// go, which only makes them "no baseline" (the window answers).</summary>
     public static McpCpuFile Next(McpCpuFile before, string bootId, IReadOnlyList<McpCpuReading> readings, McpCpuBounds bounds, int maxEntries) =>
+        Next(before, bootId, readings, bounds, maxEntries, new HashSet<(int, long)>());
+
+    /// <summary>The same, and each identity in <paramref name="busy"/> — busy without a log write over an interval reading NOW
+    /// (plan E14 S2b) — keeps its entry's streak, or starts one at its reading; every other identity has none.</summary>
+    public static McpCpuFile Next(McpCpuFile before, string bootId, IReadOnlyList<McpCpuReading> readings, McpCpuBounds bounds, int maxEntries, IReadOnlySet<(int Pid, long StartTicks)> busy) =>
         new(Core.SchemaVersion.Current, bootId,
         [
             .. readings
-                .Select(r => new McpCpuEntry(r.Pid, r.StartTicks, Points(EntryOf(before, bootId, r), r.At, bounds)))
+                .Select(r => Entry(EntryOf(before, bootId, r), r, bounds, busy.Contains((r.Pid, r.StartTicks))))
                 .OrderByDescending(e => e.StartTicks)
                 .Take(maxEntries)
                 .OrderBy(e => e.Pid)
                 .ThenBy(e => e.StartTicks),
         ]);
+
+    /// <summary>One identity's next entry: its points, and its busy streak — kept from <paramref name="was"/> while it stays busy,
+    /// started at this reading when it was not, none when it is not busy now.</summary>
+    private static McpCpuEntry Entry(McpCpuEntry? was, McpCpuReading reading, McpCpuBounds bounds, bool busy)
+    {
+        var entry = new McpCpuEntry(reading.Pid, reading.StartTicks, Points(was, reading.At, bounds));
+        return (busy, was) switch
+        {
+            (false, _) => entry,
+            (true, { Busy: true }) => entry with { BusySinceWall = was.BusySinceWall, BusySinceMs = was.BusySinceMs },
+            _ => entry with { BusySinceWall = reading.At.Wall, BusySinceMs = reading.At.MonotonicMs },
+        };
+    }
+
+    /// <summary>How long this identity has been busy without a log write by <paramref name="ledger"/> (plan E14 S2b, A19's busy
+    /// evidence): the shorter of the two clocks since its streak began — and only while the ledger is current, its newest point no
+    /// older than <paramref name="max"/> (<c>mcpServers.cpuIntervalMaxMinutes</c>). Zero for another boot, another process, no streak
+    /// or stale evidence.</summary>
+    public static TimeSpan BusyFor(McpCpuFile ledger, string bootId, int pid, long startTicks, McpCpuPoint now, TimeSpan max) =>
+        EntryOf(ledger, bootId, new McpCpuReading(pid, startTicks, now)) is { Busy: true, Points: [.., var newest] } entry
+        && newest.MonotonicMs <= now.MonotonicMs && AgeOf(newest, now) <= max && entry.BusySinceMs <= now.MonotonicMs
+            ? Shorter(now.Wall - entry.BusySinceWall, TimeSpan.FromMilliseconds(now.MonotonicMs - entry.BusySinceMs))
+            : TimeSpan.Zero;
+
+    private static TimeSpan Shorter(TimeSpan wall, TimeSpan monotonic) => wall < monotonic ? wall : monotonic;
 
     private static IReadOnlyList<McpCpuPoint> Points(McpCpuEntry? was, McpCpuPoint now, McpCpuBounds bounds)
     {

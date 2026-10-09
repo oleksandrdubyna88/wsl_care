@@ -70,12 +70,12 @@ public sealed class PackageFlows
         var name = await ReleaseScripts.ArchiveNameAsync(Version, rid);
         Path.GetFileName(archive).Should().Be(name, "the script prints the archive it wrote, named as install.sh downloads it");
         var folder = $"wsl-care-{Version}-{rid}";
-        var files = ReleaseFiles.InstallerRequiredMembers.Select(m => $"{folder}/{m}").ToList();
+        var files = ReleaseFiles.InstallerRequiredMembers.Concat(ReleaseFiles.InstallerOptionalMembers).Select(m => $"{folder}/{m}").ToList();
         var folders = files.Select(f => f[..f.LastIndexOf('/')]).Distinct().ToList();
 
         var entries = Entries(archive);
         entries.Select(e => e.Name.TrimEnd('/')).Should().OnlyHaveUniqueItems()
-            .And.BeEquivalentTo([.. files, .. folders], "exactly the members install.sh requires and their folders — nothing missing, nothing extra");
+            .And.BeEquivalentTo([.. files, .. folders], "exactly the members install.sh requires, the optional units it installs when shipped (E14 S2b), and their folders — nothing missing, nothing extra");
         entries.Should().OnlyContain(e => e.EntryType == TarEntryType.Directory || e.EntryType == TarEntryType.RegularFile,
             "install.sh refuses a link or a special file (only regular files and folders)");
         entries.Where(e => e.EntryType == TarEntryType.Directory).Select(e => e.Name.TrimEnd('/')).Should().BeEquivalentTo(folders);

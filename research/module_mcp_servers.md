@@ -104,8 +104,49 @@ agents — so missing history is "not idle" and on the 4-hour timer the 60 minut
 work since the preview is kept). Signals through
 `SuspectSignals.EndAllAsync`: SIGTERM, SIGKILL after `processes.termGraceSeconds`, by pid AND start, each re-read (a server
 that used CPU since the preview is kept). Every item says the agent's session may need `/mcp` to reconnect: what an agent
-does with an ended stdio server is not measured yet (plan S2). The busy-without-activity half (interval evidence, a watch
-timer) is S2b.
+does with an ended stdio server is not measured yet (plan S2).
+
+### The busy half and the watch (E14 S2b, 2026-10-09)
+
+```mermaid
+flowchart LR
+    timer["wsl-care-watch.timer<br/>every mcpWatchdog.periodMinutes (5)"] --> watch["WatchRun (watch --timer)<br/>THE run lock, no wait (75 when held)"]
+    watch -- "under the lock" --> collector["McpServerCollector<br/>root's place, written"]
+    collector -- "kinds judged first, then recorded" --> ledger[("mcp-cpu.json<br/>points + BusySince per identity")]
+    watch -- "under the lock" --> history[("agent-cpu.json<br/>AgentCpuHistory.Record")]
+    watch -- "--timer, auto.A19, not observe-only,<br/>the timer's dry-run rules say real" --> preview["ActionEngine.PreviewAsync(A19)"]
+    ledger -- "BusyFor: root's ledger only" --> a19["McpServerStop<br/>idle by history · busy by ledger"]
+    history --> a19
+    preview --> a19
+    preview -- "targets not tried before" --> tries[("mcp-watch.json<br/>written BEFORE the act")]
+    tries --> act["ActionEngine.ExecuteAsync<br/>act, trigger timer, bound to those pid:start"]
+    act --> signals["SuspectSignals.EndAllAsync<br/>busy items: CPU re-check dropped"]
+```
+
+- **The busy streak** (`McpCpuEntry.BusySinceWall` / `BusySinceMs`, omitted when none): at every sample that WRITES a ledger,
+  an instance whose kind is `busyWithoutActivity` over an `interval` basis keeps its entry's start, or starts one at its
+  reading; any other kind, a `window` basis or an unmeasured CPU clears it. The collector judges the kinds before it records
+  (`CpuRound`, `Record`). `BytesPerEntry` went 320 → 400 (an entry at its widest is 369 bytes).
+- **`McpCpuLedger.BusyFor`**: the shorter of the two clocks since the streak began — zero for another boot, another process,
+  no streak, or a ledger whose newest point is older than `mcpServers.cpuIntervalMaxMinutes`.
+- **A19's busy target** (`JudgeOne`): every S2a guard, then idle enough OR busy for `mcpWatchdog.busyMinutes` (30) by ROOT's
+  ledger (`McpCpuLedgerPlace.ForStatus(root: true)`, `ReadStateFile`) — never a user's. Its item is `Kind` `busy process`
+  and says "busy without a log write for N min".
+- **The signal path** (`SuspectSignals.EndAllAsync(…, cpuMayMove, …)`): a busy item keeps the identity, account, terminal and
+  not-root re-checks and drops only the CPU one. The old overload passes "never" — A11, A18 and A19's idle items unchanged.
+- **The watch** (`Watch/WatchRun.cs`, `wsl-care watch [--timer] [--json]`, `WatchCommand`): sample under the lock, then act
+  as described in the diagram. The tries file (`WatchTries`, root's state, private, live identities only, at most
+  `mcpServers.maxInstances`) is written before the act; an act that never ran (`Busy`, `Wedged`, `StateUnreadable`) gives
+  the tries back. A watch that stops nothing writes no history line. During a dry run it only samples.
+- **Keys:** `mcpWatchdog.busyMinutes` (10–10080, 30, `Higher`), `mcpWatchdog.periodMinutes` (2–15, 5, machine-only,
+  `Lower`), `mcpWatchdog.runLimitMinutes` (2–60, 10, machine-only, `Lower`). Re-classified as evidence:
+  `mcpServers.idleCpuPercent`, `activityWindowMinutes`, `cpuIntervalMinSeconds` → `Higher`, `cpuIntervalMaxMinutes` → `Lower`.
+  Rules: the period under `cpuIntervalMaxMinutes`; the run limit at least `RunBudget.WatchRunWorstCase` (the CPU window, every
+  server's log listing, A19's grace, 60 s).
+- **Units:** `wsl-care-watch.timer` (monotonic: `OnActiveSec` = `OnUnitActiveSec` = the period, its drop-in clearing the list ONCE before both — an empty assignment resets every time setting before it) and `wsl-care-watch.service`
+  (oneshot, the full run's hardening, `TimeoutStartSec` = the run limit, `SuccessExitStatus=75 130`), with drop-ins, a doctor
+  check, installed by `install.sh` only when the release ships them — and retired (timer disabled, service stopped, files removed) when an older release is installed over them. The timer's full run now waits
+  `requests.lockWaitSeconds` for the lock (the watch holds it for seconds).
 
 ## Entry points
 
@@ -191,6 +232,13 @@ flowchart LR
   capped, nothing opened; the full fix is a descriptor-based listing for every user, a story of its own.
 - A WSL session relay (`/init` with a pid other than 1) as a server's parent is a live non-agent parent: such a server is
   `notUnderAgent`, not an orphaned instance.
+- **The watch (E14 S2b):** A19's busy half acts only on root's interval evidence — a server that bursts less than
+  `idleCpuPercent` on average over 5 minutes is not busy. CPU silence still does not prove no request is in flight (S2a's
+  residual), and a server busy on a REMOTE request with no log line reads as busy without activity; `busyMinutes` (30) is the
+  margin. A watch that loses the lock to a full run tries again 5 minutes later; a button's `act` that collides with the
+  watch's seconds is refused ("try again"). `act --stop` does not stop a wedged act the watch started (its process lives in
+  `wsl-care-watch.service`): the watch's run limit ends it. What Claude Code does with an ended stdio server is still not
+  measured.
 - `status` takes 2 s **plus** the CPU window when a server has no baseline (owner question Q-M5); with every instance in
   the ledger it waits nothing.
 - **The ledger (E14 S1):** an unprivileged `status` writes one file it did not write before (owner question Q9 of plan E14);

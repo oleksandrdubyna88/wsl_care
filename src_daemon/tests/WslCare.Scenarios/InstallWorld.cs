@@ -318,12 +318,15 @@ internal sealed class InstallWorld : IDisposable
 
     /// <summary>The archive a release would carry (plan §15e #1): the binary, every unit of src_daemon/systemd and the machine layer from
     /// this repository, under one top folder.</summary>
-    public void WriteRealRelease(TarWriter tar, string name)
+    public void WriteRealRelease(TarWriter tar, string name) => WriteRealRelease(tar, name, []);
+
+    /// <summary>The same archive without the units named in <paramref name="without"/> — a release from before they existed.</summary>
+    public void WriteRealRelease(TarWriter tar, string name, IReadOnlyCollection<string> without)
     {
         AddDirectory(tar, $"{name}/");
         AddFile(tar, $"{name}/wsl-care", Encoding.UTF8.GetBytes(StubScript()), Executable);
         AddDirectory(tar, $"{name}/systemd/");
-        foreach (var unit in ShippedFiles.UnitNames)
+        foreach (var unit in ShippedFiles.UnitNames.Except(without))
         {
             AddFile(tar, $"{name}/systemd/{unit}", File.ReadAllBytes(Path.Combine(ShippedFiles.SystemdDirectory, unit)), Regular);
         }
@@ -446,9 +449,10 @@ internal sealed class InstallWorld : IDisposable
             Download(ReleasesApi, _root.File("release/releases.json", ReleasesJson())),
             Answer("gh", ["--version"], "gh version 2.97.0 (2026-07-31)\nhttps://github.com/cli/cli/releases/tag/v2.97.0\n"),
             Answer("systemctl", ["daemon-reload"]),
-            Answer("systemctl", ["enable", "--now", "wsl-care.timer", "wsl-care-events.service"]),
+            Answer("systemctl", ["enable", "--now", "wsl-care.timer", "wsl-care-watch.timer", "wsl-care-events.service"]),
             Answer("systemctl", ["enable", "--now", "sysstat.service", "atop.service"]),
             Answer("systemctl", ["is-active", "--quiet", "wsl-care.timer"]),
+            Answer("systemctl", ["is-active", "--quiet", "wsl-care-watch.timer"]),
             Answer("systemctl", ["is-active", "--quiet", "wsl-care-events.service"]),
             Answer("wsl-care", ["collect"], "collect: recorded\n"),
             Answer("wsl-care", ["doctor", "--json"], DoctorJson(healthy: true)),

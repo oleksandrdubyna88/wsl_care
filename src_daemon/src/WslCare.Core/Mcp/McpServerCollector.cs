@@ -32,29 +32,31 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
         var found = McpInstances.Find(snapshot.All, settings.Watched);
         var listed = found.Instances.Take(settings.MaxInstances).ToList();
         var agesAt = clock.GetUtcNow();
-        var (cpu, baseline) = await CpuAsync(listed, settings, cancellationToken).ConfigureAwait(false);
+        var cpu = await CpuAsync(listed, settings, cancellationToken).ConfigureAwait(false);
         var now = clock.GetUtcNow();
         var logs = settings.Watched.ToDictionary(s => s.Name, s => McpRunLogs.Read(files, paths.Home, s, now, settings, clock, cancellationToken), StringComparer.Ordinal);
         var judge = new McpJudge(settings, now, agesAt, snapshot.All);
+        List<McpInstance> instances = [.. listed.Select(f => judge.Instance(f, cpu.Cpu[f.Process.Pid], logs[f.Server.Name])).OrderByDescending(i => i.CpuPercent.ValueOr(-1)).ThenBy(i => i.Process.Pid)];
         return Reading.Of(new McpSample(
             (int)settings.Window.TotalMilliseconds,
             found.Instances.Count,
             found.NotUnderAgent,
             found.Instances.Sum(f => f.Process.HeldBytes),
-            [.. listed.Select(f => judge.Instance(f, cpu[f.Process.Pid], logs[f.Server.Name])).OrderByDescending(i => i.CpuPercent.ValueOr(-1)).ThenBy(i => i.Process.Pid)],
+            instances,
             [.. settings.Watched.Select(s => judge.Summary(s, found.Instances, logs[s.Name]))])
         {
-            Baseline = baseline,
+            // Plan E14 S2b: the kinds are judged first, so the ledger can keep each identity's busy-without-activity streak.
+            Baseline = Record(cpu, settings, instances),
         });
     }
 
     /// <summary>Each instance's CPU % of one core: over the interval since the ledger's point of its identity when there is one
     /// (plan E14 S1), else across the window; then the readings recorded for the next sample where the place allows.</summary>
-    private async Task<(IReadOnlyDictionary<int, McpCpu> Cpu, McpCpuBaseline Baseline)> CpuAsync(IReadOnlyList<McpFound> listed, McpSettings settings, CancellationToken cancellationToken)
+    private async Task<CpuRound> CpuAsync(IReadOnlyList<McpFound> listed, McpSettings settings, CancellationToken cancellationToken)
     {
         if (listed.Count == 0)
         {
-            return (new Dictionary<int, McpCpu>(), McpCpuBaseline.NotRecorded(ledger.FileOrEmpty, "no MCP server instance to record"));
+            return new CpuRound(new Dictionary<int, McpCpu>(), string.Empty, McpCpuFile.Empty, []);
         }
 
         var kernel = ProcText.Bytes(files, $"{paths.ProcRoot}/self/auxv").Bind(bytes => KernelFacts.FromAuxVector(bytes));
@@ -66,7 +68,25 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
         // coai code round 2026-10-08, finding 7: without the kernel's tick rate the window cannot produce a figure — no wait.
         var windowed = await WindowAsync([.. first.Where(m => kernel.IsAvailable && m.Read is not null && fromLedger[m.Pid] is null)], settings.Window, started, kernel, cancellationToken).ConfigureAwait(false);
         var measured = first.Select(m => Combine(m, fromLedger[m.Pid], windowed, kernel)).ToList();
-        return (measured.ToDictionary(m => m.Pid, m => m.Cpu), RecordAll(boot, before, measured, settings));
+        return new CpuRound(measured.ToDictionary(m => m.Pid, m => m.Cpu), boot, before, measured);
+    }
+
+    /// <summary>One sample's CPU: each listed instance's figure, and what its ledger record needs (the boot, the ledger read, the
+    /// readings).</summary>
+    private sealed record CpuRound(IReadOnlyDictionary<int, McpCpu> Cpu, string Boot, McpCpuFile Before, IReadOnlyList<Measured> Measured);
+
+    /// <summary>The readings into the caller's ledger — none to record when no instance runs — with the identities busy without a
+    /// log write over an INTERVAL reading now (plan E14 S2b: A19's busy evidence is a chain of those; a window reading is no link).</summary>
+    private McpCpuBaseline Record(CpuRound cpu, McpSettings settings, IReadOnlyList<McpInstance> instances)
+    {
+        if (cpu.Measured.Count == 0)
+        {
+            return McpCpuBaseline.NotRecorded(ledger.FileOrEmpty, "no MCP server instance to record");
+        }
+
+        var busyPids = instances.Where(i => i.Kind == McpKind.BusyWithoutActivity && i.CpuBasis == McpCpuBasis.Interval).Select(i => i.Process.Pid).ToHashSet();
+        var busy = cpu.Measured.Where(m => busyPids.Contains(m.Pid)).Select(m => m.Read).OfType<McpCpuReading>().Select(r => (r.Pid, r.StartTicks)).ToHashSet();
+        return RecordAll(cpu.Boot, cpu.Before, cpu.Measured, settings, busy);
     }
 
     /// <summary>One listed instance being measured: its first read, and that read as a ledger reading when it was taken.</summary>
@@ -92,10 +112,10 @@ public sealed class McpServerCollector(IFileSystem files, LinuxHostPaths paths, 
         : new(m.Pid, McpCpu.Unmeasured(m.Sample.IsAvailable ? kernel.ReasonOrEmpty : m.Sample.ReasonOrEmpty), null);
 
     /// <summary>This sample's readings into the caller's ledger, by the two-point rule, capped to what its read cap holds.</summary>
-    private McpCpuBaseline RecordAll(string boot, McpCpuFile before, IReadOnlyList<Measured> measured, McpSettings settings) =>
+    private McpCpuBaseline RecordAll(string boot, McpCpuFile before, IReadOnlyList<Measured> measured, McpSettings settings, IReadOnlySet<(int Pid, long StartTicks)> busy) =>
         boot.Length == 0
             ? McpCpuBaseline.NotRecorded(ledger.FileOrEmpty, "the boot id cannot be read, so no reading can name its process across samples")
-            : McpCpuLedger.Record(files, ledger, before, McpCpuLedger.Next(before, boot, [.. measured.Select(m => m.Read).OfType<McpCpuReading>()], settings.Bounds, McpCpuLedger.MaxEntries(settings.LedgerMaxBytes)), new McpCpuSweep(clock.GetUtcNow(), settings.Bounds.Min));
+            : McpCpuLedger.Record(files, ledger, before, McpCpuLedger.Next(before, boot, [.. measured.Select(m => m.Read).OfType<McpCpuReading>()], settings.Bounds, McpCpuLedger.MaxEntries(settings.LedgerMaxBytes), busy), new McpCpuSweep(clock.GetUtcNow(), settings.Bounds.Min));
 
     private static McpCpuReading ReadingOf(PidSample sample, SampleTime at) => new(sample.Pid, sample.StartTicks, new McpCpuPoint(sample.CpuTicks, at.Wall, at.MonotonicMs));
 

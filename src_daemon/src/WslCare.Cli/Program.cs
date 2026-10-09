@@ -104,6 +104,7 @@ internal static class Program
             Request.Collect collect => CollectCommand.Run(collect, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.Doctor doctor => DoctorCommand.Run(doctor, host, loaded, stdout, cancellationToken),
             Request.Busy busy => BusyCommand.Run(busy, host, loaded, stdout),
+            Request.Watch watch => WatchCommand.Run(watch, host, loaded, stdout, stderr, logger, cancellationToken),
             Request.AgentsList agents => AgentsCommand.Run(agents, host, loaded, stdout, stderr, cancellationToken),
             Request.AgentsProbe probe => AgentsCommand.Probe(probe, host, stdout, stderr, cancellationToken),
             Request.EventsFollow follow => EventsCommand.Run(follow, host, stdout, stderr, logger, cancellationToken),

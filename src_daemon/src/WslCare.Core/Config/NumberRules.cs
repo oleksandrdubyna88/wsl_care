@@ -86,6 +86,13 @@ public static class NumberRules
         new([ConfigKeys.Timer.RunLimitMinutes, .. RunBudget.Keys],
             c => TimeSpan.FromMinutes(I(c, ConfigKeys.Timer.RunLimitMinutes)) >= RunBudget.TimerRunWorstCase(c),
             c => $"{ConfigKeys.Timer.RunLimitMinutes.Name} ({I(c, ConfigKeys.Timer.RunLimitMinutes)}) must be at least the derived worst case of a timer run ({Math.Ceiling(RunBudget.TimerRunWorstCase(c).TotalMinutes)} min: every command template once at its ceiling with its drains, the two walks, {RunMarginMinutes} min more)"),
+        // Plan E14 S2b: the watch samples more often than the interval maximum, or no sample finds a baseline and A19 sees no busy server.
+        new([ConfigKeys.McpWatchdog.PeriodMinutes, ConfigKeys.McpServers.CpuIntervalMaxMinutes],
+            c => I(c, ConfigKeys.McpWatchdog.PeriodMinutes) < I(c, ConfigKeys.McpServers.CpuIntervalMaxMinutes),
+            c => $"{ConfigKeys.McpWatchdog.PeriodMinutes.Name} ({I(c, ConfigKeys.McpWatchdog.PeriodMinutes)}) must be under {ConfigKeys.McpServers.CpuIntervalMaxMinutes.Name} ({I(c, ConfigKeys.McpServers.CpuIntervalMaxMinutes)}): a watch sample finds a CPU baseline only within that maximum, so a longer period would leave A19 no busy evidence"),
+        new([ConfigKeys.McpWatchdog.RunLimitMinutes, .. RunBudget.WatchKeys],
+            c => TimeSpan.FromMinutes(I(c, ConfigKeys.McpWatchdog.RunLimitMinutes)) >= RunBudget.WatchRunWorstCase(c),
+            c => $"{ConfigKeys.McpWatchdog.RunLimitMinutes.Name} ({I(c, ConfigKeys.McpWatchdog.RunLimitMinutes)}) must be at least the derived worst case of a watch run ({Math.Ceiling(RunBudget.WatchRunWorstCase(c).TotalMinutes)} min: the CPU window, every server's log listing, A19's signal grace, {CeilingMarginSeconds} s more)"),
         new([ConfigKeys.Running.NoProgressMinutes, .. RunBudget.Keys],
             c => TimeSpan.FromMinutes(I(c, ConfigKeys.Running.NoProgressMinutes)) >= RunBudget.LongestStep(c),
             c => $"{ConfigKeys.Running.NoProgressMinutes.Name} ({I(c, ConfigKeys.Running.NoProgressMinutes)}) must be at least the longest single command ({Math.Ceiling(RunBudget.LongestStep(c).TotalMinutes)} min with its drains and {CeilingMarginSeconds} s more): a command still inside its ceiling is progress"),

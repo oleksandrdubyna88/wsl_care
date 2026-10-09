@@ -128,6 +128,8 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Collectors/Procfs/PidSamples.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/Actions/Suspects/AgentOrphans.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Actions/Suspects/AgentCpuHistory.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
+        // Plan E14 S2b: the watch's tries — root's state, read back as such.
+        ["WslCare.Core/Watch/WatchRun.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         ["WslCare.Core/Collectors/LinuxProbe.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/MemoryCollector.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
         // E14 S6: /proc/pressure/{memory,io,cpu} — moved out of the memory collector so `wsl-care busy` reads it alone.

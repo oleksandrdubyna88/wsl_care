@@ -46,6 +46,16 @@ public sealed class UnitSuccessExitTests
         LineNotWritten,
     }
 
+    /// <summary>Every way <c>watch --timer</c> (<c>wsl-care-watch.service</c>, plan E14 S2b) ends.</summary>
+    public enum WatchEnding
+    {
+        Sampled,
+        Acted,
+        Busy,
+        StoppedWhileSampling,
+        LineNotWritten,
+    }
+
     /// <summary>Every way <c>collect --timer</c> (<c>wsl-care.service</c>) ends.</summary>
     public enum TimerEnding
     {
@@ -70,36 +80,39 @@ public sealed class UnitSuccessExitTests
 
     /// <summary>EVERY exit code, for the template unit's <c>act --request</c> and the timer's <c>collect --timer</c>. A member
     /// added to <see cref="ExitCode"/> without a row here fails <c>Every_exit_code_is_classified_for_both_units</c>.</summary>
-    private static readonly IReadOnlyDictionary<ExitCode, (UnitAnswer Detached, UnitAnswer Timer)> Classified = new Dictionary<ExitCode, (UnitAnswer, UnitAnswer)>
+    private static readonly IReadOnlyDictionary<ExitCode, (UnitAnswer Detached, UnitAnswer Timer, UnitAnswer Watch)> Classified = new Dictionary<ExitCode, (UnitAnswer, UnitAnswer, UnitAnswer)>
     {
-        [ExitCode.Ok] = (UnitAnswer.Answer, UnitAnswer.Answer),
-        [ExitCode.RunFailed] = (UnitAnswer.Failure, UnitAnswer.Failure),
-        [ExitCode.Usage] = (UnitAnswer.Failure, UnitAnswer.Failure),
-        [ExitCode.ActionFailed] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
-        [ExitCode.RecordsUnreadable] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
-        [ExitCode.DetachUnavailable] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
-        [ExitCode.Internal] = (UnitAnswer.Failure, UnitAnswer.Failure),
-        [ExitCode.DetachStartFailed] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
-        [ExitCode.QueueFull] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
-        [ExitCode.Busy] = (UnitAnswer.Answer, UnitAnswer.Answer),
-        [ExitCode.Wedged] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
-        [ExitCode.NeedsRoot] = (UnitAnswer.Failure, UnitAnswer.NotReachable),
-        [ExitCode.ObserveOnly] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
-        [ExitCode.StateUnreadable] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
-        [ExitCode.RequestGone] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
-        [ExitCode.NotAsRoot] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
-        [ExitCode.RequestUnusable] = (UnitAnswer.Answer, UnitAnswer.NotReachable),
+        [ExitCode.Ok] = (UnitAnswer.Answer, UnitAnswer.Answer, UnitAnswer.Answer),
+        [ExitCode.RunFailed] = (UnitAnswer.Failure, UnitAnswer.Failure, UnitAnswer.Failure),
+        [ExitCode.Usage] = (UnitAnswer.Failure, UnitAnswer.Failure, UnitAnswer.Failure),
+        [ExitCode.ActionFailed] = (UnitAnswer.Answer, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.RecordsUnreadable] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.DetachUnavailable] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.Internal] = (UnitAnswer.Failure, UnitAnswer.Failure, UnitAnswer.Failure),
+        [ExitCode.DetachStartFailed] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.QueueFull] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.Busy] = (UnitAnswer.Answer, UnitAnswer.Answer, UnitAnswer.Answer),
+        [ExitCode.Wedged] = (UnitAnswer.Answer, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.NeedsRoot] = (UnitAnswer.Failure, UnitAnswer.NotReachable, UnitAnswer.Failure),
+        [ExitCode.ObserveOnly] = (UnitAnswer.Answer, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.StateUnreadable] = (UnitAnswer.Answer, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.RequestGone] = (UnitAnswer.Answer, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.NotAsRoot] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.RequestUnusable] = (UnitAnswer.Answer, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
         // E14 S6: only the busy verb returns it, and neither unit runs that verb.
-        [ExitCode.MachineBusy] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable),
-        [ExitCode.Interrupted] = (UnitAnswer.Answer, UnitAnswer.Answer),
+        [ExitCode.MachineBusy] = (UnitAnswer.NotReachable, UnitAnswer.NotReachable, UnitAnswer.NotReachable),
+        [ExitCode.Interrupted] = (UnitAnswer.Answer, UnitAnswer.Answer, UnitAnswer.Answer),
     };
 
     private static UnitAnswer AnswerOf(string unit, int exit) =>
-        Classified.TryGetValue((ExitCode)exit, out var answer) ? (unit == DetachedUnit ? answer.Detached : answer.Timer) : UnitAnswer.NotReachable;
+        Classified.TryGetValue((ExitCode)exit, out var answer) ? unit switch { DetachedUnit => answer.Detached, WatchUnit => answer.Watch, _ => answer.Timer } : UnitAnswer.NotReachable;
 
     private const string DetachedUnit = "wsl-care-act@.service";
 
     private const string TimerUnit = "wsl-care.service";
+
+    /// <summary>Plan E14 S2b: the watch's run (<c>watch --timer</c>).</summary>
+    private const string WatchUnit = "wsl-care-watch.service";
 
     /// <summary>One ending as observed: what the program exited with, and whether the end was answered (recorded or a no-op).</summary>
     private sealed record Observed(string Ending, int Exit, bool Answered);
@@ -122,12 +135,13 @@ public sealed class UnitSuccessExitTests
     [Fact]
     public void Every_exit_code_is_classified_for_both_units()
     {
-        Classified.Keys.Should().BeEquivalentTo(Enum.GetValues<ExitCode>(), "a new exit code is a decision for both units: a recorded answer, a failure, or not reachable");
+        Classified.Keys.Should().BeEquivalentTo(Enum.GetValues<ExitCode>(), "a new exit code is a decision for every unit: a recorded answer, a failure, or not reachable");
     }
 
     [Theory]
     [InlineData(DetachedUnit)]
     [InlineData(TimerUnit)]
+    [InlineData(WatchUnit)]
     public void Each_unit_counts_exactly_its_classified_answers_as_success(string unit)
     {
         var answers = Classified.Keys.Where(code => code != ExitCode.Ok && AnswerOf(unit, (int)code) == UnitAnswer.Answer).Select(code => (int)code).Order().ToList();
@@ -149,6 +163,14 @@ public sealed class UnitSuccessExitTests
         var observed = Enum.GetValues<TimerEnding>().Select(Timer).ToList();
 
         Hold(TimerUnit, observed);
+    }
+
+    [Fact]
+    public void The_watch_s_service_counts_exactly_the_exits_of_its_answered_endings_as_success()
+    {
+        var observed = Enum.GetValues<WatchEnding>().Select(Watch).ToList();
+
+        Hold(WatchUnit, observed);
     }
 
     /// <summary>The unit's list is exactly the non-zero exits of the answered endings; every driven ending agrees with the
@@ -231,6 +253,12 @@ public sealed class UnitSuccessExitTests
     private static Observed Timer(TimerEnding ending)
     {
         using var h = new DetachedRunHarness($"unit-exit-timer-{ending}");
+        if (ending == TimerEnding.Busy)
+        {
+            // Plan E14 S2b: the timer's run waits requests.lockWaitSeconds for the lock; held throughout, it is refused at once here.
+            h.MachineLayer("""{ "requests": { "lockWaitSeconds": 0 } }""");
+        }
+
         var before = Trace.Of(h);
         var host = ending == TimerEnding.LineNotWritten ? h.Host(files: new RefusingHistoryAppends(h.Sandbox.Files)) : h.Host();
         var exit = ending switch
@@ -241,6 +269,83 @@ public sealed class UnitSuccessExitTests
         };
         var answered = h.History().Count > before.Lines || Trace.Of(h) == before;
         return new Observed(ending.ToString(), exit, answered);
+    }
+
+    /// <summary>One ending of <c>watch --timer</c>. Its A19 is a test double with ONE target, so an act happens without a process
+    /// table: the watch's own gates (the timer mark, auto.A19, no dry run, a target not tried) are what the ending drives.</summary>
+    private static Observed Watch(WatchEnding ending)
+    {
+        using var h = new DetachedRunHarness($"unit-exit-watch-{ending}");
+        if (ending is WatchEnding.Acted or WatchEnding.LineNotWritten)
+        {
+            h.MachineLayer("""{ "dryRun": false }""");
+            WriteState(Core.Actions.Engine.DryRunWindow.File(h.Sandbox.Paths), JsonSerializer.Serialize(new FirstTimerRun(1, Now.AddDays(-8)), WslCareJsonContext.Default.FirstTimerRun));
+        }
+
+        var before = Trace.Of(h);
+        var host = WatchHost(h, ending);
+        var exit = ending switch
+        {
+            WatchEnding.Busy => UnderTheLock(h, () => CliRun.Guarded(host, CancellationToken.None, "watch", "--timer").Exit),
+            WatchEnding.StoppedWhileSampling => StoppedWhileSampling(h, host),
+            _ => CliRun.Guarded(host, CancellationToken.None, "watch", "--timer").Exit,
+        };
+        var answered = h.History().Count > before.Lines || Trace.Of(h) == before;
+        return new Observed(ending.ToString(), exit, answered);
+    }
+
+    private static CliHost WatchHost(DetachedRunHarness h, WatchEnding ending)
+    {
+        var host = h.Host(files: ending == WatchEnding.LineNotWritten ? new RefusingHistoryAppends(h.Sandbox.Files) : null);
+        return host with { Actions = new Core.Actions.ActionRegistry([new OneTargetA19()]) };
+    }
+
+    /// <summary>A stop (SIGTERM, as systemd asks on <c>systemctl stop</c>) while the watch samples — the probe is where it is cut.</summary>
+    private static int StoppedWhileSampling(DetachedRunHarness h, CliHost host)
+    {
+        using var stop = new CancellationTokenSource();
+        return CliRun.Guarded(host with { Probe = new StoppingProbe(stop) }, stop.Token, "watch", "--timer").Exit;
+    }
+
+    /// <summary>A probe that asks the run to stop and is cut off by that stop.</summary>
+    private sealed class StoppingProbe(CancellationTokenSource stop) : Core.Hosting.IHostProbe
+    {
+        public Core.Hosting.HostSide Side => Core.Hosting.HostSide.Wsl;
+
+        public Core.Collectors.ProbeSample Sample(CancellationToken cancellationToken)
+        {
+            stop.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new System.Diagnostics.UnreachableException("the token was cancelled");
+        }
+    }
+
+    /// <summary>A19 as a test double: one target (pid:start of nobody real), run "ended" without signalling anything.</summary>
+    private sealed class OneTargetA19 : Core.Actions.ICleanupAction, Core.Actions.IBoundToShownList
+    {
+        public Core.Actions.ActionId Id { get; } = Core.Actions.ActionId.Find("A19")!;
+
+        public string Summary => "a test double of A19";
+
+        public Core.Processes.Policy.CommandScope Scope => Core.Processes.Policy.CommandScope.User;
+
+        public Core.Actions.IdleRule Idle => Core.Actions.IdleRule.Never;
+
+        public IReadOnlyList<Core.Hosting.HostSide> Sides { get; } = [Core.Hosting.HostSide.Wsl];
+
+        public IReadOnlyList<Core.Processes.Policy.CommandTemplate> Commands { get; } = [];
+
+        private static readonly Core.Actions.ActionItem Target = new("process", "4242 coai-mcp", 1) { Key = "4242:4000:500:1000" };
+
+        public IReadOnlyList<string> Shown(Core.Actions.ActionPreview preview) => ["4242:4000"];
+
+        public Task<Core.Actions.ActionPreview> PreviewAsync(Core.Actions.ActionContext context, Core.Actions.ActionCommands commands, CancellationToken cancellationToken) =>
+            Task.FromResult(Core.Actions.ActionPreview.Of("a test double", 1, null, "scripted", new Dictionary<string, long>(), string.Empty, [Target]));
+
+        public Core.Actions.TriggerDecision Trigger(Core.Actions.ActionPreview preview, Core.Config.EffectiveConfig config) => new(preview.Count > 0, "any");
+
+        public Task<Core.Actions.ActionRun> RunAsync(Core.Actions.ActionContext context, Core.Actions.ActionPreview preview, Core.Actions.ActionCommands commands, CancellationToken cancellationToken) =>
+            Task.FromResult(new Core.Actions.ActionRun(1, null, "a test double", null, null, [Target], commands.Ran, string.Empty));
     }
 
     private static int UnderTheLock(DetachedRunHarness h, Func<int> run)

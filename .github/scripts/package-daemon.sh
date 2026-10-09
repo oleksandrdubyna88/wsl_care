@@ -12,6 +12,8 @@
 #   wsl-care-<version>-<rid>/systemd/wsl-care.timer
 #   wsl-care-<version>-<rid>/systemd/wsl-care-events.service
 #   wsl-care-<version>-<rid>/systemd/wsl-care-act@.service    (E6.S1: the detached run's template unit)
+#   wsl-care-<version>-<rid>/systemd/wsl-care-watch.service  (E14 S2b: the watch's run)
+#   wsl-care-<version>-<rid>/systemd/wsl-care-watch.timer
 #   wsl-care-<version>-<rid>/config/machine.json             (0644, src_daemon/config/ — the EMPTY machine layer)
 # plus the three folders: regular files and folders only (install.sh refuses a link or a special file), owner 0:0,
 # names sorted, gzip without a timestamp.

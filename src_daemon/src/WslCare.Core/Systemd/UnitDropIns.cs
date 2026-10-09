@@ -22,8 +22,13 @@ public static class UnitDropIns
     public const string Act = "wsl-care-act@.service";
     public const string Events = "wsl-care-events.service";
 
+    /// <summary>The watch (plan E14 S2b): its service and its timer.</summary>
+    public const string Watch = "wsl-care-watch.service";
+
+    public const string WatchTimer = "wsl-care-watch.timer";
+
     /// <summary>Every unit that has a drop-in, in the order <c>install.sh</c> lists its units.</summary>
-    public static IReadOnlyList<string> Units { get; } = [Service, Timer, Events, Act];
+    public static IReadOnlyList<string> Units { get; } = [Service, Timer, Events, Act, WatchTimer, Watch];
 
     private const string Header =
         "# Written by install.sh from the machine configuration (wsl-care units dropin {0}). Do not edit: change\n" +
@@ -58,6 +63,20 @@ public static class UnitDropIns
             $"MemoryMax={Text(ConfigKeys.Units.MemoryMaxMb)}M",
             $"TimeoutStopSec={Text(ConfigKeys.Units.StopTimeoutSeconds)}"),
         Events => Lines("[Service]", $"RestartSec={Text(ConfigKeys.Units.EventsRestartSeconds)}", $"MemoryMax={Text(ConfigKeys.Units.MemoryMaxMb)}M"),
+        // Plan E14 S2b: the watch is a root run with the full run's hardening values, ended as a whole at mcpWatchdog.runLimitMinutes.
+        Watch => Lines(
+            "[Service]",
+            $"Nice={Text(ConfigKeys.Units.Nice)}",
+            $"MemoryMax={Text(ConfigKeys.Units.MemoryMaxMb)}M",
+            $"TimeoutStopSec={Text(ConfigKeys.Units.StopTimeoutSeconds)}",
+            $"TimeoutStartSec={Text(ConfigKeys.McpWatchdog.RunLimitMinutes)}min"),
+        // ONE empty assignment, first: in [Timer] an empty assignment of ANY time setting resets EVERY time setting before it
+        // (systemd.timer(5)) — a second reset after OnActiveSec= would wipe it (own code review 2026-10-09).
+        WatchTimer => Lines(
+            "[Timer]",
+            "OnActiveSec=",
+            $"OnActiveSec={Text(ConfigKeys.McpWatchdog.PeriodMinutes)}min",
+            $"OnUnitActiveSec={Text(ConfigKeys.McpWatchdog.PeriodMinutes)}min"),
         _ => throw new ArgumentOutOfRangeException(nameof(unit), unit, $"a unit without a drop-in; one of: {string.Join(", ", Units)}"),
     };
 

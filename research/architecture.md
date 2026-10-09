@@ -1444,6 +1444,8 @@ changes, without it. It never removes sysstat, atop, `/etc/wsl.conf` or a user's
 | `wsl-care.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care collect --timer`, `Nice=19`, `IOSchedulingClass=idle`, `MemoryMax=1G`, `TimeoutStartSec=240min` (above the derived worst case of a timer run, E7.S2b/S2c review C-H2), `SuccessExitStatus=75 130`, `NoNewPrivileges=yes`, `KillMode=control-group`, `TimeoutStopSec=90`; no `[Install]` | `--timer` is the only thing that makes a run the timer (§15d CI). 75 is `ExitCode.Busy`: a second run meeting the lock is designed, not a failed unit (the health collector counts failed units); 130 is a stop asked for, recorded `interrupted` (retro over PR #11). `MemoryMax` is the cgroup's, so it covers every child — npm, dotnet, pip, the Docker CLI, the 2M-entry walk — and §8's 256M (a guess for the binary alone) was raised to 1G by the E4 review |
 | `wsl-care.timer` | `OnCalendar=*-*-* 00/4:00:00`, `Persistent=true`, `RandomizedDelaySec=5min`, `AccuracySec=1min` | Persistent= acts on calendar timers only; the stored last trigger makes the first boot of the day run ONCE for the night's missed slots — the case §8's monotonic timer was chosen for |
 | `wsl-care-events.service` | `Type=simple`, `ExecStart=/opt/wsl-care/bin/wsl-care events follow`, `Restart=always`, `RestartSec=30`, `MemoryMax=1G`, `NoNewPrivileges=yes`, `WantedBy=multi-user.target` | the follower waits for Docker in-process (§15b #8); the restart is the outer net |
+| `wsl-care-watch.service` | `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care watch --timer`, the hardening of `wsl-care.service`, `TimeoutStartSec=10min` (`mcpWatchdog.runLimitMinutes`, above `RunBudget.WatchRunWorstCase`), `SuccessExitStatus=75 130`; no `[Install]` | E14 S2b: the watch — root's MCP CPU ledger and the agents' CPU history every few minutes, and A19 as a recorded act (the busy half needs interval evidence the 4-hour timer never gives); [module_mcp_servers.md](module_mcp_servers.md) § *The busy half and the watch* |
+| `wsl-care-watch.timer` | `OnActiveSec=5min`, `OnUnitActiveSec=5min` (`mcpWatchdog.periodMinutes`), `AccuracySec=30s` | monotonic, from the timer's own start (a past `OnBootSec` would fire at `enable --now`, into the installer's first run): nothing to catch up after the VM was off; installed only when the release ships it |
 | `wsl-care-act@.service` | template; `[Unit] CollectMode=inactive-or-failed`; `Type=oneshot`, `ExecStart=/opt/wsl-care/bin/wsl-care act --request %i`, the hardening of `wsl-care.service`, `TimeoutStartSec=infinity`, `SuccessExitStatus=3 75 76 78 79 80 82 130` (the RECORDED ends: an action failed, a refusal recorded, no request, an unusable request recorded, a stop recorded); no `[Install]` | a detached run the panel asked for (E6.S1, described with the detached runs below); `CollectMode` sits in `[Unit]`, the only section systemd reads it from (0.1.0 had it in `[Service]`, ignored — fixed in 0.1.1) |
 
 Each unit's configurable values (`timer.*`, `units.*`) come as a drop-in, `<unit>.d/50-wsl-care-config.conf`, that
@@ -2430,7 +2432,9 @@ A collector over the one process snapshot — read-only towards the servers — 
 in every run detail), three verdicts (`mcp.instances`, `mcp.cpu`, `mcp.starts`) and the `mcpServers.*` keys; the Windows
 binary answers it unavailable (E11). Since E14 S1 (2026-10-07) an instance's CPU is measured over the interval since its
 previous sample from a per-caller ledger (`mcp-cpu.json`: root's under `/var/lib/wsl-care`, an unprivileged `status`'s under
-`$XDG_STATE_HOME/wsl-care`), the 1 s window only a fallback. Since E14 S2a/S2c (2026-10-08) A19 stops idle instances, and the
+`$XDG_STATE_HOME/wsl-care`), the 1 s window only a fallback. Since E14 S2a/S2c (2026-10-08) A19 stops idle instances — and since S2b (2026-10-09) those busy without a log write for
+`mcpWatchdog.busyMinutes`, from root's interval evidence that the watch (`wsl-care-watch.timer`, every 5 minutes, `watch --timer`)
+records; the 4-hour timer's full run now waits `requests.lockWaitSeconds` for a lock the watch holds — and the
 user may add their own servers by program file name (`mcpServers.programs`, a rule-bound open list — the first list key that
 is not closed over a catalogue; `ConfigKey.TextListKey` carries a member rule and a cap). The module, its diagram, entities, flows and residuals: [module_mcp_servers.md](module_mcp_servers.md).
 
@@ -2876,6 +2880,8 @@ flowchart LR
         svc["wsl-care.service<br/>collect: measure, timer pass"]
         events["wsl-care-events.service<br/>events follow"]
         act["wsl-care-act@.service<br/>detached act"]
+        watchtimer["wsl-care-watch.timer"]
+        watch["wsl-care-watch.service<br/>watch: MCP ledger, A19"]
         cli["/opt/wsl-care/bin/wsl-care<br/>Native AOT CLI"]
         conf["/etc/wsl-care/config.json<br/>+ user layer"]
         state["/var/lib/wsl-care<br/>history, run records, state"]
@@ -2892,6 +2898,8 @@ flowchart LR
     wslexe -->|"-d distro --exec"| cli
     timer --> svc
     svc --> cli
+    watchtimer --> watch
+    watch --> cli
     events --> cli
     act --> cli
     cli --> conf

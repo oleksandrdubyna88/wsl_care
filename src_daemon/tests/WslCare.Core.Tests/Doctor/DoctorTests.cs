@@ -76,7 +76,7 @@ public sealed class DoctorTests : IDisposable
         var report = await RunAsync(Runner(unitState: "inactive"));
 
         report.Healthy.Should().BeFalse();
-        report.Checks.Where(c => c.State == DoctorRun.Problem).Select(c => c.Id).Should().Contain(["lastRun", "unit.wsl-care.timer", "unit.wsl-care-events.service", "eventsFollower"]);
+        report.Checks.Where(c => c.State == DoctorRun.Problem).Select(c => c.Id).Should().Contain(["lastRun", "unit.wsl-care.timer", "unit.wsl-care-watch.timer", "unit.wsl-care-events.service", "eventsFollower"], "E14 S2b: a stopped watch timer is a problem too — A19 would act on the 4-hour timer only");
     }
 
     /// <summary>The PR #16 retro round (consultation 0d924598): <c>lastRun</c> speaks of the last full run, so frequent <c>act</c>

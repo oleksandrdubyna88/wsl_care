@@ -32,6 +32,11 @@
       "detail": "systemctl show wsl-care.timer --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState exited 98: fake systemctl: no scripted answer for: systemctl show wsl-care.timer --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState"
     },
     {
+      "id": "unit.wsl-care-watch.timer",
+      "state": "unknown",
+      "detail": "systemctl show wsl-care-watch.timer --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState exited 98: fake systemctl: no scripted answer for: systemctl show wsl-care-watch.timer --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState"
+    },
+    {
       "id": "unit.wsl-care-events.service",
       "state": "unknown",
       "detail": "systemctl show wsl-care-events.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState exited 98: fake systemctl: no scripted answer for: systemctl show wsl-care-events.service --timestamp=unix --property=Id,LoadState,ActiveState,SubState,Result,NRestarts,ActiveEnterTimestamp,UnitFileState"

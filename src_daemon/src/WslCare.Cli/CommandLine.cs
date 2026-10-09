@@ -64,6 +64,14 @@ internal abstract record Request
     /// calm or unknown, <see cref="ExitCode.MachineBusy"/> busy.</summary>
     internal sealed record Busy(bool Json) : Request;
 
+    /// <summary><c>watch [--timer] [--json]</c> (plan E14 S2b): as root, the watch timer's run — the MCP servers' CPU ledger and the
+    /// agents' CPU history recorded; with <c>--timer</c> (the watch unit's mark) A19 may act.</summary>
+    internal sealed record Watch(bool Json) : Request
+    {
+        /// <summary>The watch timer started it (its unit passes <c>--timer</c>); never inferred from the environment.</summary>
+        public bool Timer { get; init; }
+    }
+
     /// <summary><c>events follow [--once]</c>: the container-start follower (plan §4.3); <c>--once</c> catches up and stops.</summary>
     internal sealed record EventsFollow(bool Once) : Request;
 
@@ -205,6 +213,7 @@ internal static class CommandLine
         new([["collect"]], "collect [--timer or --detach] [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise); --timer is the systemd timer's mark, the only run that also acts; --detach (as root) starts it in its own unit and answers accepted at once", ["collect", "--json"], ParseCollect),
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
         new([["busy"]], "busy [--json]", "is the machine too busy to start heavy work now: cpu, io and memory pressure (PSI some avg60) against their keys; exit 83 busy (wait), 0 calm or unknown (go); reads /proc/pressure and /proc/loadavg only", ["busy", "--json"], rest => JsonOnly("busy", rest, json => new Request.Busy(json))),
+        new([["watch"]], "watch [--timer] [--json]", "as root: the watch timer's run (wsl-care-watch.timer, every mcpWatchdog.periodMinutes): records the MCP servers' CPU ledger and the agents' CPU history under the run lock; with --timer, A19 may then stop the MCP servers idle or busy without a log write, under the dry-run rules, as a recorded act (a watch that stops nothing writes no history line)", ["watch", "--json"], ParseWatch),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
         new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed, --process the processes A18's or A19's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
         new([["act", "--request"]], "act --request <runId>", "as root, the template unit's start: run the request --detach wrote, recorded under its run id (refused, recorded, when another run holds the lock)", ["act", "--request", "20261002T120000Z-123"], ParseActFromRequest),
@@ -330,6 +339,11 @@ internal static class CommandLine
         rest.All(f => f is TimerFlag or JsonFlag or DetachFlag) && rest.Distinct(StringComparer.Ordinal).Count() == rest.Count && !(rest.Contains(TimerFlag) && rest.Contains(DetachFlag))
             ? new Request.Collect(rest.Contains(JsonFlag)) { Timer = rest.Contains(TimerFlag), Detach = rest.Contains(DetachFlag) }
             : new Request.Failed($"\"{BinaryName} collect\" takes {TimerFlag} or {DetachFlag} (not both) and {JsonFlag}, each once; got \"{Printable(string.Join(' ', rest))}\".");
+
+    private static Request ParseWatch(IReadOnlyList<string> rest) =>
+        rest.All(f => f is TimerFlag or JsonFlag) && rest.Distinct(StringComparer.Ordinal).Count() == rest.Count
+            ? new Request.Watch(rest.Contains(JsonFlag)) { Timer = rest.Contains(TimerFlag) }
+            : new Request.Failed($"\"{BinaryName} watch\" takes {TimerFlag} and {JsonFlag}, each once; got \"{Printable(string.Join(' ', rest))}\".");
 
     /// <summary><c>act --request &lt;runId&gt;</c>: exactly one well-formed run id.</summary>
     private static Request ParseActFromRequest(IReadOnlyList<string> rest) =>

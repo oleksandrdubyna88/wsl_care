@@ -41,6 +41,9 @@ internal static class CollectCommand
             Signals = host.Signals,
             InterruptCause = host.InterruptCause,
             Wait = host.Wait,
+            // Plan E14 S2b: the watch holds THE run lock for the seconds of its sample every few minutes; the timer's full run that
+            // fires then waits for it (the bound an accepted detached run waits) instead of being lost to the next slot.
+            LockWait = request.Timer ? Core.Records.RunLock.AcceptedRunWait : TimeSpan.Zero,
         };
         // Retro gate over PR #5: Docker's disk figures and the daily folder walks can take minutes, each under its own ceiling;
         // the console log (stderr) says so before anything is asked, so working is never mistaken for stuck.

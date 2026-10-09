@@ -1,0 +1,23 @@
+# wsl-care — the watch (plan E14 S2b). Installed by install.sh to /etc/systemd/system/ and enabled with
+# `systemctl enable --now wsl-care-watch.timer`.
+#
+# A MONOTONIC timer, not a calendar: the watch samples the MCP servers' CPU into root's ledger every few minutes, so A19 sees a
+# reading over an interval (the 4-hour timer never gives one: mcpServers.cpuIntervalMaxMinutes is 20) and an idle server is
+# stopped within minutes of mcpWatchdog.idleMinutes rather than hours. After the VM was off there is nothing to catch up, so
+# no Persistent=. OnActiveSec (a period after THIS timer starts: at boot, or at install.sh's enable --now — never OnBootSec, which
+# fires at once when the timer is started long after boot and took the run lock from the installer's first full run) and
+# OnUnitActiveSec below are the DEFAULT of mcpWatchdog.periodMinutes; install.sh writes
+# wsl-care-watch.timer.d/50-wsl-care-config.conf from the machine configuration (wsl-care units dropin wsl-care-watch.timer),
+# and doctor names a drop-in that no longer matches the key.
+[Unit]
+Description=wsl-care: the watch every 5 minutes (the MCP servers' CPU; A19)
+Documentation=https://github.com/oleksandrdubyna88/wsl_care
+
+[Timer]
+OnActiveSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=wsl-care-watch.service
+
+[Install]
+WantedBy=timers.target

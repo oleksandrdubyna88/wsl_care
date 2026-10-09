@@ -307,6 +307,9 @@
   },
   "mcpWatchdog": {
     "idleMinutes": 60,
-    "orphanIdleMinutes": 10
+    "orphanIdleMinutes": 10,
+    "busyMinutes": 30,
+    "periodMinutes": 5,
+    "runLimitMinutes": 10
   }
 }

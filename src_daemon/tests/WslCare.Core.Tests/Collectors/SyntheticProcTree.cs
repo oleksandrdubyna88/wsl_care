@@ -84,6 +84,10 @@ internal sealed class SyntheticProcTree : IDisposable
         return path;
     }
 
+    /// <summary>A file under the tree at the DISTRO path <paramref name="distroPath"/> holding <paramref name="content"/> (a
+    /// configuration layer, a state file).</summary>
+    public string Write(string distroPath, string content) => _root.File(distroPath.TrimStart('/'), content);
+
     /// <summary>Removes one process from the tree — it exited.</summary>
     public void Exit(int pid) => Directory.Delete(_root.Under($"proc/{pid}"), recursive: true);
 

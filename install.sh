@@ -11,6 +11,8 @@
 #   /etc/systemd/system/wsl-care.service        the timer's full run (`collect --timer`)
 #   /etc/systemd/system/wsl-care.timer          every 4 hours, enabled and started
 #   /etc/systemd/system/wsl-care-events.service the container-start follower, enabled and started
+#   /etc/systemd/system/wsl-care-watch.service  the watch's run (`watch --timer`: the MCP servers' CPU, A19)
+#   /etc/systemd/system/wsl-care-watch.timer    every 5 minutes, enabled and started — when the release ships them (E14 S2b)
 #   /etc/systemd/system/<unit>.d/50-wsl-care-config.conf  each unit's values from the machine configuration
 #                                               (the timer's period, Nice, MemoryMax, TimeoutStopSec, RestartSec),
 #                                               rendered by the installed binary: `wsl-care units dropin <unit>`
@@ -76,7 +78,10 @@ readonly BIN_DIR="/opt/wsl-care/bin"
 readonly BIN_PATH="$BIN_DIR/wsl-care"
 readonly LINK_PATH="/usr/local/bin/wsl-care"
 readonly UNIT_DIR="/etc/systemd/system"
-readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service wsl-care-act@.service"
+readonly UNITS="wsl-care.service wsl-care.timer wsl-care-events.service wsl-care-act@.service wsl-care-watch.timer wsl-care-watch.service"
+# E14 S2b: the watch's two units are installed and enabled only when the release ships them. This installer (main) installs the
+# NEWEST daemon release, and a release from before the watch has none — it must still install.
+readonly OPTIONAL_UNITS="wsl-care-watch.timer wsl-care-watch.service"
 readonly DROPIN_NAME="50-wsl-care-config.conf"
 readonly CONFIG_DIR="/etc/wsl-care"
 readonly CONFIG_FILE="$CONFIG_DIR/config.json"
@@ -465,6 +470,39 @@ to /etc/wsl.conf yourself, restart the distro from Windows (wsl --terminate <dis
   done
 }
 
+# Whether the release being installed ships <unit>: every unit but an OPTIONAL one always does (unpack checks them).
+shipped() {
+  case " $OPTIONAL_UNITS " in
+    *" $1 "*) [ -f "$SRC/systemd/$1" ] ;;
+    *) return 0 ;;
+  esac
+}
+
+# The watch timer's name — or $1 when given — when the release ships it; nothing otherwise (E14 S2b).
+watch_timer() {
+  if shipped wsl-care-watch.timer; then printf '%s' "${1:-wsl-care-watch.timer}"; fi
+}
+
+# A unit this release does not ship (E14 S2b, own code review): an older release installed over one with the watch — its binary
+# has no `watch` verb, so a watch unit left in place would fail every few minutes. The timer is disabled first (UNITS lists it
+# before its service), then the service stopped; the unit file and its drop-in go. Nothing when the unit is not there.
+retire() {
+  if [ ! -f "$ROOT$UNIT_DIR/$1" ]; then
+    say "this release ships no $1 (a release before the watch, E14 S2b): not installed"
+    return 0
+  fi
+  case "$1" in
+    *.timer) systemctl_job install-units disable --now "$1" ;;
+    *) systemctl_job install-units stop "$1" ;;
+  esac
+  run rm -f -- "$ROOT$UNIT_DIR/$1" || fail install-units "could not remove $UNIT_DIR/$1"
+  if [ -f "$ROOT$UNIT_DIR/$1.d/$DROPIN_NAME" ]; then
+    run rm -f -- "$ROOT$UNIT_DIR/$1.d/$DROPIN_NAME" || fail install-units "could not remove $UNIT_DIR/$1.d/$DROPIN_NAME"
+  fi
+  if [ -d "$ROOT$UNIT_DIR/$1.d" ] && [ -z "$(ls -A "$ROOT$UNIT_DIR/$1.d")" ]; then run rmdir -- "$ROOT$UNIT_DIR/$1.d"; fi
+  say "removed $UNIT_DIR/$1: this release ships no watch, and its binary has no watch verb"
+}
+
 # --- uninstall -----------------------------------------------------------------------------------------
 uninstall() {
   preflight_common
@@ -473,7 +511,7 @@ uninstall() {
   fi
   say "uninstalling wsl-care"
   enabled=""
-  for unit in wsl-care.timer wsl-care-events.service; do
+  for unit in wsl-care.timer wsl-care-watch.timer wsl-care-events.service; do
     if [ -f "$ROOT$UNIT_DIR/$unit" ]; then enabled="$enabled $unit"; fi
   done
   if [ -n "$enabled" ]; then
@@ -482,6 +520,9 @@ uninstall() {
   fi
   if [ -f "$ROOT$UNIT_DIR/wsl-care.service" ]; then
     systemctl_job units stop wsl-care.service
+  fi
+  if [ -f "$ROOT$UNIT_DIR/wsl-care-watch.service" ]; then
+    systemctl_job units stop wsl-care-watch.service
   fi
   if [ -f "$ROOT$UNIT_DIR/wsl-care-act@.service" ]; then
     # Every detached run still loaded (E6.S1): its unit file is about to go. systemctl matches the pattern against loaded
@@ -865,6 +906,10 @@ install_files() {
 
   run install -d -m 0755 "$ROOT$UNIT_DIR" || fail install-units "could not create $UNIT_DIR"
   for unit in $UNITS; do
+    if ! shipped "$unit"; then
+      retire "$unit"
+      continue
+    fi
     run install -m 0644 "$SRC/systemd/$unit" "$ROOT$UNIT_DIR/$unit" || fail install-units "could not install $UNIT_DIR/$unit"
   done
   say "units: $UNITS in $UNIT_DIR"
@@ -887,6 +932,7 @@ install_files() {
 # refuses an invalid machine configuration (78) gets no drop-in, said, and the stale one goes: the units keep their own values.
 write_dropins() {
   for unit in $UNITS; do
+    shipped "$unit" || continue
     dir="$UNIT_DIR/$unit.d"
     if [ "$DRY_RUN" = 1 ]; then
       say "would write $dir/$DROPIN_NAME from: $BIN_PATH units dropin $unit"
@@ -988,7 +1034,8 @@ enable_units() {
     # The follower keeps running the replaced binary until it restarts.
     systemctl_job enable-units try-restart wsl-care-events.service
   fi
-  systemctl_job enable-units enable --now wsl-care.timer wsl-care-events.service
+  # shellcheck disable=SC2046 # the watch timer's name or nothing, split on purpose
+  systemctl_job enable-units enable --now wsl-care.timer $(watch_timer) wsl-care-events.service
   systemctl_job enable-units enable --now sysstat.service atop.service
 }
 
@@ -1016,16 +1063,17 @@ healthy() {
 
 verify() {
   if [ "$DRY_RUN" = 1 ]; then
-    say "would verify: sar and atop on PATH, wsl-care.timer and wsl-care-events.service active, $BIN_PATH doctor --json healthy"
+    say "would verify: sar and atop on PATH, wsl-care.timer $(watch_timer) wsl-care-events.service active, $BIN_PATH doctor --json healthy"
     return 0
   fi
   have sar || fail "verify: sysstat (sar on PATH)" "sar is not on PATH after installing sysstat"
   have atop || fail "verify: atop on PATH" "atop is not on PATH after installing it"
-  for unit in wsl-care.timer wsl-care-events.service; do
+  # shellcheck disable=SC2046 # the watch timer's name or nothing, split on purpose
+  for unit in wsl-care.timer $(watch_timer) wsl-care-events.service; do
     systemctl is-active --quiet "$unit" || fail "verify: $unit active" "systemctl is-active $unit: not active"
   done
   doctor_wait
-  say "verified: sar, atop, wsl-care.timer, wsl-care-events.service, doctor healthy"
+  say "verified: sar, atop, wsl-care.timer, $(watch_timer "wsl-care-watch.timer, ")wsl-care-events.service, doctor healthy"
 }
 
 # `doctor --json` until it is healthy, for at most DOCTOR_SECONDS on the WALL clock (retro review of PR #8 — the old loop
