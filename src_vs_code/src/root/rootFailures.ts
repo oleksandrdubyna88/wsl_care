@@ -29,6 +29,7 @@ const ROOT_CODES: ReadonlyMap<number, ByMessages> = new Map<number, ByMessages>(
   [DAEMON_EXIT.stateUnreadable, (messages) => ({ kind: 'stateUnreadable', messages })],
   [DAEMON_EXIT.requestGone, (messages) => ({ kind: 'requestGone', messages })],
   [DAEMON_EXIT.requestUnusable, (messages) => ({ kind: 'requestUnusable', messages })],
+  [DAEMON_EXIT.machineBusy, (messages) => ({ kind: 'machineBusy', messages })],
 ]);
 
 /** How a root call that ended in an exit code other than 0 is read. `shownOnStdin`: the call piped A4's list (`--only -`). */

@@ -68,9 +68,14 @@ public sealed class MemoryCollector(IFileSystem files, LinuxHostPaths paths)
             .Bind(x => Fragmentation.Of(x.zones, Fragmentation.ThresholdZone, x.k.PageSizeBytes));
     }
 
-    private PressureSet ReadPressures() => new(ReadPressure("memory"), ReadPressure("io"), ReadPressure("cpu"));
+    private PressureSet ReadPressures() => ReadPressures(files, paths);
 
-    private Reading<Pressure> ReadPressure(string resource)
+    /// <summary><c>/proc/pressure/{memory,io,cpu}</c> alone — what <c>wsl-care busy</c> reads (E14 S6), without the rest of the
+    /// memory sample.</summary>
+    public static PressureSet ReadPressures(IFileSystem files, LinuxHostPaths paths) =>
+        new(ReadPressure(files, paths, "memory"), ReadPressure(files, paths, "io"), ReadPressure(files, paths, "cpu"));
+
+    private static Reading<Pressure> ReadPressure(IFileSystem files, LinuxHostPaths paths, string resource)
     {
         var path = $"{paths.ProcRoot}/pressure/{resource}";
         return ProcText.Read(files, path).Bind(text => PressureFile.Parse(text, path));

@@ -81,6 +81,11 @@ internal enum ExitCode
     /// used to exit 2, the usage error, which the unit counted as a failure).</summary>
     RequestUnusable = 82,
 
+    /// <summary><c>busy</c> (E14 S6): the machine is too busy to START heavy work now — a pressure (PSI some avg60) crossed its key;
+    /// the answer names which. Advice to an agent that asked, never an error: wait with a bounded backoff, then go. (Not
+    /// <see cref="Busy"/>, 75, which means another run holds the run lock.)</summary>
+    MachineBusy = 83,
+
     /// <summary>Stopped by Ctrl+C or SIGTERM before it finished (128 + SIGINT, the shell convention). Under a unit the only signal
     /// is systemd's SIGTERM - a stop someone asked for (<c>act --stop</c>, <c>systemctl stop</c>, a shutdown) - and the run records
     /// itself <c>interrupted</c> first (or leaves running.json / its request for the sweep), so both units count it as a success

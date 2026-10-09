@@ -69,7 +69,8 @@ public static class StatusReports
         _ => new FragmentationReport(false, reading.ReasonOrEmpty, null, null, null, null, null),
     };
 
-    private static PressureReport Pressure(PressureSet set) => new(Psi(set.Memory), Psi(set.Io), Psi(set.Cpu));
+    /// <summary>The three PSI files as the wire shows them — also <c>wsl-care busy</c>'s (E14 S6).</summary>
+    public static PressureReport Pressure(PressureSet set) => new(Psi(set.Memory), Psi(set.Io), Psi(set.Cpu));
 
     private static PsiReport Psi(Reading<Pressure> reading) => reading switch
     {

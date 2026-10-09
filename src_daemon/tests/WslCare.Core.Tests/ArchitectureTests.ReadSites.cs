@@ -97,6 +97,8 @@ public sealed partial class ArchitectureTests
         // place (root's state folder or this account's), so the stricter metadata class holds for both.
         ["WslCare.Core/Mcp/McpCpuLedger.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState), ["ReadUserFile"] = (1, ReadClass.OwnUnprivileged), ["ListFiles"] = (1, ReadClass.TargetHomeMetadata) },
         ["WslCare.Core/Collectors/Procfs/SampleTime.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
+        // E14 S6: /proc/loadavg for `wsl-care busy` — the kernel's file.
+        ["WslCare.Core/Collectors/Procfs/LoadAverageFile.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/ProcessCollector.cs"] = new() { ["ListDirectories"] = (1, ReadClass.System), ["ProcText.Read"] = (5, ReadClass.System), ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/Procfs/ProcText.cs"] = new() { ["ReadFile"] = (1, ReadClass.System) },
         ["WslCare.Core/Config/ConfigLoader.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.ConfigLayer), ["ReadUserFile"] = (1, ReadClass.ConfigLayer) },

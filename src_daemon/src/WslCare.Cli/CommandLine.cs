@@ -60,6 +60,10 @@ internal abstract record Request
     /// <summary><c>doctor [--json]</c>: is the installation doing its job (plan §6).</summary>
     internal sealed record Doctor(bool Json) : Request;
 
+    /// <summary><c>busy [--json]</c> (E14 S6): is the machine too busy to START heavy work now — PSI against its keys; exit 0
+    /// calm or unknown, <see cref="ExitCode.MachineBusy"/> busy.</summary>
+    internal sealed record Busy(bool Json) : Request;
+
     /// <summary><c>events follow [--once]</c>: the container-start follower (plan §4.3); <c>--once</c> catches up and stops.</summary>
     internal sealed record EventsFollow(bool Once) : Request;
 
@@ -200,6 +204,7 @@ internal static class CommandLine
         new([["preview"]], "preview --all [--json]", "every cleanup row with its count and reclaimable bytes, the kept named volumes, Docker hygiene", ["preview", "--all", "--json"], ParsePreview),
         new([["collect"]], "collect [--timer or --detach] [--json]", "the full run: every collector, the thresholds, recorded as run detail + history line (as root; read-only otherwise); --timer is the systemd timer's mark, the only run that also acts; --detach (as root) starts it in its own unit and answers accepted at once", ["collect", "--json"], ParseCollect),
         new([["doctor"]], "doctor [--json]", "is the installation doing its job: units, collectors, configuration, last run, versions", ["doctor", "--json"], rest => JsonOnly("doctor", rest, json => new Request.Doctor(json))),
+        new([["busy"]], "busy [--json]", "is the machine too busy to start heavy work now: cpu, io and memory pressure (PSI some avg60) against their keys; exit 83 busy (wait), 0 calm or unknown (go); reads /proc/pressure and /proc/loadavg only", ["busy", "--json"], rest => JsonOnly("busy", rest, json => new Request.Busy(json))),
         new([["events", "follow"]], "events follow [--once]", "record every container start under the state directory (the wsl-care-events unit); --once catches up and stops", ["events", "follow", "--once"], ParseEventsFollow),
         new([["act"]], "act <A#>[,<A#>...] (--preview or --confirm) [--manual or --timer] [--detach] [--volume <name>]... [--only <file or ->] [--process <pid:start>]... [--json]", "as root: preview the actions from live state, or run them (--confirm), one run at a time, recorded; --manual marks the panel's button, --timer the systemd timer, --detach runs a confirm in its own unit and answers accepted at once, --volume / --only (- = stdin) the volumes A4's preview showed, --process the processes A18's or A19's preview showed", ["act", "A10", "--preview", "--json"], ParseAct),
         new([["act", "--request"]], "act --request <runId>", "as root, the template unit's start: run the request --detach wrote, recorded under its run id (refused, recorded, when another run holds the lock)", ["act", "--request", "20261002T120000Z-123"], ParseActFromRequest),

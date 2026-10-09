@@ -349,6 +349,47 @@ sysstat and atop wrote in the last 30 minutes, whether the events follower is cu
 Docker, systemd and the kernel. Root reachability is the extension's check (`notChecked` here). It exits 0 whatever it
 finds; `healthy` is the verdict.
 
+## Busy — may an agent start heavy work now?
+
+```bash
+wsl-care busy --json   # state: calm | busy | unknown, reasons, the three PSI files, the load
+wsl-care busy          # one line: "busy: PSI some avg60 cpu 28.5, io 1.2, memory 0; load 36.1 — cpu avg60 28.5 > 20 (…)"
+```
+
+It reads `/proc/pressure/{cpu,io,memory}` and `/proc/loadavg` and nothing else, in milliseconds. It does not walk the
+processes, does not open the MCP window, reads no history and writes nothing; any user may run it. The state:
+- **busy** when a pressure (PSI `some avg60`) is above its key: cpu `thresholds.cpuPressureWarnPercent` (20), io
+  `thresholds.ioPressureWarnPercent` (10), memory `thresholds.memoryPressureWarn` (10). Each crossing is named with its value
+  and key.
+- **calm** when all three were read and none crosses.
+- **unknown** when one could not be read (a kernel without PSI, the Windows binary).
+
+The load is shown, never judged. `status` shows the same rule as the verdicts `pressure.cpu` and `pressure.io`, so the
+extension's status bar warns while the machine is busy. `memory.pressure` is a different question (has the VM been
+struggling, avg60 or avg300) and keeps its rule.
+
+**The agent-side contract.** Poll it before a heavy step: a build, a test suite, an install.
+
+| exit | meaning | what the agent does |
+|---|---|---|
+| `0` | calm, or unknown (`state` says which) | go |
+| `83` | busy (`machineBusy` in `contracts/exit-codes.json`) | wait with a bounded, JITTERED backoff — about 30 s, 60 s, 120 s, each ± 25 %, at most 10 minutes in all — then go anyway and say so |
+| anything else | the signal itself failed (an old binary without the verb answers 2, usage) | say so in the session's log, then go: a broken signal never blocks work |
+
+It is advice, never a lock or a queue: the daemon starts and stops nothing because of it. The jitter is what keeps twenty
+waiting agents from all starting at the same second when the pressure falls.
+
+```bash
+waited=0; step=30
+while true; do
+  wsl-care busy >/dev/null 2>&1; rc=$?
+  [ "$rc" -eq 83 ] || { [ "$rc" -eq 0 ] || echo "wsl-care busy failed ($rc); going on"; break; }
+  [ "$waited" -ge 600 ] && { echo "machine still busy after ${waited}s; going on"; break; }
+  pause=$(( step * (75 + RANDOM % 51) / 100 )); sleep "$pause"; waited=$(( waited + pause ))
+  [ "$step" -lt 120 ] && step=$(( step * 2 ))
+done
+```
+
 ## Events follow — container starts
 
 ```bash

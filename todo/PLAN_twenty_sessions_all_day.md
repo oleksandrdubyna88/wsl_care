@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-08: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S2b and S4–S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`); S2b, S4, S5, S7, S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -601,6 +601,33 @@ with a bounded backoff.
 - `Busy_reads_no_process_and_writes_nothing`
 - `An_unreadable_pressure_is_unknown_and_exits_0`
 - the contract and golden updates.
+
+#### S6 as built (2026-10-09)
+
+- **Plan round** (coai session `79b51f53`): `proceed`, 2 of 2 reviewers, 7 findings.
+  - **Accepted:**
+    - (1) when the sample's memory part was not read, the verdict says the PSI was not read with it. It no longer borrows another file's reason.
+    - (2) one unread pressure makes an otherwise calm machine UNKNOWN, never calm by absence; a crossed one is still busy.
+    - (3) the README loop has jitter (± 25 %), so twenty waiting agents do not wake on the same second.
+    - (5) the contract separates a broken signal (any code other than 0 and 83: say so, then go) from calm.
+    - (6) the keys' 0–100 range is tested.
+  - **Rejected, with reasons:**
+    - (0) running the goldens locally: the Linux binary produces them; the Linux legs verify them.
+    - (4) avg60 vs `memory.pressure`'s avg60-or-avg300: different questions, documented.
+- **Built:**
+  - `Thresholds/MachineBusy` (`Judge`, `Verdicts`, `BusyLimits`, `BusyReason`, `BusyJudgement`).
+  - `Status/BusyReport` (+ `LoadReport`).
+  - `Collectors/Procfs/LoadAverageFile`: the idle gate's parser was moved there and reused.
+  - `MemoryCollector.ReadPressures` (static).
+  - CLI `busy [--json]` (`BusyCommand`), `ExitCode.MachineBusy = 83`. Neither unit can reach it, and both are classified.
+  - The keys `thresholds.cpuPressureWarnPercent` (20) and `thresholds.ioPressureWarnPercent` (10).
+  - The seven status goldens gained the two verdicts.
+- **Tests:**
+  - `MachineBusyTests` (4).
+  - `StatusVerdictsTests.Status_judges_cpu_and_io_pressure_after_memory_pressure`.
+  - `BusyCommandTests` (3).
+  - `BusyFlows` over the built binary (busy on Linux, unknown on Windows).
+  - The tests were written first. The first run was against the finished code, so the teeth were shown by breaking product code: unknown-by-absence off, the verdict level fixed at ok, the exit code fixed at 0 — 6 red, restored green.
 
 ### S7 — the Windows side (inside E11/E12's scope)
 

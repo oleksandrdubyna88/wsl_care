@@ -27,6 +27,8 @@ export const DAEMON_EXIT = {
   notAsRoot: 81,
   /** The daemon's retro round over PR #11: `act --request` met a request it cannot use — recorded refused and removed. */
   requestUnusable: 82,
+  /** E14 S6: `busy` only — the machine is too busy to START heavy work now (advice; not `busy`, 75, a held run lock). */
+  machineBusy: 83,
   interrupted: 130,
 } as const;
 

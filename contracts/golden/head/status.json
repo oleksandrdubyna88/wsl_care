@@ -1989,6 +1989,30 @@
       }
     },
     {
+      "id": "pressure.cpu",
+      "level": "ok",
+      "value": "some avg10 0.1, avg60 4.18",
+      "limit": "warn: some avg60 > 20 (thresholds.cpuPressureWarnPercent)",
+      "reason": "cpu pressure (PSI): tasks waiting for a CPU — the machine is too busy to start heavy work (wsl-care busy)",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
+      "id": "pressure.io",
+      "level": "ok",
+      "value": "some avg10 0.06, avg60 1.69",
+      "limit": "warn: some avg60 > 10 (thresholds.ioPressureWarnPercent)",
+      "reason": "io pressure (PSI): tasks waiting for the disk — the machine is too busy to start heavy work (wsl-care busy)",
+      "basis": {
+        "source": "sample",
+        "evaluatedAt": "2000-01-01T00:00:00+00:00",
+        "ageSeconds": 0
+      }
+    },
+    {
       "id": "wslconfig.memory",
       "level": "ok",
       "value": "33.2 % of 44.9 GiB used; .wslconfig not read: status does not read it; the full run (collect) does",
