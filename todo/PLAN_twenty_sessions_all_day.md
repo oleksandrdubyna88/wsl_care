@@ -550,6 +550,48 @@ A1/A2's triggers may also take memory PSI (`thresholds.memoryPressureWarn` exist
 baseline first. `.wslconfig` advice (memory cap, swap size, `autoMemoryReclaim`) extends the existing `WslConfigReport`
 (`HealthReport.cs:36`): **shown, never written** by the product (Q5).
 
+#### S5 — as to be built (2026-10-09, branch `feat/wc-memory-before-evening`): a REPORT, nothing acts differently
+
+1. **`memory.swapFree`** (a fast-sample verdict, after `memory.swap`):
+   - warn when swap is configured and `SwapFree` < `thresholds.swapFreeWarnGb` (new key, 0–GbCeiling, default 4);
+   - ok with "no swap configured" when `SwapTotal` is 0;
+   - the value is "X GiB free of Y GiB".
+   
+   The evening (L3) had 2.4 GB left, so it warns; the captured calm tree has 12 of 12 free.
+2. **`memory.committed`** (after it): warn when `Committed_AS` > `thresholds.committedWarnPercent` (new key, 1–1000, default 80)
+   of `MemTotal`. The value is "P % of MemTotal (C of T GiB committed)".
+   - Linux over-commits, so this is a warning of what is PROMISED, never of what is used.
+   - The evening read 104 %; the calm tree reads 46 %.
+   - `MemorySnapshot` gains `Committed` as an init property (default "not read"), so the many positional constructions in
+     tests stay valid.
+   - The status wire's memory block does not change: the figures are in the verdicts.
+3. **A1/A2 and memory pressure, SHADOW only.** The plan says to measure against the baseline first, and this session cannot
+   measure (no WSL commands). So A1's and A2's previews gain the fact `memoryPressureAvg60Hundredths`, and their trigger REASON says whether the pressure rule
+   (memory PSI some avg60 above `thresholds.memoryPressureWarn`, the S6 rule) WOULD have fired. Whether they fire does not
+   change. Every timer run then records the evidence in its run record, so the S8 soak can decide with numbers whether to
+   make it a real trigger.
+4. **`.wslconfig` advice** (the full run's `WslConfigReport`, additive): `advice`, the lines a person could put under
+   `[wsl2]`, each only where the file differs from the recommendation, each with what it says now:
+   - `memory=` (`wslConfig.recommendedMemoryGb`, existing, 36);
+   - `swap=` (`wslConfig.recommendedSwapGb`, new, 0–1024, default 16 — the evening used 9.9 of 12);
+   - `autoMemoryReclaim=dropCache` (the value the existing warning already names as the one that works with systemd and
+     Docker).
+   
+   It is SHOWN, NEVER WRITTEN: no code path writes `.wslconfig`, and an architecture check asserts that no product file
+   contains a write to it. Q5 (which settings to advise) stays the owner's; these defaults are the coordinator's
+   stated scope.
+5. **Wire and goldens:** additive. The seven `status*.json` goldens gain the two verdicts: fixture values, or the
+   "meminfo does not exist" reason in the `status-running-*` ones. `config-keys.json` gains three keys.
+
+**RED (S5), written BEFORE the product code:**
+- `Swap_left_below_its_key_warns_and_no_swap_is_ok`
+- `Committed_above_its_share_of_MemTotal_warns_and_the_calm_tree_is_ok`
+- `Status_answers_swapFree_and_committed_after_memory_swap`
+- `A1_and_A2_say_whether_memory_pressure_would_have_fired_and_fire_as_before`
+- `The_wslconfig_advice_names_only_what_differs_with_what_it_says_now`
+- `No_product_code_writes_wslconfig`
+- the contract and golden updates.
+
 ### S6 — a "machine busy" signal agents can poll
 
 **Problem.** Agents start heavy builds into an already saturated machine (L1–L2, L7). PSI cpu and io are read
