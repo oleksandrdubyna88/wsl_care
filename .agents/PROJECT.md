@@ -37,3 +37,16 @@ node .agents/conventions/tools/plan-lifecycle.mjs
 - **Measured before recommended.** A threshold or a setting the extension advises carries the
   measurement it came from (`research/`), and a claim about this machine is re-measured, not
   remembered.
+- **Every extension action has a button in the panel UI** (owner, 2026-10-09). A command-palette
+  entry may duplicate a button; it is never the only way. Where each contributed command's button
+  lives is declared in `src_vs_code/src/panel/commandButtons.ts`, and `commandButtons.test.ts`
+  fails for a command without one. A new action ships with its button in the same change.
+
+## Commit titles
+
+- **Name the daemon's CLI as the daemon's** (owner, 2026-10-09). A commit that touches `src_vs_code/`
+  and names a `wsl-care` verb says "the `wsl-care` daemon's `<verb>` command" (for example "the
+  `wsl-care` daemon's `busy` command"), never a bare "wsl-care <verb>". release-please copies such
+  titles into `src_vs_code/CHANGELOG.md`, which is Marketplace text, and `productName.test.ts`
+  allows `wsl-care` there only as the daemon. The test stays strict; the title follows it. (Extension
+  0.3.0's release PR failed on exactly this and was fixed by hand.)

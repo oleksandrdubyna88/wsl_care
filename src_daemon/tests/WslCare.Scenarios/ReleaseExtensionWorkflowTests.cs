@@ -334,6 +334,32 @@ public sealed partial class ReleaseExtensionWorkflowTests
         guard.Should().NotContain("sort -t.", "no second spelling of the comparison");
     }
 
+    /// <summary>The day Azure DevOps stops honouring GLOBAL personal access tokens (docs/repo-settings.md step 9,
+    /// todo/PLAN_marketplace_entra_publish.md). A global PAT works until then whatever its own expiry says.</summary>
+    private static readonly DateOnly GlobalPatRetirement = new(2026, 12, 1);
+
+    /// <summary>2026-10-09: VSCE_PAT is a GLOBAL PAT whose own expiry is 2027-10-08. POST_DEPLOY item 12's command reads the FIRST
+    /// date on the <c>VSCE_PAT expires:</c> line and fails 30 days before it, so a line that records a global PAT must record
+    /// the date it really stops working — never the token's later expiry, or item 12 passes while every publish fails. Scoped
+    /// to a line that says it is a global PAT (coai plan round 85cfa858): another credential records its own expiry.</summary>
+    [Fact]
+    public void A_recorded_global_pat_date_is_never_after_global_pat_retirement()
+    {
+        var line = File.ReadAllLines(Path.Combine(ReleaseFiles.Root, "POST_DEPLOY.md")).Single(l => l.StartsWith("VSCE_PAT expires:", StringComparison.Ordinal));
+        var date = RecordedPatDate().Match(line);
+
+        if (!date.Success || !line.Contains("global PAT", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        DateOnly.ParseExact(date.Groups[1].Value, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+            .Should().BeOnOrBefore(GlobalPatRetirement, $"item 12 reads the first date of '{line}', and a global PAT stops working on {GlobalPatRetirement:yyyy-MM-dd} whatever its own expiry says");
+    }
+
+    [GeneratedRegex(@"^VSCE_PAT expires: (\d{4}-\d{2}-\d{2})", RegexOptions.CultureInvariant)]
+    private static partial Regex RecordedPatDate();
+
     [Fact]
     public void The_extension_tag_ruleset_protects_exactly_the_extension_tags_and_lets_only_the_release_App_through()
     {
