@@ -1,6 +1,6 @@
 # PLAN — twenty Claude sessions run normally for 24 hours (epic E14)
 
-> Status: **in progress, 2026-10-09: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S3b built (A11 on by default with `language-servers`, the owner's Q14/Q15 of 2026-10-09, PR #75); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4 measured and decided (documentation only: `nice` works in WSL, the planned scope backfires — [2026-10-09_cpu_fairness.md](../research/2026-10-09_cpu_fairness.md)); S7b (a stop on Windows, the owner's), S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
+> Status: **in progress, 2026-10-10: S1 built (§ 13, PR #48); S2a built (the idle MCP watchdog, A19, PR #55); S2c built (the user's own MCP programs, PR #58); S2d built (playwright-mcp, an interpreter-run server, in the catalogue, PR #61); S3 built (A3's timer waits for idle build servers; language servers for A11, PR #60); S3b built (A11 on by default with `language-servers`, the owner's Q14/Q15 of 2026-10-09, PR #75); S5 built (memory and swap before the evening: a report, PR #63); S6 built (the "machine busy" signal: `wsl-care busy`, `pressure.cpu` / `pressure.io`, PR #62); S7a built (the Windows side's MCP servers, read-only, and the vmmem advice, PR #64); S2b built (the watch timer and A19's busy half); S4 measured and decided (documentation only: `nice` works in WSL, the planned scope backfires — [2026-10-09_cpu_fairness.md](../research/2026-10-09_cpu_fairness.md)); S7b.1 built (the Windows side's MCP CPU ledger, read-only); S7b (a stop on Windows as a safety net, the owner's decisions D1–D4; the interop route waits for Q-S7b-3) and S8 plan only.** Scope: the daemon's MCP metric (S1), an MCP watchdog action
 > (S2), a build-server reaper (S3), CPU fairness inside WSL (S4), memory and swap before the evening (S5), a "machine busy"
 > signal (S6), the Windows side's MCP servers and advice (S7, inside E11/E12's scope), and a 24-hour soak campaign (S8).
 >
@@ -1138,6 +1138,150 @@ exclusions** for build and tool folders are a security trade-off: Q6, never auto
     the owner differs.- **Residuals:** counted in `status` only (`collect`'s run detail is unchanged); CPU across the window only; an interop
   child's caller is invisible from Windows, so the W9 accumulation shows as one big `owners[]` group, not as orphans;
   `playwright-mcp` is not matched on Windows (no command line read); no Windows verdict and no stop (the owner's decision).
+
+#### S7b — as to be built (2026-10-09, branch `feat/wc-s7b-windows-stop`): a stop on Windows, as a SAFETY NET
+
+**Why.** S7a counts the Windows side's MCP servers and stops nothing. W9 (2026-10-07) counted 85 `creds-mcp.exe`, 66 of
+them orphaned, holding 1.32 GB. The owner fixes `creds-mcp`'s own exit in its own repository. This story is the safety net
+for whatever still leaks, from any server.
+
+**The owner's decisions (2026-10-09), binding:**
+- **D1 — targets.** Orphaned Windows MCP servers, or ones idle past the SAME configurable thresholds as A19
+  (`mcpWatchdog.orphanIdleMinutes` and `mcpWatchdog.idleMinutes`).
+- **D2 — an interop child under a LIVE `wsl.exe`** is never stopped unless BOTH hold: it is idle past the threshold, AND
+  its WSL client can be shown gone. This plan designs that proof.
+- **D3 — an auto switch, default ON;** every number a config key; a dry run and a preview; a stop button in the extension.
+- **D4 — by pid AND creation time only,** never by image name. Plan gate first, with the own Opus reviewer in parallel.
+
+**Measured first** (2026-10-09 18:46Z; read-only, recorded in
+[2026-10-09_interop_relays.md](../research/2026-10-09_interop_relays.md)):
+
+1. **Windows side.**
+   - 28 MCP processes: 12 under six `claude.exe` (2 each), and 16 `creds-mcp.exe` under ONE `wsl.exe`.
+   - That `wsl.exe` is VS Code's WSL connection: `wsl.exe -d Ubuntu sh -c "$VSCODE_WSL_EXT_LOCATION/scripts/wslServer.sh" …`, created 09:12:52Z.
+   - Its command line names the distro (`-d Ubuntu`).
+2. **Distro side — every Windows interop child has a Linux RELAY:**
+   - a process whose `/proc/<pid>/exe` is `/init` and whose argv is `/init <the .exe's /mnt path> <argv…>`;
+   - for `creds-mcp.exe`: exactly **16 relays**, matching the 16 Windows children.
+3. **A relay's parent says whether its client lives.**
+   - **6 relays** are children of a live caller: the distro's `creds-mcp` shim, itself a child of `claude`.
+   - **10 relays** were re-parented to the session's init, `Relay(1402)`. Their caller is gone.
+   - So "the WSL client is gone" is a LINUX fact, readable from `/proc` without guessing: the relay's parent is the session's `Relay(…)` init, not the caller that exec'd it.
+4. **The two clocks disagree by about 12 minutes.**
+   - The oldest Windows child was created at 09:15:06Z on the Windows clock; the oldest relay shows 09:27:12Z by btime + start ticks.
+   - On this machine the guest wall clock is stepped (`clock.jumps` 301 in 2 h on 2026-10-09), and btime + start ticks drifts with every step.
+   - **So no proof may pair a relay with a Windows child by wall time.**
+
+**Design.**
+
+1. **The Windows binary reaches the machine — the plan of record's E7.S3** ([PLAN_wsl_care_daemon.md](PLAN_wsl_care_daemon.md) §15g M5 and finding #13: "`--target win32-x64` once E7 bundles the probe").
+   - `release-extension.yml`'s build downloads `wsl-care-<v>-win-x64.zip` of the guard's `install_daemon` release.
+   - It checks the `.sha256` and runs `gh attestation verify --cert-identity …release.yml@refs/tags/daemon-v<v>`.
+   - It puts `bin/win-x64/wsl-care.exe` into the `.vsix` and packages with `--target win32-x64`.
+   - `check-vsix` allows exactly that one binary, held to the attested digest.
+   - The extension finds it beside itself (`context.extensionPath`), never on `PATH`.
+   - **Assumption A1:** this route, not a typed install command. The alternative is owner question Q-S7b-1.
+2. **A Windows CPU history** — the queued "Windows S1-style ledger" lands here, because idle for 60 minutes needs it.
+   - The file is `{windows state}/windows-mcp-cpu.json`. Key: the identity (pid, creation FILETIME); value: CPU 100-ns ticks, `firstSeen`, `lastSeen`, `idleSince`.
+   - It has `AgentCpuHistory`'s rules (`AgentCpuHistory.cs:41-53`): a gap longer than `mcpWatchdog.windowsMaxGapMinutes` breaks the chain, missing history is "not idle", and it is capped by `agentCpu.maxEntries` / `agentCpu.maxBytes`. These rules are reused, not copied: the shared half is extracted (reuse-first step 2).
+   - Written only by the Windows `watch` (item 5); a preview merges "now" in memory and writes nothing.
+3. **The interop proof** (D2) — **pairing by ORDER, never by clock:**
+   - **The distro side** gains a read verb, `wsl-care interop --json`. It runs as the user, reads `/proc` only, and lists the relays: `{pid, startTicks, windowsPath, clientAlive, caller}`.
+     - `clientAlive` is false exactly when the parent is the session's init (comm `Relay(<n>)` / `init`) or the parent pid is gone.
+     - It is the distro's `/proc` reader (`Collectors/Procfs`) with one new predicate. Nothing is written.
+   - **The Windows side** asks for it only when D2 matters: the server is an interop child, idle past the threshold, under a live `wsl.exe`.
+     - The distro comes from that `wsl.exe`'s command line (`-d <name>` / `--distribution <name>`, read through the S7a `CommandLine(pid)`). A `wsl.exe` without a distro name is not proof: keep.
+     - The question is a new `CommandTemplate`: `wsl.exe --list --running --quiet` first (a stopped distro is never started), then `wsl.exe -d <distro> --exec /opt/wsl-care/bin/wsl-care interop --json`, with a ceiling of `commands.interopQueryTimeoutSeconds`.
+   - **Pairing**, per distro and per Windows program path. The `/mnt/<drive>/…` path is mapped to `<DRIVE>:\…`, compared without case. The Windows child's path is its image path from `QueryFullProcessImageNameW`, a read right S7a already holds.
+     - Relays are sorted by start ticks (the guest's monotonic clock), and Windows children by creation time.
+     - The i-th relay is the i-th child ONLY IF the counts are equal, and every relay within `mcpWatchdog.interopTieSeconds` of a neighbour has the SAME `clientAlive`. Inside a tie the order may interleave, so a tie of mixed status proves nothing for its members.
+     - A child is "client shown gone" only when it is paired and its relay has `clientAlive = false`. Unequal counts, a mixed tie, an unread distro or an unread image path keep EVERY child of that program, with the reason in the preview.
+   - **Measured shape:** 16 relays and 16 children; the 7 relays started inside one second at 17:09:11Z are all client-gone, so the tie agrees.
+4. **A21 `WindowsMcpStop`** — the first action whose `Sides` is `[HostSide.Windows]`. Today every action is `[HostSide.Wsl]`, as at `McpServerStop.cs:68`, and `ActCommand.cs:108` refuses the other side.
+   - **A target needs ALL of:**
+     - (a) an instance of a watched server (the S7a catalogue);
+     - (b) the current user's process (the binary refuses to run elevated, as `archive run` does, so `OpenProcess` cannot reach another account's process);
+     - (c) not this process or an ancestor of it;
+     - (d) one of:
+       - **orphaned** (parent gone or reused, S7a) and idle ≥ `mcpWatchdog.orphanIdleMinutes`;
+       - **agent** or **other** owner and idle ≥ `mcpWatchdog.idleMinutes`;
+       - **interop** and idle ≥ `mcpWatchdog.idleMinutes` AND client shown gone (item 3).
+   - **There is no busy half on Windows.** "Busy without activity" needs log evidence that the Windows side does not have. This is said in the preview.
+   - **The stop** is a new seam, `IWindowsProcessStop`, with a real `Win32ProcessStop` (win-x64 only):
+     - `OpenProcess(PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, pid)`;
+     - then `GetProcessTimes` ON THAT HANDLE — the creation time must equal the shown one, and the CPU time the previewed one (an idle target that used CPU since the preview is kept, as A18/A19's re-check);
+     - then `TerminateProcess` on the SAME handle and `WaitForSingleObject` up to `processes.termGraceSeconds`; then `CloseHandle`.
+     - One handle from the check to the stop, so a reused pid can never be hit.
+     - There is no graceful step (a console-less server has no Ctrl+C channel), and the preview says so.
+     - The S7a reader stays import-free of stop calls. `ArchitectureTests` (`ArchitectureTests.cs:65-78`) widens its rule: `TerminateProcess` appears in `Win32ProcessStop` alone.
+   - **Bound to what was shown.** A button run takes `--process <pid:creationTicks>` (`ActionId.ShownProcessIds`, `ActionId.cs:69`, gains A21). The timer binds to its own fresh preview, as A19's watch does.
+5. **The Windows watch.** `wsl-care.exe watch [--timer] [--json]` — today the verb refuses the Windows binary (`WatchCommand.cs:52`).
+   - It samples the Windows CPU history, and when `auto.A21` is on, runs A21 under the dry-run rules: `DryRunWindow.Decide` (`DryRunWindow.cs:41`) on the WINDOWS state directory. So the Windows side has its OWN first-week window from its own first run, plus `dryRun`.
+   - **Runner, assumption A2: the extension**, every `mcpWatchdog.periodMinutes` while VS Code runs. A per-user Task Scheduler entry is E11's, and owner question Q-S7b-2.
+   - Why the extension is enough for the measured leak: the interop children live under VS Code's own `wsl.exe`, and the orphans left when VS Code closes are swept at its next start.
+   - A new module, `WindowsCareClient.ts`, is the only one that starts the bundled exe, mirroring `WslCareClient.ts:16`'s rule for `wsl.exe`.
+6. **The extension button.** The panel shows the S7a `windowsMcpServers` instances (today nothing reads the block; `fieldMap.ts:108`) and a **Stop idle Windows MCP servers** button.
+   - The modal lists each target: pid, server, owner, idle time, memory, and for interop the relay proof in words.
+   - It then runs `act A21 --process …` with exactly the shown pairs. The result names what was stopped and what was kept, and why.
+   - A21 joins `BUTTON_ONLY_IDS`' sibling list for the shown-process confirm (`rootIds.ts:29`) without being button-only: it has a timer switch.
+7. **Keys** (every number a key; trust as A19's):
+   - Reused: `mcpWatchdog.idleMinutes`, `mcpWatchdog.orphanIdleMinutes`, `mcpWatchdog.periodMinutes`, `processes.termGraceSeconds`.
+   - `auto.A21`, default **true** (D3).
+   - `mcpWatchdog.windowsMaxGapMinutes`, 1–1440, default 30, `SafeDirection.Lower`.
+   - `mcpWatchdog.interopTieSeconds`, 0–60, default 2, `SafeDirection.Higher` (a wider tie proves less).
+   - `commands.interopQueryTimeoutSeconds`, 1–120, default 20.
+   - `contracts/config-keys.json` regenerated; `NumberRules` as needed.
+8. **The record.** One action record per stop on the Windows side (`{windows state}/runs/…`, the engine's shape): pid, creation, server, owner, idle time, private bytes, and for interop the relay pid and its parent. Kept targets go in `notRemoved` with their reason.
+
+**Never:**
+- stop by image name;
+- stop a process whose creation time or CPU differs from the shown one;
+- stop an interop child without the relay proof;
+- start a stopped distro to ask;
+- run elevated;
+- touch another account's process;
+- act while `auto.A21` is off, `dryRun` is on, or the Windows first-week window runs (timer).
+
+**RED (written before the product code):**
+- `An_orphaned_idle_windows_server_is_a_target_by_pid_and_creation_time`
+- `An_agent_owned_server_needs_the_full_idle_minutes_and_missing_history_is_not_idle`
+- `An_interop_child_is_kept_without_a_relay_proof`
+- `An_interop_child_whose_paired_relay_lost_its_client_is_a_target`
+- `Unequal_counts_or_a_mixed_tie_keep_every_interop_child_of_that_program`
+- `A_stopped_distro_is_never_started_to_ask`
+- `The_stop_rechecks_creation_and_cpu_on_the_same_handle_and_a_reused_pid_is_never_terminated`
+- `A_button_run_ends_only_what_its_modal_showed`
+- `Auto_A21_is_on_and_the_windows_dry_run_window_stops_nothing`
+- `The_elevated_binary_refuses_A21`
+- `Interop_lists_relays_with_client_alive_from_the_parent` (distro, `/proc` fixtures)
+- the extension: `the stop button sends exactly the shown pairs`, `the watch timer runs the bundled exe only`
+- `check-vsix`: `the one binary is the attested wsl-care.exe`
+
+`TerminateProcess` itself is reached only through the seam; its real implementation is exercised on a child process the test starts (never a process the test did not start), as the S2a flow does on Linux.
+
+**Build order:**
+1. The distro's `interop` verb.
+2. The Windows CPU history with the shared-history extraction.
+3. The pairing (pure).
+4. `IWindowsProcessStop` + `Win32ProcessStop`.
+5. A21 + the Windows `watch`.
+6. E7.S3's bundling (release-extension.yml, `check-vsix`, `--target win32-x64`).
+7. The extension client, timer and button.
+8. Docs.
+
+Steps 1–5 land with the daemon; steps 6–7 with the next extension release. Until step 7 nothing runs A21 on its own, and the button does not exist.
+
+**Definition of Done:**
+- [ ] Each RED test above seen red for the right reason, then green; break-it on product code (the same-handle check off, the tie rule off, the client predicate inverted) turns its test red.
+- [ ] The own Opus review of the stop path finds no wrong-process route.
+- [ ] Windows suites green locally; CI's Linux legs green.
+- [ ] `module_mcp_servers.md`, `module_daemon.md`, `module_vs_code.md`, `architecture.md`, `module_tests.md` updated; `contracts/` regenerated.
+- [ ] A dry run on the owner's machine: the preview names the 10 client-gone interop children and keeps the 6, before any stop.
+
+**Owner questions (non-blocking; the assumptions above stand until answered):**
+- **Q-S7b-1:** how the exe reaches the machine — E7.S3's bundling in a `win32-x64` `.vsix` (assumed), or a typed install command like *Install daemon*?
+- **Q-S7b-2:** the runner — the extension while VS Code runs (assumed), or a per-user scheduled task now (E11)?
+- **Q-S7b-3:** may one client-gone relay be ended by hand (by pid and start) to measure whether its Windows child exits with it? If it does, the interop case could also be closed from the distro by A19's relay rule. This is never assumed: it is a real stop on the owner's machine.
 
 ### S8 — the 24 h × 20 sessions soak campaign
 
