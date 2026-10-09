@@ -4099,6 +4099,12 @@ reads times.
 **Break-it** on product code only: the idle arm dropped, the future arm dropped, the fresh read replaced by nothing, the default made
 open, the skew ignored.
 
+**The plan round** (coai session a024a786, `proceed`, 1 gating; one of two vendors answered). Both findings accepted: **0** — a flow
+through `ArchiveRun.Run` (selection, phase 1, phase 2) on the real file system with the Windows view over a process table showing a
+Claude Code: an idle session moves and is removed, a recent one stays, one touched after the selection is kept at phase 2 (the CLI
+flow uses the real process table on purpose and cannot be made to show a Claude Code); **1** — a unit with one old and one recent
+file is kept, naming `archive.windowsIdleDays`.
+
 **DoD.** The plan gate (this section), the code gate, an own Opus review (data safety: what may move while Claude runs), the teeth
 recorded in `module_tests.md`, `module_archive.md` and the README's archive text updated, all suites on Windows and WSL, a PR merged by
 squash.
