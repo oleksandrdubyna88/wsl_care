@@ -748,6 +748,8 @@ the new default; `ContractFilesTests` red until the contract is regenerated. **T
 - **Tests:** RED *Expected config.Bool(ConfigKeys.Auto.A11) to be True … but found False*; the stale contract red at its
   line 176; green after. `UserLayerTrustTests` gained a user layer's `auto.A11 false` being taken (a user can still switch
   A11 off once it is on). Teeth: the families default reverted → 2 red (*… contains 1 item(s) less*); restored, green.
+- **Code round** (same session): `proceed`, 4 of 8 reviewers (codex; gemini rate-limited), 1 Minor finding, accepted: the
+  expected family list is a collection expression (the C# doctrine's newest syntax).
 
 ### S4 — CPU fairness that works inside WSL
 

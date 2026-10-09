@@ -53,7 +53,7 @@ public sealed class ConfigSchemaTests
         config.Bool(ConfigKeys.Auto.A5Testcontainers).Should().BeTrue();
         config.Bool(ConfigKeys.Auto.A11).Should().BeTrue("E14 S3b: the owner switched A11 on by default (Q15, 2026-10-09)");
         config.TextList(ConfigKeys.Processes.Families).Should().Equal(
-            new[] { "dotnet-build-servers", "testhost", "language-servers" },
+            ["dotnet-build-servers", "testhost", "language-servers"],
             "E14 S3b: the C# language server joins A11's defaults (Q14); vscode-server never does, it matches the daemonised VS Code server");
         config.Text(ConfigKeys.Logging.MinimumLevel).Should().Be("Information");
         config.Int(ConfigKeys.Logging.RetentionDays).Should().Be(14);
