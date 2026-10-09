@@ -35,7 +35,10 @@ stornvme/disk error for disk 0 is logged around it.
 47 × `disk` event 11 "controller error on \Device\Harddisk1\DR1" in 45 days (26 on 10-07, 16 on 10-08). Harddisk1 is
 the USB keyboard's 30 MB storage function (ClawsKey ClawsKeyboard), not the NVMe.
 
-## Chain to the clock problem
+## Chain to the clock problem (a hypothesis: who wrote UTC into the RTC is not measured)
+
+The Linux on the disk is the strongest CANDIDATE, not a proven writer — [2026-10-08_who_stops_windows_time.md](2026-10-08_who_stops_windows_time.md)
+leaves the writer open. The chain as read:
 BSOD → firmware auto-boots the broken Linux on the disk → Linux writes UTC into the RTC → Windows (no
 RealTimeIsUniversal) reads it as local time → 2 h slow. RealTimeIsUniversal=1 set 2026-10-09 15:27Z (owner approved);
 W32Time set Automatic + running + resync the same minute (it had been found Stopped/Manual again at 15:26Z with a
