@@ -15,7 +15,7 @@
     "A8": false,
     "A9": true,
     "A10": true,
-    "A11": false,
+    "A11": true,
     "A12": false,
     "A13": true,
     "A14": true,
@@ -59,7 +59,8 @@
     "idleOlderThanHours": 8,
     "families": [
       "dotnet-build-servers",
-      "testhost"
+      "testhost",
+      "language-servers"
     ],
     "aiAgentsIdleHours": 4,
     "cpuWindowSeconds": 5,

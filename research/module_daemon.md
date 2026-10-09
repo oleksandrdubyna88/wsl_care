@@ -141,8 +141,10 @@ flowchart LR
 within `buildServers.idleMinutes` (default 60, higher is safer), or that the history does not hold yet (one sighting, another
 boot, a reused pid), or every server when the boot id cannot be read, holds the timer. On the 4-hour timer the window is a
 floor: a burst anywhere in the interval waits for the next pass. Per-process reaping of idle ORPHANED build servers is A11's
-(its default families include `dotnet-build-servers`; A11 is off by default — owner question Q15 of the E14 plan). The C#
-language server is its own family, `language-servers`, so A11 can name it without the daemonised VS Code server.
+(its default families include `dotnet-build-servers`; A11 is ON by default since E14 S3b, 2026-10-09 — the owner's answer to
+Q15 — and the timer stays under the global dry-run rules). The C#
+language server is its own family, `language-servers`, so A11 can name it without the daemonised VS Code server; it is one
+of A11's default families since E14 S3b (Q14), `vscode-server` never (Q16).
 
 ## The Windows Time guard (PLAN_windows_time_guard.md, 2026-10-08)
 

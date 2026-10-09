@@ -1083,7 +1083,7 @@ sequenceDiagram
 | A7 | timer: `docker builder prune -f --max-used-space <N>GB` or `--keep-storage <N>GB` — whichever `docker builder prune --help` lists (read-only probe; captured 2026-10-02: buildx lists `--max-used-space`, no `--keep-storage`); button: `-a -f` | Docker's "Total:" | timer with neither flag; `IdleRule.Always` |
 | A8 | `runuser -u <user> -- <npm> cache clean --force` | `~/.npm` walked before / after (complete walks only) | npm not in the user's bin folders = skip |
 | A9 | `apt-get clean`; `snap list --all` again, then `snap remove <snap> --revision=<n>` per revision still disabled | `/var/cache/apt` before / after + each `{name}_{rev}.snap` gone | a missing tool skips its part; an x-revision or an odd name is kept |
-| A11 | `IProcessSignals.TerminateAllAsync(pid + start …)`: SIGTERM to all, ONE shared 10 s grace, then SIGKILL to the survivors | none (memory, not disk; the preview counts no bytes either — the memory held is the `heldMemoryBytes` fact) | off by default; see below |
+| A11 | `IProcessSignals.TerminateAllAsync(pid + start …)`: SIGTERM to all, ONE shared 10 s grace, then SIGKILL to the survivors | none (memory, not disk; the preview counts no bytes either — the memory held is the `heldMemoryBytes` fact) | on by default since E14 S3b (2026-10-09; off before), the timer still under the global dry-run rules; see below |
 | A12 | `IFileSystem.DeleteDirectory` per unreferenced browser (root `~/.cache/ms-playwright`); `runuser … dotnet nuget locals http-cache --clear` | folders measured before, counted when gone; http-cache before / after | timer never (button only); the Playwright part refuses whole when what is referenced cannot be told |
 | A14 | `IFileSystem.DeleteDirectory` per old build / obsolete extension (root: the editor's folder) | folders measured before, counted when gone | an unreadable process table |
 | A17 | `runuser … pnpm store prune`, `uv cache prune`, `pip cache purge` (`pip3` only without `pip`) | each cache before / after | none installed = skip; `cargo sweep` and Gradle not run (below) |
@@ -1098,7 +1098,11 @@ Candidates (`SuspectTermination.Candidates`, pure): orphaned (parent pid 1 or a 
 `processes.families`, older than `processes.idleOlderThanHours`, no terminal, not a zombie, not root's, not this process.
 Since E14 S3 the C# language server is a family of its own, `language-servers` (matched before `vscode-server`): listing it
 lets A11 end a language server whose VS Code window closed (it is re-parented) without naming the VS Code server, which is
-daemonised and therefore "orphaned" by this rule — `vscode-server` must not be listed for A11. Each candidate's `/proc/[pid]/stat` and `status` are read, then again after a 5 s window: only a process whose CPU ticks
+daemonised and therefore "orphaned" by this rule — `vscode-server` must not be listed for A11. Since E14 S3b (2026-10-09, the
+owner's answers to Q14/Q15) `auto.A11` is ON by default and the default families are `dotnet-build-servers`, `testhost`,
+`language-servers`; `vscode-server` stays choosable, never a default (Q16). A11 has no dry window of its own: with `dryRun`
+at its default (`true`) the timer only records what A11 would end; with `dryRun` off and the first week passed it ends
+suspects from the first full timer run after the upgrade (the same answer Q11 gave A19). Each candidate's `/proc/[pid]/stat` and `status` are read, then again after a 5 s window: only a process whose CPU ticks
 did not move AT ALL, with the same start and still no terminal and not uid 0, is a suspect. Just before its signal the
 run reads it a THIRD time and keeps it if it used any CPU since, gained a terminal or is another process now. The signal
 goes through the new seam `Processes/ProcessSignals.cs`:

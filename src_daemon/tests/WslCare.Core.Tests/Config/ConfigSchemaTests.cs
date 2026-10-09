@@ -51,8 +51,10 @@ public sealed class ConfigSchemaTests
         config.Int(ConfigKeys.Containers.StoppedOlderThanDays).Should().Be(7);
         config.Bool(ConfigKeys.Auto.A5).Should().BeFalse("plan §5 A5: other containers off by default");
         config.Bool(ConfigKeys.Auto.A5Testcontainers).Should().BeTrue();
-        config.Bool(ConfigKeys.Auto.A11).Should().BeFalse("plan §5 A11: killing processes is opt-in");
-        config.TextList(ConfigKeys.Processes.Families).Should().Equal("dotnet-build-servers", "testhost");
+        config.Bool(ConfigKeys.Auto.A11).Should().BeTrue("E14 S3b: the owner switched A11 on by default (Q15, 2026-10-09)");
+        config.TextList(ConfigKeys.Processes.Families).Should().Equal(
+            new[] { "dotnet-build-servers", "testhost", "language-servers" },
+            "E14 S3b: the C# language server joins A11's defaults (Q14); vscode-server never does, it matches the daemonised VS Code server");
         config.Text(ConfigKeys.Logging.MinimumLevel).Should().Be("Information");
         config.Int(ConfigKeys.Logging.RetentionDays).Should().Be(14);
     }
