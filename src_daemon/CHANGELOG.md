@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.3.0...daemon-v0.4.0) (2026-10-10)
+
+
+### Features
+
+* **daemon:** A11 on by default, with language-servers in its default families ([#75](https://github.com/oleksandrdubyna88/wsl_care/issues/75)) ([f7dbb46](https://github.com/oleksandrdubyna88/wsl_care/commit/f7dbb460ce1a8ebc5f7c9b29cdfa4bd3adc152bb))
+* **daemon:** E10.S0 — A20's entries on stdin, the restore ceiling, none lost to the window ([#73](https://github.com/oleksandrdubyna88/wsl_care/issues/73)) ([7b1dad7](https://github.com/oleksandrdubyna88/wsl_care/commit/7b1dad73c9337b1bb7b9e5cf07c06d66ed297f10))
+* **daemon:** E9 — the AI-session archive (E9.S0–E9.S5) ([#69](https://github.com/oleksandrdubyna88/wsl_care/issues/69)) ([eb498eb](https://github.com/oleksandrdubyna88/wsl_care/commit/eb498eb6571986ad42ba84edc068fb92ffffd5f9))
+
+
+### Bug Fixes
+
+* **ci:** the Marketplace wait outlasts a 20-minute propagation and logs every attempt ([#70](https://github.com/oleksandrdubyna88/wsl_care/issues/70)) ([c002c00](https://github.com/oleksandrdubyna88/wsl_care/commit/c002c008c01b6fb5d787564c2b49f3977b707fea))
+
 ## [0.3.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.2.0...daemon-v0.3.0) (2026-10-09)
 
 
