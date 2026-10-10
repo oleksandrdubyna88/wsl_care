@@ -129,9 +129,23 @@ public static partial class BaseFolderRules
             ? new Placement.Refused(BaseFolderRule.Shape, $"it lies on a drvfs mount of {windows}: {alias}")
             : placement;
 
+    /// <summary>The E9 network-base fix's own review, 1: a mapped NETWORK drive is judged by the share it maps to — the share-alias rule
+    /// (the distribution's own files, this machine, an administrative share) through the mapping, and a network drive whose share
+    /// cannot be read is refused. Empty for a local drive and for a share of its own.</summary>
+    internal static string MappedShareProblem(string given, Func<string, Files.DriveMapping> mappingOf) =>
+        Files.NetworkPaths.DriveOf(given) is { Length: > 0 } drive && mappingOf(drive) is { Remote: true } mapping
+            ? MappingProblem(given, drive, mapping)
+            : string.Empty;
+
+    private static string MappingProblem(string given, string drive, Files.DriveMapping mapping) =>
+        mapping.Root.Length == 0 ? $"{given} is on the network drive {drive}, whose share cannot be read; name the share itself"
+        : WindowsShares.Alias(mapping.Root.TrimEnd('\\') + given[drive.Length..]) is { Length: > 0 } alias ? $"{given} is on {drive}, mapped to {mapping.Root}: {alias}"
+        : string.Empty;
+
     private static Placement PlaceOnWindows(IFileSystem files, string given) =>
         given.StartsWith('/') ? new Placement.Refused(BaseFolderRule.Shape, $"{given} is a Linux path; the Windows side names a drive folder (V:\\…) or a share (\\\\server\\share\\…)")
-        : WindowsShares.Alias(given) is { Length: > 0 } alias ? new Placement.Refused(BaseFolderRule.Shape, alias)
+        : (WindowsShares.Alias(given) is { Length: > 0 } alias ? alias : MappedShareProblem(given, Files.NetworkPaths.MappingOnThisMachine)) is { Length: > 0 } refused
+            ? new Placement.Refused(BaseFolderRule.Shape, refused)
         : PlacedOnWindows(files.ResolvePath(given) is RealPathResult.Resolved real ? real.Path.TrimEnd('\\') : given.TrimEnd('\\'), given.TrimEnd('\\'));
 
     private static Placement.Placed PlacedOnWindows(string real, string spelled) =>

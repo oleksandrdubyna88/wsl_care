@@ -2958,6 +2958,40 @@ names the idle rule's cross-module path and draws it; the stats are asked throug
 removed: red); the per-unit cost is bounded by the same fix. Rejected: binding the rule at one shared boundary — the run applies it
 after its test seam on purpose, and a path that forgets it fails closed.
 
+### A base on a network share (E9 live gate step 8, first run, 2026-10-10)
+
+| Guarantee | Tests |
+|---|---|
+| a mapped drive's folder answered under its UNC root is in place | `Files/NetworkBaseTests.A_mapped_drives_folder_answered_under_its_network_root_is_in_place` |
+| a link inside the share, another share, a local drive, and an empty answer are still NOT in place | `NetworkBaseTests.A_real_link_or_another_share_is_still_not_in_place` |
+| over SMB, error 1 from a folder flush counts as done; nothing else does (not error 1 locally, not another error remotely) | `NetworkBaseTests.Over_smb_a_folder_flush_the_redirector_does_not_offer_counts_as_done_and_nothing_else_does` (5 rows) |
+| a path is remote when it is UNC or on a network drive; an extended-length local path is not | `NetworkBaseTests.A_path_is_remote_when_it_is_a_share_or_on_a_network_drive` |
+| the lease refusal names why its folder could not be opened | `Archive/SideLeaseTests.The_lease_refusal_names_why_its_folder_could_not_be_opened` |
+| **the live gate:** a base on `V:\…` and on `\\server\share\…`, each judged, configured and used; the live Claude Code seen; a held session kept by the holder's pid, then copied once the holder is gone; the session inside the idle window kept by the idle rule; phase 2 after `archive.removeAfterHours` | `research/module_archive.md` *The live gate on the NAS* (the owner's machine; not repeatable in CI, which has no share) |
+
+**Red first:** against a skeleton that kept today's behaviour: `Expected NetworkPaths.InPlace(@"\\nas\work\archive\base", @"V:\archive\base", RootOf) to be True, but found False`;
+the error-1 remote row `Expected … to be True, but found False`; `IsRemote(@"\\nas\work\base")` false; the lease
+`"the lease folder .wsl-care/sides could not be opened in the base" does not match` the reason's pattern. The live symptom came
+first and is what the tests reproduce: *base-drive was reached through a link* and *its new entry could not be flushed (error 1)*.
+
+**Teeth** (`N-01`–`N-08`, product code only, each restored byte for byte, on Windows): N-01–N-05 red — the prefix swap removed, error 1
+tolerated on a local volume too, the lease's reason dropped, UNC not seen as remote, the swap keeping only the root; and after the own
+review N-06–N-08: the root's separator kept, a mapped drive with an unreadable share let through, the alias rule skipped through a
+mapping — all red.
+
+**The own review round** (an Opus reviewer in parallel: data safety, Windows file semantics, confused deputy):
+
+| # | Finding | Decision |
+|---|---|---|
+| 1 | **Medium** — before the fix every mapped drive refused at the act, so the share-alias rule only ever saw UNC spellings; a drive mapped to `\\wsl.localhost\…` (the distribution's own files) or to this machine would now pass | fixed: `BaseFolderRules.MappedShareProblem` judges a mapped network drive by the share it maps to (the alias rule through the mapping), and refuses a network drive whose share cannot be read. `NetworkBaseTests.A_mapped_drive_is_judged_by_the_share_it_maps_to` (red: the function did not exist — the rule had no way in); teeth N-07, N-08. The wiring into the placement is not testable without a second drive mapping on this machine (a machine change), so it is held by the break-it on the pure function and the live gate |
+| 2 | a remap of the drive between the judgement and the open would be accepted | written down (`module_archive.md`): drive letters are per logon session, only this account's own session can remap them, and every removal in the base is by identity or hash |
+| 3 | server-side links (Samba `follow symlinks`, DFS) never show in a final path; Offline Files could answer a re-hash from the local cache | written down as residuals of ANY network base, the UNC spelling too: the in-place check covers what the client follows. The Offline Files case is a question for the owner (refuse a base whose handle carries `FILE_ATTRIBUTE_OFFLINE`?) |
+| 4 | a root with a trailing separator failed the match (safely) | fixed: the root's separator dropped; `A_trailing_separator_a_subfolder_mapping_and_a_lower_case_drive_still_match`; teeth N-06 |
+| 5 | two 64 KB allocations per call | fixed: the string is cut at its terminator |
+| 6 | the subfolder mapping, lower case, `\\?\UNC\` untested | tests added (above) |
+| 7 | `DriveOf` complexity 5 | fixed: a list pattern |
+| 8 | the docs and the status line | fixed with this round |
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

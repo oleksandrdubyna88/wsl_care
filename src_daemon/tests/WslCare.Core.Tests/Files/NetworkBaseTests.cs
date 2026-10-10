@@ -1,5 +1,6 @@
 using FluentAssertions;
 
+using WslCare.Core.Archive;
 using WslCare.Core.Files;
 
 namespace WslCare.Core.Tests.Files;
@@ -50,5 +51,46 @@ public sealed class NetworkBaseTests
         NetworkPaths.IsRemote(@"V:\base", RootOf).Should().BeTrue();
         NetworkPaths.IsRemote(@"C:\base", RootOf).Should().BeFalse();
         NetworkPaths.IsRemote(@"\\?\C:\base", RootOf).Should().BeFalse("an extended-length local path is not a share");
+    }
+
+    // ---- the own review round ----
+
+    private static DriveMapping MappingOf(string drive) => drive.ToUpperInvariant() switch
+    {
+        "V:" => new DriveMapping(true, Share),
+        "W:" => new DriveMapping(true, @"\\wsl.localhost\Ubuntu\home\me"),
+        "L:" => new DriveMapping(true, @"\\localhost\work"),
+        "A:" => new DriveMapping(true, @"\\nas\D$"),
+        "D:" => new DriveMapping(true, string.Empty),
+        _ => DriveMapping.Local,
+    };
+
+    /// <summary>Own review 1 (Medium): before the fix every mapped drive refused at the act, so the share-alias rule only ever had to see a
+    /// UNC spelling. A drive mapped to the distribution's own files or to an administrative share is now refused by that rule, through
+    /// its mapping; a remote drive whose share cannot be read is refused too.</summary>
+    [Fact]
+    public void A_mapped_drive_is_judged_by_the_share_it_maps_to()
+    {
+        BaseFolderRules.MappedShareProblem(@"W:\archive", MappingOf).Should().Contain("distribution's own files");
+        BaseFolderRules.MappedShareProblem(@"L:\archive", MappingOf).Should().Contain("names this machine");
+        BaseFolderRules.MappedShareProblem(@"A:\archive", MappingOf).Should().Contain("administrative share");
+        BaseFolderRules.MappedShareProblem(@"D:\archive", MappingOf).Should().Contain("cannot be read");
+        BaseFolderRules.MappedShareProblem(@"V:\archive", MappingOf).Should().BeEmpty("the NAS's own share is a share of its own");
+        BaseFolderRules.MappedShareProblem(@"C:\archive", MappingOf).Should().BeEmpty("a local drive");
+    }
+
+    /// <summary>Own review 4 and 6: a root with a trailing separator, a mapping to a subfolder, a lower-case drive letter.</summary>
+    [Fact]
+    public void A_trailing_separator_a_subfolder_mapping_and_a_lower_case_drive_still_match()
+    {
+        NetworkPaths.InPlace(@"\\nas\work\archive\base", @"V:\archive\base", static _ => @"\\nas\work\").Should().BeTrue();
+        NetworkPaths.InPlace(@"\\nas\work\sub\archive", @"V:\archive", static _ => @"\\nas\work\sub").Should().BeTrue();
+        NetworkPaths.InPlace(@"\\nas\work\archive", @"v:\archive", RootOf).Should().BeTrue();
+    }
+
+    [Fact]
+    public void An_extended_length_unc_spelling_is_not_remote_and_so_refuses()
+    {
+        NetworkPaths.IsRemote(@"\\?\UNC\nas\work\base", RootOf).Should().BeFalse("such a spelling is refused, never swapped");
     }
 }

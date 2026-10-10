@@ -4132,7 +4132,7 @@ squash.
 
 #### E9 live gate step 8, first run (2026-10-10): a base on the NAS refused — the fix
 
-> Status: **plan only, 2026-10-10 — nothing built.** Scope: `Files/PhysicalFileSystem.Archive.Windows.cs`, `Files/BeneathWrites.cs`,
+> Status: **built, 2026-10-10 (its PR open).** Scope: `Files/PhysicalFileSystem.Archive.Windows.cs`, `Files/BeneathWrites.cs`,
 > `Files/PhysicalFileSystem.Archive.cs` (the folder flush), `Archive/SideLease.cs` (the refusal's reason), tests, `research/module_archive.md`,
 > `research/module_tests.md`. Branch `fix/wc-e9-network-base`, its own PR. It OVERRIDES the E9.S2a/E9.S5 text above where they differ.
 

@@ -34,17 +34,26 @@ internal static partial class NetworkPaths
     /// <summary>The network root this process's session maps <paramref name="drive"/> (<c>V:</c>) to; empty for a local drive or when
     /// the system cannot say.</summary>
     [SupportedOSPlatform("windows")]
-    internal static string NetworkRootOf(string drive) =>
-        Native.GetDriveType(drive + "\\") == Native.DriveRemote ? Connection(drive) : string.Empty;
+    internal static string NetworkRootOf(string drive) => MappingOf(drive).Root;
+
+    /// <summary>What <paramref name="drive"/> is in this process's logon session: a network drive and the share it maps to (empty when
+    /// the system cannot say, a disconnected drive), or a local one.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static DriveMapping MappingOf(string drive) =>
+        Native.GetDriveType(drive + "\\") == Native.DriveRemote ? new DriveMapping(true, Connection(drive)) : DriveMapping.Local;
+
+    /// <summary>The mapping on this machine — every drive local off Windows.</summary>
+    internal static DriveMapping MappingOnThisMachine(string drive) => OperatingSystem.IsWindows() ? MappingOf(drive) : DriveMapping.Local;
 
     private static bool Same(string a, string b) => b.Length > 0 && string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>The judged path under its drive's network root (a root's own trailing separator dropped, the own review, 4); empty when
+    /// the drive is none.</summary>
     private static string UnderNetworkRoot(string judged, Func<string, string> networkRootOf) =>
-        DriveOf(judged) is { Length: > 0 } drive && networkRootOf(drive) is { Length: > 0 } root ? root + judged[drive.Length..] : string.Empty;
+        DriveOf(judged) is { Length: > 0 } drive && networkRootOf(drive) is { Length: > 0 } root ? root.TrimEnd('\\') + judged[drive.Length..] : string.Empty;
 
     /// <summary>The drive of a <c>X:\…</c> path (<c>X:</c>); empty for anything else.</summary>
-    private static string DriveOf(string path) =>
-        path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] == '\\' ? path[..2] : string.Empty;
+    internal static string DriveOf(string path) => path is [var letter, ':', '\\', ..] && char.IsAsciiLetter(letter) ? path[..2] : string.Empty;
 
     private static bool IsUnc(string path) => path.StartsWith(@"\\", StringComparison.Ordinal) && !path.StartsWith(@"\\?\", StringComparison.Ordinal) && !path.StartsWith(@"\\.\", StringComparison.Ordinal);
 
@@ -53,7 +62,7 @@ internal static partial class NetworkPaths
     {
         var buffer = new char[Native.LongestRemoteName];
         var length = buffer.Length;
-        return Native.WNetGetConnection(drive, buffer, ref length) == 0 ? new string(buffer).TrimEnd('\0') : string.Empty;
+        return Native.WNetGetConnection(drive, buffer, ref length) == 0 ? new string(buffer, 0, Math.Max(0, Array.IndexOf(buffer, '\0'))) : string.Empty;
     }
 
     [SupportedOSPlatform("windows")]
@@ -70,4 +79,11 @@ internal static partial class NetworkPaths
         [LibraryImport("mpr.dll", EntryPoint = "WNetGetConnectionW", StringMarshalling = StringMarshalling.Utf16)]
         public static partial int WNetGetConnection(string localName, [Out] char[] remoteName, ref int length);
     }
+}
+
+/// <summary>A drive as this logon session maps it: <paramref name="Remote"/> a network drive, <paramref name="Root"/> its share (empty
+/// when the system cannot say). Drive letters are per logon session, so a mapping is asked, never remembered.</summary>
+internal sealed record DriveMapping(bool Remote, string Root)
+{
+    public static DriveMapping Local { get; } = new(false, string.Empty);
 }
