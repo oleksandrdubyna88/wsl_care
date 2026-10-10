@@ -4065,7 +4065,7 @@ Its results — both spellings judged and used, the holder kept, the idle rule, 
   - the query fails on a remote path (unknown).
 
   The base's own hold at the run start asks the same question and refuses the run with the reason when the flag is set. A local
-  path is never asked.
+  path is never asked. On a REMOTE base, a query that FAILS refuses the run as well, naming why (the plan round, finding 1).
 
 **RED first.**
 - G1: a session whose GUID is on a live Claude command line is kept even when idle; another session is not; the distro's
@@ -4077,6 +4077,12 @@ Its results — both spellings judged and used, the holder kept, the idle rule, 
 
 **Break-it** on product code only: the GUID match removed, the distro leg removed, the offline flag ignored, the unknown answer
 trusted.
+
+**The plan round** (coai session dcff3401, `proceed`, 2 gating; one vendor answered). Finding 1 was accepted: an unknown answer on a
+remote base refuses the run. Finding 0 ("verify with Offline Files on") was rejected and moved to the owner's list:
+- turning Offline Files on is a machine change only the owner may make;
+- "keep the source whenever the signal cannot be verified" would keep every source on every network base;
+- the guard uses the documented handle signal and fails closed on every unknown answer, and its negative case is measured.
 
 #### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
 
