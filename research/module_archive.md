@@ -288,6 +288,68 @@ flowchart TD
   cannot read; A20 lists with `archive list --restorable` — the verified entries removed at their source, newest first, at most
   `archive.maxRestoreEntries`, the rest counted in `omitted` — so its answer stays inside the cap however large the archive grows.
 
+## A base on a network share (the E9 live gate step 8, 2026-10-10)
+
+The owner's only share is a NAS mounted as `V:` = `\\192.168.1.113\Shared_Drive_Work`. Step 8 found two defects there and the fix
+removes both (plan §15r *E9 live gate step 8, first run*). Before it, `archive run` refused both spellings of the base before it
+touched anything.
+
+```mermaid
+flowchart TD
+    given["the base: V:\… or \\server\share\…"] --> place{"BaseFolderRules (placement)"}
+    place -- "UNC" --> alias["WindowsShares.Alias:<br/>the distribution's files, this machine,<br/>an administrative share → refused"]
+    place -- "a network drive" --> mapping["NetworkPaths.MappingOf (GetDriveTypeW, WNetGetConnectionW):<br/>no share readable → refused;<br/>the share it maps to → the same alias rule"]
+    alias --> held["the base held by handle"]
+    mapping --> held
+    held --> inplace{"NetworkPaths.InPlace:<br/>final path = judged path,<br/>or = judged path under the drive's share"}
+    inplace -- "no" --> link["refused: reached through a link"]
+    inplace -- "yes" --> level["each level created and held"]
+    level --> flush{"folder flush"}
+    flush -- "error 1 on a network path" --> done["counts as done (SMB has no folder flush)"]
+    flush -- "any other error, or error 1 locally" --> refused["refused, naming the error"]
+```
+
+- **The mapped drive is its share.** `GetFinalPathNameByHandle` answers a mapped drive's files under their UNC root (`\\?\UNC\…`,
+  its device prefix taken off). `NetworkPaths.InPlace` accepts exactly one swap of the drive letter for the drive's share, and
+  nothing else: a link inside the share, another share, a local drive and an empty answer still refuse.
+- **SMB has no folder flush.** `FlushFileBuffers` on a folder handle answers `ERROR_INVALID_FUNCTION` over SMB. On a network path
+  that one error counts as flushed. **Why that is safe:** no source is removed until phase 2, a later run in a new process,
+  re-hashes every archived copy in the base against its index line. A copy the server lost marks the entry damaged and the source
+  stays.
+- **A mapped drive is judged by the share it maps to:**
+  - a drive mapped to the distribution's own files (`\\wsl.localhost\…`), to this machine or to an administrative share is refused
+    as its UNC spelling is;
+  - a network drive whose share cannot be read is refused.
+- **A refusal says why.** The lease's refusal carries the folder's own reason. That reason is how the run found the two defects.
+- **Residuals of any network base, said plainly:**
+  - The in-place check sees only the links the CLIENT follows. A link the server resolves (Samba's `follow symlinks`, a DFS
+    referral) never shows in a final path.
+  - With Offline Files on, a re-hash could be answered from the local cache.
+  - A drive letter remapped between the judgement and the open is not seen. Drive letters belong to one logon session, so only
+    this account can remap one, and every removal in the base is by identity or hash.
+
+### The live gate on the NAS (2026-10-10)
+
+- **The binary.** This fix merged locally with the Windows idle rule (PR #78), built in Debug. The merge was a local
+  worktree, never pushed.
+- **The setup.** Throwaway sessions only, in sandboxes (`WSL_CARE_ROOT`) whose profile is never the real one. They live in ONE new
+  subfolder, `V:\connectOtherAis\wsl-care-archive-livegate-20261010T0831Z`. The run uses the real process table and the real
+  Restart Manager, and a live `claude.exe` was running. Each leg has three sessions:
+  - `old1`: 40 days old;
+  - `held1`: 40 days old, held open by a PowerShell process with no sharing;
+  - `recent1`: 20 days old, with `archive.windowsIdleDays` 30.
+- **The legs:**
+  - `drive`: a local profile, the base on `V:\…`;
+  - `uncbase`: a local profile, the base on the UNC spelling;
+  - `unc`: the profile itself on the share.
+- **Results:**
+  - **Both bases were accepted** by `archive check-base`: *network NTFS* and *network*.
+  - **On the drive and uncbase legs,** the run copied `old1`. It kept `held1` as "held open by a process (pid N)", naming the holder's
+    real pid, and kept `recent1` by the idle rule. Once the holder was stopped, the next run copied `held1`.
+  - **On the unc leg,** the Restart Manager was asked about the session on the share in its `\\?\UNC\` form and named the holder. The
+    copy itself is refused, because a file on the share is owned by the NAS's account, not this one. That is the source rules
+    working, not a defect.
+
 ## External dependencies
 
 - **Linux:** `libc` — `openat`, `mkdirat`, `renameat2`, `unlinkat`, `statx`, `fcntl` (`F_SETLEASE`, `F_SETSIG`, `F_GETLEASE`),

@@ -24,6 +24,17 @@ public sealed class NetworkBaseTests
         NetworkPaths.InPlace(@"V:\archive\base", @"V:\archive\base", RootOf).Should().BeTrue("the plain answer still holds");
     }
 
+    /// <summary>The code round's findings 1–2: the system's own answer is the EXTENDED spelling (<c>\\?\UNC\server\share\…</c>) — the
+    /// final path reaches the comparison only after its device prefix is taken off, so it is the plain UNC the mapping spells.</summary>
+    [Fact]
+    public void The_systems_extended_unc_answer_is_compared_as_plain_unc()
+    {
+        var answered = BeneathWrites.WithoutDevicePrefix(@"\\?\UNC\nas\work\archive\base");
+
+        answered.Should().Be(@"\\nas\work\archive\base");
+        NetworkPaths.InPlace(answered, @"V:\archive\base", RootOf).Should().BeTrue();
+    }
+
     [Fact]
     public void A_real_link_or_another_share_is_still_not_in_place()
     {

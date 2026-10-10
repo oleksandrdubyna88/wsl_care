@@ -57,12 +57,22 @@ internal static partial class NetworkPaths
 
     private static bool IsUnc(string path) => path.StartsWith(@"\\", StringComparison.Ordinal) && !path.StartsWith(@"\\?\", StringComparison.Ordinal) && !path.StartsWith(@"\\.\", StringComparison.Ordinal);
 
+    /// <summary>The share <paramref name="drive"/> maps to: asked with a room that fits every ordinary share name, and once more with the
+    /// room the system names when it does not fit (the code round: a 64 KiB buffer per question added up over thousands of files).</summary>
     [SupportedOSPlatform("windows")]
     private static string Connection(string drive)
     {
-        var buffer = new char[Native.LongestRemoteName];
-        var length = buffer.Length;
-        return Native.WNetGetConnection(drive, buffer, ref length) == 0 ? new string(buffer, 0, Math.Max(0, Array.IndexOf(buffer, '\0'))) : string.Empty;
+        var length = Native.FirstRemoteNameRoom;
+        var first = Asked(drive, ref length);
+        return first.Error == Native.MoreData && length <= Native.LongestRemoteName ? Asked(drive, ref length).Name : first.Name;
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static (int Error, string Name) Asked(string drive, ref int length)
+    {
+        var buffer = new char[length];
+        var error = Native.WNetGetConnection(drive, buffer, ref length);
+        return (error, error == 0 ? new string(buffer, 0, Math.Max(0, Array.IndexOf(buffer, '\0'))) : string.Empty);
     }
 
     [SupportedOSPlatform("windows")]
@@ -72,6 +82,12 @@ internal static partial class NetworkPaths
 
         /// <summary>The longest remote name <c>WNetGetConnectionW</c> is given room for (a UNC path's documented ceiling).</summary>
         public const int LongestRemoteName = 32768;
+
+        /// <summary>The first room asked with: a server and a share name fit it many times over.</summary>
+        public const int FirstRemoteNameRoom = 512;
+
+        /// <summary><c>ERROR_MORE_DATA</c>: the room was too small, and the length now says how much is needed.</summary>
+        public const int MoreData = 234;
 
         [LibraryImport("kernel32.dll", EntryPoint = "GetDriveTypeW", StringMarshalling = StringMarshalling.Utf16)]
         public static partial uint GetDriveType(string root);

@@ -2992,6 +2992,12 @@ mapping — all red.
 | 7 | `DriveOf` complexity 5 | fixed: a list pattern |
 | 8 | the docs and the status line | fixed with this round |
 
+**The coai code round** (session f18f23ef, `proceed`, 4 gating of threshold 5; one vendor answered, the other unauthenticated).
+Accepted: `module_archive.md` describes the network base and draws it; `WNetGetConnectionW` is asked with a 512-character room
+first, once more on `ERROR_MORE_DATA`. Rejected with the code and a measurement: "the extended `\\?\UNC\` answer never matches" —
+the final path is stripped of its device prefix before the comparison (`NetworkBaseTests.The_systems_extended_unc_answer_is_compared_as_plain_unc`),
+and the live gate copied to `V:\…` with this code.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
