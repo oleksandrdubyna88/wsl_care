@@ -363,4 +363,16 @@ public sealed class WatchRunTests : IDisposable
         result.Outcome.Should().Be(WatchOutcome.Sampled);
         result.Reason.Should().Contain("auto.A19 is off").And.Contain("auto.A21 is off").And.Contain("so no watched action may act");
     }
+
+    /// <summary>The CI's Linux watch flow (2026-10-10): with nothing to stop the reason names EACH watched action, as A19's alone did.</summary>
+    [Fact]
+    public async Task With_no_target_the_reason_names_each_watched_action()
+    {
+        Configure("""{ "dryRun": false }""");
+
+        var result = await Watch(advance: false);
+
+        result.Outcome.Should().Be(WatchOutcome.Sampled);
+        result.Reason.Should().Be("A19 has no target; A21 has no target");
+    }
 }

@@ -161,7 +161,7 @@ public static class WatchRun
     }
 
     private static string NothingNew(IReadOnlyList<ActionId> acting, IReadOnlyList<string> targets) =>
-        targets.Count == 0 ? $"{Names(acting)} has no target" : $"{Names(acting)}'s {targets.Count} target(s) were already tried by the watch; the full run's pass may try again";
+        targets.Count == 0 ? string.Join("; ", acting.Select(id => $"{id.Text} has no target")) : $"{Names(acting)}'s {targets.Count} target(s) were already tried by the watch; the full run's pass may try again";
 
     private static string Names(IReadOnlyList<ActionId> ids) => string.Join(" and ", ids.Select(id => id.Text));
 
@@ -223,7 +223,7 @@ public static class WatchRun
     {
         { Timer: false } => NoTimer,
         { Loaded.IsObserveOnly: true } => ActionEngine.ObserveOnlyReason,
-        { Loaded.UserLayerUnread: true } => $"{c.Loaded.UserLayerSkipped}; the watch lets A19 act only while every switch can be seen",
+        { Loaded.UserLayerUnread: true } => $"{c.Loaded.UserLayerSkipped}; the watch lets A19 and A21 act only while every switch can be seen",
         _ when Enabled(c).Count == 0 => $"{Off(c)}so no watched action may act",
         _ => DryReason(c),
     };
@@ -231,7 +231,7 @@ public static class WatchRun
     /// <summary>The timer's dry-run decision, the same two locks as the full run's; empty when it says real.</summary>
     private static string DryReason(WatchContext c) =>
         DryRunWindow.Decide(RunTrigger.Timer, c.Loaded.Config, c.Paths, c.Files, c.Clock.GetUtcNow()) is { DryRun: true } dry
-            ? $"a dry run ({dry.Reason}): the watch only samples, and the full run's pass records what A19 would do"
+            ? $"a dry run ({dry.Reason}): the watch only samples, and the full run's pass records what A19 and A21 would do"
             : string.Empty;
 
     /// <summary>The live targets of <paramref name="acting"/>, as <c>pid:start</c> (each action's keys are its own processes).</summary>

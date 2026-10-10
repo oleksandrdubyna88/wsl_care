@@ -111,7 +111,10 @@ public sealed class InteropRelayStop : ICleanupAction, IBoundToShownList
         return new(ActionPreview.Of(what, items.Count, null, basis, facts, string.Empty, items), judged);
     }
 
-    private static string ScanNote(HolderScan scan) => scan is HolderScan.Inconclusive inconclusive ? $" - INCONCLUSIVE: {inconclusive.Reason}" : string.Empty;
+    /// <summary>What the holder scan cost — every preview measures it (the default budget is not measured yet) — and, when it did not
+    /// finish, why every relay is kept.</summary>
+    private static string ScanNote(HolderScan scan) =>
+        $": {scan.Cost}{(scan is HolderScan.Inconclusive inconclusive ? $" - INCONCLUSIVE: {inconclusive.Reason}" : string.Empty)}";
 
     /// <summary>Every pipe on fd 0-2 of <paramref name="relays"/>: what the holder scan looks for.</summary>
     private static HashSet<string> Pipes(IEnumerable<RelayFacts> relays) =>

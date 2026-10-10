@@ -70,7 +70,7 @@
     "killWaitSeconds": 5,
     "shownCommandChars": 200,
     "signalSliceMilliseconds": 200,
-    "fdScanMilliseconds": 2000
+    "fdScanMilliseconds": 10000
   },
   "thresholds": {
     "memAvailableWarnPercent": 25,

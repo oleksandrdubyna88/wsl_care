@@ -123,7 +123,7 @@ public static class AgentCpuHistory
     private static TimeSpan Shorter(TimeSpan wall, TimeSpan monotonic) => wall < monotonic ? wall : monotonic;
 
     /// <summary>Empty when written; otherwise why not.</summary>
-    public static string Write(IHostPaths paths, IFileSystem files, AgentCpuFile history)
+    internal static string Write(IHostPaths paths, IFileSystem files, AgentCpuFile history)
     {
         try
         {

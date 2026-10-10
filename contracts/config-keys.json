@@ -2580,7 +2580,7 @@
       "shape": "int",
       "min": 100,
       "max": 30000,
-      "default": 2000,
+      "default": 10000,
       "safeDirection": "lower",
       "rootEffective": true,
       "tightenOnlyForRoot": false,

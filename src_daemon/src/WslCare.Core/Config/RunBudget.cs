@@ -45,8 +45,8 @@ public static class RunBudget
 
     /// <summary>A watch run's WORST CASE (plan E14 S2b) — what <c>mcpWatchdog.runLimitMinutes</c> (wsl-care-watch.service's
     /// <c>TimeoutStartSec</c>) must stay above: the CPU window, the log listing of every server the watched list can hold (the catalogue's
-    /// and the user's <c>mcpServers.programs</c> at their cap), A19's one shared signal grace, A21's own SIGTERM grace and its two fd-table
-    /// scans (the preview and the re-check, plan E14 S7b.2), and a command's margin.</summary>
+    /// and the user's <c>mcpServers.programs</c> at their cap), A19's one shared signal grace, A21's own SIGTERM grace and its three fd-table
+    /// scans (the watch's preview, the act's preview and the re-check, plan E14 S7b.2; the own code review, finding 3), and a command's margin.</summary>
     public static TimeSpan WatchRunWorstCase(EffectiveConfig config)
     {
         using (Tuning.Use(config))
@@ -55,7 +55,7 @@ public static class RunBudget
             return Tuning.Current.Milliseconds(ConfigKeys.McpServers.CpuWindowMilliseconds)
                 + (Tuning.Current.Milliseconds(ConfigKeys.McpServers.LogListMilliseconds) * servers)
                 + (Tuning.Current.Seconds(ConfigKeys.Processes.TermGraceSeconds) * 2)
-                + (Tuning.Current.Milliseconds(ConfigKeys.Processes.FdScanMilliseconds) * 2)
+                + (Tuning.Current.Milliseconds(ConfigKeys.Processes.FdScanMilliseconds) * 3)
                 + TimeSpan.FromSeconds(NumberRules.CeilingMarginSeconds);
         }
     }

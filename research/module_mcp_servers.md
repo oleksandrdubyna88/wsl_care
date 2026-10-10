@@ -184,9 +184,12 @@ flowchart LR
       the relay with its reason. Node gives a child socketpairs, and a socket's peer cannot be told from `/proc`.
     - `StdioHolders` reads every process's fd table. Any other holder of one of the relay's pipes (fd 0–2) keeps it, including
       a root process and `Relay(n)` itself.
-    - A process that vanished mid-scan holds nothing. A table or link that exists and cannot be read makes the whole scan
+    - A process that vanished mid-scan holds nothing: a listed pid whose directory is gone, or a process with no `fd` directory,
+    lists as empty and complete (the `ListEntries` contract). A table or link that exists and cannot be read makes the whole scan
       inconclusive, and every relay is kept that run. So does a `/proc` list that cannot be read or is cut (it is read under the
-      scan's own bounds), and so does passing `processes.fdScanMilliseconds`.
+      scan's own bounds), and so does passing `processes.fdScanMilliseconds` (default 10000, provisional).
+  - Every preview's basis says what the scan cost ("N process(es), M fd link(s) in X ms"). The dry-run preview on the owner's
+    machine is the measurement the default waits for.
 - **Idle** is a freshness floor, not evidence: the CPU must be unmoved for `mcpWatchdog.orphanIdleMinutes`, by
   `AgentCpuHistory`.
   - The history records relays at both writers (`ActionEngine.RecordAgentCpu` and `WatchRun`), through
@@ -197,7 +200,8 @@ flowchart LR
   refusing sender, test fakes), so no sender falls back to the escalating call.
   - `PidfdProcessSignals` pins each process, compares its start ticks, sends SIGTERM and waits ONE shared
     `processes.termGraceSeconds`.
-  - A survivor is `StillRunning`. Its item says the Windows process `<program>.exe` is still running (S7b.3, A22).
+  - A survivor is `StillRunning`. Its item says the Windows process `<program>.exe` is still running (S7b.3, A22). As for A19, it
+    counts as a failure of the action: the leak it was for is still open.
   - Before the signal, `RunAsync` judges every relay again on a fresh table. A relay whose pipe gained a holder, that used
     CPU, or whose pid is another process now is `not signalled: the re-check …`.
 - **The controls:**
@@ -208,12 +212,13 @@ flowchart LR
 - **The item** names the program's base name only. The Windows path carries the Windows user name.
 - **`status --json` → `interopRelays`** (capability `status.interopRelays`): what an unprivileged status can read.
   - It gives `count`, and `reparented` (to a reaper and not born there).
-  - It gives the effective `autoStop` (`auto.A21`) and the `command` that flips it. The extension shows that command; it
+  - It gives the effective `autoStop` (`auto.A21`) and the `command` that flips it. The text status prints them as one
+    `windows mcp relays:` line. The extension shows that command; it
     never writes daemon config.
   - Whether a relay's client is gone needs root's scan, so that is the button's preview. `act.processList` advertises the
     `--process` road for the extension's process buttons.
-- **The budget:** `RunBudget.WatchRunWorstCase` counts two signal graces (A19's and A21's) and two fd scans (the preview and the
-  re-check). The coupled `mcpWatchdog.runLimitMinutes` rule follows.
+- **The budget:** `RunBudget.WatchRunWorstCase` counts two signal graces (A19's and A21's) and THREE fd scans: the watch's preview,
+  the act's preview, and the re-check. The coupled `mcpWatchdog.runLimitMinutes` rule follows.
 - **Not measured:** what a real relay's stdio is, and whether `Relay(n)` holds it. At 2026-10-10 14:25Z no relay ran.
   - If relays sit on sockets, A21 keeps them all, and the dry-run preview says so. The follow-up would be the socket's peer
     through `sock_diag`.
@@ -359,3 +364,6 @@ flowchart LR
   missed (never mistaken), as are a global install (`~/.nvm/…/bin/playwright-mcp`), a relative script path and `node …/@playwright/mcp/cli.js` run by another name. A leaked tree — the agent gone, `npm exec` and the shell re-parented to init, `node` still alive — has a live non-agent parent, so it counts as not under an agent and is never an orphan target (the owner walk stops at the first live parent; whether `playwright-mcp` outlives its closed stdin is not measured).
   A Windows server reached through interop (`/init …/creds-mcp.exe`) has argv[0] `init` and is no A19 instance; A21 (above)
   judges it as an interop relay.
+- **Pre-existing, outside A21** (the S7b.2 own code review): an interop relay of a Windows AI CLI (`/init …/claude.exe`) matches
+  the `ai-agents` family, so the button-only A18 can SIGTERM and then SIGKILL such a relay. It is no catalogued MCP relay, and A21
+  never reaches it.

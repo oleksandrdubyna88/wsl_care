@@ -2351,6 +2351,7 @@
     "A11",
     "A18",
     "A19",
+    "A21",
     "A13",
     "A20",
     "A1",
@@ -2374,7 +2375,9 @@
     "archive.run",
     "archive.restore",
     "archive.list",
-    "act.entryStdin"
+    "act.entryStdin",
+    "act.processList",
+    "status.interopRelays"
   ],
   "running": {
     "state": "none"
@@ -2500,5 +2503,12 @@
       "recorded": false,
       "reason": "the boot id cannot be read, so no reading can name its process across samples"
     }
+  },
+  "interopRelays": {
+    "available": true,
+    "count": 0,
+    "reparented": 0,
+    "autoStop": true,
+    "command": "wsl-care config set auto.A21 false"
   }
 }

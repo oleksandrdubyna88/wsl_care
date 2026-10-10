@@ -448,6 +448,7 @@
     "A11",
     "A18",
     "A19",
+    "A21",
     "A13",
     "A20",
     "A1",
@@ -471,7 +472,9 @@
     "archive.run",
     "archive.restore",
     "archive.list",
-    "act.entryStdin"
+    "act.entryStdin",
+    "act.processList",
+    "status.interopRelays"
   ],
   "running": {
     "state": "unreadable",
@@ -494,5 +497,11 @@
   "mcpServers": {
     "available": false,
     "reason": "the process table could not be read: /golden-root/proc does not exist: no procfs to read processes from"
+  },
+  "interopRelays": {
+    "available": false,
+    "reason": "/golden-root/proc does not exist: no procfs to read processes from",
+    "autoStop": true,
+    "command": "wsl-care config set auto.A21 false"
   }
 }

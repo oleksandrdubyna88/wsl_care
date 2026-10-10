@@ -1496,7 +1496,7 @@ script `research/diagnostics/relay-facts.sh` prints the facts whenever relays ex
 **Keys:**
 - reused: `mcpWatchdog.orphanIdleMinutes`, `processes.termGraceSeconds`, `mcpWatchdog.periodMinutes`,
   `mcpServers.maxInstances`, `agentCpu.maxEntries`;
-- new: `auto.A21` (default true), and `processes.fdScanMilliseconds` (the budget's allowance for one scan, default 2000).
+- new: `auto.A21` (default true), and `processes.fdScanMilliseconds` (the budget's allowance for one scan, default 2000 as planned; 10000 as built, provisional).
 
 **Never:**
 - stop by name;
@@ -1589,7 +1589,7 @@ Built as designed above, RED first. Every break-it on product code went red and 
   `EndAllAsync`.
 - **`AgentCpuHistory.Record(…, EffectiveConfig)`** is the one writer overload, used by both product writers (the timer's full
   run and the watch). A writer that left relays out would drop their entries.
-- **The fd scan is bounded** by the new key `processes.fdScanMilliseconds` (100–30000, default 2000, machine-only, lower is
+- **The fd scan is bounded** by the new key `processes.fdScanMilliseconds` (100–30000, default 10000 since the own code review (provisional), machine-only, lower is
   safer). Past it the scan is inconclusive and every relay is kept. The watch's worst case counts it twice.
 - **Two capabilities, appended:** `act.processList` and `status.interopRelays`. `ActEntryStdinTests`' "last capability" check
   became an order check.
@@ -1604,6 +1604,29 @@ Built as designed above, RED first. Every break-it on product code went red and 
     It was RED first: *Expected preview.Count to be 0 … but found 1*.
 - **Rejected:** "A21 needs its panel button in this change" (two findings). This change contributes no extension action;
   `ACTION_IDS` follows the contract, as A18's and A19's do without a button. The button is S7b.2b, next.
+
+**The own code review** (Fable, after a 429 and an Opus fallback that hit the spend limit; verdict "fix first", nothing blocking
+on safety: no path signals a live-client relay or sends SIGKILL). All ten findings were taken in:
+1. **The scan's cost is reported.** Every preview's basis says what the holder scan read and took ("N process(es), M fd link(s) in
+   X ms"), so the DoD's dry-run preview measures it.
+   - `processes.fdScanMilliseconds` defaults to **10000, provisional** until that measurement. Before, it was an unmeasured
+     2000, which on a 20-session day could have made every scan inconclusive.
+2. **The production vanished-pid path is tested:** a listed pid whose directory is gone, and a process with no `fd`
+   directory, hold nothing. `ScanOne` documents the `ListEntries` contract it relies on.
+3. **The watch's worst case counts THREE scans:** the watch's preview, the act's preview, and the re-check.
+4. **Engine-level timer tests:** `dryRun` on gives DryRun, `auto.A21` off gives Skipped, and nothing is signalled.
+5. **Tests for the remaining guards:** the time budget, a cut `/proc` list, a cut fd table. Each break-it went red.
+6. **A SIGTERM survivor stays a failure of the action,** as for A19: a relay that ignores SIGTERM keeps its Windows child alive,
+   which is worth a red line. This is documented.
+7. **Text status:** one `windows mcp relays:` line, with the switch and its command.
+8. **`AgentCpuHistory.Write` is internal,** and a test holds it.
+9. **The watch's texts name both actions,** and each action's "has no target" separately. The Linux CI's `WatchFlows` failure
+   was the RED for this.
+10. **Noted** in module_mcp_servers.md: A18's `ai-agents` family matches an interop relay of a Windows AI CLI. That is
+    pre-existing, and outside A21.
+
+The Linux goldens (`status.json`, the six `status-running-*.json`) were taken from the CI's `goldens-linux-x64` artifact. They
+add A21, the two capabilities and the `interopRelays` block, and were read as a contract diff.
 
 **Not done here:** S7b.2b (the button), S7b.3 (A22, the Windows-side stop), and the socket peer through `sock_diag` (only if
 the dry-run preview shows that relays sit on sockets).

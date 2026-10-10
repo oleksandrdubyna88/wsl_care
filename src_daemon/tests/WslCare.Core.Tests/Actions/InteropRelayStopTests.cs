@@ -10,6 +10,7 @@ using WslCare.Core.Collectors.Procfs;
 using WslCare.Core.Config;
 using WslCare.Core.Files;
 using WslCare.Core.Processes;
+using WslCare.Core.Processes.Policy;
 using WslCare.Core.Records;
 using WslCare.TestSupport;
 
@@ -49,16 +50,41 @@ public sealed class InteropRelayStopTests : IDisposable
 
         public HashSet<string> UnreadableLinks { get; } = new(StringComparer.Ordinal);
 
+        /// <summary>Folders whose bounded listing stops before its end (a deadline or a cap).</summary>
+        public HashSet<string> CutDirectories { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Directory names the bounded listing of a folder adds — a pid whose directory is gone by the time it is read.</summary>
+        public Dictionary<string, string[]> ExtraDirectories { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Called at every link read — a test moves the clock with it.</summary>
+        public Action OnReadLink { get; set; } = static () => { };
+
         public override LinkReadResult ReadLink(string path)
         {
+            OnReadLink();
             var key = path.Replace('\\', '/');
             return UnreadableLinks.Contains(key) ? new LinkReadResult.Unreadable("permission denied")
                 : links.TryGetValue(key, out var target) ? new LinkReadResult.Target(target)
                 : new LinkReadResult.NotALink();
         }
 
-        EntryListing IFileSystem.ListEntries(string path, ListingBounds bounds) =>
-            UnreadableDirectories.Contains(path.Replace('\\', '/')) ? new EntryListing.Unreadable($"{path}: permission denied") : Inner.ListEntries(path, bounds);
+        EntryListing IFileSystem.ListEntries(string path, ListingBounds bounds)
+        {
+            var key = path.Replace('\\', '/');
+            if (UnreadableDirectories.Contains(key))
+            {
+                return new EntryListing.Unreadable($"{path}: permission denied");
+            }
+
+            var listing = Inner.ListEntries(path, bounds);
+            return listing switch
+            {
+                EntryListing.Listed listed when CutDirectories.Contains(key) => listed with { Complete = false, Note = EntryListing.OutOfTime(path) },
+                EntryListing.Listed listed when ExtraDirectories.TryGetValue(key, out var extra) =>
+                    listed with { Entries = [.. listed.Entries, .. extra.Select(name => new FileEntry(name, EntryKind.Directory, 0, DateTimeOffset.UnixEpoch))] },
+                _ => listing,
+            };
+        }
     }
 
     private sealed class RecordingSignals : IProcessSignals
@@ -530,5 +556,106 @@ public sealed class InteropRelayStopTests : IDisposable
         var writers = typeof(AgentCpuHistory).GetMethods().Where(m => m.Name == nameof(AgentCpuHistory.Record) && m.IsPublic).ToList();
 
         writers.Should().ContainSingle().Which.GetParameters().Last().ParameterType.Should().Be<EffectiveConfig>();
+    }
+
+    /// <summary>The own code review 2026-10-10, finding 2: the PRODUCTION vanished-pid path — a pid the /proc listing names whose
+    /// directory is gone when its table is read lists as empty and complete, so it holds nothing and keeps no relay.</summary>
+    [Fact]
+    public async Task A_listed_pid_whose_directory_is_gone_holds_nothing()
+    {
+        Init();
+        RelayOnProc();
+        _files.ExtraDirectories[_sandbox.Paths.ProcRoot.Replace('\\', '/')] = ["99999"];
+
+        var preview = await IdleFor(PastTheWindow, [Entry()]);
+
+        preview.Count.Should().Be(1, "a process gone mid-scan holds no pipe");
+    }
+
+    /// <summary>Finding 2 again: a live process with no fd directory at all (the captured fixture's processes, a kernel thread's
+    /// empty table) holds nothing.</summary>
+    [Fact]
+    public async Task A_process_with_no_fd_directory_holds_nothing()
+    {
+        Init();
+        RelayOnProc();
+        Stat(900, cpuTicks: 10, parent: 1, name: "nofd");
+
+        var preview = await IdleFor(PastTheWindow, [Entry()]);
+
+        preview.Count.Should().Be(1);
+        preview.Basis.Should().Contain("process(es)").And.Contain("fd link(s)", "every preview says what its scan cost");
+    }
+
+    /// <summary>Finding 5: past processes.fdScanMilliseconds the scan is inconclusive and every relay is kept.</summary>
+    [Fact]
+    public async Task A_scan_past_its_time_budget_keeps_every_relay()
+    {
+        Init();
+        RelayOnProc();
+        Record([Entry()]);
+        _clock.Advance(PastTheWindow);
+        Record([Entry()]);
+        _files.OnReadLink = () => _clock.Advance(TimeSpan.FromSeconds(4));
+
+        var preview = await Preview([Entry()]);
+
+        preview.Count.Should().Be(0);
+        preview.Basis.Should().Contain("passed processes.fdScanMilliseconds");
+    }
+
+    /// <summary>Finding 5: a /proc list or a live process's fd table cut before its end is inconclusive.</summary>
+    [Theory]
+    [InlineData("proc")]
+    [InlineData("fd")]
+    public async Task A_cut_listing_keeps_every_relay(string which)
+    {
+        Init();
+        RelayOnProc();
+        Stat(500, cpuTicks: 10, parent: 1, name: "busy");
+        Link(500, "fd/9", "/dev/null");
+        _files.CutDirectories.Add(which == "proc" ? _sandbox.Paths.ProcRoot.Replace('\\', '/') : $"{Proc(500)}/fd");
+
+        var preview = await IdleFor(PastTheWindow, [Entry()]);
+
+        preview.Count.Should().Be(0);
+        preview.Basis.Should().Contain("INCONCLUSIVE").And.Contain(which == "proc" ? "process list was not read to its end" : "pid 500's fd table was not listed to its end");
+    }
+
+    /// <summary>Finding 8: the history file has no public writer but the configuration-taking Record.</summary>
+    [Fact]
+    public void The_cpu_history_file_has_no_other_public_writer()
+    {
+        typeof(AgentCpuHistory).GetMethods().Where(m => m.IsPublic && m.Name == nameof(AgentCpuHistory.Write)).Should().BeEmpty();
+    }
+
+    /// <summary>The own code review 2026-10-10, finding 4 — the 4-hour timer at ENGINE level, over the probe's own /proc read: with an
+    /// idle client-gone relay A21 is selected and DRY while dryRun is on, skipped with auto.A21 off, and nothing is signalled.</summary>
+    [Theory]
+    [InlineData("""{ "dryRun": true }""", ActionStatus.DryRun)]
+    [InlineData("""{ "dryRun": false, "auto": { "A21": false } }""", ActionStatus.Skipped)]
+    public async Task The_timer_pass_runs_A21_under_its_switch_and_the_dry_run_rules(string machine, string expected)
+    {
+        _sandbox.Write("/etc/passwd", "root:x:0:0::/root:/bin/bash\nme:x:1000:1000::/home/me:/bin/bash\n");
+        _sandbox.Load(0.1, 0.1, 0.1, cpus: 4);
+        _sandbox.Write("/etc/wsl-care/config.json", machine);
+        Init();
+        RelayOnProc();
+        Record([Entry()]);
+        _clock.Advance(PastTheWindow);
+        Record([Entry()]);
+        var signals = new RecordingSignals();
+        var context = new EngineContext(_sandbox.Paths, _files, new RecordingCommandRunner { Policy = CommandPolicy.Product }, _clock, new LinuxProbe(_files, _sandbox.Paths, _clock),
+            ConfigLoader.Load(_sandbox.Paths, _files), new FakeProcessTable().Alive(4242, FixedTimeProvider.DefaultNow.AddMinutes(-1)), 4242, new ActionRegistry([new InteropRelayStop()]))
+        {
+            Signals = signals,
+        };
+
+        var pass = await new ActionEngine(context).TimerPassAsync(RunId.New(_clock.GetUtcNow(), 4242), _clock.GetUtcNow(), CancellationToken.None);
+
+        pass.Ran.Should().BeTrue(pass.Reason);
+        pass.Actions.Should().ContainSingle(o => o.Id == "A21").Which.Status.Should().Be(expected);
+        signals.TermOnly.Should().BeEmpty();
+        signals.Escalated.Should().BeEmpty();
     }
 }
