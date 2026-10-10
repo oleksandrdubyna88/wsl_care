@@ -1434,7 +1434,7 @@ script `research/diagnostics/relay-facts.sh` prints the facts whenever relays ex
    - `auto.A21`, default **true** (D3).
    - The daemon's dry-run rules. **A21 inherits Q11: no window of its own** (review finding 6).
      - The timer is dry while `dryRun` is on or the first week runs. On the owner's machine, the week ends 2026-10-11 14:02Z and
-       `dryRun` is still on (`research/2026-10-10_dry_week_report.md`, PR #89).
+       `dryRun` is still on ([2026-10-10_dry_week_report.md](../research/2026-10-10_dry_week_report.md)).
      - So A21's first timer runs record what it would do until the owner turns `dryRun` off. Then it is live at the next watch.
      - The DoD's preview is the only observation it gets; this is said in the PR and in the report to the owner.
    - **The watch timer** (`wsl-care-watch`, every `mcpWatchdog.periodMinutes`) runs A19 and A21 as ONE recorded act
