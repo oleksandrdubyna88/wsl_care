@@ -17,12 +17,13 @@ import { DEFAULT_NUMBERS, NUMBER_NAMES, NUMBER_SETTINGS, type Numbers } from '..
 
 const MINIMUMS = Object.fromEntries(NUMBER_NAMES.map((name) => [name, NUMBER_SETTINGS[name].minimum])) as Numbers;
 
-/** Every non-empty selection of the cleanup rows. */
+/** Every non-empty selection of the cleanup rows — and A13 alone, *Archive now*'s preview (E10.S1b: no row carries A13). */
 function selections(): string[][] {
   const all: string[][] = [];
   for (let mask = 1; mask < 1 << ROW_IDS.length; mask += 1) {
     all.push(ROW_IDS.filter((_id, i) => (mask & (1 << i)) !== 0));
   }
+  all.push(['A13']);
   return all;
 }
 

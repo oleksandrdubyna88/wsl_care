@@ -1,0 +1,30 @@
+{
+  "id": "A13",
+  "summary": "move aged AI-agent sessions into the archive (archive.baseFolder) as the target user \u2014 the product\u0027s own binary, never root",
+  "status": "previewed",
+  "reason": "",
+  "preview": {
+    "what": "move aged AI-agent sessions into the archive as user: 1 session(s) due, 0 archived session(s) due to be removed",
+    "available": true,
+    "count": 1,
+    "bytes": 200,
+    "basis": "the archive child\u0027s own preview (archive preview --json), run as the target user; counts only",
+    "facts": {
+      "dueSessions": 1,
+      "dueFiles": 2,
+      "removalsDue": 0,
+      "quarantined": 0
+    },
+    "refusal": "",
+    "items": [
+      {
+        "kind": "agent",
+        "name": "claude-code",
+        "bytes": 200,
+        "note": "1 session(s) due, 2 file(s)"
+      }
+    ],
+    "skip": "",
+    "urgent": ""
+  }
+}

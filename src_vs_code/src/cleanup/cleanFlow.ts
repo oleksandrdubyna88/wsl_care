@@ -1,11 +1,11 @@
 import { FULL_CHECK_ACTIONS, type CleanupController } from '../root/cleanupController';
 import { rootFailureText } from '../root/rootFailureText';
-import type { RunId } from '../root/rootIds';
+import type { ActionId, ActionIds, RunId } from '../root/rootIds';
 import type { HandOffOutcome, HeldPreview, RootFailure } from '../root/rootOutcome';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { CleanupJournal, JournalEntry, NewEntry } from './journal';
 import { firstModal, missingFromPreview, secondModal, stopModal, type Modal } from './modalText';
-import { handOffNotice, type NoticeLevel } from './resultText';
+import { ARCHIVE_RUN, handOffNotice, type NoticeLevel } from './resultText';
 import type { RowId } from './rowIds';
 import type { RunFollower } from './runFollower';
 
@@ -60,6 +60,9 @@ export const PREVIEW_EXPIRY_MS = DEFAULT_NUMBERS.previewExpiryMinutes * 60_000;
 export const PREVIEW_ROUNDS = DEFAULT_NUMBERS.previewRounds;
 
 export const RETRY_LABEL = 'Retry';
+
+/** *Archive now*'s one id (E10.S1b): A13 alone, never beside a cleanup row. */
+const ARCHIVE_IDS: ActionIds = ['A13'];
 
 /** A wedged run the daemon can stop, as the host read it from `status.running`. */
 export interface StopTarget {
@@ -123,6 +126,16 @@ export class CleanFlow {
     return pass.retry ? this.clean(rowIds, selected) : pass.result;
   }
 
+  /**
+   * *Archive now* (E10.S1b): A13 through the SAME transaction — one flow at a time, the preview, its modal, the age re-check, the
+   * journal entry before the confirm, the follower — told as the archive run.
+   */
+  async archive(): Promise<FlowOutcome> {
+    const pass = await this.exclusive(() => this.cleanOnce(ARCHIVE_IDS, false, ARCHIVE_RUN));
+
+    return pass.retry ? this.archive() : pass.result;
+  }
+
   /** *Stop* — only ever for a wedged run the host read from `status.running` (`cleanupView.ts` decides which). */
   async stop(target: StopTarget): Promise<FlowOutcome> {
     return (await this.exclusive(() => this.stopOnce(target))).result;
@@ -146,16 +159,16 @@ export class CleanFlow {
     }
   }
 
-  private async cleanOnce(rowIds: readonly RowId[], selected: boolean): Promise<Pass> {
+  private async cleanOnce(rowIds: readonly ActionId[], selected: boolean, label?: string): Promise<Pass> {
     const held = await this.confirmedPreview(rowIds, selected);
     if ('kind' in held) {
       return { result: held, retry: false };
     }
-    return this.persisted({ kind: 'unresolved', op: 'clean', distro: held.distro, actions: held.ids, since: this.since() }, async (entry) => this.handedOff(entry, await this.options.controller.confirm(held), held.ids.join(', '), true));
+    return this.persisted({ kind: 'unresolved', op: 'clean', distro: held.distro, actions: held.ids, since: this.since() }, async (entry) => this.handedOff(entry, await this.options.controller.confirm(held), label ?? held.ids.join(', '), true));
   }
 
   /** Steps 2–4, at most `previewRounds` times: a preview confirmed in time, or why there is none. */
-  private async confirmedPreview(rowIds: readonly RowId[], selected: boolean): Promise<HeldPreview | FlowOutcome> {
+  private async confirmedPreview(rowIds: readonly ActionId[], selected: boolean): Promise<HeldPreview | FlowOutcome> {
     const rounds = this.numbers().previewRounds;
     for (let round = 0; round < rounds; round += 1) {
       const step = await this.previewRound(rowIds, selected);
@@ -169,7 +182,7 @@ export class CleanFlow {
     return { kind: 'expired' };
   }
 
-  private async previewRound(rowIds: readonly RowId[], selected: boolean): Promise<HeldPreview | FlowOutcome | 'expired'> {
+  private async previewRound(rowIds: readonly ActionId[], selected: boolean): Promise<HeldPreview | FlowOutcome | 'expired'> {
     const outcome = await this.options.controller.preview(rowIds);
     if (outcome.kind !== 'previewed') {
       this.tell('error', rootFailureText(outcome).sentence);

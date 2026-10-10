@@ -111,6 +111,20 @@ export class CleanupHost {
     return this.edge('a cleanup', () => this.flow.clean(rowIds, selected));
   }
 
+  /**
+   * *Archive now* (E10.S1b) — refused here, and told, while the cleanup controls are greyed (a run in flight, the journal full);
+   * the archive's own conditions (a folder set, no archive flow busy, A13 offered with its capabilities) are `ArchiveHost.archiveNow`'s.
+   */
+  archiveNow(): Promise<FlowOutcome | undefined> {
+    const controls = this.controls();
+    if (!controls.enabled) {
+      void this.ui.notify('warn', `Archive now is not available: ${controls.reason === '' ? controls.state : controls.reason}.`);
+      return Promise.resolve(undefined);
+    }
+
+    return this.edge('the archive run', () => this.flow.archive());
+  }
+
   /** *Run full check now* — refused here when the controls grey it (review A4), whatever the page sent. */
   runFullCheck(): Promise<FlowOutcome | undefined> {
     const controls = this.controls();

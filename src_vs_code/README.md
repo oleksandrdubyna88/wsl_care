@@ -13,7 +13,7 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   Container starts, Cleanup (what each cleanup would free, with **Clean**, **Select**, **Clean selected** and **Run full
   check now**), Health, AI agents, Last cleanup. *AI agents* shows the daemon's AI-session archive: the folder it archives
   into, per agent what is old enough to be archived, and a warning when an agent's own cleanup deletes its sessions sooner
-  than the archive would take them — with **Choose archive folder…** and **Stop archiving**. A figure the daemon could not read says
+  than the archive would take them — with **Choose archive folder…**, **Stop archiving** and **Archive now…**. A figure the daemon could not read says
   why ("unavailable — reason"); a row this version cannot fill yet says so; nothing is shown as a made-up 0.
 - **The Logs page** (*Logs* in the panel's title, or beside *Last cleanup*) — what the runs of a period did: This run,
   Today, Yesterday, a day or a range of your LOCAL days (the 90 the daemon keeps). Totals, runs with and without a
@@ -34,6 +34,14 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   `config set archive.baseFolder <the folder>` — as your own user, never as root. **Stop archiving** writes the empty value;
   nothing already archived is touched. Nothing is moved when you choose: the daemon archives a session only once it is old
   enough.
+- **Archive now…** runs the daemon's archive at once instead of waiting for its timer. It is a cleanup-like root call
+  (`act A13 --preview`, then `act A13 --confirm --manual --detach`): a modal first names each agent's sessions and bytes,
+  and nothing is moved before you press **Archive**. The daemon moves the sessions as your user with its own binary, and a
+  session leaves its agent's folder only after its archived copy was verified. The panel follows the run to its result,
+  across a reload, as it follows a cleanup. A first archive over a slow network folder can take longer than
+  `wslCare.cleanup.followCeilingMinutes` (30 by default): the notice then says the run's state is unknown and names the
+  daemon's `runs show`, while the section keeps reading **Archiving…** from the daemon's own status until the run ends — the run
+  goes on in the daemon's unit; nothing is stuck.
 - **Cleaning — only after you confirm, and only through five calls.** A cleanup needs root inside the distribution, so
   the extension has exactly five root calls, all built in one place and nowhere else: a cleanup's preview
   (`act <ids> --preview`), its run once you confirmed (`act <ids> --confirm --manual --detach`, with the list of volumes

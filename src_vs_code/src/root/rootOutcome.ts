@@ -82,6 +82,13 @@ export interface ShownSelection {
   readonly cap: number;
 }
 
+/** One listed item of a preview (the daemon's `ActionItem`): A13's agents, A4's volumes. Every string is the daemon's, unsanitised here. */
+export interface PreviewItem {
+  readonly name: string;
+  readonly bytes: number | undefined;
+  readonly note: string;
+}
+
 /**
  * One action of a preview, as far as the host reads it — what its confirmation modal shows (E6.S3): what it removes, how
  * many and how large, and the names of the first items the daemon listed (at most 20, its `MaxItems`). Every string is the
@@ -98,6 +105,8 @@ export interface PreviewedAction {
   readonly bytes: number | undefined;
   /** The names of the items the preview listed, in its order. */
   readonly items: readonly string[];
+  /** Every item the preview listed, whole (E10.S1b): its name, its bytes when the daemon gave them, its note. */
+  readonly details: readonly PreviewItem[];
 }
 
 /**

@@ -8,9 +8,10 @@ import { newCleanRecorder, recordingCleanUi, type CleanRecorder } from '../../cl
 import { WslCareClient } from '../../client/WslCareClient';
 import { CleanupController } from '../../root/cleanupController';
 import { OutcomeStore } from '../../state/outcomeStore';
+import { bodyAt } from '../support/body';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld } from '../support/fakeWorld';
 import { ManualTimers, MapStore } from '../support/memento';
-import { GOLDEN_ROOT } from '../support/paths';
+import { GOLDEN_ROOT, goldenFile } from '../support/paths';
 
 /**
  * The extension's scenario harness, CLEANUP tier (E6.S3; research/module_tests.md § The extension): the REAL cleanup host —
@@ -137,5 +138,68 @@ test('a 387-volume A4 pipes all 387 names; Clean selected is ONE act call throug
     const outcome = await window.host.clean(['A5', 'A4'], true);
     assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
     assert.deepEqual(confirms().slice(before), [`${ROOT} act A4,A5 --confirm --manual --detach --only - --json`]);
+  });
+});
+
+// ---- E10.S1b: Archive now — A13 through the same host, followed across a reload ----
+
+/** A status whose running block is `state`'s golden, carrying A13 alone. */
+function archiving(state: 'live' | 'dead'): Record<string, unknown> {
+  const golden = goldenFile(`status-running-${state}.json`);
+  return { ...golden, running: { ...bodyAt(golden, 'running'), actions: ['A13'], current: '' } };
+}
+
+test('the RELOAD scenario for Archive now: start A13, reload, "Archiving…" from status.running, then the result in the archive\'s words', async () => {
+  await within(async (world) => {
+    const durable = new MapStore();
+    const first = openWindow(world, durable);
+    await first.host.follower.tick(); // the window's status, as the poll gives a real one
+    const outcome = await first.host.archiveNow();
+    assert.equal(outcome?.kind, 'handedOff', JSON.stringify(outcome).slice(0, 300));
+    assert.ok(world.calls().includes(`${ROOT} act A13 --confirm --manual --detach --json`));
+    assert.deepEqual(first.host.journal.entries().map((e) => e.actions), [['A13']], 'the started archive run is persisted');
+    assert.equal(first.recorder.modals[0]?.confirm, 'Archive');
+    first.host.dispose();
+
+    world.rewrite({ answers: answers(world, 'archiving', { 'status.json': archiving('live') }) });
+    const second = openWindow(world, durable);
+    await second.host.follower.tick();
+    assert.equal(second.host.controls().state, 'Archiving… the aged AI sessions', 'from the daemon\'s running block, in a window that started nothing');
+
+    world.rewrite({ answers: answers(world, 'archived', { 'status.json': 'status.json' }), runsShow: 'runs-show-done.json' });
+    await second.host.follower.tick();
+    assert.match(second.host.controls().results[0]?.sentence ?? '', /^Run 20000101T000000Z-1 \(the archive run\) is done: moved /);
+    assert.deepEqual(second.host.journal.entries(), []);
+  });
+});
+
+test('a DEAD archive run after a reload ends as interrupted — never stuck on "Archiving…"', async () => {
+  await within(async (world) => {
+    const durable = new MapStore();
+    const started = openWindow(world, durable);
+    await started.host.follower.tick();
+    await started.host.archiveNow();
+    world.rewrite({ answers: answers(world, 'archive-dead', { 'status.json': archiving('dead') }), runsShow: 'runs-show-interrupted.json' });
+    const window = openWindow(world, durable);
+    await window.host.follower.tick();
+    assert.match(window.host.controls().results[0]?.sentence ?? '', /\(the archive run\) was interrupted/);
+    assert.equal(window.host.controls().enabled, true);
+  });
+});
+
+test('Archive now while a run is in flight is told and starts nothing — the cleanup controls are the gate', async () => {
+  await within(async (world) => {
+    const durable = new MapStore();
+    const started = openWindow(world, durable);
+    await started.host.follower.tick();
+    await started.host.archiveNow();
+    world.rewrite({ answers: answers(world, 'busy', { 'status.json': archiving('live') }) });
+    const window = openWindow(world, durable);
+    await window.host.follower.tick();
+    const confirms = (): number => world.calls().filter((c) => c.includes('--confirm')).length;
+    const before = confirms();
+    assert.equal(await window.host.archiveNow(), undefined);
+    assert.equal(confirms(), before, 'no second confirm');
+    assert.match(window.recorder.notices.at(-1)?.sentence ?? '', /^Archive now is not available: /);
   });
 });

@@ -3,7 +3,7 @@ import { checkedBody } from '../client/handshake';
 import { RUN_ID_BODY } from '../shared/shapes';
 import type { JsonObject } from '../client/outcome';
 import { actionIdOf, MAX_SHOWN_VOLUMES, runIdOf, shownCap, volumeNameOf, type ActionId, type ActionIds, type RunId, type VolumeName } from './rootIds';
-import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
+import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type PreviewItem, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
 
 /**
  * The root answers, read as untrusted input (E6.S2): the schema checked by the client's own `checkedBody`, every value that
@@ -75,8 +75,9 @@ function previewedAction(value: unknown): PreviewedAction[] {
     return [];
   }
   const preview = previewOf(value);
+  const details = detailsOf(preview);
 
-  return [{ id, status: stringOr(value.status, ''), reason: reasonOf(value, preview), ...figuresOf(preview) }];
+  return [{ id, status: stringOr(value.status, ''), reason: reasonOf(value, preview), ...figuresOf(preview, details), details }];
 }
 
 /** The preview part of an action's answer, or an empty one. */
@@ -89,11 +90,16 @@ function reasonOf(action: JsonObject, preview: JsonObject): string {
   return stringOr(action.reason, '') || stringOr(preview.reason, '');
 }
 
-/** What a preview says it would remove: its text, whether it could be read, the count, the bytes, the listed names. */
-function figuresOf(preview: JsonObject): Pick<PreviewedAction, 'what' | 'available' | 'count' | 'bytes' | 'items'> {
-  const items = Array.isArray(preview.items) ? preview.items.flatMap((item) => (isObject(item) && typeof item.name === 'string' ? [item.name] : [])) : [];
+/** What a preview says it would remove: its text, whether it could be read, the count, the bytes, the listed names (the details' — one walk, own review #10). */
+function figuresOf(preview: JsonObject, details: readonly PreviewItem[]): Pick<PreviewedAction, 'what' | 'available' | 'count' | 'bytes' | 'items'> {
+  return { what: stringOr(preview.what, ''), available: preview.available !== false, count: countOrUndefined(preview.count), bytes: countOrUndefined(preview.bytes), items: details.map((d) => d.name) };
+}
 
-  return { what: stringOr(preview.what, ''), available: preview.available !== false, count: countOrUndefined(preview.count), bytes: countOrUndefined(preview.bytes), items };
+/** Every listed item whole (E10.S1b): its name, its bytes when the daemon gave a count, its note — strings as the daemon wrote them. */
+function detailsOf(preview: JsonObject): readonly PreviewItem[] {
+  const items = Array.isArray(preview.items) ? preview.items : [];
+
+  return items.flatMap((item) => (isObject(item) && typeof item.name === 'string' ? [{ name: item.name, bytes: countOrUndefined(item.bytes), note: stringOr(item.note, '') }] : []));
 }
 
 function countOrUndefined(value: unknown): number | undefined {

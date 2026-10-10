@@ -11,7 +11,7 @@ import { callRoot, FULL_CHECK_ACTIONS, RUN_KINDS, type RootOp, type RootTarget }
 import { exitFailure } from './rootFailures';
 import { runIdOf, shownCap, volumeNameOf, type ActionIds, type RunId, type VolumeName } from './rootIds';
 import type { DaemonLimits } from '../shared/daemonLimits';
-import type { HandOffOutcome, HeldPreview, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
+import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
 
 /**
  * The host-side cleanup controller (E6.S2) — the API E6.S3's buttons call, and the ONLY module that imports
@@ -110,9 +110,27 @@ export const CAPABILITIES = {
   preview: [...BASE, 'act.shownList'],
   confirm: [...BASE, 'act.detach'],
   confirmA4: [...BASE, 'act.detach', 'act.onlyStdin'],
+  previewA13: [...BASE, 'act.shownList', 'archive.preview'],
+  confirmA13: [...BASE, 'act.detach', 'archive.run'],
   stop: [...BASE, 'act.stop'],
   fullCheck: [...BASE, 'act.detach'],
 } as const;
+
+/**
+ * What a preview of `ids` needs advertised: the preview's own set, and A13's archive preview when A13 is asked (E10.S1b — its
+ * preview is the archive child's own `archive preview`).
+ */
+export function previewNeeds(ids: readonly string[]): readonly string[] {
+  return ids.includes('A13') ? CAPABILITIES.previewA13 : CAPABILITIES.preview;
+}
+
+/** What a confirm of `ids` needs advertised: the detach, A4's stdin list when A4 is confirmed, A13's archive run when A13 is (E10.S1b). */
+export function confirmNeeds(ids: readonly string[]): readonly string[] {
+  const a4 = ids.includes('A4') ? CAPABILITIES.confirmA4 : [];
+  const a13 = ids.includes('A13') ? CAPABILITIES.confirmA13 : [];
+
+  return [...new Set([...CAPABILITIES.confirm, ...a4, ...a13])];
+}
 
 /** A call that went out: the op, and how it ended (`undefined`: the op could not be built, nothing started). */
 interface Call {
@@ -147,7 +165,7 @@ export class CleanupController {
   /** `act <ids> --preview --json` as root — held, so a confirm can name it. */
   preview(ids: readonly string[]): Promise<PreviewOutcome> {
     return this.transaction(async (target) => {
-      const call = await this.acting(target, CAPABILITIES.preview, (gate) => previewOp(ids, gate));
+      const call = await this.acting(target, previewNeeds(ids), (gate) => previewOp(ids, gate));
       return 'kind' in call ? call : this.held(call, target);
     });
   }
@@ -247,7 +265,7 @@ export class CleanupController {
 
   /** The confirm's call; the preview is consumed once the call went out and the daemon took it (review M4). */
   private async confirmCall(target: RootTarget, preview: HeldPreview): Promise<HandOffOutcome> {
-    const required = preview.ids.includes('A4') ? CAPABILITIES.confirmA4 : CAPABILITIES.confirm;
+    const required = confirmNeeds(preview.ids);
     const call = await this.acting(target, required, (gate) => confirmOp(preview, gate));
     if ('kind' in call) {
       return call;
@@ -528,11 +546,16 @@ function isQueuedOrLive(running: RunningBlock): boolean {
   return running.state.kind === 'known' && (running.state.value === 'queued' || running.state.value === 'live');
 }
 
+/** One previewed action frozen with its lists: the item names, and the details a modal shows (E10.S1b, own review #2). */
+function freezeAction(action: PreviewedAction): PreviewedAction {
+  return Object.freeze({ ...action, items: Object.freeze([...action.items]), details: Object.freeze(action.details.map((d) => Object.freeze({ ...d }))) });
+}
+
 /** A held preview made immutable all the way down — the names a confirm pipes cannot be edited after the preview. */
 function freezePreview(preview: HeldPreview): HeldPreview {
   const a4 = preview.a4 === undefined ? undefined : Object.freeze({ ...preview.a4, names: Object.freeze([...preview.a4.names]) });
 
-  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map((a) => Object.freeze({ ...a, items: Object.freeze([...a.items]) }))), a4 });
+  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map(freezeAction)), a4 });
 }
 
 /** What a full check's run holds as its actions (`["collect"]`) — re-exported so the host's cleanup flow can name it

@@ -4270,7 +4270,7 @@ consult was owed.
 
 ### 15s. E10 split and design — the AI-session archive in the extension
 
-> Status: **in progress, 2026-10-09 — E10.S0 (the daemon half) built; E10.S1 and E10.S2 (the extension) not started.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
+> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b built on its branch (*As built — E10.S1b*); E10.S2 not started.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
 > daemon additions it needs (E10.S0). Branch `feat/wc-e10-archive-ui`. This section OVERRIDES the archive plan's §5 and §6
 > ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) and the §16 E10 row where they differ. Related: §15r (E9, the
 > daemon half, built), §15q (E7 — its extension parts E7.S3–E7.S5 are NOT built), [module_archive.md](../research/module_archive.md),
@@ -4528,6 +4528,147 @@ One was rejected. **#3** (the host's fields "mutate") is a stateful service hold
 
 Tests and teeth: [module_tests.md](../research/module_tests.md), the `client archive*`, `command wslCare.chooseArchiveFolder` /
 `stopArchiving` and `message …` rows, and *What each E10.S1a guarantee rests on*.
+
+#### E10.S1b build notes (2026-10-10): *Archive now*
+
+> Status: **built on its branch, 2026-10-10 — see *As built — E10.S1b* below; merged when its PR is.** Branch
+> `feat/wc-e10s1b-archive-now`, from `main` 6c5f148 (E10.S1a merged). The paths are `src_vs_code/`'s unless named otherwise.
+
+**Goal.** One panel button, *Archive now*, runs A13 at once: the daemon's own action, through the cleanup controller as it is.
+It previews as root, shows a modal naming each agent's sessions and bytes, persists the run, and confirms
+`act A13 --confirm --manual --detach --json`. The run then lives in the daemon's own unit and is followed to its result across a
+reload. No new root argv word, no new root op and no new journal field: A13 is one more id of the compiled registry
+(`contracts/actions.json`), which the controller already takes (`cleanupController.ts:148-261`, `rootCall.ts:90-113`).
+
+**What changes:**
+
+1. **The capability sets** (`root/cleanupController.ts:109-115`).
+   - A preview that includes A13 also needs `archive.preview`.
+   - A confirm that includes A13 needs `confirmA13` = BASE + `act.detach` + `archive.run`.
+   - The fresh-status gate stays the authority: the ids are the registry ∩ `status.actions`.
+2. **The preview's ceiling** (`client/ceilings.ts` `shareS`, `client/worstCases.ts` `otherRowShareS`). A13's share is the
+   `wslCare.timeouts.archivePreviewSeconds` setting (630 s by default). Its worst case is the daemon's `archive.previewTimeoutSeconds`
+   at its maximum (600 s), because A13's preview is ONE `archive preview` child under that key
+   (`ArchiveAction.PreviewAsync`, `ArchiveChildren.Preview`). It is no Docker row's snapshot. `ceilings.test.ts` holds it strictly
+   above.
+3. **The preview's items, read whole** (`root/rootAnswers.ts` `figuresOf`, `root/rootOutcome.ts` `PreviewedAction`). Each item
+   keeps its `name`, `bytes` and `note` (`ActionItem(Kind, Name, Bytes, Note)` in the daemon). A13's items are per agent:
+   `agent`, the agent id, the due bytes, "N session(s) due, M file(s)". `rootAnswers.ts` keeps every string as the daemon wrote
+   it; the modal's words go through `safeText` in `modalText.ts` (the own review on Fable, #13). The A4 reading (names only, the
+   bound list) is unchanged.
+4. **Its own words** (`cleanup/modalText.ts`, `cleanup/resultText.ts`, `cleanup/cleanupView.ts`).
+   - The modal: "Archive the aged AI sessions in "<distro>"?", one line per agent with its sessions and bytes, and how the move
+     is made (as the target user, the product's own binary, nothing removed before its copy is verified). Confirm label:
+     *Archive*.
+   - No second modal: A13 moves, it does not delete.
+   - The hand-off and terminal notices say "the archive run", never "Cleaning A13". The in-flight state reads "Archiving…".
+   - The words are chosen by the entry's actions being exactly `['A13']`. Nothing new is persisted.
+5. **The flow** (`cleanup/cleanFlow.ts`): `archive()` runs the same transaction as `clean()` — one flow at a time, preview,
+   modal, the age re-check, the journal entry BEFORE the call, the confirm, the follower — over the ids `['A13']` and the
+   archive words. `cleanupHost.ts` gets `archiveNow()` behind the same detached edge, refused (told) while the cleanup controls
+   are greyed.
+6. **The button** (the archive section, `archive/archiveView.ts`, `media/panel.js`, D11).
+   - *Archive now* carries `data-archive-action="archiveNow"` and posts the bare `archiveNow` (`panel/messages.ts`).
+   - It is also the command `wslCare.archiveNow` (`package.json`, `commandButtons.ts`, `manifest.test.ts`, the catalogue).
+   - It is enabled only when:
+     - the daemon advertises `archive.run`, `archive.preview` and `act.detach` (plan round #0: the preview the click starts needs `archive.preview`);
+     - `status.actions` holds A13;
+     - a base folder is set;
+     - no archive flow is busy;
+     - the cleanup controls are enabled (no run in flight, the journal not full).
+   - `ArchiveHost` reads those last two from the cleanup host it is handed, and re-renders on its changes.
+7. **The fake and the golden.**
+   - The daemon's `GoldenContracts` gains `act-a13-preview.json`: `act A13 --preview --json` with a base folder set and one
+     session due, so the golden carries the REAL per-agent items (plan round #2, accepted with this scope — the live root run
+     stays the owner's). The extension's parser, modal test and fake read that golden, never a hand-written item.
+   - The strict fake answers A13's preview from that golden. A scenario may give an answers folder whose A13 entry carries
+     per-agent items in the daemon's `ActionItem` shape.
+   - The fake's root shapes take A13 only with `archive.preview` (preview) or `archive.run` (confirm) advertised, and never
+     beside another id.
+
+**Build order:** the golden (daemon) → capabilities + ceiling → items → words → flow + host → view + button + message + command →
+fake → scenario → docs.
+
+**RED first** — each test below is seen red, for its own symptom, before the code it pins:
+- a preview or confirm with A13 is refused without `archive.preview` / `archive.run`;
+- A13's preview ceiling is A13's, not a Docker row's;
+- the modal names each agent's sessions and bytes and reads *Archive*;
+- the notices say "the archive run";
+- *Archive now* survives a reload: the cleanup scenario harness starts A13, reloads, sees "Archiving…" from `status.running`,
+  then the result from `runs show`;
+- a dead run ends interrupted, never stuck;
+- the button is greyed exactly when its conditions do not hold;
+- the bare message and the command;
+- the fake refuses A13 beside another id, or without its capability.
+
+**The plan round** (coai session 7b82a297, `proceed`, codex only): #0 and #2 accepted as written above; #1 (verify the copy
+before the removal from the extension) rejected — that sequence is the daemon's A13, pinned by its own tests
+(`ArchiveRunTests.Guards.cs`, `ArchiveRemoveTests`, the NAS live gate); the extension moves no bytes.
+
+**Not in it:** restoring (A20, E10.S2). A live root A13 run is the owner's (the morning list).
+
+**DoD:**
+- A13 through the existing controller only.
+- No new root argv word: the bundle scan's root literal set is unchanged.
+- Every check above is red first.
+- An own review on Fable (owner 2026-10-10, root-touching).
+- The coai plan and code rounds.
+- The docs: `module_vs_code.md`, `module_tests.md`, README, this section's *as built*.
+
+#### As built — E10.S1b (2026-10-10)
+
+As planned, with these specifics:
+- **The capability choice is two functions.** `previewNeeds(ids)` and `confirmNeeds(ids)` in `cleanupController.ts`; the latter
+  is the union of the detach, A4's stdin list and A13's `archive.run`. `CAPABILITIES` gained `previewA13` and `confirmA13`.
+- **A13's share is the setting itself.** `ceilings.ts` `SETTING_SHARES`: the archive preview's setting. `worstCases.ts` adds
+  A13's worst case, 600 s.
+- **The golden comes from the daemon's code, not from the CLI.** `act-a13-preview-action.json` is A13's LINE, made by the daemon's
+  own `ArchiveAction` over a child answering one due session (`A13PreviewGolden.cs`, in `GoldenContracts`). The built CLI's A13
+  refuses a test build's binary, which is never root's alone (`ArchiveActFlows`). The fake merges that line into the act
+  envelope of the A4 golden.
+- **One older fake test changed its input.** The registry test's mixed case moved from `A4,A13`, now refused earlier because A13
+  never sits beside another id, to `A4,A99`.
+- ***Clean selected* cannot carry A13.** A13 is not a `ROW_IDS` member, so the page cannot send it as a row. *Archive now* is the
+  only way in, and the fake refuses A13 beside another id.
+- **The scenario windows ask `status` first** (the follower's tick), as a real window's poll does. The host's gate reads the cleanup
+  controls, which need a status.
+- **The second code round and the own review on Fable (2026-10-10).** The coai code round 2 (session 7b82a297, `again` over the
+  whole branch; codex only — gemini rate-limited, the local engine unconfigured; verdict `proceed`, 4 findings, all accepted) and
+  the own read-only review on Fable (no blocker; 4 should-fix, 9 nits) changed, each RED first:
+  - the button's capability requirement is the controller's own — `ARCHIVE_NOW_CAPABILITIES` = `previewNeeds(['A13'])` ∪
+    `confirmNeeds(['A13'])` (round #2), so a capability A13 gains in the controller greys the button without a second list;
+  - `ArchiveHost.archiveNow()` refuses, and says why, on the archive's conditions (`archiveNowBlocker`: a capability not advertised,
+    A13 not offered, no folder set, the archive folder being changed) BEFORE the cleanup host sees the request — the palette's
+    command and a stale page send the same bare message the button does, and the host used to check only the cleanup's side
+    (Fable #1); the cleanup host still refuses its own side;
+  - a held preview's `details` are frozen with its `items` — immutable all the way down (Fable #2);
+  - the archive's done notice reads its bytes through `sizeText`: *moved 200 B*, never *0.0 GB* (Fable #3, round #3; a cleanup's
+    figure stays in GB);
+  - `ceilings.test.ts` N-2 covers `['A13']` with the defaults and with every setting at its minimum (Fable #4: the row-selection
+    loop never saw A13, so the docs' pin overclaimed); teeth by break-it N11;
+  - a queued or wedged archive run reads *the archive run*, as a live one reads *Archiving…* (Fable #7);
+  - `ArchiveHost.dispose()` unsubscribes from the cleanup host, and `extension.ts` disposes it (Fable #6);
+  - the fake refuses an answers folder without the daemon's A13 line, naming the file, instead of crashing (Fable #11);
+  - `figuresOf` reads the item names off the details — one walk (Fable #10); three displaced doc comments restored (Fable #5);
+  - the new fixtures are read through `src/test/support/body.ts` — `goldenFile` / `bodyOf` / `bodyAt` / `stringsAt`, checked,
+    never cast (round #0; the pre-S1b `JSON.parse(…) as Record<string, unknown>` readers of files this branch did not touch stay);
+  - `research/architecture.md` carries the S1b wiring (round #1).
+  Not taken: `sizeText(999 950)` reads "1000.0 kB" (cosmetic; Fable #8), and `'A13'` is spelled in seven modules — a shared
+  constant outside `root/` is a later tidy (Fable #9).
+- **The third code round** (the same session, `again` over the whole branch; codex's four roles; `proceed`, 3 findings): two
+  accepted — the branch's own `withoutCapability` fixture and the two registry / capability tests in `fakeWsl.test.ts` read
+  `status.json` through `bodyOf` / `stringsAt`, and `commandButtons.test.ts` builds its snapshots with the shared `goldenSnapshot()`
+  (`support/outcomes.ts`; `archiveView.test.ts` uses it too) instead of `as Snapshot`. One REJECTED: "A13 previews can silently drop
+  malformed items and still be confirmed" — the modal's figures come from the daemon's own `what` sentence and `count` / `bytes`,
+  not from the items; the extension never chooses what A13 moves (the daemon re-selects at run time under its gates — A4's piped
+  names are a selection, A13 carries none); the item shape is pinned on both sides by the golden; the lenient list read is E6.S3's
+  convention for every action, and an unreadable preview (`available: false`) is refused already. The pre-S1b `as unknown as
+  Snapshot` of a hand-built verdicts status in `commandButtons.test.ts` stays (not this story's).
+- **A first archive over a slow network folder can outrun the follow ceiling** (`wslCare.cleanup.followCeilingMinutes`, 30 by
+  default; Fable #12): the notice then says *state unknown* and names `runs show`, while the daemon's own `status.running` keeps
+  the controls at *Archiving…* until the run ends — never stuck. The extension README says so.
+
+Tests and teeth: [module_tests.md](../research/module_tests.md), *What each E10.S1b guarantee rests on*.
 
 #### Definition of Done
 

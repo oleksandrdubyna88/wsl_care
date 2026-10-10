@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
-import { ARCHIVE_LABELS, deriveArchive } from '../archive/archiveView';
+import { ARCHIVE_CAPABILITY, ARCHIVE_LABELS, ARCHIVE_NOW_CAPABILITIES, deriveArchive } from '../archive/archiveView';
 import { COMMAND_BUTTONS } from '../panel/commandButtons';
 import { PAGE_MESSAGE_TYPES } from '../panel/messages';
 import { PAGE_ACTIONS } from '../panel/view';
@@ -11,7 +11,7 @@ import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
 import { GUARD_LABELS, guardView } from '../windowsTime/guardState';
 import { guardSummary, type GuardOptions } from '../windowsTime/guardTask';
-import { failed, goldenOutcomes } from './support/outcomes';
+import { failed, goldenSnapshot } from './support/outcomes';
 import { Element, runPageScript } from './support/pageHarness';
 import { PAGE_SCRIPT } from './support/paths';
 
@@ -56,9 +56,9 @@ function postedByPageButtons(): Set<string> {
     buildPanelView(failedWith('stopped')),
     buildPanelView(failedWith('notInstalled')),
     buildPanelView(verdicts),
-    ...guards.map((guard) => buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, guard)),
-    // E10.S1: an archiving daemon with a base folder set — both archive buttons enabled.
-    buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, undefined, deriveArchive({ status: { kind: 'read', read: 'archiveStatus', distro: 'Ubuntu', body: { schemaVersion: 1, baseFolder: '/mnt/v/a' } }, preview: undefined, capabilities: ['archive.checkBase'], busy: '', reading: false, asked: true, unavailable: '' })),
+    ...guards.map((guard) => buildPanelView(goldenSnapshot(), undefined, guard)),
+    // E10.S1: an archiving daemon with a base folder set, advertising what every archive button needs — all three enabled.
+    buildPanelView(goldenSnapshot(), undefined, undefined, deriveArchive({ status: { kind: 'read', read: 'archiveStatus', distro: 'Ubuntu', body: { schemaVersion: 1, baseFolder: '/mnt/v/a' } }, preview: undefined, capabilities: [ARCHIVE_CAPABILITY, ...ARCHIVE_NOW_CAPABILITIES], busy: '', reading: false, asked: true, unavailable: '', cleanupFree: true, a13Offered: true })),
   ];
   const posted = new Set<string>();
   for (const view of views) {

@@ -477,6 +477,21 @@ function actShape(tail: readonly string[]): RootShape | string {
   return `not one of the root shapes: ${JSON.stringify(tail)}`;
 }
 
+/**
+ * E10.S1b, the fake's own copy of A13's rule: A13 is archived on its own, never beside another id, and its preview needs
+ * `archive.preview` advertised, its confirm `archive.run` — what `cleanupController.ts` gates on.
+ */
+function withArchive(shape: RootShape | string): RootShape | string {
+  if (typeof shape === 'string' || !shape.ids.includes('A13')) {
+    return shape;
+  }
+  if (shape.ids.length > 1) {
+    return `A13 is archived on its own, never beside another id: ${JSON.stringify(shape.ids)}`;
+  }
+
+  return { ...shape, capabilities: [...shape.capabilities, shape.op === 'preview' ? 'archive.preview' : 'archive.run'] };
+}
+
 /** The tail after the root prefix, read against the five shapes — or why it is none of them. */
 function rootShape(tail: readonly string[]): RootShape | string {
   if (sameTail(tail, ['--version'])) {
@@ -489,7 +504,7 @@ function rootShape(tail: readonly string[]): RootShape | string {
     return RUN_ID.test(tail[2] ?? '') ? { op: 'stop', ids: [], piped: false, capabilities: ['act.stop'], runId: tail[2] ?? '' } : `not a run id the daemon writes: ${JSON.stringify(tail[2])}`;
   }
 
-  return tail[0] === 'act' && !(tail[1] ?? '').startsWith('-') ? actShape(tail) : `not one of the root shapes: ${JSON.stringify(tail)}`;
+  return tail[0] === 'act' && !(tail[1] ?? '').startsWith('-') ? withArchive(actShape(tail)) : `not one of the root shapes: ${JSON.stringify(tail)}`;
 }
 
 function readJson(file: string): Record<string, unknown> {
@@ -527,12 +542,22 @@ function capabilityProblem(scenario: FakeScenario, needed: readonly string[]): s
   return missing.length > 0 ? `the daemon does not advertise ${JSON.stringify(missing)}` : undefined;
 }
 
+/** The daemon's own A13 line, which every A13 preview answers from (E10.S1b). */
+const A13_PREVIEW_ACTION = 'act-a13-preview-action.json';
+
+/** An answers folder without the daemon's A13 line cannot answer A13's preview: refused, never thrown (E10.S1b own review #11). */
+function archiveLineProblem(scenario: FakeScenario, shape: RootShape): string | undefined {
+  const needed = shape.op === 'preview' && shape.ids.includes('A13');
+
+  return needed && !fs.existsSync(path.join(scenario.answers, A13_PREVIEW_ACTION)) ? `the answers folder has no ${A13_PREVIEW_ACTION}` : undefined;
+}
+
 function shapeProblem(scenario: FakeScenario, shape: RootShape, stdin: Buffer): string | undefined {
   if (!shape.piped && stdin.length > 0) {
     return 'stdin outside --only -: only a confirm of A4 pipes a list';
   }
 
-  return (shape.piped ? pipedProblem(stdin) : undefined) ?? (shape.ids.length > 0 ? idsProblem(scenario, shape.ids) : undefined) ?? capabilityProblem(scenario, shape.capabilities);
+  return (shape.piped ? pipedProblem(stdin) : undefined) ?? (shape.ids.length > 0 ? idsProblem(scenario, shape.ids) : undefined) ?? capabilityProblem(scenario, shape.capabilities) ?? archiveLineProblem(scenario, shape);
 }
 
 function handOff(scenario: FakeScenario, kind: 'act' | 'collect'): Buffer {
@@ -544,7 +569,7 @@ function handOff(scenario: FakeScenario, kind: 'act' | 'collect'): Buffer {
 function previewAnswer(scenario: FakeScenario, ids: readonly string[]): Buffer {
   const golden = readJson(path.join(scenario.answers, 'act-a4-preview.json'));
   const entries = Array.isArray(golden.actions) ? (golden.actions as Record<string, unknown>[]) : [];
-  const actions = ids.map((id) => entries.find((a) => a.id === id) ?? { id, summary: '', status: 'previewed', reason: '', preview: { available: true, count: 0, bytes: 0 } });
+  const actions = ids.map((id) => (id === 'A13' ? readJson(path.join(scenario.answers, A13_PREVIEW_ACTION)) : undefined) ?? entries.find((a) => a.id === id) ?? { id, summary: '', status: 'previewed', reason: '', preview: { available: true, count: 0, bytes: 0 } });
 
   return Buffer.from(JSON.stringify({ ...golden, actions }), 'utf8');
 }
