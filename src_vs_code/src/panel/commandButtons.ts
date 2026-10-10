@@ -1,3 +1,4 @@
+import type { ArchiveAction } from '../archive/archiveView';
 import type { GuardAction } from '../windowsTime/guardState';
 import type { PageAction } from './view';
 
@@ -12,7 +13,7 @@ import type { PageAction } from './view';
  * `commandButtons.test.ts` holds this table to `package.json`'s commands and to the button sets the page really has.
  */
 export type CommandButton =
-  | { readonly where: 'page'; readonly action: PageAction | GuardAction }
+  | { readonly where: 'page'; readonly action: PageAction | GuardAction | ArchiveAction }
   | { readonly where: 'title' }
   | { readonly where: 'opener' };
 
@@ -24,5 +25,7 @@ export const COMMAND_BUTTONS: Readonly<Record<string, CommandButton>> = {
   'wslCare.startWindowsTime': { where: 'page', action: 'startWindowsTime' },
   'wslCare.installWindowsTimeGuard': { where: 'page', action: 'installWindowsTimeGuard' },
   'wslCare.removeWindowsTimeGuard': { where: 'page', action: 'removeWindowsTimeGuard' },
+  'wslCare.chooseArchiveFolder': { where: 'page', action: 'chooseArchiveFolder' },
+  'wslCare.stopArchiving': { where: 'page', action: 'stopArchiving' },
   'wslCare.openLogs': { where: 'title' },
 };

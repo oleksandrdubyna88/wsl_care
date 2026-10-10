@@ -1,4 +1,5 @@
 import type { ProcessResult, Runner } from '../process/runner';
+import { basePathRefusal } from '../shared/basePath';
 import { RUN_ID_SHAPE, UTC_INSTANT_SHAPE } from '../shared/shapes';
 import { DISTRO_NAME, distroSettingText, isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
 import { wslExecutable } from '../wsl/wslExecutable';
@@ -405,34 +406,8 @@ const READ_REFUSALS: { readonly [K in RunReadName]: (request: Extract<RunRead, {
   logs: (request) => instantsRefusal(request.from, request.to),
   archiveStatus: () => undefined,
   archivePreview: () => undefined,
-  archiveCheckBase: (request) => pathRefusal(request.path),
+  archiveCheckBase: (request) => basePathRefusal(request.path),
 };
-
-/** The longest folder `archive.baseFolder` takes (its rule's limit in `contracts/config-keys.json`). */
-export const MAX_BASE_FOLDER_CHARS = 1024;
-
-/**
- * E10.S1: a folder sent as `archive check-base <path>` — the FIRST value of a path the client ever puts in argv — refused before a
- * spawn unless the daemon would take it (`ArchiveArguments.IsPathArgument`: not empty, not starting with `-`, no control
- * character) and the key could hold it.
- */
-function pathRefusal(path: string): string | undefined {
-  return pathLengthRefusal(path) ?? pathShapeRefusal(path);
-}
-
-function pathLengthRefusal(path: string): string | undefined {
-  return path.length === 0 || path.length > MAX_BASE_FOLDER_CHARS ? `a folder of 1 to ${MAX_BASE_FOLDER_CHARS} characters is asked about` : undefined;
-}
-
-function pathShapeRefusal(path: string): string | undefined {
-  return path.startsWith('-') || [...path].some(isControl) ? 'a folder that starts with "-" or holds a control character is never sent' : undefined;
-}
-
-function isControl(c: string): boolean {
-  const code = c.charCodeAt(0);
-
-  return code < 32 || code === 127;
-}
 
 function instantsRefusal(from: string, to: string): string | undefined {
   if (!INSTANT.test(from) || !INSTANT.test(to)) {

@@ -18,6 +18,9 @@ import { ROW_IDS, rowIdOf, type RowId } from '../cleanup/rowIds';
  *
  * <p>The Windows Time guard's `installWindowsTimeGuard` and `removeWindowsTimeGuard` (PLAN_windows_time_task.md D8 o5) are
  * bare: the task, its settings and its scripts are the host's constants — nothing from the page reaches them.</p>
+ *
+ * <p>E10.S1's `chooseArchiveFolder` and `stopArchiving` are bare: the folder is picked in the host's own dialog and judged by
+ * the daemon — no path ever comes from the page.</p>
  */
 
 export type PageMessage =
@@ -30,13 +33,15 @@ export type PageMessage =
   | { readonly type: 'startWindowsTime' }
   | { readonly type: 'installWindowsTimeGuard' }
   | { readonly type: 'removeWindowsTimeGuard' }
+  | { readonly type: 'chooseArchiveFolder' }
+  | { readonly type: 'stopArchiving' }
   | { readonly type: 'openRunLogs' }
   | { readonly type: 'clean'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'cleanSelected'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'runFullCheck' }
   | { readonly type: 'stop'; readonly index: number };
 
-const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs']);
+const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving']);
 
 /** The host holds at most this many stoppable runs plus one (the daemon has ONE running state; the list is a list for shape only). */
 export const MAX_STOP_INDEX = 3;

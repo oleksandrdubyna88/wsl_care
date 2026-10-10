@@ -476,3 +476,46 @@ test('run reads: a run read to a STOPPED distribution is refused like every -d',
     assert.equal(exitOf(await ask(world, [...DAEMON_CALL, 'runs', 'show', RUN, '--json'])).code, FAKE_EXIT.wouldStart);
   });
 });
+
+// ---- E10.S1: the one config write ----
+
+const CONFIG_SET = [...DAEMON_CALL, 'config', 'set', 'archive.baseFolder'];
+
+test('config: the folder its check-base answer accepted, and the empty value, are written — unprivileged, in UTF-8 text', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const set = exitOf(await ask(world, [...CONFIG_SET, '/mnt/v/ai-archive']));
+    assert.equal(set.code, 0, set.stderr);
+    assert.equal(set.stdout.toString('utf8'), 'archive.baseFolder = /mnt/v/ai-archive (user)\n');
+    assert.equal(exitOf(await ask(world, [...CONFIG_SET, ''])).code, 0);
+  });
+});
+
+test('config: every other config argv is refused — another value, another key, reset, a word more, as root, to a stopped distribution', async () => {
+  const never: readonly (readonly string[])[] = [
+    [...CONFIG_SET, '/mnt/v/elsewhere'],
+    [...CONFIG_SET, 'V:\\ai-archive'],
+    [...DAEMON_CALL, 'config', 'set', 'dryRun', 'false'],
+    [...DAEMON_CALL, 'config', 'reset', 'archive.baseFolder'],
+    [...DAEMON_CALL, 'config', 'get', 'archive.baseFolder'],
+    [...CONFIG_SET, '/mnt/v/ai-archive', '--json'],
+    [...CONFIG_SET],
+    [...ROOT_CALL, 'config', 'set', 'archive.baseFolder', '/mnt/v/ai-archive'],
+  ];
+  await within(UBUNTU_RUNNING, async (world) => {
+    for (const argv of never) {
+      const { code, stderr } = exitOf(await ask(world, argv));
+      assert.equal(code, FAKE_EXIT.refused, `${argv.join(' ')} → ${code} ${stderr}`);
+    }
+  });
+  await within({ ...UBUNTU_RUNNING, checkBase: 'archive-check-base-refused.json' }, async (world) => {
+    const refused = golden('archive-check-base-refused.json');
+    assert.equal(exitOf(await ask(world, [...CONFIG_SET, String(refused.folder)])).code, FAKE_EXIT.refused, 'a folder its check-base refused');
+  });
+  await within({ ...UBUNTU_RUNNING, distros: [{ name: 'Ubuntu', running: false }] }, async (world) => {
+    assert.equal(exitOf(await ask(world, [...CONFIG_SET, ''])).code, FAKE_EXIT.wouldStart);
+  });
+});
+
+function golden(name: string): Record<string, unknown> {
+  return JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, 'head', name), 'utf8')) as Record<string, unknown>;
+}

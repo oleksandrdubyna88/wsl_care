@@ -108,6 +108,16 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.chooseArchiveFolder",
+        "title": "Choose the AI-session archive folder…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.stopArchiving",
+        "title": "Stop archiving AI sessions…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.openLogs",
         "title": "Logs",
         "category": "AI OS Care",

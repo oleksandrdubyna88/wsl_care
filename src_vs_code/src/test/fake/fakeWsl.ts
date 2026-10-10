@@ -19,6 +19,10 @@
  * outside `contracts/actions.json` ∩ the scenario daemon's `status.actions`, an op whose capability that daemon does not
  * advertise, and `--timer` / `--user` / `config` anywhere. A call's stdin is recorded in the log.</p>
  *
+ * <p><b>Since E10.S1, the one config write</b> — `config/configCall.ts`'s shape, unprivileged: `-d <distro> --cd / --exec <daemon>
+ * config set archive.baseFolder <v>`, where `<v>` is empty or exactly the folder the scenario's `check-base` answer accepted.
+ * Every other `config` argv — another key, `config reset`, `-u root` before it — is still refused.</p>
+ *
  * <p>The four verbs are written out HERE, independently of the product's `VERBS`: the fake is the oracle of the plan's
  * decision (§15f #5), so a verb added to the client without a decision added here fails rather than passing because
  * both read one list.</p>
@@ -72,6 +76,8 @@ export interface FakeScenario {
   readonly logs?: string;
   /** E10.S1: the file (in `answers`) `archive check-base <path> --json` answers; `archive-check-base.json` by default. */
   readonly checkBase?: string;
+  /** E10.S1: `config set archive.baseFolder <v>` exits with this code and stderr instead of writing. */
+  readonly configExit?: { readonly code: number; readonly stderr: string };
 }
 
 /** The root calls' scripted answers (E6.S2); absent, every root call of the closed set answers as the goldens do. */
@@ -238,6 +244,33 @@ function archiveReadOf(tail: readonly string[]): ((scenario: FakeScenario) => st
   return sub === 'check-base' && isPathValue(third) && fourth === '--json' ? (scenario) => scenario.checkBase ?? 'archive-check-base.json' : undefined;
 }
 
+// ---- E10.S1: the ONE config write — the fake's OWN copy of its shape ----
+
+/** The ten words of the one config call the extension sends: `-d <distro> --cd / --exec <daemon> config set archive.baseFolder <v>`. */
+function configSetOf(argv: readonly string[]): { readonly value: string } | undefined {
+  const [d, , cd, slash, exec, binary, config, set, key, value, ...rest] = argv;
+  const shaped = d === '-d' && cd === '--cd' && slash === '/' && exec === '--exec' && binary === DAEMON && rest.length === 0;
+
+  return shaped && config === 'config' && set === 'set' && key === 'archive.baseFolder' && value !== undefined ? { value } : undefined;
+}
+
+/**
+ * The value is written only when it is empty (*Stop archiving*) or EXACTLY the folder the scenario's own `check-base` answer
+ * accepted — stricter than the daemon, which judges any folder again: a value the extension never had judged is refused.
+ */
+function configReply(scenario: FakeScenario, config: { readonly value: string }, argv: readonly string[]): Reply {
+  const report = readJson(path.join(scenario.answers, scenario.checkBase ?? 'archive-check-base.json'));
+  const judged = report.accepted === true && report.folder === config.value;
+  if (config.value !== '' && !judged) {
+    return refuse(`config set archive.baseFolder with a value the check-base answer did not accept: ${JSON.stringify(config.value)}`, argv);
+  }
+  if (scenario.configExit !== undefined) {
+    return { code: scenario.configExit.code, stderr: scenario.configExit.stderr, ...delay(scenario) };
+  }
+
+  return { code: 0, stdout: Buffer.from(`archive.baseFolder = ${config.value === '' ? '(none)' : config.value} (user)\n`, 'utf8'), ...delay(scenario) };
+}
+
 // ---- E6.S3 / E6.S4: the three run reads — the fake's OWN copy of their shapes ----
 
 /** The one instant shape the client sends, with its offset spelt (the daemon's `LogPeriod.ParseInstants` takes more; the client sends this). */
@@ -319,6 +352,10 @@ export function decide(scenario: FakeScenario, argv: readonly string[], stdin: B
   }
   if (stdin.length > 0) {
     return refuse('stdin outside --only -: only a root confirm of A4 pipes a list', argv);
+  }
+  const config = configSetOf(argv);
+  if (config !== undefined) {
+    return distroReply(scenario, argv) ?? configReply(scenario, config, argv);
   }
   const forbidden = argv.find((word) => FORBIDDEN_WORDS.includes(word));
   if (forbidden !== undefined) {

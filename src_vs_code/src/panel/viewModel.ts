@@ -6,6 +6,7 @@ import { at, unavailableAncestor } from './jsonPath';
 import { isUnavailable, unavailableText } from './read';
 import { RENDERERS, type Rendered } from './rowRenderers';
 import type { CleanupControls, PanelView, ViewLevel, ViewRow, ViewSection } from './view';
+import { NO_ARCHIVE, type ArchiveControls } from '../archive/archiveView';
 import type { GuardView } from '../windowsTime/guardState';
 import { windowsTimeNeedsFix } from '../windowsTime/windowsTimeNeed';
 
@@ -118,7 +119,7 @@ export const NO_CLEANUP: CleanupControls = { enabled: false, state: '', stateLev
 export const NO_GUARD: GuardView = { line: 'Windows Time guard: checking…', level: 'none', buttons: [] };
 
 /** `cleanup` is the host's derivation (`cleanup/cleanupView.ts`) — this module reads nothing of the root paths; `guard` is the
- * Windows Time guard host's (`windowsTime/guardHost.ts`). */
-export function buildPanelView(snapshot: Snapshot, cleanup: CleanupControls = NO_CLEANUP, guard: GuardView = NO_GUARD): PanelView {
-  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), cleanup, windowsTimeGuard: guard };
+ * Windows Time guard host's (`windowsTime/guardHost.ts`); `archive` the archive host's (`archive/archiveHost.ts`, E10.S1). */
+export function buildPanelView(snapshot: Snapshot, cleanup: CleanupControls = NO_CLEANUP, guard: GuardView = NO_GUARD, archive: ArchiveControls = NO_ARCHIVE): PanelView {
+  return { heading: `AI OS Care${distroOf(snapshot)}`, ...notice(snapshot), actions: actions(snapshot), sections: sections(snapshot), cleanup, windowsTimeGuard: guard, archive };
 }

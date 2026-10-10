@@ -1,3 +1,5 @@
+import type { ArchiveHost } from './archive/archiveHost';
+import type { ArchiveRecorder } from './archive/archiveRecorder';
 import type { CleanupHost } from './cleanup/cleanupHost';
 import type { CleanRecorder } from './cleanup/cleanRecorder';
 import type { InstallRecorder } from './install/installUi';
@@ -46,6 +48,9 @@ export interface WslCareTestApi {
   cleanRecorder(): CleanRecorder;
   /** E6.S4: the Logs page — its controller (period, rendered blocks) as the page's messages reach it. */
   logs(): LogsPanel;
+  /** E10.S1: the archive's host — its reads, its view and its two flows — and its recorded dialog, modals and notifications. */
+  archive(): ArchiveHost;
+  archiveRecorder(): ArchiveRecorder;
   /** The version the running bundle was built for (`buildStamp.ts`). */
   buildVersion(): string;
 }

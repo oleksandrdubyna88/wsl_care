@@ -20,7 +20,9 @@ import { stringLiteralsAt, stringLiteralsOf } from './support/sourceScan';
  *   `--timer`, `--confirm`, `--manual`, `--preview`, `--detach`, `--only`, `--stop`, `--request`), `config` as an argv
  *   word, and the word `root` — prose about root only as an exact literal of `root/rootFailureText.ts`, as `sudo` is allowed
  *   only in the install command;
- * - `--timer`, `--user` and `config` are forbidden EVERYWHERE, the root region included.
+ * - `--timer` and `--user` are forbidden EVERYWHERE, the root region included; `config` everywhere but ONE region:
+ * - the CONFIG REGION (`// src/config/configCall.ts`, E10.S1 — the one user-layer writer) must exist and its literals must EQUAL
+ *   its own exact set; it may spell `config` and nothing else of the forbidden set (no `-u`, no `root`, no root flag).
  *
  * Bare words (`-`, `act`, `collect`) are deliberately NOT matched outside the root region (§15k #10: they occur in
  * ordinary code and prose): they are held by the import graph (`structure.test.ts`: only the cleanup controller imports
@@ -38,6 +40,8 @@ interface Forbidden {
 const BACKTICK = String.fromCharCode(96);
 
 const ROOT_MARKER = 'src/root/rootCall.ts';
+
+const CONFIG_MARKER = 'src/config/configCall.ts';
 
 function flag(word: string): (literal: string) => boolean {
   const escaped = word.replace(/[-]/g, '\\-');
@@ -65,6 +69,17 @@ const OUTSIDE_ROOT: readonly Forbidden[] = [
  * empty string and the newline that build the stdin lines, and WSLENV, taken out of every root call's environment.
  */
 const ROOT_LITERALS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '-', '--stop', '--json', ',', 'A4', 'confirm', '', '\n', 'WSLENV'];
+
+/**
+ * The config region's literals, EXACTLY — the oracle of `configCall.ts`, written out independently: the settings verb, its `set`,
+ * the one key, the empty value that stops the archive, the ceiling it takes (`runRead`), and the words of reading its ending
+ * (`exited`, the launcher reading `daemonCall`, `written`, the `utf8` of its text answer). A `reset`, a second key or a `-u` is a
+ * finding.
+ */
+const CONFIG_LITERALS = ['config', 'set', 'archive.baseFolder', '', 'runRead', 'exited', 'daemonCall', 'written', 'utf8'];
+
+/** What the config region may not spell: everything outside the root region forbids, but its own verb. */
+const IN_CONFIG: readonly Forbidden[] = OUTSIDE_ROOT.filter((f) => !f.name.startsWith('config'));
 
 /** The exact literals of the failure-text module that spell "root" — the only root prose any other region may carry. */
 function rootProse(): string[] {
@@ -103,29 +118,40 @@ function findings(text: string): string[] {
   if (!all.some((r) => r.name === ROOT_MARKER)) {
     out.push(`${ROOT_MARKER}: the root region's marker is missing (a minified bundle, or the module gone)`);
   }
-  const rootLiterals = new Set<string>();
+  if (!all.some((r) => r.name === CONFIG_MARKER)) {
+    out.push(`${CONFIG_MARKER}: the config region's marker is missing (a minified bundle, or the module gone)`);
+  }
+  const held = { [ROOT_MARKER]: new Set<string>(), [CONFIG_MARKER]: new Set<string>() };
   for (const literal of stringLiteralsAt(text, ts.ScriptKind.JS)) {
     const region = regionAt(all, literal.start);
-    const set = region === ROOT_MARKER ? EVERYWHERE : OUTSIDE_ROOT;
-    for (const word of set.filter((f) => f.matches(literal.text))) {
+    for (const word of forbiddenIn(region).filter((f) => f.matches(literal.text))) {
       out.push(`${region}: ${word.name}`);
     }
-    if (region === ROOT_MARKER) {
-      rootLiterals.add(literal.text);
+    if (region === ROOT_MARKER || region === CONFIG_MARKER) {
+      held[region].add(literal.text);
     }
   }
 
-  return [...new Set([...out, ...rootSetFindings(rootLiterals, all)])];
+  return [...new Set([...out, ...setFindings(ROOT_MARKER, ROOT_LITERALS, held[ROOT_MARKER], all), ...setFindings(CONFIG_MARKER, CONFIG_LITERALS, held[CONFIG_MARKER], all)])];
 }
 
-function rootSetFindings(literals: ReadonlySet<string>, all: readonly Region[]): string[] {
-  if (!all.some((r) => r.name === ROOT_MARKER)) {
+function forbiddenIn(region: string): readonly Forbidden[] {
+  if (region === ROOT_MARKER) {
+    return EVERYWHERE;
+  }
+
+  return region === CONFIG_MARKER ? IN_CONFIG : OUTSIDE_ROOT;
+}
+
+/** A sanctioned region's literals against its exact set: every extra one and every missing one is a finding. */
+function setFindings(marker: string, expected: readonly string[], literals: ReadonlySet<string>, all: readonly Region[]): string[] {
+  if (!all.some((r) => r.name === marker)) {
     return [];
   }
-  const extra = [...literals].filter((l) => !ROOT_LITERALS.includes(l));
-  const missing = ROOT_LITERALS.filter((l) => !literals.has(l));
+  const extra = [...literals].filter((l) => !expected.includes(l));
+  const missing = expected.filter((l) => !literals.has(l));
 
-  return [...extra.map((l) => `${ROOT_MARKER}: an unexpected literal ${JSON.stringify(l)}`), ...missing.map((l) => `${ROOT_MARKER}: the expected literal ${JSON.stringify(l)} is missing`)];
+  return [...extra.map((l) => `${marker}: an unexpected literal ${JSON.stringify(l)}`), ...missing.map((l) => `${marker}: the expected literal ${JSON.stringify(l)} is missing`)];
 }
 
 /** A copy of `text` with `line` inserted right after the header of `region`. */
@@ -142,7 +168,7 @@ test('the shipped bundle: the root region holds exactly its literals, and no oth
 
 test('the scan reads the real bundle: the regions are there, the root region and the cleanup controller among them', () => {
   const names = regions(bundleText()).map((r) => r.name);
-  for (const module of ['src/extension.ts', 'src/client/WslCareClient.ts', ROOT_MARKER, 'src/root/cleanupController.ts']) {
+  for (const module of ['src/extension.ts', 'src/client/WslCareClient.ts', ROOT_MARKER, 'src/root/cleanupController.ts', CONFIG_MARKER, 'src/archive/archiveFlow.ts']) {
     assert.ok(names.includes(module), `the bundle has no region ${module}`);
   }
   const literals = stringLiteralsOf(bundleText(), ts.ScriptKind.JS);
@@ -244,4 +270,37 @@ test('the sudo scan is alive: the real bundle does carry the install command\'s 
 test('the bundle carries the build stamp of the version it was built for (scripts/bundle.mjs)', () => {
   const version = (JSON.parse(fs.readFileSync(path.join(EXTENSION_ROOT, 'package.json'), 'utf8')) as { version: string }).version;
   assert.deepEqual(stringLiteralsOf(bundleText(), ts.ScriptKind.JS).filter((l) => l.startsWith('wsl-care-build ')), [`wsl-care-build ${version}`]);
+});
+
+// ---- E10.S1: the config region — the one user-layer writer ----
+
+test('the scan reads the config region: it exists, and holds exactly its literals', () => {
+  assert.ok(regions(bundleText()).some((r) => r.name === CONFIG_MARKER));
+  assert.deepEqual(findings(bundleText()).filter((f) => f.startsWith(CONFIG_MARKER)), []);
+});
+
+test('a planted config word in ANOTHER module\'s region is found there — the archive flow may not spell it either', () => {
+  const planted = plantedIn(bundleText(), 'src/archive/archiveFlow.ts', 'var stray = ["config", "set", "dryRun", "false"];\n');
+  assert.deepEqual(findings(planted), ['src/archive/archiveFlow.ts: config (an argv word; config set / config reset)']);
+});
+
+test('a planted config word IN the root region is found — the root module never writes a setting', () => {
+  const planted = plantedIn(bundleText(), ROOT_MARKER, 'var settings = ["config"];\n');
+  assert.deepEqual(findings(planted), [`${ROOT_MARKER}: config (an argv word; config set / config reset)`, `${ROOT_MARKER}: an unexpected literal "config"`]);
+});
+
+test('a planted -u or root word IN the config region is found — the writer is unprivileged', () => {
+  const planted = plantedIn(bundleText(), CONFIG_MARKER, 'var asRoot = ["-u", "root"];\n');
+  assert.deepEqual(findings(planted), [`${CONFIG_MARKER}: -u (another user)`, `${CONFIG_MARKER}: root`, `${CONFIG_MARKER}: an unexpected literal "-u"`, `${CONFIG_MARKER}: an unexpected literal "root"`]);
+});
+
+test('an extra literal in the config region is found — its set is exact (a reset, or a second key)', () => {
+  assert.deepEqual(findings(plantedIn(bundleText(), CONFIG_MARKER, 'var extra = ["reset"];\n')), [`${CONFIG_MARKER}: an unexpected literal "reset"`]);
+  assert.deepEqual(findings(plantedIn(bundleText(), CONFIG_MARKER, 'var key = ["dryRun"];\n')), [`${CONFIG_MARKER}: an unexpected literal "dryRun"`]);
+});
+
+test('a stripped config marker is found — and its config word then falls into the region before it, where it is a finding too', () => {
+  const found = findings(bundleText().replace(`// ${CONFIG_MARKER}\n`, ''));
+  assert.ok(found.includes(`${CONFIG_MARKER}: the config region's marker is missing (a minified bundle, or the module gone)`), found.join('\n'));
+  assert.ok(found.some((f) => f.endsWith(': config (an argv word; config set / config reset)')), found.join('\n'));
 });
