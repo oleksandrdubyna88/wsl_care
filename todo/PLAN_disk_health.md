@@ -4,7 +4,7 @@
 > and memory report with CPU attribution by Claude session (E15), a responsiveness probe with a measured restart forecast
 > and the remedy ladder (E16), statistics kept forever on a share (E17), and the shared webview kit, the full view and the
 > slim sidebar of GitHub issue #87 (E18). Each story is one pull request. Story G1 (the GPU alert) is NOT here: it is built
-> separately (`todo/PLAN_gpu_health.md` (branch `feat/wc-gpu-health`), branch `feat/wc-gpu-health`); its daemon half G2 is E15.S8.
+> separately (`todo/PLAN_gpu_health.md` on branch `feat/wc-gpu-health`); its daemon half G2 is E15.S8.
 >
 > Evidence: [2026-10-10_disk.md](../research/2026-10-10_disk.md) (D1–D9). Related: [module_daemon.md](../research/module_daemon.md),
 > [module_vs_code.md](../research/module_vs_code.md), [module_mcp_servers.md](../research/module_mcp_servers.md),
@@ -260,7 +260,7 @@ this repository, one per lane; E18.K1 lives in the kit's repository.
 
 | Item | This epic | The other plan |
 |---|---|---|
-| GPU | E15.S8: the daemon's `gpu.adapters`, the contract table with one writer, a doctor check; a test holding G1's table equal | G1 (`todo/PLAN_gpu_health.md` (branch `feat/wc-gpu-health`)): the extension's read, the top alert, the bar mark, *Enable <GPU>*; builds no daemon code |
+| GPU | E15.S8: the daemon's `gpu.adapters`, the contract table with one writer, a doctor check; a test holding G1's table equal | G1 (`todo/PLAN_gpu_health.md`, branch `feat/wc-gpu-health`): the extension's read, the top alert, the bar mark, *Enable <GPU>*; builds no daemon code |
 | E7.S5a ([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)) | the Windows tab reads `wsl-care.exe status --json` through `WindowsCareClient` once it exists (a follow-up story) | the bundle, the attestation, `WindowsCareClient` and its first `--version` |
 | S7b ([PLAN_twenty_sessions_all_day.md](PLAN_twenty_sessions_all_day.md)) | the ladder's A21 rung as `arrivesWithS7b`; the Windows probe as a `watch` step S7b's runner will call; E15.S6 reuses S7b.1's Windows ledger | A21, the Windows `watch`, its runner |
 | E10 archive (#88, #92) | `configCall.ts` gains a second key; the archive's folder flow reused; a stats folder may not lie inside the archive base | unchanged |
