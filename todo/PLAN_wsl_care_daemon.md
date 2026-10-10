@@ -4570,15 +4570,16 @@ reload. No new root argv word, no new root op and no new journal field: A13 is o
    - *Archive now* carries `data-archive-action="archiveNow"` and posts the bare `archiveNow` (`panel/messages.ts`).
    - It is also the command `wslCare.archiveNow` (`package.json`, `commandButtons.ts`, `manifest.test.ts`, the catalogue).
    - It is enabled only when:
-     - the daemon advertises `archive.run` and `act.detach`;
+     - the daemon advertises `archive.run`, `archive.preview` and `act.detach` (plan round #0: the preview the click starts needs `archive.preview`);
      - `status.actions` holds A13;
      - a base folder is set;
      - no archive flow is busy;
      - the cleanup controls are enabled (no run in flight, the journal not full).
    - `ArchiveHost` reads those last two from the cleanup host it is handed, and re-renders on its changes.
 7. **The fake and the golden.**
-   - The daemon's `GoldenContracts` gains `act-a13-preview.json`: `act A13 --preview --json` over the captured morning tree,
-     whatever that tree yields (likely the skip *no archive configured*).
+   - The daemon's `GoldenContracts` gains `act-a13-preview.json`: `act A13 --preview --json` with a base folder set and one
+     session due, so the golden carries the REAL per-agent items (plan round #2, accepted with this scope — the live root run
+     stays the owner's). The extension's parser, modal test and fake read that golden, never a hand-written item.
    - The strict fake answers A13's preview from that golden. A scenario may give an answers folder whose A13 entry carries
      per-agent items in the daemon's `ActionItem` shape.
    - The fake's root shapes take A13 only with `archive.preview` (preview) or `archive.run` (confirm) advertised, and never
@@ -4598,6 +4599,10 @@ fake → scenario → docs.
 - the button is greyed exactly when its conditions do not hold;
 - the bare message and the command;
 - the fake refuses A13 beside another id, or without its capability.
+
+**The plan round** (coai session 7b82a297, `proceed`, codex only): #0 and #2 accepted as written above; #1 (verify the copy
+before the removal from the extension) rejected — that sequence is the daemon's A13, pinned by its own tests
+(`ArchiveRunTests.Guards.cs`, `ArchiveRemoveTests`, the NAS live gate); the extension moves no bytes.
 
 **Not in it:** restoring (A20, E10.S2). A live root A13 run is the owner's (the morning list).
 

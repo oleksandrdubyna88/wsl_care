@@ -247,6 +247,9 @@ internal static partial class GoldenContracts
             files.Add(Answered("act-a4-preview.json", morning, await morning.RunAsync("act", "A4", "--preview", "--json"), matched));
         }
 
+        // E10.S1b: A13's line when a session is due — produced by the daemon's own ArchiveAction (A13PreviewGolden says why not the CLI).
+        files.Add((A13PreviewGolden.File, await A13PreviewGolden.TextAsync()));
+
         // E6.S1: the answer a detach hands the panel — the run id it follows and the unit systemd runs it in.
         using (var detach = new ScenarioHome("golden-detach") { ClaimsRoot = true })
         {
