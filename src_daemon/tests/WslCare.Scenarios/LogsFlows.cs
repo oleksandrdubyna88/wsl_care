@@ -32,9 +32,27 @@ public sealed class LogsFlows
         if (OperatingSystem.IsLinux())
         {
             ProcfsFixture.CopyTo(home.SandboxRoot);
+            // PLAN_boot_settle.md: the captured /proc says the machine has been up 177 s — under timer.bootDelayMinutes — so a timer
+            // run here would really wait ~12 min to settle. These flows are about other things: the machine layer turns the wait off
+            // (BootSettleFlows holds the settle itself).
+            SettleOff(home);
         }
 
         return home;
+    }
+
+    /// <summary>The machine layer that turns the timer run's settle step off — refused when a machine layer already exists, so no
+    /// flow's own machine configuration is ever replaced silently.</summary>
+    internal static void SettleOff(ScenarioHome home)
+    {
+        var machine = home.Paths.MachineConfigFile;
+        if (File.Exists(machine))
+        {
+            throw new InvalidOperationException($"{machine} exists: merge the settle keys into it instead");
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(machine)!);
+        File.WriteAllText(machine, """{ "timer": { "bootDelayMinutes": 0, "busyWaitMinutes": 0 } }""");
     }
 
     [Fact]

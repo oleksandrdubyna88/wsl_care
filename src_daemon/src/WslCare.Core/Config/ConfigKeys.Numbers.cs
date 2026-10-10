@@ -301,6 +301,17 @@ public static partial class ConfigKeys
         /// <summary>wsl-care.service's TimeoutStartSec: the backstop that ends a timer run as a whole (E7.S2b/S2c review C-H2; at least
         /// the derived worst case of a timer run). Default 240.</summary>
         public static readonly ConfigKey.IntKey RunLimitMinutes = new("timer.runLimitMinutes", 60, 1440) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
+
+        /// <summary>A timer run within this many minutes of boot first waits until the machine has been up that long
+        /// (PLAN_boot_settle.md; 0 = off). Default 15 — provisional, about three times the one measured busy boot of 2026-10-10.</summary>
+        public static readonly ConfigKey.IntKey BootDelayMinutes = new("timer.bootDelayMinutes", 0, 120) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
+
+        /// <summary>The longest a timer run waits while S6 says the machine is busy, then it runs anyway (PLAN_boot_settle.md; 0 = off).
+        /// Default 20 — provisional, no measurement yet (the run record's <c>settled</c> measures it).</summary>
+        public static readonly ConfigKey.IntKey BusyWaitMinutes = new("timer.busyWaitMinutes", 0, 120) { Trust = new(SafeDirection.Higher, MachineOnly: true) };
+
+        /// <summary>How often a waiting timer run asks S6 again (PLAN_boot_settle.md). Default 60.</summary>
+        public static readonly ConfigKey.IntKey BusyCheckSeconds = new("timer.busyCheckSeconds", 10, 600) { Trust = new(SafeDirection.None, MachineOnly: true) };
     }
 
     public static partial class Units
@@ -780,6 +791,9 @@ public static partial class ConfigKeys
         Timer.RandomizedDelayMinutes,
         Timer.AccuracyMinutes,
         Timer.RunLimitMinutes,
+        Timer.BootDelayMinutes,
+        Timer.BusyWaitMinutes,
+        Timer.BusyCheckSeconds,
         Units.Nice,
         Units.MemoryMaxMb,
         Units.StopTimeoutSeconds,

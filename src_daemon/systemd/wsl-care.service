@@ -37,10 +37,11 @@
 #                         OOM-kill a child mid-cleanup; 1G is a ceiling against a runaway, not a budget (the VM's
 #                         ceiling is 36 GB). Unmeasured until the live install: POST_DEPLOY.md #11 reads the peak.
 #   Nice / IOSchedulingClass — plan §8, resource limits for a background job
-#   TimeoutStartSec=240min (E7.S2b/S2c review C-H2, which REVERSED E7.S2c's infinity, N-4): the timer.runLimitMinutes default,
+#   TimeoutStartSec=276min (E7.S2b/S2c review C-H2, which REVERSED E7.S2c's infinity, N-4): the timer.runLimitMinutes default,
 #                         the backstop that ends a timer run as a whole — kept above the derived worst case of a timer run
 #                         (every command template once at its ceiling with its drains, the two walks, 10 min: 220 min with
-#                         the defaults; a coupled rule refuses less). The old 10min could kill a long A7 prune mid-run; with
+#                         the defaults; a coupled rule refuses less). PLAN_boot_settle.md adds the settle step's waits
+#                         (15 + 20 + 1 min) and raised 240 to 276 by exactly them, so the archive's slack (D8) is unchanged. The old 10min could kill a long A7 prune mid-run; with
 #                         no limit at all a hung read kept the run "live" forever, because the heartbeat beats on a timer —
 #                         so a run that makes no step for running.noProgressMinutes (20) now reads WEDGED and act --stop
 #                         ends it long before this limit
@@ -67,7 +68,7 @@ ExecStart=/opt/wsl-care/bin/wsl-care collect --timer
 Nice=19
 IOSchedulingClass=idle
 MemoryMax=1G
-TimeoutStartSec=240min
+TimeoutStartSec=276min
 SuccessExitStatus=75 130
 NoNewPrivileges=yes
 KillMode=control-group

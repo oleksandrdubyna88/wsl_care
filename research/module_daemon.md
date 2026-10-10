@@ -76,6 +76,14 @@ The CLI verbs, as `CommandLine.Commands` spells them — the derived verb regist
 § *The derived verb register* fails on a verb missing there. The systemd units (`src_daemon/systemd/`) start
 `collect --timer` (the timer), `events follow` (the follower) and the `wsl-care-act@` template (detached runs).
 
+**A timer run settles first** (`Core/Collect/RunSettle.cs`, [PLAN_boot_settle.md](PLAN_boot_settle.md)): before the run
+lock and before `running.json`, so its wait blocks nothing, a `collect --timer` in the distro waits until the machine has been up
+`timer.bootDelayMinutes` (15), then — at any time — while S6's `MachineBusy` says busy, in `timer.busyCheckSeconds` (60) steps
+for at most `timer.busyWaitMinutes` (20); then it runs anyway. An unread uptime or busy signal is no wait, noted. The run
+detail's `settled {bootWaitSeconds, busyWaitSeconds, busyAtEnd, notes}` says what it waited (absent on a run the timer did not
+start). Why: on 2026-10-10 the boot catch-up ran 07:44–07:48Z while Docker started 12 containers. The waits are part of the
+run's derived worst case, so `timer.runLimitMinutes` rose from 240 to 276 by exactly them (D8's archive slack unchanged).
+
 ## External dependencies
 
 Read: `/proc`, cgroup v2, `/etc/passwd`, `/etc/wsl.conf`, `docker` (read verbs, each with a ceiling), `systemctl show`,
