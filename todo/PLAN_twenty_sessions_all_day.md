@@ -1358,6 +1358,9 @@ few minutes looks idle in a 1 s window — the S1 defect (2026-10-07 M1–M3) on
 
 #### S7b.2 — as to be built (2026-10-10, branch `feat/wc-s7b-relay-stop`): the distro-side relay stop, A21
 
+> Revised after the plan round (coai `f7248563`: proceed, 3 findings accepted) and the own Fable review (verdict revise, 15
+> findings, all taken in; the two blocking ones are resolved by design below, not by an unmeasured assumption).
+
 **Why this route.** Q-S7b-3 was measured on 2026-10-10 (the owner approved it, the coordinator ran it; recorded in
 [2026-10-09_interop_relays.md](../research/2026-10-09_interop_relays.md) § 5):
 - SIGTERM to one client-gone `creds-mcp.exe` relay (pid 12062) ended it in 26 ms;
@@ -1367,95 +1370,203 @@ few minutes looks idle in a 1 s window — the S1 defect (2026-10-07 M1–M3) on
 So the leak S7b exists for is closed EXACTLY from the distro side. The relay is the target user's own Linux process,
 identified by pid and start ticks, and its "client gone" evidence is local to `/proc`. This **supersedes** S7b's "no interop
 stop": D2 is met by showing, per relay, that its client is gone. The Windows-side stop of S7b items 3–5 (for orphaned or
-agent-owned Windows servers that have no relay) stays a later story, S7b.3, and its bundled exe is E7.S5a
-(`todo/PLAN_bundle_windows_binary.md` (PR #86)).
+agent-owned Windows servers that have no relay) stays a later story, S7b.3 (A22), and its bundled exe is E7.S5a
+([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md)).
+
+**What is NOT measured, and how the design stands without it** (the review's findings 1 and 2):
+- what a relay's fd 0/1/2 are — pipes, sockets or files. Node's `child_process` gives a child socketpairs, and the two ends of
+  a socketpair have DIFFERENT inodes, so an inode scan cannot see a socket's peer;
+- whether `Relay(n)` holds a relay's stdio (root's fd table; the experiment read as the user);
+- the session id (`stat` field 6) of a command born under `Relay(n)`.
+
+The design needs none of them to be safe: a socket on the relay's stdio KEEPS it, `Relay(n)` is scanned as a holder like any
+other process, and the session id is not used (replaced by the exact `pid == n` test below). What they decide is only how
+much A21 will find. The DoD's dry-run preview on the owner's machine shows that, kept reason by kept reason. If it shows that
+relays sit on sockets, a follow-up story adds the socket's PEER through `sock_diag` (`UNIX_DIAG_PEER`). The read-only user
+script `research/diagnostics/relay-facts.sh` prints the facts whenever relays exist; at 2026-10-10 14:25Z there were none.
 
 **Design — A21 `InteropRelayStop`**, a distro action beside A19 (`Actions/Suspects/`), sharing A19's machinery:
 1. **A relay** is a process of the snapshot that meets all of these:
-   - `/proc/<pid>/exe` is `/init`;
-   - `argv[0]` is `/init`;
-   - `argv[1]` is a `/mnt/<drive>/…` path ending in `.exe` (no case fold);
-   - its program name (the basename without `.exe`) is a server of the Windows catalogue (`WindowsMcpCatalogue.Servers`:
-     `coai-mcp` when watched, `creds-mcp`, the user's `mcpServers.programs`). These are the Windows programs this product
-     already counts, and the same name rule applies.
-2. **"Client gone"** requires ALL of the following, read from `/proc` (a new reader in `Collectors/Procfs`, read-only):
-   - **re-parented:** the parent's `comm` matches exactly `Relay(<digits>)` and the parent's uid is 0. That is the WSL
-     session's init.
-   - **a foreign session:** the relay's session id (`stat` field 6) is neither its own pid nor its parent's. A relay run as
-     `wsl.exe`'s top-level command is born under `Relay(n)` with a live Windows-side caller, and is not foreign
-     (the S7b own review, finding 3a).
-   - **no other holder:** no process but the relay holds the pipe or socket that is the relay's fd 0 or 1. Root reads every
-     `/proc/*/fd`. A daemonising caller still holding the pipe keeps the relay (finding 3b). **The session init itself counts
-     as a holder too.** Whether `Relay(n)` holds the relay's stdio is NOT measured — the experiment read as the user — and a
-     relay it holds is kept with that reason, so the dry-run preview shows it before anything stops.
-   - **idle:** the relay's CPU has not moved for at least `mcpWatchdog.orphanIdleMinutes`. This is A19's orphan rule ("nobody
-     can talk to it any more", D1's same threshold), over the CPU history: `AgentCpuHistory`, widened to record relays by
-     identity, as it was widened to MCP servers in S2a.
-3. **The target user's**, as for A18 and A19: never root's, never another account's, not a zombie, no controlling terminal.
+   - `/proc/<pid>/exe` is `/init`, and `argv[0]` is `/init`;
+   - `argv[1]` ends in `.exe`, compared without case. No `/mnt/` prefix is required, because `[automount] root=` moves it;
+   - its program, the base name with `.exe` stripped and compared without case as `WindowsMcpCatalogue.ServerOf` does, is a
+     **catalogue** server: `creds-mcp`, and `coai-mcp` when `mcpServers.watched` holds it.
+   - **The user's `mcpServers.programs` are NOT targets in this story** (review finding 3). A19 and S7b keep a user
+     program's orphan, because a name the user chose may be another program, and every client-gone relay is an orphan by
+     construction. A later story may admit them with an explicit substitute guard.
+2. **"Client gone"** is shown by the first three of these, all read from `/proc` by a new read-only reader in
+   `Collectors/Procfs`. The fourth is a freshness floor, not evidence.
+   - **Re-parented to a reaper.** The parent is either pid 1, or a uid-0 process whose `comm` is exactly `Relay(<digits>)` or
+     `SessionLeader` (review finding 7: a tmux-hosted session's relays land on a subreaper, not on `Relay(n)`).
+   - **Not born there.** A `Relay(n)` is created for ONE command, and `n` is that command's pid. The samples: `Relay(1402)` is
+     pid 1401 (2026-10-09 § 2), `Relay(220668)` is pid 220666 with child 220668 (2026-10-10), and the client-gone relay 12062
+     was under `Relay(7411)`. So a relay whose pid is `n` is `wsl.exe`'s top-level command, whose Windows-side caller may
+     live: **kept**. This replaces the session-id check (review findings 1 and 15a).
+   - **Its stdio has no other holder** (review finding 2 and the plan round's finding 0).
+     - fd 0 and fd 1 must each be a `pipe:[…]`. A socket, a file, a device, a pty, a missing or unreadable link KEEPS the relay
+       and names why ("its stdio is a socket: a socket's peer cannot be told from /proc").
+     - fd 2 is scanned too when it is a pipe. If it is a socket, the relay is kept. If it is a file or `/dev/null`, that is fine.
+     - No other process may hold any of those pipe inodes. Root reads every `/proc/<pid>/fd`, and `Relay(n)` and every other
+       uid-0 process count like any other holder.
+     - A process that vanished mid-scan (`ENOENT`) is skipped. An fd table that answers `EACCES`/`EPERM` makes the WHOLE scan
+       inconclusive: every relay is kept that run, and the reason names the pid.
+   - **Idle** (the floor). The relay's CPU has not moved for at least `mcpWatchdog.orphanIdleMinutes` over `AgentCpuHistory`.
+     A relay with a live but quiet client also spends no CPU, so this proves nothing about the client. It keeps a relay that is
+     still moving bytes, and it is not counted as evidence.
+3. **The target user's**, as for A18 and A19:
+   - the REAL uid of `/proc/<pid>/status` equals the target user's;
+   - never root's, never another account's, not a zombie, no controlling terminal.
 4. **The stop: SIGTERM ONLY**, through the pidfd, by pid AND start ticks.
-   - `IProcessSignals` gains a TERM-only mode. A process that outlives `processes.termGraceSeconds` is reported `StillRunning`
-     ("did not end on SIGTERM; no SIGKILL is sent to a relay"). There is never a SIGKILL.
-   - Just before the signal, every condition of 1–3 is re-read on a fresh table and fresh `/proc` reads, so a client that
-     returned or a reused pid stops nothing.
+   - `IProcessSignals` gains a SEPARATE method, `TerminateOnlyAsync`.
+     - Its default implementation is `Refused`, so `RefusingProcessSignals` and every test fake refuse it unless they opt in.
+     - A11, A18 and A19 cannot reach it by accident, and the architecture test that keeps the signal calls in
+       `ProcessSignals.cs` still holds.
+   - `PidfdProcessSignals` sends SIGTERM and waits `processes.termGraceSeconds`. A survivor is `StillRunning`, with the note
+     "did not end on SIGTERM; no SIGKILL is sent to a relay; its Windows process `<program>.exe` is still running — S7b.3 (A22)".
+     There is never a SIGKILL.
+   - **Just before the signal**, the relay test, the four checks and the account are re-read on a fresh table and fresh
+     `/proc` reads. Why the remaining window is benign (review finding 10):
+     - a pid reused between the re-read and the pin is refused by the pidfd's start-tick compare;
+     - a client cannot come back to a pipe whose other ends are all closed.
+   - One real consequence, stated: the re-check refuses on moved CPU. So a relay woken by a late byte is kept this run, and,
+     through `mcp-watch.json`, only the 4-hour pass tries it again.
 5. **The controls:**
-   - `auto.A21`, default **true** (D3);
-   - the daemon's dry-run rules: `dryRun`, and the first-week window;
-   - the watch timer (`wsl-care-watch`, every `mcpWatchdog.periodMinutes`) runs A21 after A19, under the same gates;
-   - the 4-hour timer runs it too;
-   - a button run is bound to the shown list, `--process <pid:start>` (`ActionId.ShownProcessIds` gains A21).
-6. **The preview and the record.** Each item gives: the pid and start, the program, the Windows path, the parent
-   `Relay(n)`, the session id, the idle time, and why the client is gone. Each kept relay gives its reason. The run record
-   carries the outcome for each signalled relay: `Ended`, `StillRunning` or `NotTheSame`.
-7. **The panel button** (the owner's standing rule: every action is a button). The panel shows:
-   - a "Windows MCP relays" row: how many relays, and how many client-gone;
-   - a **Stop client-gone relays** button. Its modal lists exactly the preview's items (pid, program, idle time), and
-     confirming runs `act A21 --process …` through the root call with exactly the shown pairs;
-   - A21's auto switch in the extension's settings (`wslCare.…`), mirrored to `auto.A21` the way other switches are.
+   - `auto.A21`, default **true** (D3).
+   - The daemon's dry-run rules. **A21 inherits Q11: no window of its own** (review finding 6).
+     - The timer is dry while `dryRun` is on or the first week runs. On the owner's machine, the week ends 2026-10-11 14:02Z and
+       `dryRun` is still on (`research/2026-10-10_dry_week_report.md`, PR #89).
+     - So A21's first timer runs record what it would do until the owner turns `dryRun` off. Then it is live at the next watch.
+     - The DoD's preview is the only observation it gets; this is said in the PR and in the report to the owner.
+   - **The watch timer** (`wsl-care-watch`, every `mcpWatchdog.periodMinutes`) runs A19 and A21 as ONE recorded act
+     `[A19, A21]`.
+     - It has one shown list: the keys are disjoint, and each action's `Bound` keeps its own.
+     - Each action's gate is its own `auto` switch; the dry-run decision is shared.
+     - So the watch takes the run lock twice, as today (sample, then act). There is no third take.
+     - `WatchTries` keeps up to `mcpServers.maxInstances` (default 256) live tries. The W9 count of 85 relays plus the watched
+       distro servers fits.
+   - **The 4-hour timer** runs it too, in `ActionId.ExecutionOrder` right after A19.
+   - **A button run** is bound to the shown list, `--process <pid:start>` (`ActionId.ShownProcessIds` gains A21).
+6. **The CPU history** (review finding 8; plan round finding 2).
+   - Relays are recorded by identity at all THREE call sites: `ActionEngine.RecordAgentCpu`, `WatchRun.SampleAsync` and the
+     previews' in-memory merge.
+     - `AgentCpuHistory.Sample` gains the relay test, with the Windows catalogue passed from the config.
+     - Today `IsRecorded` matches by argv[0], which is `init`, so no relay is recorded.
+   - **The bound is the existing one:**
+     - the history holds LIVE processes only;
+     - at most `agentCpu.maxEntries` (default 512), the newest by start;
+     - another boot starts it afresh.
+   - **The arithmetic:** a heavy day's agents (≈ 20) + watched distro servers (≈ 40) + build servers (≈ 110, the dry week's
+     worst) + relays (≈ 85) ≈ 255, under 512. Past the cap, the OLDEST drop out as "no history", which keeps them. That is
+     safe, and the preview names it.
+7. **The preview and the record.** Each item gives:
+   - the pid and start;
+   - the program's BASE name only: the Windows path carries the Windows user name, so it stays out of the item (review
+     finding 14);
+   - the parent (`Relay(n)`, `SessionLeader` or pid 1);
+   - the idle time;
+   - why the client is gone.
 
-   Where the extension has no path that writes a daemon key, the setting is SHOWN, with the command that changes it — never
-   silently out of step.
+   Each kept relay gives its reason. The run record carries the outcome for each signalled relay: `Ended`, `StillRunning` or
+   `NotTheSame`. No Windows pid is paired anywhere (the S7b plan round refuted pairing).
+8. **The budget** (review finding 8).
+   - `RunBudget.WatchRunWorstCase` gains A21's grace: one more `processes.termGraceSeconds`, and no kill wait.
+   - It also gains the fd scans: a fixed allowance, `processes.fdScanMilliseconds`, counted twice (the preview and the re-check).
+   - The coupled number rule (`NumberRules`, watch limit ≥ worst case) and its test follow.
+9. **The panel** (the owner's standing rule: every action is a button).
+   - **A "Windows MCP relays" row**, from a new `status` block that the user can read:
+     - relays: how many, and how many re-parented and not born there;
+     - and the EFFECTIVE `auto.A21`.
+     - "Client gone" needs root's holder scan, so the row says "the button's preview tells which have no client".
+   - **A Stop client-gone relays button.**
+     - Its modal is the root preview: at most `ActionPreview.MaxItems` rows shown, all keys sent, as for A19.
+     - Confirming runs `act A21 --process …` through the root call, with exactly the shown pairs.
+   - **No extension setting** (review finding 4). The extension never writes daemon config: S7b item 6, and
+     `structure.test.ts` / `rootCall.test.ts` keep `config` out of root calls. The row shows the daemon's effective switch and
+     the literal command `wsl-care config set auto.A21 false`.
+   - **Where it touches** (review finding 12):
+     - `rootIds.ts`: `ACTION_IDS` gains A21, so the contract-equality test holds; `BUTTON_ONLY_IDS` too, to keep it out of
+       the cleanup gate as A18 and A19 are.
+     - `rootCall.ts`: `ROOT_OPS` and `TAILS` take a `--process` tail for A21. The tail is tied to the action's shown list,
+       not to A4's volumes.
+     - `bundleScan.test.ts` `ROOT_LITERALS`.
+     - A daemon capability `act.processList`, advertised in `Capabilities.All`, as the gate's authority. An older daemon has no
+       button.
+     - `PAGE_ACTIONS`, and `COMMAND_BUTTONS` with its rule test.
 
 **Keys:**
-- reused: `mcpWatchdog.orphanIdleMinutes`, `processes.termGraceSeconds`, `mcpWatchdog.periodMinutes`;
-- new: `auto.A21` (default true).
-
-Every new number is a key; there are none besides these.
+- reused: `mcpWatchdog.orphanIdleMinutes`, `processes.termGraceSeconds`, `mcpWatchdog.periodMinutes`,
+  `mcpServers.maxInstances`, `agentCpu.maxEntries`;
+- new: `auto.A21` (default true), and `processes.fdScanMilliseconds` (the budget's allowance for one scan, default 2000).
 
 **Never:**
 - stop by name;
-- stop a relay whose client is not shown gone on ALL four counts (re-parented, foreign session, no other holder, idle);
+- stop a relay that is not shown re-parented, not born there, AND without another holder of piped stdio;
 - send SIGKILL to a relay;
 - stop anything that is not `/init` with a catalogued Windows program;
+- stop a user program's relay (this story);
 - stop root's or another account's process;
 - stop when `auto.A21` is off, `dryRun` is on, or the first-week window runs (timer).
 
-**RED tests** (fixtures: synthetic `/proc` trees; the signals are a fake — **no test ever signals a real process**):
+**RED tests** (fixtures: synthetic `/proc` trees with `exe` and `fd` links; the signals are a fake — **no test ever signals a
+real process**):
+
+*The judgement:*
 - `A_client_gone_idle_relay_of_a_catalogued_program_is_a_target_by_pid_and_start`
 - `A_relay_with_a_live_caller_is_kept`
-- `A_relay_born_under_the_session_init_is_kept` (its own session)
-- `A_relay_whose_stdio_another_process_holds_is_kept` (the session init counted too)
+- `A_relay_whose_pid_is_its_Relay_parents_n_is_kept` (born there: wsl.exe's top-level command)
+- `A_relay_orphaned_to_pid_1_or_SessionLeader_is_judged_like_one_under_Relay`
+- `A_non_root_parent_named_Relay_is_not_a_reaper`
+
+*The holder scan:*
+- `A_relay_whose_stdio_another_process_holds_is_kept`, including a uid-0 holder and `Relay(n)` itself
+- `A_relay_whose_stderr_pipe_another_process_holds_is_kept` (the plan round's finding 0)
+- `A_relay_whose_stdio_is_a_socket_a_file_or_unreadable_is_kept`
+- `An_unreadable_fd_table_keeps_every_relay`
+- `A_vanished_process_during_the_scan_keeps_nothing`
+
+*What is never a target:*
 - `A_relay_that_used_cpu_within_the_orphan_window_or_has_no_history_is_kept`
-- `A_relay_of_an_uncatalogued_program_or_a_non_init_exe_is_never_a_target`
-- `A_non_root_parent_named_Relay_is_not_the_session_init`
+- `A_relay_of_an_uncatalogued_or_user_program_or_a_non_init_exe_is_never_a_target`
+- `A_relay_program_matches_without_case_and_without_a_mnt_prefix`
 - `Another_users_or_roots_relay_is_never_a_target`
-- `The_stop_is_SIGTERM_only_and_a_survivor_is_reported_still_running_never_killed`
+
+*The stop:*
+- `The_stop_is_SIGTERM_only_and_a_survivor_is_reported_still_running_naming_its_Windows_program`
+- `TerminateOnly_is_refused_by_the_refusing_sender_and_by_default`
 - `A_client_that_returned_or_a_reused_pid_before_the_signal_stops_nothing`
 - `A_button_run_ends_only_what_its_modal_showed`
-- `Auto_A21_is_on_and_the_dry_run_rules_stop_nothing`
-- `The_watch_runs_A21_after_A19`
-- the extension: the row, the button's modal sends exactly the shown pairs, `commandButtons`' rule holds
-- a scenario over the built CLI: `act A21 --preview` on a fixture tree
+
+*The controls:*
+- `Auto_A21_is_on_and_the_dry_run_rules_stop_nothing`, at ENGINE level (`TimerPass`)
+- `The_first_week_window_keeps_A21_dry_with_auto_on_and_dryRun_off_then_lets_it_run` (the plan round's finding 1)
+- `The_watch_runs_A19_and_A21_as_one_act_each_by_its_own_switch`
+- `The_timer_and_the_watch_record_relays_in_the_cpu_history` (all three call sites)
+- `The_watch_worst_case_counts_the_second_grace_and_the_scans` (and the coupled rule)
+
+*The order and the contracts:*
+- `ExecutionOrder` puts A21 after A19;
+- `contracts/actions.json`, `config-keys.json` and the capability.
+
+*The extension:*
+- the row from the status block, and the effective switch with its command;
+- the button's modal sends exactly the shown pairs;
+- `ACTION_IDS` equality, the `ROOT_LITERALS` set, and `commandButtons`' rule.
+
+*The scenario:* `act A21 --preview --json` over the built CLI on a fixture tree.
 
 **Break-it on product code**, each red and then restored:
-- the foreign-session check off;
+- the born-there test off;
 - the holder scan off;
-- TERM-only escalating to KILL;
+- "a socket keeps" off;
+- `TerminateOnly` escalating to KILL;
 - the fresh re-check before the signal off.
 
 **DoD:**
 - [ ] RED, then green; break-it red, restored.
 - [ ] Docs: `module_mcp_servers.md`, `module_daemon.md`, `module_vs_code.md`, `module_tests.md`, `contracts/`.
-- [ ] A dry-run preview on the owner's machine names its client-gone relays, each with its four reasons, before any stop.
+  The measurement scripts are in `research/diagnostics/` (review finding 13).
+- [ ] A dry-run preview on the owner's machine names its relays, each target with its reasons and each kept relay with its
+  reason, before any stop.
 
 ### S8 — the 24 h × 20 sessions soak campaign
 
