@@ -224,7 +224,10 @@
     "lateSlackMinutes": 60,
     "randomizedDelayMinutes": 5,
     "accuracyMinutes": 1,
-    "runLimitMinutes": 240
+    "runLimitMinutes": 276,
+    "bootDelayMinutes": 15,
+    "busyWaitMinutes": 20,
+    "busyCheckSeconds": 60
   },
   "units": {
     "nice": 19,

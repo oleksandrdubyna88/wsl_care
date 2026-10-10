@@ -57,6 +57,12 @@ public sealed record CollectContext(
     /// <summary>How long the run waits for THE run lock: zero — refuse at once — except for an accepted detached full run, whose lock
     /// a <c>--detach</c> check may hold for a moment (<see cref="RunLock.TakeAsync"/>; retro round over PR #11, O1).</summary>
     public TimeSpan LockWait { get; init; }
+
+    /// <summary>What the settle step waited before this TIMER run started (PLAN_boot_settle.md); <c>null</c> on any other run.</summary>
+    public RunSettled? Settled { get; init; }
+
+    /// <summary>Where the settle step says what it waits for, before each wait (the run's log; a test captures it).</summary>
+    public Action<string> Say { get; init; } = static _ => { };
 }
 
 /// <summary>How a full run ended for its records, and its detail (none when another run held the lock).</summary>
@@ -95,8 +101,10 @@ public static class CollectRun
     /// <summary>The "since the last run" window when there is no last run: the timer's period (plan §8).</summary>
     public static TimeSpan DefaultWindow => Tuning.Current.Hours(ConfigKeys.Timer.PeriodHours);
 
-    public static async Task<CollectResult> RunAsync(CollectContext c, CancellationToken cancellationToken)
+    public static async Task<CollectResult> RunAsync(CollectContext context, CancellationToken cancellationToken)
     {
+        // PLAN_boot_settle.md: a timer run settles FIRST — before the lock and running.json — so its wait blocks nothing.
+        var c = await SettledAsync(context, cancellationToken).ConfigureAwait(false);
         var started = c.Clock.GetUtcNow();
         var runId = c.RunId ?? RunId.New(started, c.ProcessId);
         if (c.Files.ProbeWriteAccess(c.Paths.StateDirectory) is WriteAccess.NotWritable denied)
@@ -118,6 +126,22 @@ public static class CollectRun
             default:
                 throw new System.Diagnostics.UnreachableException("ExclusiveLock is a closed set");
         }
+    }
+
+    /// <summary>A timer run in the distro waits for the boot to settle and while the machine is busy (bounded); every other run, and
+    /// the Windows binary (no timer, no /proc), goes at once.</summary>
+    private static async Task<CollectContext> SettledAsync(CollectContext c, CancellationToken cancellationToken)
+    {
+        if (c.Trigger != RunTrigger.Timer || c.Paths is not LinuxHostPaths linux)
+        {
+            return c;
+        }
+
+        var probe = SettleProbe.ForDistro(c.Files, linux, BusyLimits.From(c.Loaded.Config));
+        var settings = SettleSettings.From(c.Loaded.Config);
+        var settled = await RunSettle.WaitAsync(probe, settings, c.Wait, cancellationToken, c.Say).ConfigureAwait(false);
+        // coai code round aebbaafd: a run that took the lock during the wait delays this one, within the busy bound, never turns it away.
+        return c with { Settled = settled, LockWait = RunSettle.LockWaitAfter(settled, settings, c.LockWait) };
     }
 
     /// <summary>
@@ -417,6 +441,7 @@ public static class CollectRun
         {
             Config = ConfigValueReport.NotDefault(c.Loaded),
             ConfigNotices = ConfigNoticeReport.Of(c.Loaded),
+            Settled = c.Settled is { } settled ? RunSettledReport.From(settled) : null,
         };
     }
 

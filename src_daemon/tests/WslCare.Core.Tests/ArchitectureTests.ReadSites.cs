@@ -108,6 +108,8 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Docker/VolumeSeen.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/Events/ContainerStartsStore.cs"] = new() { ["ListFiles"] = (3, ReadClass.RootState), ["ReadFile"] = (2, ReadClass.RootState) },
         ["WslCare.Core/Folders/FolderSizes.cs"] = new() { ["MeasureTree"] = (1, ReadClass.TargetHomeMetadata) },
+        // PLAN_boot_settle.md: the settle step reads /proc/uptime (the kernel's, no account's file).
+        ["WslCare.Core/Collect/RunSettle.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Health/HealthCollector.cs"] = new() { ["ListFiles"] = (1, ReadClass.System), ["ReadNoFollowFile"] = (1, ReadClass.WindowsProfile), ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/History/RunLogs.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
         ["WslCare.Core/History/RunShow.cs"] = new() { ["ReadFile"] = (1, ReadClass.RootState) },
