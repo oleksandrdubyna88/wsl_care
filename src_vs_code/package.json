@@ -123,6 +123,11 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.enableGpu",
+        "title": "Enable a disabled GPU (elevated, one UAC prompt)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.openLogs",
         "title": "Logs",
         "category": "AI OS Care",
@@ -257,6 +262,38 @@
           "maximum": 300,
           "scope": "application",
           "markdownDescription": "How long the read-only Task Scheduler query behind the panel's *Windows Time guard* line may take, in seconds."
+        },
+        "wslCare.timeouts.gpuQuerySeconds": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 5,
+          "maximum": 120,
+          "scope": "application",
+          "markdownDescription": "How long the read-only query of Windows' display adapters behind the panel's GPU alert may take, in seconds (measured: 0.6–1.5 s, once 6.2 s)."
+        },
+        "wslCare.timeouts.gpuEnableSeconds": {
+          "type": "integer",
+          "default": 120,
+          "minimum": 30,
+          "maximum": 600,
+          "scope": "application",
+          "markdownDescription": "How long *Enable <GPU>* may take, in seconds — it waits for YOU at the UAC prompt, then enables one display adapter."
+        },
+        "wslCare.gpu.checkMinutes": {
+          "type": "integer",
+          "default": 15,
+          "minimum": 0,
+          "maximum": 1440,
+          "scope": "application",
+          "markdownDescription": "How often Windows' display adapters are read for the GPU alert, in minutes, besides when the panel opens or is refreshed (0 = only then). Each read starts one Windows PowerShell."
+        },
+        "wslCare.gpu.ollamaLogTailKiB": {
+          "type": "integer",
+          "default": 256,
+          "minimum": 16,
+          "maximum": 4096,
+          "scope": "application",
+          "markdownDescription": "How much of the end of Ollama's server.log is read for the device it last chose, in KiB."
         },
         "wslCare.windowsTime.setAutomaticStart": {
           "type": "boolean",

@@ -205,6 +205,35 @@ const WINDOWS_FAKE: readonly Scenario[] = [
       scenario(RUNNING);
     },
   },
+  {
+    name: 'PLAN_gpu_health.md: a disabled GPU marks the bar "GPU off"; Enable a disabled GPU shows the modal first — declined, nothing runs; confirmed, ONE elevated request and the outcome from the re-read',
+    run: async (api) => {
+      const recorder = api.gpuRecorder();
+      const answer = (code: number): Buffer => Buffer.from(['name.0=AMD Radeon AI PRO R9700', 'id.0=PCI\\VEN_1002&DEV_7551&SUBSYS_B0201F4C&REV_C0\\6&2A3DA1BE&0&00000019', `code.0=${code}`, 'adapters=1', ''].join('\r\n'));
+      recorder.queryResult = { kind: 'exited', code: 0, stdout: answer(22), stderr: Buffer.alloc(0) };
+      await api.gpu().refresh();
+      assert.ok(api.statusBar().text.endsWith(' · GPU off'), api.statusBar().text);
+      assert.equal(api.statusBar().level, 'critical');
+
+      recorder.answer = false;
+      const prompts = recorder.prompts.length;
+      await vscode.commands.executeCommand('wslCare.enableGpu');
+      await until('the enable modal was shown', () => recorder.prompts.length > prompts);
+      assert.match(recorder.prompts.at(-1)?.detail ?? '', /Enable-PnpDevice -InstanceId \$id/);
+      assert.equal(recorder.requests.length, 0, 'declined: no elevated request');
+
+      recorder.answer = true;
+      recorder.result = { kind: 'exited', code: 0, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
+      const reports = recorder.reports.length;
+      await vscode.commands.executeCommand('wslCare.enableGpu');
+      recorder.queryResult = { kind: 'exited', code: 0, stdout: answer(0), stderr: Buffer.alloc(0) };
+      await until('the enable reported its outcome', () => recorder.reports.length > reports);
+      assert.equal(recorder.requests.length, 1);
+      assert.ok(recorder.requests[0]?.args.join(' ').includes('runas'), 'the one request is the elevated launcher');
+      assert.match(recorder.reports.at(-1)?.message ?? '', /enabled — code 0/);
+      assert.equal(api.statusBar().text.includes('GPU'), false, 'Windows now reports code 0: the mark is gone');
+    },
+  },
 ];
 
 const WINDOWS_CLOSED: readonly Scenario[] = [

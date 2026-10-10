@@ -180,3 +180,31 @@ div[data-notes] p {
   margin: 2px 0;
   color: var(--vscode-descriptionForeground);
 }
+
+/* The GPU alerts (PLAN_gpu_health.md D6): the first element of the panel. A bordered box in the theme's error (or
+   warning, for a check that could not run) colours; the level is also in the words and the leading sign, never the colour
+   alone. */
+div[data-gpu-alert] {
+  border: 1px solid var(--vscode-inputValidation-errorBorder, var(--vscode-editorError-foreground));
+  background: var(--vscode-inputValidation-errorBackground, transparent);
+  padding: 6px 8px;
+  margin: 0 0 8px;
+}
+
+div[data-gpu-alert][data-level="unknown"] {
+  border-color: var(--vscode-inputValidation-warningBorder, var(--vscode-editorWarning-foreground));
+  background: var(--vscode-inputValidation-warningBackground, transparent);
+}
+
+div[data-gpu-alert] p {
+  margin: 2px 0;
+}
+
+p[data-gpu-line] {
+  font-weight: bold;
+}
+
+p[data-gpu-ok] {
+  color: var(--vscode-descriptionForeground);
+  margin: 2px 0;
+}

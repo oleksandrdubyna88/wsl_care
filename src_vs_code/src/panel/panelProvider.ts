@@ -4,7 +4,7 @@ import type { RunOptions } from '../client/WslCareClient';
 import type { OutcomeStore } from '../state/outcomeStore';
 import { parsePageMessage, type PageMessage } from './messages';
 import { newNonce, panelOptions, panelShell } from './panelHtml';
-import type { ArchiveControls, CleanupControls, GuardView } from './view';
+import type { ArchiveControls, CleanupControls, GpuView, GuardView } from './view';
 import { buildPanelView } from './viewModel';
 import type { RowId } from '../cleanup/rowIds';
 
@@ -47,6 +47,10 @@ export interface PanelActions {
   readonly stopArchiving: () => void;
   /** E10.S1b: *Archive now* — A13 through the cleanup host's transaction. */
   readonly archiveNow: () => void;
+  /** PLAN_gpu_health.md D6: the GPU alerts (Windows' answer + the pending enable), and *Enable <GPU>* by the adapter's index. */
+  readonly gpu: () => GpuView;
+  readonly onGpuChange: (listener: () => void) => () => void;
+  readonly enableGpu: (index: number) => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -57,7 +61,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   private readonly unsubscribe: readonly (() => void)[];
 
   constructor(private readonly extensionUri: vscode.Uri, private readonly store: OutcomeStore, private readonly actions: PanelActions) {
-    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post()), actions.onArchiveChange(() => this.post())];
+    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post()), actions.onArchiveChange(() => this.post()), actions.onGpuChange(() => this.post())];
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -113,6 +117,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       runFullCheck: () => this.actions.runFullCheck(),
       stop: (m) => this.actions.stop(m.index),
       openRunLogs: () => this.actions.openRunLogs(),
+      enableGpu: (m) => this.actions.enableGpu(m.index),
     };
     if (message !== undefined) {
       (handlers[message.type] as (m: PageMessage) => void)(message);
@@ -120,6 +125,6 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive()) });
+    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive(), this.actions.gpu()) });
   }
 }

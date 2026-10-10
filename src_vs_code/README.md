@@ -21,6 +21,15 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   run list — *Show objects* lists every object a run removed, and every command it ran with its exit. Shown exactly as the
   daemon answers; the chosen period survives a reload.
 
+- **A GPU that is not working** (since 2026-10-10) — Windows' display adapters are read on their own (unelevated, at start,
+  on panel open and *Refresh*, and every `wslCare.gpu.checkMinutes`). Any adapter whose Device Manager code is not 0 is an
+  ALERT at the very top of the panel — its name, the code and its meaning, the fix in plain words (whether it needs a
+  restart), what it costs (local models such as Ollama run on the CPU or do not start) and Ollama's own last choice from
+  its `server.log` — and `· GPU off` on the status bar in the error colour; a check that could not run reads `· GPU ?`.
+  A **disabled** adapter (code 22) gets **Enable <name>**: a modal shows the exact elevated script first, then ONE
+  elevated PowerShell (one UAC prompt) re-checks the device and runs `Enable-PnpDevice` for exactly it, and the panel says
+  what Windows reports afterwards ("enabled — code 0", or the code it still has and whether to restart).
+
 ## What it runs, and when
 
 - **Reading** — it asks the daemon four questions: `status --json`, `preview --all --json`, `doctor --json` and
@@ -111,6 +120,10 @@ ceiling can never be set at or below the daemon's own worst case for that call: 
 | `wslCare.cleanup.tombstoneMinutes` | 10 | 1–1440 | How long a cleanup another window removed from the shared journal is remembered as removed, so a stale list in a second window does not write it back, in minutes. |
 | `wslCare.cleanup.resultsKept` | 5 | 1–50 | How many past cleanup results *Last cleanup* in the panel lists (newest first; the daemon keeps them all). |
 | `wslCare.cleanup.journalEntries` | 32 | 4–256 | How many started cleanups whose result has not appeared yet the extension keeps following; past it a new cleanup is refused, none dropped. |
+| `wslCare.timeouts.gpuQuerySeconds` | 20 | 5–120 | How long the read-only query of Windows' display adapters behind the panel's GPU alert may take, in seconds (measured: 0.6–1.5 s, once 6.2 s). |
+| `wslCare.timeouts.gpuEnableSeconds` | 120 | 30–600 | How long *Enable <GPU>* may take, in seconds — it waits for YOU at the UAC prompt, then enables one display adapter. |
+| `wslCare.gpu.checkMinutes` | 15 | 0–1440 | How often Windows' display adapters are read for the GPU alert, in minutes, besides when the panel opens or is refreshed (0 = only then). Each read starts one Windows PowerShell. |
+| `wslCare.gpu.ollamaLogTailKiB` | 256 | 16–4096 | How much of the end of Ollama's server.log is read for the device it last chose, in KiB. |
 | `wslCare.logs.maxRunIndex` | 9999 | 100–100000 | The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read). |
 
 Some numbers are NOT settings, because they mirror the daemon and a second copy could drift: the days of history it

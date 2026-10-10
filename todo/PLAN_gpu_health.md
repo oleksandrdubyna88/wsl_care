@@ -55,7 +55,17 @@ Two more reasons it must be the extension's own read even after E7.S5a:
 **The boundary, named on both sides** (`common.planning-docs`): the daemon-side verdict in `status --json` / `doctor`
 (so the CLI and the run history carry it) is the epic's later story G2 (`todo/PLAN_disk_health.md`), which also moves the
 code → meaning table into `contracts/` with ONE writer so the two sides cannot drift. Until then the table has one home,
-`src/gpu/gpuProblems.ts`.
+`src/gpu/gpuProblems.ts`. The same table stands in `todo/PLAN_disk_health.md` (plan round: a boundary named on one side
+only is not one):
+
+| Item | Built by | The other plan's part |
+|---|---|---|
+| the extension's unelevated adapter read, the alert, the bar mark, *Enable <GPU>* | **G1 (this plan), FIRST** | G2 reuses the read for the button's precondition; it builds no second read |
+| the code → meaning table | G1, in `src/gpu/gpuProblems.ts` | G2 moves it into `contracts/` with one writer; G1's tests then compare against it |
+| a GPU verdict in `status --json` / `doctor` and the run history | G2 (needs the Windows binary, E7.S5a, and a `NeverList` change) | G1 says nothing in `status` / `doctor` |
+| GPU as a sidebar summary row and a Windows-side tab (#87) | the epic's panel stories | G1's alert stays the top element |
+
+Disjoint: G1 writes no daemon code and no contract file; G2 writes no extension read of Windows.
 
 ## 4. What exists already (reuse first, verified at `832470d`)
 
@@ -102,8 +112,13 @@ installed", 45 "not connected", … and "code N" for an unlisted one), the fix k
 | Fix kind | Codes | Words | Button |
 |---|---|---|---|
 | `enable` | 22 | "It is disabled. Enable it — no restart needed." | *Enable <name>* |
-| `restart` | every other listed code | "Restart Windows. If it is still not working after a restart, reinstall the graphics driver." | none |
+| `reconnect` | 45 (not connected), 47 (prepared for safe removal) | "Windows does not see the card now. Check that it is seated and powered (an external GPU: its cable and power); then restart Windows." | none |
+| `driver` | 18, 28, 39, 48, 52 (driver missing, corrupt, blocked or unsigned) | "Reinstall the graphics driver, then restart Windows." | none |
+| `restart` | 10, 14, 21, 31, 43, 44, 54 and the other listed codes | "Restart Windows. If it is still not working after a restart, reinstall the graphics driver." | none |
 | `unknown` | unlisted | "Restart Windows; if it stays, Device Manager shows what code N means for this device." | none |
+
+Each code's row (meaning, fix kind, restart needed) lives once in `gpuProblems.ts`; the tests iterate it (a plan-round finding:
+code 45 got its own advice instead of the generic restart-and-reinstall).
 
 The consequence line is the same for every non-working adapter: "Programs that use this GPU — local models such as Ollama
 — run on the CPU or do not start", followed by Ollama's line from D2 when there is one. The alert's level is never only a
@@ -146,12 +161,17 @@ enables <name> (answer the UAC prompt)…" and the button is disabled; it is cle
 shows the device no longer at 22, or after the enable ceiling + 60 s (a reload mid-run never sticks on "waiting").
 
 **D6 — the panel and the bar.** `PanelView` gains `gpu: GpuView` (`{ alerts: [{ line, consequence, ollama, level,
-button? }], checkedLine }`). `media/panel.js` renders the alerts as the FIRST element under the heading, each in a box with
+button? }], checkedLine }`). `media/panel.js` renders the alerts as the FIRST element of the panel, ABOVE the heading, each in a box with
 `role="alert"` created once per distinct alert text (so it is announced once, not on every render), its button through
 `actionButton` posting `{ type: 'enableGpu', index }` — `messages.ts` accepts an integer index below the adapter count
 cap (8) and nothing else. When all adapters are fine the panel shows one muted line in *Health*: "GPU: AMD Radeon 890M,
 AMD Radeon AI PRO R9700 — working (checked 14:31)". The status bar's text gains `· GPU off` and its error background while
 any adapter is critical; its tooltip names the adapter and code.
+
+**A query that did not answer is visible too** (plan round): the `unknown` state is its own panel alert at the top, level
+`unknown` — "GPU state could not be checked: <reason>" — and the bar shows `· GPU ?` with the warning background and the
+reason in its tooltip, so a closed panel never reads a failed check as "fine". On a host that is not Windows (VS Code on a
+Linux desktop) the GPU part is absent rather than unknown — there is nothing of Windows to read.
 
 **D7 — the command and the tripwire.** `wslCare.enableGpu` (*AI OS Care: Enable a disabled GPU…*) duplicates the button
 (a QuickPick when several adapters are at 22; "no GPU is disabled" otherwise); `COMMAND_BUTTONS` maps it to the page
@@ -193,8 +213,11 @@ is bounded by `ollamaLogTailKiB`.
 
 ## 9. Residuals (said, not solved)
 
-- The `pwsh` 7 branch of D4 is unexercised on this machine (only the Store `pwsh` is installed — research G4); its path
-  choice is unit-tested, its run is not.
+- The `pwsh` 7 branch of D4 (plan round, finding 1): its READ half — the module path cut, `PnpDevice` imported by path,
+  `Get-PnpDevice`, `Class`, `[int]` code — was run unelevated under `pwsh` 7.6.4 and 5.1 and answered identically
+  (research G6); `Enable-PnpDevice` is the same `PnpDevice` cmdlet under both. The MSI `pwsh` path itself is not installed
+  here, so its selection is unit-tested and its elevated run is not; the elevated run of either edition is first exercised
+  by the owner's press.
 - Who disables the card is not found (research G3); G1 shows it, it does not prevent it.
 - `%ProgramFiles%` and `%SystemRoot%` come from the environment, as the Windows Time launcher's do; the UAC prompt shows
   the program it elevates.
@@ -212,3 +235,26 @@ is bounded by `ollamaLogTailKiB`.
 - [ ] Every new number is a setting; the command has its button (`commandButtons.test.ts`).
 - [ ] Tests red first, green after; break-its observed; `npm test`, lint, typecheck, `check:vsix`, family checks green.
 - [ ] README, `module_vs_code.md`, `architecture.md`, the research file updated; the plan promoted with its deviations.
+
+## 11. As built (2026-10-10) — what shipped differently
+
+- **The alert sits ABOVE the heading**, as the very first element of the panel (the plan said "under the heading"): the
+  owner's "impossible to miss" read as above everything, the Refresh / Settings bar included. The alerts live in ONE
+  persistent `role="alert"` container whose children are rebuilt only when the alerts' words change, so a screen reader
+  announces a new alert once and not on every render (the notice's rule, `media/panel.js`).
+- **The code table names 28 documented codes**, not the plan's illustrative eight; each has a fix kind — `enable` (22),
+  `reconnect` (24, 41, 45, 47), `driver` (1, 18, 19, 28, 32, 37, 39, 40, 48, 52) or `restart` (the rest) — and an unlisted
+  code reads `unknown` with its number.
+- **The pending-run rule was extracted, not copied** (`common.reuse-first` 2.2): `src/state/pendingRun.ts` holds the
+  deadline rule; the Windows Time guard's `guardPending.ts` and the new `gpuPending.ts` keep their own keys and record
+  shapes over it. `elevatedRequest` was WIDENED with an optional `elevated` PowerShell (its default unchanged for the
+  Windows Time callers), and an unquotable elevated path refuses the request.
+- **The recorder lives in `gpuRecorder.ts`** (no `vscode` import) so the unit suite loads it — the guard's
+  `guardRecorder.ts` shape.
+- **The command is wired in `gpu/gpuWiring.ts`** (`gpuParts`, `gpuPanelActions`, `gpuRegistrations`), so `extension.ts`
+  gained eight lines; its `wire()` kept under the 50-line lint bound by moving the Logs page's three registrations into
+  `logsRegistrations`.
+- **Measured cost** (research G7): CPU 375–656 ms of one core per read, ≈ 45 s a day at the default 15 minutes.
+- **Tests**: `gpu.test.ts` (29, one of them the PowerShell parser check on the Windows leg), four new `panelPage.test.ts`
+  cases, one `noRealWsl.test.ts` case (the device verbs), `commandButtons.test.ts` and `manifest.test.ts` widened, and one
+  extension-host scenario (the bar mark, the declined and the confirmed enable in Test mode, on 1.85.0 and stable).

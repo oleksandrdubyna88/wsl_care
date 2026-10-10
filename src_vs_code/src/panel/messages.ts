@@ -1,4 +1,5 @@
 import { ROW_IDS, rowIdOf, type RowId } from '../cleanup/rowIds';
+import { MAX_ADAPTERS } from '../gpu/gpuState';
 
 /**
  * The CLOSED set of messages the panel's page may send the host (plan §15g m10, extended by §15j M8), each validated
@@ -21,6 +22,8 @@ import { ROW_IDS, rowIdOf, type RowId } from '../cleanup/rowIds';
  *
  * <p>E10.S1's `chooseArchiveFolder` and `stopArchiving` are bare: the folder is picked in the host's own dialog and judged by
  * the daemon — no path ever comes from the page. E10.S1b's `archiveNow` is bare too: the host previews A13 itself.</p>
+ * <p>*Enable <GPU>*'s `enableGpu` (PLAN_gpu_health.md D6) carries an INDEX below `MAX_ADAPTERS` into the adapters the host
+ * read from Windows itself: the instance id the elevated script acts on is the host's reading, never the page's.</p>
  */
 
 export type PageMessage =
@@ -40,7 +43,8 @@ export type PageMessage =
   | { readonly type: 'clean'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'cleanSelected'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'runFullCheck' }
-  | { readonly type: 'stop'; readonly index: number };
+  | { readonly type: 'stop'; readonly index: number }
+  | { readonly type: 'enableGpu'; readonly index: number };
 
 const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving', 'archiveNow']);
 
@@ -90,6 +94,8 @@ function withRows(type: 'clean' | 'cleanSelected', raw: Raw): PageMessage | unde
 const WITH_VALUE: Readonly<Record<string, WithValue>> = {
   rendered: (raw) => (isIndex(raw.rows, Number.MAX_SAFE_INTEGER) ? { type: 'rendered', rows: raw.rows } : undefined),
   stop: (raw) => (isIndex(raw.index, MAX_STOP_INDEX) ? { type: 'stop', index: raw.index } : undefined),
+  // PLAN_gpu_health.md D6: an INDEX into the adapters the host itself read — never an id, a name or a script.
+  enableGpu: (raw) => (isIndex(raw.index, MAX_ADAPTERS - 1) ? { type: 'enableGpu', index: raw.index } : undefined),
   clean: (raw) => withRows('clean', raw),
   cleanSelected: (raw) => withRows('cleanSelected', raw),
 };

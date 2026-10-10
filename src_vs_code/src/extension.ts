@@ -11,6 +11,7 @@ import { newArchiveRecorder, type ArchiveRecorder } from './archive/archiveRecor
 import { archiveUiFor } from './archive/archiveUi';
 import { CleanupHost } from './cleanup/cleanupHost';
 import { newCleanRecorder, type CleanRecorder } from './cleanup/cleanRecorder';
+import { gpuPanelActions, gpuParts, gpuRegistrations, type GpuParts } from './gpu/gpuWiring';
 import { cleanUiFor } from './cleanup/cleanUi';
 import { lastCleanupPeriod } from './logsPage/logsController';
 import { LogsPanel } from './logsPage/logsPanel';
@@ -100,6 +101,7 @@ interface Parts {
   readonly windowsTime: WindowsTimeRecorder;
   readonly guardRecorder: GuardRecorder;
   readonly guard: WindowsTimeGuardHost;
+  readonly gpu: GpuParts;
   readonly cleanRecorder: CleanRecorder;
   readonly host: CleanupHost;
   readonly archive: ArchiveHost;
@@ -159,8 +161,9 @@ function build(context: vscode.ExtensionContext): Parts {
     // archive host refuses on its own conditions first, then the cleanup host runs A13 through its transaction.
     cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener), archiveNow: () => host.archiveNow(),
   });
+  const gpu = gpuParts(context, testMode, numbers, (line) => log.error(line));
 
-  return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log };
+  return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, gpu, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log };
 }
 
 /** The Windows Time guard's settings, read NOW (PLAN_windows_time_task.md D6): the task is built from them at install. */
@@ -247,6 +250,7 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
 function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
   return (options) => {
     void parts.guard.refresh();
+    void parts.gpu.host.refresh();
     const round = parts.poller.refreshPanel(options);
     void round.then(() => parts.archive.refresh()).catch((e: unknown) => { parts.log.error(`archive: the refresh failed: ${String(e)}`); });
 
@@ -289,7 +293,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
   const install = installer(parts);
   const windowsTime = windowsTimeFixer(parts);
   const logs = logsPanel(context, parts);
-  const bar = new StatusBar(store, OPEN_PANEL);
+  const bar = new StatusBar(store, OPEN_PANEL, { mark: () => parts.gpu.host.barMark(), onChange: (listener) => parts.gpu.host.onChange(listener) });
   const installGuard = guardFlow(parts, 'install');
   const removeGuard = guardFlow(parts, 'remove');
   const refreshAll = panelRefresh(parts);
@@ -310,6 +314,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     installWindowsTimeGuard: installGuard,
     removeWindowsTimeGuard: removeGuard,
     ...archive,
+    ...gpuPanelActions(parts.gpu),
   });
   context.subscriptions.push(
     bar,
@@ -327,12 +332,20 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     ...archiveCommands(archive),
     ...logsSubscriptions(logs, store),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
-    vscode.workspace.onDidChangeConfiguration((event) => configurationChanged(event, parts, panel)),
-    // A guard setting re-derives the guard's line at once: "install it again to update it" follows the setting (gemini).
-    vscode.workspace.onDidChangeConfiguration((event) => { if (event.affectsConfiguration('wslCare.windowsTime')) { parts.guard.settingsChanged(); } }),
+    ...settingsListeners(parts, panel),
   );
 
   return { bar, panel, logs };
+}
+
+/** Every setting a host re-reads the moment it changes — and the GPU story's own command and listener (`gpu/gpuWiring.ts`). */
+function settingsListeners(parts: Parts, panel: PanelProvider): vscode.Disposable[] {
+  return [
+    vscode.workspace.onDidChangeConfiguration((event) => configurationChanged(event, parts, panel)),
+    ...gpuRegistrations(parts.gpu),
+    // A guard setting re-derives the guard's line at once: "install it again to update it" follows the setting (gemini).
+    vscode.workspace.onDidChangeConfiguration((event) => { if (event.affectsConfiguration('wslCare.windowsTime')) { parts.guard.settingsChanged(); } }),
+  ];
 }
 
 function configurationChanged(event: vscode.ConfigurationChangeEvent, parts: Parts, panel: PanelProvider): void {
@@ -362,6 +375,8 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     windowsTime: () => parts.windowsTime,
     windowsTimeGuard: () => parts.guard,
     guardRecorder: () => parts.guardRecorder,
+    gpu: () => parts.gpu.host,
+    gpuRecorder: () => parts.gpu.recorder,
     cleanup: () => parts.cleanup,
     cleanupHost: () => parts.host,
     cleanRecorder: () => parts.cleanRecorder,
@@ -377,6 +392,7 @@ export function activate(context: vscode.ExtensionContext): WslCareTestApi | und
   const { bar, panel, logs } = wire(context, parts);
   parts.poller.start();
   parts.host.start();
+  parts.gpu.host.start();
 
   return context.extensionMode === vscode.ExtensionMode.Test ? testApi(parts, bar, panel, logs) : undefined;
 }

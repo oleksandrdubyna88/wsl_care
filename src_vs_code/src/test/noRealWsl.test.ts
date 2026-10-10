@@ -94,3 +94,15 @@ test('own code review k6: a quoted program, cmd /c and shell: true are judged by
     assert.equal(MUTATING.test(words), true, words);
   }
 });
+
+test('PLAN_gpu_health.md D7: a device change is refused too — Enable-/Disable-PnpDevice in a PowerShell (decoded payloads included) and pnputil itself; a device READ stays allowed', () => {
+  for (const words of ['Enable-PnpDevice -InstanceId x -Confirm:$false', 'disable-pnpdevice -InstanceId x']) {
+    assert.equal(MUTATING.test(words), true, words);
+    assert.equal(isMachineChange(POWERSHELL, ['-Command', words]), true, words);
+    assert.throws(() => childProcess.spawnSync(POWERSHELL, ['-NoProfile', '-Command', words]), new RegExp(TASK_TRIPWIRE_MESSAGE), words);
+  }
+  const encoded = Buffer.from('Enable-PnpDevice -InstanceId x', 'utf16le').toString('base64');
+  assert.equal(isMachineChange(POWERSHELL, ['-NoProfile', '-EncodedCommand', encoded]), true, 'an encoded payload is decoded and judged');
+  assert.throws(() => childProcess.spawnSync('pnputil.exe', ['/enable-device', 'x']), new RegExp(TASK_TRIPWIRE_MESSAGE));
+  assert.equal(isMachineChange(POWERSHELL, ['-Command', 'Get-PnpDevice -Class Display; Get-CimInstance -ClassName Win32_VideoController']), false, 'reading the devices is not a change');
+});

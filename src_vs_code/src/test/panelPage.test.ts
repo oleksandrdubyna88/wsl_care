@@ -319,3 +319,66 @@ test('only the Health section carries the guard line', () => {
   assert.deepEqual(root.all('div[data-guard]').length, 1);
   assert.match(root.one('section[data-section="health"]').one('p[data-guard-line]').textContent, /checking…/);
 });
+
+// ---- PLAN_gpu_health.md D6: the GPU alerts, RUN in the strict harness ----
+
+const GPU_ALERT = {
+  level: 'critical' as const,
+  line: 'GPU AMD Radeon AI PRO R9700 is not working (code 22: it is disabled)',
+  fix: 'It is disabled. Enable it — no restart is needed.',
+  consequence: 'Programs that use this GPU — local models such as Ollama — run on the CPU or do not start.',
+  button: { index: 1, label: 'Enable AMD Radeon AI PRO R9700', enabled: true },
+};
+
+test('a GPU alert is the FIRST element of the panel, above the heading, in a role="alert" box — its words as TEXT, its level in words and a sign', () => {
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [GPU_ALERT], line: '' }));
+  const first = root.children[0];
+  assert.equal(first?.dataset.gpuAlerts, '', 'the alerts container comes before the header');
+  assert.equal(first?.attributes.role, 'alert');
+  const alert = first?.one('div[data-gpu-alert]');
+  assert.equal(alert?.dataset.level, 'critical');
+  assert.equal(alert?.one('p[data-gpu-line]').textContent, `⚠ ${GPU_ALERT.line}`, 'the level is a sign and words, not a colour only');
+  assert.equal(alert?.one('p[data-gpu-fix]').textContent, GPU_ALERT.fix);
+  assert.equal(alert?.one('p[data-gpu-consequence]').textContent, GPU_ALERT.consequence);
+});
+
+test('the alert\'s Enable button posts ONLY { type: "enableGpu", index } — the host holds the device id; a disabled one posts nothing', () => {
+  const { page, root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [GPU_ALERT], line: '' }));
+  const button = root.one('button[data-gpu-action="enableGpu"]');
+  assert.equal(button.textContent, 'Enable AMD Radeon AI PRO R9700');
+  assert.equal(button.attributes.type, 'button');
+  page.click(button);
+  assert.deepEqual(page.posted.at(-1), { type: 'enableGpu', index: 1 });
+
+  const waiting = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [{ ...GPU_ALERT, button: { ...GPU_ALERT.button, enabled: false } }], line: '' }));
+  const before = waiting.page.posted.length;
+  waiting.page.click(waiting.root.one('button[data-gpu-action="enableGpu"]'));
+  assert.equal(waiting.page.posted.length, before);
+});
+
+test('the alerts box is the SAME element across renders and is rebuilt only when its words change — announced once, not on every render', () => {
+  const view = buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [GPU_ALERT], line: '' });
+  const { page, root } = show(view);
+  const box = root.children[0];
+  const alert = box?.one('div[data-gpu-alert]');
+  page.message({ type: 'view', view: structuredClone(view) });
+  assert.equal(root.children[0], box, 'the same container');
+  assert.equal(root.children[0]?.one('div[data-gpu-alert]'), alert, 'unchanged words: the same alert element, nothing re-announced');
+  page.message({ type: 'view', view: buildPanelView(snapshot(goldenOutcomes())) });
+  assert.equal(root.children[0], box);
+  assert.equal(box?.children.length, 0, 'no alert: the container stays, empty');
+});
+
+test('hostile adapter text renders as inert TEXT; an unknown check is an alert without a button; all working is one muted line in Health', () => {
+  const hostile = 'GPU </script><img src=x onerror=alert(1)> is not working (code 22: it is disabled)';
+  const { root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [{ ...GPU_ALERT, line: hostile }, { level: 'unknown', line: 'GPU state could not be checked: x', fix: 'Refresh to try again.', consequence: '', button: undefined }], line: '' }));
+  assert.ok(![root, ...root.descendants()].some((e) => e.tagName === 'IMG' || e.tagName === 'SCRIPT'));
+  const alerts = root.all('div[data-gpu-alert]');
+  assert.deepEqual(alerts.map((a) => a.dataset.level), ['critical', 'unknown']);
+  assert.equal(alerts[1]?.all('button[data-gpu-action]').length, 0);
+  assert.equal(alerts[1]?.all('p[data-gpu-consequence]').length, 0, 'an empty consequence draws no line');
+
+  const ok = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [], line: 'GPU: AMD Radeon(TM) 890M Graphics — working (checked 14:31)' }));
+  assert.equal(ok.root.one('section[data-section="health"]').one('p[data-gpu-ok]').textContent, 'GPU: AMD Radeon(TM) 890M Graphics — working (checked 14:31)');
+  assert.equal(ok.root.all('div[data-gpu-alert]').length, 0);
+});

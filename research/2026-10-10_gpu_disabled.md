@@ -66,3 +66,24 @@ also wrote "Preparing modules for first use" progress records as CLIXML on stder
 `Get-PnpDevice -InstanceId <the R9700's id>` in both 5.1 and 7.6.4: `Class` = `Display`; `ConfigManagerErrorCode` is the
 enum `PnpDevice.Problem` (it prints `CM_PROB_DISABLED`); `[int]` of it is 22 and `-eq 22` is True. The `PnpDevice` module is
 `C:\WINDOWS\system32\WindowsPowerShell\v1.0\Modules\PnpDevice\PnpDevice.psd1`.
+
+## G6 — the enable script's read half under both PowerShells (after the plan round)
+
+The plan's elevated script up to (not including) `Enable-PnpDevice` — `$PSModulePath` cut to `$PSHOME\Modules`, `PnpDevice`
+imported by its absolute path, `Get-PnpDevice -InstanceId <the R9700's id>` — run UNELEVATED as `-EncodedCommand`:
+
+| PowerShell | Answer | Exit |
+|---|---|---|
+| `pwsh` 7.6.4 (the Store package; the same engine as the MSI one the plan prefers) | `edition=Core class=Display code=22`, `Enable-PnpDevice` resolved from `PnpDevice` | 0 |
+| Windows PowerShell 5.1.26100.9549 | `edition=Desktop class=Display code=22`, `Enable-PnpDevice` resolved from `PnpDevice` | 0 |
+
+So the import by path and the re-read work under both editions with the module path cut. `Enable-PnpDevice` itself was not
+run (it changes the device; the owner presses the button).
+
+## G7 — what the alert's read costs (the built query, 2026-10-10 15:15Z)
+
+The shipped `QUERY_SCRIPT`, run ten times as the extension runs it (`powershell.exe -NoProfile -NonInteractive
+-EncodedCommand`, started by `Start-Process -Wait` from `pwsh` so the child's CPU could be read): wall 500–1 208 ms, CPU
+375–656 ms of one core (median ≈ 450 ms), 11 lines each time (both adapters and the count). At the default
+`wslCare.gpu.checkMinutes` (15) that is 96 reads a day, about 45 s of one core per day, plus one read per panel open or
+*Refresh*.

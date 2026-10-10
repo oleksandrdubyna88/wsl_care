@@ -1,4 +1,5 @@
 import type { DurableStore } from '../cleanup/journal';
+import { clearPendingAt, readPendingAt, sweepPendingAt, writePendingAt, type PendingTimes } from '../state/pendingRun';
 import type { PendingGuardOp } from './guardState';
 
 /**
@@ -6,52 +7,34 @@ import type { PendingGuardOp } from './guardState';
  * `common.durable-status` rule 1): written to `globalState` BEFORE the launch, cleared when the launcher answers — kept,
  * after a TIMEOUT, until its deadline, because the elevated child (the UAC broker's, not ours) may still be running or its
  * UAC prompt still open. While it stands, both buttons are disabled in every window and across a reload, so an install and
- * a removal can never run at once; a deadline in the past is swept by the next read.
+ * a removal can never run at once; a deadline in the past is swept by the next read. The deadline rule is the shared one
+ * (`state/pendingRun.ts`, since *Enable <GPU>* needed the same).
  */
 
 export const PENDING_KEY = 'wslCare.windowsTimeGuard.pending';
 
-export interface PendingRecord extends PendingGuardOp {
-  readonly startedAtUtcMs: number;
-  readonly deadlineUtcMs: number;
-}
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+export interface PendingRecord extends PendingGuardOp, PendingTimes {}
 
 const OPS: ReadonlySet<unknown> = new Set(['install', 'remove']);
 
-function hasInstants(value: Readonly<Record<string, unknown>>): boolean {
-  return Number.isFinite(value.startedAtUtcMs) && Number.isFinite(value.deadlineUtcMs);
-}
-
-function recordOf(value: unknown): PendingRecord | undefined {
-  if (!isRecord(value) || !OPS.has(value.op)) {
-    return undefined;
-  }
-
-  return hasInstants(value) ? { op: value.op as PendingRecord['op'], startedAtUtcMs: value.startedAtUtcMs as number, deadlineUtcMs: value.deadlineUtcMs as number } : undefined;
+function opOf(value: Readonly<Record<string, unknown>>): PendingGuardOp | undefined {
+  return OPS.has(value.op) ? { op: value.op as PendingGuardOp['op'] } : undefined;
 }
 
 /** The pending run while it stands: a malformed value, or one past its deadline, is none. */
 export function readPending(store: DurableStore, nowUtcMs: number): PendingRecord | undefined {
-  const record = recordOf(store.get(PENDING_KEY));
-
-  return record !== undefined && nowUtcMs < record.deadlineUtcMs ? record : undefined;
+  return readPendingAt(store, PENDING_KEY, opOf, nowUtcMs);
 }
 
 export async function writePending(store: DurableStore, record: PendingRecord): Promise<void> {
-  await store.update(PENDING_KEY, { ...record });
+  await writePendingAt(store, PENDING_KEY, record);
 }
 
 export async function clearPending(store: DurableStore): Promise<void> {
-  await store.update(PENDING_KEY, undefined);
+  await clearPendingAt(store, PENDING_KEY);
 }
 
 /** At activation: a record past its deadline (or malformed) is removed, so nothing is stuck "waiting" forever. */
 export async function sweepPending(store: DurableStore, nowUtcMs: number): Promise<void> {
-  if (store.get(PENDING_KEY) !== undefined && readPending(store, nowUtcMs) === undefined) {
-    await clearPending(store);
-  }
+  await sweepPendingAt(store, PENDING_KEY, opOf, nowUtcMs);
 }
