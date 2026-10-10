@@ -139,6 +139,8 @@ public sealed partial class ArchitectureTests
         ["WslCare.Core/Actions/Engine/IdleGate.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/Actions/Memory/MemoryNow.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System) },
         ["WslCare.Core/Collectors/Procfs/PidSamples.cs"] = new() { ["ProcText.Read"] = (2, ReadClass.System) },
+        ["WslCare.Core/Collectors/Procfs/StdioHolders.cs"] = new() { ["ListEntries"] = (2, ReadClass.System) },
+        ["WslCare.Core/Collectors/Procfs/InteropRelays.cs"] = new() { ["ProcText.Bytes"] = (1, ReadClass.System), ["ProcText.Read"] = (2, ReadClass.System) },
         ["WslCare.Core/Actions/Suspects/AgentOrphans.cs"] = new() { ["ProcText.Read"] = (1, ReadClass.System) },
         ["WslCare.Core/Actions/Suspects/AgentCpuHistory.cs"] = new() { ["ReadStateFile"] = (1, ReadClass.TrustedState) },
         // Plan E14 S2b: the watch's tries — root's state, read back as such.

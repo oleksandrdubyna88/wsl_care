@@ -130,6 +130,12 @@ public static partial class ConfigKeys
 
         /// <summary>The poll slice while waiting for processes to end. Default 200.</summary>
         public static readonly ConfigKey.IntKey SignalSliceMilliseconds = new("processes.signalSliceMilliseconds", 50, 1000) { Trust = new(SafeDirection.None, MachineOnly: true) };
+
+        /// <summary>A21 (plan E14 S7b.2): the longest one scan of every process's fd table may take — past it the scan is
+        /// inconclusive and every relay is kept (lower is safer). The watch's worst case counts it three times (its preview, the act's
+        /// preview, the re-check). Default 10000 — provisional: every A21 preview reports what its scan cost, and the dry-run
+        /// preview on the owner's machine sets the measured default (the S7b.2 own code review, finding 1).</summary>
+        public static readonly ConfigKey.IntKey FdScanMilliseconds = new("processes.fdScanMilliseconds", 100, 30000) { Trust = new(SafeDirection.Lower, MachineOnly: true) };
     }
 
     public static partial class Events
@@ -853,6 +859,7 @@ public static partial class ConfigKeys
         Processes.KillWaitSeconds,
         Processes.ShownCommandChars,
         Processes.SignalSliceMilliseconds,
+        Processes.FdScanMilliseconds,
         Events.SegmentSlackSeconds,
         Events.EarlyEndSeconds,
         Running.HeartbeatSeconds,

@@ -62,6 +62,55 @@ refuted it, and the refutation is part of this record:
   - a daemonising caller re-parents it while still holding its pipe;
   - any process can name itself `init`.
 
-So S7b stops no interop child at all. The 10 client-gone relays above remain a measured fact, not a proof per Windows
-process. The exact route — ending the client-gone relay itself in the distro, by pid and start ticks — needs one fact first,
-which is not measured and never assumed: whether ending a relay ends its Windows child too (owner question Q-S7b-3).
+So the Windows side pairs nothing and stops no interop child. The 10 client-gone relays above remained a measured fact, not
+a proof per Windows process. The exact route — ending the client-gone relay ITSELF in the distro, by pid and start ticks —
+needed one fact first: whether ending a relay ends its Windows child. §5 measures it. **The route works**, which corrects
+this section's first conclusion ("the interop route refuted": only the cross-OS PAIRING was refuted, not the distro route).
+
+## 5. Q-S7b-3, measured 2026-10-10 — the Windows child exits with its relay
+
+The owner approved the experiment, and the coordinator ran it. This agent ran nothing on the machine; the scripts were the
+ones prepared for it, kept in [`diagnostics/`](diagnostics/): [`relay-list.sh`](diagnostics/relay-list.sh), [`win-sampler.ps1`](diagnostics/win-sampler.ps1) (its argument is the `wsl.exe` pid) and [`relay-term.py`](diagnostics/relay-term.py).
+
+| time (UTC) | side | what |
+|---|---|---|
+| 13:59:54Z | distro | `relay-list.sh`: 2 `creds-mcp.exe` relays. Pid **12062**, start ticks 36501, parent `Relay(7411)` (uid 0), **client gone**. Pid 13226, parent `creds-mcp`, client alive |
+| 14:00:26.426Z | Windows | sampler START: 2 `creds-mcp.exe` under `wsl.exe` 17372 — `34248@09:49:55.699667Z`, `40308@09:50:23.631016Z` |
+| 14:01:23.532Z | distro | `relay-term.py 12062 36501`: every check passed (same start ticks, parent a uid-0 `Relay(n)`, exe `/init`, program `creds-mcp.exe`, this user's, no other holder of its stdio); **SIGTERM** sent through the pidfd |
+| 14:01:23.558Z | distro | the relay exited, **26 ms** after SIGTERM. No SIGKILL was needed or sent |
+| 14:01:23.735Z | Windows | sampler CHANGE: `gone=[34248]`, **about 0.2 s** after the relay's SIGTERM |
+| 14:02:26Z | Windows | sampler END: count 1. `40308`, whose relay has a live client, untouched |
+
+**Conclusion:**
+- A Windows interop child exits within about 0.2 s of its distro relay ending on SIGTERM.
+- The relay of a live client, and its Windows child, are not affected.
+- So the leak is closed EXACTLY from the distro side: the relay is the user's own Linux process, identified by pid and start
+  ticks, and its "client gone" evidence is local to `/proc`. No cross-OS pairing is needed.
+- S7b.2 (in [PLAN_twenty_sessions_all_day.md](../todo/PLAN_twenty_sessions_all_day.md)) builds that route.
+
+**Not covered by this one sample:**
+- a relay that ignores SIGTERM;
+- a relay born under `Relay(n)` (`wsl.exe`'s top-level command);
+- a daemonising caller.
+
+The design keeps all three: TERM only, a relay born under its `Relay(n)` kept (§ 6), and no other holder of its piped stdio.
+
+## 6. What the S7b.2 review found unmeasured — read 2026-10-10 14:25Z
+
+The S7b.2 plan review (the own Fable reviewer) asked for three facts that § 5's run did not record:
+- what a relay's fd 0/1/2 are: pipes, sockets or files. The two ends of a socketpair have different inodes, so an inode scan
+  cannot see a socket's peer;
+- whether `Relay(n)` (uid 0) holds a relay's stdio;
+- the session id of a command born under `Relay(n)`.
+
+[`diagnostics/relay-facts.sh`](diagnostics/relay-facts.sh) prints all three that the user can read: the ancestry with session
+ids, the stdio links, and each pipe's or socket's other readable holders, with a socket's peer from `ss -xpn`. Run as the
+default user at 14:24:59Z, it found **no `.exe` relay at all**: no AI-agent session was running in the distro. Another
+read-only listing at the same time showed the shape of the session inits:
+- `Relay(562)` (pid 540), `Relay(1136)` (pid 1135), `Relay(220668)` (pid 220666), `Relay(225368)` (pid 225366);
+- the child of `Relay(220668)` is pid **220668**.
+
+So, with `Relay(1402)` (pid 1401) in § 2, a `Relay(n)` is created for one command and `n` is that command's pid. A relay whose
+pid equals its parent's `n` was born there (`wsl.exe`'s top-level command); the client-gone relay 12062 of § 5 was under
+`Relay(7411)`. S7b.2 keeps the born-there relay by this test and does not use the session id. It keeps a relay whose stdio is
+a socket until a peer can be shown gone.

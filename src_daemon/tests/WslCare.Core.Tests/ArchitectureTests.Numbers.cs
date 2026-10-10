@@ -47,6 +47,8 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Mcp/McpRunLogs.cs: TimeSpan.FromDays(1)"] = "a calendar day: the run logs of today and of yesterday — the folders a starts window of at most one day (its key's own maximum) can reach",
         ["WslCare.Core/Actions/Suspects/AgentOrphans.cs: Take(5)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
         ["WslCare.Core/Actions/Suspects/McpServerStop.cs: Take(5)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
+        ["WslCare.Core/Collectors/Procfs/InteropRelays.cs: StdioCount"] = "fd 0, 1 and 2: the three standard streams (POSIX), not a tuning",
+        ["WslCare.Core/Actions/Suspects/InteropRelayStop.cs: Take(5)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
         ["WslCare.Core/Actions/Suspects/McpServerStop.cs: InitPid"] = "the kernel's init process is pid 1 — an orphan's parent (as A18's)",
         ["WslCare.Core/Actions/Suspects/SuspectTermination.cs: Take(5)"] = "a display truncation: how many entries one sentence quotes, not how much is done",
         ["WslCare.Core/Actions/TargetUser.cs: FirstLoginUid"] = "Debian/Ubuntu's UID_MIN (login.defs) — the distribution's convention",

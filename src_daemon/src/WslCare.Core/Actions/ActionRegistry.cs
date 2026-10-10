@@ -36,6 +36,7 @@ public sealed class ActionRegistry
         new Suspects.SuspectTermination(),
         new Suspects.AgentOrphans(),
         new Suspects.McpServerStop(),
+        new Suspects.InteropRelayStop(),
         new UserCaches.BrowserAndHttpCaches(),
         new UserCaches.EditorServerCleanup(),
         new UserCaches.ToolCacheTrims(),

@@ -60,13 +60,13 @@ public sealed record ActionId
     /// </summary>
     public static IReadOnlyList<ActionId> ExecutionOrder { get; } =
     [
-        .. new[] { "A5Testcontainers", "A5", "A4", "A6", "A6Unused", "A7", "A8", "A9", "A12", "A14", "A17", "A10", "A15", "A16", "A3", "A11", "A18", "A19", "A13", "A20", "A1", "A2" }
+        .. new[] { "A5Testcontainers", "A5", "A4", "A6", "A6Unused", "A7", "A8", "A9", "A12", "A14", "A17", "A10", "A15", "A16", "A3", "A11", "A18", "A19", "A21", "A13", "A20", "A1", "A2" }
             .Select(text => All.Single(id => id.Text == text)),
     ];
 
     /// <summary>The ids whose button run is bound to the PROCESSES its modal showed (<c>--process pid:start</c>): A18 (E7.S2b review
-    /// A-H1) and A19 (plan E14 S2a). The one place the parser and the docs ask.</summary>
-    public static IReadOnlyList<ActionId> ShownProcessIds { get; } = [.. new[] { "A18", "A19" }.Select(text => All.Single(id => id.Text == text))];
+    /// A-H1), A19 (plan E14 S2a) and A21 (plan E14 S7b.2). The one place the parser and the docs ask.</summary>
+    public static IReadOnlyList<ActionId> ShownProcessIds { get; } = [.. new[] { "A18", "A19", "A21" }.Select(text => All.Single(id => id.Text == text))];
 
     /// <summary>The id <paramref name="text"/> names exactly, or <c>null</c>.</summary>
     public static ActionId? Find(string text) => All.FirstOrDefault(id => string.Equals(id.Text, text, StringComparison.Ordinal));

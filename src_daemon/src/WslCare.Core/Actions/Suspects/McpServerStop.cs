@@ -81,7 +81,7 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
             Busy = TimeSpan.FromMinutes(context.Config.Int(ConfigKeys.McpWatchdog.BusyMinutes)),
         };
         var what = string.Create(CultureInfo.InvariantCulture, $"the target user's MCP servers with no CPU for {windows.Idle.TotalMinutes:0} min ({windows.Orphan.TotalMinutes:0} min when their agent died), or busy without a log write for {windows.Busy.TotalMinutes:0} min, measured - SIGTERM, then SIGKILL after {SuspectTermination.Grace.TotalSeconds:0} s; {Reconnect}");
-        return Task.FromResult(Bound(Preview(context, what, windows, cancellationToken), context));
+        return Task.FromResult(ShownProcessBinding.Bound(Preview(context, what, windows, cancellationToken), context, ButtonNeedsShownProcesses));
     }
 
     /// <summary>The two idle windows in force: an instance's, and one whose agent died — and the busy streak a target needs
@@ -89,23 +89,6 @@ public sealed class McpServerStop : ICleanupAction, IBoundToShownList
     public sealed record IdleWindows(TimeSpan Idle, TimeSpan Orphan)
     {
         public TimeSpan Busy { get; init; }
-    }
-
-    /// <summary>A button run narrowed to what its modal showed — or refused when it showed nothing (as A18's).</summary>
-    private static ActionPreview Bound(ActionPreview preview, ActionContext context)
-    {
-        if (context.ShownProcesses.Given)
-        {
-            var kept = preview.Targets.Where(t => context.ShownProcesses.Names.Contains(SuspectSignals.Shown(t.Key))).ToList();
-            var what = string.Create(CultureInfo.InvariantCulture, $"{preview.What}; of the {context.ShownProcesses.Names.Count} process(es) the panel showed, the {kept.Count} still eligible");
-            // coai code round 2026-10-08, finding 13: the held memory of what is KEPT, not of the whole preview.
-            var facts = new Dictionary<string, long>(preview.Facts, StringComparer.Ordinal) { [SuspectTermination.HeldMemoryFact] = kept.Sum(i => i.Bytes ?? 0) };
-            return RowPreviews.Narrowed(preview, kept, what, facts);
-        }
-
-        return context.Trigger == RunTrigger.Manual && preview.Available
-            ? preview with { Refusal = preview.Refusal.Length > 0 ? preview.Refusal : ButtonNeedsShownProcesses }
-            : preview;
     }
 
     private static ActionPreview Preview(ActionContext context, string what, IdleWindows windows, CancellationToken cancellationToken)

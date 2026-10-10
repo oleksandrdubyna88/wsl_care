@@ -73,6 +73,18 @@ public sealed class McpStatusTests
         CliRun.Lines(stdout).Should().Contain(l => l.StartsWith("mcp servers: 2 (0 idle, 0 busy without a log write)", StringComparison.Ordinal) && l.Contains("coai-mcp 0 in 10 min", StringComparison.Ordinal));
     }
 
+    /// <summary>E14 S7b.2 (the own code review, finding 7): the distro's text status carries one interop-relays line — the counts and
+    /// the timer's switch with the command that flips it.</summary>
+    [Fact]
+    public void Status_text_prints_one_interop_relays_line_with_the_switch_and_its_command()
+    {
+        var (exit, stdout, _) = CliRun.Over(FixtureHost((_, _) => Task.CompletedTask), "status");
+
+        exit.Should().Be((int)ExitCode.Ok);
+        CliRun.Lines(stdout).Should().ContainSingle(l => l.StartsWith("windows mcp relays: ", StringComparison.Ordinal))
+            .Which.Should().EndWith("the timer stops client-gone relays: on (wsl-care config set auto.A21 false)");
+    }
+
     [Fact]
     public async Task The_windows_binary_answers_no_distro_mcp_servers_and_points_at_its_own_block()
     {

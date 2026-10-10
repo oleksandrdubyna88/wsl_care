@@ -48,6 +48,7 @@ internal static class StatusCommand
             LastCleanup = LastCleanups.From(history),
             Limits = StatusLimits.From(loaded.Config),
             McpServers = McpServersReport.From(mcp),
+            InteropRelays = host.Paths is LinuxHostPaths ? InteropRelaysReport.From(sample.Vm.Bind(vm => vm.Processes), host.Paths, host.Files, loaded.Config) : null,
         };
         report = WithWindowsSide(report, host, sample, loaded.Config, cancellationToken);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
@@ -105,6 +106,11 @@ internal static class StatusText
             text.AppendLine(WindowsMcpServers(windows));
         }
 
+        if (report.InteropRelays is { } relays)
+        {
+            text.AppendLine(InteropRelays(relays));
+        }
+
         text.AppendLine(Verdicts(report.Verdicts ?? []));
         text.AppendLine(Running(report.Running));
         text.AppendLine(LastCleanup(report.LastCleanup));
@@ -128,6 +134,14 @@ internal static class StatusText
         { Available: true } => Invariant($"windows mcp servers: {mcp.Count} ({mcp.IdleCount} idle, {mcp.OrphanedCount} orphaned), {Number(mcp.CpuCores!)} cores{CpuBases((mcp.Instances ?? []).Select(i => i.CpuBasis), mcp.WindowMilliseconds)}, {Gib(mcp.Held!)} private ({mcp.MemoryRead} read)")
             + string.Concat((mcp.Owners ?? []).Take(TopShown).Select((o, i) => Invariant($"{(i == 0 ? "; " : ", ")}{o.Count} under {o.Parent}"))),
         _ => $"windows mcp servers: unavailable ({mcp.Reason})",
+    };
+
+    /// <summary>One line (E14 S7b.2, the distro): <c>windows mcp relays: 3 (1 re-parented); the timer stops client-gone relays: on (wsl-care
+    /// config set auto.A21 false)</c>.</summary>
+    private static string InteropRelays(InteropRelaysReport relays) => relays switch
+    {
+        { Available: true } => Invariant($"windows mcp relays: {relays.Count} ({relays.Reparented} re-parented); the timer stops client-gone relays: {(relays.AutoStop ? "on" : "off")} ({relays.Command})"),
+        _ => $"windows mcp relays: unavailable ({relays.Reason}); the timer stops client-gone relays: {(relays.AutoStop ? "on" : "off")} ({relays.Command})",
     };
 
     /// <summary>What the CPU figures were measured over (plan E14 S1; the Windows line since S7b.1): <c> (3 over their last interval, 1
