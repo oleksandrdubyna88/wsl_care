@@ -256,7 +256,7 @@ public static class Selection
         c => RuleVerdict.When(c.GatherNote.Length > 0, SkipRule.NotWhole, () => $"not every file of it was seen ({c.GatherNote}); a unit moves whole or not at all"),
         c => MayBeOpen(c.Input.Files, c.Under, c.Unit, c.Key),
         c => ScanIncomplete(c.Input.InUse),
-        c => AgentHere(c.Input, c.Entry, c.Key),
+        c => AgentHere(c.Input, c.Entry, c.Key, c.Files),
         c => InUse(c.Input, c.Under, c.Files),
     ];
 
@@ -305,9 +305,9 @@ public static class Selection
             : RuleVerdict.Holds;
 
     /// <summary>A live Claude Code process whose working directory is this session's project (§15r D2.2) — or, on Windows, any live
-    /// Claude Code, whose working folder cannot be read (E9.S5).</summary>
-    private static RuleVerdict AgentHere(SelectionInput input, AgentEntry entry, string key) =>
-        Liveness.AgentWorking(input.InUse, entry.Id, key) is { Length: > 0 } working ? new RuleVerdict.Refuses(SkipRule.AgentWorkingHere, working) : RuleVerdict.Holds;
+    /// Claude Code, whose working folder cannot be read (E9.S5), while a file of the unit is not idle (the E9.S5 amendment).</summary>
+    private static RuleVerdict AgentHere(SelectionInput input, AgentEntry entry, string key, IReadOnlyList<UnitFile> files) =>
+        Liveness.AgentWorking(input.InUse, entry.Id, key, [.. files.Select(f => f.OnDisk)]) is { Length: > 0 } working ? new RuleVerdict.Refuses(SkipRule.AgentWorkingHere, working) : RuleVerdict.Holds;
 
     private static string Distro(IHostPaths paths, string onDisk) => paths is LinuxHostPaths linux ? linux.ToDistro(onDisk) : onDisk;
 }

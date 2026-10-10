@@ -132,9 +132,12 @@ public sealed class ArchiveBoundedBaseTests : IDisposable
         }
     }
 
+    /// <summary>The window is widened here (the other tests keep 1 s to time a base that never answers): an ANSWERING base must not
+    /// be timed against one second on a loaded CI runner, where the reach's task can start late (win-x64, 2026-10-10: "unreachable").</summary>
     [Fact]
     public void A_base_that_answers_is_reached_and_listed()
     {
+        Written(_sandbox.Paths.MachineConfigFile, """{ "archive": { "reachabilitySeconds": 30 } }""");
         var reach = CliRun.Over(Host(_sandbox.Files), "archive", "reach", "--json");
         var list = CliRun.Over(Host(_sandbox.Files), "archive", "list", "--restorable", "--json");
 

@@ -18,6 +18,12 @@ public static partial class ConfigKeys
     private const int CountCeiling = 1_000_000;
     private const int GbCeiling = 100_000;
     private const int DaysCeiling = 3650;
+
+    /// <summary>The longest <c>archive.windowsIdleDays</c>: a year (see the key).</summary>
+    private const int WindowsIdleCeilingDays = 365;
+
+    /// <summary>A day in minutes — the widest clock skew <c>archive.clockSkewMinutes</c> tolerates.</summary>
+    private const int MinutesPerDay = 1440;
     private const int HoursCeiling = 8760;
 
     /// <summary>The distribution-name shape the extension's own setting uses (letters, digits, <c>.</c>, <c>_</c>, <c>-</c>).</summary>
@@ -151,6 +157,16 @@ public static partial class ConfigKeys
     {
         public static readonly ConfigKey.IntKey OlderThanDays = new("archive.olderThanDays", 1, DaysCeiling) { Trust = KeyTrust.Higher };
 
+        /// <summary>The E9.S5 amendment (owner decision 2026-10-09): while Claude Code runs on Windows — whose working folder cannot be
+        /// read — a Claude Code session moves only when ALL its files were untouched this many days. At least a day: a session idle for
+        /// less is likely the one open in a window this evening. At most a year: past it the rule would only restate "nothing moves
+        /// while Claude runs".</summary>
+        public static readonly ConfigKey.IntKey WindowsIdleDays = new("archive.windowsIdleDays", 1, WindowsIdleCeilingDays) { Trust = KeyTrust.Higher };
+
+        /// <summary>The tolerance of "now" against a file's time (the E9.S5 amendment): a NAS stamps a share's files, a WSL VM clock drifts
+        /// after sleep. A file dated later than now by more than this keeps its session — which clock is wrong is not guessed.</summary>
+        public static readonly ConfigKey.IntKey ClockSkewMinutes = new("archive.clockSkewMinutes", 0, MinutesPerDay) { Trust = KeyTrust.Higher };
+
         /// <summary>Empty means no archive is configured and A13 does not run. The folder as THIS side sees it. An ordinary key since
         /// plan §15r D1 (E9.S0): root never opens, writes or removes anything under it — the TARGET USER's own process moves — so the
         /// user layer may name it; the base rules (§15r D7, <c>Archive.BaseFolderRules</c>) are judged by that user's process at
@@ -221,7 +237,7 @@ public static partial class ConfigKeys
         Thresholds.MemAvailableWarnPercent, Thresholds.MemAvailableActPercent, Thresholds.SwapWarnGb,
         AiAgents.WarnGb, AiAgents.SessionWarnMb, AiAgents.Extra,
         McpServers.Watched, McpServers.Programs,
-        Archive.OlderThanDays, Archive.BaseFolder, Archive.Agents,
+        Archive.OlderThanDays, Archive.WindowsIdleDays, Archive.ClockSkewMinutes, Archive.BaseFolder, Archive.Agents,
         Idle.CpuPercent, Idle.Minutes,
         Clock.ReferenceUrl, Clock.ReferenceToleranceSeconds, Clock.ManualStartWarns,
         Clock.MaxDriftSeconds,

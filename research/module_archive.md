@@ -3,7 +3,7 @@
 > Built so far: **E9.S0** (catalogue blocks, keys, base folder rules, `archive check-base`), **E9.S1** (the selection and
 > `archive preview`, read-only), **E9.S2a** (the file seam `IArchiveFiles`, with its gate round and own review round), **E9.S2b**
 > (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`, with its own review round), **E9.S3** (`archive restore`, `archive list`), **E9.S4** (A13 and A20 in the engine — the root → user boundary,
-> `archive reach`), **E9.S5** (the Windows side's open-file check: the Restart Manager, and a live Claude Code on Windows). **E10.S0** (the daemon half of the extension's archive, plan §15s: `act A20 … --entry -` with the ids on stdin, `restoreCeiling` on every list answer, `archive check-base --json <path>`; capability `act.entryStdin`). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
+> `archive reach`), **E9.S5** (the Windows side's open-file check: the Restart Manager, and a live Claude Code on Windows; amended 2026-10-09 — the Windows idle rule, `archive.windowsIdleDays`). **E10.S0** (the daemon half of the extension's archive, plan §15s: `act A20 … --entry -` with the ids on stdin, `restoreCeiling` on every list answer, `archive check-base --json <path>`; capability `act.entryStdin`). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
 > red runs and their break-it checks: [module_tests.md](module_tests.md), the E9 sections (from *The AI-session archive:
 > catalogue blocks, keys, base folder* to *The E9.S2a gate round*). The longer history of each
 > story: *Story history* below.
@@ -436,9 +436,17 @@ flowchart TD
   ASKED of the Restart Manager (`Archive/RestartManager.cs`, extended-length paths; a path past `MAX_PATH` asked of the file
   system's own list of users, its attributes opened only) — never an open of a session file; a holder (named by its pid only), an
   error, a stalled question, a spent budget or a cancellation keeps the unit, and once a question stalls no later view of the
-  process asks (`StallLatch`). Claude Code's working folder cannot be read on Windows, so a live Claude Code there (`claude.exe`, or
-  `node.exe` running its package; an unreadable `node.exe` of this session counts) keeps every Claude Code session — asked again at
-  every unit, the selection's and phase 2's, and before the Restart Manager. Phase 2 resuming past its commit point asks the
+  process asks (`StallLatch`). Claude Code's working folder cannot be read on Windows, so while a Claude Code runs there (`claude.exe`, or
+  `node.exe` running its package; an unreadable `node.exe` of this session or an unreadable process table counts) a Claude Code
+  session moves only when IDLE — every file of it untouched for `archive.windowsIdleDays` past the `archive.clockSkewMinutes`
+  tolerance (`Archive/WindowsIdle.cs`, `InUseView.ClaudeIdle`, given by `WithIdle` in the run and the preview; a view never given
+  it keeps every such unit). Whether Claude runs is asked again at every unit, the selection's and phase 2's, and before the
+  Restart Manager; the times are read at the question. A file dated after the clock by more than the tolerance, or a time that
+  cannot be read (`PhysicalFileSystem.FileSize` answers *unreadable*, not *missing*, for a file it may not stat), keeps the unit; a
+  name that does not exist is skipped, and a unit with none left is idle (the E9.S5 amendment, owner decision 2026-10-09).
+  **Residual risk, said plainly:** a Claude Code window left open on a session for the whole window, with no new turn, is not
+  seen — Claude keeps no handle open and a resume only reads; such a session is moved, and the next turn writes a fresh file at
+  the source, which the archive records as a `split` (nothing is lost). Phase 2 resuming past its commit point asks the
   quarantine names too (`ArchiveRemove.ResumeNames`).
 - **`Archive/ArchiveNames.cs`**: the name rules (`Problem`, `CaseCollision`), Claude's project-folder encoding
   (`ClaudeProjectOf`), the quarantine mark, and the side folder (`SideName`: `windows-<host>`, `wsl-<host>-<distro>`, §15r D4).
