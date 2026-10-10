@@ -56,7 +56,12 @@ internal static partial class NetworkPaths
     /// <summary>Why a handle opened at <paramref name="path"/> is not trusted (<see cref="OfflineCacheProblem"/>); a local path is never asked.</summary>
     [SupportedOSPlatform("windows")]
     internal static string OfflineCacheProblemOf(SafeFileHandle handle, string path) =>
-        IsRemote(path, NetworkRootOf) && RemoteProtocolFlags(handle) is var (flags, error) ? OfflineCacheProblem(flags, error, remote: true) : string.Empty;
+        IsRemote(path, MappingOf) && RemoteProtocolFlags(handle) is var (flags, error) ? OfflineCacheProblem(flags, error, remote: true) : string.Empty;
+
+    /// <summary>Whether <paramref name="path"/> is on a network share by the DRIVE'S TYPE, not its share name — a remote drive whose share
+    /// cannot be read (a remembered, disconnected mapping) is remote (the guards' own review, finding 4).</summary>
+    internal static bool IsRemote(string path, Func<string, DriveMapping> mappingOf) =>
+        IsUnc(path) || (DriveOf(path) is { Length: > 0 } drive && mappingOf(drive).Remote);
 
     /// <summary>Whether <paramref name="path"/> is on a network share: a UNC path, or a drive the system maps to one.</summary>
     internal static bool IsRemote(string path, Func<string, string> networkRootOf) =>

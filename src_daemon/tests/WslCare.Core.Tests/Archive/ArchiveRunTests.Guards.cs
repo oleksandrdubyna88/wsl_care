@@ -27,14 +27,43 @@ public sealed partial class ArchiveRunTests
         ArchiveRun.Run(Input(Config(), runId: "r3")).Agents.Single().Removed.Should().Be(1, "a trusted re-hash later removes it");
     }
 
-    /// <summary>Every call of the real seam, but each read-back answered "not trusted" — what a share in the Offline Files cache says.</summary>
-    private sealed class UntrustedReadBack(IArchiveFiles inner) : IArchiveFiles
+    /// <summary>The own review, finding 1 (Major): the base turning untrusted BETWEEN the lease and phase 2 refuses phase 2's folder
+    /// opens — that is not a damaged copy either: the entry is kept, never dropped as damaged.</summary>
+    [Fact]
+    public void Phase_2_keeps_the_entry_when_the_bases_folders_are_refused()
     {
+        var source = Session("refused");
+        ArchiveRun.Run(Input(Config())).Agents.Single().Copied.Should().Be(1);
+        _clock.Advance(TimeSpan.FromHours(25));
+
+        var second = ArchiveRun.Run(Input(Config(), runId: "r2") with { Archive = new RefusedFolders(_sandbox.Files) }).Agents.Single();
+
+        second.Damaged.Should().Be(0, "a refused open is not a damaged copy");
+        second.Removed.Should().Be(0);
+        File.Exists(source).Should().BeTrue();
+        ArchiveRun.Run(Input(Config(), runId: "r3")).Agents.Single().Removed.Should().Be(1, "a later run with the base answering removes it");
+    }
+
+    /// <summary>The real seam, the archived copies' folders in the base refused (what an untrusted base answers mid-run, after the lease
+    /// and the index were read).</summary>
+    private sealed class RefusedFolders(IArchiveFiles inner) : UntrustedReadBack(inner)
+    {
+        public override FolderBeneath OpenExistingFolderBeneath(string baseFolder, IReadOnlyList<string> levels) =>
+            levels.Contains("projects") ? new FolderBeneath.Refused("the share answers from the Offline Files cache (a test says so)") : Inner.OpenExistingFolderBeneath(baseFolder, levels);
+
+        public override FileHash ReadBack(BeneathFolder folder, string name) => Inner.ReadBack(folder, name);
+    }
+
+    /// <summary>Every call of the real seam, but each read-back answered "not trusted" — what a share in the Offline Files cache says.</summary>
+    private class UntrustedReadBack(IArchiveFiles inner) : IArchiveFiles
+    {
+        protected IArchiveFiles Inner => inner;
+
         public SourceOpen OpenSource(string layoutRoot, string path) => inner.OpenSource(layoutRoot, path);
 
         public FolderBeneath OpenFolderBeneath(string baseFolder, IReadOnlyList<string> levels, DeletionScope scope) => inner.OpenFolderBeneath(baseFolder, levels, scope);
 
-        public FolderBeneath OpenExistingFolderBeneath(string baseFolder, IReadOnlyList<string> levels) => inner.OpenExistingFolderBeneath(baseFolder, levels);
+        public virtual FolderBeneath OpenExistingFolderBeneath(string baseFolder, IReadOnlyList<string> levels) => inner.OpenExistingFolderBeneath(baseFolder, levels);
 
         public DurableAppend AppendDurably(BeneathFolder folder, string name, ReadOnlySpan<byte> bytes, DeletionScope scope) => inner.AppendDurably(folder, name, bytes, scope);
 
@@ -44,7 +73,7 @@ public sealed partial class ArchiveRunTests
 
         public ExclusiveFile CreateExclusive(BeneathFolder folder, string name, DeletionScope scope) => inner.CreateExclusive(folder, name, scope);
 
-        public FileHash ReadBack(BeneathFolder folder, string name) => new FileHash.Untrusted("the share may answer from the Offline Files cache (a test says so)");
+        public virtual FileHash ReadBack(BeneathFolder folder, string name) => new FileHash.Untrusted("the share may answer from the Offline Files cache (a test says so)");
 
         public VerifiedRemoval RemoveOwnCopy(BeneathFolder folder, string name, FileIdentity created, DeletionScope scope) => inner.RemoveOwnCopy(folder, name, created, scope);
 

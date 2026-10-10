@@ -82,17 +82,21 @@ public static class InUseWindows
             : string.Empty;
 
     private static string Naming(IWindowsProcessTable processes, WindowsProcessEntry process, string id) =>
-        IsClaudeProgram(process) && processes.CommandLine(process.Pid) is Reading<string>.Available { Value: var line } && Names(line, id)
+        ClaudeEvidence(process) is { } evidence && processes.CommandLine(process.Pid) is Reading<string>.Available { Value: var line } && Names(line, id, evidence)
             ? Liveness.OnItsCommandLine(process.Pid)
             : string.Empty;
 
-    /// <summary>A <c>claude.exe</c> or a <c>node.exe</c>; whether the node runs Claude Code is told by its line (<see cref="Names"/>).</summary>
-    private static bool IsClaudeProgram(WindowsProcessEntry process) =>
-        CommandLineText.FileNameOf(process.ExeName) is var program && (program.Equals(ClaudeProgram, StringComparison.OrdinalIgnoreCase) || program.Equals(NodeProgram, StringComparison.OrdinalIgnoreCase));
+    /// <summary>What a process's line must also carry to be Claude Code: nothing for <c>claude.exe</c>, the package for <c>node.exe</c>
+    /// (the guards' own review: a node line naming a transcript path is no Claude Code); <c>null</c> — not found — for any other program.</summary>
+    private static string? ClaudeEvidence(WindowsProcessEntry process) => CommandLineText.FileNameOf(process.ExeName) switch
+    {
+        var program when program.Equals(ClaudeProgram, StringComparison.OrdinalIgnoreCase) => string.Empty,
+        var program when program.Equals(NodeProgram, StringComparison.OrdinalIgnoreCase) => ClaudePackage,
+        _ => null,
+    };
 
-    /// <summary>A Claude Code line naming the session: <c>claude.exe</c>'s own, or a <c>node.exe</c> line that runs the package.</summary>
-    private static bool Names(string line, string id) =>
-        line.Contains(id, StringComparison.OrdinalIgnoreCase) && (line.Contains(ClaudePackage, StringComparison.OrdinalIgnoreCase) || line.Contains(ClaudeProgram, StringComparison.OrdinalIgnoreCase));
+    private static bool Names(string line, string id, string evidence) =>
+        line.Contains(id, StringComparison.OrdinalIgnoreCase) && line.Contains(evidence, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Why no Claude Code session may move on this side now; empty when no Claude Code runs.</summary>
     public static string ClaudeRunning(IWindowsProcessTable processes) => processes.List() switch

@@ -134,7 +134,11 @@ public static class InUse
             return;
         }
 
-        lines.Add((int.Parse(Path.GetFileName(pid), System.Globalization.CultureInfo.InvariantCulture), line));
+        if (int.TryParse(Path.GetFileName(pid), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id))
+        {
+            lines.Add((id, line));
+        }
+
         if (files.ReadLink(Path.Combine(pid, "cwd")) is LinkReadResult.Target cwd)
         {
             projects.Add(ArchiveNames.ClaudeProjectOf(cwd.Path));

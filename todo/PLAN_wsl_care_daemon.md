@@ -4032,7 +4032,7 @@ Its results — both spellings judged and used, the holder kept, the idle rule, 
 
 #### Two fail-closed guards after the live gate (owner questions 1 and 2, decided overnight 2026-10-10)
 
-> Status: **plan only, 2026-10-10 — nothing built.** Scope: `Archive/InUseWindows.cs`, `Archive/InUse.cs` (the distro scan),
+> Status: **built, 2026-10-10 (its PR open).** Scope: `Archive/InUseWindows.cs`, `Archive/InUse.cs` (the distro scan),
 > `Archive/Liveness.cs`, `Files/BeneathWrites.cs`, `Files/NetworkPaths.cs`, `Files/PhysicalFileSystem.Archive.Windows.cs`
 > (`ReadBack` and the base's hold), `Archive/ArchiveRemove.cs`, tests, `module_archive.md`, `module_tests.md`. Branch
 > `fix/wc-e9-archive-guards`, a PR after #80.
@@ -4083,6 +4083,14 @@ remote base refuses the run. Finding 0 ("verify with Offline Files on") was reje
 - turning Offline Files on is a machine change only the owner may make;
 - "keep the source whenever the signal cannot be verified" would keep every source on every network base;
 - the guard uses the documented handle signal and fails closed on every unknown answer, and its negative case is measured.
+
+**As built (2026-10-10).** As designed. The own review round added:
+- a REFUSED folder in phase 2 keeps the entry (only a missing one is damage), the Major finding;
+- remote-ness is decided by the drive's type;
+- a node line must run the package.
+
+The residuals are in [module_archive.md](../research/module_archive.md), *Two fail-closed guards*. The tests, red runs, teeth
+G-01–G-11 and the review table are in [module_tests.md](../research/module_tests.md).
 
 #### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
 

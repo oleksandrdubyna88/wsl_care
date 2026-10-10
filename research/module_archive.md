@@ -353,6 +353,40 @@ flowchart TD
     and removed the two idle sessions at their source on both the drive and uncbase legs. `recent1` stayed. `archive list` shows
     both entries `sourceRemoved` and verified.
   - **The test data stays** in the one subfolder and in the scratch sandboxes, as the owner asked. Nothing was deleted.
+  - **With the guards (G1/G2, below)** the NAS still reads trusted. A new throwaway session (`old2`) was copied to the drive and
+    uncbase legs, read back through the offline check.
+  - **Not the product:** the 20-day `recent1` in the two LOCAL sandboxes disappeared before that run, with no index line and no copy
+    in either base, so the archive never took it. Windows Storage Sense is on (its policy: delete temporary files apps are not using),
+    and the sandboxes live under `%TEMP%`. The NAS leg's `recent1` is still there.
+
+### Two fail-closed guards (owner questions 1 and 2, 2026-10-10)
+
+- **G1: a session on a live command line stays.**
+  - A Claude Code session is kept, before the idle rule and whatever that rule says, when its GUID (the transcript's file name)
+    appears on the command line of a live Claude Code process, matched in any letter case: `--resume`, `-r`, `--session-id`, a
+    transcript path.
+  - A Claude Code process is a `claude.exe`, a `node.exe` running the `claude-code` package, or the distro's Claude Code by its argv.
+  - It reads the Windows process table through the bounded asker, and on the distro side `/proc/<pid>/cmdline`, which the scan reads
+    anyway.
+  - It is a positive keep only. An id on no command line proves nothing: `--continue` names no id, the in-app `/resume` picker leaves
+    no trace, and a window started on A that switched to B still shows A.
+- **G2: an Offline Files share is not trusted.**
+  - On a network path, the archive asks the handle's `FILE_REMOTE_PROTOCOL_INFO`. A share that says it answers from an offline cache
+    (`REMOTE_PROTOCOL_FLAG_OFFLINE`), or a query that fails, is not trusted.
+  - **At the base's hold:** the run is refused, naming why.
+  - **For a read-back:** it answers `FileHash.Untrusted`. Phase 2 then keeps the source and the entry for a later run instead of
+    marking it damaged.
+  - **A refused folder in phase 2** keeps the entry too; only a missing folder is damage.
+  - **A local path is never asked**, and remote-ness is decided by the drive's TYPE.
+  - **Measured on the owner's NAS:** SMB 3.1, flags 0x10, so the share is trusted.
+- **Residuals, said plainly:**
+  - **Offline Files has not been seen live.** The positive case needs Offline Files turned on, a machine change only the owner may
+    make, so it is on the owner's list.
+  - **A base turning untrusted mid-run** (in the seconds between phase 2's re-hash and the removal, or during phase 1) gets a wrong
+    label (`superseded`, `split`, "the base does not keep what it is given"). Nothing is removed or lost.
+  - **The distro side asks nothing** about a drvfs mount of a Windows network drive.
+  - **Not covered by a test:** the lease's refusal on an offline answer and the resume path with an untrusted copy. The pure function,
+    the break-it checks and the live NAS run hold them.
 
 ## External dependencies
 

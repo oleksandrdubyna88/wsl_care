@@ -186,11 +186,18 @@ public static class ArchiveRemove
     private static CopyCheck CopyProblem(MoveContext c, InflightEntry entry, IndexFile file)
     {
         var levels = ArchiveCopy.Levels(entry.Agent, entry.Month, c.Side, ArchiveCopy.Folders(file.Archived));
-        if (c.Files.OpenExistingFolderBeneath(c.BaseFolder, levels) is not FolderBeneath.Ready { Folder: var folder })
+        return c.Files.OpenExistingFolderBeneath(c.BaseFolder, levels) switch
         {
-            return new CopyCheck($"the folder of {file.Archived} is missing or unreadable in the base", false);
-        }
+            FolderBeneath.Ready ready => ReadBack(c, ready.Folder, file),
+            FolderBeneath.Refused refused => new CopyCheck($"the folder of {file.Archived} could not be opened in the base ({refused.Why})", true),
+            _ => new CopyCheck($"the folder of {file.Archived} is missing in the base", false),
+        };
+    }
 
+    /// <summary>The copy re-hashed in its held folder. A REFUSED folder (above) is no proof of damage — the base may have turned untrusted
+    /// since the lease (the guards' own review, finding 1) — so it keeps the entry; only a MISSING one marks it damaged.</summary>
+    private static CopyCheck ReadBack(MoveContext c, BeneathFolder folder, IndexFile file)
+    {
         using (folder)
         {
             return Judged(c.Files.ReadBack(folder, Path.GetFileName(file.Archived)), file);

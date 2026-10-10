@@ -71,6 +71,25 @@ public sealed class ArchiveGuardsTests : IDisposable
 
     // ---- G2 ----
 
+    /// <summary>The own review, finding 4: a drive the system calls REMOTE whose share cannot be read (a remembered, disconnected mapping —
+    /// plausible exactly when Offline Files serves it) is remote, so its answers are asked about, never trusted by default.</summary>
+    [Fact]
+    public void A_remote_drive_whose_share_cannot_be_read_is_still_remote()
+    {
+        NetworkPaths.IsRemote(@"D:\base", static _ => new DriveMapping(true, string.Empty)).Should().BeTrue();
+        NetworkPaths.IsRemote(@"C:\base", static _ => DriveMapping.Local).Should().BeFalse();
+        NetworkPaths.IsRemote(@"\\nas\work\base", static _ => DriveMapping.Local).Should().BeTrue();
+    }
+
+    /// <summary>The own review, nit: a node.exe line counts only when it runs the claude-code package; a claude.exe line needs only the id.</summary>
+    [Fact]
+    public void A_node_line_must_run_claude_code_to_keep_a_session()
+    {
+        Problem(WindowsView($@"node.exe C:\Users\me\.claude\projects\p\{Session}.jsonl", "node.exe")).Should().BeEmpty("a node.exe that only names the transcript is no Claude Code");
+        Problem(WindowsView($"claude.exe {Session}")).Should().Contain("on its command line");
+    }
+
+
     [Theory]
     [InlineData(0x10u, 0, true, "")]
     [InlineData(0x12u, 0, true, "Offline Files")]
