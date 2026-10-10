@@ -27,7 +27,7 @@ public static class WindowsDiskParsers
         C.DistroTag, C.DistrosErrorTag, C.DockerTag, C.DockerErrorTag, C.VolumeTag, C.VolumesErrorTag, C.DiskTag, C.DisksErrorTag,
         C.ReliabilityTag, C.ReliabilityReadTag, C.ReliabilityRefusedTag, C.EventsReadTag, C.EventsErrorTag, C.EventTag,
         C.CommitTag, C.CommitErrorTag, C.CompressionTag, C.CompressionErrorTag, C.EditionTag, C.VersionTag, C.BuildTag,
-        C.InstallDateTag, C.WindowsErrorTag, C.MachineGuidTag, C.MachineErrorTag, C.AdapterTag, C.AdaptersErrorTag,
+        C.InstallDateTag, C.AccountTag, C.WindowsErrorTag, C.MachineGuidTag, C.MachineErrorTag, C.AdapterTag, C.AdaptersErrorTag,
     };
 
     /// <summary>The facts of <paramref name="stdout"/>; <paramref name="maxRead"/> and <paramref name="sinceDays"/> are the two
@@ -192,8 +192,8 @@ public static class WindowsDiskParsers
     {
         var installed = Single(a, C.InstallDateTag, C.WindowsErrorTag, "Windows' install date").Bind(InstallDate);
         var guid = Single(a, C.MachineGuidTag, C.MachineErrorTag, "the machine id").Bind(MachineGuid);
-        var identity = new WindowsIdentity(Text(a, C.EditionTag, "the edition"), Text(a, C.VersionTag, "the display version"), Text(a, C.BuildTag, "the build"), installed, guid);
-        return (identity, Bad(installed, a, C.InstallDateTag) + Bad(guid, a, C.MachineGuidTag));
+        var identity = new WindowsIdentity(Text(a, C.EditionTag, "the edition"), Text(a, C.VersionTag, "the display version"), Text(a, C.BuildTag, "the build"), installed, guid, Single(a, C.AccountTag, C.WindowsErrorTag, "the account").Bind(Sid));
+        return (identity, Bad(installed, a, C.InstallDateTag) + Bad(guid, a, C.MachineGuidTag) + Bad(identity.Account, a, C.AccountTag));
     }
 
     private static Reading<string> Text(Answer a, string tag, string what) =>
@@ -203,6 +203,12 @@ public static class WindowsDiskParsers
         long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds) && seconds > 0 && seconds <= DateTimeOffset.MaxValue.ToUnixTimeSeconds()
             ? Reading.Of(DateTimeOffset.FromUnixTimeSeconds(seconds))
             : Reading.Missing<DateTimeOffset>($"Windows' install date \"{value}\" is not unix seconds");
+
+    /// <summary>A Windows SID (<c>S-1-5-21-…</c>), or why not.</summary>
+    private static Reading<string> Sid(string value) =>
+        value.StartsWith("S-1-", StringComparison.Ordinal) && value[2..].All(c => char.IsAsciiDigit(c) || c == '-')
+            ? Reading.Of(value)
+            : Reading.Missing<string>($"the account \"{value}\" is not a SID");
 
     private static Reading<string> MachineGuid(string value) =>
         Guid.TryParse(value, out var guid) ? Reading.Of(guid.ToString("D")) : Reading.Missing<string>($"the machine id \"{value}\" is not a GUID");

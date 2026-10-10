@@ -51,6 +51,7 @@ public static class WindowsDiskCommands
     public const string VersionTag = "windows.version=";
     public const string BuildTag = "windows.build=";
     public const string InstallDateTag = "windows.installDate=";
+    public const string AccountTag = "windows.account=";
     public const string WindowsErrorTag = "windows.error=";
     public const string MachineGuidTag = "machine.guid=";
     public const string MachineErrorTag = "machine.error=";
@@ -149,9 +150,10 @@ public static class WindowsDiskCommands
     private static readonly string Compression =
         $$"""try { $o.Add('{{CompressionTag}}'+@(Get-Process -Name 'Memory Compression')[0].WorkingSet64) } catch { $o.Add('{{CompressionErrorTag}}'+$_.Exception.GetType().Name) }""";
 
-    /// <summary>The edition, the display version, the build with its update revision, and the install date (unix seconds).</summary>
+    /// <summary>The edition, the display version, the build with its update revision, the install date (unix seconds) and the
+    /// account the script runs as (its SID) — interop runs it as the Windows user who started the VM, whose hive HKCU is.</summary>
     private static readonly string Identity =
-        $$"""try { $w=Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'; $o.Add('{{EditionTag}}'+$w.EditionID); $o.Add('{{VersionTag}}'+$w.DisplayVersion); $o.Add('{{BuildTag}}'+$w.CurrentBuild+'.'+$w.UBR); $o.Add('{{InstallDateTag}}'+$w.InstallDate) } catch { $o.Add('{{WindowsErrorTag}}'+$_.Exception.GetType().Name) }""";
+        $$"""try { $w=Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'; $o.Add('{{EditionTag}}'+$w.EditionID); $o.Add('{{VersionTag}}'+$w.DisplayVersion); $o.Add('{{BuildTag}}'+$w.CurrentBuild+'.'+$w.UBR); $o.Add('{{InstallDateTag}}'+$w.InstallDate); $o.Add('{{AccountTag}}'+[Security.Principal.WindowsIdentity]::GetCurrent().User.Value) } catch { $o.Add('{{WindowsErrorTag}}'+$_.Exception.GetType().Name) }""";
 
     /// <summary>The machine's id — every statistics record will carry it (PLAN_disk_health.md §3.2).</summary>
     private static readonly string Machine =

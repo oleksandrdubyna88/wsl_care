@@ -146,6 +146,13 @@ public sealed class HealthContractTests
         Available(facts.PhysicalDisks).Should().NotBeEmpty();
         Available(facts.Events).Read.Should().BeLessThanOrEqualTo(WindowsDiskCommands.EventsMaxRead);
         Available(facts.Identity.MachineGuid).Should().NotBeEmpty();
+        // E15.S1's plan round: interop runs the script as the Windows user who started the VM, so HKCU is THAT account's hive —
+        // the account is a user SID, and the distro this test runs in is among the Lxss map's distros.
+        Available(facts.Identity.Account).Should().StartWith("S-1-5-21-", "interop runs Windows programs as the signed-in user, not SYSTEM");
+        if (Environment.GetEnvironmentVariable("WSL_DISTRO_NAME") is { Length: > 0 } distro)
+        {
+            Available(facts.Distros).Should().Contain(d => d.Name == distro, "the Lxss map read is the account that runs this distro");
+        }
         Available(facts.CommitLimitBytes).Should().BePositive();
         (facts.Reliability.IsAvailable || facts.Reliability.ReasonOrEmpty.Contains("elevation", StringComparison.Ordinal)).Should().BeTrue(facts.Reliability.ReasonOrEmpty);
     }

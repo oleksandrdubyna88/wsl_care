@@ -252,7 +252,8 @@ flowchart LR
   `disk.eventsSinceDays` (60) days, at most `disk.eventsMaxRead` (5000), AGGREGATED inside PowerShell per UTC day, provider,
   id and `HarddiskN` (one line per event was 64 of 75 lines, D10); commit charge and limit
   (`Win32_PerfRawData_PerfOS_Memory`); the Memory Compression process's working set; EditionID, DisplayVersion,
-  CurrentBuild.UBR, InstallDate; MachineGuid; each display adapter's problem code, PNP device id and name (for G2). The
+  CurrentBuild.UBR, InstallDate; MachineGuid; the account the script ran as (its SID — interop runs it as the Windows user who
+  started the VM, whose hive `HKCU` is; the live contract asserts a user SID and that the running distro is in the Lxss map); each display adapter's problem code, PNP device id and name (for G2). The
   last line is `end=1`.
 - **The script is one line of ASCII**, no double quote, no control character, none of the never-list's words; its only
   varying parts are the two event numbers, written as invariant integers clamped to their keys' ranges — never text from the

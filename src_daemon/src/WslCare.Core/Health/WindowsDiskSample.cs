@@ -42,7 +42,10 @@ public sealed record DisplayAdapter(Reading<int> ProblemCode, string PnpDeviceId
 /// <summary>The machine's identity — what every statistics record will carry (PLAN_disk_health.md §3.2).</summary>
 /// <param name="Build">The build with its update revision (<c>26300.9550</c>).</param>
 /// <param name="InstalledAt">Windows' install date (the registry's unix seconds), UTC.</param>
-public sealed record WindowsIdentity(Reading<string> Edition, Reading<string> DisplayVersion, Reading<string> Build, Reading<DateTimeOffset> InstalledAt, Reading<string> MachineGuid);
+/// <param name="Account">The Windows account the script ran as (its SID): interop starts Windows programs as the Windows user who
+/// started the VM, so <c>HKCU…Lxss</c> is THAT account's hive — recorded so a run under another account is visible (E15.S1's
+/// plan round).</param>
+public sealed record WindowsIdentity(Reading<string> Edition, Reading<string> DisplayVersion, Reading<string> Build, Reading<DateTimeOffset> InstalledAt, Reading<string> MachineGuid, Reading<string> Account);
 
 /// <summary>
 /// Everything one answer of the Windows disk script said (<see cref="WindowsDiskCommands"/>) — every figure a

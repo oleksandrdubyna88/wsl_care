@@ -20,3 +20,4 @@ Redacted, by hand, and nothing else changed:
   - the Windows user name in every profile path -> C:\Users\user
   - the Ubuntu-26.04 distro's folder GUID -> {00000000-0000-4000-8000-000000000001}
   - machine.guid -> 00000000-0000-4000-8000-000000000002
+  - windows.account (added with E15.S1's plan round; the line was not in the capture) -> S-1-5-21-0-0-0-1001

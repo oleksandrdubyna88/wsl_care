@@ -101,6 +101,19 @@ takes no package (`tests/WslCare.Core.Tests/ArchitectureTests.cs:99`, `Directory
   written to the share as temp + rename, read back and compared with its digest (the archive's pattern), skipped when the
   share's drive is not mounted or the Offline Files guard refuses, bounded by `stats.flushTimeoutSeconds`, run LAST in a run.
   `index.json` lists the pending days; a doctor check and a verdict warn past `stats.pendingWarnDays`.
+- **The archive's guarantees do NOT transfer to drvfs as they are** (the cadence consultation, verified 2026-10-10): the
+  Offline Files guard exists only on the Windows path (`Files/PhysicalFileSystem.Archive.Windows.cs:244-248`, `TrustedHash`);
+  the Linux read-back opens and hashes synchronously with no such guard and no cancellation
+  (`Files/PhysicalFileSystem.Archive.cs:464-470`). So E17.S2 starts with a **transport proof** before any pruning is enabled:
+  the share I/O runs in a bounded, isolated worker (its own process, so a blocked drvfs call cannot hold the run lock past
+  `stats.flushTimeoutSeconds` — cancelling a wait is not stopping a write), tracked as a survivor the next run waits out
+  (the archive's `Archive/ArchiveChildren.cs` `Survivor` shape) and FENCED: each flush writes temp files named with its own
+  generation id and renames only while that generation is still the newest, so an old worker that resumes cannot replace a
+  newer day file. A read-back — even from a later process — can be answered by the client's cache, so it is NOT proof of
+  server-backed storage: **local pruning stays OFF** (`stats.pruneConfirmedDays`, default false) — the local store is
+  authoritative and bounded by the backlog cap below; the share is a verified-as-far-as-possible copy. The interruption tests
+  (connectivity cut during open, write, rename and read-back on a disposable share; a worker that outlives its timeout) are
+  E17.S2's acceptance, and turning pruning on is a later decision with its own measurement.
 - **Never lose a record:** local append first; a local raw day is pruned only after `stats.localRetentionDays` AND a
   confirmed share copy (or with no share set, never below the key). Rollups are kept forever everywhere; the share keeps
   everything forever (the owner).
@@ -142,19 +155,25 @@ takes no package (`tests/WslCare.Core.Tests/ArchitectureTests.cs:99`, `Directory
 - **Baseline** (per side, per boot id): the median total of the first `probe.baselineSamples` (6) CALM samples after
   `timer.bootDelayMinutes` (15) and within `probe.baselineWindowMinutes` (60); fewer than 3 → "no baseline for this boot".
 - **N** = median of the last `probe.nowSamples` (3) calm samples ÷ the baseline; N < 1.1 → "no slowdown measured since boot".
-- **K** = the median, over the last `probe.maxBootsUsed` (10) boots with a baseline, of the hours until the factor stayed ≥
-  `probe.degradedFactorPercent` (150) for `probe.degradedSamples` (3) calm samples; a boot that never degraded is censored
-  and said ("no previous boot slowed past 1.5×; the longest ran H h"). **M** = the uncensored boots used.
+- **K** = the Kaplan–Meier median, over the last `probe.maxBootsUsed` (10) boots with a baseline, of the hours until the factor
+  stayed ≥ `probe.degradedFactorPercent` (150) for `probe.degradedSamples` (3) calm samples. A boot is censored at its LAST
+  adequately observed calm sample — a gap over `probe.maxGapMinutes` (30) without a calm sample ends its observation, so a
+  busy afternoon is not counted as healthy hours. When the median is not reached the text says so with its coverage: *"median
+  degradation time not reached; 1 of 4 boots observed degrading, observed for 1–10 h"*. **M** = the boots used, with how many
+  were observed degrading. (Calm-only sampling and restarts prompted by poor performance can make censoring depend on
+  degradation; the estimate is a product gate, not a statistical guarantee — said in the research note.)
 - **The minimum (the owner's rule):** while the history spans < `probe.minHistoryDays` (7; 1–90) days OR fewer than
   `probe.minBoots` (2) boots have a baseline, there is NO factor and the text is exactly *"a minimum forecast needs at least 7
   days of history; N days so far"* (7 = the key's value); the verdict `probe.factor` is `unknown` with that reason.
-- **The sentence** (daemon-made, shown verbatim): *"now 412 ms vs 180 ms after the last boot → a restart is expected to make
-  local steps ~2.3× faster for about the next 9 hours (based on 4 boots)"*, per side (`wsl --shutdown` for the VM, a Windows
-  restart for the host).
-- **Validation (falsifiable):** at each boot-id change a `boot` record keeps the last forecast (N, K) and, as they become
-  known, the realised N′ = last calm score before ÷ the new baseline and K′ = the new boot's degradation hour. The Statistics
-  tab shows predicted vs realised per boot; a forecast wrong (N′ below the degraded factor) on 3 of the last 5 boots reads
-  "uncertain".
+- **The sentence** (daemon-made, shown verbatim): descriptive by default — *"local steps now take 2.3× as long as after the
+  last boot (412 ms vs 180 ms)"*; the predictive form (*"a restart is expected to make local steps ~2.3× faster for about the
+  next 9 hours (based on 4 boots)"*) only under the calibration gate below. Per side: `wsl --shutdown` for the VM; for the host
+  (a Windows restart, advice only, never `advised`) the sentence stays descriptive.
+- **Validation (falsifiable) — shadow predictions:** every *Shut down WSL…* press records, BEFORE the restart and immutably, a
+  shadow prediction (N, K) computed by the same function whether or not it is shown; at the next boot the realised N′ = last
+  calm score before ÷ the new baseline and K′ = the new boot's degradation hour (or `unresolved` while censored) are scored
+  against it. The Statistics tab shows predicted vs realised per advised boot. A censored K′ is unresolved evidence, never a
+  success.
 - **Only a boot that FOLLOWED the advice validates it** (plan round). Each `boot` record carries its cause: `advised` — the
   extension's *Shut down WSL…* ran after showing the forecast: before it starts `wsl.exe --shutdown` it calls the new
   unprivileged verb `wsl-care probe mark-restart --forecast <id of the shown forecast>`, which writes
@@ -163,6 +182,24 @@ takes no package (`tests/WslCare.Core.Tests/ArchitectureTests.cs:99`, `Directory
   product only advises). The predicted-vs-realised table and the "uncertain" rule use `advised` boots only; `other` boots
   are listed apart and still feed the baselines and K (a boot is a boot for how fast the machine degrades). A marker older
   than `probe.restartMarkerMaxMinutes` (10) is ignored.
+- **Descriptive first, predictive only when calibrated** (the cadence consultation of epics 1–3, 2026-10-10, verified against
+  the formulas above). Two synthetic cases break the predictive sentence as written: a forecast of 5× for 9 h realised five
+  times as 1.6× for 1 h is never declared wrong (the "uncertain" rule only tests N′ < 1.5); and four boots where one degrades
+  at hour 1 and three stay healthy until a shutdown at hour 10 give K = 1 h from the uncensored median. So:
+  1. **The default sentence is descriptive:** *"local steps now take 2.3× as long as after the last boot (412 ms vs 180 ms)"*
+     — a claim about the probe, true as measured.
+  2. **K is a survival estimate** (Kaplan–Meier over all boots with a baseline, censored at their shutdown), reported as "about
+     K hours" only when the estimate's median is reached; otherwise "no previous boot slowed past 1.5× within H h".
+  3. **The predictive sentence** appears only when, over the last `probe.calibrationWindowBoots` (10) scored `advised` boots, at
+     least `probe.calibrationBoots` (3) were within `probe.calibrationTolerancePercent` (30) of the shadow prediction AND they
+     are at least `probe.calibrationSuccessPercent` (70) of the scored ones — for N and for K separately (unresolved K′ count
+     in neither numerator nor denominator; each of N and K can read "insufficient evidence" on its own). Three successes are a
+     provisional product gate, not proof of reliability. The 7-day / 2-boot minimum stays — an eligibility rule, not evidence.
+- **Freshness gates** (the same consultation): "now" is the median of the last `probe.nowSamples` calm samples taken within
+  `probe.nowMaxAgeMinutes` (30); older or skipped samples give "no current measurement (the machine was busy since HH:MM)". The
+  ladder (E16.S3) acts only on verdicts whose basis is younger than `ladder.maxEvidenceAgeMinutes` (60); an older carried
+  verdict is shown with its age but never drives the recommendation (the `fullRun` basis keeps its severity today,
+  `Status/StatusVerdicts.cs:54-59`).
 
 ### 3.4 The shared webview kit and its Storybook (the owner's Q1: a shared kit)
 
@@ -251,7 +288,7 @@ The template for a threshold key is commit `95448096` (E14 S5).
 | Story | What it builds | Risk |
 |---|---|---|
 | **E16.S1** the probe | §3.3's components in `Probe/ResponsivenessProbe.cs` (one implementation, both OS), `Probe/ProbeStore.cs` (`{state}/probe.jsonl`, `probe.localRetentionDays` 400 until E17 takes the forever copy), the watch step and the full-run step under the lock, `wsl-care probe [--json]` (+ the verb register), `status.probe`, `probe.budget`; `RunBudget.WatchRunWorstCase` grows by `probe.maxMilliseconds`. Measured FIRST: ten probe runs on the owner's distro. RED: fixed work; over-budget kept and flagged; a busy machine skips and says why; the files live only under the state folder. | medium |
-| **E16.S2** the forecast | `Probe/Forecast.cs` (PURE: baseline, N, K, M, censoring, the minimum, the sentence), `Probe/BootChanges.cs` (a `boot` record with the last forecast; realised values fill in later); the keys of §3.3; `probe.factor`. RED, with the owner's words: six days of history give NO factor and say "a minimum forecast needs at least 7 days of history; 6 days so far"; the minimum in the sentence is the key's value; a 30-day synthetic fixture with four boots gives N, K, M; a forecast wrong on 3 of 5 boots reads "uncertain". A `research/` note states the method with the fixture's numbers. | high — statistics the gate will argue |
+| **E16.S2** the forecast | `Probe/Forecast.cs` (PURE: baseline, N, K, M, censoring, the minimum, the sentence), `Probe/BootChanges.cs` (a `boot` record with the shadow prediction; realised values fill in later); the keys of §3.3; `probe.factor`. RED, with the owner's words: six days of history give NO factor and say "a minimum forecast needs at least 7 days of history; 6 days so far"; the minimum in the sentence is the key's value; a 30-day synthetic fixture with four boots gives N, K, M; the consultation's two cases are fixtures (5× / 9 h predicted, 1.6× / 1 h realised five times → the predictive sentence never unlocks; one boot degrading at 1 h and three censored at 10 h → "median degradation time not reached; 1 of 4 boots observed degrading"); a gap of busy samples ends observation; a shadow prediction is recorded before every advised restart and scored at the next boot. A `research/` note states the method with the fixture's numbers. | high — statistics the gate will argue |
 | **E16.S3** the ladder and the ONE recommendation | the previews and measured results of A19, A11, A18, A1, A2, the container stats, `VmmemAdvice`, the forecast, the run history → `Thresholds/Ladder.cs` (PURE: rungs in cost order, each `{id, kind: action|extensionButton|advice, addresses[], state, wouldFree, lastEffect, text}`; the recommendation = the first rung with something to do among those addressing the WORST non-ok verdict; "all within limits"); S7b's A21 shown as `arrivesWithS7b` on the wire, never in the sidebar. RED: the recommendation names the group, the limit, the measured value and the button; severity first, then cost; a rung's last effect comes from the history, never a guess. | medium |
 | **E16.S4** *Shut down WSL…* (ask first) and the Disk & memory section | the restart marker first (`wsl-care probe mark-restart`, §3.3), then `WslCareClient` (the only argv speller, `src/client/WslCareClient.ts:17-28`) gains the one request `wsl.exe --shutdown`; a modal names what ends ("every WSL session and every program in the distro — N agent processes, M containers now"), the forecast line and that the effect is measured; greyed while a run is live / queued or the archive runs; `wslCare.timeouts.wslShutdownSeconds` (120); command + button; the sidebar's section renders `status.disk`, `host.*`, the forecast and the ladder (rungs as buttons where the cleanup controller offers the action, advice lines otherwise). RED: exactly `wsl.exe --shutdown`; a decline starts nothing; the strict fake accepts only `['--shutdown']`; the tripwire refuses the real one. Never automatic. | medium |
 
@@ -410,3 +447,17 @@ anything but the fixed Windows clock probe" to contain "closed set"*; the parser
 "cut"* / *"did not answer within 30 s; its process tree was killed"*. **Break-its**, each restored: the never-list line back to
 the clock's arguments (5 red), the sample not stored (2 red), the end-line check removed (4 red), the template removed (3 red) —
 messages in [module_tests.md](../research/module_tests.md) *E15.S1*.
+
+**The story's plan round** (coai, 2026-10-10, `proceed`, 1 of 1 reviewer — codex): three findings, all accepted. (1) *Whose
+HKCU?* — interop starts Windows programs as the Windows user who started the VM (Microsoft documents it; the cadence
+consultation agreed), so the script now also prints `windows.account=` (the SID), the run detail carries it, and the live
+contract asserts a user SID (`S-1-5-21-…`) and that the distro it runs in is in the Lxss map. RED first: the fixture's new line
+read as malformed (*Expected facts.MalformedLines to be 0, but found 1*) before the parser knew the tag; break-it: the account's
+parse replaced by a missing reading → 2 red, restored. (2) *Size and retention of the new payload* — the captured answer is
+1 473 bytes; the run detail's `health.windowsDisk` block is a few KB per full run, 6 a day × the run details' existing
+retention `runs.historyRetentionDays` (90, `Records/RunRetention.cs`) ≈ 2–3 MB, retired by that same sweep; no new growth
+surface. (3) *A window cut by `disk.eventsMaxRead`* — already carried: `StorageEvents.Capped` (`Read >= MaxRead`) is in the
+sample and the report (`capped`), tested by the captured answer (`!e.Capped`). The epics' cadence consultation (epics 1–3,
+gpt-6-astra, two turns, closed `solved`) changed §3.2 (the share's fenced isolated worker; local pruning off by default) and
+§3.3 (a descriptive sentence by default, a Kaplan–Meier K, shadow predictions behind a calibration gate, freshness gates).
+

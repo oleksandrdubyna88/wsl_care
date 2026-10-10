@@ -36,7 +36,7 @@ public sealed record StorageEventGroupReport(string Day, string Provider, int Id
 /// <param name="Capped">The cap was reached: the counts are a lower bound over the newest events.</param>
 public sealed record StorageEventsReport(bool Available, string? Reason, int? Read, int? MaxRead, int? SinceDays, bool? Capped, IReadOnlyList<StorageEventGroupReport>? Groups);
 
-public sealed record WindowsIdentityReport(TextFigure Edition, TextFigure DisplayVersion, TextFigure Build, InstantFigure InstalledAt, TextFigure MachineGuid);
+public sealed record WindowsIdentityReport(TextFigure Edition, TextFigure DisplayVersion, TextFigure Build, InstantFigure InstalledAt, TextFigure MachineGuid, TextFigure Account);
 
 public sealed record DisplayAdapterReport(string Name, string PnpDeviceId, CountFigure ProblemCode);
 
@@ -104,7 +104,7 @@ public static class WindowsDiskReports
             : new(false, events.ReasonOrEmpty, null, null, null, null, null);
 
     private static WindowsIdentityReport Identity(WindowsIdentity i) =>
-        new(Text(i.Edition), Text(i.DisplayVersion), Text(i.Build), Instant(i.InstalledAt), Text(i.MachineGuid));
+        new(Text(i.Edition), Text(i.DisplayVersion), Text(i.Build), Instant(i.InstalledAt), Text(i.MachineGuid), Text(i.Account));
 
     private static DisplayAdaptersReport Adapters(Reading<IReadOnlyList<DisplayAdapter>> adapters) =>
         adapters is Reading<IReadOnlyList<DisplayAdapter>>.Available { Value: var list }

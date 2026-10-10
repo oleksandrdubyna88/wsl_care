@@ -78,6 +78,7 @@ public sealed class WindowsDiskTests
         Value(facts.Identity.Build).Should().Be("26300.9550");
         Value(facts.Identity.InstalledAt).Should().Be(DateTimeOffset.FromUnixTimeSeconds(1_784_190_275));
         Value(facts.Identity.MachineGuid).Should().Be("00000000-0000-4000-8000-000000000002");
+        Value(facts.Identity.Account).Should().Be("S-1-5-21-0-0-0-1001", "the account the script ran as is recorded (E15.S1's plan round: HKCU is that account's hive)");
         var adapters = Value(facts.Adapters);
         adapters.Select(a => Value(a.ProblemCode)).Should().Equal(0, 22);
         adapters[1].Name.Should().Be("AMD Radeon AI PRO R9700");
