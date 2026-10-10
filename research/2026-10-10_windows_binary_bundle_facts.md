@@ -17,6 +17,13 @@
 
 The attestation's subject is the ZIP (`release.yml`'s `attest-build-provenance` over the asset), not the exe inside it.
 
+With `gh` 2.97.0, the provenance's source ref can be checked as well:
+
+| check | result |
+|---|---|
+| the same verify plus `--source-ref refs/tags/daemon-v0.3.0` | exit 0 |
+| the same verify plus `--source-ref refs/tags/daemon-v0.2.0` (another tag) | exit 1, refused |
+
 ## 2. Does Windows let it run?
 
 | check | result |
@@ -40,8 +47,8 @@ addresses in every non-image entry. Counted as raw bytes in the exe:
 | `.pdb` | 1 |
 | `/home/`, `C:\Users\`, `@users.noreply`, `runneradmin` | 0 |
 
-So the scan would refuse the exe as it stands. What it finds is the runner's build path, not this machine's data. The plan
-therefore exempts exactly `bin/wsl-care.exe` from the TEXT scan, and holds it by its attested digest instead.
+So the scan, as it is today, would refuse the exe. What it finds is the runner's build path, not this machine's data. How a bundle
+answers that is the plan's to decide, not this record's.
 
 ## 4. How vsce names a targeted package
 

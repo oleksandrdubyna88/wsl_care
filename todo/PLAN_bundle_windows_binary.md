@@ -35,7 +35,8 @@ ship different bytes unnoticed.
 ## 2. Measured first (2026-10-10, read-only, on the owner's machine — [the record](../research/2026-10-10_windows_binary_bundle_facts.md))
 
 - **The asset verifies.** The `daemon-v0.3.0` asset passed `sha256sum -c`, and `gh attestation verify --cert-identity
-  …/release.yml@refs/tags/daemon-v0.3.0 --deny-self-hosted-runners` (without `--source-ref`).
+  …/release.yml@refs/tags/daemon-v0.3.0 --deny-self-hosted-runners`, and with `--source-ref refs/tags/daemon-v0.3.0` too (another
+  tag is refused).
 - **It runs here.** The exe is 13,676,544 bytes, Authenticode `NotSigned`, with no Mark of the Web, and its **`--version` ran under
   the enforced Smart App Control.**
   - That is a fact about THESE bytes, not a property of the design: every release's exe is new bytes, and SAC's reputation
@@ -68,10 +69,11 @@ ship different bytes unnoticed.
      2. `sha256sum -c`.
      3. `gh attestation verify <zip> --repo oleksandrdubyna88/wsl_care --cert-identity
         https://github.com/oleksandrdubyna88/wsl_care/.github/workflows/release.yml@refs/tags/daemon-v<v>
-        --deny-self-hosted-runners`.
+        --source-ref refs/tags/daemon-v<v> --deny-self-hosted-runners`.
         - The identity is EXACT, never a `--signer-workflow` prefix (module_tests O4).
-        - `--source-ref` is dropped: the identity already pins the tag, and the measured command did not use it (own review,
-          finding 6).
+        - **`--source-ref` is kept.** The workflow identity alone does not say which source revision the provenance records
+          (coai code round `52122128`). The Fable review's worry that it was unmeasured is answered by a measurement: with gh
+          2.97.0, the right tag exits 0 and another tag is refused (exit 1), recorded in the research note.
      4. The zip is read by python3 `zipfile`, as `compare-installed-extension.sh:22-48` does. The rules:
         - it holds exactly ONE file entry, named exactly `wsl-care-<v>-win-x64/wsl-care.exe`;
         - a directory entry beside it is allowed, because `package-daemon.sh:82`'s `7z a -tzip <folder>` writes one;
@@ -274,7 +276,7 @@ Steps 4 and 5 land in ONE PR. The extension release that carries it is the first
   - the CI-guarded skip;
   - the client's seam and `VERBS.version`;
   - never elevated, and never registered;
-  - `--source-ref` dropped;
+  - `--source-ref`, which Fable asked to drop as unmeasured: the coai code round asked to keep it, so it was measured and kept;
   - the 7z zip semantics;
   - the full consumer list;
   - the frozen other platforms, `targetPlatform` and `TargetPlatform`;

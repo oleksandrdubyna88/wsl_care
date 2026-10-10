@@ -95,6 +95,15 @@ UAC policy (U4), not the extension's.
   `wsl-care.service` *Starting* 11:44:02+02:00 and *Finished* 09:48:49+02:00. (Separately: AI OS Care 0.3.0 read the freshly
   installed guard as "not as the current settings would install it" — Task Scheduler stores the delay `PT60S` as `PT1M`;
   fixed in 0.3.1, durations compared by value.)
+- **2026-10-10, POST_DEPLOY item 9 PASSED** on the owner's machine (run elevated by the coordinator):
+  - **Before.** At 14:05:33Z the task `\wsl-care\windows-time-guard` was Ready; its last run was 12:00:01Z with result `0x0`, and
+    `w32time` was Running / Automatic. The periodic runs of 08:00:01Z and 12:00:01Z both ended `0x0`.
+  - **A manual Run** gave a last run of 14:05:36Z, `0x0`.
+  - **The start-type trigger:**
+    - `Set-Service W32Time -StartupType Manual` at 14:05:43.48Z;
+    - the task ran at 14:06:45Z, after its 60 s delay;
+    - the start type was Automatic again at 14:06:48Z.
+  - No Defender ASR event 1121 / 1122 that day.
 - What the owner's minidumps say about the 2 h slow boots — three `0x19C` display-driver hangs at monitor power changes, one
   `0x154` compressed-memory read failure, the BSOD → Linux on the disk → RTC in UTC chain:
   [2026-10-09_crash_dumps.md](2026-10-09_crash_dumps.md).
