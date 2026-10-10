@@ -139,11 +139,27 @@ public sealed partial class PhysicalFileSystem : IFileSystem, IArchiveFiles
         try
         {
             var info = new FileInfo(path);
-            return info.Exists ? new FileSizeResult.Measured(info.Length, new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) : new FileSizeResult.Missing();
+            return info.Exists ? new FileSizeResult.Measured(info.Length, new DateTimeOffset(info.LastWriteTimeUtc, TimeSpan.Zero)) : NotAFile(path);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException)
         {
             return new FileSizeResult.Unreadable(e.Message);
+        }
+    }
+
+    /// <summary>A file <see cref="FileInfo.Exists"/> denies: <see cref="FileSizeResult.Missing"/> only when the file system SAYS there is no
+    /// such file (or it is not a file) — <c>Exists</c> also answers false for one it may not look at (access denied), which is
+    /// unreadable, not missing (the E9.S5 amendment's own review, finding 1: an unreadable recent file read as idle).</summary>
+    private static FileSizeResult NotAFile(string path)
+    {
+        try
+        {
+            _ = File.GetAttributes(path);
+            return new FileSizeResult.Missing();
+        }
+        catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
+        {
+            return new FileSizeResult.Missing();
         }
     }
 

@@ -158,4 +158,18 @@ public sealed class SideLeaseTests : IDisposable
 
         public ProcessLookup Lookup(int pid) => _pids.TryGetValue(pid, out var found) ? found : new ProcessLookup.Gone();
     }
+
+    /// <summary>The E9 live gate step 8 (2026-10-10), N3: the run found both NAS defects only once the refusal carried the lease folder's
+    /// own reason — it said "could not be opened" and nothing more.</summary>
+    [Fact]
+    public void The_lease_refusal_names_why_its_folder_could_not_be_opened()
+    {
+        var notAFolder = On("/srv/base-is-a-file");
+        Directory.CreateDirectory(Path.GetDirectoryName(notAFolder)!);
+        File.WriteAllText(notAFolder, "a file where the base should be");
+
+        var taken = SideLease.Take(_sandbox.Files, notAFolder, Side, Me, new ScriptedProcessTable());
+
+        taken.Should().BeOfType<LeaseTaken.Refused>().Which.Why.Should().MatchRegex(@"could not be opened in the base \(.+\)");
+    }
 }

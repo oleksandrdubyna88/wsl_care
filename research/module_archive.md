@@ -3,7 +3,7 @@
 > Built so far: **E9.S0** (catalogue blocks, keys, base folder rules, `archive check-base`), **E9.S1** (the selection and
 > `archive preview`, read-only), **E9.S2a** (the file seam `IArchiveFiles`, with its gate round and own review round), **E9.S2b**
 > (the two-phase move: `archive run`, `archive status`, `archive reconcile --scan`, with its own review round), **E9.S3** (`archive restore`, `archive list`), **E9.S4** (A13 and A20 in the engine — the root → user boundary,
-> `archive reach`), **E9.S5** (the Windows side's open-file check: the Restart Manager, and a live Claude Code on Windows). **E10.S0** (the daemon half of the extension's archive, plan §15s: `act A20 … --entry -` with the ids on stdin, `restoreCeiling` on every list answer, `archive check-base --json <path>`; capability `act.entryStdin`). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
+> `archive reach`), **E9.S5** (the Windows side's open-file check: the Restart Manager, and a live Claude Code on Windows; amended 2026-10-09 — the Windows idle rule, `archive.windowsIdleDays`). **E10.S0** (the daemon half of the extension's archive, plan §15s: `act A20 … --entry -` with the ids on stdin, `restoreCeiling` on every list answer, `archive check-base --json <path>`; capability `act.entryStdin`). The design and every decision: `todo/PLAN_wsl_care_daemon.md` §15r. The tests, their
 > red runs and their break-it checks: [module_tests.md](module_tests.md), the E9 sections (from *The AI-session archive:
 > catalogue blocks, keys, base folder* to *The E9.S2a gate round*). The longer history of each
 > story: *Story history* below.
@@ -288,6 +288,72 @@ flowchart TD
   cannot read; A20 lists with `archive list --restorable` — the verified entries removed at their source, newest first, at most
   `archive.maxRestoreEntries`, the rest counted in `omitted` — so its answer stays inside the cap however large the archive grows.
 
+## A base on a network share (the E9 live gate step 8, 2026-10-10)
+
+The owner's only share is a NAS mounted as `V:` = `\\192.168.1.113\Shared_Drive_Work`. Step 8 found two defects there and the fix
+removes both (plan §15r *E9 live gate step 8, first run*). Before it, `archive run` refused both spellings of the base before it
+touched anything.
+
+```mermaid
+flowchart TD
+    given["the base: V:\… or \\server\share\…"] --> place{"BaseFolderRules (placement)"}
+    place -- "UNC" --> alias["WindowsShares.Alias:<br/>the distribution's files, this machine,<br/>an administrative share → refused"]
+    place -- "a network drive" --> mapping["NetworkPaths.MappingOf (GetDriveTypeW, WNetGetConnectionW):<br/>no share readable → refused;<br/>the share it maps to → the same alias rule"]
+    alias --> held["the base held by handle"]
+    mapping --> held
+    held --> inplace{"NetworkPaths.InPlace:<br/>final path = judged path,<br/>or = judged path under the drive's share"}
+    inplace -- "no" --> link["refused: reached through a link"]
+    inplace -- "yes" --> level["each level created and held"]
+    level --> flush{"folder flush"}
+    flush -- "error 1 on a network path" --> done["counts as done (SMB has no folder flush)"]
+    flush -- "any other error, or error 1 locally" --> refused["refused, naming the error"]
+```
+
+- **The mapped drive is its share.** `GetFinalPathNameByHandle` answers a mapped drive's files under their UNC root (`\\?\UNC\…`,
+  its device prefix taken off). `NetworkPaths.InPlace` accepts exactly one swap of the drive letter for the drive's share, and
+  nothing else: a link inside the share, another share, a local drive and an empty answer still refuse.
+- **SMB has no folder flush.** `FlushFileBuffers` on a folder handle answers `ERROR_INVALID_FUNCTION` over SMB. On a network path
+  that one error counts as flushed. **Why that is safe:** no source is removed until phase 2, a later run in a new process,
+  re-hashes every archived copy in the base against its index line. A copy the server lost marks the entry damaged and the source
+  stays.
+- **A mapped drive is judged by the share it maps to:**
+  - a drive mapped to the distribution's own files (`\\wsl.localhost\…`), to this machine or to an administrative share is refused
+    as its UNC spelling is;
+  - a network drive whose share cannot be read is refused.
+- **A refusal says why.** The lease's refusal carries the folder's own reason. That reason is how the run found the two defects.
+- **Residuals of any network base, said plainly:**
+  - The in-place check sees only the links the CLIENT follows. A link the server resolves (Samba's `follow symlinks`, a DFS
+    referral) never shows in a final path.
+  - With Offline Files on, a re-hash could be answered from the local cache.
+  - A drive letter remapped between the judgement and the open is not seen. Drive letters belong to one logon session, so only
+    this account can remap one, and every removal in the base is by identity or hash.
+
+### The live gate on the NAS (2026-10-10)
+
+- **The binary.** This fix merged locally with the Windows idle rule (PR #78), built in Debug. The merge was a local
+  worktree, never pushed.
+- **The setup.** Throwaway sessions only, in sandboxes (`WSL_CARE_ROOT`) whose profile is never the real one. They live in ONE new
+  subfolder, `V:\connectOtherAis\wsl-care-archive-livegate-20261010T0831Z`. The run uses the real process table and the real
+  Restart Manager, and a live `claude.exe` was running. Each leg has three sessions:
+  - `old1`: 40 days old;
+  - `held1`: 40 days old, held open by a PowerShell process with no sharing;
+  - `recent1`: 20 days old, with `archive.windowsIdleDays` 30.
+- **The legs:**
+  - `drive`: a local profile, the base on `V:\…`;
+  - `uncbase`: a local profile, the base on the UNC spelling;
+  - `unc`: the profile itself on the share.
+- **Results:**
+  - **Both bases were accepted** by `archive check-base`: *network NTFS* and *network*.
+  - **On the drive and uncbase legs,** the run copied `old1`. It kept `held1` as "held open by a process (pid N)", naming the holder's
+    real pid, and kept `recent1` by the idle rule. Once the holder was stopped, the next run copied `held1`.
+  - **On the unc leg,** the Restart Manager was asked about the session on the share in its `\\?\UNC\` form and named the holder. The
+    copy itself is refused, because a file on the share is owned by the NAS's account, not this one. That is the source rules
+    working, not a defect.
+  - **Phase 2,** one hour after the copies (`archive.removeAfterHours` 1 for the gate), re-read every archived copy through the share
+    and removed the two idle sessions at their source on both the drive and uncbase legs. `recent1` stayed. `archive list` shows
+    both entries `sourceRemoved` and verified.
+  - **The test data stays** in the one subfolder and in the scratch sandboxes, as the owner asked. Nothing was deleted.
+
 ## External dependencies
 
 - **Linux:** `libc` — `openat`, `mkdirat`, `renameat2`, `unlinkat`, `statx`, `fcntl` (`F_SETLEASE`, `F_SETSIG`, `F_GETLEASE`),
@@ -436,9 +502,17 @@ flowchart TD
   ASKED of the Restart Manager (`Archive/RestartManager.cs`, extended-length paths; a path past `MAX_PATH` asked of the file
   system's own list of users, its attributes opened only) — never an open of a session file; a holder (named by its pid only), an
   error, a stalled question, a spent budget or a cancellation keeps the unit, and once a question stalls no later view of the
-  process asks (`StallLatch`). Claude Code's working folder cannot be read on Windows, so a live Claude Code there (`claude.exe`, or
-  `node.exe` running its package; an unreadable `node.exe` of this session counts) keeps every Claude Code session — asked again at
-  every unit, the selection's and phase 2's, and before the Restart Manager. Phase 2 resuming past its commit point asks the
+  process asks (`StallLatch`). Claude Code's working folder cannot be read on Windows, so while a Claude Code runs there (`claude.exe`, or
+  `node.exe` running its package; an unreadable `node.exe` of this session or an unreadable process table counts) a Claude Code
+  session moves only when IDLE — every file of it untouched for `archive.windowsIdleDays` past the `archive.clockSkewMinutes`
+  tolerance (`Archive/WindowsIdle.cs`, `InUseView.ClaudeIdle`, given by `WithIdle` in the run and the preview; a view never given
+  it keeps every such unit). Whether Claude runs is asked again at every unit, the selection's and phase 2's, and before the
+  Restart Manager; the times are read at the question. A file dated after the clock by more than the tolerance, or a time that
+  cannot be read (`PhysicalFileSystem.FileSize` answers *unreadable*, not *missing*, for a file it may not stat), keeps the unit; a
+  name that does not exist is skipped, and a unit with none left is idle (the E9.S5 amendment, owner decision 2026-10-09).
+  **Residual risk, said plainly:** a Claude Code window left open on a session for the whole window, with no new turn, is not
+  seen — Claude keeps no handle open and a resume only reads; such a session is moved, and the next turn writes a fresh file at
+  the source, which the archive records as a `split` (nothing is lost). Phase 2 resuming past its commit point asks the
   quarantine names too (`ArchiveRemove.ResumeNames`).
 - **`Archive/ArchiveNames.cs`**: the name rules (`Problem`, `CaseCollision`), Claude's project-folder encoding
   (`ClaudeProjectOf`), the quarantine mark, and the side folder (`SideName`: `windows-<host>`, `wsl-<host>-<distro>`, §15r D4).

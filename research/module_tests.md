@@ -2912,6 +2912,93 @@ record — accepted, a list; `ShownEntriesFailure` above complexity 4 — accept
 own; `RestoreAction.PastTheCeiling` returning `ActionPreview?` — rejected: it chains with `ArchiveGates.Before`, whose nullable
 "no gate stopped it" is the gate family's shape. The thirteen teeth were run again after the round: all red.
 
+### The Windows idle rule (the E9.S5 amendment, owner decision 2026-10-09, plan §15r *E9.S5 amendment*)
+
+| Guarantee | Tests |
+|---|---|
+| while Claude Code runs on Windows a session idle for `archive.windowsIdleDays` may move; an unreadable process table (Claude may run) takes the same rule | `WindowsIdleTests.While_claude_runs_a_session_idle_for_the_window_may_move`, `…When_whether_claude_runs_cannot_be_told_the_same_idle_rule_applies` |
+| a session touched within the window stays, naming the key and the days; one recent file keeps a unit whose other files are old (the plan round, 1) | `…A_session_touched_within_the_window_stays_naming_the_window`, `…One_recent_file_keeps_a_unit_whose_other_files_are_old` |
+| a file dated after the machine's clock beyond `archive.clockSkewMinutes` keeps it naming the clock; within the tolerance it counts as touched now; the window is measured past the tolerance (the own review, 4) | `…beyond_the_skew_keeps_the_session_naming_the_clock`, `…within_the_skew_counts_as_touched_now`, `…The_idle_window_is_measured_with_the_clock_tolerance` |
+| both numbers are settings with their defaults and ranges | `…The_window_and_the_skew_are_settings`, `…The_two_keys_have_their_defaults_and_ranges`; `contracts/config-keys.json` |
+| a time that cannot be read keeps the session; the REAL file system answers *unreadable*, not *missing*, for a file it may not stat (the own review, 1; Linux legs) | `…A_time_that_cannot_be_read_keeps_the_session`, `…The_real_file_system_answers_unreadable_not_missing_for_a_file_it_may_not_stat` |
+| a missing name is skipped; a unit with none left is idle (the own review, 5); a quarantine name touched recently keeps a resumed entry | `…Missing_names_are_skipped_and_a_unit_with_none_left_is_idle`, `…A_quarantine_name_touched_recently_keeps_a_resumed_entry` |
+| the Restart Manager still keeps a held idle session; the times are read at each question; a view never given the rule keeps every Claude Code session; another agent's unit is never asked about idleness | `…A_held_idle_session_is_still_kept_by_the_restart_managers_answer`, `…The_times_are_read_at_each_question`, `…A_view_without_the_idle_rule_keeps_every_claude_session`, `…Another_agents_unit_is_never_asked_about_idleness` |
+| through a whole run (the plan round, 0): an idle session is copied and removed while a recent due one stays; one touched after the selection is kept by phase 2 | `ArchiveRunTests.While_claude_runs_an_idle_session_is_copied_and_removed_and_a_recent_due_one_stays`, `…While_claude_runs_a_session_touched_after_the_selection_is_kept_by_phase_2` |
+
+**Red first:** against a skeleton (`WindowsIdle.Problem` answering nothing, `InUseView.ClaudeIdle` never asked) eleven of the thirteen
+idle tests were red with today's sentence — `Expected … to be empty, but found "Claude Code runs on Windows (claude.exe, pid 40); its
+working folder cannot be read here, so no Claude Code session moves while it runs"` — and the whole-run flow with `Expected
+first.Copied to be 1 … but found 0`. The two green ones (another agent's unit, the keys) pin what the skeleton already had. The own
+review's three were red against the first build: the real stat in WSL (`Expected type to be … Unreadable, but found … Missing`), the
+none-left unit (`… none of its files could be found …`), the tolerance (`Expected … "" to contain "archive.windowsIdleDays"`). The
+phase-2 flow test was green against the code before the amendment (which kept everything while Claude ran); its teeth are W-03 and
+W-10.
+
+**Teeth** (`W-01`–`W-13`, product code only, each restored byte for byte): on Windows W-01–W-10, W-12, W-13 all red — the window arm
+dropped, the clock arm dropped, the run not giving the view the rule, the default made open, the tolerance ignored in the clock arm,
+the unreadable arm dropped, the idle answer ignored, the selection asking with no files, the oldest file taken instead of the newest,
+phase 2 asking relative names, a none-left unit kept, the tolerance dropped from the window. W-11 (the real stat's *missing* for any
+error) in WSL: red.
+
+**The own review round** (an Opus reviewer in parallel, data safety):
+
+| # | Finding | Decision |
+|---|---|---|
+| 1 | **Major** — `PhysicalFileSystem.FileSize` answered *missing* for a file it could not stat (access denied), so an unreadable recent file read as idle | fixed: `NotAFile` asks the file system — *missing* only for no such file; every other error *unreadable*. Its other callers gain the same honesty (a package-cache file now reads gone only when it is gone) |
+| 2 | **Major (residual)** — a Claude Code window left open on a session for the whole window, with no new turn, is not seen (no handle, a resume only reads) | written into the plan, `module_archive.md` and the summary: the session moves and the next turn writes a fresh file, recorded as a `split` — nothing is lost. The cheap guard offered (a session id on a `claude --resume <id>` command line) is a question for the owner, not built: a window opened without `--resume` carries no id |
+| 3 | phase 2 asks only the indexed files; a companion file created after the copy is not asked | not changed: the same holds on Linux, and a resume appends to the transcript first; the folder's own time would keep every session of a busy project |
+| 4 | `archive.clockSkewMinutes` changed only the message | fixed: idle only past the window AND the tolerance. The clock jumping days ahead is not guarded here: the Windows clock is the reference the time service keeps |
+| 5 | an entry with no file left waited until `archive.keptEntryDays` | fixed: a unit none of whose names exists is idle |
+| 6 | the time reads are outside the listing budget | noted: the sources are in the local profile and the listing already stats the same files |
+| 7 | missing tests (the quarantine name, a real unreadable stat, a missing name beside an old file) | added (above) |
+
+**The coai code round** (session a024a786, `proceed`, 2 gating of threshold 5; one of two vendors answered). Accepted: `architecture.md`
+names the idle rule's cross-module path and draws it; the stats are asked through the Windows view's bounded asker
+(`InUseView.Bounded` — `archive.inUseScanSeconds`, the budget, the cancellation; RED first:
+`WindowsIdleTests.A_stat_that_does_not_answer_keeps_the_session_within_the_ceiling` waited the full 20 s; teeth W-14, the binding
+removed: red); the per-unit cost is bounded by the same fix. Rejected: binding the rule at one shared boundary — the run applies it
+after its test seam on purpose, and a path that forgets it fails closed.
+
+### A base on a network share (E9 live gate step 8, first run, 2026-10-10)
+
+| Guarantee | Tests |
+|---|---|
+| a mapped drive's folder answered under its UNC root is in place | `Files/NetworkBaseTests.A_mapped_drives_folder_answered_under_its_network_root_is_in_place` |
+| a link inside the share, another share, a local drive, and an empty answer are still NOT in place | `NetworkBaseTests.A_real_link_or_another_share_is_still_not_in_place` |
+| over SMB, error 1 from a folder flush counts as done; nothing else does (not error 1 locally, not another error remotely) | `NetworkBaseTests.Over_smb_a_folder_flush_the_redirector_does_not_offer_counts_as_done_and_nothing_else_does` (5 rows) |
+| a path is remote when it is UNC or on a network drive; an extended-length local path is not | `NetworkBaseTests.A_path_is_remote_when_it_is_a_share_or_on_a_network_drive` |
+| the lease refusal names why its folder could not be opened | `Archive/SideLeaseTests.The_lease_refusal_names_why_its_folder_could_not_be_opened` |
+| **the live gate:** a base on `V:\…` and on `\\server\share\…`, each judged, configured and used; the live Claude Code seen; a held session kept by the holder's pid, then copied once the holder is gone; the session inside the idle window kept by the idle rule; phase 2 after `archive.removeAfterHours` | `research/module_archive.md` *The live gate on the NAS* (the owner's machine; not repeatable in CI, which has no share) |
+
+**Red first:** against a skeleton that kept today's behaviour: `Expected NetworkPaths.InPlace(@"\\nas\work\archive\base", @"V:\archive\base", RootOf) to be True, but found False`;
+the error-1 remote row `Expected … to be True, but found False`; `IsRemote(@"\\nas\work\base")` false; the lease
+`"the lease folder .wsl-care/sides could not be opened in the base" does not match` the reason's pattern. The live symptom came
+first and is what the tests reproduce: *base-drive was reached through a link* and *its new entry could not be flushed (error 1)*.
+
+**Teeth** (`N-01`–`N-08`, product code only, each restored byte for byte, on Windows): N-01–N-05 red — the prefix swap removed, error 1
+tolerated on a local volume too, the lease's reason dropped, UNC not seen as remote, the swap keeping only the root; and after the own
+review N-06–N-08: the root's separator kept, a mapped drive with an unreadable share let through, the alias rule skipped through a
+mapping — all red.
+
+**The own review round** (an Opus reviewer in parallel: data safety, Windows file semantics, confused deputy):
+
+| # | Finding | Decision |
+|---|---|---|
+| 1 | **Medium** — before the fix every mapped drive refused at the act, so the share-alias rule only ever saw UNC spellings; a drive mapped to `\\wsl.localhost\…` (the distribution's own files) or to this machine would now pass | fixed: `BaseFolderRules.MappedShareProblem` judges a mapped network drive by the share it maps to (the alias rule through the mapping), and refuses a network drive whose share cannot be read. `NetworkBaseTests.A_mapped_drive_is_judged_by_the_share_it_maps_to` (red: the function did not exist — the rule had no way in); teeth N-07, N-08. The wiring into the placement is not testable without a second drive mapping on this machine (a machine change), so it is held by the break-it on the pure function and the live gate |
+| 2 | a remap of the drive between the judgement and the open would be accepted | written down (`module_archive.md`): drive letters are per logon session, only this account's own session can remap them, and every removal in the base is by identity or hash |
+| 3 | server-side links (Samba `follow symlinks`, DFS) never show in a final path; Offline Files could answer a re-hash from the local cache | written down as residuals of ANY network base, the UNC spelling too: the in-place check covers what the client follows. The Offline Files case is a question for the owner (refuse a base whose handle carries `FILE_ATTRIBUTE_OFFLINE`?) |
+| 4 | a root with a trailing separator failed the match (safely) | fixed: the root's separator dropped; `A_trailing_separator_a_subfolder_mapping_and_a_lower_case_drive_still_match`; teeth N-06 |
+| 5 | two 64 KB allocations per call | fixed: the string is cut at its terminator |
+| 6 | the subfolder mapping, lower case, `\\?\UNC\` untested | tests added (above) |
+| 7 | `DriveOf` complexity 5 | fixed: a list pattern |
+| 8 | the docs and the status line | fixed with this round |
+
+**The coai code round** (session f18f23ef, `proceed`, 4 gating of threshold 5; one vendor answered, the other unauthenticated).
+Accepted: `module_archive.md` describes the network base and draws it; `WNetGetConnectionW` is asked with a 512-character room
+first, once more on `ERROR_MORE_DATA`. Rejected with the code and a measurement: "the extended `\\?\UNC\` answer never matches" —
+the final path is stripped of its device prefix before the comparison (`NetworkBaseTests.The_systems_extended_unc_answer_is_compared_as_plain_unc`),
+and the live gate copied to `V:\…` with this code.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

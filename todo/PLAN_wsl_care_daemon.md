@@ -4026,7 +4026,159 @@ Folded into ONE `fix(daemon): the coai code round and the own review over E9.S5`
 | own 6 | the Restart Manager leaves out processes it may not query | **Accepted:** said in the view's note |
 | own 7–9 | `ExtendedPath` edge inputs; the per-question task; CA1416 | **Noted:** the inputs are full paths of judged folders and fail closed otherwise; the abandoned worker is the stall latch's case; the one constructor of `RealWindowsSide` is behind `OperatingSystem.IsWindows()` |
 
-**Owed:** the E9 live gate's Windows steps (8), and the release carrying E9.
+**Owed:** the release carrying E9. The E9 live gate's Windows step 8 RAN on 2026-10-10 on the owner's NAS, through the fix below.
+Its results — both spellings judged and used, the holder kept, the idle rule, phase 2 over the share — are in
+[module_archive.md](../research/module_archive.md), *The live gate on the NAS*.
+
+#### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
+
+> Status: **built, 2026-10-09; merged 2026-10-10 (#78).** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
+> `Archive/Liveness.cs`, `Archive/Selection.cs`, `Archive/ArchiveRemove.cs`, `Archive/ArchiveRun.cs`, a new `Archive/WindowsIdle.cs`,
+> `Config/ConfigKeys.cs` + `default.json` (two keys), the tests, `research/module_archive.md`, `research/module_tests.md`, README.
+> Branch `fix/wc-e9s5-windows-idle`, its own PR, before E10 goes on. It OVERRIDES the E9.S5 text above where they differ.
+
+**The symptom.** E9.S5 kept EVERY Claude Code session on the Windows side while any Claude Code runs there
+(`InUseWindows.ClaudeRunning` → `Liveness.AgentWorking` → `agent-working-here`), because the working folder of a Windows process cannot
+be read. The owner keeps Claude Code open around the clock, so on the owner's machine the Windows archive would move nothing, ever.
+
+**The rule (the owner's words, 2026-10-09).** While Claude Code runs on Windows, a Claude Code session whose files were ALL untouched
+for at least `archive.windowsIdleDays` may still be archived; the open-file check still applies to it (a file the Restart Manager
+names held keeps it); a session touched within the window stays.
+
+**Design.**
+- **D1 — two keys, every number a setting.**
+  - `archive.windowsIdleDays`: default **7**, range **1–365**, safe direction higher.
+    - The floor is one day: a session idle for less than that is likely one open in a window this evening, and the owner's sessions
+      idle overnight.
+    - The ceiling is a year: past it the rule would only restate "nothing moves while Claude runs", which a person can have by not
+      setting a base on Windows.
+  - `archive.clockSkewMinutes`: default **10**, range **0–1440**, safe direction higher. It is the tolerance of "now" against a file's
+    time, since the two clocks may differ: a file on a share is stamped by the NAS, a WSL file by a VM clock that drifts after sleep.
+  - Both are ordinary keys on both layers (Windows user layer included). `NumbersAreConfigurationTests` lists them, and the
+    `contracts/config-keys.json` golden carries them.
+- **D2 — "untouched" is judged from the files' CURRENT times, asked fresh at each question** (the selection's and phase 2's), never the
+  listing's frozen ones: a session resumed between the selection and the removal is seen. It is judged by the newest last-write time
+  over every file of the unit — every name the question is asked for (phase 2's resume asks the quarantine names too). Then:
+  - newest **after now + skew** → **kept**: "a file of it is dated <time>, after this machine's clock (<now>) by more than
+    `archive.clockSkewMinutes`; whether it is idle cannot be told". The archive does not guess which clock is wrong.
+  - newest **after now − idle** (within the window, or in the future by no more than the skew) → **kept**: "a file of it changed within
+    `archive.windowsIdleDays` (N days)".
+  - a file whose time **cannot be read** → **kept**, naming it unreadable. A name that does not exist (an original renamed aside, a
+    quarantine name not yet made) is skipped. A unit with NO readable file is kept: there is nothing to judge.
+  - otherwise **idle** → the agent rule lets it through; the open-file question (`HeldBy`, the Restart Manager) is still asked, so a
+    held file still keeps it.
+- **D3 — where.** `InUseView` gains a per-unit question `ClaudeIdle: Func<IReadOnlyList<string>, string>` (the unit's files as full
+  paths → why it is NOT idle; empty when it is).
+  - Its default FAILS CLOSED ("whether its files are idle was not judged"), so a view that reports Claude running but cannot judge
+    idleness keeps everything, as today.
+  - `Liveness.AgentWorking(view, agent, key, files)` keeps a Claude Code unit only when `ClaudeRunning()` speaks AND `ClaudeIdle(files)`
+    speaks, and joins the two sentences.
+  - The project rule (a live Claude Code in the unit's project, the distro's `/proc` view) is unchanged.
+  - The Windows view takes a `WindowsIdle(TimeProvider Clock, TimeSpan Idle, TimeSpan Skew)` and the side's file system.
+    `IWindowsSide.View` takes them from the run's input (its config and clock).
+- **D4 — the unknown case is the running case.** A process table that cannot be read, or a `node.exe` of this session whose command
+  line cannot be read, means "Claude Code may run". The idle rule applies to it exactly as to a Claude Code known to run: idleness is
+  the safe answer to both. Nothing else in E9.S5 changes, in particular the Restart Manager, the stall latch and the budget.
+- **D5 — what the owner sees.** The skip reason keeps `agent-working-here`, and its sentence now names the window or the clock. The
+  sentence `Runs()` gives drops "no Claude Code session moves while it runs" and says "only a session idle for
+  `archive.windowsIdleDays` moves while it runs".
+- **Measured interplay, said honestly.** A unit is due only past its effective age (`archive.olderThanDays`, 14 by default, shortened by
+  the agent's own retention). So at selection the idle rule bites only when that age is under `archive.windowsIdleDays`. Its main work
+  is phase 2, a day or more later, on fresh times: a session resumed in between is kept.
+
+**RED first.** Each test below is red against today's code: today every Claude Code unit is kept while Claude runs, and phase 2 never
+reads times.
+- an idle unit moves while Claude runs, for a known Claude and for an unknown table alike;
+- a unit touched within the window is kept, naming `archive.windowsIdleDays`;
+- a future-dated file beyond the skew is kept, naming the clock;
+- a future-dated file within the skew counts as touched now;
+- an unreadable time keeps the unit;
+- a held idle unit is still kept by the Restart Manager answer;
+- phase 2 re-reads the times: a file touched after the selection is kept, and its quarantine name counts on a resume;
+- the view's default fails closed;
+- the two keys exist with their ranges and defaults.
+
+**Break-it** on product code only: the idle arm dropped, the future arm dropped, the fresh read replaced by nothing, the default made
+open, the skew ignored.
+
+**The plan round** (coai session a024a786, `proceed`, 1 gating; one of two vendors answered). Both findings accepted: **0** — a flow
+through `ArchiveRun.Run` (selection, phase 1, phase 2) on the real file system with the Windows view over a process table showing a
+Claude Code: an idle session moves and is removed, a recent one stays, one touched after the selection is kept at phase 2 (the CLI
+flow uses the real process table on purpose and cannot be made to show a Claude Code); **1** — a unit with one old and one recent
+file is kept, naming `archive.windowsIdleDays`.
+
+**As built (2026-10-09).** As designed, with these changes from the own review round. Each overrides D1–D5 above where they differ.
+
+- **The tolerance decides too.** A session is idle only when its newest file is older than the window AND
+  `archive.clockSkewMinutes` (review 4). Before, the tolerance changed only the message.
+- **A unit none of whose names exists is idle** (review 5): it has nothing an agent could be using. This lets a resumed entry whose
+  files are all gone close instead of waiting `archive.keptEntryDays`.
+- **`PhysicalFileSystem.FileSize` answers *unreadable*, not *missing*, for a file it may not stat** (review 1, Major): `FileInfo.Exists`
+  says false for access denied too, so an unreadable recent file read as idle. The other callers of `FileSize` gain the same honesty.
+- **The residual risk** (review 2) is written into `module_archive.md`. A Claude Code window left open on a session for the whole
+  window with no new turn is not seen: Claude keeps no handle open, and a resume only reads. Such a session moves, and its next turn
+  writes a fresh file that the archive records as a `split`, so nothing is lost. The owner decides whether to add the partial guard
+  (a session id on a `claude --resume <id>` command line).
+- **Code:**
+  - `Archive/WindowsIdle.cs`
+  - `InUseView.ClaudeIdle` / `WithIdle` (default fails closed: `InUseView.NotJudged`)
+  - `Liveness.AgentWorking(view, agent, key, files)`
+  - the run and the preview give the view the rule
+  - the test doubles `GivenAnswers` / `GivenTable` extracted to `WindowsSideFakes.cs`
+- **Tests, red runs, teeth W-01 to W-13, and the review table:** [module_tests.md](../research/module_tests.md), *The Windows idle
+  rule*.
+
+**DoD.** The plan gate (this section), the code gate, an own Opus review (data safety: what may move while Claude runs), the teeth
+recorded in `module_tests.md`, `module_archive.md` and the README's archive text updated, all suites on Windows and WSL, a PR merged by
+squash.
+
+#### E9 live gate step 8, first run (2026-10-10): a base on the NAS refused — the fix
+
+> Status: **built, 2026-10-10 (its PR open).** Scope: `Files/PhysicalFileSystem.Archive.Windows.cs`, `Files/BeneathWrites.cs`,
+> `Files/PhysicalFileSystem.Archive.cs` (the folder flush), `Archive/SideLease.cs` (the refusal's reason), tests, `research/module_archive.md`,
+> `research/module_tests.md`. Branch `fix/wc-e9-network-base`, its own PR. It OVERRIDES the E9.S2a/E9.S5 text above where they differ.
+
+**What step 8 found** (the owner's NAS, `V:` = `\\192.168.1.113\Shared_Drive_Work`; throwaway sessions in sandboxes, one new subfolder
+`V:\connectOtherAis\wsl-care-archive-livegate-20261010T0831Z`).
+- `archive check-base` accepted both spellings: `V:\…` reads as *network NTFS* and the UNC path as *network*.
+- `archive preview` saw the live Claude Code (`claude.exe`) and kept the 20-day session by the idle rule. It listed the two 40-day
+  sessions as due.
+- `archive run` REFUSED both legs before it touched anything. The refusal named no reason, because the lease's refusal dropped it.
+  With the reason restored:
+  - **the drive leg:** "`base-drive` was reached through a link (the open file is not where its path says)".
+    `GetFinalPathNameByHandle` answers a mapped drive's files as `\\?\UNC\server\share\…`. The in-place check compares that answer with
+    the `V:\…` spelling, so every folder on a mapped network drive reads as reached through a link.
+  - **the UNC leg:** "its new entry could not be flushed (error 1)". `FlushFileBuffers` on a FOLDER handle answers
+    `ERROR_INVALID_FUNCTION` over SMB: the redirector does not flush directories. This is the live-gate item the E9.S2a own review
+    left unmeasured, and it is now measured.
+
+**Design.**
+- **N1 — the mapped drive is its UNC root, not a link.** The in-place check accepts the final path when it equals the judged path
+  OR the judged path with its drive letter replaced by the drive's network root.
+  - The network root comes from `WNetGetConnectionW`, asked only for a drive `GetDriveTypeW` reports `DRIVE_REMOTE`.
+  - A real link inside the share is still refused: the comparison is exact after the one prefix swap.
+  - The comparison is a pure function (`InPlace(actual, judged, networkRootOf)`) and its tests hold it.
+- **N2 — a folder flush over SMB.** On a NETWORK path (UNC, or a remote drive), `ERROR_INVALID_FUNCTION` from `FlushFileBuffers` on a
+  folder handle counts as done: the server commits the entry it created, and the client has no folder flush to give.
+  - Any other error, and error 1 on a local volume, still refuses.
+  - The files themselves are still written through and flushed by their own handles, which SMB honours.
+  - Pure function `FolderFlushed(error, remote)`.
+  - **Why this is safe (the plan round, finding 0 — rejected with this reason):** the archive never rests on the folder flush alone.
+    No source is removed until phase 2, a separate run at least `archive.removeAfterHours` later in a new process with fresh
+    handles, re-opens every archived copy in the base and re-hashes it against its index line (`ArchiveRemove.CopyProblem`). A missing
+    or different copy marks the entry damaged, and the SOURCE STAYS. An entry an SMB server lost would cost a retry, never data.
+    Refusing would make every SMB base unusable, and the owner's only share is SMB.
+- **N3 — a refusal says why.** `SideLease` carries the folder's own reason ("… could not be opened in the base (<why>)"). This is how
+  the run found the two defects.
+
+**RED first.**
+- `InPlace` refuses today's mapped-drive answer and accepts it after the fix. It still refuses a different final path (a link) and
+  `\\server\other` for `V:`.
+- `FolderFlushed(1, remote: true)` is done; `(1, remote: false)` and `(5, remote: true)` are failed.
+- The lease refusal names the folder's reason.
+- The live gate step 8 is re-run with the fixed binary, both legs, the holder, and phase 2 after `archive.removeAfterHours`.
+
+**Break-it** on product code only: the prefix swap removed, the remote condition removed, the reason dropped.
 
 #### E9.S2b/S3 gate round (2026-10-08) — the coai code round over E9.S2b, E9.S3 and their own review rounds
 

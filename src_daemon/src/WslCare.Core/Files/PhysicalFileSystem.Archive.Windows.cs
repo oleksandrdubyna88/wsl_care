@@ -79,10 +79,12 @@ public sealed partial class PhysicalFileSystem
 
     /// <summary>Gate round finding 3, own review round security m1: where the OPEN file really is, against the REAL path the policy
     /// judged — a link swapped in anywhere on the way after the judgement (the open is by path on Windows) leads the open
-    /// elsewhere, and that file is never acted on. Empty when it is in place. Residual: a short (8.3) spelling refuses.</summary>
+    /// elsewhere, and that file is never acted on. Empty when it is in place. A mapped network drive's answer comes under its UNC
+    /// root, which is the same place (<see cref="NetworkPaths.InPlace"/>, the E9 live gate 2026-10-10). Residual: a short (8.3)
+    /// spelling refuses.</summary>
     [SupportedOSPlatform("windows")]
     private static string NotInPlace(SafeFileHandle opened, Located at) =>
-        BeneathWrites.FinalPath(opened) is { Length: > 0 } actual && string.Equals(actual, at.RealPath, StringComparison.OrdinalIgnoreCase)
+        NetworkPaths.InPlace(BeneathWrites.FinalPath(opened), at.RealPath, NetworkPaths.NetworkRootOf)
             ? string.Empty
             : $"{at.Name} was reached through a link (the open file is not where its path says), never followed";
 
@@ -172,7 +174,8 @@ public sealed partial class PhysicalFileSystem
     [SupportedOSPlatform("windows")]
     private int SyncedParentWindows(SafeFileHandle parent, string path)
     {
-        var error = BeneathWrites.FlushWindows(parent);
+        // The E9 live gate (2026-10-10): over SMB a folder handle has no flush (error 1) — NetworkPaths says why that is safe.
+        var error = NetworkPaths.FolderFlushed(BeneathWrites.FlushWindows(parent), NetworkPaths.IsRemote(path, NetworkPaths.NetworkRootOf));
         _onArchiveStep(ArchiveFileStep.FolderLevelSynced, path);
         return error;
     }
