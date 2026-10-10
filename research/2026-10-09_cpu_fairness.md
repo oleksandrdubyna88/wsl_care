@@ -4,13 +4,15 @@
 > has no effect in this WSL (no `cpu` controller delegated below `system.slice`)", and a design built on it — a systemd
 > drop-in delegating `cpu io memory pids` to `user@.service`, and `wsl-care low -- <cmd…>` running a command in a
 > `systemd-run --user --scope` with a low `CPUWeight`. The plan said to measure first. This record is that measurement.
-> **Both halves of the belief are false on this machine**, and the planned design would have made a "low" job run
-> about nine times FASTER than a session's own process, not slower.
+> **The belief is false on this machine:** its first half ("no effect") is false; its bracketed reason is literally true
+> (`system.slice` delegates no `cpu`, G4) but irrelevant, because the sessions live in `/init.scope` and the user manager
+> has `cpu` already (P1–P4, G7, G8). And the planned design made a "low" job run 7–21 times FASTER than a session's own
+> process (9× in E4), not slower.
 >
 > - **Machine:** Windows 11 Pro 10.0.26300, 24 logical processors; WSL 2, kernel `6.18.33.2-microsoft-standard-WSL2`,
 >   Ubuntu with systemd 255 (255.4-1ubuntu8.17), daemon `0.3.0+609ba17` installed.
 > - **Who, when, how:** the author (an agent session), 2026-10-09 19:15Z–19:21Z, 19:54Z–19:56Z (§ 3b, the consultant's checks) and 20:02Z (§ 3c, the plan round's check), as the login account (uid 1000), through
->   script files run with `wsl.exe -d Ubuntu -- sh <file>`. Nothing as root, nothing written, nothing deleted. The busy loops
+>   script files run with `wsl.exe -d Ubuntu -- sh <file>`. Nothing as root, nothing deleted, nothing written outside `/tmp` (§ 3c's build folder). The busy loops
 >   were pinned to ONE CPU (`taskset -c 23`), each under `timeout 20`, and every one was ended by the pid the script
 >   started; the transient scopes went away with their processes. Load at the start: 4.47 / 4.78 / 5.17 on 24 CPUs, PSI cpu
 >   some avg10 0.21 %.
@@ -31,13 +33,16 @@
 | G8 | `systemctl show user@1000.service -p Delegate -p DelegateControllers` | `Delegate=yes`, `DelegateControllers=cpu memory pids` — systemd 255's default; no drop-in exists (`/etc/systemd/system/user@.service.d` absent) |
 | G9 | `cpu.weight` of `init.scope`, `user.slice`, `system.slice` | 100, 100, 100 |
 | G10 | autogroup | `/proc/sys/kernel/sched_autogroup_enabled` and `/proc/self/autogroup` absent: the kernel has no autogroup |
-| G11 | block-device I/O schedulers | `[none]` on every `sd*` and `loop*` device (no BFQ) |
+| G11 | block-device I/O schedulers | `[none]` on every `sd*` and `loop*` device (no BFQ, no mq-deadline) |
+| G12 | `app.slice` (under `user@1000.service`) `subtree_control`, read 19:16Z | `memory pids` — no `cpu` until a child asks for a weight |
+| G13 | `/sys/fs/cgroup/io.cost.qos`, `io.cost.model`, read 19:54Z | both absent: the `io.cost` controller is not configured |
 
 **So `cpu` IS delegated to the user manager already** (G7, G8) — the drop-in the plan proposed would add nothing for CPU.
 `io` is not delegated below `/` (G4–G7), and with the `none` scheduler on every disk (G11) there is nothing for an I/O
 weight or an `ionice` class to act on: `io.weight` needs BFQ or the `io.cost` controller, and `io.cost` is not configured
-either (`/sys/fs/cgroup/io.cost.qos` and `io.cost.model` do not exist, read 19:54Z); I/O priorities need BFQ. (The kernel
-side is documentation, not measured here; the consultant corrected an earlier "only BFQ".)
+either (G13); I/O priority classes need an I/O scheduler that honours them (BFQ, or mq-deadline since kernel 5.14), and
+every device here runs `none`. (The kernel side is documentation, not measured here; the consultant corrected an earlier
+"only BFQ", the own review an earlier "I/O priorities need BFQ".)
 
 ## 2. Where the sessions live (read 19:16Z)
 
@@ -62,13 +67,13 @@ Each row: two `sh -c 'while :; do :; done'` loops started together, pinned to CP
 |---|---|---|---|---|---|---|
 | E1 | `/init.scope`, nice 0 | `/init.scope`, nice 19 | 98.2 % | 1.4 % | **68.1 : 1** | 1024 / 15 = 68.3 |
 | E2 | `systemd-run --user --scope -p CPUWeight=100`, nice 10 | the same with `CPUWeight=10`, nice 10 | 91.0 % | 9.1 % | **10.0 : 1** | 100 / 10 = 10 |
-| E3 | `systemd-run --user --scope` (no weight), nice 0 | the same, nice 19 | 98.0 % | 1.4 % | 67.9 : 1 | (no `cpu` controller enabled in `app.slice` without a weight — the two scopes share one CPU group, so nice decides) |
+| E3 | `systemd-run --user --scope` (no weight), nice 0 | the same, nice 19 | 98.0 % | 1.4 % | 67.9 : 1 | 1024 / 15 = 68.3: the scopes had no `cpu.weight` file (the script read none) and `app.slice` enables no `cpu` (G12), so the two loops shared one CPU group and nice decided |
 | E4 | **`/init.scope`, nice 10 — where the sessions are** | **a "low" scope, `CPUWeight=10`, nice 10 — the plan's design** | **9.7 %** | **89.6 %** | **0.1 : 1** | the design assumed ≈ 10 : 1 for A |
 | E5 | `/init.scope`, nice 0 | a "low" scope, `CPUWeight=10`, **nice 19** | 23.7 % | 76.2 % | 0.3 : 1 | — |
 | E6 | `/init.scope`, nice 0 | `/init.scope`, `chrt -i 0` (`SCHED_IDLE`) | 98.8 % | 0.3 % | **356 : 1** | 1024 / 3 = 341 |
 | E7 | `/init.scope`, nice 19 | `/init.scope`, `SCHED_IDLE` | 83.1 % | 16.6 % | 5.0 : 1 | 15 / 3 = 5 |
 
-(The CPU's remaining share in each row was 0.7 % or less: nothing else ran on CPU 23.)
+(The CPU's remaining share in each row was 0.9 % or less: nothing else ran on CPU 23.)
 
 ### 3b. The consultant's checks (19:54Z–19:56Z)
 
@@ -79,7 +84,8 @@ Each row: two `sh -c 'while :; do :; done'` loops started together, pinned to CP
 | E4b | E4 again: `/init.scope` nice 10 vs the "low" scope (`CPUWeight=10`, nice 10), both on CPU 23 | **4.5 %** vs **94.4 %** |
 | E8 | the same pair, plus a third `/init.scope` nice-10 loop on CPU **22** | **12.9 %** vs **86.7 %** |
 | B1 | MSBuild processes alive at 19:55Z | three node-reuse workers, `dotnet …/MSBuild.dll /nodemode:1 /nodeReuse:true /low:false`, each at **nice 0** |
-| B2 | the SDK's own help (10.0.112) | `dotnet build --disable-build-servers` "Force the command to ignore any persistent build servers"; `dotnet msbuild -lowPriority` (`-low`) "Causes MSBuild to run at low process priority" |
+| B2 | the SDK's own help (10.0.112, in WSL) | `dotnet build --disable-build-servers` "Force the command to ignore any persistent build servers"; `dotnet msbuild -lowPriority` (`-low`) "Causes MSBuild to run at low process priority" |
+| B3 | `dotnet <cmd> --help` (SDK 10.0.400, Windows, inside this repository whose `global.json` selects the Microsoft Testing Platform runner), read 2026-10-10 by the own review's finding | `--disable-build-servers` listed by `build`, `publish`, `pack`, `run`; **NOT by `test`** — under MTP `dotnet test` forwards an unknown option to the test application, which may fail the run |
 | W1 | Windows, PowerShell 7: `Get-Command start` | an **alias of `Start-Process`**, not cmd's `start` |
 | W2 | Windows: `cmd /c 'start "" /b /wait /belownormal cmd /c exit 37'` | exit **0** — the child's 37 is lost; `Start-Process … -Wait -PassThru` kept 37 |
 
@@ -102,11 +108,16 @@ measured: a multi-project build with `-m` (its worker nodes are then children st
 inherit the niceness too — expected, not observed), and a build WITHOUT the flag (whether it hands work to the nice-0
 workers stays the risk of point 5, not an observation).
 
+`dotnet test` is the exception (B3): it does not take `--disable-build-servers` under MTP, so the form that keeps a test run's
+build at the inherited priority is to build first (`nice -n 19 dotnet build --disable-build-servers`) and then run the tests
+without building (`nice -n 19 dotnet test --no-build`, or the test executable itself).
+
 ## 4. What the numbers say
 
 1. **`nice` works here, fully** (E1): a nice-19 job beside a nice-0 process in the same cgroup gets 1.4 % of a contended
-   CPU, the kernel's 68 : 1 to the decimal. Because every session and everything the sessions start share `/init.scope`
-   (P1–P4) and the kernel has no autogroup (G10), **a nice-19 build competes with the sessions exactly as E1 shows**.
+   CPU, 68.1 : 1 against the kernel's 68.3 (within 0.3 %). Because every session and everything the sessions start share `/init.scope`
+   (P1–P4) and the kernel has no autogroup (G10), **a nice-19 build competes with the sessions as E1 shows** — per runnable thread: a build with N busy threads holds N such
+   shares (15 N against a session thread's 1024).
    `SCHED_IDLE` (E6) gets a much smaller share still under contention (0.3 %, 356 : 1) — not zero: it is NOT "only CPU
    time nobody else wants". It is not recommended for builds: a build that other work waits on (a shared server, a lock)
    would be delayed further, and nothing donates priority back.
@@ -114,8 +125,9 @@ workers stays the risk of point 5, not an observation).
 3. **The plan's design backfires** (E4, E5): moved into a `systemd --user` scope, the "low" job leaves `/init.scope` for
    `user.slice` — a different subtree whose weight (100) competes with `/init.scope`'s (100) at the root, and its own
    `CPUWeight=10` only orders it against `app.slice`'s other children, of which there are none. It then got 89.6 % of the
-   CPU against a session-like process's 9.7 % — **nine times more, not ten times less** — and adding nice 19 to it (E5)
-   only narrowed that to 3 : 1 in the job's favour, because nice orders tasks only within one CPU group. The direction held
+   CPU against a session-like process's 9.7 % — **nine times more, not ten times less** (E4; 21× in E4b, 6.7× in E8). In
+   E5 BOTH nice values changed (the session-side loop from 10 to 0, the job from 10 to 19) and the job still got 3.2 : 1
+   in its favour; no mechanism is claimed for that step. The direction held
    in all three runs (E4 9.7 %, E4b 4.5 %, E8 12.9 % for the session-side loop; ≥ 86 % for the "low" job), with no
    throttling in play (C1, C2). **Why it is so lopsided is NOT established.** The first explanation (a group's weight is
    spread over the CPUs where its load is, so the busy `/init.scope` brings only a slice of its weight to CPU 23)
@@ -140,15 +152,23 @@ workers stays the risk of point 5, not an observation).
 ## 5. Consequences for S4
 
 The plan's S4 design (the Q3 drop-in, `wsl-care low` through `systemd-run --user --scope`) is withdrawn by this
-measurement. What it leaves, and the choice taken with the coai consultant, are in the plan's *S4 as built*.
+measurement. What it leaves, and the choice taken with the coai consultant, are in the plan's *S4 — revised after the
+measurement*.
+
+**Scope of the evidence:** this one WSL 2 machine. A native Linux desktop usually has autogroup on, and terminals or apps
+often get their own systemd scopes; there `nice` orders work only inside its own group (the effect § 4.3 shows for the
+scope design). `nice -n 19` is harmless there, but its effect on Linux or macOS was not measured.
 
 ## 6. Method (the scripts, kept out of the repository)
 
 `wc_probe1.sh` (the cgroup files, `systemctl show`, the daemon's config layers), `wc_probe2.sh` (the cgroup of every
 process, tallied by `comm`), `wc_measure_cpu.sh` (E1–E5), `wc_measure_cpu2.sh` (E6–E7), `wc_measure_cpu3.sh` (C1, C2, B1,
-E4b, E8), `wc_probe4.sh` (the build servers' argv) and `wc_build_probe.sh` (§ 3c; its folder
-`/tmp/wc-s4-build-20261009T200242Z` was left in place, per this machine's no-deletion rule) — each a POSIX `sh` script
+E4b, E8), `wc_probe4.sh` (the build servers' argv), `wc_ls_tmp.sh` (the `/tmp` folder after the restart) and `wc_build_probe.sh` (§ 3c; its folder
+`/tmp/wc-s4-build-20261009T200242Z` was left in place, per this machine's no-deletion rule, and was gone after the PC
+restarted that night — WSL starts with an empty `/tmp`) — each a POSIX `sh` script
 that reads `/proc` and `/sys` and, for the measurement, starts two loops with
 `[systemd-run --user --scope -q -p CPUWeight=N --] nice -n N taskset -c 23 timeout 20 sh -c '…'` (or `chrt -i 0`), finds
 each loop as the child of its `timeout`, reads `utime + stime` 1 s and 19 s after the start, and ends every pid it started
-in an `EXIT` trap. Re-run with the same commands to re-measure; one run takes ≈ 2 minutes and one CPU.
+in an `EXIT` trap. Re-run with the same commands to re-measure; one run takes ≈ 2 minutes and one CPU. W1, W2 and B3 were
+read in the author's Windows shell (PowerShell 7 and Git Bash): `Get-Command start`, the two `start` / `Start-Process`
+forms with a child `cmd /c exit 37`, and `dotnet <cmd> --help` piped to a count of `--disable-build-servers`.

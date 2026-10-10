@@ -132,8 +132,9 @@ The plan proposed a `user@.service` delegation drop-in from `install.sh` and a `
 `systemd-run --user --scope` with a low `CPUWeight`. The measurement
 ([2026-10-09_cpu_fairness.md](2026-10-09_cpu_fairness.md)) withdrew both: `cpu` is already delegated to the user manager,
 and every session and build runs in `/init.scope` with no autogroup, so `nice 19` works against the sessions (68 : 1); the
-scope moved the job to `user.slice`, where it got ≈ 9× MORE CPU than a session's process. The answer is documentation: the
-README's *Busy* section (`nice -n 19`, plus `--disable-build-servers` for `dotnet` builds). No code, unit, key or
+scope moved the job to `user.slice`, where it got 7–21× MORE CPU than a session's process (three runs). The answer is documentation: the
+README's *Busy* section (`nice -n 19`, plus `--disable-build-servers` for `dotnet build` / `publish` / `pack` / `run`;
+`dotnet test` under MTP builds first and runs `--no-build`). No code, unit, key or
 `install.sh` line changed. One fact about the daemon itself, recorded and not acted on: the units' `Nice=19` orders a root
 run only among `system.slice`'s services, not against the sessions in `/init.scope` (a sibling at the root).
 

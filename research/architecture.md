@@ -2470,8 +2470,9 @@ stopped because of it.
 **Then, how heavy work runs (E14 S4, 2026-10-09):** at `nice -n 19`, in the session's own shell, with
 `--disable-build-servers` for a `dotnet` build — documentation, no verb. WSL puts every session and everything it starts in
 `/init.scope` and the kernel has no autogroup, so `nice` orders a build against the sessions (68 : 1 measured); a
-`systemd-run --user --scope` would move it to `user.slice`, a root-level sibling, where it got ≈ 9× more CPU than a session's
-process. The units' `Nice=19` likewise orders the daemon's own run only inside `system.slice`
+`systemd-run --user --scope` would move it to `user.slice`, a root-level sibling, where it got 7–21× more CPU than a session's
+process (three runs). `dotnet test` under MTP takes no `--disable-build-servers`: build first, then run the tests
+without building. The units' `Nice=19` likewise orders the daemon's own run only inside `system.slice`
 ([2026-10-09_cpu_fairness.md](2026-10-09_cpu_fairness.md), [module_daemon.md](module_daemon.md) § *CPU fairness*).
 
 ## The AI-session archive (E9.S0, 2026-10-06, plan §15r)

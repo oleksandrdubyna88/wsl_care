@@ -771,13 +771,13 @@ The owner, 2026-10-09: "good idea. check it. choose the best implementation opti
 approving Q3 (the drop-in) and Q4 (a `wsl-care low` verb) **if the measurement shows they are needed**. It shows they
 are not ([2026-10-09_cpu_fairness.md](../research/2026-10-09_cpu_fairness.md)):
 
-- **The premise was false.** `cpu` is already delegated to `user@1000.service` (systemd 255's default
+- **The premise was false.** Its reason is literally true (`system.slice` delegates no `cpu`) but irrelevant: `cpu` is already delegated to `user@1000.service` (systemd 255's default
   `DelegateControllers=cpu memory pids`); every session, the VS Code server, `coai-mcp` and every build run in
   `/init.scope` (159 processes), and the kernel has no autogroup. So `nice` works between a build and the sessions: a
-  nice-19 loop got 1.4 % of a contended CPU beside a nice-0 one (68 : 1, the kernel's weights exactly).
+  nice-19 loop got 1.4 % of a contended CPU beside a nice-0 one (68.1 : 1, the kernel's 68.3).
 - **The planned design backfires.** A `systemd-run --user --scope -p CPUWeight=10` job leaves `/init.scope` for `user.slice`
   and got 89.6 % / 94.4 % / 86.7 % of the CPU against a session-like loop's 9.7 % / 4.5 % / 12.9 % (three runs) — the
-  "low" job ran about nine times faster than the session, not ten times slower. Why it is that lopsided is not established
+  "low" job ran 7–21 times faster than the session (9× in E4), not ten times slower. Why it is that lopsided is not established
   (the first explanation was refuted by the consultant's check, E8); the direction held every time.
 - **I/O has nothing to weigh.** Every disk runs the `none` scheduler and `io.cost` is not configured, so neither `ionice`
   nor `IOWeight` would act; the drop-in would only enable `io` in a subtree where no session lives.
@@ -787,11 +787,12 @@ are not ([2026-10-09_cpu_fairness.md](../research/2026-10-09_cpu_fairness.md)):
 (c) a `wsl-care low` verb that sets the niceness in place and `exec`s the argv — no scheduling benefit over `nice`, and it
 would tie a family-wide rule to a tool installed only here; (d) docs plus a doctor check of the premise — deferred: a check
 worth having inspects the actual workers' CPU groups, not its own cgroup. **Chosen: (a).** The consultant's corrections,
-each verified before it was taken: `io.weight` also works under `io.cost` (true; not configured here — C1); SCHED_IDLE is
+each checked before it was taken — measured where a row is cited, from documentation otherwise: `io.weight` also works
+under `io.cost` (documentation; not configured here — the record's G13); SCHED_IDLE is
 "a much smaller share", not "only idle time" (true, E6: 0.3 %), and is not recommended for builds (a build others wait on
 would be delayed further, nothing donates priority back); persistent build servers can carry a niced build's work at
 nice 0 (three `/nodeReuse:true /low:false` MSBuild workers at nice 0 were alive at 19:55Z — a risk, the hand-off itself
-not observed), so .NET builds add `--disable-build-servers` (in SDK 10.0.112's help; a real `nice -n 19 dotnet build
+not observed), so .NET builds add `--disable-build-servers` (in `dotnet build`'s help, SDK 10.0.112; a real `nice -n 19 dotnet build
 --disable-build-servers` was then watched — the plan round's finding 0 — and its driver and `csc` ran at nice 19 while the
 nice-0 workers' CPU ticks did not move, record § 3c; its build-time cost against a server-backed build NOT measured —
 S8 will see it); the Windows form `start /belownormal` is PowerShell's `Start-Process` alias and, under `cmd`, lost a
@@ -800,19 +801,29 @@ child's exit code 37 → 0 (measured), so no Windows form is proposed.
 **Decided:** no drop-in (**Q3: not needed**), no verb (**Q4: not needed** — documentation only), the daemon's units
 unchanged (their `Nice=19` orders the root run only inside `system.slice`; recorded, not acted on: no daemon run was
 measured under load), no new configuration key (nothing in the product reads a number for this). What ships: the research
-record, this section, the README's note under the units table, `research/module_daemon.md`'s note.
+record and its row in `research/README.md`, this section, the README's note (its *Busy* section), and the notes in
+`research/module_daemon.md` and `research/architecture.md`. **Own review** (one reviewer, `feature-dev:code-reviewer` on
+Opus, read-only; 11 findings, all accepted): `dotnet test` under MTP does NOT take `--disable-build-servers` — checked,
+SDK 10.0.400 lists it for `build`, `publish`, `pack`, `run` only (record B3), so the rule builds first and runs the tests
+without building; the rule's scope is WSL (the evidence is one WSL machine; native Linux usually has autogroup); the
+ratios stated as measured (68.1 vs 68.3; 7–21× across the three runs) instead of "exactly" and "nine times"; E5 stated as
+observed, without a mechanism; the io.cost read and `app.slice`'s `subtree_control` as rows (G12, G13); `todo/README.md`'s
+S4 entry; the record's header (it wrote under `/tmp`), cross-references and method list.
 
 **The rule text proposed for the family's shared agent rules** (the conventions repository; an outward-facing change,
 for the coordinator to carry — NOT edited from here):
 
-> **Heavy work runs at reduced CPU priority** (measured 2026-10-09 in wsl_care's
-> `research/2026-10-09_cpu_fairness.md`). On Linux, WSL and macOS, start a build, a test run, a benchmark or any other
-> CPU-heavy command as `nice -n 19 <command…>`, in the same shell the session gives you — never through
-> `systemd-run --user --scope` (in WSL that moves the job out of the sessions' cgroup and it then runs FASTER than they
-> do). For `dotnet` commands that build (`build`, `test`, `publish`, `pack`, `run`), also pass `--disable-build-servers`,
-> so the work stays in processes that inherit the priority; keep the repository's prescribed test runner (a built test
-> executable is started with `nice -n 19` as it is) and its concurrency limits. Do not use `chrt -i` / `SCHED_IDLE` for
-> builds. On Windows hosts no form is prescribed yet (the obvious `start /belownormal` loses the exit code).
+> **Heavy work runs at reduced CPU priority in WSL** (measured 2026-10-09 in wsl_care's
+> `research/2026-10-09_cpu_fairness.md`). In WSL, start a build, a test run, a benchmark or any other CPU-heavy command as
+> `nice -n 19 <command…>`, in the same shell the session gives you — never through `systemd-run --user --scope` (that
+> moves the job out of the sessions' cgroup and it then runs FASTER than they do). For `dotnet build`, `publish`, `pack`
+> and `run`, also pass `--disable-build-servers`, so the work stays in processes that inherit the priority. `dotnet test`
+> does not take that option under the Microsoft Testing Platform: build first
+> (`nice -n 19 dotnet build --disable-build-servers`), then run the tests without building — the repository's prescribed
+> runner (a built test executable, started as `nice -n 19 <exe>`) or `nice -n 19 dotnet test --no-build` — and keep its
+> concurrency limits. Do not use `chrt -i` / `SCHED_IDLE` for builds. On native Linux and macOS `nice -n 19` is harmless,
+> but its effect there is not measured (autogroup or per-app cgroups can neutralise it). On Windows hosts no form is
+> prescribed yet (the obvious `start /belownormal` loses the exit code).
 
 **Tests:** none — no product code, key or behaviour changes (the plan's DoD item "every new number a key" has no number to
 hold). The measurement is the evidence; its scripts are described in the record's § 6.
