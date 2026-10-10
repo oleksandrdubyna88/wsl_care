@@ -152,19 +152,27 @@ function build(context: vscode.ExtensionContext): Parts {
 
   const guardRecorder = newGuardRecorder();
   const guard = windowsTimeGuard(context, testMode, guardRecorder);
-  // E10.S1: the archive's reads and its one user-layer write go through the SAME runner and the client's target checks.
   const archiveRecorder = newArchiveRecorder();
-  const archive = new ArchiveHost({
-    read: (request) => client.read(request), target: () => client.rootTarget(), runner, outcomes: store, ui: archiveUiFor(testMode, archiveRecorder),
-    log: (line) => log.error(line), numbers, limits: () => limitsOf(store),
-    // E10.S1b: Archive now is greyed while a cleanup is in flight; the cleanup's changes re-render the archive's controls; the
-    // archive host refuses on its own conditions first, then the cleanup host runs A13 through its transaction.
-    cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener), archiveNow: () => host.archiveNow(),
-  });
+  const archive = archiveHostOf(testMode, client, runner, store, host, archiveRecorder, log);
+
   return {
     testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
     gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
   };
+}
+
+/**
+ * E10.S1: the archive's reads and its one user-layer write go through the SAME runner and the client's target checks.
+ * E10.S1b: Archive now is greyed while a cleanup is in flight; the cleanup's changes re-render the archive's controls; the
+ * archive host refuses on its own conditions first, then the cleanup host runs A13 through its transaction. (Its own
+ * function since the GPU host joined `build()`, which the line bound then held to 50.)
+ */
+function archiveHostOf(testMode: boolean, client: WslCareClient, runner: ReturnType<typeof clientRunner>, store: OutcomeStore, host: CleanupHost, recorder: ArchiveRecorder, log: vscode.LogOutputChannel): ArchiveHost {
+  return new ArchiveHost({
+    read: (request) => client.read(request), target: () => client.rootTarget(), runner, outcomes: store, ui: archiveUiFor(testMode, recorder),
+    log: (line) => log.error(line), numbers, limits: () => limitsOf(store),
+    cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener), archiveNow: () => host.archiveNow(),
+  });
 }
 
 /** The Windows Time guard's settings, read NOW (PLAN_windows_time_task.md D6): the task is built from them at install. */
