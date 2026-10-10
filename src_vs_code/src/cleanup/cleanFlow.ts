@@ -1,6 +1,6 @@
 import { FULL_CHECK_ACTIONS, type CleanupController } from '../root/cleanupController';
 import { rootFailureText } from '../root/rootFailureText';
-import type { RunId } from '../root/rootIds';
+import type { ActionId, ActionIds, RunId } from '../root/rootIds';
 import type { HandOffOutcome, HeldPreview, RootFailure } from '../root/rootOutcome';
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { CleanupJournal, JournalEntry, NewEntry } from './journal';
@@ -62,7 +62,7 @@ export const PREVIEW_ROUNDS = DEFAULT_NUMBERS.previewRounds;
 export const RETRY_LABEL = 'Retry';
 
 /** *Archive now*'s one id (E10.S1b): A13 alone, never beside a cleanup row. */
-const ARCHIVE_IDS: readonly string[] = ['A13'];
+const ARCHIVE_IDS: ActionIds = ['A13'];
 
 /** A wedged run the daemon can stop, as the host read it from `status.running`. */
 export interface StopTarget {
@@ -159,7 +159,7 @@ export class CleanFlow {
     }
   }
 
-  private async cleanOnce(rowIds: readonly string[], selected: boolean, label?: string): Promise<Pass> {
+  private async cleanOnce(rowIds: readonly ActionId[], selected: boolean, label?: string): Promise<Pass> {
     const held = await this.confirmedPreview(rowIds, selected);
     if ('kind' in held) {
       return { result: held, retry: false };
@@ -168,7 +168,7 @@ export class CleanFlow {
   }
 
   /** Steps 2–4, at most `previewRounds` times: a preview confirmed in time, or why there is none. */
-  private async confirmedPreview(rowIds: readonly string[], selected: boolean): Promise<HeldPreview | FlowOutcome> {
+  private async confirmedPreview(rowIds: readonly ActionId[], selected: boolean): Promise<HeldPreview | FlowOutcome> {
     const rounds = this.numbers().previewRounds;
     for (let round = 0; round < rounds; round += 1) {
       const step = await this.previewRound(rowIds, selected);
@@ -182,7 +182,7 @@ export class CleanFlow {
     return { kind: 'expired' };
   }
 
-  private async previewRound(rowIds: readonly string[], selected: boolean): Promise<HeldPreview | FlowOutcome | 'expired'> {
+  private async previewRound(rowIds: readonly ActionId[], selected: boolean): Promise<HeldPreview | FlowOutcome | 'expired'> {
     const outcome = await this.options.controller.preview(rowIds);
     if (outcome.kind !== 'previewed') {
       this.tell('error', rootFailureText(outcome).sentence);

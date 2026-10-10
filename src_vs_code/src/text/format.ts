@@ -10,6 +10,19 @@ export function gb(bytes: number): string {
   return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
+/** The decimal units a small amount is read in — largest first. */
+const DECIMAL_UNITS: readonly (readonly [number, string])[] = [[1e9, 'GB'], [1e6, 'MB'], [1e3, 'kB']];
+
+/**
+ * A byte count readable at ANY size (E10.S1b code round #2): decimal like `gb`, in the largest unit it reaches — 200 bytes read
+ * "200 B", never an empty-looking "0.0 GB". For the archive's backlog, which is small far more often than a Docker cache.
+ */
+export function sizeText(bytes: number): string {
+  const unit = DECIMAL_UNITS.find(([size]) => bytes >= size);
+
+  return unit === undefined ? `${bytes} B` : `${(bytes / unit[0]).toFixed(1)} ${unit[1]}`;
+}
+
 const GIB = 1024 ** 3;
 
 export function gib(bytes: number): string {

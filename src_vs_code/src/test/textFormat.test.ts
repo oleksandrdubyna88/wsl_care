@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { gib, localMinuteOf, metricText, percent } from '../text/format';
+import { gib, localMinuteOf, metricText, percent, sizeText } from '../text/format';
 import { withZone } from './support/zone';
 
 /**
@@ -41,4 +41,12 @@ test('a metric in its own unit: % as a percentage, memory bytes in GiB, Docker b
   assert.equal(metricText('dockerReclaimableBytes', 'bytes', 21000000000), '21.0 GB');
   assert.equal(metricText('containerStarts24h', 'starts', 950), '950 starts');
   assert.equal(metricText('somethingNew', 'widgets', 3), '3 widgets', 'a unit this build does not know: the number and the unit as answered');
+});
+
+test('sizeText (E10.S1b code round #2): a byte count in the largest decimal unit it reaches — small amounts never read 0.0 GB', () => {
+  assert.equal(sizeText(0), '0 B');
+  assert.equal(sizeText(200), '200 B');
+  assert.equal(sizeText(1_500), '1.5 kB');
+  assert.equal(sizeText(2_400_000), '2.4 MB');
+  assert.equal(sizeText(59_600_000_000), '59.6 GB');
 });

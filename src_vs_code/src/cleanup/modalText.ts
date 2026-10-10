@@ -1,6 +1,6 @@
 import type { ActionId } from '../root/rootIds';
 import type { HeldPreview, PreviewedAction, PreviewItem } from '../root/rootOutcome';
-import { gb } from '../text/format';
+import { gb, sizeText } from '../text/format';
 import { safeText } from '../text/safeText';
 
 /**
@@ -83,7 +83,7 @@ export function isArchiveOnly(ids: readonly string[]): boolean {
 
 /** One agent's line: its id, the daemon's note (sessions and files), its bytes. */
 function agentLine(item: PreviewItem): string {
-  return `  • ${safeText(item.name, NAME_MAX)} — ${safeText(item.note, TEXT_MAX)} · ${item.bytes === undefined ? '? GB' : gb(item.bytes)}`;
+  return `  • ${safeText(item.name, NAME_MAX)} — ${safeText(item.note, TEXT_MAX)} · ${item.bytes === undefined ? 'an unknown size' : sizeText(item.bytes)}`;
 }
 
 function archiveBlock(action: PreviewedAction | undefined): string[] {

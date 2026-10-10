@@ -44,10 +44,10 @@ test('over the goldens: the base folder the daemon reads, every enabled agent wi
   assert.equal(controls.line, 'Archive folder: /mnt/v/ai-archive');
   assert.equal(controls.level, 'ok');
   assert.equal(controls.agents[0]?.name, 'Claude Code');
-  assert.equal(controls.agents[0]?.due, '1 session · 2 files · 0.0 GB older than 14 d');
+  assert.equal(controls.agents[0]?.due, '1 session · 2 files · 200 B older than 14 d', 'a small backlog is never shown as 0.0 GB (E10.S1b code round #2)');
   assert.equal(controls.agents[0]?.retention, 'its own cleanup deletes after 30 d');
   assert.equal(controls.lock, 'No archive run in progress');
-  assert.match(controls.lastRun, /^Last archive run: done — 1 copied, 0 removed, 0\.0 GB, /);
+  assert.match(controls.lastRun, /^Last archive run: done — 1 copied, 0 removed, 200 B, /);
   assert.deepEqual(enabled(controls), { chooseArchiveFolder: true, stopArchiving: true, archiveNow: false });
 });
 

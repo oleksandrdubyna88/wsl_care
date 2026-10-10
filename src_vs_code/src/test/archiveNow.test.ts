@@ -14,7 +14,7 @@ import { ARCHIVE_RUN, handOffNotice, resultNotice, type NoticeLevel } from '../c
 import { parsePageMessage } from '../panel/messages';
 import { CleanupController, type CleanupClient } from '../root/cleanupController';
 import { rootTimeoutMs } from '../root/rootCall';
-import { runIdOf, type RunId } from '../root/rootIds';
+import { runIdOf, type ActionIds, type RunId } from '../root/rootIds';
 import type { HeldPreview } from '../root/rootOutcome';
 import { DEFAULT_NUMBERS } from '../settings/numbers';
 import type { Snapshot } from '../state/outcomeStore';
@@ -97,7 +97,8 @@ test('a confirm of A13 without archive.run advertised is refused before the conf
 // ---- 2. the ceiling ----
 
 test('A13\'s preview ceiling is the archive preview setting\'s, not a Docker row\'s snapshot', () => {
-  const ms = rootTimeoutMs({ op: 'preview', ids: ['A13'] as never });
+  const ids: ActionIds = ['A13'];
+  const ms = rootTimeoutMs({ op: 'preview', ids });
   assert.equal(ms, 1000 * (DEFAULT_NUMBERS.statusSeconds + DEFAULT_NUMBERS.archivePreviewSeconds));
   assert.ok(ms > 1000 * 600, 'above the daemon\'s archive.previewTimeoutSeconds at its range maximum');
   assert.equal(ceilingMs({ ...DEFAULT_NUMBERS, archivePreviewSeconds: 900 }, { call: 'rootPreview', ids: ['A13'] }), 1000 * (DEFAULT_NUMBERS.statusSeconds + 900), 'it follows the setting');
@@ -116,14 +117,15 @@ test('the modal of A13 names each agent\'s sessions and bytes, how the move is m
   const modal = firstModal(await heldA13(), false);
   assert.equal(modal.message, 'Archive the aged AI sessions in "Ubuntu"?');
   assert.equal(modal.confirm, ARCHIVE_LABEL);
-  assert.match(modal.detail, /claude-code — 1 session\(s\) due, 2 file\(s\) · 0\.0 GB/);
+  // The code round's #2: 200 bytes read as 200 B, never as an empty-looking 0.0 GB.
+  assert.match(modal.detail, /claude-code — 1 session\(s\) due, 2 file\(s\) · 200 B/);
   assert.match(modal.detail, /only after its archived copy was verified/);
   assert.equal(secondModal(['A13']), undefined);
 });
 
 test('the notices say "the archive run", never "Cleaning A13"', () => {
   const entry: JournalEntry = { id: 'e1', kind: 'run', op: 'clean', distro: 'Ubuntu', actions: ['A13'], since: '2026-10-10T12:00:00.000Z', runId: runId(RUN) };
-  const taken = handOffNotice({ kind: 'accepted', runId: runId(RUN), unit: '', productVersion: '0.1.0' } as never, ARCHIVE_RUN, 'clean');
+  const taken = handOffNotice({ kind: 'accepted', runId: runId(RUN), unit: '', productVersion: '0.1.0' }, ARCHIVE_RUN, 'clean');
   assert.match(taken.sentence, /^The archive run: the daemon took it as run 20000101T000000Z-1/);
   assert.match(resultNotice({ kind: 'ceiling', entry }, 1_800_000).sentence, /^Run 20000101T000000Z-1 \(the archive run\): state unknown/);
   const { runId: _id, ...unresolved } = entry;

@@ -1,6 +1,6 @@
 import type { ReadOutcome } from '../client/outcome';
 import { failureText } from '../failureText';
-import { gb, localMinuteOf } from '../text/format';
+import { localMinuteOf, sizeText } from '../text/format';
 import { safeText } from '../text/safeText';
 
 /**
@@ -162,7 +162,7 @@ function dueText(agent: Body): string {
   }
   const age = `older than ${due.effectiveAgeDays} d`;
 
-  return due.dueUnits === 0 ? `nothing ${age}` : `${plural(due.dueUnits, 'session')} · ${plural(due.dueFiles, 'file')} · ${gb(due.dueBytes)} ${age}`;
+  return due.dueUnits === 0 ? `nothing ${age}` : `${plural(due.dueUnits, 'session')} · ${plural(due.dueFiles, 'file')} · ${sizeText(due.dueBytes)} ${age}`;
 }
 
 function retentionOf(agent: Body): { known: boolean; days: number } {
@@ -212,7 +212,7 @@ function lastRunText(status: Body | undefined): string {
     return '';
   }
 
-  return `Last archive run: ${str(last, 'outcome') || 'unknown'} — ${count(last, 'copied')} copied, ${count(last, 'removed')} removed, ${gb(count(last, 'bytes'))}, ${localMinuteOf(str(last, 'endedUtc'))}`;
+  return `Last archive run: ${str(last, 'outcome') || 'unknown'} — ${count(last, 'copied')} copied, ${count(last, 'removed')} removed, ${sizeText(count(last, 'bytes'))}, ${localMinuteOf(str(last, 'endedUtc'))}`;
 }
 
 // ---- the buttons ----
