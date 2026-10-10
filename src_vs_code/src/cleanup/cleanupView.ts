@@ -14,6 +14,7 @@ import type { StopTarget } from './cleanFlow';
 import type { JournalEntry } from './journal';
 import type { Notice, NoticeLevel } from './resultText';
 import { ROW_IDS } from './rowIds';
+import { isArchiveOnly } from './modalText';
 
 /**
  * The cleanup controls the panel shows (E6.S3, `common.durable-status` rules 1–4): DERIVED, every time, from what the
@@ -81,12 +82,21 @@ function whatOf(running: RunningBlock): string {
   return safeText(running.current === '' ? running.actions.join(', ') : running.current, RUN_TEXT);
 }
 
+/** What a live run is doing, in its own words: the full check, the archive run (E10.S1b: A13 alone) or the cleanup of its ids. */
+function liveState(running: RunningBlock): string {
+  if (isFullCheck(running)) {
+    return 'Checking… the full check';
+  }
+
+  return isArchiveOnly(running.actions) ? 'Archiving… the aged AI sessions' : `Cleaning… ${whatOf(running)}`;
+}
+
 type ByState = { readonly [K in 'none' | 'queued' | 'live' | 'wedged' | 'dead' | 'unknown' | 'unreadable']: (running: RunningBlock) => InFlight };
 
 const BY_STATE: ByState = {
   none: () => IDLE,
   queued: (r) => ({ state: `Queued… ${whatOf(r)}`, level: 'none', reason: 'a run is queued' }),
-  live: (r) => ({ state: isFullCheck(r) ? 'Checking… the full check' : `Cleaning… ${whatOf(r)}`, level: 'none', reason: 'a run is in flight' }),
+  live: (r) => ({ state: liveState(r), level: 'none', reason: 'a run is in flight' }),
   wedged: (r) => ({ state: `Wedged: run ${r.runId ?? '(no run id)'} (${whatOf(r)}) — ${safeText(r.reason, RUN_TEXT)}`, level: 'critical', reason: 'a run is wedged' }),
   dead: (r) => ({ state: `Run ${r.runId ?? '(no run id)'} died; the next run records it interrupted.`, level: 'warn', reason: '' }),
   unknown: (r) => ({ state: safeText(r.reason, RUN_TEXT), level: 'warn', reason: 'the daemon cannot tell what runs' }),
@@ -102,7 +112,7 @@ function fromDaemon(running: RunningBlock | undefined): InFlight {
 }
 
 function entryLabel(entry: JournalEntry): string {
-  const what = entry.op === 'fullCheck' ? 'the full check' : entry.actions.join(', ');
+  const what = entry.op === 'fullCheck' ? 'the full check' : (isArchiveOnly(entry.actions) ? 'the archive run' : entry.actions.join(', '));
 
   return entry.kind === 'run' ? `run ${entry.runId} (${what})` : what;
 }

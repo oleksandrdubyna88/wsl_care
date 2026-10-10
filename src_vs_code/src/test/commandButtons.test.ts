@@ -58,7 +58,7 @@ function postedByPageButtons(): Set<string> {
     buildPanelView(verdicts),
     ...guards.map((guard) => buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, guard)),
     // E10.S1: an archiving daemon with a base folder set — both archive buttons enabled.
-    buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, undefined, deriveArchive({ status: { kind: 'read', read: 'archiveStatus', distro: 'Ubuntu', body: { schemaVersion: 1, baseFolder: '/mnt/v/a' } }, preview: undefined, capabilities: ['archive.checkBase'], busy: '', reading: false, asked: true, unavailable: '' })),
+    buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, undefined, deriveArchive({ status: { kind: 'read', read: 'archiveStatus', distro: 'Ubuntu', body: { schemaVersion: 1, baseFolder: '/mnt/v/a' } }, preview: undefined, capabilities: ['archive.checkBase', 'archive.preview', 'archive.run', 'act.detach'], busy: '', reading: false, asked: true, unavailable: '', cleanupFree: true, a13Offered: true })),
   ];
   const posted = new Set<string>();
   for (const view of views) {

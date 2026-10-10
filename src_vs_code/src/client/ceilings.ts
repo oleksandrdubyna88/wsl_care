@@ -32,9 +32,14 @@ const SETTING_OF: { readonly [K in FixedCall]: keyof Numbers } = {
   stop: 'stopSeconds',
 };
 
-/** One id's share of a cleanup's preview: a Docker row (or an id outside the rows) its own snapshot's setting; A8 / A9 their cost. */
+/** The ids whose share of a preview is a SETTING of their own (E10.S1b: A13's is the archive preview's ceiling). */
+const SETTING_SHARES: Readonly<Record<string, keyof Numbers>> = { A13: 'archivePreviewSeconds' };
+
+/** One id's share of a cleanup's preview: its own setting (A13), A8 / A9 their cost, a Docker row (or an id outside the rows) its own snapshot's setting. */
 function shareS(numbers: Numbers, id: string): number {
-  return otherRowShareS(id) ?? numbers.previewPerDockerRowSeconds;
+  const setting = Object.hasOwn(SETTING_SHARES, id) ? SETTING_SHARES[id] : undefined;
+
+  return setting === undefined ? (otherRowShareS(id) ?? numbers.previewPerDockerRowSeconds) : numbers[setting];
 }
 
 /**

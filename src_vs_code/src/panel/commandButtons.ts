@@ -27,5 +27,6 @@ export const COMMAND_BUTTONS: Readonly<Record<string, CommandButton>> = {
   'wslCare.removeWindowsTimeGuard': { where: 'page', action: 'removeWindowsTimeGuard' },
   'wslCare.chooseArchiveFolder': { where: 'page', action: 'chooseArchiveFolder' },
   'wslCare.stopArchiving': { where: 'page', action: 'stopArchiving' },
+  'wslCare.archiveNow': { where: 'page', action: 'archiveNow' },
   'wslCare.openLogs': { where: 'title' },
 };

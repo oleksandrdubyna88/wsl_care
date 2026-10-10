@@ -118,6 +118,11 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.archiveNow",
+        "title": "Archive the aged AI sessions now (preview, then confirm)…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.openLogs",
         "title": "Logs",
         "category": "AI OS Care",

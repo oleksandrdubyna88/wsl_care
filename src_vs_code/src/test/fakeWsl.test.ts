@@ -299,7 +299,8 @@ test('root: an id outside the contract registry ∩ the daemon\'s status.actions
     const status = JSON.parse(fs.readFileSync(path.join(answers, 'status.json'), 'utf8')) as { actions: string[] };
     fs.writeFileSync(path.join(answers, 'status.json'), JSON.stringify({ ...status, actions: status.actions.filter((id) => id !== 'A13') }));
     world.rewrite({ answers });
-    for (const ids of ['A13', 'A99', 'A4,A13', 'a4']) {
+    // A4,A13 is refused earlier since E10.S1b (A13 never beside another id): the mixed case is held by A4,A99 here.
+    for (const ids of ['A13', 'A99', 'A4,A99', 'a4']) {
       const { code, stderr } = exitOf(await rootAsk(world, ['act', ids, '--preview', '--json']));
       assert.equal(code, FAKE_EXIT.refused, ids);
       assert.match(stderr, /outside the intersection/, ids);
@@ -519,3 +520,42 @@ test('config: every other config argv is refused — another value, another key,
 function golden(name: string): Record<string, unknown> {
   return JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, 'head', name), 'utf8')) as Record<string, unknown>;
 }
+
+// ---- E10.S1b: A13 among the root shapes ----
+
+/** The head goldens, with status.json's capabilities filtered — what an older or a narrower daemon advertises. */
+function withoutCapability(world: FakeWorld, capability: string): string {
+  const folder = path.join(world.folder, `without-${capability}`);
+  fs.mkdirSync(folder, { recursive: true });
+  for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head'))) {
+    fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(folder, file));
+  }
+  const status = JSON.parse(fs.readFileSync(path.join(folder, 'status.json'), 'utf8')) as { capabilities: string[] };
+  fs.writeFileSync(path.join(folder, 'status.json'), JSON.stringify({ ...status, capabilities: status.capabilities.filter((c) => c !== capability) }));
+  return folder;
+}
+
+test('root: A13 previews from the daemon\'s own A13 golden line and confirms detached — with archive.preview / archive.run advertised', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const preview = json(await rootAsk(world, ['act', 'A13', '--preview', '--json']));
+    const line = (preview.actions as { id: string; preview: { items: { name: string }[] } }[])[0];
+    assert.equal(line?.id, 'A13');
+    assert.equal(line?.preview.items[0]?.name, 'claude-code', 'the golden act-a13-preview-action.json, not a made-up line');
+    assert.equal(json(await rootAsk(world, ['act', 'A13', '--confirm', '--manual', '--detach', '--json'])).result, 'accepted');
+  });
+});
+
+test('root: A13 is refused beside another id, and without the capability its op needs', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    assert.equal(exitOf(await rootAsk(world, ['act', 'A4,A13', '--preview', '--json'])).code, FAKE_EXIT.refused, 'A13 beside A4 (preview)');
+    assert.equal(exitOf(await rootAsk(world, ['act', 'A5,A13', '--confirm', '--manual', '--detach', '--json'])).code, FAKE_EXIT.refused, 'A13 beside A5 (confirm)');
+  });
+  await within(UBUNTU_RUNNING, async (world) => {
+    world.rewrite({ answers: withoutCapability(world, 'archive.preview') });
+    assert.equal(exitOf(await rootAsk(world, ['act', 'A13', '--preview', '--json'])).code, FAKE_EXIT.refused, 'no archive.preview');
+  });
+  await within(UBUNTU_RUNNING, async (world) => {
+    world.rewrite({ answers: withoutCapability(world, 'archive.run') });
+    assert.equal(exitOf(await rootAsk(world, ['act', 'A13', '--confirm', '--manual', '--detach', '--json'])).code, FAKE_EXIT.refused, 'no archive.run');
+  });
+});

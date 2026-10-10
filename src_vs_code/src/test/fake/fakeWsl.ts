@@ -478,6 +478,21 @@ function actShape(tail: readonly string[]): RootShape | string {
 }
 
 /** The tail after the root prefix, read against the five shapes — or why it is none of them. */
+/**
+ * E10.S1b, the fake's own copy of A13's rule: A13 is archived on its own, never beside another id, and its preview needs
+ * `archive.preview` advertised, its confirm `archive.run` — what `cleanupController.ts` gates on.
+ */
+function withArchive(shape: RootShape | string): RootShape | string {
+  if (typeof shape === 'string' || !shape.ids.includes('A13')) {
+    return shape;
+  }
+  if (shape.ids.length > 1) {
+    return `A13 is archived on its own, never beside another id: ${JSON.stringify(shape.ids)}`;
+  }
+
+  return { ...shape, capabilities: [...shape.capabilities, shape.op === 'preview' ? 'archive.preview' : 'archive.run'] };
+}
+
 function rootShape(tail: readonly string[]): RootShape | string {
   if (sameTail(tail, ['--version'])) {
     return { op: 'check', ids: [], piped: false, capabilities: [] };
@@ -489,7 +504,7 @@ function rootShape(tail: readonly string[]): RootShape | string {
     return RUN_ID.test(tail[2] ?? '') ? { op: 'stop', ids: [], piped: false, capabilities: ['act.stop'], runId: tail[2] ?? '' } : `not a run id the daemon writes: ${JSON.stringify(tail[2])}`;
   }
 
-  return tail[0] === 'act' && !(tail[1] ?? '').startsWith('-') ? actShape(tail) : `not one of the root shapes: ${JSON.stringify(tail)}`;
+  return tail[0] === 'act' && !(tail[1] ?? '').startsWith('-') ? withArchive(actShape(tail)) : `not one of the root shapes: ${JSON.stringify(tail)}`;
 }
 
 function readJson(file: string): Record<string, unknown> {
@@ -544,7 +559,7 @@ function handOff(scenario: FakeScenario, kind: 'act' | 'collect'): Buffer {
 function previewAnswer(scenario: FakeScenario, ids: readonly string[]): Buffer {
   const golden = readJson(path.join(scenario.answers, 'act-a4-preview.json'));
   const entries = Array.isArray(golden.actions) ? (golden.actions as Record<string, unknown>[]) : [];
-  const actions = ids.map((id) => entries.find((a) => a.id === id) ?? { id, summary: '', status: 'previewed', reason: '', preview: { available: true, count: 0, bytes: 0 } });
+  const actions = ids.map((id) => (id === 'A13' ? readJson(path.join(scenario.answers, 'act-a13-preview-action.json')) : undefined) ?? entries.find((a) => a.id === id) ?? { id, summary: '', status: 'previewed', reason: '', preview: { available: true, count: 0, bytes: 0 } });
 
   return Buffer.from(JSON.stringify({ ...golden, actions }), 'utf8');
 }

@@ -45,6 +45,8 @@ export interface PanelActions {
   readonly onArchiveChange: (listener: () => void) => () => void;
   readonly chooseArchiveFolder: () => void;
   readonly stopArchiving: () => void;
+  /** E10.S1b: *Archive now* — A13 through the cleanup host's transaction. */
+  readonly archiveNow: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -105,6 +107,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       removeWindowsTimeGuard: () => this.actions.removeWindowsTimeGuard(),
       chooseArchiveFolder: () => this.actions.chooseArchiveFolder(),
       stopArchiving: () => this.actions.stopArchiving(),
+      archiveNow: () => this.actions.archiveNow(),
       clean: (m) => this.actions.clean(m.rowIds, false),
       cleanSelected: (m) => this.actions.clean(m.rowIds, true),
       runFullCheck: () => this.actions.runFullCheck(),

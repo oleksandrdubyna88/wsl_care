@@ -3,7 +3,7 @@ import { checkedBody } from '../client/handshake';
 import { RUN_ID_BODY } from '../shared/shapes';
 import type { JsonObject } from '../client/outcome';
 import { actionIdOf, MAX_SHOWN_VOLUMES, runIdOf, shownCap, volumeNameOf, type ActionId, type ActionIds, type RunId, type VolumeName } from './rootIds';
-import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
+import { RUNNING_STATES, type HeldPreview, type PreviewedAction, type PreviewItem, type RootFailure, type RunningBlock, type ShownSelection } from './rootOutcome';
 
 /**
  * The root answers, read as untrusted input (E6.S2): the schema checked by the client's own `checkedBody`, every value that
@@ -76,7 +76,7 @@ function previewedAction(value: unknown): PreviewedAction[] {
   }
   const preview = previewOf(value);
 
-  return [{ id, status: stringOr(value.status, ''), reason: reasonOf(value, preview), ...figuresOf(preview) }];
+  return [{ id, status: stringOr(value.status, ''), reason: reasonOf(value, preview), ...figuresOf(preview), details: detailsOf(preview) }];
 }
 
 /** The preview part of an action's answer, or an empty one. */
@@ -94,6 +94,13 @@ function figuresOf(preview: JsonObject): Pick<PreviewedAction, 'what' | 'availab
   const items = Array.isArray(preview.items) ? preview.items.flatMap((item) => (isObject(item) && typeof item.name === 'string' ? [item.name] : [])) : [];
 
   return { what: stringOr(preview.what, ''), available: preview.available !== false, count: countOrUndefined(preview.count), bytes: countOrUndefined(preview.bytes), items };
+}
+
+/** Every listed item whole (E10.S1b): its name, its bytes when the daemon gave a count, its note — strings as the daemon wrote them. */
+function detailsOf(preview: JsonObject): readonly PreviewItem[] {
+  const items = Array.isArray(preview.items) ? preview.items : [];
+
+  return items.flatMap((item) => (isObject(item) && typeof item.name === 'string' ? [{ name: item.name, bytes: countOrUndefined(item.bytes), note: stringOr(item.note, '') }] : []));
 }
 
 function countOrUndefined(value: unknown): number | undefined {

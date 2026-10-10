@@ -1,5 +1,5 @@
 import type { ActionId } from '../root/rootIds';
-import type { HeldPreview, PreviewedAction } from '../root/rootOutcome';
+import type { HeldPreview, PreviewedAction, PreviewItem } from '../root/rootOutcome';
 import { gb } from '../text/format';
 import { safeText } from '../text/safeText';
 
@@ -19,6 +19,7 @@ export interface Modal {
 
 export const CLEAN_LABEL = 'Clean';
 export const CLEAN_ANYWAY_LABEL = 'Clean anyway';
+export const ARCHIVE_LABEL = 'Archive';
 
 /** An attacker-settable name (a container's, an image's) is cut here; a `what` or a reason a little later. */
 const NAME_MAX = 80;
@@ -75,8 +76,45 @@ function block(action: PreviewedAction, preview: HeldPreview): string {
   return [head, ...binding(action, preview), ...names(action)].join('\n');
 }
 
+/** E10.S1b: a preview of A13 alone — *Archive now* — is told in the archive's words, never "Clean A13". */
+export function isArchiveOnly(ids: readonly string[]): boolean {
+  return ids.length === 1 && ids[0] === 'A13';
+}
+
+/** One agent's line: its id, the daemon's note (sessions and files), its bytes. */
+function agentLine(item: PreviewItem): string {
+  return `  • ${safeText(item.name, NAME_MAX)} — ${safeText(item.note, TEXT_MAX)} · ${item.bytes === undefined ? '? GB' : gb(item.bytes)}`;
+}
+
+function archiveBlock(action: PreviewedAction | undefined): string[] {
+  return action !== undefined && action.available ? readBlock(action) : [`Not read — ${notReadWhy(action)}`];
+}
+
+function notReadWhy(action: PreviewedAction | undefined): string {
+  return safeText(action?.reason ?? 'the daemon did not describe A13', TEXT_MAX);
+}
+
+/** What A13 would move, per agent, and the daemon's own reason when it gave one (a skip). */
+function readBlock(action: PreviewedAction): string[] {
+  const said = action.reason === '' ? [] : [`The daemon says: ${safeText(action.reason, TEXT_MAX)}`];
+
+  return [safeText(action.what, TEXT_MAX), ...action.details.map(agentLine), ...said];
+}
+
+/** *Archive now*'s modal (E10.S1b): each agent's sessions and bytes, and how the daemon moves them. */
+function archiveModal(preview: HeldPreview): Modal {
+  const action = preview.actions.find((a) => a.id === 'A13');
+  const how = 'The daemon moves them as the target user, with its own binary: a session leaves its agent\'s folder only after its archived copy was verified. The run is the daemon\'s own unit; the panel follows it to its result.';
+
+  return { message: `Archive the aged AI sessions in "${safeText(preview.distro, 64)}"?`, detail: [...archiveBlock(action), '', how].join('\n'), confirm: ARCHIVE_LABEL };
+}
+
 /** The modal every cleanup shows: what each action removes, how much, and how its targets are chosen. */
 export function firstModal(preview: HeldPreview, selected: boolean): Modal {
+  return isArchiveOnly(preview.ids) ? archiveModal(preview) : cleanModal(preview, selected);
+}
+
+function cleanModal(preview: HeldPreview, selected: boolean): Modal {
   const distro = safeText(preview.distro, 64);
   const message = selected ? `Clean the ${preview.ids.length} selected rows in "${distro}"?` : `Clean ${preview.ids[0]} in "${distro}"?`;
   const blocks = preview.ids.flatMap((id) => preview.actions.filter((a) => a.id === id).slice(0, 1)).map((action) => block(action, preview));

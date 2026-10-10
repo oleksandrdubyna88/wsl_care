@@ -94,13 +94,14 @@ export const WORST_CASE_S = { status: TODAY.status, version: TODAY.version, doct
 
 /**
  * What ONE row costs in `act <ids> --preview` (plan §15q N-2): each Docker action takes its OWN Docker snapshot
- * (`DockerLook.TakeAsync`), A8 reads a folder (no command), A9 lists the snaps.
+ * (`DockerLook.TakeAsync`), A8 reads a folder (no command), A9 lists the snaps, A13 runs the archive's own preview child.
  */
 export const DOCKER_ROW_IDS: ReadonlySet<string> = new Set(['A4', 'A5', 'A5Testcontainers', 'A6', 'A6Unused', 'A7']);
 
 /** The rows that take no Docker snapshot — their share, under `worst`. */
 export function otherRowShareS(id: string, worst: WorstCases = TODAY): number | undefined {
-  const shares: Readonly<Record<string, number>> = { A8: 0, A9: worst.snapList };
+  // E10.S1b: A13's preview is ONE `archive preview` child under `archive.previewTimeoutSeconds` (`ArchiveAction.PreviewAsync`).
+  const shares: Readonly<Record<string, number>> = { A8: 0, A9: worst.snapList, A13: worst.archivePreview };
 
   return Object.hasOwn(shares, id) && !DOCKER_ROW_IDS.has(id) ? shares[id] : undefined;
 }

@@ -28,6 +28,10 @@ export interface ArchiveHostOptions {
   readonly log: (line: string) => void;
   readonly numbers?: () => Numbers;
   readonly limits?: () => DaemonLimits;
+  /** E10.S1b: the cleanup controls are enabled (no run in flight, the journal not full) — *Archive now* is greyed otherwise. */
+  readonly cleanupFree?: () => boolean;
+  /** E10.S1b: the cleanup's state changed (its journal, a result, its flow); returns an unsubscribe. */
+  readonly onCleanupChange?: (listener: () => void) => () => void;
 }
 
 /** The capabilities the store's newest answered status advertises — `undefined` until one answered. */
@@ -39,6 +43,13 @@ export function capabilitiesOf(outcomes: OutcomeStore): readonly string[] | unde
   const listed = body.capabilities;
 
   return Array.isArray(listed) ? listed.filter((c): c is string => typeof c === 'string') : [];
+}
+
+/** E10.S1b: the newest answered status offers A13 in `status.actions`. */
+export function offersA13(outcomes: OutcomeStore): boolean {
+  const actions = statusBody(outcomes)?.actions;
+
+  return Array.isArray(actions) && actions.includes('A13');
 }
 
 /** The short label of the panel's own `status` failure, or '' — what the archive line says instead of a lasting "checking…" (own review #1). */
@@ -92,6 +103,7 @@ export class ArchiveHost {
 
   constructor(private readonly options: ArchiveHostOptions) {
     this.ui = sanitised(options.ui);
+    options.onCleanupChange?.(() => this.changed());
   }
 
   view(): ArchiveControls {
@@ -99,7 +111,7 @@ export class ArchiveHost {
 
     return deriveArchive({
       status: this.status, preview: this.preview, capabilities: capabilitiesOf(outcomes), busy: this.busyText,
-      reading: this.refreshing !== undefined, asked: this.asked, unavailable: statusFailureOf(outcomes),
+      reading: this.refreshing !== undefined, asked: this.asked, unavailable: statusFailureOf(outcomes), cleanupFree: this.options.cleanupFree?.() ?? false, a13Offered: offersA13(outcomes),
     });
   }
 

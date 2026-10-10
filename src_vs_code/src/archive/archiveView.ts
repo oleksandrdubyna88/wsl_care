@@ -13,11 +13,12 @@ import { safeText } from '../text/safeText';
  * days below the effective age) loses sessions the archive never sees — said on its line, exactly when that holds.</p>
  */
 
-export type ArchiveAction = 'chooseArchiveFolder' | 'stopArchiving';
+export type ArchiveAction = 'chooseArchiveFolder' | 'stopArchiving' | 'archiveNow';
 
 export const ARCHIVE_LABELS: { readonly [K in ArchiveAction]: string } = {
   chooseArchiveFolder: 'Choose archive folder…',
   stopArchiving: 'Stop archiving',
+  archiveNow: 'Archive now…',
 };
 
 export type ArchiveLevel = 'none' | 'ok' | 'warn' | 'critical' | 'unknown';
@@ -60,6 +61,10 @@ export interface ArchiveState {
   readonly asked: boolean;
   /** '' — or the short label of the panel's own `status` failure (WSL stopped, daemon not installed …). */
   readonly unavailable: string;
+  /** E10.S1b: the cleanup controls are enabled — no run in flight, the journal not full (`cleanupHost.ts`). */
+  readonly cleanupFree: boolean;
+  /** E10.S1b: the newest `status.actions` offers A13. */
+  readonly a13Offered: boolean;
 }
 
 type Body = Readonly<Record<string, unknown>>;
@@ -212,14 +217,30 @@ function lastRunText(status: Body | undefined): string {
 
 // ---- the buttons ----
 
+/** A daemon that judges a base folder, and no archive flow running. */
+function mayAct(state: ArchiveState): boolean {
+  return state.capabilities?.includes(ARCHIVE_CAPABILITY) === true && state.busy === '';
+}
+
 function buttons(state: ArchiveState): ArchiveControls['buttons'] {
-  const may = state.capabilities?.includes(ARCHIVE_CAPABILITY) === true && state.busy === '';
-  const base = str(bodyOf(state.status), 'baseFolder');
+  const may = mayAct(state);
+  const withBase = may && str(bodyOf(state.status), 'baseFolder') !== '';
 
   return [
     { id: 'chooseArchiveFolder', label: ARCHIVE_LABELS.chooseArchiveFolder, enabled: may },
-    { id: 'stopArchiving', label: ARCHIVE_LABELS.stopArchiving, enabled: may && base !== '' },
+    { id: 'stopArchiving', label: ARCHIVE_LABELS.stopArchiving, enabled: withBase },
+    { id: 'archiveNow', label: ARCHIVE_LABELS.archiveNow, enabled: withBase && mayArchiveNow(state) },
   ];
+}
+
+/** What *Archive now* needs advertised (E10.S1b): the run and its preview (plan round #0), and the detach that hands it to its unit. */
+export const ARCHIVE_NOW_CAPABILITIES: readonly string[] = ['archive.run', 'archive.preview', 'act.detach'];
+
+/** The daemon offers A13 with everything it needs, and no cleanup is in flight. */
+function mayArchiveNow(state: ArchiveState): boolean {
+  const capabilities = state.capabilities ?? [];
+
+  return state.a13Offered && state.cleanupFree && ARCHIVE_NOW_CAPABILITIES.every((c) => capabilities.includes(c));
 }
 
 /** Why there are no per-agent lines to trust: the preview was not asked, or failed (code round #6 — never "nothing due"). */
@@ -249,4 +270,4 @@ export function deriveArchive(state: ArchiveState): ArchiveControls {
 }
 
 /** The controls before the host derived any: every button greyed. */
-export const NO_ARCHIVE: ArchiveControls = deriveArchive({ status: undefined, preview: undefined, capabilities: undefined, busy: '', reading: false, asked: false, unavailable: '' });
+export const NO_ARCHIVE: ArchiveControls = deriveArchive({ status: undefined, preview: undefined, capabilities: undefined, busy: '', reading: false, asked: false, unavailable: '', cleanupFree: false, a13Offered: false });
