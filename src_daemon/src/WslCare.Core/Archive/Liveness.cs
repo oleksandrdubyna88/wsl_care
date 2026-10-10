@@ -29,18 +29,32 @@ public static class Liveness
         OpenFile(view, distro, under, relatives) is { Length: > 0 } open ? $"{open} is open in a process"
         : view.HeldBy([.. relatives.Select(r => Path.Combine(under, r))]);
 
-    /// <summary>Why an agent may be working in the unit: a live Claude Code on a side that cannot read its working folder (E9.S5) while
+    /// <summary>Why an agent may be working in the unit: a live Claude Code naming the session on its command line (G1, 2026-10-10,
+    /// before anything else); a live Claude Code on a side that cannot read its working folder (E9.S5) while
     /// a file of the unit is not idle (the E9.S5 amendment, owner decision 2026-10-09: <paramref name="files"/> are its full paths), or
     /// one working in the unit's project; empty otherwise.</summary>
     public static string AgentWorking(InUseView view, string agent, string key, IReadOnlyList<string> files) =>
-        agent == ClaudeCode && ClaudeKeeps(view, files) is { Length: > 0 } keeps ? keeps
+        agent == ClaudeCode && ClaudeReason(view, key, files) is { Length: > 0 } keeps ? keeps
         : ProjectOf(agent, key) is { Length: > 0 } project && view.ClaudeProjects.Contains(project) ? $"Claude Code is working in the project {project}"
         : string.Empty;
+
+    /// <summary>Why a Claude Code unit stays: its session on a live command line, else a running Claude with the unit not idle.</summary>
+    private static string ClaudeReason(InUseView view, string key, IReadOnlyList<string> files) =>
+        view.ClaudeOnCommandLine(key) is { Length: > 0 } named ? named : ClaudeKeeps(view, files);
 
     /// <summary>Claude Code may run where its working folder cannot be read, and the unit is not idle: both sentences; empty when either
     /// is silent. Whether Claude runs is asked first — the idle question reads the files' times.</summary>
     private static string ClaudeKeeps(InUseView view, IReadOnlyList<string> files) =>
         view.ClaudeRunning() is { Length: > 0 } running && view.ClaudeIdle(files) is { Length: > 0 } busy ? $"{running}; {busy}" : string.Empty;
+
+    /// <summary>The session id of a Claude Code unit's key — its file name's GUID (<c>projects/p/&lt;id&gt;.jsonl</c>); empty when the name is
+    /// no GUID (the guards after the live gate, G1).</summary>
+    public static string ClaudeSessionOf(string key) =>
+        Path.GetFileNameWithoutExtension(key) is var stem && Guid.TryParseExact(stem, "D", out _) ? stem : string.Empty;
+
+    /// <summary>What a unit kept by a command line says — the same sentence on both sides.</summary>
+    public static string OnItsCommandLine(int pid) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"Claude Code runs with this session on its command line (pid {pid}); it stays");
 
     /// <summary>The Claude Code project a unit of <paramref name="agent"/> lies in (<c>projects/&lt;project&gt;/…</c>); empty otherwise.</summary>
     public static string ProjectOf(string agent, string key)

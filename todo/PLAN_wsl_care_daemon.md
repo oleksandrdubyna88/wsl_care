@@ -4030,6 +4030,68 @@ Folded into ONE `fix(daemon): the coai code round and the own review over E9.S5`
 Its results — both spellings judged and used, the holder kept, the idle rule, phase 2 over the share — are in
 [module_archive.md](../research/module_archive.md), *The live gate on the NAS*.
 
+#### Two fail-closed guards after the live gate (owner questions 1 and 2, decided overnight 2026-10-10)
+
+> Status: **built, 2026-10-10 (its PR open).** Scope: `Archive/InUseWindows.cs`, `Archive/InUse.cs` (the distro scan),
+> `Archive/Liveness.cs`, `Files/BeneathWrites.cs`, `Files/NetworkPaths.cs`, `Files/PhysicalFileSystem.Archive.Windows.cs`
+> (`ReadBack` and the base's hold), `Archive/ArchiveRemove.cs`, tests, `module_archive.md`, `module_tests.md`. Branch
+> `fix/wc-e9-archive-guards`, a PR after #80.
+
+**How it was decided.** The owner's night rule sends a question to the coai consultant first (consultation 129f2946, closed
+`solved`). The coordinator leaned YES on both. The consultant's answer was verified as follows:
+
+- **Q1 — taken, as a positive veto.** A Claude Code session whose id (its file name's GUID) appears anywhere on the command line of
+  an identified Claude Code process is kept, on both sides.
+  - Matching the GUID anywhere, case-insensitively, also covers `--resume <id>`, `-r <id>`, `--session-id <id>`, the `=` forms and
+    a transcript path, with no flag parser. The cost is keeping a session that is only mentioned on a command line.
+  - The absence of an id proves nothing, and that stays a residual: `--continue` names no id, the in-app `/resume` picker leaves no
+    trace, and a window started with `--resume A` that switched to B still shows A.
+- **Q2 — the attribute rejected, a measured signal taken.** `FILE_ATTRIBUTE_OFFLINE` marks offloaded storage, not the Offline Files
+  cache. The handle-level signal is `GetFileInformationByHandleEx(FileRemoteProtocolInfo)`, whose `REMOTE_PROTOCOL_FLAG_OFFLINE`
+  (0x2) says that the protocol answers from an offline cache.
+  - **Measured on the owner's NAS 2026-10-10:** protocol SMB (0x20000) 3.1, flags 0x10 (integrity), OFFLINE clear, on both the
+    `V:` and the UNC spelling. On a local folder the query answers error 87.
+
+**Design.**
+
+- **G1 (Q1).** The Windows view's process walk keeps every identified Claude Code process's command line.
+  - `InUseView` gains `ClaudeSessionIds`: the GUIDs seen on those command lines, asked fresh at each question like `ClaudeRunning`.
+  - `Liveness.AgentWorking` keeps a Claude Code unit whose key's file stem is among them, saying "Claude Code runs with this session
+    on its command line (pid N)". This applies before the idle rule and whatever the idle rule says.
+  - The distro scan does the same from `/proc/<pid>/cmdline`, which it already reads for attribution.
+- **G2 (Q2).** On a REMOTE path, phase 2's re-hash (`ReadBack`) asks the read-back handle's `FileRemoteProtocolInfo`. The archive
+  copy is then *not trusted*, and the source stays with the entry kept for a later run, never marked damaged, when either:
+  - the flags carry `REMOTE_PROTOCOL_FLAG_OFFLINE` (the copy may be the cache's);
+  - the query fails on a remote path (unknown).
+
+  The base's own hold at the run start asks the same question and refuses the run with the reason when the flag is set. A local
+  path is never asked. On a REMOTE base, a query that FAILS refuses the run as well, naming why (the plan round, finding 1).
+
+**RED first.**
+- G1: a session whose GUID is on a live Claude command line is kept even when idle; another session is not; the distro's
+  `/proc` command line keeps it too.
+- G2: the protocol answer is read as a pure function (`OfflineCache(flags, error, remote)`): OFFLINE kept, an error on a remote path
+  kept, 0x10 trusted, a local path never asked.
+- G2: phase 2 keeps the source when the read-back says offline. A seam on the read-back handle's answer is the test hook, and it is
+  held by break-it.
+
+**Break-it** on product code only: the GUID match removed, the distro leg removed, the offline flag ignored, the unknown answer
+trusted.
+
+**The plan round** (coai session dcff3401, `proceed`, 2 gating; one vendor answered). Finding 1 was accepted: an unknown answer on a
+remote base refuses the run. Finding 0 ("verify with Offline Files on") was rejected and moved to the owner's list:
+- turning Offline Files on is a machine change only the owner may make;
+- "keep the source whenever the signal cannot be verified" would keep every source on every network base;
+- the guard uses the documented handle signal and fails closed on every unknown answer, and its negative case is measured.
+
+**As built (2026-10-10).** As designed. The own review round added:
+- a REFUSED folder in phase 2 keeps the entry (only a missing one is damage), the Major finding;
+- remote-ness is decided by the drive's type;
+- a node line must run the package.
+
+The residuals are in [module_archive.md](../research/module_archive.md), *Two fail-closed guards*. The tests, red runs, teeth
+G-01–G-11 and the review table are in [module_tests.md](../research/module_tests.md).
+
 #### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
 
 > Status: **built, 2026-10-09; merged 2026-10-10 (#78).** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
