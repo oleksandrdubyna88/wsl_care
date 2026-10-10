@@ -47,10 +47,10 @@ export interface PanelActions {
   readonly stopArchiving: () => void;
   /** E10.S1b: *Archive now* — A13 through the cleanup host's transaction. */
   readonly archiveNow: () => void;
-  /** PLAN_gpu_health.md D6: the GPU alerts (Windows' answer + the pending enable), and *Enable <GPU>* by the adapter's index. */
+  /** PLAN_gpu_health.md D6: the GPU alerts (Windows' answer + the pending enable), and *Enable <GPU>* by the adapter's index in the READ the button came from. */
   readonly gpu: () => GpuView;
   readonly onGpuChange: (listener: () => void) => () => void;
-  readonly enableGpu: (index: number) => void;
+  readonly enableGpu: (index: number, readAt: number) => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -117,7 +117,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       runFullCheck: () => this.actions.runFullCheck(),
       stop: (m) => this.actions.stop(m.index),
       openRunLogs: () => this.actions.openRunLogs(),
-      enableGpu: (m) => this.actions.enableGpu(m.index),
+      enableGpu: (m) => this.actions.enableGpu(m.index, m.readAt),
     };
     if (message !== undefined) {
       (handlers[message.type] as (m: PageMessage) => void)(message);

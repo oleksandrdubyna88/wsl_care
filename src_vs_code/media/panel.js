@@ -300,7 +300,8 @@
     }
     if (isObject(alert.button)) {
       const index = alert.button.index;
-      box.appendChild(actionButton(alert.button.label, { 'gpu-action': 'enableGpu' }, !alert.button.enabled, function () { return { type: 'enableGpu', index: index }; }));
+      const readAt = alert.button.readAt;
+      box.appendChild(actionButton(alert.button.label, { 'gpu-action': 'enableGpu' }, !alert.button.enabled, function () { return { type: 'enableGpu', index: index, readAt: readAt }; }));
     }
     return box;
   }

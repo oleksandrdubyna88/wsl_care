@@ -1,7 +1,8 @@
 import type { DurableStore } from '../cleanup/journal';
+import { noticeText } from '../text/safeText';
 import { enableGpu, type EnableResult } from './gpuEnable';
 import { clearGpuPending, readGpuPending } from './gpuPending';
-import { DISABLED_CODE, queryRequest } from './gpuScripts';
+import { DISABLED_CODE, queryRequest, type FileInfoOf } from './gpuScripts';
 import { gpuBarMark, gpuStateOf, gpuView, NOT_ASKED, type GpuBarMark, type GpuState, type GpuView } from './gpuState';
 import type { GpuUi } from './gpuRecorder';
 import { ollamaLogPath, ollamaReadOf, readTail, type OllamaRead, type TailRead } from './ollamaLog';
@@ -18,7 +19,8 @@ export interface GpuHostDeps {
   readonly env: Readonly<Record<string, string | undefined>>;
   /** Off Windows there is no Windows to read: the host stays silent (no alert, no mark). */
   readonly platform: NodeJS.Platform;
-  readonly exists: (file: string) => boolean;
+  /** Node's `lstat` of a program the enable might elevate (the MSI pwsh), or `undefined` when it cannot be read. */
+  readonly fileInfo: FileInfoOf;
   readonly queryTimeoutMs: () => number;
   readonly enableTimeoutMs: () => number;
   readonly enableSettleSeconds: () => number;
@@ -34,6 +36,12 @@ export interface GpuHostDeps {
   readonly formatTime: (utcMs: number) => string;
   readonly readTail?: (file: string, bytes: number) => TailRead;
 }
+
+/** The results after which Windows is read again at once: the alert the page showed no longer matches the host's reading. */
+const REREAD: ReadonlySet<EnableResult> = new Set<EnableResult>(['notOffered', 'stale']);
+
+/** Told when a button from an older read is pressed (code round 2) — the panel is re-rendered from the current read. */
+const STALE_BUTTON = 'The display adapters were read again since the panel showed that button — the panel is refreshed; press it again.';
 
 /** Whether Windows' answer shows the device a pending enable was for as no longer at code 22 (or gone). */
 function noLongerDisabled(state: GpuState, id: string): boolean {
@@ -119,15 +127,19 @@ export class GpuHost {
     return this.querying;
   }
 
-  /** ONE enable at a time in this window — the adapter at `index` of the host's own reading. */
-  async enable(index: number): Promise<EnableResult | undefined> {
+  /**
+   * ONE enable at a time in this window — the adapter at `index` of the host's own reading, the one the button was rendered
+   * from: `readAt` is that read's time stamp, and an index from an OLDER read acts on nothing (code round 2) — Windows'
+   * adapter order can change between a render and a click.
+   */
+  async enable(index: number, readAt: number): Promise<EnableResult | undefined> {
     if (this.enabling || !this.active()) {
       return undefined;
     }
     this.enabling = true;
     try {
-      const result = await this.enableAt(index);
-      if (result === 'notOffered') {
+      const result = await this.enableAt(index, readAt);
+      if (REREAD.has(result)) {
         void this.refresh();
       }
       return result;
@@ -148,11 +160,27 @@ export class GpuHost {
     this.stopDeadline = pending === undefined ? undefined : this.deps.after(pending.deadlineUtcMs - this.deps.nowUtcMs() + 1, () => this.changed());
   }
 
-  private enableAt(index: number): Promise<EnableResult> {
-    const adapter = this.state.kind === 'read' ? this.state.adapters[index] : undefined;
-    return enableGpu(adapter, {
+  /** Whether `readAt` names an older read than the host's current one — a button the panel rendered before the last query. */
+  private staleAt(readAt: number): boolean {
+    return this.state.kind === 'read' && this.state.atUtcMs !== readAt;
+  }
+
+  /** The host's reading, when it is one. */
+  private read(): Extract<GpuState, { kind: 'read' }> | undefined {
+    return this.state.kind === 'read' ? this.state : undefined;
+  }
+
+  private enableAt(index: number, readAt: number): Promise<EnableResult> {
+    if (this.staleAt(readAt)) {
+      this.deps.ui.report(noticeText(STALE_BUTTON), false);
+      return Promise.resolve('stale');
+    }
+    const read = this.read();
+
+    return enableGpu(read?.adapters[index], {
       env: this.deps.env,
-      exists: this.deps.exists,
+      fileInfo: this.deps.fileInfo,
+      pwshAlias: read?.pwsh,
       timeoutMs: this.deps.enableTimeoutMs,
       settleSeconds: this.deps.enableSettleSeconds,
       confirm: this.deps.ui.confirm,

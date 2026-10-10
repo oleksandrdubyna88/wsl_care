@@ -1,7 +1,7 @@
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
-import { DISABLED_CODE, INSTANCE_ID, TAGS } from './gpuScripts';
+import { DISABLED_CODE, INSTANCE_ID, TAGS, type PwshAlias } from './gpuScripts';
 import { FIX_WORDS, problemOf, type FixKind } from './gpuProblems';
 import { choiceSentence, type OllamaRead } from './ollamaLog';
 
@@ -22,7 +22,7 @@ export interface Adapter {
 
 export type GpuState =
   | { readonly kind: 'unknown'; readonly reason: string }
-  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number };
+  | { readonly kind: 'read'; readonly adapters: readonly Adapter[]; readonly atUtcMs: number; readonly pwsh?: PwshAlias };
 
 export const NOT_ASKED: GpuState = { kind: 'unknown', reason: 'checking…' };
 
@@ -36,16 +36,31 @@ const NAME_MAX = 120;
 
 const INTEGER = /^-?\d+$/;
 
-function tagsOf(stdout: string): ReadonlyMap<string, string> {
-  const tags = new Map<string, string>();
-  for (const line of stdout.split(/\r?\n/)) {
-    const at = line.indexOf('=');
-    const name = line.slice(0, at);
-    if (at > 0 && !tags.has(name)) {
-      tags.set(name, line.slice(at + 1).trim());
-    }
-  }
-  return tags;
+/** A line's tag and value, or nothing: a line without a `=`, and the `adapter=<i>` block marker (printed once per adapter, read by nobody). */
+function entryOf(line: string): readonly (readonly [string, string])[] {
+  const at = line.indexOf('=');
+  const name = line.slice(0, at);
+
+  return at > 0 && name !== TAGS.adapter ? [[name, line.slice(at + 1).trim()] as const] : [];
+}
+
+/** The answer's `name=value` lines, in order. */
+function entriesOf(stdout: string): readonly (readonly [string, string])[] {
+  return stdout.split(/\r?\n/).flatMap(entryOf);
+}
+
+interface Tags {
+  readonly tags: ReadonlyMap<string, string>;
+  /** The first tag the answer printed TWICE — a value that could have shadowed another (code round 2) — or `undefined`. */
+  readonly twice: string | undefined;
+}
+
+/** The answer as a map built ONCE from its lines; a tag printed twice is named, never read first- or last-wins. */
+function tagsOf(stdout: string): Tags {
+  const entries = entriesOf(stdout);
+  const twice = entries.find(([name], i) => entries.findIndex(([other]) => other === name) !== i)?.[0];
+
+  return { tags: new Map(entries), twice };
 }
 
 function tag(tags: ReadonlyMap<string, string>, name: string, i: number): string {
@@ -74,7 +89,10 @@ function overCap(count: number): GpuState {
 
 /** The query's stdout as one state: every adapter up to the count it printed LAST, or `unknown` with why. */
 export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
-  const tags = tagsOf(stdout);
+  const { tags, twice } = tagsOf(stdout);
+  if (twice !== undefined) {
+    return { kind: 'unknown', reason: `the display-adapter query answered a tag twice (${safeText(twice, NAME_MAX)})` };
+  }
   const count = countOf(tags);
   if (count === undefined) {
     return { kind: 'unknown', reason: 'the display-adapter query printed no complete answer' };
@@ -83,10 +101,25 @@ export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
   return count > MAX_ADAPTERS ? overCap(count) : adaptersOf(tags, count, atUtcMs);
 }
 
+function isAliasKind(kind: string | undefined): kind is PwshAlias['kind'] {
+  return kind === 'alias' || kind === 'file' || kind === 'absent';
+}
+
+/** The Store alias as the query saw it (`ALIAS_PROBE`), when it answered one of the three kinds. */
+function pwshOf(tags: ReadonlyMap<string, string>): PwshAlias | undefined {
+  const kind = tags.get(TAGS.pwshKind);
+
+  return isAliasKind(kind) ? { kind, path: tags.get(TAGS.pwshPath) ?? '' } : undefined;
+}
+
 function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: number): GpuState {
   const adapters = Array.from({ length: count }, (_v, i) => i).flatMap((i) => adapterAt(tags, i) ?? []);
+  if (adapters.length !== count) {
+    return { kind: 'unknown', reason: 'the display-adapter query answered an adapter without its name or code' };
+  }
+  const pwsh = pwshOf(tags);
 
-  return adapters.length === count ? { kind: 'read', adapters, atUtcMs } : { kind: 'unknown', reason: 'the display-adapter query answered an adapter without its name or code' };
+  return pwsh === undefined ? { kind: 'read', adapters, atUtcMs } : { kind: 'read', adapters, atUtcMs, pwsh };
 }
 
 const NOT_ANSWERED: { readonly [K in Exclude<ProcessResult['kind'], 'exited'>]: (r: Extract<ProcessResult, { kind: K }>) => string } = {
@@ -136,8 +169,11 @@ export interface GpuAlert {
   readonly fix: string;
   /** What it costs — and Ollama's own last word when its log was read. */
   readonly consequence: string;
-  /** The button, by the adapter's INDEX (the page posts only the index; the host holds the id). */
-  readonly button: { readonly index: number; readonly label: string; readonly enabled: boolean } | undefined;
+  /**
+   * The button, by the adapter's INDEX in the READ it was rendered from (`readAt`, the read's time stamp): the page posts
+   * those two numbers and nothing else; the host holds the id, and refuses an index from an older read (code round 2).
+   */
+  readonly button: { readonly index: number; readonly label: string; readonly enabled: boolean; readonly readAt: number } | undefined;
 }
 
 export interface GpuView {
@@ -176,11 +212,11 @@ function consequence(ollama: OllamaRead | undefined): string {
   return CONSEQUENCE + ollamaWords(ollama);
 }
 
-function buttonFor(adapter: Adapter, index: number, pending: PendingEnable | undefined): GpuAlert['button'] {
-  return canEnable(adapter) ? { index, label: `Enable ${adapter.name}`, enabled: pending === undefined } : undefined;
+function buttonFor(adapter: Adapter, index: number, pending: PendingEnable | undefined, readAt: number): GpuAlert['button'] {
+  return canEnable(adapter) ? { index, label: `Enable ${adapter.name}`, enabled: pending === undefined, readAt } : undefined;
 }
 
-function alertFor(adapter: Adapter, index: number, ollama: OllamaRead | undefined, pending: PendingEnable | undefined): GpuAlert {
+function alertFor(adapter: Adapter, index: number, ollama: OllamaRead | undefined, pending: PendingEnable | undefined, readAt: number): GpuAlert {
   const waiting = pending !== undefined && canEnable(adapter) ? `Waiting for the elevated PowerShell that enables ${pending.name} (answer the UAC prompt)… ` : '';
 
   return {
@@ -188,7 +224,7 @@ function alertFor(adapter: Adapter, index: number, ollama: OllamaRead | undefine
     line: `GPU ${adapter.name} is not working (code ${adapter.code}: ${meaningOf(adapter.code)})`,
     fix: waiting + fixWords(adapter.code),
     consequence: consequence(ollama),
-    button: buttonFor(adapter, index, pending),
+    button: buttonFor(adapter, index, pending, readAt),
   };
 }
 
@@ -200,7 +236,7 @@ export function gpuView(state: GpuState, ollama: OllamaRead | undefined, pending
   if (state.kind === 'unknown') {
     return unknownView(state);
   }
-  const alerts = state.adapters.flatMap((a, i) => (a.code === 0 ? [] : [alertFor(a, i, ollama, pending)]));
+  const alerts = state.adapters.flatMap((a, i) => (a.code === 0 ? [] : [alertFor(a, i, ollama, pending, state.atUtcMs)]));
 
   return { alerts, line: alerts.length > 0 ? '' : workingLine(state.adapters, formatTime(state.atUtcMs)) };
 }

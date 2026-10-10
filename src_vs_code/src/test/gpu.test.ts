@@ -11,7 +11,7 @@ import { enableExitOf, enableGpu, enablePrompt, enableSentence, type EnableDeps 
 import { GpuHost, type GpuHostDeps } from '../gpu/gpuHost';
 import { GPU_PENDING_KEY, readGpuPending, sweepGpuPending } from '../gpu/gpuPending';
 import { DEVICE_PROBLEMS, FIX_WORDS, NEEDS_RESTART } from '../gpu/gpuProblems';
-import { DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, INSTANCE_ID, QUERY_SCRIPT, queryRequest } from '../gpu/gpuScripts';
+import { ALIAS_PROBE, aliasPwsh, DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, engineOf, INSTANCE_ID, QUERY_SCRIPT, queryRequest, TAG_HELPER, type FileInfo, type PwshAlias } from '../gpu/gpuScripts';
 import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, type Adapter, type GpuState } from '../gpu/gpuState';
 import { newGpuRecorder } from '../gpu/gpuRecorder';
 import { choiceSentence, lastChoice, ollamaLogPath, readError, readTail } from '../gpu/ollamaLog';
@@ -39,6 +39,17 @@ const MEASURED = [
 
 const ENV = { SystemRoot: 'C:\\Windows', ProgramFiles: 'C:\\Program Files', LOCALAPPDATA: 'C:\\Users\\user\\AppData\\Local' };
 const AT = Date.UTC(2026, 9, 10, 12, 0, 0);
+
+const PS51 = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+const PS51_LABEL = `Windows PowerShell 5.1 (${PS51})`;
+const MSI_PWSH = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
+const ALIAS_PWSH = 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe';
+const ALIAS: PwshAlias = { kind: 'alias', path: ALIAS_PWSH };
+
+/** What Node's lstat would say per path — nothing for the rest (absent, or EACCES as on the real alias). */
+function files(table: Readonly<Record<string, FileInfo>>): (file: string) => FileInfo | undefined {
+  return (file) => table[file];
+}
 
 function exited(code: number, stdout = ''): ProcessResult {
   return { kind: 'exited', code, stdout: Buffer.from(stdout), stderr: Buffer.alloc(0) };
@@ -133,7 +144,7 @@ test('the measured state is ONE critical alert, for the R9700: its code and mean
   assert.equal(alert?.line, 'GPU AMD Radeon AI PRO R9700 is not working (code 22: it is disabled)');
   assert.match(alert?.fix ?? '', /no restart is needed/);
   assert.match(alert?.consequence ?? '', /local models such as Ollama — run on the CPU or do not start/);
-  assert.deepEqual(alert?.button, { index: 1, label: 'Enable AMD Radeon AI PRO R9700', enabled: true });
+  assert.deepEqual(alert?.button, { index: 1, label: 'Enable AMD Radeon AI PRO R9700', enabled: true, readAt: AT }, 'the button carries the READ it was rendered from, so a press after a newer read is refused (code round 2)');
 });
 
 test('code 31 and 43 are critical with restart advice and NO button; code 45 says Windows does not see the card', () => {
@@ -174,8 +185,8 @@ test('the bar: "GPU off" and the error colour over whatever it shows — a mark 
 // ---- D4: the enable's request and script ----
 
 test('the enable is ONE request through the Windows Time launcher: runas, the script encoded, the device id inside it as a single-quoted literal', () => {
-  const request = enableRequest(ENV, R9700_ID, 120_000, () => false, 3) as ProcessRequest;
-  assert.equal(request.file, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  const request = enableRequest(ENV, R9700_ID, 120_000, files({}), undefined, 3) as ProcessRequest;
+  assert.equal(request.file, PS51);
   assert.ok(isElevatedPowerShell(request.file, request.args), 'it asks Windows for elevation — so the tripwire refuses it in any test that tried to run it');
   assert.ok(isMachineChange(request.file, request.args), 'and the decoded payload carries a device verb the tripwire knows');
   const inner = revealed(request.args);
@@ -196,21 +207,46 @@ test('the elevated script re-checks the device as administrator before it acts: 
 
 test('an id that could be more than text is refused before any request exists: a quote, $, a backtick, whitespace, a newline, 201 characters', () => {
   for (const id of [`${R9700_ID}'`, `${R9700_ID}$x`, `${R9700_ID}\``, 'PCI\\VEN 1002', 'PCI\\VEN\r\nexit', `PCI\\${'A'.repeat(197)}`, '', `PCI\\VEN';Remove-Item C:\\ -Recurse;'`]) {
-    assert.equal(typeof enableRequest(ENV, id, 120_000, () => true, 3), 'string', JSON.stringify(id));
+    assert.equal(typeof enableRequest(ENV, id, 120_000, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), ALIAS, 3), 'string', JSON.stringify(id));
     assert.equal(INSTANCE_ID.test(id), false, JSON.stringify(id));
   }
   assert.equal(INSTANCE_ID.test(`PCI\\${'A'.repeat(196)}`), true, '200 characters is the largest accepted');
 });
 
-test('the elevated PowerShell is the MSI pwsh 7 when that file exists, else Windows PowerShell — never the Store alias', () => {
-  const pwsh = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
-  assert.equal(elevatedPowerShellFor(ENV, (f) => f === pwsh), pwsh);
-  assert.equal(elevatedPowerShellFor(ENV, () => false), undefined);
-  const withPwsh = enableRequest(ENV, R9700_ID, 120_000, (f) => f === pwsh, 3) as ProcessRequest;
-  assert.match(withPwsh.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Program Files\\PowerShell\\7\\pwsh\.exe'/);
-  const without = enableRequest(ENV, R9700_ID, 120_000, () => false, 3) as ProcessRequest;
+test('owner 2026-10-10: the elevated engine is PowerShell 7 — the MSI install when it is a real file, else the Store alias while the LAST read saw a zero-byte app-execution alias at the path this extension computes — and Windows PowerShell 5.1 otherwise', () => {
+  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: false } }), ALIAS), MSI_PWSH, 'an administrator-only install is preferred over the alias');
+  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 300_000, symlink: true } }), undefined), undefined, 'a link where the MSI pwsh should be is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({ [MSI_PWSH]: { bytes: 0, symlink: false } }), undefined), undefined, 'an empty file there is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), ALIAS), ALIAS_PWSH, 'the Store alias, as the query saw it');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'file', path: ALIAS_PWSH }), undefined, 'a real file (or a link) where the alias should be is not elevated');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'absent', path: ALIAS_PWSH }), undefined);
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'alias', path: 'C:\\Elsewhere\\WindowsApps\\pwsh.exe' }), undefined, 'the query looked at another path than this extension would start');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), { kind: 'alias', path: ALIAS_PWSH.toUpperCase() }), ALIAS_PWSH, 'the same path in another case is the same path');
+  assert.equal(elevatedPowerShellFor({ ...ENV, LOCALAPPDATA: "C:\\Users\\O'Brien\\AppData\\Local" }, files({}), { kind: 'alias', path: "C:\\Users\\O'Brien\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh.exe" }), undefined, 'a path PowerShell could not quote is skipped — 5.1 runs, nothing is refused');
+  assert.equal(elevatedPowerShellFor(ENV, files({}), undefined), undefined, 'before any read: 5.1');
+  const withAlias = enableRequest(ENV, R9700_ID, 120_000, files({}), ALIAS, 3) as ProcessRequest;
+  assert.match(withAlias.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh\.exe'/);
+  assert.equal(withAlias.file, PS51, 'the LAUNCHER stays Windows PowerShell; only the elevated program changes');
+  const without = enableRequest(ENV, R9700_ID, 120_000, files({}), undefined, 3) as ProcessRequest;
   assert.match(without.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe'/);
-  assert.equal(typeof enableRequest({ ...ENV, ProgramFiles: "C:\\Pro'gram" }, R9700_ID, 120_000, () => true, 3), 'string', 'a path PowerShell could not quote builds no request');
+  assert.deepEqual(engineOf(ENV, files({}), ALIAS), { file: ALIAS_PWSH, label: `PowerShell 7 (${ALIAS_PWSH})` });
+  assert.deepEqual(engineOf(ENV, files({}), undefined), { file: PS51, label: PS51_LABEL });
+  assert.equal(aliasPwsh(ENV), ALIAS_PWSH);
+});
+
+test('code round 2 / owner 2026-10-10: the query prints every field through ONE helper that strips line breaks, and reports the Store alias as WINDOWS sees it — RUN by Windows PowerShell on this machine, once, read-only', { skip: process.platform !== 'win32' ? 'Windows PowerShell exists on the Windows leg only' : false }, () => {
+  assert.equal((QUERY_SCRIPT.match(/\btag \(/g) ?? []).length, 4, 'id, code, driver and name each go through the helper');
+  // ONE PowerShell for both probes: the suite runs its files in parallel, and every extra child loads the timing tests.
+  const probe = `${TAG_HELPER}\ntag 'name.0' ("GPU\`r\`nadapters=0")\ntag 'code.0' $null\n${ALIAS_PROBE}\nexit 0`;
+  const result = childProcess.spawnSync(PS51, ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(probe, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 60_000 });
+  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+  const lines = result.stdout.split(/\r?\n/).filter((l) => l !== '');
+  assert.deepEqual(lines.slice(0, 2), ['name.0=GPU adapters=0', 'code.0='], 'one line per field, the break a space, a null an empty value');
+  const state = parseGpuAnswer(`${lines.slice(2).join('\n')}\nadapters=0\n`, AT);
+  assert.equal(state.kind, 'read', JSON.stringify(state));
+  const pwsh = state.kind === 'read' ? state.pwsh : undefined;
+  assert.ok(pwsh !== undefined && ['alias', 'file', 'absent'].includes(pwsh.kind), JSON.stringify(pwsh));
+  assert.equal(pwsh?.path.toLowerCase(), aliasPwsh(process.env)?.toLowerCase(), 'the shell folder API and LOCALAPPDATA name the same file');
 });
 
 // ---- D4: the outcome, worded from what Windows says AFTER ----
@@ -218,22 +254,24 @@ test('the elevated PowerShell is the MSI pwsh 7 when that file exists, else Wind
 test('every exit and every re-read code is its own sentence: enabled → code 0; still 22; another code → restart; declined; nothing done; failed; timed out', () => {
   const adapter = r9700();
   const ran = enableExitOf(exited(0));
-  assert.deepEqual(enableSentence(adapter, ran, measured(0)), { sentence: 'AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU.', failed: false });
-  assert.deepEqual(enableSentence(adapter, ran, measured(22)), { sentence: 'AMD Radeon AI PRO R9700 is still disabled (code 22).', failed: true });
-  assert.match(enableSentence(adapter, ran, measured(43)).sentence, /enabled, but still not working \(code 43: Windows stopped it because it reported problems\) — restart Windows/);
-  assert.deepEqual(enableSentence(adapter, enableExitOf(exited(EXIT.declined)), measured()), { sentence: 'Nothing was changed: the UAC prompt was declined.', failed: false });
-  assert.match(enableSentence(adapter, enableExitOf(exited(ENABLE_EXIT.notDisabled)), measured(0)).sentence, /^Nothing was done: that device is no longer disabled\. .*code 0/);
-  assert.match(enableSentence(adapter, enableExitOf(exited(ENABLE_EXIT.enableFailed)), measured()).sentence, /Enable-PnpDevice failed/);
-  assert.match(enableSentence(adapter, enableExitOf(exited(EXIT.launchFailed)), measured()).sentence, /could not be started/);
-  assert.match(enableSentence(adapter, enableExitOf({ kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), measured()).sentence, /120 s \(wslCare\.timeouts\.gpuEnableSeconds\)/);
-  assert.match(enableSentence(adapter, ran, { kind: 'unknown', reason: 'the display-adapter query exited 1' }).sentence, /could not be read/);
+  const seven = `PowerShell 7 (${ALIAS_PWSH})`;
+  assert.deepEqual(enableSentence(adapter, ran, measured(0), seven), { sentence: `AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU. Elevated program: ${seven}.`, failed: false }, 'the owner asked which engine ran');
+  assert.deepEqual(enableSentence(adapter, ran, measured(22), PS51_LABEL), { sentence: `AMD Radeon AI PRO R9700 is still disabled (code 22). Elevated program: ${PS51_LABEL}.`, failed: true });
+  assert.match(enableSentence(adapter, ran, measured(43), seven).sentence, /enabled, but still not working \(code 43: Windows stopped it because it reported problems\) — restart Windows/);
+  assert.deepEqual(enableSentence(adapter, enableExitOf(exited(EXIT.declined)), measured(), seven), { sentence: `Nothing was changed: the UAC prompt was declined. Elevated program: ${seven}.`, failed: false });
+  assert.match(enableSentence(adapter, enableExitOf(exited(ENABLE_EXIT.notDisabled)), measured(0), seven).sentence, /^Nothing was done: that device is no longer disabled\. .*code 0/);
+  assert.match(enableSentence(adapter, enableExitOf(exited(ENABLE_EXIT.enableFailed)), measured(), seven).sentence, /Enable-PnpDevice failed/);
+  assert.match(enableSentence(adapter, enableExitOf(exited(EXIT.launchFailed)), measured(), seven).sentence, /could not be started/);
+  assert.match(enableSentence(adapter, enableExitOf({ kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }), measured(), seven).sentence, /120 s \(wslCare\.timeouts\.gpuEnableSeconds\)/);
+  assert.match(enableSentence(adapter, ran, { kind: 'unknown', reason: 'the display-adapter query exited 1' }, seven).sentence, /could not be read/);
+  assert.equal(enableSentence(adapter, ran, measured(0), '').sentence.includes('Elevated program'), false, 'no PowerShell at all: no engine named');
 });
 
 function enableDeps(over: Partial<EnableDeps> & { readonly answers?: ProcessResult; readonly after?: GpuState } = {}): EnableDeps & { readonly log: string[]; readonly store: MemoryStore } {
   const log: string[] = [];
   const store = new MemoryStore();
   return {
-    env: ENV, exists: () => false, timeoutMs: () => 120_000, settleSeconds: () => 3,
+    env: ENV, fileInfo: files({}), pwshAlias: undefined, timeoutMs: () => 120_000, settleSeconds: () => 3,
     confirm: () => { log.push('confirm'); return Promise.resolve(true); },
     run: (request) => { log.push(`run ${request.file}`); log.push(`pending ${store.get(GPU_PENDING_KEY) === undefined ? 'absent' : 'written'}`); return Promise.resolve(over.answers ?? exited(0)); },
     report: (message, failed) => { log.push(`${failed ? 'error' : 'info'}: ${message}`); },
@@ -246,7 +284,7 @@ function enableDeps(over: Partial<EnableDeps> & { readonly answers?: ProcessResu
 test('the order that makes it safe: the modal, THEN the pending record, THEN the one elevated run, THEN Windows read again, THEN the sentence', async () => {
   const deps = enableDeps();
   assert.equal(await enableGpu(r9700(), deps), 'ran');
-  assert.deepEqual(deps.log, ['confirm', 'run C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', 'pending written', 'reread', 'info: AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU.']);
+  assert.deepEqual(deps.log, ['confirm', 'run C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe', 'pending written', 'reread', `info: AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU. Elevated program: ${PS51_LABEL}.`]);
   assert.equal(deps.store.get(GPU_PENDING_KEY), undefined, 'cleared once the launcher answered');
 });
 
@@ -286,9 +324,9 @@ test('the modal shows the exact elevated script and names the device and its id'
 
 // ---- D6: the page's message ----
 
-test('the page may ask for an enable only by an INDEX below the adapter cap — never an id, a name or a script', () => {
-  assert.deepEqual(parsePageMessage({ type: 'enableGpu', index: 1 }), { type: 'enableGpu', index: 1 });
-  for (const raw of [{ type: 'enableGpu' }, { type: 'enableGpu', index: MAX_ADAPTERS }, { type: 'enableGpu', index: -1 }, { type: 'enableGpu', index: 1.5 }, { type: 'enableGpu', index: '1' }, { type: 'enableGpu', index: 1, id: R9700_ID }, { type: 'enableGpu', id: R9700_ID }]) {
+test('the page may ask for an enable only by an INDEX below the adapter cap and the READ it saw (a time stamp) — never an id, a name or a script', () => {
+  assert.deepEqual(parsePageMessage({ type: 'enableGpu', index: 1, readAt: AT }), { type: 'enableGpu', index: 1, readAt: AT });
+  for (const raw of [{ type: 'enableGpu' }, { type: 'enableGpu', index: 1 }, { type: 'enableGpu', index: MAX_ADAPTERS, readAt: AT }, { type: 'enableGpu', index: -1, readAt: AT }, { type: 'enableGpu', index: 1.5, readAt: AT }, { type: 'enableGpu', index: '1', readAt: AT }, { type: 'enableGpu', index: 1, readAt: -1 }, { type: 'enableGpu', index: 1, readAt: 1.5 }, { type: 'enableGpu', index: 1, readAt: 'now' }, { type: 'enableGpu', index: 1, readAt: AT, id: R9700_ID }, { type: 'enableGpu', id: R9700_ID }]) {
     assert.equal(parsePageMessage(raw), undefined, JSON.stringify(raw));
   }
 });
@@ -362,7 +400,7 @@ function hostDeps(over: Partial<GpuHostDeps> = {}): GpuHostDeps & { readonly rec
   const timers: number[] = [];
   const deadlines: number[] = [];
   return {
-    env: ENV, platform: 'win32', exists: () => false, queryTimeoutMs: () => 20_000, enableTimeoutMs: () => 120_000, enableSettleSeconds: () => 3, ollamaTailBytes: () => 4096, checkMinutes: () => 15,
+    env: ENV, platform: 'win32', fileInfo: files({}), queryTimeoutMs: () => 20_000, enableTimeoutMs: () => 120_000, enableSettleSeconds: () => 3, ollamaTailBytes: () => 4096, checkMinutes: () => 15,
     ui: { confirm: (p) => { recorder.prompts.push(p); return Promise.resolve(recorder.answer); }, run: (r) => { recorder.requests.push(r); return Promise.resolve(recorder.result); }, query: (r) => { recorder.queries.push(r); return Promise.resolve(recorder.queryResult); }, report: (m, f) => { recorder.reports.push({ message: m, failed: f }); } },
     durable: new MemoryStore(), nowUtcMs: () => AT, every: (ms) => { timers.push(ms); return () => undefined; }, after: (ms) => { deadlines.push(ms); return () => undefined; }, formatTime: () => '14:31', readTail: () => ({ kind: 'text', text: `${OLLAMA_CPU}\n` }),
     recorder, timers, deadlines, ...over,
@@ -386,16 +424,37 @@ test('the host\'s enable acts on ITS reading at the index — the recorded reque
   const host = new GpuHost(deps);
   await host.refresh();
   deps.recorder.answer = false;
-  await host.enable(1);
+  await host.enable(1, AT);
   assert.equal(deps.recorder.requests.length, 0, 'declined: nothing ran');
   deps.recorder.answer = true;
   deps.recorder.result = exited(0);
   deps.recorder.queryResult = exited(0, MEASURED.replace('code.1=22', 'code.1=0'));
-  await host.enable(1);
+  await host.enable(1, AT);
   assert.equal(deps.recorder.requests.length, 1);
   assert.ok(revealed(deps.recorder.requests[0]?.args ?? []).includes(R9700_ID));
-  assert.deepEqual(deps.recorder.reports.at(-1), { message: 'AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU.', failed: false });
+  assert.deepEqual(deps.recorder.reports.at(-1), { message: `AMD Radeon AI PRO R9700 is enabled — code 0. Start Ollama again so it finds the GPU. Elevated program: ${PS51_LABEL}.`, failed: false });
   assert.deepEqual(host.view().alerts, [], 'Windows now says code 0: the alert is gone');
+});
+
+test('owner 2026-10-10: the host elevates the Store alias only when ITS OWN read of Windows reported it as an alias at the path it computes — the modal and the outcome name PowerShell 7', async () => {
+  const deps = hostDeps();
+  deps.recorder.queryResult = exited(0, `${MEASURED}pwsh.kind=alias\r\npwsh.path=${ALIAS_PWSH.toUpperCase()}\r\n`);
+  const host = new GpuHost(deps);
+  await host.refresh();
+  deps.recorder.answer = true;
+  deps.recorder.result = exited(0);
+  await host.enable(1, AT);
+  assert.match(deps.recorder.prompts.at(-1)?.detail ?? '', /The elevated program: PowerShell 7 \(C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh\.exe\)/);
+  assert.match(deps.recorder.requests[0]?.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh\.exe'/);
+  assert.match(deps.recorder.reports.at(-1)?.message ?? '', /Elevated program: PowerShell 7 \(C:\\Users\\user\\AppData\\Local\\Microsoft\\WindowsApps\\pwsh\.exe\)\.$/);
+
+  const file = hostDeps();
+  file.recorder.queryResult = exited(0, `${MEASURED}pwsh.kind=file\r\npwsh.path=${ALIAS_PWSH}\r\n`);
+  const planted = new GpuHost(file);
+  await planted.refresh();
+  file.recorder.answer = true;
+  await planted.enable(1, AT);
+  assert.match(file.recorder.prompts.at(-1)?.detail ?? '', /The elevated program: Windows PowerShell 5\.1/, 'a real file where the alias should be: 5.1 runs');
 });
 
 test('off Windows the host is silent: no query, no alert, no mark, no timer', async () => {
@@ -427,7 +486,7 @@ test('PowerShell\'s own parser reads the query, the enable and its launcher with
   const powerShell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gpu-parse-'));
   try {
-    const request = enableRequest(ENV, R9700_ID, 120_000, () => false, 3) as ProcessRequest;
+    const request = enableRequest(ENV, R9700_ID, 120_000, files({}), undefined, 3) as ProcessRequest;
     for (const [name, text] of [['query.ps1', QUERY_SCRIPT], ['enable.ps1', enableScript(R9700_ID, 3)], ['outer.ps1', request.args[3] ?? '']] as const) {
       fs.writeFileSync(path.join(dir, name), text, 'utf8');
     }
@@ -456,13 +515,43 @@ test('own review M1: the modal names the PROGRAM it elevates, and the elevated s
   assert.equal(script.includes('$env:SystemRoot'), false);
 });
 
-test('own review M6: a device NAME that carries a newline cannot shadow its id or code — the name is printed last', () => {
-  const hostile = ['adapter=0', `id.0=${R9700_ID}`, 'code.0=22', 'driver.0=1', 'name.0=Evil', 'id.0=PCI\\OTHER', 'code.0=0', 'adapters=1'].join('\n');
-  const state = parseGpuAnswer(hostile, AT);
-  assert.equal(state.kind === 'read' ? state.adapters[0]?.id : '', R9700_ID);
-  assert.equal(state.kind === 'read' ? state.adapters[0]?.code : -1, 22);
-  const order = ['id.', 'code.', 'driver.', 'name.'].map((t) => QUERY_SCRIPT.indexOf(`'${t}'`));
+test('own review M6 / code round 2: a device NAME carrying a newline can shadow nothing — a tag answered twice is an explicit UNKNOWN, never a first-wins read and never an all-clear', () => {
+  const shadow = ['adapter=0', `id.0=${R9700_ID}`, 'code.0=22', 'driver.0=1', 'name.0=Evil', 'id.0=PCI\\OTHER', 'code.0=0', 'adapters=1'].join('\n');
+  assert.deepEqual(parseGpuAnswer(shadow, AT), { kind: 'unknown', reason: 'the display-adapter query answered a tag twice (id.0)' });
+  // The reviewer's case: `GPU\nadapters=0` printed before the real count read as "no display adapter reported — working".
+  const spoof = ['adapter=0', `id.0=${R9700_ID}`, 'code.0=22', 'driver.0=1', 'name.0=GPU', 'adapters=0', 'adapters=1'].join('\n');
+  assert.deepEqual(parseGpuAnswer(spoof, AT), { kind: 'unknown', reason: 'the display-adapter query answered a tag twice (adapters)' });
+  assert.equal(gpuView(parseGpuAnswer(spoof, AT), undefined, undefined, () => '').alerts[0]?.level, 'unknown', 'shown as a check that could not run, not as fine');
+  const order = ['id.', 'code.', 'driver.', 'name.'].map((t) => QUERY_SCRIPT.indexOf(`tag ('${t}'`));
   assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > (order[i - 1] ?? -1))), `the query prints the name LAST: ${order.join(',')}`);
+});
+
+test('code round 2: a button rendered from an OLDER read acts on nothing — the host refuses the stale index without a modal, reads Windows again, and says so', async () => {
+  let now = AT;
+  const deps = hostDeps({ nowUtcMs: () => now });
+  const host = new GpuHost(deps);
+  await host.refresh();
+  now = AT + 5_000;
+  await host.refresh();
+  deps.recorder.answer = true;
+  const queries = deps.recorder.queries.length;
+  assert.equal(await host.enable(1, AT), 'stale', 'the token of the first read no longer matches');
+  assert.equal(deps.recorder.prompts.length, 0, 'no modal');
+  assert.equal(deps.recorder.requests.length, 0, 'nothing ran');
+  assert.ok(deps.recorder.queries.length > queries, 'Windows was read again');
+  assert.match(deps.recorder.reports.at(-1)?.message ?? '', /read again since the panel showed that button/);
+  assert.equal(await host.enable(1, AT + 5_000), 'ran', 'the current read\'s token is accepted');
+  assert.equal(deps.recorder.prompts.length, 1);
+});
+
+test('code round 2: a window that confirms while THIS modal is open wins — the pending record is read AGAIN after the modal, and this window starts nothing', async () => {
+  const store = new MemoryStore();
+  const other = { name: 'the other window', id: R9700_ID, startedAtUtcMs: AT, deadlineUtcMs: AT + 60_000 };
+  const deps = enableDeps({ durable: store, confirm: async () => { await store.update(GPU_PENDING_KEY, other); return true; } });
+  assert.equal(await enableGpu(r9700(), deps), 'busy');
+  assert.ok(!deps.log.some((l) => l.startsWith('run')), 'no elevated run from this window');
+  assert.deepEqual(store.get(GPU_PENDING_KEY), other, 'the other window\'s record stands, not overwritten');
+  assert.match(deps.log.at(-1) ?? '', /^info: An enable of the other window is already waiting/);
 });
 
 test('own review: a settle value that is not a number becomes 0 in the elevated script, never NaN', () => {
@@ -482,7 +571,7 @@ test('own review M2: after a timed-out enable the host schedules ONE re-render a
   await host.refresh();
   deps.recorder.answer = true;
   deps.recorder.result = { kind: 'timedOut', timeoutMs: 120_000, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) };
-  await host.enable(1);
+  await host.enable(1, AT);
   assert.deepEqual(deps.deadlines, [120_000 + 60_000 + 1]);
 });
 
@@ -491,7 +580,7 @@ test('own review M4: a press on an adapter no longer at 22 reads Windows again, 
   const host = new GpuHost(deps);
   await host.refresh();
   const queries = deps.recorder.queries.length;
-  await host.enable(0);
+  await host.enable(0, AT);
   assert.ok(deps.recorder.queries.length > queries, 'Windows was read again');
   assert.match(deps.recorder.reports.at(-1)?.message ?? '', /Windows is read again/);
 });

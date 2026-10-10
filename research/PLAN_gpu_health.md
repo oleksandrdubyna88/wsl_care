@@ -1,13 +1,16 @@
 # PLAN — a GPU that dropped out of Windows is impossible to miss, and a disabled one is one button away (story G1)
 
-> Status: **plan only, nothing implemented yet, 2026-10-10.** Scope: the VS Code extension (`src_vs_code/`) — an
-> unelevated read of Windows' display adapters, a per-adapter verdict, a top-of-panel alert, a status-bar mark, and ONE
-> elevated action (*Enable <GPU>*, code 22 only) through the existing Windows Time launcher. The daemon is not changed.
+> Status: **IMPLEMENTED, 2026-10-10.** Scope: the VS Code extension (`src_vs_code/`) — an unelevated read of Windows'
+> display adapters, a per-adapter verdict, a top-of-panel alert, a status-bar mark, and ONE elevated action (*Enable <GPU>*,
+> code 22 only) through the existing Windows Time launcher. The daemon is not changed. What shipped differently is in §11
+> (the as-built record): the alert above the heading, 28 codes, the extracted pending-run rule, two code rounds and an own
+> review, and — the owner's decision of 2026-10-10 — PowerShell 7 elevated through the Store alias rather than the MSI-only
+> choice of D4.
 >
 > Story G1 of the disk-and-memory epic (`todo/PLAN_disk_health.md`, written in parallel on its own branch; the owner moved
 > this story FIRST on 2026-10-10 because the card is disabled now and he wants to try the button). Evidence:
-> [2026-10-10_gpu_disabled.md](../research/2026-10-10_gpu_disabled.md). Related: [module_vs_code.md](../research/module_vs_code.md),
-> [PLAN_windows_time_guard.md](../research/PLAN_windows_time_guard.md) (the elevated launcher this reuses).
+> [2026-10-10_gpu_disabled.md](2026-10-10_gpu_disabled.md). Related: [module_vs_code.md](module_vs_code.md),
+> [PLAN_windows_time_guard.md](PLAN_windows_time_guard.md) (the elevated launcher this reuses).
 
 ## 1. Symptom
 
@@ -41,7 +44,7 @@ On 2026-10-10 the owner's local models did not work and nothing said why. Measur
 
 The daemon that computes verdicts runs INSIDE WSL; the Windows binary (`wsl-care.exe`, whose probe is
 `src_daemon/src/WslCare.Core/Collectors/WindowsProbe.cs:26-41`) is not reachable from the extension until E7.S5a bundles it
-([PLAN_bundle_windows_binary.md](PLAN_bundle_windows_binary.md), plan only). The extension runs on Windows
+([PLAN_bundle_windows_binary.md](../todo/PLAN_bundle_windows_binary.md), plan only). The extension runs on Windows
 (`extensionKind: ["ui"]`) and already reads Windows itself where the daemon cannot: the Windows Time guard's state comes from
 Task Scheduler through an unelevated PowerShell query (`src/windowsTime/guardScripts.ts:66-80`, `queryRequest` `:103-107`).
 G1 follows that precedent exactly.
@@ -128,7 +131,9 @@ colour: an icon character and the words "not working" carry it (WCAG 1.4.1).
 an optional `elevated` argument naming the PowerShell that runs ELEVATED (today the same 5.1 as the launcher, unchanged for
 the Windows Time callers). The enable passes `%ProgramFiles%\PowerShell\7\pwsh.exe` when that file exists (an
 administrator-only folder; the Store `pwsh` under `WindowsApps` is NOT used — it is an app-execution alias, research G4),
-else the 5.1 one; both must pass `QUOTABLE_PATH`. The inner script, a pure function of ONE validated instance id:
+else the 5.1 one; both must pass `QUOTABLE_PATH`. *As built, the owner decided otherwise (2026-10-10, §11): the Store
+alias IS used, verified by the extension's own query, the MSI install preferred when present, 5.1 the fallback.* The inner
+script, a pure function of ONE validated instance id:
 
 ```powershell
 $env:PSModulePath = "$PSHOME\Modules"; $ProgressPreference = 'SilentlyContinue'
@@ -223,18 +228,32 @@ is bounded by `ollamaLogTailKiB`.
   the program it elevates.
 - The daemon's own verdict (G2) and the contract table come later; until then `doctor` / `status --json` say nothing
   about the GPU.
+- **The Store alias is the user's own folder** (the owner's decision, 2026-10-10; research G8): a user-level process could
+  replace `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe`. A real file or a link planted there is refused (5.1 runs); a
+  forged app-execution alias cannot be told from Windows' own by any read — checked: Node's `lstat` (EACCES on the alias),
+  PowerShell's `Get-Item` (Length, ReparsePoint, LinkType); NOT checked: whether a standard user can set the AppExecLink
+  reparse tag on a file of their own. The MSI install under `%ProgramFiles%` has no such hole and is preferred when present.
+- **Two windows can both launch** (code round 2): the pending record in `globalState` is advisory coordination, not a lock
+  (`common.reliability`: no compare-and-swap). The second look after the modal closes the modal's open time; the residual
+  is the instant between that look and the write — two UAC prompts, and the elevated script's own re-check (still code 22)
+  makes the second change nothing. The atomic claim — a directory created without `recursive` under the shared storage,
+  with a heartbeat and a fenced release — is the epic's follow-up for every elevated flow (the Windows Time guard's pending
+  run has the same shape), not this story's.
+- **The elevated run of the alias is first exercised by the owner's press**: `Process.Start` with `runas` on an
+  app-execution alias was not run here (nothing elevated by the implementer); the unelevated alias started 7.6.4 Core.
 
 ## 10. Definition of Done
 
-- [ ] Every adapter judged; non-zero code → a critical alert at the top of the panel, with meaning, fix, restart need,
+- [x] Every adapter judged; non-zero code → a critical alert at the top of the panel, with meaning, fix, restart need,
       consequence, and Ollama's last line when readable; the status bar marks it.
-- [ ] *Enable <name>* only for code 22; modal first; one elevated run; outcome worded from the re-read code.
-- [ ] The id is the extension's own reading, validated, inside an encoded script; the page posts only an index.
-- [ ] Durable in-flight state; never stuck on "waiting".
-- [ ] Tripwire widened with the device verbs; no test reaches the real launcher.
-- [ ] Every new number is a setting; the command has its button (`commandButtons.test.ts`).
-- [ ] Tests red first, green after; break-its observed; `npm test`, lint, typecheck, `check:vsix`, family checks green.
-- [ ] README, `module_vs_code.md`, `architecture.md`, the research file updated; the plan promoted with its deviations.
+- [x] *Enable <name>* only for code 22; modal first; one elevated run; outcome worded from the re-read code — and naming the engine.
+- [x] The id is the extension's own reading, validated, inside an encoded script; the page posts only an index (and, since
+      code round 2, the read's time stamp the host compares).
+- [x] Durable in-flight state; never stuck on "waiting".
+- [x] Tripwire widened with the device verbs; no test reaches the real launcher.
+- [x] Every new number is a setting; the command has its button (`commandButtons.test.ts`).
+- [x] Tests red first, green after; break-its observed; `npm test`, lint, typecheck, `check:vsix`, family checks green.
+- [x] README, `module_vs_code.md`, `architecture.md`, the research file updated; the plan promoted with its deviations.
 
 ## 11. As built (2026-10-10) — what shipped differently
 
@@ -282,3 +301,44 @@ Seven findings, all accepted, each fixed test-first (RED observed against a stub
 | M5: the `role="alert"` container is re-inserted on every render | not changed: the same pattern as the notice's live region, which the harness cannot judge either; recorded for the epic's webview work (#87) |
 | M6: a name with a newline could shadow its id | the query prints the NAME last, so the parser's first-wins keeps the real id and code |
 | (note) a NaN settle value | `wholeSeconds` reads NaN as 0 |
+
+### Code round 2 (coai, 2026-10-10 15:37Z on `2d7048dc`: `proceed`, 4 of 12 reviewers — codex's four roles; local had no model, gemini out of quota)
+
+Five findings; four accepted and fixed test-first (RED observed against the old behaviour — the seams added, the behaviour
+kept — then GREEN), one rejected with its reason:
+
+| Finding | Decision | Done |
+|---|---|---|
+| Nit: the tag parser mutates a Map after creating it (`gpuState.ts`) | accepted — it fell out of the next fix | the map is built ONCE from the answer's entries (`new Map(entries)`) |
+| Major: a rendered adapter index can resolve to a different GPU when the host's list changes between render and click | accepted | each button carries `readAt`, the time stamp of the read it was rendered from; the page posts `{ type, index, readAt }` (three keys, exactly); the host refuses an older stamp ("read again since the panel showed that button"), reads Windows again and re-renders; the palette passes the stamp of the read it chose from |
+| Major: a newline in an adapter name can spoof the final adapter count (`GPU\nadapters=0` read as "no display adapter — working") | accepted | two roads closed: every field the query prints goes through ONE PowerShell helper that flattens line breaks (run by Windows PowerShell in the suite on a value carrying both), and the parser refuses an answer that prints any tag twice — an explicit `unknown` ("answered a tag twice (adapters)"), never first-wins; the per-adapter block marker `adapter=<i>` is a separator the parser does not count |
+| Major: two windows can both pass the pending check and both launch | accepted, as the Windows Time guard flow does it | the pending record is read AGAIN after the modal, before the write; the residual (the instant between that look and the write) is stated in `gpuEnable.ts`'s header and in §9, with the atomic claim named as the epic's follow-up |
+| Minor: the palette command waits silently for the adapter query (up to the 120 s ceiling) | accepted | the read runs under a progress notification ("Reading Windows' display adapters…") |
+
+### The owner's decision (2026-10-10, evening): PowerShell 7 through the Store alias
+
+D4 chose the MSI `pwsh` only and refused the Store alias as a user-writable path. The owner decided the button runs
+PowerShell 7 via the user's alias `%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe` (this machine has the Store build and no
+MSI), falls back to Windows PowerShell 5.1 when no `pwsh` is there, and says which engine ran. As built (research G8):
+
+- Node cannot read the alias (`lstat`/`stat` answer EACCES, `existsSync` false), so the **unelevated query** reports it as
+  Windows sees it — `pwsh.kind` = `alias` (a zero-byte reparse point with no link type), `file` (anything else there) or
+  `absent` — and `pwsh.path` from `[Environment]::GetFolderPath('LocalApplicationData')`; the host elevates the alias only
+  while its LAST read said `alias` at the very path it computes from `LOCALAPPDATA` (compared case-insensitively) and
+  PowerShell can quote that path — else it is skipped, never refused.
+- The order: the MSI install when `lstat` shows a real file (not a link, bytes in it) → the verified alias → 5.1. The
+  launcher itself stays Windows PowerShell 5.1 (`elevatedRequest`'s unelevated outer script); only the elevated program
+  changes.
+- The modal names "The elevated program: PowerShell 7 (C:\…\pwsh.exe)" / "Windows PowerShell 5.1 (…)"; every outcome
+  sentence ends with "Elevated program: …".
+- Measured on this machine, read-only: the built probe answered `pwsh.kind=alias` at Node's path (the suite's own
+  Windows-leg test); the alias starts 7.6.4 Core from `C:\Program Files\WindowsApps\…`. The elevated run through the alias
+  is the owner's press.
+
+### The rebase (2026-10-10)
+
+Rebased onto `main` after #88 (E10.S1a, the archive section): the panel's view gained `archive` before `gpu`
+(`buildPanelView(snapshot, cleanup, guard, archive, gpu)`, its defaults split into two helpers to stay under the complexity
+bound), the eleven commands, the page's `EXTRAS` for both, `extension.ts`'s `panelRefresh` reading the GPU host too and a
+`settingsListeners` helper to keep `wire()` under 50 lines. #90 (the architecture split this branch was built on) was still
+open at the rebase; this branch carries the same patch.

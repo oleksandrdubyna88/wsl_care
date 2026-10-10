@@ -23,7 +23,9 @@ import { MAX_ADAPTERS } from '../gpu/gpuState';
  * <p>E10.S1's `chooseArchiveFolder` and `stopArchiving` are bare: the folder is picked in the host's own dialog and judged by
  * the daemon — no path ever comes from the page. E10.S1b's `archiveNow` is bare too: the host previews A13 itself.</p>
  * <p>*Enable <GPU>*'s `enableGpu` (PLAN_gpu_health.md D6) carries an INDEX below `MAX_ADAPTERS` into the adapters the host
- * read from Windows itself: the instance id the elevated script acts on is the host's reading, never the page's.</p>
+ * read from Windows itself, and `readAt`, the time stamp of the read the button was rendered from (the host compares it with
+ * its current read and refuses an older one): the instance id the elevated script acts on is the host's reading, never the
+ * page's.</p>
  */
 
 export type PageMessage =
@@ -44,7 +46,7 @@ export type PageMessage =
   | { readonly type: 'cleanSelected'; readonly rowIds: readonly RowId[] }
   | { readonly type: 'runFullCheck' }
   | { readonly type: 'stop'; readonly index: number }
-  | { readonly type: 'enableGpu'; readonly index: number };
+  | { readonly type: 'enableGpu'; readonly index: number; readonly readAt: number };
 
 const BARE: ReadonlySet<string> = new Set(['ready', 'refresh', 'openSettings', 'startWsl', 'installDaemon', 'startWindowsTime', 'installWindowsTimeGuard', 'removeWindowsTimeGuard', 'runFullCheck', 'openRunLogs', 'chooseArchiveFolder', 'stopArchiving', 'archiveNow']);
 
@@ -90,28 +92,35 @@ function withRows(type: 'clean' | 'cleanSelected', raw: Raw): PageMessage | unde
   return rowIds === undefined || rowIds.length > MOST_ROWS[type] ? undefined : { type, rowIds };
 }
 
-/** The messages that carry ONE value besides their type — exactly two keys each. */
-const WITH_VALUE: Readonly<Record<string, WithValue>> = {
-  rendered: (raw) => (isIndex(raw.rows, Number.MAX_SAFE_INTEGER) ? { type: 'rendered', rows: raw.rows } : undefined),
-  stop: (raw) => (isIndex(raw.index, MAX_STOP_INDEX) ? { type: 'stop', index: raw.index } : undefined),
-  // PLAN_gpu_health.md D6: an INDEX into the adapters the host itself read — never an id, a name or a script.
-  enableGpu: (raw) => (isIndex(raw.index, MAX_ADAPTERS - 1) ? { type: 'enableGpu', index: raw.index } : undefined),
-  clean: (raw) => withRows('clean', raw),
-  cleanSelected: (raw) => withRows('cleanSelected', raw),
+/** A reader for a message that carries values beside its type — and how many keys such a message has in all, exactly. */
+interface Reader {
+  readonly keys: number;
+  readonly read: WithValue;
+}
+
+/** The messages that carry values besides their type — each read exactly, with exactly its number of keys. */
+const READERS: Readonly<Record<string, Reader>> = {
+  rendered: { keys: 2, read: (raw) => (isIndex(raw.rows, Number.MAX_SAFE_INTEGER) ? { type: 'rendered', rows: raw.rows } : undefined) },
+  stop: { keys: 2, read: (raw) => (isIndex(raw.index, MAX_STOP_INDEX) ? { type: 'stop', index: raw.index } : undefined) },
+  // PLAN_gpu_health.md D6: an INDEX into the adapters the host itself read, and the READ it came from (a time stamp the host
+  // compares with its current read, code round 2) — never an id, a name or a script.
+  enableGpu: { keys: 3, read: (raw) => (isIndex(raw.index, MAX_ADAPTERS - 1) && isIndex(raw.readAt, Number.MAX_SAFE_INTEGER) ? { type: 'enableGpu', index: raw.index, readAt: raw.readAt } : undefined) },
+  clean: { keys: 2, read: (raw) => withRows('clean', raw) },
+  cleanSelected: { keys: 2, read: (raw) => withRows('cleanSelected', raw) },
 };
 
-function readerOf(type: unknown): WithValue | undefined {
-  return typeof type === 'string' && Object.hasOwn(WITH_VALUE, type) ? WITH_VALUE[type] : undefined;
+function readerOf(type: unknown): Reader | undefined {
+  return typeof type === 'string' && Object.hasOwn(READERS, type) ? READERS[type] : undefined;
 }
 
 function valued(raw: Raw, keys: readonly string[]): PageMessage | undefined {
-  const read = readerOf(raw.type);
+  const reader = readerOf(raw.type);
 
-  return read !== undefined && keys.length === 2 ? read(raw) : undefined;
+  return reader !== undefined && keys.length === reader.keys ? reader.read(raw) : undefined;
 }
 
 /** Every message type the page may send — what the flow catalogue derives its `message <type>` rows from. */
-export const PAGE_MESSAGE_TYPES: readonly PageMessage['type'][] = [...BARE, ...Object.keys(WITH_VALUE)] as PageMessage['type'][];
+export const PAGE_MESSAGE_TYPES: readonly PageMessage['type'][] = [...BARE, ...Object.keys(READERS)] as PageMessage['type'][];
 
 /** The message, or `undefined` for anything outside the closed set — which the host drops. */
 export function parsePageMessage(raw: unknown): PageMessage | undefined {

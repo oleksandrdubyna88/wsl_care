@@ -327,7 +327,7 @@ const GPU_ALERT = {
   line: 'GPU AMD Radeon AI PRO R9700 is not working (code 22: it is disabled)',
   fix: 'It is disabled. Enable it — no restart is needed.',
   consequence: 'Programs that use this GPU — local models such as Ollama — run on the CPU or do not start.',
-  button: { index: 1, label: 'Enable AMD Radeon AI PRO R9700', enabled: true },
+  button: { index: 1, label: 'Enable AMD Radeon AI PRO R9700', enabled: true, readAt: 1_760_097_600_000 },
 };
 
 test('a GPU alert is the FIRST element of the panel, above the heading, in a role="alert" box — its words as TEXT, its level in words and a sign', () => {
@@ -342,13 +342,13 @@ test('a GPU alert is the FIRST element of the panel, above the heading, in a rol
   assert.equal(alert?.one('p[data-gpu-consequence]').textContent, GPU_ALERT.consequence);
 });
 
-test('the alert\'s Enable button posts ONLY { type: "enableGpu", index } — the host holds the device id; a disabled one posts nothing', () => {
+test('the alert\'s Enable button posts ONLY { type: "enableGpu", index, readAt } — the host holds the device id, and the READ the button came from is named so a press after a newer read is refused; a disabled one posts nothing', () => {
   const { page, root } = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [GPU_ALERT], line: '' }));
   const button = root.one('button[data-gpu-action="enableGpu"]');
   assert.equal(button.textContent, 'Enable AMD Radeon AI PRO R9700');
   assert.equal(button.attributes.type, 'button');
   page.click(button);
-  assert.deepEqual(page.posted.at(-1), { type: 'enableGpu', index: 1 });
+  assert.deepEqual(page.posted.at(-1), { type: 'enableGpu', index: 1, readAt: 1_760_097_600_000 });
 
   const waiting = show(buildPanelView(snapshot(goldenOutcomes()), undefined, undefined, undefined, { alerts: [{ ...GPU_ALERT, button: { ...GPU_ALERT.button, enabled: false } }], line: '' }));
   const before = waiting.page.posted.length;

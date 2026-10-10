@@ -4,15 +4,23 @@ import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
 import { CONFIRM_LABEL, EXIT, type FixPrompt } from '../windowsTime/windowsTimeFix';
 import { clearGpuPending, PENDING_GRACE_MS, readGpuPending, writeGpuPending } from './gpuPending';
-import { DISABLED_CODE, elevatedProgramFor, ENABLE_EXIT, enableRequest, enableScript } from './gpuScripts';
+import { DISABLED_CODE, ENABLE_EXIT, enableRequest, enableScript, engineOf, type Engine, type FileInfoOf, type PwshAlias } from './gpuScripts';
 import { canEnable, meaningOf, type Adapter, type GpuState } from './gpuState';
 
 /**
  * *Enable <GPU>* (PLAN_gpu_health.md D4, D5) in the order that makes it safe: the adapter is the host's OWN reading, chosen
- * by an index; the request is built (or the reason none can be is told); a modal shows the exact elevated script and the
- * device; ONLY its confirm persists the pending run and starts the ONE elevated PowerShell; then Windows is read again and
- * the outcome is worded from what it NOW says about that device. Nothing runs on a decline, while another enable stands, or
- * for an adapter that is not at code 22.
+ * by an index; the request is built (or the reason none can be is told); a modal shows the exact elevated script, the
+ * device and the engine; ONLY its confirm — and a SECOND look at the pending record, after the modal — persists the pending
+ * run and starts the ONE elevated PowerShell; then Windows is read again and the outcome is worded from what it NOW says
+ * about that device, and names the engine that ran. Nothing runs on a decline, while another enable stands, or for an
+ * adapter that is not at code 22.
+ *
+ * <p><b>The pending record is advisory coordination, not a lock</b> (code round 2; `common.reliability` — a lock names its
+ * atomic operation): `globalState` has no compare-and-swap, so two windows that both pass the check and both confirm within
+ * the same instant can both launch — two UAC prompts, and the elevated script's own re-check (still code 22) makes the second
+ * change nothing. The second look after the modal closes the long window (the modal's open time), as the Windows Time
+ * guard's flow does; the residual is the instant between that look and the write. An atomic claim (a directory created
+ * without `recursive` under the shared storage) is the epic's follow-up, named in the plan.</p>
  */
 
 /** What the launcher's exit said — before Windows is read again. */
@@ -90,8 +98,12 @@ function nowWords(name: string, after: Adapter | undefined, state: GpuState): To
   return after === undefined ? { sentence: `Windows no longer lists ${name}.`, failed: true } : codeWords(name, after.code);
 }
 
-/** The outcome, from the launcher's exit and the read that followed it (D4) — pure, so every row is a unit test. */
-export function enableSentence(adapter: Adapter, exit: EnableExit, state: GpuState): { readonly sentence: string; readonly failed: boolean } {
+/**
+ * The outcome, from the launcher's exit and the read that followed it (D4), naming the ENGINE that ran elevated (the owner,
+ * 2026-10-10: PowerShell 7 through its alias, or Windows PowerShell 5.1) — pure, so every row is a unit test.
+ */
+export function enableSentence(adapter: Adapter, exit: EnableExit, state: GpuState, engine: string): { readonly sentence: string; readonly failed: boolean } {
+  const by = engine === '' ? '' : ` Elevated program: ${engine}.`;
   const now = nowWords(adapter.name, afterOf(state, adapter.id), state);
   const lead: { readonly [K in EnableExit['kind']]: (e: Extract<EnableExit, { kind: K }>) => { readonly text: string; readonly failed: boolean } } = {
     ran: () => ({ text: '', failed: false }),
@@ -102,10 +114,10 @@ export function enableSentence(adapter: Adapter, exit: EnableExit, state: GpuSta
   };
   const head = (lead[exit.kind] as (e: EnableExit) => { readonly text: string; readonly failed: boolean })(exit);
   if (exit.kind === 'declined') {
-    return { sentence: noticeText(head.text), failed: false };
+    return { sentence: noticeText(head.text + by), failed: false };
   }
 
-  return { sentence: noticeText([head.text, now.sentence].filter((t) => t !== '').join(' ')), failed: head.failed || now.failed };
+  return { sentence: noticeText([head.text, now.sentence].filter((t) => t !== '').join(' ') + by), failed: head.failed || now.failed };
 }
 
 export function enablePrompt(adapter: Adapter, settleSeconds: number, elevated: string): FixPrompt {
@@ -125,7 +137,10 @@ export function enablePrompt(adapter: Adapter, settleSeconds: number, elevated: 
 
 export interface EnableDeps {
   readonly env: Readonly<Record<string, string | undefined>>;
-  readonly exists: (file: string) => boolean;
+  /** Node's `lstat` of a program the enable might elevate (the MSI pwsh), or `undefined` when it cannot be read. */
+  readonly fileInfo: FileInfoOf;
+  /** The Store alias as the host's LAST read of Windows reported it (the query's `pwsh.*` tags), or `undefined`. */
+  readonly pwshAlias: PwshAlias | undefined;
   readonly timeoutMs: () => number;
   /** `wslCare.gpu.enableSettleSeconds`: how long the elevated script waits after the enable before it ends. */
   readonly settleSeconds: () => number;
@@ -138,11 +153,21 @@ export interface EnableDeps {
   readonly reread: () => Promise<GpuState>;
 }
 
-export type EnableResult = 'notOffered' | 'busy' | 'notStarted' | 'declined' | 'ran';
+export type EnableResult = 'notOffered' | 'busy' | 'notStarted' | 'declined' | 'ran' | 'stale';
 
 /** An adapter the enable may act on: present in the host's reading, at code 22, with an id it passes. */
 function offered(adapter: Adapter | undefined): adapter is Adapter {
   return adapter !== undefined && canEnable(adapter);
+}
+
+/** Whether an enable already stands — this window's or another's — told when it does. */
+function busy(deps: EnableDeps): boolean {
+  const pending = readGpuPending(deps.durable, deps.nowUtcMs());
+  if (pending !== undefined) {
+    deps.report(noticeText(`An enable of ${pending.name} is already waiting for its UAC prompt (or its end) — nothing else is started.`), false);
+  }
+
+  return pending !== undefined;
 }
 
 /** Why nothing may start, or the one request — checked in this order: offered, not already running, buildable. */
@@ -151,12 +176,10 @@ function precondition(adapter: Adapter | undefined, deps: EnableDeps, timeoutMs:
     deps.report(noticeText('No disabled GPU is at that place any more — Windows is read again.'), false);
     return { stop: 'notOffered' };
   }
-  const pending = readGpuPending(deps.durable, deps.nowUtcMs());
-  if (pending !== undefined) {
-    deps.report(noticeText(`An enable of ${pending.name} is already waiting for its UAC prompt (or its end) — nothing else is started.`), false);
+  if (busy(deps)) {
     return { stop: 'busy' };
   }
-  const request = enableRequest(deps.env, adapter.id, timeoutMs, deps.exists, deps.settleSeconds());
+  const request = enableRequest(deps.env, adapter.id, timeoutMs, deps.fileInfo, deps.pwshAlias, deps.settleSeconds());
 
   return typeof request === 'string' ? notStarted(adapter, request, deps) : { adapter, request };
 }
@@ -164,6 +187,21 @@ function precondition(adapter: Adapter | undefined, deps: EnableDeps, timeoutMs:
 function notStarted(adapter: Adapter, reason: string, deps: EnableDeps): { readonly stop: EnableResult } {
   deps.report(noticeText(`${adapter.name} could not be enabled from here: ${reason}.`), true);
   return { stop: 'notStarted' };
+}
+
+/** The confirmed run: the pending record, the ONE elevated launcher, the read after it, and the sentence naming the engine. */
+async function launched(adapter: Adapter, request: ProcessRequest, engine: Engine, deps: EnableDeps, timeoutMs: number): Promise<EnableResult> {
+  const startedAtUtcMs = deps.nowUtcMs();
+  await writeGpuPending(deps.durable, { name: adapter.name, id: adapter.id, startedAtUtcMs, deadlineUtcMs: startedAtUtcMs + timeoutMs + PENDING_GRACE_MS });
+  const exit = enableExitOf(await deps.run(request));
+  // After a TIMEOUT the elevated child may still run (its UAC prompt open): the record stands until its deadline.
+  if (exit.kind !== 'timedOut') {
+    await clearGpuPending(deps.durable);
+  }
+  const told = enableSentence(adapter, exit, await deps.reread(), engine.label);
+  deps.report(told.sentence, told.failed);
+
+  return 'ran';
 }
 
 /** ONE enable of `adapter` — the host's own reading. */
@@ -174,18 +212,15 @@ export async function enableGpu(chosen: Adapter | undefined, deps: EnableDeps): 
     return ready.stop;
   }
   const { adapter, request } = ready;
-  if (!(await deps.confirm(enablePrompt(adapter, deps.settleSeconds(), elevatedProgramFor(deps.env, deps.exists))))) {
+  const engine = engineOf(deps.env, deps.fileInfo, deps.pwshAlias);
+  if (!(await deps.confirm(enablePrompt(adapter, deps.settleSeconds(), engine.label)))) {
     return 'declined';
   }
-  const startedAtUtcMs = deps.nowUtcMs();
-  await writeGpuPending(deps.durable, { name: adapter.name, id: adapter.id, startedAtUtcMs, deadlineUtcMs: startedAtUtcMs + timeoutMs + PENDING_GRACE_MS });
-  const exit = enableExitOf(await deps.run(request));
-  // After a TIMEOUT the elevated child may still run (its UAC prompt open): the record stands until its deadline.
-  if (exit.kind !== 'timedOut') {
-    await clearGpuPending(deps.durable);
+  // AGAIN, after the modal: another window may have confirmed its own enable while this modal was open (code round 2; the
+  // Windows Time guard flow's rule). Its record stands; this window starts nothing.
+  if (busy(deps)) {
+    return 'busy';
   }
-  const told = enableSentence(adapter, exit, await deps.reread());
-  deps.report(told.sentence, told.failed);
 
-  return 'ran';
+  return launched(adapter, request, engine, deps, timeoutMs);
 }

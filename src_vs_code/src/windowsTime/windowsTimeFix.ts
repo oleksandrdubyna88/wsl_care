@@ -51,6 +51,11 @@ export function encoded(script: string): string {
 /** A path PowerShell reads inside single quotes with nothing to escape. */
 const QUOTABLE_PATH = /^[A-Za-z]:\\[^'`$\r\n"]*$/;
 
+/** Whether PowerShell reads `file` inside single quotes with nothing to escape — the test every program this launcher starts passes. */
+export function quotablePath(file: string): boolean {
+  return QUOTABLE_PATH.test(file);
+}
+
 /**
  * The UNELEVATED launcher's script: start the elevated PowerShell through `System.Diagnostics.Process.Start` with the
  * `runas` verb, wait, and hand back its exit code. The UAC refusal is the `Win32Exception` (1223) that `Process.Start`

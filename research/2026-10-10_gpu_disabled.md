@@ -52,8 +52,8 @@ The log's line is the one place the consequence is written down.
 - `pwsh` is the Store package: `C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.4.0_x64__8wekyb3d8bbwe\pwsh.exe`.
   `%ProgramFiles%\PowerShell\7\pwsh.exe` (the MSI install): **absent**. Windows PowerShell 5.1
   (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`): present.
-- So on THIS machine an elevated run that prefers the MSI `pwsh` falls back to 5.1; the `pwsh` branch is not exercised
-  here (recorded in the plan's residuals).
+- So on THIS machine an elevated run that prefers the MSI `pwsh` falls back to 5.1 — which is what the plan first chose.
+  The owner decided otherwise the same evening (G8): PowerShell 7 through the Store alias, 5.1 only when no `pwsh` is there.
 
 ## G5 — the read the extension would make, timed
 
@@ -87,6 +87,31 @@ The shipped `QUERY_SCRIPT`, run ten times as the extension runs it (`powershell.
 375–656 ms of one core (median ≈ 450 ms), 11 lines each time (both adapters and the count). At the default
 `wslCare.gpu.checkMinutes` (15) that is 96 reads a day, about 45 s of one core per day, plus one read per panel open or
 *Refresh*.
+
+## G8 — the Store alias, as Node and as Windows see it (the owner's decision, 2026-10-10 evening)
+
+The owner's decision: *Enable <GPU>* runs PowerShell 7 through the user's app-execution alias
+`%LOCALAPPDATA%\Microsoft\WindowsApps\pwsh.exe` (the Store build is what this machine has; `%ProgramFiles%\PowerShell\7` does
+not exist), falls back to Windows PowerShell 5.1 when no `pwsh` is there, and the result says which engine ran. Measured
+read-only before building it (nothing elevated):
+
+| Who looks | What the alias is |
+|---|---|
+| Node 24 `fs.lstatSync` / `statSync` / `existsSync` | **EACCES** on `lstat` and `stat`; `existsSync` answers `false` — Node cannot read an app-execution alias at all |
+| Windows PowerShell 5.1 `Get-Item -LiteralPath` | `Length 0`, `Attributes Archive, ReparsePoint`, `LinkType` empty, `Target` empty |
+| running it | `7.6.4 Core`, `$PSHOME` = `C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.4.0_x64__8wekyb3d8bbwe` — an administrator-only folder |
+| Node `lstat` of 5.1's `powershell.exe` | a 495 616-byte file, no link — the shape the MSI `pwsh` check requires |
+
+So the extension cannot verify the alias from Node; its own unelevated query (Windows PowerShell) reports `pwsh.kind` —
+`alias` for a zero-byte reparse point with no link type, `file` for anything else there, `absent` — and `pwsh.path` from
+`[Environment]::GetFolderPath('LocalApplicationData')`, and the host elevates the alias only while the LAST read said
+`alias` at the very path it computes from `LOCALAPPDATA`. The built probe, run by the unit suite on this machine
+(`gpu.test.ts`, *the query reports the Store alias as WINDOWS sees it*): `pwsh.kind=alias`, the path equal to Node's, 0.9 s.
+
+**The residual the owner accepted:** the folder is the user's own, so a user-level process could replace the alias; a
+real file or a symbolic link planted there is refused (5.1 runs instead), but a forged app-execution alias cannot be told
+from Windows' own by any read, and the UAC prompt names `pwsh.exe` either way. The MSI install under `%ProgramFiles%` has
+no such hole and is preferred whenever it exists.
 
 After the own review (2026-10-10 15:50Z), the elevated script finds System32 through `[Environment]::SystemDirectory`
 (GetSystemDirectory) instead of `$env:SystemRoot`: the same read half, unelevated, printed `sysdir=C:\WINDOWS\system32

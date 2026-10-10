@@ -26,9 +26,12 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   ALERT at the very top of the panel — its name, the code and its meaning, the fix in plain words (whether it needs a
   restart), what it costs (local models such as Ollama run on the CPU or do not start) and Ollama's own last choice from
   its `server.log` — and `· GPU off` on the status bar in the error colour; a check that could not run reads `· GPU ?`.
-  A **disabled** adapter (code 22) gets **Enable <name>**: a modal shows the exact elevated script first, then ONE
-  elevated PowerShell (one UAC prompt) re-checks the device and runs `Enable-PnpDevice` for exactly it, and the panel says
-  what Windows reports afterwards ("enabled — code 0", or the code it still has and whether to restart).
+  A **disabled** adapter (code 22) gets **Enable <name>**: a modal shows the exact elevated script and the program it
+  elevates first, then ONE elevated PowerShell (one UAC prompt) re-checks the device and runs `Enable-PnpDevice` for
+  exactly it, and the panel says what Windows reports afterwards ("enabled — code 0", or the code it still has and whether
+  to restart) and which engine ran: PowerShell 7 — the MSI install when present, else the Store build through its
+  app-execution alias under `%LOCALAPPDATA%\Microsoft\WindowsApps`, used only while the extension's own read of Windows
+  reports it as a zero-byte alias — or Windows PowerShell 5.1 when neither is there.
 
 ## What it runs, and when
 
