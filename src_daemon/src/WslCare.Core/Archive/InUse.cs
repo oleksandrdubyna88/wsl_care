@@ -38,6 +38,10 @@ public sealed record InUseView(IReadOnlySet<string> OpenFiles, IReadOnlySet<stri
     /// gate round, finding 6); empty when nothing says so.</summary>
     public Func<string> ClaudeRunning { get; init; } = static () => string.Empty;
 
+    /// <summary>The guards after the live gate, G1 (owner question 1, 2026-10-10): a Claude Code unit's key → why it stays because a live
+    /// Claude Code names its session on its command line; empty when none does. A positive keep only, asked at every question.</summary>
+    public Func<string, string> ClaudeOnCommandLine { get; init; } = static _ => string.Empty;
+
     /// <summary>The E9.S5 amendment (owner decision 2026-10-09): while <see cref="ClaudeRunning"/> speaks, why a unit's files (full
     /// paths on this side's disk) are NOT idle — empty when every one was untouched for <c>archive.windowsIdleDays</c>. Asked only of a
     /// Claude Code unit, only while Claude Code may run. Its default FAILS CLOSED: a view never given the rule keeps every such unit.</summary>
@@ -91,6 +95,7 @@ public static class InUse
     {
         var open = new HashSet<string>(StringComparer.Ordinal);
         var projects = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var lines = new List<(int Pid, string Line)>();
         var watch = Stopwatch.StartNew();
         var pids = files.ListDirectories(paths.ProcRoot).Where(d => Path.GetFileName(d).All(char.IsAsciiDigit)).ToList();
         foreach (var pid in pids)
@@ -98,16 +103,23 @@ public static class InUse
             cancellationToken.ThrowIfCancellationRequested();
             if (watch.Elapsed > ceiling)
             {
-                return InUseView.Cut(open, projects, $"the open-file scan was cut at {ceiling.TotalSeconds:0.#} s; what it did not reach may be open, so every due session stays where it is");
+                return WithLines(InUseView.Cut(open, projects, $"the open-file scan was cut at {ceiling.TotalSeconds:0.#} s; what it did not reach may be open, so every due session stays where it is"), lines);
             }
 
-            Read(files, pid, open, projects);
+            Read(files, pid, open, projects, lines);
         }
 
-        return InUseView.Complete(open, projects);
+        return WithLines(InUseView.Complete(open, projects), lines);
     }
 
-    private static void Read(IFileSystem files, string pid, HashSet<string> open, HashSet<string> projects)
+    /// <summary>The view with G1's question: a key whose session id is on a Claude Code command line read in this scan.</summary>
+    private static InUseView WithLines(InUseView view, IReadOnlyList<(int Pid, string Line)> lines) =>
+        view with { ClaudeOnCommandLine = key => Liveness.ClaudeSessionOf(key) is { Length: > 0 } id ? Naming(lines, id) : string.Empty };
+
+    private static string Naming(IReadOnlyList<(int Pid, string Line)> lines, string id) =>
+        lines.FirstOrDefault(l => l.Line.Contains(id, StringComparison.OrdinalIgnoreCase)) is { Line: not null } named ? Liveness.OnItsCommandLine(named.Pid) : string.Empty;
+
+    private static void Read(IFileSystem files, string pid, HashSet<string> open, HashSet<string> projects, List<(int Pid, string Line)> lines)
     {
         foreach (var fd in files.ListEntries(Path.Combine(pid, "fd")).Where(e => e.Kind == EntryKind.Link))
         {
@@ -117,13 +129,24 @@ public static class InUse
             }
         }
 
-        if (IsClaudeCode(files, pid) && files.ReadLink(Path.Combine(pid, "cwd")) is LinkReadResult.Target cwd)
+        if (ClaudeLine(files, pid) is not { Length: > 0 } line)
+        {
+            return;
+        }
+
+        if (int.TryParse(Path.GetFileName(pid), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var id))
+        {
+            lines.Add((id, line));
+        }
+
+        if (files.ReadLink(Path.Combine(pid, "cwd")) is LinkReadResult.Target cwd)
         {
             projects.Add(ArchiveNames.ClaudeProjectOf(cwd.Path));
         }
     }
 
-    private static bool IsClaudeCode(IFileSystem files, string pid) =>
-        ProcText.Bytes(files, Path.Combine(pid, "cmdline")) is Reading<byte[]>.Available cmdline
-        && Agents.AgentProcesses.AgentOfPrograms(CommandLineText.ProgramNames(CommandLineText.Arguments(cmdline.Value))) is { Id: ClaudeCode };
+    /// <summary>A Claude Code process's command line, its arguments joined by spaces; empty for any other process.</summary>
+    private static string ClaudeLine(IFileSystem files, string pid) =>
+        ProcText.Bytes(files, Path.Combine(pid, "cmdline")) is Reading<byte[]>.Available cmdline && CommandLineText.Arguments(cmdline.Value) is var arguments
+        && Agents.AgentProcesses.AgentOfPrograms(CommandLineText.ProgramNames(arguments)) is { Id: ClaudeCode } ? string.Join(' ', arguments) : string.Empty;
 }

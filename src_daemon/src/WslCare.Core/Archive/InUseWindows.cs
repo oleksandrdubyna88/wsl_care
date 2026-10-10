@@ -68,9 +68,35 @@ public static class InUseWindows
         {
             HeldBy = files => asker.Asked(() => restartManager.Holders(files), Said),
             ClaudeRunning = () => asker.Asked(() => ClaudeRunning(processes), static running => running),
+            ClaudeOnCommandLine = key => Liveness.ClaudeSessionOf(key) is { Length: > 0 } id ? asker.Asked(() => OnCommandLine(processes, id), static said => said) : string.Empty,
             Bounded = question => asker.Asked(question, static said => said),
         };
     }
+
+    /// <summary>The guards after the live gate, G1 (owner question 1, 2026-10-10): why the session <paramref name="id"/> stays — a live
+    /// Claude Code process names it on its command line (<c>--resume</c>, <c>-r</c>, <c>--session-id</c>, a transcript path: the id is
+    /// matched anywhere, whatever its case); empty when none does. A positive keep only: an id on no command line proves nothing.</summary>
+    public static string OnCommandLine(IWindowsProcessTable processes, string id) =>
+        processes.List() is Reading<IReadOnlyList<WindowsProcessEntry>>.Available { Value: var all }
+            ? all.Select(p => Naming(processes, p, id)).FirstOrDefault(v => v.Length > 0, string.Empty)
+            : string.Empty;
+
+    private static string Naming(IWindowsProcessTable processes, WindowsProcessEntry process, string id) =>
+        ClaudeEvidence(process) is { } evidence && processes.CommandLine(process.Pid) is Reading<string>.Available { Value: var line } && Names(line, id, evidence)
+            ? Liveness.OnItsCommandLine(process.Pid)
+            : string.Empty;
+
+    /// <summary>What a process's line must also carry to be Claude Code: nothing for <c>claude.exe</c>, the package for <c>node.exe</c>
+    /// (the guards' own review: a node line naming a transcript path is no Claude Code); <c>null</c> — not found — for any other program.</summary>
+    private static string? ClaudeEvidence(WindowsProcessEntry process) => CommandLineText.FileNameOf(process.ExeName) switch
+    {
+        var program when program.Equals(ClaudeProgram, StringComparison.OrdinalIgnoreCase) => string.Empty,
+        var program when program.Equals(NodeProgram, StringComparison.OrdinalIgnoreCase) => ClaudePackage,
+        _ => null,
+    };
+
+    private static bool Names(string line, string id, string evidence) =>
+        line.Contains(id, StringComparison.OrdinalIgnoreCase) && line.Contains(evidence, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Why no Claude Code session may move on this side now; empty when no Claude Code runs.</summary>
     public static string ClaudeRunning(IWindowsProcessTable processes) => processes.List() switch

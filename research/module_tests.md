@@ -2999,6 +2999,45 @@ first, once more on `ERROR_MORE_DATA`. Rejected with the code and a measurement:
 the final path is stripped of its device prefix before the comparison (`NetworkBaseTests.The_systems_extended_unc_answer_is_compared_as_plain_unc`),
 and the live gate copied to `V:\…` with this code.
 
+### Two fail-closed guards after the live gate (owner questions 1 and 2, 2026-10-10)
+
+| Guarantee | Tests |
+|---|---|
+| G1: a Claude Code session whose GUID is on a live Claude Code command line (`--resume`, `-r`, `--session-id=`, a `node.exe` running the package) is kept even when the idle rule would let it go, naming the pid | `Archive/ArchiveGuardsTests.A_session_on_a_live_claude_command_line_is_kept_even_when_idle` (4 rows) |
+| the id is matched whatever its case; another session's id, or another program's command line, keeps nothing by this rule | `ArchiveGuardsTests.The_id_is_matched_whatever_its_case`, `…Another_session_or_another_programs_command_line_keeps_nothing_by_this_rule` |
+| the distro's `/proc` scan keeps a session on a Claude Code command line too (Linux legs) | `ArchiveGuardsTests.The_distro_scan_keeps_a_session_on_a_claude_command_line_too` |
+| G2: a share whose protocol says it answers from the Offline Files cache, or that cannot be asked, is not trusted; a trusted share (flags 0x10, as measured on the NAS) is; a local path is never asked | `ArchiveGuardsTests.A_share_that_may_answer_from_the_offline_cache_is_not_trusted` (5 rows) |
+| phase 2 keeps the source — and the entry, never marked damaged — when the archived copy's read-back is not trusted; a trusted re-hash later removes it | `ArchiveRunTests.Phase_2_keeps_the_source_when_the_archived_copy_may_be_the_offline_caches` |
+| the live NAS still reads trusted with the guards in place: a new throwaway session copied to both the `V:` and the UNC base | `research/module_archive.md` *The live gate on the NAS* |
+
+**Red first:** against skeletons (`ClaudeOnCommandLine` answering nothing, `OfflineCacheProblem` answering nothing, `FileHash.Untrusted`
+new but unhandled) the G1 rows were red with `Expected … "" to contain "on its command line"`, the G2 rows with `Expected problem ""
+to contain "Offline Files"` / `"could not be asked"`, and phase 2 with `Expected second.Damaged to be 0 … but found 1` — the
+untrusted answer was being read as a damaged copy.
+
+**Teeth** (`G-01`, `G-02`, `G-04`–`G-11`, product code only, each restored byte for byte, on Windows): all red; G-09–G-11 from the own review — the GUID match
+removed, the command-line keep skipped, the session id never recognised, the offline flag ignored, an unknown answer trusted,
+phase 2 marking an untrusted copy damaged (two ways). G-03, the distro leg dropped, ran in WSL: red
+(`Expected seen.ClaudeOnCommandLine(Key) "" to contain "on its command line"`).
+
+**The own review round** (an Opus reviewer in parallel, data safety):
+
+| # | Finding | Decision |
+|---|---|---|
+| 1 | **Major** — a base turning untrusted between the lease and phase 2 refused phase 2's folder opens, which `CopyProblem` read as damage: the entry was dropped as damaged | fixed: only a MISSING folder is damage; a refused one keeps the entry. `ArchiveRunTests.Phase_2_keeps_the_entry_when_the_bases_folders_are_refused` (red: `Expected second.Damaged to be 0 … but found 1`); teeth G-11 |
+| 2 | an untrusted re-hash inside the removal itself (`RemoveVerified`) is labelled superseded/split | written down: it needs the base to turn untrusted in the seconds between phase 2's re-hash and the removal; nothing is removed or lost, only the label is wrong — as it already was for an unreadable copy |
+| 3 | phase 1 reads an untrusted read-back as "taken" / "mismatch" | written down: the lease refuses an untrusted base first; mid-run it costs a retry and a wrong stop sentence, never data |
+| 4 | a REMOTE drive whose share cannot be read counted as local, so the offline check was never asked | fixed: remote-ness by the drive's type (`IsRemote(path, MappingOf)`); `A_remote_drive_whose_share_cannot_be_read_is_still_remote`; teeth G-10 |
+| 5 | the distro side has no offline check (a drvfs mount of a Windows network drive) | written down as a residual in `module_archive.md` |
+| 6 | test gaps: the real handle hooks, the resume path, the lease refusal, `RemoveVerified` | the hooks are held by the live NAS run and the pure function; the lease refusal and the resume path are named as untested in `module_archive.md` |
+| nits | a `node.exe` line needed only the word `claude`; `int.Parse` on a pid name | fixed: a node line must run the `claude-code` package (`A_node_line_must_run_claude_code_to_keep_a_session`, teeth G-09); `TryParse` |
+
+**The coai code round** (session dcff3401, `proceed`, 1 gating of threshold 5; one vendor answered). Both findings were rejected with
+reasons:
+- **a per-pass snapshot of the command lines:** freshness per question is the E9.S5 rule for the same reason, a Claude Code
+  started mid-run, and the cost is bounded by the asker and the budget, failing closed;
+- **the scan's local list mutated:** it is the same local accumulator the open-file and project sets beside it are.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
