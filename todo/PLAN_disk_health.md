@@ -103,6 +103,13 @@ takes no package (`tests/WslCare.Core.Tests/ArchitectureTests.cs:99`, `Directory
 - **Never lose a record:** local append first; a local raw day is pruned only after `stats.localRetentionDays` AND a
   confirmed share copy (or with no share set, never below the key). Rollups are kept forever everywhere; the share keeps
   everything forever (the owner).
+- **The local backlog is bounded, and reaching the bound is loud, never silent** (plan round): when the share stays offline,
+  local raw days cannot be pruned, so `stats.localBacklogMaxMb` (64–65 536, default 1 024 — about 30 years of this machine's
+  records at the budget below) caps them. At `stats.localBacklogWarnPercent` (80) of it the verdict `stats.backlog` warns
+  and the panel says the share has not confirmed a copy since <day>; AT the cap the writer keeps every `run`, `act`,
+  `forecast`, `boot` and `remedy` record and stops keeping individual `probe` samples (the only high-volume kind,
+  ~288 a day) — their daily rollup still counts them, each such day carries `probesNotKept: N` and the verdict turns
+  critical. Nothing is dropped without a count, and the run is never blocked.
 - **Schema and migrations:** every record and day file carries `v`; raw files are never rewritten; a reader counts newer
   records as "not read"; `wsl-care stats rebuild` regenerates rollups. **Integrity:** `wsl-care stats check` and a doctor
   check parse every day line by line (a bad line is counted, never fatal) and compare digests.
@@ -147,6 +154,14 @@ takes no package (`tests/WslCare.Core.Tests/ArchitectureTests.cs:99`, `Directory
   known, the realised N′ = last calm score before ÷ the new baseline and K′ = the new boot's degradation hour. The Statistics
   tab shows predicted vs realised per boot; a forecast wrong (N′ below the degraded factor) on 3 of the last 5 boots reads
   "uncertain".
+- **Only a boot that FOLLOWED the advice validates it** (plan round). Each `boot` record carries its cause: `advised` — the
+  extension's *Shut down WSL…* ran after showing the forecast: before it starts `wsl.exe --shutdown` it calls the new
+  unprivileged verb `wsl-care probe mark-restart --forecast <id of the shown forecast>`, which writes
+  `$XDG_STATE_HOME/wsl-care/restart-marker.json` (time, the forecast's id), read and consumed by the root daemon on the next
+  boot — or `other` (no fresh marker: a crash, an update, `wsl --shutdown` typed by hand, a Windows restart, which this
+  product only advises). The predicted-vs-realised table and the "uncertain" rule use `advised` boots only; `other` boots
+  are listed apart and still feed the baselines and K (a boot is a boot for how fast the machine degrades). A marker older
+  than `probe.restartMarkerMaxMinutes` (10) is ignored.
 
 ### 3.4 The shared webview kit and its Storybook (the owner's Q1: a shared kit)
 
@@ -160,6 +175,17 @@ compiles it into the bundle, so the `.vsix` ships nothing extra). The convention
 for product code was rejected with a measured reason (`todo/PLAN_shared_vscode_kit.md:19-20`). coai and creds are not touched.
 The kit uses CLASSES only — no `style`, no `innerHTML` — so the panel's nonce-only CSP (`src_vs_code/src/panel/panelHtml.ts:59`)
 and the strict DOM harness (`src/test/support/pageHarness.ts:18-24`, `:30`, `:33`) hold.
+
+**The paired plan in the kit's repository** (plan round): E18.K1 opens with `dew_flow_vscode_kit` ·
+`todo/PLAN_kit_components_storybook.md`, written in that repository's own pull request BEFORE any K1 code and carrying this
+same table; the kit's existing `todo/PLAN_extract_the_kit.md` (its 0.1.0 release) is named there as the order's first step.
+
+| Item | `dew_flow_vscode_kit` builds | wsl_care builds |
+|---|---|---|
+| `Tabs`, `DataTable`, `RecommendationCard`, theme tokens; the display controls and Help viewer (exist) | the components, their CSS (classes only), their tests, axe checks, the Storybook (every component × state × light / dark / high contrast × three font sizes), release 0.2.0 | nothing of the components — it consumes them |
+| the data shown, the units, the redaction, the reveal, the recommendation's words | nothing (consumer-supplied callbacks and strings) | everything (E18.W1–W3; the daemon makes the words) |
+| the order | 0.1.0 (its E3) → K1 → 0.2.0 on npmjs | W0 starts only after 0.2.0 is published (or the kit's `pack-and-consume` tarball as a bridge, never committed) |
+| disjoint | no wsl_care-specific component, no `vscode` API in the webview components | no copy of a kit component, ever (`common.reuse-first`) |
 
 ### 3.5 One data service; the sidebar keeps 20 parameters
 
@@ -226,7 +252,7 @@ The template for a threshold key is commit `95448096` (E14 S5).
 | **E16.S1** the probe | §3.3's components in `Probe/ResponsivenessProbe.cs` (one implementation, both OS), `Probe/ProbeStore.cs` (`{state}/probe.jsonl`, `probe.localRetentionDays` 400 until E17 takes the forever copy), the watch step and the full-run step under the lock, `wsl-care probe [--json]` (+ the verb register), `status.probe`, `probe.budget`; `RunBudget.WatchRunWorstCase` grows by `probe.maxMilliseconds`. Measured FIRST: ten probe runs on the owner's distro. RED: fixed work; over-budget kept and flagged; a busy machine skips and says why; the files live only under the state folder. | medium |
 | **E16.S2** the forecast | `Probe/Forecast.cs` (PURE: baseline, N, K, M, censoring, the minimum, the sentence), `Probe/BootChanges.cs` (a `boot` record with the last forecast; realised values fill in later); the keys of §3.3; `probe.factor`. RED, with the owner's words: six days of history give NO factor and say "a minimum forecast needs at least 7 days of history; 6 days so far"; the minimum in the sentence is the key's value; a 30-day synthetic fixture with four boots gives N, K, M; a forecast wrong on 3 of 5 boots reads "uncertain". A `research/` note states the method with the fixture's numbers. | high — statistics the gate will argue |
 | **E16.S3** the ladder and the ONE recommendation | the previews and measured results of A19, A11, A18, A1, A2, the container stats, `VmmemAdvice`, the forecast, the run history → `Thresholds/Ladder.cs` (PURE: rungs in cost order, each `{id, kind: action|extensionButton|advice, addresses[], state, wouldFree, lastEffect, text}`; the recommendation = the first rung with something to do among those addressing the WORST non-ok verdict; "all within limits"); S7b's A21 shown as `arrivesWithS7b` on the wire, never in the sidebar. RED: the recommendation names the group, the limit, the measured value and the button; severity first, then cost; a rung's last effect comes from the history, never a guess. | medium |
-| **E16.S4** *Shut down WSL…* (ask first) and the Disk & memory section | `WslCareClient` (the only argv speller, `src/client/WslCareClient.ts:17-28`) gains the one request `wsl.exe --shutdown`; a modal names what ends ("every WSL session and every program in the distro — N agent processes, M containers now"), the forecast line and that the effect is measured; greyed while a run is live / queued or the archive runs; `wslCare.timeouts.wslShutdownSeconds` (120); command + button; the sidebar's section renders `status.disk`, `host.*`, the forecast and the ladder (rungs as buttons where the cleanup controller offers the action, advice lines otherwise). RED: exactly `wsl.exe --shutdown`; a decline starts nothing; the strict fake accepts only `['--shutdown']`; the tripwire refuses the real one. Never automatic. | medium |
+| **E16.S4** *Shut down WSL…* (ask first) and the Disk & memory section | the restart marker first (`wsl-care probe mark-restart`, §3.3), then `WslCareClient` (the only argv speller, `src/client/WslCareClient.ts:17-28`) gains the one request `wsl.exe --shutdown`; a modal names what ends ("every WSL session and every program in the distro — N agent processes, M containers now"), the forecast line and that the effect is measured; greyed while a run is live / queued or the archive runs; `wslCare.timeouts.wslShutdownSeconds` (120); command + button; the sidebar's section renders `status.disk`, `host.*`, the forecast and the ladder (rungs as buttons where the cleanup controller offers the action, advice lines otherwise). RED: exactly `wsl.exe --shutdown`; a decline starts nothing; the strict fake accepts only `['--shutdown']`; the tripwire refuses the real one. Never automatic. | medium |
 
 ### E17 — STATISTICS kept forever
 
@@ -270,12 +296,13 @@ this repository, one per lane; E18.K1 lives in the kit's repository.
 
 | Surface | Projected size | Retired by | Interrupted |
 |---|---|---|---|
-| stats raw (local) | ≈ 95 KB/day/side ≈ 40 MB/side at 400 days | `stats.localRetentionDays`, only after a confirmed share copy | append under the lock; a torn last line is counted as bad, never fatal |
+| stats raw (local) | ≈ 95 KB/day/side ≈ 40 MB/side at 400 days; at most `stats.localBacklogMaxMb` (1 024) when the share stays offline | `stats.localRetentionDays`, only after a confirmed share copy; at the backlog cap individual probe samples stop being kept, counted (§3.2) | append under the lock; a torn last line is counted as bad, never fatal |
 | stats raw (share) | ≈ 70 MB/year, ≈ 0.7 GB in ten years | kept forever (the owner) | whole-file temp + rename; pending days retried each run |
 | rollups | ≈ 1.5 MB/year | kept forever | rebuilt from raw by `stats rebuild` |
 | `probe.jsonl` (until E17) | ≈ 70 KB/day | `probe.localRetentionDays` | appended under the lock |
 | `disk-io.json` ledger | ≤ `records.maxStateFileBytes` (1 MiB) | two points per device, other boots dropped | written atomically |
 | probe files | 64 × 4 KiB = 256 KiB | created once; never grow | recreated when missing |
+| restart marker | one file, < 1 KB | consumed at the next boot; ignored after `probe.restartMarkerMaxMinutes` | written atomically by the unprivileged verb |
 
 ## 8. Test plan (across the epic)
 
@@ -316,7 +343,14 @@ Windows probe's runner is S7b's, not a new scheduled task.
 5. **The kit on #87's critical path** — five components only, the kit's own CI, a `pack-and-consume` tarball as a bridge if
    the publish slips, no interim copy in wsl_care.
 
-## 11. Definition of Done (per story, and for the epic)
+## 11. The plan round (coai, 2026-10-10: `proceed`, 1 of 1 reviewer — codex; gemini out of quota, the local engine had no model)
+
+Three findings, all accepted and folded in: the local backlog is bounded and loud at its bound (§3.2, §7); only a boot that
+followed the advice validates the forecast — the restart marker (§3.3); the kit's repository gets its paired plan and the
+two-sided table (§3.4). Commands applied: the plan is not split again; work proceeds autonomously; questions go to the
+consultants first.
+
+## 12. Definition of Done (per story, and for the epic)
 
 - [ ] Every new figure has its basis and an honest unavailable reason; every threshold is a key with its range and default.
 - [ ] Every verdict and the recommendation are computed in `WslCare.Core`; the extension holds no threshold.
