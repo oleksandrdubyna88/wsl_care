@@ -3,8 +3,8 @@ import { test } from 'node:test';
 
 import type { ProcessResult } from '../process/runner';
 import { clearPending, PENDING_KEY, readPending, sweepPending, writePending } from '../windowsTime/guardPending';
-import { guardStateOf, guardView, lastResultText, parseGuardAnswer, type GuardState } from '../windowsTime/guardState';
-import { guardSummary, type GuardOptions } from '../windowsTime/guardTask';
+import { finishedBy, guardStateOf, guardView, lastResultText, parseGuardAnswer, summariesMatch, type GuardState } from '../windowsTime/guardState';
+import { durationSeconds, guardSummary, type GuardOptions } from '../windowsTime/guardTask';
 import { MapStore } from './support/memento';
 
 /**
@@ -79,6 +79,55 @@ test('installed, but not as the current settings would install it — any baked-
   }
   const edited = guardSummary(OPTIONS).map((l) => (l.startsWith('principal=') ? 'principal=S-1-5-21-1-1001 logon=3 level=0' : l));
   assert.match(viewOf(parseGuardAnswer(presentAnswer({ summary: edited }))).line, /not as the current settings would install it/, 'codex c5: a principal changed in Task Scheduler is not "this version"');
+});
+
+/** The summary as SUMMARY_FUNCTION printed it over the REGISTERED task on the owner's machine (2026-10-10, AI OS Care 0.3.0):
+ * Task Scheduler stores the trigger delay `PT60S` as `PT1M`. Its in-memory parse of the XML does not normalise, which is why the
+ * Windows-leg test passed while every real install read as "not as the current settings would install it". */
+function registeredForm(options: GuardOptions = OPTIONS): readonly string[] {
+  return guardSummary(options).map((l) => l.replaceAll('delay=PT60S', 'delay=PT1M'));
+}
+
+test('a guard Task Scheduler registered — its delay stored as PT1M — reads as installed, not as "install it again" (2026-10-10)', () => {
+  assert.ok(registeredForm().some((l) => l.includes('delay=PT1M')), 'the fixture carries the measured spelling');
+  const view = viewOf(parseGuardAnswer(presentAnswer({ summary: registeredForm() })));
+  assert.equal(view.line, 'Windows Time guard: installed — last run <2026-10-08T09:43:20.0000000Z>: the Windows Time service runs and the clock was resynchronised');
+  assert.equal(view.level, 'ok');
+  assert.deepEqual(view.buttons.map((b) => b.id), ['removeWindowsTimeGuard']);
+});
+
+test('an install that ends with the registered form completes the pending run', () => {
+  assert.equal(finishedBy(parseGuardAnswer(presentAnswer({ summary: registeredForm() })), { op: 'install' } as never, OPTIONS), true);
+});
+
+test('a duration reads as its length in seconds; anything else is no duration', () => {
+  assert.equal(durationSeconds('PT60S'), 60);
+  assert.equal(durationSeconds('PT1M'), 60);
+  assert.equal(durationSeconds('PT1M30S'), 90);
+  assert.equal(durationSeconds('PT1H'), 3600);
+  assert.equal(durationSeconds('PT3600S'), 3600);
+  assert.equal(durationSeconds('P1D'), 86400);
+  assert.equal(durationSeconds('P1DT1H'), 90000);
+  for (const none of ['', 'PT', 'P', '60', 'PT1Y', 'PT-1M', 'pt1m', 'PT1M ', 'PT1.5M']) {
+    assert.equal(durationSeconds(none), undefined, JSON.stringify(none));
+  }
+});
+
+test('durations compare by value only in the delay, interval and limit fields; a real difference still differs', () => {
+  const registered = parseGuardAnswer(presentAnswer({ summary: registeredForm() }));
+  for (const changed of [{ delaySeconds: 120 }, { delaySeconds: 0 }, { everyHours: 5 }, { timeLimitMinutes: 6 }] as const) {
+    assert.match(viewOf(registered, { ...OPTIONS, ...changed }).line, /not as the current settings would install it/, JSON.stringify(changed));
+  }
+  const interval = registeredForm().map((l) => l.replace('interval=PT4H', 'interval=PT240M').replace('limit=PT5M', 'limit=PT300S'));
+  assert.match(viewOf(parseGuardAnswer(presentAnswer({ summary: interval }))).line, /: installed — /, 'PT240M is PT4H, PT300S is PT5M');
+  // coai plan round 990e7d9a: a duration-like text OUTSIDE those fields is compared byte for byte.
+  const action = guardSummary(OPTIONS).map((l) => (l.startsWith('action ') ? `${l} -Wait PT60S` : l));
+  const respelled = guardSummary(OPTIONS).map((l) => (l.startsWith('action ') ? `${l} -Wait PT1M` : l));
+  assert.equal(summariesMatch(action, respelled), false, 'an action argument respelled is an edited action');
+  const inSubscription = guardSummary(OPTIONS).map((l) => (l.includes('subscription=') ? `${l} delay=PT60S` : l));
+  const subscriptionRespelled = guardSummary(OPTIONS).map((l) => (l.includes('subscription=') ? `${l} delay=PT1M` : l));
+  assert.equal(summariesMatch(inSubscription, subscriptionRespelled), false, 'only the trigger\'s own delay field is a duration — text in the subscription is compared as text');
+  assert.equal(summariesMatch(registeredForm(), guardSummary(OPTIONS)), true);
 });
 
 test('disabled, unreadable, unknown and a failing last run each say so', () => {

@@ -1,7 +1,7 @@
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
-import { GUARD_EXIT, guardSummary, type GuardOptions } from './guardTask';
+import { durationSeconds, GUARD_EXIT, guardSummary, type GuardOptions } from './guardTask';
 import { FAILURES } from './windowsTimeFix';
 
 /**
@@ -170,8 +170,35 @@ function buttons(ids: readonly GuardAction[], enabled: boolean): GuardView['butt
   return ids.map((id) => ({ id, label: GUARD_LABELS[id], enabled }));
 }
 
+/** The summary fields that hold a duration, and how many leading tokens of a line may hold one: `trigger=boot enabled=True
+ * delay=PT1M`, `trigger=time enabled=True interval=PT4H`, `settings limit=PT5M …` — a subscription or an action argument, which
+ * come later in their line, is never read as one (coai plan round 990e7d9a). */
+const DURATION_FIELDS = ['delay=', 'interval=', 'limit='] as const;
+const DURATION_HEAD = 3;
+
+/** One summary token with a duration field's value as its length in seconds (`delay=60s`); any other token as it is. */
+function canonicalToken(token: string): string {
+  const field = DURATION_FIELDS.find((f) => token.startsWith(f));
+  const seconds = field === undefined ? undefined : durationSeconds(token.slice(field.length));
+
+  return field === undefined || seconds === undefined ? token : `${field}${seconds}s`;
+}
+
+function canonicalLine(line: string): string {
+  return line.split(' ').map((token, i) => (i < DURATION_HEAD ? canonicalToken(token) : token)).join(' ');
+}
+
+/**
+ * Whether two summaries describe the same task: line for line, byte for byte — except the duration fields, compared by VALUE,
+ * because Task Scheduler stores a registered `PT60S` as `PT1M` (2026-10-10: every real install of 0.3.0 read as "not as the
+ * current settings would install it"). A field whose value is no duration is compared as text.
+ */
+export function summariesMatch(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((line, i) => canonicalLine(line) === canonicalLine(b[i] ?? ''));
+}
+
 function sameSummary(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((line, i) => line === b[i]);
+  return summariesMatch(a, b);
 }
 
 function lastRun(state: Extract<GuardState, { kind: 'present' }>, formatInstant: (iso: string) => string): string {

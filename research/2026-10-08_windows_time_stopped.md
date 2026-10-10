@@ -86,6 +86,15 @@ UAC policy (U4), not the extension's.
 
 - **2026-10-09 15:26Z:** `w32time` found **Stopped / Manual** again, with a CORRECT clock (the coordinator, on the owner's
   machine); set **Automatic + running** elevated at 15:27Z. The same minute `RealTimeIsUniversal=1` was set (owner approved).
+- **2026-10-10 07:43Z boot:** the first boot after `RealTimeIsUniversal=1` came up **2 h AHEAD** (expected once: the RTC held
+  local time, now read as UTC). `w32time` was Running / Automatic but reported *Source: Local CMOS Clock, not synchronized*
+  until the coordinator's elevated `w32tm /resync /force` at 07:51Z put it right. The guard's boot trigger (1 min delay)
+  would have resynced it, but it had never run: `LastTaskResult` 267011 (*has not yet run*) at 07:52Z — the owner installed it
+  after that boot. Its first run was the timed trigger at 08:00:01Z, `LastTaskResult` 0, and `w32tm /query /status` then read
+  *Source: time.windows.com*, last sync 08:00:03Z (read unelevated at 08:02Z). The guest came up with the same 2 h-ahead time and timesyncd stepped it back: the journal stamps
+  `wsl-care.service` *Starting* 11:44:02+02:00 and *Finished* 09:48:49+02:00. (Separately: AI OS Care 0.3.0 read the freshly
+  installed guard as "not as the current settings would install it" — Task Scheduler stores the delay `PT60S` as `PT1M`;
+  fixed in 0.3.1, durations compared by value.)
 - What the owner's minidumps say about the 2 h slow boots — three `0x19C` display-driver hangs at monitor power changes, one
   `0x154` compressed-memory read failure, the BSOD → Linux on the disk → RTC in UTC chain:
   [2026-10-09_crash_dumps.md](2026-10-09_crash_dumps.md).
