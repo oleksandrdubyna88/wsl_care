@@ -1594,6 +1594,17 @@ Built as designed above, RED first. Every break-it on product code went red and 
 - **Two capabilities, appended:** `act.processList` and `status.interopRelays`. `ActEntryStdinTests`' "last capability" check
   became an order check.
 
+**The code round** (coai, proceed; 5 findings: 3 accepted, 2 rejected):
+- **Accepted:**
+  - `AgentCpuHistory.Record(…, EffectiveConfig)` is now the ONLY public writer: the narrower overloads are gone, and a test
+    holds it.
+  - The kept `research/diagnostics/relay-term.py` refuses everything A21 refuses (born there, stdio not two pipes, a socket, an
+    unreadable fd table).
+  - The `/proc` listing is read under the scan's own bounds: an unreadable or cut list is inconclusive, and every relay is kept.
+    It was RED first: *Expected preview.Count to be 0 … but found 1*.
+- **Rejected:** "A21 needs its panel button in this change" (two findings). This change contributes no extension action;
+  `ACTION_IDS` follows the contract, as A18's and A19's do without a button. The button is S7b.2b, next.
+
 **Not done here:** S7b.2b (the button), S7b.3 (A22, the Windows-side stop), and the socket peer through `sock_diag` (only if
 the dry-run preview shows that relays sit on sockets).
 

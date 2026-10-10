@@ -109,7 +109,7 @@ public sealed class AgentOrphansTests : IDisposable
 
     /// <summary>What the timer's full run does every time: record the AI-agent processes' CPU by identity.</summary>
     private void Record(IReadOnlyList<ProcessEntry> processes) =>
-        AgentCpuHistory.Record(_sandbox.Paths, _sandbox.Files, processes, SampleTime.Of(_clock)).Should().BeEmpty();
+        AgentCpuHistory.Record(_sandbox.Paths, _sandbox.Files, processes, SampleTime.Of(_clock), ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config).Should().BeEmpty();
 
     private SampleTime At(TimeSpan later) => new(_clock.GetUtcNow() + later, (long)(TimeSpan.FromDays(1) + later).TotalMilliseconds);
 

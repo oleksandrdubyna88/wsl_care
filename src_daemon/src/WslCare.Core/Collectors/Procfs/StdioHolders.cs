@@ -41,12 +41,19 @@ public static class StdioHolders
         var started = clock.GetTimestamp();
         bool OutOfTime() => clock.GetElapsedTime(started) >= budget;
         var holders = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-        foreach (var pid in Pids(files, linux))
+        var bounds = new ListingBounds(int.MaxValue, OutOfTime, cancellationToken);
+        var (pids, unlisted) = Pids(files, linux, bounds);
+        if (unlisted.Length > 0)
+        {
+            return new HolderScan.Inconclusive(unlisted);
+        }
+
+        foreach (var pid in pids)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var why = OutOfTime()
                 ? string.Create(CultureInfo.InvariantCulture, $"the scan of every process's fd table passed processes.fdScanMilliseconds ({budget.TotalMilliseconds:0} ms)")
-                : ScanOne(files, linux, pid, targets, holders, new ListingBounds(int.MaxValue, OutOfTime, cancellationToken));
+                : ScanOne(files, linux, pid, targets, holders, bounds);
             if (why.Length > 0)
             {
                 return new HolderScan.Inconclusive(why);
@@ -56,11 +63,17 @@ public static class StdioHolders
         return new HolderScan.Done(holders.ToDictionary(kv => kv.Key, kv => (IReadOnlyList<int>)kv.Value, StringComparer.Ordinal));
     }
 
-    private static IEnumerable<int> Pids(IFileSystem files, LinuxHostPaths linux) =>
-        files.ListDirectories(linux.ProcRoot)
-            .Select(ProcText.LastSegment)
-            .Select(name => int.TryParse(name, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) ? pid : 0)
-            .Where(pid => pid > 0);
+    /// <summary>Every pid directory of <c>/proc</c>, listed under the scan's own bounds (coai code round 2026-10-10, finding 4: the
+    /// listing is part of the budget) — or why the list cannot be trusted whole (unreadable, or cut at the deadline).</summary>
+    private static (IReadOnlyList<int> Pids, string Why) Pids(IFileSystem files, LinuxHostPaths linux, ListingBounds bounds) => files.ListEntries(linux.ProcRoot, bounds) switch
+    {
+        EntryListing.Listed { Complete: true } listed => ([.. listed.Entries.Where(e => e.Kind == EntryKind.Directory).Select(e => Pid(e.Name)).Where(pid => pid > 0)], string.Empty),
+        EntryListing.Listed cut => ([], $"the process list was not read to its end ({cut.Note}): a holder there cannot be ruled out"),
+        EntryListing.Unreadable unreadable => ([], $"the process list could not be read ({unreadable.Reason}): a holder there cannot be ruled out"),
+        _ => throw new System.Diagnostics.UnreachableException("EntryListing is a closed set"),
+    };
+
+    private static int Pid(string name) => int.TryParse(name, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) ? pid : 0;
 
     /// <summary>One process's table into <paramref name="holders"/>; empty when read (or the process is gone), otherwise why the
     /// scan is inconclusive.</summary>
