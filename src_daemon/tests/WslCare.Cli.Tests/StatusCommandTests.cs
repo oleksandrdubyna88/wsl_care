@@ -25,6 +25,9 @@ public sealed class StatusCommandTests
     /// 83 % turned <c>disk.root</c> warn and failed a test about the verdict line, for a reason that test does not guard.</summary>
     private static readonly VolumeReadResult.Measured HalfFullRoot = new(100 * GiB, 50 * GiB, 50 * GiB);
 
+    /// <summary>A root volume 90 % used: above the 80 % warn, so <c>disk.root</c> warns.</summary>
+    private static readonly VolumeReadResult.Measured NinetyPercentFullRoot = new(100 * GiB, 10 * GiB, 10 * GiB);
+
     private static (CliHost Host, RecordingCommandRunner Runner) FixtureHost(SandboxHost sandbox, DateTimeOffset now) =>
         FixtureHost(sandbox, now, HalfFullRoot);
 
@@ -146,7 +149,7 @@ public sealed class StatusCommandTests
     public void Status_without_json_names_every_warn_verdict_in_the_line_a_full_root_disk_too()
     {
         using var sandbox = new SandboxHost("status-text-verdicts-full-root");
-        var (host, _) = FixtureHost(sandbox, ProcfsFixture.CapturedAt, new VolumeReadResult.Measured(100 * GiB, 10 * GiB, 10 * GiB));
+        var (host, _) = FixtureHost(sandbox, ProcfsFixture.CapturedAt, NinetyPercentFullRoot);
         CliRun.Over(host, "config", "set", "thresholds.memAvailableWarnPercent", "70").Exit.Should().Be((int)ExitCode.Ok);
 
         var lines = CliRun.Lines(CliRun.Over(host, "status").Stdout);
