@@ -44,11 +44,19 @@ public static class SuspectSignals
     /// <summary>The same, with the items whose CPU may have moved since the preview (plan E14 S2b: A19's BUSY targets — a busy
     /// server moves its CPU by definition): their re-check keeps the identity, the terminal and the account, and drops ONLY the CPU
     /// one. Every other item — every target of A11 and A18 — still refuses a moved CPU.</summary>
-    public static async Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> EndAllAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, TimeSpan grace, Func<ActionItem, bool> cpuMayMove, CancellationToken cancellationToken)
+    public static Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> EndAllAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, TimeSpan grace, Func<ActionItem, bool> cpuMayMove, CancellationToken cancellationToken) =>
+        SignalAllAsync(context, linux, targets, cpuMayMove, (identities, token) => context.Signals.TerminateAllAsync(identities, grace, token), cancellationToken);
+
+    /// <summary>The same re-check, then SIGTERM ONLY (plan E14 S7b.2: an interop relay is never killed) — a survivor of the grace
+    /// comes back <see cref="SignalOutcome.StillRunning"/>. Every target's CPU must not have moved since the preview.</summary>
+    public static Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> TermOnlyAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, TimeSpan grace, CancellationToken cancellationToken) =>
+        SignalAllAsync(context, linux, targets, static _ => false, (identities, token) => context.Signals.TerminateOnlyAsync(identities, grace, token), cancellationToken);
+
+    private static async Task<IReadOnlyList<(ActionItem Item, SignalOutcome Outcome)>> SignalAllAsync(ActionContext context, LinuxHostPaths linux, IReadOnlyList<ActionItem> targets, Func<ActionItem, bool> cpuMayMove, Func<IReadOnlyList<ProcessIdentity>, CancellationToken, Task<IReadOnlyList<SignalOutcome>>> send, CancellationToken cancellationToken)
     {
         var checkedTargets = targets.Select(t => (Item: t, Identity: Identity(t), Refusal: Recheck(SuspectTermination.Sample(context, linux, Identity(t).Pid), t, cpuMayMove(t)))).ToList();
         var passing = checkedTargets.Where(c => c.Refusal is null).ToList();
-        var outcomes = passing.Count == 0 ? [] : await context.Signals.TerminateAllAsync([.. passing.Select(c => c.Identity)], grace, cancellationToken).ConfigureAwait(false);
+        var outcomes = passing.Count == 0 ? [] : await send([.. passing.Select(c => c.Identity)], cancellationToken).ConfigureAwait(false);
         return [.. checkedTargets.Where(c => c.Refusal is not null).Select(c => (c.Item, c.Refusal!)), .. passing.Zip(outcomes, (c, o) => (c.Item, o))];
     }
 

@@ -210,7 +210,8 @@ public sealed class ActEntryStdinTests : IDisposable
     public void The_capability_names_the_stdin_entry_list()
     {
         Capabilities.All.Should().Contain("act.entryStdin");
-        Capabilities.All[^1].Should().Be(Capabilities.ActEntryStdin, "a capability is appended in the story that delivers it");
+        Capabilities.All.Should().ContainInOrder([Capabilities.ArchiveList, Capabilities.ActEntryStdin], "a capability is appended in the story that delivers it");
+        Capabilities.All.Should().ContainInOrder([Capabilities.ActEntryStdin, Capabilities.ActProcessList, Capabilities.StatusInteropRelays], "E14 S7b.2 appended its two after it");
     }
 
     // ---------- D10: archive check-base, either order ----------

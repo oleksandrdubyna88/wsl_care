@@ -127,4 +127,48 @@ public sealed class PidfdSignalsTests : IDisposable
         calls.Closed.Should().BeEquivalentTo([10, 20]);
         calls.Sent.Should().NotContain(s => s.Signal == SigKill, "a cancelled run escalates nothing");
     }
+
+    /// <summary>A sender that knows only the escalating call: the SIGTERM-only one must refuse by default, never fall back to it.</summary>
+    private sealed class EscalatingOnly : IProcessSignals
+    {
+        public int Calls { get; private set; }
+
+        public Task<IReadOnlyList<SignalOutcome>> TerminateAllAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult<IReadOnlyList<SignalOutcome>>([.. processes.Select(_ => new SignalOutcome.Ended(NeededKill: true))]);
+        }
+    }
+
+    /// <summary>Plan E14 S7b.2: a relay gets SIGTERM ONLY — a survivor of the grace is reported still running, and no SIGKILL is
+    /// ever sent through the pin.</summary>
+    [Fact]
+    public async Task The_sigterm_only_call_sends_sigterm_once_and_reports_a_survivor_still_running_never_killed()
+    {
+        Stat(10);
+        var calls = new NeverEnding(_clock);
+        var started = _clock.GetUtcNow();
+
+        var outcomes = await ((IProcessSignals)Signals(calls)).TerminateOnlyAsync([new ProcessIdentity(10, 4000)], TimeSpan.FromSeconds(10), CancellationToken.None);
+
+        outcomes.Should().ContainSingle().Which.Should().BeOfType<SignalOutcome.StillRunning>()
+            .Which.Reason.Should().Contain("SIGTERM").And.Contain("no SIGKILL");
+        calls.Sent.Should().Equal([(10, SigTerm)], "one SIGTERM through the pin, never a SIGKILL");
+        (_clock.GetUtcNow() - started).Should().BeLessThan(TimeSpan.FromSeconds(10) + PidfdProcessSignals.KillWait, "no kill wait follows the grace");
+        calls.Closed.Should().Equal([10]);
+    }
+
+    [Fact]
+    public async Task The_sigterm_only_call_is_refused_by_the_refusing_sender_and_by_any_sender_that_does_not_implement_it()
+    {
+        var escalating = new EscalatingOnly();
+        var identity = new ProcessIdentity(10, 4000);
+
+        var refusing = await ((IProcessSignals)RefusingProcessSignals.Sandboxed).TerminateOnlyAsync([identity], TimeSpan.FromSeconds(10), CancellationToken.None);
+        var byDefault = await ((IProcessSignals)escalating).TerminateOnlyAsync([identity], TimeSpan.FromSeconds(10), CancellationToken.None);
+
+        refusing.Should().ContainSingle().Which.Should().BeOfType<SignalOutcome.Refused>();
+        byDefault.Should().ContainSingle().Which.Should().BeOfType<SignalOutcome.Refused>();
+        escalating.Calls.Should().Be(0, "a sender without a SIGTERM-only mode never falls back to the escalating call");
+    }
 }

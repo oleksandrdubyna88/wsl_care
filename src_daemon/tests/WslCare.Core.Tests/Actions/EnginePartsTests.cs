@@ -90,7 +90,7 @@ public sealed class EnginePartsTests
         ((Action)(() => _ = ActionId.Find("A18")!.AutoSwitch)).Should().Throw<InvalidOperationException>().WithMessage("*button only*");
         ActionId.ExecutionOrder.Select(id => id.Text).Should().BeEquivalentTo(ActionId.All.Select(id => id.Text)).And.OnlyHaveUniqueItems();
         ActionId.ExecutionOrder.Select(id => id.Text).Should().ContainInOrder("A5", "A4", "A6", "A7", "A8", "A9").And.ContainInOrder("A1", "A2");
-        ActionId.ExecutionOrder.Select(id => id.Text).Should().ContainInOrder(new[] { "A16", "A3", "A11", "A18", "A19", "A13", "A20", "A1", "A2" }, "plan §15r D8: the archive after the clock and the suspects, before the cache drop and the compaction");
+        ActionId.ExecutionOrder.Select(id => id.Text).Should().ContainInOrder(new[] { "A16", "A3", "A11", "A18", "A19", "A21", "A13", "A20", "A1", "A2" }, "plan §15r D8: the archive after the clock and the suspects, before the cache drop and the compaction");
     }
 
     [Theory]
@@ -101,7 +101,8 @@ public sealed class EnginePartsTests
     [InlineData("A18", true)]
     [InlineData("A19", true)]
     [InlineData("A20", true)]
-    [InlineData("A21", false)]
+    [InlineData("A21", true)]
+    [InlineData("A22", false)]
     [InlineData("A4,A4", false)]
     [InlineData("A4,", false)]
     [InlineData("", false)]

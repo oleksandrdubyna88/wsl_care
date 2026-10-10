@@ -73,6 +73,14 @@ public static class Capabilities
     /// <c>--json</c> before its path (plan §15s D6, D7, D10; E10.S0).</summary>
     public const string ActEntryStdin = "act.entryStdin";
 
+    /// <summary><c>act A18|A19|A21 --preview|--confirm --process &lt;pid:start&gt;…</c>: a button run bound to the processes its preview
+    /// showed — the gate the extension's process buttons act on (plan E14 S7b.2).</summary>
+    public const string ActProcessList = "act.processList";
+
+    /// <summary><c>status --json</c> carries the <c>interopRelays</c> block, and A21 stops client-gone interop relays with SIGTERM only
+    /// (plan E14 S7b.2).</summary>
+    public const string StatusInteropRelays = "status.interopRelays";
+
     /// <summary>Every capability this build has, in the order they were added.</summary>
-    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase, ArchivePreview, ArchiveRun, ArchiveRestore, ArchiveList, ActEntryStdin];
+    public static IReadOnlyList<string> All { get; } = [ActShownList, RunsShow, RunningBlock, LogsInstantRange, ActDetach, ActOnlyStdin, ActStop, ConfigContract, AgentsList, AgentsProbe, ConfigAgentsExtra, StatusMcpServers, ArchiveCheckBase, ArchivePreview, ArchiveRun, ArchiveRestore, ArchiveList, ActEntryStdin, ActProcessList, StatusInteropRelays];
 }

@@ -22,7 +22,8 @@
     "A15": true,
     "A16": true,
     "A17": false,
-    "A19": true
+    "A19": true,
+    "A21": true
   },
   "volumes": {
     "anonymousMaxCount": 100,
@@ -68,7 +69,8 @@
     "topCount": 30,
     "killWaitSeconds": 5,
     "shownCommandChars": 200,
-    "signalSliceMilliseconds": 200
+    "signalSliceMilliseconds": 200,
+    "fdScanMilliseconds": 2000
   },
   "thresholds": {
     "memAvailableWarnPercent": 25,

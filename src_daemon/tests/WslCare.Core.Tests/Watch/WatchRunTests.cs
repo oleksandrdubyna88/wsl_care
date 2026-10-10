@@ -61,13 +61,54 @@ public sealed class WatchRunTests : IDisposable
     {
         public List<ProcessIdentity> Asked { get; } = [];
 
+        /// <summary>What A21 asked to end with SIGTERM only (plan E14 S7b.2).</summary>
+        public List<ProcessIdentity> TermOnly { get; } = [];
+
         public Task<IReadOnlyList<SignalOutcome>> TerminateAllAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken)
         {
             hook()();
             Asked.AddRange(processes);
             return Task.FromResult<IReadOnlyList<SignalOutcome>>([.. processes.Select(_ => new SignalOutcome.Ended(NeededKill: false))]);
         }
+
+        public Task<IReadOnlyList<SignalOutcome>> TerminateOnlyAsync(IReadOnlyList<ProcessIdentity> processes, TimeSpan grace, CancellationToken cancellationToken)
+        {
+            TermOnly.AddRange(processes);
+            return Task.FromResult<IReadOnlyList<SignalOutcome>>([.. processes.Select(_ => new SignalOutcome.Ended(NeededKill: false))]);
+        }
     }
+
+    private const int RelayPid = 400;
+    private const string CredsExe = "/mnt/c/Users/me/AppData/Local/Programs/creds/creds-mcp.exe";
+
+    /// <summary>The real tree with the links a relay needs (a link needs a privilege on Windows).</summary>
+    private sealed class RelayLinks(IFileSystem inner, IReadOnlyDictionary<string, string> links) : DelegatingFileSystem(inner)
+    {
+        public override LinkReadResult ReadLink(string path) =>
+            links.TryGetValue(path.Replace('\\', '/'), out var target) ? new LinkReadResult.Target(target) : base.ReadLink(path);
+    }
+
+    /// <summary>Plan E14 S7b.2: a client-gone creds-mcp.exe relay under root's session init <c>Relay(7411)</c>, idle, its stdio
+    /// two pipes nobody else holds — and the file system that answers its links.</summary>
+    private RelayLinks ClientGoneRelay()
+    {
+        _tree.Process(7410, 1, "/", 10, uid: 0, words: ["/init"], startTicks: StartTicksFor(TimeSpan.FromHours(3)));
+        _tree.Write("/proc/7410/comm", "Relay(7411)\n");
+        _tree.Process(RelayPid, 7410, "/", 2_000, words: ["/init", CredsExe], startTicks: StartTicksFor(TimeSpan.FromHours(1)), cpuTicks: 500);
+        _tree.Write("/proc/400/fd/0", string.Empty);
+        _tree.Write("/proc/400/fd/1", string.Empty);
+        var proc = _tree.Paths.ProcRoot.Replace('\\', '/');
+        return new RelayLinks(Files, new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [$"{proc}/400/exe"] = "/init",
+            [$"{proc}/400/fd/0"] = "pipe:[4000]",
+            [$"{proc}/400/fd/1"] = "pipe:[4001]",
+        });
+    }
+
+    /// <summary>The dry-run week's first timer run, <paramref name="ago"/> before now.</summary>
+    private void FirstTimerRun(TimeSpan ago) =>
+        _tree.Write("/var/lib/wsl-care/" + DryRunWindow.FileName, JsonSerializer.Serialize(new FirstTimerRun(SchemaVersion.Current, _clock.GetUtcNow() - ago), WslCareJsonContext.Default.FirstTimerRun));
 
     private RecordingSignals? _recording;
 
@@ -255,5 +296,71 @@ public sealed class WatchRunTests : IDisposable
         collided.Reason.Should().Contain("lock");
         Signals.Asked.Should().ContainSingle("the next watch tried the server, which a lost race must not have used up");
         next.Outcome.Should().Be(WatchOutcome.Acted, next.Reason);
+    }
+
+    [Fact]
+    public async Task The_watch_runs_A19_and_A21_as_one_act_and_ends_the_relay_with_sigterm_only()
+    {
+        Configure("""{ "dryRun": false }""");
+        var files = ClientGoneRelay();
+        await Watch(advance: false, through: files);
+        await Watch(through: files);
+
+        var acted = await Watch(through: files);
+
+        acted.Outcome.Should().Be(WatchOutcome.Acted, acted.Reason);
+        acted.Tried.Should().Equal(string.Create(CultureInfo.InvariantCulture, $"{RelayPid}:{StartTicksFor(TimeSpan.FromHours(1))}"));
+        Signals.TermOnly.Should().ContainSingle().Which.Pid.Should().Be(RelayPid, "idle 10 min (two 5-minute watches) past mcpWatchdog.orphanIdleMinutes");
+        Signals.Asked.Should().BeEmpty("A19 had no target, and A21 never escalates");
+        var line = History().Should().ContainSingle("ONE recorded act carries both actions").Subject;
+        line.Actions.Select(a => a.Id).Should().Equal(["A19", "A21"]);
+        line.Actions.Single(a => a.Id == "A21").Status.Should().Be(ActionStatus.Ran);
+    }
+
+    [Theory]
+    [InlineData("auto off")]
+    [InlineData("dry run")]
+    [InlineData("first week")]
+    public async Task A_client_gone_relay_is_left_alone_with_auto_A21_off_in_a_dry_run_or_in_the_first_week(string why)
+    {
+        Configure(why switch
+        {
+            "auto off" => """{ "dryRun": false, "auto": { "A21": false } }""",
+            "dry run" => """{ "dryRun": true }""",
+            _ => """{ "dryRun": false }""",
+        });
+        if (why == "first week")
+        {
+            FirstTimerRun(TimeSpan.FromDays(2));
+        }
+
+        var files = ClientGoneRelay();
+        await Watch(advance: false, through: files);
+        await Watch(through: files);
+
+        var result = await Watch(through: files);
+
+        result.Outcome.Should().Be(WatchOutcome.Sampled, result.Reason);
+        result.Reason.Should().Contain(why switch { "auto off" => "auto.A21 is off", "dry run" => "dryRun is on", _ => "first 7 days run dry" });
+        Signals.TermOnly.Should().BeEmpty();
+        History().Should().BeEmpty();
+        if (why == "first week")
+        {
+            FirstTimerRun(TimeSpan.FromDays(8));
+            var after = await Watch(through: files);
+            after.Outcome.Should().Be(WatchOutcome.Acted, "once the week is over, auto on and dryRun off let it act");
+            Signals.TermOnly.Should().ContainSingle();
+        }
+    }
+
+    [Fact]
+    public async Task With_both_watched_switches_off_the_watch_only_samples_and_names_both()
+    {
+        Configure("""{ "dryRun": false, "auto": { "A19": false, "A21": false } }""");
+
+        var result = await Watch(advance: false);
+
+        result.Outcome.Should().Be(WatchOutcome.Sampled);
+        result.Reason.Should().Contain("auto.A19 is off").And.Contain("auto.A21 is off").And.Contain("so no watched action may act");
     }
 }

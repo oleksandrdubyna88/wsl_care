@@ -148,6 +148,76 @@ flowchart LR
   check, installed by `install.sh` only when the release ships them — and retired (timer disabled, service stopped, files removed) when an older release is installed over them. The timer's full run now waits
   `requests.lockWaitSeconds` for the lock (the watch holds it for seconds).
 
+## A21 — ending client-gone interop relays (E14 S7b.2, 2026-10-10)
+
+`Actions/Suspects/InteropRelayStop.cs`, `Collectors/Procfs/InteropRelays.cs` and `StdioHolders.cs`. It closes the Windows-side
+leak from the distro. A Windows MCP server started from the distro, such as `creds-mcp.exe` under VS Code's `wsl.exe`, runs as
+a Linux **interop relay**: exe `/init`, argv `/init <path>.exe …`. Ending the relay with SIGTERM ends its Windows child. The
+Q-S7b-3 measurement of 2026-10-10 recorded 26 ms for the relay and about 0.2 s for the child, and a relay with a live client
+was untouched ([2026-10-09_interop_relays.md](2026-10-09_interop_relays.md) § 5).
+
+```mermaid
+flowchart LR
+    snap["the process table<br/>argv[0] init + a catalogued program"] --> read["InteropRelays.Read<br/>exe link /init · raw argv · parent comm + uid · fd 0-2"]
+    read --> judge["InteropRelayStop.Judge"]
+    scan["StdioHolders.Scan<br/>every /proc/&lt;pid&gt;/fd as root<br/>≤ processes.fdScanMilliseconds"] --> judge
+    history[("agent-cpu.json<br/>relays recorded by the timer and the watch")] --> judge
+    judge -- "reaper parent · not born there ·<br/>piped stdio nobody else holds · idle" --> item["target pid:start"]
+    item --> recheck["RunAsync: judged AGAIN on a fresh table"]
+    recheck --> term["SuspectSignals.TermOnlyAsync<br/>IProcessSignals.TerminateOnlyAsync — SIGTERM only"]
+```
+
+- **A relay** is a snapshot process whose program word is `init` and whose next word is a CATALOGUE server's program:
+  `creds-mcp`, and `coai-mcp` when `mcpServers.watched` holds it. The comparison ignores case.
+  - It is confirmed from `/proc`: the exe link is `/init`, `argv[0]` is `/init`, and `argv[1]` ends in `.exe` in any case.
+  - No `/mnt/` prefix is required, because `[automount] root=` moves it.
+  - The user's `mcpServers.programs` are not relay targets: every client-gone relay is an orphan, and a name the user chose may
+    be another program.
+- **Client gone** needs all three of these:
+  - **A reaper parent:** root's pid 1, or a root process whose comm is exactly `Relay(<digits>)` (the WSL session init) or
+    `SessionLeader`. A non-root process with either name is no reaper.
+  - **Not born there:** a `Relay(n)` is made for ONE command, and `n` is that command's pid. Measured: `Relay(220668)` is pid
+    220666, with child 220668. So a relay whose pid is `n` is `wsl.exe`'s own top-level command, whose Windows caller may live,
+    and it is kept.
+  - **Piped stdio nobody else holds:**
+    - fd 0 and fd 1 must each be a `pipe:[…]`. A socket on fd 0–2, a file, a device, a closed fd or an unreadable link keeps
+      the relay with its reason. Node gives a child socketpairs, and a socket's peer cannot be told from `/proc`.
+    - `StdioHolders` reads every process's fd table. Any other holder of one of the relay's pipes (fd 0–2) keeps it, including
+      a root process and `Relay(n)` itself.
+    - A process that vanished mid-scan holds nothing. A table or link that exists and cannot be read makes the whole scan
+      inconclusive, and every relay is kept that run. So does passing `processes.fdScanMilliseconds`.
+- **Idle** is a freshness floor, not evidence: the CPU must be unmoved for `mcpWatchdog.orphanIdleMinutes`, by
+  `AgentCpuHistory`.
+  - The history records relays at both writers (`ActionEngine.RecordAgentCpu` and `WatchRun`, through
+    `AgentCpuHistory.Record(…, config)`). A writer that left them out would drop their entries.
+  - Its bound is the existing one: live identities only, at most `agentCpu.maxEntries` (512).
+- **The account:** the target user's (the real uid), never root's, no terminal, not a zombie, and the process the snapshot saw.
+- **The stop is SIGTERM only.** `IProcessSignals.TerminateOnlyAsync` is a separate method. By default it refuses (the
+  refusing sender, test fakes), so no sender falls back to the escalating call.
+  - `PidfdProcessSignals` pins each process, compares its start ticks, sends SIGTERM and waits ONE shared
+    `processes.termGraceSeconds`.
+  - A survivor is `StillRunning`. Its item says the Windows process `<program>.exe` is still running (S7b.3, A22).
+  - Before the signal, `RunAsync` judges every relay again on a fresh table. A relay whose pipe gained a holder, that used
+    CPU, or whose pid is another process now is `not signalled: the re-check …`.
+- **The controls:**
+  - `auto.A21` is on by default, under the daemon's dry-run rules. It has no window of its own (Q11).
+  - The watch runs `[A19, A21]` as ONE recorded act with one shown list, each action by its own switch.
+  - The 4-hour timer runs it right after A19.
+  - A button run passes `--process <pid:start>` (`ActionId.ShownProcessIds`; `ShownProcessBinding`, shared with A19).
+- **The item** names the program's base name only. The Windows path carries the Windows user name.
+- **`status --json` → `interopRelays`** (capability `status.interopRelays`): what an unprivileged status can read.
+  - It gives `count`, and `reparented` (to a reaper and not born there).
+  - It gives the effective `autoStop` (`auto.A21`) and the `command` that flips it. The extension shows that command; it
+    never writes daemon config.
+  - Whether a relay's client is gone needs root's scan, so that is the button's preview. `act.processList` advertises the
+    `--process` road for the extension's process buttons.
+- **The budget:** `RunBudget.WatchRunWorstCase` counts two signal graces (A19's and A21's) and two fd scans (the preview and the
+  re-check). The coupled `mcpWatchdog.runLimitMinutes` rule follows.
+- **Not measured:** what a real relay's stdio is, and whether `Relay(n)` holds it. At 2026-10-10 14:25Z no relay ran.
+  - If relays sit on sockets, A21 keeps them all, and the dry-run preview says so. The follow-up would be the socket's peer
+    through `sock_diag`.
+  - `research/diagnostics/relay-facts.sh` prints these facts read-only.
+
 ## Entry points
 
 `wsl-care status [--json]` (the block, the verdicts, one text line) and `wsl-care collect` (the run detail). No verb of its
@@ -286,4 +356,5 @@ flowchart LR
   interpreter — and needs a catalogue entry naming its script, as `playwright-mcp` has since E14 S2d. A `node` started with an
   option that takes a separate value before the script (`node -r mod …/playwright-mcp`) yields the value as its script and is
   missed (never mistaken), as are a global install (`~/.nvm/…/bin/playwright-mcp`), a relative script path and `node …/@playwright/mcp/cli.js` run by another name. A leaked tree — the agent gone, `npm exec` and the shell re-parented to init, `node` still alive — has a live non-agent parent, so it counts as not under an agent and is never an orphan target (the owner walk stops at the first live parent; whether `playwright-mcp` outlives its closed stdin is not measured).
-  A Windows server reached through interop (`/init …/creds-mcp.exe`) has argv[0] `init` and is not matched.
+  A Windows server reached through interop (`/init …/creds-mcp.exe`) has argv[0] `init` and is no A19 instance; A21 (above)
+  judges it as an interop relay.

@@ -48,6 +48,7 @@ internal static class StatusCommand
             LastCleanup = LastCleanups.From(history),
             Limits = StatusLimits.From(loaded.Config),
             McpServers = McpServersReport.From(mcp),
+            InteropRelays = host.Paths is LinuxHostPaths ? InteropRelaysReport.From(sample.Vm.Bind(vm => vm.Processes), host.Paths, host.Files, loaded.Config) : null,
         };
         report = WithWindowsSide(report, host, sample, loaded.Config, cancellationToken);
         return Output.Answer(stdout, request.Json ? JsonSerializer.Serialize(report, WslCareJsonContext.Default.StatusReport) : StatusText.Render(report));
