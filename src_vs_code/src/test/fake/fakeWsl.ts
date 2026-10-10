@@ -70,6 +70,8 @@ export interface FakeScenario {
   readonly runs?: string;
   /** E6.S4: the file (in `answers`) `logs --from --to --json` answers; `logs-local-day.json` by default. */
   readonly logs?: string;
+  /** E10.S1: the file (in `answers`) `archive check-base <path> --json` answers; `archive-check-base.json` by default. */
+  readonly checkBase?: string;
 }
 
 /** The root calls' scripted answers (E6.S2); absent, every root call of the closed set answers as the goldens do. */
@@ -201,6 +203,10 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
   if (d !== '-d' || cd !== '--cd' || slash !== '/' || exec !== '--exec' || binary !== DAEMON) {
     return refuse('not the one shape the client sends: -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care <verb>', argv);
   }
+  const archive = archiveReadOf(tail);
+  if (archive !== undefined) {
+    return distroReply(scenario, argv) ?? { code: 0, stdout: fs.readFileSync(path.join(scenario.answers, archive(scenario))), ...delay(scenario) };
+  }
   const runRead = runReadOf(tail);
   if (runRead !== undefined) {
     return distroReply(scenario, argv) ?? runReadAnswer(scenario, runRead);
@@ -210,6 +216,26 @@ function daemonReply(scenario: FakeScenario, argv: readonly string[]): Reply {
   }
 
   return distroReply(scenario, argv) ?? daemonAnswer(scenario, tail);
+}
+
+// ---- E10.S1: the three archive reads — the fake's OWN copy of their shapes ----
+
+/** The daemon's own path rule for check-base (`ArchiveArguments.IsPathArgument`), and the key's limit. */
+function isPathValue(value: string | undefined): value is string {
+  return value !== undefined && value.length > 0 && value.length <= 1024 && !value.startsWith('-') && ![...value].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127);
+}
+
+/** `archive status --json`, `archive preview --json`, `archive check-base <path> --json` — the answer file each reads — or not one. */
+function archiveReadOf(tail: readonly string[]): ((scenario: FakeScenario) => string) | undefined {
+  const [verb, sub, third, fourth, ...rest] = tail;
+  if (verb !== 'archive' || rest.length > 0) {
+    return undefined;
+  }
+  if (third === '--json' && fourth === undefined && (sub === 'status' || sub === 'preview')) {
+    return () => `archive-${sub}.json`;
+  }
+
+  return sub === 'check-base' && isPathValue(third) && fourth === '--json' ? (scenario) => scenario.checkBase ?? 'archive-check-base.json' : undefined;
 }
 
 // ---- E6.S3 / E6.S4: the three run reads — the fake's OWN copy of their shapes ----

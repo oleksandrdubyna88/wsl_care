@@ -1,4 +1,4 @@
-import type { RunRead } from '../client/verbs';
+import type { HistoryRead } from '../client/verbs';
 import { DAY_MS, RETENTION_DAYS, utcInstantOf } from '../shared/instants';
 import { RUN_ID_SHAPE } from '../shared/shapes';
 
@@ -135,12 +135,12 @@ export function windowOf(period: DayPeriod, now: number, retentionDays: number =
 }
 
 /** What the host asks the daemon for a period — `runs show` for one run; `logs` and `runs` over the window otherwise. */
-export function readsOf(period: Period, now: number): RunRead[] {
+export function readsOf(period: Period, now: number): HistoryRead[] {
   return readsFor(period, period.kind === 'thisRun' ? undefined : windowOf(period, now));
 }
 
 /** The reads of a period over the window ALREADY built for it (review C2: the view shows that same window). */
-export function readsFor(period: Period, window: PeriodWindow | undefined): RunRead[] {
+export function readsFor(period: Period, window: PeriodWindow | undefined): HistoryRead[] {
   if (period.kind === 'thisRun') {
     return [{ read: 'runsShow', runId: period.runId }];
   }

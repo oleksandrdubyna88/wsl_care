@@ -1,5 +1,5 @@
 import type { JsonObject, ReadOutcome, VerbOutcome } from '../client/outcome';
-import type { RunRead } from '../client/verbs';
+import type { HistoryRead, RunRead } from '../client/verbs';
 import type { DurableStore } from '../cleanup/journal';
 import { failureText } from '../failureText';
 import type { ViewLevel } from '../panel/view';
@@ -278,9 +278,9 @@ export class LogsController {
   }
 
   /** Sets the state of each read's slot; a runs answer also gives the run ids the list's indexes name. */
-  private mark(reads: readonly RunRead[], state: ReadState): void {
+  private mark(reads: readonly HistoryRead[], state: ReadState): void {
     for (const request of reads) {
-      const slots: { readonly [K in RunRead['read']]: () => void } = {
+      const slots: { readonly [K in HistoryRead['read']]: () => void } = {
         logs: () => { this.logs = state; },
         runs: () => { this.runs = state; this.runIds = state.kind === 'answered' ? list(state.body, 'runs').map((run) => runIdOf(run.runId)) : []; },
         runsShow: () => { this.show = state; },

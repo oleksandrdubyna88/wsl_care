@@ -27,7 +27,7 @@ function golden(name: string): Record<string, unknown> {
   return JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, 'head', name), 'utf8')) as Record<string, unknown>;
 }
 
-const ANSWERS: { readonly [K in RunRead['read']]: string } = { logs: 'logs-local-day.json', runs: 'runs-local-day.json', runsShow: 'runs-show-done.json' };
+const ANSWERS: { readonly [K in RunRead['read']]: string } = { logs: 'logs-local-day.json', runs: 'runs-local-day.json', runsShow: 'runs-show-done.json', archiveStatus: 'archive-status.json', archivePreview: 'archive-preview.json', archiveCheckBase: 'archive-check-base.json' };
 
 /** A status answer naming `runId` as the last cleanup (or none), with the daemon's capabilities. */
 function statusWith(runId: string | undefined, capabilities?: readonly string[]): VerbOutcome {

@@ -187,6 +187,14 @@
           "scope": "application",
           "markdownDescription": "A cleanup's preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9's snap listing and a margin."
         },
+        "wslCare.timeouts.archivePreviewSeconds": {
+          "type": "integer",
+          "default": 630,
+          "minimum": 610,
+          "maximum": 7200,
+          "scope": "application",
+          "markdownDescription": "How long `archive preview --json` (what the AI-session archive would move) may take, in seconds — above the daemon ceiling `archive.previewTimeoutSeconds` at its maximum (600)."
+        },
         "wslCare.timeouts.runReadSeconds": {
           "type": "integer",
           "default": 20,

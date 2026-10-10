@@ -26,6 +26,8 @@ export const DAEMON_CEILING_S = {
   snapList: 30,
   /** `StdinList.Ceiling` (A4's shown list on stdin) — not a command. */
   stdin: 10,
+  /** `archive.previewTimeoutSeconds`' range maximum (`ConfigKeys.Archive.PreviewTimeoutSeconds`): the longest an `archive preview` takes. */
+  archivePreviewMax: 600,
 } as const;
 
 /** `RunRequests.MaxQueued`: the most requests the detach's sweep can meet, each answered by one `systemctl show`. */
@@ -62,6 +64,9 @@ export function worstCasesOf(limits: DaemonLimits) {
     preview: snapshot,
     /** `runs show`, `runs`, `logs` without `--detail`: file reads only. */
     runRead: 0,
+    /** `archive preview --json` (E10.S1): the agents' folders listed and the open-file scan, all within `archive.previewTimeoutSeconds` —
+     *  taken at its RANGE MAXIMUM (machine-only, not published in `status.limits`): no child process. */
+    archivePreview: DAEMON_CEILING_S.archivePreviewMax,
     /**
      * A detach (`act … --confirm --detach`, `collect --detach`, `DetachedRuns`): the shown list on stdin, the request sweep
      * under the lock — one `systemctl show` per queued request, at most `MAX_QUEUED_REQUESTS` — the unit's start and, when
@@ -85,7 +90,7 @@ const TODAY = worstCasesOf(FALLBACK_LIMITS);
 export const DOCKER_SNAPSHOT_S = TODAY.snapshot;
 
 /** The fixed-shape calls' worst cases under today's limits. */
-export const WORST_CASE_S = { status: TODAY.status, version: TODAY.version, doctor: TODAY.doctor, preview: TODAY.preview, runRead: TODAY.runRead, detach: TODAY.detach, stop: TODAY.stop } as const;
+export const WORST_CASE_S = { status: TODAY.status, version: TODAY.version, doctor: TODAY.doctor, preview: TODAY.preview, runRead: TODAY.runRead, archivePreview: TODAY.archivePreview, detach: TODAY.detach, stop: TODAY.stop } as const;
 
 /**
  * What ONE row costs in `act <ids> --preview` (plan §15q N-2): each Docker action takes its OWN Docker snapshot

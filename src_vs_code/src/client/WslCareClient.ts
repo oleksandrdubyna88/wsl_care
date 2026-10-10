@@ -10,7 +10,7 @@ import type { Answer, DaemonVersion, Failure, JsonObject, ReadOutcome, VerbOutco
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { DaemonLimits } from '../shared/daemonLimits';
 import { ceilingMs } from './ceilings';
-import { PREVIEW_CONTAINER_ASSUMPTION, runReadTail, VERBS, type RunRead, type Verb } from './verbs';
+import { PREVIEW_CONTAINER_ASSUMPTION, runReadTail, VERBS, type RunRead, type RunReadName, type Verb } from './verbs';
 
 /**
  * The extension's one client of the `wsl-care` daemon — and the ONLY module that builds `wsl.exe` argv
@@ -194,7 +194,7 @@ export class WslCareClient {
       return { ...target.failure, read: request.read };
     }
     const { wsl, distro } = target.value;
-    const timeoutMs = this.ceiling('runRead');
+    const timeoutMs = this.ceiling(request.read === 'archivePreview' ? 'archivePreview' : 'runRead');
     const result = await this.options.runner({ file: wsl, args: daemonArgv(distro, runReadTail(request)), timeoutMs });
     const read = readAnswerOf(result, distro, timeoutMs);
 
@@ -321,7 +321,7 @@ export class WslCareClient {
   }
 
   /** The call's ceiling, from the number settings as they are NOW (`client/ceilings.ts`). */
-  private ceiling(call: Verb | 'runRead'): number {
+  private ceiling(call: Verb | 'runRead' | 'archivePreview'): number {
     return ceilingMs(this.options.numbers?.() ?? DEFAULT_NUMBERS, { call }, this.options.limits?.());
   }
 
@@ -395,11 +395,43 @@ const INSTANT = UTC_INSTANT_SHAPE;
 
 /** Why a run read may not be built, or `undefined` when it may. */
 function readRefusal(request: RunRead): string | undefined {
-  if (request.read === 'runsShow') {
-    return RUN_ID.test(request.runId) ? undefined : 'that run id is not one the daemon writes (yyyyMMddTHHmmssZ-<pid>)';
-  }
+  return (READ_REFUSALS[request.read] as (r: RunRead) => string | undefined)(request);
+}
 
-  return instantsRefusal(request.from, request.to);
+/** One entry per read — a read added to `RunRead` without its check here does not compile. */
+const READ_REFUSALS: { readonly [K in RunReadName]: (request: Extract<RunRead, { readonly read: K }>) => string | undefined } = {
+  runsShow: (request) => (RUN_ID.test(request.runId) ? undefined : 'that run id is not one the daemon writes (yyyyMMddTHHmmssZ-<pid>)'),
+  runs: (request) => instantsRefusal(request.from, request.to),
+  logs: (request) => instantsRefusal(request.from, request.to),
+  archiveStatus: () => undefined,
+  archivePreview: () => undefined,
+  archiveCheckBase: (request) => pathRefusal(request.path),
+};
+
+/** The longest folder `archive.baseFolder` takes (its rule's limit in `contracts/config-keys.json`). */
+export const MAX_BASE_FOLDER_CHARS = 1024;
+
+/**
+ * E10.S1: a folder sent as `archive check-base <path>` — the FIRST value of a path the client ever puts in argv — refused before a
+ * spawn unless the daemon would take it (`ArchiveArguments.IsPathArgument`: not empty, not starting with `-`, no control
+ * character) and the key could hold it.
+ */
+function pathRefusal(path: string): string | undefined {
+  return pathLengthRefusal(path) ?? pathShapeRefusal(path);
+}
+
+function pathLengthRefusal(path: string): string | undefined {
+  return path.length === 0 || path.length > MAX_BASE_FOLDER_CHARS ? `a folder of 1 to ${MAX_BASE_FOLDER_CHARS} characters is asked about` : undefined;
+}
+
+function pathShapeRefusal(path: string): string | undefined {
+  return path.startsWith('-') || [...path].some(isControl) ? 'a folder that starts with "-" or holds a control character is never sent' : undefined;
+}
+
+function isControl(c: string): boolean {
+  const code = c.charCodeAt(0);
+
+  return code < 32 || code === 127;
 }
 
 function instantsRefusal(from: string, to: string): string | undefined {

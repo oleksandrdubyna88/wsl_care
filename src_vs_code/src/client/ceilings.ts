@@ -15,7 +15,7 @@ import { MARGIN_S, otherRowShareS, previewWorstCaseS, worstCasesOf, type WorstCa
  */
 
 export type HostCall =
-  | { readonly call: 'status' | 'version' | 'rootCheck' | 'doctor' | 'preview' | 'runRead' | 'detach' | 'stop' }
+  | { readonly call: 'status' | 'version' | 'rootCheck' | 'doctor' | 'preview' | 'runRead' | 'archivePreview' | 'detach' | 'stop' }
   | { readonly call: 'rootPreview'; readonly ids: readonly string[] };
 
 type FixedCall = Exclude<HostCall, { call: 'rootPreview' }>['call'];
@@ -27,6 +27,7 @@ const SETTING_OF: { readonly [K in FixedCall]: keyof Numbers } = {
   doctor: 'doctorSeconds',
   preview: 'previewSeconds',
   runRead: 'runReadSeconds',
+  archivePreview: 'archivePreviewSeconds',
   detach: 'detachSeconds',
   stop: 'stopSeconds',
 };
