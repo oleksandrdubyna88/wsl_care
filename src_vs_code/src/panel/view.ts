@@ -1,3 +1,4 @@
+import type { ArchiveControls } from '../archive/archiveView';
 import type { GuardView } from '../windowsTime/guardState';
 
 /**
@@ -86,6 +87,12 @@ export interface CleanupControls {
  */
 export type { GuardView } from '../windowsTime/guardState';
 
+/**
+ * The AI-session archive's part of the *AI agents* section (E10.S1, plan §15s): derived by the host from the daemon's
+ * `archive status` / `archive preview` answers and its capabilities (`archive/archiveView.ts`) — never a page flag.
+ */
+export type { ArchiveControls } from '../archive/archiveView';
+
 export interface PanelView {
   readonly heading: string;
   /** One sentence above the sections ('' when there is nothing to say). */
@@ -95,4 +102,5 @@ export interface PanelView {
   readonly sections: readonly ViewSection[];
   readonly cleanup: CleanupControls;
   readonly windowsTimeGuard: GuardView;
+  readonly archive: ArchiveControls;
 }

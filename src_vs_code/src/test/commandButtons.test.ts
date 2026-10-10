@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 
+import { ARCHIVE_LABELS, deriveArchive } from '../archive/archiveView';
 import { COMMAND_BUTTONS } from '../panel/commandButtons';
 import { PAGE_MESSAGE_TYPES } from '../panel/messages';
 import { PAGE_ACTIONS } from '../panel/view';
@@ -56,13 +57,15 @@ function postedByPageButtons(): Set<string> {
     buildPanelView(failedWith('notInstalled')),
     buildPanelView(verdicts),
     ...guards.map((guard) => buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, guard)),
+    // E10.S1: an archiving daemon with a base folder set — both archive buttons enabled.
+    buildPanelView({ checking: false, ...goldenOutcomes() } as Snapshot, undefined, undefined, deriveArchive({ status: { kind: 'read', read: 'archiveStatus', distro: 'Ubuntu', body: { schemaVersion: 1, baseFolder: '/mnt/v/a' } }, preview: undefined, capabilities: ['archive.checkBase'], busy: '', reading: false, asked: true, unavailable: '' })),
   ];
   const posted = new Set<string>();
   for (const view of views) {
     const root = new Element('MAIN');
     const page = runPageScript(fs.readFileSync(PAGE_SCRIPT, 'utf8'), { panel: root });
     page.message({ type: 'view', view: structuredClone(view) });
-    for (const button of [...root.all('button[data-action]'), ...root.all('button[data-guard-action]')]) {
+    for (const button of [...root.all('button[data-action]'), ...root.all('button[data-guard-action]'), ...root.all('button[data-archive-action]')]) {
       page.click(button);
     }
     for (const message of page.posted) {
@@ -81,7 +84,7 @@ test('a page button is one the page renders, the host accepts, and that runs the
       continue;
     }
     assert.ok(rendered.has(button.action), `${command}: no rendered page button posts '${button.action}' (pressed: ${[...rendered].sort().join(', ')})`);
-    assert.ok((PAGE_ACTIONS as readonly string[]).includes(button.action) || button.action in GUARD_LABELS, `${command}: '${button.action}' is no page action`);
+    assert.ok((PAGE_ACTIONS as readonly string[]).includes(button.action) || button.action in GUARD_LABELS || button.action in ARCHIVE_LABELS, `${command}: '${button.action}' is no page action`);
     assert.ok((PAGE_MESSAGE_TYPES as readonly string[]).includes(button.action), `${command}: the host does not accept '${button.action}'`);
     assert.equal(command, `wslCare.${button.action}`, `${command}: its button posts '${button.action}', another operation`);
   }

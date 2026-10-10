@@ -69,7 +69,7 @@ export const PREVIEW_CONTAINER_ASSUMPTION = 100;
  * The values are checked by the client before a spawn (`WslCareClient.read`): a run id of the daemon's one spelling, an
  * instant of exactly `yyyy-MM-ddTHH:mm:ssZ`.
  */
-export const RUN_READ_NAMES = ['runsShow', 'runs', 'logs'] as const;
+export const RUN_READ_NAMES = ['runsShow', 'runs', 'logs', 'archiveStatus', 'archivePreview', 'archiveCheckBase'] as const;
 
 export type RunReadName = (typeof RUN_READ_NAMES)[number];
 
@@ -81,17 +81,41 @@ export const RUN_READ_VERBS: { readonly [K in RunReadName]: readonly string[] } 
   runsShow: ['runs', 'show'],
   runs: ['runs'],
   logs: ['logs'],
+  archiveStatus: ['archive', 'status'],
+  archivePreview: ['archive', 'preview'],
+  archiveCheckBase: ['archive', 'check-base'],
 };
 
 export type RunRead =
   | { readonly read: 'runsShow'; readonly runId: string }
   | { readonly read: 'runs'; readonly from: string; readonly to: string }
-  | { readonly read: 'logs'; readonly from: string; readonly to: string };
+  | { readonly read: 'logs'; readonly from: string; readonly to: string }
+  | { readonly read: 'archiveStatus' }
+  | { readonly read: 'archivePreview' }
+  | { readonly read: 'archiveCheckBase'; readonly path: string };
+
+/** The reads about runs and their history (E6.S3, E6.S4) — what the Logs page and the durable poll ask; the archive reads are E10's. */
+export type HistoryRead = Extract<RunRead, { readonly read: 'runsShow' | 'runs' | 'logs' }>;
 
 /** The daemon tail of a run read — appended after `--exec /opt/wsl-care/bin/wsl-care`. Pure; the values are checked by the caller. */
 export function runReadTail(read: RunRead): readonly string[] {
-  return read.read === 'runsShow' ? [...RUN_READ_VERBS.runsShow, read.runId, '--json'] : [...RUN_READ_VERBS[read.read], '--from', read.from, '--to', read.to, '--json'];
+  return [...RUN_READ_VERBS[read.read], ...valuesOf(read), '--json'];
 }
+
+/** The values a read carries between its verb and `--json`, in the order the daemon takes them. */
+function valuesOf(read: RunRead): readonly string[] {
+  return (READ_VALUES[read.read] as (r: RunRead) => readonly string[])(read);
+}
+
+/** One entry per read — a read added to `RunRead` without its values here does not compile. */
+const READ_VALUES: { readonly [K in RunReadName]: (read: Extract<RunRead, { readonly read: K }>) => readonly string[] } = {
+  runsShow: (read) => [read.runId],
+  runs: (read) => ['--from', read.from, '--to', read.to],
+  logs: (read) => ['--from', read.from, '--to', read.to],
+  archiveStatus: () => [],
+  archivePreview: () => [],
+  archiveCheckBase: (read) => [read.path],
+};
 
 /**
  * The ceilings of the run reads (plan §15k #19). None starts a child process: `runs show` reads the request folder, the
@@ -103,4 +127,7 @@ export const RUN_READ_TIMEOUT_MS: { readonly [K in RunReadName]: number } = {
   runsShow: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
   runs: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
   logs: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
+  archiveStatus: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
+  archivePreview: ceilingMs(DEFAULT_NUMBERS, { call: 'archivePreview' }),
+  archiveCheckBase: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
 };

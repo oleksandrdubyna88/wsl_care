@@ -4,7 +4,7 @@ import type { RunOptions } from '../client/WslCareClient';
 import type { OutcomeStore } from '../state/outcomeStore';
 import { parsePageMessage, type PageMessage } from './messages';
 import { newNonce, panelOptions, panelShell } from './panelHtml';
-import type { CleanupControls, GuardView } from './view';
+import type { ArchiveControls, CleanupControls, GuardView } from './view';
 import { buildPanelView } from './viewModel';
 import type { RowId } from '../cleanup/rowIds';
 
@@ -40,6 +40,11 @@ export interface PanelActions {
   readonly onGuardChange: (listener: () => void) => () => void;
   readonly installWindowsTimeGuard: () => void;
   readonly removeWindowsTimeGuard: () => void;
+  /** E10.S1: the archive's controls (the daemon's archive reads + the flow in flight), and its two flows. */
+  readonly archive: () => ArchiveControls;
+  readonly onArchiveChange: (listener: () => void) => () => void;
+  readonly chooseArchiveFolder: () => void;
+  readonly stopArchiving: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -50,7 +55,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   private readonly unsubscribe: readonly (() => void)[];
 
   constructor(private readonly extensionUri: vscode.Uri, private readonly store: OutcomeStore, private readonly actions: PanelActions) {
-    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post())];
+    this.unsubscribe = [store.onChange(() => this.post()), actions.onCleanupChange(() => this.post()), actions.onGuardChange(() => this.post()), actions.onArchiveChange(() => this.post())];
   }
 
   resolveWebviewView(view: vscode.WebviewView): void {
@@ -98,6 +103,8 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       startWindowsTime: () => this.actions.startWindowsTime(),
       installWindowsTimeGuard: () => this.actions.installWindowsTimeGuard(),
       removeWindowsTimeGuard: () => this.actions.removeWindowsTimeGuard(),
+      chooseArchiveFolder: () => this.actions.chooseArchiveFolder(),
+      stopArchiving: () => this.actions.stopArchiving(),
       clean: (m) => this.actions.clean(m.rowIds, false),
       cleanSelected: (m) => this.actions.clean(m.rowIds, true),
       runFullCheck: () => this.actions.runFullCheck(),
@@ -110,6 +117,6 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
   }
 
   private post(): void {
-    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard()) });
+    void this.view?.webview.postMessage({ type: 'view', view: buildPanelView(this.store.snapshot(), this.actions.cleanup(), this.actions.guard(), this.actions.archive()) });
   }
 }

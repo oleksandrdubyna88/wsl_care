@@ -6,7 +6,8 @@
 //
 // It sends the host only its closed set (src/panel/messages.ts): ready, rendered, the id of a pressed button — and, since
 // E6.S3, the cleanup messages: clean / cleanSelected with row ids, runFullCheck, stop with the index the host gave it — and the
-// Windows Time guard's bare installWindowsTimeGuard / removeWindowsTimeGuard.
+// Windows Time guard's bare installWindowsTimeGuard / removeWindowsTimeGuard, and (E10.S1) the archive's bare
+// chooseArchiveFolder / stopArchiving.
 (function () {
   'use strict';
 
@@ -241,11 +242,49 @@
     return box;
   }
 
+  // ---- E10.S1: the AI-session archive (src/archive/archiveView.ts ArchiveControls) — the base folder the daemon reads, per
+  // agent what is due and its own retention (with the badge when that retention deletes sooner than the archive takes), the
+  // run lock and the last run; and the archive's buttons, each posting its bare id — no folder ever comes from the page. ----
+
+  function archiveAgent(agent) {
+    const line = element('li', undefined, { 'archive-agent': '' });
+    line.appendChild(element('span', agent.name, { 'agent-name': '' }));
+    line.appendChild(element('span', agent.due, { 'agent-due': '' }));
+    line.appendChild(element('span', agent.retention, { 'agent-retention': '' }));
+    if (agent.badge !== '') {
+      line.appendChild(element('span', agent.badge, { 'retention-badge': '', level: 'warn' }));
+    }
+    return line;
+  }
+
+  function archivePart(archive) {
+    const box = element('div', undefined, { archive: '' });
+    box.appendChild(element('p', archive.line, { 'archive-line': '', level: archive.level }));
+    // The host's own words while the daemon is asked again, and why the per-agent lines are missing — never "nothing due".
+    box.appendChild(element('p', archive.reading, { 'archive-reading': '' }));
+    box.appendChild(element('p', archive.previewNote, { 'archive-preview-note': '' }));
+    const list = element('ul', undefined, { 'archive-agents': '' });
+    archive.agents.forEach(function (agent) { list.appendChild(archiveAgent(agent)); });
+    box.appendChild(list);
+    box.appendChild(element('p', archive.lock, { 'archive-lock': '' }));
+    box.appendChild(element('p', archive.lastRun, { 'archive-last-run': '' }));
+    archive.buttons.forEach(function (b) {
+      const id = b.id;
+      box.appendChild(actionButton(b.label, { 'archive-action': id }, !b.enabled, function () { return { type: id }; }));
+    });
+    return box;
+  }
+
+  function isArchive(value) {
+    return isObject(value) && Array.isArray(value.buttons) && Array.isArray(value.agents);
+  }
+
   /** The sections the host's extra parts belong to — by the ids of src/panel/fieldMap.ts's SECTIONS. */
   const EXTRAS = {
     cleanup: function (view) { return isObject(view.cleanup) ? cleanupControls(view.cleanup) : undefined; },
     lastCleanup: function (view) { return isObject(view.cleanup) ? lastCleanupParts(view.cleanup) : undefined; },
     health: function (view) { return isObject(view.windowsTimeGuard) && Array.isArray(view.windowsTimeGuard.buttons) ? guardPart(view.windowsTimeGuard) : undefined; },
+    aiAgents: function (view) { return isArchive(view.archive) ? archivePart(view.archive) : undefined; },
   };
 
   function sectionWithExtras(model, view) {

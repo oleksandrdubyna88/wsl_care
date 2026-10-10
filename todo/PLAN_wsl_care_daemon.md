@@ -4385,6 +4385,71 @@ parallel for the root and the writing paths (D2, D5, D6, D7), break-it checks on
   the flag order; the capability in `status.json`'s golden.
 - **Catalogue**: `research/module_tests.md` rows for every new verb, op, message and command (`catalogue.test.ts`).
 
+#### E10.S1 build notes (2026-10-10, before its plan round)
+
+> Status: **plan only, 2026-10-10 — E10.S1 not started.** Branch `feat/wc-e10s1-archive-panel`. These notes refine D1–D5 and D11 for the
+> code as it stands on `main` 7efa0fb. They come from a read of the extension: the paths below are `src_vs_code/`'s.
+
+- **The three reads are RunReads, not Verbs** (`src/client/verbs.ts:72-94`): `archiveStatus` (`archive status --json`),
+  `archivePreview` (`archive preview --json`), `archiveCheckBase` (`archive check-base <path> --json`).
+  - Each is unprivileged, built only in `verbs.ts` (which alone may spell `--json`, `structure.test.ts:88-90`), and checked before a
+    spawn by `readRefusal` (`WslCareClient.ts:397`).
+  - The path is the first VALUE of a path in argv. It follows the daemon's own rule (`ArchiveArguments.IsPathArgument`: not empty, not
+    starting with `-`, no control character) and is at most 1024 characters, the key's limit.
+  - **Measured 2026-10-10:** `wsl.exe --exec`, spawned with `shell: false` as the runner does, carries an empty argument, spaces,
+    backslashes and a quote byte for byte (`research/2026-10-03_wsl_exe_facts.md` gains the row). This is what D3's empty *Stop* value
+    needed.
+- **Ceilings** (`src/client/ceilings.ts`): status and check-base take the run-read ceiling (20 s: they start no child; check-base
+  reads one folder's mount). The preview walks the agents' folders under `archive.previewTimeoutSeconds` (default 120, machine-only),
+  so it gets its own `HostCall` and number setting, `wslCare.timeouts.archivePreviewSeconds`. Its default is held strictly above the
+  daemon's worst case in `worstCases.ts`, as every other ceiling is.
+- **ONE user-layer writer, `src/config/configCall.ts`:**
+  - It spells exactly `config set archive.baseFolder <judged folder>` and `config set archive.baseFolder ""`. There is no other key,
+    and it never uses `-u`.
+  - It builds its argv with the client's `daemonArgv`, as `rootCall` does, and is imported only by the archive flow.
+  - `config set` answers in text. Its exit is read on its own: 0 is set; 2, 78 and 81 each come with their sentence.
+  - `bundleScan.test.ts` gains a CONFIG region with an exact literal set, modelled on the root region (`:67`, `:121-129`). `config` is
+    allowed only there; `-u` and `root` stay forbidden in it. `structure.test.ts` gains the import rule and the planted tests.
+- **The folder picker** (`src/archive/archiveUi.ts`):
+  - It uses `showOpenDialog({ canSelectFolders: true, canSelectMany: false })` and the modal pattern (`showWarningMessage(msg,
+    { modal: true, detail }, …)`, `cleanUi.ts:24`).
+  - A Test-mode recorder (`cleanRecorder.ts`' pattern) scripts the picked path and the answers.
+  - The flow, `src/archive/archiveFlow.ts`: pick → `archiveCheckBase` → a modal naming the verdict (accepted with its warnings, or
+    refused with its rule) → on *Use this folder*, `configCall` writes the report's `folder` → the panel refreshes.
+  - *Stop archiving*: modal → the empty value → refresh.
+- **The archive section of the panel:**
+  - A new extra in `PanelView`, `archive: ArchiveControls`, derived outside `src/panel/` (the `cleanupView.ts` pattern;
+    `FAR_FROM_ROOT`), from the two reads made on the panel's own refresh (`poll/poller.ts` `panelRound`), never more often.
+  - It shows the base folder and its warnings; per agent the due sessions, files and bytes, the effective age, and the agent's own
+    retention with a **retention badge** exactly when retention < effective age; the side's lock and its last run.
+  - It reads with `src/panel/read.ts` (every text through `safeText`). `media/panel.js` gains the section with lint's limits
+    (complexity 4, 50 lines a function).
+- **Buttons (D11)** carry `data-archive-action` and post bare messages: `chooseArchiveFolder`, `stopArchiving`, `archiveNow`. No path
+  or id ever comes from the page.
+  - `messages.ts` gains them, and `commandButtons.ts` / `.test.ts` widen to the archive's actions.
+  - Each gets a command (`wslCare.chooseArchiveFolder`, `wslCare.stopArchiving`, `wslCare.archiveNow`), `package.json`, and
+    `manifest.test.ts`.
+  - The buttons are greyed by capability (`archive.checkBase`, `archive.preview`, `archive.run`) and, for *Archive now*, by A13 in
+    `status.actions`. This is the `cleanupView.ts:258-279` pattern.
+- ***Archive now* = A13 through the cleanup controller as it is** (`cleanupController.ts:148-215`; ids are generic). It needs:
+  - a capability set `confirmA13` (`act.detach` + `archive.run`);
+  - the controller's journal op `clean` with actions `['A13']`;
+  - its own modal and notice words ("Archive the aged AI sessions …?", "Archive", not "Clean A13");
+  - `parsePreview` widened, so the modal names each agent's sessions and bytes;
+  - its preview ceiling held to A13's real preview (`archive.previewTimeoutSeconds` plus the reach), not a Docker row's.
+- **Docs:** `module_vs_code.md`, `module_tests.md` (catalogue rows for each new read, message and command), README, the field map if a
+  row is added, and this section's *as built*.
+
+**RED first:**
+- the client refuses any other archive argv and a bad path value;
+- the writer refuses a key not listed, a value not judged, and `-u root` (the scan);
+- a refused folder is never written;
+- *Stop* writes the empty value;
+- *Archive now* survives a reload and never sticks (the journal and follower path);
+- the badge shows exactly when retention < effective age;
+- every button posts its bare message and has a command;
+- the fake `wsl.exe` refuses every other archive shape.
+
 #### The plan round (coai session 82e14bdf, 2026-10-09)
 
 `proceed`, 2 gating of threshold 6, one of two reviewers (the other was out of quota). Both accepted and written into D6 / D7
@@ -4411,6 +4476,58 @@ it now asks `archive list --restorable --entry <shown>` (`ArchiveChildren.ListSh
 IN FORCE before the child is asked, and the act verb holds that ceiling and the shown-list cap on the entries too (a coupled-limit
 rule was tried and dropped: it made every machine with a lowered `act.maxShownNames` observe-only). Tests and teeth: [module_tests.md](../research/module_tests.md), *The
 daemon half of the extension's archive*.
+
+#### As built — E10.S1a (2026-10-10): the archive folder and the panel section; *Archive now* split into E10.S1b
+
+E10.S1 ships as two PRs. **S1a** has the three reads, the writer, *Choose archive folder…*, *Stop archiving* and the panel section.
+**S1b** (still open) is *Archive now* — A13 through the cleanup controller, with everything the build notes list for it:
+- `confirmA13`;
+- the journal op;
+- its own modal and notice words;
+- `parsePreview` widened;
+- its preview ceiling.
+
+The split keeps the one root-touching change on its own PR.
+
+The S1a deviations from the build notes:
+- **`config set` never answers 78.** An observe-only configuration still writes the user layer (`ConfigCommand.Set`), so the
+  writer reads 0 as written and 2 / 81 / 70 as the client's failures (`classifyExit`). The notes said "2, 78 and 81".
+- **The value written is the report's `folder`.** It is the daemon's own spelling (on WSL the mount path, `/mnt/v/…`), not the
+  picked Windows text. It is a branded `JudgedFolder` that only `judgedFolderOf` makes, and only from a report with
+  `accepted: true`, so an unjudged value does not type-check. The strict fake goes further: it writes only EXACTLY the folder its
+  own `check-base` answer accepted.
+- **The two reads are asked from the panel's refresh in `extension.ts` (`panelRefresh`), after the poller's round.** The notes
+  put them inside `poll/poller.ts` `panelRound`. The frequency is the same (only on a refresh, never on the timer). Asking after
+  the round lets that round's `status` capabilities decide whether to ask at all: `archive status` needs `archive.run`, and
+  `archive preview` needs `archive.preview`.
+- **The writer takes the run-read ceiling** (`wslCare.timeouts.runReadSeconds`). The daemon judges the folder as `check-base`
+  does and writes one file, so no new setting was added.
+- **The path rule moved to `shared/basePath.ts`.** It is one rule for the check-base argument and the judged folder: the daemon's
+  `IsPathArgument` plus the key's 1024 limit.
+- **The archive section sits in *AI agents*** (`EXTRAS.aiAgents` in `media/panel.js`). The badge text names both numbers.
+
+**The code round** was coai session 237ecc90 (`proceed`, 7 gating). Only codex answered: the local engine refused for want of a
+model, and gemini was out of quota. Six findings were accepted:
+- **#0:** `architecture.md` names the new interaction.
+- **#1:** a scenario test, `scenarios/archiveFlows.test.ts`.
+- **#2:** the cast in a test fixture is gone.
+- **#4:** a write whose ending is unknown (timed out) is `unknown`, not `failed`, and the reads run again after any write that may
+  have happened.
+- **#5:** the panel says while it asks again.
+- **#6:** a failed preview reads *What is due: <failure>*, and missing figures read *unknown*, never 0.
+
+One was rejected. **#3** (the host's fields "mutate") is a stateful service holding immutable answers that are replaced whole, as
+`CleanupHost` and `WindowsTimeGuardHost` hold theirs.
+
+**The own review** ran on Fable (owner 2026-10-10: the root-touching parts get a Fable reviewer). All four findings were taken:
+- **#1:** a failed panel `status`, or a daemon that answers no archive status, no longer leaves a lasting *checking…*.
+- **#2:** the write-readback half is the code round's #4; `wslCare.timeouts.runReadSeconds`' description now names the archive
+  calls it bounds.
+- **#3:** the palette's *Start WSL and check* goes through the same refresh as the panel's button.
+- **#4:** `structure.test.ts` pins that only `judgedFolder.ts` casts into the brand.
+
+Tests and teeth: [module_tests.md](../research/module_tests.md), the `client archive*`, `command wslCare.chooseArchiveFolder` /
+`stopArchiving` and `message …` rows, and *What each E10.S1a guarantee rests on*.
 
 #### Definition of Done
 

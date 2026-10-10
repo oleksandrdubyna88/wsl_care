@@ -178,8 +178,8 @@ const CLEANUP_CONTROLLER = 'src/root/cleanupController.ts';
 /** The root argv words (§15j M1) — only `rootCall.ts` may spell them. */
 const ROOT_WORDS = ['-u', 'root', 'act', 'collect', '--preview', '--confirm', '--manual', '--detach', '--only', '--stop'];
 
-/** Words NO module may spell, the root module included: the timer's mark, another user, the daemon's settings verb. */
-const NEVER_WORDS = ['--timer', '--user', 'config'];
+/** Words NO module may spell, the root module included: the timer's mark, another user. The daemon's settings verb is the writer's alone (E10.S1, below). */
+const NEVER_WORDS = ['--timer', '--user'];
 
 /** Every module a source imports by a RELATIVE specifier, resolved to `src/...ts` the way the structural tests name files. */
 function resolvedImports(source: Source): string[] {
@@ -199,7 +199,7 @@ test('only rootCall.ts spells a root argv word — and it spells every one of th
   assert.deepEqual(spellers(sources(), ROOT_WORDS), { [ROOT_CALL]: [...ROOT_WORDS].sort() });
 });
 
-test('no module spells --timer, --user or config — the root module included', () => {
+test('no module spells --timer or --user — the root module included', () => {
   assert.deepEqual(spellers(sources(), NEVER_WORDS), {});
 });
 
@@ -238,4 +238,84 @@ test('the import-graph scan resolves relative specifiers and finds a planted imp
     { file: 'src/other.ts', text: "const s = '../root/rootCall';" },
   ];
   assert.deepEqual(importersOf(planted, ROOT_CALL), ['src/panel/viewModel.ts', 'src/root/cleanupController.ts']);
+});
+
+// ---- E10.S1: THE user-layer writer (plan §15s) ----
+//
+// ONE module spells the daemon's settings verb and the one key it writes, ONE module imports it (the archive flow), and it
+// imports no process API — the root boundary's shape, for the one unprivileged write the extension makes.
+
+const CONFIG_CALL = 'src/config/configCall.ts';
+const ARCHIVE_FLOW = 'src/archive/archiveFlow.ts';
+
+/** The writer's words — only `configCall.ts` may spell them. */
+const CONFIG_WORDS = ['config', 'archive.baseFolder'];
+
+test('only configCall.ts spells config or archive.baseFolder — and it spells both (the scan is alive)', () => {
+  assert.deepEqual(spellers(sources(), CONFIG_WORDS), { [CONFIG_CALL]: [...CONFIG_WORDS].sort() });
+});
+
+test('the config-word scan finds a planted word elsewhere — the root module included — and ignores a comment', () => {
+  const planted: Source[] = [
+    { file: 'src/root/rootCall.ts', text: "const t = ['config', 'set', 'dryRun', 'false'];" },
+    { file: 'src/panel/x.ts', text: 'const k = [\n  `archive.baseFolder`,\n];' },
+    { file: 'src/z.ts', text: '// config set archive.baseFolder is the writer\'s\nconst s = "configure";' },
+  ];
+  assert.deepEqual(spellers(planted, CONFIG_WORDS), { 'src/root/rootCall.ts': ['config'], 'src/panel/x.ts': ['archive.baseFolder'] });
+});
+
+test('only the archive flow imports configCall.ts', () => {
+  assert.deepEqual(importersOf(sources(), CONFIG_CALL), [ARCHIVE_FLOW]);
+});
+
+test('no panel, status-bar, poller, install, store or Logs-page module imports anything under src/config/', () => {
+  const offenders = sources().filter((s) => FAR_FROM_ROOT.some((dir) => s.file.startsWith(dir)) && resolvedImports(s).some((m) => m.startsWith('src/config/')));
+  assert.deepEqual(offenders.map((s) => s.file), []);
+});
+
+test('configCall.ts imports only the client\'s argv builder and failure readers, the runner\'s types, the ceilings and the judged folder — no process API', () => {
+  const source = sources().find((s) => s.file === CONFIG_CALL);
+  assert.ok(source !== undefined);
+  assert.deepEqual(resolvedImports(source).sort(), [
+    'src/archive/judgedFolder.ts', 'src/client/WslCareClient.ts', 'src/client/ceilings.ts', 'src/client/exitCodes.ts', 'src/client/failures.ts', 'src/client/outcome.ts',
+    'src/process/runner.ts', 'src/settings/numbers.ts', 'src/shared/daemonLimits.ts',
+  ]);
+  assert.deepEqual(importsOf(source.text).filter((m) => !m.startsWith('.')), []);
+});
+
+test('the writer\'s import scan finds a planted import of configCall.ts outside the archive flow', () => {
+  const planted: Source[] = [
+    { file: 'src/panel/viewModel.ts', text: "import { callConfig } from '../config/configCall';" },
+    { file: ARCHIVE_FLOW, text: "import { callConfig } from '../config/configCall';" },
+  ];
+  assert.deepEqual(importersOf(planted, CONFIG_CALL), [ARCHIVE_FLOW, 'src/panel/viewModel.ts']);
+});
+
+// ---- E10.S1 own review on Fable, finding 4: the JudgedFolder brand is held by more than the types ----
+
+/** Files that assert a value INTO `JudgedFolder` (`x as JudgedFolder`, `<JudgedFolder>x`), read with the parser — casts are erased
+ * from the bundle, so this is the one place a forged folder could be seen. */
+function judgedFolderCasters(all: readonly Source[]): string[] {
+  return all.filter((s) => {
+    let found = false;
+    const visit = (node: ts.Node): void => {
+      found ||= (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && /\bJudgedFolder\b/.test(node.type.getText());
+      ts.forEachChild(node, visit);
+    };
+    visit(ts.createSourceFile('scan.ts', s.text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS));
+    return found;
+  }).map((s) => s.file);
+}
+
+test('only judgedFolder.ts makes a JudgedFolder — no shipped module casts a value into one', () => {
+  assert.deepEqual(judgedFolderCasters(sources()), ['src/archive/judgedFolder.ts']);
+});
+
+test('the brand scan finds a planted cast, in both spellings, and ignores a mention in a comment or a type annotation', () => {
+  const planted: Source[] = [
+    { file: 'src/archive/archiveFlow.ts', text: "const f = picked as JudgedFolder;" },
+    { file: 'src/panel/x.ts', text: 'const f = <JudgedFolder>(picked);' },
+    { file: 'src/z.ts', text: '// never `x as JudgedFolder` here\nlet f: JudgedFolder | undefined;' },
+  ];
+  assert.deepEqual(judgedFolderCasters(planted), ['src/archive/archiveFlow.ts', 'src/panel/x.ts']);
 });

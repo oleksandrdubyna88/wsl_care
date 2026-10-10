@@ -28,6 +28,10 @@ that by itself — *the Windows Time guard*, `\wsl-care\windows-time-guard`, run
 hours, on the Time-Service's stop event 258 and on the Service Control Manager's start-type change 7040 for `W32Time` (which, while
 `wslCare.windowsTime.setAutomaticStart` is on, undoes a *disabled*), with a rate limit on starts — after showing the exact elevated script in
 a read-only tab; it removes it the same way, and shows on the *Health* section what Task Scheduler holds.
+Since E10.S1 it shows the daemon's AI-session archive in the *AI agents* section (three unprivileged reads: `archive status`,
+`archive preview`, `archive check-base <path>`) and writes ONE daemon setting, `archive.baseFolder`, through ONE module,
+`config/configCall.ts` — a folder the daemon itself judged and accepted, or the empty value that stops the archive — as the
+person's own user, never `-u`, and only after *Choose archive folder…* or *Stop archiving* and their modal.
 It runs on the Windows side (`extensionKind: ["ui"]`), on VS Code 1.85.0 or newer.
 
 ## Diagram
@@ -48,9 +52,11 @@ flowchart LR
         controller["CleanupController<br/>(the one holder of root)"]
         rootCall["root/rootCall.ts<br/>(closed ROOT_OPS argv)"]
         logs["LogsPanel<br/>(WebviewPanel, run reads)"]
+        archiveHost["ArchiveHost<br/>(archive reads, one flow at a time)"]
+        configCall["config/configCall.ts<br/>(THE user-layer writer)"]
     end
     wsl["%SystemRoot%\\System32\\wsl.exe"]
-    daemon["/opt/wsl-care/bin/wsl-care<br/>status | preview | doctor | --version<br/>runs show | runs | logs<br/>-u root: act … --detach | --stop | collect --detach"]
+    daemon["/opt/wsl-care/bin/wsl-care<br/>status | preview | doctor | --version<br/>runs show | runs | logs<br/>archive status | preview | check-base<br/>config set archive.baseFolder<br/>-u root: act … --detach | --stop | collect --detach"]
 
     ext --> poller
     ext --> bar
@@ -80,6 +86,10 @@ flowchart LR
     runner -->|"elevated: Register-ScheduledTask / DeleteTask"| sched["Task Scheduler<br/>\wsl-care\windows-time-guard (SYSTEM)"]
     guard -->|"unelevated query (Schedule.Service, read)"| runner
     sched -.->|"boot · logon · every N h · event 258 · SCM 7040 (W32Time)"| w32
+    panel -->|"chooseArchiveFolder / stopArchiving (bare)"| archiveHost
+    archiveHost -->|"read: archive status, preview, check-base"| client
+    archiveHost -->|"the judged folder, or empty"| configCall
+    configCall -->|"daemonArgv, no -u"| runner
 ```
 
 ## Core entities
@@ -98,6 +108,7 @@ flowchart LR
 | Logs page | `src/logsPage/` | A `WebviewPanel` under the panel's shell and CSP: periods (This run, Today, Yesterday, a day, a range) become argv in `period.ts` alone, over the UTC instants of local midnights; a closed message set (`logsMessages.ts`); the selection persisted in `globalState`; nothing computed in the page (E6.S4). |
 | *Start Windows Time* | `src/windowsTime/` | PLAN_windows_time_guard.md D7: `windowsTimeFix.ts` — the elevated script as module constants (modules from `$PSHOME`, `w32tm.exe` by absolute path, one exit code per failure because an elevated child's streams cannot be read), the outer launcher that catches the UAC refusal as 1223, the request, the closed outcome, the flow (modal → one run → *Run full check now* on success); `windowsTimeNeed.ts` — the panel offers it only on the daemon's verdicts (`clock.timeService` warn/critical, `clock.reference` critical); `windowsTimeUi.ts` — the real modal, a progress notification while it runs, or a recorder in Test mode. |
 | *The Windows Time guard* | `src/windowsTime/guard*.ts` | PLAN_windows_time_task.md: `guardTask.ts` — the task as pure functions of the settings (the ONE-line action reusing story 1's start-type, start and resync lines with a rate limit on starts before them; the XML with its SYSTEM principal, five triggers (the fifth, SCM 7040 for `W32Time`, since the later 2026-10-08 change — the start-type line then runs only when the type is not already Automatic, so the guard's own change cannot re-fire it), read ACE for Authenticated Users and plain `-Command` action; the canonical summary and the PowerShell that prints it); `guardScripts.ts` — the elevated install (folder through `Schedule.Service`, `Register-ScheduledTask -Xml -Force`) and removal ("if present" at every step), the unelevated read-only query, the length bound; `guardState.ts` — the query's answer as one closed state and the panel's line and buttons (the registered summary is compared with `guardSummary` line for line, byte for byte EXCEPT the three duration fields — `delay=`, `interval=`, `limit=` before a line's first free-text field (`subscription=`, `path=`, `args=`) — which are compared by value through `durationSeconds`: Task Scheduler stores a registered `PT60S` as `PT1M`, measured on the owner's machine 2026-10-10, and 0.3.0 read every real install as "not as the current settings would install it"); `guardPending.ts` — the elevated run persisted in `globalState` before it starts (checked again after the modal), held past a timeout until its deadline or until Task Scheduler shows its end, swept at activation; `guardFlow.ts` — the order (tab → modal → pending → one run → re-read) and the closed outcomes; `guardHost.ts` — one query and one flow at a time; `guardUi.ts` / `guardRecorder.ts` — the read-only tab, the modal, the progress, or a recorder in Test mode. |
+| *The AI-session archive* | `src/archive/`, `src/config/configCall.ts` | E10.S1 (plan §15s): `archiveHost.ts` — the two reads (`archive status`, `archive preview`) asked only on the panel's refresh and only of a daemon whose `status` advertises `archive.run` / `archive.preview`, one flow at a time, the reads again after a write; `archiveFlow.ts` — *Choose archive folder…* (the folder dialog → `archive check-base <path>` → a refusal told with its rule and nothing written, or a modal with the daemon's warnings → *Use this folder* writes the folder AS THE DAEMON SPELT IT) and *Stop archiving* (a modal → the empty value), the ONE importer of the writer; `judgedFolder.ts` — the branded `JudgedFolder`, made only from an ACCEPTED report; `archiveView.ts` — the base folder, per agent what is due, the agent's own retention and the retention badge exactly when it is below the effective age, the run lock and the last run, the two buttons (greyed without `archive.checkBase`, *Stop* also without a folder); never a lasting *checking…* — a failed panel `status` reads *unavailable — <reason>*, a daemon answering no archive status after a refresh *update the daemon*, a failed preview *What is due: <failure>*, a missing figure *unknown* (never 0), and while the reads run again the panel says the lines are the previous answer; after any write that may have happened (written, timed out — `unknown` —, failed) the reads run again; `archiveUi.ts` / `archiveRecorder.ts` — the dialog and modal, or a recorder in Test mode. `config/configCall.ts` spells `config set archive.baseFolder <v>` and nothing else (never `-u`, never `reset`, no other key), reads the text answer by its exit (0 written; 2, 81, 70 the client's failures — `config set` never answers 78) and takes the run-read ceiling; the bundle scan holds its region to an exact literal set and keeps `config` out of every other region. The path rule of both the check and the write is `shared/basePath.ts` (the daemon's `IsPathArgument` + the key's 1024 limit). |
 | Number settings | `src/settings/numbers.ts` | Every E6 number — the host ceilings (each above the daemon's own worst case for its call), the cleanup and Logs limits — as an `application`-scope setting, held equal to `package.json`. |
 
 ## Entry points
@@ -107,7 +118,8 @@ flowchart LR
 - **Commands** — `wslCare.openPanel`, `wslCare.refresh`, `wslCare.startWsl`, `wslCare.installDaemon`, and since E6.S4
   `wslCare.openLogs` (also in the panel's title bar), and since 2026-10-08 `wslCare.startWindowsTime` (also a panel
   button while the daemon's verdicts ask for it), `wslCare.installWindowsTimeGuard` and `wslCare.removeWindowsTimeGuard`
-  (also the *Health* section's buttons beside the guard's line). No cleanup is a command: cleanups start only from the panel's
+  (also the *Health* section's buttons beside the guard's line), and since E10.S1 `wslCare.chooseArchiveFolder` and
+  `wslCare.stopArchiving` (also the *AI agents* section's buttons beside the archive's line). No cleanup is a command: cleanups start only from the panel's
   buttons, through the host's modals. **Every command has a button in the panel UI** (the owner's standing rule of
   2026-10-09; the palette may duplicate a button, never be the only way): `src/panel/commandButtons.ts` declares where each
   one lives — a page button posting the same operation, the panel view's title bar (`wslCare.openLogs`), or the activity-bar
@@ -121,7 +133,8 @@ flowchart LR
   `wslCare.windowsTime.setAutomaticStart` (default on) and `wslCare.timeouts.windowsTimeFixSeconds` (default 180); for the
   guard `wslCare.windowsTime.guard.everyHours` (4), `….minMinutesBetweenStarts` (10), `….delaySeconds` (60),
   `….timeLimitMinutes` (5) — baked into the task at install — and `wslCare.timeouts.windowsTimeGuardSeconds` (180),
-  `wslCare.timeouts.windowsTimeGuardQuerySeconds` (30).
+  `wslCare.timeouts.windowsTimeGuardQuerySeconds` (30); since E10.S1 `wslCare.timeouts.archivePreviewSeconds` (630, its minimum
+  strictly above the daemon's `archive.previewTimeoutSeconds` at its range maximum, 600 s).
 - **Test mode** — `activate()` returns a test API only in `ExtensionMode.Test`; the extension-host tier drives it.
 
 ## External dependencies

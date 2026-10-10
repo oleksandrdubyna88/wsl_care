@@ -108,6 +108,16 @@
         "category": "AI OS Care"
       },
       {
+        "command": "wslCare.chooseArchiveFolder",
+        "title": "Choose the AI-session archive folder…",
+        "category": "AI OS Care"
+      },
+      {
+        "command": "wslCare.stopArchiving",
+        "title": "Stop archiving AI sessions…",
+        "category": "AI OS Care"
+      },
+      {
         "command": "wslCare.openLogs",
         "title": "Logs",
         "category": "AI OS Care",
@@ -187,13 +197,21 @@
           "scope": "application",
           "markdownDescription": "A cleanup's preview (`act <ids> --preview`) takes ONE Docker snapshot per Docker row (A4–A7): its ceiling is this many seconds per Docker row, plus A9's snap listing and a margin."
         },
+        "wslCare.timeouts.archivePreviewSeconds": {
+          "type": "integer",
+          "default": 630,
+          "minimum": 610,
+          "maximum": 7200,
+          "scope": "application",
+          "markdownDescription": "How long `archive preview --json` (what the AI-session archive would move) may take, in seconds — above the daemon ceiling `archive.previewTimeoutSeconds` at its maximum (600)."
+        },
         "wslCare.timeouts.runReadSeconds": {
           "type": "integer",
           "default": 20,
           "minimum": 10,
           "maximum": 600,
           "scope": "application",
-          "markdownDescription": "How long `runs show`, `runs` and `logs` may take, in seconds."
+          "markdownDescription": "How long `runs show`, `runs` and `logs` may take, in seconds — and the archive calls that start no child: `archive status`, `archive check-base` and the archive folder write (`config set archive.baseFolder`, which judges the folder again). Raise it when the archive folder is on a slow network share."
         },
         "wslCare.timeouts.detachSeconds": {
           "type": "integer",

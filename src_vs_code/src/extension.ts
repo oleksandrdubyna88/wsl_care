@@ -1,17 +1,20 @@
 import * as vscode from 'vscode';
 
 import { buildVersion } from './buildStamp';
-import { WslCareClient } from './client/WslCareClient';
+import { WslCareClient, type RunOptions } from './client/WslCareClient';
 import { installDaemon } from './install/installDaemon';
 import { installUiFor, newInstallRecorder, type InstallRecorder } from './install/installUi';
 import { performance } from 'node:perf_hooks';
 
+import { ArchiveHost } from './archive/archiveHost';
+import { newArchiveRecorder, type ArchiveRecorder } from './archive/archiveRecorder';
+import { archiveUiFor } from './archive/archiveUi';
 import { CleanupHost } from './cleanup/cleanupHost';
 import { newCleanRecorder, type CleanRecorder } from './cleanup/cleanRecorder';
 import { cleanUiFor } from './cleanup/cleanUi';
 import { lastCleanupPeriod } from './logsPage/logsController';
 import { LogsPanel } from './logsPage/logsPanel';
-import { PanelProvider } from './panel/panelProvider';
+import { PanelProvider, type PanelActions } from './panel/panelProvider';
 import { Poller, type Timers } from './poll/poller';
 import { chooseRunner, runnerFor, type RunnerChoice } from './process/runnerSelection';
 import { CleanupController } from './root/cleanupController';
@@ -99,6 +102,8 @@ interface Parts {
   readonly guard: WindowsTimeGuardHost;
   readonly cleanRecorder: CleanRecorder;
   readonly host: CleanupHost;
+  readonly archive: ArchiveHost;
+  readonly archiveRecorder: ArchiveRecorder;
   readonly choice: RunnerChoice;
   readonly calls: string[];
   readonly store: OutcomeStore;
@@ -145,8 +150,14 @@ function build(context: vscode.ExtensionContext): Parts {
 
   const guardRecorder = newGuardRecorder();
   const guard = windowsTimeGuard(context, testMode, guardRecorder);
+  // E10.S1: the archive's reads and its one user-layer write go through the SAME runner and the client's target checks.
+  const archiveRecorder = newArchiveRecorder();
+  const archive = new ArchiveHost({
+    read: (request) => client.read(request), target: () => client.rootTarget(), runner, outcomes: store, ui: archiveUiFor(testMode, archiveRecorder),
+    log: (line) => log.error(line), numbers, limits: () => limitsOf(store),
+  });
 
-  return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, cleanRecorder, host, choice, calls, store, poller, focus, log };
+  return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log };
 }
 
 /** The Windows Time guard's settings, read NOW (PLAN_windows_time_task.md D6): the task is built from them at install. */
@@ -226,6 +237,47 @@ function logsPanel(context: vscode.ExtensionContext, parts: Parts): LogsPanel {
   }, (line) => log.error(line));
 }
 
+/**
+ * The panel's refresh: the guard's Task Scheduler query, the panel round (`status`, `preview`, `doctor`) and, once that round's
+ * `status` is in the store (its capabilities decide what is asked), the archive's two reads (E10.S1) — never more often.
+ */
+function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
+  return (options) => {
+    void parts.guard.refresh();
+    const round = parts.poller.refreshPanel(options);
+    void round.then(() => parts.archive.refresh()).catch((e: unknown) => { parts.log.error(`archive: the refresh failed: ${String(e)}`); });
+
+    return round;
+  };
+}
+
+/** E10.S1: the archive's part of the panel — its controls, their changes, and its two flows (the panel button and the command). */
+function archiveActions(parts: Parts): Pick<PanelActions, 'archive' | 'onArchiveChange' | 'chooseArchiveFolder' | 'stopArchiving'> {
+  return {
+    archive: () => parts.archive.view(),
+    onArchiveChange: (listener) => parts.archive.onChange(listener),
+    chooseArchiveFolder: () => { void parts.archive.choose(); },
+    stopArchiving: () => { void parts.archive.stop(); },
+  };
+}
+
+function archiveCommands(archive: Pick<PanelActions, 'chooseArchiveFolder' | 'stopArchiving'>): vscode.Disposable[] {
+  return [
+    vscode.commands.registerCommand('wslCare.chooseArchiveFolder', archive.chooseArchiveFolder),
+    vscode.commands.registerCommand('wslCare.stopArchiving', archive.stopArchiving),
+  ];
+}
+
+/** The Logs page (E6.S4): itself, its title-bar command, the status it follows, and its serializer for a reload. */
+function logsSubscriptions(logs: LogsPanel, store: OutcomeStore): vscode.Disposable[] {
+  return [
+    logs,
+    vscode.commands.registerCommand('wslCare.openLogs', () => logs.show()),
+    { dispose: store.onChange(() => logs.statusChanged()) },
+    vscode.window.registerWebviewPanelSerializer(LogsPanel.viewType, { deserializeWebviewPanel: (restored) => { logs.restore(restored); return Promise.resolve(); } }),
+  ];
+}
+
 function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar; panel: PanelProvider; logs: LogsPanel } {
   const { poller, store, focus, host } = parts;
   const install = installer(parts);
@@ -234,8 +286,10 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
   const bar = new StatusBar(store, OPEN_PANEL);
   const installGuard = guardFlow(parts, 'install');
   const removeGuard = guardFlow(parts, 'remove');
+  const refreshAll = panelRefresh(parts);
+  const archive = archiveActions(parts);
   const panel = new PanelProvider(context.extensionUri, store, {
-    refresh: (options) => { void parts.guard.refresh(); return poller.refreshPanel(options); },
+    refresh: refreshAll,
     openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'wslCare'); },
     installDaemon: install,
     startWindowsTime: windowsTime,
@@ -249,6 +303,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     onGuardChange: (listener) => parts.guard.onChange(listener),
     installWindowsTimeGuard: installGuard,
     removeWindowsTimeGuard: removeGuard,
+    ...archive,
   });
   context.subscriptions.push(
     bar,
@@ -257,16 +312,14 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     { dispose: () => host.dispose() },
     vscode.window.registerWebviewViewProvider(PanelProvider.viewId, panel),
     vscode.commands.registerCommand(OPEN_PANEL, () => vscode.commands.executeCommand(`${PanelProvider.viewId}.focus`)),
-    vscode.commands.registerCommand('wslCare.refresh', () => { void parts.guard.refresh(); return poller.refreshPanel(); }),
-    vscode.commands.registerCommand('wslCare.startWsl', () => poller.refreshPanel({ startIfStopped: true })),
+    vscode.commands.registerCommand('wslCare.refresh', () => refreshAll()),
+    vscode.commands.registerCommand('wslCare.startWsl', () => refreshAll({ startIfStopped: true })),
     vscode.commands.registerCommand('wslCare.installDaemon', install),
     vscode.commands.registerCommand('wslCare.startWindowsTime', windowsTime),
     vscode.commands.registerCommand('wslCare.installWindowsTimeGuard', installGuard),
     vscode.commands.registerCommand('wslCare.removeWindowsTimeGuard', removeGuard),
-    logs,
-    vscode.commands.registerCommand('wslCare.openLogs', () => logs.show()),
-    { dispose: store.onChange(() => logs.statusChanged()) },
-    vscode.window.registerWebviewPanelSerializer(LogsPanel.viewType, { deserializeWebviewPanel: (restored) => { logs.restore(restored); return Promise.resolve(); } }),
+    ...archiveCommands(archive),
+    ...logsSubscriptions(logs, store),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
     vscode.workspace.onDidChangeConfiguration((event) => configurationChanged(event, parts, panel)),
     // A guard setting re-derives the guard's line at once: "install it again to update it" follows the setting (gemini).
@@ -307,6 +360,8 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     cleanupHost: () => parts.host,
     cleanRecorder: () => parts.cleanRecorder,
     logs: () => logs,
+    archive: () => parts.archive,
+    archiveRecorder: () => parts.archiveRecorder,
     buildVersion,
   };
 }

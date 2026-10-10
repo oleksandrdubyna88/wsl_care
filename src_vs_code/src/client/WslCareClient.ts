@@ -1,4 +1,5 @@
 import type { ProcessResult, Runner } from '../process/runner';
+import { basePathRefusal } from '../shared/basePath';
 import { RUN_ID_SHAPE, UTC_INSTANT_SHAPE } from '../shared/shapes';
 import { DISTRO_NAME, distroSettingText, isDistroName, parseDefaultDistro, parseQuietList } from '../wsl/distros';
 import { wslExecutable } from '../wsl/wslExecutable';
@@ -10,7 +11,7 @@ import type { Answer, DaemonVersion, Failure, JsonObject, ReadOutcome, VerbOutco
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { DaemonLimits } from '../shared/daemonLimits';
 import { ceilingMs } from './ceilings';
-import { PREVIEW_CONTAINER_ASSUMPTION, runReadTail, VERBS, type RunRead, type Verb } from './verbs';
+import { PREVIEW_CONTAINER_ASSUMPTION, runReadTail, VERBS, type RunRead, type RunReadName, type Verb } from './verbs';
 
 /**
  * The extension's one client of the `wsl-care` daemon — and the ONLY module that builds `wsl.exe` argv
@@ -194,7 +195,7 @@ export class WslCareClient {
       return { ...target.failure, read: request.read };
     }
     const { wsl, distro } = target.value;
-    const timeoutMs = this.ceiling('runRead');
+    const timeoutMs = this.ceiling(request.read === 'archivePreview' ? 'archivePreview' : 'runRead');
     const result = await this.options.runner({ file: wsl, args: daemonArgv(distro, runReadTail(request)), timeoutMs });
     const read = readAnswerOf(result, distro, timeoutMs);
 
@@ -321,7 +322,7 @@ export class WslCareClient {
   }
 
   /** The call's ceiling, from the number settings as they are NOW (`client/ceilings.ts`). */
-  private ceiling(call: Verb | 'runRead'): number {
+  private ceiling(call: Verb | 'runRead' | 'archivePreview'): number {
     return ceilingMs(this.options.numbers?.() ?? DEFAULT_NUMBERS, { call }, this.options.limits?.());
   }
 
@@ -395,12 +396,18 @@ const INSTANT = UTC_INSTANT_SHAPE;
 
 /** Why a run read may not be built, or `undefined` when it may. */
 function readRefusal(request: RunRead): string | undefined {
-  if (request.read === 'runsShow') {
-    return RUN_ID.test(request.runId) ? undefined : 'that run id is not one the daemon writes (yyyyMMddTHHmmssZ-<pid>)';
-  }
-
-  return instantsRefusal(request.from, request.to);
+  return (READ_REFUSALS[request.read] as (r: RunRead) => string | undefined)(request);
 }
+
+/** One entry per read — a read added to `RunRead` without its check here does not compile. */
+const READ_REFUSALS: { readonly [K in RunReadName]: (request: Extract<RunRead, { readonly read: K }>) => string | undefined } = {
+  runsShow: (request) => (RUN_ID.test(request.runId) ? undefined : 'that run id is not one the daemon writes (yyyyMMddTHHmmssZ-<pid>)'),
+  runs: (request) => instantsRefusal(request.from, request.to),
+  logs: (request) => instantsRefusal(request.from, request.to),
+  archiveStatus: () => undefined,
+  archivePreview: () => undefined,
+  archiveCheckBase: (request) => basePathRefusal(request.path),
+};
 
 function instantsRefusal(from: string, to: string): string | undefined {
   if (!INSTANT.test(from) || !INSTANT.test(to)) {

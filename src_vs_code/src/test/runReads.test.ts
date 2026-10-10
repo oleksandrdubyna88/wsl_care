@@ -43,6 +43,9 @@ function client(script: Record<string, Scripted>): { c: WslCareClient; rec: Retu
 }
 
 const SHOW = daemonArgv('Ubuntu', ['runs', 'show', RUN, '--json']);
+
+const HISTORY_READS = { runsShow: { read: 'runsShow', runId: RUN }, runs: { read: 'runs', from: FROM, to: TO }, logs: { read: 'logs', from: FROM, to: TO } } as const;
+const ARCHIVE_READS = { archiveStatus: { read: 'archiveStatus' }, archivePreview: { read: 'archivePreview' }, archiveCheckBase: { read: 'archiveCheckBase', path: 'V:\\a' } } as const;
 const RUNS = daemonArgv('Ubuntu', ['runs', '--from', FROM, '--to', TO, '--json']);
 
 function bodyOf(outcome: ReadOutcome): Record<string, unknown> {
@@ -82,8 +85,8 @@ test('logs --from --to (E6.S4): the instant window of the Logs page, exactly as 
 });
 
 test('review K2: each run read names its CLI verb in an explicit table — a tag is never sent as a verb', () => {
-  assert.deepEqual(RUN_READ_VERBS, { runsShow: ['runs', 'show'], runs: ['runs'], logs: ['logs'] });
-  const reads: { readonly [K in RunRead['read']]: RunRead } = { runsShow: { read: 'runsShow', runId: RUN }, runs: { read: 'runs', from: FROM, to: TO }, logs: { read: 'logs', from: FROM, to: TO } };
+  assert.deepEqual(RUN_READ_VERBS, { runsShow: ['runs', 'show'], runs: ['runs'], logs: ['logs'], archiveStatus: ['archive', 'status'], archivePreview: ['archive', 'preview'], archiveCheckBase: ['archive', 'check-base'] });
+  const reads: { readonly [K in RunRead['read']]: RunRead } = { ...HISTORY_READS, ...ARCHIVE_READS };
   for (const name of RUN_READ_NAMES) {
     assert.deepEqual(runReadTail(reads[name]).slice(0, RUN_READ_VERBS[name].length), [...RUN_READ_VERBS[name]], name);
   }
@@ -97,8 +100,8 @@ test('review C1: exit 4 WITH a readable answer on logs and runs is an answer —
 });
 
 test('every run read\'s tail is built from its typed parts, and each has a stated ceiling', () => {
-  const reads: { readonly [K in RunRead['read']]: RunRead } = { runsShow: { read: 'runsShow', runId: RUN }, runs: { read: 'runs', from: FROM, to: TO }, logs: { read: 'logs', from: FROM, to: TO } };
-  assert.deepEqual(RUN_READ_NAMES.map((name) => runReadTail(reads[name])), [['runs', 'show', RUN, '--json'], ['runs', '--from', FROM, '--to', TO, '--json'], ['logs', '--from', FROM, '--to', TO, '--json']]);
+  const reads: { readonly [K in RunRead['read']]: RunRead } = { ...HISTORY_READS, ...ARCHIVE_READS };
+  assert.deepEqual(RUN_READ_NAMES.map((name) => runReadTail(reads[name])), [['runs', 'show', RUN, '--json'], ['runs', '--from', FROM, '--to', TO, '--json'], ['logs', '--from', FROM, '--to', TO, '--json'], ['archive', 'status', '--json'], ['archive', 'preview', '--json'], ['archive', 'check-base', 'V:\\a', '--json']]);
   for (const name of RUN_READ_NAMES) {
     assert.ok(RUN_READ_TIMEOUT_MS[name] > 0, name);
   }

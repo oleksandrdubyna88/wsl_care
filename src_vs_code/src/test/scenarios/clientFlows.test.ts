@@ -161,6 +161,25 @@ const RUN_READS: { readonly [K in RunReadName]: { readonly request: RunRead; rea
     scenario: {},
     check: (body) => { assert.equal(body.freedBytes, 308003000); assert.equal(body.detailsNotRead, 0); },
   },
+  // E10.S1: the three archive reads, unprivileged like the run reads.
+  archiveStatus: {
+    request: { read: 'archiveStatus' },
+    tail: ['archive', 'status', '--json'],
+    scenario: {},
+    check: (body) => assert.equal(body.schemaVersion, 1),
+  },
+  archivePreview: {
+    request: { read: 'archivePreview' },
+    tail: ['archive', 'preview', '--json'],
+    scenario: {},
+    check: (body) => assert.ok(Array.isArray(body.agents)),
+  },
+  archiveCheckBase: {
+    request: { read: 'archiveCheckBase', path: 'V:\\ai archive' },
+    tail: ['archive', 'check-base', 'V:\\ai archive', '--json'],
+    scenario: {},
+    check: (body) => assert.equal(body.accepted, true),
+  },
 };
 
 for (const name of RUN_READ_NAMES) {
