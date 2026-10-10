@@ -37,11 +37,13 @@ public sealed record WindowsAsk(TimeSpan Ceiling, TimeSpan Budget, CancellationT
 /// <para><b>Fails closed.</b> A held file keeps its unit; a Restart Manager that could not be asked keeps it; a question past its
 /// ceiling keeps it — and, the native worker being unstoppable, every later question in this process (<see cref="StallLatch"/>); a
 /// scan past its budget or cancelled keeps every unit not yet asked.</para>
-/// <para><b>Claude Code's working folder cannot be read on Windows</b>: a live Claude Code there keeps EVERY Claude Code session in
-/// place — asked again at every question (the gate round, finding 6: phase 2 asks minutes after the selection), and BEFORE the
+/// <para><b>Claude Code's working folder cannot be read on Windows</b>: while a Claude Code runs there, a Claude Code session moves
+/// only when every file of it was untouched for <c>archive.windowsIdleDays</c> (the E9.S5 amendment, owner decision 2026-10-09:
+/// <see cref="WindowsIdle"/>, <see cref="InUseView.ClaudeIdle"/>); before it, a live Claude Code kept EVERY Claude Code session in
+/// place. Whether one runs is asked again at every question (the gate round, finding 6: phase 2 asks minutes after the selection), and BEFORE the
 /// Restart Manager (finding 12). Claude Code runs as <c>claude.exe</c>, or as <c>node.exe</c> with its <c>claude-code</c> package on
-/// the command line; a <c>node.exe</c> of this session whose command line cannot be read cannot be told apart, so it keeps them too
-/// (the own review, 3).</para>
+/// the command line; a <c>node.exe</c> of this session whose command line cannot be read cannot be told apart, so it counts as running
+/// (the own review, 3) — the idle rule then applies as to a known one.</para>
 /// <para><b>Not seen</b> (said in <see cref="Note"/>): the Restart Manager leaves out a process it may not query (another account's,
 /// an elevated one) without saying so.</para>
 /// </remarks>
@@ -52,7 +54,7 @@ public static class InUseWindows
     private const string ClaudePackage = "claude-code";
 
     /// <summary>What the view says of itself: what it asks, and what it cannot see.</summary>
-    public const string Note = "on Windows the Restart Manager is asked who holds each session's files (it leaves out a process it may not query: another account's, an elevated one); Claude Code's working folder cannot be read here, so a live Claude Code keeps every Claude Code session in place";
+    public const string Note = "on Windows the Restart Manager is asked who holds each session's files (it leaves out a process it may not query: another account's, an elevated one); Claude Code's working folder cannot be read here, so while a Claude Code runs only a Claude Code session idle for archive.windowsIdleDays moves";
 
     /// <summary>A view whose questions each wait at most <paramref name="ceiling"/>, with a latch of its own (a test's).</summary>
     public static InUseView View(IRestartManager restartManager, IWindowsProcessTable processes, TimeSpan ceiling) =>
@@ -73,7 +75,7 @@ public static class InUseWindows
     public static string ClaudeRunning(IWindowsProcessTable processes) => processes.List() switch
     {
         Reading<IReadOnlyList<WindowsProcessEntry>>.Available { Value: var all } => Running(processes, all, processes.Details(Environment.ProcessId).SessionId),
-        Reading<IReadOnlyList<WindowsProcessEntry>>.Unavailable missing => $"the Windows process table could not be read ({missing.Reason}), so whether Claude Code runs is not known; no Claude Code session moves",
+        Reading<IReadOnlyList<WindowsProcessEntry>>.Unavailable missing => $"the Windows process table could not be read ({missing.Reason}), so whether Claude Code runs is not known; only a Claude Code session idle for archive.windowsIdleDays moves",
         _ => throw new UnreachableException("Reading is a closed set"),
     };
 
@@ -95,7 +97,7 @@ public static class InUseWindows
     {
         Reading<string>.Available { Value: var line } => line.Contains(ClaudePackage, StringComparison.OrdinalIgnoreCase) ? Runs(process) : string.Empty,
         Reading<string>.Unavailable missing when InMySession(processes, process, mySession) =>
-            string.Create(CultureInfo.InvariantCulture, $"a node.exe of this session (pid {process.Pid}) could not be read ({missing.Reason}), so whether it is Claude Code is not known; no Claude Code session moves"),
+            string.Create(CultureInfo.InvariantCulture, $"a node.exe of this session (pid {process.Pid}) could not be read ({missing.Reason}), so whether it is Claude Code is not known; only a Claude Code session idle for archive.windowsIdleDays moves"),
         _ => string.Empty,
     };
 
@@ -104,7 +106,7 @@ public static class InUseWindows
         mySession is not Reading<int>.Available { Value: var mine } || processes.Details(process.Pid).SessionId is not Reading<int>.Available { Value: var theirs } || theirs == mine;
 
     private static string Runs(WindowsProcessEntry process) =>
-        string.Create(CultureInfo.InvariantCulture, $"Claude Code runs on Windows ({process.ExeName}, pid {process.Pid}); its working folder cannot be read here, so no Claude Code session moves while it runs");
+        string.Create(CultureInfo.InvariantCulture, $"Claude Code runs on Windows ({process.ExeName}, pid {process.Pid}); its working folder cannot be read here, so only a Claude Code session idle for archive.windowsIdleDays moves while it runs");
 
     /// <summary>Asks one native question at a time, each in a worker it can abandon: within the question's ceiling and what is left of
     /// the budget, never after a stall of this process, never after a cancellation. Every way it does not answer keeps the unit.</summary>

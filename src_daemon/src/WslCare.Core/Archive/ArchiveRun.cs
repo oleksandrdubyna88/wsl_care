@@ -286,7 +286,8 @@ public static class ArchiveRun
     private static ArchiveRunReport Moved(ArchiveRunInput input, ArchiveState state, DateTimeOffset started, byte[] key, string side, List<string> notes)
     {
         var meter = new RunMeter(input, started);
-        var inUse = input.InUseScan(input);
+        // The E9.S5 amendment: the Windows side's view judges whether a Claude Code session is idle, from times read at each question.
+        var inUse = input.InUseScan(input).WithIdle(WindowsIdle.Of(input.Files, input.Config, input.Clock));
         var context = ContextOf(input, state, key, inUse, meter.Moved);
         var reconcile = ArchiveReconcile.FromInflight(context);
         var selectionInput = new SelectionInput(input.Paths, input.Files, input.Config, input.Clock.GetUtcNow(), input.Zone, inUse, input.Environment) { OnlyAgent = input.OnlyAgent, Token = input.Token };

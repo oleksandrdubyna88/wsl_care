@@ -4030,7 +4030,7 @@ Folded into ONE `fix(daemon): the coai code round and the own review over E9.S5`
 
 #### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
 
-> Status: **plan only, 2026-10-09 — nothing built.** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
+> Status: **built, 2026-10-09 (its PR open).** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
 > `Archive/Liveness.cs`, `Archive/Selection.cs`, `Archive/ArchiveRemove.cs`, `Archive/ArchiveRun.cs`, a new `Archive/WindowsIdle.cs`,
 > `Config/ConfigKeys.cs` + `default.json` (two keys), the tests, `research/module_archive.md`, `research/module_tests.md`, README.
 > Branch `fix/wc-e9s5-windows-idle`, its own PR, before E10 goes on. It OVERRIDES the E9.S5 text above where they differ.
@@ -4104,6 +4104,27 @@ through `ArchiveRun.Run` (selection, phase 1, phase 2) on the real file system w
 Claude Code: an idle session moves and is removed, a recent one stays, one touched after the selection is kept at phase 2 (the CLI
 flow uses the real process table on purpose and cannot be made to show a Claude Code); **1** — a unit with one old and one recent
 file is kept, naming `archive.windowsIdleDays`.
+
+**As built (2026-10-09).** As designed, with these changes from the own review round. Each overrides D1–D5 above where they differ.
+
+- **The tolerance decides too.** A session is idle only when its newest file is older than the window AND
+  `archive.clockSkewMinutes` (review 4). Before, the tolerance changed only the message.
+- **A unit none of whose names exists is idle** (review 5): it has nothing an agent could be using. This lets a resumed entry whose
+  files are all gone close instead of waiting `archive.keptEntryDays`.
+- **`PhysicalFileSystem.FileSize` answers *unreadable*, not *missing*, for a file it may not stat** (review 1, Major): `FileInfo.Exists`
+  says false for access denied too, so an unreadable recent file read as idle. The other callers of `FileSize` gain the same honesty.
+- **The residual risk** (review 2) is written into `module_archive.md`. A Claude Code window left open on a session for the whole
+  window with no new turn is not seen: Claude keeps no handle open, and a resume only reads. Such a session moves, and its next turn
+  writes a fresh file that the archive records as a `split`, so nothing is lost. The owner decides whether to add the partial guard
+  (a session id on a `claude --resume <id>` command line).
+- **Code:**
+  - `Archive/WindowsIdle.cs`
+  - `InUseView.ClaudeIdle` / `WithIdle` (default fails closed: `InUseView.NotJudged`)
+  - `Liveness.AgentWorking(view, agent, key, files)`
+  - the run and the preview give the view the rule
+  - the test doubles `GivenAnswers` / `GivenTable` extracted to `WindowsSideFakes.cs`
+- **Tests, red runs, teeth W-01 to W-13, and the review table:** [module_tests.md](../research/module_tests.md), *The Windows idle
+  rule*.
 
 **DoD.** The plan gate (this section), the code gate, an own Opus review (data safety: what may move while Claude runs), the teeth
 recorded in `module_tests.md`, `module_archive.md` and the README's archive text updated, all suites on Windows and WSL, a PR merged by

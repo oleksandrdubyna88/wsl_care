@@ -83,6 +83,8 @@ public sealed partial class NumbersArchitectureTests
         ["WslCare.Core/Config/ConfigKeys.cs: GbCeiling"] = "a key's range ceiling — the contract that bounds the configuration itself",
         ["WslCare.Core/Config/ConfigKeys.cs: DaysCeiling"] = "a key's range ceiling — the contract that bounds the configuration itself",
         ["WslCare.Core/Config/ConfigKeys.cs: HoursCeiling"] = "a key's range ceiling — the contract that bounds the configuration itself",
+        ["WslCare.Core/Config/ConfigKeys.cs: WindowsIdleCeilingDays"] = "a key's range ceiling — the contract that bounds the configuration itself",
+        ["WslCare.Core/Config/ConfigKeys.cs: MinutesPerDay"] = "a unit (the minutes of a day) — the range ceiling of archive.clockSkewMinutes",
         ["WslCare.Core/Config/KeyRules.cs: MaxLength"] = "a path key's length in the schema (contracts/config-keys.json)",
         ["WslCare.Core/Mcp/McpUserPrograms.cs: MaxMembers"] = "the mcpServers.programs list's cap in the schema (contracts/config-keys.json maxMembers), what bounds the configuration itself",
         ["WslCare.Core/Config/NumberRules.cs: BytesPerShownName"] = "a coupled-limit rule's factor: a 64-hex name, its quotes and its comma — the request file's format",

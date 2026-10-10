@@ -737,8 +737,11 @@ Code is working in its project, its database may be open (a `-wal` beside it), i
 such as `con`, a trailing dot or space, invalid UTF-8, two names differing only by case), or not all of it could be seen. Only a
 COMPLETE open-file scan lets a session move: a scan cut by its time keeps every due session. On Windows the Restart Manager is
 asked who holds each session's files (nothing is opened); a holder, an error or a question past `archive.inUseScanSeconds` keeps
-the session, and because Claude Code's working folder cannot be read there, a running Claude Code on Windows keeps every Claude
-Code session in place. Claude Code is not archived while `CLAUDE_CONFIG_DIR` points
+the session. Claude Code's working folder cannot be read there, so while a Claude Code runs on Windows (or whether one runs cannot
+be told) a Claude Code session moves only when every one of its files was untouched for `archive.windowsIdleDays` (7 days by
+default) — judged from the files' times when asked, again before the removal. A file dated after the machine's clock by more than
+`archive.clockSkewMinutes` (10) keeps its session, and a session counts as idle only past the window and that tolerance together;
+a time that cannot be read keeps it, and the open-file check still holds a session whose files are held. Claude Code is not archived while `CLAUDE_CONFIG_DIR` points
 elsewhere than `~/.claude`; `--agent` previews an agent `archive.agents` does not hold, marked `enabled: false`. As root it
 refuses with exit **81**.
 
