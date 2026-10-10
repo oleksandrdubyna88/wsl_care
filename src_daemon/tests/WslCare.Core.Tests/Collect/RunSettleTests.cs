@@ -108,11 +108,15 @@ public sealed class RunSettleTests
     public void A_settled_timer_run_waits_for_the_lock_for_what_is_left_of_the_busy_bound()
     {
         var accepted = TimeSpan.FromSeconds(30);
+        var bootWaited = RunSettled.None with { BootWait = TimeSpan.FromMinutes(13) };
 
-        RunSettle.LockWaitAfter(RunSettled.None, Defaults, accepted).Should().Be(TimeSpan.FromMinutes(20), "no busy wait: the whole bound is left");
+        RunSettle.LockWaitAfter(bootWaited, Defaults, accepted).Should().Be(TimeSpan.FromMinutes(20), "it waited for the boot, no busy wait: the whole bound is left");
         RunSettle.LockWaitAfter(RunSettled.None with { BusyWait = TimeSpan.FromMinutes(15) }, Defaults, accepted).Should().Be(TimeSpan.FromMinutes(5));
         RunSettle.LockWaitAfter(RunSettled.None with { BusyWait = TimeSpan.FromMinutes(20) }, Defaults, accepted).Should().Be(accepted, "never less than before");
-        RunSettle.LockWaitAfter(RunSettled.None, Defaults with { BusyWait = TimeSpan.Zero }, accepted).Should().Be(accepted, "the bound off: as before");
+        RunSettle.LockWaitAfter(bootWaited, Defaults with { BusyWait = TimeSpan.Zero }, accepted).Should().Be(accepted, "the bound off: as before");
+        // PR #82's CI (linux-arm64, 30-min job limit): a run that waited for NOTHING opened no window for another run to take the
+        // lock in — so it keeps the accepted wait, and a timer run meeting a held lock is turned away in seconds, as before.
+        RunSettle.LockWaitAfter(RunSettled.None, Defaults, accepted).Should().Be(accepted, "no settle wait: the lock wait as before");
     }
 
     [Fact]

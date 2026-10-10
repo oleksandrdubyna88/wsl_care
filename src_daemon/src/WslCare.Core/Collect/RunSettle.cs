@@ -63,11 +63,14 @@ public static class RunSettle
 
     /// <summary>How long a settled timer run waits for the run lock: what is left of <c>timer.busyWaitMinutes</c> after the busy wait,
     /// never less than the accepted-run wait it had before (<c>requests.lockWaitSeconds</c>) — so a manual run that took the lock
-    /// during the settle wait delays the timer run instead of turning it away, inside the bound the run budget already counts.</summary>
+    /// during the settle wait delays the timer run instead of turning it away, inside the bound the run budget already counts. A run
+    /// that waited for NOTHING opened no such window and keeps the accepted wait (PR #82's CI: otherwise every timer run meeting a
+    /// held lock waited the whole bound before it was turned away).</summary>
     public static TimeSpan LockWaitAfter(RunSettled settled, SettleSettings settings, TimeSpan accepted)
     {
+        var waited = settled.BootWait + settled.BusyWait > TimeSpan.Zero;
         var left = settings.BusyWait - settled.BusyWait;
-        return left > accepted ? left : accepted;
+        return waited && left > accepted ? left : accepted;
     }
 
     /// <summary>How long until the machine has been up the boot delay; zero when it has, when the delay is off, or when the uptime
