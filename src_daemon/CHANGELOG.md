@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.4.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.3.0...daemon-v0.4.0) (2026-10-10)
+
+
+### Features
+
+* **daemon:** a timer run settles first — after a boot, and while the machine is busy ([#82](https://github.com/oleksandrdubyna88/wsl_care/issues/82)) ([912eed2](https://github.com/oleksandrdubyna88/wsl_care/commit/912eed21810f0a54b207d8e08d130757ca3b21ea))
+* **daemon:** A11 on by default, with language-servers in its default families ([#75](https://github.com/oleksandrdubyna88/wsl_care/issues/75)) ([f7dbb46](https://github.com/oleksandrdubyna88/wsl_care/commit/f7dbb460ce1a8ebc5f7c9b29cdfa4bd3adc152bb))
+* **daemon:** A21 ends client-gone interop relays with SIGTERM only (E14 S7b.2) ([#91](https://github.com/oleksandrdubyna88/wsl_care/issues/91)) ([9d23dc1](https://github.com/oleksandrdubyna88/wsl_care/commit/9d23dc16d82e77ae259f2604c686c2c26f8d7bbf))
+* **daemon:** E10.S0 — A20's entries on stdin, the restore ceiling, none lost to the window ([#73](https://github.com/oleksandrdubyna88/wsl_care/issues/73)) ([7b1dad7](https://github.com/oleksandrdubyna88/wsl_care/commit/7b1dad73c9337b1bb7b9e5cf07c06d66ed297f10))
+* **daemon:** E9 — the AI-session archive (E9.S0–E9.S5) ([#69](https://github.com/oleksandrdubyna88/wsl_care/issues/69)) ([eb498eb](https://github.com/oleksandrdubyna88/wsl_care/commit/eb498eb6571986ad42ba84edc068fb92ffffd5f9))
+* **daemon:** the Windows side's MCP CPU ledger (E14 S7b.1), and the S7b plan ([#84](https://github.com/oleksandrdubyna88/wsl_care/issues/84)) ([c1e9249](https://github.com/oleksandrdubyna88/wsl_care/commit/c1e92497702eee90a5ae0ab83c69aa5381be8056))
+* **extension:** E10.S1a — the archive folder, one user-layer writer, the panel's archive section ([#88](https://github.com/oleksandrdubyna88/wsl_care/issues/88)) ([6c5f148](https://github.com/oleksandrdubyna88/wsl_care/commit/6c5f148f3df096059fc756cb47901c441773ca62))
+* **extension:** E10.S1b — Archive now, the daemon's A13 through the cleanup controller from a panel button ([#92](https://github.com/oleksandrdubyna88/wsl_care/issues/92)) ([7198f25](https://github.com/oleksandrdubyna88/wsl_care/commit/7198f252e556db9535c0b132096a2190afc12ba1))
+
+
+### Bug Fixes
+
+* **ci:** the Marketplace wait outlasts a 20-minute propagation and logs every attempt ([#70](https://github.com/oleksandrdubyna88/wsl_care/issues/70)) ([c002c00](https://github.com/oleksandrdubyna88/wsl_care/commit/c002c008c01b6fb5d787564c2b49f3977b707fea))
+* **daemon:** a base on a network share — the mapped drive is its share, SMB's missing folder flush, the lease says why ([#80](https://github.com/oleksandrdubyna88/wsl_care/issues/80)) ([7efa0fb](https://github.com/oleksandrdubyna88/wsl_care/commit/7efa0fb83287a54a8378456dd129ca61f1b2ae55))
+* **daemon:** the Windows idle rule — while Claude Code runs, a session idle for archive.windowsIdleDays may move ([#78](https://github.com/oleksandrdubyna88/wsl_care/issues/78)) ([463fc24](https://github.com/oleksandrdubyna88/wsl_care/commit/463fc2479b7299c9a3a825e0ce13d289f8450f5e))
+* **daemon:** two fail-closed guards — a session on a live Claude command line stays, an Offline Files share is not trusted ([#85](https://github.com/oleksandrdubyna88/wsl_care/issues/85)) ([4499849](https://github.com/oleksandrdubyna88/wsl_care/commit/44998494325738727a5c0ea9b4a2bb13899cc00d))
+
 ## [0.3.0](https://github.com/oleksandrdubyna88/wsl_care/compare/daemon-v0.2.0...daemon-v0.3.0) (2026-10-09)
 
 
