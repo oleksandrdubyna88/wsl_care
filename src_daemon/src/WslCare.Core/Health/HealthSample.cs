@@ -60,6 +60,10 @@ public sealed record HealthSample(
     /// <summary>journald's "Time jumped backwards" in the last 4 h of this boot, counted on the monotonic clock (D4).</summary>
     public Reading<int> TimeJumpsBack { get; init; } = Reading.Missing<int>("not read");
 
+    /// <summary>The Windows disk facts the second fixed interop script read (E15.S1) — the full run's only; no verdict judges
+    /// them yet, the run detail records them.</summary>
+    public WindowsDiskSample WindowsDisk { get; init; } = WindowsDiskSample.Unavailable(DateTimeOffset.UnixEpoch, "not read");
+
     /// <summary>The whole sample unavailable for one reason — the Windows binary, which has no systemd to ask.</summary>
     public static HealthSample Unavailable(DateTimeOffset since, string reason, WindowsClockSample clock, Reading<string> profile, Reading<WslConfigAudit> wslConfig) =>
         new(

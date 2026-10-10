@@ -104,6 +104,8 @@ public sealed class HostileInputs(int seed)
         SlotKind.SnapName => Pick<string>(["core22", "snapd", "firefox", "gnome-42-2204", "lxd", "a1"]),
         SlotKind.Text t => TextValue(t),
         SlotKind.HttpsUrl => Pick<string>(["https://www.microsoft.com", "https://a.b:8443/x/y", "https://1.2.3.4", "https://time-host.example/p_~.-/q", "https://X"]),
+        SlotKind.WindowsDiskScript => WslCare.Core.Health.WindowsDiskCommands.Script, // its whole accepted space: one value
+
         SlotKind.OneOf o => Pick(o.Values),
         SlotKind.Prefixed p => p.Prefix + Valid(p.Inner),
         SlotKind.AnyOf a => Valid(Pick(a.Kinds)),

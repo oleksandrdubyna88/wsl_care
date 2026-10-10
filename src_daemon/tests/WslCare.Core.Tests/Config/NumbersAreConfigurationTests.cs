@@ -35,7 +35,7 @@ public sealed class NumbersAreConfigurationTests
         "thresholds.clockJumpsWarnPer4h", "thresholds.collectorFreshMinutes", "wslConfig.recommendedMemoryGb",
         "thresholds.wslMemoryCriticalPercent", "processes.topCount",
         "archive.removeAfterHours", "archive.marginDays", "archive.agentRetentionDays", "archive.urgentWithinDays", "archive.minFreeGb",
-        "archive.copyBufferKib",
+        "archive.copyBufferKib", "disk.eventsSinceDays",
     ];
 
     /// <summary>The inventory's group B (root-safety limits) — machine-layer-only keys.</summary>
@@ -53,7 +53,7 @@ public sealed class NumbersAreConfigurationTests
         "journal.vacuumTimeoutSeconds", "memory.syncTimeoutSeconds", "memory.dropCachesTimeoutSeconds", "memory.compactTimeoutSeconds",
         "aptCache.cleanTimeoutSeconds", "snap.removeTimeoutSeconds", "buildServers.shutdownTimeoutSeconds", "trim.timeoutSeconds",
         "npm.cleanTimeoutSeconds", "nuget.clearTimeoutSeconds", "toolCaches.trimTimeoutSeconds", "toolCaches.whereTimeoutSeconds",
-        "toolCaches.whereOutputCapBytes", "clock.stepTimeoutSeconds", "health.windowsClockTimeoutSeconds", "health.snapTimeoutSeconds",
+        "toolCaches.whereOutputCapBytes", "clock.stepTimeoutSeconds", "health.windowsClockTimeoutSeconds", "health.windowsDiskTimeoutSeconds", "disk.eventsMaxRead", "health.snapTimeoutSeconds",
         "health.outputCapBytes", "health.kernelLinesKept", "health.kernelLineChars", "health.maxWslConfigBytes", "commands.outputCapBytes",
         "commands.systemDriveLookupSeconds", "commands.maxTimeoutHours", "commands.drainGraceMilliseconds", "userFiles.maxSmallFileBytes",
         "userFiles.maxJsonBytes", "userFiles.maxLinkBytes", "records.maxReasonChars", "records.lockTimeoutSeconds",
