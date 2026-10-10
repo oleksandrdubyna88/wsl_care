@@ -48,7 +48,12 @@ public sealed record InUseView(IReadOnlySet<string> OpenFiles, IReadOnlySet<stri
 
     /// <summary>This view with the idle rule <paramref name="idle"/> — what every run and preview hands the Windows side's view (the
     /// distro's view never says Claude runs, so it is never asked).</summary>
-    public InUseView WithIdle(WindowsIdle idle) => this with { ClaudeIdle = idle.Problem };
+    public InUseView WithIdle(WindowsIdle idle) => this with { ClaudeIdle = files => Bounded(() => idle.Problem(files)) };
+
+    /// <summary>How a per-unit question of this view is asked (the code round over the E9.S5 amendment, finding 2: a profile on a
+    /// redirected share can hang a stat): the Windows view asks within <c>archive.inUseScanSeconds</c> and the caller's budget, and a
+    /// question that does not answer keeps the unit; the distro's view asks directly (it never says Claude runs).</summary>
+    public Func<Func<string>, string> Bounded { get; init; } = static question => question();
 
     public static InUseView Complete(IReadOnlySet<string> openFiles, IReadOnlySet<string> claudeProjects) => new(openFiles, claudeProjects, InUseState.Complete, string.Empty);
 

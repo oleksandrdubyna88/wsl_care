@@ -68,6 +68,7 @@ public static class InUseWindows
         {
             HeldBy = files => asker.Asked(() => restartManager.Holders(files), Said),
             ClaudeRunning = () => asker.Asked(() => ClaudeRunning(processes), static running => running),
+            Bounded = question => asker.Asked(question, static said => said),
         };
     }
 

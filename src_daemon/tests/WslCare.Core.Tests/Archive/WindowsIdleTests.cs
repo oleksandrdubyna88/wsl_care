@@ -216,6 +216,23 @@ public sealed class WindowsIdleTests : IDisposable
         Problem(ClaudeView(), name).Should().Contain("Claude Code runs on Windows").And.Contain("not judged");
     }
 
+    /// <summary>The code round, finding 2: a profile on a redirected share can hang a stat — the idle question is asked like every Windows
+    /// question, within <c>archive.inUseScanSeconds</c> and the caller's budget, and a question that does not answer keeps the unit.</summary>
+    [Fact]
+    public void A_stat_that_does_not_answer_keeps_the_session_within_the_ceiling()
+    {
+        using var never = new ManualResetEventSlim();
+        var hanging = new WindowsIdle(_ => { never.Wait(TimeSpan.FromSeconds(20)); return new FileSizeResult.Missing(); }, _clock, TimeSpan.FromDays(7), TimeSpan.FromMinutes(10));
+        var view = InUseWindows.View(new GivenAnswers(new RmAnswer.Free()), new GivenTable([new WindowsProcessEntry(40, 4, "claude.exe")], string.Empty), TimeSpan.FromMilliseconds(300));
+
+        var started = DateTime.UtcNow;
+        var answer = Problem(view.WithIdle(hanging), "s1.jsonl");
+        never.Set();
+
+        (DateTime.UtcNow - started).Should().BeLessThan(TimeSpan.FromSeconds(10));
+        answer.Should().Contain("did not answer within archive.inUseScanSeconds");
+    }
+
     [Fact]
     public void Another_agents_unit_is_never_asked_about_idleness()
     {

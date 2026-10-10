@@ -2495,6 +2495,16 @@ reading ONE process's command line through its query-only handle) to tell whethe
 Windows binary only (`CliHost.ArchiveWindows` → `RealWindowsSide`); the distro's binary and every test host get a check that
 did not run, or the test's own.
 
+**The Windows idle rule (the E9.S5 amendment, owner decision 2026-10-09).** While the process table says a Claude Code runs (or
+cannot tell), a Claude Code unit moves only when it is idle. Idle means every file of it was untouched for
+`archive.windowsIdleDays`, past the `archive.clockSkewMinutes` tolerance.
+
+- The rule reaches the view from the configuration: `WindowsIdle.Of(files, config, clock)`, handed over by `WithIdle` in the run
+  (`ArchiveRun.Moved`) and in the preview (`ArchiveCommand`).
+- The file times come from `IFileSystem.FileSize` (`PhysicalFileSystem` answers *unreadable*, not *missing*, for a file it may not
+  stat). They are read through the same bounded asker as every Windows question (`InUseView.Bounded`).
+- A view never given the rule keeps every such unit (`InUseView.NotJudged`).
+
 ```mermaid
 flowchart LR
     cli["wsl-care.exe archive preview / run"] --> side["CliHost.ArchiveWindows<br/>RealWindowsSide"]
@@ -2502,6 +2512,8 @@ flowchart LR
     view --> rm["RestartManager<br/>RmStartSession · RmRegisterResources · RmGetList · RmEndSession"]
     view --> users["FileUsers (past MAX_PATH)<br/>NtQueryInformationFile, attributes-only handle"]
     view --> table["Win32ProcessTable (E14 S7a)<br/>snapshot · query-only handle · command line"]
+    cfg["config: archive.windowsIdleDays,<br/>archive.clockSkewMinutes"] --> idle["WindowsIdle (WithIdle)<br/>file times via IFileSystem.FileSize"]
+    idle --> view
     view --> liveness["Liveness: the selection and phase 2"]
 ```
 

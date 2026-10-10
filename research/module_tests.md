@@ -2951,6 +2951,13 @@ error) in WSL: red.
 | 6 | the time reads are outside the listing budget | noted: the sources are in the local profile and the listing already stats the same files |
 | 7 | missing tests (the quarantine name, a real unreadable stat, a missing name beside an old file) | added (above) |
 
+**The coai code round** (session a024a786, `proceed`, 2 gating of threshold 5; one of two vendors answered). Accepted: `architecture.md`
+names the idle rule's cross-module path and draws it; the stats are asked through the Windows view's bounded asker
+(`InUseView.Bounded` — `archive.inUseScanSeconds`, the budget, the cancellation; RED first:
+`WindowsIdleTests.A_stat_that_does_not_answer_keeps_the_session_within_the_ceiling` waited the full 20 s; teeth W-14, the binding
+removed: red); the per-unit cost is bounded by the same fix. Rejected: binding the rule at one shared boundary — the run applies it
+after its test seam on purpose, and a path that forgets it fails closed.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam
