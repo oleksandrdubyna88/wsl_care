@@ -3592,6 +3592,33 @@ Totals after the review rounds: `npm test` **923 tests (922 pass, 1 skipped)**; 
 | **the own review on Fable: only `judgedFolder.ts` casts into the brand** (#4) | `structure.test.ts` (*only judgedFolder.ts makes a JudgedFolder*, its planted companion) | green on the tree; the planted `as JudgedFolder` and `<JudgedFolder>` are found, a comment and an annotation are not |
 | **the own review on Fable: the palette's *Start WSL and check* refreshes the archive too** (#3), **the run-read ceiling's description names the archive calls** (#2) | — (#3 is the thin `extension.ts` wiring, outside the node tier; #2 is held by `numbers.test.ts`, `package.json` equal to the table) | #2's write-readback half is the code round's #4 above |
 
+### What each E10.S1b guarantee rests on (2026-10-10)
+
+E10.S1b is *Archive now*: A13 through the cleanup controller (plan §15s, *E10.S1b build notes*). The guarantees were written
+RED first against stubs that compiled and did the old thing:
+- the capability sets were declared but unused;
+- the items were read as `[]`;
+- `CleanFlow.archive()` delegated to `clean(['A13'])`;
+- the button was always greyed.
+
+Each test failed for its own symptom before the code it pins. One exception: the *done words* test was written right after its
+code, so its teeth come from mutation N6. Every mutation below changed PRODUCT code only, through the mutation script, which
+restores each file byte for byte. N1 did not compile the first time and was re-made so that it did.
+
+Totals: `npm test` **939 tests (938 pass, 1 skipped)**; typecheck and lint 0.
+
+| Guarantee | Tests | Red / green / teeth |
+|---|---|---|
+| **A13 is previewed only with `archive.preview` advertised, and confirmed only with `archive.run`** — at the controller, the authority | `archiveNow.test.ts` (*a preview of A13 without archive.preview …*, *a confirm of A13 without archive.run …*) | red: `'previewed'` and `'accepted'` where a refusal was due; green; teeth: N1 (the preview ignoring A13's set) and N2 (the confirm ignoring `archive.run`), red each |
+| **A13's preview ceiling is its own setting, above the daemon's 600 s** | `archiveNow.test.ts` (*A13's preview ceiling …*), `ceilings.test.ts` | red: `370000 !== 650000` (a Docker row's share); green; teeth: N3, red |
+| **the preview's items read whole** | `archiveNow.test.ts` (*… keeps each agent's item whole*) — over the daemon's own `act-a13-preview-action.json` | red: `[]`; green; teeth: N4, red |
+| **its own words** (the modal, the notices, *moved*, *Archiving…*) | `archiveNow.test.ts` (*the modal of A13 …*, *the notices say "the archive run"*, *a done archive run says what it MOVED*, *the in-flight state … "Archiving…"*) | red: `'Clean A13 in "Ubuntu"?'`, `'Cleaning the archive run: …'`, `'Cleaning… A13'`; green; teeth: N5 (never archive-only), N6 (the cleanup's done words), N7 (the live state), red each |
+| **the same durable transaction** (journal before the call, one detached confirm, the follower, reload, a dead run) | `archiveNow.test.ts` (*Archive now: the preview of A13, its modal, the journal entry BEFORE the confirm …*), `scenarios/cleanupFlows.test.ts` (*the RELOAD scenario for Archive now*, *a DEAD archive run …*) | red: the modal confirmed *Clean*; green |
+| **never a second archive run while one is in flight** | `scenarios/cleanupFlows.test.ts` (*Archive now while a run is in flight …*) | red: a second confirm went out (`handedOff`); green; teeth: N9 (the host gate dropped), red |
+| **the button is greyed exactly when a condition does not hold** (incl. `archive.preview`, the plan round's #0) | `archiveNow.test.ts` (*Archive now is enabled exactly when …*) | red: always greyed; green; teeth: N8 (a cleanup in flight ignored), red |
+| **a bare message and a command** | `archiveNow.test.ts`, `commandButtons.test.ts`, `manifest.test.ts`, `catalogue.test.ts` | red: the message dropped, the catalogue missing its two rows, the manifest's command list |
+| **the fake: A13 alone, with its capability, answered from the daemon's golden line** | `fakeWsl.test.ts` (*root: A13 previews from the daemon's own A13 golden line …*, *root: A13 is refused beside another id …*) | red: the fake took `A4,A13` and answered a made-up line; green. The older registry test's mixed case moved from `A4,A13` (now refused earlier, beside another id) to `A4,A99` |
+
 ### What the service-account fix of the `.vsix` leak check rests on (release PR #47, 2026-10-08)
 
 Release PR #47 (extension 0.2.0) was red on both CI legs (run 37751902435): release-please's CHANGELOG section said

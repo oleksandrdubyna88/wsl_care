@@ -4531,8 +4531,8 @@ Tests and teeth: [module_tests.md](../research/module_tests.md), the `client arc
 
 #### E10.S1b build notes (2026-10-10): *Archive now*
 
-> Status: **plan only, 2026-10-10 — E10.S1b not started.** Branch `feat/wc-e10s1b-archive-now`, from `main` 6c5f148 (E10.S1a
-> merged). The paths are `src_vs_code/`'s unless named otherwise.
+> Status: **built on its branch, 2026-10-10 — see *As built — E10.S1b* below; merged when its PR is.** Branch
+> `feat/wc-e10s1b-archive-now`, from `main` 6c5f148 (E10.S1a merged). The paths are `src_vs_code/`'s unless named otherwise.
 
 **Goal.** One panel button, *Archive now*, runs A13 at once: the daemon's own action, through the cleanup controller as it is.
 It previews as root, shows a modal naming each agent's sessions and bytes, persists the run, and confirms
@@ -4613,6 +4613,26 @@ before the removal from the extension) rejected — that sequence is the daemon'
 - An own review on Fable (owner 2026-10-10, root-touching).
 - The coai plan and code rounds.
 - The docs: `module_vs_code.md`, `module_tests.md`, README, this section's *as built*.
+
+#### As built — E10.S1b (2026-10-10)
+
+As planned, with these specifics:
+- **The capability choice is two functions.** `previewNeeds(ids)` and `confirmNeeds(ids)` in `cleanupController.ts`; the latter
+  is the union of the detach, A4's stdin list and A13's `archive.run`. `CAPABILITIES` gained `previewA13` and `confirmA13`.
+- **A13's share is the setting itself.** `ceilings.ts` `SETTING_SHARES`: the archive preview's setting. `worstCases.ts` adds
+  A13's worst case, 600 s.
+- **The golden comes from the daemon's code, not from the CLI.** `act-a13-preview-action.json` is A13's LINE, made by the daemon's
+  own `ArchiveAction` over a child answering one due session (`A13PreviewGolden.cs`, in `GoldenContracts`). The built CLI's A13
+  refuses a test build's binary, which is never root's alone (`ArchiveActFlows`). The fake merges that line into the act
+  envelope of the A4 golden.
+- **One older fake test changed its input.** The registry test's mixed case moved from `A4,A13`, now refused earlier because A13
+  never sits beside another id, to `A4,A99`.
+- ***Clean selected* cannot carry A13.** A13 is not a `ROW_IDS` member, so the page cannot send it as a row. *Archive now* is the
+  only way in, and the fake refuses A13 beside another id.
+- **The scenario windows ask `status` first** (the follower's tick), as a real window's poll does. The host's gate reads the cleanup
+  controls, which need a status.
+
+Tests and teeth: [module_tests.md](../research/module_tests.md), *What each E10.S1b guarantee rests on*.
 
 #### Definition of Done
 
