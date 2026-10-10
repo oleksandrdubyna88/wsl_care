@@ -143,8 +143,13 @@ public static class AgentCpuHistory
     /// keys by identity and would refuse a duplicate — the risk consultation of 2026-10-08) — and, since E14 S3, the .NET build
     /// servers (A3's timer runs its shutdown only when every one is measured idle).</summary>
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, IReadOnlyList<Mcp.McpServerEntry> watched) =>
+        Sample(paths, files, processes, watched, []);
+
+    /// <summary>The same, and — since E14 S7b.2 — the interop relays of <paramref name="relays"/> (A21's idle floor): a relay's
+    /// argv[0] is <c>init</c>, so the watched list alone never records one.</summary>
+    public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, IReadOnlyList<Mcp.McpServerEntry> watched, IReadOnlyList<Mcp.McpServerEntry> relays) =>
         [.. processes
-            .Where(p => p.Pid > 1 && p.User != "root" && IsRecorded(p, watched))
+            .Where(p => p.Pid > 1 && p.User != "root" && (IsRecorded(p, watched) || InteropRelays.ServerOf(p, relays) is not null))
             .Select(p => p.Pid)
             .Distinct()
             .Select(pid => SuspectTermination.Sample(files, paths, pid))
@@ -159,16 +164,18 @@ public static class AgentCpuHistory
     public static IReadOnlyList<PidSample> Sample(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes) =>
         Sample(paths, files, processes, Mcp.McpServerCatalogue.Servers);
 
-    /// <summary>One root run's record (the timer's full run): sample, merge, write. Empty when written.</summary>
-    public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at) =>
-        Record(paths, files, processes, at, Mcp.McpServerCatalogue.Servers);
+    /// <summary>One root run's record as THIS configuration has it (the timer's full run and the watch, plan E14 S7b.2): the watched
+    /// MCP servers and the catalogued servers' interop relays. Every writer records the same set — an identity a writer leaves out
+    /// is dropped from the history, which would reset its idle time — so this is the ONLY writer (coai code round 2026-10-10,
+    /// finding 1: the overloads that took a narrower set are gone). Empty when written.</summary>
+    public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at, EffectiveConfig config) =>
+        Record(paths, files, processes, at, Mcp.McpSettings.From(config).Watched, InteropRelays.Servers(config));
 
-    /// <summary>One root run's record over the WATCHED MCP servers (the timer passes <c>mcpServers.watched</c>). Empty when written.</summary>
-    public static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at, IReadOnlyList<Mcp.McpServerEntry> watched)
+    private static string Record(LinuxHostPaths paths, IFileSystem files, IEnumerable<ProcessEntry> processes, SampleTime at, IReadOnlyList<Mcp.McpServerEntry> watched, IReadOnlyList<Mcp.McpServerEntry> relays)
     {
         var boot = BootIdentity.Read(paths, files);
         return boot.Length == 0
             ? "the boot id cannot be read; the AI-agent CPU history is not recorded"
-            : Write(paths, files, Next(Read(paths, files), boot, Sample(paths, files, processes, watched), at));
+            : Write(paths, files, Next(Read(paths, files), boot, Sample(paths, files, processes, watched, relays), at));
     }
 }

@@ -78,6 +78,11 @@ public static class WatchRun
 {
     private static readonly ActionId A19 = ActionId.Find("A19") ?? throw new InvalidOperationException("this build holds no A19");
 
+    /// <summary>The actions the watch lets act, in this order (plan E14 S7b.2: A21 after A19) — each by its own <c>auto</c> switch,
+    /// as ONE recorded act bound to the targets this watch has not tried before.</summary>
+    private static readonly IReadOnlyList<ActionId> Acting =
+        [A19, ActionId.Find("A21") ?? throw new InvalidOperationException("this build holds no A21")];
+
     public const string NotTheDistro = "the watch is the distro's: the Windows binary keeps no MCP CPU ledger";
 
     public const string NoTimer = "without --timer the watch records the evidence only; A19 acts from the watch timer (wsl-care-watch.timer)";
@@ -124,7 +129,7 @@ public static class WatchRun
         var ledger = mcp is Reading<McpSample>.Available { Value: var s } ? s.Baseline : McpCpuBaseline.NotRecorded(place.FileOrEmpty, mcp.ReasonOrEmpty);
         var processes = sample.Vm.Bind(vm => vm.Processes);
         var history = processes is Reading<ProcessSnapshot>.Available { Value: var snapshot }
-            ? AgentCpuHistory.Record(linux, c.Files, snapshot.All, SampleTime.Of(c.Clock), McpSettings.From(c.Loaded.Config).Watched)
+            ? AgentCpuHistory.Record(linux, c.Files, snapshot.All, SampleTime.Of(c.Clock), c.Loaded.Config)
             : $"the process table could not be read: {processes.ReasonOrEmpty}";
         return new Sampled(string.Empty, ledger, history, processes.Map(p => p.All).ValueOr([]));
     }
@@ -144,21 +149,32 @@ public static class WatchRun
             InterruptCause = c.InterruptCause,
             Wait = c.Wait,
         });
-        var targets = await TargetsAsync(engine, cancellationToken).ConfigureAwait(false);
+        var acting = Enabled(c);
+        var targets = await TargetsAsync(engine, acting, cancellationToken).ConfigureAwait(false);
         var boot = BootIdentity.Read(linux, c.Files);
         var tried = WatchTries.Read(c.Paths, c.Files);
         var before = tried.BootId == boot ? tried.Tried : [];
         List<string> fresh = [.. targets.Where(t => !before.Contains(t, StringComparer.Ordinal))];
         return fresh.Count == 0
-            ? sampledOnly with { Reason = NothingNew(targets) }
-            : await TryAsync(c, engine, new Tries(boot, before, fresh, sampled.Processes), sampledOnly, cancellationToken).ConfigureAwait(false);
+            ? sampledOnly with { Reason = Off(c) + NothingNew(acting, targets) }
+            : await TryAsync(c, engine, new Tries(boot, before, fresh, sampled.Processes, acting), sampledOnly, cancellationToken).ConfigureAwait(false);
     }
 
-    private static string NothingNew(IReadOnlyList<string> targets) =>
-        targets.Count == 0 ? "A19 has no target" : $"A19's {targets.Count} target(s) were already tried by the watch; the full run's pass may try again";
+    private static string NothingNew(IReadOnlyList<ActionId> acting, IReadOnlyList<string> targets) =>
+        targets.Count == 0 ? $"{Names(acting)} has no target" : $"{Names(acting)}'s {targets.Count} target(s) were already tried by the watch; the full run's pass may try again";
 
-    /// <summary>What one try is made of: the boot, what was tried before, what is new, and the processes alive now.</summary>
-    private sealed record Tries(string Boot, IReadOnlyList<string> Before, IReadOnlyList<string> Fresh, IReadOnlyList<ProcessEntry> Processes);
+    private static string Names(IReadOnlyList<ActionId> ids) => string.Join(" and ", ids.Select(id => id.Text));
+
+    /// <summary>The watched actions whose own switch is on and that this build holds, in <see cref="Acting"/>'s order.</summary>
+    private static List<ActionId> Enabled(WatchContext c) =>
+        [.. Acting.Where(id => c.Actions.Find(id) is not null && id.Timer is TimerSwitch.Auto auto && c.Loaded.Config.Bool(auto.Key))];
+
+    /// <summary>Which watched switches are off, said first (empty when none is).</summary>
+    private static string Off(WatchContext c) =>
+        string.Concat(Acting.Except(Enabled(c)).Select(id => $"{(id.Timer is TimerSwitch.Auto auto ? auto.Key.Name : id.Text)} is off: the watch does not let {id.Text} act; "));
+
+    /// <summary>What one try is made of: the boot, what was tried before, what is new, the processes alive now, and the actions.</summary>
+    private sealed record Tries(string Boot, IReadOnlyList<string> Before, IReadOnlyList<string> Fresh, IReadOnlyList<ProcessEntry> Processes, IReadOnlyList<ActionId> Acting);
 
     /// <summary>The tries written, then the recorded act bound to exactly the new targets — and the tries given back when the act
     /// never ran (another run took the lock in between, a wedged or unreadable running state), so a lost race uses up nothing.</summary>
@@ -168,20 +184,20 @@ public static class WatchRun
         // tries the same process again.
         if (Write(c, tries.Boot, [.. tries.Before, .. tries.Fresh], tries.Processes) is { Length: > 0 } unwritten)
         {
-            return sampledOnly with { Reason = $"A19 was not run: the watch could not record what it tries ({unwritten}), so it could not keep from trying them again" };
+            return sampledOnly with { Reason = $"{Names(tries.Acting)} was not run: the watch could not record what it tries ({unwritten}), so it could not keep from trying them again" };
         }
 
-        var act = await engine.ExecuteAsync(new ActRequest([A19], RunTrigger.Timer, Execute: true) { ShownProcesses = ShownList.Of(tries.Fresh) }, cancellationToken).ConfigureAwait(false);
+        var act = await engine.ExecuteAsync(new ActRequest(tries.Acting, RunTrigger.Timer, Execute: true) { ShownProcesses = ShownList.Of(tries.Fresh) }, cancellationToken).ConfigureAwait(false);
         if (act is not ActResult.Done)
         {
             // coai code round 2026-10-09, finding 2: a give-back that cannot be written is said — those processes stay "tried".
-            return sampledOnly with { Reason = $"A19 did not run: {NotRun(act)}; {GiveBack(Write(c, tries.Boot, tries.Before, tries.Processes))}" };
+            return sampledOnly with { Reason = $"{Names(tries.Acting)} did not run: {NotRun(act)}; {GiveBack(Write(c, tries.Boot, tries.Before, tries.Processes))}" };
         }
 
         return sampledOnly with
         {
             Outcome = WatchOutcome.Acted,
-            Reason = string.Create(CultureInfo.InvariantCulture, $"A19 ran on {tries.Fresh.Count} process(es) the watch had not tried"),
+            Reason = string.Create(CultureInfo.InvariantCulture, $"{Off(c)}{Names(tries.Acting)} ran on {tries.Fresh.Count} process(es) the watch had not tried"),
             Tried = tries.Fresh,
             Acts = [act],
         };
@@ -208,8 +224,7 @@ public static class WatchRun
         { Timer: false } => NoTimer,
         { Loaded.IsObserveOnly: true } => ActionEngine.ObserveOnlyReason,
         { Loaded.UserLayerUnread: true } => $"{c.Loaded.UserLayerSkipped}; the watch lets A19 act only while every switch can be seen",
-        _ when c.Actions.Find(A19) is null => "this build holds no A19",
-        _ when A19.Timer is TimerSwitch.Auto auto && !c.Loaded.Config.Bool(auto.Key) => $"{auto.Key.Name} is off: the watch does not let A19 act",
+        _ when Enabled(c).Count == 0 => $"{Off(c)}so no watched action may act",
         _ => DryReason(c),
     };
 
@@ -219,9 +234,9 @@ public static class WatchRun
             ? $"a dry run ({dry.Reason}): the watch only samples, and the full run's pass records what A19 would do"
             : string.Empty;
 
-    /// <summary>A19's live targets, as <c>pid:start</c>.</summary>
-    private static async Task<IReadOnlyList<string>> TargetsAsync(ActionEngine engine, CancellationToken cancellationToken) =>
-        await engine.PreviewAsync(new ActRequest([A19], RunTrigger.Timer, Execute: false), cancellationToken).ConfigureAwait(false) is ActResult.Previewed previewed
+    /// <summary>The live targets of <paramref name="acting"/>, as <c>pid:start</c> (each action's keys are its own processes).</summary>
+    private static async Task<IReadOnlyList<string>> TargetsAsync(ActionEngine engine, IReadOnlyList<ActionId> acting, CancellationToken cancellationToken) =>
+        await engine.PreviewAsync(new ActRequest(acting, RunTrigger.Timer, Execute: false), cancellationToken).ConfigureAwait(false) is ActResult.Previewed previewed
             ? [.. previewed.Actions.SelectMany(a => a.Preview?.Targets ?? []).Select(t => SuspectSignals.Shown(t.Key)).Distinct(StringComparer.Ordinal)]
             : [];
 

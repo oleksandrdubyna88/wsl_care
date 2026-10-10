@@ -86,6 +86,10 @@ public sealed record StatusReport(
     /// <summary>E14 S7a: the WINDOWS side's MCP server processes (<c>coai-mcp.exe</c>, <c>creds-mcp.exe</c>, the user's programs) —
     /// the Windows binary only; the distro's answer omits it. Additive, read-only.</summary>
     public WindowsMcpServersReport? WindowsMcpServers { get; init; }
+
+    /// <summary>E14 S7b.2: the distro's interop relays of catalogued Windows MCP servers this caller can see, and the effective
+    /// <c>auto.A21</c> with the command that flips it — the distro's binary only. Additive.</summary>
+    public InteropRelaysReport? InteropRelays { get; init; }
 }
 
 /// <summary>The distro side (plan §4.1, §4.2, §4.4).</summary>

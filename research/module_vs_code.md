@@ -162,3 +162,7 @@ flowchart LR
   `logging.retentionDays` (default 14).
 - Where *Install daemon*'s terminal opens in a Remote – WSL window, and which settings file a UI extension reads there,
   are E5 live-gate observations (`POST_DEPLOY.md` item 3).
+- **The process buttons are not built yet (2026-10-10).** A18, A19 and A21 (E14 S7b.2: the client-gone interop relays) are in
+  `ACTION_IDS` and in `BUTTON_ONLY_IDS`, so the E6 cleanup gate never acts on them. Their button road is still to come: a root op
+  with a `--process <pid:start>` tail tied to the shown list, a modal, and the gate on the daemon's `act.processList`. The daemon's
+  `status --json` already publishes `interopRelays` (counts, the effective `auto.A21` and the command that flips it) for the row.

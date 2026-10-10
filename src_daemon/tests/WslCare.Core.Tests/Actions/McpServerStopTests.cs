@@ -82,7 +82,7 @@ public sealed class McpServerStopTests : IDisposable
     /// <summary>What every timer run does: record the CPU ticks of the AI-agent processes AND the WATCHED MCP servers (the
     /// configuration's, as <c>ActionEngine</c> passes them) by identity.</summary>
     private void Record(IReadOnlyList<ProcessEntry> processes) =>
-        AgentCpuHistory.Record(_sandbox.Paths, _sandbox.Files, processes, SampleTime.Of(_clock), McpSettings.From(ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config).Watched).Should().BeEmpty();
+        AgentCpuHistory.Record(_sandbox.Paths, _sandbox.Files, processes, SampleTime.Of(_clock), ConfigLoader.Load(_sandbox.Paths, _sandbox.Files).Config).Should().BeEmpty();
 
     private const string CredsPath = "/home/me/.local/bin/creds-mcp";
 
