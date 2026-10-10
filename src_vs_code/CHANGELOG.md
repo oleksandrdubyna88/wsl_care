@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.3.0...extension-v0.3.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **extension:** a freshly installed Windows Time guard reads as installed — durations compared by value ([#77](https://github.com/oleksandrdubyna88/wsl_care/issues/77)) ([242e05d](https://github.com/oleksandrdubyna88/wsl_care/commit/242e05d042da0599b35a62e9fde0daf56510f175))
+
 ## [0.3.0](https://github.com/oleksandrdubyna88/wsl_care/compare/extension-v0.2.0...extension-v0.3.0) (2026-10-09)
 
 

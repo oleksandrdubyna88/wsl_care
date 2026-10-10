@@ -98,6 +98,8 @@
   },
   "archive": {
     "olderThanDays": 14,
+    "windowsIdleDays": 7,
+    "clockSkewMinutes": 10,
     "baseFolder": "",
     "agents": [
       "claude-code",

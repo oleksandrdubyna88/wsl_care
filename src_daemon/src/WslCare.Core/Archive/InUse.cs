@@ -38,6 +38,23 @@ public sealed record InUseView(IReadOnlySet<string> OpenFiles, IReadOnlySet<stri
     /// gate round, finding 6); empty when nothing says so.</summary>
     public Func<string> ClaudeRunning { get; init; } = static () => string.Empty;
 
+    /// <summary>The E9.S5 amendment (owner decision 2026-10-09): while <see cref="ClaudeRunning"/> speaks, why a unit's files (full
+    /// paths on this side's disk) are NOT idle — empty when every one was untouched for <c>archive.windowsIdleDays</c>. Asked only of a
+    /// Claude Code unit, only while Claude Code may run. Its default FAILS CLOSED: a view never given the rule keeps every such unit.</summary>
+    public Func<IReadOnlyList<string>, string> ClaudeIdle { get; init; } = static _ => NotJudged;
+
+    /// <summary>What the default idle question answers.</summary>
+    public const string NotJudged = "whether its files are idle was not judged";
+
+    /// <summary>This view with the idle rule <paramref name="idle"/> — what every run and preview hands the Windows side's view (the
+    /// distro's view never says Claude runs, so it is never asked).</summary>
+    public InUseView WithIdle(WindowsIdle idle) => this with { ClaudeIdle = files => Bounded(() => idle.Problem(files)) };
+
+    /// <summary>How a per-unit question of this view is asked (the code round over the E9.S5 amendment, finding 2: a profile on a
+    /// redirected share can hang a stat): the Windows view asks within <c>archive.inUseScanSeconds</c> and the caller's budget, and a
+    /// question that does not answer keeps the unit; the distro's view asks directly (it never says Claude runs).</summary>
+    public Func<Func<string>, string> Bounded { get; init; } = static question => question();
+
     public static InUseView Complete(IReadOnlySet<string> openFiles, IReadOnlySet<string> claudeProjects) => new(openFiles, claudeProjects, InUseState.Complete, string.Empty);
 
     public static InUseView Cut(IReadOnlySet<string> openFiles, IReadOnlySet<string> claudeProjects, string note) => new(openFiles, claudeProjects, InUseState.Cut, note);

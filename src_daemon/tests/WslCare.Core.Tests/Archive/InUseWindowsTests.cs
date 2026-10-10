@@ -299,11 +299,6 @@ public sealed class InUseWindowsTests : IDisposable
 
     private static GivenTable NoClaude() => new([new WindowsProcessEntry(10, 4, "explorer.exe")], string.Empty);
 
-    private sealed class GivenAnswers(RmAnswer answer) : IRestartManager
-    {
-        public RmAnswer Holders(IReadOnlyList<string> files) => answer;
-    }
-
     private sealed class Throwing : IRestartManager
     {
         public RmAnswer Holders(IReadOnlyList<string> files) => throw new InvalidOperationException("the native call threw");
@@ -321,14 +316,5 @@ public sealed class InUseWindowsTests : IDisposable
             release.Wait();
             return new RmAnswer.Free();
         }
-    }
-
-    private sealed class GivenTable(IReadOnlyList<WindowsProcessEntry> processes, string commandLine) : IWindowsProcessTable
-    {
-        public Reading<IReadOnlyList<WindowsProcessEntry>> List() => Reading.Of(processes);
-
-        public WindowsProcessDetails Details(int pid) => WindowsProcessDetails.Unopenable("not asked");
-
-        public Reading<string> CommandLine(int pid) => commandLine.Length > 0 ? Reading.Of(commandLine) : Reading.Missing<string>("none given");
     }
 }
