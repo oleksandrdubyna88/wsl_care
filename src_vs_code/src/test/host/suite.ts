@@ -194,6 +194,20 @@ const WINDOWS_FAKE: readonly Scenario[] = [
     },
   },
   {
+    name: 'E10.S2a: the Archive page opens from its command, asks archive list --json unprivileged ONCE, and the page renders its agent',
+    run: async (api) => {
+      scenario(RUNNING);
+      api.resetCalls();
+      await vscode.commands.executeCommand('wslCare.openArchive');
+      const archive = api.archivePage().controller;
+      await until('the Archive page read its list', () => archive.view().state === 'answered');
+      await until('the Archive page reported its agent block', () => archive.lastRendered() === 1);
+      const reads = daemonCalls(api).filter((c) => / archive /.test(c));
+      assert.deepEqual(reads, ['-d Ubuntu --cd / --exec /opt/wsl-care/bin/wsl-care archive list --json'], JSON.stringify(reads));
+      assert.equal(archive.view().agents[0]?.agent, 'claude-code', 'the golden list reached the page');
+    },
+  },
+  {
     name: '"Start WSL and check" makes the one -d the user asked for',
     run: async (api) => {
       scenario({ ...STOPPED, startable: true });

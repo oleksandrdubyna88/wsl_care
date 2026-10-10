@@ -69,7 +69,7 @@ export const PREVIEW_CONTAINER_ASSUMPTION = 100;
  * The values are checked by the client before a spawn (`WslCareClient.read`): a run id of the daemon's one spelling, an
  * instant of exactly `yyyy-MM-ddTHH:mm:ssZ`.
  */
-export const RUN_READ_NAMES = ['runsShow', 'runs', 'logs', 'archiveStatus', 'archivePreview', 'archiveCheckBase'] as const;
+export const RUN_READ_NAMES = ['runsShow', 'runs', 'logs', 'archiveStatus', 'archivePreview', 'archiveCheckBase', 'archiveList'] as const;
 
 export type RunReadName = (typeof RUN_READ_NAMES)[number];
 
@@ -84,6 +84,7 @@ export const RUN_READ_VERBS: { readonly [K in RunReadName]: readonly string[] } 
   archiveStatus: ['archive', 'status'],
   archivePreview: ['archive', 'preview'],
   archiveCheckBase: ['archive', 'check-base'],
+  archiveList: ['archive', 'list'],
 };
 
 export type RunRead =
@@ -92,7 +93,9 @@ export type RunRead =
   | { readonly read: 'logs'; readonly from: string; readonly to: string }
   | { readonly read: 'archiveStatus' }
   | { readonly read: 'archivePreview' }
-  | { readonly read: 'archiveCheckBase'; readonly path: string };
+  | { readonly read: 'archiveCheckBase'; readonly path: string }
+  /** E10.S2a, the Archive page: `archive list --json` — never `--agent`, `--month`, `--run` or `--restorable`. */
+  | { readonly read: 'archiveList' };
 
 /** The reads about runs and their history (E6.S3, E6.S4) — what the Logs page and the durable poll ask; the archive reads are E10's. */
 export type HistoryRead = Extract<RunRead, { readonly read: 'runsShow' | 'runs' | 'logs' }>;
@@ -115,19 +118,29 @@ const READ_VALUES: { readonly [K in RunReadName]: (read: Extract<RunRead, { read
   archiveStatus: () => [],
   archivePreview: () => [],
   archiveCheckBase: (read) => [read.path],
+  archiveList: () => [],
 };
 
 /**
  * The ceilings of the run reads (plan §15k #19). None starts a child process: `runs show` reads the request folder, the
  * running state (at most four reads 100 ms apart, `RunningReadRetry.Default`), the history and ONE detail file; `runs` and
  * `logs` (without `--detail` / `--action`, so no detail file is opened) read the history of the window's days. All are the
- * file reads `status` already makes (it reads the history for `lastCleanup`), so `status`'s 20 s holds for each.
+ * file reads `status` already makes (it reads the history for `lastCleanup`), so `status`'s 20 s holds for each. The archive
+ * reads that walk or read the base (`archive preview`, `archive list`) take the archive preview's setting instead.
  */
-export const RUN_READ_TIMEOUT_MS: { readonly [K in RunReadName]: number } = {
-  runsShow: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
-  runs: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
-  logs: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
-  archiveStatus: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
-  archivePreview: ceilingMs(DEFAULT_NUMBERS, { call: 'archivePreview' }),
-  archiveCheckBase: ceilingMs(DEFAULT_NUMBERS, { call: 'runRead' }),
+export const RUN_READ_CALLS: { readonly [K in RunReadName]: 'runRead' | 'archivePreview' } = {
+  runsShow: 'runRead',
+  runs: 'runRead',
+  logs: 'runRead',
+  archiveStatus: 'runRead',
+  archivePreview: 'archivePreview',
+  archiveCheckBase: 'runRead',
+  // E10.S2a: the daemon bounds its own list child by `archive.previewTimeoutSeconds` (`ArchiveChildren.List`); the user's list
+  // reads the same months over the same base, with no child — the archive preview's ceiling.
+  archiveList: 'archivePreview',
 };
+
+/** Each run read's DEFAULT ceiling (the client reads the settings at every call through `RUN_READ_CALLS`). */
+export const RUN_READ_TIMEOUT_MS: { readonly [K in RunReadName]: number } = Object.fromEntries(
+  RUN_READ_NAMES.map((name) => [name, ceilingMs(DEFAULT_NUMBERS, { call: RUN_READ_CALLS[name] })]),
+) as { readonly [K in RunReadName]: number };

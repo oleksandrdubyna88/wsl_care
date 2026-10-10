@@ -43,13 +43,13 @@ test('over the goldens: the base folder the daemon reads, every enabled agent wi
   assert.equal(controls.agents[0]?.retention, 'its own cleanup deletes after 30 d');
   assert.equal(controls.lock, 'No archive run in progress');
   assert.match(controls.lastRun, /^Last archive run: done — 1 copied, 0 removed, 200 B, /);
-  assert.deepEqual(enabled(controls), { chooseArchiveFolder: true, stopArchiving: true, archiveNow: false });
+  assert.deepEqual(enabled(controls), { chooseArchiveFolder: true, stopArchiving: true, archiveNow: false, openArchive: false });
 });
 
 test('no folder set: the archive reads "off", and Stop archiving is greyed', () => {
   const controls = deriveArchive(state({ status: read('archiveStatus', { ...goldenFile('archive-status.json'), baseFolder: '' }) }));
   assert.match(controls.line, /^Archive: off — no archive folder is chosen/);
-  assert.deepEqual(enabled(controls), { chooseArchiveFolder: true, stopArchiving: false, archiveNow: false });
+  assert.deepEqual(enabled(controls), { chooseArchiveFolder: true, stopArchiving: false, archiveNow: false, openArchive: false });
 });
 
 test('the retention badge shows EXACTLY when the agent\'s own retention is below the effective age', () => {
@@ -66,9 +66,9 @@ test('the retention badge shows EXACTLY when the agent\'s own retention is below
 test('a daemon without the archive capability: said, and every button greyed; before any status: checking, greyed', () => {
   const old = deriveArchive(state({ capabilities: ['act.detach'] }));
   assert.equal(old.line, 'Archive: this daemon has no AI-session archive — update the daemon');
-  assert.deepEqual(enabled(old), { chooseArchiveFolder: false, stopArchiving: false, archiveNow: false });
+  assert.deepEqual(enabled(old), { chooseArchiveFolder: false, stopArchiving: false, archiveNow: false, openArchive: false });
   assert.equal(NO_ARCHIVE.line, 'Archive: checking…');
-  assert.deepEqual(enabled(NO_ARCHIVE), { chooseArchiveFolder: false, stopArchiving: false, archiveNow: false });
+  assert.deepEqual(enabled(NO_ARCHIVE), { chooseArchiveFolder: false, stopArchiving: false, archiveNow: false, openArchive: false });
 });
 
 test('a failed archive status reads as its failure\'s label; a flow in flight shows its text and greys both buttons', () => {
@@ -77,7 +77,16 @@ test('a failed archive status reads as its failure\'s label; a flow in flight sh
   assert.equal(failed.level, 'unknown');
   const busy = deriveArchive(state({ busy: 'Checking the folder…' }));
   assert.equal(busy.line, 'Checking the folder…');
-  assert.deepEqual(enabled(busy), { chooseArchiveFolder: false, stopArchiving: false, archiveNow: false });
+  assert.deepEqual(enabled(busy), { chooseArchiveFolder: false, stopArchiving: false, archiveNow: false, openArchive: false });
+});
+
+test('E10.S2a: Open archive is enabled exactly when the daemon advertises archive.list — with no folder set, and while a folder flow runs', () => {
+  const lists = [...CAPABLE, 'archive.list'];
+  assert.equal(enabled(deriveArchive(state({ capabilities: lists }))).openArchive, true);
+  assert.equal(enabled(deriveArchive(state({ capabilities: lists, status: read('archiveStatus', { ...goldenFile('archive-status.json'), baseFolder: '' }) }))).openArchive, true, 'an archive that is off may still hold entries');
+  assert.equal(enabled(deriveArchive(state({ capabilities: lists, busy: 'Checking the folder…' }))).openArchive, true, 'browsing changes nothing');
+  assert.equal(enabled(deriveArchive(state({ capabilities: CAPABLE }))).openArchive, false, 'no archive.list');
+  assert.equal(enabled(NO_ARCHIVE).openArchive, false, 'no status yet');
 });
 
 test('a daemon string is made printable and short before it reaches the view', () => {

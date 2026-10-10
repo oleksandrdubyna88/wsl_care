@@ -4270,7 +4270,7 @@ consult was owed.
 
 ### 15s. E10 split and design — the AI-session archive in the extension
 
-> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b built on its branch (*As built — E10.S1b*); E10.S2 not started.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
+> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b merged (#92); E10.S2 split into S2a / S2b / S2c (*E10.S2 split into three epics*), S2a in progress on its branch.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
 > daemon additions it needs (E10.S0). Branch `feat/wc-e10-archive-ui`. This section OVERRIDES the archive plan's §5 and §6
 > ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) and the §16 E10 row where they differ. Related: §15r (E9, the
 > daemon half, built), §15q (E7 — its extension parts E7.S3–E7.S5 are NOT built), [module_archive.md](../research/module_archive.md),
@@ -4366,7 +4366,7 @@ question already; today the extension asks none of them.
 |---|---|---|---|
 | **E10.S0** (daemon) | D7 `--entry -` on stdin + `act.entryStdin` + the shared request fixture; `restoreCeiling` on the list answer; D10 the flag order | `WslCare.Cli/CommandLine.cs`, `ArchiveArguments.cs`, `StdinList.cs`, `Core/Status/Capabilities.cs`, `Core/Archive/ArchiveList.cs`, contracts | stdin ids accepted and bounded and checked like the flag; a duplicate / a bad id / no A20 refused; the fixture's bytes parse to its ids; the list carries the effective ceiling; `--json` first accepted |
 | **E10.S1** (extension) | the read verbs `archive status --json`, `archive preview --json`, `archive check-base <path> --json` (as the user, allowlisted, the fake taught); D2 the writer; D3 the picker; D4 the panel section with the badge; D5 *Archive now* | `src/client/verbs.ts`, `src/config/configCall.ts` (new), `src/archive/*` (new), `src/panel/*`, `src/root/*`, `package.json`, `media/panel.js`, tests | the client refuses any other archive argv; the writer refuses a key not listed, a value not judged, `-u root`; a refused folder is never written; *Stop* writes an explicit empty value and an inherited machine base no longer applies; *Archive now* survives a reload and never sticks; the badge shows exactly when retention < effective age |
-| **E10.S2** (extension) | D6 the Archive page with restore; D8 the Logs words | `src/archivePage/*` (new), `media/archive.js` (new), `src/root/*`, `src/logsPage/*`, goldens | an unverified entry is never sent; ids reach the daemon on stdin only; a restore survives a reload; the Logs rows say what A13 / A20 did |
+| **E10.S2** (extension; split into S2a browse / S2b restore / S2c Logs, see *E10.S2 split into three epics*) | D6 the Archive page with restore; D8 the Logs words | `src/archivePage/*` (new), `media/archive.js` (new), `src/root/*`, `src/logsPage/*`, goldens | an unverified entry is never sent; ids reach the daemon on stdin only; a restore survives a reload; the Logs rows say what A13 / A20 did |
 
 Each story: its own commit series and PR, a plan-gated scope (this section), the code gate on its diff, an own Opus review in
 parallel for the root and the writing paths (D2, D5, D6, D7), break-it checks on product code only, docs in the same change.
@@ -4531,7 +4531,7 @@ Tests and teeth: [module_tests.md](../research/module_tests.md), the `client arc
 
 #### E10.S1b build notes (2026-10-10): *Archive now*
 
-> Status: **built on its branch, 2026-10-10 — see *As built — E10.S1b* below; merged when its PR is.** Branch
+> Status: **built and merged, 2026-10-10 (#92, 7198f25) — see *As built — E10.S1b* below.** Branch
 > `feat/wc-e10s1b-archive-now`, from `main` 6c5f148 (E10.S1a merged). The paths are `src_vs_code/`'s unless named otherwise.
 
 **Goal.** One panel button, *Archive now*, runs A13 at once: the daemon's own action, through the cleanup controller as it is.
@@ -4669,6 +4669,179 @@ As planned, with these specifics:
   the controls at *Archiving…* until the run ends — never stuck. The extension README says so.
 
 Tests and teeth: [module_tests.md](../research/module_tests.md), *What each E10.S1b guarantee rests on*.
+
+#### E10.S2 split into three epics (2026-10-10)
+
+> Status: **E10.S2a in progress on its branch, 2026-10-10; E10.S2b and E10.S2c not started.** E10.S2a's branch is
+> `feat/wc-e10s2a-archive-page`, from `main` d6f436c. The paths are `src_vs_code/`'s unless named otherwise.
+
+**Why three.** The coai plan round over the first draft (session af2da363, `proceed`, 2 gating of threshold 6, codex only — see
+below) carried the operator's order to split the work into epics of two or three stories, the split done on Fable. The split (on
+Fable, 2026-10-10) cuts E10.S2 so the root road gets a PR of its own, built on a page that already ships:
+
+| Epic | What it ships | Root? | Own review | Branch |
+|---|---|---|---|---|
+| **E10.S2a** | the Archive page, BROWSE ONLY: the `archive list` read, the page, its opener | no | Opus | `feat/wc-e10s2a-archive-page` |
+| **E10.S2b** | *Restore* through the root road: the selection, `--entry -`, A20's two ops, the flow | yes | Fable | from S2a's merge |
+| **E10.S2c** | the Logs page names the archive (D8): A13 / A20 run goldens made by the daemon's code, the words | no | Opus | from S2b's merge |
+
+Each epic is one branch and one PR with its own coai plan and code rounds. S2a ships no dead code: the page is useful on its own
+(what the archive holds, per agent and month, what is verified), and *Restore* arrives as one whole button in S2b.
+
+**The shared kit (#87, `todo/PLAN_disk_health.md` E18).** The page is built so it can move into the webview kit E18 plans:
+- every decision is the host's (`archiveController.ts`, `archiveViewModel.ts`);
+- the page script lays out a view model with `createElement` / `textContent` and computes nothing;
+- the rendering lives in ONE file, `media/archive.js`;
+- its messages are a closed set, and a row is named by an index into what the host holds.
+
+Sorting and search arrive with the kit's `DataTable` (E18.K1, E18.W1), not here. The boundary is written into E18's table too.
+
+##### E10.S2a build notes — the Archive page, browse only
+
+**Goal.** A person presses *Open archive* in the panel's *AI agents* section (or runs *AI OS Care: Open archive*) and sees this
+distribution's archive: per agent, per month, the entries — each with its session path, files, bytes, status, whether it is
+verified, and when it was archived. Nothing is changed and nothing runs as root.
+
+**What the code has today (verified on `main` d6f436c):**
+- `client/verbs.ts:70-94`: six run reads, none is `archive list`. `WslCareClient.read` checks each read's values before a spawn.
+- The Logs page is the shape to copy: `logsPage/logsPanel.ts` (one `WebviewPanel`, `panelSlot.ts`, a serializer),
+  `logsController.ts` (vscode-free), `logsMessages.ts` (a closed set), `logsViewModel.ts` (pure), `media/logs.js`.
+- `panel/panelHtml.ts:27` `PAGES` holds `panel` and `logs`.
+- `structure.test.ts:212` `FAR_FROM_ROOT` lists the modules that may import nothing under `src/root/` or `src/config/`.
+- `archive/archiveView.ts:22` `ArchiveAction` is the archive section's three buttons; `media/panel.js:271` renders every
+  button of `archive.buttons` generically, each posting its bare id.
+- The daemon's `archive list --json` (`Archive/ArchiveList.cs`) is read-only as the user, reads only the months it is asked,
+  names an unreadable month in `notes`, counts torn lines in `skippedLines`, and carries `restoreCeiling` on every answer.
+
+**What changes:**
+
+1. **The read `archiveList`** (`client/verbs.ts`): `archive list --json`, unprivileged, no value. It is asked only of a daemon
+   whose newest `status` advertises `archive.list`. Its ceiling is `wslCare.timeouts.archivePreviewSeconds` (630 s): the daemon
+   bounds its own list child by `archive.previewTimeoutSeconds` (`ArchiveChildren.List`), and the user's list reads the same months
+   over the same base with no child. The setting's description names the list. The strict fake answers it from `archive-list.json`
+   (or the scenario's `archiveList` file) and refuses any other `archive list` shape (`--agent`, `--month`, `--run`,
+   `--restorable` are never sent).
+2. **One panel slot for both pages**: `logsPage/panelSlot.ts` moves to `panel/panelSlot.ts` (reuse-first: move it to where both
+   callers live), its test with it.
+3. **The page** (`src/archivePage/`):
+   - `archivePanel.ts`: ONE `WebviewPanel` `wslCare.archive`, "AI OS Care — Archive", the panel's static shell (`panelHtml.ts`
+     gains the page `archive`: `<main id="archive">`), the panel's stylesheet, restored after a reload by its serializer
+     (`onWebviewPanel:wslCare.archive`).
+   - `archiveMessages.ts` — the closed set, each validated exactly: `ready`, `refresh`, `rendered {blocks}`,
+     `expandMonth {index}`, `collapseMonth {index}`, `showPaths`, `hidePaths`. An index names a month of the list the HOST holds
+     and is checked against it there; no id, key or path ever comes from the page.
+   - `archiveController.ts` (vscode-free): reads the list on the page's first `ready` and on *Refresh* (a returning tab is shown
+     what is held, as the Logs page's review C5); a generation count drops an answer to an older read; holds the list answer,
+     the expanded months (by agent and month, so a refreshed list keeps what was open), and the paths toggle. A daemon whose
+     `status` does not advertise `archive.list` is not asked: the page says "update the daemon".
+   - `archiveViewModel.ts` (pure) + `archiveView.ts` (the view's types): the D9 label ("this distribution's archive only — the
+     Windows archive is shown by a later version"), the base folder, the answer's outcome when it is not `done`, its `notes`, its
+     `skippedLines`, then per agent its months — each month's entries, verified ones, and bytes as the answer says them — and
+     per expanded month a table of its entries.
+   - **Session paths are shortened by default** (`…/<last segment>`), and *Show full session paths* (a toggle, `aria-pressed`)
+     shows them whole: the owner's rule that arguments are never shown in full by default, carried to session paths, which hold
+     a project's folder name. The toggle is host memory, off on every open.
+   - The words of an entry's status come from ONE table of the daemon's index events (`archived`, `sourceRemoved`, `split`,
+     `restored`, `superseded`, `damaged`, `recovered`); any other value reads "unknown (<value>)". Verified reads *yes*, or
+     *no — restore it in a terminal with --accept-unverified* for an unverified entry removed at its source (§15r D6). Times are
+     local with their offset (`text/format.ts` `localMinuteOf`); every daemon string passes `safeText`.
+   - The daemon answers entries only, so the month and agent figures are counted and summed by the view model over the answer's
+     own entries (and named "listed"); the page computes nothing.
+   - `media/archive.js`: builds the DOM with `createElement` / `textContent` only, run in the strict harness
+     (`support/pageHarness.ts`), which throws on every HTML sink.
+4. **The opener (D11)**: `openArchive` is a fourth button of the archive section (`ArchiveAction`, `ARCHIVE_LABELS`
+   *Open archive…*), enabled when the daemon advertises `archive.list`; it posts the bare `openArchive` (`panel/messages.ts`). The
+   command `wslCare.openArchive` (`package.json`, `commandButtons.ts` as `where: 'page'`, `manifest.test.ts`) does the same.
+5. **The structural tests**: `src/archivePage/` joins `FAR_FROM_ROOT`; the catalogue derives `archive <type>` rows from the
+   page's message set, and `client archiveList`, `command wslCare.openArchive`, `view` / panel rows as before.
+
+**Build order:** the read → the slot move → messages → controller → view model → the script → the panel and its serializer →
+the opener → the fake → the scenario → the docs.
+
+**RED first** — each seen red, for its own symptom, before the code it pins:
+- the client sends `archive list --json` and only that; the fake refuses any other `archive list` argv;
+- the list read's ceiling is the archive preview's setting, held strictly above the daemon's worst case (`ceilings.test.ts`);
+- a page message outside the closed set, an index past the held months, an extra key — dropped, nothing read;
+- a daemon without `archive.list` is not asked, and the page says why;
+- an answer to an older read is dropped;
+- a refreshed list keeps the open months by agent and month;
+- the page script shows a key short unless the toggle is on, and the full key only then; no `innerHTML`;
+- an unverified entry removed at its source carries the terminal sentence; an unknown status reads "unknown (<value>)";
+- *Open archive* is a rendered panel button and a command (`commandButtons.test.ts`), greyed without `archive.list`;
+- the scenario: open the page over the strict fake → one `archive list --json`, unprivileged, the page renders the golden's entry.
+
+**Not in S2a:** selection, the ceiling count and *Restore* (S2b); the Logs words (S2c); the Windows archive (D9, E13); a search
+box, *Open folder* and a year level (the archive plan §6 — D6 overrides it; search and sort are E18's); `archive reconcile --scan`
+as a button (§15r named it for E10; it re-indexes as `recovered`, unverified, and it is not D6's — a later story, said here so it
+is not lost).
+
+**Growth.** The page persists nothing. The list answer, the expanded months and the toggle live in host memory; the answer is at
+most the runner's 16 MiB stdout bound (about 60 000 entries at ~250 bytes) — past it the read fails as *too much output* and the
+page says so. A month's table is built only while that month is expanded.
+
+**DoD:** no root word and no config word in the page or its read (the bundle scan unchanged); every check above red first; an
+own review (Opus); the coai code round; the docs — `module_vs_code.md`, `module_tests.md` (rows and *What each E10.S2a
+guarantee rests on*), `architecture-extension-e6.md` (a section for the page; `architecture.md` keeps a one-line pointer: it is
+near the resolver's size bound), README, and this section's *as built*.
+
+##### As built — E10.S2a (2026-10-10)
+
+As planned, with these specifics:
+- **One table decides each run read's ceiling.** `client/verbs.ts` `RUN_READ_CALLS` names each read's host call (`runRead` or
+  `archivePreview`); the client and the default `RUN_READ_TIMEOUT_MS` both read it. Before, the client chose with
+  `request.read === 'archivePreview' ? …` at one site — the shape a second archive read would have missed.
+- **The `archive list` read takes no value**, so the client has nothing to refuse for it; the fake refuses every other `archive
+  list` argv.
+- **`ARCHIVE_LIST_CAPABILITY` is defined once**, in `archivePage/archiveController.ts`; the panel's *Open archive…*
+  (`archive/archiveView.ts`) imports it.
+- **The month and agent figures** ("2 listed · 1 verified · 400 B") are counted and summed by the view model over the answer's own
+  entries — the daemon answers entries only.
+- **Two stale lines were fixed on the way**, both docs: the root README's "It never changes the daemon's configuration" (untrue
+  since E10.S1a) and the extension README's settings table, which lacked `wslCare.timeouts.archivePreviewSeconds` and the archive
+  half of `runReadSeconds`.
+- **The extension-host scenario** (*E10.S2a: the Archive page*, `host/suite.ts`) runs in CI on both legs; it was not run on this
+  machine (no `.vscode-test` cache in the worktree).
+- **The break-its** (product code only; each red, then restored): B1 the paths always whole; B2 a month kept by index; B3 an older
+  answer kept; B4 the capability gate removed; B5 *Open archive…* never greyed; B6 extra message keys accepted; B7 an index past the
+  list clamped to a month; B8 the unverified sentence dropped; B9 the list on the run-read ceiling. Teeth per guarantee:
+  [module_tests.md](../research/module_tests.md), *What each E10.S2a guarantee rests on*.
+
+##### E10.S2b and E10.S2c — the outline their own plan rounds start from
+
+**E10.S2b, *Restore*** (from S2a's merge; root; an own review on Fable). Its stories:
+1. **The root road**: a daemon A20 preview golden (`act-a20-preview-action.json`, the daemon's own `RestoreAction` over a child,
+   as `A13PreviewGolden`); `rootIds.ts` `entryIdOf` / `EntryIds` (16 hex, `shared/shapes.ts`; the stale `rootIds.ts:24` comment
+   corrected); two ops in `rootCall.ts` — `restorePreview` → `act A20 --preview --entry - --json`, `restoreConfirm` → `act A20
+   --confirm --manual --detach --entry - --json`, the ids on stdin, one per line, ended; `client/ceilings.ts` (`SETTING_SHARES`
+   A20 = the archive preview's setting; `ROOT_OP_CALLS` maps `restoreConfirm` to the DETACH — today an unknown op name falls to
+   `rootPreview` with `ids ?? []`, `ceilings.ts:64-70`); `worstCases.ts` A20 = 600 s; the bundle scan's root set gains `--entry`
+   and `A20`, `--entry` is forbidden outside it and joins `ROOT_WORDS`; `rootCall.test.ts` emits exactly
+   `contracts/requests/act-a20-entry-stdin.json`'s argv and stdin.
+2. **Controller, flow, host, fake**: `actionGate.ts` `GateOpen.reported` (A20 is refused today by `pickIds`,
+   `cleanupController.ts:395-403`); `previewRestore`, `previewA20` / `confirmA20` capabilities, a `confirmOp` branch;
+   `expectedActions` returns `['A20']` for a restore detach, never `['collect']` (that would ADOPT a full check's run);
+   `freezePreview` freezes the restore selection too; `rootAnswers.ts` reads A20's `shown` with the daemon's cap in force
+   (`shown.length == min(count, cap)`: the daemon cuts it, `RestoreAction.cs:42`, `RunRequests.cs:269`); `cleanFlow.ts:40` and
+   `cleanupHost.ts:27`'s `Pick<…>` gain `previewRestore`; ONE root-free `cleanup/runWords.ts` table for single-action runs (A13,
+   A20) replacing `isArchiveOnly` at its three sites; the fake's A20 shapes.
+3. **The selection and the button**: the selection held by ENTRY ID (the plan round's finding 0), kept across a list
+   replacement only for ids still present and selectable, the dropped ones said; counted against `restoreCeiling`; *Select month*
+   (its newest up to the room left, said); *Restore* greyed and refused on the same conditions; an unverified entry never reaches
+   stdin. `src/archivePage/` stays far from root: the page hands entry ids as text to `cleanup/`, which converts them.
+
+**E10.S2c, the Logs page names the archive** (D8): A13 rows read "AI sessions archived", A20 rows "archived sessions restored";
+the run detail's per-agent table gets its own headings; the A13 / A20 run goldens are made by the daemon's code
+(`GoldenContracts`, the journal scene); `runDetail.ts` takes its words from `cleanup/runWords.ts`.
+
+##### The plan round over the first draft (coai session af2da363, 2026-10-10)
+
+`proceed`, 2 gating of threshold 6, one reviewer (codex; gemini is out of quota). The draft was the whole of S2 as ONE epic
+(the page, the selection and the root road). Both findings were accepted and are in S2b's outline:
+- **#0** — a selection held as indexes into a list that is replaced can name a different session after a refresh: the
+  selection is held by entry id, kept only for ids still present and selectable, the dropped ones said.
+- **#1** — the restore's journal entry needs its retention stated: one entry per press that reached the confirm (~200 bytes in
+  `globalState`), gone on the terminal answer or at `wslCare.cleanup.followCeilingMinutes`; the shared budget
+  `wslCare.cleanup.journalEntries` (32) refuses a new entry before anything starts and evicts none.
 
 #### Definition of Done
 

@@ -77,6 +77,24 @@ test('archive check-base: the picked folder as ONE argument, spaces and backslas
   assert.ok(rec.requests.every((r) => !r.args.includes('-u')));
 });
 
+// ---- E10.S2a: the Archive page's list ----
+
+const LIST = daemonArgv('Ubuntu', ['archive', 'list', '--json']);
+
+test('archive list: exactly `archive list --json` — no agent, month, run or restorable filter is ever sent', () => {
+  assert.deepEqual(runReadTail({ read: 'archiveList' }), ['archive', 'list', '--json']);
+});
+
+test('archive list: after the three WSL questions, unprivileged, the archive preview\'s ceiling (it reads the same months over the same base)', async () => {
+  const { c, rec } = client({ ...wsl(), [LIST]: exited(0, goldenText('archive-list.json')) });
+  const outcome = await c.read({ read: 'archiveList' });
+  assert.ok(Array.isArray(bodyOf(outcome).entries));
+  assert.deepEqual(rec.argvs(), [LIST_QUIET, LIST_VERBOSE, LIST_RUNNING, LIST]);
+  assert.equal(rec.requests.at(-1)?.timeoutMs, RUN_READ_TIMEOUT_MS.archivePreview, 'the setting wslCare.timeouts.archivePreviewSeconds');
+  assert.equal(RUN_READ_TIMEOUT_MS.archiveList, RUN_READ_TIMEOUT_MS.archivePreview);
+  assert.ok(rec.requests.every((r) => !r.args.includes('-u')));
+});
+
 for (const [bad, why] of [
   ['', 'an empty path'],
   ['-rf', 'a path starting with a dash (an option to the daemon)'],

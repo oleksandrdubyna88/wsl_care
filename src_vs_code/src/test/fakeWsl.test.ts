@@ -494,6 +494,36 @@ test('run reads: a run read to a STOPPED distribution is refused like every -d',
   });
 });
 
+// ---- E10.S2a: the Archive page's list ----
+
+test('archive list: `archive list --json` answers the golden (or the scenario\'s file), unprivileged', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const answer = exitOf(await ask(world, [...DAEMON_CALL, 'archive', 'list', '--json']));
+    assert.equal(answer.code, 0, answer.stderr);
+    assert.deepEqual(JSON.parse(answer.stdout.toString('utf8')), goldenFile('archive-list.json'));
+  });
+  await within({ ...UBUNTU_RUNNING, archiveList: 'archive-status.json' }, async (world) => {
+    assert.deepEqual(JSON.parse(exitOf(await ask(world, [...DAEMON_CALL, 'archive', 'list', '--json'])).stdout.toString('utf8')), goldenFile('archive-status.json'), 'the scenario names the file');
+  });
+});
+
+test('archive list: every other list argv is refused — a filter, no --json, a word more, as root', async () => {
+  const never: readonly (readonly string[])[] = [
+    [...DAEMON_CALL, 'archive', 'list'],
+    [...DAEMON_CALL, 'archive', 'list', '--restorable', '--json'],
+    [...DAEMON_CALL, 'archive', 'list', '--agent', 'claude-code', '--json'],
+    [...DAEMON_CALL, 'archive', 'list', '--month', '2000-01', '--json'],
+    [...DAEMON_CALL, 'archive', 'list', '--json', '--json'],
+    [...ROOT_CALL, 'archive', 'list', '--json'],
+  ];
+  await within(UBUNTU_RUNNING, async (world) => {
+    for (const argv of never) {
+      const { code, stderr } = exitOf(await ask(world, argv));
+      assert.equal(code, FAKE_EXIT.refused, `${argv.join(' ')} → ${code} ${stderr}`);
+    }
+  });
+});
+
 // ---- E10.S1: the one config write ----
 
 const CONFIG_SET = [...DAEMON_CALL, 'config', 'set', 'archive.baseFolder'];

@@ -4,7 +4,8 @@
 > concerns). These three sections were moved here unchanged on 2026-10-06 because `architecture.md` had outgrown the
 > 256 KiB the conventions resolver (`.agents/conventions/tools/rules.mjs`) accepts for a required source;
 > `.agents/PROJECT.md` requires each of the split files; the daemon's half of E6 is [architecture-daemon-e6.md](architecture-daemon-e6.md). The extension's E5 sections (client, status bar and panel, *Install daemon*
-> and its release) are still in [architecture.md](architecture.md).
+> and its release) are still in [architecture.md](architecture.md). Since 2026-10-10 the Archive page of E10.S2a is here too, beside the
+> Logs page whose shape it copies.
 
 ## The extension: the root boundary (E6.S2)
 
@@ -298,7 +299,7 @@ sequenceDiagram
   relabel them); a selection begins synchronously (generation, cleared slots, window) before its persist await; `ready`
   posts what is held and reads only when nothing is; *This run* greyed for one of three reasons (`status` not read,
   `status` failed, no cleanup recorded) and the view re-posted on every store change; the page keeps its header and
-  date inputs across renders (a typed day survives); exactly one panel (`panelSlot.ts`: created or revealed before any
+  date inputs across renders (a typed day survives); exactly one panel (`panelSlot.ts`, since E10.S2a `panel/panelSlot.ts`, shared with the Archive page: created or revealed before any
   await, a restored extra disposed).
 - **`logsPanel.ts`** — the wiring: the panel's static shell (`panel/panelHtml.ts`, page `logs`: its own `<main id="logs">`
   and title, the same nonce-only CSP), scripts on, command URIs off, resources only from `media/`, the panel's ONE
@@ -338,3 +339,53 @@ survives a reload, a malicious message starts no process), `logsPage/logsPage.te
 harness over the goldens: every block equals the JSON, no arithmetic, `detailsNotRead` shown, hostile text inert),
 `textFormat.test.ts`, `runReads.test.ts` / `fakeWsl.test.ts` / `scenarios/clientFlows.test.ts` (the `logs` read),
 `catalogue.test.ts` (the Logs flows derived), and in VS Code 1.85.0 + stable `host/suite.ts` (*E6.S4: the Logs page*).
+
+## The extension: the Archive page (E10.S2a)
+
+E10.S2a (2026-10-10, plan §15s D6, D9, D11 and *E10.S2 split into three epics*) is the third webview, in the Logs page's
+shape: a `WebviewPanel` in the editor area, opened by *Open archive…* in the panel's *AI agents* section and by
+`wslCare.openArchive`. It is BROWSE ONLY — one more unprivileged read, nothing changed, nothing as root; *Restore* is E10.S2b.
+It is placed here, beside the Logs page it copies, because `architecture.md` is near the conventions resolver's size bound.
+
+```mermaid
+sequenceDiagram
+    participant W as webview (media/archive.js)
+    participant M as archivePage/archiveMessages.ts
+    participant A as archivePage/archiveController.ts
+    participant S as the store's newest status
+    participant C as client/WslCareClient.read
+    participant D as daemon (via wsl.exe, no -u)
+    W->>M: {type: ready | refresh | expandMonth{index} | collapseMonth{index} | showPaths | hidePaths | rendered{blocks}}
+    M->>A: the closed set only (anything else dropped: nothing starts)
+    A->>S: archive.list advertised? (no → "update the daemon", nothing asked)
+    A->>C: archive list --json (first ready, Refresh; an older answer dropped)
+    C->>D: -d <distro> --cd / --exec /opt/wsl-care/bin/wsl-care archive list --json
+    A->>W: {type: view} — the D9 label, the base folder, the notes, per agent its months
+    W->>M: expandMonth{index}
+    A->>A: index → that month's agent and month (held open by them, not by the index)
+    A->>W: {type: view} — the month's entries, the session paths short unless shown
+```
+
+**The parts** (`src/archivePage/` — imports nothing under `src/root/` or `src/config/`, held by `structure.test.ts`):
+
+- **`archiveMessages.ts`** — the page's closed set; a month is an INDEX into the list the host holds, checked there.
+- **`archiveController.ts`** — vscode-free: ONE read (`archive list --json`, the client's `archiveList`, unprivileged, the archive
+  preview's ceiling `wslCare.timeouts.archivePreviewSeconds` — the daemon bounds its own list child by
+  `archive.previewTimeoutSeconds`), on the page's first `ready` and on *Refresh*; a capability gate on `status.capabilities`
+  (`archive.list`); a generation count; the open months by agent and month; the paths toggle; an index past the list told.
+- **`archiveViewModel.ts`** + **`archiveView.ts`** — the view: the entries grouped in the daemon's order (agent, month, key),
+  each group's counts and bytes summed over the answer's own entries; the status from ONE table of the daemon's index events;
+  a session path SHORT until *Show full session paths* (the owner's rule for arguments, carried to session paths).
+- **`archivePanel.ts`** — the wiring: the panel's static shell (`panel/panelHtml.ts`, page `archive`), one slot
+  (`panel/panelSlot.ts`, moved from `logsPage/` and now the Logs page's too), the serializer
+  (`onWebviewPanel:wslCare.archive`), the store's status re-posting the view.
+- **`media/archive.js`** — the ONE file that renders the page (`createElement` / `textContent`), so the page can move into the
+  shared webview kit (`todo/PLAN_disk_health.md` E18) whole.
+
+### Tests (details: [module_tests.md](module_tests.md) § *What each E10.S2a guarantee rests on*)
+
+`archivePage/archiveMessages.test.ts`, `archivePage/archiveController.test.ts`, `archivePage/archivePage.test.ts` (the script RUN in the
+strict harness over `archive-list.json`), `scenarios/archivePageFlows.test.ts` (the real controller, client and strict fake),
+`archiveReads.test.ts` / `runReads.test.ts` / `fakeWsl.test.ts` / `scenarios/clientFlows.test.ts` (the read), `archiveView.test.ts`
+and `commandButtons.test.ts` (*Open archive…*), `catalogue.test.ts` (the `archive <type>` rows derived), and in VS Code 1.85.0 +
+stable `host/suite.ts` (*E10.S2a: the Archive page*).

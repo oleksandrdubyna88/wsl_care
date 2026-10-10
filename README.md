@@ -809,7 +809,9 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
 
 - **Reading.** It asks the daemon, as your own user: `status --json`, `preview --all --json`, `doctor --json`,
   `--version`, and for the run history `runs show <runId> --json`, `runs --from … --to … --json` and
-  `logs --from … --to … --json`. It never changes the daemon's configuration.
+  `logs --from … --to … --json`, and for the archive `archive status`, `archive preview`, `archive check-base <folder>` and
+  (the Archive page, E10.S2a) `archive list`, each `--json`. It changes ONE daemon setting, and only when you choose it:
+  `archive.baseFolder` (*Choose archive folder…* / *Stop archiving*, E10.S1a — as your own user, never as root).
 - **Start Windows Time (2026-10-08).** When the newest full run found the Windows Time service not running or not starting
   Automatic, or Windows' clock wrong against the reference, the panel offers **Start Windows Time** (also the command
   *AI OS Care: Start Windows Time…*). A modal shows the exact script first; on confirmation ONE Windows PowerShell runs it
@@ -872,6 +874,12 @@ gate; the Marketplace listing is the owner's, [docs/repo-settings.md](docs/repo-
   not removed, every command and its exit. The period is kept in VS Code's `globalState`, so it survives a reload. The
   page sends the host only a period's name, the picker's days or a line's index — never a run id or an argument; all
   three reads are unprivileged.
+- **The Archive page (E10.S2a).** **Open archive…** in the panel's *AI agents* section (*AI OS Care: Open the AI-session
+  archive*) opens it in the editor area. It reads `archive list --json` as your own user — nothing else, nothing as root —
+  and shows this distribution's archive per agent and month: each archived session's files, size, status, whether it is
+  verified, and when it was archived. Session paths read short until **Show full session paths** is pressed; an unverified
+  session removed at its source says to restore it in a terminal with `--accept-unverified`. The page sends the host only a
+  month's index or the toggle — never a path or an id. Restoring from the page is E10.S2b; the Windows archive is E13's.
 - **The root boundary (E6.S2).** A cleanup needs root, so the
   extension holds exactly five root calls, built in ONE module (`src/root/rootCall.ts`) from a closed set and started only
   through the runner seam: `-d <distro> -u root --cd / --exec /opt/wsl-care/bin/wsl-care` followed by

@@ -11,7 +11,7 @@ import type { Answer, DaemonVersion, Failure, JsonObject, ReadOutcome, VerbOutco
 import { DEFAULT_NUMBERS, type Numbers } from '../settings/numbers';
 import type { DaemonLimits } from '../shared/daemonLimits';
 import { ceilingMs } from './ceilings';
-import { PREVIEW_CONTAINER_ASSUMPTION, runReadTail, VERBS, type RunRead, type RunReadName, type Verb } from './verbs';
+import { PREVIEW_CONTAINER_ASSUMPTION, RUN_READ_CALLS, runReadTail, VERBS, type RunRead, type RunReadName, type Verb } from './verbs';
 
 /**
  * The extension's one client of the `wsl-care` daemon — and the ONLY module that builds `wsl.exe` argv
@@ -195,7 +195,7 @@ export class WslCareClient {
       return { ...target.failure, read: request.read };
     }
     const { wsl, distro } = target.value;
-    const timeoutMs = this.ceiling(request.read === 'archivePreview' ? 'archivePreview' : 'runRead');
+    const timeoutMs = this.ceiling(RUN_READ_CALLS[request.read]);
     const result = await this.options.runner({ file: wsl, args: daemonArgv(distro, runReadTail(request)), timeoutMs });
     const read = readAnswerOf(result, distro, timeoutMs);
 
@@ -407,6 +407,7 @@ const READ_REFUSALS: { readonly [K in RunReadName]: (request: Extract<RunRead, {
   archiveStatus: () => undefined,
   archivePreview: () => undefined,
   archiveCheckBase: (request) => basePathRefusal(request.path),
+  archiveList: () => undefined,
 };
 
 function instantsRefusal(from: string, to: string): string | undefined {

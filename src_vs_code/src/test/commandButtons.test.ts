@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { ARCHIVE_CAPABILITY, ARCHIVE_LABELS, ARCHIVE_NOW_CAPABILITIES, deriveArchive } from '../archive/archiveView';
+import { ARCHIVE_LIST_CAPABILITY } from '../archivePage/archiveController';
 import { COMMAND_BUTTONS } from '../panel/commandButtons';
 import { PAGE_MESSAGE_TYPES } from '../panel/messages';
 import { PAGE_ACTIONS } from '../panel/view';
@@ -58,8 +59,9 @@ function postedByPageButtons(): Set<string> {
     buildPanelView(failedWith('notInstalled')),
     buildPanelView(verdicts),
     ...guards.map((guard) => buildPanelView(goldenSnapshot(), undefined, guard)),
-    // E10.S1: an archiving daemon with a base folder set, advertising what every archive button needs — all three enabled.
-    buildPanelView(goldenSnapshot(), undefined, undefined, deriveArchive({ status: { kind: 'read', read: 'archiveStatus', distro: 'Ubuntu', body: { schemaVersion: 1, baseFolder: '/mnt/v/a' } }, preview: undefined, capabilities: [ARCHIVE_CAPABILITY, ...ARCHIVE_NOW_CAPABILITIES], busy: '', reading: false, asked: true, unavailable: '', cleanupFree: true, a13Offered: true })),
+    // E10.S1: an archiving daemon with a base folder set, advertising what every archive button needs — all four enabled (E10.S2a's
+    // *Open archive…* needs archive.list).
+    buildPanelView(goldenSnapshot(), undefined, undefined, deriveArchive({ status: { kind: 'read', read: 'archiveStatus', distro: 'Ubuntu', body: { schemaVersion: 1, baseFolder: '/mnt/v/a' } }, preview: undefined, capabilities: [ARCHIVE_CAPABILITY, ...ARCHIVE_NOW_CAPABILITIES, ARCHIVE_LIST_CAPABILITY], busy: '', reading: false, asked: true, unavailable: '', cleanupFree: true, a13Offered: true })),
     // PLAN_gpu_health.md: the REAL GPU view over a disabled adapter, so the alert's Enable button is rendered and pressed.
     buildPanelView(goldenSnapshot(), undefined, undefined, undefined, gpuView(parseGpuAnswer(['name.0=GPU', 'id.0=PCI\\VEN_1002&DEV_7551', 'code.0=22', 'adapters=1'].join('\n'), 0), undefined, undefined, () => '')),
   ];

@@ -9,6 +9,7 @@ import { performance } from 'node:perf_hooks';
 import { ArchiveHost } from './archive/archiveHost';
 import { newArchiveRecorder, type ArchiveRecorder } from './archive/archiveRecorder';
 import { archiveUiFor } from './archive/archiveUi';
+import { ArchivePanel } from './archivePage/archivePanel';
 import { CleanupHost } from './cleanup/cleanupHost';
 import { newCleanRecorder, type CleanRecorder } from './cleanup/cleanRecorder';
 import { gpuPanelActions, gpuParts, gpuRegistrations, type GpuParts } from './gpu/gpuWiring';
@@ -52,6 +53,9 @@ import { distroSettingText } from './wsl/distros';
  * E6.S4 adds the Logs page (`logsPage/`): a `WebviewPanel` opened by *Logs* in the panel title (`wslCare.openLogs`) and
  * beside *Last cleanup* (that run), restored after a reload by its serializer; its period persisted in `globalState`, its
  * reads (`logs` / `runs` / `runs show`) the client's unprivileged run reads.
+ *
+ * E10.S2a adds the Archive page (`archivePage/`): a `WebviewPanel` opened by *Open archive…* in the panel's archive section and by
+ * `wslCare.openArchive`, restored after a reload by its serializer; its one read is the client's unprivileged `archive list --json`.
  */
 
 const OPEN_PANEL = 'wslCare.openPanel';
@@ -268,7 +272,7 @@ function panelRefresh(parts: Parts): (options?: RunOptions) => Promise<void> {
 }
 
 /** E10.S1: the archive's part of the panel — its controls, their changes, and its two flows (the panel button and the command). */
-function archiveActions(parts: Parts): Pick<PanelActions, 'archive' | 'onArchiveChange' | 'chooseArchiveFolder' | 'stopArchiving' | 'archiveNow'> {
+function archiveActions(parts: Parts, page: ArchivePanel): Pick<PanelActions, 'archive' | 'onArchiveChange' | 'chooseArchiveFolder' | 'stopArchiving' | 'archiveNow' | 'openArchive'> {
   return {
     archive: () => parts.archive.view(),
     onArchiveChange: (listener) => parts.archive.onChange(listener),
@@ -276,6 +280,8 @@ function archiveActions(parts: Parts): Pick<PanelActions, 'archive' | 'onArchive
     stopArchiving: () => { void parts.archive.stop(); },
     // E10.S1b own review #1: the archive host refuses on the archive's conditions, then hands it to the cleanup host (its own).
     archiveNow: () => { void parts.archive.archiveNow(); },
+    // E10.S2a: the Archive page — it reads the list itself.
+    openArchive: () => { void page.show(); },
   };
 }
 
@@ -284,6 +290,22 @@ function archiveCommands(archive: Pick<PanelActions, 'chooseArchiveFolder' | 'st
     vscode.commands.registerCommand('wslCare.chooseArchiveFolder', archive.chooseArchiveFolder),
     vscode.commands.registerCommand('wslCare.stopArchiving', archive.stopArchiving),
     vscode.commands.registerCommand('wslCare.archiveNow', archive.archiveNow),
+  ];
+}
+
+function archivePanel(context: vscode.ExtensionContext, parts: Parts): ArchivePanel {
+  const { client, store, log } = parts;
+
+  return new ArchivePanel(context.extensionUri, { read: (request) => client.read(request), status: () => store.snapshot().status }, (line) => log.error(line));
+}
+
+/** The Archive page (E10.S2a): itself, its command (also the archive section's *Open archive…*), the status it follows, its serializer. */
+function archivePageSubscriptions(page: ArchivePanel, store: OutcomeStore): vscode.Disposable[] {
+  return [
+    page,
+    vscode.commands.registerCommand('wslCare.openArchive', () => page.show()),
+    { dispose: store.onChange(() => page.statusChanged()) },
+    vscode.window.registerWebviewPanelSerializer(ArchivePanel.viewType, { deserializeWebviewPanel: (restored) => { page.restore(restored); return Promise.resolve(); } }),
   ];
 }
 
@@ -297,16 +319,16 @@ function logsSubscriptions(logs: LogsPanel, store: OutcomeStore): vscode.Disposa
   ];
 }
 
-function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar; panel: PanelProvider; logs: LogsPanel } {
+function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar; panel: PanelProvider; logs: LogsPanel; archivePage: ArchivePanel } {
   const { poller, store, focus, host } = parts;
   const install = installer(parts);
   const windowsTime = windowsTimeFixer(parts);
   const logs = logsPanel(context, parts);
+  const archivePage = archivePanel(context, parts);
   const bar = new StatusBar(store, OPEN_PANEL, { mark: () => parts.gpu.host.barMark(), onChange: (listener) => parts.gpu.host.onChange(listener) });
-  const installGuard = guardFlow(parts, 'install');
-  const removeGuard = guardFlow(parts, 'remove');
+  const [installGuard, removeGuard] = [guardFlow(parts, 'install'), guardFlow(parts, 'remove')];
   const refreshAll = panelRefresh(parts);
-  const archive = archiveActions(parts);
+  const archive = archiveActions(parts, archivePage);
   const panel = new PanelProvider(context.extensionUri, store, {
     refresh: refreshAll,
     openSettings: () => { void vscode.commands.executeCommand('workbench.action.openSettings', 'wslCare'); },
@@ -339,12 +361,12 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     vscode.commands.registerCommand('wslCare.installWindowsTimeGuard', installGuard),
     vscode.commands.registerCommand('wslCare.removeWindowsTimeGuard', removeGuard),
     ...archiveCommands(archive),
-    ...logsSubscriptions(logs, store),
+    ...logsSubscriptions(logs, store), ...archivePageSubscriptions(archivePage, store),
     vscode.window.onDidChangeWindowState((state) => { if (focus.override === undefined) { poller.focusChanged(state.focused); host.start(); } }),
     ...settingsListeners(parts, panel),
   );
 
-  return { bar, panel, logs };
+  return { bar, panel, logs, archivePage };
 }
 
 /** Every setting a host re-reads the moment it changes — and the GPU story's own command and listener (`gpu/gpuWiring.ts`). */
@@ -366,7 +388,7 @@ function configurationChanged(event: vscode.ConfigurationChangeEvent, parts: Par
   }
 }
 
-function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsPanel): WslCareTestApi {
+function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsPanel, archivePage: ArchivePanel): WslCareTestApi {
   const { poller, calls, focus } = parts;
 
   return {
@@ -390,6 +412,7 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
     cleanupHost: () => parts.host,
     cleanRecorder: () => parts.cleanRecorder,
     logs: () => logs,
+    archivePage: () => archivePage,
     archive: () => parts.archive,
     archiveRecorder: () => parts.archiveRecorder,
     buildVersion,
@@ -398,12 +421,12 @@ function testApi(parts: Parts, bar: StatusBar, panel: PanelProvider, logs: LogsP
 
 export function activate(context: vscode.ExtensionContext): WslCareTestApi | undefined {
   const parts = build(context);
-  const { bar, panel, logs } = wire(context, parts);
+  const { bar, panel, logs, archivePage } = wire(context, parts);
   parts.poller.start();
   parts.host.start();
   parts.gpu.host.start();
 
-  return context.extensionMode === vscode.ExtensionMode.Test ? testApi(parts, bar, panel, logs) : undefined;
+  return context.extensionMode === vscode.ExtensionMode.Test ? testApi(parts, bar, panel, logs, archivePage) : undefined;
 }
 
 export function deactivate(): void {

@@ -76,6 +76,8 @@ export interface FakeScenario {
   readonly logs?: string;
   /** E10.S1: the file (in `answers`) `archive check-base <path> --json` answers; `archive-check-base.json` by default. */
   readonly checkBase?: string;
+  /** E10.S2a: the file (in `answers`) `archive list --json` answers; `archive-list.json` by default. */
+  readonly archiveList?: string;
   /** E10.S1: `config set archive.baseFolder <v>` exits with this code and stderr instead of writing. */
   readonly configExit?: { readonly code: number; readonly stderr: string };
 }
@@ -239,6 +241,10 @@ function archiveReadOf(tail: readonly string[]): ((scenario: FakeScenario) => st
   }
   if (third === '--json' && fourth === undefined && (sub === 'status' || sub === 'preview')) {
     return () => `archive-${sub}.json`;
+  }
+  // E10.S2a: the Archive page's list — `archive list --json` exactly; no filter is ever sent.
+  if (sub === 'list' && third === '--json' && fourth === undefined) {
+    return (scenario) => scenario.archiveList ?? 'archive-list.json';
   }
 
   return sub === 'check-base' && isPathValue(third) && fourth === '--json' ? (scenario) => scenario.checkBase ?? 'archive-check-base.json' : undefined;

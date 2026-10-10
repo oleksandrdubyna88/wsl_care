@@ -51,6 +51,8 @@ export interface PanelActions {
   readonly gpu: () => GpuView;
   readonly onGpuChange: (listener: () => void) => () => void;
   readonly enableGpu: (index: number, readAt: number) => void;
+  /** E10.S2a: *Open archive…* — the Archive page, which reads `archive list` itself. */
+  readonly openArchive: () => void;
 }
 
 export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -112,6 +114,7 @@ export class PanelProvider implements vscode.WebviewViewProvider, vscode.Disposa
       chooseArchiveFolder: () => this.actions.chooseArchiveFolder(),
       stopArchiving: () => this.actions.stopArchiving(),
       archiveNow: () => this.actions.archiveNow(),
+      openArchive: () => this.actions.openArchive(),
       clean: (m) => this.actions.clean(m.rowIds, false),
       cleanSelected: (m) => this.actions.clean(m.rowIds, true),
       runFullCheck: () => this.actions.runFullCheck(),

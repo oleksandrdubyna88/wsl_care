@@ -1,8 +1,9 @@
 /**
- * The ONE Logs panel (review K3, and the security review's below-threshold note): exactly one panel receives the host's
+ * The ONE panel of a page (review K3, and the security review's below-threshold note) — the Logs page's, and since E10.S2a the
+ * Archive page's (moved here from `logsPage/` so both pages hold one slot each of the SAME type): exactly one panel receives the host's
  * views. `open` creates or reveals SYNCHRONOUSLY — so a second press of *Logs* while the first is still awaiting finds the
  * panel the first created — and `adopt` keeps a panel VS Code restored only when none is open, disposing the extra one.
- * vscode-free: `logsPanel.ts` passes VS Code's `WebviewPanel`s, the tests fakes.
+ * vscode-free: `logsPanel.ts` and `archivePanel.ts` pass VS Code's `WebviewPanel`s, the tests fakes.
  */
 
 export interface SlotPanel {
