@@ -4032,7 +4032,7 @@ Its results — both spellings judged and used, the holder kept, the idle rule, 
 
 #### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
 
-> Status: **built, 2026-10-09 (its PR open).** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
+> Status: **built, 2026-10-09; merged 2026-10-10 (#78).** Scope: `Archive/InUseWindows.cs`, `Archive/WindowsSide.cs`,
 > `Archive/Liveness.cs`, `Archive/Selection.cs`, `Archive/ArchiveRemove.cs`, `Archive/ArchiveRun.cs`, a new `Archive/WindowsIdle.cs`,
 > `Config/ConfigKeys.cs` + `default.json` (two keys), the tests, `research/module_archive.md`, `research/module_tests.md`, README.
 > Branch `fix/wc-e9s5-windows-idle`, its own PR, before E10 goes on. It OVERRIDES the E9.S5 text above where they differ.
