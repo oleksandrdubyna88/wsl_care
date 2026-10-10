@@ -11,7 +11,9 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
   the daemon reports; "WSL stopped" when the distribution is not running. A click opens the panel.
 - **The panel** (the *AI OS Care* icon in the activity bar) — Memory, Top holders, Swap, Disk, Folders, Containers,
   Container starts, Cleanup (what each cleanup would free, with **Clean**, **Select**, **Clean selected** and **Run full
-  check now**), Health, Last cleanup. A figure the daemon could not read says
+  check now**), Health, AI agents, Last cleanup. *AI agents* shows the daemon's AI-session archive: the folder it archives
+  into, per agent what is old enough to be archived, and a warning when an agent's own cleanup deletes its sessions sooner
+  than the archive would take them — with **Choose archive folder…** and **Stop archiving**. A figure the daemon could not read says
   why ("unavailable — reason"); a row this version cannot fill yet says so; nothing is shown as a made-up 0.
 - **The Logs page** (*Logs* in the panel's title, or beside *Last cleanup*) — what the runs of a period did: This run,
   Today, Yesterday, a day or a range of your LOCAL days (the 90 the daemon keeps). Totals, runs with and without a
@@ -23,14 +25,21 @@ you confirm it. **Windows with WSL only**; the daemon is installed separately, i
 
 - **Reading** — it asks the daemon four questions: `status --json`, `preview --all --json`, `doctor --json` and
   `--version` — and, for the cleanups' results and the Logs page, three about runs: `runs show <run> --json`,
-  `runs --from <instant> --to <instant> --json` and `logs --from <instant> --to <instant> --json`. They run as your own
-  user and change nothing.
+  `runs --from <instant> --to <instant> --json` and `logs --from <instant> --to <instant> --json` — and, for the archive,
+  `archive status --json`, `archive preview --json` and `archive check-base <folder> --json`. They run as your own user and
+  change nothing.
+- **One setting, and only when you choose it.** **Choose archive folder…** opens a folder dialog; the daemon checks the
+  folder (as your user, the one that will write the archive) and says why when it cannot hold the archive — then nothing is
+  written. An accepted folder is shown with the daemon's warnings, and only **Use this folder** writes it, as
+  `config set archive.baseFolder <the folder>` — as your own user, never as root. **Stop archiving** writes the empty value;
+  nothing already archived is touched. Nothing is moved when you choose: the daemon archives a session only once it is old
+  enough.
 - **Cleaning — only after you confirm, and only through five calls.** A cleanup needs root inside the distribution, so
   the extension has exactly five root calls, all built in one place and nowhere else: a cleanup's preview
   (`act <ids> --preview`), its run once you confirmed (`act <ids> --confirm --manual --detach`, with the list of volumes
   the preview showed handed over on stdin), stopping a wedged run (`act --stop <run>`), *Run full check now*
-  (`collect --detach`) and a root check (`--version`). It never sends the timer's mark, never changes the daemon's
-  settings, and never acts on an action the daemon does not offer. A confirmed cleanup runs in the daemon's own systemd
+  (`collect --detach`) and a root check (`--version`). It never sends the timer's mark, never changes a daemon setting
+  other than the archive folder above, and never acts on an action the daemon does not offer. A confirmed cleanup runs in the daemon's own systemd
   unit, so reloading the window does not cut it off: the panel writes the run down before it starts and follows it to its
   result — "Cleaning… A4" after a reload, then what it freed; a run that died says *interrupted*. (Whether the run also
   survives closing every WSL window is measured before the first release.)

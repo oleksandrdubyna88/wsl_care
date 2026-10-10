@@ -4477,6 +4477,38 @@ IN FORCE before the child is asked, and the act verb holds that ceiling and the 
 rule was tried and dropped: it made every machine with a lowered `act.maxShownNames` observe-only). Tests and teeth: [module_tests.md](../research/module_tests.md), *The
 daemon half of the extension's archive*.
 
+#### As built — E10.S1a (2026-10-10): the archive folder and the panel section; *Archive now* split into E10.S1b
+
+E10.S1 ships as two PRs. **S1a** has the three reads, the writer, *Choose archive folder…*, *Stop archiving* and the panel section.
+**S1b** (still open) is *Archive now* — A13 through the cleanup controller, with everything the build notes list for it:
+- `confirmA13`;
+- the journal op;
+- its own modal and notice words;
+- `parsePreview` widened;
+- its preview ceiling.
+
+The split keeps the one root-touching change on its own PR.
+
+The S1a deviations from the build notes:
+- **`config set` never answers 78.** An observe-only configuration still writes the user layer (`ConfigCommand.Set`), so the
+  writer reads 0 as written and 2 / 81 / 70 as the client's failures (`classifyExit`). The notes said "2, 78 and 81".
+- **The value written is the report's `folder`.** It is the daemon's own spelling (on WSL the mount path, `/mnt/v/…`), not the
+  picked Windows text. It is a branded `JudgedFolder` that only `judgedFolderOf` makes, and only from a report with
+  `accepted: true`, so an unjudged value does not type-check. The strict fake goes further: it writes only EXACTLY the folder its
+  own `check-base` answer accepted.
+- **The two reads are asked from the panel's refresh in `extension.ts` (`panelRefresh`), after the poller's round.** The notes
+  put them inside `poll/poller.ts` `panelRound`. The frequency is the same (only on a refresh, never on the timer). Asking after
+  the round lets that round's `status` capabilities decide whether to ask at all: `archive status` needs `archive.run`, and
+  `archive preview` needs `archive.preview`.
+- **The writer takes the run-read ceiling** (`wslCare.timeouts.runReadSeconds`). The daemon judges the folder as `check-base`
+  does and writes one file, so no new setting was added.
+- **The path rule moved to `shared/basePath.ts`.** It is one rule for the check-base argument and the judged folder: the daemon's
+  `IsPathArgument` plus the key's 1024 limit.
+- **The archive section sits in *AI agents*** (`EXTRAS.aiAgents` in `media/panel.js`). The badge text names both numbers.
+
+Tests and teeth: [module_tests.md](../research/module_tests.md), the `client archive*`, `command wslCare.chooseArchiveFolder` /
+`stopArchiving` and `message …` rows.
+
 #### Definition of Done
 
 - [ ] E10.S0, E10.S1, E10.S2 merged, each with its gate rounds, an own review and break-it checks recorded in `module_tests.md`.

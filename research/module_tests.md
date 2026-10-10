@@ -3564,6 +3564,26 @@ and restored by SHA-256. Totals after the round (rebased onto `main`, with §15q
 | **A4's cap follows `maxShownNames`** (§15p; the coordinator, 2026-10-06) | `cleanupController.test.ts` (*#17: a preview is held to the cap IN FORCE*; *#17: the confirm checks the cap in force AT THE CONFIRM*), `rootCall.test.ts` (*#17: a confirm is built only when its shown list fits the cap in force*), `modalText.test.ts` (*#17: the truncated line names the cap in force*), `ceilings.test.ts` (*#17: the contract maximum is what the ceilings are held to*; the maximum limits now built from `LIMIT_FIELDS`) | red first against stubs (`shownCap` returning 10 000, the context and the selection carrying an unused cap): 300 of 387 names under `maxShownNames` 300 refused as *does not match its count (387) and its cap flag*; a 387-name list confirmed (*accepted*) after the daemon fell to 300; a 3-name confirm built under a cap of 2; the modal naming 10000. Teeth (each restored by sha256): `shownCap` ignoring its value → 4 red (controller 2, rootCall 1, modalText 1); `fitsCap` loosened → 1 red; the confirm's cap check loosened → 1 red (refused only later, as *could not be built*, not *preview again*); the preview parsed under 10 000 → 1 red; the modal line on 10 000 → 1 red; the count rule on 10 000 → 2 red |
 | **absent ≠ 0** (green with a bug) | `logsPage.test.ts` (*never 0*) | green from the start; teeth: a missing byte figure as `0.0 GB` → 1 red; a missing metric point as `0` → 1 red |
 
+### What each E10.S1a guarantee rests on (2026-10-10)
+
+E10.S1a is the archive folder and the panel's archive section (plan §15s, *As built — E10.S1a*). Its archive-read rows were
+RED first: the read tables and the fake's archive shapes were missing. The writer, the flows, the host and the view were each
+written in ONE step with their tests, so their teeth were proven by mutating product code instead. Each mutation was made by a
+script that rebuilds, runs the named test files and restores the file byte for byte. A mutation that did not compile was
+re-made so that it did; no test, fake or tripwire was touched.
+
+Totals: `npm test` **906 tests (905 pass, 1 skipped)**; typecheck and lint 0.
+
+| Guarantee | Tests | Red / green / teeth |
+|---|---|---|
+| **only a folder the daemon ACCEPTED is written** (`JudgedFolder`) | `configCall.test.ts` (*judgedFolderOf …*, *a value that was never judged does not type-check*), `archiveFlow.test.ts` (*a REFUSED folder is told with its rule — no modal, nothing written*), `fakeWsl.test.ts` (*config: every other config argv is refused*) | teeth: `judgedFolderOf` ignoring `accepted` → configCall + archiveFlow red; the flow judging a refused report as accepted → archiveFlow red |
+| **the writer is unprivileged and writes ONE key** | `configCall.test.ts`, `structure.test.ts` (*only configCall.ts spells config or archive.baseFolder*), `bundleScan.test.ts` (the config region's exact literals; a planted `-u`/`root`/`reset`/second key found) | the shipped bundle was red first (36 findings: `config` outside every sanctioned region) until the config region existed; teeth: `-u root` added to the writer's argv → configCall + bundleScan red; another key → configCall + structure + bundleScan red |
+| **the folder value obeys the daemon's path rule before any spawn** | `archiveReads.test.ts`, `configCall.test.ts` | teeth: the leading-dash check dropped from `shared/basePath.ts` → archiveReads + configCall red |
+| **the retention badge exactly when retention < effective age** | `archiveView.test.ts` (*the retention badge shows EXACTLY when …*) | teeth: `<` as `<=` → red |
+| **the reads only of an advertising daemon, only on a refresh** | `archiveHost.test.ts` (*a daemon that advertises neither is not asked at all*, *two refreshes at once share one pair of reads*) | teeth: the capability gate dropped → red |
+| **Stop archiving greyed while no folder is set** | `archiveView.test.ts` (*no folder set …*) | teeth: Stop enabled by the capability alone → red |
+| **every archive button posts its bare message and has a command** | `commandButtons.test.ts`, `manifest.test.ts`, `archiveHost.test.ts` (*BARE messages*), `archiveView.test.ts` (the page run), `catalogue.test.ts` | red first: the catalogue missing the two `message` and two `command` rows; the button test finding no rendered page button posting `chooseArchiveFolder`; the manifest's command list |
+
 ### What the service-account fix of the `.vsix` leak check rests on (release PR #47, 2026-10-08)
 
 Release PR #47 (extension 0.2.0) was red on both CI legs (run 37751902435): release-please's CHANGELOG section said
