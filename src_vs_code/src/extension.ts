@@ -161,9 +161,10 @@ function build(context: vscode.ExtensionContext): Parts {
     // archive host refuses on its own conditions first, then the cleanup host runs A13 through its transaction.
     cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener), archiveNow: () => host.archiveNow(),
   });
-  const gpu = gpuParts(context, testMode, numbers, (line) => log.error(line));
-
-  return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, gpu, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log };
+  return {
+    testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log,
+    gpu: gpuParts(context, testMode, numbers, (line) => log.error(line)),
+  };
 }
 
 /** The Windows Time guard's settings, read NOW (PLAN_windows_time_task.md D6): the task is built from them at install. */
