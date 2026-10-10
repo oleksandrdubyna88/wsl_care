@@ -87,6 +87,8 @@ public abstract record FileHash
     public sealed record Gone : FileHash;
 
     public sealed record Unreadable(string Why) : FileHash;
+
+    public sealed record Untrusted(string Why) : FileHash;
 }
 
 /// <summary>A rename that never replaces (<see cref="IArchiveFiles.QuarantineRename"/>, <see cref="IArchiveFiles.RenameBack"/>).</summary>

@@ -46,7 +46,7 @@ public static class ArchiveRemove
         PlaceKept(c, entry) is { } place ? place
         : Unremovable(entry, indexed) is { } early ? Early(c, entry, early)
         : LiveProblem(c, entry, indexed) is { Length: > 0 } live ? new RemoveOutcome.Kept($"{live}; nothing is touched")
-        : CopiesProblem(c, entry, indexed) is { Length: > 0 } damaged ? MarkDamaged(c, entry, indexed, damaged)
+        : CopiesProblem(c, entry, indexed) is { Why.Length: > 0 } copy ? CopiesFailed(c, entry, indexed, copy)
         : GitTreeKept(c, entry, indexed, []) is { } git ? git
         : Quarantined(c, entry, indexed);
 
@@ -70,10 +70,9 @@ public static class ArchiveRemove
             return Deferred(c, entry, aside, live);
         }
 
-        if (CopiesProblem(c, entry, indexed) is { Length: > 0 } damaged)
+        if (CopiesProblem(c, entry, indexed) is { Why.Length: > 0 } copy)
         {
-            RenameBack(c, entry, aside);
-            return MarkDamaged(c, entry, indexed, damaged);
+            return copy.Untrusted ? Deferred(c, entry, aside, copy.Why) : DamagedBack(c, entry, indexed, aside, copy.Why);
         }
 
         return GitTreeKept(c, entry, indexed, aside) ?? Finish(c, entry, indexed, aside);
@@ -162,25 +161,48 @@ public static class ArchiveRemove
         return new RemoveOutcome.Superseded(why);
     }
 
-    /// <summary>Every archived file opened again and hashed against its index row; empty when all equal (D2 step 7).</summary>
-    private static string CopiesProblem(MoveContext c, InflightEntry entry, IndexEntry indexed) =>
-        indexed.Files.Select(f => CopyProblem(c, entry, f)).FirstOrDefault(p => p.Length > 0) ?? string.Empty;
+    /// <summary>What re-hashing the archived copies found: why one does not hold — and whether its answer was merely NOT TRUSTED (the
+    /// guards after the live gate, G2: a share that may answer from the Offline Files cache), which keeps the entry rather than marking
+    /// it damaged.</summary>
+    private sealed record CopyCheck(string Why, bool Untrusted)
+    {
+        public static CopyCheck Holds { get; } = new(string.Empty, false);
+    }
 
-    private static string CopyProblem(MoveContext c, InflightEntry entry, IndexFile file)
+    /// <summary>A copy that did not hold: an untrusted answer keeps the entry for a later run; any other marks it damaged.</summary>
+    private static RemoveOutcome CopiesFailed(MoveContext c, InflightEntry entry, IndexEntry indexed, CopyCheck copy) =>
+        copy.Untrusted ? new RemoveOutcome.Kept($"{copy.Why}; nothing is touched and the removal waits") : MarkDamaged(c, entry, indexed, copy.Why);
+
+    private static RemoveOutcome DamagedBack(MoveContext c, InflightEntry entry, IndexEntry indexed, IReadOnlyList<Aside> aside, string why)
+    {
+        RenameBack(c, entry, aside);
+        return MarkDamaged(c, entry, indexed, why);
+    }
+
+    /// <summary>Every archived file opened again and hashed against its index row; <see cref="CopyCheck.Holds"/> when all equal (D2 step 7).</summary>
+    private static CopyCheck CopiesProblem(MoveContext c, InflightEntry entry, IndexEntry indexed) =>
+        indexed.Files.Select(f => CopyProblem(c, entry, f)).FirstOrDefault(p => p.Why.Length > 0) ?? CopyCheck.Holds;
+
+    private static CopyCheck CopyProblem(MoveContext c, InflightEntry entry, IndexFile file)
     {
         var levels = ArchiveCopy.Levels(entry.Agent, entry.Month, c.Side, ArchiveCopy.Folders(file.Archived));
         if (c.Files.OpenExistingFolderBeneath(c.BaseFolder, levels) is not FolderBeneath.Ready { Folder: var folder })
         {
-            return $"the folder of {file.Archived} is missing or unreadable in the base";
+            return new CopyCheck($"the folder of {file.Archived} is missing or unreadable in the base", false);
         }
 
         using (folder)
         {
-            return c.Files.ReadBack(folder, Path.GetFileName(file.Archived)) is FileHash.Hashed hashed && hashed.Sha256 == file.Sha256 && hashed.Length == file.Bytes
-                ? string.Empty
-                : $"{file.Archived} no longer matches its index line";
+            return Judged(c.Files.ReadBack(folder, Path.GetFileName(file.Archived)), file);
         }
     }
+
+    private static CopyCheck Judged(FileHash read, IndexFile file) => read switch
+    {
+        FileHash.Hashed hashed when hashed.Sha256 == file.Sha256 && hashed.Length == file.Bytes => CopyCheck.Holds,
+        FileHash.Untrusted untrusted => new CopyCheck($"{file.Archived}: {untrusted.Why}", true),
+        _ => new CopyCheck($"{file.Archived} no longer matches its index line", false),
+    };
 
     private static RemoveOutcome MarkDamaged(MoveContext c, InflightEntry entry, IndexEntry indexed, string why)
     {

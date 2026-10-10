@@ -1,5 +1,8 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+
+using Microsoft.Win32.SafeHandles;
 
 namespace WslCare.Core.Files;
 
@@ -23,9 +26,37 @@ internal static partial class NetworkPaths
     internal static bool InPlace(string actual, string judged, Func<string, string> networkRootOf) =>
         actual.Length > 0 && (Same(actual, judged) || Same(actual, UnderNetworkRoot(judged, networkRootOf)));
 
+    /// <summary>The guards after the live gate, G2 (owner question 2, 2026-10-10): why a NETWORK handle's answers are not trusted — its
+    /// protocol says it answers from an offline cache (<c>REMOTE_PROTOCOL_FLAG_OFFLINE</c>, Windows Offline Files), or the protocol
+    /// could not be asked (unknown keeps). Empty for a trusted share and for a local path, which is never asked. Measured on the owner's
+    /// NAS 2026-10-10: SMB 3.1, flags 0x10 (integrity), the offline flag clear.</summary>
+    internal static string OfflineCacheProblem(uint flags, int error, bool remote) =>
+        !remote ? string.Empty
+        : error != 0 ? string.Create(CultureInfo.InvariantCulture, $"whether the share answers from the Offline Files cache could not be asked (error {error}); what it answers is not trusted")
+        : (flags & OfflineFlag) != 0 ? "the share answers from the Offline Files cache, so a copy it shows may not be on the server; what it answers is not trusted"
+        : string.Empty;
+
     /// <summary>A folder flush's error as the caller should read it: 0 when it flushed — or when a NETWORK path answered
     /// <see cref="InvalidFunction"/>, which is SMB's "no folder flush here"; every other error as it came.</summary>
     internal static int FolderFlushed(int error, bool remote) => error == InvalidFunction && remote ? 0 : error;
+
+    /// <summary><c>REMOTE_PROTOCOL_FLAG_OFFLINE</c> of <c>FILE_REMOTE_PROTOCOL_INFO.Flags</c>.</summary>
+    internal const uint OfflineFlag = 0x2;
+
+    /// <summary>The remote protocol's flags of an open handle, or the Win32 error of asking (a local handle answers one).</summary>
+    [SupportedOSPlatform("windows")]
+    internal static (uint Flags, int Error) RemoteProtocolFlags(SafeFileHandle handle)
+    {
+        var buffer = new byte[Native.RemoteProtocolInfoBytes];
+        return Native.GetFileInformationByHandleEx(handle, Native.FileRemoteProtocolInfo, buffer, (uint)buffer.Length)
+            ? (BitConverter.ToUInt32(buffer, Native.FlagsOffset), 0)
+            : (0, Marshal.GetLastPInvokeError());
+    }
+
+    /// <summary>Why a handle opened at <paramref name="path"/> is not trusted (<see cref="OfflineCacheProblem"/>); a local path is never asked.</summary>
+    [SupportedOSPlatform("windows")]
+    internal static string OfflineCacheProblemOf(SafeFileHandle handle, string path) =>
+        IsRemote(path, NetworkRootOf) && RemoteProtocolFlags(handle) is var (flags, error) ? OfflineCacheProblem(flags, error, remote: true) : string.Empty;
 
     /// <summary>Whether <paramref name="path"/> is on a network share: a UNC path, or a drive the system maps to one.</summary>
     internal static bool IsRemote(string path, Func<string, string> networkRootOf) =>
@@ -88,6 +119,19 @@ internal static partial class NetworkPaths
 
         /// <summary><c>ERROR_MORE_DATA</c>: the room was too small, and the length now says how much is needed.</summary>
         public const int MoreData = 234;
+
+        /// <summary><c>FileRemoteProtocolInfo</c> of <c>FILE_INFO_BY_HANDLE_CLASS</c>.</summary>
+        public const int FileRemoteProtocolInfo = 13;
+
+        /// <summary>Room for <c>FILE_REMOTE_PROTOCOL_INFO</c> with room to spare (the measured call took a 148-byte buffer).</summary>
+        public const int RemoteProtocolInfoBytes = 256;
+
+        /// <summary>Where <c>Flags</c> lies in it: after two USHORTs, a ULONG and four USHORTs.</summary>
+        public const int FlagsOffset = 16;
+
+        [LibraryImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static partial bool GetFileInformationByHandleEx(SafeFileHandle handle, int informationClass, [Out] byte[] buffer, uint size);
 
         [LibraryImport("kernel32.dll", EntryPoint = "GetDriveTypeW", StringMarshalling = StringMarshalling.Utf16)]
         public static partial uint GetDriveType(string root);
