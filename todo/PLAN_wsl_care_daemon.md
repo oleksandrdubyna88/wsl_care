@@ -4161,6 +4161,11 @@ squash.
   - Any other error, and error 1 on a local volume, still refuses.
   - The files themselves are still written through and flushed by their own handles, which SMB honours.
   - Pure function `FolderFlushed(error, remote)`.
+  - **Why this is safe (the plan round, finding 0 — rejected with this reason):** the archive never rests on the folder flush alone.
+    No source is removed until phase 2, a separate run at least `archive.removeAfterHours` later in a new process with fresh
+    handles, re-opens every archived copy in the base and re-hashes it against its index line (`ArchiveRemove.CopyProblem`). A missing
+    or different copy marks the entry damaged, and the SOURCE STAYS. An entry an SMB server lost would cost a retry, never data.
+    Refusing would make every SMB base unusable, and the owner's only share is SMB.
 - **N3 — a refusal says why.** `SideLease` carries the folder's own reason ("… could not be opened in the base (<why>)"). This is how
   the run found the two defects.
 
