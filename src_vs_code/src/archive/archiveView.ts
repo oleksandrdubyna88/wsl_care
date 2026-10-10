@@ -1,5 +1,6 @@
 import type { ReadOutcome } from '../client/outcome';
 import { failureText } from '../failureText';
+import { confirmNeeds, previewNeeds } from '../root/cleanupController';
 import { localMinuteOf, sizeText } from '../text/format';
 import { safeText } from '../text/safeText';
 
@@ -229,18 +230,38 @@ function buttons(state: ArchiveState): ArchiveControls['buttons'] {
   return [
     { id: 'chooseArchiveFolder', label: ARCHIVE_LABELS.chooseArchiveFolder, enabled: may },
     { id: 'stopArchiving', label: ARCHIVE_LABELS.stopArchiving, enabled: withBase },
-    { id: 'archiveNow', label: ARCHIVE_LABELS.archiveNow, enabled: withBase && mayArchiveNow(state) },
+    { id: 'archiveNow', label: ARCHIVE_LABELS.archiveNow, enabled: state.cleanupFree && archiveNowBlocker(state) === '' },
   ];
 }
 
-/** What *Archive now* needs advertised (E10.S1b): the run and its preview (plan round #0), and the detach that hands it to its unit. */
-export const ARCHIVE_NOW_CAPABILITIES: readonly string[] = ['archive.run', 'archive.preview', 'act.detach'];
+/**
+ * What *Archive now* needs advertised (E10.S1b): exactly what the controller's preview and confirm of A13 need — ONE definition,
+ * the controller's (`previewNeeds` / `confirmNeeds`; the second code round #2), so a capability A13 gains there greys the button here.
+ */
+export const ARCHIVE_NOW_CAPABILITIES: readonly string[] = [...new Set([...previewNeeds(['A13']), ...confirmNeeds(['A13'])])];
 
-/** The daemon offers A13 with everything it needs, and no cleanup is in flight. */
-function mayArchiveNow(state: ArchiveState): boolean {
+/** The capabilities *Archive now* needs that the daemon does not advertise — the archive's own first. */
+function missingOf(state: ArchiveState): readonly string[] {
   const capabilities = state.capabilities ?? [];
 
-  return state.a13Offered && state.cleanupFree && ARCHIVE_NOW_CAPABILITIES.every((c) => capabilities.includes(c));
+  return [ARCHIVE_CAPABILITY, ...ARCHIVE_NOW_CAPABILITIES].filter((c) => !capabilities.includes(c));
+}
+
+/** The archive's conditions on *Archive now*, in the order they are told — each with its words. */
+const ARCHIVE_NOW_CONDITIONS: readonly { readonly holds: (state: ArchiveState) => boolean; readonly why: (state: ArchiveState) => string }[] = [
+  { holds: (s) => missingOf(s).length === 0, why: (s) => `the daemon does not advertise ${missingOf(s).join(', ')}` },
+  { holds: (s) => s.a13Offered, why: () => 'the daemon does not offer A13' },
+  { holds: (s) => str(bodyOf(s.status), 'baseFolder') !== '', why: () => 'no archive folder is set' },
+  { holds: (s) => s.busy === '', why: () => 'the archive folder is being changed' },
+];
+
+/**
+ * Why *Archive now* cannot start on the ARCHIVE's side — '' when it can (own review #1: the host refuses on the same conditions
+ * the button greys on, because the palette's command and a stale page send the same bare request). The cleanup's side (a run in
+ * flight, the journal full) is the cleanup host's own refusal.
+ */
+export function archiveNowBlocker(state: ArchiveState): string {
+  return ARCHIVE_NOW_CONDITIONS.find((c) => !c.holds(state))?.why(state) ?? '';
 }
 
 /** Why there are no per-agent lines to trust: the preview was not asked, or failed (code round #6 — never "nothing due"). */

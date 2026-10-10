@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import type { ProcessResult } from '../process/runner';
 import { FAKE_EXIT, missingBinaryStderr, NO_SUCH_DISTRO, OLD_GLIBC_STDERR } from './fake/fakeWsl';
 import { fakeWorld, UBUNTU_RUNNING, type FakeWorld, type ScenarioInput } from './support/fakeWorld';
-import { GOLDEN_ROOT } from './support/paths';
+import { GOLDEN_ROOT, goldenFile } from './support/paths';
 
 /**
  * The strict fake's OWN tests (`common.generated-code-tests` §3: a fake is code under test, and may be stricter than
@@ -308,6 +308,21 @@ test('root: an id outside the contract registry ∩ the daemon\'s status.actions
   });
 });
 
+test('root: an answers folder without the daemon\'s A13 line REFUSES A13\'s preview, naming the file — never a crash (E10.S1b own review #11)', async () => {
+  await within(UBUNTU_RUNNING, async (world) => {
+    const answers = path.join(world.folder, 'answers-no-a13-line');
+    fs.mkdirSync(answers);
+    for (const file of fs.readdirSync(path.join(GOLDEN_ROOT, 'head')).filter((name) => name !== 'act-a13-preview-action.json')) {
+      fs.copyFileSync(path.join(GOLDEN_ROOT, 'head', file), path.join(answers, file));
+    }
+    world.rewrite({ answers });
+    const { code, stderr } = exitOf(await rootAsk(world, ['act', 'A13', '--preview', '--json']));
+    assert.equal(code, FAKE_EXIT.refused, stderr);
+    assert.match(stderr, /the answers folder has no act-a13-preview-action\.json/);
+    assert.equal(exitOf(await rootAsk(world, ['act', 'A10', '--preview', '--json'])).code, 0, 'a preview without A13 needs no A13 line');
+  });
+});
+
 test('root: an op whose capability the scenario daemon does not advertise is refused', async () => {
   await within(UBUNTU_RUNNING, async (world) => {
     const answers = path.join(world.folder, 'answers-no-detach');
@@ -509,17 +524,13 @@ test('config: every other config argv is refused — another value, another key,
     }
   });
   await within({ ...UBUNTU_RUNNING, checkBase: 'archive-check-base-refused.json' }, async (world) => {
-    const refused = golden('archive-check-base-refused.json');
+    const refused = goldenFile('archive-check-base-refused.json');
     assert.equal(exitOf(await ask(world, [...CONFIG_SET, String(refused.folder)])).code, FAKE_EXIT.refused, 'a folder its check-base refused');
   });
   await within({ ...UBUNTU_RUNNING, distros: [{ name: 'Ubuntu', running: false }] }, async (world) => {
     assert.equal(exitOf(await ask(world, [...CONFIG_SET, ''])).code, FAKE_EXIT.wouldStart);
   });
 });
-
-function golden(name: string): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, 'head', name), 'utf8')) as Record<string, unknown>;
-}
 
 // ---- E10.S1b: A13 among the root shapes ----
 

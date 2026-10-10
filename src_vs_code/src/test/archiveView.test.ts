@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as path from 'node:path';
 import { test } from 'node:test';
 
 import { ARCHIVE_CAPABILITY, deriveArchive, NO_ARCHIVE, retentionBadge, type ArchiveState } from '../archive/archiveView';
@@ -9,16 +8,12 @@ import { buildPanelView } from '../panel/viewModel';
 import type { Snapshot } from '../state/outcomeStore';
 import { goldenOutcomes } from './support/outcomes';
 import { Element, runPageScript } from './support/pageHarness';
-import { GOLDEN_ROOT, PAGE_SCRIPT } from './support/paths';
+import { goldenFile, PAGE_SCRIPT } from './support/paths';
 
 /**
  * Plan §15s, E10.S1: the archive's part of the panel, derived from the daemon's `archive status` / `archive preview` answers and
  * the capabilities its `status` advertised — and the page rendering it in *AI agents* with createElement / textContent only.
  */
-
-function golden(name: string): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, 'head', name), 'utf8')) as Record<string, unknown>;
-}
 
 function read(read: 'archiveStatus' | 'archivePreview', body: Record<string, unknown>): ReadOutcome {
   return { kind: 'read', read, distro: 'Ubuntu', body };
@@ -32,7 +27,7 @@ function answeredSnapshot(): Snapshot {
 const CAPABLE = [ARCHIVE_CAPABILITY, 'archive.preview', 'archive.run'];
 
 function state(overrides: Partial<ArchiveState> = {}): ArchiveState {
-  return { status: read('archiveStatus', golden('archive-status.json')), preview: read('archivePreview', golden('archive-preview.json')), capabilities: CAPABLE, busy: '', reading: false, asked: true, unavailable: '', cleanupFree: true, a13Offered: true, ...overrides };
+  return { status: read('archiveStatus', goldenFile('archive-status.json')), preview: read('archivePreview', goldenFile('archive-preview.json')), capabilities: CAPABLE, busy: '', reading: false, asked: true, unavailable: '', cleanupFree: true, a13Offered: true, ...overrides };
 }
 
 function enabled(controls: ReturnType<typeof deriveArchive>): Record<string, boolean> {
@@ -52,7 +47,7 @@ test('over the goldens: the base folder the daemon reads, every enabled agent wi
 });
 
 test('no folder set: the archive reads "off", and Stop archiving is greyed', () => {
-  const controls = deriveArchive(state({ status: read('archiveStatus', { ...golden('archive-status.json'), baseFolder: '' }) }));
+  const controls = deriveArchive(state({ status: read('archiveStatus', { ...goldenFile('archive-status.json'), baseFolder: '' }) }));
   assert.match(controls.line, /^Archive: off — no archive folder is chosen/);
   assert.deepEqual(enabled(controls), { chooseArchiveFolder: true, stopArchiving: false, archiveNow: false });
 });
@@ -63,7 +58,7 @@ test('the retention badge shows EXACTLY when the agent\'s own retention is below
   assert.equal(retentionBadge(agent(14, true, 14)), '', 'equal: the archive takes them on the same day the agent would delete them');
   assert.equal(retentionBadge(agent(7, true, 14)), 'its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d');
   assert.equal(retentionBadge(agent(7, false, 14)), '', 'an unknown retention says nothing it does not know');
-  const preview = golden('archive-preview.json');
+  const preview = goldenFile('archive-preview.json');
   const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { ...a, retention: { known: true, days: 7, source: 's' } } : a));
   assert.equal(deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0]?.badge, 'its own cleanup deletes sessions after 7 d — before the archive takes them at 14 d');
 });
@@ -86,13 +81,13 @@ test('a failed archive status reads as its failure\'s label; a flow in flight sh
 });
 
 test('a daemon string is made printable and short before it reaches the view', () => {
-  const evil = deriveArchive(state({ status: read('archiveStatus', { ...golden('archive-status.json'), baseFolder: `/mnt/v/a${String.fromCharCode(0x202e)}b` }) }));
+  const evil = deriveArchive(state({ status: read('archiveStatus', { ...goldenFile('archive-status.json'), baseFolder: `/mnt/v/a${String.fromCharCode(0x202e)}b` }) }));
   assert.equal(evil.line.includes(String.fromCharCode(0x202e)), false);
   assert.equal(deriveArchive(state({ status: read('archiveStatus', { baseFolder: 'x'.repeat(2000) }) })).line.length < 400, true);
 });
 
 test('the page renders the archive in the AI agents section — text only — and its buttons post their bare ids, a greyed one nothing', () => {
-  const view = buildPanelView(answeredSnapshot(), undefined, undefined, deriveArchive(state({ status: read('archiveStatus', { ...golden('archive-status.json'), baseFolder: '' }) })));
+  const view = buildPanelView(answeredSnapshot(), undefined, undefined, deriveArchive(state({ status: read('archiveStatus', { ...goldenFile('archive-status.json'), baseFolder: '' }) })));
   const root = new Element('MAIN');
   const page = runPageScript(fs.readFileSync(PAGE_SCRIPT, 'utf8'), { panel: root });
   page.message({ type: 'view', view: structuredClone(view) });
@@ -115,7 +110,7 @@ test('code round #6: a FAILED preview is said, never shown as nothing due', () =
 });
 
 test('code round #6: an agent whose figures are missing reads "unknown", never "nothing older than 0 d"', () => {
-  const preview = golden('archive-preview.json');
+  const preview = goldenFile('archive-preview.json');
   const agents = (preview.agents as Record<string, unknown>[]).map((a, i) => (i === 0 ? { id: 'claude-code', name: 'Claude Code', enabled: true } : a));
   const line = deriveArchive(state({ preview: read('archivePreview', { ...preview, agents }) })).agents[0];
   assert.equal(line?.due, 'what is due is unknown — update the daemon to see this');

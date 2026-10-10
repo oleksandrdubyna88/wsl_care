@@ -73,10 +73,13 @@ function isFullCheck(running: RunningBlock): boolean {
   return running.actions.length === FULL_CHECK_ACTIONS.length && running.actions.every((a, i) => a === FULL_CHECK_ACTIONS[i]);
 }
 
-/** "A4" (the action in flight), "A5, A4" (what is queued), or the full check by name. */
+/** "A4" (the action in flight), "A5, A4" (what is queued), the full check or the archive run (E10.S1b, own review #7) by name. */
 function whatOf(running: RunningBlock): string {
   if (isFullCheck(running)) {
     return 'the full check';
+  }
+  if (isArchiveOnly(running.actions)) {
+    return 'the archive run';
   }
 
   return safeText(running.current === '' ? running.actions.join(', ') : running.current, RUN_TEXT);

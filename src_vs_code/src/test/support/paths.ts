@@ -1,6 +1,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+import { bodyOf, type Body } from './body';
+
 /**
  * Where the tests find the repository's files — resolved from THIS compiled file (`out/test/support/paths.js`), never
  * from the working directory, so a run from any folder reads the same files (TypeScript doctrine §4: build in place).
@@ -29,9 +31,14 @@ export function goldenSets(): string[] {
   return fs.readdirSync(GOLDEN_ROOT, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
 }
 
-/** One golden answer, parsed. */
-export function golden(set: string, verb: 'status' | 'preview' | 'doctor'): Record<string, unknown> {
-  return JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, set, `${verb}.json`), 'utf8')) as Record<string, unknown>;
+/** One golden file of `set`, parsed and CHECKED to be an object (`body.ts`) — `act-a13-preview-action.json`, `runs-show-done.json`. */
+export function goldenFile(name: string, set = 'head'): Body {
+  return bodyOf(JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, set, name), 'utf8')), `${set}/${name}`);
+}
+
+/** One golden answer by its verb, parsed. */
+export function golden(set: string, verb: 'status' | 'preview' | 'doctor'): Body {
+  return goldenFile(`${verb}.json`, set);
 }
 
 /** Every `.ts` file under `dir`, recursively, as absolute paths. */

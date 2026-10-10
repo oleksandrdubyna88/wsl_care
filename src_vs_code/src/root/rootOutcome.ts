@@ -82,11 +82,6 @@ export interface ShownSelection {
   readonly cap: number;
 }
 
-/**
- * One action of a preview, as far as the host reads it — what its confirmation modal shows (E6.S3): what it removes, how
- * many and how large, and the names of the first items the daemon listed (at most 20, its `MaxItems`). Every string is the
- * daemon's, unsanitised here: `cleanup/modalText.ts` makes it printable and short before a native modal shows it.
- */
 /** One listed item of a preview (the daemon's `ActionItem`): A13's agents, A4's volumes. Every string is the daemon's, unsanitised here. */
 export interface PreviewItem {
   readonly name: string;
@@ -94,6 +89,11 @@ export interface PreviewItem {
   readonly note: string;
 }
 
+/**
+ * One action of a preview, as far as the host reads it — what its confirmation modal shows (E6.S3): what it removes, how
+ * many and how large, and the names of the first items the daemon listed (at most 20, its `MaxItems`). Every string is the
+ * daemon's, unsanitised here: `cleanup/modalText.ts` makes it printable and short before a native modal shows it.
+ */
 export interface PreviewedAction {
   readonly id: ActionId;
   readonly status: string;

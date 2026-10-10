@@ -4270,7 +4270,7 @@ consult was owed.
 
 ### 15s. E10 split and design — the AI-session archive in the extension
 
-> Status: **in progress, 2026-10-09 — E10.S0 (the daemon half) built; E10.S1 and E10.S2 (the extension) not started.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
+> Status: **in progress, 2026-10-10 — E10.S0 (the daemon half) built; E10.S1a merged (#88); E10.S1b built on its branch (*As built — E10.S1b*); E10.S2 not started.** Scope: the extension's half of the archive (`src_vs_code/`) and two small
 > daemon additions it needs (E10.S0). Branch `feat/wc-e10-archive-ui`. This section OVERRIDES the archive plan's §5 and §6
 > ([PLAN_ai_session_archive.md](PLAN_ai_session_archive.md)) and the §16 E10 row where they differ. Related: §15r (E9, the
 > daemon half, built), §15q (E7 — its extension parts E7.S3–E7.S5 are NOT built), [module_archive.md](../research/module_archive.md),
@@ -4553,8 +4553,9 @@ reload. No new root argv word, no new root op and no new journal field: A13 is o
    above.
 3. **The preview's items, read whole** (`root/rootAnswers.ts` `figuresOf`, `root/rootOutcome.ts` `PreviewedAction`). Each item
    keeps its `name`, `bytes` and `note` (`ActionItem(Kind, Name, Bytes, Note)` in the daemon). A13's items are per agent:
-   `agent`, the agent id, the due bytes, "N session(s) due, M file(s)". Every string goes through `safeText`. The A4 reading
-   (names only, the bound list) is unchanged.
+   `agent`, the agent id, the due bytes, "N session(s) due, M file(s)". `rootAnswers.ts` keeps every string as the daemon wrote
+   it; the modal's words go through `safeText` in `modalText.ts` (the own review on Fable, #13). The A4 reading (names only, the
+   bound list) is unchanged.
 4. **Its own words** (`cleanup/modalText.ts`, `cleanup/resultText.ts`, `cleanup/cleanupView.ts`).
    - The modal: "Archive the aged AI sessions in "<distro>"?", one line per agent with its sessions and bytes, and how the move
      is made (as the target user, the product's own binary, nothing removed before its copy is verified). Confirm label:
@@ -4631,6 +4632,32 @@ As planned, with these specifics:
   only way in, and the fake refuses A13 beside another id.
 - **The scenario windows ask `status` first** (the follower's tick), as a real window's poll does. The host's gate reads the cleanup
   controls, which need a status.
+- **The second code round and the own review on Fable (2026-10-10).** The coai code round 2 (session 7b82a297, `again` over the
+  whole branch; codex only — gemini rate-limited, the local engine unconfigured; verdict `proceed`, 4 findings, all accepted) and
+  the own read-only review on Fable (no blocker; 4 should-fix, 9 nits) changed, each RED first:
+  - the button's capability requirement is the controller's own — `ARCHIVE_NOW_CAPABILITIES` = `previewNeeds(['A13'])` ∪
+    `confirmNeeds(['A13'])` (round #2), so a capability A13 gains in the controller greys the button without a second list;
+  - `ArchiveHost.archiveNow()` refuses, and says why, on the archive's conditions (`archiveNowBlocker`: a capability not advertised,
+    A13 not offered, no folder set, the archive folder being changed) BEFORE the cleanup host sees the request — the palette's
+    command and a stale page send the same bare message the button does, and the host used to check only the cleanup's side
+    (Fable #1); the cleanup host still refuses its own side;
+  - a held preview's `details` are frozen with its `items` — immutable all the way down (Fable #2);
+  - the archive's done notice reads its bytes through `sizeText`: *moved 200 B*, never *0.0 GB* (Fable #3, round #3; a cleanup's
+    figure stays in GB);
+  - `ceilings.test.ts` N-2 covers `['A13']` with the defaults and with every setting at its minimum (Fable #4: the row-selection
+    loop never saw A13, so the docs' pin overclaimed); teeth by break-it N11;
+  - a queued or wedged archive run reads *the archive run*, as a live one reads *Archiving…* (Fable #7);
+  - `ArchiveHost.dispose()` unsubscribes from the cleanup host, and `extension.ts` disposes it (Fable #6);
+  - the fake refuses an answers folder without the daemon's A13 line, naming the file, instead of crashing (Fable #11);
+  - `figuresOf` reads the item names off the details — one walk (Fable #10); three displaced doc comments restored (Fable #5);
+  - the new fixtures are read through `src/test/support/body.ts` — `goldenFile` / `bodyOf` / `bodyAt` / `stringsAt`, checked,
+    never cast (round #0; the pre-S1b `JSON.parse(…) as Record<string, unknown>` readers of files this branch did not touch stay);
+  - `research/architecture.md` carries the S1b wiring (round #1).
+  Not taken: `sizeText(999 950)` reads "1000.0 kB" (cosmetic; Fable #8), and `'A13'` is spelled in seven modules — a shared
+  constant outside `root/` is a later tidy (Fable #9).
+- **A first archive over a slow network folder can outrun the follow ceiling** (`wslCare.cleanup.followCeilingMinutes`, 30 by
+  default; Fable #12): the notice then says *state unknown* and names `runs show`, while the daemon's own `status.running` keeps
+  the controls at *Archiving…* until the run ends — never stuck. The extension README says so.
 
 Tests and teeth: [module_tests.md](../research/module_tests.md), *What each E10.S1b guarantee rests on*.
 

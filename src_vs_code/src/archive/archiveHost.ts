@@ -7,7 +7,7 @@ import { FALLBACK_LIMITS, type DaemonLimits } from '../shared/daemonLimits';
 import type { OutcomeStore } from '../state/outcomeStore';
 import { noticeText, unlinked } from '../text/safeText';
 import { chooseArchiveFolder, stopArchiving, type ArchiveFlowDeps, type ArchiveFlowOutcome, type ArchiveUi, type ConfigTarget } from './archiveFlow';
-import { deriveArchive, type ArchiveControls } from './archiveView';
+import { archiveNowBlocker, deriveArchive, type ArchiveControls, type ArchiveState } from './archiveView';
 
 /**
  * The host side of the archive (E10.S1, plan §15s): the two reads of the panel's own refresh (`archive status`, `archive preview`)
@@ -32,6 +32,8 @@ export interface ArchiveHostOptions {
   readonly cleanupFree?: () => boolean;
   /** E10.S1b: the cleanup's state changed (its journal, a result, its flow); returns an unsubscribe. */
   readonly onCleanupChange?: (listener: () => void) => () => void;
+  /** E10.S1b: the cleanup host's *Archive now* — A13 through its transaction; refused there while the cleanup controls are greyed. */
+  readonly archiveNow?: () => Promise<unknown>;
 }
 
 /** The capabilities the store's newest answered status advertises — `undefined` until one answered. */
@@ -100,19 +102,29 @@ export class ArchiveHost {
   private refreshing: Promise<void> | undefined;
   private readonly listeners = new Set<() => void>();
   private readonly ui: ArchiveUi;
+  /** The cleanup's changes no longer re-render this host after `dispose` (own review #6). */
+  private readonly unsubscribe: () => void;
 
   constructor(private readonly options: ArchiveHostOptions) {
     this.ui = sanitised(options.ui);
-    options.onCleanupChange?.(() => this.changed());
+    this.unsubscribe = options.onCleanupChange?.(() => this.changed()) ?? ((): void => undefined);
   }
 
   view(): ArchiveControls {
+    return deriveArchive(this.state());
+  }
+
+  dispose(): void {
+    this.unsubscribe();
+  }
+
+  private state(): ArchiveState {
     const outcomes = this.options.outcomes;
 
-    return deriveArchive({
+    return {
       status: this.status, preview: this.preview, capabilities: capabilitiesOf(outcomes), busy: this.busyText,
       reading: this.refreshing !== undefined, asked: this.asked, unavailable: statusFailureOf(outcomes), cleanupFree: this.options.cleanupFree?.() ?? false, a13Offered: offersA13(outcomes),
-    });
+    };
   }
 
   onChange(listener: () => void): () => void {
@@ -139,6 +151,19 @@ export class ArchiveHost {
   /** *Stop archiving* — never rejects. */
   stop(): Promise<ArchiveFlowOutcome | undefined> {
     return this.flow('stopping the archive', stopArchiving);
+  }
+
+  /**
+   * *Archive now* (E10.S1b, own review #1): refused here, and told, when the archive's side of the button would grey it — the
+   * palette's command and a stale page send the same bare request the button does. The cleanup host refuses its own side.
+   */
+  async archiveNow(): Promise<void> {
+    const blocker = archiveNowBlocker(this.state());
+    if (blocker !== '') {
+      await this.ui.notify('warn', `Archive now is not available: ${blocker}.`);
+      return;
+    }
+    await this.options.archiveNow?.();
   }
 
   private async reads(): Promise<void> {

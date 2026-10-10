@@ -117,6 +117,15 @@ extension: status bar, read-only panel and polling*), and from E5.S3 *Install da
   (never `-u`). The folder is one the daemon itself judged and accepted, and the daemon judges it again on the write
   (`ConfigCommand.SetBaseFolderAsUser`), so the extension decides nothing about a base folder the daemon would not. The bundle
   scan holds the writer to its own region, exactly as the root region is held ([module_vs_code.md](module_vs_code.md), plan §15s).
+  Since E10.S1b *Archive now* — the archive section's third button — runs the daemon's A13 through the cleanup controller AS IT
+  IS (`CleanupHost.archiveNow()` → `CleanFlow.archive()`, the cleanup transaction over `['A13']`: `act A13 --preview --json`, its
+  own modal, the journal entry before the call, ONE `act A13 --confirm --manual --detach --json`, the follower): one more id of the
+  closed root union, no new root word, no new root op, no new journal field. The one new dependency inside the extension is
+  archive → cleanup: `ArchiveHost.archiveNow()` refuses the request, and says why, on the archive's own conditions (a folder set,
+  no archive flow busy, A13 offered with its capabilities — the conditions the button greys on, because the palette's command and
+  a stale page send the same bare request) and hands it to the cleanup host, which refuses its own (a run in flight, the journal
+  full); the archive host reads the cleanup host's controls, re-renders on its changes and stops listening on `dispose`; and the
+  button's capability requirement is the controller's own (`previewNeeds(['A13'])` ∪ `confirmNeeds(['A13'])`), never a second list.
 - **`contracts/golden/head/`** (E5.S0) — `status.json`, `preview.json`, `doctor.json`: the built CLI's answers over the
   captured fixtures, normalised, held current by `GoldenContractTests` (section *The verdicts in `status`*); since E6.S0
   also `status-running-*.json`, `act-a4-preview.json`, `runs-show-*.json`, `runs-local-day.json`, `logs-local-day.json`,

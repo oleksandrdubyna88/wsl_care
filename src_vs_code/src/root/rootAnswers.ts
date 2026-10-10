@@ -75,8 +75,9 @@ function previewedAction(value: unknown): PreviewedAction[] {
     return [];
   }
   const preview = previewOf(value);
+  const details = detailsOf(preview);
 
-  return [{ id, status: stringOr(value.status, ''), reason: reasonOf(value, preview), ...figuresOf(preview), details: detailsOf(preview) }];
+  return [{ id, status: stringOr(value.status, ''), reason: reasonOf(value, preview), ...figuresOf(preview, details), details }];
 }
 
 /** The preview part of an action's answer, or an empty one. */
@@ -89,11 +90,9 @@ function reasonOf(action: JsonObject, preview: JsonObject): string {
   return stringOr(action.reason, '') || stringOr(preview.reason, '');
 }
 
-/** What a preview says it would remove: its text, whether it could be read, the count, the bytes, the listed names. */
-function figuresOf(preview: JsonObject): Pick<PreviewedAction, 'what' | 'available' | 'count' | 'bytes' | 'items'> {
-  const items = Array.isArray(preview.items) ? preview.items.flatMap((item) => (isObject(item) && typeof item.name === 'string' ? [item.name] : [])) : [];
-
-  return { what: stringOr(preview.what, ''), available: preview.available !== false, count: countOrUndefined(preview.count), bytes: countOrUndefined(preview.bytes), items };
+/** What a preview says it would remove: its text, whether it could be read, the count, the bytes, the listed names (the details' — one walk, own review #10). */
+function figuresOf(preview: JsonObject, details: readonly PreviewItem[]): Pick<PreviewedAction, 'what' | 'available' | 'count' | 'bytes' | 'items'> {
+  return { what: stringOr(preview.what, ''), available: preview.available !== false, count: countOrUndefined(preview.count), bytes: countOrUndefined(preview.bytes), items: details.map((d) => d.name) };
 }
 
 /** Every listed item whole (E10.S1b): its name, its bytes when the daemon gave a count, its note — strings as the daemon wrote them. */

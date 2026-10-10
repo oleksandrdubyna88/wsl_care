@@ -1,6 +1,7 @@
 import { parseAnswer, parseDaemonVersion } from '../../client/handshake';
 import type { Failure, VerbOutcome } from '../../client/outcome';
 import type { Verb } from '../../client/verbs';
+import type { Body } from './body';
 import { golden } from './paths';
 
 /**
@@ -9,7 +10,7 @@ import { golden } from './paths';
  * product — never a hand-built object that could drift from the handshake.
  */
 
-export type Body = Record<string, unknown>;
+export type { Body };
 
 /** A deep copy of one golden body, to edit. */
 export function headBody(verb: 'status' | 'preview' | 'doctor', set = 'head'): Body {

@@ -11,7 +11,7 @@ import { callRoot, FULL_CHECK_ACTIONS, RUN_KINDS, type RootOp, type RootTarget }
 import { exitFailure } from './rootFailures';
 import { runIdOf, shownCap, volumeNameOf, type ActionIds, type RunId, type VolumeName } from './rootIds';
 import type { DaemonLimits } from '../shared/daemonLimits';
-import type { HandOffOutcome, HeldPreview, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
+import type { HandOffOutcome, HeldPreview, PreviewedAction, PreviewOutcome, RootCheckOutcome, RootFailure, RunningBlock } from './rootOutcome';
 
 /**
  * The host-side cleanup controller (E6.S2) — the API E6.S3's buttons call, and the ONLY module that imports
@@ -546,11 +546,16 @@ function isQueuedOrLive(running: RunningBlock): boolean {
   return running.state.kind === 'known' && (running.state.value === 'queued' || running.state.value === 'live');
 }
 
+/** One previewed action frozen with its lists: the item names, and the details a modal shows (E10.S1b, own review #2). */
+function freezeAction(action: PreviewedAction): PreviewedAction {
+  return Object.freeze({ ...action, items: Object.freeze([...action.items]), details: Object.freeze(action.details.map((d) => Object.freeze({ ...d }))) });
+}
+
 /** A held preview made immutable all the way down — the names a confirm pipes cannot be edited after the preview. */
 function freezePreview(preview: HeldPreview): HeldPreview {
   const a4 = preview.a4 === undefined ? undefined : Object.freeze({ ...preview.a4, names: Object.freeze([...preview.a4.names]) });
 
-  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map((a) => Object.freeze({ ...a, items: Object.freeze([...a.items]) }))), a4 });
+  return Object.freeze({ ...preview, ids: Object.freeze([...preview.ids]) as unknown as HeldPreview['ids'], actions: Object.freeze(preview.actions.map(freezeAction)), a4 });
 }
 
 /** What a full check's run holds as its actions (`["collect"]`) — re-exported so the host's cleanup flow can name it

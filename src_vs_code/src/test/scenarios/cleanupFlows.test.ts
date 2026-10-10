@@ -8,9 +8,10 @@ import { newCleanRecorder, recordingCleanUi, type CleanRecorder } from '../../cl
 import { WslCareClient } from '../../client/WslCareClient';
 import { CleanupController } from '../../root/cleanupController';
 import { OutcomeStore } from '../../state/outcomeStore';
+import { bodyAt } from '../support/body';
 import { fakeWorld, TEST_ENV, UBUNTU_RUNNING, type FakeWorld } from '../support/fakeWorld';
 import { ManualTimers, MapStore } from '../support/memento';
-import { GOLDEN_ROOT } from '../support/paths';
+import { GOLDEN_ROOT, goldenFile } from '../support/paths';
 
 /**
  * The extension's scenario harness, CLEANUP tier (E6.S3; research/module_tests.md § The extension): the REAL cleanup host —
@@ -144,8 +145,8 @@ test('a 387-volume A4 pipes all 387 names; Clean selected is ONE act call throug
 
 /** A status whose running block is `state`'s golden, carrying A13 alone. */
 function archiving(state: 'live' | 'dead'): Record<string, unknown> {
-  const golden = JSON.parse(fs.readFileSync(path.join(GOLDEN_ROOT, 'head', `status-running-${state}.json`), 'utf8')) as Record<string, unknown>;
-  return { ...golden, running: { ...(golden.running as Record<string, unknown>), actions: ['A13'], current: '' } };
+  const golden = goldenFile(`status-running-${state}.json`);
+  return { ...golden, running: { ...bodyAt(golden, 'running'), actions: ['A13'], current: '' } };
 }
 
 test('the RELOAD scenario for Archive now: start A13, reload, "Archiving…" from status.running, then the result in the archive\'s words', async () => {

@@ -155,8 +155,9 @@ function build(context: vscode.ExtensionContext): Parts {
   const archive = new ArchiveHost({
     read: (request) => client.read(request), target: () => client.rootTarget(), runner, outcomes: store, ui: archiveUiFor(testMode, archiveRecorder),
     log: (line) => log.error(line), numbers, limits: () => limitsOf(store),
-    // E10.S1b: Archive now is greyed while a cleanup is in flight; the cleanup's changes re-render the archive's controls.
-    cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener),
+    // E10.S1b: Archive now is greyed while a cleanup is in flight; the cleanup's changes re-render the archive's controls; the
+    // archive host refuses on its own conditions first, then the cleanup host runs A13 through its transaction.
+    cleanupFree: () => host.controls().enabled, onCleanupChange: (listener) => host.onChange(listener), archiveNow: () => host.archiveNow(),
   });
 
   return { testMode, client, cleanup, install: newInstallRecorder(), windowsTime: newWindowsTimeRecorder(), guardRecorder, guard, cleanRecorder, host, archive, archiveRecorder, choice, calls, store, poller, focus, log };
@@ -260,7 +261,8 @@ function archiveActions(parts: Parts): Pick<PanelActions, 'archive' | 'onArchive
     onArchiveChange: (listener) => parts.archive.onChange(listener),
     chooseArchiveFolder: () => { void parts.archive.choose(); },
     stopArchiving: () => { void parts.archive.stop(); },
-    archiveNow: () => { void parts.host.archiveNow(); },
+    // E10.S1b own review #1: the archive host refuses on the archive's conditions, then hands it to the cleanup host (its own).
+    archiveNow: () => { void parts.archive.archiveNow(); },
   };
 }
 
@@ -313,7 +315,7 @@ function wire(context: vscode.ExtensionContext, parts: Parts): { bar: StatusBar;
     bar,
     panel,
     { dispose: () => poller.dispose() },
-    { dispose: () => host.dispose() },
+    { dispose: () => { host.dispose(); parts.archive.dispose(); } },
     vscode.window.registerWebviewViewProvider(PanelProvider.viewId, panel),
     vscode.commands.registerCommand(OPEN_PANEL, () => vscode.commands.executeCommand(`${PanelProvider.viewId}.focus`)),
     vscode.commands.registerCommand('wslCare.refresh', () => refreshAll()),

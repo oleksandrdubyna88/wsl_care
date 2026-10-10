@@ -1,6 +1,6 @@
 import { rootFailureText } from '../root/rootFailureText';
 import type { HandOffOutcome, RootFailure } from '../root/rootOutcome';
-import { gb, minuteOf } from '../text/format';
+import { gb, minuteOf, sizeText } from '../text/format';
 import { safeText } from '../text/safeText';
 import type { JournalEntry, JournalOp } from './journal';
 import { isArchiveOnly } from './modalText';
@@ -77,14 +77,18 @@ function labelOf(entry: JournalEntry): string {
   return isArchiveOnly(entry.actions) ? ARCHIVE_RUN : entry.actions.join(', ');
 }
 
-/** What a done run did, in its own words: a cleanup frees and removes; the archive run (E10.S1b) MOVES out of the agents' folders. */
+/**
+ * What a done run did, in its own words: a cleanup frees and removes, its figure in GB as `docker system df` prints it; the archive
+ * run (E10.S1b) MOVES out of the agents' folders, its figure in the unit it reaches — a 200-byte backlog reads 200 B, never
+ * 0.0 GB (own review #3, the second code round #3).
+ */
 const DID = {
-  clean: { freed: 'freed', unknown: 'freed an unknown amount', objects: 'objects removed' },
-  archive: { freed: 'moved', unknown: 'moved an unknown amount', objects: 'objects archived' },
+  clean: { freed: 'freed', unknown: 'freed an unknown amount', objects: 'objects removed', size: gb },
+  archive: { freed: 'moved', unknown: 'moved an unknown amount', objects: 'objects archived', size: sizeText },
 } as const;
 
 function freedText(bytes: number | undefined, did: (typeof DID)[keyof typeof DID]): string {
-  return bytes === undefined ? did.unknown : `${did.freed} ${gb(bytes)}`;
+  return bytes === undefined ? did.unknown : `${did.freed} ${did.size(bytes)}`;
 }
 
 function doneSentence(name: string, show: RunShow, archive: boolean): string {
