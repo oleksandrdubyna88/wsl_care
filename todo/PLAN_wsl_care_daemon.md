@@ -4026,7 +4026,9 @@ Folded into ONE `fix(daemon): the coai code round and the own review over E9.S5`
 | own 6 | the Restart Manager leaves out processes it may not query | **Accepted:** said in the view's note |
 | own 7–9 | `ExtendedPath` edge inputs; the per-question task; CA1416 | **Noted:** the inputs are full paths of judged folders and fail closed otherwise; the abandoned worker is the stall latch's case; the one constructor of `RealWindowsSide` is behind `OperatingSystem.IsWindows()` |
 
-**Owed:** the E9 live gate's Windows steps (8), and the release carrying E9.
+**Owed:** the release carrying E9. The E9 live gate's Windows step 8 RAN on 2026-10-10 on the owner's NAS, through the fix below.
+Its results — both spellings judged and used, the holder kept, the idle rule, phase 2 over the share — are in
+[module_archive.md](../research/module_archive.md), *The live gate on the NAS*.
 
 #### E9.S5 amendment — the Windows idle rule (owner decision 2026-10-09)
 
