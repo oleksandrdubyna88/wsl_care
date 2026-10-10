@@ -70,7 +70,7 @@ this section's first conclusion ("the interop route refuted": only the cross-OS 
 ## 5. Q-S7b-3, measured 2026-10-10 — the Windows child exits with its relay
 
 The owner approved the experiment, and the coordinator ran it. This agent ran nothing on the machine; the scripts were the
-ones prepared for it (`relay-list.sh`, `win-sampler.ps1`, `relay-term.py`).
+ones prepared for it, kept in [`diagnostics/`](diagnostics/): [`relay-list.sh`](diagnostics/relay-list.sh), [`win-sampler.ps1`](diagnostics/win-sampler.ps1) (its argument is the `wsl.exe` pid) and [`relay-term.py`](diagnostics/relay-term.py).
 
 | time (UTC) | side | what |
 |---|---|---|
@@ -93,4 +93,24 @@ ones prepared for it (`relay-list.sh`, `win-sampler.ps1`, `relay-term.py`).
 - a relay born under `Relay(n)` (`wsl.exe`'s top-level command);
 - a daemonising caller.
 
-The design keeps all three: TERM only, foreign-session only, and no other stdio holder.
+The design keeps all three: TERM only, a relay born under its `Relay(n)` kept (§ 6), and no other holder of its piped stdio.
+
+## 6. What the S7b.2 review found unmeasured — read 2026-10-10 14:25Z
+
+The S7b.2 plan review (the own Fable reviewer) asked for three facts that § 5's run did not record:
+- what a relay's fd 0/1/2 are: pipes, sockets or files. The two ends of a socketpair have different inodes, so an inode scan
+  cannot see a socket's peer;
+- whether `Relay(n)` (uid 0) holds a relay's stdio;
+- the session id of a command born under `Relay(n)`.
+
+[`diagnostics/relay-facts.sh`](diagnostics/relay-facts.sh) prints all three that the user can read: the ancestry with session
+ids, the stdio links, and each pipe's or socket's other readable holders, with a socket's peer from `ss -xpn`. Run as the
+default user at 14:24:59Z, it found **no `.exe` relay at all**: no AI-agent session was running in the distro. Another
+read-only listing at the same time showed the shape of the session inits:
+- `Relay(562)` (pid 540), `Relay(1136)` (pid 1135), `Relay(220668)` (pid 220666), `Relay(225368)` (pid 225366);
+- the child of `Relay(220668)` is pid **220668**.
+
+So, with `Relay(1402)` (pid 1401) in § 2, a `Relay(n)` is created for one command and `n` is that command's pid. A relay whose
+pid equals its parent's `n` was born there (`wsl.exe`'s top-level command); the client-gone relay 12062 of § 5 was under
+`Relay(7411)`. S7b.2 keeps the born-there relay by this test and does not use the session id. It keeps a relay whose stdio is
+a socket until a peer can be shown gone.
