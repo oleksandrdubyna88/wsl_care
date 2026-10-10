@@ -71,7 +71,7 @@ test('scenario · choose: the panel reads, the daemon judges the picked folder, 
 
 test('scenario · choose: a folder the daemon REFUSES is told with its rule, and no config call is made', async () => {
   await scene({ ...UBUNTU_RUNNING, checkBase: 'archive-check-base-refused.json' }, async ({ host, recorder, archiveCalls }) => {
-    recorder.picked = 'C:\\Users\\someone\\.claude\\archive';
+    recorder.picked = 'C:\\Users\\user\\.claude\\archive';
     recorder.answer = true;
     assert.equal(await host.choose(), 'refused');
     assert.equal(archiveCalls().some((c) => c.includes(' config ')), false);
