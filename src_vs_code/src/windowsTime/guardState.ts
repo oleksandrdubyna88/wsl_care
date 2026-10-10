@@ -1,7 +1,7 @@
 import type { ProcessResult } from '../process/runner';
 import { signed32 } from '../process/runner';
 import { noticeText } from '../text/safeText';
-import { GUARD_EXIT, guardSummary, type GuardOptions } from './guardTask';
+import { durationSeconds, GUARD_EXIT, guardSummary, type GuardOptions } from './guardTask';
 import { FAILURES } from './windowsTimeFix';
 
 /**
@@ -170,8 +170,42 @@ function buttons(ids: readonly GuardAction[], enabled: boolean): GuardView['butt
   return ids.map((id) => ({ id, label: GUARD_LABELS[id], enabled }));
 }
 
+/** The summary fields that hold a duration: `trigger=boot enabled=True delay=PT1M`, `trigger=time enabled=True interval=PT4H`,
+ * `settings limit=PT5M …`. */
+const DURATION_FIELDS = ['delay=', 'interval=', 'limit='] as const;
+
+/** The summary fields whose value is FREE TEXT and runs to the end of its line (`SUMMARY_FUNCTION`): from the first of them on,
+ * nothing is read as a duration — a subscription or an action argument is compared as text (coai plan round 990e7d9a), wherever
+ * the structured fields before it stand (code round: tied to the line's schema, not to a token count). */
+const FREE_TEXT_FIELDS = ['subscription=', 'path=', 'args='] as const;
+
+/** One summary token with a duration field's value as its length in seconds (`delay=60s`); any other token as it is. */
+function canonicalToken(token: string): string {
+  const field = DURATION_FIELDS.find((f) => token.startsWith(f));
+  const seconds = field === undefined ? undefined : durationSeconds(token.slice(field.length));
+
+  return field === undefined || seconds === undefined ? token : `${field}${seconds}s`;
+}
+
+function canonicalLine(line: string): string {
+  const tokens = line.split(' ');
+  const freeText = tokens.findIndex((token) => FREE_TEXT_FIELDS.some((f) => token.startsWith(f)));
+  const structured = freeText === -1 ? tokens.length : freeText;
+
+  return tokens.map((token, i) => (i < structured ? canonicalToken(token) : token)).join(' ');
+}
+
+/**
+ * Whether two summaries describe the same task: line for line, byte for byte — except the duration fields, compared by VALUE,
+ * because Task Scheduler stores a registered `PT60S` as `PT1M` (2026-10-10: every real install of 0.3.0 read as "not as the
+ * current settings would install it"). A field whose value is no duration is compared as text.
+ */
+export function summariesMatch(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((line, i) => canonicalLine(line) === canonicalLine(b[i] ?? ''));
+}
+
 function sameSummary(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((line, i) => line === b[i]);
+  return summariesMatch(a, b);
 }
 
 function lastRun(state: Extract<GuardState, { kind: 'present' }>, formatInstant: (iso: string) => string): string {

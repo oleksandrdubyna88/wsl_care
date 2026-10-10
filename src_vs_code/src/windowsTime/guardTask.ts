@@ -221,6 +221,26 @@ export const SUMMARY_FUNCTION = [
   '}',
 ].join('\n');
 
+/** An ISO 8601 duration as Task Scheduler writes one — days, then hours, minutes and whole seconds: `P1D`, `PT1M`, `PT1M30S`. */
+const DURATION = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/;
+
+const SECONDS_PER = { day: 86_400, hour: 3_600, minute: 60 } as const;
+
+/**
+ * A duration's length in seconds, or `undefined` for anything that is no duration of that shape (the empty "no delay" among
+ * them). Task Scheduler stores a registered trigger's `PT60S` as `PT1M` (measured on the owner's machine, 2026-10-10), so the
+ * summary's duration fields are compared by this VALUE, never by their spelling (`guardState.ts`, `summariesMatch`).
+ */
+export function durationSeconds(text: string): number | undefined {
+  const match = DURATION.exec(text);
+  if (match === null || text === 'P' || text.endsWith('T')) {
+    return undefined;
+  }
+  const [days, hours, minutes, seconds] = match.slice(1).map((part) => Number(part ?? 0));
+
+  return days * SECONDS_PER.day + hours * SECONDS_PER.hour + minutes * SECONDS_PER.minute + seconds;
+}
+
 /** The summary `SUMMARY_FUNCTION` prints for `guardTaskXml(options)` — what "this version, these settings" reads as. */
 export function guardSummary(options: GuardOptions): readonly string[] {
   const delay = options.delaySeconds > 0 ? `PT${options.delaySeconds}S` : '';
