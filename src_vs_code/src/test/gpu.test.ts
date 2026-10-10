@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 
 import type { DurableStore } from '../cleanup/journal';
-import { enableChoices } from '../gpu/gpuCommand';
+import { enableChoices, noChoiceMessage, NONE_DISABLED } from '../gpu/gpuCommand';
 import { enableExitOf, enableGpu, enablePrompt, enableSentence, type EnableDeps } from '../gpu/gpuEnable';
 import { GpuHost, type GpuHostDeps } from '../gpu/gpuHost';
 import { GPU_PENDING_KEY, readGpuPending, sweepGpuPending } from '../gpu/gpuPending';
@@ -14,7 +14,7 @@ import { DEVICE_PROBLEMS, FIX_WORDS, NEEDS_RESTART } from '../gpu/gpuProblems';
 import { DISABLED_CODE, elevatedPowerShellFor, ENABLE_EXIT, enableRequest, enableScript, INSTANCE_ID, QUERY_SCRIPT, queryRequest } from '../gpu/gpuScripts';
 import { fixOf, gpuBarMark, gpuStateOf, gpuView, MAX_ADAPTERS, NOT_ASKED, parseGpuAnswer, type Adapter, type GpuState } from '../gpu/gpuState';
 import { newGpuRecorder } from '../gpu/gpuRecorder';
-import { choiceSentence, lastChoice, ollamaLogPath, readTail } from '../gpu/ollamaLog';
+import { choiceSentence, lastChoice, ollamaLogPath, readError, readTail } from '../gpu/ollamaLog';
 import { parsePageMessage } from '../panel/messages';
 import type { ProcessRequest, ProcessResult } from '../process/runner';
 import { withGpuMark } from '../statusBar/statusBarModel';
@@ -79,10 +79,22 @@ test('an answer cut before its count, an adapter without a code, an exit, a time
   assert.deepEqual(parseGpuAnswer('adapters=0', AT), { kind: 'read', adapters: [], atUtcMs: AT }, 'a machine with no display adapter is a READ, not unknown');
 });
 
-test('more adapters than the cap are read up to the cap, so the page index stays below it', () => {
-  const many = Array.from({ length: MAX_ADAPTERS + 3 }, (_v, i) => `name.${i}=GPU ${i}\ncode.${i}=0\nid.${i}=PCI\\X${i}`).join('\n') + `\nadapters=${MAX_ADAPTERS + 3}`;
-  const state = parseGpuAnswer(many, AT);
-  assert.equal(state.kind === 'read' ? state.adapters.length : -1, MAX_ADAPTERS);
+function adapters(count: number, codeOf: (i: number) => number): string {
+  return Array.from({ length: count }, (_v, i) => `name.${i}=GPU ${i}\ncode.${i}=${codeOf(i)}\nid.${i}=PCI\\X${i}`).join('\n') + `\nadapters=${count}`;
+}
+
+test('code round: EVERY reported adapter up to the cap is judged — a broken ninth one is an alert at its own index', () => {
+  const state = parseGpuAnswer(adapters(9, (i) => (i === 8 ? 43 : 0)), AT);
+  assert.equal(state.kind === 'read' ? state.adapters.length : -1, 9);
+  const view = gpuView(state, undefined, undefined, () => '');
+  assert.deepEqual(view.alerts.map((a) => a.line), ['GPU GPU 8 is not working (code 43: Windows stopped it because it reported problems)']);
+  assert.equal(gpuBarMark(state).text, ' · GPU off');
+});
+
+test('code round: more adapters than the cap is an explicit UNKNOWN — never a partial read presented as complete', () => {
+  const state = parseGpuAnswer(adapters(MAX_ADAPTERS + 1, () => 0), AT);
+  assert.deepEqual(state, { kind: 'unknown', reason: `Windows reported ${MAX_ADAPTERS + 1} display adapters; this extension reads at most ${MAX_ADAPTERS}` });
+  assert.equal(parseGpuAnswer(adapters(MAX_ADAPTERS, () => 0), AT).kind, 'read', 'exactly the cap is read');
 });
 
 test('the query is unelevated and READ-only: no runas, no payload, no mutating word — and the tripwire lets it through', () => {
@@ -162,7 +174,7 @@ test('the bar: "GPU off" and the error colour over whatever it shows — a mark 
 // ---- D4: the enable's request and script ----
 
 test('the enable is ONE request through the Windows Time launcher: runas, the script encoded, the device id inside it as a single-quoted literal', () => {
-  const request = enableRequest(ENV, R9700_ID, 120_000, () => false) as ProcessRequest;
+  const request = enableRequest(ENV, R9700_ID, 120_000, () => false, 3) as ProcessRequest;
   assert.equal(request.file, 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
   assert.ok(isElevatedPowerShell(request.file, request.args), 'it asks Windows for elevation — so the tripwire refuses it in any test that tried to run it');
   assert.ok(isMachineChange(request.file, request.args), 'and the decoded payload carries a device verb the tripwire knows');
@@ -172,7 +184,7 @@ test('the enable is ONE request through the Windows Time launcher: runas, the sc
 });
 
 test('the elevated script re-checks the device as administrator before it acts: present, a display adapter, still at 22 — each with its own exit', () => {
-  const script = enableScript(R9700_ID);
+  const script = enableScript(R9700_ID, 3);
   const order = ['Import-Module', 'Get-PnpDevice', "$d.Class -ne 'Display'", `[int]$d.ConfigManagerErrorCode -ne ${DISABLED_CODE}`, 'Enable-PnpDevice'].map((s) => script.indexOf(s));
   assert.ok(order.every((at, i) => at >= 0 && (i === 0 || at > (order[i - 1] ?? -1))), `the checks come before the enable, in order: ${order.join(',')}`);
   assert.match(script, /^\$env:PSModulePath = "\$PSHOME\\Modules"/, 'the module path is cut first: a user\'s Documents folder supplies nothing');
@@ -184,7 +196,7 @@ test('the elevated script re-checks the device as administrator before it acts: 
 
 test('an id that could be more than text is refused before any request exists: a quote, $, a backtick, whitespace, a newline, 201 characters', () => {
   for (const id of [`${R9700_ID}'`, `${R9700_ID}$x`, `${R9700_ID}\``, 'PCI\\VEN 1002', 'PCI\\VEN\r\nexit', `PCI\\${'A'.repeat(197)}`, '', `PCI\\VEN';Remove-Item C:\\ -Recurse;'`]) {
-    assert.equal(typeof enableRequest(ENV, id, 120_000, () => true), 'string', JSON.stringify(id));
+    assert.equal(typeof enableRequest(ENV, id, 120_000, () => true, 3), 'string', JSON.stringify(id));
     assert.equal(INSTANCE_ID.test(id), false, JSON.stringify(id));
   }
   assert.equal(INSTANCE_ID.test(`PCI\\${'A'.repeat(196)}`), true, '200 characters is the largest accepted');
@@ -194,11 +206,11 @@ test('the elevated PowerShell is the MSI pwsh 7 when that file exists, else Wind
   const pwsh = 'C:\\Program Files\\PowerShell\\7\\pwsh.exe';
   assert.equal(elevatedPowerShellFor(ENV, (f) => f === pwsh), pwsh);
   assert.equal(elevatedPowerShellFor(ENV, () => false), undefined);
-  const withPwsh = enableRequest(ENV, R9700_ID, 120_000, (f) => f === pwsh) as ProcessRequest;
+  const withPwsh = enableRequest(ENV, R9700_ID, 120_000, (f) => f === pwsh, 3) as ProcessRequest;
   assert.match(withPwsh.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Program Files\\PowerShell\\7\\pwsh\.exe'/);
-  const without = enableRequest(ENV, R9700_ID, 120_000, () => false) as ProcessRequest;
+  const without = enableRequest(ENV, R9700_ID, 120_000, () => false, 3) as ProcessRequest;
   assert.match(without.args[3] ?? '', /ProcessStartInfo -ArgumentList 'C:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe'/);
-  assert.equal(typeof enableRequest({ ...ENV, ProgramFiles: "C:\\Pro'gram" }, R9700_ID, 120_000, () => true), 'string', 'a path PowerShell could not quote builds no request');
+  assert.equal(typeof enableRequest({ ...ENV, ProgramFiles: "C:\\Pro'gram" }, R9700_ID, 120_000, () => true, 3), 'string', 'a path PowerShell could not quote builds no request');
 });
 
 // ---- D4: the outcome, worded from what Windows says AFTER ----
@@ -221,7 +233,7 @@ function enableDeps(over: Partial<EnableDeps> & { readonly answers?: ProcessResu
   const log: string[] = [];
   const store = new MemoryStore();
   return {
-    env: ENV, exists: () => false, timeoutMs: () => 120_000,
+    env: ENV, exists: () => false, timeoutMs: () => 120_000, settleSeconds: () => 3,
     confirm: () => { log.push('confirm'); return Promise.resolve(true); },
     run: (request) => { log.push(`run ${request.file}`); log.push(`pending ${store.get(GPU_PENDING_KEY) === undefined ? 'absent' : 'written'}`); return Promise.resolve(over.answers ?? exited(0)); },
     report: (message, failed) => { log.push(`${failed ? 'error' : 'info'}: ${message}`); },
@@ -265,9 +277,9 @@ test('after a TIMEOUT the pending record stands until its deadline (the UAC prom
 });
 
 test('the modal shows the exact elevated script and names the device and its id', () => {
-  const prompt = enablePrompt(r9700());
+  const prompt = enablePrompt(r9700(), 3);
   assert.equal(prompt.message, 'Enable AMD Radeon AI PRO R9700?');
-  assert.ok(prompt.detail.includes(enableScript(R9700_ID)));
+  assert.ok(prompt.detail.includes(enableScript(R9700_ID, 3)));
   assert.ok(prompt.detail.includes(R9700_ID));
   assert.equal(prompt.confirm, 'Run it (one UAC prompt follows)');
 });
@@ -285,6 +297,23 @@ test('the command offers exactly the adapters at 22 with an id it passes', () =>
   assert.deepEqual(enableChoices(measured()), [{ index: 1, label: 'AMD Radeon AI PRO R9700' }]);
   assert.deepEqual(enableChoices(measured(0)), []);
   assert.deepEqual(enableChoices(NOT_ASKED), []);
+});
+
+test('code round: with no choice the palette says WHY — a failed check is its reason, never "no GPU is disabled"', () => {
+  assert.deepEqual(noChoiceMessage({ kind: 'unknown', reason: 'the display-adapter query exited 1' }), 'Whether a GPU is disabled could not be checked: the display-adapter query exited 1.');
+  assert.equal(noChoiceMessage(measured(0)), NONE_DISABLED);
+});
+
+test('code round: Ollama\'s log that cannot be read says so on the consequence; an absent one says nothing', () => {
+  const [unreadable] = gpuView(measured(), { kind: 'unreadable', reason: 'EACCES' }, undefined, () => '').alerts;
+  assert.match(unreadable?.consequence ?? '', /Ollama's log could not be read \(EACCES\)\.$/);
+  const [absent] = gpuView(measured(), { kind: 'absent' }, undefined, () => '').alerts;
+  assert.equal(absent?.consequence, 'Programs that use this GPU — local models such as Ollama — run on the CPU or do not start.');
+});
+
+test('code round: the wait after Enable-PnpDevice is the setting\'s number, not a literal in the script', () => {
+  assert.match(enableScript(R9700_ID, 5), /\nStart-Sleep -Seconds 5\n/);
+  assert.match(enableScript(R9700_ID, 0), /\nStart-Sleep -Seconds 0\n/);
 });
 
 // ---- D2: Ollama's last word ----
@@ -306,9 +335,18 @@ test('the tail is bounded, a missing log is no line, and the path is Ollama\'s u
   try {
     const file = path.join(dir, 'server.log');
     fs.writeFileSync(file, `${'x'.repeat(10_000)}\n${OLLAMA_CPU}\n`);
-    assert.equal(readTail(file, 64)?.length, 64);
-    assert.equal(readTail(path.join(dir, 'absent.log'), 64), undefined);
-    assert.equal(lastChoice(readTail(file, 4096) ?? '')?.library, 'cpu');
+    const tail = readTail(file, 64);
+    assert.equal(tail.kind === 'text' ? tail.text.length : -1, 64);
+    assert.deepEqual(readTail(path.join(dir, 'absent.log'), 64), { kind: 'absent' });
+    const whole = readTail(file, 4096);
+    assert.equal(lastChoice(whole.kind === 'text' ? whole.text : '')?.library, 'cpu');
+    // Code round: a log that EXISTS but cannot be read is not "Ollama is not installed" — it says why.
+    const unreadable = readTail(dir, 64);
+    assert.equal(unreadable.kind, 'unreadable');
+    assert.match(unreadable.kind === 'unreadable' ? unreadable.reason : '', /not a file|EISDIR/);
+    const denied = Object.assign(new Error('denied'), { code: 'EACCES' });
+    assert.deepEqual(readError(denied), { kind: 'unreadable', reason: 'EACCES' }, 'a refused read is not "absent"');
+    assert.deepEqual(readError(Object.assign(new Error('gone'), { code: 'ENOENT' })), { kind: 'absent' });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -323,9 +361,9 @@ function hostDeps(over: Partial<GpuHostDeps> = {}): GpuHostDeps & { readonly rec
   recorder.queryResult = exited(0, MEASURED);
   const timers: number[] = [];
   return {
-    env: ENV, platform: 'win32', exists: () => false, queryTimeoutMs: () => 20_000, enableTimeoutMs: () => 120_000, ollamaTailBytes: () => 4096, checkMinutes: () => 15,
+    env: ENV, platform: 'win32', exists: () => false, queryTimeoutMs: () => 20_000, enableTimeoutMs: () => 120_000, enableSettleSeconds: () => 3, ollamaTailBytes: () => 4096, checkMinutes: () => 15,
     ui: { confirm: (p) => { recorder.prompts.push(p); return Promise.resolve(recorder.answer); }, run: (r) => { recorder.requests.push(r); return Promise.resolve(recorder.result); }, query: (r) => { recorder.queries.push(r); return Promise.resolve(recorder.queryResult); }, report: (m, f) => { recorder.reports.push({ message: m, failed: f }); } },
-    durable: new MemoryStore(), nowUtcMs: () => AT, every: (ms) => { timers.push(ms); return () => undefined; }, formatTime: () => '14:31', readTail: () => `${OLLAMA_CPU}\n`,
+    durable: new MemoryStore(), nowUtcMs: () => AT, every: (ms) => { timers.push(ms); return () => undefined; }, formatTime: () => '14:31', readTail: () => ({ kind: 'text', text: `${OLLAMA_CPU}\n` }),
     recorder, timers, ...over,
   };
 }
@@ -388,8 +426,8 @@ test('PowerShell\'s own parser reads the query, the enable and its launcher with
   const powerShell = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gpu-parse-'));
   try {
-    const request = enableRequest(ENV, R9700_ID, 120_000, () => false) as ProcessRequest;
-    for (const [name, text] of [['query.ps1', QUERY_SCRIPT], ['enable.ps1', enableScript(R9700_ID)], ['outer.ps1', request.args[3] ?? '']] as const) {
+    const request = enableRequest(ENV, R9700_ID, 120_000, () => false, 3) as ProcessRequest;
+    for (const [name, text] of [['query.ps1', QUERY_SCRIPT], ['enable.ps1', enableScript(R9700_ID, 3)], ['outer.ps1', request.args[3] ?? '']] as const) {
       fs.writeFileSync(path.join(dir, name), text, 'utf8');
     }
     const check = "$e=$null; $t=$null; foreach ($f in 'query.ps1','enable.ps1','outer.ps1') { [void][System.Management.Automation.Language.Parser]::ParseFile((Join-Path $args[0] $f), [ref]$t, [ref]$e); if ($e.Count -gt 0) { Write-Output ($f + ': ' + $e[0].Message); exit 1 } }; exit 0";
@@ -398,4 +436,11 @@ test('PowerShell\'s own parser reads the query, the enable and its launcher with
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('code round: the HOST carries an unreadable Ollama log to the alert (not only the pure view)', async () => {
+  const deps = hostDeps({ readTail: () => ({ kind: 'unreadable', reason: 'EACCES' }) });
+  const host = new GpuHost(deps);
+  await host.refresh();
+  assert.match(host.view().alerts[0]?.consequence ?? '', /Ollama's log could not be read \(EACCES\)\.$/);
 });

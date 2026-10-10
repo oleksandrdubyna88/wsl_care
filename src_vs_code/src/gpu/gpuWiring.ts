@@ -3,7 +3,7 @@ import * as vscode from 'vscode';
 
 import type { Numbers } from '../settings/numbers';
 import { runnerFor } from '../process/runnerSelection';
-import { enableChoices, NONE_DISABLED, type EnableChoice } from './gpuCommand';
+import { enableChoices, noChoiceMessage, type EnableChoice } from './gpuCommand';
 import { GpuHost } from './gpuHost';
 import type { GpuView } from './gpuState';
 import { sweepGpuPending } from './gpuPending';
@@ -36,6 +36,7 @@ export function gpuParts(context: vscode.ExtensionContext, testMode: boolean, nu
     exists: (file) => fs.existsSync(file),
     queryTimeoutMs: () => numbers().gpuQuerySeconds * 1000,
     enableTimeoutMs: () => numbers().gpuEnableSeconds * 1000,
+    enableSettleSeconds: () => numbers().gpuEnableSettleSeconds,
     ollamaTailBytes: () => numbers().gpuOllamaLogTailKiB * 1024,
     checkMinutes: () => numbers().gpuCheckMinutes,
     ui: gpuUiFor(testMode, recorder, runnerFor({ kind: 'real' })),
@@ -75,7 +76,7 @@ async function pick(host: GpuHost, testMode: boolean): Promise<number | undefine
   await host.refresh();
   const choices = enableChoices(host.current());
   if (choices.length === 0) {
-    void vscode.window.showInformationMessage(NONE_DISABLED);
+    void vscode.window.showInformationMessage(noChoiceMessage(host.current()));
     return undefined;
   }
 

@@ -51,9 +51,10 @@ export const DISABLED_CODE = 22;
  * administrator, that the device exists, is a display adapter and is still disabled — so an index that went stale between
  * the panel's render and the click acts on nothing it should not — and only then runs `Enable-PnpDevice`. `PnpDevice` comes
  * by absolute path because the module path is cut to `$PSHOME\Modules` (a user's Documents folder supplies nothing), where
- * `pwsh` 7 does not hold it (research G6).
+ * `pwsh` 7 does not hold it (research G6). It waits `settleSeconds` (`wslCare.gpu.enableSettleSeconds`) after the enable, so the
+ * re-read that follows sees the driver started rather than starting — a NUMBER from a setting, clamped, never text.
  */
-export function enableScript(id: string): string {
+export function enableScript(id: string, settleSeconds: number): string {
   return [
     "$env:PSModulePath = \"$PSHOME\\Modules\"; $ProgressPreference = 'SilentlyContinue'",
     `try { Import-Module -Name (Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\Modules\\PnpDevice') -ErrorAction Stop } catch { exit ${ENABLE_EXIT.importFailed} }`,
@@ -62,7 +63,7 @@ export function enableScript(id: string): string {
     `if ($d.Class -ne 'Display') { exit ${ENABLE_EXIT.notDisplay} }`,
     `if ([int]$d.ConfigManagerErrorCode -ne ${DISABLED_CODE}) { exit ${ENABLE_EXIT.notDisabled} }`,
     `try { Enable-PnpDevice -InstanceId $id -Confirm:$false -ErrorAction Stop } catch { exit ${ENABLE_EXIT.enableFailed} }`,
-    'Start-Sleep -Seconds 3',
+    `Start-Sleep -Seconds ${Math.max(0, Math.trunc(settleSeconds))}`,
     `exit ${ENABLE_EXIT.done}`,
   ].join('\n');
 }
@@ -82,10 +83,10 @@ export function elevatedPowerShellFor(env: Readonly<Record<string, string | unde
 }
 
 /** The one elevated request the enable ever builds — or why none can be (a refused id, no Windows PowerShell). */
-export function enableRequest(env: Readonly<Record<string, string | undefined>>, id: string, timeoutMs: number, exists: (file: string) => boolean): ProcessRequest | string {
+export function enableRequest(env: Readonly<Record<string, string | undefined>>, id: string, timeoutMs: number, exists: (file: string) => boolean, settleSeconds: number): ProcessRequest | string {
   if (!INSTANCE_ID.test(id)) {
     return 'the device id Windows reported is not one this extension passes to an elevated command';
   }
 
-  return elevatedRequest(env, enableScript(id), timeoutMs, elevatedPowerShellFor(env, exists));
+  return elevatedRequest(env, enableScript(id, settleSeconds), timeoutMs, elevatedPowerShellFor(env, exists));
 }

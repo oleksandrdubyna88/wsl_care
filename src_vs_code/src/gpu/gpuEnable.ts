@@ -108,13 +108,13 @@ export function enableSentence(adapter: Adapter, exit: EnableExit, state: GpuSta
   return { sentence: noticeText([head.text, now.sentence].filter((t) => t !== '').join(' ')), failed: head.failed || now.failed };
 }
 
-export function enablePrompt(adapter: Adapter): FixPrompt {
+export function enablePrompt(adapter: Adapter, settleSeconds: number): FixPrompt {
   return {
     message: `Enable ${adapter.name}?`,
     detail: [
       `Windows reports it as disabled (code ${DISABLED_CODE}). One PowerShell runs ELEVATED — Windows asks you first (UAC) — and runs exactly this:`,
       '',
-      enableScript(adapter.id),
+      enableScript(adapter.id, settleSeconds),
       '',
       `The device: ${adapter.name} (${adapter.id}). Nothing else on Windows is changed. Afterwards the display adapters are read again and the panel says what Windows reports.`,
     ].join('\n'),
@@ -126,6 +126,8 @@ export interface EnableDeps {
   readonly env: Readonly<Record<string, string | undefined>>;
   readonly exists: (file: string) => boolean;
   readonly timeoutMs: () => number;
+  /** `wslCare.gpu.enableSettleSeconds`: how long the elevated script waits after the enable before it ends. */
+  readonly settleSeconds: () => number;
   readonly confirm: (prompt: FixPrompt) => Promise<boolean>;
   readonly run: Runner;
   readonly report: (message: string, failed: boolean) => void;
@@ -151,7 +153,7 @@ function precondition(adapter: Adapter | undefined, deps: EnableDeps, timeoutMs:
   if (readGpuPending(deps.durable, deps.nowUtcMs()) !== undefined) {
     return { stop: 'busy' };
   }
-  const request = enableRequest(deps.env, adapter.id, timeoutMs, deps.exists);
+  const request = enableRequest(deps.env, adapter.id, timeoutMs, deps.exists, deps.settleSeconds());
 
   return typeof request === 'string' ? notStarted(adapter, request, deps) : { adapter, request };
 }
@@ -169,7 +171,7 @@ export async function enableGpu(chosen: Adapter | undefined, deps: EnableDeps): 
     return ready.stop;
   }
   const { adapter, request } = ready;
-  if (!(await deps.confirm(enablePrompt(adapter)))) {
+  if (!(await deps.confirm(enablePrompt(adapter, deps.settleSeconds())))) {
     return 'declined';
   }
   const startedAtUtcMs = deps.nowUtcMs();

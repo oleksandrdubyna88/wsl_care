@@ -15,4 +15,9 @@ export function enableChoices(state: GpuState): readonly EnableChoice[] {
   return state.kind === 'read' ? state.adapters.flatMap((a, index) => (canEnable(a) ? [{ index, label: a.name }] : [])) : [];
 }
 
+/** What the palette says when there is nothing to offer: a check that could not run says WHY (code round), never an all-clear. */
+export function noChoiceMessage(state: GpuState): string {
+  return state.kind === 'unknown' ? `Whether a GPU is disabled could not be checked: ${state.reason}.` : NONE_DISABLED;
+}
+
 export const NONE_DISABLED = 'No GPU is disabled: Windows reports none of its display adapters at code 22.';

@@ -3,7 +3,7 @@ import { signed32 } from '../process/runner';
 import { safeText } from '../text/safeText';
 import { DISABLED_CODE, INSTANCE_ID, TAGS } from './gpuScripts';
 import { FIX_WORDS, problemOf, type FixKind } from './gpuProblems';
-import { choiceSentence, type OllamaChoice } from './ollamaLog';
+import { choiceSentence, type OllamaRead } from './ollamaLog';
 
 /**
  * What Windows said about its display adapters (PLAN_gpu_health.md D1, D3) as ONE closed state, and the alert, the line
@@ -26,8 +26,11 @@ export type GpuState =
 
 export const NOT_ASKED: GpuState = { kind: 'unknown', reason: 'checking…' };
 
-/** At most this many adapters are read — and the page's index is held below it (`messages.ts`). */
-export const MAX_ADAPTERS = 8;
+/**
+ * At most this many adapters are read — and the page's index is held below it (`messages.ts`). An answer naming more is
+ * an explicit UNKNOWN, never a partial read shown as complete (code round). The owner's machine has two.
+ */
+export const MAX_ADAPTERS = 32;
 
 const NAME_MAX = 120;
 
@@ -58,11 +61,15 @@ function adapterAt(tags: ReadonlyMap<string, string>, i: number): Adapter | unde
     : { name: safeText(name, NAME_MAX), id: tag(tags, TAGS.id, i), code: Number(code), driver: safeText(tag(tags, TAGS.driver, i), NAME_MAX) };
 }
 
-/** The count the query printed LAST — absent (a cut-off answer) or not a count is `undefined`; above the cap, the cap. */
+/** The count the query printed LAST — absent (a cut-off answer) or not a count is `undefined`. */
 function countOf(tags: ReadonlyMap<string, string>): number | undefined {
   const count = tags.get(TAGS.count) ?? '';
 
-  return /^\d+$/.test(count) ? Math.min(Number(count), MAX_ADAPTERS) : undefined;
+  return /^\d+$/.test(count) ? Number(count) : undefined;
+}
+
+function overCap(count: number): GpuState {
+  return { kind: 'unknown', reason: `Windows reported ${count} display adapters; this extension reads at most ${MAX_ADAPTERS}` };
 }
 
 /** The query's stdout as one state: every adapter up to the count it printed LAST, or `unknown` with why. */
@@ -72,6 +79,11 @@ export function parseGpuAnswer(stdout: string, atUtcMs: number): GpuState {
   if (count === undefined) {
     return { kind: 'unknown', reason: 'the display-adapter query printed no complete answer' };
   }
+
+  return count > MAX_ADAPTERS ? overCap(count) : adaptersOf(tags, count, atUtcMs);
+}
+
+function adaptersOf(tags: ReadonlyMap<string, string>, count: number, atUtcMs: number): GpuState {
   const adapters = Array.from({ length: count }, (_v, i) => i).flatMap((i) => adapterAt(tags, i) ?? []);
 
   return adapters.length === count ? { kind: 'read', adapters, atUtcMs } : { kind: 'unknown', reason: 'the display-adapter query answered an adapter without its name or code' };
@@ -147,15 +159,28 @@ function fixWords(code: number): string {
   return FIX_WORDS[fixOf(code)].replace('code N', `code ${code}`);
 }
 
-function consequence(ollama: OllamaChoice | undefined): string {
-  return ollama === undefined ? CONSEQUENCE : `${CONSEQUENCE} ${choiceSentence(ollama)}`;
+/** Ollama's part of the consequence: its last choice, why its log could not be read (code round), or nothing. */
+function ollamaWords(ollama: OllamaRead | undefined): string {
+  if (ollama === undefined) {
+    return '';
+  }
+
+  return 'library' in ollama ? ` ${choiceSentence(ollama)}` : unreadableWords(ollama);
+}
+
+function unreadableWords(read: Exclude<OllamaRead, { readonly library: string }>): string {
+  return read.kind === 'unreadable' ? ` Ollama's log could not be read (${read.reason}).` : '';
+}
+
+function consequence(ollama: OllamaRead | undefined): string {
+  return CONSEQUENCE + ollamaWords(ollama);
 }
 
 function buttonFor(adapter: Adapter, index: number, pending: PendingEnable | undefined): GpuAlert['button'] {
   return canEnable(adapter) ? { index, label: `Enable ${adapter.name}`, enabled: pending === undefined } : undefined;
 }
 
-function alertFor(adapter: Adapter, index: number, ollama: OllamaChoice | undefined, pending: PendingEnable | undefined): GpuAlert {
+function alertFor(adapter: Adapter, index: number, ollama: OllamaRead | undefined, pending: PendingEnable | undefined): GpuAlert {
   const waiting = pending !== undefined && canEnable(adapter) ? `Waiting for the elevated PowerShell that enables ${pending.name} (answer the UAC prompt)… ` : '';
 
   return {
@@ -171,7 +196,7 @@ function alertFor(adapter: Adapter, index: number, ollama: OllamaChoice | undefi
  * The panel's GPU part (D3, D6): one critical alert per adapter that is not working, the unknown state as an alert of its
  * own, and — when all work — one muted line. `formatTime` is the presentation edge's local-time formatter.
  */
-export function gpuView(state: GpuState, ollama: OllamaChoice | undefined, pending: PendingEnable | undefined, formatTime: (utcMs: number) => string): GpuView {
+export function gpuView(state: GpuState, ollama: OllamaRead | undefined, pending: PendingEnable | undefined, formatTime: (utcMs: number) => string): GpuView {
   if (state.kind === 'unknown') {
     return unknownView(state);
   }

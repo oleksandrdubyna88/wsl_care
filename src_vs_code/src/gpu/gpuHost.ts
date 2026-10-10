@@ -4,7 +4,7 @@ import { clearGpuPending, readGpuPending } from './gpuPending';
 import { DISABLED_CODE, queryRequest } from './gpuScripts';
 import { gpuBarMark, gpuStateOf, gpuView, NOT_ASKED, type GpuBarMark, type GpuState, type GpuView } from './gpuState';
 import type { GpuUi } from './gpuRecorder';
-import { lastChoice, ollamaLogPath, readTail, type OllamaChoice } from './ollamaLog';
+import { ollamaLogPath, ollamaReadOf, readTail, type OllamaRead, type TailRead } from './ollamaLog';
 
 /**
  * The host side of the GPU story (PLAN_gpu_health.md D1, D2, D5, D6): the adapters Windows last reported, ONE query in flight
@@ -21,6 +21,7 @@ export interface GpuHostDeps {
   readonly exists: (file: string) => boolean;
   readonly queryTimeoutMs: () => number;
   readonly enableTimeoutMs: () => number;
+  readonly enableSettleSeconds: () => number;
   readonly ollamaTailBytes: () => number;
   readonly checkMinutes: () => number;
   readonly ui: GpuUi;
@@ -29,7 +30,7 @@ export interface GpuHostDeps {
   readonly every: (ms: number, run: () => void) => () => void;
   /** The presentation edge's local-time formatter. */
   readonly formatTime: (utcMs: number) => string;
-  readonly readTail?: (file: string, bytes: number) => string | undefined;
+  readonly readTail?: (file: string, bytes: number) => TailRead;
 }
 
 /** Whether Windows' answer shows the device a pending enable was for as no longer at code 22 (or gone). */
@@ -39,7 +40,7 @@ function noLongerDisabled(state: GpuState, id: string): boolean {
 
 export class GpuHost {
   private state: GpuState = NOT_ASKED;
-  private ollama: OllamaChoice | undefined;
+  private ollama: OllamaRead | undefined;
   private querying: Promise<void> | undefined;
   private again = false;
   private enabling = false;
@@ -125,6 +126,7 @@ export class GpuHost {
         env: this.deps.env,
         exists: this.deps.exists,
         timeoutMs: this.deps.enableTimeoutMs,
+        settleSeconds: this.deps.enableSettleSeconds,
         confirm: this.deps.ui.confirm,
         run: this.deps.ui.run,
         report: this.deps.ui.report,
@@ -153,11 +155,11 @@ export class GpuHost {
     this.changed();
   }
 
-  private readOllama(): OllamaChoice | undefined {
+  private readOllama(): OllamaRead | undefined {
     const file = ollamaLogPath(this.deps.env);
-    const text = file === undefined ? undefined : (this.deps.readTail ?? readTail)(file, this.deps.ollamaTailBytes());
+    const read = this.deps.readTail ?? readTail;
 
-    return text === undefined ? undefined : lastChoice(text);
+    return file === undefined ? undefined : ollamaReadOf(read(file, this.deps.ollamaTailBytes()));
   }
 
   /** A pending enable whose device Windows already shows not disabled (after a reload, say) is cleared, not waited out. */

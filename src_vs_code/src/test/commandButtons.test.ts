@@ -78,6 +78,8 @@ function postedByPageButtons(): Set<string> {
   return posted;
 }
 
+/** The golden outcomes as a real `Snapshot` — typed, not cast (TypeScript doctrine §3; code round of PLAN_gpu_health.md). */
+
 const GUARD_OPTIONS: GuardOptions = { setAutomaticStart: true, everyHours: 4, minMinutesBetweenStarts: 10, delaySeconds: 60, timeLimitMinutes: 5 };
 
 test('a page button is one the page renders, the host accepts, and that runs the command\'s own operation', () => {

@@ -258,3 +258,15 @@ is bounded by `ollamaLogTailKiB`.
 - **Tests**: `gpu.test.ts` (29, one of them the PowerShell parser check on the Windows leg), four new `panelPage.test.ts`
   cases, one `noRealWsl.test.ts` case (the device verbs), `commandButtons.test.ts` and `manifest.test.ts` widened, and one
   extension-host scenario (the bar mark, the declined and the confirmed enable in Test mode, on 1.85.0 and stable).
+
+### The code round (coai, 2026-10-10: `proceed`, 4 of 12 reviewers — codex's four roles; local had no model, gemini out of quota)
+
+Seven findings, all accepted, each fixed test-first (RED observed against a stub keeping the old behaviour, then GREEN):
+
+| Finding | Fix |
+|---|---|
+| the Ollama log reader swallowed every read error | `readTail` answers `text` / `absent` (ENOENT, ENOTDIR only) / `unreadable` with its code; the HOST carries `unreadable` to the alert ("Ollama's log could not be read (EACCES)") — a second RED caught the host dropping it |
+| the adapter cap silently hid every adapter after the eighth (three findings) | every reported adapter up to `MAX_ADAPTERS` (now 32) is judged; an answer naming more is an explicit `unknown` ("Windows reported N display adapters; this extension reads at most 32"), never a partial read shown as complete |
+| the palette said "No GPU is disabled" after a failed check | `noChoiceMessage`: a check that could not run says why |
+| `Start-Sleep -Seconds 3` was a literal in the elevated script | `wslCare.gpu.enableSettleSeconds` (default 3, 0–60), clamped to an integer before it reaches the script |
+| a test fixture cast to `Snapshot` | a typed `GOLDEN_SNAPSHOT` (the neighbouring fixtures in `commandButtons.test.ts` still cast — named, not rewritten) |

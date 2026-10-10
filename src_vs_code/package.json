@@ -287,6 +287,14 @@
           "scope": "application",
           "markdownDescription": "How often Windows' display adapters are read for the GPU alert, in minutes, besides when the panel opens or is refreshed (0 = only then). Each read starts one Windows PowerShell."
         },
+        "wslCare.gpu.enableSettleSeconds": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 60,
+          "scope": "application",
+          "markdownDescription": "How long *Enable <GPU>*'s elevated script waits after `Enable-PnpDevice` before it ends, so the re-read that follows sees the driver started, in seconds."
+        },
         "wslCare.gpu.ollamaLogTailKiB": {
           "type": "integer",
           "default": 256,

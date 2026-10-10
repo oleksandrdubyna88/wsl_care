@@ -72,6 +72,7 @@ const GUARD = {
 /** The GPU alert (PLAN_gpu_health.md D1, D2). */
 const GPU = {
   gpuCheckMinutes: { key: 'gpu.checkMinutes', default: 15, minimum: 0, maximum: 1440, description: 'How often Windows\' display adapters are read for the GPU alert, in minutes, besides when the panel opens or is refreshed (0 = only then). Each read starts one Windows PowerShell.' },
+  gpuEnableSettleSeconds: { key: 'gpu.enableSettleSeconds', default: 3, minimum: 0, maximum: 60, description: 'How long *Enable <GPU>*\'s elevated script waits after `Enable-PnpDevice` before it ends, so the re-read that follows sees the driver started, in seconds.' },
   gpuOllamaLogTailKiB: { key: 'gpu.ollamaLogTailKiB', default: 256, minimum: 16, maximum: 4096, description: 'How much of the end of Ollama\'s server.log is read for the device it last chose, in KiB.' },
 } as const satisfies Readonly<Record<string, NumberSetting>>;
 

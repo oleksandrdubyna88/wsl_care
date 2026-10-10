@@ -123,6 +123,7 @@ ceiling can never be set at or below the daemon's own worst case for that call: 
 | `wslCare.timeouts.gpuQuerySeconds` | 20 | 5–120 | How long the read-only query of Windows' display adapters behind the panel's GPU alert may take, in seconds (measured: 0.6–1.5 s, once 6.2 s). |
 | `wslCare.timeouts.gpuEnableSeconds` | 120 | 30–600 | How long *Enable <GPU>* may take, in seconds — it waits for YOU at the UAC prompt, then enables one display adapter. |
 | `wslCare.gpu.checkMinutes` | 15 | 0–1440 | How often Windows' display adapters are read for the GPU alert, in minutes, besides when the panel opens or is refreshed (0 = only then). Each read starts one Windows PowerShell. |
+| `wslCare.gpu.enableSettleSeconds` | 3 | 0–60 | How long *Enable <GPU>*'s elevated script waits after `Enable-PnpDevice` before it ends, so the re-read that follows sees the driver started, in seconds. |
 | `wslCare.gpu.ollamaLogTailKiB` | 256 | 16–4096 | How much of the end of Ollama's server.log is read for the device it last chose, in KiB. |
 | `wslCare.logs.maxRunIndex` | 9999 | 100–100000 | The largest run-list index the Logs page may name (a bound on its messages; the host still checks the index against the list it read). |
 
