@@ -103,12 +103,18 @@ public sealed partial class PhysicalFileSystem
         };
     }
 
+    /// <summary>Why the held base may not be used: reached through a link, or (G2, 2026-10-10) a share that answers from the Offline
+    /// Files cache or cannot say; empty when it may.</summary>
+    [SupportedOSPlatform("windows")]
+    private static string BaseProblem(SafeFileHandle handle, Located at) =>
+        NotInPlace(handle, at) is { Length: > 0 } moved ? moved : NetworkPaths.OfflineCacheProblemOf(handle, at.RealPath);
+
     /// <summary>The base held and found where its real path says.</summary>
     [SupportedOSPlatform("windows")]
     private static HeldLevel HeldBase(Located at)
     {
         var held = HeldFolder(at.RealPath);
-        if (held is not HeldLevel.Held { Handle: var handle } || NotInPlace(handle, at) is not { Length: > 0 } moved)
+        if (held is not HeldLevel.Held { Handle: var handle } || BaseProblem(handle, at) is not { Length: > 0 } moved)
         {
             return held;
         }
@@ -228,12 +234,18 @@ public sealed partial class PhysicalFileSystem
         using var opened = BeneathWrites.OpenWindows(path, delete: false, unbuffered: true);
         return opened switch
         {
-            NativeOpen.Opened file when BeneathWrites.Describe(file.Handle).IsPlainFile => HashedUnbuffered(file.Handle, path),
+            NativeOpen.Opened file when BeneathWrites.Describe(file.Handle).IsPlainFile => TrustedHash(file.Handle, path),
             NativeOpen.Opened => new FileHash.Unreadable($"{name} is not a plain file of one link"),
             NativeOpen.Failed { Error: BeneathWrites.WindowsNotFound or BeneathWrites.WindowsPathNotFound } => new FileHash.Gone(),
             _ => new FileHash.Unreadable($"{name} could not be opened (error {opened.ErrorCode})"),
         };
     }
+
+    /// <summary>G2 (2026-10-10): a copy on a share that may answer from the Offline Files cache is not hashed — its answer is not
+    /// trusted, and the caller keeps what it would have removed.</summary>
+    [SupportedOSPlatform("windows")]
+    private FileHash TrustedHash(SafeFileHandle handle, string path) =>
+        NetworkPaths.OfflineCacheProblemOf(handle, path) is { Length: > 0 } untrusted ? new FileHash.Untrusted(untrusted) : HashedUnbuffered(handle, path);
 
     private FileHash HashedUnbuffered(SafeFileHandle handle, string path)
     {
