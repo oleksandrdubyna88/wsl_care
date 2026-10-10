@@ -2373,7 +2373,8 @@
     "archive.preview",
     "archive.run",
     "archive.restore",
-    "archive.list"
+    "archive.list",
+    "act.entryStdin"
   ],
   "running": {
     "state": "none"

@@ -20,5 +20,6 @@
   ],
   "skippedLines": 0,
   "notes": [],
-  "omitted": 0
+  "omitted": 0,
+  "restoreCeiling": 1000
 }

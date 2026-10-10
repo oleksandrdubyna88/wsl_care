@@ -2866,6 +2866,51 @@ an error letting the unit go; a stall not remembered; a share given the drive fo
 table letting Claude go; Claude under node not seen; one folder for every side. On Linux the Windows-only tests skip, so these checks
 were not repeated there; the Linux suites are green (Core 2255 / 16 skipped, Cli 344 / 4, Scenarios 497 / 3, goldens 14 / 0).
 
+### The daemon half of the extension's archive (E10.S0, 2026-10-09, plan §15s D6, D7, D10)
+
+| Guarantee | Tests |
+|---|---|
+| `act A20 … --entry -` parses as "the ids on stdin" and puts no `-` among the ids | `Cli.Tests/ActEntryStdinTests.The_entry_flag_takes_a_dash_for_stdin_and_names_no_id_on_the_command_line` |
+| a stdin entry list is A20's alone, given once, never beside `--entry <id>` and never beside `--only -` (stdin carries one list) | `ActEntryStdinTests.A_stdin_entry_list_is_A20s_alone_given_once_and_never_beside_another_stdin_list` (4 rows) |
+| **the shared request** (`contracts/requests/act-a20-entry-stdin.json`, the plan round's finding 0): its confirm argv and stdin reach the detached run with exactly its entries; its preview argv parses and reads exactly its entries | `ActEntryStdinTests.The_shared_confirm_request_reaches_the_detached_run_with_exactly_its_entries`, `…The_shared_preview_request_parses_and_reads_exactly_its_entries` |
+| a bad line is named by its NUMBER and never echoed; an id twice is refused; an empty list is refused — nothing written, nothing started | `ActEntryStdinTests.A_bad_stdin_entry_list_is_refused_naming_the_rule_never_echoing_a_line` (3 rows) |
+| at most `archive.maxRestoreEntries`' ceiling on stdin, as with the flag | `ActEntryStdinTests.A_stdin_entry_list_is_bounded_by_the_ceiling_any_restore_takes` |
+| a trailing CR is tolerated, as the `--only` file tolerates it | `ActEntryStdinTests.A_trailing_carriage_return_is_tolerated_as_the_only_file_tolerates_it` |
+| the capability `act.entryStdin` is appended last | `ActEntryStdinTests.The_capability_names_the_stdin_entry_list`; the `status*.json` goldens |
+| every `archive list` answer — plain, restorable, stopped without a base — carries the effective `archive.maxRestoreEntries` as `restoreCeiling` (the plan round's finding 1) | `Core.Tests/Archive/ArchiveRunTests.Every_list_answer_carries_the_restore_ceiling_in_force`; `archive-list.json` |
+| `archive check-base` takes `--json` before or after its path (D10) | `ActEntryStdinTests.Check_base_takes_json_before_or_after_its_path` |
+
+**Red first:** all thirteen Cli tests were red against a skeleton of the new members, each for its own symptom (`--entry needs a
+value`, `Capabilities.All … to contain "act.entryStdin"`, `Expected type to be … ArchiveCheckBase, but found … Failed`), and the
+ceiling test was red with `Expected plain.RestoreCeiling to be 7, but found 0`. The `A13` row was first written to expect "A20"
+and passed against the skeleton for the wrong reason (the "needs a value" sentence names A20 too); it was sharpened to
+"A20 among the actions" before the code was written.
+
+**Teeth** (`E10S0-01`–`E10S0-13`, product code only, each restored byte for byte, on Windows): all 13 red — the stdin list's
+count check dropped, the one-stdin rule dropped, `--entry -` beside `--entry <id>` allowed, a second `--entry -` allowed, the
+stdin ids not read, a bad line not named, an `--entry -` without A20 allowed; and the six of the own review: A20's preview asking
+the bounded window instead of the shown entries, its ceiling check dropped, the list's entry filter ignored, the verb's ceiling in
+force dropped, the entries left out of the shown-list cap, `archive list --entry` allowed without `--restorable`.
+
+**The own review round** (an Opus reviewer in parallel, security / confused deputy and correctness, on the uncommitted diff):
+
+| # | Finding | Decision |
+|---|---|---|
+| 1 | **Major** — A20's preview asked `archive list --restorable`, which keeps the newest `archive.maxRestoreEntries` restorable entries; a shown entry older than that window was dropped without a word ("the M still restorable") — `--entry -` made such selections practical | fixed: `archive list --restorable --entry <ids>` (`ArchiveChildren.ListShown`, `ArchiveList.Asked`); the preview asks for exactly the shown ids. `RestoreActionTests.A20_asks_the_child_for_exactly_the_shown_entries_so_none_is_lost_to_the_newest_window` (red: the argv lacked `--entry`), `ArchiveRunTests.A_restorable_list_asked_for_its_entries_answers_them_past_the_newest_window` (red: the window's entry instead), `ActEntryStdinTests.Archive_list_takes_the_entries_a_restorable_list_is_asked_for` (red: `--entry` unknown to `archive list`) |
+| 2 | the CLI held the key's RANGE (5000), not the value in force (1000) | fixed twice: the verb (`ActCommand.PastTheCeiling`) and A20's preview (`RestoreAction.PastTheCeiling`, before the child is asked). `ActEntryStdinTests.More_entries_than_the_ceiling_in_force_are_refused_before_anything_is_written` (red: exit 0), `RestoreActionTests.More_shown_entries_than_the_ceiling_in_force_are_refused_before_the_child_is_asked` (red: no refusal) |
+| 3 | a detach was `accepted` for more entries than `act.maxShownNames`, which the unit then refuses to read | fixed in the verb: the entries join `PastTheCap`. `ActEntryStdinTests.Entries_past_the_shown_list_cap_in_force_are_refused_before_a_request_is_written` (red: accepted). A coupled-limit rule (`maxShownNames >= maxRestoreEntries`) was tried first and dropped: it turned every machine that had lowered `act.maxShownNames` below 1000 observe-only (`UnitsCommandTests…cap_in_force…` went red with exit 78) |
+| 4 | `act.maxListBytes` (65 536 at least) can be below a full 5000-id selection (≈ 90 000 bytes) | not changed: the refusal names the byte cap ("larger than N bytes"), and only a machine that set both extremes meets it; a coupled rule would have the cost of #3 |
+| 5 | complexity above 4 in `ShownEntriesFailure`, `ShownValueProblem`, `SecondOnce` | fixed: `PlacementProblem` apart from the list check; `SecondOnly` / `SecondStdinEntries` / `OnceWords` |
+| 6 | the bad-line scan written twice | fixed: one `StdinList.Lines(text, valid)` for the `--only` file and the entry list |
+| 7 | stale words (`ButtonNeedsShownEntries`, check-base's usage line) | fixed |
+| 8 | untested: stdin untouched by a refused request; the in-process path; ids before the dash; the byte cap and no-end for this list | tests added: `A_refused_request_never_reads_stdin`, `An_in_process_preview_reads_its_entries_from_stdin_under_the_same_checks`, `Ids_before_the_dash_a_list_past_the_byte_cap_and_a_list_with_no_end_are_refused` (green against the code as it was — they pin what the shared readers already did) |
+
+**The coai code round** (session 82e14bdf, `proceed`, 4 gating of threshold 5; one of two vendors answered, the other out of quota): the
+plan's status line still said nothing was built — accepted, it says E10.S0 is built; `ArchiveListRequest.EntryIds` a set on a public
+record — accepted, a list; `ShownEntriesFailure` above complexity 4 — accepted, the placement check is a switch expression of its
+own; `RestoreAction.PastTheCeiling` returning `ActionPreview?` — rejected: it chains with `ArchiveGates.Before`, whose nullable
+"no gate stopped it" is the gate family's shape. The thirteen teeth were run again after the round: all red.
+
 ## The extension (`src_vs_code/`)
 
 > E5.S1 (2026-10-03): the client tier of the extension's harness — the real `WslCareClient` over the real runner seam

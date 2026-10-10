@@ -67,13 +67,17 @@ public static class ArchiveGates
     /// <summary>A whole child's answer: its one line, when it exited with one of <paramref name="exits"/> and its output was not cut —
     /// its launcher recorded at its start and its worker right before a kill, both retired at its end (the S4 own review round S-M1:
     /// every child root starts is recorded, not only the streamed ones).</summary>
-    public static async Task<ChildText> ChildTextAsync(ActionContext context, ActionCommands commands, CommandTemplate template, IReadOnlyList<int> exits, CancellationToken cancellationToken)
+    public static Task<ChildText> ChildTextAsync(ActionContext context, ActionCommands commands, CommandTemplate template, IReadOnlyList<int> exits, CancellationToken cancellationToken) =>
+        ChildTextAsync(context, commands, template, [], exits, cancellationToken);
+
+    /// <summary>As above, with the template's slot <paramref name="values"/> (A20's shown entries, the E10.S0 own review, finding 1).</summary>
+    public static async Task<ChildText> ChildTextAsync(ActionContext context, ActionCommands commands, CommandTemplate template, IReadOnlyList<string> values, IReadOnlyList<int> exits, CancellationToken cancellationToken)
     {
         var watch = new ChildWatch(context, template.Name, cancellationToken);
         ChildText text;
         try
         {
-            var outcome = await commands.RunAsync(template, [], watch.Hooks, cancellationToken).ConfigureAwait(false);
+            var outcome = await commands.RunAsync(template, values, watch.Hooks, cancellationToken).ConfigureAwait(false);
             text = outcome is CommandOutcome.Exited exited ? Whole(template, exited, exits) : NotAnswered(template, outcome);
         }
         finally
