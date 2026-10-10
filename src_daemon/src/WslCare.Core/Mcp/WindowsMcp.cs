@@ -59,7 +59,15 @@ public enum WindowsMcpOwnerKind
 }
 
 /// <summary>One Windows MCP server instance.</summary>
-public sealed record WindowsMcpInstance(int Pid, string Server, WindowsMcpOwner Owner, Reading<DateTimeOffset> Created, Reading<double> CpuPercent, Reading<long> WorkingSet, Reading<long> PrivateBytes, Reading<int> SessionId, bool Idle);
+public sealed record WindowsMcpInstance(int Pid, string Server, WindowsMcpOwner Owner, Reading<DateTimeOffset> Created, Reading<double> CpuPercent, Reading<long> WorkingSet, Reading<long> PrivateBytes, Reading<int> SessionId, bool Idle)
+{
+    /// <summary>Over what <see cref="CpuPercent"/> was measured: since this identity's ledger point (<c>interval</c>), across the
+    /// window, or not at all (E14 S7b.1, S1's basis).</summary>
+    public McpCpuBasis CpuBasis { get; init; } = McpCpuBasis.None;
+
+    /// <summary>How long <see cref="CpuPercent"/> was measured over; zero when it was not.</summary>
+    public TimeSpan CpuOver { get; init; }
+}
 
 /// <summary>How many instances one owner holds — the "35 under one wsl.exe" line.</summary>
 public sealed record WindowsMcpOwnerGroup(WindowsMcpOwnerKind Kind, string Parent, int Count);
@@ -72,4 +80,7 @@ public sealed record WindowsMcpSample(int WindowMilliseconds, IReadOnlyList<Wind
     public int IdleCount => Instances.Count(i => i.Idle);
 
     public int OrphanedCount => Instances.Count(i => i.Owner.Kind == WindowsMcpOwnerKind.Orphaned);
+
+    /// <summary>Whether this sample's readings were recorded for the next one's interval, and where (E14 S7b.1).</summary>
+    public McpCpuBaseline Baseline { get; init; } = McpCpuBaseline.NotRecorded(string.Empty, "no CPU ledger");
 }

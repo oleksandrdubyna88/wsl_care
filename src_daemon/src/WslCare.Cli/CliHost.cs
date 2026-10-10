@@ -35,6 +35,10 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
     /// unless <see cref="ForThisMachine"/> wires the real one on Windows, so a test's answer never depends on this machine's processes.</summary>
     public IWindowsProcessTable WindowsProcesses { get; init; } = new UnreadWindowsProcessTable("a host built by a test reads no Windows process table");
 
+    /// <summary>Windows' boot counter and unbiased clock, for the Windows side's MCP CPU ledger (E14 S7b.1, read-only). Reads nothing
+    /// unless <see cref="ForThisMachine"/> wires the real one on Windows; without it every instance is measured across the window.</summary>
+    public IWindowsBoot WindowsBoot { get; init; } = new UnreadWindowsBoot("a host built by a test reads no Windows boot counter");
+
     /// <summary>What the archive's open-file check asks on the Windows side (plan §15r E9.S5): the Restart Manager and
     /// <see cref="WindowsProcesses"/> in the Windows binary; a check that did not run in the distro's.</summary>
     public IWindowsSide ArchiveWindows() =>
@@ -155,6 +159,7 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
             HomeOwner = owner,
             Signals = SignalsFor(paths, files),
             WindowsProcesses = WindowsProcessesFor(paths),
+            WindowsBoot = WindowsBootFor(paths),
             InteropRefusal = () => paths is LinuxHostPaths linux ? UserLayerTrusts.InteropRefusal(linux, files) : string.Empty,
         };
     }
@@ -211,6 +216,12 @@ internal sealed record CliHost(IHostPaths Paths, IFileSystem Files, TimeProvider
         paths is WindowsHostPaths && OperatingSystem.IsWindows()
             ? new Win32ProcessTable()
             : new UnreadWindowsProcessTable("the distro's binary reads the distro's MCP servers (mcpServers)");
+
+    /// <summary>The real boot counter and unbiased clock for the Windows binary; none in the distro (its ledger reads the kernel's).</summary>
+    private static IWindowsBoot WindowsBootFor(IHostPaths paths) =>
+        paths is WindowsHostPaths && OperatingSystem.IsWindows()
+            ? new Win32Boot()
+            : new UnreadWindowsBoot("the distro's binary keeps the distro's CPU ledger (mcpServers)");
 
     private static IHostProbe ProbeFor(IHostPaths paths, IFileSystem files, TimeProvider clock)
     {

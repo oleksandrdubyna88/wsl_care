@@ -28,12 +28,18 @@ public sealed record WindowsMcpServersReport(
     IReadOnlyList<WindowsMcpOwnerGroupReport>? Owners,
     IReadOnlyList<WindowsMcpInstanceReport>? Instances)
 {
+    /// <summary>Whether this sample's readings were recorded for the next one's interval, and where (E14 S7b.1, S1's shape). Additive.</summary>
+    public McpCpuBaselineReport? CpuBaseline { get; init; }
+
     public static WindowsMcpServersReport From(Reading<WindowsMcpSample> reading) => reading switch
     {
         Reading<WindowsMcpSample>.Available { Value: var s } => new(
             true, null, s.WindowMilliseconds, s.Count, s.Listed.Count, s.IdleCount, s.OrphanedCount, s.Instances.Count(i => i.PrivateBytes.IsAvailable),
             StatusReports.Bytes(Sum(s.Instances, i => i.PrivateBytes)), StatusReports.Bytes(Sum(s.Instances, i => i.WorkingSet)), StatusReports.Number(Cores(s.Instances)),
-            ServerReports(s.Instances), [.. s.Owners.Select(o => new WindowsMcpOwnerGroupReport(WindowsMcpOwnerReport.KindName(o.Kind), o.Parent, o.Count))], [.. s.Listed.Select(WindowsMcpInstanceReport.From)]),
+            ServerReports(s.Instances), [.. s.Owners.Select(o => new WindowsMcpOwnerGroupReport(WindowsMcpOwnerReport.KindName(o.Kind), o.Parent, o.Count))], [.. s.Listed.Select(WindowsMcpInstanceReport.From)])
+        {
+            CpuBaseline = new(s.Baseline.File, s.Baseline.Recorded, s.Baseline.Recorded ? null : s.Baseline.Reason),
+        },
         _ => new(false, reading.ReasonOrEmpty, null, null, null, null, null, null, null, null, null, null, null, null),
     };
 
@@ -74,6 +80,12 @@ public sealed record WindowsMcpInstanceReport(
     int? SessionId,
     bool Idle)
 {
+    /// <summary><c>interval</c> (since this identity's ledger point), <c>window</c> or <c>none</c> — S1's names (E14 S7b.1). Additive.</summary>
+    public string CpuBasis { get; init; } = McpInstanceReport.BasisName(McpCpuBasis.None);
+
+    /// <summary>How long <see cref="CpuPercent"/> was measured over, in seconds; unavailable when it was not. Additive.</summary>
+    public NumberFigure CpuIntervalSeconds { get; init; } = StatusReports.Number(Reading.Missing<double>("not measured"));
+
     public static WindowsMcpInstanceReport From(WindowsMcpInstance i) => new(
         i.Pid,
         i.Server,
@@ -83,7 +95,11 @@ public sealed record WindowsMcpInstanceReport(
         StatusReports.Bytes(i.WorkingSet),
         StatusReports.Bytes(i.PrivateBytes),
         i.SessionId is Reading<int>.Available { Value: var session } ? session : null,
-        i.Idle);
+        i.Idle)
+    {
+        CpuBasis = McpInstanceReport.BasisName(i.CpuBasis),
+        CpuIntervalSeconds = StatusReports.Number(i.CpuPercent.Map(_ => Math.Round(i.CpuOver.TotalSeconds, 1))),
+    };
 }
 
 /// <summary>Who holds an instance: <c>agent</c>, <c>interop</c>, <c>orphaned</c> or <c>other</c>, the direct parent, and why.</summary>

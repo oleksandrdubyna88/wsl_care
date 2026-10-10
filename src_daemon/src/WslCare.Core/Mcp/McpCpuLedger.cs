@@ -56,6 +56,10 @@ public abstract record McpCpuLedgerPlace
     /// <summary>This account's own, under <c>$XDG_STATE_HOME/wsl-care</c>: read and written by an unprivileged <c>status</c>.</summary>
     public sealed record OwnState(string Directory, string File) : McpCpuLedgerPlace;
 
+    /// <summary>The Windows binary's own, under its state directory (<c>%LOCALAPPDATA%\wsl-care</c>, E14 S7b.1): read and written by
+    /// an unelevated <c>status</c>; an elevated one reads it and writes nothing (<paramref name="Writes"/> false) — it is the user's file.</summary>
+    public sealed record WindowsState(string Directory, string File, bool Writes) : McpCpuLedgerPlace;
+
     /// <summary>No ledger: every instance is measured across the window.</summary>
     public sealed record None(string Reason) : McpCpuLedgerPlace;
 
@@ -64,6 +68,7 @@ public abstract record McpCpuLedgerPlace
     {
         RootState root => root.File,
         OwnState own => own.File,
+        WindowsState windows => windows.File,
         _ => string.Empty,
     };
 
@@ -75,6 +80,11 @@ public abstract record McpCpuLedgerPlace
         LinuxHostPaths linux => new OwnState(linux.UserStateDirectory, linux.Rules.Join(linux.UserStateDirectory, McpCpuLedger.FileName)),
         _ => new None(McpServerCollector.WindowsReadsItsOwn),
     };
+
+    /// <summary>The Windows binary's <c>status</c> place (E14 S7b.1): its own state directory's ledger, written only when the process
+    /// is not elevated.</summary>
+    public static McpCpuLedgerPlace ForWindowsStatus(WindowsHostPaths paths, bool elevated) =>
+        new WindowsState(paths.StateDirectory, paths.Rules.Join(paths.StateDirectory, McpCpuLedger.FileName), Writes: !elevated);
 
     /// <summary><c>collect</c>'s place: root's ledger when the run may record; none for a read-only run (<paramref name="readOnly"/>
     /// says why), which measures across the window and writes nothing.</summary>
@@ -114,6 +124,7 @@ public static partial class McpCpuLedger
         McpCpuLedgerPlace.RootState root => Parse(files.ReadStateFile(root.File, maxBytes)),
         // Review finding 2: this account's own file, owner-checked and reached through no link — ReadStateFile trusts root's only.
         McpCpuLedgerPlace.OwnState own => Parse(files.ReadUserFile(own.File, maxBytes, RegularFiles.EffectiveUid(), own.Directory)),
+        McpCpuLedgerPlace.WindowsState windows => Parse(files.ReadUserFile(windows.File, maxBytes, RegularFiles.EffectiveUid(), windows.Directory)),
         _ => McpCpuFile.Empty,
     };
 
@@ -231,6 +242,8 @@ public static partial class McpCpuLedger
     {
         McpCpuLedgerPlace.RootState { Writes: true } root => Write(files, root.Directory, root.File, before, next, sweep),
         McpCpuLedgerPlace.OwnState own => Write(files, own.Directory, own.File, before, next, sweep),
+        McpCpuLedgerPlace.WindowsState { Writes: true } windows => Write(files, windows.Directory, windows.File, before, next, sweep),
+        McpCpuLedgerPlace.WindowsState windows => McpCpuBaseline.NotRecorded(windows.File, ReadOnlyElevated),
         McpCpuLedgerPlace.RootState root => McpCpuBaseline.NotRecorded(root.File, ReadOnlyRoot),
         McpCpuLedgerPlace.None none => McpCpuBaseline.NotRecorded(string.Empty, none.Reason),
         _ => throw new System.Diagnostics.UnreachableException("McpCpuLedgerPlace is a closed set"),
@@ -238,6 +251,9 @@ public static partial class McpCpuLedger
 
     /// <summary>Why a root <c>status</c> records nothing.</summary>
     public const string ReadOnlyRoot = "status as root reads root's ledger and writes nothing (plan §15b #3); the root timer's full run records it";
+
+    /// <summary>Why an elevated Windows <c>status</c> records nothing (E14 S7b.1).</summary>
+    public const string ReadOnlyElevated = "an elevated status reads the user's ledger and writes nothing; the user's own status records it";
 
     private static McpCpuBaseline Write(IFileSystem files, string directory, string file, McpCpuFile before, McpCpuFile next, McpCpuSweep sweep)
     {

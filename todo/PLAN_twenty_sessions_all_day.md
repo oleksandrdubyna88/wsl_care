@@ -1302,6 +1302,59 @@ Steps 1–5 land with the daemon (nothing runs A21 until step 7); steps 6–7 wi
 - **Q-S7b-2:** the runner — the extension while VS Code runs (assumed), or a per-user scheduled task now (E11)?
 - **Q-S7b-3:** may one client-gone relay be ended by hand (by pid and start) to measure whether its Windows child exits with it? If it does, the interop case closes in the distro by exact identity (A19's family) with no cross-OS pairing. Nothing is assumed: it is a real stop on the owner's machine.
 
+#### S7b.1 — as to be built (2026-10-09, same branch): the Windows CPU ledger, READ-ONLY
+
+**Why now.** Every S7b route needs it, whatever Q-S7b-3 shows, and the coordinator queued it on its own ("the Windows-side
+S1-style CPU ledger"). S7a measures a Windows server only across one short window, so a server that wakes for a burst every
+few minutes looks idle in a 1 s window — the S1 defect (2026-10-07 M1–M3) on Windows. Nothing here stops or changes a process.
+
+**Measured** (2026-10-09, read-only; `Get-Process` CPU time twice, 16.4 min apart):
+- all 22 `creds-mcp.exe` used exactly **0 ms**;
+- the 6 `coai-mcp.exe` of live sessions used **0.9–3.3 s** each.
+
+**Design — S1's ledger as it is** (`Mcp/McpCpuLedger.cs`; reuse-first step 1, no second ledger):
+1. **The reading.**
+   - Identity: (pid, creation time as a FILETIME integer) in `McpCpuReading.StartTicks`.
+   - `CpuTicks`: kernel + user 100-ns ticks (`GetProcessTimes`).
+   - `MonotonicMs`: `QueryUnbiasedInterruptTime`, which stops while the host sleeps, as Linux's `CLOCK_MONOTONIC` does.
+2. **Boot id:** Windows' own boot counter — `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management\PrefetchParameters\BootId` (a DWORD, readable unelevated; measured 117) — as `windows-<n>`.
+   - It is read through a new read-only seam, `IWindowsBoot`.
+   - Unreadable means no baseline: the window answers, as S1 does for an unreadable boot id.
+3. **Place:** `{%LOCALAPPDATA%\wsl-care}\mcp-cpu.json` (the Windows binary's state directory), a new `McpCpuLedgerPlace.WindowsState(Directory, File, Writes)`.
+   - An unelevated `status` reads and writes it; an elevated one only reads, since it is the user's file.
+   - It is read as S1's own-state ledger (regular, capped by `records.maxStateFileBytes`, reached through no link) and written atomically and privately, only when it changed.
+4. **`WindowsMcpCollector`.**
+   - An instance with a usable baseline (between `mcpServers.cpuIntervalMinSeconds` and `mcpServers.cpuIntervalMaxMinutes`, S1's keys) is measured over the real interval since it: `cpuBasis: interval`.
+   - The rest are measured across the window (`cpuBasis: window`), and the wait is paid only when one needs it.
+   - "Idle" keeps S7a's rule over whichever basis answered.
+   - The sample's readings go into the ledger by S1's two-point rule.
+5. **Wire, additive:**
+   - `windowsMcpServers.instances[]` gains `cpuBasis` and `cpuIntervalSeconds` (S1's names);
+   - the block gains `cpuBaseline {file, recorded, reason}`;
+   - the text line names the basis.
+   - The Windows golden is regenerated; the Linux answers are unchanged (the block is absent there).
+6. **Not here:**
+   - `collect` on the Windows binary: no Windows run records anything yet;
+   - S7b's idle history and stop;
+   - `node.exe` / `wslhost.exe` children and `playwright-mcp` on Windows (known limits).
+
+**Keys:** S1's, unchanged. No new number.
+
+**RED tests:**
+- `A_windows_instance_with_a_ledger_point_in_bounds_is_measured_over_the_interval`
+- `A_windows_instance_without_one_is_measured_across_the_window_and_recorded`
+- `A_reused_pid_never_takes_another_processs_baseline`
+- `Another_boot_or_an_unreadable_boot_id_is_no_baseline`
+- `An_elevated_status_reads_the_ledger_and_writes_nothing`
+- `The_real_boot_id_and_unbiased_clock_read_on_windows` (Windows only, read-only)
+- `The_windows_block_carries_cpu_basis_and_the_baseline`
+
+**DoD:**
+- [ ] RED, then green.
+- [ ] Break-it on product code turns the tests red: the creation time dropped from the identity; the boot id ignored.
+- [ ] Windows suites and CI green.
+- [ ] `module_mcp_servers.md`, `module_daemon.md`, `module_tests.md` and `contracts/` updated.
+
 ### S8 — the 24 h × 20 sessions soak campaign
 
 **What is sampled, every `soak.periodMinutes` (10):** `wsl-care status --json` (the S1 MCP block, S5/S6 verdicts, memory,
